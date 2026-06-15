@@ -19,7 +19,11 @@ from .view_model import (
     build_troubleshooting_job_detail_payload,
     build_troubleshooting_jobs_payload,
     build_troubleshooting_summary_payload,
+    external_effect_attempt_item,
     external_effect_filters,
+    external_effect_job_detail_item,
+    external_effect_receipt_item,
+    redact_external_effect_payload,
 )
 from .worker import ExternalEffectWorker
 
@@ -97,6 +101,7 @@ def list_external_effect_jobs(
     business_type: str = "",
     business_id: str = "",
     trace_id: str = "",
+    job_id: int = 0,
     limit: int = 50,
     offset: int = 0,
 ) -> dict[str, Any]:
@@ -109,6 +114,7 @@ def list_external_effect_jobs(
             "business_type": business_type,
             "business_id": business_id,
             "trace_id": trace_id,
+            "job_id": job_id,
             "limit": limit,
             "offset": offset,
         },
@@ -207,8 +213,8 @@ def get_external_effect_job(job_id: int) -> JSONResponse:
     return _json(
         {
             "ok": True,
-            "job": job.to_dict(),
-            "attempts": [attempt.to_dict() for attempt in service.list_attempts(job_id)],
+            "job": external_effect_job_detail_item(job),
+            "attempts": [external_effect_attempt_item(attempt) for attempt in service.list_attempts(job_id)],
             "route_owner": ROUTE_OWNER,
         }
     )
@@ -302,7 +308,13 @@ def list_external_effect_test_receipts(
         "received_to": received_to,
     }
     items, total = _service().list_test_receipts(filters, limit=_int(limit, default=50, minimum=1), offset=_int(offset, default=0))
-    return {"ok": True, "items": [item.to_dict() for item in items], "total": total, "filters": filters, "route_owner": ROUTE_OWNER}
+    return {
+        "ok": True,
+        "items": [external_effect_receipt_item(item) for item in items],
+        "total": total,
+        "filters": {key: redact_external_effect_payload(value, key=key) for key, value in filters.items() if _text(value)},
+        "route_owner": ROUTE_OWNER,
+    }
 
 
 @router.get("/api/admin/external-effects/test-receipts/{receipt_id}")
@@ -310,7 +322,7 @@ def get_external_effect_test_receipt(receipt_id: str) -> JSONResponse:
     receipt = _service().get_test_receipt(receipt_id)
     if not receipt:
         return _json({"ok": False, "error": "external_effect_test_receipt_not_found", "route_owner": ROUTE_OWNER}, status_code=404)
-    return _json({"ok": True, "receipt": receipt.to_dict(), "route_owner": ROUTE_OWNER})
+    return _json({"ok": True, "receipt": external_effect_receipt_item(receipt), "route_owner": ROUTE_OWNER})
 
 
 @router.post("/api/admin/external-effects/jobs/{job_id}/retry")
@@ -322,7 +334,7 @@ async def retry_external_effect_job(job_id: int, request: Request) -> JSONRespon
     job = _service().retry(job_id)
     if not job:
         return _json({"ok": False, "error": "external_effect_job_not_retryable", "route_owner": ROUTE_OWNER}, status_code=409)
-    return _json({"ok": True, "job": job.to_dict(), "route_owner": ROUTE_OWNER})
+    return _json({"ok": True, "job": external_effect_job_detail_item(job), "route_owner": ROUTE_OWNER})
 
 
 @router.post("/api/admin/external-effects/jobs/{job_id}/cancel")
@@ -334,4 +346,4 @@ async def cancel_external_effect_job(job_id: int, request: Request) -> JSONRespo
     job = _service().cancel(job_id)
     if not job:
         return _json({"ok": False, "error": "external_effect_job_not_cancellable", "route_owner": ROUTE_OWNER}, status_code=409)
-    return _json({"ok": True, "job": job.to_dict(), "route_owner": ROUTE_OWNER})
+    return _json({"ok": True, "job": external_effect_job_detail_item(job), "route_owner": ROUTE_OWNER})
