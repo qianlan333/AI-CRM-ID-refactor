@@ -5,7 +5,7 @@ from typing import Any
 
 from aicrm_next.platform_foundation.command_bus import Command, CommandContext
 
-from .config import event_type_allowed, internal_events_enabled, questionnaire_internal_events_enabled
+from .config import customer_tags_internal_events_enabled, event_type_allowed, internal_events_enabled, questionnaire_internal_events_enabled
 from .consumer_registry import DEFAULT_INTERNAL_EVENT_CONSUMER_REGISTRY, InternalEventConsumerRegistry
 from .models import InternalEvent, InternalEventConsumerResult, InternalEventConsumerRun
 from .questionnaire import register_questionnaire_event_consumers
@@ -93,7 +93,46 @@ def customer_summary_consumer(event: InternalEvent, run: InternalEventConsumerRu
 
 
 def tag_external_effect_shadow_consumer(event: InternalEvent, run: InternalEventConsumerRun) -> InternalEventConsumerResult:
-    return _skipped("customer_tag_external_effect_shadow_only", event, run)
+    payload = dict(event.payload_json or {})
+    external_effect_job = payload.get("external_effect_job")
+    side_effect_plan = payload.get("side_effect_plan")
+    if isinstance(external_effect_job, dict) and external_effect_job.get("id"):
+        return InternalEventConsumerResult(
+            status="succeeded",
+            request_summary={"event_id": event.event_id, "consumer_name": run.consumer_name},
+            response_summary={
+                "external_effect_job_reused": True,
+                "external_effect_job_created": False,
+                "external_effect_job_id": external_effect_job.get("id"),
+                "effect_type": _text(external_effect_job.get("effect_type")),
+                "execution_mode": _text(external_effect_job.get("execution_mode") or "shadow"),
+                "status": _text(external_effect_job.get("status") or "planned"),
+                "real_external_call_executed": False,
+                "wecom_api_called": False,
+            },
+            result_summary={
+                "external_effect_job_reused": True,
+                "external_effect_job_id": external_effect_job.get("id"),
+                "reason": "customer_tag_external_effect_already_planned",
+            },
+        )
+    if isinstance(side_effect_plan, dict) and side_effect_plan.get("id"):
+        return InternalEventConsumerResult(
+            status="succeeded",
+            request_summary={"event_id": event.event_id, "consumer_name": run.consumer_name},
+            response_summary={
+                "side_effect_plan_reused": True,
+                "side_effect_plan_id": side_effect_plan.get("id"),
+                "real_external_call_executed": False,
+                "wecom_api_called": False,
+            },
+            result_summary={
+                "side_effect_plan_reused": True,
+                "side_effect_plan_id": side_effect_plan.get("id"),
+                "reason": "customer_tag_side_effect_already_planned",
+            },
+        )
+    return _skipped("customer_tag_external_effect_not_configured_or_already_shadow_only", event, run)
 
 
 def tag_summary_consumer(event: InternalEvent, run: InternalEventConsumerRun) -> InternalEventConsumerResult:
@@ -147,6 +186,7 @@ def register_shadow_event_consumers(registry: InternalEventConsumerRegistry | No
     for event_type in (CUSTOMER_TAGGED_EVENT_TYPE, CUSTOMER_UNTAGGED_EVENT_TYPE):
         registry.register(event_type, "tag_external_effect_shadow_consumer", tag_external_effect_shadow_consumer, consumer_type="external_effect_planner")
         registry.register(event_type, "tag_summary_consumer", tag_summary_consumer, consumer_type="projection")
+        registry.register(event_type, "ai_assist_notify_consumer", ai_assist_notify_consumer, consumer_type="orchestration")
 
     for event_type in (AI_CAMPAIGN_CREATED_EVENT_TYPE, AI_CAMPAIGN_APPROVED_EVENT_TYPE, AI_CAMPAIGN_STARTED_EVENT_TYPE):
         registry.register(event_type, "ai_assist_notify_consumer", ai_assist_notify_consumer, consumer_type="orchestration")
@@ -270,21 +310,29 @@ def emit_customer_tag_shadow_event(
     external_userid: str,
     tag_ids: list[str],
     source_context: dict[str, Any],
+    side_effect_plan: dict[str, Any] | None = None,
+    external_effect_job: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     event_type = CUSTOMER_UNTAGGED_EVENT_TYPE if _text(effect_type) == "wecom.tag.unmark" else CUSTOMER_TAGGED_EVENT_TYPE
-    if not _event_enabled(event_type):
+    if not customer_tags_internal_events_enabled():
+        return {"status": "skipped", "reason": "customer_tags_internal_events_disabled"}
+    if not event_type_allowed(event_type):
         return {"status": "skipped", "reason": "internal_events_disabled_or_event_type_not_allowed"}
     if not _text(external_userid):
         return {"status": "skipped", "reason": "external_userid_missing"}
     register_shadow_event_consumers()
     stable_key = command.idempotency_key or command.command_id or f"{event_type}:{external_userid}:{','.join(tag_ids)}"
+    source = _source_context_source(source_context, command.context.source_route)
+    normalized_tags = list(tag_ids or [])
+    external_effect_summary = dict(external_effect_job or {}) if isinstance(external_effect_job, dict) else {}
+    side_effect_summary = dict(side_effect_plan or {}) if isinstance(side_effect_plan, dict) else {}
     result = InternalEventService().emit_event(
         event_type=event_type,
         event_version=1,
         aggregate_type="customer",
         aggregate_id=_text(external_userid),
         subject_type="customer",
-        subject_id=_text(external_userid),
+        subject_id=_redact_external_userid(external_userid),
         idempotency_key=f"{event_type}:{stable_key}",
         source_module="customer_tags.live_mutation",
         source_command_id=command.command_id,
@@ -292,14 +340,35 @@ def emit_customer_tag_shadow_event(
         context=command.context,
         payload={
             "external_userid": external_userid,
-            "tag_ids": list(tag_ids or []),
+            "tag_ids": normalized_tags,
+            "tag_count": len(normalized_tags),
             "source_context": dict(source_context or {}),
             "effect_type": effect_type,
+            "source": {
+                "source_module": "customer_tags.live_mutation",
+                "source_route": command.context.source_route,
+                "command_id": command.command_id,
+                "trace_id": command.context.trace_id,
+            },
+            "side_effect_plan": {
+                "id": side_effect_summary.get("id"),
+                "effect_type": side_effect_summary.get("effect_type"),
+                "status": side_effect_summary.get("status"),
+            } if side_effect_summary else {},
+            "external_effect_job": {
+                "id": external_effect_summary.get("id"),
+                "effect_type": external_effect_summary.get("effect_type"),
+                "status": external_effect_summary.get("status"),
+                "execution_mode": external_effect_summary.get("execution_mode"),
+                "idempotency_key": external_effect_summary.get("idempotency_key"),
+            } if external_effect_summary else {},
         },
         payload_summary={
             "external_userid_redacted": _redact_external_userid(external_userid),
-            "tag_count": len(tag_ids or []),
-            "source": _source_context_source(source_context, command.context.source_route),
+            "tag_count": len(normalized_tags),
+            "tag_ids_count": len(normalized_tags),
+            "source": source,
+            "effect_type": effect_type,
         },
     )
     return {"status": "emitted", "event_id": result["event"]["event_id"], "consumer_run_count": len(result.get("consumer_runs") or [])}

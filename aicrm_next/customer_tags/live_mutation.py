@@ -164,6 +164,8 @@ def _handle_plan_mutation(command: Command) -> dict[str, Any]:
         external_userid=external_userid,
         tag_ids=tag_ids,
         source_context=dict(command.payload.get("source_context") or {}),
+        side_effect_plan=_plan_response(plan),
+        external_effect_job=external_effect_job,
     )
     return {
         "effect_type": effect_type,
