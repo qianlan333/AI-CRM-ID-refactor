@@ -167,7 +167,13 @@ def list_internal_events(
 
 
 @router.get("/api/admin/internal-events/diagnostics")
-def internal_events_diagnostics(event_type: str = "", consumer_name: str = "", consumer_status: str = "") -> dict[str, Any]:
+def internal_events_diagnostics(
+    event_type: str = "",
+    consumer_name: str = "",
+    consumer_status: str = "",
+    trace_hash: str = "",
+    original_trace_hash: str = "",
+) -> dict[str, Any]:
     payload = build_diagnostics_payload(locals(), service=_service())
     payload["config"] = config_diagnostics_payload()
     payload.update(config_diagnostics_payload())

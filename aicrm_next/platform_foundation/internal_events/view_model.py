@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 from typing import Any
 
 from .models import InternalEvent, InternalEventConsumerAttempt, InternalEventConsumerRun
@@ -39,6 +40,7 @@ _SENSITIVE_EXACT_KEYS = {
     "mobile_snapshot",
 }
 _SENSITIVE_KEY_FRAGMENTS = ("token", "secret", "password", "authorization", "openid", "unionid", "mobile", "phone")
+_HASH_FILTER_KEYS = {"trace_hash", "original_trace_hash"}
 
 
 def _text(value: Any) -> str:
@@ -53,8 +55,26 @@ def _int(value: Any, *, default: int, minimum: int = 0, maximum: int = 200) -> i
     return max(minimum, min(parsed, maximum))
 
 
+def _hash16(value: str) -> str:
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()[:16]
+
+
+def _public_filter_value(key: str, value: Any) -> str:
+    text = _text(value)
+    if not text:
+        return ""
+    if key in _HASH_FILTER_KEYS:
+        return f"trace_ref:{_hash16(text)}"
+    return text
+
+
 def _public_filters(filters: dict[str, Any]) -> dict[str, str]:
-    return {key: _text(value) for key, value in filters.items() if _text(value)}
+    public: dict[str, str] = {}
+    for key, value in filters.items():
+        public_value = _public_filter_value(key, value)
+        if public_value:
+            public[key] = public_value
+    return public
 
 
 def internal_event_filters(params: dict[str, Any] | None = None) -> dict[str, str]:

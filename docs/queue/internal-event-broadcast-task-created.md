@@ -109,6 +109,13 @@ trace hash. The API does not return or persist the raw upstream trace, raw
 `external_userid`, mobile number, openid, unionid, webhook URL, token, or
 message body.
 
+The list and diagnostics APIs also redact filter echoes. `trace_hash` and
+`original_trace_hash` request parameters are accepted as raw lookup input, but
+`response.filters` returns a safe `trace_ref:{sha256(input)[:16]}` view instead
+of the raw query value. This keeps repository lookup behavior compatible while
+preventing raw upstream trace, plan id, `external_userid`, mobile, openid, or
+unionid values from being reflected back in API responses.
+
 `payload_summary_json` is the admin-visible summary:
 
 - `task_id`
