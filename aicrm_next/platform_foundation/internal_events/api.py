@@ -146,6 +146,7 @@ def admin_internal_events_page(request: Request):
 
 @router.get("/api/admin/internal-events")
 def list_internal_events(
+    event_section: str = "",
     event_type: str = "",
     aggregate_type: str = "",
     aggregate_id: str = "",
@@ -168,6 +169,7 @@ def list_internal_events(
 
 @router.get("/api/admin/internal-events/diagnostics")
 def internal_events_diagnostics(
+    event_section: str = "",
     event_type: str = "",
     consumer_name: str = "",
     consumer_status: str = "",

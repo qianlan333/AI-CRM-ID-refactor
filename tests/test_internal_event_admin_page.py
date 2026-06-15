@@ -47,30 +47,31 @@ def test_internal_event_admin_page_smoke_and_payment_consumer_copy(next_client: 
     assert 'data-route-owner="ai_crm_next"' in response.text
     assert 'id="statsGrid"' in response.text
     assert 'id="filterForm"' in response.text
+    assert 'id="sectionTabs"' in response.text
     assert 'id="internalEventsTable"' in response.text
+    assert 'id="detailModal"' in response.text
     assert 'id="detailPanel"' in response.text
     for text in [
-        "event_type",
-        "aggregate_type",
-        "aggregate_id",
-        "subject_type",
-        "subject_id",
-        "consumer_name",
-        "consumer_status",
-        "trace_id",
-        "source_module",
-        "created_from",
-        "created_to",
-        "payment.succeeded",
-        "订单消费者",
-        "webhook 消费者",
-        "自动化消费者",
+        "支付订单",
+        "问卷",
+        "群发 / 运营",
+        "AI 助手",
+        "客户 / 标签",
+        "负责人迁移",
+        "支付成功",
+        "微信支付订单",
+        "H5 微信支付",
+        "订单投影",
+        "订单外推规划",
+        "支付自动化",
         "客户摘要消费者",
-        "DND 消费者",
-        "AI 助手消费者",
+        "免打扰策略",
+        "AI 助手通知",
         "成功",
         "失败可重试",
         "已跳过",
+        "Payload 摘要",
+        "执行明细",
         "payload_summary_json",
         "/api/admin/internal-events",
         'data-action="retry"',
@@ -85,6 +86,15 @@ def test_internal_event_admin_page_smoke_and_payment_consumer_copy(next_client: 
     assert "unionid" not in response.text.lower()
     assert "secret" not in response.text.lower()
     assert "access_token" not in response.text
+    assert "聚合 ID" not in response.text
+    assert "主体 ID" not in response.text
+    assert "internal-events-detail-card" not in response.text
+
+    payment_payload = next_client.get("/api/admin/internal-events", params={"event_section": "payment"}).json()
+    questionnaire_payload = next_client.get("/api/admin/internal-events", params={"event_section": "questionnaire"}).json()
+    assert payment_payload["total"] == 1
+    assert payment_payload["items"][0]["event_type"] == "payment.succeeded"
+    assert questionnaire_payload["total"] == 0
 
 
 def test_internal_event_navigation_entry_is_in_admin_shell(next_client: TestClient) -> None:
