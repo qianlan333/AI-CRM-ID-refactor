@@ -7,6 +7,7 @@ from aicrm_next.platform_foundation.command_bus import Command, CommandContext
 
 from .config import (
     ai_campaign_internal_events_enabled,
+    allowed_event_types,
     customer_tags_internal_events_enabled,
     event_type_allowed,
     internal_events_enabled,
@@ -164,6 +165,10 @@ def ops_plan_ai_assist_notify_consumer(event: InternalEvent, run: InternalEventC
     return _skipped("ops_plan_ai_assist_notify_not_configured", event, run)
 
 
+def legacy_ops_plan_ai_assist_notify_consumer(event: InternalEvent, run: InternalEventConsumerRun) -> InternalEventConsumerResult:
+    return _skipped("ops_plan_legacy_ai_assist_notify_not_configured", event, run)
+
+
 def campaign_summary_consumer(event: InternalEvent, run: InternalEventConsumerRun) -> InternalEventConsumerResult:
     return _skipped("campaign_summary_not_configured", event, run)
 
@@ -248,6 +253,7 @@ def register_shadow_event_consumers(registry: InternalEventConsumerRegistry | No
     registry.register(OPS_PLAN_APPROVED_EVENT_TYPE, "ops_plan_ai_assist_notify_consumer", ops_plan_ai_assist_notify_consumer, consumer_type="orchestration")
     registry.register(OPS_PLAN_APPROVED_EVENT_TYPE, "audit_projection_consumer", audit_projection_consumer, consumer_type="projection")
     registry.register(OPS_PLAN_APPROVED_EVENT_TYPE, "broadcast_task_planner_consumer", broadcast_task_planner_consumer, consumer_type="orchestration")
+    registry.register_handler_alias(OPS_PLAN_APPROVED_EVENT_TYPE, "ai_assist_notify_consumer", legacy_ops_plan_ai_assist_notify_consumer)
 
     registry.register(OWNER_MIGRATION_EXECUTED_EVENT_TYPE, "customer_owner_projection_consumer", customer_owner_projection_consumer, consumer_type="projection")
     registry.register(OWNER_MIGRATION_EXECUTED_EVENT_TYPE, "customer_summary_mark_dirty_consumer", customer_summary_mark_dirty_consumer, consumer_type="projection")
@@ -575,7 +581,10 @@ def emit_ops_plan_approved_shadow_event(
 ) -> dict[str, Any]:
     if not ops_plan_internal_events_enabled():
         return {"status": "skipped", "reason": "ops_plan_internal_events_disabled"}
-    if not event_type_allowed(OPS_PLAN_APPROVED_EVENT_TYPE):
+    configured_event_types = allowed_event_types()
+    if not configured_event_types or OPS_PLAN_APPROVED_EVENT_TYPE not in set(configured_event_types):
+        return {"status": "skipped", "reason": "ops_plan_event_type_not_explicitly_allowed"}
+    if not event_type_allowed(OPS_PLAN_APPROVED_EVENT_TYPE, configured=configured_event_types):
         return {"status": "skipped", "reason": "internal_events_disabled_or_event_type_not_allowed"}
     plan_id = _text(plan.get("plan_id") or plan.get("id") or plan.get("code"))
     if not plan_id:
@@ -592,7 +601,20 @@ def emit_ops_plan_approved_shadow_event(
     plan_type = _text(plan.get("plan_type") or plan.get("source_type") or aggregate_type)
     stage = review_status or run_status or "approved"
     register_shadow_event_consumers()
-    result = InternalEventService().emit_event(
+    service = InternalEventService()
+    legacy_idempotency_key = f"ops_plan.approved:{aggregate_type}:{plan_id}"
+    legacy_events, legacy_total = service.list_events({"idempotency_key": legacy_idempotency_key}, limit=1)
+    if legacy_total and legacy_events:
+        legacy_event = legacy_events[0]
+        _legacy_runs, run_total = service.list_consumer_runs({"event_id": legacy_event.event_id})
+        return {
+            "status": "emitted",
+            "event_id": legacy_event.event_id,
+            "consumer_run_count": run_total,
+            "reason": "ops_plan_legacy_idempotency_key_reused",
+            "legacy_idempotency_key_reused": True,
+        }
+    result = service.emit_event(
         event_type=OPS_PLAN_APPROVED_EVENT_TYPE,
         event_version=1,
         aggregate_type=aggregate_type,

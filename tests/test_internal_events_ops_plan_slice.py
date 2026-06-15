@@ -5,9 +5,11 @@ from fastapi.testclient import TestClient
 from aicrm_next.cloud_orchestrator.application import ApproveCloudPlanCommand
 from aicrm_next.cloud_orchestrator.repository import reset_cloud_plan_fixture_state
 from aicrm_next.main import create_app
+from aicrm_next.platform_foundation.command_bus import CommandContext
 from aicrm_next.platform_foundation.external_effects import ExternalEffectService, reset_external_effect_fixture_state
 from aicrm_next.platform_foundation.internal_events import InternalEventService, reset_internal_event_fixture_state
-from aicrm_next.platform_foundation.internal_events.shadow import OPS_PLAN_APPROVED_EVENT_TYPE
+from aicrm_next.platform_foundation.internal_events.repository import build_internal_event_repository
+from aicrm_next.platform_foundation.internal_events.shadow import OPS_PLAN_APPROVED_EVENT_TYPE, register_shadow_event_consumers
 from aicrm_next.platform_foundation.internal_events.worker import InternalEventWorker
 
 OPS_PLAN_CONSUMERS = [
@@ -125,8 +127,85 @@ def test_ops_plan_approved_emits_once_with_expected_consumers(monkeypatch) -> No
     assert "prompt" not in str(event.payload_summary_json).lower()
     assert run_total == 4
     assert sorted(run.consumer_name for run in runs) == OPS_PLAN_CONSUMERS
+    assert "ai_assist_notify_consumer" not in [run.consumer_name for run in runs]
     assert all(run.status == "pending" for run in runs)
     assert all(run.attempt_count == 0 for run in runs)
+
+
+def test_ops_plan_requires_explicit_event_type_allowlist(monkeypatch) -> None:
+    _configure(monkeypatch, allowed_event_types="")
+
+    result = _approve()
+    events, total = _events()
+
+    assert result["ok"] is True
+    assert result["internal_event_status"] == "skipped"
+    assert result["internal_event_reason"] == "ops_plan_event_type_not_explicitly_allowed"
+    assert result["internal_event_id"] == ""
+    assert events == []
+    assert total == 0
+
+
+def test_ops_plan_reuses_legacy_idempotency_key(monkeypatch) -> None:
+    _configure(monkeypatch)
+    register_shadow_event_consumers()
+    service = InternalEventService()
+    legacy = service.emit_event(
+        event_type=OPS_PLAN_APPROVED_EVENT_TYPE,
+        event_version=1,
+        aggregate_type="cloud_orchestrator_plan",
+        aggregate_id="plan_probe",
+        subject_type="ops_plan",
+        subject_id="plan_probe",
+        idempotency_key="ops_plan.approved:cloud_orchestrator_plan:plan_probe",
+        source_module="legacy.ops_plan",
+        source_command_id="plan_probe",
+        correlation_id="plan_probe",
+        context=CommandContext(actor_id="legacy", actor_type="admin", trace_id="plan_probe", request_id="legacy-plan-probe"),
+        payload={"legacy": True},
+        payload_summary={"plan_id": "plan_probe", "legacy": True},
+    )
+
+    result = _approve()
+    events, total = _events()
+    new_key_events, new_key_total = service.list_events(
+        {"idempotency_key": "ops_plan.approved:cloud_orchestrator_plan:plan_probe:approved"}
+    )
+
+    assert total == 1
+    assert events[0].event_id == legacy["event"]["event_id"]
+    assert result["internal_event_status"] == "emitted"
+    assert result["internal_event_id"] == legacy["event"]["event_id"]
+    assert result["internal_event_reason"] == "ops_plan_legacy_idempotency_key_reused"
+    assert new_key_events == []
+    assert new_key_total == 0
+
+
+def test_ops_plan_legacy_ai_assist_consumer_run_has_dispatch_handler(monkeypatch) -> None:
+    _configure(monkeypatch)
+    _approve()
+    event = _event()
+    repo = build_internal_event_repository()
+    legacy_run = repo.create_consumer_run(
+        event=event,
+        consumer_name="ai_assist_notify_consumer",
+        consumer_type="orchestration",
+    )
+
+    result = InternalEventWorker().dispatch_one_consumer(
+        event.event_id,
+        "ai_assist_notify_consumer",
+        dry_run=False,
+        force=False,
+        reason="ops_plan_legacy_consumer_compat_test",
+    )
+    runs, run_total = _runs(event.event_id)
+
+    assert legacy_run.consumer_name == "ai_assist_notify_consumer"
+    assert result["consumer_run"]["status"] == "skipped"
+    assert result["attempt"]["response_summary_json"]["reason"] == "ops_plan_legacy_ai_assist_notify_not_configured"
+    assert run_total == 5
+    assert sorted(run.consumer_name for run in runs) == sorted([*OPS_PLAN_CONSUMERS, "ai_assist_notify_consumer"])
 
 
 def test_ops_plan_consumers_are_noop_or_skipped_without_external_work(monkeypatch) -> None:
