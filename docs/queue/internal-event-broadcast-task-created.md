@@ -32,9 +32,11 @@ The payload keeps only operational diagnostics. Redaction applies to the stored
 ### Stored Payload Redaction
 
 Some creation paths, especially the group-ops private-message enqueue path, can
-receive a `source_id` that embeds a raw `external_userid` or other customer
-identifier. `broadcast_task.created` must never persist that raw value in
-`internal_event.payload_json` or `internal_event.source_command_id`.
+receive `source_id`, `trace_id`, or `idempotency_key` values that embed a raw
+`external_userid` or other customer identifier. `broadcast_task.created` must
+never persist those raw values in `internal_event.payload_json`,
+`internal_event.trace_id`, `internal_event.correlation_id`, or
+`internal_event.source_command_id`.
 
 The emit helper stores source references as follows:
 
@@ -45,12 +47,22 @@ The emit helper stores source references as follows:
   SHA-256 hash.
 - `payload.broadcast_task.source_id_present`: boolean indicator only.
 - `payload.broadcast_task.command_id`: `broadcast_task.created:{task_id}`.
+- `payload.broadcast_task.trace_id`: `broadcast_task.created:{task_id}`.
+- `payload.broadcast_task.trace_id_present`: boolean indicator only.
+- `payload.broadcast_task.trace_id_hash`: the first 16 hex characters of a
+  SHA-256 hash when raw trace input is present.
+- `payload.broadcast_task.idempotency_key_present`: boolean indicator only.
+- `payload.broadcast_task.idempotency_key_hash`: the first 16 hex characters of
+  a SHA-256 hash when raw idempotency input is present.
+- `trace_id`: `broadcast_task.created:{task_id}`.
+- `correlation_id`: `broadcast_task.created:{task_id}`.
 - `source_command_id`: `broadcast_task.created:{task_id}`.
 
-If trace or batch fallback data is missing, the emit path falls back to the
-broadcast task id rather than raw `source_id`. This prevents raw
-`external_userid`, mobile numbers, openid, unionid, webhook URLs, tokens, or
-message text from being stored in the event record.
+If trace, correlation, command, or batch fallback data is missing, the emit path
+falls back to the broadcast task id rather than raw `source_id`, raw `trace_id`,
+or raw `idempotency_key`. This prevents raw `external_userid`, mobile numbers,
+openid, unionid, webhook URLs, tokens, or message text from being stored in the
+event record while keeping hash/present flags for diagnostics.
 
 `payload_summary_json` is the admin-visible summary:
 

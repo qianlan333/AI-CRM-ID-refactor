@@ -603,12 +603,16 @@ def emit_broadcast_task_created_shadow_event(
     job_id = _text(job.get("id") or job.get("job_id") or job.get("broadcast_job_id"))
     if not job_id:
         return {"status": "skipped", "reason": "broadcast_job_id_missing"}
-    trace_id = _text(job.get("trace_id") or job.get("idempotency_key") or job_id)
+    raw_trace_id = _text(job.get("trace_id"))
+    raw_idempotency_key = _text(job.get("idempotency_key"))
+    safe_event_ref = f"broadcast_task.created:{job_id}"
+    trace_id = safe_event_ref
+    correlation_id = safe_event_ref
     source_type = _text(source or job.get("source_type") or source_module)
     source_id = _text(job.get("source_id"))
     safe_source_ref = _safe_source_ref(source_id)
     safe_source_hash = _hash_text(source_id)
-    safe_command_id = f"broadcast_task.created:{job_id}"
+    safe_command_id = safe_event_ref
     batch_id = _text(job.get("batch_key") or job_id)
     scheduled_at = _text(job.get("scheduled_at") or job.get("scheduled_for"))
     target_count = int(job.get("target_count") or job.get("audience_count") or 0)
@@ -638,6 +642,10 @@ def emit_broadcast_task_created_shadow_event(
         "scheduled_at": scheduled_at,
         "status": _text(job.get("status") or "created"),
         "trace_id": trace_id,
+        "trace_id_present": bool(raw_trace_id),
+        "trace_id_hash": _hash_text(raw_trace_id),
+        "idempotency_key_present": bool(raw_idempotency_key),
+        "idempotency_key_hash": _hash_text(raw_idempotency_key),
         "command_id": safe_command_id,
         "content_summary_present": bool(_text(job.get("content_summary"))),
         "target_external_userids_count": len(job.get("target_external_userids") or []) if isinstance(job.get("target_external_userids"), list) else target_count,
@@ -653,7 +661,7 @@ def emit_broadcast_task_created_shadow_event(
         idempotency_key=f"broadcast_task.created:{job_id}",
         source_module=source_module,
         source_command_id=safe_command_id,
-        correlation_id=_text(job.get("idempotency_key") or trace_id or job_id),
+        correlation_id=correlation_id,
         context=CommandContext(
             actor_id=_text(operator or job.get("created_by")),
             actor_type="admin",
