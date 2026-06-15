@@ -69,6 +69,20 @@ def _safe_source_ref(value: Any, fallback: Any = "") -> str:
     return _text(fallback)
 
 
+def _safe_trace_ref(value: Any) -> str:
+    text = _text(value)
+    if not text:
+        return ""
+    return f"trace_ref:{_hash_text(text)}"
+
+
+def _safe_ops_plan_ref(value: Any) -> str:
+    text = _text(value)
+    if not text:
+        return ""
+    return f"ops_plan_ref:{_hash_text(text)}"
+
+
 def _questionnaire_subject_id(submission: dict[str, Any]) -> str:
     external_userid = _text(submission.get("external_userid"))
     if external_userid:
@@ -605,6 +619,8 @@ def emit_broadcast_task_created_shadow_event(
         return {"status": "skipped", "reason": "broadcast_job_id_missing"}
     raw_trace_id = _text(job.get("trace_id"))
     raw_idempotency_key = _text(job.get("idempotency_key"))
+    original_trace_hash = _hash_text(raw_trace_id)
+    original_idempotency_key_hash = _hash_text(raw_idempotency_key)
     safe_event_ref = f"broadcast_task.created:{job_id}"
     trace_id = safe_event_ref
     correlation_id = safe_event_ref
@@ -633,7 +649,10 @@ def emit_broadcast_task_created_shadow_event(
         "source_id_hash": safe_source_hash,
         "source_id_present": bool(source_id),
         "related_campaign_code": campaign_code,
-        "related_ops_plan_id": ops_plan_id,
+        "related_ops_plan_id": _safe_ops_plan_ref(ops_plan_id),
+        "related_ops_plan_ref": _safe_ops_plan_ref(ops_plan_id),
+        "related_ops_plan_hash": _hash_text(ops_plan_id),
+        "related_ops_plan_present": bool(ops_plan_id),
         "task_type": task_type,
         "send_channel": send_channel,
         "target_count": target_count,
@@ -642,10 +661,15 @@ def emit_broadcast_task_created_shadow_event(
         "scheduled_at": scheduled_at,
         "status": _text(job.get("status") or "created"),
         "trace_id": trace_id,
+        "original_trace_ref": _safe_trace_ref(raw_trace_id),
+        "original_trace_present": bool(raw_trace_id),
+        "original_trace_hash": original_trace_hash,
         "trace_id_present": bool(raw_trace_id),
-        "trace_id_hash": _hash_text(raw_trace_id),
+        "trace_id_hash": original_trace_hash,
+        "original_idempotency_key_present": bool(raw_idempotency_key),
+        "original_idempotency_key_hash": original_idempotency_key_hash,
         "idempotency_key_present": bool(raw_idempotency_key),
-        "idempotency_key_hash": _hash_text(raw_idempotency_key),
+        "idempotency_key_hash": original_idempotency_key_hash,
         "command_id": safe_command_id,
         "content_summary_present": bool(_text(job.get("content_summary"))),
         "target_external_userids_count": len(job.get("target_external_userids") or []) if isinstance(job.get("target_external_userids"), list) else target_count,

@@ -154,6 +154,8 @@ def list_internal_events(
     consumer_name: str = "",
     consumer_status: str = "",
     trace_id: str = "",
+    trace_hash: str = "",
+    original_trace_hash: str = "",
     source_module: str = "",
     created_from: str = "",
     created_to: str = "",

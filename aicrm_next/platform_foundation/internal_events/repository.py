@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from collections.abc import Callable
 from datetime import datetime, timedelta, timezone
@@ -28,6 +29,22 @@ _SENSITIVE_PAYLOAD_KEYS = {"token", "secret", "password", "authorization", "acce
 
 def _text(value: Any) -> str:
     return str(value or "").strip()
+
+
+def _hash_text(value: Any) -> str:
+    text = _text(value)
+    if not text:
+        return ""
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
+
+
+def _trace_hash_filter(filters: dict[str, Any]) -> str:
+    value = _text(filters.get("original_trace_hash") or filters.get("trace_hash"))
+    if not value:
+        return ""
+    if len(value) == 16 and all(char in "0123456789abcdefABCDEF" for char in value):
+        return value.lower()
+    return _hash_text(value)
 
 
 def _json_dumps(value: Any) -> str:
@@ -311,6 +328,17 @@ class SQLAlchemyInternalEventRepository(InternalEventRepository):
             if value:
                 clauses.append(f"{key} = :{key}")
                 params[key] = value
+        trace_hash = _trace_hash_filter(filters)
+        if trace_hash:
+            clauses.append(
+                """
+                (
+                    payload_json -> 'broadcast_task' ->> 'original_trace_hash' = :original_trace_hash
+                    OR payload_json -> 'broadcast_task' ->> 'trace_id_hash' = :original_trace_hash
+                )
+                """
+            )
+            params["original_trace_hash"] = trace_hash
         if _text(filters.get("created_from")):
             clauses.append("created_at >= CAST(:created_from AS timestamptz)")
             params["created_from"] = _text(filters.get("created_from"))
@@ -1180,6 +1208,17 @@ class InMemoryInternalEventRepository(InternalEventRepository):
             value = _text(filters.get(key))
             if value:
                 rows = [row for row in rows if _text(row.get(key)) == value]
+        trace_hash = _trace_hash_filter(filters)
+        if trace_hash:
+            rows = [
+                row
+                for row in rows
+                if _text(
+                    (((row.get("payload_json") or {}).get("broadcast_task") or {}).get("original_trace_hash"))
+                    or (((row.get("payload_json") or {}).get("broadcast_task") or {}).get("trace_id_hash"))
+                )
+                == trace_hash
+            ]
         if _text(filters.get("created_from")):
             created_from = self._dt(filters.get("created_from"))
             rows = [row for row in rows if self._dt(row.get("created_at")) >= created_from]
