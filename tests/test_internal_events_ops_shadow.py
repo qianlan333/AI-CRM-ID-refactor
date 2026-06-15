@@ -167,7 +167,10 @@ def test_cloud_plan_recipient_approval_shadow_emits_broadcast_task_created(monke
     ]
 
 
-def test_owner_migration_execute_shadow_emits_owner_migration_executed() -> None:
+def test_owner_migration_execute_shadow_emits_owner_migration_executed(monkeypatch) -> None:
+    monkeypatch.setenv("AICRM_INTERNAL_EVENTS_ENABLED", "1")
+    monkeypatch.setenv("AICRM_INTERNAL_EVENTS_OWNER_MIGRATION_ENABLED", "1")
+    monkeypatch.setenv("AICRM_INTERNAL_EVENTS_ALLOWED_EVENT_TYPES", "owner_migration.executed")
     reset_internal_event_fixture_state()
 
     result = OwnerMigrationService(MinimalOwnerMigrationRepo()).run(
@@ -180,9 +183,10 @@ def test_owner_migration_execute_shadow_emits_owner_migration_executed() -> None
             perform_wecom_transfer=False,
         )
     )
-    aggregate_id = "owner_a:owner_b:pytest"
+    aggregate_id = f"legacy:{hashlib.sha256('owner_a:owner_b:pytest'.encode('utf-8')).hexdigest()[:16]}"
+    trace_id = f"owner_migration.executed:{aggregate_id}"
     events, total = InternalEventService().list_events({"event_type": "owner_migration.executed", "aggregate_id": aggregate_id})
-    trace_events, trace_total = InternalEventService().list_events({"event_type": "owner_migration.executed", "trace_id": aggregate_id})
+    trace_events, trace_total = InternalEventService().list_events({"event_type": "owner_migration.executed", "trace_id": trace_id})
     runs, run_total = InternalEventService().list_consumer_runs({"event_id": events[0].event_id})
 
     assert result["ok"] is True
@@ -192,18 +196,18 @@ def test_owner_migration_execute_shadow_emits_owner_migration_executed() -> None
     assert total == 1
     assert trace_total == 1
     assert trace_events[0].event_id == events[0].event_id
-    assert events[0].aggregate_type == "owner_migration_session"
-    assert events[0].payload_summary_json == {
-        "count": 2,
-        "batch_id": aggregate_id,
-        "operator": "pytest",
-        "source": "owner_migration",
-    }
+    assert events[0].aggregate_type == "owner_migration"
+    assert events[0].payload_summary_json["migration_id"] == aggregate_id
+    assert events[0].payload_summary_json["customer_count"] == 2
+    assert events[0].payload_summary_json["success_count"] == 2
+    assert events[0].payload_summary_json["operator"] == "pytest"
+    assert events[0].payload_summary_json["source"] == "owner_migration"
+    assert events[0].payload_summary_json["executed"] is True
     assert "wm_owner_a" not in str(events[0].payload_summary_json)
     assert run_total == 4
     assert sorted(run.consumer_name for run in runs) == [
-        "ai_assist_notify_consumer",
         "customer_owner_projection_consumer",
         "customer_summary_mark_dirty_consumer",
+        "owner_migration_ai_assist_notify_consumer",
         "webhook_owner_migration_consumer",
     ]

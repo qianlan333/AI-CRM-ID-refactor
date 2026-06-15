@@ -12,8 +12,8 @@ from .config import (
     broadcast_task_internal_events_enabled,
     customer_tags_internal_events_enabled,
     event_type_allowed,
-    internal_events_enabled,
     ops_plan_internal_events_enabled,
+    owner_migration_internal_events_enabled,
     questionnaire_internal_events_enabled,
 )
 from .consumer_registry import DEFAULT_INTERNAL_EVENT_CONSUMER_REGISTRY, InternalEventConsumerRegistry
@@ -81,6 +81,13 @@ def _safe_ops_plan_ref(value: Any) -> str:
     if not text:
         return ""
     return f"ops_plan_ref:{_hash_text(text)}"
+
+
+def _safe_owner_ref(value: Any) -> str:
+    text = _text(value)
+    if not text:
+        return ""
+    return f"owner_ref:{_hash_text(text)}"
 
 
 def _questionnaire_subject_id(submission: dict[str, Any]) -> str:
@@ -207,6 +214,14 @@ def legacy_ops_plan_ai_assist_notify_consumer(event: InternalEvent, run: Interna
     return _skipped("ops_plan_legacy_ai_assist_notify_not_configured", event, run)
 
 
+def owner_migration_ai_assist_notify_consumer(event: InternalEvent, run: InternalEventConsumerRun) -> InternalEventConsumerResult:
+    return _skipped("owner_migration_ai_assist_notify_not_configured", event, run)
+
+
+def legacy_owner_migration_ai_assist_notify_consumer(event: InternalEvent, run: InternalEventConsumerRun) -> InternalEventConsumerResult:
+    return _skipped("owner_migration_legacy_ai_assist_notify_not_configured", event, run)
+
+
 def campaign_summary_consumer(event: InternalEvent, run: InternalEventConsumerRun) -> InternalEventConsumerResult:
     return _skipped("campaign_summary_not_configured", event, run)
 
@@ -289,10 +304,32 @@ def audit_projection_consumer(event: InternalEvent, run: InternalEventConsumerRu
 
 
 def customer_owner_projection_consumer(event: InternalEvent, run: InternalEventConsumerRun) -> InternalEventConsumerResult:
+    if event.event_type == OWNER_MIGRATION_EXECUTED_EVENT_TYPE:
+        return InternalEventConsumerResult(
+            status="succeeded",
+            request_summary={"event_id": event.event_id, "consumer_name": run.consumer_name},
+            response_summary={
+                "succeeded": True,
+                "customer_owner_projection": "owner_migration_recorded",
+                "real_external_call_executed": False,
+            },
+            result_summary={"customer_owner_projection": "owner_migration_recorded"},
+        )
     return _succeeded_noop("customer_owner_projection_shadow_only", event, run)
 
 
 def customer_summary_mark_dirty_consumer(event: InternalEvent, run: InternalEventConsumerRun) -> InternalEventConsumerResult:
+    if event.event_type == OWNER_MIGRATION_EXECUTED_EVENT_TYPE:
+        return InternalEventConsumerResult(
+            status="succeeded",
+            request_summary={"event_id": event.event_id, "consumer_name": run.consumer_name},
+            response_summary={
+                "succeeded": True,
+                "customer_summary_mark_dirty": "owner_migration_recorded",
+                "real_external_call_executed": False,
+            },
+            result_summary={"customer_summary_mark_dirty": "owner_migration_recorded"},
+        )
     return _succeeded_noop("customer_summary_mark_dirty_shadow_only", event, run)
 
 
@@ -330,8 +367,9 @@ def register_shadow_event_consumers(registry: InternalEventConsumerRegistry | No
 
     registry.register(OWNER_MIGRATION_EXECUTED_EVENT_TYPE, "customer_owner_projection_consumer", customer_owner_projection_consumer, consumer_type="projection")
     registry.register(OWNER_MIGRATION_EXECUTED_EVENT_TYPE, "customer_summary_mark_dirty_consumer", customer_summary_mark_dirty_consumer, consumer_type="projection")
-    registry.register(OWNER_MIGRATION_EXECUTED_EVENT_TYPE, "ai_assist_notify_consumer", ai_assist_notify_consumer, consumer_type="orchestration")
+    registry.register(OWNER_MIGRATION_EXECUTED_EVENT_TYPE, "owner_migration_ai_assist_notify_consumer", owner_migration_ai_assist_notify_consumer, consumer_type="orchestration")
     registry.register(OWNER_MIGRATION_EXECUTED_EVENT_TYPE, "webhook_owner_migration_consumer", webhook_owner_migration_consumer, consumer_type="external_effect_planner")
+    registry.register_handler_alias(OWNER_MIGRATION_EXECUTED_EVENT_TYPE, "ai_assist_notify_consumer", legacy_owner_migration_ai_assist_notify_consumer)
 
 
 def emit_questionnaire_submitted_shadow_event(
@@ -825,7 +863,12 @@ def emit_owner_migration_executed_shadow_event(
     result: dict[str, Any],
     source_route: str = "/api/admin/owner-migration/execute",
 ) -> dict[str, Any]:
-    if not _event_enabled(OWNER_MIGRATION_EXECUTED_EVENT_TYPE):
+    if not owner_migration_internal_events_enabled():
+        return {"status": "skipped", "reason": "owner_migration_internal_events_disabled"}
+    configured_event_types = allowed_event_types()
+    if not configured_event_types or OWNER_MIGRATION_EXECUTED_EVENT_TYPE not in set(configured_event_types):
+        return {"status": "skipped", "reason": "owner_migration_event_type_not_explicitly_allowed"}
+    if not event_type_allowed(OWNER_MIGRATION_EXECUTED_EVENT_TYPE, configured=configured_event_types):
         return {"status": "skipped", "reason": "internal_events_disabled_or_event_type_not_allowed"}
     result_id = _text(result.get("result_id") or result.get("job_id") or result.get("preview_token"))
     if not result_id:
@@ -836,21 +879,66 @@ def emit_owner_migration_executed_shadow_event(
         for row in rows
         if isinstance(row, dict) and _text(row.get("external_userid"))
     ]
-    count = int(result.get("crm_updated") or result.get("touched_count") or result.get("requested_external_userids") or len(external_userids) or 0)
+    requested_external_userids = result.get("requested_external_userids")
+    if not isinstance(requested_external_userids, list):
+        requested_external_userids = []
+    touched_external_userids = result.get("touched_external_userids")
+    if not isinstance(touched_external_userids, list):
+        touched_external_userids = []
+    transfer = result.get("wecom_transfer") if isinstance(result.get("wecom_transfer"), dict) else {}
+    transfer_success = transfer.get("success_external_userids")
+    if not isinstance(transfer_success, list):
+        transfer_success = []
+
+    def _safe_int(value: Any) -> int:
+        try:
+            return int(value or 0)
+        except (TypeError, ValueError):
+            return 0
+
+    update_counts = result.get("update_counts") if isinstance(result.get("update_counts"), dict) else {}
+    customer_count = (
+        _safe_int(result.get("candidate_count"))
+        or _safe_int(result.get("requested_count"))
+        or _safe_int(result.get("touched_count"))
+        or len(requested_external_userids)
+        or len(touched_external_userids)
+        or len(external_userids)
+        or _safe_int(result.get("crm_updated"))
+        or _safe_int(update_counts.get("contacts"))
+    )
+    success_count = (
+        _safe_int(result.get("success_count"))
+        or _safe_int(result.get("crm_updated"))
+        or _safe_int(result.get("touched_count"))
+        or _safe_int(update_counts.get("contacts"))
+        or len(transfer_success)
+        or len(touched_external_userids)
+        or len(external_userids)
+        or customer_count
+    )
+    failed_count = _safe_int(result.get("failed_count")) or _safe_int(transfer.get("failed_count"))
+    skipped_count = _safe_int(result.get("skipped_count"))
     operator = _text(result.get("operator") or getattr(command, "operator", ""))
-    trace_id = result_id
+    source_owner_userid = _text(result.get("source_owner_userid") or getattr(command, "source_owner_userid", ""))
+    target_owner_userid = _text(result.get("target_owner_userid") or getattr(command, "target_owner_userid", ""))
+    source_owner_hash = _hash_text(source_owner_userid)
+    target_owner_hash = _hash_text(target_owner_userid)
+    source_command_id = f"owner_migration.executed:{result_id}"
+    trace_id = source_command_id
+    customer_scope_hash = _hash_text("|".join(sorted(external_userids or touched_external_userids or requested_external_userids)))
     register_shadow_event_consumers()
     result_payload = InternalEventService().emit_event(
         event_type=OWNER_MIGRATION_EXECUTED_EVENT_TYPE,
         event_version=1,
-        aggregate_type="owner_migration_session",
+        aggregate_type="owner_migration",
         aggregate_id=result_id,
-        subject_type="owner_migration_session",
+        subject_type="owner_migration",
         subject_id=result_id,
         idempotency_key=f"owner_migration.executed:{result_id}",
         source_module="owner_migration.application",
-        source_command_id=_text(result.get("preview_token") or result_id),
-        correlation_id=_text(result.get("job_id") or result_id),
+        source_command_id=source_command_id,
+        correlation_id=source_command_id,
         context=CommandContext(
             actor_id=operator,
             actor_type="admin",
@@ -859,25 +947,57 @@ def emit_owner_migration_executed_shadow_event(
             source_route=source_route,
         ),
         payload={
-            "result_id": result_id,
-            "job_id": _text(result.get("job_id")),
-            "session_id": _text(result.get("session_id") or getattr(command, "session_id", "")),
-            "external_userids": external_userids,
-            "source_owner_userid": _text(result.get("source_owner_userid") or getattr(command, "source_owner_userid", "")),
-            "target_owner_userid": _text(result.get("target_owner_userid") or getattr(command, "target_owner_userid", "")),
+            "owner_migration": {
+                "migration_id": result_id,
+                "batch_id": result_id,
+                "execution_id": result_id,
+                "job_id": _text(result.get("job_id")),
+                "session_id": _safe_source_ref(result.get("session_id") or getattr(command, "session_id", "")),
+                "from_owner_userid_ref": _safe_owner_ref(source_owner_userid),
+                "from_owner_userid_hash": source_owner_hash,
+                "from_owner_present": bool(source_owner_userid),
+                "to_owner_userid_ref": _safe_owner_ref(target_owner_userid),
+                "to_owner_userid_hash": target_owner_hash,
+                "to_owner_present": bool(target_owner_userid),
+                "operator": operator,
+                "source_route": source_route,
+                "command_id": source_command_id,
+                "trace_id": trace_id,
+                "customer_count": customer_count,
+                "success_count": success_count,
+                "failed_count": failed_count,
+                "skipped_count": skipped_count,
+                "customer_scope_present": bool(customer_count),
+                "customer_scope_hash": customer_scope_hash,
+                "dry_run": False,
+                "real_execution": bool(transfer.get("enabled")),
+                "created_at": _text(result.get("created_at")),
+                "executed_at": _text(result.get("executed_at")),
+            },
+            "source": {
+                "source_module": "owner_migration.application",
+                "source_route": source_route,
+                "command_id": source_command_id,
+                "trace_id": trace_id,
+            },
         },
         payload_summary={
-            "count": count,
+            "migration_id": result_id,
             "batch_id": result_id,
+            "from_owner_present": bool(source_owner_userid),
+            "from_owner_hash": source_owner_hash,
+            "to_owner_present": bool(target_owner_userid),
+            "to_owner_hash": target_owner_hash,
             "operator": operator,
+            "customer_count": customer_count,
+            "success_count": success_count,
+            "failed_count": failed_count,
+            "skipped_count": skipped_count,
             "source": "owner_migration",
+            "executed": True,
         },
     )
     return {"status": "emitted", "event_id": result_payload["event"]["event_id"], "consumer_run_count": len(result_payload.get("consumer_runs") or [])}
-
-
-def _event_enabled(event_type: str) -> bool:
-    return internal_events_enabled() and event_type_allowed(event_type)
 
 
 def safe_emit(label: str, func, **kwargs: Any) -> dict[str, Any]:
