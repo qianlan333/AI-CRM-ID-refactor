@@ -389,28 +389,112 @@ def test_broadcast_task_legacy_ai_assist_alias_dispatches_without_new_fanout(mon
 def test_broadcast_task_admin_api_redacts_summary_and_hides_payload_json(monkeypatch) -> None:
     client = _configure(monkeypatch)
     plan_id = "p0-1284-plan-probe"
+    plan_trace_ref = f"trace_ref:{_hash16(plan_id)}"
     _approve_recipient(plan_id)
     event = _event()
 
     list_payload = client.get("/api/admin/internal-events", params={"event_type": BROADCAST_TASK_CREATED_EVENT_TYPE}).json()
-    trace_lookup_payload = client.get(
+    original_trace_lookup_payload = client.get(
         "/api/admin/internal-events",
+        params={"event_type": BROADCAST_TASK_CREATED_EVENT_TYPE, "original_trace_hash": plan_id},
+    ).json()
+    raw_trace_lookup_payload = client.get(
+        "/api/admin/internal-events",
+        params={"event_type": BROADCAST_TASK_CREATED_EVENT_TYPE, "trace_hash": plan_id},
+    ).json()
+    hashed_trace_lookup_payload = client.get(
+        "/api/admin/internal-events",
+        params={"event_type": BROADCAST_TASK_CREATED_EVENT_TYPE, "trace_hash": _hash16(plan_id)},
+    ).json()
+    diagnostics_payload = client.get(
+        "/api/admin/internal-events/diagnostics",
         params={"event_type": BROADCAST_TASK_CREATED_EVENT_TYPE, "original_trace_hash": plan_id},
     ).json()
     detail_payload = client.get(f"/api/admin/internal-events/{event.event_id}").json()
 
     assert list_payload["ok"] is True
-    assert trace_lookup_payload["ok"] is True
-    assert trace_lookup_payload["total"] == 1
-    assert trace_lookup_payload["items"][0]["event_id"] == event.event_id
+    assert original_trace_lookup_payload["ok"] is True
+    assert original_trace_lookup_payload["total"] == 1
+    assert original_trace_lookup_payload["items"][0]["event_id"] == event.event_id
+    assert original_trace_lookup_payload["filters"]["original_trace_hash"] == plan_trace_ref
+    assert original_trace_lookup_payload["filters"]["original_trace_hash"] != plan_id
+    assert raw_trace_lookup_payload["ok"] is True
+    assert raw_trace_lookup_payload["total"] == 1
+    assert raw_trace_lookup_payload["items"][0]["event_id"] == event.event_id
+    assert raw_trace_lookup_payload["filters"]["trace_hash"] == plan_trace_ref
+    assert raw_trace_lookup_payload["filters"]["trace_hash"] != plan_id
+    assert hashed_trace_lookup_payload["ok"] is True
+    assert hashed_trace_lookup_payload["total"] == 1
+    assert hashed_trace_lookup_payload["items"][0]["event_id"] == event.event_id
+    assert hashed_trace_lookup_payload["filters"]["trace_hash"] == f"trace_ref:{_hash16(_hash16(plan_id))}"
+    assert diagnostics_payload["filters"]["original_trace_hash"] == plan_trace_ref
     assert "payload_json" not in list_payload["items"][0]
     assert "payload_json" not in detail_payload
-    payload_text = str(list_payload) + str(detail_payload)
+    raw_filter_response_text = str(original_trace_lookup_payload) + str(raw_trace_lookup_payload) + str(hashed_trace_lookup_payload) + str(diagnostics_payload)
+    payload_text = (
+        str(list_payload)
+        + str(original_trace_lookup_payload)
+        + str(raw_trace_lookup_payload)
+        + str(hashed_trace_lookup_payload)
+        + str(detail_payload)
+    )
+    assert plan_id not in raw_filter_response_text
     assert plan_id not in payload_text
     assert "wm_a" not in payload_text
     assert "13800138000" not in payload_text
     assert "完整消息正文" not in payload_text
     assert "webhook" not in payload_text.lower()
+
+
+def test_broadcast_task_admin_api_redacts_16_hex_filter_echo(monkeypatch) -> None:
+    client = _configure(monkeypatch)
+    raw_trace_id = "abcdef1234567890"
+    job = {
+        "id": "broadcast-api-hex-trace",
+        "source_type": "unit_test",
+        "source_id": raw_trace_id,
+        "trace_id": raw_trace_id,
+        "idempotency_key": raw_trace_id,
+        "target_count": 1,
+        "created_by": "pytest",
+    }
+    emit_broadcast_task_created_shadow_event(
+        job=job,
+        source_module="tests.broadcast_task_slice",
+        source_route="/tests/broadcast-task",
+        operator="pytest",
+        source="unit_test",
+    )
+    event = _event()
+
+    original_trace_lookup_payload = client.get(
+        "/api/admin/internal-events",
+        params={"event_type": BROADCAST_TASK_CREATED_EVENT_TYPE, "original_trace_hash": raw_trace_id},
+    ).json()
+    raw_trace_lookup_payload = client.get(
+        "/api/admin/internal-events",
+        params={"event_type": BROADCAST_TASK_CREATED_EVENT_TYPE, "trace_hash": raw_trace_id},
+    ).json()
+    hashed_trace_lookup_payload = client.get(
+        "/api/admin/internal-events",
+        params={"event_type": BROADCAST_TASK_CREATED_EVENT_TYPE, "trace_hash": _hash16(raw_trace_id)},
+    ).json()
+
+    assert original_trace_lookup_payload["ok"] is True
+    assert original_trace_lookup_payload["total"] == 1
+    assert original_trace_lookup_payload["items"][0]["event_id"] == event.event_id
+    assert original_trace_lookup_payload["filters"]["original_trace_hash"] == f"trace_ref:{_hash16(raw_trace_id)}"
+    assert original_trace_lookup_payload["filters"]["original_trace_hash"] != raw_trace_id
+    assert raw_trace_lookup_payload["ok"] is True
+    assert raw_trace_lookup_payload["total"] == 1
+    assert raw_trace_lookup_payload["items"][0]["event_id"] == event.event_id
+    assert raw_trace_lookup_payload["filters"]["trace_hash"] == f"trace_ref:{_hash16(raw_trace_id)}"
+    assert raw_trace_lookup_payload["filters"]["trace_hash"] != raw_trace_id
+    assert hashed_trace_lookup_payload["ok"] is True
+    assert hashed_trace_lookup_payload["total"] == 1
+    assert hashed_trace_lookup_payload["items"][0]["event_id"] == event.event_id
+    response_text = str(original_trace_lookup_payload) + str(raw_trace_lookup_payload) + str(hashed_trace_lookup_payload)
+    assert raw_trace_id not in response_text
 
 
 def test_broadcast_task_pair_allowlist_blocks_auto_execute_but_single_consumer_still_works(monkeypatch) -> None:
