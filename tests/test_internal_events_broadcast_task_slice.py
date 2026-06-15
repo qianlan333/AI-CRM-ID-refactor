@@ -153,13 +153,18 @@ def test_broadcast_task_created_emits_once_with_expected_safe_schema_and_consume
 
 def test_broadcast_task_direct_emit_is_idempotent(monkeypatch) -> None:
     _configure(monkeypatch)
+    raw_external_userid = "wm_raw_external_userid_abcdef1234567890"
+    raw_mobile = "13800138000"
+    raw_openid = "openid_raw_1234567890"
+    raw_unionid = "unionid_raw_1234567890"
+    raw_source_id = f"plan:trigger:{raw_external_userid}:{raw_mobile}:{raw_openid}:{raw_unionid}:send_private_message"
     job = {
         "id": "broadcast-direct-1",
         "source_type": "unit_test",
-        "source_id": "source-1",
+        "source_id": raw_source_id,
         "idempotency_key": "broadcast-direct-key",
         "target_count": 2,
-        "target_external_userids": ["wm_direct_a", "wm_direct_b"],
+        "target_external_userids": [raw_external_userid, "wm_direct_b"],
         "content_summary": "完整消息正文不进入摘要",
         "created_by": "pytest",
     }
@@ -180,11 +185,27 @@ def test_broadcast_task_direct_emit_is_idempotent(monkeypatch) -> None:
     )
     events, total = InternalEventService().list_events({"event_type": BROADCAST_TASK_CREATED_EVENT_TYPE, "aggregate_id": "broadcast-direct-1"})
     runs, run_total = _runs(events[0].event_id)
+    event = events[0]
+    broadcast_payload = event.payload_json["broadcast_task"]
+    payload_text = str(event.payload_json) + str(event.payload_summary_json) + str(event.source_command_id)
 
     assert first["status"] == "emitted"
     assert second["status"] == "emitted"
     assert second["event_id"] == first["event_id"]
     assert total == 1
+    assert raw_source_id not in payload_text
+    assert raw_external_userid not in payload_text
+    assert raw_mobile not in payload_text
+    assert raw_openid not in payload_text
+    assert raw_unionid not in payload_text
+    assert broadcast_payload["source_id"].startswith("source_ref:")
+    assert broadcast_payload["source_id_redacted"] == broadcast_payload["source_id"]
+    assert len(broadcast_payload["source_id_hash"]) == 16
+    assert broadcast_payload["source_id_present"] is True
+    assert broadcast_payload["command_id"] == "broadcast_task.created:broadcast-direct-1"
+    assert broadcast_payload["command_id"] != raw_source_id
+    assert event.source_command_id == "broadcast_task.created:broadcast-direct-1"
+    assert event.source_command_id != raw_source_id
     assert run_total == 4
     assert sorted(run.consumer_name for run in runs) == BROADCAST_TASK_CONSUMERS
 

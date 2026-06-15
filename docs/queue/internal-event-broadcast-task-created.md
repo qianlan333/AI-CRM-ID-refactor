@@ -14,10 +14,11 @@ External Effects.
 - `subject_id`: broadcast task id or code
 - `idempotency_key`: `broadcast_task.created:{task_id_or_code}`
 
-The payload keeps only operational diagnostics:
+The payload keeps only operational diagnostics. Redaction applies to the stored
+`payload_json`, not only to admin summaries or API view models:
 
 - task id / task code
-- source type, module, route, and source id
+- source type, module, route, and safe source reference
 - related campaign code when present
 - related ops plan id when present
 - task type and send channel
@@ -27,6 +28,29 @@ The payload keeps only operational diagnostics:
 - task status
 - trace id / command id
 - boolean or count-only indicators for content and target list presence
+
+### Stored Payload Redaction
+
+Some creation paths, especially the group-ops private-message enqueue path, can
+receive a `source_id` that embeds a raw `external_userid` or other customer
+identifier. `broadcast_task.created` must never persist that raw value in
+`internal_event.payload_json` or `internal_event.source_command_id`.
+
+The emit helper stores source references as follows:
+
+- `payload.broadcast_task.source_id`: `source_ref:{sha256[:16]}` when a source
+  id is present, otherwise empty.
+- `payload.broadcast_task.source_id_redacted`: same safe reference.
+- `payload.broadcast_task.source_id_hash`: the first 16 hex characters of a
+  SHA-256 hash.
+- `payload.broadcast_task.source_id_present`: boolean indicator only.
+- `payload.broadcast_task.command_id`: `broadcast_task.created:{task_id}`.
+- `source_command_id`: `broadcast_task.created:{task_id}`.
+
+If trace or batch fallback data is missing, the emit path falls back to the
+broadcast task id rather than raw `source_id`. This prevents raw
+`external_userid`, mobile numbers, openid, unionid, webhook URLs, tokens, or
+message text from being stored in the event record.
 
 `payload_summary_json` is the admin-visible summary:
 
