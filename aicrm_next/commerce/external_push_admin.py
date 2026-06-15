@@ -9,10 +9,10 @@ import ipaddress
 import socket
 from datetime import datetime, timedelta, timezone
 from typing import Any
-from urllib.parse import urljoin, urlparse
+from urllib.parse import urlparse
 
-import requests
-
+from aicrm_next.platform_foundation.command_bus import CommandContext
+from aicrm_next.platform_foundation.external_effects import ExternalEffectService, WEBHOOK_GENERIC_PUSH, WEBHOOK_ORDER_PAID_PUSH
 from aicrm_next.shared.runtime import production_data_ready, raw_database_url
 
 from .external_push_outbox import DEFAULT_TENANT_ID, EVENT_TRANSACTION_PAID
@@ -421,17 +421,6 @@ def _create_test_delivery(conn: Any, *, config: dict[str, Any], product_id: int,
     return dict(row) if row else {}
 
 
-def _send_http_post(url: str, *, raw_body: str, headers: dict[str, str], timeout: float) -> tuple[int, str, str]:
-    resolved = resolve_and_validate_public_https_url(url)
-    response = requests.post(resolved, data=raw_body.encode("utf-8"), headers=headers, timeout=timeout, allow_redirects=False)
-    if response.is_redirect and response.headers.get("Location"):
-        redirect_url = urljoin(resolved, response.headers["Location"])
-        redirect_url = resolve_and_validate_public_https_url(redirect_url)
-        response = requests.post(redirect_url, data=raw_body.encode("utf-8"), headers=headers, timeout=timeout, allow_redirects=False)
-        resolved = redirect_url
-    return int(response.status_code), _truncate_body(response.text or "", MAX_BODY_BYTES), resolved
-
-
 def _attempt_delivery(conn: Any, delivery: dict[str, Any], *, config: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any]:
     delivery_id = _text(delivery.get("delivery_id"))
     event_type = _text(delivery.get("event_type")) or EVENT_TRANSACTION_PAID
@@ -448,36 +437,71 @@ def _attempt_delivery(conn: Any, delivery: dict[str, Any], *, config: dict[str, 
     next_attempt = int(delivery.get("attempt_count") or 0) + 1
     request_url = _text(config.get("webhook_url") or delivery.get("request_url"))
     try:
-        status_code, response_body, final_url = _send_http_post(
-            request_url,
-            raw_body=raw_body,
-            headers=headers,
-            timeout=float(os.getenv("EXTERNAL_PUSH_WEBHOOK_TIMEOUT_SECONDS") or 5),
+        final_url = resolve_and_validate_public_https_url(request_url)
+        effect_type = WEBHOOK_GENERIC_PUSH if event_type == EVENT_EXTERNAL_PUSH_TEST else WEBHOOK_ORDER_PAID_PUSH
+        job = ExternalEffectService().plan_effect(
+            effect_type=effect_type,
+            adapter_name="outbound_webhook",
+            operation="post",
+            target_type="external_push_delivery",
+            target_id=delivery_id,
+            business_type="commerce_order" if event_type != EVENT_EXTERNAL_PUSH_TEST else "commerce_product_external_push_test",
+            business_id=_text(delivery.get("order_id") or delivery.get("product_id") or delivery_id),
+            payload={
+                "webhook_url": final_url,
+                "body": payload,
+                "headers": headers,
+                "legacy_delivery_id": delivery_id,
+                "event_type": event_type,
+            },
+            payload_summary={
+                "event_type": event_type,
+                "delivery_id": delivery_id,
+                "target_url_present": bool(final_url),
+                "header_count": len(headers),
+                "body_type": type(payload).__name__,
+                "external_effect_queue_required": True,
+            },
+            context=CommandContext(
+                actor_id="commerce_external_push",
+                actor_type="system",
+                request_id=delivery_id,
+                trace_id=_text(delivery.get("delivery_id")),
+                source_route="commerce.external_push_admin._attempt_delivery",
+            ),
+            source_module="commerce.external_push_admin",
+            source_event_id=delivery_id,
+            source_command_id=delivery_id,
+            idempotency_key=f"commerce-external-push:{delivery_id}:{next_attempt}",
+            execution_mode="execute",
+            status="queued",
         )
-        ok = 200 <= status_code < 300
-        next_retry = "" if ok else (_retry_at(next_attempt) or "")
-        status = "success" if ok else ("retrying" if next_retry else "gave_up")
         updated = _update_delivery_result(
             conn,
             delivery_id,
-            status=status,
+            status="retry_scheduled",
             attempt_count=next_attempt,
             request_url=final_url,
             request_headers=_redact_sensitive_fields(headers),
             request_body=_redact_sensitive_fields(payload),
-            response_status=status_code,
-            response_body=response_body,
-            error_message="" if ok else f"HTTP {status_code}",
-            next_retry_at=next_retry,
+            response_status=None,
+            response_body=json.dumps({"external_effect_job_id": job.get("id")}, ensure_ascii=False),
+            error_message="external_effect_job_queued",
+            next_retry_at="",
         )
-        return {"ok": ok, "delivery": _public_delivery(updated), "status_code": status_code, "reason": "" if ok else f"HTTP {status_code}"}
+        return {
+            "ok": True,
+            "delivery": _public_delivery(updated),
+            "external_effect_job_id": job.get("id"),
+            "external_effect_required": True,
+            "real_external_call_executed": False,
+            "reason": "queued_external_effect_job",
+        }
     except Exception as exc:
-        next_retry = _retry_at(next_attempt) or ""
-        status = "retrying" if next_retry else "gave_up"
         updated = _update_delivery_result(
             conn,
             delivery_id,
-            status=status,
+            status="gave_up",
             attempt_count=next_attempt,
             request_url=request_url,
             request_headers=_redact_sensitive_fields(headers),
@@ -485,7 +509,7 @@ def _attempt_delivery(conn: Any, delivery: dict[str, Any], *, config: dict[str, 
             response_status=None,
             response_body="",
             error_message=_truncate_body(str(exc), 1000),
-            next_retry_at=next_retry,
+            next_retry_at="",
         )
         return {"ok": False, "delivery": _public_delivery(updated), "reason": str(exc)}
 

@@ -72,7 +72,9 @@ def test_active_channel_baseline_before_program_admission(monkeypatch):
 
     assert result["handled"] is True
     assert result["mode"] == "program_admission"
-    assert calls[:3] == ["contact", "welcome", "tag"]
+    assert calls[0] == "contact"
+    assert result["welcome_message"]["queued"] is True
+    assert result["entry_tag"]["queued"] is True
     assert "member" in calls
 
 
@@ -87,7 +89,9 @@ def test_archived_program_keeps_baseline_and_rejects_admission(monkeypatch):
     assert result["reason"] == "program_archived"
     assert result["program_member_written"] is False
     assert result["admission_results"][0]["reason"] == "program_archived"
-    assert calls[:3] == ["contact", "welcome", "tag"]
+    assert calls == ["contact"]
+    assert result["welcome_message"]["queued"] is True
+    assert result["entry_tag"]["queued"] is True
     assert "member" not in calls
 
 

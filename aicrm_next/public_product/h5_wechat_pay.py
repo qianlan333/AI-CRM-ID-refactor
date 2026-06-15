@@ -844,7 +844,8 @@ def _plan_order_paid_external_effect_job(*, order: dict[str, Any], transaction: 
             source_event_id=str((outbox or {}).get("id") or ""),
             risk_level="medium",
             requires_approval=False,
-            execution_mode="shadow",
+            execution_mode="execute",
+            status="queued",
             idempotency_key=f"wechat-pay:{out_trade_no or target_id}:external-effect:{WEBHOOK_ORDER_PAID_PUSH}",
         )
     except Exception:

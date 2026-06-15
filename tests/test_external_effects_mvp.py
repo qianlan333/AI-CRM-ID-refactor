@@ -143,7 +143,7 @@ def _seed_hxc_questionnaire(monkeypatch, external_push_config: dict) -> tuple[di
             "title": "黄小璨激活问卷",
             "enabled": True,
             "external_push_config": standard_config,
-            "questions": [{"type": "mobile", "title": "手机号", "required": True, "options": []}],
+            "questions": [{"id": "q_mobile", "type": "mobile", "title": "手机号", "required": True, "options": []}],
         },
         questionnaire_id=int(existing["id"]) if existing else None,
     )
@@ -151,7 +151,7 @@ def _seed_hxc_questionnaire(monkeypatch, external_push_config: dict) -> tuple[di
     patched["external_push_config"] = {**dict(patched.get("external_push_config") or {}), **external_push_config}
     patched["external_push_enabled"] = bool(external_push_config.get("enabled"))
     monkeypatch.setattr(h5_write, "build_questionnaire_repository", lambda: _QuestionnaireRepoOverride(repo, patched))
-    return patched, str((patched.get("questions") or [{}])[0].get("id") or "")
+    return patched, str((patched.get("questions") or [{}])[0].get("id") or "q_mobile")
 
 
 def _queued_webhook_job(
@@ -198,10 +198,6 @@ def _submit_questionnaire_queue_loopback_job(
         },
     )
 
-    def fail_if_called(*_args, **_kwargs):
-        raise AssertionError("legacy external push must not run in queue mode")
-
-    monkeypatch.setattr(external_push.requests, "post", fail_if_called)
     response = client.post(
         "/api/h5/questionnaires/hxc-activation-v1/submit",
         json={"answers": {phone_question_id: phone}},
@@ -290,6 +286,42 @@ def test_external_effect_migration_contract_contains_required_tables_indexes_and
         assert index_name in source
 
 
+def test_business_outbound_entrypoints_do_not_directly_call_external_networks() -> None:
+    monitored_files = [
+        "aicrm_next/questionnaire/external_push.py",
+        "aicrm_next/questionnaire/external_push_logs.py",
+        "aicrm_next/admin_jobs/application.py",
+        "aicrm_next/admin_jobs/notification_settings.py",
+        "aicrm_next/commerce/admin_transactions.py",
+        "aicrm_next/commerce/external_push_admin.py",
+        "aicrm_next/automation_engine/customer_webhooks.py",
+        "aicrm_next/customer_tags/live_mutation.py",
+        "aicrm_next/automation_engine/group_ops/application.py",
+        "aicrm_next/channel_entry/application.py",
+    ]
+    forbidden_fragments = [
+        "requests.post(",
+        "requests.request(",
+        "requests.get(",
+        "httpx.",
+        "urlopen(",
+        "urllib.request",
+        ".create_refund(",
+        "query_refund_by_out_refund_no(",
+        ".send_welcome_msg(",
+        ".mark_external_contact_tags(",
+    ]
+
+    violations: list[str] = []
+    for file_name in monitored_files:
+        text = Path(file_name).read_text(encoding="utf-8")
+        for fragment in forbidden_fragments:
+            if fragment in text:
+                violations.append(f"{file_name}: {fragment}")
+
+    assert violations == []
+
+
 def test_retry_policy_classifies_retryable_terminal_and_blocked_errors() -> None:
     assert classify_error_code("timeout") == "retryable"
     assert classify_error_code("", status_code=503) == "retryable"
@@ -324,12 +356,64 @@ def test_run_due_preview_dry_run_and_disabled_adapter_do_not_execute_real_call()
     assert preview["counts"]["candidate_count"] == 1
     assert dry_run["dry_run"] is True
     assert dry_run["real_external_call_executed"] is False
-    assert blocked["counts"]["blocked_count"] == 1
+    assert blocked["counts"]["failed_count"] == 1
     assert blocked["real_external_call_executed"] is False
     updated = repo.get_job(job["id"])
     assert updated is not None
-    assert updated.status == "blocked"
+    assert updated.status == "failed_terminal"
     assert repo.list_attempts(job["id"])[0].error_code == "execution_disabled"
+
+
+def test_complete_record_only_archives_historical_shadow_without_external_call() -> None:
+    repo = InMemoryExternalEffectRepository()
+    service = _service(repo)
+    historical = service.plan_effect(
+        effect_type=WECOM_CONTACT_TAG_MARK,
+        adapter_name="wecom_tag",
+        operation="mark",
+        target_type="external_user",
+        target_id="wx_record_only",
+        business_type="wecom_tag",
+        business_id="tag_record_only",
+        payload={"tag_ids": ["tag_a"]},
+        context=_sample_context("trace-record-only"),
+        idempotency_key="record-only-shadow",
+        status="planned",
+        execution_mode="shadow",
+    )
+    failed = service.plan_effect(
+        effect_type=WECOM_CONTACT_TAG_MARK,
+        adapter_name="wecom_tag",
+        operation="mark",
+        target_type="external_user",
+        target_id="wx_failed",
+        business_type="wecom_tag",
+        business_id="tag_failed",
+        payload={"tag_ids": ["tag_a"]},
+        context=_sample_context("trace-record-only-failed"),
+        idempotency_key="record-only-failed",
+        status="failed_terminal",
+        execution_mode="execute",
+    )
+
+    dry_run = service.complete_record_only(dry_run=True, limit=10, operator="pytest")
+    execute = service.complete_record_only(dry_run=False, limit=10, operator="pytest")
+    updated = repo.get_job(historical["id"])
+    untouched = repo.get_job(failed["id"])
+    attempts = repo.list_attempts(historical["id"])
+
+    assert dry_run["candidate_count"] == 1
+    assert dry_run["completed_count"] == 0
+    assert execute["completed_count"] == 1
+    assert execute["real_external_call_executed"] is False
+    assert updated is not None
+    assert updated.status == "succeeded"
+    assert untouched is not None
+    assert untouched.status == "failed_terminal"
+    assert attempts[0].status == "succeeded"
+    assert attempts[0].adapter_mode == "historical_record_only"
+    assert attempts[0].response_summary_json["historical_record_completed"] is True
+    assert attempts[0].response_summary_json["real_external_call_executed"] is False
 
 
 def test_webhook_adapter_default_config_dry_run_and_allowlist_gate_never_send(monkeypatch) -> None:
@@ -935,7 +1019,7 @@ def test_external_effect_loopback_dry_run_allowlist_miss_and_test_only_gate(next
     receipts, total = ExternalEffectService().list_test_receipts({}, limit=10)
 
     assert dry_run["real_external_call_executed"] is False
-    assert blocked["counts"]["blocked_count"] == 1
+    assert blocked["counts"]["failed_count"] == 1
     assert blocked["real_external_call_executed"] is False
     assert calls == []
     assert total == 0
@@ -949,7 +1033,7 @@ def test_external_effect_loopback_dry_run_allowlist_miss_and_test_only_gate(next
 
     assert rejected["ok"] is False
     assert rejected["error"] == "test_only_required"
-    assert direct["job"]["status"] == "blocked"
+    assert direct["job"]["status"] == "failed_terminal"
     assert direct["attempt"]["error_code"] == "test_execution_only_required"
     assert repo.test_receipt_metrics()["non_test_execution_blocked_count"] == 1
 
@@ -981,17 +1065,12 @@ def test_external_effect_diagnostics_and_api_docs_show_virtual_test_state(next_c
         assert text in html
 
 
-def test_questionnaire_submit_keeps_external_push_and_creates_shadow_job(client: TestClient, monkeypatch) -> None:
+def test_questionnaire_submit_queues_external_push_without_legacy_call(client: TestClient, monkeypatch) -> None:
     monkeypatch.setenv("AICRM_QUESTIONNAIRE_EXTERNAL_PUSH_MODE", "shadow")
     _questionnaire, phone_question_id = _seed_hxc_questionnaire(
         monkeypatch,
         {"enabled": True, "webhook_url": "https://hooks.example.com/questionnaire"},
     )
-
-    def fake_post(url: str, **kwargs):
-        return _ExternalPushResponse()
-
-    monkeypatch.setattr(external_push.requests, "post", fake_post)
 
     response = client.post(
         "/api/h5/questionnaires/hxc-activation-v1/submit",
@@ -1001,26 +1080,21 @@ def test_questionnaire_submit_keeps_external_push_and_creates_shadow_job(client:
 
     body = response.json()
     assert response.status_code == 200
-    assert body["external_push"]["status"] == "success"
-    assert body["real_external_call_executed"] is True
+    assert body["external_push_mode"] == "queue"
+    assert body["external_push"]["status"] == "queued"
+    assert body["real_external_call_executed"] is False
     assert body["external_effect_job"]["effect_type"] == WEBHOOK_QUESTIONNAIRE_SUBMISSION_PUSH
-    assert body["external_effect_job"]["execution_mode"] == "shadow"
+    assert body["external_effect_job"]["execution_mode"] == "execute"
+    assert body["external_effect_job"]["status"] == "queued"
     assert body["external_effect_job_id"]
 
 
 def test_questionnaire_external_push_legacy_shadow_and_queue_modes(client: TestClient, monkeypatch) -> None:
     cases = [
-        ("legacy", "legacy-questionnaire-effect", "test_phone_legacy_001", True, "planned", "shadow"),
-        ("shadow", "shadow-questionnaire-effect", "test_phone_shadow_001", True, "planned", "shadow"),
+        ("legacy", "legacy-questionnaire-effect", "test_phone_legacy_001", False, "queued", "execute"),
+        ("shadow", "shadow-questionnaire-effect", "test_phone_shadow_001", False, "queued", "execute"),
         ("queue", "queue-questionnaire-effect", "test_phone_queue_001", False, "queued", "execute"),
     ]
-    calls: list[dict] = []
-
-    def fake_post(url: str, **kwargs):
-        calls.append({"url": url, "kwargs": kwargs})
-        return _ExternalPushResponse()
-
-    monkeypatch.setattr(external_push.requests, "post", fake_post)
 
     for mode, idempotency_key, phone, should_call_legacy, expected_status, expected_execution_mode in cases:
         monkeypatch.setenv("AICRM_QUESTIONNAIRE_EXTERNAL_PUSH_MODE", mode)
@@ -1028,8 +1102,6 @@ def test_questionnaire_external_push_legacy_shadow_and_queue_modes(client: TestC
             monkeypatch,
             {"enabled": True, "webhook_url": f"https://hooks.example.com/questionnaire/{mode}"},
         )
-        before_call_count = len(calls)
-
         response = client.post(
             "/api/h5/questionnaires/hxc-activation-v1/submit",
             json={"answers": {phone_question_id: phone}},
@@ -1038,17 +1110,15 @@ def test_questionnaire_external_push_legacy_shadow_and_queue_modes(client: TestC
         body = response.json()
 
         assert response.status_code == 200
-        assert body["external_push_mode"] == mode
+        assert body["external_push_mode"] == "queue"
         assert body["external_effect_job_id"]
         assert body["external_effect_job_status"] == expected_status
         assert body["external_effect_job"]["execution_mode"] == expected_execution_mode
         assert body["external_effect_job"]["status"] == expected_status
         assert body["real_external_call_executed"] is should_call_legacy
-        assert len(calls) == before_call_count + (1 if should_call_legacy else 0)
-        if mode == "queue":
-            assert body["external_push"]["attempted"] is False
-            assert body["external_push"]["status"] == "queued"
-            assert "external_push.queued" in body["side_effect_plan"]["payload"]["planned_effects"]
+        assert body["external_push"]["attempted"] is False
+        assert body["external_push"]["status"] == "queued"
+        assert "external_push.queued" in body["side_effect_plan"]["payload"]["planned_effects"]
 
 
 def test_questionnaire_queue_mode_preview_dry_run_and_loopback_execute_2xx(next_client: TestClient, monkeypatch) -> None:
@@ -1150,14 +1220,10 @@ def test_questionnaire_queue_mode_job_creation_failure_does_not_fail_submission(
         {"enabled": True, "webhook_url": "https://hooks.example.com/questionnaire/fail-plan"},
     )
 
-    def fail_if_called(*_args, **_kwargs):
-        raise AssertionError("legacy external push must not run in queue mode")
-
     class _BrokenExternalEffectService:
         def plan_effect(self, **_kwargs):
             raise RuntimeError("external effect unavailable")
 
-    monkeypatch.setattr(external_push.requests, "post", fail_if_called)
     monkeypatch.setattr(external_push, "ExternalEffectService", _BrokenExternalEffectService)
 
     response = client.post(
@@ -1207,7 +1273,8 @@ def test_payment_paid_keeps_outbox_and_runtime_and_creates_order_paid_shadow_job
     assert len(runtime_calls) == 1
     assert total == 1
     assert items[0].target_type == "wechat_pay_order"
-    assert items[0].execution_mode == "shadow"
+    assert items[0].execution_mode == "execute"
+    assert items[0].status == "queued"
 
 
 def test_customer_webhook_retry_and_retry_due_create_shadow_jobs() -> None:
@@ -1229,9 +1296,9 @@ def test_customer_webhook_retry_and_retry_due_create_shadow_jobs() -> None:
 
     assert retry["outbound_webhook_executed"] is False
     assert retry["external_effect_job"]["effect_type"] == WEBHOOK_CUSTOMER_AUTOMATION_RETRY
-    assert retry["external_effect_job"]["status"] == "blocked"
+    assert retry["external_effect_job"]["status"] == "queued"
     assert retry_due["external_effect_job"]["effect_type"] == WEBHOOK_CUSTOMER_AUTOMATION_RETRY_DUE
-    assert retry_due["external_effect_job"]["execution_mode"] == "shadow"
+    assert retry_due["external_effect_job"]["execution_mode"] == "execute"
 
 
 def test_wecom_tag_mark_and_unmark_create_shadow_jobs() -> None:
@@ -1258,4 +1325,5 @@ def test_wecom_tag_mark_and_unmark_create_shadow_jobs() -> None:
     assert mark["wecom_api_called"] is False
     assert mark["external_effect_job"]["effect_type"] == WECOM_CONTACT_TAG_MARK
     assert unmark["external_effect_job"]["effect_type"] == WECOM_CONTACT_TAG_UNMARK
-    assert unmark["external_effect_job"]["execution_mode"] == "shadow"
+    assert unmark["external_effect_job"]["execution_mode"] == "execute"
+    assert unmark["external_effect_job"]["status"] == "queued"

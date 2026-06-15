@@ -406,7 +406,7 @@ def _plan_customer_webhook_external_effect_job(
     try:
         return ExternalEffectService().plan_effect(
             effect_type=effect_type,
-            adapter_name="customer_outbound_webhook",
+            adapter_name="outbound_webhook",
             operation="post",
             target_type="customer_automation_webhook_delivery",
             target_id=target_id,
@@ -415,7 +415,7 @@ def _plan_customer_webhook_external_effect_job(
             payload={
                 "command_payload": dict(command.payload or {}),
                 "candidates": candidates,
-                "blocked_plan_only": True,
+                "external_effect_queue_required": True,
             },
             payload_summary={
                 "candidate_count": len(candidates),
@@ -427,8 +427,8 @@ def _plan_customer_webhook_external_effect_job(
             source_command_id=command.command_id,
             risk_level="high",
             requires_approval=True,
-            execution_mode="shadow",
-            status="blocked",
+            execution_mode="execute",
+            status="queued",
             idempotency_key=f"{command.idempotency_key or command.command_id}:external-effect:{effect_type}",
         )
     except Exception:

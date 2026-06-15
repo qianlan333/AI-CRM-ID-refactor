@@ -276,7 +276,8 @@ def build_troubleshooting_summary_payload(
     base_filters = {key: value for key, value in filters.items() if key in {"effect_type", "status", "target_type", "target_id", "business_type", "business_id", "trace_id"}}
     counts = service.count_jobs(base_filters)
     queue_metrics = service.queue_metrics(base_filters)
-    problem_count = sum(int(counts.get(status, 0) or 0) for status in ("failed_retryable", "failed_terminal", "blocked"))
+    by_status = dict(counts.get("by_status") or {})
+    problem_count = sum(int(by_status.get(status, 0) or 0) for status in ("failed_retryable", "failed_terminal", "blocked"))
     return {
         "ok": True,
         "route_owner": ROUTE_OWNER,

@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import os
+from typing import Any
+
+import pytest
 from fastapi.testclient import TestClient
 
 from aicrm_next.admin_config.repository import AdminConfigRepository
@@ -39,8 +43,68 @@ class _SucceedingAdapter:
         )
 
 
+_SETTINGS: dict[str, str] = {}
+_AUDIT_LOGS: list[dict[str, Any]] = []
+_ENV_SETTING_KEYS: set[str] = set()
+
+
+@pytest.fixture(autouse=True)
+def _patch_admin_config_repository(monkeypatch: pytest.MonkeyPatch):
+    for key in list(_ENV_SETTING_KEYS):
+        monkeypatch.delenv(key, raising=False)
+    _ENV_SETTING_KEYS.clear()
+    _SETTINGS.clear()
+    _AUDIT_LOGS.clear()
+
+    def list_app_settings(self) -> list[dict[str, Any]]:
+        return [{"key": key, "value": value, "updated_at": ""} for key, value in sorted(_SETTINGS.items())]
+
+    def get_app_setting(self, key: str) -> dict[str, Any] | None:
+        normalized = str(key or "").strip()
+        if normalized not in _SETTINGS:
+            return None
+        return {"key": normalized, "value": _SETTINGS[normalized], "updated_at": ""}
+
+    def upsert_app_setting(self, *, key: str, value: str) -> dict[str, Any]:
+        normalized = str(key or "").strip()
+        _SETTINGS[normalized] = str(value)
+        return {"key": normalized, "value": str(value), "updated_at": ""}
+
+    def insert_audit_log(
+        self,
+        *,
+        operator: str,
+        action_type: str,
+        target_type: str,
+        target_id: str,
+        before: dict[str, Any] | None,
+        after: dict[str, Any] | None,
+    ) -> None:
+        _AUDIT_LOGS.append(
+            {
+                "operator": operator,
+                "action_type": action_type,
+                "target_type": target_type,
+                "target_id": target_id,
+                "before": before or {},
+                "after": after or {},
+            }
+        )
+
+    monkeypatch.setattr(AdminConfigRepository, "list_app_settings", list_app_settings)
+    monkeypatch.setattr(AdminConfigRepository, "get_app_setting", get_app_setting)
+    monkeypatch.setattr(AdminConfigRepository, "upsert_app_setting", upsert_app_setting)
+    monkeypatch.setattr(AdminConfigRepository, "insert_audit_log", insert_audit_log)
+    yield
+    for key in list(_ENV_SETTING_KEYS):
+        os.environ.pop(key, None)
+    _ENV_SETTING_KEYS.clear()
+
+
 def _set_setting(key: str, value: str) -> None:
     AdminConfigRepository().upsert_app_setting(key=key, value=value)
+    os.environ[str(key or "").strip()] = str(value)
+    _ENV_SETTING_KEYS.add(str(key or "").strip())
 
 
 def _context(trace_id: str) -> CommandContext:
@@ -249,7 +313,7 @@ def test_external_effect_worker_blocks_disabled_capability_before_adapter_and_al
         effect_types=[WEBHOOK_QUESTIONNAIRE_SUBMISSION_PUSH],
     )
 
-    assert blocked["counts"]["blocked_count"] == 1
+    assert blocked["counts"]["failed_count"] == 1
     assert blocked["items"][0]["attempt"]["error_code"] == "push_capability_disabled"
     assert blocked["real_external_call_executed"] is False
     assert adapter.calls == 0

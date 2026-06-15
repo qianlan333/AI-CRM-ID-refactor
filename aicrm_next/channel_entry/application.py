@@ -28,6 +28,12 @@ from .schemas import (
 )
 from .wecom_adapter import WeComAdapterBlocked, WeComApiError, get_wecom_adapter, wecom_adapter_diagnostics
 from .wecom_crypto import build_encrypted_reply, decrypt_message, parse_callback_xml, verify_signature
+from aicrm_next.platform_foundation.command_bus.models import CommandContext
+from aicrm_next.platform_foundation.external_effects import (
+    ExternalEffectService,
+    WECOM_CONTACT_TAG_MARK,
+    WECOM_WELCOME_MESSAGE_SEND,
+)
 
 CUSTOMER_NAME_PLACEHOLDER_RE = re.compile(r"\{\{\s*客户名\s*\}\}")
 
@@ -131,6 +137,45 @@ def _log_effect(command: ProcessChannelEntryCommand, *, effect_type: str, idempo
         reason=reason,
         request_json=repo.json_safe(request_json or {}),
         response_json=repo.json_safe(response_json or {}),
+    )
+
+
+def _plan_channel_entry_effect(
+    command: ProcessChannelEntryCommand,
+    *,
+    effect_type: str,
+    adapter_name: str,
+    operation: str,
+    target_type: str,
+    target_id: str,
+    business_id: str,
+    idempotency_key: str,
+    payload: dict[str, Any],
+    payload_summary: dict[str, Any],
+) -> dict[str, Any]:
+    return ExternalEffectService().plan_effect(
+        effect_type=effect_type,
+        adapter_name=adapter_name,
+        operation=operation,
+        target_type=target_type,
+        target_id=target_id,
+        business_type="channel_entry",
+        business_id=business_id,
+        source_module="channel_entry.application",
+        source_event_id=str(command.event_log_id or ""),
+        idempotency_key=f"channel_entry:{idempotency_key}",
+        context=CommandContext(
+            actor_id=text(command.operator_id or command.follow_user_userid),
+            actor_type="channel_entry",
+            request_id=str(command.event_log_id or ""),
+            trace_id=f"channel-entry-{command.event_log_id}" if command.event_log_id else idempotency_key,
+            source_route="channel_entry.process_channel_entry",
+            dry_run=bool(command.dry_run),
+        ),
+        payload=payload,
+        payload_summary=payload_summary,
+        status="queued",
+        execution_mode="execute",
     )
 
 
@@ -266,24 +311,47 @@ def _send_welcome(command: ProcessChannelEntryCommand, *, channel: dict[str, Any
     if command.dry_run:
         return {"attempted": False, "sent": False, "reason": "dry_run", "request_payload": payload}
     try:
-        wecom_result = get_wecom_adapter().send_welcome_msg(payload)
+        job = _plan_channel_entry_effect(
+            command,
+            effect_type=WECOM_WELCOME_MESSAGE_SEND,
+            adapter_name="wecom_welcome_message",
+            operation="send",
+            target_type="external_user",
+            target_id=command.external_contact_id,
+            business_id=str(channel_id),
+            idempotency_key=key,
+            payload={
+                **payload,
+                "external_userid": command.external_contact_id,
+                "follow_user_userid": command.follow_user_userid,
+                "channel_id": channel_id,
+                "scene_value": scene,
+            },
+            payload_summary={
+                "external_userid": command.external_contact_id,
+                "follow_user_userid": command.follow_user_userid,
+                "channel_id": channel_id,
+                "scene_value": scene,
+                "welcome_code_present": bool(welcome_code),
+                "text_present": bool(text_content),
+                "attachment_count": len(attachments),
+            },
+        )
     except Exception as exc:
-        reason, failure = _adapter_failure(exc)
-        result = {"attempted": True, "sent": False, "reason": reason, "welcome_code": welcome_code, **failure}
-        _log_effect(command, effect_type="welcome_message", idempotency_key=key, status="failed", channel_id=channel_id, scene_value=scene, reason=reason, request_json=payload, response_json=result)
+        result = {"attempted": True, "sent": False, "reason": "external_effect_queue_failed", "welcome_code": welcome_code, "message": str(exc)}
+        _log_effect(command, effect_type="welcome_message", idempotency_key=key, status="failed", channel_id=channel_id, scene_value=scene, reason="external_effect_queue_failed", request_json=payload, response_json=result)
         return result
-    if int((wecom_result or {}).get("errcode") or 0) != 0:
-        result = {
-            "attempted": True,
-            "sent": False,
-            "reason": "wecom_api_error",
-            "welcome_code": welcome_code,
-            "wecom_result": dict(wecom_result or {}),
-        }
-        _log_effect(command, effect_type="welcome_message", idempotency_key=key, status="failed", channel_id=channel_id, scene_value=scene, reason="wecom_api_error", request_json=payload, response_json=result)
-        return result
-    result = {"attempted": True, "sent": True, "welcome_code": welcome_code, "wecom_result": dict(wecom_result or {}), "attachments": attachments}
-    _log_effect(command, effect_type="welcome_message", idempotency_key=key, status="success", channel_id=channel_id, scene_value=scene, reason="sent", request_json=payload, response_json=result)
+    result = {
+        "attempted": True,
+        "sent": False,
+        "queued": True,
+        "reason": "external_effect_job_queued",
+        "welcome_code": welcome_code,
+        "external_effect_job_id": job.get("id"),
+        "real_external_call_executed": False,
+        "attachments": attachments,
+    }
+    _log_effect(command, effect_type="welcome_message", idempotency_key=key, status="queued", channel_id=channel_id, scene_value=scene, reason="external_effect_job_queued", request_json=payload, response_json=result)
     return result
 
 
@@ -301,19 +369,43 @@ def _apply_tag(command: ProcessChannelEntryCommand, *, channel: dict[str, Any], 
     if command.dry_run:
         return {"attempted": False, "applied": False, "reason": "dry_run", "request_payload": payload}
     try:
-        wecom_result = get_wecom_adapter().mark_external_contact_tags(**payload)
+        job = _plan_channel_entry_effect(
+            command,
+            effect_type=WECOM_CONTACT_TAG_MARK,
+            adapter_name="wecom_tag",
+            operation="mark",
+            target_type="external_user",
+            target_id=command.external_contact_id,
+            business_id=str(channel_id),
+            idempotency_key=key,
+            payload={
+                **payload,
+                "channel_id": channel_id,
+                "scene_value": scene,
+            },
+            payload_summary={
+                "external_userid": command.external_contact_id,
+                "follow_user_userid": command.follow_user_userid,
+                "channel_id": channel_id,
+                "scene_value": scene,
+                "tag_ids": [tag_id],
+                "operation": "mark",
+            },
+        )
     except Exception as exc:
-        reason, failure = _adapter_failure(exc)
-        result = {"attempted": True, "applied": False, "reason": reason, "entry_tag_id": tag_id, **failure}
-        _log_effect(command, effect_type="entry_tag", idempotency_key=key, status="failed", channel_id=channel_id, scene_value=scene, reason=reason, request_json=payload, response_json=result)
+        result = {"attempted": True, "applied": False, "reason": "external_effect_queue_failed", "entry_tag_id": tag_id, "message": str(exc)}
+        _log_effect(command, effect_type="entry_tag", idempotency_key=key, status="failed", channel_id=channel_id, scene_value=scene, reason="external_effect_queue_failed", request_json=payload, response_json=result)
         return result
-    if int((wecom_result or {}).get("errcode") or 0) != 0:
-        result = {"attempted": True, "applied": False, "reason": "wecom_api_error", "entry_tag_id": tag_id, "wecom_result": dict(wecom_result or {})}
-        _log_effect(command, effect_type="entry_tag", idempotency_key=key, status="failed", channel_id=channel_id, scene_value=scene, reason="wecom_api_error", request_json=payload, response_json=result)
-        return result
-    repo.save_tag_snapshot(command.follow_user_userid, command.external_contact_id, [tag_id], {tag_id: text(channel.get("entry_tag_name"))})
-    result = {"attempted": True, "applied": True, "entry_tag_id": tag_id, "wecom_result": dict(wecom_result or {})}
-    _log_effect(command, effect_type="entry_tag", idempotency_key=key, status="success", channel_id=channel_id, scene_value=scene, reason="applied", request_json=payload, response_json=result)
+    result = {
+        "attempted": True,
+        "applied": False,
+        "queued": True,
+        "reason": "external_effect_job_queued",
+        "entry_tag_id": tag_id,
+        "external_effect_job_id": job.get("id"),
+        "real_external_call_executed": False,
+    }
+    _log_effect(command, effect_type="entry_tag", idempotency_key=key, status="queued", channel_id=channel_id, scene_value=scene, reason="external_effect_job_queued", request_json=payload, response_json=result)
     return result
 
 

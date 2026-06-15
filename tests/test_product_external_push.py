@@ -7,6 +7,7 @@ import pytest
 
 from aicrm_next.commerce import external_push_admin
 from aicrm_next.commerce.repo import reset_commerce_fixture_state
+from aicrm_next.platform_foundation.external_effects import ExternalEffectService, WEBHOOK_ORDER_PAID_PUSH, reset_external_effect_fixture_state
 
 
 def _public_dns(monkeypatch, ip: str = "93.184.216.34") -> None:
@@ -102,7 +103,9 @@ def test_external_push_payload_masks_stored_body_but_sends_full_payload():
     assert "tenant" not in redacted
 
 
-def test_external_push_attempt_uses_mocked_http_and_updates_delivery(monkeypatch):
+def test_external_push_attempt_queues_external_effect_and_updates_delivery(monkeypatch):
+    reset_external_effect_fixture_state()
+    _public_dns(monkeypatch)
     updates: list[dict] = []
 
     class FakeConn:
@@ -123,7 +126,6 @@ def test_external_push_attempt_uses_mocked_http_and_updates_delivery(monkeypatch
             )
             return SimpleNamespace(fetchone=lambda: {"delivery_id": params[9], "status": params[0], "attempt_count": params[1]})
 
-    monkeypatch.setattr(external_push_admin, "_send_http_post", lambda *args, **kwargs: (200, '{"ok":true}', "https://example.com/hook"))
     monkeypatch.setattr(external_push_admin, "_jsonb", lambda value: value)
 
     result = external_push_admin._attempt_delivery(
@@ -134,10 +136,15 @@ def test_external_push_attempt_uses_mocked_http_and_updates_delivery(monkeypatch
     )
 
     assert result["ok"] is True
-    assert result["delivery"]["status"] == "success"
+    assert result["delivery"]["status"] == "retry_scheduled"
+    assert result["external_effect_job_id"]
+    assert result["real_external_call_executed"] is False
     assert updates[0]["request_headers"]["X-AICRM-Signature"].startswith("sha256=")
     assert updates[0]["request_body"]["phone_number"] == "138****0000"
-    assert updates[0]["response_status"] == 200
+    assert updates[0]["response_status"] is None
+    items, total = ExternalEffectService().list_jobs({"effect_type": WEBHOOK_ORDER_PAID_PUSH, "target_id": "deliv_attempt"})
+    assert total == 1
+    assert items[0].status == "queued"
 
 
 def test_external_push_test_payload_does_not_include_order_or_real_payment_fields():

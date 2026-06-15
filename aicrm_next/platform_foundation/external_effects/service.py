@@ -31,12 +31,12 @@ class ExternalEffectService:
         source_command_id: str = "",
         risk_level: str = "medium",
         requires_approval: bool = False,
-        execution_mode: str = "shadow",
+        execution_mode: str = "execute",
         scheduled_at: datetime | None = None,
         priority: int = 100,
         max_attempts: int = 5,
         idempotency_key: str = "",
-        status: str = "planned",
+        status: str = "queued",
     ) -> dict[str, Any]:
         request = ExternalEffectCreateRequest(
             effect_type=effect_type,
@@ -125,6 +125,52 @@ class ExternalEffectService:
         if not job or job.status in {"succeeded", "cancelled"}:
             return None
         return self._repo.cancel_job(job_id)
+
+    def complete_record_only(self, *, dry_run: bool = True, limit: int = 100, operator: str = "system") -> dict[str, Any]:
+        jobs = self._repo.list_record_only_jobs(limit=limit)
+        if dry_run:
+            return {
+                "ok": True,
+                "dry_run": True,
+                "operator": operator,
+                "candidate_count": len(jobs),
+                "completed_count": 0,
+                "items": [job.to_dict() for job in jobs],
+                "real_external_call_executed": False,
+            }
+        completed: list[dict[str, Any]] = []
+        for job in jobs:
+            attempt = self._repo.record_attempt(
+                job=job,
+                status="succeeded",
+                adapter_mode="historical_record_only",
+                request_summary={
+                    "effect_type": job.effect_type,
+                    "target_type": job.target_type,
+                    "target_id": job.target_id,
+                    "operator": operator,
+                },
+                response_summary={
+                    "historical_record_completed": True,
+                    "real_external_call_executed": False,
+                },
+            )
+            updated = self._repo.mark_succeeded(job.id, attempt_id=attempt.attempt_id)
+            completed.append(
+                {
+                    "job": updated.to_dict() if updated else job.to_dict(),
+                    "attempt": attempt.to_dict(),
+                }
+            )
+        return {
+            "ok": True,
+            "dry_run": False,
+            "operator": operator,
+            "candidate_count": len(jobs),
+            "completed_count": len(completed),
+            "items": completed,
+            "real_external_call_executed": False,
+        }
 
 
 def default_external_effect_service() -> ExternalEffectService:

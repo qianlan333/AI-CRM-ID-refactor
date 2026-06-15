@@ -298,8 +298,8 @@ def test_webhook_payment_consumer_plans_shadow_job_without_external_attempt(monk
     assert result["counts"]["succeeded_count"] == 1
     assert result["real_external_call_executed"] is False
     assert total == 1
-    assert jobs[0].execution_mode == "shadow"
-    assert jobs[0].status == "planned"
+    assert jobs[0].execution_mode == "execute"
+    assert jobs[0].status == "queued"
     assert jobs[0].attempt_count == 0
     assert attempts == []
 

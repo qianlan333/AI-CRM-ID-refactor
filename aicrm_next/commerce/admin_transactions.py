@@ -9,6 +9,8 @@ from datetime import datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
 
+from aicrm_next.platform_foundation.command_bus import CommandContext
+from aicrm_next.platform_foundation.external_effects import ExternalEffectService, PAYMENT_WECHAT_REFUND_REQUEST
 from aicrm_next.shared.runtime import database_mode
 from aicrm_next.shared.text_encoding import repair_utf8_mojibake
 
@@ -101,6 +103,7 @@ def _normalized_bool(value: Any) -> bool:
 
 def _refund_status_label(status: str) -> str:
     mapping = {
+        "queued": "退款申请已入队",
         "requested": "退款申请已提交",
         "PROCESSING": "退款处理中",
         "SUCCESS": "退款成功",
@@ -466,111 +469,70 @@ def create_wechat_refund_request(order_id: str, payload: dict[str, Any]) -> dict
                         Jsonb(request_payload),
                     ),
                 )
-            conn.commit()
-            try:
-                response_payload = _create_wechat_pay_refund_client().create_refund(request_payload)
-            except Exception as exc:
-                error_text = str(exc)
-                with conn.cursor() as cur:
-                    cur.execute(
-                        """
-                        UPDATE wechat_pay_refunds
-                        SET status = 'failed',
-                            response_payload_json = %s,
-                            error_message = %s,
-                            updated_at = CURRENT_TIMESTAMP
-                        WHERE out_refund_no = %s
-                        """,
-                        (Jsonb({}), error_text[:500], out_refund_no),
-                    )
-                    cur.execute(
-                        """
-                        INSERT INTO wechat_pay_order_events (
-                            out_trade_no, event_type, transaction_id, trade_state,
-                            payload_json, headers_json, created_at
-                        )
-                        VALUES (%s, 'refund_failed', %s, %s, %s, %s, CURRENT_TIMESTAMP)
-                        """,
-                        (
-                            order.get("out_trade_no") or "",
-                            order["transaction_id"],
-                            str(order.get("trade_state") or ""),
-                            Jsonb({"out_refund_no": out_refund_no, "amount_total": amount_total, "error": error_text}),
-                            Jsonb({}),
-                        ),
-                    )
-                conn.commit()
-                raise ValueError(f"微信支付退款申请失败：{error_text}") from exc
-
-            refund_status = str(response_payload.get("status") or "PROCESSING").strip() or "PROCESSING"
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    UPDATE wechat_pay_refunds
-                    SET refund_id = COALESCE(NULLIF(%s, ''), refund_id),
-                        status = %s,
-                        response_payload_json = %s,
-                        error_message = '',
-                        updated_at = CURRENT_TIMESTAMP
-                    WHERE out_refund_no = %s
-                    """,
-                    (
-                        str(response_payload.get("refund_id") or "").strip(),
-                        refund_status,
-                        Jsonb(response_payload),
-                        out_refund_no,
-                    ),
-                )
-                if refund_status == "SUCCESS":
-                    cur.execute(
-                        """
-                        UPDATE wechat_pay_orders
-                        SET refunded_amount_total = LEAST(amount_total, COALESCE(refunded_amount_total, 0) + %s),
-                            refund_status = CASE
-                                WHEN LEAST(amount_total, COALESCE(refunded_amount_total, 0) + %s) >= amount_total THEN 'full_refunded'
-                                ELSE 'partial_refunded'
-                            END,
-                            updated_at = CURRENT_TIMESTAMP
-                        WHERE id = %s
-                        """,
-                        (amount_total, amount_total, int(order["id"])),
-                    )
                 cur.execute(
                     """
                     INSERT INTO wechat_pay_order_events (
                         out_trade_no, event_type, transaction_id, trade_state,
                         payload_json, headers_json, created_at
                     )
-                    VALUES (%s, 'refund_requested', %s, %s, %s, %s, CURRENT_TIMESTAMP)
+                    VALUES (%s, 'refund_request_queued', %s, %s, %s, %s, CURRENT_TIMESTAMP)
                     """,
                     (
                         order.get("out_trade_no") or "",
                         order["transaction_id"],
                         str(order.get("trade_state") or ""),
-                        Jsonb(
-                            {
-                                "out_refund_no": out_refund_no,
-                                "refund_id": str(response_payload.get("refund_id") or "").strip(),
-                                "wechat_refund_status": refund_status,
-                                "amount_total": amount_total,
-                            }
-                        ),
+                        Jsonb({"out_refund_no": out_refund_no, "amount_total": amount_total, "provider_refund_executed": False}),
                         Jsonb({}),
                     ),
                 )
             conn.commit()
-        updated_order = get_wechat_admin_order(order_id) or order
-        return {
-            "ok": True,
-            "order": updated_order,
-            "refund": {
-                "status": refund_status,
-                "status_label": _refund_status_label(refund_status),
-                "out_refund_no": out_refund_no,
-                "refund_id": str(response_payload.get("refund_id") or "").strip(),
-                "provider_refund_executed": True,
-            },
-        }
+            effect_job = ExternalEffectService().plan_effect(
+                effect_type=PAYMENT_WECHAT_REFUND_REQUEST,
+                adapter_name="wechat_payment",
+                operation="refund_request",
+                target_type="wechat_pay_refund",
+                target_id=out_refund_no,
+                business_type="commerce_order",
+                business_id=str(order.get("out_trade_no") or order_id),
+                payload={
+                    "request_payload": request_payload,
+                    "order_id": order.get("id"),
+                    "out_trade_no": order.get("out_trade_no") or "",
+                    "out_refund_no": out_refund_no,
+                    "transaction_id": order["transaction_id"],
+                },
+                payload_summary={
+                    "order_id": order.get("id"),
+                    "out_trade_no": order.get("out_trade_no") or "",
+                    "out_refund_no": out_refund_no,
+                    "refund_amount_total": amount_total,
+                    "currency": currency,
+                    "provider_refund_executed": False,
+                },
+                context=CommandContext(
+                    actor_id=str(payload.get("operator") or "aicrm_next"),
+                    actor_type="user",
+                    trace_id=str(order.get("out_trade_no") or out_refund_no),
+                    source_route="commerce.admin_transactions.create_wechat_refund_request",
+                ),
+                source_module="commerce.admin_transactions",
+                idempotency_key=f"wechat-refund-request:{out_refund_no}",
+            )
+            updated_order = get_wechat_admin_order(order_id) or order
+            return {
+                "ok": True,
+                "order": updated_order,
+                "refund": {
+                    "status": "queued",
+                    "status_label": _refund_status_label("queued"),
+                    "out_refund_no": out_refund_no,
+                    "refund_id": "",
+                    "provider_refund_executed": False,
+                    "external_effect_job_id": effect_job.get("id"),
+                },
+                "external_effect_job_id": effect_job.get("id"),
+                "real_external_call_executed": False,
+            }
     else:
         result = build_commerce_repository().request_refund("wechat", str(order_id), request_payload)
         updated_order = _present_order(result["order"])

@@ -28,6 +28,7 @@ WEBHOOK_QUESTIONNAIRE_SUBMISSION_PUSH = "webhook.questionnaire_submission.push"
 WEBHOOK_ORDER_PAID_PUSH = "webhook.order_paid.push"
 WEBHOOK_CUSTOMER_AUTOMATION_RETRY = "webhook.customer_automation.retry"
 WEBHOOK_CUSTOMER_AUTOMATION_RETRY_DUE = "webhook.customer_automation.retry_due"
+WEBHOOK_GENERIC_PUSH = "webhook.generic.push"
 AI_ASSIST_CAMPAIGN_MESSAGE_PLAN = "ai_assist.campaign.message.plan"
 AI_ASSIST_CAMPAIGN_MESSAGE_LOOPBACK = "ai_assist.campaign.message.loopback"
 WECOM_MESSAGE_PRIVATE_SEND = "wecom.message.private.send"
@@ -39,6 +40,7 @@ WECOM_CONTACT_TAG_UNMARK = "wecom.contact.tag.unmark"
 GROUP_OPS_MESSAGE_LOOPBACK = "group_ops.message.loopback"
 GROUP_OPS_WEBHOOK_ACTION_LOOPBACK = "group_ops.webhook.action.loopback"
 PAYMENT_WECHAT_ORDER_QUERY = "payment.wechat.order.query"
+PAYMENT_WECHAT_REFUND_REQUEST = "payment.wechat.refund.request"
 PAYMENT_WECHAT_REFUND_QUERY = "payment.wechat.refund.query"
 PAYMENT_ALIPAY_ORDER_QUERY = "payment.alipay.order.query"
 PAYMENT_ALIPAY_REFUND_QUERY = "payment.alipay.refund.query"
@@ -85,12 +87,12 @@ class ExternalEffectCreateRequest:
     source_command_id: str = ""
     risk_level: str = "medium"
     requires_approval: bool = False
-    execution_mode: ExternalEffectExecutionMode = "shadow"
+    execution_mode: ExternalEffectExecutionMode = "execute"
     scheduled_at: datetime | None = None
     priority: int = 100
     max_attempts: int = 5
     tenant_id: str = DEFAULT_TENANT_ID
-    status: ExternalEffectStatus = "planned"
+    status: ExternalEffectStatus = "queued"
     idempotency_key: str = ""
     correlation_id: str = ""
 
@@ -118,10 +120,10 @@ class ExternalEffectJob:
     actor_type: str = "system"
     risk_level: str = "medium"
     requires_approval: bool = False
-    execution_mode: ExternalEffectExecutionMode = "shadow"
+    execution_mode: ExternalEffectExecutionMode = "execute"
     payload_json: dict[str, Any] = field(default_factory=dict)
     payload_summary_json: dict[str, Any] = field(default_factory=dict)
-    status: ExternalEffectStatus = "planned"
+    status: ExternalEffectStatus = "queued"
     priority: int = 100
     scheduled_at: str = ""
     attempt_count: int = 0

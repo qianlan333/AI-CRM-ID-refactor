@@ -15,6 +15,7 @@ from .models import (
     GROUP_OPS_WEBHOOK_ACTION_LOOPBACK,
     WEBHOOK_ORDER_PAID_PUSH,
     WEBHOOK_QUESTIONNAIRE_SUBMISSION_PUSH,
+    WEBHOOK_GENERIC_PUSH,
     WECOM_MESSAGE_GROUP_SEND,
     WECOM_MESSAGE_PRIVATE_SEND,
     ExternalEffectDispatchResult,
@@ -26,6 +27,7 @@ LOW_RISK_WEBHOOK_EFFECT_TYPES = frozenset(
     {
         WEBHOOK_QUESTIONNAIRE_SUBMISSION_PUSH,
         WEBHOOK_ORDER_PAID_PUSH,
+        WEBHOOK_GENERIC_PUSH,
         AI_ASSIST_CAMPAIGN_MESSAGE_LOOPBACK,
         GROUP_OPS_MESSAGE_LOOPBACK,
         GROUP_OPS_WEBHOOK_ACTION_LOOPBACK,
@@ -69,12 +71,12 @@ def wecom_execution_settings() -> dict[str, Any]:
 class DisabledAdapter:
     def dispatch(self, job: ExternalEffectJob) -> ExternalEffectDispatchResult:
         return ExternalEffectDispatchResult(
-            status="blocked",
+            status="failed_terminal",
             adapter_mode=job.execution_mode or "disabled",
             request_summary={"effect_type": job.effect_type, "target_type": job.target_type, "target_id": job.target_id},
             response_summary={"blocked": True, "real_external_call_executed": False},
-            error_code="adapter_blocked",
-            error_message="External effect adapter execution is disabled in MVP.",
+            error_code="adapter_not_implemented",
+            error_message="No External Effect Queue adapter is registered for this adapter_name.",
             real_external_call_executed=False,
         )
 
@@ -87,7 +89,7 @@ class WebhookAdapter:
         gate_error = self._execution_gate_error(job)
         if gate_error:
             return ExternalEffectDispatchResult(
-                status="blocked",
+                status="failed_terminal",
                 adapter_mode=job.execution_mode or "shadow",
                 request_summary={
                     "effect_type": job.effect_type,
@@ -201,6 +203,13 @@ class WebhookAdapter:
 
     def _headers(self, *, payload: dict[str, Any], body: dict[str, Any] | list[Any]) -> tuple[dict[str, str], bool]:
         headers = {"Content-Type": "application/json"}
+        extra_headers = payload.get("headers")
+        if isinstance(extra_headers, dict):
+            for key, value in extra_headers.items():
+                header_name = str(key or "").strip()
+                if not header_name or any(sensitive in header_name.lower() for sensitive in ("authorization", "token", "secret", "cookie")):
+                    continue
+                headers[header_name] = str(value or "")
         secret = str(
             payload.get("signature_secret")
             or payload.get("signing_secret")
@@ -235,7 +244,7 @@ class WeComPrivateMessageAdapter:
         }
         if gate_error:
             return ExternalEffectDispatchResult(
-                status="blocked",
+                status="failed_terminal",
                 adapter_mode=job.execution_mode or "execute",
                 request_summary=request_summary,
                 response_summary={"blocked": True, "execution_gate": gate_error, "real_external_call_executed": False, "wecom_send_executed": False},
@@ -290,7 +299,7 @@ class WeComPrivateMessageAdapter:
             )
         if not side_effect_executed:
             return ExternalEffectDispatchResult(
-                status="blocked",
+                status="failed_terminal",
                 adapter_mode="execute",
                 request_summary=request_summary,
                 response_summary=response_summary,
@@ -353,7 +362,7 @@ class WeComGroupMessageExternalEffectAdapter:
         request_summary = self._request_summary(job, payload)
         if gate_error:
             return ExternalEffectDispatchResult(
-                status="blocked",
+                status="failed_terminal",
                 adapter_mode=job.execution_mode or "execute",
                 request_summary=request_summary,
                 response_summary={

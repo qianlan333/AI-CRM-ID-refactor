@@ -61,13 +61,14 @@ def test_experiments_pytest_and_tools_import_root_next_package() -> None:
 
 
 def test_duplicate_source_references_are_not_active_import_or_config_paths() -> None:
-    ignored_dirs = {".git", ".venv", "__pycache__", ".pytest_cache"}
     allowed_files = {Path("tests/test_next_source_consolidation.py")}
     offenders: list[str] = []
-    for path in REPO_ROOT.rglob("*"):
-        if not path.is_file() or any(part in ignored_dirs for part in path.parts):
+    tracked = subprocess.run(["git", "ls-files"], cwd=REPO_ROOT, check=True, capture_output=True, text=True).stdout.splitlines()
+    for rel_text in tracked:
+        rel = Path(rel_text)
+        path = REPO_ROOT / rel
+        if not path.is_file():
             continue
-        rel = path.relative_to(REPO_ROOT)
         if rel in allowed_files:
             continue
         if path.suffix not in {".py", ".toml", ".sh", ".yml", ".yaml"}:

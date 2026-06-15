@@ -93,6 +93,11 @@ def build_parser() -> argparse.ArgumentParser:
     external_effects_run_due.add_argument("--execute", action="store_true", default=False, help="Execute due jobs when the scheduler switch is enabled.")
     external_effects_run_due.add_argument("--limit", type=int, default=0)
     external_effects_run_due.add_argument("--operator", default="cli")
+    external_effects_complete = external_effects_subparsers.add_parser("complete-record-only", help="Complete historical shadow/plan-only External Effect records without sending.")
+    external_effects_complete.add_argument("--dry-run", action="store_true", default=False, help="Preview record-only jobs without mutating state.")
+    external_effects_complete.add_argument("--execute", action="store_true", default=False, help="Mark historical record-only jobs as succeeded with a synthetic attempt.")
+    external_effects_complete.add_argument("--limit", type=int, default=100)
+    external_effects_complete.add_argument("--operator", default="cli")
     targets = subparsers.add_parser("p0-1-test-targets", help="P0-1 production test target manifest commands.")
     targets_subparsers = targets.add_subparsers(dest="p0_1_targets_command")
     targets_validate = targets_subparsers.add_parser("validate", help="Validate the P0-1 production test target manifest.")
@@ -152,6 +157,18 @@ def main(argv: Sequence[str] | None = None) -> None:
                 dry_run = True
             limit = int(getattr(args, "limit", 0) or 0) or None
             print_run_due_result(dry_run=dry_run, limit=limit, operator=getattr(args, "operator", "cli"))
+            return
+        if getattr(args, "external_effects_command", "") == "complete-record-only":
+            from aicrm_next.platform_foundation.external_effects.jobs import print_complete_record_only_result
+
+            dry_run = not bool(getattr(args, "execute", False))
+            if getattr(args, "dry_run", False):
+                dry_run = True
+            print_complete_record_only_result(
+                dry_run=dry_run,
+                limit=int(getattr(args, "limit", 100) or 100),
+                operator=getattr(args, "operator", "cli"),
+            )
             return
         parser.print_help()
         return

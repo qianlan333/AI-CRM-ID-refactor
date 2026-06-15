@@ -171,7 +171,8 @@ def webhook_order_paid_consumer(event: InternalEvent, run: InternalEventConsumer
         source_event_id=event.event_id,
         risk_level="medium",
         requires_approval=False,
-        execution_mode="shadow",
+        execution_mode="execute",
+        status="queued",
         idempotency_key=f"payment.succeeded:{out_trade_no}:external-effect:{WEBHOOK_ORDER_PAID_PUSH}",
     )
     return InternalEventConsumerResult(

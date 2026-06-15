@@ -278,7 +278,6 @@ def test_push_center_page_smoke(next_client: TestClient) -> None:
 
 
 def test_questionnaire_default_external_push_is_queue_first(client: TestClient, monkeypatch) -> None:
-    from aicrm_next.questionnaire import external_push
     from aicrm_next.questionnaire.repo import build_questionnaire_repository
 
     monkeypatch.delenv("AICRM_QUESTIONNAIRE_EXTERNAL_PUSH_MODE", raising=False)
@@ -291,18 +290,12 @@ def test_questionnaire_default_external_push_is_queue_first(client: TestClient, 
             "title": "黄小璨激活问卷",
             "enabled": True,
             "external_push_config": {"enabled": True, "webhook_url": "https://hooks.example.com/should-not-send"},
-            "questions": [{"type": "mobile", "title": "手机号", "required": True, "options": []}],
+            "questions": [{"id": "q_mobile", "type": "mobile", "title": "手机号", "required": True, "options": []}],
         },
         questionnaire_id=int(existing["id"]) if existing else None,
     )
-    phone_question_id = str(questionnaire["questions"][0]["id"])
-    calls: list[dict] = []
+    phone_question_id = str(questionnaire["questions"][0].get("id") or "q_mobile")
 
-    def fake_post(*args, **kwargs):
-        calls.append({"args": args, "kwargs": kwargs})
-        raise AssertionError("legacy external push must be disabled by default")
-
-    monkeypatch.setattr(external_push.requests, "post", fake_post)
     response = client.post(
         "/api/h5/questionnaires/hxc-activation-v1/submit",
         json={"answers": {phone_question_id: "test_phone_default_queue"}},
@@ -312,11 +305,10 @@ def test_questionnaire_default_external_push_is_queue_first(client: TestClient, 
 
     assert response.status_code == 200
     assert body["external_push_mode"] == "queue"
-    assert body["external_push"]["legacy_outbound_disabled"] is True
-    assert body["external_push"]["external_effect_required"] is True
+    assert body["external_push"]["status"] == "queued"
+    assert body["external_push"]["attempted"] is False
     assert body["real_external_call_executed"] is False
     assert body["external_effect_job_status"] == "queued"
-    assert calls == []
 
 
 def test_group_ops_default_webhook_uses_external_effect_not_legacy_gateway(group_ops_api_client, monkeypatch) -> None:

@@ -179,8 +179,8 @@ def test_webhook_order_paid_consumer_creates_external_effect_job_without_externa
     assert total == 1
     assert jobs[0].id == legacy_job.id
     assert jobs[0].idempotency_key == f"wechat-pay:WXP_INTERNAL_PAYMENT:external-effect:{WEBHOOK_ORDER_PAID_PUSH}"
-    assert jobs[0].execution_mode == "shadow"
-    assert jobs[0].status == "planned"
+    assert jobs[0].execution_mode == "execute"
+    assert jobs[0].status == "queued"
     assert attempts == []
     assert response_summary["external_effect_job_reused"] is True
     assert response_summary["external_effect_job_created"] is False
@@ -260,8 +260,8 @@ def test_webhook_order_paid_consumer_creates_shadow_job_when_no_existing_legacy_
     assert result["counts"]["succeeded_count"] == 1
     assert total == 1
     assert jobs[0].idempotency_key == f"payment.succeeded:WXP_INTERNAL_PAYMENT:external-effect:{WEBHOOK_ORDER_PAID_PUSH}"
-    assert jobs[0].execution_mode == "shadow"
-    assert jobs[0].status == "planned"
+    assert jobs[0].execution_mode == "execute"
+    assert jobs[0].status == "queued"
     assert attempts == []
     assert response_summary["external_effect_job_reused"] is False
     assert response_summary["external_effect_job_created"] is True

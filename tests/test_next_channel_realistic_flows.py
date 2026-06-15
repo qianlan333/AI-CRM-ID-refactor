@@ -276,10 +276,15 @@ def test_realistic_active_program_flow_has_qr_alias_effects_and_member(runtime):
     assert result["admission_results"][0]["realtime_task_hook"]["ok"] is True
     assert runtime.aliases["scene-current"]["config_id"] == "config-101"
     assert runtime.contacts[0]["owner_staff_id"] == "owner-a"
-    assert runtime.welcome_calls[0]["welcome_code"] == "welcome-real"
-    assert runtime.tag_calls[0]["add_tags"] == ["tag-next-real"]
-    assert ("owner-a", "wm-real", "tag-next-real") in runtime.tags
+    assert result["welcome_message"]["queued"] is True
+    assert result["entry_tag"]["queued"] is True
+    assert result["welcome_message"]["real_external_call_executed"] is False
+    assert result["entry_tag"]["real_external_call_executed"] is False
+    assert runtime.welcome_calls == []
+    assert runtime.tag_calls == []
     assert {row["effect_type"] for row in runtime.effect_logs} >= {"channel_contact", "welcome_message", "entry_tag", "program_admission"}
+    assert any(row["effect_type"] == "welcome_message" and row["status"] == "queued" for row in runtime.effect_logs)
+    assert any(row["effect_type"] == "entry_tag" and row["status"] == "queued" for row in runtime.effect_logs)
 
 
 def test_effect_log_json_payload_accepts_database_scalar_types():
@@ -305,8 +310,8 @@ def test_channel_contact_db_timestamps_do_not_block_baseline_effects(runtime):
     result = process_channel_entry(_command(external="wm-db-datetime"))
 
     assert result["handled"] is True
-    assert result["welcome_message"]["sent"] is True
-    assert result["entry_tag"]["applied"] is True
+    assert result["welcome_message"]["queued"] is True
+    assert result["entry_tag"]["queued"] is True
     assert result["program_member_written"] is True
     channel_contact_effect = next(row for row in runtime.effect_logs if row["effect_type"] == "channel_contact")
     assert channel_contact_effect["response_json"]["created_at"] == "2026-05-31T15:35:05+00:00"
@@ -320,7 +325,10 @@ def test_no_binding_runs_standalone_baseline(runtime):
     assert result["mode"] == "standalone_channel"
     assert result["reason"] == "no_active_binding"
     assert result["program_member_written"] is False
-    assert runtime.welcome_calls and runtime.tag_calls
+    assert result["welcome_message"]["queued"] is True
+    assert result["entry_tag"]["queued"] is True
+    assert runtime.welcome_calls == []
+    assert runtime.tag_calls == []
     assert any(row["effect_type"] == "program_admission" and row["status"] == "skipped" for row in runtime.effect_logs)
 
 
@@ -358,7 +366,10 @@ def test_archived_program_keeps_baseline_and_blocks_member(runtime):
     assert result["reason"] == "program_archived"
     assert result["program_member_written"] is False
     assert result["workflow_triggered"] is False
-    assert runtime.welcome_calls and runtime.tag_calls
+    assert result["welcome_message"]["queued"] is True
+    assert result["entry_tag"]["queued"] is True
+    assert runtime.welcome_calls == []
+    assert runtime.tag_calls == []
     assert runtime.members == {}
     assert runtime.admission_attempts[0]["entry_reason"] == "program_archived"
 
@@ -380,21 +391,21 @@ def test_missing_welcome_code_does_not_block_tag_or_admission(runtime):
     result = process_channel_entry(_command(external="wm-no-welcome", welcome_code=""))
 
     assert result["welcome_message"]["reason"] == "welcome_code_missing"
-    assert result["entry_tag"]["applied"] is True
+    assert result["entry_tag"]["queued"] is True
     assert result["program_member_written"] is True
     assert runtime.welcome_calls == []
-    assert runtime.tag_calls
+    assert runtime.tag_calls == []
 
 
 def test_duplicate_welcome_and_tag_are_idempotent(runtime):
     first = process_channel_entry(_command(external="wm-dup", welcome_code="welcome-dup"))
     second = process_channel_entry(_command(external="wm-dup", welcome_code="welcome-dup"))
 
-    assert first["welcome_message"]["sent"] is True
-    assert second["welcome_message"]["reason"] == "idempotent_success_exists"
-    assert second["entry_tag"]["reason"] == "idempotent_success_exists"
-    assert len(runtime.welcome_calls) == 1
-    assert len(runtime.tag_calls) == 1
+    assert first["welcome_message"]["queued"] is True
+    assert second["welcome_message"]["queued"] is True
+    assert second["entry_tag"]["queued"] is True
+    assert len(runtime.welcome_calls) == 0
+    assert len(runtime.tag_calls) == 0
     assert len(runtime.members) == 1
 
 
@@ -402,7 +413,7 @@ def test_follow_user_dimension_is_not_hardcoded(runtime):
     process_channel_entry(_command(external="wm-shared", owner="owner-a", welcome_code="welcome-a"))
     process_channel_entry(_command(external="wm-shared", owner="owner-b", welcome_code="welcome-b"))
 
-    owners = {item["owner_staff_id"] for item in runtime.tag_snapshots}
+    owners = {row["owner_staff_id"] for row in runtime.effect_logs if row["effect_type"] == "entry_tag"}
     assert owners == {"owner-a", "owner-b"}
     assert runtime.contacts[0]["owner_staff_id"] in {"owner-a", "owner-b"}
     assert "HuangYouCan" not in owners
@@ -411,8 +422,8 @@ def test_follow_user_dimension_is_not_hardcoded(runtime):
 def test_follow_user_empty_wecom_tags_still_applies_channel_entry_tag(runtime):
     result = process_channel_entry(_command(external="wm-empty-tags"))
 
-    assert result["entry_tag"]["applied"] is True
-    assert runtime.tag_calls[0]["add_tags"] == ["tag-next-real"]
+    assert result["entry_tag"]["queued"] is True
+    assert runtime.tag_calls == []
 
 
 def test_welcome_attachment_shapes_and_failures(runtime):
@@ -420,9 +431,10 @@ def test_welcome_attachment_shapes_and_failures(runtime):
     runtime.channel["welcome_attachment_library_ids"] = [{"media_id": "file-media"}]
     runtime.channel["welcome_miniprogram_library_ids"] = [{"appid": "wx123", "page": "pages/a", "title": "小程序", "pic_media_id": "pic-media"}]
     ok = process_channel_entry(_command(external="wm-attach"))
-    assert ok["welcome_message"]["sent"] is True
-    assert [item["msgtype"] for item in runtime.welcome_calls[0]["attachments"]] == ["image", "file", "miniprogram"]
-    assert runtime.welcome_calls[0]["attachments"][2]["appid"] == "wx123"
+    assert ok["welcome_message"]["queued"] is True
+    welcome_effect = next(row for row in runtime.effect_logs if row["effect_type"] == "welcome_message" and row["external_contact_id"] == "wm-attach")
+    assert [item["msgtype"] for item in welcome_effect["request_json"]["attachments"]] == ["image", "file", "miniprogram"]
+    assert welcome_effect["request_json"]["attachments"][2]["appid"] == "wx123"
 
     runtime.welcome_calls.clear()
     runtime.channel["welcome_image_library_ids"] = list(range(1, 11))
@@ -438,14 +450,14 @@ def test_welcome_attachment_shapes_and_failures(runtime):
 def test_wecom_adapter_errors_write_failed_effects(runtime):
     runtime.welcome_errcode = 40001
     welcome_failed = process_channel_entry(_command(external="wm-welcome-error"))
-    assert welcome_failed["welcome_message"]["reason"] == "wecom_api_error"
-    assert welcome_failed["entry_tag"]["applied"] is True
-    assert any(row["effect_type"] == "welcome_message" and row["status"] == "failed" and row["reason"] == "wecom_api_error" for row in runtime.effect_logs)
+    assert welcome_failed["welcome_message"]["reason"] == "external_effect_job_queued"
+    assert welcome_failed["entry_tag"]["queued"] is True
+    assert any(row["effect_type"] == "welcome_message" and row["status"] == "queued" and row["reason"] == "external_effect_job_queued" for row in runtime.effect_logs)
 
     runtime.welcome_errcode = 0
     runtime.tag_errcode = 40002
     tag_failed = process_channel_entry(_command(external="wm-tag-error", welcome_code="welcome-tag-error"))
-    assert tag_failed["entry_tag"]["reason"] == "wecom_api_error"
+    assert tag_failed["entry_tag"]["reason"] == "external_effect_job_queued"
     assert ("owner-a", "wm-tag-error", "tag-next-real") not in runtime.tags
 
 
@@ -466,7 +478,7 @@ def test_scene_not_found_and_no_welcome_or_no_tag_configs(runtime):
     runtime.channel["welcome_message"] = ""
     no_welcome = process_channel_entry(_command(external="wm-no-message", welcome_code="welcome-no-message"))
     assert no_welcome["welcome_message"]["reason"] == "no_welcome_message_configured"
-    assert no_welcome["entry_tag"]["applied"] is True
+    assert no_welcome["entry_tag"]["queued"] is True
 
 
 def test_diagnosis_dry_run_and_repair(runtime):

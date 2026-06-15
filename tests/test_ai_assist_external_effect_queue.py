@@ -231,10 +231,10 @@ def test_ai_assist_campaign_loopback_allowlist_miss_blocks_without_receipt(next_
     attempts = service.list_attempts(job_id)
     receipts, total = service.list_test_receipts({"job_id": job_id}, limit=10)
 
-    assert blocked["counts"]["blocked_count"] == 1
+    assert blocked["counts"]["failed_count"] == 1
     assert blocked["real_external_call_executed"] is False
     assert updated is not None
-    assert updated.status == "blocked"
+    assert updated.status == "failed_terminal"
     assert attempts[0].error_code == "effect_type_not_allowed"
     assert calls == []
     assert receipts == []
@@ -296,11 +296,11 @@ def test_wecom_private_external_effect_default_disabled_blocks_without_wecom_cal
     updated = ExternalEffectService().get(job_id)
     attempts = ExternalEffectService().list_attempts(job_id)
 
-    assert result["counts"]["blocked_count"] == 1
+    assert result["counts"]["failed_count"] == 1
     assert result["real_external_call_executed"] is False
     assert calls == []
     assert updated is not None
-    assert updated.status == "blocked"
+    assert updated.status == "failed_terminal"
     assert attempts[0].error_code == "wecom_execution_disabled"
 
 
@@ -385,11 +385,11 @@ def test_wecom_private_external_effect_target_allowlist_miss_blocks(monkeypatch)
     updated = ExternalEffectService().get(job_id)
     attempts = ExternalEffectService().list_attempts(job_id)
 
-    assert result["counts"]["blocked_count"] == 1
+    assert result["counts"]["failed_count"] == 1
     assert result["real_external_call_executed"] is False
     assert calls == []
     assert updated is not None
-    assert updated.status == "blocked"
+    assert updated.status == "failed_terminal"
     assert attempts[0].error_code == "target_not_allowed"
 
 

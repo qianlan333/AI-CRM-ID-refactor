@@ -126,14 +126,14 @@ class ExternalEffectWorker:
         if _enabled("AICRM_EXTERNAL_EFFECT_TEST_EXECUTION_ONLY") and not _is_test_job(job):
             attempt = self._repo.record_attempt(
                 job=job,
-                status="blocked",
+                status="failed_terminal",
                 adapter_mode=job.execution_mode or "execute",
                 request_summary={"effect_type": job.effect_type, "test_execution_only": True},
                 response_summary={"blocked": True, "real_external_call_executed": False},
                 error_code="test_execution_only_required",
                 error_message="AICRM_EXTERNAL_EFFECT_TEST_EXECUTION_ONLY=1 blocks non-test jobs.",
             )
-            updated = self._repo.mark_blocked(
+            updated = self._repo.mark_failed_terminal(
                 job.id,
                 attempt_id=attempt.attempt_id,
                 error_code="test_execution_only_required",
@@ -154,7 +154,7 @@ class ExternalEffectWorker:
             )
             attempt = self._repo.record_attempt(
                 job=job,
-                status="blocked",
+                status="failed_terminal",
                 adapter_mode=job.execution_mode or "execute",
                 request_summary={
                     "effect_type": job.effect_type,
@@ -166,7 +166,7 @@ class ExternalEffectWorker:
                 error_code=capability_error,
                 error_message=message,
             )
-            updated = self._repo.mark_blocked(
+            updated = self._repo.mark_failed_terminal(
                 job.id,
                 attempt_id=attempt.attempt_id,
                 error_code=capability_error,
@@ -210,7 +210,7 @@ class ExternalEffectWorker:
                 error_message=dispatch_result.error_message,
             )
         else:
-            updated = self._repo.mark_blocked(
+            updated = self._repo.mark_failed_terminal(
                 job.id,
                 attempt_id=attempt.attempt_id,
                 error_code=dispatch_result.error_code or "adapter_blocked",

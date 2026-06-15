@@ -9,6 +9,8 @@ from typing import Any
 
 from aicrm_next.shared.runtime import production_data_ready
 from aicrm_next.message_archive.sync_service import execute_archive_sync
+from aicrm_next.platform_foundation.command_bus import CommandContext
+from aicrm_next.platform_foundation.external_effects import ExternalEffectService, WEBHOOK_GENERIC_PUSH
 
 from .domain import (
     BROADCAST_SOURCE_TYPES,
@@ -369,23 +371,59 @@ def retry_webhook_delivery(repo: AdminJobsRepository, delivery: dict[str, Any]) 
             {"status": "retry_scheduled" if retryable else "exhausted", "attempt_count": attempt_count, "last_error": "fixture_retry_suppressed", "last_attempted_at": _iso(now), "next_retry_at": _iso(now + timedelta(seconds=60)) if retryable else "", "response_status_code": None, "response_body_summary": ""},
         )
         return {"ok": False, "sent": False, "reason": "fixture_retry_suppressed", "delivery": _webhook_row_view(updated or delivery)}
-    try:
-        import requests
-
-        payload = delivery.get("payload_json")
-        if isinstance(payload, str):
-            payload = json.loads(payload or "{}")
-        response = requests.post(target_url, json=payload or {}, headers=_webhook_headers(delivery), timeout=_webhook_timeout(delivery))
-        if 200 <= int(response.status_code) < 300:
-            updated = repo.update_webhook_delivery(int(delivery["id"]), {"status": "success", "attempt_count": attempt_count, "response_status_code": int(response.status_code), "response_body_summary": response.text[:500], "last_error": "", "last_attempted_at": _iso(now), "next_retry_at": ""})
-            return {"ok": True, "sent": True, "status_code": int(response.status_code), "delivery": _webhook_row_view(updated or delivery)}
-        retryable = attempt_count < max_attempts
-        updated = repo.update_webhook_delivery(int(delivery["id"]), {"status": "retry_scheduled" if retryable else "exhausted", "attempt_count": attempt_count, "response_status_code": int(response.status_code), "response_body_summary": response.text[:500], "last_error": f"http_status_{int(response.status_code)}", "last_attempted_at": _iso(now), "next_retry_at": _iso(now + timedelta(seconds=60)) if retryable else ""})
-        return {"ok": False, "sent": False, "status_code": int(response.status_code), "reason": f"http_status_{int(response.status_code)}", "delivery": _webhook_row_view(updated or delivery)}
-    except Exception as exc:
-        retryable = attempt_count < max_attempts
-        updated = repo.update_webhook_delivery(int(delivery["id"]), {"status": "retry_scheduled" if retryable else "exhausted", "attempt_count": attempt_count, "response_status_code": None, "response_body_summary": "", "last_error": str(exc)[:500], "last_attempted_at": _iso(now), "next_retry_at": _iso(now + timedelta(seconds=60)) if retryable else ""})
-        return {"ok": False, "sent": False, "reason": str(exc), "delivery": _webhook_row_view(updated or delivery)}
+    payload = delivery.get("payload_json")
+    if isinstance(payload, str):
+        payload = json.loads(payload or "{}")
+    effect_job = ExternalEffectService().plan_effect(
+        effect_type=WEBHOOK_GENERIC_PUSH,
+        adapter_name="outbound_webhook",
+        operation="post",
+        target_type="admin_webhook_delivery",
+        target_id=str(delivery.get("id") or ""),
+        business_type="admin_webhook_delivery",
+        business_id=str(delivery.get("id") or ""),
+        payload={
+            "webhook_url": target_url,
+            "body": payload or {},
+            "source_delivery_id": delivery.get("id"),
+            "source_event_type": delivery.get("event_type"),
+        },
+        payload_summary={
+            "target_url_present": bool(target_url),
+            "source_delivery_id": delivery.get("id"),
+            "source_event_type": delivery.get("event_type"),
+            "body_type": type(payload or {}).__name__,
+        },
+        context=CommandContext(
+            actor_id="admin_jobs",
+            actor_type="system",
+            trace_id=str(delivery.get("trace_id") or delivery.get("id") or ""),
+            source_route="admin_jobs.retry_webhook_delivery",
+        ),
+        source_module="admin_jobs.application",
+        source_event_id=str(delivery.get("id") or ""),
+        idempotency_key=f"admin-webhook-delivery:{delivery.get('id')}:external-effect:{attempt_count}",
+    )
+    updated = repo.update_webhook_delivery(
+        int(delivery["id"]),
+        {
+            "status": "retry_scheduled",
+            "attempt_count": int(delivery.get("attempt_count") or 0),
+            "last_error": "external_effect_job_queued",
+            "last_attempted_at": _iso(now),
+            "next_retry_at": "",
+            "response_status_code": None,
+            "response_body_summary": f"external_effect_job_id={effect_job.get('id')}",
+        },
+    )
+    return {
+        "ok": True,
+        "sent": False,
+        "queued": True,
+        "external_effect_job_id": effect_job.get("id"),
+        "real_external_call_executed": False,
+        "delivery": _webhook_row_view(updated or delivery),
+    }
 
 
 def _webhook_timeout(delivery: dict[str, Any]) -> int:
