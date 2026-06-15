@@ -110,7 +110,8 @@ def test_broadcast_task_created_emits_once_with_expected_safe_schema_and_consume
     result = _approve_recipient()
     duplicate = ApproveCloudPlanRecipientCommand().execute("plan_probe", 1, operator="pytest")
     event = _event()
-    trace_events, trace_total = InternalEventService().list_events({"event_type": BROADCAST_TASK_CREATED_EVENT_TYPE, "trace_id": "plan_probe"})
+    safe_trace_id = f"broadcast_task.created:{result['job_id']}"
+    trace_events, trace_total = InternalEventService().list_events({"event_type": BROADCAST_TASK_CREATED_EVENT_TYPE, "trace_id": safe_trace_id})
     runs, run_total = _runs(event.event_id)
 
     assert result["status"] == "approved"
@@ -121,6 +122,8 @@ def test_broadcast_task_created_emits_once_with_expected_safe_schema_and_consume
     assert duplicate["internal_event_status"] == ""
     assert trace_total == 1
     assert trace_events[0].event_id == event.event_id
+    assert event.trace_id == safe_trace_id
+    assert event.correlation_id == safe_trace_id
     assert event.event_type == BROADCAST_TASK_CREATED_EVENT_TYPE
     assert event.aggregate_type == "broadcast_task"
     assert event.aggregate_id == str(result["job_id"])
@@ -158,11 +161,14 @@ def test_broadcast_task_direct_emit_is_idempotent(monkeypatch) -> None:
     raw_openid = "openid_raw_1234567890"
     raw_unionid = "unionid_raw_1234567890"
     raw_source_id = f"plan:trigger:{raw_external_userid}:{raw_mobile}:{raw_openid}:{raw_unionid}:send_private_message"
+    raw_trace_id = f"trace:{raw_external_userid}:{raw_mobile}:{raw_openid}:{raw_unionid}"
+    raw_idempotency_key = f"idempotency:{raw_external_userid}:{raw_mobile}:{raw_openid}:{raw_unionid}"
     job = {
         "id": "broadcast-direct-1",
         "source_type": "unit_test",
         "source_id": raw_source_id,
-        "idempotency_key": "broadcast-direct-key",
+        "trace_id": raw_trace_id,
+        "idempotency_key": raw_idempotency_key,
         "target_count": 2,
         "target_external_userids": [raw_external_userid, "wm_direct_b"],
         "content_summary": "完整消息正文不进入摘要",
@@ -187,7 +193,13 @@ def test_broadcast_task_direct_emit_is_idempotent(monkeypatch) -> None:
     runs, run_total = _runs(events[0].event_id)
     event = events[0]
     broadcast_payload = event.payload_json["broadcast_task"]
-    payload_text = str(event.payload_json) + str(event.payload_summary_json) + str(event.source_command_id)
+    payload_text = (
+        str(event.payload_json)
+        + str(event.payload_summary_json)
+        + str(event.source_command_id)
+        + str(event.trace_id)
+        + str(event.correlation_id)
+    )
 
     assert first["status"] == "emitted"
     assert second["status"] == "emitted"
@@ -198,14 +210,27 @@ def test_broadcast_task_direct_emit_is_idempotent(monkeypatch) -> None:
     assert raw_mobile not in payload_text
     assert raw_openid not in payload_text
     assert raw_unionid not in payload_text
+    assert raw_trace_id not in payload_text
+    assert raw_idempotency_key not in payload_text
     assert broadcast_payload["source_id"].startswith("source_ref:")
     assert broadcast_payload["source_id_redacted"] == broadcast_payload["source_id"]
     assert len(broadcast_payload["source_id_hash"]) == 16
     assert broadcast_payload["source_id_present"] is True
+    assert broadcast_payload["trace_id"] == "broadcast_task.created:broadcast-direct-1"
+    assert broadcast_payload["trace_id"] != raw_trace_id
+    assert broadcast_payload["trace_id_present"] is True
+    assert len(broadcast_payload["trace_id_hash"]) == 16
+    assert broadcast_payload["idempotency_key_present"] is True
+    assert len(broadcast_payload["idempotency_key_hash"]) == 16
     assert broadcast_payload["command_id"] == "broadcast_task.created:broadcast-direct-1"
     assert broadcast_payload["command_id"] != raw_source_id
+    assert event.trace_id == "broadcast_task.created:broadcast-direct-1"
+    assert event.trace_id != raw_trace_id
+    assert event.correlation_id == "broadcast_task.created:broadcast-direct-1"
+    assert event.correlation_id != raw_idempotency_key
     assert event.source_command_id == "broadcast_task.created:broadcast-direct-1"
     assert event.source_command_id != raw_source_id
+    assert event.idempotency_key == "broadcast_task.created:broadcast-direct-1"
     assert run_total == 4
     assert sorted(run.consumer_name for run in runs) == BROADCAST_TASK_CONSUMERS
 
