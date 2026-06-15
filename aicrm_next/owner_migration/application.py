@@ -276,6 +276,9 @@ class OwnerMigrationService:
         )
         result["internal_event_id"] = internal_event.get("event_id") or ""
         result["internal_event_status"] = internal_event.get("status") or ""
+        result["internal_event_reason"] = internal_event.get("reason") or ""
+        result["internal_event_error"] = internal_event.get("error") or ""
+        result["internal_event_consumer_run_count"] = int(internal_event.get("consumer_run_count") or 0)
         return result
 
     def export_session_errors(self, session_id: str) -> dict[str, Any]:
@@ -393,10 +396,12 @@ class OwnerMigrationService:
             result = self._repo.preview_owner_migration(source_owner_userid=source, target_owner_userid=target)
         payload = {"ok": True, "mode": "execute" if command.execute else "preview", "source_owner_userid": source, "target_owner_userid": target, "operator": operator, "wecom_diagnostics": _wecom_transfer_diagnostics(), **result}
         if command.execute:
+            legacy_event_key = hashlib.sha256(f"{source}:{target}:{operator}".encode("utf-8")).hexdigest()[:16]
+            legacy_result_id = f"legacy:{legacy_event_key}"
             event_result = {
                 **payload,
-                "result_id": clean_text(payload.get("result_id")) or f"{source}:{target}:{operator}",
-                "job_id": clean_text(payload.get("job_id")) or f"legacy:{source}:{target}:{operator}",
+                "result_id": clean_text(payload.get("result_id")) or legacy_result_id,
+                "job_id": clean_text(payload.get("job_id")) or legacy_result_id,
             }
             internal_event = safe_emit(
                 "owner_migration.executed",
@@ -406,6 +411,9 @@ class OwnerMigrationService:
             )
             payload["internal_event_id"] = internal_event.get("event_id") or ""
             payload["internal_event_status"] = internal_event.get("status") or ""
+            payload["internal_event_reason"] = internal_event.get("reason") or ""
+            payload["internal_event_error"] = internal_event.get("error") or ""
+            payload["internal_event_consumer_run_count"] = int(internal_event.get("consumer_run_count") or 0)
         return payload
 
     def _validate_owners(self, source: str, target: str) -> dict[str, Any] | None:
