@@ -23,6 +23,7 @@ from .view_model import (
     external_effect_filters,
     external_effect_job_detail_item,
     external_effect_receipt_item,
+    redact_external_effect_admin_response,
     redact_external_effect_payload,
 )
 from .worker import ExternalEffectWorker
@@ -234,7 +235,7 @@ async def preview_external_effect_run_due(request: Request) -> JSONResponse:
         test_only=_bool(payload.get("test_only"), default=False),
     )
     result["route_owner"] = ROUTE_OWNER
-    return _json(result)
+    return _json(redact_external_effect_admin_response(result))
 
 
 @router.post("/api/admin/external-effects/run-due")
@@ -254,7 +255,7 @@ async def run_external_effect_due(request: Request) -> JSONResponse:
     )
     result["route_owner"] = ROUTE_OWNER
     result["real_external_call_executed"] = bool(result.get("real_external_call_executed")) and not dry_run
-    return _json(result)
+    return _json(redact_external_effect_admin_response(result))
 
 
 @router.post("/api/external-effects/test-receiver/{receiver_token}")
