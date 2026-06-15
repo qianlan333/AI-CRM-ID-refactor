@@ -9,6 +9,7 @@ from aicrm_next.platform_foundation.external_effects import ExternalEffectServic
 from aicrm_next.platform_foundation.internal_events import InternalEventService, reset_internal_event_fixture_state
 from aicrm_next.platform_foundation.internal_events.customer_identity import CUSTOMER_PHONE_BOUND_EVENT_TYPE
 from aicrm_next.platform_foundation.internal_events.worker import InternalEventWorker
+from aicrm_next.sidebar_write.application import reset_sidebar_write_fixture_state
 
 PHONE_BOUND_CONSUMERS = [
     "automation_phone_bound_consumer",
@@ -21,6 +22,7 @@ PHONE_BOUND_CONSUMERS = [
 def _reset() -> None:
     reset_internal_event_fixture_state()
     reset_external_effect_fixture_state()
+    reset_sidebar_write_fixture_state()
 
 
 def _enable_phone_bound_events(monkeypatch, *, enabled: bool = True, allowed: str = CUSTOMER_PHONE_BOUND_EVENT_TYPE) -> None:
@@ -62,6 +64,22 @@ def _run_consumer(event_id: str, consumer_name: str) -> dict:
     )
 
 
+def _sidebar_bind(
+    client: TestClient,
+    *,
+    external_userid: str,
+    mobile: str,
+    idempotency_key: str,
+) -> dict:
+    response = client.post(
+        "/api/sidebar/bind-mobile",
+        json={"external_userid": external_userid, "mobile": mobile},
+        headers={"Idempotency-Key": idempotency_key},
+    )
+    assert response.status_code == 200
+    return response.json()
+
+
 def test_customer_phone_bound_flag_off_does_not_emit(monkeypatch) -> None:
     _enable_phone_bound_events(monkeypatch, enabled=False)
     _reset()
@@ -73,6 +91,28 @@ def test_customer_phone_bound_flag_off_does_not_emit(monkeypatch) -> None:
     assert result["internal_event_status"] == "skipped"
     assert result["internal_event_reason"] == "customer_identity_internal_events_disabled"
     assert result["internal_event_id"] == ""
+    assert events == []
+    assert total == 0
+
+
+def test_sidebar_bind_mobile_flag_off_does_not_emit(monkeypatch) -> None:
+    _enable_phone_bound_events(monkeypatch, enabled=False)
+    _reset()
+    client = TestClient(create_app())
+
+    result = _sidebar_bind(
+        client,
+        external_userid="wx_ext_002",
+        mobile="13800138123",
+        idempotency_key="sidebar-phone-bound-off",
+    )
+    events, total = InternalEventService().list_events({"event_type": CUSTOMER_PHONE_BOUND_EVENT_TYPE})
+
+    assert result["ok"] is True
+    assert result["internal_event_status"] == "skipped"
+    assert result["internal_event_reason"] == "customer_identity_internal_events_disabled"
+    assert result["internal_event_id"] == ""
+    assert result["internal_event_consumer_run_count"] == 0
     assert events == []
     assert total == 0
 
@@ -105,6 +145,70 @@ def test_customer_phone_bound_emits_single_event_and_expected_consumers(monkeypa
     assert sorted(run.consumer_name for run in runs) == PHONE_BOUND_CONSUMERS
     assert all(run.status == "pending" for run in runs)
     assert all(run.attempt_count == 0 for run in runs)
+
+
+def test_sidebar_bind_mobile_emits_phone_bound_event_and_expected_consumers(monkeypatch) -> None:
+    _enable_phone_bound_events(monkeypatch)
+    _reset()
+    client = TestClient(create_app())
+
+    result = _sidebar_bind(
+        client,
+        external_userid="wx_ext_002",
+        mobile="13800138124",
+        idempotency_key="sidebar-phone-bound-on",
+    )
+    event = _event()
+    runs, run_total = InternalEventService().list_consumer_runs({"event_id": event.event_id})
+
+    assert result["ok"] is True
+    assert result["internal_event_status"] == "emitted"
+    assert result["internal_event_id"] == event.event_id
+    assert result["internal_event_consumer_run_count"] == 4
+    assert result["binding"]["binding_status"] == "bound"
+    assert event.event_type == CUSTOMER_PHONE_BOUND_EVENT_TYPE
+    assert event.aggregate_type == "customer"
+    assert event.aggregate_id == "wx_ext_002"
+    assert event.source_module == "sidebar_write.application"
+    assert event.source_route == "/api/sidebar/bind-mobile"
+    assert event.payload_json["binding"]["external_userid"] == "wx_ext_002"
+    assert event.payload_json["binding"]["mobile"] == "13800138124"
+    assert event.payload_json["binding"]["matched_by"] == "sidebar_bind_mobile"
+    assert event.payload_summary_json["external_userid_present"] is True
+    assert event.payload_summary_json["mobile_masked"] == "138****8124"
+    assert "13800138124" not in str(event.payload_summary_json)
+    assert "wx_ext_002" not in str(event.payload_summary_json)
+    assert run_total == 4
+    assert sorted(run.consumer_name for run in runs) == PHONE_BOUND_CONSUMERS
+    assert all(run.status == "pending" for run in runs)
+    assert all(run.attempt_count == 0 for run in runs)
+
+
+def test_sidebar_bind_mobile_duplicate_does_not_duplicate_phone_bound_event(monkeypatch) -> None:
+    _enable_phone_bound_events(monkeypatch)
+    _reset()
+    client = TestClient(create_app())
+
+    first = _sidebar_bind(
+        client,
+        external_userid="wx_ext_002",
+        mobile="13800138125",
+        idempotency_key="sidebar-phone-bound-idem-1",
+    )
+    second = _sidebar_bind(
+        client,
+        external_userid="wx_ext_002",
+        mobile="13800138125",
+        idempotency_key="sidebar-phone-bound-idem-2",
+    )
+    events, total = InternalEventService().list_events({"event_type": CUSTOMER_PHONE_BOUND_EVENT_TYPE})
+    runs, run_total = InternalEventService().list_consumer_runs({"event_id": first["internal_event_id"]})
+
+    assert total == 1
+    assert len(events) == 1
+    assert first["internal_event_id"] == second["internal_event_id"] == events[0].event_id
+    assert run_total == 4
+    assert sorted(run.consumer_name for run in runs) == PHONE_BOUND_CONSUMERS
 
 
 def test_customer_phone_bound_fallback_idempotency_does_not_expose_external_userid(monkeypatch) -> None:
@@ -178,6 +282,32 @@ def test_customer_phone_bound_api_redacts_payload_summary_and_hides_payload_json
     assert "wm_phone_bound_slice_202" not in str(detail_payload)
 
 
+def test_sidebar_bind_mobile_api_redacts_payload_summary_and_hides_payload_json(monkeypatch) -> None:
+    _enable_phone_bound_events(monkeypatch)
+    _reset()
+    client = TestClient(create_app())
+    _sidebar_bind(
+        client,
+        external_userid="wx_ext_002",
+        mobile="13800138126",
+        idempotency_key="sidebar-phone-bound-redaction",
+    )
+    event = _event()
+
+    list_payload = client.get("/api/admin/internal-events", params={"event_type": CUSTOMER_PHONE_BOUND_EVENT_TYPE}).json()
+    detail_payload = client.get(f"/api/admin/internal-events/{event.event_id}").json()
+
+    assert list_payload["ok"] is True
+    assert list_payload["items"][0]["payload_summary_json"]["mobile_masked"] == "[redacted]"
+    assert "payload_json" not in list_payload["items"][0]
+    assert detail_payload["event"]["payload_summary_json"]["mobile_masked"] == "[redacted]"
+    assert "payload_json" not in detail_payload
+    assert "13800138126" not in str(list_payload)
+    assert "13800138126" not in str(detail_payload)
+    assert "wx_ext_002" not in str(list_payload["items"][0]["payload_summary_json"])
+    assert "wx_ext_002" not in str(detail_payload["event"]["payload_summary_json"])
+
+
 def test_customer_identity_projection_consumer_succeeds_and_other_consumers_skip(monkeypatch) -> None:
     _enable_phone_bound_events(monkeypatch)
     _reset()
@@ -239,6 +369,44 @@ def test_worker_pair_allowlist_blocks_phone_bound_auto_execute_but_single_consum
     assert execute["event_consumers"] == []
     assert manual["consumer_run"]["status"] == "succeeded"
     assert next(run for run in runs if run.consumer_name == "customer_summary_consumer").status == "pending"
+
+
+def test_sidebar_phone_bound_pair_allowlist_blocks_auto_execute(monkeypatch) -> None:
+    _enable_phone_bound_events(monkeypatch, allowed="payment.succeeded,customer.phone_bound")
+    monkeypatch.setenv("AICRM_INTERNAL_EVENTS_AUTO_EXECUTE", "1")
+    monkeypatch.setenv("AICRM_INTERNAL_EVENTS_ALLOWED_CONSUMERS", "order_projection_consumer,customer_identity_projection_consumer")
+    monkeypatch.setenv("AICRM_INTERNAL_EVENTS_ALLOWED_EVENT_CONSUMERS", "payment.succeeded:order_projection_consumer")
+    monkeypatch.setenv("AICRM_INTERNAL_EVENTS_AUTO_EXECUTE_MAX_BATCH_SIZE", "1")
+    _reset()
+    client = TestClient(create_app())
+    _sidebar_bind(
+        client,
+        external_userid="wx_ext_002",
+        mobile="13800138127",
+        idempotency_key="sidebar-phone-bound-pair-allowlist",
+    )
+    event = _event()
+    worker = InternalEventWorker()
+
+    preview = worker.preview_due(
+        batch_size=1,
+        event_types=[CUSTOMER_PHONE_BOUND_EVENT_TYPE],
+        consumer_names=["customer_identity_projection_consumer", "customer_summary_consumer"],
+    )
+    execute = worker.run_due(
+        batch_size=1,
+        dry_run=False,
+        event_types=[CUSTOMER_PHONE_BOUND_EVENT_TYPE],
+        consumer_names=["customer_identity_projection_consumer", "customer_summary_consumer"],
+    )
+    runs, _ = InternalEventService().list_consumer_runs({"event_id": event.event_id})
+
+    assert preview["counts"]["candidate_count"] == 0
+    assert preview["event_consumers"] == []
+    assert execute["counts"]["processed_count"] == 0
+    assert execute["event_consumers"] == []
+    assert all(run.status == "pending" for run in runs)
+    assert all(run.attempt_count == 0 for run in runs)
 
 
 def test_diagnostics_exposes_customer_identity_flag(monkeypatch) -> None:
