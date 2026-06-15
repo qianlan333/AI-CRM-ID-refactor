@@ -159,10 +159,25 @@ class InternalEventRepository:
     def queue_metrics(self, filters: dict[str, Any] | None = None) -> dict[str, Any]:
         raise NotImplementedError
 
-    def list_due_runs(self, *, limit: int = 50, event_types: list[str] | None = None, consumer_names: list[str] | None = None) -> list[InternalEventConsumerRun]:
+    def list_due_runs(
+        self,
+        *,
+        limit: int = 50,
+        event_types: list[str] | None = None,
+        consumer_names: list[str] | None = None,
+        event_consumers: list[tuple[str, str]] | None = None,
+    ) -> list[InternalEventConsumerRun]:
         raise NotImplementedError
 
-    def acquire_due_runs(self, *, limit: int = 50, locked_by: str, event_types: list[str] | None = None, consumer_names: list[str] | None = None) -> list[InternalEventConsumerRun]:
+    def acquire_due_runs(
+        self,
+        *,
+        limit: int = 50,
+        locked_by: str,
+        event_types: list[str] | None = None,
+        consumer_names: list[str] | None = None,
+        event_consumers: list[tuple[str, str]] | None = None,
+    ) -> list[InternalEventConsumerRun]:
         raise NotImplementedError
 
     def mark_running(self, run_id: int, *, locked_by: str) -> InternalEventConsumerRun | None:
@@ -520,6 +535,9 @@ class SQLAlchemyInternalEventRepository(InternalEventRepository):
             if consumer_names:
                 clauses.append("r.consumer_name = ANY(:consumer_names)")
                 params["consumer_names"] = consumer_names
+        pair_clause = self._event_consumer_pair_clause(filters.get("event_consumers"), params)
+        if pair_clause:
+            clauses.append(pair_clause)
         where = "WHERE " + " AND ".join(clauses) if clauses else ""
         due_predicate = """
             r.status IN ('pending', 'failed_retryable', 'failed_terminal', 'blocked')
@@ -580,8 +598,15 @@ class SQLAlchemyInternalEventRepository(InternalEventRepository):
             "due_count_by_consumer": {_text(item.get("consumer_name")): int(item.get("due_count") or 0) for item in by_consumer},
         }
 
-    def list_due_runs(self, *, limit: int = 50, event_types: list[str] | None = None, consumer_names: list[str] | None = None) -> list[InternalEventConsumerRun]:
-        filters, params = self._due_filters(event_types=event_types, consumer_names=consumer_names)
+    def list_due_runs(
+        self,
+        *,
+        limit: int = 50,
+        event_types: list[str] | None = None,
+        consumer_names: list[str] | None = None,
+        event_consumers: list[tuple[str, str]] | None = None,
+    ) -> list[InternalEventConsumerRun]:
+        filters, params = self._due_filters(event_types=event_types, consumer_names=consumer_names, event_consumers=event_consumers)
         rows = self._all(
             f"""
             SELECT r.*
@@ -595,8 +620,16 @@ class SQLAlchemyInternalEventRepository(InternalEventRepository):
         )
         return [run for row in rows if (run := _public_run(row)) is not None]
 
-    def acquire_due_runs(self, *, limit: int = 50, locked_by: str, event_types: list[str] | None = None, consumer_names: list[str] | None = None) -> list[InternalEventConsumerRun]:
-        filters, params = self._due_filters(event_types=event_types, consumer_names=consumer_names)
+    def acquire_due_runs(
+        self,
+        *,
+        limit: int = 50,
+        locked_by: str,
+        event_types: list[str] | None = None,
+        consumer_names: list[str] | None = None,
+        event_consumers: list[tuple[str, str]] | None = None,
+    ) -> list[InternalEventConsumerRun]:
+        filters, params = self._due_filters(event_types=event_types, consumer_names=consumer_names, event_consumers=event_consumers)
         rows = self._write_all(
             f"""
             WITH due AS (
@@ -739,7 +772,13 @@ class SQLAlchemyInternalEventRepository(InternalEventRepository):
             raise RuntimeError("internal event consumer attempt insert failed")
         return attempt
 
-    def _due_filters(self, *, event_types: list[str] | None, consumer_names: list[str] | None) -> tuple[str, dict[str, Any]]:
+    def _due_filters(
+        self,
+        *,
+        event_types: list[str] | None,
+        consumer_names: list[str] | None,
+        event_consumers: list[tuple[str, str]] | None = None,
+    ) -> tuple[str, dict[str, Any]]:
         filters = [
             "r.status IN ('pending', 'failed_retryable', 'failed_terminal', 'blocked')",
             "(r.status <> 'failed_retryable' OR r.next_retry_at IS NULL OR r.next_retry_at <= CURRENT_TIMESTAMP)",
@@ -752,7 +791,32 @@ class SQLAlchemyInternalEventRepository(InternalEventRepository):
         if consumer_names:
             filters.append("r.consumer_name = ANY(:consumer_names)")
             params["consumer_names"] = [_text(item) for item in consumer_names if _text(item)]
+        pair_clause = self._event_consumer_pair_clause(event_consumers, params)
+        if pair_clause:
+            filters.append(pair_clause)
         return " AND ".join(filters), params
+
+    def _event_consumer_pair_clause(self, event_consumers: Any, params: dict[str, Any]) -> str:
+        pairs: list[tuple[str, str]] = []
+        for item in event_consumers or []:
+            if isinstance(item, str) and ":" in item:
+                event_type, consumer_name = item.split(":", 1)
+            elif isinstance(item, (list, tuple)) and len(item) == 2:
+                event_type, consumer_name = item
+            else:
+                continue
+            event_type = _text(event_type)
+            consumer_name = _text(consumer_name)
+            if event_type and consumer_name:
+                pairs.append((event_type, consumer_name))
+        clauses: list[str] = []
+        for index, (event_type, consumer_name) in enumerate(pairs):
+            event_key = f"pair_event_type_{index}"
+            consumer_key = f"pair_consumer_name_{index}"
+            params[event_key] = event_type
+            params[consumer_key] = consumer_name
+            clauses.append(f"(e.event_type = :{event_key} AND r.consumer_name = :{consumer_key})")
+        return "(" + " OR ".join(clauses) + ")" if clauses else ""
 
     def _update(self, run_id: int, set_sql: str, params: dict[str, Any]) -> InternalEventConsumerRun | None:
         row = self._write_one(
@@ -934,10 +998,17 @@ class InMemoryInternalEventRepository(InternalEventRepository):
         rows = list(self._filtered_runs(filters or {}))
         event_type_set = {_text(item) for item in (filters or {}).get("event_types") or [] if _text(item)}
         consumer_set = {_text(item) for item in (filters or {}).get("consumer_names") or [] if _text(item)}
+        pair_set = self._event_consumer_pair_set((filters or {}).get("event_consumers"))
         if event_type_set:
             rows = [row for row in rows if (self.get_event(row.get("event_id") or "") or InternalEvent()).event_type in event_type_set]
         if consumer_set:
             rows = [row for row in rows if _text(row.get("consumer_name")) in consumer_set]
+        if pair_set:
+            rows = [
+                row
+                for row in rows
+                if ((self.get_event(row.get("event_id") or "") or InternalEvent()).event_type, _text(row.get("consumer_name"))) in pair_set
+            ]
         due_rows = [
             row
             for row in rows
@@ -963,24 +1034,41 @@ class InMemoryInternalEventRepository(InternalEventRepository):
             "due_count_by_consumer": dict(sorted(by_consumer.items())),
         }
 
-    def list_due_runs(self, *, limit: int = 50, event_types: list[str] | None = None, consumer_names: list[str] | None = None) -> list[InternalEventConsumerRun]:
+    def list_due_runs(
+        self,
+        *,
+        limit: int = 50,
+        event_types: list[str] | None = None,
+        consumer_names: list[str] | None = None,
+        event_consumers: list[tuple[str, str]] | None = None,
+    ) -> list[InternalEventConsumerRun]:
         now = utcnow()
         event_type_set = {_text(item) for item in event_types or [] if _text(item)}
         consumer_set = {_text(item) for item in consumer_names or [] if _text(item)}
+        pair_set = self._event_consumer_pair_set(event_consumers)
         rows = [
             row
             for row in self._runs
             if row.get("status") in {"pending", "failed_retryable", "failed_terminal", "blocked"}
             and (not consumer_set or row.get("consumer_name") in consumer_set)
             and (not event_type_set or (self.get_event(row.get("event_id") or "") or InternalEvent()).event_type in event_type_set)
+            and (not pair_set or ((self.get_event(row.get("event_id") or "") or InternalEvent()).event_type, _text(row.get("consumer_name"))) in pair_set)
             and (row.get("status") != "failed_retryable" or not row.get("next_retry_at") or self._dt(row.get("next_retry_at")) <= now)
             and (not row.get("locked_at") or self._dt(row.get("locked_at")) <= now - timedelta(minutes=5))
         ]
         rows.sort(key=lambda row: (row.get("next_retry_at") or row.get("created_at") or "", int(row.get("id") or 0)))
         return [run for row in rows[: max(1, min(int(limit or 50), 200))] if (run := _public_run(row)) is not None]
 
-    def acquire_due_runs(self, *, limit: int = 50, locked_by: str, event_types: list[str] | None = None, consumer_names: list[str] | None = None) -> list[InternalEventConsumerRun]:
-        runs = self.list_due_runs(limit=limit, event_types=event_types, consumer_names=consumer_names)
+    def acquire_due_runs(
+        self,
+        *,
+        limit: int = 50,
+        locked_by: str,
+        event_types: list[str] | None = None,
+        consumer_names: list[str] | None = None,
+        event_consumers: list[tuple[str, str]] | None = None,
+    ) -> list[InternalEventConsumerRun]:
+        runs = self.list_due_runs(limit=limit, event_types=event_types, consumer_names=consumer_names, event_consumers=event_consumers)
         now = public_datetime(utcnow())
         for run in runs:
             row = self._find_run(run.id)
@@ -1118,6 +1206,21 @@ class InMemoryInternalEventRepository(InternalEventRepository):
         if event_type:
             rows = [row for row in rows if (self.get_event(row.get("event_id") or "") or InternalEvent()).event_type == event_type]
         return rows
+
+    def _event_consumer_pair_set(self, event_consumers: Any) -> set[tuple[str, str]]:
+        pairs: set[tuple[str, str]] = set()
+        for item in event_consumers or []:
+            if isinstance(item, str) and ":" in item:
+                event_type, consumer_name = item.split(":", 1)
+            elif isinstance(item, (list, tuple)) and len(item) == 2:
+                event_type, consumer_name = item
+            else:
+                continue
+            event_type = _text(event_type)
+            consumer_name = _text(consumer_name)
+            if event_type and consumer_name:
+                pairs.add((event_type, consumer_name))
+        return pairs
 
     def _find_run(self, run_id: int) -> dict[str, Any] | None:
         for row in self._runs:

@@ -26,6 +26,7 @@ The worker execute path requires all of these gates:
 ```bash
 export AICRM_INTERNAL_EVENTS_AUTO_EXECUTE=1
 export AICRM_INTERNAL_EVENTS_ALLOWED_EVENT_TYPES=payment.succeeded
+export AICRM_INTERNAL_EVENTS_ALLOWED_EVENT_CONSUMERS=payment.succeeded:order_projection_consumer,payment.succeeded:customer_business_summary_consumer,payment.succeeded:dnd_policy_consumer,payment.succeeded:ai_assist_notify_consumer
 export AICRM_INTERNAL_EVENTS_ALLOWED_CONSUMERS=order_projection_consumer,customer_business_summary_consumer,dnd_policy_consumer,ai_assist_notify_consumer
 export AICRM_INTERNAL_EVENTS_WORKER_BATCH_SIZE=1
 export AICRM_INTERNAL_EVENTS_AUTO_EXECUTE_MAX_BATCH_SIZE=1
@@ -33,12 +34,17 @@ export AICRM_INTERNAL_EVENTS_AUTO_EXECUTE_MAX_BATCH_SIZE=1
 
 `AICRM_INTERNAL_EVENT_WORKER_BATCH_SIZE` is still accepted as a legacy fallback, but the plural `AICRM_INTERNAL_EVENTS_WORKER_BATCH_SIZE` should be used for this rollout.
 
+`AICRM_INTERNAL_EVENTS_ALLOWED_EVENT_CONSUMERS` is the preferred production gate. It is pair-aware: every entry names one `event_type:consumer_name` pair. This matters when a generic consumer such as `ai_assist_notify_consumer` is registered on multiple event types. A consumer-name-only allowlist can accidentally make the same consumer executable for newly enabled event families; the pair allowlist keeps `payment.succeeded:ai_assist_notify_consumer` separate from `customer.tagged:ai_assist_notify_consumer`.
+
+When `AICRM_INTERNAL_EVENTS_ALLOWED_EVENT_CONSUMERS` is non-empty, it has priority over `AICRM_INTERNAL_EVENTS_ALLOWED_CONSUMERS`. The legacy consumer-name allowlist is kept for single-event compatibility, but production multi-event auto-execute should use pair-aware entries.
+
 ## Stage 1
 
 Stage 1 only allows no-op/projection consumers:
 
 ```bash
 export AICRM_INTERNAL_EVENTS_ALLOWED_CONSUMERS=order_projection_consumer,customer_business_summary_consumer,dnd_policy_consumer,ai_assist_notify_consumer
+export AICRM_INTERNAL_EVENTS_ALLOWED_EVENT_CONSUMERS=payment.succeeded:order_projection_consumer,payment.succeeded:customer_business_summary_consumer,payment.succeeded:dnd_policy_consumer,payment.succeeded:ai_assist_notify_consumer
 ```
 
 Expected results:
@@ -54,6 +60,7 @@ Stage 2 adds automation after Stage 1 is stable:
 
 ```bash
 export AICRM_INTERNAL_EVENTS_ALLOWED_CONSUMERS=order_projection_consumer,customer_business_summary_consumer,dnd_policy_consumer,ai_assist_notify_consumer,automation_payment_consumer
+export AICRM_INTERNAL_EVENTS_ALLOWED_EVENT_CONSUMERS=payment.succeeded:order_projection_consumer,payment.succeeded:customer_business_summary_consumer,payment.succeeded:dnd_policy_consumer,payment.succeeded:ai_assist_notify_consumer,payment.succeeded:automation_payment_consumer
 ```
 
 Expected result:
@@ -66,6 +73,7 @@ Stage 3 may add the webhook planner only after Stage 2 is stable:
 
 ```bash
 export AICRM_INTERNAL_EVENTS_ALLOWED_CONSUMERS=order_projection_consumer,customer_business_summary_consumer,dnd_policy_consumer,ai_assist_notify_consumer,automation_payment_consumer,webhook_order_paid_consumer
+export AICRM_INTERNAL_EVENTS_ALLOWED_EVENT_CONSUMERS=payment.succeeded:order_projection_consumer,payment.succeeded:customer_business_summary_consumer,payment.succeeded:dnd_policy_consumer,payment.succeeded:ai_assist_notify_consumer,payment.succeeded:automation_payment_consumer,payment.succeeded:webhook_order_paid_consumer
 ```
 
 The webhook consumer may create or reuse a `webhook.order_paid.push` `external_effect_job`, but it must not dispatch `external_effect_attempt`. The job must remain `execution_mode=shadow` and `status=planned` or another safe non-executing state.
@@ -81,11 +89,15 @@ curl -sS "$BASE_URL/api/admin/internal-events/diagnostics" \
     shadow_only,
     allowed_event_types,
     allowed_consumers,
+    allowed_event_consumers,
+    pair_allowlist_enabled,
     worker_batch_size,
     due_count,
     due_count_by_event_type,
     due_count_by_consumer,
     blocked_by_config_count,
+    blocked_by_pair_allowlist_count,
+    config_warnings,
     real_external_call_executed
   }'
 ```
@@ -106,10 +118,13 @@ Expected:
 
 - `auto_execute_enabled=true` only during the gray execute window.
 - `allowed_event_types=["payment.succeeded"]`.
-- `allowed_consumers` contains only the current stage consumers.
+- `allowed_event_consumers` contains only the current stage `payment.succeeded:<consumer>` pairs.
+- `pair_allowlist_enabled=true` when multiple internal event families are enabled in production.
 - `worker_batch_size=1`.
 - `real_external_call_executed=false`.
 - External Effect `real_execution_enabled=false`.
+
+If diagnostics shows `auto_execute_multi_event_without_pair_allowlist`, stop execute and set `AICRM_INTERNAL_EVENTS_ALLOWED_EVENT_CONSUMERS` before continuing.
 
 ## Preview
 
@@ -185,14 +200,24 @@ If `batch_size` is greater than `AICRM_INTERNAL_EVENTS_AUTO_EXECUTE_MAX_BATCH_SI
 
 ## Proving It Does Not Scan The Whole Queue
 
-The execute path applies both filters before locking:
+The execute path applies filters before locking:
 
 - `event_type` must match `AICRM_INTERNAL_EVENTS_ALLOWED_EVENT_TYPES`.
-- `consumer_name` must match `AICRM_INTERNAL_EVENTS_ALLOWED_CONSUMERS`.
+- If `AICRM_INTERNAL_EVENTS_ALLOWED_EVENT_CONSUMERS` is set, `event_type:consumer_name` must match one configured pair.
+- If the pair allowlist is empty, `consumer_name` must match `AICRM_INTERNAL_EVENTS_ALLOWED_CONSUMERS`.
 - Requested API filters are intersected with configured allowlists.
 - An empty intersection returns zero candidates, not an unfiltered scan.
 - Only executable statuses are considered: `pending`, `failed_retryable`, `failed_terminal`, `blocked`.
 - `succeeded` and `skipped` are not acquired again.
+
+Example: keep payment automation enabled while also allowing `questionnaire.submitted` and customer-tag events to emit:
+
+```bash
+export AICRM_INTERNAL_EVENTS_ALLOWED_EVENT_TYPES=payment.succeeded,questionnaire.submitted,customer.tagged,customer.untagged
+export AICRM_INTERNAL_EVENTS_ALLOWED_EVENT_CONSUMERS=payment.succeeded:order_projection_consumer,payment.succeeded:customer_business_summary_consumer,payment.succeeded:dnd_policy_consumer,payment.succeeded:ai_assist_notify_consumer,payment.succeeded:automation_payment_consumer
+```
+
+With that configuration, `customer.tagged:ai_assist_notify_consumer` remains blocked even though `ai_assist_notify_consumer` is allowed for `payment.succeeded`.
 
 Use diagnostics to compare:
 
@@ -201,7 +226,8 @@ curl -sS "$BASE_URL/api/admin/internal-events/diagnostics" \
   -H "Authorization: Bearer $INTERNAL_TOKEN" | jq '{
     due_count,
     effective_queue_metrics,
-    blocked_by_config_count
+    blocked_by_config_count,
+    blocked_by_pair_allowlist_count
   }'
 ```
 
@@ -241,6 +267,7 @@ Disable automatic due execution:
 ```bash
 export AICRM_INTERNAL_EVENTS_AUTO_EXECUTE=0
 export AICRM_INTERNAL_EVENTS_ALLOWED_CONSUMERS=
+export AICRM_INTERNAL_EVENTS_ALLOWED_EVENT_CONSUMERS=
 ```
 
 Restart or reload the app/worker process that reads env. The manual endpoint remains available:

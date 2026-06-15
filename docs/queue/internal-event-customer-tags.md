@@ -11,10 +11,23 @@ These events record the business fact that a customer tag mutation command was a
 - `AICRM_INTERNAL_EVENTS_ENABLED=1` enables the Internal Event Queue infrastructure.
 - `AICRM_INTERNAL_EVENTS_CUSTOMER_TAGS_ENABLED=1` enables customer tag shadow emit.
 - `AICRM_INTERNAL_EVENTS_ALLOWED_EVENT_TYPES=customer.tagged,customer.untagged` must include the target event type.
+- `AICRM_INTERNAL_EVENTS_ALLOWED_EVENT_CONSUMERS` should remain limited to approved pairs, usually `payment.succeeded:<consumer>` pairs only during customer tag Q1/Q2.
 - `AICRM_INTERNAL_EVENTS_ALLOWED_CONSUMERS` should not include customer tag consumers until a specific worker gray stage is approved.
 - `AICRM_EXTERNAL_EFFECT_WEBHOOK_EXECUTE=0` and `AICRM_EXTERNAL_EFFECT_ALLOWED_TYPES=` keep external effect execution disabled.
 
 Production default is safe: `AICRM_INTERNAL_EVENTS_CUSTOMER_TAGS_ENABLED=0`.
+
+## Worker Pair Allowlist
+
+Customer tag events share generic consumer names with other event families. For example, `ai_assist_notify_consumer` can be registered for both `payment.succeeded` and `customer.tagged`.
+
+For production auto-execute, consumer-name-only allowlists are not precise enough. Use `AICRM_INTERNAL_EVENTS_ALLOWED_EVENT_CONSUMERS` to allow exact `event_type:consumer_name` pairs:
+
+```bash
+AICRM_INTERNAL_EVENTS_ALLOWED_EVENT_CONSUMERS=payment.succeeded:order_projection_consumer,payment.succeeded:customer_business_summary_consumer,payment.succeeded:dnd_policy_consumer,payment.succeeded:ai_assist_notify_consumer,payment.succeeded:automation_payment_consumer
+```
+
+With the configuration above, `customer.tagged` and `customer.untagged` can emit and create pending consumer runs, but all customer tag consumers remain blocked by the pair allowlist. This prevents a shared consumer such as `ai_assist_notify_consumer` from being auto-executed for customer tags just because it is allowed for payment.
 
 ## Event Schema
 
@@ -123,6 +136,7 @@ Set:
 ```bash
 AICRM_INTERNAL_EVENTS_CUSTOMER_TAGS_ENABLED=1
 AICRM_INTERNAL_EVENTS_ALLOWED_EVENT_TYPES=payment.succeeded,questionnaire.submitted,customer.tagged,customer.untagged
+AICRM_INTERNAL_EVENTS_ALLOWED_EVENT_CONSUMERS=payment.succeeded:order_projection_consumer,payment.succeeded:customer_business_summary_consumer,payment.succeeded:dnd_policy_consumer,payment.succeeded:ai_assist_notify_consumer,payment.succeeded:automation_payment_consumer
 ```
 
 Keep:
@@ -142,6 +156,7 @@ Verify one safe tag mutation:
   - `ai_assist_notify_consumer`
 - Consumer runs remain pending.
 - Worker preview for payment consumers does not include customer tag events.
+- Explicit customer tag preview returns zero candidates or reports work blocked by pair allowlist until customer tag pairs are approved.
 
 ### Q2: Single Consumer Gray
 
@@ -181,6 +196,12 @@ Remove customer tag events from:
 
 ```bash
 AICRM_INTERNAL_EVENTS_ALLOWED_EVENT_TYPES
+```
+
+Keep or restore the payment-only pair allowlist:
+
+```bash
+AICRM_INTERNAL_EVENTS_ALLOWED_EVENT_CONSUMERS=payment.succeeded:order_projection_consumer,payment.succeeded:customer_business_summary_consumer,payment.succeeded:dnd_policy_consumer,payment.succeeded:ai_assist_notify_consumer,payment.succeeded:automation_payment_consumer
 ```
 
 Keep the internal event rows and attempts for diagnosis. Schema rollback is not required.
