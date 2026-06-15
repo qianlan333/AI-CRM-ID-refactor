@@ -9,6 +9,7 @@ from .models import (
 )
 from .repository import InMemoryInternalEventRepository, reset_internal_event_fixture_state
 from .service import InternalEventService
+from .customer_identity import CUSTOMER_PHONE_BOUND_EVENT_TYPE, register_customer_identity_event_consumers
 from .payment import PAYMENT_SUCCEEDED_EVENT_TYPE, PAYMENT_SUCCEEDED_EVENT_TYPES, register_payment_succeeded_consumers
 from .questionnaire import QUESTIONNAIRE_SUBMITTED_EVENT_TYPE, register_questionnaire_event_consumers
 from .shadow import register_shadow_event_consumers
@@ -25,6 +26,8 @@ __all__ = [
     "PAYMENT_SUCCEEDED_EVENT_TYPE",
     "PAYMENT_SUCCEEDED_EVENT_TYPES",
     "QUESTIONNAIRE_SUBMITTED_EVENT_TYPE",
+    "CUSTOMER_PHONE_BOUND_EVENT_TYPE",
+    "register_customer_identity_event_consumers",
     "register_payment_succeeded_consumers",
     "register_questionnaire_event_consumers",
     "register_shadow_event_consumers",
