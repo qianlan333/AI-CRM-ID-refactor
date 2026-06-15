@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from copy import deepcopy
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from urllib.parse import urlparse
@@ -45,6 +46,20 @@ class _AdapterResponse:
     def __init__(self, status_code: int, text: str = "adapter-response"):
         self.status_code = status_code
         self.text = text
+
+
+class _QuestionnaireRepoOverride:
+    def __init__(self, repo, questionnaire: dict):
+        self._repo = repo
+        self._questionnaire = deepcopy(questionnaire)
+
+    def get_questionnaire_by_slug(self, slug: str):
+        if str(slug or "").strip() == str(self._questionnaire.get("slug") or ""):
+            return deepcopy(self._questionnaire)
+        return self._repo.get_questionnaire_by_slug(slug)
+
+    def __getattr__(self, name: str):
+        return getattr(self._repo, name)
 
 
 class _FakeCursor:
@@ -111,6 +126,34 @@ def _install_loopback_http_adapter(monkeypatch, client: TestClient) -> list[dict
     return calls
 
 
+def _seed_hxc_questionnaire(monkeypatch, external_push_config: dict) -> tuple[dict, str]:
+    from aicrm_next.questionnaire import h5_write
+
+    repo = build_questionnaire_repository()
+    existing = repo.get_questionnaire_by_slug("hxc-activation-v1")
+    standard_config = {
+        "enabled": bool(external_push_config.get("enabled")),
+        "webhook_url": str(external_push_config.get("webhook_url") or ""),
+        "custom_params": list(external_push_config.get("custom_params") or []),
+    }
+    questionnaire = repo.save_questionnaire(
+        {
+            "slug": "hxc-activation-v1",
+            "name": "黄小璨激活问卷",
+            "title": "黄小璨激活问卷",
+            "enabled": True,
+            "external_push_config": standard_config,
+            "questions": [{"type": "mobile", "title": "手机号", "required": True, "options": []}],
+        },
+        questionnaire_id=int(existing["id"]) if existing else None,
+    )
+    patched = deepcopy(questionnaire)
+    patched["external_push_config"] = {**dict(patched.get("external_push_config") or {}), **external_push_config}
+    patched["external_push_enabled"] = bool(external_push_config.get("enabled"))
+    monkeypatch.setattr(h5_write, "build_questionnaire_repository", lambda: _QuestionnaireRepoOverride(repo, patched))
+    return patched, str((patched.get("questions") or [{}])[0].get("id") or "")
+
+
 def _queued_webhook_job(
     service: ExternalEffectService,
     *,
@@ -145,15 +188,15 @@ def _submit_questionnaire_queue_loopback_job(
     receiver_token: str,
     response_status: int,
 ) -> dict:
-    repo = build_questionnaire_repository()
-    questionnaire = repo._questionnaires[0]  # type: ignore[attr-defined]
-    questionnaire["external_push_config"] = {
-        "enabled": True,
-        "webhook_url": f"https://crm.example.test/api/external-effects/test-receiver/{receiver_token}",
-        "receiver_token": receiver_token,
-        "receiver_response_status": response_status,
-    }
-    questionnaire["questions"] = [{"id": "phone", "type": "mobile", "title": "手机号", "required": True, "options": []}]
+    _questionnaire, phone_question_id = _seed_hxc_questionnaire(
+        monkeypatch,
+        {
+            "enabled": True,
+            "webhook_url": f"https://crm.example.test/api/external-effects/test-receiver/{receiver_token}",
+            "receiver_token": receiver_token,
+            "receiver_response_status": response_status,
+        },
+    )
 
     def fail_if_called(*_args, **_kwargs):
         raise AssertionError("legacy external push must not run in queue mode")
@@ -161,7 +204,7 @@ def _submit_questionnaire_queue_loopback_job(
     monkeypatch.setattr(external_push.requests, "post", fail_if_called)
     response = client.post(
         "/api/h5/questionnaires/hxc-activation-v1/submit",
-        json={"answers": {"phone": phone}},
+        json={"answers": {phone_question_id: phone}},
         headers={"Idempotency-Key": idempotency_key},
     )
     body = response.json()
@@ -940,10 +983,10 @@ def test_external_effect_diagnostics_and_api_docs_show_virtual_test_state(next_c
 
 def test_questionnaire_submit_keeps_external_push_and_creates_shadow_job(client: TestClient, monkeypatch) -> None:
     monkeypatch.setenv("AICRM_QUESTIONNAIRE_EXTERNAL_PUSH_MODE", "shadow")
-    repo = build_questionnaire_repository()
-    questionnaire = repo._questionnaires[0]  # type: ignore[attr-defined]
-    questionnaire["external_push_config"] = {"enabled": True, "webhook_url": "https://hooks.example.com/questionnaire"}
-    questionnaire["questions"] = [{"id": "phone", "type": "mobile", "title": "手机号", "required": True, "options": []}]
+    _questionnaire, phone_question_id = _seed_hxc_questionnaire(
+        monkeypatch,
+        {"enabled": True, "webhook_url": "https://hooks.example.com/questionnaire"},
+    )
 
     def fake_post(url: str, **kwargs):
         return _ExternalPushResponse()
@@ -952,7 +995,7 @@ def test_questionnaire_submit_keeps_external_push_and_creates_shadow_job(client:
 
     response = client.post(
         "/api/h5/questionnaires/hxc-activation-v1/submit",
-        json={"answers": {"phone": "13770938680"}},
+        json={"answers": {phone_question_id: "13770938680"}},
         headers={"Idempotency-Key": "questionnaire-shadow-effect"},
     )
 
@@ -978,21 +1021,18 @@ def test_questionnaire_external_push_legacy_shadow_and_queue_modes(client: TestC
         return _ExternalPushResponse()
 
     monkeypatch.setattr(external_push.requests, "post", fake_post)
-    repo = build_questionnaire_repository()
-    questionnaire = repo._questionnaires[0]  # type: ignore[attr-defined]
-    questionnaire["questions"] = [{"id": "phone", "type": "mobile", "title": "手机号", "required": True, "options": []}]
 
     for mode, idempotency_key, phone, should_call_legacy, expected_status, expected_execution_mode in cases:
         monkeypatch.setenv("AICRM_QUESTIONNAIRE_EXTERNAL_PUSH_MODE", mode)
-        questionnaire["external_push_config"] = {
-            "enabled": True,
-            "webhook_url": f"https://hooks.example.com/questionnaire/{mode}",
-        }
+        _questionnaire, phone_question_id = _seed_hxc_questionnaire(
+            monkeypatch,
+            {"enabled": True, "webhook_url": f"https://hooks.example.com/questionnaire/{mode}"},
+        )
         before_call_count = len(calls)
 
         response = client.post(
             "/api/h5/questionnaires/hxc-activation-v1/submit",
-            json={"answers": {"phone": phone}},
+            json={"answers": {phone_question_id: phone}},
             headers={"Idempotency-Key": idempotency_key},
         )
         body = response.json()
@@ -1105,10 +1145,10 @@ def test_questionnaire_queue_mode_loopback_500_retryable_and_400_terminal(next_c
 
 def test_questionnaire_queue_mode_job_creation_failure_does_not_fail_submission(client: TestClient, monkeypatch) -> None:
     monkeypatch.setenv("AICRM_QUESTIONNAIRE_EXTERNAL_PUSH_MODE", "queue")
-    repo = build_questionnaire_repository()
-    questionnaire = repo._questionnaires[0]  # type: ignore[attr-defined]
-    questionnaire["external_push_config"] = {"enabled": True, "webhook_url": "https://hooks.example.com/questionnaire/fail-plan"}
-    questionnaire["questions"] = [{"id": "phone", "type": "mobile", "title": "手机号", "required": True, "options": []}]
+    _questionnaire, phone_question_id = _seed_hxc_questionnaire(
+        monkeypatch,
+        {"enabled": True, "webhook_url": "https://hooks.example.com/questionnaire/fail-plan"},
+    )
 
     def fail_if_called(*_args, **_kwargs):
         raise AssertionError("legacy external push must not run in queue mode")
@@ -1122,7 +1162,7 @@ def test_questionnaire_queue_mode_job_creation_failure_does_not_fail_submission(
 
     response = client.post(
         "/api/h5/questionnaires/hxc-activation-v1/submit",
-        json={"answers": {"phone": "test_phone_queue_plan_failure"}},
+        json={"answers": {phone_question_id: "test_phone_queue_plan_failure"}},
         headers={"Idempotency-Key": "questionnaire-queue-plan-failure"},
     )
     body = response.json()
