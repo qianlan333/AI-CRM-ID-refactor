@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import logging
 from typing import Any
 
@@ -52,6 +53,20 @@ def _mask_mobile(value: Any) -> str:
     if len(text) < 7:
         return "<redacted>" if text else ""
     return f"{text[:3]}****{text[-4:]}"
+
+
+def _hash_text(value: Any) -> str:
+    text = _text(value)
+    if not text:
+        return ""
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
+
+
+def _safe_source_ref(value: Any, fallback: Any = "") -> str:
+    text = _text(value)
+    if text:
+        return f"source_ref:{_hash_text(text)}"
+    return _text(fallback)
 
 
 def _questionnaire_subject_id(submission: dict[str, Any]) -> str:
@@ -588,10 +603,13 @@ def emit_broadcast_task_created_shadow_event(
     job_id = _text(job.get("id") or job.get("job_id") or job.get("broadcast_job_id"))
     if not job_id:
         return {"status": "skipped", "reason": "broadcast_job_id_missing"}
-    trace_id = _text(job.get("trace_id") or job.get("idempotency_key") or job.get("source_id") or job_id)
+    trace_id = _text(job.get("trace_id") or job.get("idempotency_key") or job_id)
     source_type = _text(source or job.get("source_type") or source_module)
     source_id = _text(job.get("source_id"))
-    batch_id = _text(job.get("batch_key") or source_id or job_id)
+    safe_source_ref = _safe_source_ref(source_id)
+    safe_source_hash = _hash_text(source_id)
+    safe_command_id = f"broadcast_task.created:{job_id}"
+    batch_id = _text(job.get("batch_key") or job_id)
     scheduled_at = _text(job.get("scheduled_at") or job.get("scheduled_for"))
     target_count = int(job.get("target_count") or job.get("audience_count") or 0)
     send_channel = _text(job.get("send_channel") or job.get("channel"))
@@ -606,7 +624,10 @@ def emit_broadcast_task_created_shadow_event(
         "source_type": _text(job.get("source_type")),
         "source_module": source_module,
         "source_route": source_route,
-        "source_id": source_id,
+        "source_id": safe_source_ref,
+        "source_id_redacted": safe_source_ref,
+        "source_id_hash": safe_source_hash,
+        "source_id_present": bool(source_id),
         "related_campaign_code": campaign_code,
         "related_ops_plan_id": ops_plan_id,
         "task_type": task_type,
@@ -617,7 +638,7 @@ def emit_broadcast_task_created_shadow_event(
         "scheduled_at": scheduled_at,
         "status": _text(job.get("status") or "created"),
         "trace_id": trace_id,
-        "command_id": source_id,
+        "command_id": safe_command_id,
         "content_summary_present": bool(_text(job.get("content_summary"))),
         "target_external_userids_count": len(job.get("target_external_userids") or []) if isinstance(job.get("target_external_userids"), list) else target_count,
     }
@@ -631,8 +652,8 @@ def emit_broadcast_task_created_shadow_event(
         subject_id=job_id,
         idempotency_key=f"broadcast_task.created:{job_id}",
         source_module=source_module,
-        source_command_id=_text(job.get("source_id")),
-        correlation_id=_text(job.get("idempotency_key") or trace_id),
+        source_command_id=safe_command_id,
+        correlation_id=_text(job.get("idempotency_key") or trace_id or job_id),
         context=CommandContext(
             actor_id=_text(operator or job.get("created_by")),
             actor_type="admin",
