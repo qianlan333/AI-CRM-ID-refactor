@@ -126,7 +126,7 @@ def test_cloud_plan_recipient_approval_shadow_emits_broadcast_task_created(monke
 
     result = ApproveCloudPlanRecipientCommand().execute("plan_probe", 1, operator="pytest")
     events, total = InternalEventService().list_events({"event_type": "broadcast_task.created", "aggregate_id": str(result["job_id"])})
-    trace_events, trace_total = InternalEventService().list_events({"event_type": "broadcast_task.created", "trace_id": "plan_probe"})
+    trace_events, trace_total = InternalEventService().list_events({"event_type": "broadcast_task.created", "original_trace_hash": "plan_probe"})
     runs, run_total = InternalEventService().list_consumer_runs({"event_id": events[0].event_id})
 
     assert result["ok"] is True
@@ -136,6 +136,7 @@ def test_cloud_plan_recipient_approval_shadow_emits_broadcast_task_created(monke
     assert total == 1
     assert trace_total == 1
     assert trace_events[0].event_id == events[0].event_id
+    assert events[0].trace_id == f"broadcast_task.created:{result['job_id']}"
     assert events[0].aggregate_type == "broadcast_task"
     assert events[0].payload_summary_json == {
         "task_id": str(result["job_id"]),

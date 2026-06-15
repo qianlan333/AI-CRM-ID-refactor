@@ -46,14 +46,31 @@ The emit helper stores source references as follows:
 - `payload.broadcast_task.source_id_hash`: the first 16 hex characters of a
   SHA-256 hash.
 - `payload.broadcast_task.source_id_present`: boolean indicator only.
+- `payload.broadcast_task.related_ops_plan_id`: `ops_plan_ref:{sha256[:16]}`
+  when a related ops plan id is present.
+- `payload.broadcast_task.related_ops_plan_ref`: same safe reference.
+- `payload.broadcast_task.related_ops_plan_hash`: the first 16 hex characters
+  of a SHA-256 hash.
+- `payload.broadcast_task.related_ops_plan_present`: boolean indicator only.
 - `payload.broadcast_task.command_id`: `broadcast_task.created:{task_id}`.
 - `payload.broadcast_task.trace_id`: `broadcast_task.created:{task_id}`.
+- `payload.broadcast_task.original_trace_ref`: `trace_ref:{sha256[:16]}`
+  when original trace input is present.
+- `payload.broadcast_task.original_trace_present`: boolean indicator only.
+- `payload.broadcast_task.original_trace_hash`: the first 16 hex characters of
+  a SHA-256 hash when raw trace input is present.
 - `payload.broadcast_task.trace_id_present`: boolean indicator only.
 - `payload.broadcast_task.trace_id_hash`: the first 16 hex characters of a
-  SHA-256 hash when raw trace input is present.
+  SHA-256 hash when raw trace input is present. This is a compatibility alias
+  for `original_trace_hash`.
+- `payload.broadcast_task.original_idempotency_key_present`: boolean indicator
+  only.
+- `payload.broadcast_task.original_idempotency_key_hash`: the first 16 hex
+  characters of a SHA-256 hash when raw idempotency input is present.
 - `payload.broadcast_task.idempotency_key_present`: boolean indicator only.
 - `payload.broadcast_task.idempotency_key_hash`: the first 16 hex characters of
-  a SHA-256 hash when raw idempotency input is present.
+  a SHA-256 hash when raw idempotency input is present. This is a compatibility
+  alias for `original_idempotency_key_hash`.
 - `trace_id`: `broadcast_task.created:{task_id}`.
 - `correlation_id`: `broadcast_task.created:{task_id}`.
 - `source_command_id`: `broadcast_task.created:{task_id}`.
@@ -63,6 +80,31 @@ falls back to the broadcast task id rather than raw `source_id`, raw `trace_id`,
 or raw `idempotency_key`. This prevents raw `external_userid`, mobile numbers,
 openid, unionid, webhook URLs, tokens, or message text from being stored in the
 event record while keeping hash/present flags for diagnostics.
+
+### Safe Trace Lookup
+
+After trace redaction, raw upstream trace values such as a cloud-plan id are no
+longer stored in `internal_event.trace_id`. The canonical event `trace_id` and
+`correlation_id` are always `broadcast_task.created:{task_id}`.
+
+For diagnostics that previously looked up `broadcast_task.created` by upstream
+trace, use the safe trace lookup filter on the internal event list API:
+
+```http
+GET /api/admin/internal-events?event_type=broadcast_task.created&original_trace_hash={upstream_trace_or_hash}
+```
+
+`trace_hash` is accepted as an alias:
+
+```http
+GET /api/admin/internal-events?event_type=broadcast_task.created&trace_hash={upstream_trace_or_hash}
+```
+
+The service hashes non-hash input before querying
+`payload.broadcast_task.original_trace_hash`, so callers may pass a non-PII
+plan code or a precomputed 16-character hash. The API does not return or persist
+the raw upstream trace, raw `external_userid`, mobile number, openid, unionid,
+webhook URL, token, or message body.
 
 `payload_summary_json` is the admin-visible summary:
 

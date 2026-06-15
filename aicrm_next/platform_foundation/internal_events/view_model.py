@@ -17,6 +17,8 @@ FILTER_KEYS = (
     "consumer_name",
     "consumer_status",
     "trace_id",
+    "trace_hash",
+    "original_trace_hash",
     "source_module",
     "created_from",
     "created_to",
