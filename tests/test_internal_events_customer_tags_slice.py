@@ -156,8 +156,8 @@ def test_tag_external_effect_shadow_consumer_reuses_planned_shadow_job_without_a
         }
     )
     assert job_total_before == 1
-    assert jobs[0].execution_mode == "shadow"
-    assert jobs[0].status == "planned"
+    assert jobs[0].execution_mode == "execute"
+    assert jobs[0].status == "queued"
     assert ExternalEffectService().list_attempts(jobs[0].id) == []
 
     result = _run_consumer(event.event_id, "tag_external_effect_shadow_consumer")
@@ -193,7 +193,7 @@ def test_untag_external_effect_shadow_consumer_reuses_shadow_unmark_job_without_
     jobs, job_total = ExternalEffectService().list_jobs({"effect_type": WECOM_CONTACT_TAG_UNMARK})
 
     assert job_total == 1
-    assert jobs[0].execution_mode == "shadow"
+    assert jobs[0].execution_mode == "execute"
 
     result = _run_consumer(event.event_id, "tag_external_effect_shadow_consumer")
 

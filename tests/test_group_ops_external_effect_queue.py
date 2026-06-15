@@ -110,8 +110,8 @@ def test_group_ops_run_due_shadow_keeps_legacy_queue_and_creates_shadow_job(grou
     assert body["real_external_call_executed"] is False
     assert body["wecom_send_executed"] is False
     assert len(gateway.calls) == 1
-    assert jobs[0].status == "planned"
-    assert jobs[0].execution_mode == "shadow"
+    assert jobs[0].status == "queued"
+    assert jobs[0].execution_mode == "execute"
     assert jobs[0].payload_summary_json["chat_count"] == 2
 
 
@@ -182,7 +182,7 @@ def test_group_ops_webhook_receive_shadow_logs_action_and_creates_external_effec
     assert response.json()["wecom_send_executed"] is False
     assert calls[0]["action"]["action_type"] == "send_group_message"
     assert logs.json()["total"] == 1
-    assert jobs[0].status == "planned"
+    assert jobs[0].status == "queued"
     assert jobs[0].payload_summary_json["chat_count"] == 1
 
 
@@ -207,8 +207,8 @@ def test_group_ops_legacy_bundle_shadow_keeps_broadcast_job_and_creates_shadow_j
     assert response.json()["legacy_broadcast_job_ids"] == [2301]
     assert response.json()["external_effect_job_ids"] == [jobs[0].id]
     assert len(gateway.calls) == 1
-    assert jobs[0].status == "planned"
-    assert jobs[0].execution_mode == "shadow"
+    assert jobs[0].status == "queued"
+    assert jobs[0].execution_mode == "execute"
 
 
 def test_group_ops_legacy_bundle_external_effect_creates_wecom_group_job_without_legacy_gateway(group_ops_api_client, monkeypatch):
@@ -272,10 +272,10 @@ def test_wecom_group_external_effect_adapter_gates_and_success_path(group_ops_ap
     disabled = ExternalEffectWorker().run_due(batch_size=1, dry_run=False, effect_types=[WECOM_MESSAGE_GROUP_SEND], test_only=False)
     disabled_updated = ExternalEffectService().get(disabled_job.id if disabled_job else 0)
 
-    assert disabled["counts"]["blocked_count"] == 1
+    assert disabled["counts"]["failed_count"] == 1
     assert disabled["real_external_call_executed"] is False
     assert disabled_updated is not None
-    assert disabled_updated.status == "blocked"
+    assert disabled_updated.status == "failed_terminal"
     assert disabled_updated.last_error_code == "execution_disabled"
     assert wecom_calls == []
 
@@ -356,7 +356,7 @@ def test_wecom_group_external_effect_blocks_allowlist_and_mention_all(group_ops_
     blocked = ExternalEffectWorker().run_due(batch_size=1, dry_run=False, effect_types=[WECOM_MESSAGE_GROUP_SEND], test_only=False)
     blocked_job = ExternalEffectService().get(job["id"])
 
-    assert blocked["counts"]["blocked_count"] == 1
+    assert blocked["counts"]["failed_count"] == 1
     assert blocked["real_external_call_executed"] is False
     assert blocked_job is not None
     assert blocked_job.last_error_code == "group_ops_webhook_key_not_allowed"
@@ -383,7 +383,7 @@ def test_wecom_group_external_effect_blocks_allowlist_and_mention_all(group_ops_
         idempotency_key="group-ops-wecom-mention-all",
     )
     mention_blocked = ExternalEffectWorker().run_due(batch_size=1, dry_run=False, effect_types=[WECOM_MESSAGE_GROUP_SEND], test_only=False)
-    assert mention_blocked["counts"]["blocked_count"] == 1
+    assert mention_blocked["counts"]["failed_count"] == 1
     assert mention_blocked["items"][0]["attempt"]["error_code"] == "mention_all_blocked"
 
 
@@ -477,10 +477,10 @@ def test_group_ops_loopback_500_retryable_allowlist_miss_and_test_only_gate(grou
     blocked = ExternalEffectWorker().run_due(batch_size=1, dry_run=False, effect_types=[GROUP_OPS_MESSAGE_LOOPBACK], test_only=True)
     blocked_updated = ExternalEffectService().get(blocked_job.id if blocked_job else 0)
 
-    assert blocked["counts"]["blocked_count"] == 1
+    assert blocked["counts"]["failed_count"] == 1
     assert blocked["real_external_call_executed"] is False
     assert blocked_updated is not None
-    assert blocked_updated.status == "blocked"
+    assert blocked_updated.status == "failed_terminal"
     assert blocked_updated.last_error_code == "effect_type_not_allowed"
     assert len(calls) == 1
 

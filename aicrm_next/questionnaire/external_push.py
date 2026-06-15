@@ -6,8 +6,6 @@ import os
 from datetime import datetime, timedelta
 from typing import Any
 
-import requests
-
 from aicrm_next.platform_foundation.command_bus import CommandContext
 from aicrm_next.platform_foundation.external_effects import ExternalEffectService, WEBHOOK_QUESTIONNAIRE_SUBMISSION_PUSH
 from aicrm_next.platform_foundation.external_effects.models import public_datetime, utcnow
@@ -40,53 +38,37 @@ def deliver_questionnaire_external_push(
         submission=submission,
         computed_result=computed_result,
     )
-    if not _global_enabled(repo):
-        log = _log(
-            repo=repo,
-            questionnaire=questionnaire,
-            submission=submission,
-            target_url=target_url,
-            payload=payload,
-            response_status_code=None,
-            response_body="",
-            status=STATUS_SKIPPED,
-            failure_reason=GLOBAL_DISABLED_REASON,
-        )
-        return {
-            "enabled": True,
-            "attempted": False,
-            "ok": False,
-            "reason": "global_switch_disabled",
-            "status": STATUS_SKIPPED,
-            "log": log,
-        }
-
-    result = _execute_request(target_url=target_url, payload=payload, timeout_seconds=_timeout_seconds(repo))
     log = _log(
         repo=repo,
         questionnaire=questionnaire,
         submission=submission,
         target_url=target_url,
         payload=payload,
-        response_status_code=result.get("response_status_code"),
-        response_body=_text(result.get("response_body")),
-        status=STATUS_SUCCESS if result.get("ok") else STATUS_FAILED,
-        failure_reason=_text(result.get("failure_reason")),
+        response_status_code=None,
+        response_body="",
+        status=STATUS_SKIPPED,
+        failure_reason="legacy_outbound_disabled_external_effect_required",
     )
     return {
         "enabled": True,
-        "attempted": bool(result.get("attempted")),
-        "ok": bool(result.get("ok")),
-        "reason": _text(result.get("failure_reason")),
-        "status": STATUS_SUCCESS if result.get("ok") else STATUS_FAILED,
-        "response_status_code": result.get("response_status_code"),
+        "attempted": False,
+        "ok": False,
+        "reason": "legacy_outbound_disabled",
+        "status": STATUS_SKIPPED,
         "log": log,
+        "legacy_outbound_disabled": True,
+        "external_effect_required": True,
+        "migration_target": "external_effect_queue",
+        "push_center_url": "/admin/push-center",
+        "real_external_call_executed": False,
     }
 
 
 def questionnaire_external_push_mode() -> str:
-    mode = runtime_setting(QUESTIONNAIRE_EXTERNAL_PUSH_MODE_KEY, "queue").strip().lower()
-    return mode if mode in QUESTIONNAIRE_EXTERNAL_PUSH_MODES else "queue"
+    # P0-1 收口后问卷外推只允许进入 External Effect Queue。旧 env 仍可存在
+    # 作为回滚排查线索，但不能恢复同步外呼。
+    _ = runtime_setting(QUESTIONNAIRE_EXTERNAL_PUSH_MODE_KEY, "queue").strip().lower()
+    return "queue"
 
 
 def plan_questionnaire_external_push_effect(
@@ -108,8 +90,7 @@ def plan_questionnaire_external_push_effect(
     if not enabled or not target_url:
         return None
 
-    selected_mode = mode if mode in QUESTIONNAIRE_EXTERNAL_PUSH_MODES else questionnaire_external_push_mode()
-    queue_mode = selected_mode == "queue"
+    selected_mode = "queue"
     body = build_questionnaire_external_push_payload(
         questionnaire=questionnaire,
         submission=submission,
@@ -147,8 +128,8 @@ def plan_questionnaire_external_push_effect(
             source_command_id=source_command_id,
             risk_level="medium",
             requires_approval=False,
-            execution_mode="execute" if queue_mode else "shadow",
-            status="queued" if queue_mode else "planned",
+            execution_mode="execute",
+            status="queued",
             idempotency_key=idempotency_key
             or f"{source_command_id}:external-effect:{WEBHOOK_QUESTIONNAIRE_SUBMISSION_PUSH}",
         )
@@ -266,48 +247,6 @@ def _questionnaire_external_effect_payload_summary(
 def _canonical_payload_hash(body: dict[str, Any]) -> str:
     canonical = json.dumps(body or {}, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
-
-
-def _execute_request(*, target_url: str, payload: dict[str, Any], timeout_seconds: float) -> dict[str, Any]:
-    if not target_url:
-        return {
-            "ok": False,
-            "attempted": False,
-            "response_status_code": None,
-            "response_body": "",
-            "failure_reason": "external push url is empty",
-        }
-    try:
-        response = requests.post(
-            target_url,
-            json=payload,
-            headers={"Content-Type": "application/json"},
-            timeout=timeout_seconds,
-        )
-    except requests.Timeout as exc:
-        return {
-            "ok": False,
-            "attempted": True,
-            "response_status_code": None,
-            "response_body": "",
-            "failure_reason": f"request timeout: {exc}",
-        }
-    except requests.RequestException as exc:
-        return {
-            "ok": False,
-            "attempted": True,
-            "response_status_code": None,
-            "response_body": "",
-            "failure_reason": f"network error: {exc}",
-        }
-    response_body = (response.text or "")[:5000]
-    return {
-        "ok": int(response.status_code) == 200,
-        "attempted": True,
-        "response_status_code": int(response.status_code),
-        "response_body": response_body,
-        "failure_reason": "" if int(response.status_code) == 200 else f"HTTP {int(response.status_code)}",
-    }
 
 
 def _log(

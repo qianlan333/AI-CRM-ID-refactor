@@ -61,8 +61,6 @@ def status_for_failure(*, error_code: str, attempt_count: int, max_attempts: int
     classification = classify_error_code(error_code, status_code=status_code)
     if classification == "retryable" and int(attempt_count or 0) < int(max_attempts or 0):
         return "failed_retryable"
-    if classification == "blocked":
-        return "blocked"
     return "failed_terminal"
 
 

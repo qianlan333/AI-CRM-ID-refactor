@@ -225,7 +225,7 @@ def _plan_wecom_tag_external_effect_job(
     try:
         return ExternalEffectService().plan_effect(
             effect_type=external_effect_type,
-            adapter_name="wecom",
+            adapter_name="wecom_tag",
             operation="tag_unmark" if external_effect_type == WECOM_CONTACT_TAG_UNMARK else "tag_mark",
             target_type="external_user",
             target_id=external_userid,
@@ -236,7 +236,7 @@ def _plan_wecom_tag_external_effect_job(
                 "tag_ids": tag_ids,
                 "operator": command.context.actor_id,
                 "source_context": source_context,
-                "blocked_plan_only": True,
+                "external_effect_queue_required": True,
             },
             payload_summary={
                 "external_userid_redacted": _redact_external_userid(external_userid),
@@ -249,7 +249,8 @@ def _plan_wecom_tag_external_effect_job(
             source_command_id=command.command_id,
             risk_level="high",
             requires_approval=True,
-            execution_mode="shadow",
+            execution_mode="execute",
+            status="queued",
             idempotency_key=f"{command.idempotency_key or command.command_id}:external-effect:{external_effect_type}",
         )
     except Exception:

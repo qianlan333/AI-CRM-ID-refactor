@@ -209,6 +209,9 @@ class ExternalEffectRepository:
     def test_receipt_metrics(self) -> dict[str, Any]:
         raise NotImplementedError
 
+    def list_record_only_jobs(self, *, limit: int = 100) -> list[ExternalEffectJob]:
+        raise NotImplementedError
+
 
 class SQLAlchemyExternalEffectRepository(ExternalEffectRepository):
     def __init__(self, session_factory: Callable[[], Session] | None = None):
@@ -283,10 +286,10 @@ class SQLAlchemyExternalEffectRepository(ExternalEffectRepository):
                 "actor_type": _text(request.context.actor_type) or "system",
                 "risk_level": _text(request.risk_level) or "medium",
                 "requires_approval": bool(request.requires_approval),
-                "execution_mode": _text(request.execution_mode) or "shadow",
+                "execution_mode": _text(request.execution_mode) or "execute",
                 "payload_json": _json_dumps(request.payload),
                 "payload_summary_json": _json_dumps(payload_summary),
-                "status": _text(request.status) or "planned",
+                "status": _text(request.status) or "queued",
                 "priority": int(request.priority or 100),
                 "scheduled_at": public_datetime(scheduled_at),
                 "max_attempts": int(request.max_attempts or 5),
@@ -694,6 +697,24 @@ class SQLAlchemyExternalEffectRepository(ExternalEffectRepository):
             "real_external_call_executed_to_test_receiver_count": int(row.get("real_external_call_executed_to_test_receiver_count") or 0),
         }
 
+    def list_record_only_jobs(self, *, limit: int = 100) -> list[ExternalEffectJob]:
+        rows = self._all(
+            """
+            SELECT *
+            FROM external_effect_job
+            WHERE attempt_count = 0
+              AND status NOT IN ('succeeded', 'failed_retryable', 'failed_terminal', 'cancelled', 'expired', 'dispatching')
+              AND (
+                    execution_mode IN ('shadow', 'plan_only', 'disabled', 'execute_dryrun')
+                 OR status = 'planned'
+              )
+            ORDER BY created_at ASC, id ASC
+            LIMIT :limit
+            """,
+            {"limit": max(1, min(int(limit or 100), 1000))},
+        )
+        return [job for row in rows if (job := _public_job(row)) is not None]
+
     def _update(self, job_id: int, set_sql: str, params: dict[str, Any]) -> ExternalEffectJob | None:
         row = self._write_one(
             f"""
@@ -749,10 +770,10 @@ class InMemoryExternalEffectRepository(ExternalEffectRepository):
             "actor_type": _text(request.context.actor_type) or "system",
             "risk_level": _text(request.risk_level) or "medium",
             "requires_approval": bool(request.requires_approval),
-            "execution_mode": _text(request.execution_mode) or "shadow",
+            "execution_mode": _text(request.execution_mode) or "execute",
             "payload_json": dict(request.payload or {}),
             "payload_summary_json": payload_summary,
-            "status": _text(request.status) or "planned",
+            "status": _text(request.status) or "queued",
             "priority": int(request.priority or 100),
             "scheduled_at": public_datetime(request.scheduled_at or now),
             "attempt_count": 0,
@@ -1002,6 +1023,17 @@ class InMemoryExternalEffectRepository(ExternalEffectRepository):
             "non_test_execution_blocked_count": len([row for row in self._jobs if row.get("last_error_code") == "test_execution_only_required"]),
             "real_external_call_executed_to_test_receiver_count": len([row for row in recent if 200 <= int(row.get("response_status") or 0) < 300]),
         }
+
+    def list_record_only_jobs(self, *, limit: int = 100) -> list[ExternalEffectJob]:
+        rows = [
+            row
+            for row in self._jobs
+            if int(row.get("attempt_count") or 0) == 0
+            and row.get("status") not in {"succeeded", "failed_retryable", "failed_terminal", "cancelled", "expired", "dispatching"}
+            and (row.get("execution_mode") in {"shadow", "plan_only", "disabled", "execute_dryrun"} or row.get("status") == "planned")
+        ]
+        rows.sort(key=lambda row: (row.get("created_at") or "", int(row.get("id") or 0)))
+        return [job for row in rows[: max(1, min(int(limit or 100), 1000))] if (job := _public_job(row)) is not None]
 
     def _find(self, job_id: int) -> dict[str, Any] | None:
         for row in self._jobs:

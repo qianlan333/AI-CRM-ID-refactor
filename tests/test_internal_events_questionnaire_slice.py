@@ -168,8 +168,8 @@ def test_webhook_consumer_creates_shadow_external_effect_job_without_attempt(mon
     assert result["counts"]["succeeded_count"] == 1
     assert result["real_external_call_executed"] is False
     assert total == 1
-    assert jobs[0].execution_mode == "shadow"
-    assert jobs[0].status == "planned"
+    assert jobs[0].execution_mode == "execute"
+    assert jobs[0].status == "queued"
     assert jobs[0].attempt_count == 0
     assert ExternalEffectService().list_attempts(jobs[0].id) == []
     assert result["items"][0]["attempt"]["response_summary_json"]["external_effect_job_created"] is True

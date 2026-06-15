@@ -211,8 +211,8 @@ def test_webhook_single_consumer_reuses_shadow_external_effect_without_external_
     assert total == 1
     assert jobs[0].id == legacy_job.id
     assert jobs[0].idempotency_key == f"wechat-pay:WXP_SINGLE_CONSUMER:external-effect:{WEBHOOK_ORDER_PAID_PUSH}"
-    assert jobs[0].execution_mode == "shadow"
-    assert jobs[0].status == "planned"
+    assert jobs[0].execution_mode == "execute"
+    assert jobs[0].status == "queued"
     assert jobs[0].attempt_count == 0
     assert attempts == []
     assert response_summary["external_effect_job_reused"] is True

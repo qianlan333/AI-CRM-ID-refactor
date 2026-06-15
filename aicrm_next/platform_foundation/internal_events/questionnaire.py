@@ -212,7 +212,7 @@ def questionnaire_webhook_consumer(event: InternalEvent, run: InternalEventConsu
             "questionnaire_id": int(questionnaire_id or 0),
             "slug": _text(questionnaire.get("slug")),
             "submission_id": submission_id,
-            "external_push_mode": "shadow",
+            "external_push_mode": "queue",
             "target_url_present": bool(target_url),
             "body_type": "dict",
             "answer_count": len(body.get("answers") or []),
@@ -232,8 +232,8 @@ def questionnaire_webhook_consumer(event: InternalEvent, run: InternalEventConsu
         source_command_id=_text(source.get("command_id") or event.source_command_id),
         risk_level="medium",
         requires_approval=False,
-        execution_mode="shadow",
-        status="planned",
+        execution_mode="execute",
+        status="queued",
         idempotency_key=f"questionnaire.submitted:{submission_id}:external-effect:{WEBHOOK_QUESTIONNAIRE_SUBMISSION_PUSH}",
     )
     return InternalEventConsumerResult(

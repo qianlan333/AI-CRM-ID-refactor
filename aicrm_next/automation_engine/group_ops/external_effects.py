@@ -143,11 +143,8 @@ def plan_group_ops_external_effect(
         and send_mode == "wecom_group"
     ):
         effect_type = WECOM_MESSAGE_GROUP_SEND
-    execution_mode = "shadow"
-    status = "planned"
-    if mode == "external_effect" and not force_shadow:
-        execution_mode = "execute"
-        status = "queued"
+    execution_mode = "execute"
+    status = "queued"
 
     chat_ids = [clean_text(item) for item in list(chat_ids or []) if clean_text(item)]
     content_payload = dict(content_payload or {})

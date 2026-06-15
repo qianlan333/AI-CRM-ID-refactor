@@ -105,3 +105,13 @@ def run_scheduled_external_effects(
 
 def print_run_due_result(*, dry_run: bool, limit: int | None = None, operator: str = "cli") -> None:
     print(json.dumps(run_scheduled_external_effects(dry_run=dry_run, limit=limit, operator=operator), ensure_ascii=False, sort_keys=True, default=str))
+
+
+def complete_record_only_jobs(*, dry_run: bool = True, limit: int = 100, operator: str = "cli") -> dict[str, Any]:
+    from .service import ExternalEffectService
+
+    return ExternalEffectService().complete_record_only(dry_run=dry_run, limit=limit, operator=operator)
+
+
+def print_complete_record_only_result(*, dry_run: bool, limit: int = 100, operator: str = "cli") -> None:
+    print(json.dumps(complete_record_only_jobs(dry_run=dry_run, limit=limit, operator=operator), ensure_ascii=False, sort_keys=True, default=str))

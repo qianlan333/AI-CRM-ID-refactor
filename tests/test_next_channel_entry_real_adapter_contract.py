@@ -48,10 +48,12 @@ def test_channel_entry_logs_real_call_disabled_without_fake_success(monkeypatch)
     assert result["handled"] is True
     assert result["baseline_effects"]["channel_contact"]["external_contact_id"] == "wm-real-disabled"
     assert result["welcome_message"]["sent"] is False
-    assert result["welcome_message"]["reason"] == "wecom_real_calls_disabled"
+    assert result["welcome_message"]["queued"] is True
+    assert result["welcome_message"]["reason"] == "external_effect_job_queued"
     assert result["entry_tag"]["applied"] is False
-    assert result["entry_tag"]["reason"] == "wecom_real_calls_disabled"
+    assert result["entry_tag"]["queued"] is True
+    assert result["entry_tag"]["reason"] == "external_effect_job_queued"
     assert result["mode"] == "standalone_channel"
     assert contacts
-    assert any(row["effect_type"] == "welcome_message" and row["status"] == "failed" and row["reason"] == "wecom_real_calls_disabled" for row in effects)
-    assert any(row["effect_type"] == "entry_tag" and row["status"] == "failed" and row["reason"] == "wecom_real_calls_disabled" for row in effects)
+    assert any(row["effect_type"] == "welcome_message" and row["status"] == "queued" and row["reason"] == "external_effect_job_queued" for row in effects)
+    assert any(row["effect_type"] == "entry_tag" and row["status"] == "queued" and row["reason"] == "external_effect_job_queued" for row in effects)

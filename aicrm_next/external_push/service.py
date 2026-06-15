@@ -6,9 +6,9 @@ import json
 import os
 from datetime import datetime, timedelta, timezone
 from typing import Any
-from urllib.parse import urljoin
 
-import requests
+from aicrm_next.platform_foundation.command_bus import CommandContext
+from aicrm_next.platform_foundation.external_effects import ExternalEffectService, WEBHOOK_GENERIC_PUSH, WEBHOOK_ORDER_PAID_PUSH
 
 from . import repo
 from .security import WebhookUrlValidationError, resolve_and_validate_public_https_url, validate_webhook_url
@@ -250,17 +250,6 @@ def _webhook_timeout_seconds() -> float:
     return float(os.getenv("EXTERNAL_PUSH_WEBHOOK_TIMEOUT_SECONDS") or 5)
 
 
-def _send_http_post(url: str, *, raw_body: str, headers: dict[str, str], timeout: float) -> tuple[int, str, str]:
-    resolved = resolve_and_validate_public_https_url(url)
-    response = requests.post(resolved, data=raw_body.encode("utf-8"), headers=headers, timeout=timeout, allow_redirects=False)
-    if response.is_redirect and response.headers.get("Location"):
-        redirect_url = urljoin(resolved, response.headers["Location"])
-        redirect_url = resolve_and_validate_public_https_url(redirect_url)
-        response = requests.post(redirect_url, data=raw_body.encode("utf-8"), headers=headers, timeout=timeout, allow_redirects=False)
-        resolved = redirect_url
-    return int(response.status_code), truncate_body(response.text or "", MAX_BODY_BYTES), resolved
-
-
 def _attempt_delivery(
     delivery: dict[str, Any],
     *,
@@ -307,42 +296,72 @@ def _attempt_delivery(
     next_attempt = int(delivery.get("attempt_count") or 0) + 1
     request_url = _normalized_text(config.get("webhook_url") or delivery.get("request_url"))
     try:
-        status_code, response_body, final_url = _send_http_post(
-            request_url,
-            raw_body=raw_body,
-            headers=headers,
-            timeout=_webhook_timeout_seconds(),
+        final_url = resolve_and_validate_public_https_url(request_url)
+        effect_type = WEBHOOK_GENERIC_PUSH if event_type == EVENT_EXTERNAL_PUSH_TEST else WEBHOOK_ORDER_PAID_PUSH
+        job = ExternalEffectService().plan_effect(
+            effect_type=effect_type,
+            adapter_name="outbound_webhook",
+            operation="post",
+            target_type="external_push_delivery",
+            target_id=delivery_id,
+            business_type="commerce_order" if event_type == EVENT_TRANSACTION_PAID else "external_push_test",
+            business_id=_normalized_text(delivery.get("order_id") or delivery.get("product_id") or delivery_id),
+            payload={
+                "webhook_url": final_url,
+                "body": request_payload,
+                "headers": headers,
+                "legacy_delivery_id": delivery_id,
+                "source_event_type": event_type,
+            },
+            payload_summary={
+                "delivery_id": delivery_id,
+                "event_type": event_type,
+                "target_url_present": bool(final_url),
+                "body_type": type(request_payload).__name__,
+            },
+            context=CommandContext(
+                actor_id="external_push_worker",
+                actor_type="system",
+                request_id=delivery_id,
+                trace_id=delivery_id,
+                source_route="external_push.service._attempt_delivery",
+            ),
+            source_module="external_push.service",
+            source_event_id=delivery_id,
+            source_command_id=delivery_id,
+            idempotency_key=f"external-push:{delivery_id}:{next_attempt}:external-effect",
         )
-        ok = 200 <= status_code < 300
-        next_retry = "" if ok else (schedule_next_retry(next_attempt) or "")
-        status = "success" if ok else ("retrying" if next_retry else "gave_up")
         updated = repository.update_delivery_result(
             delivery_id,
-            status=status,
-            attempt_count=next_attempt,
+            status="retry_scheduled",
+            attempt_count=int(delivery.get("attempt_count") or 0),
             request_url=final_url,
             request_headers=redact_sensitive_fields(headers),
             request_body=redact_sensitive_fields(request_payload),
-            response_status=status_code,
-            response_body=response_body,
-            error_message="" if ok else f"HTTP {status_code}",
-            next_retry_at=next_retry,
+            response_status=None,
+            response_body=f"external_effect_job_id={job.get('id')}",
+            error_message="external_effect_job_queued",
+            next_retry_at="",
         )
-        return {"ok": ok, "delivery": updated, "status_code": status_code, "reason": "" if ok else f"HTTP {status_code}"}
+        return {
+            "ok": True,
+            "queued": True,
+            "delivery": updated,
+            "external_effect_job_id": job.get("id"),
+            "real_external_call_executed": False,
+        }
     except Exception as exc:
-        next_retry = schedule_next_retry(next_attempt) or ""
-        status = "retrying" if next_retry else "gave_up"
         updated = repository.update_delivery_result(
             delivery_id,
-            status=status,
-            attempt_count=next_attempt,
+            status="failed",
+            attempt_count=int(delivery.get("attempt_count") or 0),
             request_url=request_url,
             request_headers=redact_sensitive_fields(headers),
             request_body=redact_sensitive_fields(request_payload),
             response_status=None,
             response_body="",
             error_message=truncate_body(str(exc), 1000),
-            next_retry_at=next_retry,
+            next_retry_at="",
         )
         return {"ok": False, "delivery": updated, "reason": str(exc)}
 
@@ -501,4 +520,3 @@ def retry_order_delivery(order_id: int, delivery_id: str, *, repository: Any | N
         raise ExternalPushError("只能重试 failed / retrying / gave_up 状态")
     config = repository.get_config_with_secret(int(delivery.get("config_id") or 0)) or {}
     return _attempt_delivery(delivery, config=config, repository=repository)
-
