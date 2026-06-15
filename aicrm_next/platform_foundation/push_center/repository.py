@@ -7,6 +7,7 @@ from aicrm_next.platform_foundation.external_effects.models import ExternalEffec
 from aicrm_next.platform_foundation.external_effects.service import ExternalEffectService
 
 from .section_mapper import all_sections, effect_types_for_section, label_for_section, section_for_job
+from .status_mapper import standard_push_status, status_matches
 
 
 def _text(value: Any) -> str:
@@ -98,9 +99,10 @@ def _matches_job(job: ExternalEffectJob, filters: dict[str, Any]) -> bool:
     section_types = set(effect_types_for_section(_text(filters.get("section"))))
     if section_types and job.effect_type not in section_types:
         return False
+    if not status_matches(job.status, filters.get("status")):
+        return False
     for key in (
         "effect_type",
-        "status",
         "business_type",
         "business_id",
         "target_type",
@@ -132,7 +134,7 @@ class PushCenterRepository:
         # payload-summary filters without exposing payload_json to callers.
         base_filters = {
             key: filters.get(key)
-            for key in ("effect_type", "status", "business_type", "business_id", "target_type", "target_id", "trace_id")
+            for key in ("effect_type", "business_type", "business_id", "target_type", "target_id", "trace_id")
             if _text(filters.get(key))
         }
         candidates, _total = self._service.list_jobs(base_filters, limit=1000, offset=0)
@@ -150,21 +152,23 @@ class PushCenterRepository:
     def counts(self, filters: dict[str, Any] | None = None) -> dict[str, Any]:
         jobs, total = self.list_jobs(filters or {}, limit=1000, offset=0)
         by_status: dict[str, int] = {}
+        by_raw_status: dict[str, int] = {}
         by_section: dict[str, int] = {}
         for job in jobs:
-            by_status[job.status] = by_status.get(job.status, 0) + 1
+            status = standard_push_status(job.status)
+            by_status[status] = by_status.get(status, 0) + 1
+            by_raw_status[job.status] = by_raw_status.get(job.status, 0) + 1
             section = section_for_job(job)
             by_section[section] = by_section.get(section, 0) + 1
         return {
             "total": total,
             "by_status": by_status,
+            "by_raw_status": by_raw_status,
             "by_section": by_section,
-            "queued": by_status.get("queued", 0),
-            "planned": by_status.get("planned", 0),
+            "pending": by_status.get("pending", 0),
+            "running": by_status.get("running", 0),
             "succeeded": by_status.get("succeeded", 0),
-            "blocked": by_status.get("blocked", 0),
-            "failed": by_status.get("failed_retryable", 0) + by_status.get("failed_terminal", 0),
-            "cancelled": by_status.get("cancelled", 0),
+            "failed": by_status.get("failed", 0),
         }
 
     def sections(self, filters: dict[str, Any] | None = None) -> list[dict[str, Any]]:

@@ -7,6 +7,11 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from aicrm_next.admin_jobs.routes import ensure_admin_action_token
 from aicrm_next.platform_foundation.legacy_cleanup.service import LegacyWebhookCleanupService
+from aicrm_next.platform_foundation.external_effects.jobs import (
+    SCHEDULER_BATCH_SIZE_KEY,
+    SCHEDULER_ENABLED_KEY,
+    SCHEDULER_INTERVAL_SECONDS_KEY,
+)
 from aicrm_next.platform_foundation.push_center.capability_registry import (
     PushCapability,
     capability_for_section,
@@ -239,6 +244,32 @@ EXTRA_SETTING_DEFINITIONS: dict[str, dict[str, Any]] = {
         "input_type": "password",
         "type": "secret",
         "description": "用于 External Effect Queue webhook HMAC 签名；留空表示保持原值。",
+    },
+    SCHEDULER_ENABLED_KEY: {
+        "key": SCHEDULER_ENABLED_KEY,
+        "label": "统一队列自动调度",
+        "mode": "editable",
+        "input_type": "text",
+        "type": "boolean",
+        "description": "开启后由统一调度器定时捞所有到期 external_effect_job；能力开关只表示允许执行。",
+    },
+    SCHEDULER_INTERVAL_SECONDS_KEY: {
+        "key": SCHEDULER_INTERVAL_SECONDS_KEY,
+        "label": "统一队列调度间隔",
+        "mode": "editable",
+        "input_type": "number",
+        "type": "integer",
+        "description": "建议 60 秒，即每 1 分钟统一扫描全部到期外部动作队列。",
+        "min": 60,
+    },
+    SCHEDULER_BATCH_SIZE_KEY: {
+        "key": SCHEDULER_BATCH_SIZE_KEY,
+        "label": "统一队列每轮处理上限",
+        "mode": "editable",
+        "input_type": "number",
+        "type": "integer",
+        "description": "调度器每轮最多处理多少条到期任务；实际仍逐条经过安全门禁和 adapter。",
+        "min": 1,
     },
     "AICRM_EXTERNAL_EFFECT_PAYMENT_EXECUTE": {
         "key": "AICRM_EXTERNAL_EFFECT_PAYMENT_EXECUTE",
@@ -709,6 +740,32 @@ def _capability_requires_webhook_gate(capability: PushCapability) -> bool:
     )
 
 
+def _scheduler_state_for_read_service(read_service: "AdminConfigReadService") -> dict[str, Any]:
+    enabled = read_service._capability_enabled_from_setting(SCHEDULER_ENABLED_KEY)
+    interval_value, interval_source = read_service._setting_value_source(SCHEDULER_INTERVAL_SECONDS_KEY)
+    batch_value, batch_source = read_service._setting_value_source(SCHEDULER_BATCH_SIZE_KEY)
+    try:
+        interval_seconds = _bounded_int(interval_value, field_name=SCHEDULER_INTERVAL_SECONDS_KEY, default=60, minimum=60, maximum=86400)
+    except ValueError:
+        interval_seconds = 60
+    try:
+        batch_size = _bounded_int(batch_value, field_name=SCHEDULER_BATCH_SIZE_KEY, default=20, minimum=1, maximum=500)
+    except ValueError:
+        batch_size = 20
+    return {
+        "enabled": enabled,
+        "status": "enabled" if enabled else "disabled",
+        "status_label": "自动调度已开启" if enabled else "自动调度未开启",
+        "interval_seconds": interval_seconds,
+        "interval_minutes": max(1, round(interval_seconds / 60)),
+        "batch_size": batch_size,
+        "interval_source": interval_source,
+        "batch_size_source": batch_source,
+        "setting_key": SCHEDULER_ENABLED_KEY,
+        "description": "统一调度器按固定间隔扫描全部到期任务；业务能力开关只表示允许执行。",
+    }
+
+
 class AdminConfigReadService:
     def __init__(self, repo: AdminConfigRepository | None = None) -> None:
         self.repo = repo or AdminConfigRepository()
@@ -998,6 +1055,7 @@ class AdminConfigReadService:
         toggleable_count = sum(1 for item in capabilities if item["toggleable"])
         abnormal_count = sum(int(item["abnormal_count"]) for item in capabilities)
         test_only = self._capability_enabled_from_setting("AICRM_EXTERNAL_EFFECT_TEST_EXECUTION_ONLY")
+        scheduler = _scheduler_state_for_read_service(self)
         if test_only:
             global_status = "test_only"
         elif enabled_count == 0:
@@ -1024,6 +1082,7 @@ class AdminConfigReadService:
                 },
             },
             "capabilities": capabilities,
+            "scheduler": scheduler,
             "advanced": {"visible": False, "items": self._advanced_push_items()},
             "route_owner": "ai_crm_next",
             "real_external_call_executed": False,
@@ -1497,6 +1556,31 @@ class AdminConfigWriteCommand:
         capability_payload = AdminConfigReadService(self.repo).get_push_capabilities()["capabilities"]
         current = next(item for item in capability_payload if item["key"] == capability.key)
         return {"capability": current, "derived_gates": derived}
+
+    def set_external_effect_scheduler_enabled(self, enabled: bool, *, operator: str) -> dict[str, Any]:
+        self._upsert_setting_with_audit(
+            key=SCHEDULER_ENABLED_KEY,
+            value=_normalize_boolean_text(enabled),
+            operator=operator,
+            target_type=TARGET_PUSH_CAPABILITY,
+        )
+        interval_value, _source = AdminConfigReadService(self.repo)._setting_value_source(SCHEDULER_INTERVAL_SECONDS_KEY)
+        if not _text(interval_value):
+            self._upsert_setting_with_audit(
+                key=SCHEDULER_INTERVAL_SECONDS_KEY,
+                value="60",
+                operator=operator,
+                target_type=TARGET_PUSH_CAPABILITY,
+            )
+        batch_value, _source = AdminConfigReadService(self.repo)._setting_value_source(SCHEDULER_BATCH_SIZE_KEY)
+        if not _text(batch_value):
+            self._upsert_setting_with_audit(
+                key=SCHEDULER_BATCH_SIZE_KEY,
+                value="20",
+                operator=operator,
+                target_type=TARGET_PUSH_CAPABILITY,
+            )
+        return {"scheduler": _scheduler_state_for_read_service(AdminConfigReadService(self.repo))}
 
     def check_category(self, category_key: str, *, operator: str) -> dict[str, Any]:
         del operator

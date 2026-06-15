@@ -4,13 +4,10 @@
 <section class="push-center-page" data-route-owner="ai_crm_next">
   <section class="push-center-stats" id="statsGrid" aria-label="推送统计">
     <article class="admin-card push-center-stat"><div class="push-center-stat-label">全部推送</div><div class="push-center-stat-value" data-stat="total">-</div></article>
-    <article class="admin-card push-center-stat"><div class="push-center-stat-label">待执行</div><div class="push-center-stat-value" data-stat="queued">-</div></article>
-    <article class="admin-card push-center-stat"><div class="push-center-stat-label">执行中</div><div class="push-center-stat-value" data-stat="dispatching">-</div></article>
-    <article class="admin-card push-center-stat"><div class="push-center-stat-label">成功</div><div class="push-center-stat-value" data-stat="succeeded">-</div></article>
-    <article class="admin-card push-center-stat"><div class="push-center-stat-label">失败可重试</div><div class="push-center-stat-value" data-stat="failed_retryable">-</div></article>
-    <article class="admin-card push-center-stat"><div class="push-center-stat-label">失败不可重试</div><div class="push-center-stat-value" data-stat="failed_terminal">-</div></article>
-    <article class="admin-card push-center-stat"><div class="push-center-stat-label">已阻断</div><div class="push-center-stat-value" data-stat="blocked">-</div></article>
-    <article class="admin-card push-center-stat"><div class="push-center-stat-label">已取消</div><div class="push-center-stat-value" data-stat="cancelled">-</div></article>
+    <article class="admin-card push-center-stat"><div class="push-center-stat-label">待执行</div><div class="push-center-stat-value" data-stat="pending">-</div></article>
+    <article class="admin-card push-center-stat"><div class="push-center-stat-label">执行中</div><div class="push-center-stat-value" data-stat="running">-</div></article>
+    <article class="admin-card push-center-stat"><div class="push-center-stat-label">执行成功</div><div class="push-center-stat-value" data-stat="succeeded">-</div></article>
+    <article class="admin-card push-center-stat"><div class="push-center-stat-label">执行失败</div><div class="push-center-stat-value" data-stat="failed">-</div></article>
   </section>
 
   <section class="admin-card push-center-legacy" id="legacyDeprecationsPanel" aria-label="旧链路下线状态">
@@ -55,13 +52,10 @@
         <label class="push-center-field">状态
           <select name="status">
             <option value="">全部</option>
-            <option value="queued">待执行</option>
-            <option value="dispatching">执行中</option>
-            <option value="succeeded">成功</option>
-            <option value="failed_retryable">失败可重试</option>
-            <option value="failed_terminal">失败不可重试</option>
-            <option value="blocked">已阻断</option>
-            <option value="cancelled">已取消</option>
+            <option value="pending">待执行</option>
+            <option value="running">执行中</option>
+            <option value="succeeded">执行成功</option>
+            <option value="failed">执行失败</option>
           </select>
         </label>
         <label class="push-center-field">客户 external_userid
@@ -119,7 +113,7 @@
 
 <style>
 .push-center-page { --pc-line: #e5e7eb; --pc-muted: #6b7280; --pc-primary: #2563eb; --pc-success: #059669; --pc-warning: #d97706; --pc-danger: #dc2626; --pc-blocked: #7c3aed; }
-.push-center-stats { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 12px; margin-bottom: 16px; }
+.push-center-stats { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; margin-bottom: 16px; }
 .push-center-stat { padding: 14px; }
 .push-center-stat-label { font-size: 12px; color: var(--pc-muted); margin-bottom: 8px; }
 .push-center-stat-value { font-size: 22px; font-weight: 700; }
@@ -163,12 +157,10 @@
 .push-center-time-date { color: #111827; font-weight: 600; }
 .push-center-time-clock { color: var(--pc-muted); font-size: 12px; margin-top: 3px; }
 .push-center-badge { display: inline-flex; align-items: center; border-radius: 999px; padding: 3px 8px; font-size: 12px; font-weight: 600; white-space: nowrap; }
+.push-center-badge.pending { color: var(--pc-primary); background: #eff6ff; }
+.push-center-badge.running { color: var(--pc-primary); background: #eff6ff; }
 .push-center-badge.succeeded { color: var(--pc-success); background: #ecfdf5; }
-.push-center-badge.queued, .push-center-badge.dispatching { color: var(--pc-primary); background: #eff6ff; }
-.push-center-badge.failed_retryable { color: var(--pc-warning); background: #fffbeb; }
-.push-center-badge.failed_terminal { color: var(--pc-danger); background: #fef2f2; }
-.push-center-badge.blocked { color: var(--pc-blocked); background: #f5f3ff; }
-.push-center-badge.cancelled { color: var(--pc-muted); background: #f3f4f6; }
+.push-center-badge.failed { color: var(--pc-danger); background: #fef2f2; }
 .push-center-detail-empty { padding: 32px 20px; color: var(--pc-muted); text-align: center; }
 .push-center-detail-body { padding: 16px; }
 .push-center-section { margin-bottom: 18px; }
@@ -194,16 +186,10 @@
 (() => {
   const state = { section: "", filters: {}, selectedJobId: null };
   const STATUS_LABELS = {
-    planned: "已计划",
-    approved: "已审批",
-    queued: "待执行",
-    dispatching: "执行中",
-    succeeded: "成功",
-    failed_retryable: "失败可重试",
-    failed_terminal: "失败不可重试",
-    blocked: "已阻断",
-    cancelled: "已取消",
-    expired: "已过期"
+    pending: "待执行",
+    running: "执行中",
+    succeeded: "执行成功",
+    failed: "执行失败"
   };
   const EFFECT_TYPE_LABELS = {
     "webhook.questionnaire_submission.push": "问卷外推",

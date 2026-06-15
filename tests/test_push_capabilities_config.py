@@ -17,6 +17,7 @@ from aicrm_next.platform_foundation.external_effects import (
     ExternalEffectService,
     reset_external_effect_fixture_state,
 )
+from aicrm_next.platform_foundation.external_effects.jobs import SCHEDULER_BATCH_SIZE_KEY, SCHEDULER_ENABLED_KEY, SCHEDULER_INTERVAL_SECONDS_KEY
 from aicrm_next.platform_foundation.external_effects.adapters import ExternalEffectAdapterRegistry
 from aicrm_next.platform_foundation.external_effects.worker import ExternalEffectWorker
 from aicrm_next.platform_foundation.push_center.capability_registry import PUSH_CAPABILITIES
@@ -200,6 +201,37 @@ def test_push_capability_toggle_derives_all_external_effect_execution_gates(next
     assert disabled["media_upload_execute"] is False
 
 
+def test_push_capability_scheduler_toggle_is_global_not_per_capability(next_client: TestClient) -> None:
+    token = ensure_admin_action_token()
+    AdminConfigRepository().upsert_app_setting(key=SCHEDULER_ENABLED_KEY, value="false")
+    initial = next_client.get("/api/admin/config/push-capabilities")
+    assert initial.status_code == 200
+    assert initial.json()["scheduler"]["enabled"] is False
+    assert initial.json()["scheduler"]["interval_seconds"] == 60
+
+    enabled = next_client.patch(
+        "/api/admin/config/push-capabilities/scheduler",
+        headers={"X-Admin-Action-Token": token},
+        json={"enabled": True},
+    )
+    assert enabled.status_code == 200
+    body = enabled.json()
+    assert body["scheduler"]["enabled"] is True
+    assert body["scheduler"]["interval_seconds"] == 60
+    assert body["scheduler"]["batch_size"] == 20
+    assert AdminConfigRepository().get_app_setting(SCHEDULER_ENABLED_KEY)["value"] == "true"
+    assert AdminConfigRepository().get_app_setting(SCHEDULER_INTERVAL_SECONDS_KEY)["value"] == "60"
+    assert AdminConfigRepository().get_app_setting(SCHEDULER_BATCH_SIZE_KEY)["value"] == "20"
+
+    disabled = next_client.patch(
+        "/api/admin/config/push-capabilities/scheduler",
+        headers={"X-Admin-Action-Token": token},
+        json={"enabled": False},
+    )
+    assert disabled.status_code == 200
+    assert disabled.json()["scheduler"]["enabled"] is False
+
+
 def test_external_effect_worker_blocks_disabled_capability_before_adapter_and_allows_enabled() -> None:
     reset_external_effect_fixture_state()
     _set_setting("AICRM_PUSH_CAPABILITY_QUESTIONNAIRE_EXTERNAL_PUSH_ENABLED", "false")
@@ -288,7 +320,7 @@ def test_webhooks_push_page_is_push_capability_entry(next_client: TestClient) ->
 
     assert response.status_code == 200
     assert "推送能力配置" in response.text
-    assert "外推总状态" in response.text
+    assert "统一队列自动调度" in response.text
     assert "已开启能力" in response.text
     assert "异常任务" in response.text
     assert "旧链路状态" in response.text
