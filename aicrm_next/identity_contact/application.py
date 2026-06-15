@@ -3,6 +3,8 @@ from __future__ import annotations
 from aicrm_next.customer_read_model.application import GetCustomerDetailQuery
 from aicrm_next.customer_read_model.dto import CustomerDetailRequest
 from aicrm_next.integration_gateway.customer_sync_adapters import build_identity_mapping_adapter
+from aicrm_next.platform_foundation.internal_events.customer_identity import emit_customer_phone_bound_event
+from aicrm_next.platform_foundation.internal_events.shadow import safe_emit
 from aicrm_next.shared.runtime import production_data_ready
 from aicrm_next.shared.typing import JsonDict
 
@@ -243,14 +245,31 @@ class BindMobileToExternalContactCommand:
 
     def execute(self, request: BindMobileToExternalContactRequest) -> JsonDict:
         normalized = normalize_mobile_binding_request(request)
-        return self._repo.bind_mobile_to_external_contact(
-            external_userid=normalized.external_userid,
-            mobile=normalized.mobile,
-            owner_userid=normalized.owner_userid or "",
-            bind_by_userid=normalized.bind_by_userid or "",
-            customer_name=normalized.customer_name or "",
-            force_rebind=normalized.force_rebind,
+        result = dict(
+            self._repo.bind_mobile_to_external_contact(
+                external_userid=normalized.external_userid,
+                mobile=normalized.mobile,
+                owner_userid=normalized.owner_userid or "",
+                bind_by_userid=normalized.bind_by_userid or "",
+                customer_name=normalized.customer_name or "",
+                force_rebind=normalized.force_rebind,
+            )
         )
+        internal_event = safe_emit(
+            "customer.phone_bound",
+            emit_customer_phone_bound_event,
+            request=normalized,
+            binding_result=result,
+        )
+        result["internal_event_status"] = str(internal_event.get("status") or "")
+        result["internal_event_id"] = str(internal_event.get("event_id") or "")
+        if internal_event.get("reason"):
+            result["internal_event_reason"] = str(internal_event.get("reason") or "")
+        if internal_event.get("error"):
+            result["internal_event_error"] = str(internal_event.get("error") or "")
+        if internal_event.get("consumer_run_count") is not None:
+            result["internal_event_consumer_run_count"] = int(internal_event.get("consumer_run_count") or 0)
+        return result
 
     __call__ = execute
 

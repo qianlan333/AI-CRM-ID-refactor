@@ -8,6 +8,7 @@ from aicrm_next.platform_foundation.command_bus import Command, CommandContext
 from .config import customer_tags_internal_events_enabled, event_type_allowed, internal_events_enabled, questionnaire_internal_events_enabled
 from .consumer_registry import DEFAULT_INTERNAL_EVENT_CONSUMER_REGISTRY, InternalEventConsumerRegistry
 from .models import InternalEvent, InternalEventConsumerResult, InternalEventConsumerRun
+from .customer_identity import CUSTOMER_PHONE_BOUND_EVENT_TYPE, register_customer_identity_event_consumers
 from .questionnaire import register_questionnaire_event_consumers
 from .service import InternalEventService
 
@@ -187,6 +188,7 @@ def webhook_owner_migration_consumer(event: InternalEvent, run: InternalEventCon
 def register_shadow_event_consumers(registry: InternalEventConsumerRegistry | None = None) -> None:
     registry = registry or DEFAULT_INTERNAL_EVENT_CONSUMER_REGISTRY
     register_questionnaire_event_consumers(registry)
+    register_customer_identity_event_consumers(registry)
 
     for event_type in (CUSTOMER_TAGGED_EVENT_TYPE, CUSTOMER_UNTAGGED_EVENT_TYPE):
         registry.register(event_type, "tag_external_effect_shadow_consumer", tag_external_effect_shadow_consumer, consumer_type="external_effect_planner")
