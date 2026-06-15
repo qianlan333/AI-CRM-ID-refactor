@@ -24,6 +24,7 @@ The payload keeps only safe operational diagnostics:
 - source route
 - safe command/trace id
 - customer count, success count, failed count, skipped count
+- count consistency diagnostics and count source labels
 - customer scope hash and present flag
 - dry-run / real-execution indicators
 - created/executed timestamps when present
@@ -38,6 +39,10 @@ The payload keeps only safe operational diagnostics:
 - `success_count`
 - `failed_count`
 - `skipped_count`
+- `count_consistency`
+- `count_source`
+- `partial_failure_present`
+- `all_failed`
 - `source`
 - `executed=true`
 
@@ -45,6 +50,43 @@ It must not include customer lists, raw `external_userid`, mobile numbers,
 openid, unionid, webhook URLs, tokens, secrets, or failure details that embed
 customer identifiers. Owner userids are represented as present flags and hashes
 in the summary.
+
+## Count Semantics
+
+`success_count` means the migration has explicit success evidence. Failed
+customers must not be counted as successful only because they appeared in the
+requested customer scope, result rows, or overall `customer_count`.
+
+The emitter calculates counts conservatively:
+
+- `failed_count` is resolved before inferring success.
+- Explicit success sources are, in order, `result.success_count`,
+  `result.crm_updated`, `update_counts.contacts`, and
+  `wecom_transfer.success_external_userids`.
+- `touched_count` is used as a success source only when there is no failed
+  count.
+- If failures exist and no explicit success source exists, `success_count` is
+  inferred as `max(0, customer_count - failed_count)`.
+- If `failed_count >= customer_count` and there is no explicit upstream
+  success count, `success_count` is `0`.
+- If explicit success and failure counts conflict with `customer_count`, the
+  explicit success count is preserved and `count_consistency` records the
+  inconsistency for diagnosis.
+
+Diagnostic fields:
+
+- `count_consistency`: `ok` for consistent explicit counts; otherwise a
+  conservative inference/correction label such as
+  `inferred_from_customer_minus_failed`, `all_failed`, or
+  `explicit_success_count_exceeds_customer_count_with_failures`.
+- `count_source`: safe source labels for `customer_count`, `success_count`, and
+  `failed_count`; these labels do not include customer identifiers.
+- `partial_failure_present`: true whenever `failed_count > 0`.
+- `all_failed`: true when the emitted summary represents a non-empty customer
+  scope where every customer failed and no success was counted.
+
+This prevents all-failed WeCom transfer or zero-row CRM updates from being
+summarized as successful migrations.
 
 ## Feature Flag
 

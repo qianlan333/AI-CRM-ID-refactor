@@ -9,7 +9,7 @@ from aicrm_next.owner_migration.application import OwnerMigrationCommand, OwnerM
 from aicrm_next.platform_foundation.external_effects import ExternalEffectService, reset_external_effect_fixture_state
 from aicrm_next.platform_foundation.internal_events import InternalEventService, reset_internal_event_fixture_state
 from aicrm_next.platform_foundation.internal_events.repository import build_internal_event_repository
-from aicrm_next.platform_foundation.internal_events.shadow import OWNER_MIGRATION_EXECUTED_EVENT_TYPE
+from aicrm_next.platform_foundation.internal_events.shadow import OWNER_MIGRATION_EXECUTED_EVENT_TYPE, emit_owner_migration_executed_shadow_event
 from aicrm_next.platform_foundation.internal_events.worker import InternalEventWorker
 
 OWNER_MIGRATION_CONSUMERS = [
@@ -165,6 +165,45 @@ def _run_consumer(event_id: str, consumer_name: str) -> dict:
     )
 
 
+def _safe_rows(count: int) -> list[dict]:
+    return [{"external_userid": f"wm_sensitive_{index}"} for index in range(count)]
+
+
+def _emit_direct_owner_migration_event(result: dict) -> dict:
+    emitted = emit_owner_migration_executed_shadow_event(
+        command=OwnerMigrationCommand(
+            source_owner_userid="owner_a",
+            target_owner_userid="owner_b",
+            operator="pytest",
+            execute=True,
+            confirm=True,
+            perform_wecom_transfer=False,
+        ),
+        result={
+            "result_id": "omr_count_semantics",
+            "source_owner_userid": "owner_a",
+            "target_owner_userid": "owner_b",
+            "operator": "pytest",
+            **result,
+        },
+    )
+    assert emitted["status"] == "emitted"
+    return _event()
+
+
+def _assert_no_sensitive_payload_text(event) -> None:
+    payload_text = str(event.payload_json) + str(event.payload_summary_json)
+
+    assert "wm_sensitive_" not in payload_text
+    assert "external_userid" not in payload_text.lower()
+    assert "13800138000" not in payload_text
+    assert "mobile" not in payload_text.lower()
+    assert "openid" not in payload_text.lower()
+    assert "unionid" not in payload_text.lower()
+    assert "token" not in payload_text.lower()
+    assert "secret" not in payload_text.lower()
+
+
 def test_owner_migration_flag_off_does_not_emit(monkeypatch) -> None:
     _configure(monkeypatch, enabled=False)
 
@@ -225,6 +264,10 @@ def test_owner_migration_executed_emits_once_with_expected_safe_schema_and_consu
     assert event.payload_summary_json["success_count"] == 2
     assert event.payload_summary_json["failed_count"] == 0
     assert event.payload_summary_json["skipped_count"] == 0
+    assert event.payload_summary_json["count_consistency"] == "ok"
+    assert event.payload_summary_json["count_source"]["success_count"] == "update_counts.contacts"
+    assert event.payload_summary_json["partial_failure_present"] is False
+    assert event.payload_summary_json["all_failed"] is False
     assert event.payload_summary_json["from_owner_present"] is True
     assert event.payload_summary_json["to_owner_present"] is True
     assert migration_payload["customer_scope_present"] is True
@@ -244,6 +287,83 @@ def test_owner_migration_executed_emits_once_with_expected_safe_schema_and_consu
     assert "ai_assist_notify_consumer" not in [run.consumer_name for run in runs]
     assert all(run.status == "pending" for run in runs)
     assert all(run.attempt_count == 0 for run in runs)
+
+
+def test_owner_migration_all_failed_transfer_does_not_count_as_success(monkeypatch) -> None:
+    _configure(monkeypatch)
+
+    event = _emit_direct_owner_migration_event(
+        {
+            "rows": _safe_rows(3),
+            "wecom_transfer": {"failed_count": 3, "failed_customers": _safe_rows(3)},
+        }
+    )
+
+    assert event.payload_summary_json["customer_count"] == 3
+    assert event.payload_summary_json["success_count"] == 0
+    assert event.payload_summary_json["failed_count"] == 3
+    assert event.payload_summary_json["all_failed"] is True
+    assert event.payload_summary_json["partial_failure_present"] is True
+    assert event.payload_summary_json["count_consistency"] != "misleading"
+    assert event.payload_json["owner_migration"]["count_source"]["success_count"] == "customer_count_minus_failed_count"
+    _assert_no_sensitive_payload_text(event)
+
+
+def test_owner_migration_partial_failure_infers_remaining_success_count(monkeypatch) -> None:
+    _configure(monkeypatch)
+
+    event = _emit_direct_owner_migration_event(
+        {
+            "rows": _safe_rows(5),
+            "wecom_transfer": {"failed_count": 2},
+        }
+    )
+
+    assert event.payload_summary_json["customer_count"] == 5
+    assert event.payload_summary_json["success_count"] == 3
+    assert event.payload_summary_json["failed_count"] == 2
+    assert event.payload_summary_json["all_failed"] is False
+    assert event.payload_summary_json["partial_failure_present"] is True
+    assert event.payload_summary_json["count_consistency"] == "inferred_from_customer_minus_failed"
+
+
+def test_owner_migration_explicit_success_count_wins_when_consistent(monkeypatch) -> None:
+    _configure(monkeypatch)
+
+    event = _emit_direct_owner_migration_event(
+        {
+            "rows": _safe_rows(5),
+            "success_count": 4,
+            "failed_count": 1,
+        }
+    )
+
+    assert event.payload_summary_json["customer_count"] == 5
+    assert event.payload_summary_json["success_count"] == 4
+    assert event.payload_summary_json["failed_count"] == 1
+    assert event.payload_summary_json["count_consistency"] == "ok"
+    assert event.payload_summary_json["count_source"]["success_count"] == "result.success_count"
+    assert event.payload_summary_json["partial_failure_present"] is True
+
+
+def test_owner_migration_zero_crm_update_does_not_fallback_to_customer_count(monkeypatch) -> None:
+    _configure(monkeypatch)
+
+    event = _emit_direct_owner_migration_event(
+        {
+            "candidate_count": 3,
+            "crm_updated": 0,
+            "failed_count": 0,
+        }
+    )
+
+    assert event.payload_summary_json["customer_count"] == 3
+    assert event.payload_summary_json["success_count"] == 0
+    assert event.payload_summary_json["failed_count"] == 0
+    assert event.payload_summary_json["count_consistency"] == "ok"
+    assert event.payload_summary_json["count_source"]["success_count"] == "result.crm_updated"
+    assert event.payload_summary_json["partial_failure_present"] is False
+    assert event.payload_summary_json["all_failed"] is False
 
 
 def test_owner_migration_admin_api_redacts_summary_and_hides_payload_json(monkeypatch) -> None:
