@@ -6,6 +6,14 @@ from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from aicrm_next.admin_jobs.routes import ensure_admin_action_token
+from aicrm_next.platform_foundation.legacy_cleanup.service import LegacyWebhookCleanupService
+from aicrm_next.platform_foundation.push_center.capability_registry import (
+    PushCapability,
+    capability_for_section,
+    get_push_capability,
+    visible_push_capabilities,
+)
+from aicrm_next.platform_foundation.push_center.repository import PushCenterRepository
 
 from .category_registry import CONFIG_CATEGORIES, ConfigCategory, ConfigCategoryField, get_config_category
 from .definitions import APP_SETTING_DEFINITIONS
@@ -19,6 +27,7 @@ TARGET_CONFIG_CATEGORY_ENABLED = "config_category_enabled"
 TARGET_ADMIN_USER = "admin_user"
 TARGET_MCP_TOOL_SETTING = "mcp_tool_setting"
 TARGET_MARKETING_AUTOMATION_CONFIG = "marketing_automation_config"
+TARGET_PUSH_CAPABILITY = "push_capability"
 DEFAULT_SIGNUP_CONVERSION_KEY = "signup_conversion_v1"
 DEFAULT_MARKETING_AUTOMATION_NAME = "自动化转化问卷初判"
 DEFAULT_MARKETING_TARGET_EVENT = "signup_success"
@@ -67,6 +76,13 @@ HTTP_URL_SETTING_KEYS = {
     "WECHAT_SHOP_API_BASE",
 }
 JSON_SETTING_KEYS = {"WECHAT_PAY_PRODUCT_CATALOG_JSON"}
+PUSH_CAPABILITY_ADVANCED_KEYS = (
+    ("OPENCLAW_WEBHOOK_URL", "OPENCLAW_WEBHOOK_URL", "OpenClaw Webhook 地址"),
+    ("openclaw_focus_message_credential", "OPENCLAW_FOCUS_MESSAGE_WEBHOOK_TOKEN", "OpenClaw Focus Message 凭据"),
+    ("QUESTIONNAIRE_SUBMIT_WEBHOOK_URL", "QUESTIONNAIRE_SUBMIT_WEBHOOK_URL", "问卷提交 Webhook 地址"),
+    ("questionnaire_submit_credential", "QUESTIONNAIRE_SUBMIT_WEBHOOK_TOKEN", "问卷提交凭据"),
+    ("external_effect_webhook_signing_config", "AICRM_EXTERNAL_EFFECT_WEBHOOK_SIGNING_SECRET", "External Effect Webhook 签名配置"),
+)
 EXTRA_SETTING_DEFINITIONS: dict[str, dict[str, Any]] = {
     "SIDEBAR_PRODUCT_CONTEXT_TOKEN_TTL_SECONDS": {
         "key": "SIDEBAR_PRODUCT_CONTEXT_TOKEN_TTL_SECONDS",
@@ -607,6 +623,69 @@ def _audit_action_label(action_type: str) -> str:
     return mapping.get(normalized, normalized or "-")
 
 
+def _capability_enabled_from_value(value: str, *, default: bool = False) -> bool:
+    if not _text(value):
+        return bool(default)
+    return _bool(value)
+
+
+def _capability_queue_counts(counts: dict[str, Any]) -> dict[str, int]:
+    return {
+        "total": int(counts.get("total") or 0),
+        "queued": int(counts.get("queued") or 0),
+        "planned": int(counts.get("planned") or 0),
+        "succeeded": int(counts.get("succeeded") or 0),
+        "blocked": int(counts.get("blocked") or 0),
+        "failed": int(counts.get("failed") or 0),
+        "cancelled": int(counts.get("cancelled") or 0),
+    }
+
+
+def _health_for_capability(*, capability: PushCapability, enabled: bool, counts: dict[str, int], last_error_code: str) -> tuple[str, str]:
+    abnormal_count = counts["blocked"] + counts["failed"]
+    if capability.readonly_reason:
+        return "只读", "neutral"
+    if not capability.supports_real_execution:
+        return "暂未接入", "neutral"
+    if not enabled:
+        return "未开启", "warn"
+    if abnormal_count or last_error_code:
+        return "有异常", "danger"
+    return "正常", "ok"
+
+
+def _effect_type_union_for_enabled_capabilities(read_service: "AdminConfigReadService") -> list[str]:
+    effect_types: list[str] = []
+    seen: set[str] = set()
+    for capability in visible_push_capabilities(main_only=False):
+        if not capability.toggleable or not capability.supports_real_execution:
+            continue
+        value, _source = read_service._setting_value_source(capability.setting_key)
+        if not _capability_enabled_from_value(value, default=False):
+            continue
+        for effect_type in capability.effect_types:
+            if effect_type not in seen:
+                seen.add(effect_type)
+                effect_types.append(effect_type)
+    return effect_types
+
+
+def _derived_gate_payload(effect_types: list[str], capabilities: list[PushCapability]) -> dict[str, Any]:
+    enabled_keys = {capability.key for capability in capabilities}
+    webhook_execute = any(
+        capability.key in enabled_keys
+        and capability.supports_real_execution
+        and capability.adapter_family in {"webhook", "legacy_webhook", "mixed"}
+        for capability in visible_push_capabilities(main_only=False)
+    )
+    wecom_execute = any(effect_type.startswith("wecom.") for effect_type in effect_types)
+    return {
+        "allowed_effect_types": effect_types,
+        "webhook_execute": webhook_execute,
+        "wecom_execute": wecom_execute,
+    }
+
+
 class AdminConfigReadService:
     def __init__(self, repo: AdminConfigRepository | None = None) -> None:
         self.repo = repo or AdminConfigRepository()
@@ -772,6 +851,21 @@ class AdminConfigReadService:
         category = get_config_category(category_key)
         if not category:
             raise KeyError("config category not found")
+        if category.key == "webhooks_push":
+            return {
+                "category": {
+                    **self._serialize_category_summary(category),
+                    "enabled_key": category.enabled_key,
+                    "special_view": "push_capabilities",
+                    "capabilities_api": "/api/admin/config/push-capabilities",
+                    "push_center_stats_api": "/api/admin/push-center/stats",
+                    "push_center_sections_api": "/api/admin/push-center/sections",
+                    "push_center_jobs_api": "/api/admin/push-center/jobs",
+                    "legacy_deprecations_api": "/api/admin/push-center/legacy-deprecations",
+                },
+                "blocks": [],
+                "special_view": "push_capabilities",
+            }
         blocks_by_title: dict[str, list[dict[str, Any]]] = {}
         for ref in category.fields:
             field_row = self._serialize_category_field(ref)
@@ -786,6 +880,101 @@ class AdminConfigReadService:
                 for title, fields in blocks_by_title.items()
             ],
         }
+
+    def _capability_enabled(self, capability: PushCapability, *, default: bool = False) -> bool:
+        value, _source = self._setting_value_source(capability.setting_key)
+        return _capability_enabled_from_value(value, default=default)
+
+    def _last_problem_for_section(self, section: str, repository: PushCenterRepository) -> dict[str, str]:
+        jobs, _total = repository.list_jobs({"section": section}, limit=50, offset=0)
+        for job in jobs:
+            if _text(job.last_error_code) or job.status in {"blocked", "failed_retryable", "failed_terminal"}:
+                return {
+                    "last_error_code": _text(job.last_error_code),
+                    "last_error_message": _text(job.last_error_message),
+                }
+        return {"last_error_code": "", "last_error_message": ""}
+
+    def _serialize_push_capability(self, capability: PushCapability, *, repository: PushCenterRepository) -> dict[str, Any]:
+        enabled = self._capability_enabled(capability, default=False)
+        counts = _capability_queue_counts(repository.counts({"section": capability.section}))
+        problem = self._last_problem_for_section(capability.section, repository)
+        health_label, health_tone = _health_for_capability(
+            capability=capability,
+            enabled=enabled,
+            counts=counts,
+            last_error_code=problem["last_error_code"],
+        )
+        return {
+            **capability.to_dict(),
+            "enabled": enabled if capability.toggleable else False,
+            "readonly_reason": capability.readonly_reason,
+            "queue_counts": counts,
+            "abnormal_count": counts["blocked"] + counts["failed"],
+            "last_error_code": problem["last_error_code"],
+            "last_error_message": problem["last_error_message"],
+            "health_label": health_label,
+            "health_tone": health_tone,
+        }
+
+    def _advanced_push_items(self) -> list[dict[str, Any]]:
+        items: list[dict[str, Any]] = []
+        for public_key, setting_key, label in PUSH_CAPABILITY_ADVANCED_KEYS:
+            metadata = _metadata_for_setting(setting_key)
+            value, _source = self._setting_value_source(setting_key)
+            sensitive = setting_key in SENSITIVE_KEYS or metadata.get("mode") == "masked" or metadata.get("type") == "secret"
+            items.append(
+                {
+                    "key": public_key,
+                    "label": label,
+                    "configured": bool(value),
+                    "sensitive": sensitive,
+                    "display_value": mask_value(setting_key, value) if sensitive else value,
+                }
+            )
+        return items
+
+    def get_push_capabilities(self, *, repository: PushCenterRepository | None = None) -> dict[str, Any]:
+        repository = repository or PushCenterRepository()
+        capabilities = [self._serialize_push_capability(item, repository=repository) for item in visible_push_capabilities(main_only=True)]
+        enabled_count = sum(1 for item in capabilities if item["toggleable"] and item["enabled"])
+        toggleable_count = sum(1 for item in capabilities if item["toggleable"])
+        abnormal_count = sum(int(item["abnormal_count"]) for item in capabilities)
+        test_only = self._capability_enabled_from_setting("AICRM_EXTERNAL_EFFECT_TEST_EXECUTION_ONLY")
+        if test_only:
+            global_status = "test_only"
+        elif enabled_count == 0:
+            global_status = "disabled"
+        elif enabled_count == toggleable_count:
+            global_status = "enabled"
+        else:
+            global_status = "partial"
+        legacy_counts = LegacyWebhookCleanupService().status({}).get("counts", {})
+        return {
+            "ok": True,
+            "summary": {
+                "total": len(capabilities),
+                "enabled_count": enabled_count,
+                "toggleable_count": toggleable_count,
+                "abnormal_count": abnormal_count,
+                "global_status": global_status,
+                "legacy": {
+                    "total": int(legacy_counts.get("total") or 0),
+                    "deprecated": int(legacy_counts.get("deprecated") or 0),
+                    "scheduled": int(legacy_counts.get("scheduled") or 0),
+                    "deleted": int(legacy_counts.get("deleted") or 0),
+                    "failed": int(legacy_counts.get("failed") or 0),
+                },
+            },
+            "capabilities": capabilities,
+            "advanced": {"visible": False, "items": self._advanced_push_items()},
+            "route_owner": "ai_crm_next",
+            "real_external_call_executed": False,
+        }
+
+    def _capability_enabled_from_setting(self, key: str) -> bool:
+        value, _source = self._setting_value_source(key)
+        return _bool(value)
 
     def list_mcp_tool_settings(self, *, query: str, enabled_only: bool) -> dict[str, Any]:
         self.ensure_mcp_tool_settings_seed()
@@ -1122,6 +1311,8 @@ class AdminConfigWriteCommand:
 
     def save_category_settings(self, category_key: str, settings: dict[str, Any], *, operator: str) -> list[dict[str, Any]]:
         category = self._category_or_error(category_key)
+        if category.key == "webhooks_push":
+            raise ValueError("webhooks_push settings are managed by push capabilities API")
         allowed_refs = {ref.key: ref for ref in category.fields}
         submitted_keys = {_text(key) for key in settings if _text(key)}
         unknown_keys = sorted(key for key in submitted_keys if key not in allowed_refs)
@@ -1153,6 +1344,72 @@ class AdminConfigWriteCommand:
             )
             changed.append(after)
         return changed
+
+    def _upsert_setting_with_audit(self, *, key: str, value: str, operator: str, target_type: str = TARGET_APP_SETTING) -> dict[str, Any]:
+        before = self.repo.get_app_setting(key)
+        after = self.repo.upsert_app_setting(key=key, value=value)
+        if _text((before or {}).get("value")) != _text(after.get("value")):
+            self.repo.insert_audit_log(
+                operator=operator,
+                action_type="update" if before else "create",
+                target_type=target_type,
+                target_id=key,
+                before=before or {},
+                after=after,
+            )
+        return after
+
+    def _enabled_capabilities_for_derivation(self, read_service: AdminConfigReadService) -> list[PushCapability]:
+        enabled: list[PushCapability] = []
+        for capability in visible_push_capabilities(main_only=False):
+            if not capability.toggleable or not capability.supports_real_execution:
+                continue
+            value, _source = read_service._setting_value_source(capability.setting_key)
+            if _capability_enabled_from_value(value, default=False):
+                enabled.append(capability)
+        return enabled
+
+    def _write_derived_push_gates(self, *, operator: str) -> dict[str, Any]:
+        read_service = AdminConfigReadService(self.repo)
+        enabled_capabilities = self._enabled_capabilities_for_derivation(read_service)
+        effect_types = _effect_type_union_for_enabled_capabilities(read_service)
+        gates = _derived_gate_payload(effect_types, enabled_capabilities)
+        self._upsert_setting_with_audit(
+            key="AICRM_EXTERNAL_EFFECT_ALLOWED_TYPES",
+            value=",".join(effect_types),
+            operator=operator,
+            target_type=TARGET_PUSH_CAPABILITY,
+        )
+        self._upsert_setting_with_audit(
+            key="AICRM_EXTERNAL_EFFECT_WEBHOOK_EXECUTE",
+            value=_normalize_boolean_text(gates["webhook_execute"]),
+            operator=operator,
+            target_type=TARGET_PUSH_CAPABILITY,
+        )
+        self._upsert_setting_with_audit(
+            key="AICRM_EXTERNAL_EFFECT_WECOM_EXECUTE",
+            value=_normalize_boolean_text(gates["wecom_execute"]),
+            operator=operator,
+            target_type=TARGET_PUSH_CAPABILITY,
+        )
+        return gates
+
+    def set_push_capability_enabled(self, capability_key: str, enabled: bool, *, operator: str) -> dict[str, Any]:
+        capability = get_push_capability(capability_key)
+        if not capability:
+            raise KeyError("push capability not found")
+        if not capability.toggleable:
+            raise PermissionError("push_capability_not_toggleable")
+        self._upsert_setting_with_audit(
+            key=capability.setting_key,
+            value=_normalize_boolean_text(enabled),
+            operator=operator,
+            target_type=TARGET_PUSH_CAPABILITY,
+        )
+        derived = self._write_derived_push_gates(operator=operator)
+        capability_payload = AdminConfigReadService(self.repo).get_push_capabilities()["capabilities"]
+        current = next(item for item in capability_payload if item["key"] == capability.key)
+        return {"capability": current, "derived_gates": derived}
 
     def check_category(self, category_key: str, *, operator: str) -> dict[str, Any]:
         del operator

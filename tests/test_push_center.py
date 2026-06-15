@@ -271,9 +271,19 @@ def test_questionnaire_default_external_push_is_queue_first(client: TestClient, 
 
     monkeypatch.delenv("AICRM_QUESTIONNAIRE_EXTERNAL_PUSH_MODE", raising=False)
     repo = build_questionnaire_repository()
-    questionnaire = repo._questionnaires[0]  # type: ignore[attr-defined]
-    questionnaire["external_push_config"] = {"enabled": True, "webhook_url": "https://hooks.example.com/should-not-send"}
-    questionnaire["questions"] = [{"id": "phone", "type": "mobile", "title": "手机号", "required": True, "options": []}]
+    existing = repo.get_questionnaire_by_slug("hxc-activation-v1")
+    questionnaire = repo.save_questionnaire(
+        {
+            "slug": "hxc-activation-v1",
+            "name": "黄小璨激活问卷",
+            "title": "黄小璨激活问卷",
+            "enabled": True,
+            "external_push_config": {"enabled": True, "webhook_url": "https://hooks.example.com/should-not-send"},
+            "questions": [{"type": "mobile", "title": "手机号", "required": True, "options": []}],
+        },
+        questionnaire_id=int(existing["id"]) if existing else None,
+    )
+    phone_question_id = str(questionnaire["questions"][0]["id"])
     calls: list[dict] = []
 
     def fake_post(*args, **kwargs):
@@ -283,7 +293,7 @@ def test_questionnaire_default_external_push_is_queue_first(client: TestClient, 
     monkeypatch.setattr(external_push.requests, "post", fake_post)
     response = client.post(
         "/api/h5/questionnaires/hxc-activation-v1/submit",
-        json={"answers": {"phone": "test_phone_default_queue"}},
+        json={"answers": {phone_question_id: "test_phone_default_queue"}},
         headers={"Idempotency-Key": "push-center-questionnaire-default-queue"},
     )
     body = response.json()

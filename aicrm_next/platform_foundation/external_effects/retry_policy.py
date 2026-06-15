@@ -20,6 +20,8 @@ BLOCKED_ERROR_CODES = {
     "plan_only",
     "effect_type_not_allowed",
     "unsupported_effect_type",
+    "push_capability_disabled",
+    "push_capability_readonly",
 }
 
 _RETRY_DELAYS_SECONDS = (60, 300, 900, 3600)

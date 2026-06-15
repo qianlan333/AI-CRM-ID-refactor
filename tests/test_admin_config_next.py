@@ -460,16 +460,14 @@ def test_webhooks_push_category_controls_external_effect_runtime(monkeypatch, tm
 
     detail_page = client.get("/admin/config/detail/webhooks_push")
     assert detail_page.status_code == 200
-    assert "Webhook 队列真实执行" in detail_page.text
-    assert "企微消息队列真实执行" in detail_page.text
-    assert "测试接收端启用" in detail_page.text
-    assert "支付查询队列真实执行（预留）" in detail_page.text
-    assert "Feishu 通知队列真实执行（预留）" in detail_page.text
-    assert "OpenClaw 推送队列真实执行（预留）" in detail_page.text
-    assert "问卷外推模式" in detail_page.text
-    assert "AICRM_EXTERNAL_EFFECT_ALLOWED_TYPES" in detail_page.text
+    assert "推送能力配置" in detail_page.text
+    assert "/api/admin/config/push-capabilities" in detail_page.text
+    assert "/api/admin/push-center/stats" in detail_page.text
+    assert "/api/admin/push-center/legacy-deprecations" in detail_page.text
+    assert "Webhook 队列真实执行" not in detail_page.text
+    assert "AICRM_EXTERNAL_EFFECT_ALLOWED_TYPES" not in detail_page.text
 
-    saved = client.put(
+    rejected_legacy_save = client.put(
         "/api/admin/config/categories/webhooks_push/settings",
         json={
             "admin_action_token": token,
@@ -495,21 +493,24 @@ def test_webhooks_push_category_controls_external_effect_runtime(monkeypatch, tm
         },
     )
 
+    assert rejected_legacy_save.status_code == 400
+    assert "push capabilities API" in rejected_legacy_save.json()["error"]
+
+    saved = client.patch(
+        "/api/admin/config/push-capabilities/questionnaire_external_push",
+        headers={"X-Admin-Action-Token": token},
+        json={"enabled": True, "operator": "webhook-runtime-test"},
+    )
+
     assert saved.status_code == 200
-    assert saved.json()["changed_count"] == 16
+    assert saved.json()["capability"]["enabled"] is True
+    assert saved.json()["derived_gates"]["allowed_effect_types"] == ["webhook.questionnaire_submission.push"]
     assert _scalar(database_url, "SELECT value FROM app_settings WHERE key = 'AICRM_EXTERNAL_EFFECT_WEBHOOK_EXECUTE'") == "true"
-    assert questionnaire_external_push_mode() == "queue"
     execution = webhook_execution_settings()
     assert execution["enabled"] is True
     assert execution["allowed_types"] == ["webhook.questionnaire_submission.push"]
     wecom_execution = wecom_execution_settings()
-    assert wecom_execution["enabled"] is True
-    assert wecom_execution["allowed_owner_userids"] == ["HuangYouCan"]
-    assert wecom_execution["allowed_target_external_userids"] == ["wm_fixture_a"]
-    assert wecom_execution["allowed_group_ops_webhook_keys"] == ["测试运营计划-ce2519"]
-    assert wecom_execution["allowed_group_chat_ids"] == ["wr_chat_fixture"]
-    assert external_effect_test_receiver_enabled() is True
-    assert external_effect_test_execution_only_enabled() is True
+    assert wecom_execution["enabled"] is False
 
     rejected = client.put(
         "/api/admin/config/categories/webhooks_push/settings",
@@ -521,7 +522,7 @@ def test_webhooks_push_category_controls_external_effect_runtime(monkeypatch, tm
     )
 
     assert rejected.status_code == 400
-    assert "不允许使用 *" in rejected.json()["error"]
+    assert "push capabilities API" in rejected.json()["error"]
 
     rejected_host = client.put(
         "/api/admin/config/categories/webhooks_push/settings",
@@ -533,7 +534,7 @@ def test_webhooks_push_category_controls_external_effect_runtime(monkeypatch, tm
     )
 
     assert rejected_host.status_code == 400
-    assert "不允许使用本地" in rejected_host.json()["error"]
+    assert "push capabilities API" in rejected_host.json()["error"]
 
 
 def test_config_category_check_and_invalid_category_are_controlled(monkeypatch, tmp_path) -> None:

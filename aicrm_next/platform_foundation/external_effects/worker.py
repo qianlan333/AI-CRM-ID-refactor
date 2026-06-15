@@ -3,7 +3,9 @@ from __future__ import annotations
 from typing import Any
 from uuid import uuid4
 
-from aicrm_next.shared.runtime_settings import runtime_bool
+from aicrm_next.platform_foundation.push_center.capability_registry import capability_for_section
+from aicrm_next.platform_foundation.push_center.section_mapper import section_for_job
+from aicrm_next.shared.runtime_settings import runtime_bool, runtime_setting
 
 from .adapters import DEFAULT_ADAPTER_REGISTRY, ExternalEffectAdapterRegistry
 from .models import WECOM_MESSAGE_GROUP_SEND, ExternalEffectJob
@@ -18,6 +20,22 @@ def _enabled(name: str) -> bool:
 def _is_test_job(job: ExternalEffectJob) -> bool:
     payload = dict(job.payload_json or {})
     return payload.get("execution_scope") == "test_loopback" or payload.get("is_test") is True
+
+
+def _capability_gate_error(job: ExternalEffectJob) -> str:
+    capability = capability_for_section(section_for_job(job))
+    if capability is None:
+        return ""
+    if not capability.supports_real_execution:
+        return "push_capability_readonly"
+    if not capability.toggleable:
+        return ""
+    value = runtime_setting(capability.setting_key, "__aicrm_missing__")
+    if value == "__aicrm_missing__":
+        return ""
+    if str(value or "").strip().lower() not in {"1", "true", "yes", "y", "on"}:
+        return "push_capability_disabled"
+    return ""
 
 
 class ExternalEffectWorker:
@@ -120,6 +138,39 @@ class ExternalEffectWorker:
                 attempt_id=attempt.attempt_id,
                 error_code="test_execution_only_required",
                 error_message="AICRM_EXTERNAL_EFFECT_TEST_EXECUTION_ONLY=1 blocks non-test jobs.",
+            )
+            return {
+                "ok": False,
+                "job": updated.to_dict() if updated else job.to_dict(),
+                "attempt": attempt.to_dict(),
+                "real_external_call_executed": False,
+            }
+        capability_error = _capability_gate_error(job)
+        if capability_error:
+            message = (
+                "Push capability is disabled by admin config."
+                if capability_error == "push_capability_disabled"
+                else "Push capability does not support real execution."
+            )
+            attempt = self._repo.record_attempt(
+                job=job,
+                status="blocked",
+                adapter_mode=job.execution_mode or "execute",
+                request_summary={
+                    "effect_type": job.effect_type,
+                    "business_type": job.business_type,
+                    "section": section_for_job(job),
+                    "capability_gate": capability_error,
+                },
+                response_summary={"blocked": True, "real_external_call_executed": False},
+                error_code=capability_error,
+                error_message=message,
+            )
+            updated = self._repo.mark_blocked(
+                job.id,
+                attempt_id=attempt.attempt_id,
+                error_code=capability_error,
+                error_message=message,
             )
             return {
                 "ok": False,

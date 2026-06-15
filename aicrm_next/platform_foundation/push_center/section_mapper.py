@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import Any
 
 from aicrm_next.platform_foundation.external_effects import (
@@ -28,38 +27,10 @@ from aicrm_next.platform_foundation.external_effects import (
     WECOM_WELCOME_MESSAGE_SEND,
 )
 
+from .capability_registry import capability_for_section, section_metadata
 
-@dataclass(frozen=True)
-class PushSection:
-    key: str
-    label: str
-    effect_types: tuple[str, ...]
-
-
-SECTIONS: tuple[PushSection, ...] = (
-    PushSection(
-        "ai_assist",
-        "AI 助手",
-        (AI_ASSIST_CAMPAIGN_MESSAGE_PLAN, AI_ASSIST_CAMPAIGN_MESSAGE_LOOPBACK, WECOM_MESSAGE_PRIVATE_SEND),
-    ),
-    PushSection("private_broadcast", "私信群发", (WECOM_MESSAGE_PRIVATE_SEND,)),
-    PushSection(
-        "group_ops",
-        "群自动化运营",
-        (GROUP_OPS_MESSAGE_LOOPBACK, GROUP_OPS_WEBHOOK_ACTION_LOOPBACK, WECOM_MESSAGE_GROUP_SEND),
-    ),
-    PushSection("group_broadcast", "群群发", (WECOM_MESSAGE_BROADCAST_SEND, WECOM_MESSAGE_GROUP_SEND)),
-    PushSection("questionnaire", "问卷外推", (WEBHOOK_QUESTIONNAIRE_SUBMISSION_PUSH,)),
-    PushSection("order", "订单外推", (WEBHOOK_ORDER_PAID_PUSH,)),
-    PushSection("customer_webhook", "客户自动化 Webhook", (WEBHOOK_CUSTOMER_AUTOMATION_RETRY, WEBHOOK_CUSTOMER_AUTOMATION_RETRY_DUE)),
-    PushSection("tags", "企微标签", (WECOM_CONTACT_TAG_MARK, WECOM_CONTACT_TAG_UNMARK)),
-    PushSection("welcome", "欢迎语", (WECOM_WELCOME_MESSAGE_SEND,)),
-    PushSection("payment", "支付查询", (PAYMENT_WECHAT_ORDER_QUERY, PAYMENT_WECHAT_REFUND_QUERY, PAYMENT_ALIPAY_ORDER_QUERY, PAYMENT_ALIPAY_REFUND_QUERY)),
-    PushSection("integrations", "集成推送", (FEISHU_WEBHOOK_NOTIFY, OPENCLAW_CONTEXT_PUSH, MEDIA_STORAGE_UPLOAD, WECOM_MEDIA_UPLOAD)),
-    PushSection("other", "其他", ()),
-)
-
-SECTION_BY_KEY = {section.key: section for section in SECTIONS}
+_SECTIONS = section_metadata()
+SECTION_BY_KEY = {item["key"]: item for item in _SECTIONS}
 
 
 def _text(value: Any) -> str:
@@ -74,12 +45,12 @@ def _job_value(job: Any, key: str) -> Any:
 
 def effect_types_for_section(section: str) -> list[str]:
     item = SECTION_BY_KEY.get(_text(section))
-    return list(item.effect_types) if item else []
+    return list(item.get("effect_types") or []) if item else []
 
 
 def label_for_section(section: str) -> str:
     item = SECTION_BY_KEY.get(_text(section))
-    return item.label if item else SECTION_BY_KEY["other"].label
+    return str(item.get("label") or "") if item else str(SECTION_BY_KEY["other"]["label"])
 
 
 def section_for_job(job: Any) -> str:
@@ -120,5 +91,18 @@ def section_for_job(job: Any) -> str:
     return "other"
 
 
+def capability_key_for_job(job: Any) -> str:
+    capability = capability_for_section(section_for_job(job))
+    return capability.key if capability else ""
+
+
 def all_sections() -> list[dict[str, Any]]:
-    return [{"key": item.key, "label": item.label, "effect_types": list(item.effect_types)} for item in SECTIONS]
+    return [
+        {
+            "key": str(item.get("key") or ""),
+            "label": str(item.get("label") or ""),
+            "effect_types": list(item.get("effect_types") or []),
+            "capability_key": str(item.get("capability_key") or ""),
+        }
+        for item in _SECTIONS
+    ]
