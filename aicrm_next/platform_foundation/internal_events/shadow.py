@@ -10,6 +10,7 @@ from .config import (
     customer_tags_internal_events_enabled,
     event_type_allowed,
     internal_events_enabled,
+    ops_plan_internal_events_enabled,
     questionnaire_internal_events_enabled,
 )
 from .consumer_registry import DEFAULT_INTERNAL_EVENT_CONSUMER_REGISTRY, InternalEventConsumerRegistry
@@ -159,6 +160,10 @@ def ai_campaign_ai_assist_notify_consumer(event: InternalEvent, run: InternalEve
     return _skipped("ai_campaign_ai_assist_notify_not_configured", event, run)
 
 
+def ops_plan_ai_assist_notify_consumer(event: InternalEvent, run: InternalEventConsumerRun) -> InternalEventConsumerResult:
+    return _skipped("ops_plan_ai_assist_notify_not_configured", event, run)
+
+
 def campaign_summary_consumer(event: InternalEvent, run: InternalEventConsumerRun) -> InternalEventConsumerResult:
     return _skipped("campaign_summary_not_configured", event, run)
 
@@ -176,10 +181,34 @@ def push_center_link_consumer(event: InternalEvent, run: InternalEventConsumerRu
 
 
 def automation_schedule_refresh_consumer(event: InternalEvent, run: InternalEventConsumerRun) -> InternalEventConsumerResult:
+    if event.event_type == OPS_PLAN_APPROVED_EVENT_TYPE:
+        return InternalEventConsumerResult(
+            status="succeeded",
+            request_summary={"event_id": event.event_id, "consumer_name": run.consumer_name},
+            response_summary={
+                "succeeded": True,
+                "automation_schedule_refresh": "shadow_only",
+                "reason": "automation_schedule_refresh_shadow_only",
+            },
+            result_summary={
+                "automation_schedule_refresh": "shadow_only",
+                "reason": "automation_schedule_refresh_shadow_only",
+            },
+        )
     return _succeeded_noop("automation_schedule_refresh_shadow_only", event, run)
 
 
 def audit_projection_consumer(event: InternalEvent, run: InternalEventConsumerRun) -> InternalEventConsumerResult:
+    if event.event_type == OPS_PLAN_APPROVED_EVENT_TYPE:
+        return InternalEventConsumerResult(
+            status="succeeded",
+            request_summary={"event_id": event.event_id, "consumer_name": run.consumer_name},
+            response_summary={
+                "succeeded": True,
+                "audit_projection": "ops_plan_approved_recorded",
+            },
+            result_summary={"audit_projection": "ops_plan_approved_recorded"},
+        )
     return _succeeded_noop("audit_projection_shadow_only", event, run)
 
 
@@ -216,8 +245,9 @@ def register_shadow_event_consumers(registry: InternalEventConsumerRegistry | No
     registry.register(BROADCAST_TASK_CREATED_EVENT_TYPE, "ai_assist_notify_consumer", ai_assist_notify_consumer, consumer_type="orchestration")
 
     registry.register(OPS_PLAN_APPROVED_EVENT_TYPE, "automation_schedule_refresh_consumer", automation_schedule_refresh_consumer, consumer_type="orchestration")
-    registry.register(OPS_PLAN_APPROVED_EVENT_TYPE, "ai_assist_notify_consumer", ai_assist_notify_consumer, consumer_type="orchestration")
+    registry.register(OPS_PLAN_APPROVED_EVENT_TYPE, "ops_plan_ai_assist_notify_consumer", ops_plan_ai_assist_notify_consumer, consumer_type="orchestration")
     registry.register(OPS_PLAN_APPROVED_EVENT_TYPE, "audit_projection_consumer", audit_projection_consumer, consumer_type="projection")
+    registry.register(OPS_PLAN_APPROVED_EVENT_TYPE, "broadcast_task_planner_consumer", broadcast_task_planner_consumer, consumer_type="orchestration")
 
     registry.register(OWNER_MIGRATION_EXECUTED_EVENT_TYPE, "customer_owner_projection_consumer", customer_owner_projection_consumer, consumer_type="projection")
     registry.register(OWNER_MIGRATION_EXECUTED_EVENT_TYPE, "customer_summary_mark_dirty_consumer", customer_summary_mark_dirty_consumer, consumer_type="projection")
@@ -543,7 +573,9 @@ def emit_ops_plan_approved_shadow_event(
     source_module: str = "cloud_orchestrator.application",
     source_route: str = "",
 ) -> dict[str, Any]:
-    if not _event_enabled(OPS_PLAN_APPROVED_EVENT_TYPE):
+    if not ops_plan_internal_events_enabled():
+        return {"status": "skipped", "reason": "ops_plan_internal_events_disabled"}
+    if not event_type_allowed(OPS_PLAN_APPROVED_EVENT_TYPE):
         return {"status": "skipped", "reason": "internal_events_disabled_or_event_type_not_allowed"}
     plan_id = _text(plan.get("plan_id") or plan.get("id") or plan.get("code"))
     if not plan_id:
@@ -551,15 +583,23 @@ def emit_ops_plan_approved_shadow_event(
     source = _text(plan.get("source_type") or plan.get("business_domain") or "cloud_orchestrator")
     trace_id = _text(plan.get("trace_id") or plan_id)
     stats = dict(stats or {})
+    review_status = _text(plan.get("review_status") or plan.get("approval_status"))
+    run_status = _text(plan.get("run_status") or plan.get("status"))
+    approved_at = _text(plan.get("approved_at"))
+    approved_marker = _text(plan.get("approved_version") or approved_at or "approved")
+    target_count = int(stats.get("target_count") or plan.get("target_count") or plan.get("candidate_count") or 0)
+    campaign_code = _text(plan.get("campaign_code") or plan.get("campaign_id"))
+    plan_type = _text(plan.get("plan_type") or plan.get("source_type") or aggregate_type)
+    stage = review_status or run_status or "approved"
     register_shadow_event_consumers()
     result = InternalEventService().emit_event(
         event_type=OPS_PLAN_APPROVED_EVENT_TYPE,
         event_version=1,
         aggregate_type=aggregate_type,
         aggregate_id=plan_id,
-        subject_type=aggregate_type,
+        subject_type="ops_plan",
         subject_id=plan_id,
-        idempotency_key=f"ops_plan.approved:{aggregate_type}:{plan_id}",
+        idempotency_key=f"ops_plan.approved:{aggregate_type}:{plan_id}:{approved_marker}",
         source_module=source_module,
         source_command_id=plan_id,
         correlation_id=trace_id,
@@ -570,12 +610,44 @@ def emit_ops_plan_approved_shadow_event(
             request_id=f"ops_plan.approved:{plan_id}",
             source_route=source_route,
         ),
-        payload={"plan": dict(plan or {}), "stats": stats},
+        payload={
+            "plan": {
+                "plan_id": plan_id,
+                "plan_code": _text(plan.get("plan_code") or plan.get("code")),
+                "approval_status": review_status,
+                "review_status": review_status,
+                "run_status": run_status,
+                "operator": _text(operator),
+                "source": source,
+                "target_count": target_count,
+                "audience_count": target_count,
+                "campaign_code": campaign_code,
+                "approved_at": approved_at,
+                "plan_type": plan_type,
+                "stage": stage,
+                "status": review_status or run_status,
+                "plan_summary": {
+                    "display_name_present": bool(_text(plan.get("display_name"))),
+                    "source_type": source,
+                },
+            },
+            "source": {
+                "source_module": source_module,
+                "source_route": source_route,
+                "command_id": plan_id,
+                "trace_id": trace_id,
+            },
+        },
         payload_summary={
-            "count": int(stats.get("target_count") or plan.get("target_count") or 0),
-            "batch_id": plan_id,
-            "operator": _text(operator),
+            "plan_id": plan_id,
             "source": source,
+            "operator": _text(operator),
+            "target_count": target_count,
+            "campaign_code": campaign_code,
+            "approved": True,
+            "plan_type": plan_type,
+            "stage": stage,
+            "status": review_status or run_status,
         },
     )
     return {"status": "emitted", "event_id": result["event"]["event_id"], "consumer_run_count": len(result.get("consumer_runs") or [])}

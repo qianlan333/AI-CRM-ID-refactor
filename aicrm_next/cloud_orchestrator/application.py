@@ -31,6 +31,16 @@ def _clean_offset(value: int) -> int:
         return 0
 
 
+def _internal_event_response(internal_event: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "internal_event_id": internal_event.get("event_id") or "",
+        "internal_event_status": internal_event.get("status") or "",
+        "internal_event_reason": internal_event.get("reason") or "",
+        "internal_event_error": internal_event.get("error") or "",
+        "internal_event_consumer_run_count": int(internal_event.get("consumer_run_count") or 0),
+    }
+
+
 class ListCloudPlansQuery:
     def __init__(self, repo: CloudPlanRepository | None = None) -> None:
         self._repo = repo or build_cloud_plan_repository()
@@ -110,8 +120,7 @@ class ApproveCloudPlanCommand:
             "ok": True,
             "plan": plan,
             "stats": stats,
-            "internal_event_id": internal_event.get("event_id") or "",
-            "internal_event_status": internal_event.get("status") or "",
+            **_internal_event_response(internal_event),
         }
 
     __call__ = execute

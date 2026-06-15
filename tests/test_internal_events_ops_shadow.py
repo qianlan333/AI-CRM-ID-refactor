@@ -77,7 +77,10 @@ class MinimalOwnerMigrationRepo:
         del event_type, payload
 
 
-def test_cloud_plan_approval_shadow_emits_ops_plan_approved() -> None:
+def test_cloud_plan_approval_shadow_emits_ops_plan_approved(monkeypatch) -> None:
+    monkeypatch.setenv("AICRM_INTERNAL_EVENTS_ENABLED", "1")
+    monkeypatch.setenv("AICRM_INTERNAL_EVENTS_OPS_PLAN_ENABLED", "1")
+    monkeypatch.setenv("AICRM_INTERNAL_EVENTS_ALLOWED_EVENT_TYPES", "ops_plan.approved")
     reset_internal_event_fixture_state()
     reset_cloud_plan_fixture_state()
 
@@ -94,16 +97,22 @@ def test_cloud_plan_approval_shadow_emits_ops_plan_approved() -> None:
     assert trace_events[0].event_id == events[0].event_id
     assert events[0].aggregate_type == "cloud_orchestrator_plan"
     assert events[0].payload_summary_json == {
-        "count": 2,
-        "batch_id": "plan_probe",
-        "operator": "pytest",
+        "plan_id": "plan_probe",
         "source": "cloud_plan",
+        "operator": "pytest",
+        "target_count": 2,
+        "campaign_code": "",
+        "approved": True,
+        "plan_type": "cloud_plan",
+        "stage": "approved",
+        "status": "approved",
     }
-    assert run_total == 3
+    assert run_total == 4
     assert sorted(run.consumer_name for run in runs) == [
-        "ai_assist_notify_consumer",
         "audit_projection_consumer",
         "automation_schedule_refresh_consumer",
+        "broadcast_task_planner_consumer",
+        "ops_plan_ai_assist_notify_consumer",
     ]
 
 
