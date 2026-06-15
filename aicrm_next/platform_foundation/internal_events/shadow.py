@@ -90,6 +90,124 @@ def _safe_owner_ref(value: Any) -> str:
     return f"owner_ref:{_hash_text(text)}"
 
 
+def _count_list(value: Any) -> list[Any]:
+    return value if isinstance(value, list) else []
+
+
+def _int_from(value: Any) -> int | None:
+    if value is None or value == "":
+        return None
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return None
+    return max(0, parsed)
+
+
+def _count_from(value: Any) -> int | None:
+    if isinstance(value, list):
+        return len(value)
+    return _int_from(value)
+
+
+def _first_count_source(sources: list[tuple[str, Any]]) -> tuple[int, str]:
+    for source, value in sources:
+        count = _count_from(value)
+        if count is not None:
+            return count, source
+    return 0, "none"
+
+
+def _owner_migration_count_diagnostics(
+    *,
+    result: dict[str, Any],
+    update_counts: dict[str, Any],
+    transfer: dict[str, Any],
+    rows: list[Any],
+    requested_external_userids: list[Any],
+    touched_external_userids: list[Any],
+    external_userids: list[str],
+    transfer_success: Any,
+) -> dict[str, Any]:
+    failed_count, failed_count_source = _first_count_source(
+        [
+            ("result.failed_count", result.get("failed_count")),
+            ("wecom_transfer.failed_count", transfer.get("failed_count")),
+            ("wecom_transfer.failed_customers", transfer.get("failed_customers")),
+            ("result.wecom_failed", result.get("wecom_failed")),
+            ("result.crm_skipped_due_to_wecom_failure", result.get("crm_skipped_due_to_wecom_failure")),
+        ]
+    )
+    customer_count, customer_count_source = _first_count_source(
+        [
+            ("result.candidate_count", result.get("candidate_count")),
+            ("result.requested_count", result.get("requested_count")),
+            ("result.requested_customer_scope", result.get("requested_external_userids")),
+            ("result.eligible_count", result.get("eligible_count")),
+            ("result.touched_count", result.get("touched_count")),
+            ("requested_customer_scope", requested_external_userids or None),
+            ("touched_customer_scope", touched_external_userids or None),
+            ("row_customer_scope", external_userids or None),
+            ("rows", rows or None),
+            ("result.crm_updated", result.get("crm_updated")),
+            ("update_counts.contacts", update_counts.get("contacts")),
+        ]
+    )
+    explicit_success, explicit_success_source = _first_count_source(
+        [
+            ("result.success_count", result.get("success_count")),
+            ("result.crm_updated", result.get("crm_updated")),
+            ("update_counts.contacts", update_counts.get("contacts")),
+            ("wecom_transfer.success_customer_scope", transfer_success),
+        ]
+    )
+    has_explicit_success = explicit_success_source != "none"
+    count_consistency = "ok"
+
+    if has_explicit_success:
+        success_count = explicit_success
+        success_count_source = explicit_success_source
+        if customer_count and failed_count and success_count + failed_count > customer_count:
+            count_consistency = "explicit_success_count_exceeds_customer_count_with_failures"
+    elif failed_count and customer_count:
+        success_count = max(0, customer_count - failed_count)
+        success_count_source = "customer_count_minus_failed_count"
+        count_consistency = "all_failed" if success_count == 0 and failed_count >= customer_count else "inferred_from_customer_minus_failed"
+    elif failed_count:
+        success_count = 0
+        success_count_source = "no_explicit_success_with_failures"
+        count_consistency = "failed_without_customer_count"
+    else:
+        success_count, success_count_source = _first_count_source(
+            [
+                ("result.touched_count", result.get("touched_count")),
+                ("touched_customer_scope", touched_external_userids or None),
+                ("row_customer_scope", external_userids or None),
+                ("customer_count", customer_count),
+            ]
+        )
+
+    if not has_explicit_success and failed_count and customer_count and success_count + failed_count > customer_count:
+        success_count = max(0, customer_count - failed_count)
+        count_consistency = "corrected_success_count_to_customer_count"
+        success_count_source = "customer_count_minus_failed_count"
+
+    all_failed = bool(failed_count and customer_count and success_count == 0 and failed_count >= customer_count)
+    return {
+        "customer_count": customer_count,
+        "success_count": success_count,
+        "failed_count": failed_count,
+        "count_consistency": count_consistency,
+        "count_source": {
+            "customer_count": customer_count_source,
+            "success_count": success_count_source,
+            "failed_count": failed_count_source,
+        },
+        "partial_failure_present": bool(failed_count),
+        "all_failed": all_failed,
+    }
+
+
 def _questionnaire_subject_id(submission: dict[str, Any]) -> str:
     external_userid = _text(submission.get("external_userid"))
     if external_userid:
@@ -879,16 +997,12 @@ def emit_owner_migration_executed_shadow_event(
         for row in rows
         if isinstance(row, dict) and _text(row.get("external_userid"))
     ]
-    requested_external_userids = result.get("requested_external_userids")
-    if not isinstance(requested_external_userids, list):
-        requested_external_userids = []
-    touched_external_userids = result.get("touched_external_userids")
-    if not isinstance(touched_external_userids, list):
-        touched_external_userids = []
+    requested_external_userids = _count_list(result.get("requested_external_userids"))
+    touched_external_userids = _count_list(result.get("touched_external_userids"))
     transfer = result.get("wecom_transfer") if isinstance(result.get("wecom_transfer"), dict) else {}
-    transfer_success = transfer.get("success_external_userids")
-    if not isinstance(transfer_success, list):
-        transfer_success = []
+    transfer_success = transfer.get("success_external_userids") if "success_external_userids" in transfer else None
+    if transfer_success is not None and not isinstance(transfer_success, list):
+        transfer_success = None
 
     def _safe_int(value: Any) -> int:
         try:
@@ -897,27 +1011,23 @@ def emit_owner_migration_executed_shadow_event(
             return 0
 
     update_counts = result.get("update_counts") if isinstance(result.get("update_counts"), dict) else {}
-    customer_count = (
-        _safe_int(result.get("candidate_count"))
-        or _safe_int(result.get("requested_count"))
-        or _safe_int(result.get("touched_count"))
-        or len(requested_external_userids)
-        or len(touched_external_userids)
-        or len(external_userids)
-        or _safe_int(result.get("crm_updated"))
-        or _safe_int(update_counts.get("contacts"))
+    counts = _owner_migration_count_diagnostics(
+        result=result,
+        update_counts=update_counts,
+        transfer=transfer,
+        rows=rows,
+        requested_external_userids=requested_external_userids,
+        touched_external_userids=touched_external_userids,
+        external_userids=external_userids,
+        transfer_success=transfer_success,
     )
-    success_count = (
-        _safe_int(result.get("success_count"))
-        or _safe_int(result.get("crm_updated"))
-        or _safe_int(result.get("touched_count"))
-        or _safe_int(update_counts.get("contacts"))
-        or len(transfer_success)
-        or len(touched_external_userids)
-        or len(external_userids)
-        or customer_count
-    )
-    failed_count = _safe_int(result.get("failed_count")) or _safe_int(transfer.get("failed_count"))
+    customer_count = int(counts["customer_count"])
+    success_count = int(counts["success_count"])
+    failed_count = int(counts["failed_count"])
+    count_consistency = _text(counts.get("count_consistency"))
+    count_source = counts.get("count_source") if isinstance(counts.get("count_source"), dict) else {}
+    partial_failure_present = bool(counts.get("partial_failure_present"))
+    all_failed = bool(counts.get("all_failed"))
     skipped_count = _safe_int(result.get("skipped_count"))
     operator = _text(result.get("operator") or getattr(command, "operator", ""))
     source_owner_userid = _text(result.get("source_owner_userid") or getattr(command, "source_owner_userid", ""))
@@ -967,6 +1077,16 @@ def emit_owner_migration_executed_shadow_event(
                 "success_count": success_count,
                 "failed_count": failed_count,
                 "skipped_count": skipped_count,
+                "count_consistency": count_consistency,
+                "count_source": count_source,
+                "count_source_detail": {
+                    "customer_count_source": _text(count_source.get("customer_count")),
+                    "success_count_source": _text(count_source.get("success_count")),
+                    "failed_count_source": _text(count_source.get("failed_count")),
+                    "explicit_success_source": _text(count_source.get("success_count")) not in {"", "none", "customer_count_minus_failed_count", "no_explicit_success_with_failures", "result.touched_count", "touched_customer_scope", "row_customer_scope", "customer_count"},
+                },
+                "partial_failure_present": partial_failure_present,
+                "all_failed": all_failed,
                 "customer_scope_present": bool(customer_count),
                 "customer_scope_hash": customer_scope_hash,
                 "dry_run": False,
@@ -993,6 +1113,10 @@ def emit_owner_migration_executed_shadow_event(
             "success_count": success_count,
             "failed_count": failed_count,
             "skipped_count": skipped_count,
+            "count_consistency": count_consistency,
+            "count_source": count_source,
+            "partial_failure_present": partial_failure_present,
+            "all_failed": all_failed,
             "source": "owner_migration",
             "executed": True,
         },
