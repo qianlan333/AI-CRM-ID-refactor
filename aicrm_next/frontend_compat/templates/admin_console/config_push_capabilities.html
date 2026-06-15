@@ -18,7 +18,7 @@
   <header class="push-capability-head">
     <div>
       <h1 class="push-capability-title">推送能力配置</h1>
-      <div class="push-capability-desc">这里只控制业务推送是否允许真实执行。工程执行参数由平台统一策略处理，不在运营配置中调整。</div>
+      <div class="push-capability-desc">按业务大类统一控制外部推送、企微、支付、Feishu、OpenClaw、素材和测试接收端；底层队列门禁由平台自动联动。</div>
     </div>
     <div class="push-capability-actions">
       <a class="push-capability-btn primary" href="/admin/push-center">进入推送中心</a>
@@ -56,7 +56,7 @@
     <div class="push-capability-panel-head">
       <div>
         <div class="push-capability-panel-title">业务推送能力</div>
-        <div class="push-capability-panel-sub">每一行对应推送中心的一个业务板块；查看任务会跳转到推送中心对应筛选。</div>
+        <div class="push-capability-panel-sub">每一行对应一个外部动作大类；打开或关闭会同步相关 effect_type allowlist 与执行门禁。</div>
       </div>
       <button class="push-capability-btn" type="button" id="refreshBtn">刷新</button>
     </div>
@@ -77,7 +77,7 @@
             <th>能力</th>
             <th>业务归属</th>
             <th>关联 effect_type</th>
-            <th>真实执行</th>
+            <th>能力开关</th>
             <th>队列状态</th>
             <th>异常数</th>
             <th>操作</th>
@@ -323,11 +323,11 @@
       const actionHref = cap.push_center_href || "/admin/push-center";
       const toggleHtml = cap.toggleable
         ? `
-          <label class="push-capability-switch" title="切换真实执行">
+          <label class="push-capability-switch" title="切换能力开关">
             <input type="checkbox" data-action="toggle" data-key="${escapeHtml(cap.key)}"${enabled ? " checked" : ""}>
             <span class="push-capability-slider"></span>
           </label>
-          <div class="push-capability-readonly-reason">${enabled ? "允许真实执行" : "关闭后阻断真实执行"}</div>
+          <div class="push-capability-readonly-reason">${enabled ? "已开启相关队列门禁" : "关闭后阻断相关执行"}</div>
         `
         : `
           <span class="push-capability-badge neutral">只读</span>
@@ -349,6 +349,7 @@
           <td>
             <span class="push-capability-badge ${healthTone}">${escapeHtml(cap.health_label || (enabled ? "已开启" : "未开启"))}</span>
             <div class="push-capability-queue-text">${escapeHtml(queueSummary(cap))}</div>
+            ${cap.gate_problem ? `<div class="push-capability-queue-text">门禁：${escapeHtml(cap.gate_problem)}</div>` : ""}
             ${cap.last_error_code ? `<div class="push-capability-queue-text">最近错误：${escapeHtml(cap.last_error_code)}</div>` : ""}
           </td>
           <td><span class="push-capability-badge ${abnormal ? "danger" : "ok"}">${abnormal}</span></td>

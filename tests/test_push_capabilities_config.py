@@ -6,7 +6,12 @@ from aicrm_next.admin_config.repository import AdminConfigRepository
 from aicrm_next.admin_jobs.routes import ensure_admin_action_token
 from aicrm_next.platform_foundation.command_bus import CommandContext
 from aicrm_next.platform_foundation.external_effects import (
+    FEISHU_WEBHOOK_NOTIFY,
+    MEDIA_STORAGE_UPLOAD,
+    OPENCLAW_CONTEXT_PUSH,
+    PAYMENT_WECHAT_ORDER_QUERY,
     WECOM_MESSAGE_PRIVATE_SEND,
+    WECOM_MEDIA_UPLOAD,
     WEBHOOK_QUESTIONNAIRE_SUBMISSION_PUSH,
     ExternalEffectDispatchResult,
     ExternalEffectService,
@@ -94,8 +99,15 @@ def test_push_capabilities_get_hides_raw_engineering_settings_and_sensitive_valu
         "ai_assist_push",
         "private_broadcast",
         "group_ops_push",
+        "group_broadcast",
+        "customer_webhook",
+        "tags",
+        "welcome_message",
+        "payment_query",
+        "integrations",
+        "test_receiver",
     } <= keys
-    assert body["summary"]["total"] == 8
+    assert body["summary"]["total"] == len(PUSH_CAPABILITIES)
     assert all(item["push_center_href"].startswith("/admin/push-center?section=") for item in body["capabilities"])
     assert "super-secret" not in text
     assert "Authorization" not in text
@@ -127,16 +139,65 @@ def test_push_capability_toggle_updates_business_setting_and_derived_gates(next_
     assert enabled.json()["capability"]["enabled"] is True
     assert WEBHOOK_QUESTIONNAIRE_SUBMISSION_PUSH in enabled.json()["derived_gates"]["allowed_effect_types"]
 
-    readonly = next_client.patch(
+    group_broadcast = next_client.patch(
         "/api/admin/config/push-capabilities/group_broadcast",
         headers={"X-Admin-Action-Token": token},
         json={"enabled": True},
     )
     rejected = next_client.patch("/api/admin/config/push-capabilities/order_paid_push", json={"enabled": True})
 
-    assert readonly.status_code == 409
-    assert readonly.json()["error"] == "push_capability_not_toggleable"
+    assert group_broadcast.status_code == 200
+    assert group_broadcast.json()["capability"]["enabled"] is True
     assert rejected.status_code == 401
+
+
+def test_push_capability_toggle_derives_all_external_effect_execution_gates(next_client: TestClient) -> None:
+    token = ensure_admin_action_token()
+
+    payment = next_client.patch(
+        "/api/admin/config/push-capabilities/payment_query",
+        headers={"X-Admin-Action-Token": token},
+        json={"enabled": True},
+    )
+    assert payment.status_code == 200
+    assert payment.json()["derived_gates"]["payment_execute"] is True
+    assert PAYMENT_WECHAT_ORDER_QUERY in payment.json()["derived_gates"]["allowed_effect_types"]
+    assert AdminConfigRepository().get_app_setting("AICRM_EXTERNAL_EFFECT_PAYMENT_EXECUTE")["value"] == "true"
+
+    integrations = next_client.patch(
+        "/api/admin/config/push-capabilities/integrations",
+        headers={"X-Admin-Action-Token": token},
+        json={"enabled": True},
+    )
+    assert integrations.status_code == 200
+    derived = integrations.json()["derived_gates"]
+    assert derived["feishu_execute"] is True
+    assert derived["openclaw_execute"] is True
+    assert derived["media_upload_execute"] is True
+    assert {FEISHU_WEBHOOK_NOTIFY, OPENCLAW_CONTEXT_PUSH, MEDIA_STORAGE_UPLOAD, WECOM_MEDIA_UPLOAD} <= set(derived["allowed_effect_types"])
+    assert AdminConfigRepository().get_app_setting("AICRM_EXTERNAL_EFFECT_FEISHU_EXECUTE")["value"] == "true"
+    assert AdminConfigRepository().get_app_setting("AICRM_EXTERNAL_EFFECT_OPENCLAW_EXECUTE")["value"] == "true"
+    assert AdminConfigRepository().get_app_setting("AICRM_EXTERNAL_EFFECT_MEDIA_UPLOAD_EXECUTE")["value"] == "true"
+
+    receiver = next_client.patch(
+        "/api/admin/config/push-capabilities/test_receiver",
+        headers={"X-Admin-Action-Token": token},
+        json={"enabled": True},
+    )
+    assert receiver.status_code == 200
+    assert receiver.json()["derived_gates"]["test_receiver_enabled"] is True
+    assert AdminConfigRepository().get_app_setting("AICRM_EXTERNAL_EFFECT_TEST_RECEIVER_ENABLED")["value"] == "true"
+
+    disable_integrations = next_client.patch(
+        "/api/admin/config/push-capabilities/integrations",
+        headers={"X-Admin-Action-Token": token},
+        json={"enabled": False},
+    )
+    assert disable_integrations.status_code == 200
+    disabled = disable_integrations.json()["derived_gates"]
+    assert disabled["feishu_execute"] is False
+    assert disabled["openclaw_execute"] is False
+    assert disabled["media_upload_execute"] is False
 
 
 def test_external_effect_worker_blocks_disabled_capability_before_adapter_and_allows_enabled() -> None:
