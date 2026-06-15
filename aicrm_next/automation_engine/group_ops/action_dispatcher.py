@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from typing import Any, Callable
 
 from aicrm_next.integration_gateway.fake_adapters import FakeWeComDispatchAdapter
+from aicrm_next.platform_foundation.internal_events.legacy_path_markers import mark_legacy_path_invoked
 from aicrm_next.platform_foundation.internal_events.shadow import emit_broadcast_task_created_shadow_event, safe_emit
 from aicrm_next.shared.errors import ContractError
 from aicrm_next.shared.postgres_connection import get_db
@@ -174,6 +175,15 @@ class NextOutboundMessageQueueGateway:
         db.commit()
         job_id = int((row or {}).get("id") or 0)
         if job_id:
+            mark_legacy_path_invoked(
+                legacy_path="broadcast_task.legacy_group_ops_private_queue",
+                replacement_event_type="broadcast_task.created",
+                replacement_consumer="broadcast_queue_projection_consumer",
+                source_module="automation_engine.group_ops.action_dispatcher",
+                source_route="NextOutboundMessageQueueGateway.enqueue_private_message",
+                aggregate_id=command.idempotency_key,
+                reason="group_ops_private_queue_replaced_by_broadcast_task_created",
+            )
             safe_emit(
                 "broadcast_task.created",
                 emit_broadcast_task_created_shadow_event,

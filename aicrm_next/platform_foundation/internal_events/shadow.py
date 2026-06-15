@@ -17,6 +17,7 @@ from .config import (
     questionnaire_internal_events_enabled,
 )
 from .consumer_registry import DEFAULT_INTERNAL_EVENT_CONSUMER_REGISTRY, InternalEventConsumerRegistry
+from .legacy_path_markers import mark_legacy_path_invoked
 from .models import InternalEvent, InternalEventConsumerResult, InternalEventConsumerRun
 from .customer_identity import CUSTOMER_PHONE_BOUND_EVENT_TYPE, register_customer_identity_event_consumers
 from .questionnaire import register_questionnaire_event_consumers
@@ -222,6 +223,26 @@ def _source_context_source(source_context: dict[str, Any], fallback: str) -> str
     return _text(source_context.get("source")) or _text(fallback)
 
 
+def _mark_legacy_hook(
+    event: InternalEvent,
+    run: InternalEventConsumerRun,
+    *,
+    legacy_path: str,
+    reason: str,
+    severity: str = "info",
+) -> None:
+    mark_legacy_path_invoked(
+        legacy_path=legacy_path,
+        replacement_event_type=event.event_type,
+        replacement_consumer=run.consumer_name,
+        source_module="platform_foundation.internal_events.shadow",
+        source_route=f"/internal-events/{event.event_type}/{run.consumer_name}",
+        aggregate_id=event.aggregate_id or event.subject_id,
+        reason=reason,
+        severity=severity,
+    )
+
+
 def _skipped(reason: str, event: InternalEvent, run: InternalEventConsumerRun) -> InternalEventConsumerResult:
     return InternalEventConsumerResult(
         status="skipped",
@@ -257,6 +278,12 @@ def customer_summary_consumer(event: InternalEvent, run: InternalEventConsumerRu
 
 
 def tag_external_effect_shadow_consumer(event: InternalEvent, run: InternalEventConsumerRun) -> InternalEventConsumerResult:
+    _mark_legacy_hook(
+        event,
+        run,
+        legacy_path="customer_tag.legacy_side_effect_planning",
+        reason="customer_tag_side_effect_replaced_by_internal_event_consumer",
+    )
     payload = dict(event.payload_json or {})
     external_effect_job = payload.get("external_effect_job")
     side_effect_plan = payload.get("side_effect_plan")
@@ -309,34 +336,82 @@ def tag_summary_consumer(event: InternalEvent, run: InternalEventConsumerRun) ->
 
 
 def ai_assist_notify_consumer(event: InternalEvent, run: InternalEventConsumerRun) -> InternalEventConsumerResult:
+    _mark_legacy_hook(
+        event,
+        run,
+        legacy_path=f"{event.event_type}.legacy_ai_assist_notify",
+        reason="ai_assist_notify_replaced_by_internal_event_consumer",
+    )
     return _skipped("ai_assist_notify_not_configured", event, run)
 
 
 def broadcast_task_ai_assist_notify_consumer(event: InternalEvent, run: InternalEventConsumerRun) -> InternalEventConsumerResult:
+    _mark_legacy_hook(
+        event,
+        run,
+        legacy_path="broadcast_task.legacy_ai_assist_notify",
+        reason="broadcast_ai_assist_notify_replaced_by_internal_event_consumer",
+    )
     return _skipped("broadcast_task_ai_assist_notify_not_configured", event, run)
 
 
 def legacy_broadcast_task_ai_assist_notify_consumer(event: InternalEvent, run: InternalEventConsumerRun) -> InternalEventConsumerResult:
+    _mark_legacy_hook(
+        event,
+        run,
+        legacy_path="broadcast_task.legacy_alias_ai_assist_notify",
+        reason="legacy_alias_dispatch_only",
+    )
     return _skipped("broadcast_task_legacy_ai_assist_notify_not_configured", event, run)
 
 
 def ai_campaign_ai_assist_notify_consumer(event: InternalEvent, run: InternalEventConsumerRun) -> InternalEventConsumerResult:
+    _mark_legacy_hook(
+        event,
+        run,
+        legacy_path="ai_campaign.legacy_ai_assist_notify",
+        reason="ai_campaign_notify_replaced_by_internal_event_consumer",
+    )
     return _skipped("ai_campaign_ai_assist_notify_not_configured", event, run)
 
 
 def ops_plan_ai_assist_notify_consumer(event: InternalEvent, run: InternalEventConsumerRun) -> InternalEventConsumerResult:
+    _mark_legacy_hook(
+        event,
+        run,
+        legacy_path="ops_plan.legacy_ai_assist_notify",
+        reason="ops_plan_notify_replaced_by_internal_event_consumer",
+    )
     return _skipped("ops_plan_ai_assist_notify_not_configured", event, run)
 
 
 def legacy_ops_plan_ai_assist_notify_consumer(event: InternalEvent, run: InternalEventConsumerRun) -> InternalEventConsumerResult:
+    _mark_legacy_hook(
+        event,
+        run,
+        legacy_path="ops_plan.legacy_alias_ai_assist_notify",
+        reason="legacy_alias_dispatch_only",
+    )
     return _skipped("ops_plan_legacy_ai_assist_notify_not_configured", event, run)
 
 
 def owner_migration_ai_assist_notify_consumer(event: InternalEvent, run: InternalEventConsumerRun) -> InternalEventConsumerResult:
+    _mark_legacy_hook(
+        event,
+        run,
+        legacy_path="owner_migration.legacy_ai_assist_notify",
+        reason="owner_migration_notify_replaced_by_internal_event_consumer",
+    )
     return _skipped("owner_migration_ai_assist_notify_not_configured", event, run)
 
 
 def legacy_owner_migration_ai_assist_notify_consumer(event: InternalEvent, run: InternalEventConsumerRun) -> InternalEventConsumerResult:
+    _mark_legacy_hook(
+        event,
+        run,
+        legacy_path="owner_migration.legacy_alias_ai_assist_notify",
+        reason="legacy_alias_dispatch_only",
+    )
     return _skipped("owner_migration_legacy_ai_assist_notify_not_configured", event, run)
 
 
@@ -345,6 +420,12 @@ def campaign_summary_consumer(event: InternalEvent, run: InternalEventConsumerRu
 
 
 def broadcast_task_planner_consumer(event: InternalEvent, run: InternalEventConsumerRun) -> InternalEventConsumerResult:
+    _mark_legacy_hook(
+        event,
+        run,
+        legacy_path=f"{event.event_type}.legacy_broadcast_task_planner",
+        reason="broadcast_task_planner_replaced_by_internal_event_consumer",
+    )
     return _skipped("broadcast_task_planner_not_configured", event, run)
 
 
@@ -379,6 +460,12 @@ def push_center_link_consumer(event: InternalEvent, run: InternalEventConsumerRu
 
 
 def automation_schedule_refresh_consumer(event: InternalEvent, run: InternalEventConsumerRun) -> InternalEventConsumerResult:
+    _mark_legacy_hook(
+        event,
+        run,
+        legacy_path="ops_plan.legacy_automation_schedule_refresh",
+        reason="automation_schedule_refresh_replaced_by_internal_event_consumer",
+    )
     if event.event_type == OPS_PLAN_APPROVED_EVENT_TYPE:
         return InternalEventConsumerResult(
             status="succeeded",
@@ -452,6 +539,12 @@ def customer_summary_mark_dirty_consumer(event: InternalEvent, run: InternalEven
 
 
 def webhook_owner_migration_consumer(event: InternalEvent, run: InternalEventConsumerRun) -> InternalEventConsumerResult:
+    _mark_legacy_hook(
+        event,
+        run,
+        legacy_path="owner_migration.legacy_webhook_notify",
+        reason="owner_migration_webhook_replaced_by_internal_event_consumer",
+    )
     return _skipped("owner_migration_webhook_not_configured", event, run)
 
 

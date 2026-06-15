@@ -8,6 +8,7 @@ from aicrm_next.platform_foundation.command_bus import CommandContext
 
 from .config import customer_identity_internal_events_enabled, event_type_allowed
 from .consumer_registry import DEFAULT_INTERNAL_EVENT_CONSUMER_REGISTRY, InternalEventConsumerRegistry
+from .legacy_path_markers import mark_legacy_path_invoked
 from .models import InternalEvent, InternalEventConsumerResult, InternalEventConsumerRun
 from .service import InternalEventService
 
@@ -79,6 +80,18 @@ def _skipped(reason: str, event: InternalEvent, run: InternalEventConsumerRun) -
     )
 
 
+def _mark_legacy_hook(event: InternalEvent, run: InternalEventConsumerRun, *, legacy_path: str, reason: str) -> None:
+    mark_legacy_path_invoked(
+        legacy_path=legacy_path,
+        replacement_event_type=event.event_type,
+        replacement_consumer=run.consumer_name,
+        source_module="platform_foundation.internal_events.customer_identity",
+        source_route=f"/internal-events/{event.event_type}/{run.consumer_name}",
+        aggregate_id=event.aggregate_id or event.subject_id,
+        reason=reason,
+    )
+
+
 def customer_identity_projection_consumer(event: InternalEvent, run: InternalEventConsumerRun) -> InternalEventConsumerResult:
     payload = dict(event.payload_json or {})
     binding = dict(payload.get("binding") or {}) if isinstance(payload.get("binding"), dict) else {}
@@ -95,14 +108,32 @@ def customer_identity_projection_consumer(event: InternalEvent, run: InternalEve
 
 
 def customer_summary_consumer(event: InternalEvent, run: InternalEventConsumerRun) -> InternalEventConsumerResult:
+    _mark_legacy_hook(
+        event,
+        run,
+        legacy_path="customer.phone_bound.legacy_profile_summary_hook",
+        reason="phone_bound_summary_hook_replaced_by_internal_event_consumer",
+    )
     return _skipped("customer_summary_not_configured", event, run)
 
 
 def automation_phone_bound_consumer(event: InternalEvent, run: InternalEventConsumerRun) -> InternalEventConsumerResult:
+    _mark_legacy_hook(
+        event,
+        run,
+        legacy_path="customer.phone_bound.legacy_automation_hook",
+        reason="phone_bound_automation_hook_replaced_by_internal_event_consumer",
+    )
     return _skipped("automation_phone_bound_not_configured", event, run)
 
 
 def customer_identity_ai_assist_notify_consumer(event: InternalEvent, run: InternalEventConsumerRun) -> InternalEventConsumerResult:
+    _mark_legacy_hook(
+        event,
+        run,
+        legacy_path="customer.phone_bound.legacy_ai_assist_notify",
+        reason="phone_bound_ai_assist_notify_replaced_by_internal_event_consumer",
+    )
     return _skipped("customer_identity_ai_assist_notify_not_configured", event, run)
 
 

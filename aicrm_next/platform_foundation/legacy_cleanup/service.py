@@ -16,6 +16,12 @@ DEFAULT_REPLACEMENT_ROUTE = "/admin/push-center"
 
 DEFAULT_LEGACY_DEPRECATIONS: tuple[dict[str, Any], ...] = (
     {
+        "legacy_key": "old_payment_direct_automation_bridge",
+        "legacy_type": "direct_automation",
+        "legacy_route": "public_product.h5_wechat_pay.process_payment_succeeded_event",
+        "legacy_module": "payment",
+    },
+    {
         "legacy_key": "old_ai_assist_direct_send",
         "legacy_type": "direct_send",
         "legacy_route": "/api/ai-assist/legacy/direct-send",
@@ -46,6 +52,12 @@ DEFAULT_LEGACY_DEPRECATIONS: tuple[dict[str, Any], ...] = (
         "legacy_module": "group_ops",
     },
     {
+        "legacy_key": "old_broadcast_jobs_direct_approve_cancel",
+        "legacy_type": "broadcast_job_control_plane",
+        "legacy_route": "/api/admin/broadcast-jobs/{job_id}/approve|cancel",
+        "legacy_module": "admin_jobs",
+    },
+    {
         "legacy_key": "old_group_ops_webhook_outbound",
         "legacy_type": "webhook_outbound",
         "legacy_route": "/api/automation/group-ops/webhooks/{webhook_key}",
@@ -64,10 +76,46 @@ DEFAULT_LEGACY_DEPRECATIONS: tuple[dict[str, Any], ...] = (
         "legacy_module": "commerce",
     },
     {
+        "legacy_key": "old_external_push_outbox_worker",
+        "legacy_type": "webhook_outbox_worker",
+        "legacy_route": "external_push.service.run_due_external_push_events",
+        "legacy_module": "external_push",
+    },
+    {
+        "legacy_key": "old_external_push_delivery_retry",
+        "legacy_type": "webhook_retry",
+        "legacy_route": "external_push.service.retry_order_delivery",
+        "legacy_module": "external_push",
+    },
+    {
+        "legacy_key": "old_payment_refund_direct_request",
+        "legacy_type": "payment_refund_request",
+        "legacy_route": "/api/admin/refunds|/api/admin/wechat-pay/orders/{order_id}/refunds",
+        "legacy_module": "commerce",
+    },
+    {
+        "legacy_key": "old_admin_jobs_deferred_run",
+        "legacy_type": "deferred_job_runner",
+        "legacy_route": "/api/admin/jobs/deferred-jobs/run",
+        "legacy_module": "admin_jobs",
+    },
+    {
         "legacy_key": "old_customer_webhook_delivery_retry",
         "legacy_type": "webhook_retry",
         "legacy_route": "/api/admin/jobs/webhook-deliveries/*/retry",
         "legacy_module": "admin_jobs",
+    },
+    {
+        "legacy_key": "old_broadcast_jobs_feishu_hourly_report",
+        "legacy_type": "feishu_notification",
+        "legacy_route": "/api/admin/broadcast-jobs/feishu-hourly-report/run",
+        "legacy_module": "admin_jobs",
+    },
+    {
+        "legacy_key": "old_owner_migration_legacy_execute_path",
+        "legacy_type": "legacy_application_path",
+        "legacy_route": "owner_migration.OwnerMigrationService._run_legacy",
+        "legacy_module": "owner_migration",
     },
     {
         "legacy_key": "old_external_direct_wecom_webhook_payment_feishu_openclaw",
@@ -107,6 +155,28 @@ def _counts(items: list[LegacyDeprecationEntry]) -> dict[str, int]:
 def _next_delete_time(items: list[LegacyDeprecationEntry]) -> str:
     scheduled = [item.delete_scheduled_at for item in items if item.delete_status == "scheduled" and item.delete_scheduled_at]
     return sorted(scheduled)[0] if scheduled else ""
+
+
+def _with_observation_metrics(
+    items: list[LegacyDeprecationEntry],
+    *,
+    counts_by_key: dict[str, dict[str, int]],
+    window_days: int,
+) -> list[dict[str, Any]]:
+    enriched: list[dict[str, Any]] = []
+    for item in items:
+        payload = item.to_dict()
+        counters = counts_by_key.get(item.legacy_key, {})
+        invoked = int(counters.get("legacy_path_invoked") or 0)
+        real_execution = int(counters.get("legacy_real_execution") or 0)
+        payload["runtime_observation"] = {
+            "window_days": int(window_days),
+            "legacy_path_invoked_count": invoked,
+            "legacy_real_execution_count": real_execution,
+            "no_recent_real_execution": real_execution == 0,
+        }
+        enriched.append(payload)
+    return enriched
 
 
 class LegacyWebhookCleanupService:
@@ -159,11 +229,23 @@ class LegacyWebhookCleanupService:
     def status(self, filters: dict[str, Any] | None = None) -> dict[str, Any]:
         items, total = self._repo.list_deprecations(filters or {}, limit=500, offset=0)
         counts = _counts(items)
+        window_days = 7
+        since = _now() - timedelta(days=window_days)
+        observation_counts = self._repo.legacy_action_counts(since=since)
+        enriched_items = _with_observation_metrics(items, counts_by_key=observation_counts, window_days=window_days)
+        recent_invoked = sum(item["runtime_observation"]["legacy_path_invoked_count"] for item in enriched_items)
+        recent_real_execution = sum(item["runtime_observation"]["legacy_real_execution_count"] for item in enriched_items)
         return {
             "ok": True,
-            "items": [item.to_dict() for item in items],
+            "items": enriched_items,
             "total": total,
             "counts": counts,
+            "runtime_observation": {
+                "window_days": window_days,
+                "legacy_path_invoked_count": recent_invoked,
+                "legacy_real_execution_count": recent_real_execution,
+                "no_recent_real_execution": recent_real_execution == 0,
+            },
             "next_delete_scheduled_at": _next_delete_time(items),
             "route_owner": "ai_crm_next",
             "real_external_call_executed": False,
@@ -235,9 +317,57 @@ class LegacyWebhookCleanupService:
         }
 
     def disabled_payload(self, legacy_key: str, *, error: str = "legacy_webhook_deprecated") -> dict[str, Any]:
+        self.record_runtime_marker(
+            legacy_key,
+            marker="legacy_path_invoked",
+            operator="legacy_cleanup.disabled_payload",
+            metadata={"disabled": True, "error": error},
+            real_external_call_executed=False,
+        )
         item = self._repo.get_deprecation(legacy_key)
         delete_scheduled_at = item.delete_scheduled_at if item else public_datetime(utcnow() + timedelta(days=7))
         return legacy_disabled_payload(legacy_key, delete_scheduled_at=delete_scheduled_at, error=error)
+
+    def record_runtime_marker(
+        self,
+        legacy_key: str,
+        *,
+        marker: str = "legacy_path_invoked",
+        operator: str = "system",
+        metadata: dict[str, Any] | None = None,
+        real_external_call_executed: bool = False,
+    ) -> dict[str, Any]:
+        key = _text(legacy_key)
+        if not key:
+            return {"ok": False, "error": "legacy_key_required", "real_external_call_executed": False}
+        action = "legacy_real_execution" if real_external_call_executed or marker == "legacy_real_execution" else "legacy_path_invoked"
+        after = scrub_summary(
+            {
+                "legacy_key": key,
+                "legacy_runtime_marker": True,
+                "marker": action,
+                "metadata": dict(metadata or {}),
+                "observation_window_days": 7,
+                "real_external_call_executed": bool(real_external_call_executed),
+            }
+        )
+        try:
+            audit = self._repo.record_audit(
+                legacy_key=key,
+                action=action,
+                operator=_text(operator) or "system",
+                before={},
+                after=after,
+            )
+        except Exception:
+            return {"ok": False, "error": "legacy_runtime_marker_failed", "real_external_call_executed": False}
+        return {
+            "ok": True,
+            "audit_id": audit.audit_id,
+            "legacy_key": key,
+            "marker": action,
+            "real_external_call_executed": bool(real_external_call_executed),
+        }
 
     def _validate_delete_candidate(self, item: LegacyDeprecationEntry, *, now: datetime) -> None:
         scheduled = _text(item.delete_scheduled_at)
