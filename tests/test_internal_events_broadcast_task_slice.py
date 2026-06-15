@@ -5,7 +5,7 @@ import hashlib
 from fastapi.testclient import TestClient
 
 from aicrm_next.cloud_orchestrator.application import ApproveCloudPlanCommand, ApproveCloudPlanRecipientCommand
-from aicrm_next.cloud_orchestrator.repository import reset_cloud_plan_fixture_state
+from aicrm_next.cloud_orchestrator.repository import build_cloud_plan_repository, reset_cloud_plan_fixture_state
 from aicrm_next.main import create_app
 from aicrm_next.platform_foundation.external_effects import ExternalEffectService, reset_external_effect_fixture_state
 from aicrm_next.platform_foundation.internal_events import InternalEventService, reset_internal_event_fixture_state
@@ -54,10 +54,15 @@ def _configure(
     return TestClient(create_app(), raise_server_exceptions=False)
 
 
-def _approve_recipient() -> dict:
-    plan = ApproveCloudPlanCommand().execute("plan_probe", operator="pytest")
+def _approve_recipient(plan_id: str = "plan_probe") -> dict:
+    repo = build_cloud_plan_repository()
+    for collection_name in ("plans", "recipients", "messages"):
+        for row in getattr(repo, collection_name, []):
+            if row.get("plan_id") == "plan_probe":
+                row["plan_id"] = plan_id
+    plan = ApproveCloudPlanCommand().execute(plan_id, operator="pytest")
     assert plan["ok"] is True
-    result = ApproveCloudPlanRecipientCommand().execute("plan_probe", 1, operator="pytest")
+    result = ApproveCloudPlanRecipientCommand().execute(plan_id, 1, operator="pytest")
     assert result["ok"] is True
     return result
 
@@ -112,14 +117,20 @@ def test_broadcast_task_requires_explicit_event_type_allowlist(monkeypatch) -> N
 
 def test_broadcast_task_created_emits_once_with_expected_safe_schema_and_consumers(monkeypatch) -> None:
     _configure(monkeypatch)
+    plan_id = "p0-1284-plan-probe"
+    plan_hash = _hash16(plan_id)
+    plan_ref = f"ops_plan_ref:{plan_hash}"
 
-    result = _approve_recipient()
-    duplicate = ApproveCloudPlanRecipientCommand().execute("plan_probe", 1, operator="pytest")
+    result = _approve_recipient(plan_id)
+    duplicate = ApproveCloudPlanRecipientCommand().execute(plan_id, 1, operator="pytest")
     event = _event()
     safe_trace_id = f"broadcast_task.created:{result['job_id']}"
     trace_events, trace_total = InternalEventService().list_events({"event_type": BROADCAST_TASK_CREATED_EVENT_TYPE, "trace_id": safe_trace_id})
     original_trace_events, original_trace_total = InternalEventService().list_events(
-        {"event_type": BROADCAST_TASK_CREATED_EVENT_TYPE, "original_trace_hash": "plan_probe"}
+        {"event_type": BROADCAST_TASK_CREATED_EVENT_TYPE, "original_trace_hash": plan_id}
+    )
+    trace_hash_events, trace_hash_total = InternalEventService().list_events(
+        {"event_type": BROADCAST_TASK_CREATED_EVENT_TYPE, "trace_hash": plan_hash}
     )
     runs, run_total = _runs(event.event_id)
     broadcast_payload = event.payload_json["broadcast_task"]
@@ -134,6 +145,8 @@ def test_broadcast_task_created_emits_once_with_expected_safe_schema_and_consume
     assert trace_events[0].event_id == event.event_id
     assert original_trace_total == 1
     assert original_trace_events[0].event_id == event.event_id
+    assert trace_hash_total == 1
+    assert trace_hash_events[0].event_id == event.event_id
     assert event.trace_id == safe_trace_id
     assert event.correlation_id == safe_trace_id
     assert event.event_type == BROADCAST_TASK_CREATED_EVENT_TYPE
@@ -148,19 +161,26 @@ def test_broadcast_task_created_emits_once_with_expected_safe_schema_and_consume
         "send_channel": "",
         "source": "cloud_plan_recipient_approval",
         "campaign_code": "",
-        "ops_plan_id": "plan_probe",
+        "ops_plan_id": plan_ref,
+        "ops_plan_ref": plan_ref,
+        "ops_plan_hash": plan_hash,
+        "ops_plan_present": True,
         "target_count": 1,
         "status": "created",
         "scheduled": False,
     }
     payload_json_text = str(event.payload_json)
     payload_text = payload_json_text + str(event.payload_summary_json)
-    assert "plan_probe" not in payload_json_text
+    assert plan_id not in payload_json_text
+    assert plan_id not in payload_text
     assert broadcast_payload["trace_id"] == safe_trace_id
-    assert broadcast_payload["original_trace_ref"] == f"trace_ref:{_hash16('plan_probe')}"
+    assert broadcast_payload["original_trace_ref"] == f"trace_ref:{plan_hash}"
     assert broadcast_payload["original_trace_present"] is True
-    assert broadcast_payload["original_trace_hash"] == _hash16("plan_probe")
+    assert broadcast_payload["original_trace_hash"] == plan_hash
     assert len(broadcast_payload["original_trace_hash"]) == 16
+    assert broadcast_payload["related_ops_plan_id"] == plan_ref
+    assert broadcast_payload["related_ops_plan_hash"] == plan_hash
+    assert broadcast_payload["related_ops_plan_present"] is True
     assert "wm_a" not in payload_text
     assert "13800138000" not in payload_text
     assert "webhook" not in payload_text.lower()
@@ -271,6 +291,57 @@ def test_broadcast_task_direct_emit_is_idempotent(monkeypatch) -> None:
     assert sorted(run.consumer_name for run in runs) == BROADCAST_TASK_CONSUMERS
 
 
+def test_broadcast_task_trace_lookup_handles_16_hex_raw_trace(monkeypatch) -> None:
+    _configure(monkeypatch)
+    raw_trace_id = "abcdef1234567890"
+    raw_trace_hash = _hash16(raw_trace_id)
+    job = {
+        "id": "broadcast-hex-trace",
+        "source_type": "unit_test",
+        "source_id": raw_trace_id,
+        "trace_id": raw_trace_id,
+        "idempotency_key": raw_trace_id,
+        "target_count": 1,
+        "created_by": "pytest",
+    }
+
+    result = emit_broadcast_task_created_shadow_event(
+        job=job,
+        source_module="tests.broadcast_task_slice",
+        source_route="/tests/broadcast-task",
+        operator="pytest",
+        source="unit_test",
+    )
+    events, total = InternalEventService().list_events({"event_type": BROADCAST_TASK_CREATED_EVENT_TYPE, "aggregate_id": "broadcast-hex-trace"})
+    raw_original_events, raw_original_total = InternalEventService().list_events(
+        {"event_type": BROADCAST_TASK_CREATED_EVENT_TYPE, "original_trace_hash": raw_trace_id}
+    )
+    raw_trace_events, raw_trace_total = InternalEventService().list_events(
+        {"event_type": BROADCAST_TASK_CREATED_EVENT_TYPE, "trace_hash": raw_trace_id}
+    )
+    hashed_events, hashed_total = InternalEventService().list_events(
+        {"event_type": BROADCAST_TASK_CREATED_EVENT_TYPE, "trace_hash": raw_trace_hash}
+    )
+    event = events[0]
+    payload_text = str(event.payload_json) + str(event.payload_summary_json) + event.trace_id + event.correlation_id + event.source_command_id
+
+    assert result["status"] == "emitted"
+    assert total == 1
+    assert event.payload_json["broadcast_task"]["original_trace_hash"] == raw_trace_hash
+    assert event.payload_json["broadcast_task"]["trace_id"] == "broadcast_task.created:broadcast-hex-trace"
+    assert event.trace_id == "broadcast_task.created:broadcast-hex-trace"
+    assert raw_trace_id not in payload_text
+    assert raw_original_total == 1
+    assert raw_original_events[0].event_id == event.event_id
+    assert raw_trace_total == 1
+    assert raw_trace_events[0].event_id == event.event_id
+    assert hashed_total == 1
+    assert hashed_events[0].event_id == event.event_id
+    runs, run_total = _runs(event.event_id)
+    assert run_total == 4
+    assert sorted(run.consumer_name for run in runs) == BROADCAST_TASK_CONSUMERS
+
+
 def test_broadcast_task_consumers_are_noop_or_skipped_without_external_work(monkeypatch) -> None:
     _configure(monkeypatch)
     _approve_recipient()
@@ -317,13 +388,14 @@ def test_broadcast_task_legacy_ai_assist_alias_dispatches_without_new_fanout(mon
 
 def test_broadcast_task_admin_api_redacts_summary_and_hides_payload_json(monkeypatch) -> None:
     client = _configure(monkeypatch)
-    _approve_recipient()
+    plan_id = "p0-1284-plan-probe"
+    _approve_recipient(plan_id)
     event = _event()
 
     list_payload = client.get("/api/admin/internal-events", params={"event_type": BROADCAST_TASK_CREATED_EVENT_TYPE}).json()
     trace_lookup_payload = client.get(
         "/api/admin/internal-events",
-        params={"event_type": BROADCAST_TASK_CREATED_EVENT_TYPE, "original_trace_hash": "plan_probe"},
+        params={"event_type": BROADCAST_TASK_CREATED_EVENT_TYPE, "original_trace_hash": plan_id},
     ).json()
     detail_payload = client.get(f"/api/admin/internal-events/{event.event_id}").json()
 
@@ -334,6 +406,7 @@ def test_broadcast_task_admin_api_redacts_summary_and_hides_payload_json(monkeyp
     assert "payload_json" not in list_payload["items"][0]
     assert "payload_json" not in detail_payload
     payload_text = str(list_payload) + str(detail_payload)
+    assert plan_id not in payload_text
     assert "wm_a" not in payload_text
     assert "13800138000" not in payload_text
     assert "完整消息正文" not in payload_text

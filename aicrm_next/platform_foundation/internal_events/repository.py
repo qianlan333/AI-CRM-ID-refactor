@@ -38,13 +38,17 @@ def _hash_text(value: Any) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
 
 
-def _trace_hash_filter(filters: dict[str, Any]) -> str:
+def _trace_hash_candidates(filters: dict[str, Any]) -> list[str]:
     value = _text(filters.get("original_trace_hash") or filters.get("trace_hash"))
     if not value:
-        return ""
+        return []
+    candidates: list[str] = []
     if len(value) == 16 and all(char in "0123456789abcdefABCDEF" for char in value):
-        return value.lower()
-    return _hash_text(value)
+        candidates.append(value.lower())
+    raw_hash = _hash_text(value)
+    if raw_hash and raw_hash not in candidates:
+        candidates.append(raw_hash)
+    return candidates
 
 
 def _json_dumps(value: Any) -> str:
@@ -328,17 +332,23 @@ class SQLAlchemyInternalEventRepository(InternalEventRepository):
             if value:
                 clauses.append(f"{key} = :{key}")
                 params[key] = value
-        trace_hash = _trace_hash_filter(filters)
-        if trace_hash:
-            clauses.append(
-                """
-                (
-                    payload_json -> 'broadcast_task' ->> 'original_trace_hash' = :original_trace_hash
-                    OR payload_json -> 'broadcast_task' ->> 'trace_id_hash' = :original_trace_hash
+        trace_hashes = _trace_hash_candidates(filters)
+        if trace_hashes:
+            trace_clauses: list[str] = []
+            for index, trace_hash in enumerate(trace_hashes):
+                param_key = f"original_trace_hash_{index}"
+                trace_clauses.append(
+                    f"""
+                    (
+                        payload_json -> 'broadcast_task' ->> 'original_trace_hash' = :{param_key}
+                        OR payload_json -> 'broadcast_task' ->> 'trace_id_hash' = :{param_key}
+                    )
+                    """
                 )
-                """
+                params[param_key] = trace_hash
+            clauses.append(
+                "(" + " OR ".join(trace_clauses) + ")"
             )
-            params["original_trace_hash"] = trace_hash
         if _text(filters.get("created_from")):
             clauses.append("created_at >= CAST(:created_from AS timestamptz)")
             params["created_from"] = _text(filters.get("created_from"))
@@ -1208,8 +1218,8 @@ class InMemoryInternalEventRepository(InternalEventRepository):
             value = _text(filters.get(key))
             if value:
                 rows = [row for row in rows if _text(row.get(key)) == value]
-        trace_hash = _trace_hash_filter(filters)
-        if trace_hash:
+        trace_hashes = set(_trace_hash_candidates(filters))
+        if trace_hashes:
             rows = [
                 row
                 for row in rows
@@ -1217,7 +1227,7 @@ class InMemoryInternalEventRepository(InternalEventRepository):
                     (((row.get("payload_json") or {}).get("broadcast_task") or {}).get("original_trace_hash"))
                     or (((row.get("payload_json") or {}).get("broadcast_task") or {}).get("trace_id_hash"))
                 )
-                == trace_hash
+                in trace_hashes
             ]
         if _text(filters.get("created_from")):
             created_from = self._dt(filters.get("created_from"))
