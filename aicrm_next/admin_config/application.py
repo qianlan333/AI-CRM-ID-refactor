@@ -672,6 +672,7 @@ def _effect_type_union_for_enabled_capabilities(read_service: "AdminConfigReadSe
 
 def _derived_gate_payload(effect_types: list[str], capabilities: list[PushCapability]) -> dict[str, Any]:
     enabled_keys = {capability.key for capability in capabilities}
+    effect_type_set = set(effect_types)
     webhook_execute = any(
         capability.key in enabled_keys
         and capability.supports_real_execution
@@ -679,11 +680,33 @@ def _derived_gate_payload(effect_types: list[str], capabilities: list[PushCapabi
         for capability in visible_push_capabilities(main_only=False)
     )
     wecom_execute = any(effect_type.startswith("wecom.") for effect_type in effect_types)
+    payment_execute = any(capability.key in enabled_keys and capability.adapter_family == "payment" for capability in capabilities)
+    feishu_execute = "feishu.webhook.notify" in effect_type_set
+    openclaw_execute = "openclaw.context.push" in effect_type_set
+    media_upload_execute = bool({"media.storage.upload", "wecom.media.upload"} & effect_type_set)
+    test_receiver_enabled = "test_receiver" in enabled_keys
     return {
         "allowed_effect_types": effect_types,
         "webhook_execute": webhook_execute,
         "wecom_execute": wecom_execute,
+        "payment_execute": payment_execute,
+        "feishu_execute": feishu_execute,
+        "openclaw_execute": openclaw_execute,
+        "media_upload_execute": media_upload_execute,
+        "test_receiver_enabled": test_receiver_enabled,
     }
+
+
+def _capability_requires_webhook_gate(capability: PushCapability) -> bool:
+    return capability.adapter_family in {"webhook", "legacy_webhook"} or any(
+        effect_type.startswith("webhook.")
+        or effect_type in {
+            "ai_assist.campaign.message.loopback",
+            "group_ops.message.loopback",
+            "group_ops.webhook.action.loopback",
+        }
+        for effect_type in capability.effect_types
+    )
 
 
 class AdminConfigReadService:
@@ -885,6 +908,33 @@ class AdminConfigReadService:
         value, _source = self._setting_value_source(capability.setting_key)
         return _capability_enabled_from_value(value, default=default)
 
+    def _capability_gate_consistent(self, capability: PushCapability, *, configured_enabled: bool) -> tuple[bool, str]:
+        if not configured_enabled:
+            return True, ""
+        allowed_types = {
+            item.strip()
+            for item in _text(self._setting_value_source("AICRM_EXTERNAL_EFFECT_ALLOWED_TYPES")[0]).replace("\n", ",").split(",")
+            if item.strip()
+        }
+        missing_types = [effect_type for effect_type in capability.effect_types if effect_type not in allowed_types]
+        if missing_types:
+            return False, "effect_type_allowlist_missing"
+        if _capability_requires_webhook_gate(capability) and not self._capability_enabled_from_setting("AICRM_EXTERNAL_EFFECT_WEBHOOK_EXECUTE"):
+            return False, "webhook_execute_disabled"
+        if any(effect_type.startswith("wecom.") for effect_type in capability.effect_types) and not self._capability_enabled_from_setting("AICRM_EXTERNAL_EFFECT_WECOM_EXECUTE"):
+            return False, "wecom_execute_disabled"
+        if capability.adapter_family == "payment" and not self._capability_enabled_from_setting("AICRM_EXTERNAL_EFFECT_PAYMENT_EXECUTE"):
+            return False, "payment_execute_disabled"
+        if "feishu.webhook.notify" in set(capability.effect_types) and not self._capability_enabled_from_setting("AICRM_EXTERNAL_EFFECT_FEISHU_EXECUTE"):
+            return False, "feishu_execute_disabled"
+        if "openclaw.context.push" in set(capability.effect_types) and not self._capability_enabled_from_setting("AICRM_EXTERNAL_EFFECT_OPENCLAW_EXECUTE"):
+            return False, "openclaw_execute_disabled"
+        if {"media.storage.upload", "wecom.media.upload"} & set(capability.effect_types) and not self._capability_enabled_from_setting("AICRM_EXTERNAL_EFFECT_MEDIA_UPLOAD_EXECUTE"):
+            return False, "media_upload_execute_disabled"
+        if capability.key == "test_receiver" and not self._capability_enabled_from_setting("AICRM_EXTERNAL_EFFECT_TEST_RECEIVER_ENABLED"):
+            return False, "test_receiver_disabled"
+        return True, ""
+
     def _last_problem_for_section(self, section: str, repository: PushCenterRepository) -> dict[str, str]:
         jobs, _total = repository.list_jobs({"section": section}, limit=50, offset=0)
         for job in jobs:
@@ -896,18 +946,25 @@ class AdminConfigReadService:
         return {"last_error_code": "", "last_error_message": ""}
 
     def _serialize_push_capability(self, capability: PushCapability, *, repository: PushCenterRepository) -> dict[str, Any]:
-        enabled = self._capability_enabled(capability, default=False)
+        configured_enabled = self._capability_enabled(capability, default=False)
+        gate_consistent, gate_problem = self._capability_gate_consistent(capability, configured_enabled=configured_enabled)
+        enabled = configured_enabled and gate_consistent
         counts = _capability_queue_counts(repository.counts({"section": capability.section}))
         problem = self._last_problem_for_section(capability.section, repository)
         health_label, health_tone = _health_for_capability(
             capability=capability,
             enabled=enabled,
             counts=counts,
-            last_error_code=problem["last_error_code"],
+            last_error_code=gate_problem or problem["last_error_code"],
         )
+        if configured_enabled and not gate_consistent:
+            health_label, health_tone = "门禁未同步", "danger"
         return {
             **capability.to_dict(),
             "enabled": enabled if capability.toggleable else False,
+            "configured_enabled": configured_enabled if capability.toggleable else False,
+            "gate_consistent": gate_consistent,
+            "gate_problem": gate_problem,
             "readonly_reason": capability.readonly_reason,
             "queue_counts": counts,
             "abnormal_count": counts["blocked"] + counts["failed"],
@@ -1389,6 +1446,36 @@ class AdminConfigWriteCommand:
         self._upsert_setting_with_audit(
             key="AICRM_EXTERNAL_EFFECT_WECOM_EXECUTE",
             value=_normalize_boolean_text(gates["wecom_execute"]),
+            operator=operator,
+            target_type=TARGET_PUSH_CAPABILITY,
+        )
+        self._upsert_setting_with_audit(
+            key="AICRM_EXTERNAL_EFFECT_PAYMENT_EXECUTE",
+            value=_normalize_boolean_text(gates["payment_execute"]),
+            operator=operator,
+            target_type=TARGET_PUSH_CAPABILITY,
+        )
+        self._upsert_setting_with_audit(
+            key="AICRM_EXTERNAL_EFFECT_FEISHU_EXECUTE",
+            value=_normalize_boolean_text(gates["feishu_execute"]),
+            operator=operator,
+            target_type=TARGET_PUSH_CAPABILITY,
+        )
+        self._upsert_setting_with_audit(
+            key="AICRM_EXTERNAL_EFFECT_OPENCLAW_EXECUTE",
+            value=_normalize_boolean_text(gates["openclaw_execute"]),
+            operator=operator,
+            target_type=TARGET_PUSH_CAPABILITY,
+        )
+        self._upsert_setting_with_audit(
+            key="AICRM_EXTERNAL_EFFECT_MEDIA_UPLOAD_EXECUTE",
+            value=_normalize_boolean_text(gates["media_upload_execute"]),
+            operator=operator,
+            target_type=TARGET_PUSH_CAPABILITY,
+        )
+        self._upsert_setting_with_audit(
+            key="AICRM_EXTERNAL_EFFECT_TEST_RECEIVER_ENABLED",
+            value=_normalize_boolean_text(gates["test_receiver_enabled"]),
             operator=operator,
             target_type=TARGET_PUSH_CAPABILITY,
         )
