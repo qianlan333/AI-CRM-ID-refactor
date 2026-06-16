@@ -2,8 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from aicrm_next.platform_foundation.command_bus import CommandContext
-from aicrm_next.platform_foundation.external_effects import ExternalEffectService, WEBHOOK_ORDER_PAID_PUSH
+from aicrm_next.platform_foundation.external_effects import ExternalEffectJob, ExternalEffectService, WEBHOOK_ORDER_PAID_PUSH
 from aicrm_next.shared.runtime import production_data_ready, raw_database_url
 
 from .consumer_registry import DEFAULT_INTERNAL_EVENT_CONSUMER_REGISTRY, InternalEventConsumerRegistry
@@ -62,6 +61,53 @@ def _is_order_paid(order: dict[str, Any]) -> bool:
     return _text(order.get("status")) == "paid" or _text(order.get("trade_state")) == "SUCCESS"
 
 
+def _configured_order_paid_job(external_effects: ExternalEffectService, *, out_trade_no: str, order_id: str) -> ExternalEffectJob | None:
+    business_ids = [value for value in (out_trade_no, order_id) if value]
+    seen: set[int] = set()
+    for business_id in business_ids:
+        jobs, _ = external_effects.list_jobs(
+            {"effect_type": WEBHOOK_ORDER_PAID_PUSH, "business_type": "commerce_order", "business_id": business_id},
+            limit=20,
+        )
+        for job in jobs:
+            if job.id in seen:
+                continue
+            seen.add(job.id)
+            payload = job.payload_json or {}
+            if payload.get("webhook_url"):
+                return job
+    return None
+
+
+def _plan_order_paid_external_push_from_db(
+    *,
+    order: dict[str, Any],
+    transaction: dict[str, Any],
+    event: InternalEvent,
+) -> dict[str, Any] | None:
+    if not production_data_ready():
+        return None
+    try:
+        import psycopg
+        from psycopg.rows import dict_row
+
+        from aicrm_next.commerce.external_push_admin import plan_order_paid_external_push_effect
+
+        with psycopg.connect(raw_database_url(), row_factory=dict_row) as conn:
+            result = plan_order_paid_external_push_effect(
+                conn,
+                order=order,
+                transaction=transaction,
+                outbox={"id": (event.payload_json or {}).get("domain_event_outbox_id")},
+                source_module="platform_foundation.internal_events.payment",
+                source_route="/internal-events/payment.succeeded/webhook_order_paid_consumer",
+            )
+            conn.commit()
+            return result
+    except Exception:
+        return None
+
+
 def order_projection_consumer(event: InternalEvent, run: InternalEventConsumerRun) -> InternalEventConsumerResult:
     order = _read_order_from_db(event) or _order_from_event(event)
     out_trade_no = _text(order.get("out_trade_no") or event.aggregate_id)
@@ -103,13 +149,7 @@ def webhook_order_paid_consumer(event: InternalEvent, run: InternalEventConsumer
             error_message="order id or out_trade_no is required",
         )
     external_effects = ExternalEffectService()
-    existing_job = external_effects.find_existing_job(
-        effect_type=WEBHOOK_ORDER_PAID_PUSH,
-        target_type="wechat_pay_order",
-        target_id=target_id,
-        business_type="commerce_order",
-        business_id=out_trade_no,
-    )
+    existing_job = _configured_order_paid_job(external_effects, out_trade_no=out_trade_no, order_id=_text(order.get("id")))
     if existing_job is not None:
         return InternalEventConsumerResult(
             status="succeeded",
@@ -128,65 +168,33 @@ def webhook_order_paid_consumer(event: InternalEvent, run: InternalEventConsumer
                 "effect_type": WEBHOOK_ORDER_PAID_PUSH,
             },
         )
-    job = external_effects.plan_effect(
-        effect_type=WEBHOOK_ORDER_PAID_PUSH,
-        adapter_name="outbound_webhook",
-        operation="post",
-        target_type="wechat_pay_order",
-        target_id=target_id,
-        business_type="commerce_order",
-        business_id=out_trade_no,
-        payload={
-            "order": {
-                "id": order.get("id"),
-                "out_trade_no": out_trade_no,
-                "status": order.get("status"),
-                "trade_state": order.get("trade_state"),
-                "product_code": order.get("product_code"),
-                "paid_at": str(order.get("paid_at") or ""),
+    planned = _plan_order_paid_external_push_from_db(order=order, transaction=transaction, event=event)
+    if not planned or planned.get("skipped"):
+        return InternalEventConsumerResult(
+            status="succeeded",
+            request_summary={"event_id": event.event_id, "out_trade_no": out_trade_no},
+            response_summary={
+                "external_effect_job_created": False,
+                "external_effect_job_reused": False,
+                "effect_type": WEBHOOK_ORDER_PAID_PUSH,
+                "skipped": True,
+                "reason": (planned or {}).get("reason") or "external_push_config_unavailable",
             },
-            "transaction": {
-                "transaction_id": transaction.get("transaction_id"),
-                "trade_state": transaction.get("trade_state"),
-                "success_time": transaction.get("success_time"),
-            },
-            "internal_event_id": event.event_id,
-            "domain_event_outbox_id": (event.payload_json or {}).get("domain_event_outbox_id"),
-        },
-        payload_summary={
-            "order_id": order.get("id"),
-            "out_trade_no": out_trade_no,
-            "status": order.get("status"),
-            "trade_state": order.get("trade_state"),
-            "internal_event_id": event.event_id,
-        },
-        context=CommandContext(
-            actor_id="internal_event_consumer",
-            actor_type="system",
-            request_id=event.request_id,
-            trace_id=event.trace_id or out_trade_no,
-            source_route="/internal-events/payment.succeeded/webhook_order_paid_consumer",
-        ),
-        source_module="platform_foundation.internal_events.payment",
-        source_event_id=event.event_id,
-        risk_level="medium",
-        requires_approval=False,
-        execution_mode="execute",
-        status="queued",
-        idempotency_key=f"payment.succeeded:{out_trade_no}:external-effect:{WEBHOOK_ORDER_PAID_PUSH}",
-    )
+            result_summary={"external_effect_job_created": False, "effect_type": WEBHOOK_ORDER_PAID_PUSH},
+        )
+    job_id = planned.get("external_effect_job_id")
     return InternalEventConsumerResult(
         status="succeeded",
         request_summary={"event_id": event.event_id, "out_trade_no": out_trade_no},
         response_summary={
             "external_effect_job_created": True,
             "external_effect_job_reused": False,
-            "external_effect_job_id": job.get("id"),
+            "external_effect_job_id": job_id,
             "effect_type": WEBHOOK_ORDER_PAID_PUSH,
-            "execution_mode": job.get("execution_mode"),
-            "status": job.get("status"),
+            "execution_mode": "execute",
+            "status": "queued",
         },
-        result_summary={"external_effect_job_id": job.get("id"), "external_effect_job_reused": False, "effect_type": WEBHOOK_ORDER_PAID_PUSH},
+        result_summary={"external_effect_job_id": job_id, "external_effect_job_reused": False, "effect_type": WEBHOOK_ORDER_PAID_PUSH},
     )
 
 

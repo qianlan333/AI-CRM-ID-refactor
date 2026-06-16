@@ -45,6 +45,7 @@ class _PaymentConn:
             "mobile_snapshot": "13800005678",
             "paid_at": "",
         }
+        self.delivery: dict | None = None
 
     def execute(self, query, params):
         normalized = " ".join(query.split())
@@ -64,6 +65,59 @@ class _PaymentConn:
                 }
             )
             return _FakeCursor(dict(self.order))
+        if "FROM wechat_pay_products" in normalized:
+            return _FakeCursor({"id": 3, "product_code": "subscription_trial_month", "name": "Single Consumer Slice", "amount_total": 990})
+        if "FROM external_push_config" in normalized:
+            return _FakeCursor(
+                {
+                    "id": 5,
+                    "tenant_id": "aicrm",
+                    "target_type": "product",
+                    "target_id": "3",
+                    "event_type": "transaction.paid",
+                    "enabled": True,
+                    "webhook_url": "https://example.com/order-paid",
+                    "secret": "order-secret",
+                    "push_type": "paid_notify",
+                    "day": 7,
+                    "frequency": 1,
+                    "remark": "测试外推",
+                    "custom_params": {},
+                }
+            )
+        if "INSERT INTO external_push_delivery" in normalized:
+            self.delivery = {
+                "id": 8,
+                "tenant_id": params[0],
+                "config_id": params[1],
+                "event_type": params[2],
+                "delivery_id": params[3],
+                "target_type": "product",
+                "target_id": params[4],
+                "order_id": params[5],
+                "product_id": params[6],
+                "status": "pending",
+                "attempt_count": 0,
+                "request_url": params[7],
+            }
+            return _FakeCursor(dict(self.delivery))
+        if "UPDATE external_push_delivery" in normalized:
+            assert self.delivery is not None
+            self.delivery.update(
+                {
+                    "status": params[0],
+                    "attempt_count": params[1],
+                    "request_url": params[2],
+                    "request_headers": params[3],
+                    "request_body": params[4],
+                    "response_status": params[5],
+                    "response_body": params[6],
+                    "error_message": params[7],
+                    "next_retry_at": params[8],
+                    "delivery_id": params[9],
+                }
+            )
+            return _FakeCursor(dict(self.delivery))
         raise AssertionError(query)
 
 
@@ -87,6 +141,7 @@ def _enable_shadow_payment_events(monkeypatch) -> None:
     monkeypatch.setenv("AICRM_INTERNAL_EVENTS_PAYMENT_DISABLE_LEGACY_AUTOMATION_DIRECT", "1")
     monkeypatch.setenv("AICRM_EXTERNAL_EFFECT_WEBHOOK_EXECUTE", "0")
     monkeypatch.setenv("AICRM_EXTERNAL_EFFECT_ALLOWED_TYPES", "")
+    monkeypatch.setattr("aicrm_next.commerce.external_push_admin.resolve_and_validate_public_https_url", lambda url: url)
 
 
 def _reset_state() -> None:
@@ -197,11 +252,11 @@ def test_single_consumer_execute_only_updates_specified_consumer(monkeypatch) ->
 
 def test_webhook_single_consumer_reuses_shadow_external_effect_without_external_attempt(monkeypatch) -> None:
     event = _emit_payment(monkeypatch)
-    legacy_jobs, legacy_total = ExternalEffectService().list_jobs({"effect_type": WEBHOOK_ORDER_PAID_PUSH, "business_id": "WXP_SINGLE_CONSUMER"})
+    legacy_jobs, legacy_total = ExternalEffectService().list_jobs({"effect_type": WEBHOOK_ORDER_PAID_PUSH, "business_id": "881"})
     legacy_job = legacy_jobs[0]
 
     result = _run(event.event_id, "webhook_order_paid_consumer")
-    jobs, total = ExternalEffectService().list_jobs({"effect_type": WEBHOOK_ORDER_PAID_PUSH, "business_id": "WXP_SINGLE_CONSUMER"})
+    jobs, total = ExternalEffectService().list_jobs({"effect_type": WEBHOOK_ORDER_PAID_PUSH, "business_id": "881"})
     attempts = ExternalEffectService().list_attempts(legacy_job.id)
     response_summary = result["attempt"]["response_summary_json"]
 
@@ -210,9 +265,10 @@ def test_webhook_single_consumer_reuses_shadow_external_effect_without_external_
     assert result["real_external_call_executed"] is False
     assert total == 1
     assert jobs[0].id == legacy_job.id
-    assert jobs[0].idempotency_key == f"wechat-pay:WXP_SINGLE_CONSUMER:external-effect:{WEBHOOK_ORDER_PAID_PUSH}"
+    assert jobs[0].idempotency_key.startswith("commerce-external-push:")
     assert jobs[0].execution_mode == "execute"
     assert jobs[0].status == "queued"
+    assert jobs[0].payload_json["webhook_url"] == "https://example.com/order-paid"
     assert jobs[0].attempt_count == 0
     assert attempts == []
     assert response_summary["external_effect_job_reused"] is True
@@ -253,12 +309,12 @@ def test_repeated_webhook_single_consumer_does_not_duplicate_external_effect_job
 
     first = _run(event.event_id, "webhook_order_paid_consumer")
     second = _run(event.event_id, "webhook_order_paid_consumer", force=True)
-    jobs, total = ExternalEffectService().list_jobs({"effect_type": WEBHOOK_ORDER_PAID_PUSH, "business_id": "WXP_SINGLE_CONSUMER"})
+    jobs, total = ExternalEffectService().list_jobs({"effect_type": WEBHOOK_ORDER_PAID_PUSH, "business_id": "881"})
 
     assert first["counts"]["succeeded_count"] == 1
     assert second["counts"]["succeeded_count"] == 1
     assert first["attempt"]["response_summary_json"]["external_effect_job_reused"] is True
     assert second["attempt"]["response_summary_json"]["external_effect_job_reused"] is True
     assert total == 1
-    assert jobs[0].idempotency_key == f"wechat-pay:WXP_SINGLE_CONSUMER:external-effect:{WEBHOOK_ORDER_PAID_PUSH}"
+    assert jobs[0].idempotency_key.startswith("commerce-external-push:")
     assert jobs[0].attempt_count == 0

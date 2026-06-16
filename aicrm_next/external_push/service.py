@@ -347,7 +347,7 @@ def _attempt_delivery(
         )
         updated = repository.update_delivery_result(
             delivery_id,
-            status="retry_scheduled",
+            status="retrying",
             attempt_count=int(delivery.get("attempt_count") or 0),
             request_url=final_url,
             request_headers=redact_sensitive_fields(headers),

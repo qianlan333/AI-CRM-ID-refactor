@@ -31,6 +31,7 @@ from aicrm_next.platform_foundation.external_effects.repo import InMemoryExterna
 from aicrm_next.platform_foundation.external_effects.retry_policy import classify_error_code, retry_delay_seconds
 from aicrm_next.platform_foundation.external_effects.worker import ExternalEffectWorker
 from aicrm_next.platform_foundation.external_effects.adapters import DEFAULT_ADAPTER_REGISTRY, ExternalEffectAdapterRegistry, WebhookAdapter
+from aicrm_next.commerce import external_push_admin
 from aicrm_next.public_product import h5_wechat_pay
 from aicrm_next.public_product.h5_wechat_pay import _apply_transaction
 from aicrm_next.questionnaire import external_push
@@ -73,10 +74,12 @@ class _FakeCursor:
 class _ApplyTransactionConn:
     def __init__(self):
         self.queries: list[str] = []
+        self.delivery: dict | None = None
 
     def execute(self, query, params):
         self.queries.append(query)
-        if query.strip().startswith("SELECT * FROM wechat_pay_orders"):
+        normalized = " ".join(query.split())
+        if normalized.startswith("SELECT * FROM wechat_pay_orders"):
             return _FakeCursor({"status": "paying", "trade_state": "NOTPAY"})
         if "UPDATE wechat_pay_orders" in query:
             return _FakeCursor(
@@ -89,6 +92,59 @@ class _ApplyTransactionConn:
                     "paid_at": "2026-06-13T10:00:00+08:00",
                 }
             )
+        if "FROM wechat_pay_products" in query:
+            return _FakeCursor({"id": 3, "product_code": "subscription_trial_month", "name": "黄小璨首月体验", "amount_total": 990})
+        if "FROM external_push_config" in query:
+            return _FakeCursor(
+                {
+                    "id": 5,
+                    "tenant_id": "aicrm",
+                    "target_type": "product",
+                    "target_id": "3",
+                    "event_type": "transaction.paid",
+                    "enabled": True,
+                    "webhook_url": "https://example.com/order-paid",
+                    "secret": "order-secret",
+                    "push_type": "paid_notify",
+                    "day": 7,
+                    "frequency": 1,
+                    "remark": "测试外推",
+                    "custom_params": {},
+                }
+            )
+        if "INSERT INTO external_push_delivery" in query:
+            self.delivery = {
+                "id": 8,
+                "tenant_id": params[0],
+                "config_id": params[1],
+                "event_type": params[2],
+                "delivery_id": params[3],
+                "target_type": "product",
+                "target_id": params[4],
+                "order_id": params[5],
+                "product_id": params[6],
+                "status": "pending",
+                "attempt_count": 0,
+                "request_url": params[7],
+            }
+            return _FakeCursor(dict(self.delivery))
+        if "UPDATE external_push_delivery" in query:
+            assert self.delivery is not None
+            self.delivery.update(
+                {
+                    "status": params[0],
+                    "attempt_count": params[1],
+                    "request_url": params[2],
+                    "request_headers": params[3],
+                    "request_body": params[4],
+                    "response_status": params[5],
+                    "response_body": params[6],
+                    "error_message": params[7],
+                    "next_retry_at": params[8],
+                    "delivery_id": params[9],
+                }
+            )
+            return _FakeCursor(dict(self.delivery))
         raise AssertionError(query)
 
 
@@ -1240,7 +1296,7 @@ def test_questionnaire_queue_mode_job_creation_failure_does_not_fail_submission(
     assert body["external_effect_job_id"] is None
 
 
-def test_payment_paid_keeps_outbox_and_runtime_and_creates_order_paid_shadow_job(monkeypatch) -> None:
+def test_payment_paid_keeps_outbox_and_runtime_and_creates_configured_order_paid_job(monkeypatch) -> None:
     reset_external_effect_fixture_state()
     outbox_calls: list[dict] = []
     runtime_calls: list[dict] = []
@@ -1254,6 +1310,7 @@ def test_payment_paid_keeps_outbox_and_runtime_and_creates_order_paid_shadow_job
 
     monkeypatch.setattr(h5_wechat_pay, "enqueue_transaction_paid_outbox", fake_enqueue)
     monkeypatch.setattr("aicrm_next.automation_runtime_v2.bridge.process_payment_succeeded_event", fake_runtime)
+    monkeypatch.setattr(external_push_admin, "resolve_and_validate_public_https_url", lambda url: url)
 
     order = _apply_transaction(
         _ApplyTransactionConn(),
@@ -1267,14 +1324,18 @@ def test_payment_paid_keeps_outbox_and_runtime_and_creates_order_paid_shadow_job
         },
     )
 
-    items, total = ExternalEffectService().list_jobs({"effect_type": WEBHOOK_ORDER_PAID_PUSH, "business_id": "WXP_SHADOW_PAID"})
+    items, total = ExternalEffectService().list_jobs({"effect_type": WEBHOOK_ORDER_PAID_PUSH, "business_id": "7"})
     assert order["status"] == "paid"
     assert len(outbox_calls) == 1
     assert len(runtime_calls) == 1
     assert total == 1
-    assert items[0].target_type == "wechat_pay_order"
+    assert items[0].target_type == "external_push_delivery"
     assert items[0].execution_mode == "execute"
     assert items[0].status == "queued"
+    assert items[0].payload_json["webhook_url"] == "https://example.com/order-paid"
+    assert items[0].payload_json["body"]["event"] == "transaction.paid"
+    assert items[0].payload_json["body"]["order"]["out_trade_no"] == "WXP_SHADOW_PAID"
+    assert items[0].payload_json["headers"]["X-AICRM-Event"] == "transaction.paid"
 
 
 def test_customer_webhook_retry_and_retry_due_create_shadow_jobs() -> None:
