@@ -180,6 +180,10 @@ class WebhookAdapter:
     def _execution_gate_error(self, job: ExternalEffectJob) -> str:
         if job.execution_mode in {"disabled", "shadow", "plan_only", "execute_dryrun"}:
             return "shadow_only"
+        if job.effect_type == GROUP_OPS_MESSAGE_LOOPBACK:
+            payload = dict(job.payload_json or {})
+            if str(payload.get("execution_scope") or "").strip() != "test_loopback" or not payload.get("webhook_url"):
+                return "group_ops_loopback_requires_test_receiver"
         if not _enabled("AICRM_EXTERNAL_EFFECT_WEBHOOK_EXECUTE"):
             return "execution_disabled"
         if job.effect_type not in LOW_RISK_WEBHOOK_EFFECT_TYPES:

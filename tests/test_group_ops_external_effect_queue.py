@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from urllib.parse import urlparse
 
+from aicrm_next.platform_foundation.command_bus import CommandContext
 from aicrm_next.platform_foundation.external_effects import (
     GROUP_OPS_MESSAGE_LOOPBACK,
     GROUP_OPS_WEBHOOK_ACTION_LOOPBACK,
@@ -115,7 +116,7 @@ def test_group_ops_run_due_shadow_keeps_legacy_queue_and_creates_shadow_job(grou
     assert jobs[0].payload_summary_json["chat_count"] == 2
 
 
-def test_group_ops_run_due_external_effect_skips_legacy_queue_and_creates_queued_job(group_ops_api_client, monkeypatch):
+def test_group_ops_run_due_external_effect_forces_wecom_group_job_for_non_test_messages(group_ops_api_client, monkeypatch):
     monkeypatch.setenv("AICRM_GROUP_OPS_OUTBOUND_MODE", "external_effect")
     monkeypatch.setenv("AICRM_GROUP_OPS_EXTERNAL_EFFECT_SEND_MODE", "loopback")
     gateway = _install_recording_gateway(monkeypatch)
@@ -124,7 +125,7 @@ def test_group_ops_run_due_external_effect_skips_legacy_queue_and_creates_queued
         "/api/admin/automation-conversion/group-ops/plans/1/run-due",
         json={"operator": "pytest", "allow_node_ids": [1], "max_outbound_tasks": 1},
     )
-    jobs = _jobs(GROUP_OPS_MESSAGE_LOOPBACK)
+    jobs = _jobs(WECOM_MESSAGE_GROUP_SEND)
 
     assert response.status_code == 202
     body = response.json()
@@ -133,8 +134,45 @@ def test_group_ops_run_due_external_effect_skips_legacy_queue_and_creates_queued
     assert body["legacy_broadcast_job_ids"] == []
     assert body["external_effect_job_ids"] == [jobs[0].id]
     assert gateway.calls == []
+    assert jobs[0].effect_type == WECOM_MESSAGE_GROUP_SEND
+    assert jobs[0].adapter_name == "wecom_group_message"
+    assert jobs[0].operation == "send_group_message"
     assert jobs[0].status == "queued"
     assert jobs[0].execution_mode == "execute"
+
+
+def test_group_ops_loopback_without_test_receiver_is_blocked_before_webhook_url_lookup(monkeypatch):
+    monkeypatch.setenv("AICRM_EXTERNAL_EFFECT_WEBHOOK_EXECUTE", "1")
+    monkeypatch.setenv("AICRM_EXTERNAL_EFFECT_ALLOWED_TYPES", GROUP_OPS_MESSAGE_LOOPBACK)
+    job = ExternalEffectService().plan_effect(
+        effect_type=GROUP_OPS_MESSAGE_LOOPBACK,
+        adapter_name="outbound_webhook",
+        operation="post",
+        target_type="group_ops_webhook_event",
+        target_id="legacy-bad-loopback",
+        business_type="group_ops_plan",
+        business_id="legacy-bad-loopback",
+        payload={
+            "plan_id": 11,
+            "trigger_event_id": "21",
+            "chat_ids": ["chat-one"],
+            "content_payload": {"text": {"content": "should not use webhook adapter"}},
+            "webhook_key": "正式群运营计划测试-584571",
+        },
+        payload_summary={"plan_id": 11, "chat_count": 1},
+        context=CommandContext(trace_id="trace-bad-loopback"),
+        idempotency_key="bad-group-ops-loopback-without-test-receiver",
+    )
+
+    result = ExternalEffectWorker().run_due(batch_size=1, dry_run=False, effect_types=[GROUP_OPS_MESSAGE_LOOPBACK])
+    updated = ExternalEffectService().get(int(job["id"]))
+    attempts = ExternalEffectService().list_attempts(int(job["id"]))
+
+    assert result["real_external_call_executed"] is False
+    assert updated is not None
+    assert updated.status == "failed_terminal"
+    assert updated.last_error_code == "group_ops_loopback_requires_test_receiver"
+    assert attempts[0].error_code == "group_ops_loopback_requires_test_receiver"
 
 
 def test_group_ops_webhook_receive_shadow_logs_action_and_creates_external_effect_job(group_ops_api_client, monkeypatch):

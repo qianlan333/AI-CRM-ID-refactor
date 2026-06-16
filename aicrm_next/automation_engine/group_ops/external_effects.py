@@ -134,13 +134,11 @@ def plan_group_ops_external_effect(
     mode = clean_text(outbound_mode or group_ops_outbound_mode()).lower()
     if mode == "legacy" and not force_shadow:
         return None
-    send_mode = group_ops_external_effect_send_mode()
     if (
         effect_type == GROUP_OPS_MESSAGE_LOOPBACK
         and mode == "external_effect"
         and not force_shadow
         and not test_loopback
-        and send_mode == "wecom_group"
     ):
         effect_type = WECOM_MESSAGE_GROUP_SEND
     execution_mode = "execute"
