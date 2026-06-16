@@ -387,7 +387,6 @@ def test_webhooks_push_page_is_push_capability_entry(next_client: TestClient) ->
     assert "统一队列自动调度" in response.text
     assert "已开启能力" in response.text
     assert "异常任务" in response.text
-    assert "旧链路状态" in response.text
     assert "业务推送能力" in response.text
     assert "capabilityTbody" in response.text
     assert "advancedPanel" in response.text
@@ -405,7 +404,7 @@ def test_webhooks_push_page_is_push_capability_entry(next_client: TestClient) ->
     assert "access_token" not in response.text
     assert "/api/admin/config/push-capabilities" in response.text
     assert "/api/admin/push-center/stats" in response.text
-    assert "/api/admin/push-center/legacy-deprecations" in response.text
+    assert "/api/admin/push-center/legacy-deprecations" not in response.text
     assert "/api/admin/push-center?section=questionnaire" not in response.text
 
 

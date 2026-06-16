@@ -6,7 +6,6 @@ from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from aicrm_next.admin_jobs.routes import ensure_admin_action_token
-from aicrm_next.platform_foundation.legacy_cleanup.service import LegacyWebhookCleanupService
 from aicrm_next.platform_foundation.external_effects.jobs import (
     SCHEDULER_BATCH_SIZE_KEY,
     SCHEDULER_ENABLED_KEY,
@@ -941,7 +940,6 @@ class AdminConfigReadService:
                     "push_center_stats_api": "/api/admin/push-center/stats",
                     "push_center_sections_api": "/api/admin/push-center/sections",
                     "push_center_jobs_api": "/api/admin/push-center/jobs",
-                    "legacy_deprecations_api": "/api/admin/push-center/legacy-deprecations",
                 },
                 "blocks": [],
                 "special_view": "push_capabilities",
@@ -1064,7 +1062,6 @@ class AdminConfigReadService:
             global_status = "enabled"
         else:
             global_status = "partial"
-        legacy_counts = LegacyWebhookCleanupService().status({}).get("counts", {})
         return {
             "ok": True,
             "summary": {
@@ -1073,13 +1070,6 @@ class AdminConfigReadService:
                 "toggleable_count": toggleable_count,
                 "abnormal_count": abnormal_count,
                 "global_status": global_status,
-                "legacy": {
-                    "total": int(legacy_counts.get("total") or 0),
-                    "deprecated": int(legacy_counts.get("deprecated") or 0),
-                    "scheduled": int(legacy_counts.get("scheduled") or 0),
-                    "deleted": int(legacy_counts.get("deleted") or 0),
-                    "failed": int(legacy_counts.get("failed") or 0),
-                },
             },
             "capabilities": capabilities,
             "scheduler": scheduler,
