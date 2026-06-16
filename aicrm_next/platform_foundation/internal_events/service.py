@@ -91,6 +91,11 @@ class InternalEventService:
     def list_attempts(self, consumer_run_id: int | None = None, *, event_id: str = ""):
         return self._repo.list_attempts(consumer_run_id, event_id=event_id)
 
+    def get_event_reconciliation(self, event_id: str) -> dict[str, Any]:
+        from .reconciliation import InternalEventReconciliationService
+
+        return InternalEventReconciliationService(repository=self._repo).build_event_reconciliation(event_id)
+
     def retry_consumer_run(self, event_id: str, consumer_name: str) -> InternalEventConsumerRun | None:
         return self._repo.retry_consumer_run(event_id, consumer_name)
 

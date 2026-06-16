@@ -4,6 +4,7 @@ import hashlib
 from typing import Any
 
 from .models import InternalEvent, InternalEventConsumerAttempt, InternalEventConsumerRun
+from .config import consumer_metadata
 from .legacy_path_markers import legacy_path_marker_diagnostics
 from .repository import InternalEventRepository, build_internal_event_repository
 from .service import InternalEventService
@@ -120,7 +121,40 @@ def _status_counts(runs: list[InternalEventConsumerRun]) -> dict[str, int]:
     return counts
 
 
-def event_list_item(event: InternalEvent, runs: list[InternalEventConsumerRun]) -> dict[str, Any]:
+def _reconciliation_summary(
+    runs: list[InternalEventConsumerRun],
+    reconciliation: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    placeholder_consumers = {
+        run.consumer_name
+        for run in runs
+        if consumer_metadata(run.consumer_name).get("type") == "placeholder"
+    }
+    placeholder_count = len(placeholder_consumers)
+    unresolved_count = len(
+        [
+            run
+            for run in runs
+            if run.consumer_name not in placeholder_consumers and run.status in {"pending", "running"}
+        ]
+    )
+    external_effects = list((reconciliation or {}).get("external_effects") or [])
+    derived_status = _text((reconciliation or {}).get("derived_status"))
+    return {
+        "derived_status": derived_status,
+        "unresolved_consumer_count": unresolved_count,
+        "placeholder_consumer_count": placeholder_count,
+        "external_effect_count": len(external_effects),
+        "external_effect_statuses": sorted({_text(item.get("job_status") or item.get("status")) for item in external_effects if _text(item.get("job_status") or item.get("status"))}),
+    }
+
+
+def event_list_item(
+    event: InternalEvent,
+    runs: list[InternalEventConsumerRun],
+    reconciliation: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    summary = _reconciliation_summary(runs, reconciliation)
     return {
         "event_id": event.event_id,
         "event_type": event.event_type,
@@ -140,6 +174,8 @@ def event_list_item(event: InternalEvent, runs: list[InternalEventConsumerRun]) 
         "correlation_id": event.correlation_id,
         "idempotency_key": event.idempotency_key,
         "payload_summary_json": _redact(dict(event.payload_summary_json or {})),
+        "derived_status": summary["derived_status"],
+        "reconciliation_summary": summary,
         **_status_counts(runs),
     }
 
@@ -221,12 +257,17 @@ def build_event_detail_payload(event_id: str, *, service: InternalEventService |
         return None
     runs, _ = service.list_consumer_runs({"event_id": event.event_id}, limit=200)
     attempts = service.list_attempts(event_id=event.event_id)
+    reconciliation = service.get_event_reconciliation(event.event_id)
+    summary = _reconciliation_summary(runs, reconciliation)
     return {
         "ok": True,
-        "event": event_list_item(event, runs),
+        "event": event_list_item(event, runs, reconciliation),
         "payload_summary_json": _redact(dict(event.payload_summary_json or {})),
         "consumer_runs": [consumer_run_item(run) for run in runs],
         "attempts": [attempt_item(attempt) for attempt in attempts],
+        "reconciliation": reconciliation,
+        "derived_status": summary["derived_status"],
+        "reconciliation_summary": summary,
         "route_owner": ROUTE_OWNER,
         "real_external_call_executed": False,
     }

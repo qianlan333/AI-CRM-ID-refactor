@@ -8,6 +8,23 @@ from aicrm_next.shared.runtime import fixture_mode
 
 DEFAULT_WORKER_BATCH_SIZE = 50
 DEFAULT_AUTO_EXECUTE_MAX_BATCH_SIZE = 1
+CONSUMER_METADATA: dict[str, dict[str, str]] = {
+    "questionnaire_tag_consumer": {
+        "type": "placeholder",
+        "expected_status": "skipped",
+        "reason": "side_effect_already_planned_or_not_configured",
+    },
+    "automation_questionnaire_consumer": {
+        "type": "placeholder",
+        "expected_status": "skipped",
+        "reason": "not_configured",
+    },
+    "customer_summary_consumer": {
+        "type": "placeholder",
+        "expected_status": "skipped",
+        "reason": "not_configured",
+    },
+}
 
 
 def _text(value: Any) -> str:
@@ -117,6 +134,18 @@ def allowed_event_consumer_pairs() -> list[tuple[str, str]]:
 
 def pair_allowlist_enabled() -> bool:
     return bool(allowed_event_consumers())
+
+
+def consumer_metadata(consumer_name: str) -> dict[str, str]:
+    return dict(CONSUMER_METADATA.get(_text(consumer_name), {}))
+
+
+def placeholder_consumers() -> list[str]:
+    return sorted(
+        consumer_name
+        for consumer_name, metadata in CONSUMER_METADATA.items()
+        if _text(metadata.get("type")) == "placeholder"
+    )
 
 
 def config_warnings() -> list[str]:

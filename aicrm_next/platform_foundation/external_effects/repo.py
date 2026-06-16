@@ -315,7 +315,17 @@ class SQLAlchemyExternalEffectRepository(ExternalEffectRepository):
         filters = dict(filters or {})
         clauses: list[str] = []
         params: dict[str, Any] = {}
-        for key in ("effect_type", "status", "target_type", "target_id", "business_type", "business_id", "trace_id"):
+        for key in (
+            "effect_type",
+            "status",
+            "target_type",
+            "target_id",
+            "business_type",
+            "business_id",
+            "trace_id",
+            "source_event_id",
+            "source_module",
+        ):
             value = _text(filters.get(key))
             if value:
                 clauses.append(f"{key} = :{key}")
@@ -345,7 +355,17 @@ class SQLAlchemyExternalEffectRepository(ExternalEffectRepository):
         filters = dict(filters or {})
         clauses: list[str] = []
         params: dict[str, Any] = {}
-        for key in ("effect_type", "status", "target_type", "target_id", "business_type", "business_id", "trace_id"):
+        for key in (
+            "effect_type",
+            "status",
+            "target_type",
+            "target_id",
+            "business_type",
+            "business_id",
+            "trace_id",
+            "source_event_id",
+            "source_module",
+        ):
             value = _text(filters.get(key))
             if value:
                 clauses.append(f"{key} = :{key}")
@@ -377,7 +397,17 @@ class SQLAlchemyExternalEffectRepository(ExternalEffectRepository):
         filters = dict(filters or {})
         clauses: list[str] = []
         params: dict[str, Any] = {}
-        for key in ("effect_type", "status", "target_type", "target_id", "business_type", "business_id", "trace_id"):
+        for key in (
+            "effect_type",
+            "status",
+            "target_type",
+            "target_id",
+            "business_type",
+            "business_id",
+            "trace_id",
+            "source_event_id",
+            "source_module",
+        ):
             value = _text(filters.get(key))
             if value:
                 clauses.append(f"{key} = :{key}")
@@ -802,7 +832,17 @@ class InMemoryExternalEffectRepository(ExternalEffectRepository):
     def list_jobs(self, filters: dict[str, Any] | None = None, *, limit: int = 50, offset: int = 0) -> tuple[list[ExternalEffectJob], int]:
         filters = dict(filters or {})
         rows = list(self._jobs)
-        for key in ("effect_type", "status", "target_type", "target_id", "business_type", "business_id", "trace_id"):
+        for key in (
+            "effect_type",
+            "status",
+            "target_type",
+            "target_id",
+            "business_type",
+            "business_id",
+            "trace_id",
+            "source_event_id",
+            "source_module",
+        ):
             value = _text(filters.get(key))
             if value:
                 rows = [row for row in rows if _text(row.get(key)) == value]
