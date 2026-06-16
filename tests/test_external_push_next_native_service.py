@@ -180,7 +180,7 @@ def test_run_due_events_success_updates_delivery_and_outbox(monkeypatch) -> None
     assert result["scanned_count"] == 1
     assert result["success_count"] == 1
     assert repository.outbox_statuses == [(repository.outbox["id"], "success")]
-    assert repository.delivery["status"] == "retry_scheduled"
+    assert repository.delivery["status"] == "retrying"
     assert repository.delivery["attempt_count"] == 0
     assert repository.delivery["request_headers"]["X-AICRM-Signature"].startswith("sha256=")
     assert repository.delivery["request_body"]["phone_number"] == "138****0000"
@@ -235,7 +235,7 @@ def test_run_due_retries_uses_existing_delivery_and_mocked_http(monkeypatch) -> 
 
     assert result["ok"] is True
     assert result["retried_count"] == 1
-    assert repository.delivery["status"] == "retry_scheduled"
+    assert repository.delivery["status"] == "retrying"
     assert repository.delivery["attempt_count"] == 1
     assert total == 1
     assert jobs[0].payload_json["legacy_delivery_id"] == "deliv_next_native"

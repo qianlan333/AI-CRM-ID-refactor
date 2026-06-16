@@ -283,7 +283,7 @@ def test_automation_payment_consumer_only_runs_when_allowlisted(monkeypatch) -> 
     assert calls == ["WXP_WORKER_ALLOWLIST"]
 
 
-def test_webhook_payment_consumer_plans_shadow_job_without_external_attempt(monkeypatch) -> None:
+def test_webhook_payment_consumer_skips_without_configured_external_effect(monkeypatch) -> None:
     reset_internal_event_fixture_state()
     reset_external_effect_fixture_state()
     _enable_auto_execute(monkeypatch, consumers=["webhook_order_paid_consumer"])
@@ -292,16 +292,16 @@ def test_webhook_payment_consumer_plans_shadow_job_without_external_attempt(monk
 
     result = InternalEventWorker(repo, registry).run_due(batch_size=1, dry_run=False)
     jobs, total = ExternalEffectService().list_jobs({"effect_type": WEBHOOK_ORDER_PAID_PUSH, "business_id": "WXP_WORKER_ALLOWLIST"})
-    attempts = ExternalEffectService().list_attempts(jobs[0].id)
+    response_summary = result["items"][0]["attempt"]["response_summary_json"]
 
     assert result["processed"][0]["consumer_name"] == "webhook_order_paid_consumer"
     assert result["counts"]["succeeded_count"] == 1
     assert result["real_external_call_executed"] is False
-    assert total == 1
-    assert jobs[0].execution_mode == "execute"
-    assert jobs[0].status == "queued"
-    assert jobs[0].attempt_count == 0
-    assert attempts == []
+    assert total == 0
+    assert jobs == []
+    assert response_summary["external_effect_job_created"] is False
+    assert response_summary["skipped"] is True
+    assert response_summary["reason"] == "external_push_config_unavailable"
 
 
 def test_diagnostics_show_allowlists_and_due_counts(monkeypatch) -> None:

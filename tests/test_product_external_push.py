@@ -136,7 +136,7 @@ def test_external_push_attempt_queues_external_effect_and_updates_delivery(monke
     )
 
     assert result["ok"] is True
-    assert result["delivery"]["status"] == "retry_scheduled"
+    assert result["delivery"]["status"] == "retrying"
     assert result["external_effect_job_id"]
     assert result["real_external_call_executed"] is False
     assert updates[0]["request_headers"]["X-AICRM-Signature"].startswith("sha256=")

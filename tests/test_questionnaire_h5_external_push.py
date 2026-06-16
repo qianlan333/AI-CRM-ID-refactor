@@ -61,6 +61,7 @@ def test_h5_submit_executes_configured_questionnaire_external_push(client: TestC
     assert job.status == "queued"
     assert job.execution_mode == "execute"
     assert job.payload_json["webhook_url"] == "https://hooks.example.com/questionnaire"
+    assert isinstance(job.payload_json["signature"], dict)
     request_json = job.payload_json["body"]
     assert request_json["phone_number"] == "13770938680"
     assert request_json["type"] == "subscription"

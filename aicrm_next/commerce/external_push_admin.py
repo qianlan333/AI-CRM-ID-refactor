@@ -16,7 +16,7 @@ from aicrm_next.platform_foundation.external_effects import ExternalEffectServic
 from aicrm_next.platform_foundation.legacy_cleanup.service import LegacyWebhookCleanupService
 from aicrm_next.shared.runtime import production_data_ready, raw_database_url
 
-from .external_push_outbox import DEFAULT_TENANT_ID, EVENT_TRANSACTION_PAID
+from .external_push_outbox import DEFAULT_TENANT_ID, EVENT_TRANSACTION_PAID, resolve_product_for_order as _resolve_product_for_order
 
 
 EVENT_EXTERNAL_PUSH_TEST = "external_push.test"
@@ -319,6 +319,10 @@ def _get_product(conn: Any, product_id: int) -> dict[str, Any] | None:
 
 
 def _get_product_for_order(conn: Any, order: dict[str, Any]) -> dict[str, Any]:
+    try:
+        return _resolve_product_for_order(conn, order)
+    except Exception:
+        pass
     row = conn.execute(
         """
         SELECT *
@@ -435,7 +439,133 @@ def _create_test_delivery(conn: Any, *, config: dict[str, Any], product_id: int,
     return dict(row) if row else {}
 
 
-def _attempt_delivery(conn: Any, delivery: dict[str, Any], *, config: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any]:
+def _create_order_delivery_once(
+    conn: Any,
+    *,
+    config: dict[str, Any],
+    order: dict[str, Any],
+    product: dict[str, Any],
+    request_url: str,
+) -> dict[str, Any]:
+    row = conn.execute(
+        """
+        INSERT INTO external_push_delivery (
+            tenant_id, config_id, event_type, delivery_id, target_type, target_id,
+            order_id, product_id, status, attempt_count, request_url, request_headers,
+            request_body, response_status, response_body, error_message, next_retry_at,
+            created_at, updated_at
+        )
+        VALUES (
+            %s, %s, %s, %s, 'product', %s, %s, %s, 'pending', 0, %s,
+            '{}'::jsonb, '{}'::jsonb, NULL, '', '', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+        )
+        ON CONFLICT (config_id, order_id, event_type) WHERE order_id > 0
+        DO UPDATE SET updated_at = external_push_delivery.updated_at
+        RETURNING *
+        """,
+        (
+            DEFAULT_TENANT_ID,
+            int(config.get("id") or 0),
+            EVENT_TRANSACTION_PAID,
+            _delivery_id(),
+            str(int(product.get("id") or 0)),
+            int(order.get("id") or 0),
+            int(product.get("id") or 0),
+            request_url,
+        ),
+    ).fetchone()
+    return dict(row) if row else {}
+
+
+def _extract_external_effect_job_id(delivery: dict[str, Any]) -> int | None:
+    response_body = _text(delivery.get("response_body"))
+    if not response_body:
+        return None
+    try:
+        payload = json.loads(response_body)
+    except json.JSONDecodeError:
+        payload = {}
+    if isinstance(payload, dict):
+        try:
+            return int(payload.get("external_effect_job_id") or 0) or None
+        except (TypeError, ValueError):
+            return None
+    if "external_effect_job_id=" in response_body:
+        try:
+            return int(response_body.rsplit("external_effect_job_id=", 1)[-1].strip())
+        except (TypeError, ValueError):
+            return None
+    return None
+
+
+def plan_order_paid_external_push_effect(
+    conn: Any,
+    *,
+    order: dict[str, Any],
+    transaction: dict[str, Any] | None = None,
+    outbox: dict[str, Any] | None = None,
+    source_module: str = "commerce.external_push_admin",
+    source_route: str = "commerce.external_push_admin.plan_order_paid_external_push_effect",
+) -> dict[str, Any]:
+    """Create one configured External Effect Queue job for an order paid webhook.
+
+    The order push must be config-driven. If the product has no enabled external
+    push config, this returns a skipped result and intentionally does not create
+    a half-populated webhook job.
+    """
+
+    order_payload = dict(order or {})
+    product = _get_product_for_order(conn, order_payload)
+    product_id = int(product.get("id") or 0)
+    if not product_id:
+        return {"ok": True, "queued": False, "skipped": True, "reason": "product_not_found"}
+    config = _get_product_config(conn, product_id)
+    if not config:
+        return {"ok": True, "queued": False, "skipped": True, "reason": "external_push_config_not_found", "product_id": product_id}
+    if not bool(config.get("enabled")):
+        return {"ok": True, "queued": False, "skipped": True, "reason": "external_push_config_disabled", "config_id": config.get("id")}
+    webhook_url = _text(config.get("webhook_url"))
+    if not webhook_url:
+        return {"ok": True, "queued": False, "skipped": True, "reason": "external_push_webhook_url_missing", "config_id": config.get("id")}
+    delivery = _create_order_delivery_once(conn, config=config, order=order_payload, product=product, request_url=webhook_url)
+    if int(delivery.get("attempt_count") or 0) > 0:
+        return {
+            "ok": True,
+            "queued": True,
+            "deduped": True,
+            "delivery": _public_delivery(delivery),
+            "external_effect_job_id": _extract_external_effect_job_id(delivery),
+            "real_external_call_executed": False,
+        }
+    payload = _build_external_push_payload(
+        EVENT_TRANSACTION_PAID,
+        order_payload,
+        product,
+        _public_config(config),
+        delivery_id=delivery["delivery_id"],
+    )
+    payload["transaction"] = {
+        "transaction_id": _text((transaction or {}).get("transaction_id")),
+        "trade_state": _text((transaction or {}).get("trade_state")),
+        "success_time": _text((transaction or {}).get("success_time")),
+    }
+    if outbox:
+        payload["domain_event_outbox_id"] = outbox.get("id")
+    result = _attempt_delivery(conn, delivery, config=config, payload=payload, source_module=source_module, source_route=source_route)
+    result["source_module"] = source_module
+    result["source_route"] = source_route
+    return result
+
+
+def _attempt_delivery(
+    conn: Any,
+    delivery: dict[str, Any],
+    *,
+    config: dict[str, Any],
+    payload: dict[str, Any],
+    source_module: str = "commerce.external_push_admin",
+    source_route: str = "commerce.external_push_admin._attempt_delivery",
+) -> dict[str, Any]:
     delivery_id = _text(delivery.get("delivery_id"))
     event_type = _text(delivery.get("event_type")) or EVENT_TRANSACTION_PAID
     raw_body = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
@@ -481,9 +611,9 @@ def _attempt_delivery(conn: Any, delivery: dict[str, Any], *, config: dict[str, 
                 actor_type="system",
                 request_id=delivery_id,
                 trace_id=_text(delivery.get("delivery_id")),
-                source_route="commerce.external_push_admin._attempt_delivery",
+                source_route=source_route,
             ),
-            source_module="commerce.external_push_admin",
+            source_module=source_module,
             source_event_id=delivery_id,
             source_command_id=delivery_id,
             idempotency_key=f"commerce-external-push:{delivery_id}:{next_attempt}",
@@ -493,7 +623,7 @@ def _attempt_delivery(conn: Any, delivery: dict[str, Any], *, config: dict[str, 
         updated = _update_delivery_result(
             conn,
             delivery_id,
-            status="retry_scheduled",
+            status="retrying",
             attempt_count=next_attempt,
             request_url=final_url,
             request_headers=_redact_sensitive_fields(headers),
