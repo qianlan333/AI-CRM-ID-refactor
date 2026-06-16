@@ -129,3 +129,18 @@ async def legacy_webhook_cleanup_run_due(request: Request) -> JSONResponse:
         operator=_text(payload.get("operator")) or "api",
     )
     return _json(result)
+
+
+@router.post("/api/admin/legacy-webhook-cleanup/deprecations/retire-now")
+async def legacy_webhook_cleanup_retire_now(request: Request) -> JSONResponse:
+    payload = await _payload(request)
+    token_error = _action_or_internal_token_error(request, payload)
+    if token_error:
+        return _json({"ok": False, "error": token_error}, status_code=401)
+    dry_run = _bool(payload.get("dry_run"), default=True)
+    result = LegacyWebhookCleanupService().retire_now(
+        dry_run=dry_run,
+        limit=_int(payload.get("limit"), default=50),
+        operator=_text(payload.get("operator")) or "api",
+    )
+    return _json(result)

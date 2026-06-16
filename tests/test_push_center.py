@@ -235,8 +235,6 @@ def test_push_center_page_smoke(next_client: TestClient) -> None:
     assert response.status_code == 200
     assert "推送中心" in response.text
     assert 'id="statsGrid"' in response.text
-    assert 'id="legacyDeprecationsPanel"' in response.text
-    assert 'id="legacyDeprecationsList"' in response.text
     assert 'id="sectionTabs"' in response.text
     assert 'id="filterForm"' in response.text
     assert 'id="pushCenterTable"' in response.text
@@ -260,9 +258,11 @@ def test_push_center_page_smoke(next_client: TestClient) -> None:
     assert "已计划" not in response.text
     assert "失败可重试" not in response.text
     assert "失败不可重试" not in response.text
-    assert "/api/admin/push-center/legacy-deprecations" in response.text
-    assert "旧链路下线状态" in response.text
-    assert "下次删除" in response.text
+    assert 'id="legacyDeprecationsPanel"' not in response.text
+    assert 'id="legacyDeprecationsList"' not in response.text
+    assert "/api/admin/push-center/legacy-deprecations" not in response.text
+    assert "旧链路下线状态" not in response.text
+    assert "下次删除" not in response.text
     assert "/api/admin/push-center/stats" in response.text
     assert "/api/admin/push-center/jobs" in response.text
     assert 'data-action="retry"' in response.text

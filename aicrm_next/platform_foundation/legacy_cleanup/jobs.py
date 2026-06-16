@@ -20,3 +20,11 @@ def run_due_cli(*, dry_run: bool = True, limit: int = 50, operator: str = "cli")
 
 def print_run_due_result(*, dry_run: bool = True, limit: int = 50, operator: str = "cli") -> None:
     print(json.dumps(run_due_cli(dry_run=dry_run, limit=limit, operator=operator), ensure_ascii=False, default=str))
+
+
+def retire_now_cli(*, dry_run: bool = True, limit: int = 50, operator: str = "cli") -> dict[str, Any]:
+    return LegacyWebhookCleanupService().retire_now(dry_run=dry_run, limit=limit, operator=operator)
+
+
+def print_retire_now_result(*, dry_run: bool = True, limit: int = 50, operator: str = "cli") -> None:
+    print(json.dumps(retire_now_cli(dry_run=dry_run, limit=limit, operator=operator), ensure_ascii=False, default=str))
