@@ -95,6 +95,26 @@ def test_production_deploy_installs_and_runs_external_push_worker_timer():
     assert daemon_reload_index < enable_index < restart_timer_index < start_service_index
 
 
+def test_production_deploy_installs_external_effect_queue_worker_timer_without_manual_execute():
+    workflow = (ROOT / ".github" / "workflows" / "deploy.yml").read_text(encoding="utf-8")
+
+    stop_timer_index = workflow.index("sudo systemctl stop openclaw-external-effect-worker.timer || true")
+    stop_service_index = workflow.index("sudo systemctl stop openclaw-external-effect-worker.service || true")
+    alembic_upgrade_index = workflow.index("python3 -m alembic upgrade head")
+    health_index = workflow.index("curl -sSf http://127.0.0.1:5001/health", workflow.index("for _ in $(seq 1 20); do"))
+    copy_service_index = workflow.index("sudo cp deploy/openclaw-external-effect-worker.service /etc/systemd/system/")
+    copy_timer_index = workflow.index("sudo cp deploy/openclaw-external-effect-worker.timer /etc/systemd/system/")
+    daemon_reload_index = workflow.index("sudo systemctl daemon-reload")
+    enable_index = workflow.index("sudo systemctl enable openclaw-external-effect-worker.timer")
+    restart_timer_index = workflow.index("sudo systemctl restart openclaw-external-effect-worker.timer")
+    timer_status_index = workflow.index("sudo systemctl status openclaw-external-effect-worker.timer --no-pager")
+
+    assert stop_timer_index < stop_service_index < alembic_upgrade_index
+    assert health_index < copy_service_index < copy_timer_index < daemon_reload_index
+    assert daemon_reload_index < enable_index < restart_timer_index < timer_status_index
+    assert "sudo systemctl start openclaw-external-effect-worker.service" not in workflow
+
+
 def test_production_deploy_installs_and_runs_reply_monitor_timer():
     workflow = (ROOT / ".github" / "workflows" / "deploy.yml").read_text(encoding="utf-8")
 
@@ -171,6 +191,20 @@ def test_external_push_worker_systemd_units_are_deployable():
     assert "OnCalendar=*-*-* *:*:20" in timer
     assert "Persistent=true" in timer
     assert "Unit=openclaw-external-push-worker.service" in timer
+
+
+def test_external_effect_queue_worker_systemd_units_are_deployable():
+    service = (ROOT / "deploy" / "openclaw-external-effect-worker.service").read_text(encoding="utf-8")
+    timer = (ROOT / "deploy" / "openclaw-external-effect-worker.timer").read_text(encoding="utf-8")
+
+    assert "After=network.target openclaw-wecom-postgres.service" in service
+    assert "Requires=openclaw-wecom-postgres.service" in service
+    assert "EnvironmentFile=/home/ubuntu/.openclaw-wecom-pg.env" in service
+    assert "WorkingDirectory=/home/ubuntu/极简 crm" in service
+    assert "python scripts/run_external_effect_queue_worker.py --execute" in service
+    assert "OnCalendar=*-*-* *:*:00" in timer
+    assert "Persistent=true" in timer
+    assert "Unit=openclaw-external-effect-worker.service" in timer
 
 
 def test_internal_event_worker_systemd_units_are_deployable():
