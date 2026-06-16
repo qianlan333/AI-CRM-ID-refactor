@@ -172,7 +172,6 @@ def admin_config_category_detail(request: Request, category_key: str):
                 push_center_stats_api="/api/admin/push-center/stats",
                 push_center_sections_api="/api/admin/push-center/sections",
                 push_center_jobs_api="/api/admin/push-center/jobs",
-                legacy_deprecations_api="/api/admin/push-center/legacy-deprecations",
             ),
         )
     return templates.TemplateResponse(

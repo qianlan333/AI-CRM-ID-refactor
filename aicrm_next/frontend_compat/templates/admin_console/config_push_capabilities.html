@@ -12,21 +12,14 @@
   data-capabilities-api="{{ push_capabilities_api }}"
   data-scheduler-api="{{ push_capabilities_scheduler_api }}"
   data-push-center-stats-api="{{ push_center_stats_api }}"
-  data-legacy-deprecations-api="{{ legacy_deprecations_api }}"
 >
   <input type="hidden" name="admin_action_token" value="{{ admin_action_token }}">
 
-  <header class="push-capability-head">
-    <div>
-      <h1 class="push-capability-title">推送能力配置</h1>
-      <div class="push-capability-desc">按业务大类统一控制外部推送、企微、支付、Feishu、OpenClaw、素材和测试接收端；能力开关表示允许执行，统一调度器负责自动捞队列。</div>
-    </div>
-    <div class="push-capability-actions">
-      <a class="push-capability-btn primary" href="/admin/push-center">进入推送中心</a>
-      <a class="push-capability-btn" href="/admin/api-docs">查看排障</a>
-      <a class="push-capability-btn" href="/admin/config">返回配置中心</a>
-    </div>
-  </header>
+  <div class="push-capability-actions push-capability-actions-bar">
+    <a class="push-capability-btn primary" href="/admin/push-center">进入推送中心</a>
+    <a class="push-capability-btn" href="/admin/api-docs">查看排障</a>
+    <a class="push-capability-btn" href="/admin/config">返回配置中心</a>
+  </div>
 
   <div id="notice" class="push-capability-notice" role="status" data-testid="push-capability-notice"></div>
 
@@ -51,11 +44,6 @@
       <div class="push-capability-summary-label">异常任务</div>
       <div class="push-capability-summary-value" id="summaryAbnormal">-</div>
       <div class="push-capability-summary-sub">失败与阻断任务合计</div>
-    </article>
-    <article class="admin-card push-capability-summary-card">
-      <div class="push-capability-summary-label">旧链路状态</div>
-      <div class="push-capability-summary-value" id="summaryLegacy">-</div>
-      <div class="push-capability-summary-sub" id="summaryLegacySub">旧 webhook / 旧直发迁移状态</div>
     </article>
   </section>
 
@@ -112,10 +100,8 @@
 
 <style>
 .push-capability-page { --pc-line: #e5e7eb; --pc-muted: #6b7280; --pc-text: #111827; --pc-subtle: #f9fafb; --pc-blue: #2563eb; --pc-green: #059669; --pc-yellow: #d97706; --pc-red: #dc2626; --pc-violet: #7c3aed; color: var(--pc-text); }
-.push-capability-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; margin-bottom: 16px; }
-.push-capability-title { margin: 0; font-size: 22px; font-weight: 700; }
-.push-capability-desc { margin-top: 6px; color: var(--pc-muted); line-height: 1.6; }
 .push-capability-actions { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+.push-capability-actions-bar { margin-bottom: 16px; }
 .push-capability-btn { height: 34px; padding: 0 12px; border: 1px solid var(--pc-line); border-radius: 10px; background: #fff; color: #1f2937; cursor: pointer; text-decoration: none; display: inline-flex; align-items: center; justify-content: center; font-size: 13px; white-space: nowrap; }
 .push-capability-btn.primary { border-color: var(--pc-blue); background: var(--pc-blue); color: #fff; }
 .push-capability-btn[disabled] { cursor: not-allowed; opacity: 0.55; }
@@ -123,7 +109,7 @@
 .push-capability-notice.show { display: block; }
 .push-capability-notice.error { border-color: #fecaca; background: #fef2f2; color: #991b1b; }
 .push-capability-notice.ok { border-color: #bbf7d0; background: #f0fdf4; color: #166534; }
-.push-capability-summary-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-bottom: 16px; }
+.push-capability-summary-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-bottom: 16px; }
 .push-capability-summary-card { padding: 14px 16px; }
 .push-capability-summary-label { color: var(--pc-muted); font-size: 12px; margin-bottom: 8px; }
 .push-capability-summary-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
@@ -178,7 +164,6 @@
   .push-capability-summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 @media (max-width: 720px) {
-  .push-capability-head { flex-direction: column; }
   .push-capability-actions { justify-content: flex-start; }
   .push-capability-summary-grid { grid-template-columns: 1fr; }
   .push-capability-advanced-list { grid-template-columns: 1fr; }
@@ -194,7 +179,6 @@
     capabilities: root.dataset.capabilitiesApi || "/api/admin/config/push-capabilities",
     scheduler: root.dataset.schedulerApi || "/api/admin/config/push-capabilities/scheduler",
     stats: root.dataset.pushCenterStatsApi || "/api/admin/push-center/stats",
-    legacy: root.dataset.legacyDeprecationsApi || "/api/admin/push-center/legacy-deprecations",
     toggle(key) {
       return `${this.capabilities}/${encodeURIComponent(key)}`;
     }
@@ -205,8 +189,7 @@
     summary: {},
     scheduler: {},
     advanced: {},
-    stats: {},
-    legacy: {}
+    stats: {}
   };
 
   const els = {
@@ -218,8 +201,6 @@
     schedulerToggle: document.getElementById("schedulerToggle"),
     summaryEnabled: document.getElementById("summaryEnabled"),
     summaryAbnormal: document.getElementById("summaryAbnormal"),
-    summaryLegacy: document.getElementById("summaryLegacy"),
-    summaryLegacySub: document.getElementById("summaryLegacySub"),
     advancedList: document.getElementById("advancedList")
   };
 
@@ -283,7 +264,6 @@
     const summary = state.summary || {};
     const scheduler = state.scheduler || {};
     const stats = state.stats || {};
-    const legacy = state.legacy || summary.legacy || {};
     const recoverableFailed = stats["failed_" + "re" + "tryable"] || 0;
     const abnormalFromStats = Number(recoverableFailed) + Number(stats.failed_terminal || 0) + Number(stats.blocked || 0);
     const abnormal = abnormalFromStats || Number(summary.abnormal_count || 0);
@@ -296,8 +276,6 @@
     if (els.schedulerToggle) els.schedulerToggle.checked = schedulerEnabled;
     els.summaryEnabled.textContent = `${Number(summary.enabled_count || 0)} / ${Number(summary.total || 0)}`;
     els.summaryAbnormal.textContent = abnormal;
-    els.summaryLegacy.textContent = `${Number(legacy.deprecated || 0)} / ${Number(legacy.total || 0)}`;
-    els.summaryLegacySub.textContent = `待删除 ${Number(legacy.scheduled || 0)} · 已删除 ${Number(legacy.deleted || 0)} · 失败 ${Number(legacy.failed || 0)}`;
   }
 
   function renderAdvanced() {
@@ -408,16 +386,11 @@
     state.stats = body.counts || {};
   }
 
-  async function loadLegacyDeprecations() {
-    const body = await fetchJson(API.legacy);
-    state.legacy = body.counts || {};
-  }
-
   async function refreshPage() {
     els.refreshBtn.disabled = true;
     showNotice("", "ok");
     try {
-      await Promise.all([loadCapabilities(), loadPushCenterStats(), loadLegacyDeprecations()]);
+      await Promise.all([loadCapabilities(), loadPushCenterStats()]);
       renderSummary();
       renderCapabilities();
       renderAdvanced();

@@ -203,29 +203,6 @@ def test_push_center_sections_stats_retry_cancel_auth(next_client: TestClient, m
     assert cancelled.json()["job"]["raw_status"] == "cancelled"
 
 
-def test_push_center_legacy_deprecations_api(next_client: TestClient) -> None:
-    from aicrm_next.platform_foundation.legacy_cleanup.repo import reset_legacy_cleanup_fixture_state
-    from aicrm_next.platform_foundation.legacy_cleanup.service import LegacyWebhookCleanupService
-
-    reset_legacy_cleanup_fixture_state()
-    before = next_client.get("/api/admin/push-center/legacy-deprecations")
-    LegacyWebhookCleanupService().mark_default_deprecations(operator="pytest")
-    response = next_client.get("/api/admin/push-center/legacy-deprecations")
-    body = response.json()
-
-    assert before.status_code == 200
-    assert before.json()["counts"]["total"] == 0
-    assert response.status_code == 200
-    assert body["ok"] is True
-    assert body["counts"]["total"] >= 10
-    assert body["counts"]["scheduled"] >= 10
-    assert body["next_delete_scheduled_at"]
-    assert any(item["legacy_key"] == "old_ai_assist_direct_send" for item in body["items"])
-    assert body["real_external_call_executed"] is False
-    assert "token" not in response.text.lower()
-    assert "secret" not in response.text.lower()
-
-
 def test_push_center_page_smoke(next_client: TestClient) -> None:
     reset_external_effect_fixture_state()
     _plan_job(effect_type=WEBHOOK_QUESTIONNAIRE_SUBMISSION_PUSH, business_type="questionnaire", business_id="q_page", target_type="questionnaire_submission", target_id="sub_page")

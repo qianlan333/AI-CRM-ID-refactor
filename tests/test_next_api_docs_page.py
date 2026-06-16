@@ -74,9 +74,6 @@ def test_api_docs_view_model_scans_current_fastapi_routes() -> None:
         ("GET", "/api/admin/external-effects/troubleshooting/jobs"),
         ("GET", "/api/admin/external-effects/troubleshooting/jobs/{job_id}"),
         ("GET", "/api/admin/push-center/stats"),
-        ("GET", "/api/admin/push-center/legacy-deprecations"),
-        ("POST", "/api/admin/legacy-webhook-cleanup/run-due/preview"),
-        ("POST", "/api/admin/legacy-webhook-cleanup/run-due"),
     ]:
         assert expected in paths
 
@@ -96,8 +93,8 @@ def test_admin_api_docs_page_renders_rich_docs_not_real_data_table(monkeypatch) 
     assert "/api/products/{page_slug}" in html
     assert "外部动作队列排障" in html
     assert "推送中心" in html
-    assert "/api/admin/push-center/legacy-deprecations" in html
-    assert "/api/admin/legacy-webhook-cleanup/run-due" in html
+    assert "/api/admin/push-center/legacy-deprecations" not in html
+    assert "/api/admin/legacy-webhook-cleanup/run-due" not in html
     assert "/api/admin/external-effects/troubleshooting/summary" in html
     assert "data-real-data-table" not in html
     assert "real-data-table" not in html
