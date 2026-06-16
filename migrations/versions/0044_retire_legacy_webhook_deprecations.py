@@ -56,7 +56,13 @@ def upgrade() -> None:
             CURRENT_TIMESTAMP,
             'deleted',
             'migration_0044_retire_legacy_webhook_deprecations',
-            '{{"replacement_capability":"external_effect_queue","real_external_call_executed":false,"physical_delete":false,"retired_by_migration":"0044_retire_legacy_webhook_deprecations","history_data_deleted":false}}'::jsonb,
+            jsonb_build_object(
+                'replacement_capability', 'external_effect_queue',
+                'real_external_call_executed', false,
+                'physical_delete', false,
+                'retired_by_migration', '0044_retire_legacy_webhook_deprecations',
+                'history_data_deleted', false
+            ),
             CURRENT_TIMESTAMP,
             CURRENT_TIMESTAMP
         FROM ({LEGACY_VALUES_SQL}) AS defaults(legacy_key, legacy_type, legacy_route, legacy_module)
