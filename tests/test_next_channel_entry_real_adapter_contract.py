@@ -19,6 +19,7 @@ def test_channel_entry_logs_real_call_disabled_without_fake_success(monkeypatch)
     }
     effects: list[dict] = []
     contacts: list[dict] = []
+    wakeups: list[int] = []
 
     monkeypatch.delenv("AICRM_NEXT_WECOM_REAL_CALLS_ENABLED", raising=False)
     monkeypatch.setenv("WECOM_CORP_ID", "ww-test")
@@ -34,6 +35,7 @@ def test_channel_entry_logs_real_call_disabled_without_fake_success(monkeypatch)
         "aicrm_next.automation_runtime_v2.bridge.process_channel_entry_event",
         lambda **kwargs: {"processed": [], "reason": "channel_without_active_binding"},
     )
+    monkeypatch.setattr("aicrm_next.channel_entry.application._wake_welcome_external_effect_job", lambda job_id: wakeups.append(int(job_id)) or True)
 
     result = process_channel_entry(
         ProcessChannelEntryCommand(
@@ -50,10 +52,12 @@ def test_channel_entry_logs_real_call_disabled_without_fake_success(monkeypatch)
     assert result["welcome_message"]["sent"] is False
     assert result["welcome_message"]["queued"] is True
     assert result["welcome_message"]["reason"] == "external_effect_job_queued"
+    assert result["welcome_message"]["immediate_dispatch_scheduled"] is True
     assert result["entry_tag"]["applied"] is False
     assert result["entry_tag"]["queued"] is True
     assert result["entry_tag"]["reason"] == "external_effect_job_queued"
     assert result["mode"] == "standalone_channel"
     assert contacts
+    assert wakeups
     assert any(row["effect_type"] == "welcome_message" and row["status"] == "queued" and row["reason"] == "external_effect_job_queued" for row in effects)
     assert any(row["effect_type"] == "entry_tag" and row["status"] == "queued" and row["reason"] == "external_effect_job_queued" for row in effects)
