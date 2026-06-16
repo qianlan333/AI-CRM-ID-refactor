@@ -316,6 +316,64 @@ class LegacyWebhookCleanupService:
             "real_external_call_executed": False,
         }
 
+    def retire_now(self, *, dry_run: bool = True, now: datetime | None = None, limit: int = 50, operator: str = "system") -> dict[str, Any]:
+        timestamp = _now(now)
+        candidates, _total = self._repo.list_deprecations(
+            {"status": "deprecated", "delete_status": "scheduled"},
+            limit=limit,
+            offset=0,
+        )
+        if dry_run:
+            return {
+                "ok": True,
+                "dry_run": True,
+                "items": [item.to_dict() for item in candidates],
+                "counts": {"candidate_count": len(candidates), "deleted": 0, "failed": 0},
+                "route_owner": "ai_crm_next",
+                "real_external_call_executed": False,
+            }
+        delete_job_id = "legacy_retire_now_" + uuid4().hex
+        results: list[dict[str, Any]] = []
+        deleted = 0
+        failed = 0
+        for item in candidates:
+            before = item.to_dict()
+            try:
+                self._validate_retire_now_candidate(item, now=timestamp)
+                after_item = self._repo.mark_deleted(
+                    item.legacy_key,
+                    delete_job_id=delete_job_id,
+                    notes={
+                        "cleanup_deleted_at": public_datetime(timestamp),
+                        "cleanup_strategy": "operator_authorized_immediate_retire",
+                        "delete_scheduled_at_bypassed": True,
+                        "history_data_deleted": False,
+                    },
+                )
+                after = after_item.to_dict() if after_item else {}
+                self._repo.record_audit(legacy_key=item.legacy_key, action="retire_legacy_entry_now", operator=operator, before=before, after=after)
+                deleted += 1
+                results.append({"legacy_key": item.legacy_key, "delete_status": "deleted", "item": after})
+            except Exception as exc:  # defensive: one bad entry must not hide others
+                failed_item = self._repo.mark_failed(
+                    item.legacy_key,
+                    error=str(exc),
+                    notes={"cleanup_failed_at": public_datetime(timestamp), "cleanup_strategy": "operator_authorized_immediate_retire"},
+                )
+                after = failed_item.to_dict() if failed_item else {"error": str(exc)}
+                self._repo.record_audit(legacy_key=item.legacy_key, action="retire_legacy_entry_now_failed", operator=operator, before=before, after=after)
+                failed += 1
+                results.append({"legacy_key": item.legacy_key, "delete_status": "failed", "error": str(exc), "item": after})
+        return {
+            "ok": True,
+            "dry_run": False,
+            "delete_job_id": delete_job_id,
+            "items": results,
+            "counts": {"candidate_count": len(candidates), "deleted": deleted, "failed": failed},
+            "route_owner": "ai_crm_next",
+            "real_external_call_executed": False,
+        }
+
     def disabled_payload(self, legacy_key: str, *, error: str = "legacy_webhook_deprecated") -> dict[str, Any]:
         self.record_runtime_marker(
             legacy_key,
@@ -378,6 +436,17 @@ class LegacyWebhookCleanupService:
             scheduled_at = scheduled_at.replace(tzinfo=timezone.utc)
         if scheduled_at.astimezone(timezone.utc) > now:
             raise ValueError("delete_not_due")
+        if item.delete_status != "scheduled":
+            raise ValueError("delete_status_not_scheduled")
+        if item.replacement_route != DEFAULT_REPLACEMENT_ROUTE:
+            raise ValueError("replacement_route_unavailable")
+        recent_count = self._repo.recent_legacy_execution_count(legacy_key=item.legacy_key, since=now - timedelta(days=7))
+        if recent_count:
+            raise ValueError("recent_legacy_execution_detected")
+
+    def _validate_retire_now_candidate(self, item: LegacyDeprecationEntry, *, now: datetime) -> None:
+        if item.status != "deprecated":
+            raise ValueError("legacy_status_not_deprecated")
         if item.delete_status != "scheduled":
             raise ValueError("delete_status_not_scheduled")
         if item.replacement_route != DEFAULT_REPLACEMENT_ROUTE:

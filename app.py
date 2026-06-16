@@ -86,6 +86,11 @@ def build_parser() -> argparse.ArgumentParser:
     cleanup_run_due.add_argument("--execute", action="store_true", default=False, help="Execute due cleanup entries.")
     cleanup_run_due.add_argument("--limit", type=int, default=50)
     cleanup_run_due.add_argument("--operator", default="cli")
+    cleanup_retire_now = cleanup_subparsers.add_parser("retire-now", help="Immediately retire scheduled legacy webhook entries after safety checks.")
+    cleanup_retire_now.add_argument("--dry-run", action="store_true", default=False, help="Preview immediate retirement without mutating state.")
+    cleanup_retire_now.add_argument("--execute", action="store_true", default=False, help="Retire scheduled legacy entries now.")
+    cleanup_retire_now.add_argument("--limit", type=int, default=50)
+    cleanup_retire_now.add_argument("--operator", default="cli")
     external_effects = subparsers.add_parser("external-effects", help="External Effect Queue commands.")
     external_effects_subparsers = external_effects.add_subparsers(dest="external_effects_command")
     external_effects_run_due = external_effects_subparsers.add_parser("run-due", help="Run due External Effect Queue jobs.")
@@ -145,6 +150,14 @@ def main(argv: Sequence[str] | None = None) -> None:
             if getattr(args, "dry_run", False):
                 dry_run = True
             print_run_due_result(dry_run=dry_run, limit=getattr(args, "limit", 50), operator=getattr(args, "operator", "cli"))
+            return
+        if getattr(args, "legacy_cleanup_command", "") == "retire-now":
+            from aicrm_next.platform_foundation.legacy_cleanup.jobs import print_retire_now_result
+
+            dry_run = not bool(getattr(args, "execute", False))
+            if getattr(args, "dry_run", False):
+                dry_run = True
+            print_retire_now_result(dry_run=dry_run, limit=getattr(args, "limit", 50), operator=getattr(args, "operator", "cli"))
             return
         parser.print_help()
         return
