@@ -207,8 +207,10 @@
 .internal-events-badge.failed_terminal { color: var(--ie-danger); background: #fef2f2; }
 .internal-events-badge.blocked { color: var(--ie-blocked); background: #f5f3ff; }
 .internal-events-badge.skipped { color: var(--ie-muted); background: #f3f4f6; }
+.internal-events-badge.placeholder { color: #374151; background: #f3f4f6; }
 .internal-events-counts { display: flex; gap: 6px; flex-wrap: wrap; }
 .internal-events-chip { border: 1px solid var(--ie-line); border-radius: 999px; padding: 2px 7px; font-size: 12px; color: #374151; background: #fff; }
+.internal-events-chip.placeholder { color: var(--ie-muted); background: #f9fafb; }
 .internal-events-modal { position: fixed; inset: 0; display: none; z-index: 1000; }
 .internal-events-modal.is-open { display: block; }
 .internal-events-modal-backdrop { position: absolute; inset: 0; background: rgba(15, 23, 42, .42); }
@@ -226,6 +228,21 @@
 .internal-events-action-row { display: flex; gap: 8px; flex-wrap: wrap; }
 .internal-events-attempt { border: 1px solid var(--ie-line); border-radius: 8px; padding: 10px; margin-bottom: 10px; background: #fafafa; }
 .internal-events-attempt-head { display: flex; justify-content: space-between; gap: 10px; margin-bottom: 8px; }
+.event-reconciliation-panel { border: 1px solid var(--ie-line); border-radius: 8px; padding: 12px; background: #fff; }
+.event-reconciliation-panel h2 { font-size: 14px; margin: 0 0 10px; }
+.effect-card { border: 1px solid var(--ie-line); border-radius: 8px; padding: 10px; margin-bottom: 10px; background: #f8fafc; display: grid; gap: 4px; font-size: 13px; }
+.consumer-table { display: grid; gap: 8px; }
+.consumer-row { border: 1px solid var(--ie-line); border-radius: 8px; padding: 9px 10px; display: grid; grid-template-columns: minmax(160px, 1fr) auto auto minmax(220px, 2fr); gap: 8px; align-items: center; font-size: 13px; }
+.consumer-row.pending { background: #eff6ff; }
+.consumer-row.skipped { background: #f9fafb; }
+.consumer-row.placeholder { background: #f9fafb; }
+.consumer-row .hint { color: var(--ie-muted); }
+.summary-box { margin-top: 10px; border: 1px solid var(--ie-line); border-radius: 8px; padding: 8px 10px; background: #fff; font-size: 13px; }
+.internal-events-category-tag { display: inline-flex; align-items: center; border: 1px solid var(--ie-line); border-radius: 999px; padding: 2px 7px; color: #374151; background: #fff; font-size: 12px; white-space: nowrap; }
+.internal-events-consumer-hint { margin-top: 5px; color: var(--ie-muted); font-size: 12px; line-height: 1.35; }
+.internal-events-placeholder-details { margin-top: 10px; border: 1px solid var(--ie-line); border-radius: 8px; padding: 8px 10px; background: #fafafa; }
+.internal-events-placeholder-details summary { cursor: pointer; font-weight: 600; }
+.internal-events-placeholder-consumers { margin-top: 8px; }
 .internal-events-page .admin-button--danger { border-color: #fecaca; color: var(--ie-danger); background: #fff7f7; }
 @media (max-width: 1200px) {
   .internal-events-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -234,6 +251,7 @@
 @media (max-width: 680px) {
   .internal-events-filters, .internal-events-stats { grid-template-columns: 1fr; }
   .internal-events-modal-card { width: calc(100vw - 16px); max-height: calc(100vh - 24px); margin: 12px auto; }
+  .consumer-row { grid-template-columns: 1fr; }
 }
 </style>
 
@@ -248,6 +266,12 @@
     failed_terminal: "失败不可重试",
     blocked: "已阻断",
     skipped: "已跳过"
+  };
+  const WHY_PENDING_CATEGORY_LABELS = {
+    normal_pending: "正常等待",
+    allowlist_blocked: "Allowlist 阻断",
+    placeholder_not_configured: "占位未配置",
+    skipped_expected: "预期跳过"
   };
   const EVENT_TYPE_LABELS = {
     "payment.succeeded": "支付成功",
@@ -425,6 +449,96 @@
     return `<span class="internal-events-badge ${escapeHtml(status || "")}">${escapeHtml(statusLabel(status))}</span>`;
   }
 
+  function categoryLabel(category) {
+    return WHY_PENDING_CATEGORY_LABELS[category] || category || "-";
+  }
+
+  function categoryTag(category) {
+    return `<span class="internal-events-category-tag">${escapeHtml(categoryLabel(category))}</span>`;
+  }
+
+  function reconciliationStateMap(reconciliation) {
+    return Object.fromEntries((reconciliation.consumer_states || []).map(item => [item.consumer_name, item]));
+  }
+
+  function whyPendingForRun(run, stateMap) {
+    return ((stateMap[run.consumer_name] || {}).why_pending) || {
+      category: "normal_pending",
+      message: "等待 reconciliation 数据",
+      actionable: true
+    };
+  }
+
+  function renderEffectCard(effect) {
+    const reusedText = effect.reused ? "true" : "false";
+    const createdText = effect.created ? "true" : "false";
+    const realCallText = effect.real_external_call_executed ? "true" : "false";
+    return `
+      <div class="effect-card">
+        <div>External Effect Job: ${escapeHtml(effect.job_id || effect.id || "-")}</div>
+        <div>effect_type: ${escapeHtml(effect.effect_type || "-")}</div>
+        <div>job_status: ${escapeHtml(effect.job_status || effect.status || "-")}</div>
+        <div>execution_mode: ${escapeHtml(effect.execution_mode || "-")}</div>
+        <div>source: ${escapeHtml(effect.source || "-")}</div>
+        <div>reused: ${escapeHtml(reusedText)}</div>
+        <div>created: ${escapeHtml(createdText)}</div>
+        <div>real_external_call_executed: ${escapeHtml(realCallText)}</div>
+        <div>blocked_reason: ${escapeHtml(effect.blocked_reason || "-")}</div>
+      </div>
+    `;
+  }
+
+  function renderConsumerReconciliationRow(state) {
+    const why = state.why_pending || {};
+    const category = why.category || "";
+    const rowClass = category === "placeholder_not_configured" ? "placeholder" : (state.status || "");
+    return `
+      <div class="consumer-row ${escapeHtml(rowClass)}" title="${escapeHtml(why.message || "")}">
+        <span>${escapeHtml(consumerLabel(state.consumer_name))}</span>
+        ${badge(state.status)}
+        ${categoryTag(category)}
+        <span class="hint">未执行原因：${escapeHtml(why.message || "-")}</span>
+      </div>
+    `;
+  }
+
+  function renderPlaceholderConsumers(states) {
+    const placeholders = states.filter(state => ((state.why_pending || {}).category === "placeholder_not_configured"));
+    if (!placeholders.length) return "";
+    return `
+      <details class="internal-events-placeholder-details" open>
+        <summary>Placeholder Consumers (not actionable)</summary>
+        <div class="consumer-table internal-events-placeholder-consumers">
+          ${placeholders.map(renderConsumerReconciliationRow).join("")}
+        </div>
+      </details>
+    `;
+  }
+
+  function renderReconciliationPanel(reconciliation) {
+    const effects = reconciliation.external_effects || [];
+    const states = reconciliation.consumer_states || [];
+    return `
+      <div class="event-reconciliation-panel">
+        <h2>业务效果核对</h2>
+        ${effects.length ? effects.map(renderEffectCard).join("") : `
+          <div class="effect-card">
+            <div>External Effect Job: -</div>
+            <div>job_status: -</div>
+            <div>execution_mode: -</div>
+            <div>reused: false</div>
+            <div>real_external_call_executed: false</div>
+          </div>
+        `}
+        <div class="consumer-table">
+          ${states.length ? states.map(renderConsumerReconciliationRow).join("") : `<div class="internal-events-muted">暂无 reconciliation consumer 状态</div>`}
+        </div>
+        ${renderPlaceholderConsumers(states)}
+        <div class="summary-box">derived_status: ${escapeHtml(reconciliation.derived_status || "-")}</div>
+      </div>
+    `;
+  }
+
   async function readJson(response) {
     try { return await response.json(); } catch (_) { return {}; }
   }
@@ -457,24 +571,30 @@
       tbody.innerHTML = `<tr><td colspan="6" class="admin-empty-cell">暂无事件</td></tr>`;
       return;
     }
-    tbody.innerHTML = items.map(item => `
-      <tr data-event-id="${escapeHtml(item.event_id)}">
-        <td>${oneLine(eventLabel(item), "internal-events-strong")}</td>
-        <td>${oneLine(eventSectionLabel(item), "internal-events-strong")}</td>
-        <td>${oneLine(businessObjectLabel(item), "internal-events-mono")}</td>
-        <td>${oneLine(sourceLabel(item), "internal-events-strong")}</td>
-        <td>
-          <div class="internal-events-counts">
-            <span class="internal-events-chip">总 ${Number(item.consumer_total || 0)}</span>
-            <span class="internal-events-chip">成 ${Number(item.succeeded_count || 0)}</span>
-            <span class="internal-events-chip">败 ${Number(item.failed_count || 0)}</span>
-            <span class="internal-events-chip">跳 ${Number(item.skipped_count || 0)}</span>
-            <span class="internal-events-chip">待 ${Number(item.pending_count || 0)}</span>
-          </div>
-        </td>
-        <td>${beijingTimeCell(item.occurred_at || item.created_at)}</td>
-      </tr>
-    `).join("");
+    tbody.innerHTML = items.map(item => {
+      const summary = item.reconciliation_summary || {};
+      const unresolved = Number(summary.unresolved_consumer_count ?? item.pending_count ?? 0);
+      const placeholder = Number(summary.placeholder_consumer_count ?? 0);
+      return `
+        <tr data-event-id="${escapeHtml(item.event_id)}">
+          <td>${oneLine(eventLabel(item), "internal-events-strong")}</td>
+          <td>${oneLine(eventSectionLabel(item), "internal-events-strong")}</td>
+          <td>${oneLine(businessObjectLabel(item), "internal-events-mono")}</td>
+          <td>${oneLine(sourceLabel(item), "internal-events-strong")}</td>
+          <td>
+            <div class="internal-events-counts">
+              <span class="internal-events-chip">总 ${Number(item.consumer_total || 0)}</span>
+              <span class="internal-events-chip">成 ${Number(item.succeeded_count || 0)}</span>
+              <span class="internal-events-chip">败 ${Number(item.failed_count || 0)}</span>
+              <span class="internal-events-chip">跳 ${Number(item.skipped_count || 0)}</span>
+              <span class="internal-events-chip">未执行 ${unresolved}</span>
+              <span class="internal-events-chip placeholder">占位 ${placeholder}</span>
+            </div>
+          </td>
+          <td>${beijingTimeCell(item.occurred_at || item.created_at)}</td>
+        </tr>
+      `;
+    }).join("");
     tbody.querySelectorAll("tr[data-event-id]").forEach(row => {
       row.addEventListener("click", () => loadDetail(row.dataset.eventId));
     });
@@ -497,6 +617,8 @@
     const event = data.event || {};
     const runs = data.consumer_runs || [];
     const attempts = data.attempts || [];
+    const reconciliation = data.reconciliation || {};
+    const reconciliationStates = reconciliationStateMap(reconciliation);
     document.getElementById("detailStatus").textContent = eventLabel(event);
     const panel = document.getElementById("detailPanel");
     panel.className = "internal-events-detail-body";
@@ -519,13 +641,16 @@
         <pre class="internal-events-json">${escapeHtml(JSON.stringify(data.payload_summary_json || {}, null, 2))}</pre>
       </div>
       <div class="internal-events-section">
+        ${renderReconciliationPanel(reconciliation)}
+      </div>
+      <div class="internal-events-section">
         <h3>消费者状态</h3>
         <div class="internal-events-detail-table-wrap">
           <table class="admin-table internal-events-consumer-table">
             <thead>
               <tr>
                 <th>消费者</th>
-                <th>状态</th>
+                <th>状态 / 原因</th>
                 <th>尝试</th>
                 <th>错误</th>
                 <th>下次重试</th>
@@ -534,27 +659,34 @@
               </tr>
             </thead>
             <tbody>
-              ${runs.map(run => `
-                <tr>
-                  <td>
-                    ${ellipsis(consumerLabel(run.consumer_name), "internal-events-strong")}
-                  </td>
-                  <td>${badge(run.status)}</td>
-                  <td>${Number(run.attempt_count || 0)} / ${Number(run.max_attempts || 0)}</td>
-                  <td>
-                    ${ellipsis(run.last_error_code || "", "internal-events-mono")}
-                    ${ellipsis(run.last_error_message || "", "internal-events-muted")}
-                  </td>
-                  <td>${run.next_retry_at ? beijingTimeCell(run.next_retry_at) : "-"}</td>
-                  <td><pre class="internal-events-json">${escapeHtml(JSON.stringify(run.result_summary_json || {}, null, 2))}</pre></td>
-                  <td>
-                    <div class="internal-events-action-row">
-                      <button class="admin-button admin-button--secondary" type="button" data-action="retry" data-event-id="${escapeHtml(event.event_id)}" data-consumer-name="${escapeHtml(run.consumer_name)}">重试</button>
-                      <button class="admin-button admin-button--danger" type="button" data-action="skip" data-event-id="${escapeHtml(event.event_id)}" data-consumer-name="${escapeHtml(run.consumer_name)}">跳过</button>
-                    </div>
-                  </td>
-                </tr>
-              `).join("")}
+              ${runs.map(run => {
+                const why = whyPendingForRun(run, reconciliationStates);
+                return `
+                  <tr title="${escapeHtml(why.message || "")}">
+                    <td>
+                      ${ellipsis(consumerLabel(run.consumer_name), "internal-events-strong")}
+                    </td>
+                    <td>
+                      ${badge(run.status)}
+                      ${categoryTag(why.category || "")}
+                      <div class="internal-events-consumer-hint">${escapeHtml(why.message || "-")}</div>
+                    </td>
+                    <td>${Number(run.attempt_count || 0)} / ${Number(run.max_attempts || 0)}</td>
+                    <td>
+                      ${ellipsis(run.last_error_code || "", "internal-events-mono")}
+                      ${ellipsis(run.last_error_message || "", "internal-events-muted")}
+                    </td>
+                    <td>${run.next_retry_at ? beijingTimeCell(run.next_retry_at) : "-"}</td>
+                    <td><pre class="internal-events-json">${escapeHtml(JSON.stringify(run.result_summary_json || {}, null, 2))}</pre></td>
+                    <td>
+                      <div class="internal-events-action-row">
+                        <button class="admin-button admin-button--secondary" type="button" data-action="retry" data-event-id="${escapeHtml(event.event_id)}" data-consumer-name="${escapeHtml(run.consumer_name)}">重试</button>
+                        <button class="admin-button admin-button--danger" type="button" data-action="skip" data-event-id="${escapeHtml(event.event_id)}" data-consumer-name="${escapeHtml(run.consumer_name)}">跳过</button>
+                      </div>
+                    </td>
+                  </tr>
+                `;
+              }).join("")}
             </tbody>
           </table>
         </div>

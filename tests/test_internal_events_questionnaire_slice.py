@@ -17,6 +17,7 @@ from aicrm_next.platform_foundation.internal_events import (
 )
 from aicrm_next.platform_foundation.internal_events.consumer_registry import InternalEventConsumerRegistry
 from aicrm_next.platform_foundation.internal_events.repository import InMemoryInternalEventRepository
+from aicrm_next.platform_foundation.internal_events.view_model import build_event_detail_payload
 from aicrm_next.platform_foundation.internal_events.worker import InternalEventWorker
 from aicrm_next.questionnaire.h5_write import reset_questionnaire_h5_write_fixture_state
 from aicrm_next.questionnaire.repo import reset_questionnaire_fixture_state
@@ -176,6 +177,49 @@ def test_webhook_consumer_creates_shadow_external_effect_job_without_attempt(mon
     assert emitted["event"]["event_id"]
 
 
+def test_questionnaire_event_detail_reconciles_submit_path_external_effect(monkeypatch) -> None:
+    monkeypatch.setenv("AICRM_EXTERNAL_EFFECT_WEBHOOK_EXECUTE", "0")
+    reset_external_effect_fixture_state()
+    registry = InternalEventConsumerRegistry()
+    register_questionnaire_event_consumers(registry)
+    repo = InMemoryInternalEventRepository()
+    service = InternalEventService(repo, registry)
+    emitted = _emit_questionnaire_event_to_service(service, key="reconcile-submit-path")
+    ExternalEffectService().plan_effect(
+        effect_type=WEBHOOK_QUESTIONNAIRE_SUBMISSION_PUSH,
+        adapter_name="outbound_webhook",
+        operation="post",
+        target_type="questionnaire_submission",
+        target_id="reconcile-submit-path",
+        business_type="questionnaire",
+        business_id="1",
+        payload={"webhook_url": "https://hooks.example.invalid/questionnaire"},
+        payload_summary={"submission_id": "reconcile-submit-path"},
+        context=CommandContext(trace_id="reconcile-submit-path"),
+        source_module="questionnaire.external_push",
+        execution_mode="execute",
+        status="queued",
+        idempotency_key="submit-path:reconcile-submit-path",
+    )
+
+    detail = build_event_detail_payload(emitted["event"]["event_id"], service=service)
+    assert detail is not None
+    reconciliation = detail["reconciliation"]
+    effect = next(item for item in reconciliation["external_effects"] if item["effect_type"] == WEBHOOK_QUESTIONNAIRE_SUBMISSION_PUSH)
+
+    assert detail["derived_status"] == "effect_planned"
+    assert detail["reconciliation_summary"]["unresolved_consumer_count"] == 2
+    assert detail["reconciliation_summary"]["placeholder_consumer_count"] == 3
+    assert reconciliation["derived_status"] == "effect_planned"
+    assert effect["effect_type"] == WEBHOOK_QUESTIONNAIRE_SUBMISSION_PUSH
+    assert effect["job_status"] == "queued"
+    assert effect["source"] == "submit_path"
+    assert effect["reused"] is False
+    assert effect["created"] is True
+    assert effect["real_external_call_executed"] is False
+    assert "payload_json" not in str(detail)
+
+
 def _emit_questionnaire_event_to_service(service: InternalEventService, *, key: str) -> dict:
     return service.emit_event(
         event_type=QUESTIONNAIRE_SUBMITTED_EVENT_TYPE,
@@ -227,7 +271,7 @@ def test_webhook_consumer_reuses_existing_external_effect_job(monkeypatch) -> No
     register_questionnaire_event_consumers(registry)
     repo = InMemoryInternalEventRepository()
     service = InternalEventService(repo, registry)
-    _emit_questionnaire_event_to_service(service, key="sub_webhook_reuse")
+    emitted = _emit_questionnaire_event_to_service(service, key="sub_webhook_reuse")
     existing = ExternalEffectService().plan_effect(
         effect_type=WEBHOOK_QUESTIONNAIRE_SUBMISSION_PUSH,
         adapter_name="outbound_webhook",
@@ -263,6 +307,10 @@ def test_webhook_consumer_reuses_existing_external_effect_job(monkeypatch) -> No
     assert response_summary["external_effect_job_created"] is False
     assert response_summary["external_effect_job_id"] == existing["id"]
     assert ExternalEffectService().list_attempts(existing["id"]) == []
+    reconciliation = service.get_event_reconciliation(emitted["event"]["event_id"])
+    assert reconciliation["derived_status"] == "effect_reused"
+    assert reconciliation["external_effects"][0]["reused"] is True
+    assert reconciliation["external_effects"][0]["job_id"] == existing["id"]
 
 
 def test_noop_questionnaire_consumers_are_skipped_with_reasons() -> None:
@@ -294,17 +342,42 @@ def test_noop_questionnaire_consumers_are_skipped_with_reasons() -> None:
         assert attempts[0].response_summary_json["reason"] == reason
 
 
+def test_reconciliation_explains_placeholder_and_allowlist_pending(monkeypatch) -> None:
+    monkeypatch.setenv("AICRM_INTERNAL_EVENTS_ALLOWED_EVENT_TYPES", "payment.succeeded")
+    registry = InternalEventConsumerRegistry()
+    register_questionnaire_event_consumers(registry)
+    repo = InMemoryInternalEventRepository()
+    service = InternalEventService(repo, registry)
+    emitted = _emit_questionnaire_event_to_service(service, key="sub_pending_explain")
+
+    reconciliation = service.get_event_reconciliation(emitted["event"]["event_id"])
+    by_consumer = {item["consumer_name"]: item for item in reconciliation["consumer_states"]}
+
+    assert by_consumer["questionnaire_projection_consumer"]["why_pending"]["category"] == "allowlist_blocked"
+    assert by_consumer["questionnaire_projection_consumer"]["why_pending"]["actionable"] is True
+    assert by_consumer["questionnaire_tag_consumer"]["why_pending"]["category"] == "placeholder_not_configured"
+    assert by_consumer["automation_questionnaire_consumer"]["why_pending"]["category"] == "placeholder_not_configured"
+    assert by_consumer["customer_summary_consumer"]["why_pending"]["actionable"] is False
+
+
 def test_internal_event_api_redacts_questionnaire_summary_and_hides_payload(monkeypatch) -> None:
     client = _client(monkeypatch, questionnaire_enabled=True)
     body = _submit(client, key="api-safety")
 
     list_response = client.get("/api/admin/internal-events?event_type=questionnaire.submitted")
     detail_response = client.get(f"/api/admin/internal-events/{body['internal_event_id']}")
+    reconciliation_response = client.get(f"/api/admin/internal-events/{body['internal_event_id']}/reconciliation")
     list_text = list_response.text
     detail = detail_response.json()
 
     assert list_response.status_code == 200
     assert detail_response.status_code == 200
+    assert reconciliation_response.status_code == 200
+    assert reconciliation_response.json()["ok"] is True
+    assert reconciliation_response.json()["reconciliation"]["event_id"] == body["internal_event_id"]
+    assert "reconciliation" in detail
+    assert "derived_status" in detail
+    assert "reconciliation_summary" in detail
     assert "payload_json" not in list_text
     assert "原始敏感答案" not in list_text
     assert "wm_questionnaire_api-safety" not in list_text
@@ -314,6 +387,20 @@ def test_internal_event_api_redacts_questionnaire_summary_and_hides_payload(monk
     assert "原始敏感答案" not in str(detail)
     assert "wm_questionnaire_api-safety" not in str(detail)
     assert "13800138000" not in str(detail)
+
+
+def test_internal_events_admin_page_contains_reconciliation_ui(monkeypatch) -> None:
+    client = _client(monkeypatch, questionnaire_enabled=True)
+
+    response = client.get("/admin/internal-events")
+    body = response.text
+
+    assert response.status_code == 200
+    assert "业务效果核对" in body
+    assert "External Effect Job" in body
+    assert "Placeholder Consumers (not actionable)" in body
+    assert "未执行" in body
+    assert "占位" in body
 
 
 def test_worker_payment_allowlist_does_not_scan_questionnaire_until_explicitly_allowed(monkeypatch) -> None:

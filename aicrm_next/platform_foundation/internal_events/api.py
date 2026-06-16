@@ -221,6 +221,21 @@ def get_internal_event(event_id: str) -> JSONResponse:
     return _json(payload)
 
 
+@router.get("/api/admin/internal-events/{event_id}/reconciliation")
+def get_internal_event_reconciliation(event_id: str) -> JSONResponse:
+    service = _service()
+    if not service.get_event(event_id):
+        return _json({"ok": False, "error": "internal_event_not_found"}, status_code=404)
+    return _json(
+        {
+            "ok": True,
+            "reconciliation": service.get_event_reconciliation(event_id),
+            "route_owner": ROUTE_OWNER,
+            "real_external_call_executed": False,
+        }
+    )
+
+
 @router.post("/api/admin/internal-events/{event_id}/consumers/{consumer_name}/run")
 async def run_internal_event_consumer(event_id: str, consumer_name: str, request: Request) -> JSONResponse:
     payload = await _payload(request)
