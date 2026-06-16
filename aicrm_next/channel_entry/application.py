@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 import secrets
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 from . import repo
@@ -34,8 +36,15 @@ from aicrm_next.platform_foundation.external_effects import (
     WECOM_CONTACT_TAG_MARK,
     WECOM_WELCOME_MESSAGE_SEND,
 )
+from aicrm_next.platform_foundation.external_effects.worker import ExternalEffectWorker
+from aicrm_next.shared.runtime_settings import runtime_bool, runtime_csv
 
 CUSTOMER_NAME_PLACEHOLDER_RE = re.compile(r"\{\{\s*客户名\s*\}\}")
+LOGGER = logging.getLogger(__name__)
+_WELCOME_EFFECT_EXECUTOR = ThreadPoolExecutor(
+    max_workers=2,
+    thread_name_prefix="channel-entry-welcome-effect",
+)
 
 
 def callback_config() -> dict[str, str]:
@@ -177,6 +186,33 @@ def _plan_channel_entry_effect(
         status="queued",
         execution_mode="execute",
     )
+
+
+def _welcome_realtime_wakeup_enabled() -> bool:
+    return runtime_bool("AICRM_EXTERNAL_EFFECT_WECOM_EXECUTE") and WECOM_WELCOME_MESSAGE_SEND in runtime_csv(
+        "AICRM_EXTERNAL_EFFECT_ALLOWED_TYPES"
+    )
+
+
+def _dispatch_welcome_external_effect_job(job_id: int) -> None:
+    try:
+        ExternalEffectWorker(locked_by="channel-entry-welcome-realtime").dispatch_one(int(job_id))
+    except Exception:
+        LOGGER.exception(
+            "channel entry welcome external effect realtime dispatch failed",
+            extra={"external_effect_job_id": int(job_id or 0)},
+        )
+
+
+def _wake_welcome_external_effect_job(job_id: Any) -> bool:
+    try:
+        normalized_job_id = int(job_id or 0)
+    except (TypeError, ValueError):
+        normalized_job_id = 0
+    if normalized_job_id <= 0 or not _welcome_realtime_wakeup_enabled():
+        return False
+    _WELCOME_EFFECT_EXECUTOR.submit(_dispatch_welcome_external_effect_job, normalized_job_id)
+    return True
 
 
 def _admit_program_binding(
@@ -348,6 +384,7 @@ def _send_welcome(command: ProcessChannelEntryCommand, *, channel: dict[str, Any
         "reason": "external_effect_job_queued",
         "welcome_code": welcome_code,
         "external_effect_job_id": job.get("id"),
+        "immediate_dispatch_scheduled": _wake_welcome_external_effect_job(job.get("id")),
         "real_external_call_executed": False,
         "attachments": attachments,
     }

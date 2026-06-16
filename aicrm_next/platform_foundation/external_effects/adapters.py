@@ -18,6 +18,7 @@ from .models import (
     WEBHOOK_GENERIC_PUSH,
     WECOM_MESSAGE_GROUP_SEND,
     WECOM_MESSAGE_PRIVATE_SEND,
+    WECOM_WELCOME_MESSAGE_SEND,
     ExternalEffectDispatchResult,
     ExternalEffectJob,
 )
@@ -64,7 +65,7 @@ def wecom_execution_settings() -> dict[str, Any]:
         "allowed_group_ops_webhook_keys": sorted(_csv_env("AICRM_EXTERNAL_EFFECT_ALLOWED_GROUP_OPS_WEBHOOK_KEYS")),
         "allowed_owner_userids": sorted(_csv_env("AICRM_EXTERNAL_EFFECT_ALLOWED_OWNER_USERIDS")),
         "allowed_group_chat_ids": sorted(_csv_env("AICRM_EXTERNAL_EFFECT_ALLOWED_GROUP_CHAT_IDS")),
-        "supported_types": [WECOM_MESSAGE_PRIVATE_SEND, WECOM_MESSAGE_GROUP_SEND],
+        "supported_types": [WECOM_MESSAGE_PRIVATE_SEND, WECOM_MESSAGE_GROUP_SEND, WECOM_WELCOME_MESSAGE_SEND],
     }
 
 
@@ -486,6 +487,152 @@ class WeComGroupMessageExternalEffectAdapter:
         return result
 
 
+class WeComWelcomeMessageAdapter:
+    def __init__(self, adapter_factory=None) -> None:
+        self._adapter_factory = adapter_factory
+
+    def dispatch(self, job: ExternalEffectJob) -> ExternalEffectDispatchResult:
+        payload = dict(job.payload_json or {})
+        request_summary = self._request_summary(job, payload)
+        gate_error = self._execution_gate_error(job, payload)
+        if gate_error:
+            return ExternalEffectDispatchResult(
+                status="failed_terminal",
+                adapter_mode=job.execution_mode or "execute",
+                request_summary=request_summary,
+                response_summary={
+                    "blocked": True,
+                    "execution_gate": gate_error,
+                    "real_external_call_executed": False,
+                    "wecom_send_executed": False,
+                },
+                error_code=gate_error,
+                error_message="WeCom welcome-message adapter execution is blocked by external effect gates.",
+                real_external_call_executed=False,
+            )
+
+        wecom_payload = self._wecom_payload(payload)
+        try:
+            adapter = self._build_adapter()
+            result = adapter.send_welcome_msg(wecom_payload)
+        except Exception as exc:
+            return self._failure_result(exc, request_summary=request_summary)
+
+        return ExternalEffectDispatchResult(
+            status="succeeded",
+            adapter_mode="execute",
+            request_summary=request_summary,
+            response_summary={
+                "errcode": int(result.get("errcode") or 0) if isinstance(result, dict) else 0,
+                "errmsg_present": bool(str((result or {}).get("errmsg") or "").strip()) if isinstance(result, dict) else False,
+                "real_external_call_executed": True,
+                "wecom_send_executed": True,
+            },
+            real_external_call_executed=True,
+        )
+
+    def _request_summary(self, job: ExternalEffectJob, payload: dict[str, Any]) -> dict[str, Any]:
+        text_payload = payload.get("text") if isinstance(payload.get("text"), dict) else {}
+        attachments = payload.get("attachments") if isinstance(payload.get("attachments"), list) else []
+        return {
+            "effect_type": job.effect_type,
+            "operation": job.operation,
+            "target_type": job.target_type,
+            "target_id": job.target_id,
+            "external_userid": str(payload.get("external_userid") or ""),
+            "follow_user_userid": str(payload.get("follow_user_userid") or ""),
+            "welcome_code_present": bool(str(payload.get("welcome_code") or "").strip()),
+            "text_length": len(str(text_payload.get("content") or "")),
+            "attachment_count": len(attachments),
+        }
+
+    def _execution_gate_error(self, job: ExternalEffectJob, payload: dict[str, Any]) -> str:
+        if job.execution_mode in {"disabled", "shadow", "plan_only", "execute_dryrun"}:
+            return "shadow_only"
+        if job.effect_type != WECOM_WELCOME_MESSAGE_SEND:
+            return "unsupported_effect_type"
+        if not _enabled("AICRM_EXTERNAL_EFFECT_WECOM_EXECUTE"):
+            return "execution_disabled"
+        allowed_types = _csv_env("AICRM_EXTERNAL_EFFECT_ALLOWED_TYPES")
+        if job.effect_type not in allowed_types:
+            return "effect_type_not_allowed"
+        external_userid = str(payload.get("external_userid") or "").strip()
+        if not external_userid or str(job.target_id or "").strip() != external_userid:
+            return "target_mismatch"
+        allowed_targets = _csv_env("AICRM_EXTERNAL_EFFECT_ALLOWED_TARGET_EXTERNAL_USERIDS")
+        if allowed_targets and external_userid not in allowed_targets:
+            return "target_not_allowed"
+        follow_user_userid = str(payload.get("follow_user_userid") or "").strip()
+        if not follow_user_userid:
+            return "owner_userid_missing"
+        allowed_owners = _csv_env("AICRM_EXTERNAL_EFFECT_ALLOWED_OWNER_USERIDS")
+        if allowed_owners and follow_user_userid not in allowed_owners:
+            return "owner_userid_not_allowed"
+        if not str(payload.get("welcome_code") or "").strip():
+            return "welcome_code_missing"
+        has_text = isinstance(payload.get("text"), dict) and bool(
+            str((payload.get("text") or {}).get("content") or "").strip()
+        )
+        has_attachments = isinstance(payload.get("attachments"), list) and bool(payload.get("attachments"))
+        if not has_text and not has_attachments:
+            return "payload_invalid"
+        return ""
+
+    def _wecom_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
+        result: dict[str, Any] = {"welcome_code": str(payload.get("welcome_code") or "").strip()}
+        if isinstance(payload.get("text"), dict):
+            result["text"] = dict(payload.get("text") or {})
+        if isinstance(payload.get("attachments"), list) and payload.get("attachments"):
+            result["attachments"] = list(payload.get("attachments") or [])
+        return result
+
+    def _build_adapter(self):
+        if self._adapter_factory is not None:
+            return self._adapter_factory()
+        from aicrm_next.channel_entry.wecom_adapter import ProductionWeComAdapter, missing_wecom_config
+
+        missing = missing_wecom_config()
+        if missing:
+            raise RuntimeError("missing_wecom_config:" + ",".join(missing))
+        return ProductionWeComAdapter()
+
+    def _failure_result(self, exc: Exception, *, request_summary: dict[str, Any]) -> ExternalEffectDispatchResult:
+        error_code = "wecom_welcome_send_failed"
+        error_message = str(exc)[:500]
+        retryable = False
+        response_summary: dict[str, Any] = {"real_external_call_executed": True, "wecom_send_executed": False}
+        try:
+            from aicrm_next.channel_entry.wecom_adapter import WeComApiError
+
+            if isinstance(exc, WeComApiError):
+                payload = dict(exc.payload or {})
+                errcode = int(payload.get("errcode") or 0)
+                response_summary.update(
+                    {
+                        "errcode": errcode,
+                        "errmsg_present": bool(str(payload.get("errmsg") or "").strip()),
+                    }
+                )
+                error_code = f"wecom_error_{errcode}" if errcode else "network_error"
+                error_message = str(payload.get("errmsg") or exc.message or exc)[:500]
+                retryable = errcode in {-1, 42001, 45009, 45011} or errcode == 0
+        except Exception:
+            pass
+        if error_message.startswith("missing_wecom_config:"):
+            error_code = "config_missing"
+            retryable = False
+            response_summary["real_external_call_executed"] = False
+        return ExternalEffectDispatchResult(
+            status="failed_retryable" if retryable else "failed_terminal",
+            adapter_mode="execute",
+            request_summary=request_summary,
+            response_summary=response_summary,
+            error_code=error_code,
+            error_message=error_message,
+            real_external_call_executed=bool(response_summary.get("real_external_call_executed")),
+        )
+
+
 class ExternalEffectAdapterRegistry:
     def __init__(self) -> None:
         self._adapters: dict[str, ExternalEffectAdapter] = {
@@ -493,6 +640,7 @@ class ExternalEffectAdapterRegistry:
             "webhook": WebhookAdapter(),
             "wecom_private_message": WeComPrivateMessageAdapter(),
             "wecom_group_message": WeComGroupMessageExternalEffectAdapter(),
+            "wecom_welcome_message": WeComWelcomeMessageAdapter(),
         }
         self._disabled = DisabledAdapter()
 
