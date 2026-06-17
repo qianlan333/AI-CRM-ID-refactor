@@ -488,6 +488,22 @@
     `;
   }
 
+  function renderPlannerCard(reconciliation) {
+    const jobIds = reconciliation.broadcast_job_ids || [];
+    const scheduledFor = reconciliation.scheduled_for || [];
+    return `
+      <div class="effect-card">
+        <div>Broadcast Planner: ${escapeHtml(reconciliation.planner_status || "-")}</div>
+        <div>planner_status: ${escapeHtml(reconciliation.planner_status || "-")}</div>
+        <div>broadcast_job_ids: ${escapeHtml(jobIds.length ? jobIds.join(", ") : "-")}</div>
+        <div>scheduled_for: ${escapeHtml(scheduledFor.length ? scheduledFor.join(", ") : "-")}</div>
+        <div>queued_count: ${escapeHtml(reconciliation.queued_count ?? 0)}</div>
+        <div>blocked_reason: ${escapeHtml(reconciliation.blocked_reason || "-")}</div>
+        <div>real_external_call_executed: false</div>
+      </div>
+    `;
+  }
+
   function renderConsumerReconciliationRow(state) {
     const why = state.why_pending || {};
     const category = why.category || "";
@@ -530,6 +546,7 @@
             <div>real_external_call_executed: false</div>
           </div>
         `}
+        ${renderPlannerCard(reconciliation)}
         <div class="consumer-table">
           ${states.length ? states.map(renderConsumerReconciliationRow).join("") : `<div class="internal-events-muted">暂无 reconciliation consumer 状态</div>`}
         </div>
