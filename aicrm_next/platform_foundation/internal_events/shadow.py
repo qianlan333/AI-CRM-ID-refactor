@@ -19,6 +19,7 @@ from .config import (
 from .consumer_registry import DEFAULT_INTERNAL_EVENT_CONSUMER_REGISTRY, InternalEventConsumerRegistry
 from .legacy_path_markers import mark_legacy_path_invoked
 from .models import InternalEvent, InternalEventConsumerResult, InternalEventConsumerRun
+from .ops_plan_broadcast_planner import build_ops_plan_broadcast_planner_service
 from .customer_identity import CUSTOMER_PHONE_BOUND_EVENT_TYPE, register_customer_identity_event_consumers
 from .questionnaire import register_questionnaire_event_consumers
 from .service import InternalEventService
@@ -426,7 +427,59 @@ def broadcast_task_planner_consumer(event: InternalEvent, run: InternalEventCons
         legacy_path=f"{event.event_type}.legacy_broadcast_task_planner",
         reason="broadcast_task_planner_replaced_by_internal_event_consumer",
     )
-    return _skipped("broadcast_task_planner_not_configured", event, run)
+    if event.event_type != OPS_PLAN_APPROVED_EVENT_TYPE:
+        return _skipped("broadcast_task_planner_not_configured", event, run)
+    result = build_ops_plan_broadcast_planner_service().plan_event(event, run)
+    blocked_reason = _text(result.get("blocked_reason") or result.get("skipped_reason"))
+    if not result.get("ok"):
+        return InternalEventConsumerResult(
+            status="failed_terminal" if blocked_reason == "target_count_mismatch" else "blocked",
+            request_summary={"event_id": event.event_id, "consumer_name": run.consumer_name},
+            response_summary={
+                "planner_status": result.get("planner_status") or "blocked",
+                "broadcast_job_ids": [],
+                "scheduled_for": [],
+                "queued_count": 0,
+                "planned_count": 0,
+                "blocked_reason": blocked_reason or "broadcast_task_planner_blocked",
+                "skipped_reason": result.get("skipped_reason") or blocked_reason,
+                "real_external_call_executed": False,
+            },
+            result_summary={
+                "planner_status": result.get("planner_status") or "blocked",
+                "broadcast_job_ids": [],
+                "scheduled_for": [],
+                "queued_count": 0,
+                "planned_count": 0,
+                "blocked_reason": blocked_reason or "broadcast_task_planner_blocked",
+                "skipped_reason": result.get("skipped_reason") or blocked_reason,
+                "real_external_call_executed": False,
+            },
+            error_code=blocked_reason or "broadcast_task_planner_blocked",
+            error_message=blocked_reason or "broadcast task planner blocked",
+        )
+    summary = {
+        "planner_status": result.get("planner_status") or "planned",
+        "broadcast_job_ids": list(result.get("broadcast_job_ids") or []),
+        "broadcast_job_ids_csv": ",".join(str(item) for item in (result.get("broadcast_job_ids") or [])),
+        "created_broadcast_job_ids": list(result.get("created_broadcast_job_ids") or []),
+        "created_broadcast_job_ids_csv": ",".join(str(item) for item in (result.get("created_broadcast_job_ids") or [])),
+        "reused_broadcast_job_ids": list(result.get("reused_broadcast_job_ids") or []),
+        "reused_broadcast_job_ids_csv": ",".join(str(item) for item in (result.get("reused_broadcast_job_ids") or [])),
+        "scheduled_for": list(result.get("scheduled_for") or []),
+        "scheduled_for_csv": ",".join(str(item) for item in (result.get("scheduled_for") or [])),
+        "queued_count": int(result.get("queued_count") or 0),
+        "planned_count": int(result.get("planned_count") or 0),
+        "blocked_reason": "",
+        "skipped_reason": result.get("skipped_reason") or "",
+        "real_external_call_executed": False,
+    }
+    return InternalEventConsumerResult(
+        status="succeeded",
+        request_summary={"event_id": event.event_id, "consumer_name": run.consumer_name},
+        response_summary=summary,
+        result_summary=summary,
+    )
 
 
 def broadcast_queue_projection_consumer(event: InternalEvent, run: InternalEventConsumerRun) -> InternalEventConsumerResult:

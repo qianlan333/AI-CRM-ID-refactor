@@ -146,6 +146,10 @@ def _reconciliation_summary(
         "placeholder_consumer_count": placeholder_count,
         "external_effect_count": len(external_effects),
         "external_effect_statuses": sorted({_text(item.get("job_status") or item.get("status")) for item in external_effects if _text(item.get("job_status") or item.get("status"))}),
+        "planner_status": _text((reconciliation or {}).get("planner_status")),
+        "broadcast_job_count": len(list((reconciliation or {}).get("broadcast_job_ids") or [])),
+        "queued_count": int((reconciliation or {}).get("queued_count") or 0),
+        "blocked_reason": _text((reconciliation or {}).get("blocked_reason")),
     }
 
 

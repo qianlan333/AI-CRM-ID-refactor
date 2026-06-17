@@ -36,6 +36,10 @@ def _payload_dict(value: Any) -> dict[str, Any]:
     return dict(value or {}) if isinstance(value, dict) else {}
 
 
+def _csv_list(value: Any) -> list[str]:
+    return [item.strip() for item in _text(value).split(",") if item.strip()]
+
+
 class InternalEventReconciliationService:
     def __init__(
         self,
@@ -55,12 +59,19 @@ class InternalEventReconciliationService:
         jobs = self._find_external_effect_jobs(event, runs, attempts)
         external_effects = [self._external_effect_item(job, event=event, reused=job_reuse.get(job.id, False)) for job in jobs]
         consumer_states = [self._consumer_state(event, run) for run in runs]
+        planner = self._planner_summary(runs, attempts)
         return {
             "event_id": event.event_id,
             "event_type": event.event_type,
             "consumer_states": consumer_states,
             "external_effects": external_effects,
-            "derived_status": self._derived_status(event, consumer_states, external_effects),
+            "planner_status": planner.get("planner_status") or "",
+            "broadcast_job_ids": planner.get("broadcast_job_ids") or [],
+            "scheduled_for": planner.get("scheduled_for") or [],
+            "queued_count": int(planner.get("queued_count") or 0),
+            "blocked_reason": planner.get("blocked_reason") or "",
+            "real_external_call_executed": False,
+            "derived_status": self._derived_status(event, consumer_states, external_effects, planner),
         }
 
     def _consumer_state(self, event: InternalEvent, run: InternalEventConsumerRun) -> dict[str, Any]:
@@ -153,6 +164,31 @@ class InternalEventReconciliationService:
                 flags[job_id] = bool(flags.get(job_id) or _bool(data.get("external_effect_job_reused")))
         return flags
 
+    def _planner_summary(
+        self,
+        runs: list[InternalEventConsumerRun],
+        attempts: list[InternalEventConsumerAttempt],
+    ) -> dict[str, Any]:
+        for payload in [run.result_summary_json for run in runs if run.consumer_name == "broadcast_task_planner_consumer"] + [
+            attempt.response_summary_json for attempt in attempts if attempt.consumer_name == "broadcast_task_planner_consumer"
+        ]:
+            data = _payload_dict(payload)
+            if _text(data.get("planner_status")) or data.get("broadcast_job_ids"):
+                job_ids = list(data.get("broadcast_job_ids") or [])
+                if not job_ids or job_ids == ["list"] or data.get("broadcast_job_ids") == "list":
+                    job_ids = _csv_list(data.get("broadcast_job_ids_csv"))
+                scheduled_for = list(data.get("scheduled_for") or [])
+                if not scheduled_for or scheduled_for == ["list"] or data.get("scheduled_for") == "list":
+                    scheduled_for = _csv_list(data.get("scheduled_for_csv"))
+                return {
+                    "planner_status": _text(data.get("planner_status")),
+                    "broadcast_job_ids": job_ids,
+                    "scheduled_for": scheduled_for,
+                    "queued_count": int(data.get("queued_count") or 0),
+                    "blocked_reason": _text(data.get("blocked_reason") or data.get("skipped_reason")),
+                }
+        return {}
+
     def _candidate_job_filters(self, event: InternalEvent) -> list[dict[str, Any]]:
         filters: list[dict[str, Any]] = [{"source_event_id": event.event_id}]
         if _text(event.trace_id):
@@ -211,7 +247,13 @@ class InternalEventReconciliationService:
         event: InternalEvent,
         consumer_states: list[dict[str, Any]],
         external_effects: list[dict[str, Any]],
+        planner: dict[str, Any] | None = None,
     ) -> str:
+        planner = planner or {}
+        if _text(planner.get("planner_status")) == "planned" and int(planner.get("queued_count") or 0) > 0:
+            return "effect_planned"
+        if _text(planner.get("planner_status")) == "blocked":
+            return "effect_blocked"
         if any(effect.get("reused") for effect in external_effects):
             return "effect_reused"
         statuses = {_text(effect.get("job_status")) for effect in external_effects}
