@@ -8,6 +8,7 @@ from typing import Any, Protocol
 from aicrm_next.shared import runtime
 from aicrm_next.shared.repository_provider import RepositoryProviderError
 from aicrm_next.shared.runtime import raw_database_url
+from .repository import connect_cloud_campaign_read_db
 
 SOURCE_STATUS = "next_cloud_orchestrator_campaign_read"
 ROUTE_OWNER = "ai_crm_next"
@@ -174,13 +175,7 @@ class PostgresCloudCampaignReadRepository:
             raise RepositoryProviderError("cloud campaign read repository unavailable: DATABASE_URL is required")
 
     def _connect(self):
-        try:
-            import psycopg
-            from psycopg.rows import dict_row
-
-            return psycopg.connect(self._database_url, row_factory=dict_row)
-        except Exception as exc:
-            raise RepositoryProviderError(f"cloud campaign read repository unavailable: {exc}") from exc
+        return connect_cloud_campaign_read_db(self._database_url)
 
     def list_campaigns(self, *, review_status: str = "", run_status: str = "", group_code: str = "", limit: int = 5000, offset: int = 0) -> tuple[list[dict[str, Any]], int]:
         where = ["1=1"]

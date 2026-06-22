@@ -8,6 +8,7 @@ from typing import Any
 
 from flask import current_app, g, has_app_context
 
+from aicrm_next.shared.db_session import connect_raw_postgres
 from aicrm_next.shared.runtime import raw_database_url
 
 _scoped_db: ContextVar["PostgresConnection | None"] = ContextVar("next_scoped_db", default=None)
@@ -125,12 +126,10 @@ def _database_url() -> str:
 
 
 def _connect() -> PostgresConnection:
-    import psycopg
-
     database_url = _database_url()
     if not database_url:
         raise RuntimeError("DATABASE_URL is required for Next automation admission runtime")
-    return PostgresConnection(psycopg.connect(database_url, autocommit=False))
+    return PostgresConnection(connect_raw_postgres(database_url, autocommit=False))
 
 
 def get_db() -> PostgresConnection:

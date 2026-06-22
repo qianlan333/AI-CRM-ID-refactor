@@ -63,6 +63,16 @@ def _psycopg_url(url: str) -> str:
     return url
 
 
+def connect_cloud_campaign_read_db(database_url: str) -> Any:
+    try:
+        import psycopg
+        from psycopg.rows import dict_row
+
+        return psycopg.connect(_psycopg_url(database_url), row_factory=dict_row)
+    except Exception as exc:
+        raise RepositoryProviderError(f"cloud campaign read repository unavailable: {exc}") from exc
+
+
 class CloudPlanRepository(Protocol):
     def list_plans(self, *, status: str = "", keyword: str = "", limit: int = 20, offset: int = 0) -> tuple[list[dict[str, Any]], int]: ...
     def get_plan(self, plan_id: str) -> dict[str, Any] | None: ...

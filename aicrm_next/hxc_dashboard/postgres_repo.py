@@ -5,7 +5,7 @@ from typing import Any
 
 from aicrm_next.shared.repository_provider import RepositoryProviderError
 
-from .repo import HxcDashboardBroadcastRepository, _build_audience_preview, new_task_id
+from .repo import HxcDashboardBroadcastRepository, _build_audience_preview, connect_hxc_dashboard_broadcast_db, new_task_id
 
 
 def _json_dumps(value: Any) -> str:
@@ -30,10 +30,7 @@ class PostgresHxcDashboardBroadcastRepository(HxcDashboardBroadcastRepository):
         self._database_url = database_url
 
     def _connect(self):
-        import psycopg
-        from psycopg.rows import dict_row
-
-        return psycopg.connect(self._database_url, row_factory=dict_row)
+        return connect_hxc_dashboard_broadcast_db(self._database_url)
 
     def preview_audience(
         self,

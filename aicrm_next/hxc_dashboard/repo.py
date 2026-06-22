@@ -132,6 +132,13 @@ def build_hxc_dashboard_broadcast_repository() -> HxcDashboardBroadcastRepositor
     return assert_repository_allowed(_FIXTURE_REPO, capability_owner="hxc_dashboard_broadcast")
 
 
+def connect_hxc_dashboard_broadcast_db(database_url: str) -> Any:
+    import psycopg
+    from psycopg.rows import dict_row
+
+    return psycopg.connect(database_url, row_factory=dict_row)
+
+
 def _build_audience_preview(rows: list[dict[str, Any]]) -> dict[str, Any]:
     skipped_by_reason: dict[str, int] = {}
     eligible_external_userids: list[str] = []

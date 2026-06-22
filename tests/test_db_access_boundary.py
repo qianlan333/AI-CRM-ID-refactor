@@ -303,3 +303,17 @@ def test_db_access_boundary_no_longer_allowlists_channel_archive_or_operation_me
     assert "psycopg.connect" not in channels_source
     assert "psycopg.connect" not in archive_source
     assert "psycopg.connect" not in operation_members_source
+
+
+def test_db_access_boundary_temporary_allowlist_is_empty() -> None:
+    config = load_config(Path("docs/architecture/db_access_boundary.yml"))
+
+    assert config["temporary_allowlist"] == []
+    for path in (
+        "aicrm_next/cloud_orchestrator/campaigns_read.py",
+        "aicrm_next/hxc_dashboard/postgres_repo.py",
+        "aicrm_next/media_library/postgres_repo.py",
+        "aicrm_next/shared/postgres_connection.py",
+    ):
+        source = Path(path).read_text(encoding="utf-8")
+        assert "psycopg.connect" not in source

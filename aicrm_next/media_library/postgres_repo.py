@@ -7,7 +7,7 @@ from typing import Any
 
 from aicrm_next.shared.errors import ContractError, NotFoundError
 
-from .repo import MediaLibraryRepository, normalize_tags
+from .repo import MediaLibraryRepository, connect_media_library_db, normalize_tags
 from .variants import (
     THUMBNAIL_SIZE_TO_VARIANT,
     add_image_variant_urls,
@@ -79,10 +79,7 @@ class PostgresMediaLibraryRepository:
         self._variants_table_available: bool | None = None
 
     def _connect(self):
-        import psycopg
-        from psycopg.rows import dict_row
-
-        return psycopg.connect(self._database_url, row_factory=dict_row)
+        return connect_media_library_db(self._database_url)
 
     def list_items(self, kind: str, *, limit: int, offset: int, filters: dict[str, Any] | None = None) -> dict[str, Any]:
         filters = filters or {}

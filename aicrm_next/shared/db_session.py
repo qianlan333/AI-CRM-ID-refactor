@@ -203,6 +203,12 @@ def get_db() -> Iterator[Session]:
             LOGGER.warning("failed to close SQLAlchemy session in get_db cleanup", exc_info=True)
 
 
+def connect_raw_postgres(database_url: str, *, autocommit: bool = False):
+    import psycopg
+
+    return psycopg.connect(database_url, autocommit=autocommit)
+
+
 def reset_engine_cache_for_tests() -> None:
     for engine in list(_ENGINE_CACHE.values()):
         engine.dispose()
