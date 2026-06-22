@@ -154,7 +154,7 @@ response.
 | `old_customer_webhook_delivery_retry` | admin webhook retry disabled paths | records `legacy_path_invoked` via disabled payload | External Effect Queue / Push Center |
 | `old_broadcast_jobs_feishu_hourly_report` | broadcast job Feishu validation/hourly report | records `legacy_path_invoked` | External Effect Queue, Feishu disabled until approved |
 | `old_owner_migration_legacy_execute_path` | `OwnerMigrationService._run_legacy` | records `legacy_path_invoked`; still emits `owner_migration.executed` | scoped owner migration flow |
-| `old_group_ops_queue_gateway_send` | `wecom_group_adapter.enqueue_group_message` | records `legacy_path_invoked`; still emits `broadcast_task.created` | broadcast task event family |
+| `old_group_ops_queue_gateway_send` | retired group_ops queue gateway | no runtime marker remains; group_ops now plans `wecom.message.group.send` External Effect jobs | External Effect Queue / Push Center |
 | `old_broadcast_jobs_direct_approve_cancel` | broadcast job approve/cancel control-plane routes | records `legacy_path_invoked` | future broadcast lifecycle event if needed |
 | `old_payment_refund_direct_request` | refund request admin routes | records `legacy_path_invoked`; no behavior change | future payment refund event/effect slice |
 
@@ -224,7 +224,7 @@ P0-2. They should remain blocked from real execution until P1/P2 approval.
 | Admin webhook retry disabled path | `aicrm_next/admin_jobs/routes.py`, `application.py` | `old_customer_webhook_delivery_retry` |
 | Broadcast Feishu report | `aicrm_next/admin_jobs/notification_settings.py` | `old_broadcast_jobs_feishu_hourly_report` |
 | Owner migration legacy execute path | `aicrm_next/owner_migration/application.py` | `old_owner_migration_legacy_execute_path` |
-| Group ops broadcast job queue gateway | `aicrm_next/integration_gateway/wecom_group_adapter.py` | `old_group_ops_queue_gateway_send` |
+| Group ops broadcast job queue gateway | retired; group_ops now uses `external_effect_job` | `old_group_ops_queue_gateway_send` |
 | Broadcast approve/cancel control-plane | `aicrm_next/admin_jobs/application.py` | `old_broadcast_jobs_direct_approve_cancel` |
 | Payment refund request | `aicrm_next/commerce/admin_refunds.py` | `old_payment_refund_direct_request` |
 

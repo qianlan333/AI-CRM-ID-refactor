@@ -20,23 +20,6 @@ from aicrm_next.platform_foundation.push_center.view_model import build_job_deta
 from tests.group_ops_test_helpers import group_ops_api_client
 
 
-class _RecordingQueueGateway:
-    def __init__(self) -> None:
-        self.calls: list[dict] = []
-
-    def enqueue_group_message(self, **kwargs):
-        self.calls.append(kwargs)
-        return 9001
-
-
-def _install_recording_group_gateway(monkeypatch) -> _RecordingQueueGateway:
-    from aicrm_next.integration_gateway import wecom_group_adapter
-
-    gateway = _RecordingQueueGateway()
-    monkeypatch.setattr(wecom_group_adapter, "build_group_ops_queue_gateway", lambda: gateway)
-    return gateway
-
-
 class _FakeBroadcastJobAdapter(BroadcastJobAdapter):
     def __init__(self, rows: list[dict]):
         self.rows = rows
@@ -432,7 +415,6 @@ def test_questionnaire_default_external_push_is_queue_first(client: TestClient, 
 def test_group_ops_default_webhook_uses_external_effect_not_legacy_gateway(group_ops_api_client, monkeypatch) -> None:
     monkeypatch.delenv("AICRM_GROUP_OPS_OUTBOUND_MODE", raising=False)
     monkeypatch.delenv("AICRM_GROUP_OPS_EXTERNAL_EFFECT_SEND_MODE", raising=False)
-    gateway = _install_recording_group_gateway(monkeypatch)
     response = group_ops_api_client.post(
         "/api/automation/group-ops/webhooks/daily-lesson-8f3a",
         headers={"Authorization": "Bearer fixture-webhook-token"},
@@ -451,4 +433,3 @@ def test_group_ops_default_webhook_uses_external_effect_not_legacy_gateway(group
     assert body["broadcast_job_ids"] == []
     assert body["legacy_broadcast_job_ids"] == []
     assert body["external_effect_job_ids"]
-    assert gateway.calls == []

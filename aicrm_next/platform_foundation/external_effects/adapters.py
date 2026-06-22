@@ -466,8 +466,8 @@ class WeComGroupMessageExternalEffectAdapter:
         if payload.get("mention_all") is True or payload.get("is_mention_all") is True:
             return "mention_all_blocked"
         chat_ids = self._chat_ids(payload)
-        if len(chat_ids) != 1:
-            return "single_group_required"
+        if not chat_ids:
+            return "group_chat_id_missing"
         allowed_chat_ids = _csv_env("AICRM_EXTERNAL_EFFECT_ALLOWED_GROUP_CHAT_IDS")
         if allowed_chat_ids and any(chat_id not in allowed_chat_ids for chat_id in chat_ids):
             return "group_chat_id_not_allowed"

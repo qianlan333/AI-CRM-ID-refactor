@@ -14,23 +14,6 @@ from aicrm_next.platform_foundation.external_effects.worker import ExternalEffec
 from tests.group_ops_test_helpers import group_ops_api_client
 
 
-class RecordingQueueGateway:
-    def __init__(self) -> None:
-        self.calls: list[dict] = []
-
-    def enqueue_group_message(self, **kwargs):
-        self.calls.append(kwargs)
-        return 2300 + len(self.calls)
-
-
-def _install_recording_gateway(monkeypatch) -> RecordingQueueGateway:
-    from aicrm_next.integration_gateway import wecom_group_adapter
-
-    gateway = RecordingQueueGateway()
-    monkeypatch.setattr(wecom_group_adapter, "build_group_ops_queue_gateway", lambda: gateway)
-    return gateway
-
-
 def _install_loopback_http_adapter(monkeypatch, client) -> list[dict]:
     calls: list[dict] = []
 
@@ -78,7 +61,6 @@ def _install_fake_wecom_group_message_adapter(monkeypatch) -> list[dict]:
 
 def test_group_ops_run_due_preview_does_not_create_external_effect_job(group_ops_api_client, monkeypatch):
     monkeypatch.setenv("AICRM_GROUP_OPS_OUTBOUND_MODE", "shadow")
-    gateway = _install_recording_gateway(monkeypatch)
 
     response = group_ops_api_client.post(
         "/api/admin/automation-conversion/group-ops/plans/1/run-due/preview",
@@ -88,38 +70,11 @@ def test_group_ops_run_due_preview_does_not_create_external_effect_job(group_ops
 
     assert response.status_code == 200
     assert response.json()["status"] == "preview"
-    assert gateway.calls == []
     assert jobs == []
 
 
-def test_group_ops_run_due_shadow_keeps_legacy_queue_and_creates_shadow_job(group_ops_api_client, monkeypatch):
+def test_group_ops_run_due_uses_wecom_group_external_effect(group_ops_api_client, monkeypatch):
     monkeypatch.setenv("AICRM_GROUP_OPS_OUTBOUND_MODE", "shadow")
-    gateway = _install_recording_gateway(monkeypatch)
-
-    response = group_ops_api_client.post(
-        "/api/admin/automation-conversion/group-ops/plans/1/run-due",
-        json={"operator": "pytest", "allow_node_ids": [1], "max_outbound_tasks": 1},
-    )
-    jobs = _jobs(GROUP_OPS_MESSAGE_LOOPBACK)
-
-    assert response.status_code == 202
-    body = response.json()
-    assert body["outbound_mode"] == "shadow"
-    assert body["broadcast_job_ids"] == [2301]
-    assert body["legacy_broadcast_job_ids"] == [2301]
-    assert body["external_effect_job_ids"] == [jobs[0].id]
-    assert body["real_external_call_executed"] is False
-    assert body["wecom_send_executed"] is False
-    assert len(gateway.calls) == 1
-    assert jobs[0].status == "queued"
-    assert jobs[0].execution_mode == "execute"
-    assert jobs[0].payload_summary_json["chat_count"] == 2
-
-
-def test_group_ops_run_due_external_effect_forces_wecom_group_job_for_non_test_messages(group_ops_api_client, monkeypatch):
-    monkeypatch.setenv("AICRM_GROUP_OPS_OUTBOUND_MODE", "external_effect")
-    monkeypatch.setenv("AICRM_GROUP_OPS_EXTERNAL_EFFECT_SEND_MODE", "loopback")
-    gateway = _install_recording_gateway(monkeypatch)
 
     response = group_ops_api_client.post(
         "/api/admin/automation-conversion/group-ops/plans/1/run-due",
@@ -133,7 +88,32 @@ def test_group_ops_run_due_external_effect_forces_wecom_group_job_for_non_test_m
     assert body["broadcast_job_ids"] == []
     assert body["legacy_broadcast_job_ids"] == []
     assert body["external_effect_job_ids"] == [jobs[0].id]
-    assert gateway.calls == []
+    assert body["real_external_call_executed"] is False
+    assert body["wecom_send_executed"] is False
+    assert jobs[0].effect_type == WECOM_MESSAGE_GROUP_SEND
+    assert jobs[0].adapter_name == "wecom_group_message"
+    assert jobs[0].operation == "send_group_message"
+    assert jobs[0].status == "queued"
+    assert jobs[0].execution_mode == "execute"
+    assert jobs[0].payload_summary_json["chat_count"] == 2
+
+
+def test_group_ops_run_due_external_effect_forces_wecom_group_job_for_non_test_messages(group_ops_api_client, monkeypatch):
+    monkeypatch.setenv("AICRM_GROUP_OPS_OUTBOUND_MODE", "external_effect")
+    monkeypatch.setenv("AICRM_GROUP_OPS_EXTERNAL_EFFECT_SEND_MODE", "loopback")
+
+    response = group_ops_api_client.post(
+        "/api/admin/automation-conversion/group-ops/plans/1/run-due",
+        json={"operator": "pytest", "allow_node_ids": [1], "max_outbound_tasks": 1},
+    )
+    jobs = _jobs(WECOM_MESSAGE_GROUP_SEND)
+
+    assert response.status_code == 202
+    body = response.json()
+    assert body["outbound_mode"] == "external_effect"
+    assert body["broadcast_job_ids"] == []
+    assert body["legacy_broadcast_job_ids"] == []
+    assert body["external_effect_job_ids"] == [jobs[0].id]
     assert jobs[0].effect_type == WECOM_MESSAGE_GROUP_SEND
     assert jobs[0].adapter_name == "wecom_group_message"
     assert jobs[0].operation == "send_group_message"
@@ -224,9 +204,8 @@ def test_group_ops_webhook_receive_shadow_logs_action_and_creates_external_effec
     assert jobs[0].payload_summary_json["chat_count"] == 1
 
 
-def test_group_ops_legacy_bundle_shadow_keeps_broadcast_job_and_creates_shadow_job(group_ops_api_client, monkeypatch):
+def test_group_ops_legacy_bundle_uses_wecom_group_external_effect(group_ops_api_client, monkeypatch):
     monkeypatch.setenv("AICRM_GROUP_OPS_OUTBOUND_MODE", "shadow")
-    gateway = _install_recording_gateway(monkeypatch)
 
     response = group_ops_api_client.post(
         "/api/automation/group-ops/webhooks/daily-lesson-8f3a",
@@ -238,21 +217,22 @@ def test_group_ops_legacy_bundle_shadow_keeps_broadcast_job_and_creates_shadow_j
             "content": {"text": "synthetic daily lesson", "attachments": []},
         },
     )
-    jobs = _jobs(GROUP_OPS_MESSAGE_LOOPBACK)
+    jobs = _jobs(WECOM_MESSAGE_GROUP_SEND)
 
     assert response.status_code == 202
-    assert response.json()["broadcast_job_ids"] == [2301]
-    assert response.json()["legacy_broadcast_job_ids"] == [2301]
+    assert response.json()["broadcast_job_ids"] == []
+    assert response.json()["legacy_broadcast_job_ids"] == []
     assert response.json()["external_effect_job_ids"] == [jobs[0].id]
-    assert len(gateway.calls) == 1
+    assert response.json()["outbound_mode"] == "external_effect"
+    assert jobs[0].effect_type == WECOM_MESSAGE_GROUP_SEND
+    assert jobs[0].adapter_name == "wecom_group_message"
     assert jobs[0].status == "queued"
     assert jobs[0].execution_mode == "execute"
 
 
-def test_group_ops_legacy_bundle_external_effect_creates_wecom_group_job_without_legacy_gateway(group_ops_api_client, monkeypatch):
+def test_group_ops_legacy_bundle_external_effect_creates_wecom_group_job(group_ops_api_client, monkeypatch):
     monkeypatch.setenv("AICRM_GROUP_OPS_OUTBOUND_MODE", "external_effect")
     monkeypatch.setenv("AICRM_GROUP_OPS_EXTERNAL_EFFECT_SEND_MODE", "wecom_group")
-    gateway = _install_recording_gateway(monkeypatch)
 
     response = group_ops_api_client.post(
         "/api/automation/group-ops/webhooks/daily-lesson-8f3a",
@@ -275,7 +255,6 @@ def test_group_ops_legacy_bundle_external_effect_creates_wecom_group_job_without
     assert body["external_effect_send_mode"] == "wecom_group"
     assert body["real_external_call_executed"] is False
     assert body["wecom_send_executed"] is False
-    assert gateway.calls == []
     assert jobs[0].effect_type == WECOM_MESSAGE_GROUP_SEND
     assert jobs[0].adapter_name == "wecom_group_message"
     assert jobs[0].operation == "send_group_message"
@@ -294,7 +273,6 @@ def test_wecom_group_external_effect_adapter_gates_and_success_path(group_ops_ap
     monkeypatch.setenv("AICRM_EXTERNAL_EFFECT_ALLOWED_TYPES", WECOM_MESSAGE_GROUP_SEND)
     monkeypatch.setenv("AICRM_EXTERNAL_EFFECT_ALLOWED_GROUP_OPS_WEBHOOK_KEYS", "daily-lesson-8f3a")
     monkeypatch.setenv("AICRM_EXTERNAL_EFFECT_ALLOWED_OWNER_USERIDS", "owner_001")
-    _install_recording_gateway(monkeypatch)
     wecom_calls = _install_fake_wecom_group_message_adapter(monkeypatch)
 
     response = group_ops_api_client.post(
@@ -343,6 +321,53 @@ def test_wecom_group_external_effect_adapter_gates_and_success_path(group_ops_ap
     assert wecom_calls[0]["payload"]["sender"] == "owner_001"
     assert wecom_calls[0]["payload"]["chat_ids"] == ["wrOgAAA001"]
     assert executed["items"][0]["attempt"]["response_summary_json"]["wecom_send_executed"] is True
+
+
+def test_wecom_group_external_effect_adapter_sends_multiple_group_chats(monkeypatch):
+    monkeypatch.setenv("AICRM_EXTERNAL_EFFECT_WECOM_EXECUTE", "1")
+    monkeypatch.setenv("AICRM_EXTERNAL_EFFECT_ALLOWED_TYPES", WECOM_MESSAGE_GROUP_SEND)
+    monkeypatch.setenv("AICRM_EXTERNAL_EFFECT_ALLOWED_GROUP_OPS_WEBHOOK_KEYS", "daily-lesson-8f3a")
+    monkeypatch.setenv("AICRM_EXTERNAL_EFFECT_ALLOWED_OWNER_USERIDS", "owner_001")
+    wecom_calls = _install_fake_wecom_group_message_adapter(monkeypatch)
+
+    service = ExternalEffectService()
+    job = service.plan_effect(
+        effect_type=WECOM_MESSAGE_GROUP_SEND,
+        adapter_name="wecom_group_message",
+        operation="send_group_message",
+        target_type="group_ops_webhook_event",
+        target_id="event_multi",
+        business_type="group_ops_plan",
+        business_id="11",
+        payload={
+            "webhook_key": "daily-lesson-8f3a",
+            "owner_userid": "owner_001",
+            "chat_ids": ["chat_001", "chat_002", "chat_003"],
+            "content_payload": {
+                "channel": "wecom_customer_group",
+                "sender": "owner_001",
+                "text": {"content": "multi group content"},
+                "attachments": [],
+            },
+            "mention_all": False,
+        },
+        payload_summary={"chat_count": 3},
+        execution_mode="execute",
+        status="queued",
+        idempotency_key="group-ops-wecom-multi-group-success",
+    )
+
+    executed = ExternalEffectWorker().run_due(batch_size=1, dry_run=False, effect_types=[WECOM_MESSAGE_GROUP_SEND], test_only=False)
+    updated = service.get(job["id"])
+
+    assert executed["counts"]["succeeded_count"] == 1
+    assert executed["real_external_call_executed"] is True
+    assert updated is not None
+    assert updated.status == "succeeded"
+    assert len(wecom_calls) == 1
+    assert wecom_calls[0]["payload"]["sender"] == "owner_001"
+    assert wecom_calls[0]["payload"]["chat_ids"] == ["chat_001", "chat_002", "chat_003"]
+    assert executed["items"][0]["attempt"]["response_summary_json"]["requested_chat_count"] == 3
 
 
 def test_wecom_group_external_effect_requires_batch_size_one(group_ops_api_client, monkeypatch):
@@ -432,7 +457,6 @@ def test_group_ops_loopback_2xx_succeeds_with_receipt(group_ops_api_client, monk
     monkeypatch.setenv("AICRM_EXTERNAL_EFFECT_WEBHOOK_EXECUTE", "1")
     monkeypatch.setenv("AICRM_EXTERNAL_EFFECT_ALLOWED_TYPES", GROUP_OPS_MESSAGE_LOOPBACK)
     calls = _install_loopback_http_adapter(monkeypatch, group_ops_api_client)
-    gateway = _install_recording_gateway(monkeypatch)
 
     response = group_ops_api_client.post(
         "/api/admin/automation-conversion/group-ops/plans/1/run-due",
@@ -453,7 +477,6 @@ def test_group_ops_loopback_2xx_succeeds_with_receipt(group_ops_api_client, monk
     receipts, total = ExternalEffectService().list_test_receipts({"job_id": job.id if job else 0}, limit=10)
 
     assert response.status_code == 202
-    assert gateway.calls == []
     assert job is not None
     assert job.payload_json["webhook_url"].startswith("https://crm.example.test/api/external-effects/test-receiver/")
     assert preview["real_external_call_executed"] is False
@@ -475,7 +498,6 @@ def test_group_ops_loopback_500_retryable_allowlist_miss_and_test_only_gate(grou
     monkeypatch.setenv("AICRM_EXTERNAL_EFFECT_WEBHOOK_EXECUTE", "1")
     monkeypatch.setenv("AICRM_EXTERNAL_EFFECT_ALLOWED_TYPES", GROUP_OPS_MESSAGE_LOOPBACK)
     calls = _install_loopback_http_adapter(monkeypatch, group_ops_api_client)
-    _install_recording_gateway(monkeypatch)
 
     retry_response = group_ops_api_client.post(
         "/api/admin/automation-conversion/group-ops/plans/1/run-due",
@@ -508,7 +530,7 @@ def test_group_ops_loopback_500_retryable_allowlist_miss_and_test_only_gate(grou
             "max_outbound_tasks": 1,
             "external_effect_test_loopback": True,
             "test_receiver_response_status": 200,
-            "scheduled_at": "allowlist-miss",
+            "scheduled_at": "2026-05-25T20:00:00+08:00",
         },
     )
     blocked_job = ExternalEffectService().get(blocked_response.json()["external_effect_job_ids"][0])
