@@ -25,6 +25,31 @@ EXPECTED_PAYMENT_CONSUMERS = (
     "ai_assist_notify_consumer",
 )
 
+PAYMENT_PLACEHOLDER_CONSUMERS: tuple[str, ...] = ()
+
+INTERNAL_EVENT_CONSUMER_PENDING_REPAIR_DECISIONS = {
+    "expected_not_applicable",
+    "scheduler_not_running",
+    "run_due_not_executed",
+    "consumer_disabled_by_config",
+    "consumer_placeholder_only",
+    "retry_replay_available",
+    "runtime_repair_required",
+    "operator_action_required",
+    "unknown_requires_manual_review",
+}
+
+CUSTOMER_LINKAGE_REPAIR_DECISIONS = {
+    "expected_not_applicable",
+    "projection_missing",
+    "customer_identity_missing",
+    "channel_linkage_only",
+    "backfill_required",
+    "runtime_projection_repair_required",
+    "operator_action_required",
+    "unknown_requires_manual_review",
+}
+
 SENSITIVE_KEY_PARTS = (
     "authorization",
     "token",
@@ -60,11 +85,13 @@ def classify_evidence(evidence: dict[str, Any]) -> dict[str, Any]:
     internal_event = _classify_internal_event(evidence)
     external_effect = _classify_external_effect_linkage(evidence)
     linkage = _classify_order_customer_channel_linkage(evidence)
+    internal_event_repair = _decide_internal_event_consumer_repair(internal_event, evidence)
+    customer_linkage_repair = _decide_customer_linkage_repair(linkage, evidence)
 
     blocker_1 = internal_event["classification"]
     blocker_2 = linkage["classification"]
-    runtime_fix_required = blocker_1 in {"consumer_not_registered", "runtime_bug"}
-    data_backfill_required = blocker_2 in {"data_backfill_missing", "linkage_missing", "projection_missing"}
+    runtime_fix_required = bool(internal_event_repair["next_pr_required"])
+    data_backfill_required = bool(customer_linkage_repair["approved_backfill_runbook_required"])
     operator_action_required = (
         blocker_1 != "expected_not_applicable"
         or blocker_2 != "expected_not_applicable"
@@ -81,16 +108,28 @@ def classify_evidence(evidence: dict[str, Any]) -> dict[str, Any]:
         "order_id": str(evidence.get("order_id") or DEFAULT_ORDER_ID),
         "source": evidence.get("source") or {"type": "fixture_or_diagnostic"},
         "internal_event": internal_event,
+        "internal_event_consumer_pending_decision": internal_event_repair,
         "external_effect_linkage": external_effect,
         "order_customer_channel_linkage": linkage,
+        "customer_read_model_linkage_decision": customer_linkage_repair,
         "conclusion": {
             "blocker_1_classification": blocker_1,
+            "blocker_1_current_status": blocker_1,
+            "blocker_1_repair_decision": internal_event_repair["repair_decision"],
+            "blocker_1_next_pr_required": bool(internal_event_repair["next_pr_required"]),
             "blocker_2_classification": blocker_2,
+            "blocker_2_current_status": blocker_2,
+            "blocker_2_repair_decision": customer_linkage_repair["repair_decision"],
+            "blocker_2_next_pr_required": bool(customer_linkage_repair["next_pr_required"]),
             "retryable": False,
             "operator_action_required": operator_action_required,
             "runtime_fix_required": runtime_fix_required,
             "data_backfill_required": data_backfill_required,
             "can_recollect_external_orders_evidence": can_recollect,
+            "can_claim_external_orders_90_plus": False,
+            "required_operator_actions": _required_operator_actions(internal_event_repair, customer_linkage_repair),
+            "required_runtime_repairs": _required_runtime_repairs(internal_event_repair, customer_linkage_repair),
+            "required_backfill_or_projection_repairs": _required_projection_repairs(customer_linkage_repair),
             "recommended_next_pr": _recommended_next_pr(blocker_1=blocker_1, blocker_2=blocker_2),
             "business_explanation": _business_explanation(
                 internal_event=internal_event,
@@ -101,6 +140,127 @@ def classify_evidence(evidence: dict[str, Any]) -> dict[str, Any]:
         "sensitive_data_redaction_ok": True,
     }
     return _redact_payload(output)
+
+
+def _decide_internal_event_consumer_repair(internal_event: dict[str, Any], evidence: dict[str, Any]) -> dict[str, Any]:
+    pending = list(internal_event.get("pending_consumers") or [])
+    failed = list(internal_event.get("failed_consumers") or [])
+    missing = list(internal_event.get("missing_consumers") or [])
+    actual_count = int(internal_event.get("actual_consumer_count") or 0)
+    config = dict(evidence.get("internal_event_config") or {})
+    all_pending_unattempted = bool(pending) and all(int(row.get("attempt_count") or 0) == 0 for row in pending)
+
+    if internal_event.get("classification") == "expected_not_applicable":
+        decision = "expected_not_applicable"
+        next_pr_required = False
+        reason = "All expected payment consumers are finished or intentionally skipped."
+    elif missing or actual_count == 0:
+        decision = "runtime_repair_required"
+        next_pr_required = True
+        reason = "Expected payment consumer run rows are missing."
+    elif failed:
+        decision = "retry_replay_available"
+        next_pr_required = True
+        reason = "At least one consumer has failed; retry/replay routes exist but require approved operator action."
+    elif all_pending_unattempted:
+        decision = "run_due_not_executed"
+        next_pr_required = True
+        reason = "All pending consumers have attempt_count=0 and no recorded error, so the due worker has not processed this event."
+    elif pending:
+        decision = "unknown_requires_manual_review"
+        next_pr_required = True
+        reason = "Pending consumers exist, but their attempt history is not sufficient to classify automatically."
+    else:
+        decision = "unknown_requires_manual_review"
+        next_pr_required = True
+        reason = "Internal event state is not recognized by the repair decision classifier."
+
+    assert decision in INTERNAL_EVENT_CONSUMER_PENDING_REPAIR_DECISIONS
+    return {
+        "repair_decision": decision,
+        "current_status": internal_event.get("classification"),
+        "expected_consumer_names": list(EXPECTED_PAYMENT_CONSUMERS),
+        "actual_consumer_run_count": actual_count,
+        "pending_consumer_names": [row.get("consumer_name") for row in pending],
+        "failed_consumer_names": [row.get("consumer_name") for row in failed],
+        "missing_consumer_names": missing,
+        "why_attempt_count_zero": reason if all_pending_unattempted else "",
+        "run_due_route_available": True,
+        "run_due_preview_route": "/api/admin/internal-events/run-due/preview",
+        "run_due_execute_route": "/api/admin/internal-events/run-due",
+        "single_consumer_run_route": "/api/admin/internal-events/{event_id}/consumers/{consumer_name}/run",
+        "retry_route_available": True,
+        "retry_route": "/api/admin/internal-events/{event_id}/consumers/{consumer_name}/retry",
+        "skip_route_available": True,
+        "skip_route": "/api/admin/internal-events/{event_id}/consumers/{consumer_name}/skip",
+        "non_dry_run_requires_internal_token": True,
+        "non_dry_run_requires_auto_execute_gate": True,
+        "non_dry_run_requires_event_consumer_allowlist": True,
+        "consumer_disabled_by_config": bool(config.get("internal_events_enabled") is False or config.get("payment_internal_events_enabled") is False),
+        "consumer_placeholder_only": False,
+        "shadow_only_semantics": bool(config.get("shadow_only")) if "shadow_only" in config else "not_collected",
+        "not_applicable_semantics": False,
+        "can_mark_expected_not_applicable": False,
+        "must_remain_blocking": decision != "expected_not_applicable",
+        "operator_action_required": decision != "expected_not_applicable",
+        "next_pr_required": next_pr_required,
+        "recommended_operator_action": (
+            "Preview the single payment.succeeded event and execute only approved batch-size-one consumers during an operator window."
+            if decision == "run_due_not_executed"
+            else "Review internal event consumer state before recollecting External Orders evidence."
+        ),
+    }
+
+
+def _decide_customer_linkage_repair(linkage: dict[str, Any], evidence: dict[str, Any]) -> dict[str, Any]:
+    external_userid_present = bool(linkage.get("external_userid_present"))
+    channel_present = linkage.get("channel_contact_linkage_evidence") == "present"
+    customer_list_rows = int(linkage.get("customer_list_index_next_rows") or 0)
+    detail_rows = int(linkage.get("customer_detail_snapshot_next_rows") or 0)
+
+    if not external_userid_present:
+        decision = "customer_identity_missing"
+        next_pr_required = True
+        reason = "The order has no usable redacted external customer identity evidence."
+    elif customer_list_rows > 0 or detail_rows > 0:
+        decision = "expected_not_applicable"
+        next_pr_required = False
+        reason = "Customer read model linkage is present."
+    elif channel_present:
+        decision = "runtime_projection_repair_required"
+        next_pr_required = True
+        reason = (
+            "The order has redacted customer identity and channel contact evidence, but the customer read model "
+            "projection has no linked row. Current customer read-model sources do not make order/channel-contact "
+            "linkage sufficient by themselves."
+        )
+    else:
+        decision = "channel_linkage_only"
+        next_pr_required = True
+        reason = "Customer identity exists but channel/customer projection evidence is incomplete."
+
+    assert decision in CUSTOMER_LINKAGE_REPAIR_DECISIONS
+    return {
+        "repair_decision": decision,
+        "current_status": linkage.get("classification"),
+        "customer_identity_evidence": linkage.get("redacted_customer_identifier_evidence"),
+        "channel_contact_linkage_evidence": linkage.get("channel_contact_linkage_evidence"),
+        "customer_list_index_next_lookup_result": customer_list_rows,
+        "customer_detail_snapshot_next_lookup_result": detail_rows,
+        "projectable_identity_fields_present": external_userid_present or channel_present,
+        "projection_should_link_order": external_userid_present and channel_present,
+        "existing_backfill_script": "scripts/backfill_customer_read_model.py",
+        "existing_backfill_production_safe_by_default": True,
+        "existing_backfill_writes_only_with_execute_and_approved_target": True,
+        "existing_projection_sources_note": (
+            "Customer read model live source is based on customer/contact identity sources; this triage did not find "
+            "a completed customer read-model row for the order's redacted identity."
+        ),
+        "approved_backfill_runbook_required": decision in {"backfill_required", "runtime_projection_repair_required"},
+        "operator_action_required": decision != "expected_not_applicable",
+        "next_pr_required": next_pr_required,
+        "recommended_operator_action": reason,
+    }
 
 
 def _classify_internal_event(evidence: dict[str, Any]) -> dict[str, Any]:
@@ -258,6 +418,32 @@ def _recommended_next_pr(*, blocker_1: str, blocker_2: str) -> str:
     if blocker_2 in {"data_backfill_missing", "linkage_missing", "projection_missing"}:
         return "customer read-model linkage projection/backfill triage"
     return "external orders evidence recollection"
+
+
+def _required_operator_actions(internal_event_repair: dict[str, Any], customer_linkage_repair: dict[str, Any]) -> list[str]:
+    actions: list[str] = []
+    if internal_event_repair.get("repair_decision") == "run_due_not_executed":
+        actions.append("preview and execute approved payment.succeeded consumers one at a time during an operator window")
+    elif internal_event_repair.get("operator_action_required"):
+        actions.append("review internal event consumer state and classify pending runs")
+    if customer_linkage_repair.get("operator_action_required"):
+        actions.append("confirm whether customer read-model linkage should exist for this order/customer identity")
+    return actions
+
+
+def _required_runtime_repairs(internal_event_repair: dict[str, Any], customer_linkage_repair: dict[str, Any]) -> list[str]:
+    repairs: list[str] = []
+    if internal_event_repair.get("repair_decision") in {"runtime_repair_required", "scheduler_not_running"}:
+        repairs.append("repair internal event consumer registration or scheduler/run-due configuration")
+    if customer_linkage_repair.get("repair_decision") == "runtime_projection_repair_required":
+        repairs.append("repair customer read-model projection so payment order customer identity can link to customer list/detail")
+    return repairs
+
+
+def _required_projection_repairs(customer_linkage_repair: dict[str, Any]) -> list[str]:
+    if customer_linkage_repair.get("repair_decision") in {"backfill_required", "runtime_projection_repair_required"}:
+        return ["approved customer read-model projection/backfill repair path required before External Orders 90%+ recollection"]
+    return []
 
 
 def _business_explanation(
