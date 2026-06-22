@@ -14,3 +14,4 @@ fi
 "$PYTHON" tools/check_architecture_boundaries.py
 "$PYTHON" tools/check_external_effects_boundary.py
 "$PYTHON" tools/check_db_access_boundary.py
+"$PYTHON" tools/check_background_job_contract.py
