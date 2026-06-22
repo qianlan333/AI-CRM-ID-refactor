@@ -20,6 +20,6 @@ def test_setup_entry_step_reuses_entry_channel_binding_js():
     assert "data-open-bind-modal" in setup_html
     assert "data-confirm-bind" in setup_html
     assert "data-unbind-channel" in setup_html
-    assert "channel_admission_pages.js" in setup_html
-    assert "channel_admission_pages.js" in entry_html
+    assert "channel_admission_pages.js?v=channel-auto-accept-save-refresh-20260622" in setup_html
+    assert "channel_admission_pages.js?v=channel-auto-accept-save-refresh-20260622" in entry_html
     assert "bind_program_channels" not in setup_html
