@@ -13,8 +13,7 @@ from .archive_sdk import (
     extract_text_record,
     fetch_chatdata_page,
 )
-from .repo import ArchiveSyncRepository, build_archive_sync_repository
-from aicrm_next.shared.runtime import raw_database_url
+from .repo import ArchiveSyncRepository, build_archive_sync_repository, read_archive_app_setting
 
 
 DEFAULT_START_TIME = "2000-01-01 00:00:00"
@@ -288,21 +287,7 @@ def _int_setting(key: str, default: int) -> int:
 
 
 def _db_setting(key: str) -> str:
-    database_url = raw_database_url()
-    if not database_url:
-        return ""
-    try:
-        import psycopg
-        from psycopg.rows import dict_row
-
-        url = database_url
-        if url.startswith("postgresql+psycopg://"):
-            url = "postgresql://" + url[len("postgresql+psycopg://") :]
-        with psycopg.connect(url, row_factory=dict_row) as conn:
-            row = conn.execute("SELECT value FROM app_settings WHERE key = %s", (key,)).fetchone()
-        return str((row or {}).get("value") or "").strip()
-    except Exception:
-        return ""
+    return read_archive_app_setting(key)
 
 
 def dump_archive_sync_payload(payload: dict[str, Any]) -> str:

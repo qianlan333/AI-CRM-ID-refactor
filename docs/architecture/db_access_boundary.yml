@@ -20,13 +20,6 @@ forbidden_layers:
   - aicrm_next/*/frontend_compat/**
 
 temporary_allowlist:
-  - path: aicrm_next/automation_engine/channels_api.py
-    rule: db_access_boundary_violation
-    owner: automation_engine
-    reason: Existing channel admin DB helper predates the DB boundary checker; do not broaden.
-    migration_target: aicrm_next/automation_engine/repository.py
-    matches:
-      - "return psycopg.connect(database_url, row_factory=dict_row)"
   - path: aicrm_next/cloud_orchestrator/campaigns_read.py
     rule: db_access_boundary_violation
     owner: cloud_orchestrator
@@ -34,13 +27,6 @@ temporary_allowlist:
     migration_target: aicrm_next/cloud_orchestrator/repository.py
     matches:
       - "return psycopg.connect(self._database_url, row_factory=dict_row)"
-  - path: aicrm_next/common_operation_members.py
-    rule: db_access_boundary_violation
-    owner: platform_foundation
-    reason: Existing common operation member DB helper predates the DB boundary checker; do not broaden.
-    migration_target: aicrm_next/platform_foundation/repository.py
-    matches:
-      - "return psycopg.connect(database_url, row_factory=dict_row)"
   - path: aicrm_next/hxc_dashboard/postgres_repo.py
     rule: db_access_boundary_violation
     owner: hxc_dashboard
@@ -55,13 +41,6 @@ temporary_allowlist:
     migration_target: aicrm_next/media_library/repo.py
     matches:
       - "return psycopg.connect(self._database_url, row_factory=dict_row)"
-  - path: aicrm_next/message_archive/sync_service.py
-    rule: db_access_boundary_violation
-    owner: message_archive
-    reason: Existing message archive sync DB lookup predates the DB boundary checker; do not broaden.
-    migration_target: aicrm_next/message_archive/repo.py
-    matches:
-      - "with psycopg.connect(url, row_factory=dict_row) as conn:"
   - path: aicrm_next/shared/postgres_connection.py
     rule: db_access_boundary_violation
     owner: platform_foundation

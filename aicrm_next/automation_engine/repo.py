@@ -72,6 +72,27 @@ def _sqlalchemy_database_url(url: str) -> str:
     return url
 
 
+def _psycopg_database_url(url: str) -> str:
+    if url.startswith("postgresql+psycopg://"):
+        return "postgresql://" + url[len("postgresql+psycopg://") :]
+    return url
+
+
+def channel_admin_uses_postgres() -> bool:
+    database_url = _psycopg_database_url(raw_database_url())
+    return database_url.startswith(("postgresql://", "postgres://"))
+
+
+def connect_channel_admin_db() -> Any | None:
+    database_url = _psycopg_database_url(raw_database_url())
+    if not database_url.startswith(("postgresql://", "postgres://")):
+        return None
+    import psycopg
+    from psycopg.rows import dict_row
+
+    return psycopg.connect(database_url, row_factory=dict_row)
+
+
 class AutomationRepository(Protocol):
     def list_pools(self) -> list[dict[str, Any]]: ...
     def list_members(self, filters: dict[str, Any] | None = None, *, limit: int = 50, offset: int = 0) -> tuple[list[dict[str, Any]], int]: ...

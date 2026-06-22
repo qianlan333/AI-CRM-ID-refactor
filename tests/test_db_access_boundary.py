@@ -287,3 +287,19 @@ def test_db_access_boundary_no_longer_allowlists_background_jobs_or_payment_even
     assert "aicrm_next/platform_foundation/internal_events/payment.py" not in allowlisted_paths
     assert "psycopg.connect" not in background_db_source
     assert "psycopg.connect" not in payment_source
+
+
+def test_db_access_boundary_no_longer_allowlists_channel_archive_or_operation_members() -> None:
+    config = load_config(Path("docs/architecture/db_access_boundary.yml"))
+
+    allowlisted_paths = {entry["path"] for entry in config["temporary_allowlist"]}
+    channels_source = Path("aicrm_next/automation_engine/channels_api.py").read_text(encoding="utf-8")
+    archive_source = Path("aicrm_next/message_archive/sync_service.py").read_text(encoding="utf-8")
+    operation_members_source = Path("aicrm_next/common_operation_members.py").read_text(encoding="utf-8")
+
+    assert "aicrm_next/automation_engine/channels_api.py" not in allowlisted_paths
+    assert "aicrm_next/message_archive/sync_service.py" not in allowlisted_paths
+    assert "aicrm_next/common_operation_members.py" not in allowlisted_paths
+    assert "psycopg.connect" not in channels_source
+    assert "psycopg.connect" not in archive_source
+    assert "psycopg.connect" not in operation_members_source

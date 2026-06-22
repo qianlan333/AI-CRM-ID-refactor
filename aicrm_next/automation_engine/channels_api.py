@@ -11,7 +11,8 @@ from fastapi.responses import JSONResponse, RedirectResponse
 
 from aicrm_next.common_operation_members import search_operation_members
 from aicrm_next.channel_entry import repo as channel_entry_repo
-from aicrm_next.shared.runtime import raw_database_url
+from aicrm_next.automation_engine.repo import channel_admin_uses_postgres as _uses_postgres
+from aicrm_next.automation_engine.repo import connect_channel_admin_db as _connect
 
 router = APIRouter()
 
@@ -25,27 +26,6 @@ _NEXT_BINDING_ID = 1
 _NEXT_ASSIGNEE_ID = 1
 _NEXT_ASSIGNMENT_EVENT_ID = 1
 _NEXT_WE_COM_LINK_ID = 1
-
-
-def _psycopg_url(url: str) -> str:
-    if url.startswith("postgresql+psycopg://"):
-        return "postgresql://" + url[len("postgresql+psycopg://") :]
-    return url
-
-
-def _connect():
-    database_url = _psycopg_url(raw_database_url())
-    if not database_url.startswith(("postgresql://", "postgres://")):
-        return None
-    import psycopg
-    from psycopg.rows import dict_row
-
-    return psycopg.connect(database_url, row_factory=dict_row)
-
-
-def _uses_postgres() -> bool:
-    database_url = _psycopg_url(raw_database_url())
-    return database_url.startswith(("postgresql://", "postgres://"))
 
 
 def _iso(value: Any) -> str:

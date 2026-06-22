@@ -438,6 +438,22 @@ def build_archive_sync_repository() -> ArchiveSyncRepository:
     return assert_repository_allowed(PostgresArchiveSyncRepository(), capability_owner="message_archive")
 
 
+def read_archive_app_setting(key: str) -> str:
+    database_url = raw_database_url()
+    if not database_url:
+        return ""
+    try:
+        import psycopg
+        from psycopg.rows import dict_row
+
+        url = _psycopg_url(database_url)
+        with psycopg.connect(url, row_factory=dict_row) as conn:
+            row = conn.execute("SELECT value FROM app_settings WHERE key = %s", (key,)).fetchone()
+        return str((row or {}).get("value") or "").strip()
+    except Exception:
+        return ""
+
+
 def _page(rows: list[JsonDict], *, limit: int | None, offset: int) -> list[JsonDict]:
     if limit is None:
         return rows[offset:] if offset else rows
