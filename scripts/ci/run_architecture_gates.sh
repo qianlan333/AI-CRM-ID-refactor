@@ -12,3 +12,4 @@ fi
 
 "$PYTHON" tools/check_route_ownership_manifest.py
 "$PYTHON" tools/check_architecture_boundaries.py
+"$PYTHON" tools/check_external_effects_boundary.py

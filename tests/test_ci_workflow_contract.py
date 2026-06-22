@@ -119,7 +119,7 @@ def test_architecture_gate_script_only_runs_delivered_static_checkers():
 
     assert "tools/check_route_ownership_manifest.py" in script
     assert "tools/check_architecture_boundaries.py" in script
-    assert "tools/check_external_effects_boundary.py" not in script
+    assert "tools/check_external_effects_boundary.py" in script
     assert "tools/check_db_access_boundary.py" not in script
 
 
