@@ -203,3 +203,15 @@ def test_external_effects_boundary_current_repository_passes() -> None:
     violations = check_external_effects_boundary()
 
     assert violations == []
+
+
+def test_external_effects_registry_no_longer_allowlists_channel_entry_wecom_adapter() -> None:
+    config = load_config(Path("docs/architecture/external_effects_registry.yml"))
+
+    allowlisted_paths = {entry["path"] for entry in config["temporary_allowlist"]}
+    wecom_effect = next(effect for effect in config["effects"] if effect["effect_key"] == "wecom.channel_entry.api")
+
+    assert "aicrm_next/channel_entry/wecom_adapter.py" not in allowlisted_paths
+    assert wecom_effect["boundary"] == "integration_gateway"
+    assert wecom_effect["adapter_module"] == "aicrm_next/integration_gateway/wecom_channel_entry_client.py"
+    assert wecom_effect["migration_target"] == "aicrm_next/integration_gateway/wecom_channel_entry_client.py"
