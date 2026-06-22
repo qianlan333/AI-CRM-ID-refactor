@@ -47,8 +47,10 @@ def public_filters(filters: dict[str, Any]) -> dict[str, str]:
     return {key: _text(value) for key, value in filters.items() if _text(value)}
 
 
-def job_list_item(job: dict[str, Any]) -> dict[str, Any]:
+def job_list_item(job: dict[str, Any], *, include_linked_records: bool = False) -> dict[str, Any]:
     payload = dict(job)
+    if not include_linked_records:
+        payload.pop("linked_records", None)
     payload.setdefault("effective_status", payload.get("status"))
     payload.setdefault("effective_status_label", EFFECTIVE_STATUS_LABELS.get(_text(payload.get("effective_status")), _text(payload.get("status_label"))))
     payload.setdefault("status_label", payload.get("effective_status_label"))
@@ -107,7 +109,7 @@ def build_job_detail_payload(job_id: int | str, *, repository: PushCenterReposit
     job = repository.get_job(job_id)
     if not job:
         return None
-    job_payload = job_list_item(job)
+    job_payload = job_list_item(job, include_linked_records=True)
     linked_records = job_payload.get("linked_records") if isinstance(job_payload.get("linked_records"), dict) else {}
     return {
         "ok": True,
