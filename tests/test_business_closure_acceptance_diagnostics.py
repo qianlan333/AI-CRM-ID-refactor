@@ -217,6 +217,144 @@ def test_external_orders_complete_order_evidence_links_order_without_sensitive_o
     assert "server-token" not in json.dumps(payload, ensure_ascii=False)
 
 
+def test_wecom_auth_missing_config_returns_specific_blocking_reasons() -> None:
+    payload = run(scenario="wecom_auth", env={})
+    item = payload["items"][0]
+    evidence = item["wecom_evidence"]
+    codes = {reason["code"] for reason in evidence["blocking_reasons"]}
+
+    assert payload["ok"] is True
+    assert item["status"] == "readiness_only"
+    assert evidence["corp_id_configured"] is False
+    assert evidence["agent_id_configured"] is False
+    assert evidence["redirect_uri_configured"] is False
+    assert {"missing_corp_id", "missing_agent_id", "missing_redirect_uri"}.issubset(codes)
+    assert evidence["auth_start_status"] == "expected_302_not_executed"
+    assert evidence["callback_missing_code_status"] == "controlled_400_expected"
+    assert evidence["callback_invalid_state_status"] == "controlled_400_expected"
+    assert evidence["real_external_call_executed"] is False
+
+
+def test_wecom_auth_readiness_redacts_env_and_reports_302_expectation() -> None:
+    env = {
+        "WECOM_CORP_ID": "corp-secret-ish",
+        "WECOM_AGENT_ID": "agent-secret-ish",
+        "ADMIN_LOGIN_REDIRECT_URI": "https://crm.example.test/auth/wecom/callback",
+        "WECOM_CONTACT_SECRET": "contact-secret",
+    }
+    payload = run(
+        scenario="wecom_auth",
+        auth_start_status="expected_302",
+        operator_identity_evidence="operator_redacted_1",
+        permission_scope_evidence="contacts_and_groups_ready",
+        customer_event_visibility="visible",
+        group_ops_permission_evidence="group_ops_ready",
+        material_permission_evidence="materials_ready",
+        env=env,
+    )
+    item = payload["items"][0]
+    evidence = item["wecom_evidence"]
+    dumped = json.dumps(payload, ensure_ascii=False)
+
+    assert item["required_env"] == [
+        {"key": "WECOM_CORP_ID", "configured": True, "value": "[redacted]"},
+        {"key": "WECOM_AGENT_ID", "configured": True, "value": "[redacted]"},
+        {"key": "ADMIN_LOGIN_REDIRECT_URI", "configured": True, "value": "[redacted]"},
+    ]
+    assert evidence["derived_status"] == "operator_auth_ready"
+    assert evidence["evidence_status"] == "OPERATOR_AUTH_READY_EVIDENCE_ATTACHED"
+    assert evidence["auth_start_status"] == "expected_302"
+    assert evidence["redirect_uri_expected"] == "https://crm.example.test/auth/wecom/callback"
+    assert evidence["token_redacted"] is True
+    assert evidence["token_never_logged"] is True
+    assert evidence["operator_action_required"] is False
+    assert "corp-secret-ish" not in dumped
+    assert "agent-secret-ish" not in dumped
+    assert "contact-secret" not in dumped
+    assert evidence["real_external_call_executed"] is False
+
+
+def test_wecom_callback_invalid_signature_does_not_allow_enqueue() -> None:
+    env = {
+        "WECOM_CORP_ID": "corp-id",
+        "WECOM_AGENT_ID": "agent-id",
+        "ADMIN_LOGIN_REDIRECT_URI": "https://crm.example.test/auth/wecom/callback",
+    }
+    payload = run(
+        scenario="wecom_auth",
+        auth_start_status="verified_302",
+        operator_identity_evidence="operator_redacted_1",
+        callback_signature_status="invalid",
+        callback_event_id="callback_evt_1",
+        internal_event_id="inbound_evt_1",
+        idempotency_key="idem_1",
+        permission_scope_evidence="contacts_and_groups_ready",
+        customer_event_visibility="visible",
+        group_ops_permission_evidence="group_ops_ready",
+        material_permission_evidence="materials_ready",
+        env=env,
+    )
+    evidence = payload["items"][0]["wecom_evidence"]
+
+    assert evidence["callback_signature_status"] == "invalid"
+    assert evidence["callback_enqueue_allowed"] is False
+    assert "invalid_callback_signature" in {reason["code"] for reason in evidence["blocking_reasons"]}
+    assert evidence["derived_status"] == "readiness_only"
+
+
+def test_wecom_callback_complete_evidence_links_callback_without_sensitive_output() -> None:
+    env = {
+        "WECOM_CORP_ID": "corp-id",
+        "WECOM_AGENT_ID": "agent-id",
+        "ADMIN_LOGIN_REDIRECT_URI": "https://crm.example.test/auth/wecom/callback",
+        "WECOM_CONTACT_SECRET": "callback-secret",
+    }
+    payload = run(
+        scenario="wecom_auth",
+        redirect_uri_expected="https://crm.example.test/auth/wecom/callback",
+        auth_start_status="verified_302",
+        callback_missing_code_status="observed_400",
+        callback_invalid_state_status="observed_400",
+        operator_identity_evidence="operator_redacted_1",
+        callback_signature_status="valid",
+        callback_event_id="callback_evt_1",
+        internal_event_id="inbound_evt_1",
+        idempotency_key="idem_1",
+        duplicate_callback_handling="reused_idempotency_key",
+        permission_scope_evidence="contacts_and_groups_ready",
+        customer_event_visibility="visible",
+        group_ops_permission_evidence="group_ops_ready",
+        material_permission_evidence="materials_ready",
+        env=env,
+    )
+    item = payload["items"][0]
+    evidence = item["wecom_evidence"]
+    dumped = json.dumps(payload, ensure_ascii=False)
+
+    assert item["status"] == "callback_linked"
+    assert evidence["evidence_status"] == "CALLBACK_LINKED_EVIDENCE_ATTACHED"
+    assert evidence["derived_status"] == "callback_linked"
+    assert evidence["callback_event_id"] == "callback_evt_1"
+    assert evidence["inbound_event_id"] == "inbound_evt_1"
+    assert evidence["idempotency_key"] == "idem_1"
+    assert evidence["duplicate_callback_handling"] == "reused_idempotency_key"
+    assert evidence["permission_scope_evidence"] == "contacts_and_groups_ready"
+    assert evidence["customer_event_visibility"] == "visible"
+    assert evidence["group_ops_permission_evidence"] == "group_ops_ready"
+    assert evidence["material_permission_evidence"] == "materials_ready"
+    assert evidence["operator_action_required"] is False
+    assert evidence["callback_enqueue_allowed"] is True
+    assert evidence["blocking_reasons"] == [
+        {
+            "code": "callback_linked",
+            "message": "Operator auth, signature, callback event, inbound event, idempotency, and permission evidence are attached.",
+        }
+    ]
+    assert "callback-secret" not in dumped
+    assert "access_token" not in dumped
+    assert "corpsecret" not in dumped
+
+
 def test_ops_plan_e2e_without_plan_id_returns_blocking_reason() -> None:
     payload = run(scenario="ops_plan_to_broadcast", env={})
     item = payload["items"][0]
@@ -345,3 +483,23 @@ def test_external_orders_evidence_template_forbids_secrets_and_requires_fields()
     assert "Authorization" in template
     assert "raw external_userid" in template
     assert "phone number" in template
+
+
+def test_wecom_evidence_template_forbids_secrets_and_requires_fields() -> None:
+    template = (ROOT / "docs" / "reports" / "wecom_operator_auth_callback_evidence_template.md").read_text(encoding="utf-8")
+
+    assert "READINESS_ONLY" in template
+    assert "OPERATOR_AUTH_READY_EVIDENCE_ATTACHED" in template
+    assert "CALLBACK_LINKED_EVIDENCE_ATTACHED" in template
+    assert "corp_id_configured" in template
+    assert "agent_id_configured" in template
+    assert "redirect_uri_expected" in template
+    assert "callback_signature_status" in template
+    assert "inbound_event_id" in template
+    assert "idempotency_key" in template
+    assert "permission_scope_evidence" in template
+    assert "Do not" in template
+    assert "raw `external_userid`" in template
+    assert "Authorization" in template
+    assert "access_token" in template
+    assert "corpsecret" in template
