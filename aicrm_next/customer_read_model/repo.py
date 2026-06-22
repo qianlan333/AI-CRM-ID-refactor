@@ -785,6 +785,8 @@ class SqlAlchemyCustomerReadModelRepository:
 class LiveSourceCustomerReadRepository:
     """Read live customer data from production source tables when projections are not ready."""
 
+    source_name = "live_source"
+
     def __init__(self, session: Session) -> None:
         self._session = session
 
@@ -800,8 +802,15 @@ class LiveSourceCustomerReadRepository:
         *,
         limit: int | None = None,
         offset: int = 0,
+        external_userids: set[str] | None = None,
     ) -> list[JsonDict]:
-        rows = self._customer_rows(filters or {}, limit=limit, offset=offset)
+        effective_filters = dict(filters or {})
+        normalized_external_userids = {str(item or "").strip() for item in (external_userids or set()) if str(item or "").strip()}
+        if len(normalized_external_userids) == 1 and not effective_filters.get("external_userid"):
+            effective_filters["external_userid"] = next(iter(normalized_external_userids))
+        rows = self._customer_rows(effective_filters, limit=limit, offset=offset)
+        if normalized_external_userids:
+            rows = [row for row in rows if str(row.get("external_userid") or "").strip() in normalized_external_userids]
         return self._decorate_customer_rows(rows)
 
     def count_customers(self, filters: JsonDict | None = None) -> int:
@@ -903,6 +912,10 @@ class LiveSourceCustomerReadRepository:
                 UNION
                 SELECT external_userid FROM wecom_external_contact_follow_users
                 UNION
+                SELECT external_contact_id AS external_userid FROM automation_channel_contact
+                UNION
+                SELECT external_userid FROM wechat_pay_orders
+                UNION
                 SELECT external_userid FROM contact_tags
                 UNION
                 SELECT external_userid FROM class_user_status_current
@@ -921,6 +934,7 @@ class LiveSourceCustomerReadRepository:
                     COALESCE(
                         NULLIF(class_status.owner_userid_snapshot, ''),
                         NULLIF(contact.owner_userid, ''),
+                        NULLIF(channel_contact.owner_staff_id, ''),
                         NULLIF(binding.last_owner_userid, ''),
                         NULLIF(binding.first_owner_userid, ''),
                         NULLIF((
@@ -946,6 +960,8 @@ class LiveSourceCustomerReadRepository:
                     COALESCE(
                         NULLIF(class_status.customer_name_snapshot, ''),
                         NULLIF(contact.customer_name, ''),
+                        NULLIF(CAST(channel_contact.source_payload_json ->> 'customer_name' AS TEXT), ''),
+                        NULLIF(CAST(channel_contact.source_payload_json ->> 'name' AS TEXT), ''),
                         NULLIF((
                             SELECT identity.name
                             FROM wecom_external_contact_identity_map identity
@@ -958,21 +974,26 @@ class LiveSourceCustomerReadRepository:
                         scope.external_userid
                     ) AS customer_name,
                     COALESCE(NULLIF(people.mobile, ''), NULLIF(class_status.mobile_snapshot, ''), '') AS mobile,
-                    COALESCE(contact.remark, '') AS remark,
-                    COALESCE(contact.description, '') AS description,
+                    COALESCE(NULLIF(contact.remark, ''), NULLIF(CAST(channel_contact.source_payload_json ->> 'remark' AS TEXT), ''), '') AS remark,
+                    COALESCE(NULLIF(contact.description, ''), NULLIF(CAST(channel_contact.source_payload_json ->> 'description' AS TEXT), ''), '') AS description,
                     COALESCE(class_status.signup_status, '') AS signup_status,
                     COALESCE(class_status.signup_label_name, '') AS signup_label_name,
                     COALESCE(CAST(class_status.status_flags_json AS TEXT), '{{}}') AS status_flags_json,
                     CASE WHEN binding.external_userid IS NULL THEN 0 ELSE 1 END AS is_bound,
                     binding.person_id AS person_id,
                     people.third_party_user_id AS third_party_user_id,
+                    latest_payment_order.latest_paid_order_id AS latest_paid_order_id,
+                    latest_payment_order.latest_paid_at AS latest_paid_at,
                     contact.updated_at AS contact_updated_at,
+                    channel_contact.updated_at AS channel_contact_updated_at,
                     binding.updated_at AS binding_updated_at,
                     class_status.updated_at AS class_status_updated_at,
                     latest_messages.last_message_at AS last_message_at,
                     COALESCE(
                         CAST(class_status.updated_at AS TEXT),
                         CAST(contact.updated_at AS TEXT),
+                        CAST(channel_contact.updated_at AS TEXT),
+                        CAST(latest_payment_order.latest_paid_at AS TEXT),
                         CAST(binding.updated_at AS TEXT),
                         latest_messages.last_message_at,
                         ''
@@ -981,6 +1002,30 @@ class LiveSourceCustomerReadRepository:
                 LEFT JOIN contacts contact ON contact.external_userid = scope.external_userid
                 LEFT JOIN external_contact_bindings binding ON binding.external_userid = scope.external_userid
                 LEFT JOIN people people ON people.id = binding.person_id
+                LEFT JOIN (
+                    SELECT *
+                    FROM (
+                        SELECT channel_contact.*,
+                               ROW_NUMBER() OVER (
+                                   PARTITION BY channel_contact.external_contact_id
+                                   ORDER BY channel_contact.updated_at DESC, channel_contact.id DESC
+                               ) AS row_num
+                        FROM automation_channel_contact channel_contact
+                        WHERE channel_contact.external_contact_id IS NOT NULL
+                          AND channel_contact.external_contact_id <> ''
+                    ) ranked_channel_contact
+                    WHERE ranked_channel_contact.row_num = 1
+                ) channel_contact ON channel_contact.external_contact_id = scope.external_userid
+                LEFT JOIN (
+                    SELECT external_userid,
+                           MAX(id) AS latest_paid_order_id,
+                           MAX(COALESCE(paid_at, updated_at, created_at)) AS latest_paid_at
+                    FROM wechat_pay_orders
+                    WHERE external_userid IS NOT NULL
+                      AND external_userid <> ''
+                      AND (status = 'paid' OR trade_state = 'SUCCESS')
+                    GROUP BY external_userid
+                ) latest_payment_order ON latest_payment_order.external_userid = scope.external_userid
                 LEFT JOIN class_user_status_current class_status ON class_status.external_userid = scope.external_userid
                 LEFT JOIN latest_messages ON latest_messages.external_userid = scope.external_userid
                 WHERE scope.external_userid IS NOT NULL AND scope.external_userid <> ''

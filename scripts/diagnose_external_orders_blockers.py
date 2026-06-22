@@ -217,17 +217,30 @@ def _decide_customer_linkage_repair(linkage: dict[str, Any], evidence: dict[str,
     channel_present = linkage.get("channel_contact_linkage_evidence") == "present"
     customer_list_rows = int(linkage.get("customer_list_index_next_rows") or 0)
     detail_rows = int(linkage.get("customer_detail_snapshot_next_rows") or 0)
+    projection_source_found = bool(linkage.get("projection_source_found"))
+    projection_target_found = bool(linkage.get("projection_target_found"))
 
     if not external_userid_present:
         decision = "customer_identity_missing"
+        projection_status = "projection_still_missing"
         next_pr_required = True
         reason = "The order has no usable redacted external customer identity evidence."
-    elif customer_list_rows > 0 or detail_rows > 0:
+    elif projection_target_found or customer_list_rows > 0 or detail_rows > 0:
         decision = "expected_not_applicable"
+        projection_status = "projection_fixed"
         next_pr_required = False
         reason = "Customer read model linkage is present."
+    elif projection_source_found:
+        decision = "backfill_required"
+        projection_status = "backfill_required"
+        next_pr_required = True
+        reason = (
+            "The order customer identity is now part of the customer read-model projection source, "
+            "but the target read-model rows are still missing."
+        )
     elif channel_present:
         decision = "runtime_projection_repair_required"
+        projection_status = "projection_still_missing"
         next_pr_required = True
         reason = (
             "The order has redacted customer identity and channel contact evidence, but the customer read model "
@@ -236,6 +249,7 @@ def _decide_customer_linkage_repair(linkage: dict[str, Any], evidence: dict[str,
         )
     else:
         decision = "channel_linkage_only"
+        projection_status = "projection_still_missing"
         next_pr_required = True
         reason = "Customer identity exists but channel/customer projection evidence is incomplete."
 
@@ -247,6 +261,10 @@ def _decide_customer_linkage_repair(linkage: dict[str, Any], evidence: dict[str,
         "channel_contact_linkage_evidence": linkage.get("channel_contact_linkage_evidence"),
         "customer_list_index_next_lookup_result": customer_list_rows,
         "customer_detail_snapshot_next_lookup_result": detail_rows,
+        "projection_status": projection_status,
+        "projection_source_found": projection_source_found,
+        "projection_target_found": projection_target_found,
+        "backfill_required": decision == "backfill_required",
         "projectable_identity_fields_present": external_userid_present or channel_present,
         "projection_should_link_order": external_userid_present and channel_present,
         "existing_backfill_script": "scripts/backfill_customer_read_model.py",
@@ -367,12 +385,20 @@ def _classify_order_customer_channel_linkage(evidence: dict[str, Any]) -> dict[s
     detail_rows = int(linkage.get("customer_detail_snapshot_rows") or 0)
     channel_rows = int(linkage.get("channel_contact_rows") or 0)
     channel_ids_present = int(linkage.get("channel_ids_present") or 0)
+    projection_source_found = bool(
+        linkage.get("projection_source_found", external_userid_present or channel_rows > 0 or channel_ids_present > 0)
+    )
+    projection_target_found = customer_rows > 0 or detail_rows > 0
 
-    if not external_userid_present:
+    if projection_target_found:
         classification = "expected_not_applicable"
         blocking = []
         repair_required = False
-    elif customer_rows <= 0 and detail_rows <= 0:
+    elif not external_userid_present:
+        classification = "linkage_missing"
+        blocking = ["missing_customer_identity"]
+        repair_required = True
+    elif projection_source_found:
         classification = "linkage_missing"
         blocking = ["missing_customer_read_model_linkage"]
         repair_required = True
@@ -395,6 +421,9 @@ def _classify_order_customer_channel_linkage(evidence: dict[str, Any]) -> dict[s
         "channel_contact_linkage_evidence": "present" if channel_rows > 0 or channel_ids_present > 0 else "missing",
         "customer_list_index_next_rows": customer_rows,
         "customer_detail_snapshot_next_rows": detail_rows,
+        "projection_source_found": projection_source_found,
+        "projection_target_found": projection_target_found,
+        "backfill_required": projection_source_found and not projection_target_found,
         "classification": classification,
         "blocking_reasons": blocking,
         "data_backfill_required": repair_required,
@@ -500,12 +529,14 @@ def _load_readonly_db_evidence(*, order_id: str, database_url: str | None) -> di
         order_row = conn.execute(
             """
             select id, provider, order_source as source,
+                   coalesce(external_userid, '') as redacted_external_userid_source,
                    coalesce(external_userid, '') <> '' as external_userid_present
               from wechat_pay_orders
              where id = %s
             """,
             (order_id,),
         ).fetchone() or {}
+        order_external_userid = str(order_row.get("redacted_external_userid_source") or "").strip()
         event_row = conn.execute(
             """
             select id, event_id, event_type, aggregate_type, aggregate_id, source_module, source_route
@@ -550,27 +581,51 @@ def _load_readonly_db_evidence(*, order_id: str, database_url: str | None) -> di
                 """,
                 (job_ids,),
             ).fetchall()
-        customer_rows = conn.execute(
+        customer_rows = {"count": 0}
+        detail_rows = {"count": 0}
+        channel_rows = {"count": 0, "channel_ids_present": 0}
+        if order_external_userid:
+            customer_rows = conn.execute(
+                """
+                select count(*)::int as count
+                  from customer_list_index_next
+                 where external_userid = %s
+                """,
+                (order_external_userid,),
+            ).fetchone() or {"count": 0}
+            detail_rows = conn.execute(
+                """
+                select count(*)::int as count
+                  from customer_detail_snapshot_next
+                 where external_userid = %s
+                """,
+                (order_external_userid,),
+            ).fetchone() or {"count": 0}
+            channel_rows = conn.execute(
+                """
+                select count(*)::int as count,
+                       count(distinct channel_id)::int as channel_ids_present
+                  from automation_channel_contact
+                 where external_contact_id = %s
+                """,
+                (order_external_userid,),
+            ).fetchone() or {"count": 0, "channel_ids_present": 0}
+        projection_source = conn.execute(
             """
             select count(*)::int as count
-              from customer_list_index_next
-             where order_ids @> to_jsonb(array[%s]::int[])
+              from (
+                    select external_userid
+                      from wechat_pay_orders
+                     where id = %s
+                       and coalesce(external_userid, '') <> ''
+                    union
+                    select external_contact_id as external_userid
+                      from automation_channel_contact
+                     where external_contact_id = %s
+                   ) source
             """,
-            (int(order_id),),
-        ).fetchone()
-        channel_rows = conn.execute(
-            """
-            select count(*)::int as count,
-                   count(distinct channel_id)::int as channel_ids_present
-              from automation_channel_contact
-             where external_userid = (
-                   select external_userid
-                     from wechat_pay_orders
-                    where id = %s
-                  )
-            """,
-            (order_id,),
-        ).fetchone() or {}
+            (order_id, order_external_userid),
+        ).fetchone() or {"count": 0}
         conn.execute("ROLLBACK")
 
     return _redact_payload(
@@ -598,9 +653,10 @@ def _load_readonly_db_evidence(*, order_id: str, database_url: str | None) -> di
                 "source": order_row.get("source") or "not_found",
                 "external_userid_present": bool(order_row.get("external_userid_present")),
                 "customer_list_index_rows": int((customer_rows or {}).get("count") or 0),
-                "customer_detail_snapshot_rows": 0,
+                "customer_detail_snapshot_rows": int((detail_rows or {}).get("count") or 0),
                 "channel_contact_rows": int(channel_rows.get("count") or 0),
                 "channel_ids_present": int(channel_rows.get("channel_ids_present") or 0),
+                "projection_source_found": int(projection_source.get("count") or 0) > 0,
             },
         }
     )

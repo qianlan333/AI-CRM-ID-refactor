@@ -65,6 +65,7 @@ def _production_like_fixture() -> dict:
             "customer_detail_snapshot_rows": 0,
             "channel_contact_rows": 1,
             "channel_ids_present": 1,
+            "projection_source_found": True,
         },
     }
 
@@ -80,7 +81,7 @@ def test_production_like_evidence_classifies_pending_consumers_and_missing_custo
     assert conclusion["blocker_1_repair_decision"] == "run_due_not_executed"
     assert conclusion["blocker_1_next_pr_required"] is True
     assert conclusion["blocker_2_classification"] == "linkage_missing"
-    assert conclusion["blocker_2_repair_decision"] == "runtime_projection_repair_required"
+    assert conclusion["blocker_2_repair_decision"] == "backfill_required"
     assert conclusion["blocker_2_next_pr_required"] is True
     assert conclusion["operator_action_required"] is True
     assert conclusion["data_backfill_required"] is True
@@ -90,6 +91,9 @@ def test_production_like_evidence_classifies_pending_consumers_and_missing_custo
     assert payload["external_effect_linkage"]["classification"] == "expected_not_applicable"
     assert payload["internal_event_consumer_pending_decision"]["run_due_route_available"] is True
     assert payload["internal_event_consumer_pending_decision"]["consumer_placeholder_only"] is False
+    assert payload["customer_read_model_linkage_decision"]["projection_status"] == "backfill_required"
+    assert payload["customer_read_model_linkage_decision"]["projection_source_found"] is True
+    assert payload["customer_read_model_linkage_decision"]["projection_target_found"] is False
     assert payload["customer_read_model_linkage_decision"]["approved_backfill_runbook_required"] is True
 
 
@@ -107,6 +111,7 @@ def test_complete_evidence_allows_recollection_without_blockers() -> None:
     assert conclusion["blocker_1_repair_decision"] == "expected_not_applicable"
     assert conclusion["blocker_2_classification"] == "expected_not_applicable"
     assert conclusion["blocker_2_repair_decision"] == "expected_not_applicable"
+    assert payload["customer_read_model_linkage_decision"]["projection_status"] == "projection_fixed"
     assert conclusion["operator_action_required"] is False
     assert conclusion["can_recollect_external_orders_evidence"] is True
 
@@ -131,6 +136,7 @@ def test_missing_customer_identity_requires_identity_triage() -> None:
 
     payload = classify_evidence(fixture)
 
+    assert payload["order_customer_channel_linkage"]["classification"] == "linkage_missing"
     assert payload["customer_read_model_linkage_decision"]["repair_decision"] == "customer_identity_missing"
     assert payload["conclusion"]["blocker_2_next_pr_required"] is True
 
