@@ -274,3 +274,16 @@ def test_db_access_boundary_no_longer_allowlists_public_product_h5_wechat_pay() 
 
     assert "aicrm_next/public_product/h5_wechat_pay.py" not in allowlisted_paths
     assert "psycopg.connect" not in source
+
+
+def test_db_access_boundary_no_longer_allowlists_background_jobs_or_payment_events() -> None:
+    config = load_config(Path("docs/architecture/db_access_boundary.yml"))
+
+    allowlisted_paths = {entry["path"] for entry in config["temporary_allowlist"]}
+    background_db_source = Path("aicrm_next/background_jobs/db.py").read_text(encoding="utf-8")
+    payment_source = Path("aicrm_next/platform_foundation/internal_events/payment.py").read_text(encoding="utf-8")
+
+    assert "aicrm_next/background_jobs/db.py" not in allowlisted_paths
+    assert "aicrm_next/platform_foundation/internal_events/payment.py" not in allowlisted_paths
+    assert "psycopg.connect" not in background_db_source
+    assert "psycopg.connect" not in payment_source

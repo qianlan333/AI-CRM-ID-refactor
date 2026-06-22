@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 
 from aicrm_next.platform_foundation.external_calls import scrub_summary
 from aicrm_next.shared.db_session import get_session_factory
-from aicrm_next.shared.runtime import fixture_mode
+from aicrm_next.shared.runtime import fixture_mode, production_data_ready, raw_database_url
 
 from .models import (
     DEFAULT_TENANT_ID,
@@ -141,6 +141,56 @@ def _public_attempt(row: dict[str, Any] | None) -> InternalEventConsumerAttempt 
     payload["id"] = int(payload.get("id") or 0)
     payload["consumer_run_id"] = int(payload.get("consumer_run_id") or 0)
     return InternalEventConsumerAttempt(**payload)
+
+
+def read_wechat_pay_order_for_payment_event(*, lookup: str, aggregate_id: str) -> dict[str, Any]:
+    if not production_data_ready():
+        return {}
+    try:
+        import psycopg
+        from psycopg.rows import dict_row
+
+        with psycopg.connect(raw_database_url(), row_factory=dict_row) as conn:
+            if lookup:
+                row = conn.execute("SELECT * FROM wechat_pay_orders WHERE out_trade_no = %s LIMIT 1", (lookup,)).fetchone()
+                if row:
+                    return dict(row)
+            if aggregate_id:
+                row = conn.execute("SELECT * FROM wechat_pay_orders WHERE id::text = %s OR out_trade_no = %s LIMIT 1", (aggregate_id, aggregate_id)).fetchone()
+                if row:
+                    return dict(row)
+    except Exception:
+        return {}
+    return {}
+
+
+def plan_order_paid_external_push_effect_from_db(
+    *,
+    order: dict[str, Any],
+    transaction: dict[str, Any],
+    domain_event_outbox_id: Any,
+) -> dict[str, Any] | None:
+    if not production_data_ready():
+        return None
+    try:
+        import psycopg
+        from psycopg.rows import dict_row
+
+        from aicrm_next.commerce.external_push_admin import plan_order_paid_external_push_effect
+
+        with psycopg.connect(raw_database_url(), row_factory=dict_row) as conn:
+            result = plan_order_paid_external_push_effect(
+                conn,
+                order=order,
+                transaction=transaction,
+                outbox={"id": domain_event_outbox_id},
+                source_module="platform_foundation.internal_events.payment",
+                source_route="/internal-events/payment.succeeded/webhook_order_paid_consumer",
+            )
+            conn.commit()
+            return result
+    except Exception:
+        return None
 
 
 class InternalEventRepository:

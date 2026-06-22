@@ -3,10 +3,10 @@ from __future__ import annotations
 from typing import Any
 
 from aicrm_next.platform_foundation.external_effects import ExternalEffectJob, ExternalEffectService, WEBHOOK_ORDER_PAID_PUSH
-from aicrm_next.shared.runtime import production_data_ready, raw_database_url
 
 from .consumer_registry import DEFAULT_INTERNAL_EVENT_CONSUMER_REGISTRY, InternalEventConsumerRegistry
 from .models import InternalEvent, InternalEventConsumerResult, InternalEventConsumerRun
+from .repository import plan_order_paid_external_push_effect_from_db, read_wechat_pay_order_for_payment_event
 
 PAYMENT_SUCCEEDED_EVENT_TYPE = "payment.succeeded"
 TRANSACTION_PAID_EVENT_ALIAS = "transaction.paid"
@@ -29,26 +29,9 @@ def _order_from_event(event: InternalEvent) -> dict[str, Any]:
 
 
 def _read_order_from_db(event: InternalEvent) -> dict[str, Any]:
-    if not production_data_ready():
-        return {}
     lookup = _text((event.payload_json or {}).get("order", {}).get("out_trade_no") if isinstance((event.payload_json or {}).get("order"), dict) else "")
     aggregate_id = _text(event.aggregate_id)
-    try:
-        import psycopg
-        from psycopg.rows import dict_row
-
-        with psycopg.connect(raw_database_url(), row_factory=dict_row) as conn:
-            if lookup:
-                row = conn.execute("SELECT * FROM wechat_pay_orders WHERE out_trade_no = %s LIMIT 1", (lookup,)).fetchone()
-                if row:
-                    return dict(row)
-            if aggregate_id:
-                row = conn.execute("SELECT * FROM wechat_pay_orders WHERE id::text = %s OR out_trade_no = %s LIMIT 1", (aggregate_id, aggregate_id)).fetchone()
-                if row:
-                    return dict(row)
-    except Exception:
-        return {}
-    return {}
+    return read_wechat_pay_order_for_payment_event(lookup=lookup, aggregate_id=aggregate_id)
 
 
 def _transaction_from_event(event: InternalEvent) -> dict[str, Any]:
@@ -85,27 +68,11 @@ def _plan_order_paid_external_push_from_db(
     transaction: dict[str, Any],
     event: InternalEvent,
 ) -> dict[str, Any] | None:
-    if not production_data_ready():
-        return None
-    try:
-        import psycopg
-        from psycopg.rows import dict_row
-
-        from aicrm_next.commerce.external_push_admin import plan_order_paid_external_push_effect
-
-        with psycopg.connect(raw_database_url(), row_factory=dict_row) as conn:
-            result = plan_order_paid_external_push_effect(
-                conn,
-                order=order,
-                transaction=transaction,
-                outbox={"id": (event.payload_json or {}).get("domain_event_outbox_id")},
-                source_module="platform_foundation.internal_events.payment",
-                source_route="/internal-events/payment.succeeded/webhook_order_paid_consumer",
-            )
-            conn.commit()
-            return result
-    except Exception:
-        return None
+    return plan_order_paid_external_push_effect_from_db(
+        order=order,
+        transaction=transaction,
+        domain_event_outbox_id=(event.payload_json or {}).get("domain_event_outbox_id"),
+    )
 
 
 def order_projection_consumer(event: InternalEvent, run: InternalEventConsumerRun) -> InternalEventConsumerResult:

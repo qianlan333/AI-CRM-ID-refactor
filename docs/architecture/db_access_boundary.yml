@@ -27,13 +27,6 @@ temporary_allowlist:
     migration_target: aicrm_next/automation_engine/repository.py
     matches:
       - "return psycopg.connect(database_url, row_factory=dict_row)"
-  - path: aicrm_next/background_jobs/db.py
-    rule: db_access_boundary_violation
-    owner: background_jobs
-    reason: Existing background job DB connection helper predates the DB boundary checker; do not broaden.
-    migration_target: aicrm_next/background_jobs/repository.py
-    matches:
-      - "conn = psycopg.connect(url, row_factory=dict_row)"
   - path: aicrm_next/cloud_orchestrator/campaigns_read.py
     rule: db_access_boundary_violation
     owner: cloud_orchestrator
@@ -69,13 +62,6 @@ temporary_allowlist:
     migration_target: aicrm_next/message_archive/repo.py
     matches:
       - "with psycopg.connect(url, row_factory=dict_row) as conn:"
-  - path: aicrm_next/platform_foundation/internal_events/payment.py
-    rule: db_access_boundary_violation
-    owner: platform_foundation
-    reason: Existing payment internal event DB lookup predates the DB boundary checker; do not broaden.
-    migration_target: aicrm_next/platform_foundation/internal_events/repository.py
-    matches:
-      - "with psycopg.connect(raw_database_url(), row_factory=dict_row) as conn:"
   - path: aicrm_next/shared/postgres_connection.py
     rule: db_access_boundary_violation
     owner: platform_foundation
