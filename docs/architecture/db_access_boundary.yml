@@ -76,13 +76,6 @@ temporary_allowlist:
     migration_target: aicrm_next/platform_foundation/internal_events/repository.py
     matches:
       - "with psycopg.connect(raw_database_url(), row_factory=dict_row) as conn:"
-  - path: aicrm_next/public_product/h5_wechat_pay.py
-    rule: db_access_boundary_violation
-    owner: public_product
-    reason: Existing H5 WeChat Pay DB helper predates the DB boundary checker; do not broaden.
-    migration_target: aicrm_next/public_product/repo.py
-    matches:
-      - "return psycopg.connect(raw_database_url(), row_factory=dict_row)"
   - path: aicrm_next/shared/postgres_connection.py
     rule: db_access_boundary_violation
     owner: platform_foundation

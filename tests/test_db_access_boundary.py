@@ -264,3 +264,13 @@ def test_db_access_boundary_no_longer_allowlists_commerce_admin_db_helpers() -> 
     assert "aicrm_next/commerce/admin_webhooks.py" not in allowlisted_paths
     assert "aicrm_next/commerce/external_push_admin.py" not in allowlisted_paths
     assert "aicrm_next/commerce/wechat_shop_service.py" not in allowlisted_paths
+
+
+def test_db_access_boundary_no_longer_allowlists_public_product_h5_wechat_pay() -> None:
+    config = load_config(Path("docs/architecture/db_access_boundary.yml"))
+
+    allowlisted_paths = {entry["path"] for entry in config["temporary_allowlist"]}
+    source = Path("aicrm_next/public_product/h5_wechat_pay.py").read_text(encoding="utf-8")
+
+    assert "aicrm_next/public_product/h5_wechat_pay.py" not in allowlisted_paths
+    assert "psycopg.connect" not in source

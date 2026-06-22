@@ -26,8 +26,9 @@ from aicrm_next.platform_foundation.internal_events import InternalEventService,
 from aicrm_next.platform_foundation.internal_events.config import event_type_allowed, payment_internal_events_enabled
 from aicrm_next.platform_foundation.internal_events.payment import PAYMENT_SUCCEEDED_EVENT_TYPE
 from aicrm_next.questionnaire.oauth import questionnaire_h5_identity_from_cookies
-from aicrm_next.shared.runtime import production_data_ready, raw_database_url
+from aicrm_next.shared.runtime import production_data_ready
 
+from .repo import connect_h5_wechat_pay_db as _connect
 from .signed_context import append_ctx_query, load_sidebar_product_context_token
 from .sidebar_order_context import resolve_sidebar_order_context
 from .service import format_price, get_public_product, product_not_found_payload, route_headers
@@ -305,13 +306,6 @@ def _require_payment_ready() -> WeChatPayClientConfig:
     if not production_data_ready():
         raise RuntimeError("production_database_required")
     return config
-
-
-def _connect():
-    import psycopg
-    from psycopg.rows import dict_row
-
-    return psycopg.connect(raw_database_url(), row_factory=dict_row)
 
 
 def _jsonb(value: Any):
