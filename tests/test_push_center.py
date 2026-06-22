@@ -224,6 +224,13 @@ def test_push_center_group_ops_shadow_failed_with_sent_broadcast_is_warning_not_
     assert item["effective_status"] == "sent_with_shadow_warning"
     assert item["status"] == "sent_with_shadow_warning"
     assert item["status_label"] == "已发送 · 影子链路异常"
+    assert "linked_records" not in item
+    assert item["linked_record_counts"] == {
+        "external_effect_jobs": 1,
+        "external_effect_attempts": 1,
+        "broadcast_jobs": 1,
+        "outbound_tasks": 1,
+    }
     assert stats["counts"]["sent"] == 1
     assert stats["counts"]["failed"] == 0
     assert detail is not None
