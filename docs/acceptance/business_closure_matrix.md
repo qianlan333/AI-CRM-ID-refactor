@@ -420,6 +420,22 @@ failures without engineer intervention.
 11. Start P1 TypeScript Frontend Foundation only after the 90%+ trial-operation
     acceptance evidence is recorded.
 
+## Acceptance Package Links
+
+The following dry-run acceptance packages are available for the next business
+closure passes:
+
+- `docs/acceptance/push_center_reconciliation_acceptance.md`
+- `docs/acceptance/group_ops_gray_send_acceptance.md`
+- `docs/acceptance/ops_plan_to_broadcast_e2e.md`
+- `docs/acceptance/external_orders_enablement.md`
+- `docs/acceptance/wecom_auth_operator_acceptance.md`
+- `docs/acceptance/core_admin_operations_acceptance.md`
+- `scripts/diagnose_business_closure_acceptance.py`
+
+These packages are readiness and operator-evidence scaffolding. They do not
+claim that real gray execution has already happened.
+
 ## Verification For This Matrix
 
 Run these checks after changing this document:
