@@ -215,3 +215,15 @@ def test_external_effects_registry_no_longer_allowlists_channel_entry_wecom_adap
     assert wecom_effect["boundary"] == "integration_gateway"
     assert wecom_effect["adapter_module"] == "aicrm_next/integration_gateway/wecom_channel_entry_client.py"
     assert wecom_effect["migration_target"] == "aicrm_next/integration_gateway/wecom_channel_entry_client.py"
+
+
+def test_external_effects_registry_no_longer_allowlists_commerce_wechat_pay_client() -> None:
+    config = load_config(Path("docs/architecture/external_effects_registry.yml"))
+
+    allowlisted_paths = {entry["path"] for entry in config["temporary_allowlist"]}
+    pay_effect = next(effect for effect in config["effects"] if effect["effect_key"] == "wechat_pay.commerce.api")
+
+    assert "aicrm_next/commerce/wechat_pay_client.py" not in allowlisted_paths
+    assert pay_effect["boundary"] == "integration_gateway"
+    assert pay_effect["adapter_module"] == "aicrm_next/integration_gateway/wechat_pay_client.py"
+    assert pay_effect["migration_target"] == "aicrm_next/integration_gateway/wechat_pay_client.py"
