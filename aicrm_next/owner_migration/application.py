@@ -12,7 +12,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Protocol
 from xml.etree import ElementTree as ET
 
-from aicrm_next.channel_entry.wecom_adapter import (
+from aicrm_next.integration_gateway.wecom_channel_entry_client import (
     WeComApiError,
     ProductionWeComAdapter,
     missing_wecom_config,

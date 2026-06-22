@@ -593,7 +593,10 @@ class WeComWelcomeMessageAdapter:
     def _build_adapter(self):
         if self._adapter_factory is not None:
             return self._adapter_factory()
-        from aicrm_next.channel_entry.wecom_adapter import ProductionWeComAdapter, missing_wecom_config
+        from aicrm_next.integration_gateway.wecom_channel_entry_client import (
+            ProductionWeComAdapter,
+            missing_wecom_config,
+        )
 
         missing = missing_wecom_config()
         if missing:
@@ -606,7 +609,7 @@ class WeComWelcomeMessageAdapter:
         retryable = False
         response_summary: dict[str, Any] = {"real_external_call_executed": True, "wecom_send_executed": False}
         try:
-            from aicrm_next.channel_entry.wecom_adapter import WeComApiError
+            from aicrm_next.integration_gateway.wecom_channel_entry_client import WeComApiError
 
             if isinstance(exc, WeComApiError):
                 payload = dict(exc.payload or {})
