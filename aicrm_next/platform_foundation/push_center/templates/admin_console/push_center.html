@@ -85,14 +85,21 @@
       </div>
     </div>
 
-    <aside class="admin-card push-center-detail-card" aria-label="任务详情">
-      <div class="push-center-card-head">
-        <div class="push-center-card-title">任务详情</div>
-        <span class="push-center-muted" id="detailStatus">未选择</span>
-      </div>
-      <div id="detailPanel" class="push-center-detail-empty">点击左侧任务查看执行详情</div>
-    </aside>
   </section>
+
+  <div class="push-center-modal" id="detailModal" aria-hidden="true">
+    <div class="push-center-modal-backdrop" data-close-detail></div>
+    <section class="admin-card push-center-modal-card" role="dialog" aria-modal="true" aria-labelledby="detailModalTitle">
+      <div class="push-center-card-head">
+        <div>
+          <div class="push-center-card-title" id="detailModalTitle">任务详情</div>
+          <span class="push-center-muted" id="detailStatus">加载中</span>
+        </div>
+        <button class="push-center-close" type="button" aria-label="关闭任务详情" data-close-detail>×</button>
+      </div>
+      <div id="detailPanel" class="push-center-detail-empty">加载中...</div>
+    </section>
+  </div>
 </section>
 
 <style>
@@ -101,8 +108,8 @@
 .push-center-stat { padding: 14px; }
 .push-center-stat-label { font-size: 12px; color: var(--pc-muted); margin-bottom: 8px; }
 .push-center-stat-value { font-size: 22px; font-weight: 700; }
-.push-center-layout { display: grid; grid-template-columns: minmax(0, 1fr) 390px; gap: 16px; align-items: start; }
-.push-center-main, .push-center-detail-card { overflow: hidden; }
+.push-center-layout { display: block; }
+.push-center-main { overflow: hidden; }
 .push-center-card-head { padding: 14px 16px; border-bottom: 1px solid var(--pc-line); display: flex; justify-content: space-between; gap: 12px; align-items: center; }
 .push-center-card-title { font-weight: 700; font-size: 15px; }
 .push-center-muted { color: var(--pc-muted); }
@@ -139,8 +146,13 @@
 .push-center-badge.sent_with_shadow_warning { color: var(--pc-warning); background: #fffbeb; }
 .push-center-badge.shadow_failed_not_business_failed { color: var(--pc-blocked); background: #f5f3ff; }
 .push-center-badge.failed { color: var(--pc-danger); background: #fef2f2; }
+.push-center-modal { position: fixed; inset: 0; display: none; z-index: 1000; }
+.push-center-modal.is-open { display: block; }
+.push-center-modal-backdrop { position: absolute; inset: 0; background: rgba(15, 23, 42, .42); }
+.push-center-modal-card { position: relative; width: min(980px, calc(100vw - 32px)); max-height: calc(100vh - 56px); margin: 28px auto; overflow: hidden; display: flex; flex-direction: column; }
+.push-center-close { border: 1px solid var(--pc-line); background: #fff; color: #374151; border-radius: 8px; width: 34px; height: 34px; font-size: 22px; line-height: 1; cursor: pointer; }
 .push-center-detail-empty { padding: 32px 20px; color: var(--pc-muted); text-align: center; }
-.push-center-detail-body { padding: 16px; }
+.push-center-detail-body { padding: 16px; overflow: auto; }
 .push-center-section { margin-bottom: 18px; }
 .push-center-section h3 { font-size: 14px; margin: 0 0 10px; }
 .push-center-kv { display: grid; grid-template-columns: 120px minmax(0, 1fr); gap: 8px 10px; font-size: 13px; margin-bottom: 10px; }
@@ -153,8 +165,11 @@
 .push-center-page .admin-button--danger { border-color: #fecaca; color: var(--pc-danger); background: #fff7f7; }
 @media (max-width: 1100px) {
   .push-center-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .push-center-layout { grid-template-columns: 1fr; }
   .push-center-filters { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 680px) {
+  .push-center-stats, .push-center-filters { grid-template-columns: 1fr; }
+  .push-center-modal-card { width: calc(100vw - 16px); max-height: calc(100vh - 24px); margin: 12px auto; }
 }
 </style>
 
@@ -286,6 +301,18 @@
     try { return await response.json(); } catch (_) { return {}; }
   }
 
+  function openDetailModal() {
+    const modal = document.getElementById("detailModal");
+    modal.classList.add("is-open");
+    modal.setAttribute("aria-hidden", "false");
+  }
+
+  function closeDetailModal() {
+    const modal = document.getElementById("detailModal");
+    modal.classList.remove("is-open");
+    modal.setAttribute("aria-hidden", "true");
+  }
+
   async function loadStats() {
     const response = await fetch(`/api/admin/push-center/stats?${qs({ section: state.section, ...state.filters })}`);
     const data = await readJson(response);
@@ -343,6 +370,10 @@
 
   async function loadDetail(jobId) {
     state.selectedJobId = jobId;
+    openDetailModal();
+    document.getElementById("detailStatus").textContent = "加载中";
+    document.getElementById("detailPanel").className = "push-center-detail-empty";
+    document.getElementById("detailPanel").textContent = "加载中...";
     const response = await fetch(`/api/admin/push-center/jobs/${jobId}`);
     const data = await readJson(response);
     if (!response.ok || !data.ok) {
@@ -444,13 +475,13 @@
     }
     await loadStats();
     await loadJobs();
-    await loadDetail(jobId);
+    if (document.getElementById("detailModal").classList.contains("is-open")) await loadDetail(jobId);
   }
 
   function refreshCurrentView() {
     loadStats();
     loadJobs();
-    if (state.selectedJobId) loadDetail(state.selectedJobId);
+    if (state.selectedJobId && document.getElementById("detailModal").classList.contains("is-open")) loadDetail(state.selectedJobId);
   }
 
   function exportCurrentFilter() {
@@ -494,6 +525,16 @@
       const btn = event.target.closest("button[data-action][data-job-id]");
       if (!btn) return;
       mutateJob(btn.dataset.jobId, btn.dataset.action);
+    });
+
+    document.getElementById("detailModal").addEventListener("click", event => {
+      if (event.target.closest("[data-close-detail]")) {
+        closeDetailModal();
+      }
+    });
+
+    document.addEventListener("keydown", event => {
+      if (event.key === "Escape") closeDetailModal();
     });
   }
 
