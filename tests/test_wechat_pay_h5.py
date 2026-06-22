@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 from datetime import datetime, timedelta, timezone
 import json
+from pathlib import Path
 
 from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
@@ -10,7 +11,6 @@ from cryptography.hazmat.primitives.asymmetric import padding, rsa
 from cryptography.x509.oid import NameOID
 
 from aicrm_next.admin_config.settings import mask_value
-from aicrm_next.commerce import wechat_pay_client as next_wechat_pay_client
 from aicrm_next.commerce.repo import reset_commerce_fixture_state
 from aicrm_next.commerce.wechat_pay_client import WeChatPayClient, WeChatPayClientConfig
 
@@ -29,7 +29,7 @@ def test_wechat_pay_sensitive_settings_are_masked_by_next_settings():
     assert mask_value("WECHAT_PAY_CERT_SERIAL_NO", "serial123456") == "ser***56"
 
 
-def test_next_wechat_pay_client_sends_platform_public_key_id_header(monkeypatch):
+def test_next_wechat_pay_client_sends_platform_public_key_id_header():
     captured: dict[str, object] = {}
 
     class FakeResponse:
@@ -46,8 +46,6 @@ def test_next_wechat_pay_client_sends_platform_public_key_id_header(monkeypatch)
         captured["timeout"] = timeout
         return FakeResponse()
 
-    monkeypatch.setattr(next_wechat_pay_client.requests, "request", fake_request)
-
     pay_client = WeChatPayClient(
         WeChatPayClientConfig(
             app_id="wx-app",
@@ -57,6 +55,7 @@ def test_next_wechat_pay_client_sends_platform_public_key_id_header(monkeypatch)
             merchant_serial_no="merchant-serial",
             platform_serial_no="PUB_KEY_ID_0116571234562024052000123400000000",
         ),
+        http_request=fake_request,
     )
     pay_client._merchant_signature = lambda message: "signed"  # type: ignore[method-assign]
 
@@ -69,7 +68,7 @@ def test_next_wechat_pay_client_sends_platform_public_key_id_header(monkeypatch)
     assert headers["Wechatpay-Serial"] == "PUB_KEY_ID_0116571234562024052000123400000000"
 
 
-def test_next_wechat_pay_client_does_not_send_certificate_serial_header(monkeypatch):
+def test_next_wechat_pay_client_does_not_send_certificate_serial_header():
     captured: dict[str, object] = {}
 
     class FakeResponse:
@@ -84,8 +83,6 @@ def test_next_wechat_pay_client_does_not_send_certificate_serial_header(monkeypa
         captured["timeout"] = timeout
         return FakeResponse()
 
-    monkeypatch.setattr(next_wechat_pay_client.requests, "request", fake_request)
-
     pay_client = WeChatPayClient(
         WeChatPayClientConfig(
             app_id="wx-app",
@@ -95,6 +92,7 @@ def test_next_wechat_pay_client_does_not_send_certificate_serial_header(monkeypa
             merchant_serial_no="merchant-serial",
             platform_serial_no="19FBBF2A24A3F3C97F5925FA855A850D6E4624AF",
         ),
+        http_request=fake_request,
     )
     pay_client._merchant_signature = lambda message: "signed"  # type: ignore[method-assign]
 
@@ -103,7 +101,7 @@ def test_next_wechat_pay_client_does_not_send_certificate_serial_header(monkeypa
     assert "Wechatpay-Serial" not in captured["headers"]
 
 
-def test_next_wechat_pay_client_creates_refund_request_without_real_http(monkeypatch):
+def test_next_wechat_pay_client_creates_refund_request_without_real_http():
     captured: dict[str, object] = {}
 
     class FakeResponse:
@@ -121,8 +119,6 @@ def test_next_wechat_pay_client_creates_refund_request_without_real_http(monkeyp
         captured["timeout"] = timeout
         return FakeResponse()
 
-    monkeypatch.setattr(next_wechat_pay_client.requests, "request", fake_request)
-
     pay_client = WeChatPayClient(
         WeChatPayClientConfig(
             app_id="wx-app",
@@ -131,6 +127,7 @@ def test_next_wechat_pay_client_creates_refund_request_without_real_http(monkeyp
             private_key_path="",
             merchant_serial_no="merchant-serial",
         ),
+        http_request=fake_request,
     )
     pay_client._merchant_signature = lambda message: "signed"  # type: ignore[method-assign]
 
@@ -199,6 +196,13 @@ def test_next_wechat_pay_client_verifies_notify_signature_with_platform_certific
             "Wechatpay-Serial": "1234567890",
         },
     )
+
+
+def test_commerce_wechat_pay_client_facade_has_no_direct_http_call() -> None:
+    source = Path("aicrm_next/commerce/wechat_pay_client.py").read_text(encoding="utf-8")
+
+    assert "requests.request" not in source
+    assert "import requests" not in source
 
 
 def test_next_wechat_checkout_and_notify_keep_h5_payment_contract(next_client):

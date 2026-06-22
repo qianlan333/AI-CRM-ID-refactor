@@ -11,9 +11,9 @@ effects:
   - effect_key: wechat_pay.commerce.api
     provider: wechat_pay
     owner: commerce
-    boundary: existing_direct_client_allowlisted
+    boundary: integration_gateway
     allowed_runtime: real_requires_approval
-    adapter_module: aicrm_next/commerce/wechat_pay_client.py
+    adapter_module: aicrm_next/integration_gateway/wechat_pay_client.py
     migration_target: aicrm_next/integration_gateway/wechat_pay_client.py
     idempotency_required: true
     audit_required: true
@@ -28,14 +28,6 @@ effects:
     audit_required: true
 
 temporary_allowlist:
-  - path: aicrm_next/commerce/wechat_pay_client.py
-    rule: direct_external_effect_call
-    owner: commerce
-    effect_key: wechat_pay.commerce.api
-    reason: Existing narrow WeChat Pay API client predates the external effects checker; do not broaden.
-    migration_target: aicrm_next/integration_gateway/wechat_pay_client.py
-    matches:
-      - "response = requests.request("
   - path: aicrm_next/commerce/wechat_shop_client.py
     rule: direct_external_effect_call
     owner: commerce
