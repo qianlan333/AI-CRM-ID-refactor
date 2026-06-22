@@ -7,75 +7,30 @@ from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from .ai_assist.api import router as ai_assist_router
-from .admin_auth.api import router as admin_auth_router
-from .admin_config.api import router as admin_config_router
-from .admin_shell.routes import router as admin_shell_router
 from .admin_auth import reset_admin_auth_fixture_state
 from .admin_jobs.repository import reset_admin_jobs_fixture_state
-from .admin_jobs.routes import router as admin_jobs_router
-from .automation_engine.admin_pages import router as automation_admin_pages_router
-from .automation_engine.api import router as automation_router
-from .automation_runtime_v2.api import router as automation_runtime_v2_router
-from .automation_engine.channel_admin_pages import router as channel_admin_pages_router
-from .automation_engine.channels_api import router as automation_channels_router
-from .channel_entry.api import router as channel_entry_router
-from .class_user_management.api import router as class_user_management_router
-from .automation_engine.group_ops.admin_pages import router as group_ops_admin_pages_router
 from .automation_engine.group_ops.repo import reset_group_ops_fixture_state
 from .automation_engine.customer_webhooks import reset_customer_webhook_fixture_state
 from .automation_engine.member_actions import reset_member_actions_fixture_state
 from .automation_engine.repo import reset_automation_fixture_state
 from .automation_engine.channels_api import reset_wecom_customer_acquisition_link_fixture_state
-from .auth_wecom.api import router as auth_wecom_router
-from .commerce.api import router as commerce_router
 from .commerce.repo import reset_commerce_fixture_state
-from .common_operation_members import router as common_operation_members_router
-from .cloud_orchestrator.api import router as cloud_orchestrator_router
 from .cloud_orchestrator.campaigns_read import reset_campaign_read_fixture_state
 from .cloud_orchestrator.campaigns_write import reset_campaign_write_fixture_state
 from .cloud_orchestrator.repository import reset_cloud_plan_fixture_state
-from .customer_tags.api import read_router as customer_tags_read_router
-from .customer_tags.api import router as customer_tags_router
-from .customer_tags.api import write_router as customer_tags_write_router
-from .customer_tags.admin_pages import router as customer_tags_admin_pages_router
 from .customer_tags.admin_write import reset_wecom_tag_write_fixture_state
 from .customer_tags.live_mutation import reset_wecom_tag_live_mutation_fixture_state
-from .customer_read_model.admin_pages import router as customer_admin_pages_router
-from .customer_read_model.api import router as customer_router
-from .hxc_dashboard.api import router as hxc_dashboard_router
 from .hxc_dashboard.repo import reset_hxc_dashboard_fixture_state
 from .hxc_dashboard.safe_mode import reset_hxc_safe_mode_fixture_state
-from .identity_contact.admin_pages import router as identity_admin_pages_router
-from .identity_contact.api import router as identity_router
-from .identity_contact.sidebar_jssdk import router as sidebar_jssdk_router
 from .integration_gateway.wecom_jssdk_adapter import reset_sidebar_jssdk_attempts
-from .integration_gateway.api import router as mcp_router
-from .media_library.admin_pages import router as media_library_admin_pages_router
-from .media_library.api import router as media_library_router
 from .media_library.repo import reset_media_library_fixture_state
-from .message_archive.api import router as message_archive_router
-from .ops_enrollment.admin_pages import router as user_ops_admin_pages_router
 from .ops_enrollment.application import reset_user_ops_fixture_state
-from .ops_enrollment.api import router as user_ops_router
-from .owner_migration.api import router as owner_migration_router
-from .platform_foundation.api import router as platform_router
-from .platform_foundation.external_effects.api import router as external_effects_router
 from .platform_foundation.external_effects import reset_external_effect_fixture_state
 from .platform_foundation.legacy_cleanup import reset_legacy_cleanup_fixture_state
-from .platform_foundation.legacy_cleanup.api import router as legacy_cleanup_router
-from .platform_foundation.internal_events.api import router as internal_events_router
 from .platform_foundation.internal_events import register_payment_succeeded_consumers, register_shadow_event_consumers, reset_internal_event_fixture_state
-from .platform_foundation.push_center.api import router as push_center_router
-from .public_product.api import router as public_product_router
-from .questionnaire.admin_pages import router as questionnaire_admin_pages_router
-from .questionnaire.api import router as questionnaire_router
-from .send_content.api import router as send_content_router
-from .radar_links.api import router as radar_links_router
-from .radar_links.admin_pages import router as radar_links_admin_pages_router
 from .radar_links.repo import reset_radar_links_fixture_state
-from .sidebar_write.api import router as sidebar_write_router
 from .sidebar_write import reset_sidebar_write_fixture_state
+from .router_registry import register_routers
 from .shared.repository_provider import RepositoryProviderError
 from .shared.runtime import fixture_mode
 from .questionnaire.repo import reset_questionnaire_fixture_state
@@ -162,52 +117,7 @@ def create_app() -> FastAPI:
         StaticFiles(directory=_FRONTEND_COMPAT_DIR / "static"),
         name="static",
     )
-    app.include_router(platform_router)
-    app.include_router(external_effects_router)
-    app.include_router(legacy_cleanup_router)
-    app.include_router(internal_events_router)
-    app.include_router(push_center_router)
-    app.include_router(admin_auth_router)
-    app.include_router(admin_shell_router)
-    app.include_router(admin_config_router)
-    app.include_router(class_user_management_router)
-    app.include_router(common_operation_members_router)
-    app.include_router(channel_entry_router)
-    app.include_router(automation_channels_router)
-    app.include_router(hxc_dashboard_router)
-    app.include_router(public_product_router)
-    app.include_router(sidebar_write_router)
-    app.include_router(sidebar_jssdk_router)
-    app.include_router(customer_tags_read_router)
-    app.include_router(customer_tags_write_router)
-    app.include_router(cloud_orchestrator_router)
-    app.include_router(customer_router)
-    app.include_router(customer_admin_pages_router)
-    app.include_router(customer_tags_router)
-    app.include_router(user_ops_router)
-    app.include_router(user_ops_admin_pages_router)
-    app.include_router(mcp_router)
-    app.include_router(identity_router)
-    app.include_router(identity_admin_pages_router)
-    app.include_router(message_archive_router)
-    app.include_router(questionnaire_admin_pages_router)
-    app.include_router(questionnaire_router)
-    app.include_router(radar_links_admin_pages_router)
-    app.include_router(radar_links_router)
-    app.include_router(auth_wecom_router)
-    app.include_router(group_ops_admin_pages_router)
-    app.include_router(automation_admin_pages_router)
-    app.include_router(channel_admin_pages_router)
-    app.include_router(customer_tags_admin_pages_router)
-    app.include_router(automation_router)
-    app.include_router(automation_runtime_v2_router)
-    app.include_router(commerce_router)
-    app.include_router(media_library_router)
-    app.include_router(media_library_admin_pages_router)
-    app.include_router(ai_assist_router)
-    app.include_router(send_content_router)
-    app.include_router(admin_jobs_router)
-    app.include_router(owner_migration_router)
+    register_routers(app)
     return app
 
 
