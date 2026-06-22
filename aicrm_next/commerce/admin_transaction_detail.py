@@ -6,11 +6,12 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from aicrm_next.shared.errors import NotFoundError
-from aicrm_next.shared.runtime import database_mode, raw_database_url
+from aicrm_next.shared.runtime import database_mode
 from aicrm_next.shared.text_encoding import repair_utf8_mojibake
 
 from .application import GetTransactionQuery, ListTransactionsQuery
 from .product_code_aliases import canonical_product_code, canonical_product_name, product_code_filter_values
+from .repo import connect_commerce_db
 from .wechat_shop_service import fixture_wechat_shop_order, fixture_wechat_shop_orders
 
 ADMIN_TZ = ZoneInfo("Asia/Shanghai")
@@ -252,10 +253,7 @@ def _present(provider: str, row: dict[str, Any], *, events: list[dict[str, Any]]
 
 
 def _connect():
-    import psycopg
-    from psycopg.rows import dict_row
-
-    return psycopg.connect(raw_database_url(), row_factory=dict_row)
+    return connect_commerce_db()
 
 
 def _postgres_filter_clause(provider: str, filters: dict[str, Any], params: list[Any]) -> str:

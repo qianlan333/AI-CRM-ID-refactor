@@ -4,10 +4,11 @@ from datetime import datetime
 from typing import Any
 
 from aicrm_next.platform_foundation.legacy_cleanup.service import LegacyWebhookCleanupService
-from aicrm_next.shared.runtime import database_mode, raw_database_url
+from aicrm_next.shared.runtime import database_mode
 
 from .admin_transactions import create_wechat_refund_request
 from .admin_unified_orders import ROUTE_OWNER, normalize_limit, normalize_offset, normalize_provider
+from .repo import connect_commerce_db
 from .wechat_shop_service import create_wechat_shop_refund_request, fixture_wechat_shop_refunds
 
 
@@ -46,10 +47,7 @@ def _format_time(value: Any) -> str:
 
 
 def _connect():
-    import psycopg
-    from psycopg.rows import dict_row
-
-    return psycopg.connect(raw_database_url(), row_factory=dict_row)
+    return connect_commerce_db()
 
 
 def _status_label(status: str) -> str:

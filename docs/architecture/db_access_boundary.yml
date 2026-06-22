@@ -41,48 +41,6 @@ temporary_allowlist:
     migration_target: aicrm_next/cloud_orchestrator/repository.py
     matches:
       - "return psycopg.connect(self._database_url, row_factory=dict_row)"
-  - path: aicrm_next/commerce/admin_refunds.py
-    rule: db_access_boundary_violation
-    owner: commerce
-    reason: Existing commerce refund admin DB helper predates the DB boundary checker; do not broaden.
-    migration_target: aicrm_next/commerce/repo.py
-    matches:
-      - "return psycopg.connect(raw_database_url(), row_factory=dict_row)"
-  - path: aicrm_next/commerce/admin_transaction_detail.py
-    rule: db_access_boundary_violation
-    owner: commerce
-    reason: Existing commerce transaction detail DB helper predates the DB boundary checker; do not broaden.
-    migration_target: aicrm_next/commerce/repo.py
-    matches:
-      - "return psycopg.connect(raw_database_url(), row_factory=dict_row)"
-  - path: aicrm_next/commerce/admin_transactions.py
-    rule: db_access_boundary_violation
-    owner: commerce
-    reason: Existing commerce transaction admin DB helper predates the DB boundary checker; do not broaden.
-    migration_target: aicrm_next/commerce/repo.py
-    matches:
-      - "with psycopg.connect(_database_url(), row_factory=dict_row) as conn:"
-  - path: aicrm_next/commerce/admin_webhooks.py
-    rule: db_access_boundary_violation
-    owner: commerce
-    reason: Existing commerce webhook admin DB helper predates the DB boundary checker; do not broaden.
-    migration_target: aicrm_next/commerce/repo.py
-    matches:
-      - "return psycopg.connect(raw_database_url(), row_factory=dict_row)"
-  - path: aicrm_next/commerce/external_push_admin.py
-    rule: db_access_boundary_violation
-    owner: commerce
-    reason: Existing commerce external push admin DB helper predates the DB boundary checker; do not broaden.
-    migration_target: aicrm_next/commerce/repo.py
-    matches:
-      - "return psycopg.connect(raw_database_url(), row_factory=dict_row)"
-  - path: aicrm_next/commerce/wechat_shop_service.py
-    rule: db_access_boundary_violation
-    owner: commerce
-    reason: Existing WeChat Shop service DB helper predates the DB boundary checker; do not broaden.
-    migration_target: aicrm_next/commerce/repo.py
-    matches:
-      - "return psycopg.connect(raw_database_url(), row_factory=dict_row)"
   - path: aicrm_next/common_operation_members.py
     rule: db_access_boundary_violation
     owner: platform_foundation
