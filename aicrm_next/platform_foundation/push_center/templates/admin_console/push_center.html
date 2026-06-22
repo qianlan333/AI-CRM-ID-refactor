@@ -6,8 +6,8 @@
     <article class="admin-card push-center-stat"><div class="push-center-stat-label">全部推送</div><div class="push-center-stat-value" data-stat="total">-</div></article>
     <article class="admin-card push-center-stat"><div class="push-center-stat-label">待执行</div><div class="push-center-stat-value" data-stat="pending">-</div></article>
     <article class="admin-card push-center-stat"><div class="push-center-stat-label">执行中</div><div class="push-center-stat-value" data-stat="running">-</div></article>
-    <article class="admin-card push-center-stat"><div class="push-center-stat-label">执行成功</div><div class="push-center-stat-value" data-stat="succeeded">-</div></article>
-    <article class="admin-card push-center-stat"><div class="push-center-stat-label">执行失败</div><div class="push-center-stat-value" data-stat="failed">-</div></article>
+    <article class="admin-card push-center-stat"><div class="push-center-stat-label">已发送</div><div class="push-center-stat-value" data-stat="sent">-</div></article>
+    <article class="admin-card push-center-stat"><div class="push-center-stat-label">发送失败</div><div class="push-center-stat-value" data-stat="failed">-</div></article>
   </section>
 
   <section class="push-center-layout">
@@ -36,8 +36,10 @@
             <option value="">全部</option>
             <option value="pending">待执行</option>
             <option value="running">执行中</option>
-            <option value="succeeded">执行成功</option>
-            <option value="failed">执行失败</option>
+            <option value="sent">已发送</option>
+            <option value="failed">发送失败</option>
+            <option value="sent_with_shadow_warning">已发送 · 影子链路异常</option>
+            <option value="shadow_failed_not_business_failed">影子链路失败，未发现主发送记录</option>
           </select>
         </label>
         <label class="push-center-field">客户 external_userid
@@ -133,6 +135,9 @@
 .push-center-badge.pending { color: var(--pc-primary); background: #eff6ff; }
 .push-center-badge.running { color: var(--pc-primary); background: #eff6ff; }
 .push-center-badge.succeeded { color: var(--pc-success); background: #ecfdf5; }
+.push-center-badge.sent { color: var(--pc-success); background: #ecfdf5; }
+.push-center-badge.sent_with_shadow_warning { color: var(--pc-warning); background: #fffbeb; }
+.push-center-badge.shadow_failed_not_business_failed { color: var(--pc-blocked); background: #f5f3ff; }
 .push-center-badge.failed { color: var(--pc-danger); background: #fef2f2; }
 .push-center-detail-empty { padding: 32px 20px; color: var(--pc-muted); text-align: center; }
 .push-center-detail-body { padding: 16px; }
@@ -160,7 +165,10 @@
     pending: "待执行",
     running: "执行中",
     succeeded: "执行成功",
-    failed: "执行失败"
+    sent: "已发送",
+    failed: "发送失败",
+    sent_with_shadow_warning: "已发送 · 影子链路异常",
+    shadow_failed_not_business_failed: "影子链路失败，未发现主发送记录"
   };
   const EFFECT_TYPE_LABELS = {
     "webhook.questionnaire_submission.push": "问卷外推",
@@ -172,6 +180,10 @@
     "wecom.message.private.send": "企微私信",
     "wecom.message.group.send": "企微群消息",
     "wecom.message.broadcast.send": "企微群发",
+    "broadcast_job": "群发队列",
+    "broadcast_job.group_ops": "群运营主发送",
+    "broadcast_job.group": "群发主发送",
+    "broadcast_job.private": "私信主发送",
     "group_ops.message.loopback": "群运营测试消息",
     "group_ops.webhook.action.loopback": "群运营 Webhook 测试",
     "wecom.contact.tag.mark": "企微打标签",
@@ -297,14 +309,14 @@
     }
 
     tbody.innerHTML = items.map(item => `
-      <tr data-job-id="${Number(item.id)}">
+      <tr data-job-id="${escapeHtml(item.projection_id || item.id)}">
         <td>
-          <div class="push-center-mono">#${escapeHtml(item.id)}</div>
+          <div class="push-center-mono">${escapeHtml(item.display_id || item.id)}</div>
           ${ellipsis(labelFor(EFFECT_TYPE_LABELS, item.effect_type), "push-center-strong")}
           ${ellipsis(item.effect_type, "push-center-mono push-center-muted")}
         </td>
         <td><span class="push-center-section-label" title="${escapeHtml(item.section_label || item.section || "-")}">${escapeHtml(item.section_label || item.section || "-")}</span></td>
-        <td>${badge(item.status)}</td>
+        <td>${badge(item.effective_status || item.status)}</td>
         <td>
           ${ellipsis(labelFor(TARGET_TYPE_LABELS, item.target_type), "push-center-strong")}
           ${ellipsis(item.target_id, "push-center-mono push-center-muted")}
@@ -319,7 +331,7 @@
         </td>
         <td>
           ${beijingTimeCell(item.created_at)}
-          <div class="push-center-muted">尝试 ${escapeHtml(item.attempt_count || 0)}</div>
+          <div class="push-center-muted">记录 ${escapeHtml((item.linked_record_counts || {}).broadcast_jobs || 0)} / attempt ${escapeHtml((item.linked_record_counts || {}).external_effect_attempts || item.attempt_count || 0)}</div>
         </td>
       </tr>
     `).join("");
@@ -342,17 +354,24 @@
 
     const job = data.job || {};
     const attempts = data.attempts || [];
+    const linked = data.linked_records || job.linked_records || {};
     const jobEffectLabel = labelFor(EFFECT_TYPE_LABELS, job.effect_type);
     const jobBusinessLabel = labelFor(BUSINESS_TYPE_LABELS, job.business_type);
     const jobTargetLabel = labelFor(TARGET_TYPE_LABELS, job.target_type);
-    document.getElementById("detailStatus").innerHTML = badge(job.status);
+    document.getElementById("detailStatus").innerHTML = badge(job.effective_status || job.status);
+    const externalJobs = linked.external_effect_jobs || [];
+    const broadcastJobs = linked.broadcast_jobs || [];
+    const outboundTasks = linked.outbound_tasks || [];
+    const retryJobId = externalJobs.length ? externalJobs[0].id : null;
     const panel = document.getElementById("detailPanel");
     panel.className = "push-center-detail-body";
     panel.innerHTML = `
       <div class="push-center-section">
         <h3>基础信息</h3>
         <div class="push-center-kv">
-          <div class="push-center-kv-key">任务 ID</div><div class="push-center-mono">#${escapeHtml(job.id)}</div>
+          <div class="push-center-kv-key">任务 ID</div><div class="push-center-mono">${escapeHtml(job.display_id || job.id)}</div>
+          <div class="push-center-kv-key">聚合 ID</div><div class="push-center-mono">${escapeHtml(job.projection_id || job.id)}</div>
+          <div class="push-center-kv-key">有效状态</div><div>${escapeHtml(job.effective_status_label || labelFor(STATUS_LABELS, job.effective_status || job.status))}</div>
           <div class="push-center-kv-key">任务类型</div><div>${escapeHtml(jobEffectLabel)} <span class="push-center-mono push-center-muted">${escapeHtml(job.effect_type)}</span></div>
           <div class="push-center-kv-key">业务对象</div><div>${escapeHtml(jobBusinessLabel)} / <span class="push-center-mono">${escapeHtml(job.business_id)}</span></div>
           <div class="push-center-kv-key">目标</div><div>${escapeHtml(jobTargetLabel)} / <span class="push-center-mono">${escapeHtml(job.target_id)}</span></div>
@@ -385,9 +404,26 @@
           </div>
         `).join("") : `<div class="push-center-muted">暂无 attempt</div>`}
       </div>
+      <div class="push-center-section">
+        <h3>关联记录</h3>
+        <div class="push-center-kv">
+          <div class="push-center-kv-key">external_effect_job</div><div>${escapeHtml(externalJobs.length)}</div>
+          <div class="push-center-kv-key">external_effect_attempt</div><div>${escapeHtml(attempts.length)}</div>
+          <div class="push-center-kv-key">broadcast_jobs</div><div>${escapeHtml(broadcastJobs.length)}</div>
+          <div class="push-center-kv-key">outbound_tasks</div><div>${escapeHtml(outboundTasks.length)}</div>
+        </div>
+        <pre class="push-center-json">${escapeHtml(JSON.stringify({
+          external_effect_jobs: externalJobs,
+          external_effect_attempts: attempts,
+          broadcast_jobs: broadcastJobs,
+          outbound_tasks: outboundTasks
+        }, null, 2))}</pre>
+      </div>
       <div class="push-center-footer-actions">
-        <button class="admin-button admin-button--secondary" type="button" data-action="retry" data-job-id="${Number(job.id)}">重试</button>
-        <button class="admin-button admin-button--danger" type="button" data-action="cancel" data-job-id="${Number(job.id)}">取消</button>
+        ${retryJobId ? `
+          <button class="admin-button admin-button--secondary" type="button" data-action="retry" data-job-id="${Number(retryJobId)}">重试 external-effect</button>
+          <button class="admin-button admin-button--danger" type="button" data-action="cancel" data-job-id="${Number(retryJobId)}">取消 external-effect</button>
+        ` : `<span class="push-center-muted">此聚合记录没有可操作的 external-effect 任务</span>`}
       </div>
     `;
   }

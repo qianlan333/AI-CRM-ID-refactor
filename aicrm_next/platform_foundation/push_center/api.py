@@ -156,7 +156,7 @@ def push_center_jobs(
 
 
 @router.get("/api/admin/push-center/jobs/{job_id}")
-def push_center_job_detail(job_id: int) -> JSONResponse:
+def push_center_job_detail(job_id: str) -> JSONResponse:
     payload = build_job_detail_payload(job_id, repository=PushCenterRepository())
     if not payload:
         return _json({"ok": False, "error": "push_center_job_not_found"}, status_code=404)

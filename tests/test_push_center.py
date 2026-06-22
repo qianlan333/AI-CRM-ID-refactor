@@ -5,6 +5,7 @@ from fastapi.testclient import TestClient
 from aicrm_next.platform_foundation.command_bus import CommandContext
 from aicrm_next.platform_foundation.external_effects import (
     AI_ASSIST_CAMPAIGN_MESSAGE_LOOPBACK,
+    GROUP_OPS_MESSAGE_LOOPBACK,
     WECOM_MESSAGE_GROUP_SEND,
     WECOM_MESSAGE_PRIVATE_SEND,
     WEBHOOK_QUESTIONNAIRE_SUBMISSION_PUSH,
@@ -12,7 +13,10 @@ from aicrm_next.platform_foundation.external_effects import (
     reset_external_effect_fixture_state,
 )
 from aicrm_next.platform_foundation.external_effects.repo import build_external_effect_repository
+from aicrm_next.platform_foundation.push_center.projection import BroadcastJobAdapter, PushCenterProjectionService
+from aicrm_next.platform_foundation.push_center.repository import PushCenterRepository
 from aicrm_next.platform_foundation.push_center.section_mapper import effect_types_for_section, label_for_section, section_for_job
+from aicrm_next.platform_foundation.push_center.view_model import build_job_detail_payload, build_jobs_payload, build_stats_payload
 from tests.group_ops_test_helpers import group_ops_api_client
 
 
@@ -31,6 +35,21 @@ def _install_recording_group_gateway(monkeypatch) -> _RecordingQueueGateway:
     gateway = _RecordingQueueGateway()
     monkeypatch.setattr(wecom_group_adapter, "build_group_ops_queue_gateway", lambda: gateway)
     return gateway
+
+
+class _FakeBroadcastJobAdapter(BroadcastJobAdapter):
+    def __init__(self, rows: list[dict]):
+        self.rows = rows
+
+    def list_jobs(self, filters: dict | None = None, *, limit: int = 1000) -> list[dict]:
+        return list(self.rows[:limit])
+
+    def get_job(self, job_id: int) -> dict | None:
+        return next((row for row in self.rows if int(row["id"]) == int(job_id)), None)
+
+
+def _projection_repo(*, broadcast_rows: list[dict]) -> PushCenterRepository:
+    return PushCenterRepository(service=PushCenterProjectionService(broadcast_adapter=_FakeBroadcastJobAdapter(broadcast_rows)))
 
 
 def _context(trace_id: str = "trace-push-center", source_route: str = "/pytest/push-center") -> CommandContext:
@@ -123,7 +142,121 @@ def test_push_center_jobs_filters_and_payload_redaction(next_client: TestClient)
     assert planned["items"][0]["status"] == "pending"
     assert planned["items"][0]["status_label"] == "待执行"
     assert planned["items"][0]["raw_status"] == "planned"
-    assert {item["key"] for item in planned["status_definitions"]} == {"pending", "running", "succeeded", "failed"}
+    assert {item["key"] for item in planned["status_definitions"]} == {
+        "pending",
+        "running",
+        "sent",
+        "failed",
+        "sent_with_shadow_warning",
+        "shadow_failed_not_business_failed",
+    }
+
+
+def test_push_center_group_ops_shadow_failed_with_sent_broadcast_is_warning_not_failed() -> None:
+    reset_external_effect_fixture_state()
+    job = _plan_job(
+        effect_type=GROUP_OPS_MESSAGE_LOOPBACK,
+        business_type="group_ops_plan",
+        business_id="11",
+        target_type="group_ops_webhook_event",
+        target_id="23",
+        status="failed_terminal",
+        trace_id="group-ops-legacy-bundle:11:23:daily-lesson",
+        idempotency_key="group-ops-legacy-bundle:11:23:daily-lesson",
+        payload_summary={"plan_id": 11, "trigger_event_id": "23", "chat_count": 8, "webhook_key": "正式群运营计划测试-584571"},
+    )
+    repo = build_external_effect_repository()
+    job_obj = repo.get_job(job["id"])
+    assert job_obj is not None
+    repo.record_attempt(
+        job=job_obj,
+        status="failed_terminal",
+        adapter_mode="execute",
+        request_summary={"effect_type": GROUP_OPS_MESSAGE_LOOPBACK, "target_id": "23"},
+        response_summary={"blocked": True, "execution_gate": "group_ops_loopback_requires_test_receiver", "real_external_call_executed": False},
+        error_code="group_ops_loopback_requires_test_receiver",
+        error_message="Webhook adapter execution is blocked by external effect execution gates.",
+    )
+    broadcast_rows = [
+        {
+            "id": 3642,
+            "source_type": "workflow",
+            "source_id": "11:webhook:23",
+            "source_table": "automation_group_ops_plans",
+            "scheduled_for": "2026-06-18T00:57:15Z",
+            "batch_key": "",
+            "business_domain": "",
+            "channel": "wecom_customer_group",
+            "target_kind": "chat_id",
+            "failure_type": "",
+            "status": "sent",
+            "target_count": 0,
+            "target_summary": "8 customer groups",
+            "content_type": "text",
+            "content_summary": "6月18日思考",
+            "attempt_count": 1,
+            "last_error": "",
+            "outbound_task_id": 3925,
+            "sent_count": 8,
+            "failed_count": 0,
+            "trace_id": "group_ops:11:webhook:23:2026-06-18T08:57:15.390408+08:00",
+            "idempotency_key": "group_ops:11:webhook:23:2026-06-18T08:57:15.390408+08:00",
+            "created_by": "group_ops_webhook",
+            "created_at": "2026-06-18T00:57:10Z",
+            "updated_at": "2026-06-18T00:58:04Z",
+            "claimed_at": "2026-06-18T00:58:01Z",
+            "sent_at": "2026-06-18T00:58:04Z",
+            "outbound_task_status": "created",
+            "outbound_task_type": "broadcast_job/group_ops",
+            "outbound_task_wecom_task_id": "msgbNXyCwAAv7rCQ6fHkZwegoawyRNWqQ",
+            "outbound_task_response_payload": '{"result":{"errcode":0,"errmsg":"ok","msgid":"msgbNXyCwAAv7rCQ6fHkZwegoawyRNWqQ"},"ok":true,"side_effect_executed":true,"exact_target_verified":true}',
+            "outbound_task_trace_id": "group_ops:11:webhook:23:2026-06-18T08:57:15.390408+08:00",
+            "outbound_task_created_at": "2026-06-18T00:58:04Z",
+        }
+    ]
+    projection_repo = _projection_repo(broadcast_rows=broadcast_rows)
+
+    body = build_jobs_payload({"section": "group_ops"}, repository=projection_repo)
+    item = body["items"][0]
+    stats = build_stats_payload({"section": "group_ops"}, repository=projection_repo)
+    detail = build_job_detail_payload(item["projection_id"], repository=projection_repo)
+
+    assert item["effective_status"] == "sent_with_shadow_warning"
+    assert item["status"] == "sent_with_shadow_warning"
+    assert item["status_label"] == "已发送 · 影子链路异常"
+    assert stats["counts"]["sent"] == 1
+    assert stats["counts"]["failed"] == 0
+    assert detail is not None
+    assert len(detail["linked_records"]["external_effect_jobs"]) == 1
+    assert len(detail["linked_records"]["external_effect_attempts"]) == 1
+    assert len(detail["linked_records"]["broadcast_jobs"]) == 1
+    assert detail["linked_records"]["outbound_tasks"][0]["response_payload"]["result"]["errcode"] == 0
+
+
+def test_push_center_group_ops_shadow_failed_without_primary_is_not_business_failed() -> None:
+    reset_external_effect_fixture_state()
+    _plan_job(
+        effect_type=GROUP_OPS_MESSAGE_LOOPBACK,
+        business_type="group_ops_plan",
+        business_id="11",
+        target_type="group_ops_webhook_event",
+        target_id="24",
+        status="failed_terminal",
+        trace_id="group-ops-legacy-bundle:11:24:daily-lesson",
+        idempotency_key="group-ops-legacy-bundle:11:24:daily-lesson",
+        payload_summary={"plan_id": 11, "trigger_event_id": "24", "chat_count": 1},
+    )
+    projection_repo = _projection_repo(broadcast_rows=[])
+
+    body = build_jobs_payload({"section": "group_ops"}, repository=projection_repo)
+    failed = build_jobs_payload({"section": "group_ops", "status": "failed"}, repository=projection_repo)
+    stats = build_stats_payload({"section": "group_ops"}, repository=projection_repo)
+
+    assert body["items"][0]["effective_status"] == "shadow_failed_not_business_failed"
+    assert body["items"][0]["status_label"] == "影子链路失败，未发现主发送记录"
+    assert failed["total"] == 0
+    assert stats["counts"]["failed"] == 0
+    assert stats["counts"]["shadow_warning"] == 1
 
 
 def test_push_center_detail_includes_attempts_without_full_payload(next_client: TestClient) -> None:
@@ -146,7 +279,8 @@ def test_push_center_detail_includes_attempts_without_full_payload(next_client: 
     body = response.json()
 
     assert response.status_code == 200
-    assert body["job"]["id"] == job["id"]
+    assert body["job"]["projection_id"] == f"external_effect_job:{job['id']}"
+    assert body["job"]["source_record_id"] == job["id"]
     assert "payload_json" not in body["job"]
     assert body["attempts"][0]["request_summary"]["Authorization"] == "[redacted]"
     assert body["attempts"][0]["response_summary"]["access_token"] == "[redacted]"
