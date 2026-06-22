@@ -117,6 +117,82 @@ def test_external_orders_readiness_reports_internal_token_without_leaking_value(
     assert "/api/external/orders" in item["routes"]
 
 
+def test_ops_plan_e2e_without_plan_id_returns_blocking_reason() -> None:
+    payload = run(scenario="ops_plan_to_broadcast", env={})
+    item = payload["items"][0]
+    evidence = item["e2e_evidence"]
+
+    assert payload["ok"] is True
+    assert item["status"] == "missing_plan_id"
+    assert item["blocking_reasons"] == [{"code": "missing_plan_id", "message": "--plan-id is required to trace an ops plan approval E2E."}]
+    assert evidence["plan_id"] == "not_provided"
+    assert evidence["derived_status"] == "missing_plan_id"
+    assert evidence["pending_reason"] == "plan_id_not_provided"
+    assert item["real_external_call_executed"] is False
+
+
+def test_ops_plan_e2e_pending_approval_and_missing_internal_event_states() -> None:
+    pending = run(scenario="ops_plan_to_broadcast", plan_id="plan_1", approval_status="pending", env={})["items"][0]["e2e_evidence"]
+    missing_event = run(
+        scenario="ops_plan_to_broadcast",
+        plan_id="plan_1",
+        approval_status="approved",
+        approval_event_id="approval_1",
+        env={},
+    )["items"][0]["e2e_evidence"]
+
+    assert pending["derived_status"] == "pending_approval"
+    assert pending["operator_action_required"] is True
+    assert pending["pending_reason"] == "plan_not_approved"
+    assert missing_event["derived_status"] == "missing_internal_event"
+    assert missing_event["approval_event_id"] == "approval_1"
+    assert missing_event["pending_reason"] == "approval_without_internal_event_evidence"
+
+
+def test_ops_plan_e2e_consumer_pending_failed_and_success_evidence() -> None:
+    consumer_pending = run(
+        scenario="ops_plan_to_broadcast",
+        plan_id="plan_1",
+        approval_status="approved",
+        internal_event_id="evt_1",
+        env={},
+    )["items"][0]["e2e_evidence"]
+    failed = run(
+        scenario="ops_plan_to_broadcast",
+        plan_id="plan_1",
+        approval_status="approved",
+        internal_event_id="evt_1",
+        consumer_run_id="run_1",
+        consumer_status="failed_retryable",
+        env={},
+    )["items"][0]["e2e_evidence"]
+    success = run(
+        scenario="ops_plan_to_broadcast",
+        plan_id="plan_1",
+        approval_status="approved",
+        internal_event_id="evt_1",
+        consumer_run_id="run_1",
+        consumer_status="succeeded",
+        broadcast_job_id="broadcast_1",
+        effect_job_id="effect_1",
+        push_center_job_id="push_1",
+        duplicate_handling="reused_idempotency_key",
+        env={},
+    )["items"][0]["e2e_evidence"]
+
+    assert consumer_pending["derived_status"] == "consumer_pending"
+    assert consumer_pending["pending_reason"] == "internal_event_has_no_consumer_run_evidence"
+    assert failed["derived_status"] == "consumer_failed"
+    assert failed["retryable"] is True
+    assert failed["operator_action_required"] is True
+    assert success["evidence_status"] == "E2E_EVIDENCE_ATTACHED"
+    assert success["derived_status"] == "job_linked"
+    assert success["broadcast_job_id"] == "broadcast_1"
+    assert success["external_effect_job_id"] == "effect_1"
+    assert success["push_center_reconciliation_route"] == "/api/admin/push-center/jobs/push_1/reconciliation"
+    assert success["duplicate_handling"] == "reused_idempotency_key"
+
+
 def test_cli_outputs_json_and_blocks_unsafe_execute() -> None:
     result = subprocess.run(
         [sys.executable, str(SCRIPT), "--scenario", "wecom_callback_gray", "--execute"],
@@ -140,3 +216,15 @@ def test_group_ops_evidence_template_forbids_secrets_and_raw_ids() -> None:
     assert "不得提交真实 receiver_token" in template
     assert "不得提交 raw external_userid" in template
     assert "/api/admin/push-center/jobs/{job_id}/reconciliation" in template
+
+
+def test_ops_plan_e2e_evidence_template_forbids_secrets_and_requires_fields() -> None:
+    template = (ROOT / "docs" / "reports" / "ops_plan_to_broadcast_e2e_evidence_template.md").read_text(encoding="utf-8")
+
+    assert "approval_event_id" in template
+    assert "internal_event_id" in template
+    assert "consumer_run_id" in template
+    assert "broadcast_job_id" in template
+    assert "external_effect_job_id" in template
+    assert "不得提交 token" in template
+    assert "不得提交 raw external_userid" in template
