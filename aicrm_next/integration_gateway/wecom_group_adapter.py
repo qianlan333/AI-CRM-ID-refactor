@@ -6,9 +6,6 @@ import os
 from typing import Any, Callable
 
 from aicrm_next.automation_engine.group_ops.domain import normalize_group_admin_userids
-from aicrm_next.platform_foundation.internal_events.legacy_path_markers import mark_legacy_path_invoked
-from aicrm_next.platform_foundation.internal_events.shadow import emit_broadcast_task_created_shadow_event, safe_emit
-from aicrm_next.platform_foundation.legacy_cleanup.service import LegacyWebhookCleanupService
 from aicrm_next.shared.postgres_connection import get_db
 
 from .audit import record_audit_event
@@ -40,28 +37,6 @@ def _safe_payload(payload: dict[str, Any]) -> dict[str, Any]:
 
 def _requested_chat_ids(payload: dict[str, Any]) -> list[str]:
     return [str(item or "").strip() for item in list((payload or {}).get("chat_ids") or []) if str(item or "").strip()]
-
-
-def _record_legacy_runtime_marker(legacy_key: str, *, metadata: dict[str, Any] | None = None) -> None:
-    try:
-        mark_legacy_path_invoked(
-            legacy_path="broadcast_task.legacy_group_ops_queue_gateway",
-            replacement_event_type="broadcast_task.created",
-            replacement_consumer="broadcast_queue_projection_consumer",
-            source_module="integration_gateway.wecom_group_adapter",
-            source_route="NextGroupOpsQueueGateway.enqueue_group_message",
-            aggregate_id=(metadata or {}).get("plan_id") or "",
-            reason="group_ops_queue_gateway_replaced_by_broadcast_task_created",
-        )
-        LegacyWebhookCleanupService().record_runtime_marker(
-            legacy_key,
-            marker="legacy_path_invoked",
-            operator="integration_gateway.wecom_group_adapter",
-            metadata=metadata or {},
-            real_external_call_executed=False,
-        )
-    except Exception:
-        pass
 
 
 class WeComGroupMessageAdapter:
@@ -572,10 +547,6 @@ class WeComGroupChatSyncAdapter(WeComGroupAssetAdapter):
     adapter_name = "WeComGroupChatSyncAdapter"
 
 
-def _json_dumps(value: Any, *, default: Any) -> str:
-    return json.dumps(value if value is not None else default, ensure_ascii=False)
-
-
 def _decode_payload(value: Any) -> dict[str, Any]:
     if isinstance(value, dict):
         return value
@@ -586,109 +557,6 @@ def _decode_payload(value: Any) -> dict[str, Any]:
         except ValueError:
             return {}
     return {}
-
-
-class NextGroupOpsQueueGateway:
-    def __init__(self, *, insert_job_fn: Callable[..., int] | None = None) -> None:
-        self._insert_job_fn = insert_job_fn
-
-    def enqueue_group_message(
-        self,
-        *,
-        plan_id: int,
-        source_id: str,
-        scheduled_at: str | None,
-        owner_userid: str,
-        chat_ids: list[str],
-        content_payload: dict[str, Any],
-        content_summary: str,
-        created_by: str = "group_ops_webhook",
-    ) -> int:
-        cleaned_chat_ids = [str(item or "").strip() for item in chat_ids if str(item or "").strip()]
-        _record_legacy_runtime_marker(
-            "old_group_ops_queue_gateway_send",
-            metadata={"operation": "enqueue_group_message", "plan_id": plan_id, "plan_id_present": bool(plan_id), "chat_count": len(cleaned_chat_ids)},
-        )
-        payload = dict(content_payload or {})
-        payload["channel"] = "wecom_customer_group"
-        payload["chat_ids"] = cleaned_chat_ids
-        payload["sender"] = str(owner_userid or "").strip()
-        source_ref = str(source_id or plan_id)
-        idempotency_key = f"group_ops:{source_id or plan_id}:{scheduled_at or ''}"
-        fields = {
-            "source_type": "workflow",
-            "source_table": "automation_group_ops_plans",
-            "source_id": source_ref,
-            "idempotency_key": idempotency_key,
-            "business_domain": "group_ops",
-            "channel": "wecom_customer_group",
-            "target_kind": "chat_id" if cleaned_chat_ids else "dynamic",
-            "scheduled_for": scheduled_at,
-            "target_external_userids": [],
-            "target_count": 0,
-            "target_summary": f"{len(cleaned_chat_ids)} customer groups",
-            "content_type": "wecom_customer_group",
-            "content_payload": payload,
-            "content_summary": str(content_summary or "")[:500],
-            "created_by": created_by,
-        }
-        if self._insert_job_fn is not None:
-            return int(self._insert_job_fn(**fields) or 0)
-        db = get_db()
-        row = db.execute(
-            """
-            INSERT INTO broadcast_jobs (
-                source_type, source_id, source_table, scheduled_for, priority, batch_key,
-                business_domain, idempotency_key, channel, target_kind, retry_policy_json, metadata_json,
-                status, requires_approval,
-                target_external_userids, target_count, target_summary,
-                content_type, content_payload, content_summary,
-                trace_id, created_by
-            ) VALUES (
-                ?, ?, ?, ?, 100, '',
-                ?, ?, ?, ?, CAST(? AS jsonb), CAST(? AS jsonb),
-                'queued', FALSE,
-                CAST(? AS jsonb), ?, ?,
-                ?, CAST(? AS jsonb), ?,
-                ?, ?
-            )
-            ON CONFLICT (idempotency_key) WHERE idempotency_key IS NOT NULL AND idempotency_key <> '' DO NOTHING
-            RETURNING id
-            """,
-            (
-                fields["source_type"],
-                fields["source_id"],
-                fields["source_table"],
-                fields["scheduled_for"],
-                fields["business_domain"],
-                fields["idempotency_key"],
-                fields["channel"],
-                fields["target_kind"],
-                _json_dumps({}, default={}),
-                _json_dumps({}, default={}),
-                _json_dumps(fields["target_external_userids"], default=[]),
-                fields["target_count"],
-                fields["target_summary"],
-                fields["content_type"],
-                _json_dumps(fields["content_payload"], default={}),
-                fields["content_summary"],
-                fields["idempotency_key"],
-                fields["created_by"],
-            ),
-        ).fetchone()
-        db.commit()
-        job_id = int((row or {}).get("id") or 0)
-        if job_id:
-            safe_emit(
-                "broadcast_task.created",
-                emit_broadcast_task_created_shadow_event,
-                job={**fields, "id": job_id, "trace_id": fields["idempotency_key"], "batch_key": f"group_ops:{plan_id}"},
-                source_module="integration_gateway.wecom_group_adapter",
-                source_route="wecom_group_adapter.enqueue_group_message",
-                operator=created_by,
-                source="group_ops_group_message",
-            )
-        return job_id
 
 
 class NextGroupOpsQueueStatsGateway:
@@ -732,10 +600,6 @@ def build_wecom_group_asset_adapter() -> WeComGroupAssetAdapter:
 
 def build_wecom_group_chat_sync_adapter() -> WeComGroupAssetAdapter:
     return build_wecom_group_asset_adapter()
-
-
-def build_group_ops_queue_gateway() -> NextGroupOpsQueueGateway:
-    return NextGroupOpsQueueGateway()
 
 
 def build_group_ops_queue_stats_gateway() -> NextGroupOpsQueueStatsGateway:

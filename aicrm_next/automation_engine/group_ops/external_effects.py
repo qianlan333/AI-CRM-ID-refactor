@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import os
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any
 from uuid import uuid4
 
@@ -18,6 +18,7 @@ from aicrm_next.platform_foundation.external_effects.test_receiver import (
     canonical_payload_hash,
 )
 from aicrm_next.platform_foundation.external_effects.models import public_datetime, utcnow
+from aicrm_next.shared.errors import ContractError
 
 from .domain import clean_text, mask_sensitive_payload
 
@@ -83,6 +84,19 @@ def _stable_suffix(value: dict[str, Any]) -> str:
     return __import__("hashlib").sha1(raw.encode("utf-8")).hexdigest()[:12]
 
 
+def parse_external_effect_scheduled_at(value: Any) -> datetime | None:
+    text = clean_text(value)
+    if not text:
+        return None
+    try:
+        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise ContractError("scheduled_at must be an ISO datetime") from exc
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=timezone.utc)
+    return parsed
+
+
 def _loopback_payload(
     *,
     base_url: str,
@@ -130,19 +144,16 @@ def plan_group_ops_external_effect(
     test_loopback: bool = False,
     test_receiver_base_url: str = "",
     test_receiver_response_status: int = 200,
+    scheduled_at: Any = None,
 ) -> dict[str, Any] | None:
     mode = clean_text(outbound_mode or group_ops_outbound_mode()).lower()
     if mode == "legacy" and not force_shadow:
         return None
-    if (
-        effect_type == GROUP_OPS_MESSAGE_LOOPBACK
-        and mode == "external_effect"
-        and not force_shadow
-        and not test_loopback
-    ):
+    if not test_loopback and effect_type == GROUP_OPS_MESSAGE_LOOPBACK:
         effect_type = WECOM_MESSAGE_GROUP_SEND
     execution_mode = "execute"
     status = "queued"
+    parsed_scheduled_at = parse_external_effect_scheduled_at(scheduled_at)
 
     chat_ids = [clean_text(item) for item in list(chat_ids or []) if clean_text(item)]
     content_payload = dict(content_payload or {})
@@ -237,6 +248,7 @@ def plan_group_ops_external_effect(
             risk_level="medium",
             execution_mode=execution_mode,
             status=status,
+            scheduled_at=parsed_scheduled_at,
             idempotency_key=key,
         )
     except Exception:
