@@ -97,7 +97,7 @@ def test_full_test_keeps_complete_regression_only():
     assert "tools/generate_legacy_replacement_backlog.py" not in full_test_block
 
 
-def test_pr_and_main_smoke_skip_architecture_guards_and_specialized_tests():
+def test_pr_and_main_smoke_run_static_architecture_gates_without_old_legacy_jobs():
     source = _ci_source()
     smoke_blocks = (
         _job_block(source, "pr-smoke", "main-smoke"),
@@ -105,11 +105,22 @@ def test_pr_and_main_smoke_skip_architecture_guards_and_specialized_tests():
     )
 
     for smoke_block in smoke_blocks:
+        assert "Run architecture gates" in smoke_block
+        assert "bash scripts/ci/run_architecture_gates.sh" in smoke_block
         assert "scripts/check_no_new_legacy.py" not in smoke_block
         assert "scripts/check_no_duplicate_next_source.sh" not in smoke_block
         assert "tools/generate_legacy_replacement_backlog.py" not in smoke_block
         for marker in SPECIALIZED_TEST_MARKERS:
             assert marker not in smoke_block
+
+
+def test_architecture_gate_script_only_runs_delivered_static_checkers():
+    script = (ROOT / "scripts" / "ci" / "run_architecture_gates.sh").read_text(encoding="utf-8")
+
+    assert "tools/check_route_ownership_manifest.py" in script
+    assert "tools/check_architecture_boundaries.py" in script
+    assert "tools/check_external_effects_boundary.py" not in script
+    assert "tools/check_db_access_boundary.py" not in script
 
 
 def test_pr_smoke_excludes_specialized_contract_and_domain_suites():
