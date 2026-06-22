@@ -98,6 +98,18 @@ SCENARIOS: dict[str, dict[str, Any]] = {
         ],
         "success_criteria": "Operator auth readiness is explainable without exposing secrets.",
     },
+    "wecom_auth": {
+        "title": "WeCom auth and callback evidence acceptance",
+        "capability_owner": "auth_wecom",
+        "routes": ["/auth/wecom/start", "/auth/wecom/callback", "/wecom/external-contact/callback", "/api/wecom/events"],
+        "required_env": ["WECOM_CORP_ID", "WECOM_AGENT_ID", "ADMIN_LOGIN_REDIRECT_URI"],
+        "checks": [
+            "auth start readiness is explainable without token exchange",
+            "callback missing code and invalid state remain controlled failures",
+            "callback signature, inbound event, and idempotency evidence can be attached without leaking secrets",
+        ],
+        "success_criteria": "Operator auth and callback evidence is ready for gray validation without exposing WeCom secrets.",
+    },
     "wecom_callback_gray": {
         "title": "WeCom callback gray acceptance",
         "capability_owner": "channel_entry",
@@ -483,6 +495,140 @@ def _external_orders_evidence(
     }
 
 
+def _status_is_verified(value: str, accepted: set[str]) -> bool:
+    return str(value or "").strip().lower() in accepted
+
+
+def _wecom_evidence(
+    *,
+    env: dict[str, str],
+    redirect_uri_expected: str,
+    auth_start_status: str,
+    callback_missing_code_status: str,
+    callback_invalid_state_status: str,
+    operator_identity_evidence: str,
+    callback_signature_status: str,
+    callback_event_id: str,
+    inbound_event_id: str,
+    idempotency_key: str,
+    duplicate_callback_handling: str,
+    permission_scope_evidence: str,
+    customer_event_visibility: str,
+    group_ops_permission_evidence: str,
+    material_permission_evidence: str,
+) -> dict[str, Any]:
+    corp_id_configured = _present(env, "WECOM_CORP_ID")
+    agent_id_configured = _present(env, "WECOM_AGENT_ID")
+    redirect_uri_configured = _present(env, "ADMIN_LOGIN_REDIRECT_URI")
+    callback_secret_configured = _present(env, "WECOM_CONTACT_SECRET")
+    auth_status = str(auth_start_status or "").strip() or "expected_302_not_executed"
+    missing_code_status = str(callback_missing_code_status or "").strip() or "controlled_400_expected"
+    invalid_state_status = str(callback_invalid_state_status or "").strip() or "controlled_400_expected"
+    signature_status = str(callback_signature_status or "").strip().lower() or "not_provided"
+    duplicate_status = str(duplicate_callback_handling or "").strip() or "not_collected"
+    blocking_reasons: list[dict[str, str]] = []
+
+    if not corp_id_configured:
+        blocking_reasons.append({"code": "missing_corp_id", "message": "WECOM_CORP_ID must be configured outside git before operator auth readiness."})
+    if not agent_id_configured:
+        blocking_reasons.append({"code": "missing_agent_id", "message": "WECOM_AGENT_ID must be configured outside git before operator auth readiness."})
+    if not redirect_uri_configured:
+        blocking_reasons.append({"code": "missing_redirect_uri", "message": "ADMIN_LOGIN_REDIRECT_URI must be configured outside git before auth start readiness."})
+    if not _status_is_verified(auth_status, {"verified_302", "observed_302", "expected_302"}):
+        blocking_reasons.append({"code": "auth_start_not_verified", "message": "Attach auth start 302 readiness evidence; the diagnostic does not start a real OAuth exchange."})
+    if not str(operator_identity_evidence or "").strip():
+        blocking_reasons.append({"code": "missing_operator_identity", "message": "Attach redacted operator identity evidence after approved operator auth."})
+
+    signature_invalid = signature_status in {"invalid", "failed", "bad_signature"}
+    if signature_status == "not_provided":
+        blocking_reasons.append({"code": "missing_callback_signature_evidence", "message": "Attach callback signature verification evidence before claiming callback readiness."})
+    elif signature_invalid:
+        blocking_reasons.append({"code": "invalid_callback_signature", "message": "Invalid callback signature evidence must not enqueue work."})
+    if not str(callback_event_id or "").strip():
+        blocking_reasons.append({"code": "missing_callback_event", "message": "Attach redacted callback event id evidence."})
+    if not str(inbound_event_id or "").strip():
+        blocking_reasons.append({"code": "missing_inbound_event", "message": "Attach inbound/internal event id evidence for the callback."})
+    if not str(idempotency_key or "").strip():
+        blocking_reasons.append({"code": "missing_idempotency_evidence", "message": "Attach idempotency key or duplicate callback evidence."})
+    permission_complete = all(
+        str(value or "").strip()
+        for value in [permission_scope_evidence, customer_event_visibility, group_ops_permission_evidence, material_permission_evidence]
+    )
+    if not permission_complete:
+        blocking_reasons.append({"code": "missing_permission_scope", "message": "Attach customer, group ops, material, and operator permission scope evidence."})
+
+    auth_ready = bool(
+        corp_id_configured
+        and agent_id_configured
+        and redirect_uri_configured
+        and _status_is_verified(auth_status, {"verified_302", "observed_302", "expected_302"})
+        and str(operator_identity_evidence or "").strip()
+        and permission_complete
+        and not signature_invalid
+    )
+    callback_ready = bool(
+        auth_ready
+        and signature_status in {"valid", "verified", "passed"}
+        and str(callback_event_id or "").strip()
+        and str(inbound_event_id or "").strip()
+        and str(idempotency_key or "").strip()
+    )
+
+    if callback_ready:
+        derived_status = "callback_linked"
+        blocking_reasons = [{"code": "callback_linked", "message": "Operator auth, signature, callback event, inbound event, idempotency, and permission evidence are attached."}]
+    elif auth_ready:
+        derived_status = "operator_auth_ready"
+        blocking_reasons = [{"code": "operator_auth_ready", "message": "Operator auth readiness and permission evidence are attached; callback linkage still needs gray evidence."}]
+    else:
+        derived_status = "readiness_only"
+
+    return {
+        "evidence_status": "CALLBACK_LINKED_EVIDENCE_ATTACHED" if derived_status == "callback_linked" else (
+            "OPERATOR_AUTH_READY_EVIDENCE_ATTACHED" if derived_status == "operator_auth_ready" else "READINESS_ONLY"
+        ),
+        "corp_id_configured": corp_id_configured,
+        "agent_id_configured": agent_id_configured,
+        "redirect_uri_configured": redirect_uri_configured,
+        "redirect_uri_expected": str(redirect_uri_expected or "").strip() or env.get("ADMIN_LOGIN_REDIRECT_URI", "") or "not_provided",
+        "auth_start_status": auth_status,
+        "callback_missing_code_status": missing_code_status,
+        "callback_invalid_state_status": invalid_state_status,
+        "operator_identity_evidence": _value_or_not_provided(operator_identity_evidence),
+        "token_redacted": True,
+        "token_never_logged": True,
+        "callback_secret_configured": callback_secret_configured,
+        "callback_signature_status": signature_status,
+        "callback_event_id": _value_or_not_provided(callback_event_id),
+        "inbound_event_id": _value_or_not_provided(inbound_event_id),
+        "idempotency_key": _value_or_not_provided(idempotency_key),
+        "duplicate_callback_handling": duplicate_status,
+        "permission_scope_evidence": _value_or_not_provided(permission_scope_evidence),
+        "customer_event_visibility": _value_or_not_provided(customer_event_visibility),
+        "group_ops_permission_evidence": _value_or_not_provided(group_ops_permission_evidence),
+        "material_permission_evidence": _value_or_not_provided(material_permission_evidence),
+        "derived_status": derived_status,
+        "retryable": False,
+        "operator_action_required": derived_status not in {"callback_linked", "operator_auth_ready"},
+        "business_explanation": (
+            "WeCom callback evidence is linked and ready for operator review without exposing tokens, secrets, or raw external user ids."
+            if derived_status == "callback_linked"
+            else (
+                "WeCom operator auth readiness is attached; collect callback signature, event, inbound event, and idempotency evidence next."
+                if derived_status == "operator_auth_ready"
+                else "WeCom auth/callback acceptance remains readiness-only until config, auth start, operator identity, signature, callback, idempotency, and permission evidence are attached."
+            )
+        ),
+        "next_action_label": "Attach final callback evidence report" if derived_status == "callback_linked" else (
+            "Collect callback gray evidence" if derived_status == "operator_auth_ready" else "Resolve WeCom blocking reasons"
+        ),
+        "real_external_call_executed": False,
+        "production_write_executed": False,
+        "callback_enqueue_allowed": derived_status == "callback_linked",
+        "blocking_reasons": blocking_reasons,
+    }
+
+
 def _scenario_payload(
     name: str,
     *,
@@ -509,6 +655,18 @@ def _scenario_payload(
     approval_status: str = "",
     consumer_status: str = "",
     duplicate_handling: str = "",
+    redirect_uri_expected: str = "",
+    auth_start_status: str = "",
+    callback_missing_code_status: str = "",
+    callback_invalid_state_status: str = "",
+    operator_identity_evidence: str = "",
+    callback_signature_status: str = "",
+    callback_event_id: str = "",
+    duplicate_callback_handling: str = "",
+    permission_scope_evidence: str = "",
+    customer_event_visibility: str = "",
+    group_ops_permission_evidence: str = "",
+    material_permission_evidence: str = "",
     env: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     env = dict(env or os.environ)
@@ -566,6 +724,18 @@ def _scenario_payload(
             "approval_status": approval_status,
             "consumer_status": consumer_status,
             "duplicate_handling": duplicate_handling,
+            "redirect_uri_expected": redirect_uri_expected,
+            "auth_start_status": auth_start_status,
+            "callback_missing_code_status": callback_missing_code_status,
+            "callback_invalid_state_status": callback_invalid_state_status,
+            "operator_identity_evidence": operator_identity_evidence,
+            "callback_signature_status": callback_signature_status,
+            "callback_event_id": callback_event_id,
+            "duplicate_callback_handling": duplicate_callback_handling,
+            "permission_scope_evidence": permission_scope_evidence,
+            "customer_event_visibility": customer_event_visibility,
+            "group_ops_permission_evidence": group_ops_permission_evidence,
+            "material_permission_evidence": material_permission_evidence,
         },
         "redaction_policy": {
             "receiver_token": "redacted",
@@ -619,6 +789,28 @@ def _scenario_payload(
         payload["external_orders_evidence"] = evidence
         payload["blocking_reasons"] = list(evidence["blocking_reasons"])
         payload["status"] = evidence["derived_status"]
+    if name in {"wecom_auth", "wecom_auth_operator", "wecom_callback_gray"}:
+        evidence = _wecom_evidence(
+            env=env,
+            redirect_uri_expected=redirect_uri_expected,
+            auth_start_status=auth_start_status,
+            callback_missing_code_status=callback_missing_code_status,
+            callback_invalid_state_status=callback_invalid_state_status,
+            operator_identity_evidence=operator_identity_evidence,
+            callback_signature_status=callback_signature_status,
+            callback_event_id=callback_event_id,
+            inbound_event_id=internal_event_id or event_id,
+            idempotency_key=idempotency_key,
+            duplicate_callback_handling=duplicate_callback_handling or duplicate_handling,
+            permission_scope_evidence=permission_scope_evidence,
+            customer_event_visibility=customer_event_visibility,
+            group_ops_permission_evidence=group_ops_permission_evidence,
+            material_permission_evidence=material_permission_evidence,
+        )
+        payload["wecom_evidence"] = evidence
+        if not unsafe_execute_requested:
+            payload["blocking_reasons"] = list(evidence["blocking_reasons"])
+            payload["status"] = evidence["derived_status"]
     return payload
 
 
@@ -658,6 +850,18 @@ def run(
     approval_status: str = "",
     consumer_status: str = "",
     duplicate_handling: str = "",
+    redirect_uri_expected: str = "",
+    auth_start_status: str = "",
+    callback_missing_code_status: str = "",
+    callback_invalid_state_status: str = "",
+    operator_identity_evidence: str = "",
+    callback_signature_status: str = "",
+    callback_event_id: str = "",
+    duplicate_callback_handling: str = "",
+    permission_scope_evidence: str = "",
+    customer_event_visibility: str = "",
+    group_ops_permission_evidence: str = "",
+    material_permission_evidence: str = "",
     env: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     names = list(SCENARIOS) if scenario == "all" else [scenario]
@@ -687,6 +891,18 @@ def run(
             approval_status=approval_status,
             consumer_status=consumer_status,
             duplicate_handling=duplicate_handling,
+            redirect_uri_expected=redirect_uri_expected,
+            auth_start_status=auth_start_status,
+            callback_missing_code_status=callback_missing_code_status,
+            callback_invalid_state_status=callback_invalid_state_status,
+            operator_identity_evidence=operator_identity_evidence,
+            callback_signature_status=callback_signature_status,
+            callback_event_id=callback_event_id,
+            duplicate_callback_handling=duplicate_callback_handling,
+            permission_scope_evidence=permission_scope_evidence,
+            customer_event_visibility=customer_event_visibility,
+            group_ops_permission_evidence=group_ops_permission_evidence,
+            material_permission_evidence=material_permission_evidence,
             env=env,
         )
         for name in names
@@ -727,6 +943,18 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--approval-status", default="")
     parser.add_argument("--consumer-status", default="")
     parser.add_argument("--duplicate-handling", default="")
+    parser.add_argument("--redirect-uri-expected", default="")
+    parser.add_argument("--auth-start-status", default="")
+    parser.add_argument("--callback-missing-code-status", default="")
+    parser.add_argument("--callback-invalid-state-status", default="")
+    parser.add_argument("--operator-identity-evidence", default="")
+    parser.add_argument("--callback-signature-status", default="")
+    parser.add_argument("--callback-event-id", default="")
+    parser.add_argument("--duplicate-callback-handling", default="")
+    parser.add_argument("--permission-scope-evidence", default="")
+    parser.add_argument("--customer-event-visibility", default="")
+    parser.add_argument("--group-ops-permission-evidence", default="")
+    parser.add_argument("--material-permission-evidence", default="")
     return parser.parse_args(argv)
 
 
@@ -757,6 +985,18 @@ def main(argv: list[str] | None = None) -> int:
         approval_status=args.approval_status,
         consumer_status=args.consumer_status,
         duplicate_handling=args.duplicate_handling,
+        redirect_uri_expected=args.redirect_uri_expected,
+        auth_start_status=args.auth_start_status,
+        callback_missing_code_status=args.callback_missing_code_status,
+        callback_invalid_state_status=args.callback_invalid_state_status,
+        operator_identity_evidence=args.operator_identity_evidence,
+        callback_signature_status=args.callback_signature_status,
+        callback_event_id=args.callback_event_id,
+        duplicate_callback_handling=args.duplicate_callback_handling,
+        permission_scope_evidence=args.permission_scope_evidence,
+        customer_event_visibility=args.customer_event_visibility,
+        group_ops_permission_evidence=args.group_ops_permission_evidence,
+        material_permission_evidence=args.material_permission_evidence,
     )
     print_json(payload)
     return 0 if payload.get("ok") else 2
