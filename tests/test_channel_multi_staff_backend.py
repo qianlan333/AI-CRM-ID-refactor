@@ -289,7 +289,13 @@ def test_channel_status_only_patch_supports_list_page_lifecycle(monkeypatch):
     assert channel["assignment_strategy"] == "ratio"
     assert len(channel["assignees"]) == 2
     listed = client.get("/api/admin/channels").json()["channels"]
-    assert any(item["id"] == channel_id and item["status"] == "archived" for item in listed)
+    assert all(item["id"] != channel_id for item in listed)
+
+    archived_listed = client.get("/api/admin/channels?status=archived").json()["channels"]
+    assert any(item["id"] == channel_id and item["status"] == "archived" for item in archived_listed)
+
+    include_archived = client.get("/api/admin/channels?include_archived=true").json()["channels"]
+    assert any(item["id"] == channel_id and item["status"] == "archived" for item in include_archived)
 
     invalid = client.patch(f"/api/admin/channels/{channel_id}", json={"status": "deleted"})
     assert invalid.status_code == 400
