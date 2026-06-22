@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from fastapi.testclient import TestClient
 
 from aicrm_next.commerce.repo import reset_commerce_fixture_state
-from aicrm_next.commerce.wechat_shop_client import WeChatShopClient, WeChatShopClientError
+from aicrm_next.commerce.wechat_shop_client import WeChatShopClient, WeChatShopClientConfig, WeChatShopClientError
 from aicrm_next.commerce.wechat_shop_service import (
     fixture_wechat_shop_order,
     fixture_wechat_shop_refunds,
@@ -78,6 +80,39 @@ def _mock_order(
         }
 
     monkeypatch.setattr(WeChatShopClient, "get_order", fake_get_order)
+
+
+def test_commerce_wechat_shop_client_facade_has_no_direct_http_call() -> None:
+    source = Path("aicrm_next/commerce/wechat_shop_client.py").read_text(encoding="utf-8")
+
+    assert "requests.post" not in source
+    assert "import requests" not in source
+
+
+def test_wechat_shop_client_uses_injected_http_post_without_real_http() -> None:
+    calls: list[dict] = []
+
+    class FakeResponse:
+        status_code = 200
+        text = '{"errcode":0,"order":{"order_id":"shop-order-001"}}'
+
+        def json(self):
+            return {"errcode": 0, "order": {"order_id": "shop-order-001"}}
+
+    def fake_post(url, *, json, headers, timeout):
+        calls.append({"url": url, "json": json, "headers": headers, "timeout": timeout})
+        return FakeResponse()
+
+    client = WeChatShopClient(
+        WeChatShopClientConfig(appid="wx-shop", appsecret="secret", api_base="https://api.weixin.qq.com"),
+        http_post=fake_post,
+    )
+
+    result = client.get_order("shop-order-001", "access-token")
+
+    assert result["order"]["order_id"] == "shop-order-001"
+    assert calls[0]["url"].endswith("/channels/ec/order/get?access_token=access-token")
+    assert calls[0]["json"] == {"order_id": "shop-order-001"}
 
 
 def test_wechat_shop_provider_is_accepted_by_unified_orders(monkeypatch) -> None:

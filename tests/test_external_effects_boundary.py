@@ -227,3 +227,14 @@ def test_external_effects_registry_no_longer_allowlists_commerce_wechat_pay_clie
     assert pay_effect["boundary"] == "integration_gateway"
     assert pay_effect["adapter_module"] == "aicrm_next/integration_gateway/wechat_pay_client.py"
     assert pay_effect["migration_target"] == "aicrm_next/integration_gateway/wechat_pay_client.py"
+
+
+def test_external_effects_registry_no_longer_has_temporary_allowlist() -> None:
+    config = load_config(Path("docs/architecture/external_effects_registry.yml"))
+
+    shop_effect = next(effect for effect in config["effects"] if effect["effect_key"] == "wechat_shop.commerce.order_read")
+
+    assert config["temporary_allowlist"] == []
+    assert shop_effect["boundary"] == "integration_gateway"
+    assert shop_effect["adapter_module"] == "aicrm_next/integration_gateway/wechat_shop_client.py"
+    assert shop_effect["migration_target"] == "aicrm_next/integration_gateway/wechat_shop_client.py"

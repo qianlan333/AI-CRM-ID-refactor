@@ -7,10 +7,14 @@ import re
 import secrets
 from typing import Any
 
+from aicrm_next.integration_gateway.wechat_shop_client import (
+    WeChatShopClient,
+    WeChatShopClientConfig,
+    WeChatShopClientError,
+)
 from aicrm_next.shared.runtime import database_mode, raw_database_url
 
 from .product_code_aliases import canonical_product_code, canonical_product_name
-from .wechat_shop_client import WeChatShopClient, WeChatShopClientConfig, WeChatShopClientError
 from .wechat_shop_signature import callback_token, should_skip_signature_without_token, verify_signature
 
 PROVIDER = "wechat_shop"
