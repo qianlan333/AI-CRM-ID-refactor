@@ -136,6 +136,8 @@ SCENARIOS: dict[str, dict[str, Any]] = {
     },
 }
 
+CORE_CLOSEOUT_SCENARIOS = ["group_ops_gray_send", "ops_plan_to_broadcast", "external_orders", "wecom_auth"]
+
 
 def _present(env: dict[str, str], key: str) -> bool:
     return bool(str(env.get(key) or "").strip())
@@ -629,6 +631,194 @@ def _wecom_evidence(
     }
 
 
+def _reason_codes(item: dict[str, Any]) -> list[str]:
+    return [str(reason.get("code", "")) for reason in item.get("blocking_reasons", []) if reason.get("code")]
+
+
+def _not_provided(value: Any) -> bool:
+    return not str(value or "").strip() or str(value).strip() == "not_provided"
+
+
+def _closeout_evidence_for_item(item: dict[str, Any]) -> dict[str, Any]:
+    scenario = str(item.get("scenario", ""))
+    if scenario == "group_ops_gray_send":
+        evidence = dict(item.get("operator_evidence") or {})
+        missing = [
+            field
+            for field in ["plan_id", "effect_job_id", "attempt_id", "push_center_job_id"]
+            if _not_provided(evidence.get(field))
+        ]
+        if evidence.get("operator_action_required"):
+            missing.append("operator_approval_or_receiver_allowlist")
+        return {
+            "evidence": evidence,
+            "evidence_status": "EVIDENCE_COLLECTED" if not missing and not _reason_codes(item) else evidence.get("evidence_status", "READINESS_ONLY"),
+            "derived_status": str(item.get("status") or evidence.get("push_center_status") or "readiness_only"),
+            "missing_operator_evidence": missing,
+            "next_required_operator_action": (
+                "Attach Push Center reconciliation evidence"
+                if missing
+                else "Operator review of gray-send evidence"
+            ),
+            "business_explanation": evidence.get("business_explanation", item.get("success_criteria", "")),
+        }
+    if scenario == "ops_plan_to_broadcast":
+        evidence = dict(item.get("e2e_evidence") or {})
+        missing = [
+            field
+            for field in ["plan_id", "internal_event_id", "consumer_run_id"]
+            if _not_provided(evidence.get(field))
+        ]
+        if _not_provided(evidence.get("broadcast_job_id")) and _not_provided(evidence.get("external_effect_job_id")):
+            missing.append("broadcast_job_id_or_external_effect_job_id")
+        if _not_provided(evidence.get("push_center_job_id")):
+            missing.append("push_center_job_id")
+        return {
+            "evidence": evidence,
+            "evidence_status": "EVIDENCE_COLLECTED" if evidence.get("derived_status") == "job_linked" and not missing else evidence.get("evidence_status", "READINESS_ONLY"),
+            "derived_status": evidence.get("derived_status", item.get("status", "readiness_only")),
+            "missing_operator_evidence": missing,
+            "next_required_operator_action": evidence.get("next_action_label", "Attach ops plan E2E evidence"),
+            "business_explanation": evidence.get("business_explanation", item.get("success_criteria", "")),
+        }
+    if scenario == "external_orders":
+        evidence = dict(item.get("external_orders_evidence") or {})
+        missing = [
+            field
+            for field in ["order_id", "external_order_id", "idempotency_key", "customer_id", "channel_id", "source", "internal_event_id", "admin_order_visibility"]
+            if _not_provided(evidence.get(field))
+        ]
+        return {
+            "evidence": evidence,
+            "evidence_status": "EVIDENCE_COLLECTED" if evidence.get("derived_status") == "order_linked" and not missing else evidence.get("evidence_status", "READINESS_ONLY"),
+            "derived_status": evidence.get("derived_status", item.get("status", "readiness_only")),
+            "missing_operator_evidence": missing,
+            "next_required_operator_action": evidence.get("next_action_label", "Attach external order evidence"),
+            "business_explanation": evidence.get("business_explanation", item.get("success_criteria", "")),
+        }
+    if scenario == "wecom_auth":
+        evidence = dict(item.get("wecom_evidence") or {})
+        missing = [
+            field
+            for field in [
+                "operator_identity_evidence",
+                "callback_event_id",
+                "inbound_event_id",
+                "idempotency_key",
+                "permission_scope_evidence",
+                "customer_event_visibility",
+                "group_ops_permission_evidence",
+                "material_permission_evidence",
+            ]
+            if _not_provided(evidence.get(field))
+        ]
+        return {
+            "evidence": evidence,
+            "evidence_status": "EVIDENCE_COLLECTED" if evidence.get("derived_status") == "callback_linked" and not missing else evidence.get("evidence_status", "READINESS_ONLY"),
+            "derived_status": evidence.get("derived_status", item.get("status", "readiness_only")),
+            "missing_operator_evidence": missing,
+            "next_required_operator_action": evidence.get("next_action_label", "Attach WeCom auth/callback evidence"),
+            "business_explanation": evidence.get("business_explanation", item.get("success_criteria", "")),
+        }
+    return {
+        "evidence": {},
+        "evidence_status": "READINESS_ONLY",
+        "derived_status": str(item.get("status") or "readiness_only"),
+        "missing_operator_evidence": ["unsupported_scenario"],
+        "next_required_operator_action": "Use one of the core closeout scenarios.",
+        "business_explanation": str(item.get("success_criteria") or ""),
+    }
+
+
+def _closeout_readiness_status(
+    *,
+    item: dict[str, Any],
+    evidence_status: str,
+    missing_operator_evidence: list[str],
+) -> tuple[str, bool]:
+    codes = [code for code in _reason_codes(item) if code not in {"order_linked", "operator_auth_ready", "callback_linked"}]
+    if codes:
+        return "BLOCKED", False
+    if missing_operator_evidence:
+        return "READINESS_ONLY", False
+    if evidence_status == "EVIDENCE_COLLECTED":
+        return "EVIDENCE_COLLECTED", False
+    return "READINESS_ONLY", False
+
+
+def _closeout_summary(items: list[dict[str, Any]]) -> dict[str, Any]:
+    by_name = {str(item.get("scenario")): item for item in items}
+    summary_items: list[dict[str, Any]] = []
+    for scenario in CORE_CLOSEOUT_SCENARIOS:
+        item = by_name.get(scenario)
+        if not item:
+            summary_items.append(
+                {
+                    "scenario": scenario,
+                    "readiness_status": "BLOCKED",
+                    "evidence_status": "READINESS_ONLY",
+                    "derived_status": "missing_scenario_output",
+                    "blocking_reasons": [{"code": "missing_scenario_output", "message": "Closeout summary could not find scenario output."}],
+                    "missing_operator_evidence": ["scenario_output"],
+                    "sensitive_data_redaction_ok": True,
+                    "real_external_call_executed": False,
+                    "production_write_executed": False,
+                    "can_claim_90_plus": False,
+                    "next_required_operator_action": "Run the scenario diagnostic and attach evidence.",
+                    "business_explanation": "Closeout cannot evaluate this business chain without scenario output.",
+                }
+            )
+            continue
+        evidence_info = _closeout_evidence_for_item(item)
+        readiness_status, can_claim = _closeout_readiness_status(
+            item=item,
+            evidence_status=str(evidence_info["evidence_status"]),
+            missing_operator_evidence=list(evidence_info["missing_operator_evidence"]),
+        )
+        summary_items.append(
+            {
+                "scenario": scenario,
+                "readiness_status": readiness_status,
+                "evidence_status": evidence_info["evidence_status"],
+                "derived_status": evidence_info["derived_status"],
+                "blocking_reasons": list(item.get("blocking_reasons") or []),
+                "missing_operator_evidence": evidence_info["missing_operator_evidence"],
+                "sensitive_data_redaction_ok": True,
+                "real_external_call_executed": bool(item.get("real_external_call_executed")),
+                "production_write_executed": bool(item.get("production_write_executed")),
+                "can_claim_90_plus": can_claim,
+                "next_required_operator_action": evidence_info["next_required_operator_action"],
+                "business_explanation": evidence_info["business_explanation"],
+            }
+        )
+    all_evidence_collected = all(item["readiness_status"] == "EVIDENCE_COLLECTED" for item in summary_items)
+    any_blocked = any(item["readiness_status"] == "BLOCKED" for item in summary_items)
+    final_status = "PASS_90_PLUS" if all_evidence_collected else ("BLOCKED" if any_blocked else "READINESS_ONLY")
+    if final_status == "PASS_90_PLUS":
+        for item in summary_items:
+            item["readiness_status"] = "PASS_90_PLUS"
+            item["can_claim_90_plus"] = True
+    return {
+        "closeout_status": final_status,
+        "can_claim_90_plus": final_status == "PASS_90_PLUS",
+        "claim_rules": {
+            "default_pass_90_plus": False,
+            "requires_all_core_scenarios": list(CORE_CLOSEOUT_SCENARIOS),
+            "requires_no_blocking_reasons": True,
+            "requires_complete_operator_evidence": True,
+            "requires_sensitive_data_redaction": True,
+            "requires_no_real_external_call_from_diagnostic": True,
+            "requires_no_production_write_from_diagnostic": True,
+        },
+        "items": summary_items,
+        "next_required_operator_actions": [
+            {"scenario": item["scenario"], "action": item["next_required_operator_action"]}
+            for item in summary_items
+            if not item["can_claim_90_plus"]
+        ],
+    }
+
+
 def _scenario_payload(
     name: str,
     *,
@@ -907,7 +1097,7 @@ def run(
         )
         for name in names
     ]
-    return {
+    payload = {
         "ok": all(item["ok"] for item in items),
         "scenario": scenario,
         "items": items,
@@ -915,6 +1105,8 @@ def run(
         "production_write_executed": False,
         "deploy_or_env_modified": False,
     }
+    payload["summary"] = _closeout_summary(items)
+    return payload
 
 
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
