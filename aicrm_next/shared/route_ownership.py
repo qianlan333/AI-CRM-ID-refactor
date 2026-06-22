@@ -5,7 +5,6 @@ from pathlib import Path
 from typing import Any, Iterable
 
 import yaml
-from fastapi.routing import APIRoute
 from starlette.routing import Mount
 
 
@@ -26,6 +25,7 @@ ALLOWED_RUNTIME_OWNERS = {"ai_crm_next", "blocked", "retired"}
 ALLOWED_EXTERNAL_EFFECTS = {"none", "fake_only", "staging_disabled", "real_requires_approval"}
 ALLOWED_LAYERS = {"api", "admin_page", "h5", "webhook", "static", "integration"}
 ALLOWED_DATA_SOURCES = {"read_model", "command", "external_adapter", "static"}
+FASTAPI_BUILTIN_ROUTE_PATHS = {"/openapi.json", "/docs", "/docs/oauth2-redirect", "/redoc"}
 
 
 @dataclass(frozen=True)
@@ -44,16 +44,25 @@ class RouteInventoryItem:
 
 
 def route_key(path: str, methods: Iterable[str], route_name: str) -> str:
-    method_part = ",".join(sorted(methods))
+    method_part = ",".join(normalize_methods(methods))
     return f"{method_part} {path} {route_name}"
+
+
+def normalize_methods(methods: Iterable[str]) -> tuple[str, ...]:
+    normalized = {str(method).upper() for method in methods if str(method).strip()}
+    if "GET" in normalized:
+        normalized.discard("HEAD")
+    if len(normalized) > 1:
+        normalized.discard("OPTIONS")
+    return tuple(sorted(normalized))
 
 
 def collect_route_inventory(app: Any, *, include_static: bool = False) -> list[RouteInventoryItem]:
     items: list[RouteInventoryItem] = []
-    for order, route in enumerate(app.routes):
-        if isinstance(route, APIRoute):
-            path = getattr(route, "path", "")
-            methods = tuple(sorted(getattr(route, "methods", set()) or ()))
+    for order, (route, prefix) in enumerate(_iter_route_entries(getattr(app, "routes", ()))):
+        path = _route_path(route, prefix)
+        if _is_http_route(route, path):
+            methods = normalize_methods(getattr(route, "methods", set()) or ())
             route_name = getattr(route, "name", "") or _route_endpoint_name(route)
             module = getattr(getattr(route, "endpoint", None), "__module__", "")
             items.append(
@@ -67,7 +76,6 @@ def collect_route_inventory(app: Any, *, include_static: bool = False) -> list[R
                 )
             )
         elif include_static and isinstance(route, Mount):
-            path = getattr(route, "path", "")
             route_name = getattr(route, "name", "") or path.strip("/") or "static"
             items.append(
                 RouteInventoryItem(
@@ -115,26 +123,28 @@ def validate_route_manifest(
     seen: set[str] = set()
     for index, entry in enumerate(manifest, start=1):
         errors.extend(_validate_manifest_entry(entry, index))
-        key = route_key(str(entry.get("path", "")), entry.get("methods") or (), str(entry.get("route_name", "")))
-        if key in seen:
-            errors.append(_format_error(index, key, "duplicate_entry", "Remove the duplicate manifest entry."))
-        seen.add(key)
-        if key not in expected:
+        display_key = route_key(str(entry.get("path", "")), entry.get("methods") or (), str(entry.get("route_name", "")))
+        if display_key in seen:
+            errors.append(_format_error(index, display_key, "duplicate_entry", "Remove the duplicate manifest entry."))
+        seen.add(display_key)
+        expected_route = expected.get(display_key)
+        if expected_route is None:
             errors.append(
                 _format_error(
                     index,
-                    key,
+                    display_key,
                     "unknown_route",
                     "Regenerate the manifest from the current FastAPI route inventory or remove this stale entry.",
                 )
             )
+            continue
 
     for key, route in expected.items():
         if key not in seen:
             errors.append(
                 _format_error(
                     None,
-                    key,
+                    route.key,
                     "missing_route_owner",
                     f"Add {route.path} ({','.join(route.methods) or '-'}) with capability_owner={route.capability_owner}.",
                 )
@@ -178,7 +188,7 @@ def infer_requires_auth(path: str) -> bool:
 def infer_data_source(path: str, methods: Iterable[str]) -> str:
     if path.startswith("/static"):
         return "static"
-    method_set = set(methods)
+    method_set = set(normalize_methods(methods))
     if method_set and method_set <= {"GET", "HEAD", "OPTIONS"}:
         return "read_model"
     if any(marker in path.lower() for marker in ("oauth", "wecom", "payment", "mcp", "external-effect")):
@@ -193,7 +203,38 @@ def infer_external_effects(path: str) -> str:
     return "none"
 
 
-def _route_endpoint_name(route: APIRoute) -> str:
+def _iter_route_entries(routes: Iterable[Any], prefix: str = "") -> Iterable[tuple[Any, str]]:
+    for route in routes:
+        context = getattr(route, "include_context", None)
+        included_router = getattr(route, "original_router", None) or getattr(context, "included_router", None)
+        if included_router is not None and hasattr(included_router, "routes"):
+            yield from _iter_route_entries(getattr(included_router, "routes", ()), _join_paths(prefix, getattr(context, "prefix", "")))
+            continue
+        if not isinstance(route, Mount) and not hasattr(route, "methods") and hasattr(route, "routes"):
+            yield from _iter_route_entries(getattr(route, "routes", ()), prefix)
+            continue
+        yield route, prefix
+
+
+def _route_path(route: Any, prefix: str) -> str:
+    return _join_paths(prefix, getattr(route, "path", ""))
+
+
+def _join_paths(prefix: str, path: str) -> str:
+    if not prefix:
+        return path
+    if not path:
+        return prefix
+    return f"{prefix.rstrip('/')}/{path.lstrip('/')}"
+
+
+def _is_http_route(route: Any, path: str) -> bool:
+    if path in FASTAPI_BUILTIN_ROUTE_PATHS:
+        return False
+    return bool(path) and hasattr(route, "methods")
+
+
+def _route_endpoint_name(route: Any) -> str:
     endpoint = getattr(route, "endpoint", None)
     return getattr(endpoint, "__name__", "") or getattr(route, "path", "")
 
