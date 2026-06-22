@@ -12,9 +12,10 @@ from aicrm_next.integration_gateway.wechat_shop_client import (
     WeChatShopClientConfig,
     WeChatShopClientError,
 )
-from aicrm_next.shared.runtime import database_mode, raw_database_url
+from aicrm_next.shared.runtime import database_mode
 
 from .product_code_aliases import canonical_product_code, canonical_product_name
+from .repo import connect_commerce_db
 from .wechat_shop_signature import callback_token, should_skip_signature_without_token, verify_signature
 
 PROVIDER = "wechat_shop"
@@ -78,10 +79,7 @@ def _iso(value: Any) -> str:
 
 
 def _connect():
-    import psycopg
-    from psycopg.rows import dict_row
-
-    return psycopg.connect(raw_database_url(), row_factory=dict_row)
+    return connect_commerce_db()
 
 
 def _jsonb(value: Any):

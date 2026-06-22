@@ -14,6 +14,13 @@ from .domain import completion_redirect_projection, normalize_product_completion
 from .domain import validate_product_code
 
 
+def connect_commerce_db(database_url: str | None = None):
+    import psycopg
+    from psycopg.rows import dict_row
+
+    return psycopg.connect(database_url or raw_database_url(), row_factory=dict_row)
+
+
 class CommerceRepository(Protocol):
     def list_products(self, *, limit: int, offset: int) -> dict[str, Any]: ...
     def get_product(self, product_id: str) -> dict[str, Any] | None: ...

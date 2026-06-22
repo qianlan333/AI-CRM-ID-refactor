@@ -251,3 +251,16 @@ def test_db_access_boundary_current_repository_passes() -> None:
     violations = check_db_access_boundary()
 
     assert violations == []
+
+
+def test_db_access_boundary_no_longer_allowlists_commerce_admin_db_helpers() -> None:
+    config = load_config(Path("docs/architecture/db_access_boundary.yml"))
+
+    allowlisted_paths = {entry["path"] for entry in config["temporary_allowlist"]}
+
+    assert "aicrm_next/commerce/admin_refunds.py" not in allowlisted_paths
+    assert "aicrm_next/commerce/admin_transaction_detail.py" not in allowlisted_paths
+    assert "aicrm_next/commerce/admin_transactions.py" not in allowlisted_paths
+    assert "aicrm_next/commerce/admin_webhooks.py" not in allowlisted_paths
+    assert "aicrm_next/commerce/external_push_admin.py" not in allowlisted_paths
+    assert "aicrm_next/commerce/wechat_shop_service.py" not in allowlisted_paths

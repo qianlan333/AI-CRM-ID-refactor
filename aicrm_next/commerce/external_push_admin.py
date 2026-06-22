@@ -14,9 +14,10 @@ from urllib.parse import urlparse
 from aicrm_next.platform_foundation.command_bus import CommandContext
 from aicrm_next.platform_foundation.external_effects import ExternalEffectService, WEBHOOK_GENERIC_PUSH, WEBHOOK_ORDER_PAID_PUSH
 from aicrm_next.platform_foundation.legacy_cleanup.service import LegacyWebhookCleanupService
-from aicrm_next.shared.runtime import production_data_ready, raw_database_url
+from aicrm_next.shared.runtime import production_data_ready
 
 from .external_push_outbox import DEFAULT_TENANT_ID, EVENT_TRANSACTION_PAID, resolve_product_for_order as _resolve_product_for_order
+from .repo import connect_commerce_db
 
 
 EVENT_EXTERNAL_PUSH_TEST = "external_push.test"
@@ -252,12 +253,9 @@ def _json_obj(value: Any) -> dict[str, Any]:
 
 
 def _connect():
-    import psycopg
-    from psycopg.rows import dict_row
-
     if not production_data_ready():
         raise ExternalPushAdminError("production_database_required")
-    return psycopg.connect(raw_database_url(), row_factory=dict_row)
+    return connect_commerce_db()
 
 
 def _public_delivery(row: dict[str, Any] | None) -> dict[str, Any]:

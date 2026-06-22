@@ -14,7 +14,7 @@ from aicrm_next.platform_foundation.external_effects import ExternalEffectServic
 from aicrm_next.shared.runtime import database_mode
 from aicrm_next.shared.text_encoding import repair_utf8_mojibake
 
-from .repo import build_commerce_repository
+from .repo import build_commerce_repository, connect_commerce_db
 from .application import GetTransactionQuery, ListProductsQuery, ListTransactionsQuery
 from .product_code_aliases import canonical_product_code, product_code_filter_values
 from aicrm_next.integration_gateway.wechat_pay_client import WeChatPayClient, WeChatPayClientConfig
@@ -341,7 +341,7 @@ def _postgres_orders(filters: dict[str, str], *, limit: int, offset: int) -> dic
         LIMIT %s OFFSET %s
     """
     count_query = f"SELECT count(*) AS total FROM wechat_pay_orders WHERE {clause}"
-    with psycopg.connect(_database_url(), row_factory=dict_row) as conn:
+    with connect_commerce_db(_database_url()) as conn:
         with conn.cursor() as cur:
             cur.execute(count_query, tuple(params))
             total = int((cur.fetchone() or {}).get("total") or 0)
@@ -379,7 +379,7 @@ def get_wechat_admin_order(order_id: str) -> dict[str, Any] | None:
             from psycopg.rows import dict_row
         except ModuleNotFoundError as exc:
             raise RuntimeError("psycopg is required for production transaction admin") from exc
-        with psycopg.connect(_database_url(), row_factory=dict_row) as conn:
+        with connect_commerce_db(_database_url()) as conn:
             with conn.cursor() as cur:
                 cur.execute(
                     f"""
@@ -445,7 +445,7 @@ def create_wechat_refund_request(order_id: str, payload: dict[str, Any]) -> dict
             from psycopg.types.json import Jsonb
         except ModuleNotFoundError as exc:
             raise RuntimeError("psycopg is required for production transaction admin") from exc
-        with psycopg.connect(_database_url(), row_factory=dict_row) as conn:
+        with connect_commerce_db(_database_url()) as conn:
             with conn.cursor() as cur:
                 cur.execute(
                     """
@@ -566,7 +566,7 @@ def apply_wechat_refund_result(refund_payload: dict[str, Any], *, raw_event: dic
     response_payload = dict(refund_payload)
     if raw_event:
         response_payload["_notify_event"] = dict(raw_event)
-    with psycopg.connect(_database_url(), row_factory=dict_row) as conn:
+    with connect_commerce_db(_database_url()) as conn:
         with conn.cursor() as cur:
             cur.execute(
                 """
@@ -678,7 +678,7 @@ def list_wechat_product_options() -> list[dict[str, str]]:
             from psycopg.rows import dict_row
         except ModuleNotFoundError:
             return []
-        with psycopg.connect(_database_url(), row_factory=dict_row) as conn:
+        with connect_commerce_db(_database_url()) as conn:
             with conn.cursor() as cur:
                 cur.execute(
                     """
