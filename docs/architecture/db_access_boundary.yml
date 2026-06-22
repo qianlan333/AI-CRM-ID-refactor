@@ -1,0 +1,134 @@
+allowed_paths:
+  - aicrm_next/shared/db_session.py
+
+allowed_globs:
+  - aicrm_next/**/repo.py
+  - aicrm_next/**/repository.py
+  - aicrm_next/**/repositories.py
+  - migrations/**
+  - scripts/**
+  - tests/**
+  - tools/**
+
+forbidden_layers:
+  - aicrm_next/*/api.py
+  - aicrm_next/*/routes.py
+  - aicrm_next/*/admin_pages.py
+  - aicrm_next/*/application.py
+  - aicrm_next/*/service.py
+  - aicrm_next/frontend_compat/**
+  - aicrm_next/*/frontend_compat/**
+
+temporary_allowlist:
+  - path: aicrm_next/automation_engine/channels_api.py
+    rule: db_access_boundary_violation
+    owner: automation_engine
+    reason: Existing channel admin DB helper predates the DB boundary checker; do not broaden.
+    migration_target: aicrm_next/automation_engine/repository.py
+    matches:
+      - "return psycopg.connect(database_url, row_factory=dict_row)"
+  - path: aicrm_next/background_jobs/db.py
+    rule: db_access_boundary_violation
+    owner: background_jobs
+    reason: Existing background job DB connection helper predates the DB boundary checker; do not broaden.
+    migration_target: aicrm_next/background_jobs/repository.py
+    matches:
+      - "conn = psycopg.connect(url, row_factory=dict_row)"
+  - path: aicrm_next/cloud_orchestrator/campaigns_read.py
+    rule: db_access_boundary_violation
+    owner: cloud_orchestrator
+    reason: Existing cloud campaign read DB helper predates the DB boundary checker; do not broaden.
+    migration_target: aicrm_next/cloud_orchestrator/repository.py
+    matches:
+      - "return psycopg.connect(self._database_url, row_factory=dict_row)"
+  - path: aicrm_next/commerce/admin_refunds.py
+    rule: db_access_boundary_violation
+    owner: commerce
+    reason: Existing commerce refund admin DB helper predates the DB boundary checker; do not broaden.
+    migration_target: aicrm_next/commerce/repo.py
+    matches:
+      - "return psycopg.connect(raw_database_url(), row_factory=dict_row)"
+  - path: aicrm_next/commerce/admin_transaction_detail.py
+    rule: db_access_boundary_violation
+    owner: commerce
+    reason: Existing commerce transaction detail DB helper predates the DB boundary checker; do not broaden.
+    migration_target: aicrm_next/commerce/repo.py
+    matches:
+      - "return psycopg.connect(raw_database_url(), row_factory=dict_row)"
+  - path: aicrm_next/commerce/admin_transactions.py
+    rule: db_access_boundary_violation
+    owner: commerce
+    reason: Existing commerce transaction admin DB helper predates the DB boundary checker; do not broaden.
+    migration_target: aicrm_next/commerce/repo.py
+    matches:
+      - "with psycopg.connect(_database_url(), row_factory=dict_row) as conn:"
+  - path: aicrm_next/commerce/admin_webhooks.py
+    rule: db_access_boundary_violation
+    owner: commerce
+    reason: Existing commerce webhook admin DB helper predates the DB boundary checker; do not broaden.
+    migration_target: aicrm_next/commerce/repo.py
+    matches:
+      - "return psycopg.connect(raw_database_url(), row_factory=dict_row)"
+  - path: aicrm_next/commerce/external_push_admin.py
+    rule: db_access_boundary_violation
+    owner: commerce
+    reason: Existing commerce external push admin DB helper predates the DB boundary checker; do not broaden.
+    migration_target: aicrm_next/commerce/repo.py
+    matches:
+      - "return psycopg.connect(raw_database_url(), row_factory=dict_row)"
+  - path: aicrm_next/commerce/wechat_shop_service.py
+    rule: db_access_boundary_violation
+    owner: commerce
+    reason: Existing WeChat Shop service DB helper predates the DB boundary checker; do not broaden.
+    migration_target: aicrm_next/commerce/repo.py
+    matches:
+      - "return psycopg.connect(raw_database_url(), row_factory=dict_row)"
+  - path: aicrm_next/common_operation_members.py
+    rule: db_access_boundary_violation
+    owner: platform_foundation
+    reason: Existing common operation member DB helper predates the DB boundary checker; do not broaden.
+    migration_target: aicrm_next/platform_foundation/repository.py
+    matches:
+      - "return psycopg.connect(database_url, row_factory=dict_row)"
+  - path: aicrm_next/hxc_dashboard/postgres_repo.py
+    rule: db_access_boundary_violation
+    owner: hxc_dashboard
+    reason: Existing postgres_repo naming predates the DB boundary checker; rename into repo.py later instead of broadening.
+    migration_target: aicrm_next/hxc_dashboard/repo.py
+    matches:
+      - "return psycopg.connect(self._database_url, row_factory=dict_row)"
+  - path: aicrm_next/media_library/postgres_repo.py
+    rule: db_access_boundary_violation
+    owner: media_library
+    reason: Existing postgres_repo naming predates the DB boundary checker; rename into repo.py later instead of broadening.
+    migration_target: aicrm_next/media_library/repo.py
+    matches:
+      - "return psycopg.connect(self._database_url, row_factory=dict_row)"
+  - path: aicrm_next/message_archive/sync_service.py
+    rule: db_access_boundary_violation
+    owner: message_archive
+    reason: Existing message archive sync DB lookup predates the DB boundary checker; do not broaden.
+    migration_target: aicrm_next/message_archive/repo.py
+    matches:
+      - "with psycopg.connect(url, row_factory=dict_row) as conn:"
+  - path: aicrm_next/platform_foundation/internal_events/payment.py
+    rule: db_access_boundary_violation
+    owner: platform_foundation
+    reason: Existing payment internal event DB lookup predates the DB boundary checker; do not broaden.
+    migration_target: aicrm_next/platform_foundation/internal_events/repository.py
+    matches:
+      - "with psycopg.connect(raw_database_url(), row_factory=dict_row) as conn:"
+  - path: aicrm_next/public_product/h5_wechat_pay.py
+    rule: db_access_boundary_violation
+    owner: public_product
+    reason: Existing H5 WeChat Pay DB helper predates the DB boundary checker; do not broaden.
+    migration_target: aicrm_next/public_product/repo.py
+    matches:
+      - "return psycopg.connect(raw_database_url(), row_factory=dict_row)"
+  - path: aicrm_next/shared/postgres_connection.py
+    rule: db_access_boundary_violation
+    owner: platform_foundation
+    reason: Existing shared Postgres connection helper predates the DB boundary checker; consolidate into shared db_session later.
+    migration_target: aicrm_next/shared/db_session.py
+    matches:
+      - "return PostgresConnection(psycopg.connect(database_url, autocommit=False))"
