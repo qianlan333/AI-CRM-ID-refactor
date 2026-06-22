@@ -109,12 +109,112 @@ def test_group_ops_evidence_skeleton_uses_not_provided_placeholders() -> None:
 
 
 def test_external_orders_readiness_reports_internal_token_without_leaking_value() -> None:
-    payload = run(scenario="external_orders_enablement", env={"AUTOMATION_INTERNAL_API_TOKEN": "secret-token"})
+    payload = run(scenario="external_orders", request_token="secret-token", env={"AUTOMATION_INTERNAL_API_TOKEN": "secret-token"})
     item = payload["items"][0]
+    evidence = item["external_orders_evidence"]
 
     assert item["missing_env"] == []
     assert item["required_env"] == [{"key": "AUTOMATION_INTERNAL_API_TOKEN", "configured": True, "value": "[redacted]"}]
     assert "/api/external/orders" in item["routes"]
+    assert item["inputs"]["request_token"] == "[redacted]"
+    assert evidence["token_configured"] is True
+    assert evidence["token_redacted"] is True
+    assert evidence["token_never_logged"] is True
+    assert evidence["request_mode"] == "valid_token"
+    assert evidence["auth_status"] == "valid_token_readiness"
+    assert evidence["route_owner"] == "ai_crm_next"
+    assert evidence["fallback_used"] is False
+    assert "secret-token" not in json.dumps(payload, ensure_ascii=False)
+
+
+def test_external_orders_missing_internal_token_is_controlled_disabled() -> None:
+    payload = run(scenario="external_orders", env={})
+    item = payload["items"][0]
+    evidence = item["external_orders_evidence"]
+
+    assert payload["ok"] is True
+    assert item["status"] == "controlled_disabled"
+    assert evidence["token_configured"] is False
+    assert evidence["request_mode"] == "dry_run"
+    assert evidence["auth_status"] == "controlled_disabled"
+    assert evidence["controlled_disabled_reason"] == "AUTOMATION_INTERNAL_API_TOKEN not configured"
+    assert "missing_internal_token_config" in {reason["code"] for reason in evidence["blocking_reasons"]}
+    assert evidence["real_external_call_executed"] is False
+    assert evidence["production_write_executed"] is False
+
+
+def test_external_orders_missing_and_invalid_request_token_paths() -> None:
+    no_token = run(scenario="external_orders", env={"AUTOMATION_INTERNAL_API_TOKEN": "server-token"})["items"][0][
+        "external_orders_evidence"
+    ]
+    wrong_token_payload = run(
+        scenario="external_orders",
+        request_token="wrong-token",
+        env={"AUTOMATION_INTERNAL_API_TOKEN": "server-token"},
+    )
+    wrong_token = wrong_token_payload["items"][0]["external_orders_evidence"]
+
+    assert no_token["request_mode"] == "no_token"
+    assert "missing_request_token" in {reason["code"] for reason in no_token["blocking_reasons"]}
+    assert wrong_token["request_mode"] == "wrong_token"
+    assert wrong_token["auth_status"] == "invalid_request_token"
+    assert "invalid_request_token" in {reason["code"] for reason in wrong_token["blocking_reasons"]}
+    assert "wrong-token" not in json.dumps(wrong_token_payload, ensure_ascii=False)
+
+
+def test_external_orders_valid_token_remains_readiness_without_order_evidence() -> None:
+    payload = run(
+        scenario="external_orders",
+        request_token="server-token",
+        env={"AUTOMATION_INTERNAL_API_TOKEN": "server-token"},
+    )
+    evidence = payload["items"][0]["external_orders_evidence"]
+    codes = {reason["code"] for reason in evidence["blocking_reasons"]}
+
+    assert evidence["request_mode"] == "valid_token"
+    assert evidence["reconciliation_status"] == "readiness_only"
+    assert evidence["operator_action_required"] is True
+    assert "token_configured_but_not_executed" in codes
+    assert "missing_order_evidence" in codes
+    assert evidence["real_external_call_executed"] is False
+
+
+def test_external_orders_complete_order_evidence_links_order_without_sensitive_output() -> None:
+    payload = run(
+        scenario="external_orders",
+        request_token="server-token",
+        order_no="order_42",
+        external_order_id="ext_order_42",
+        idempotency_key="idem_42",
+        customer_id="cust_42",
+        channel_id="channel_42",
+        source="gray_partner",
+        internal_event_id="evt_42",
+        admin_order_visibility="visible",
+        env={"AUTOMATION_INTERNAL_API_TOKEN": "server-token"},
+    )
+    item = payload["items"][0]
+    evidence = item["external_orders_evidence"]
+
+    assert item["status"] == "order_linked"
+    assert evidence["evidence_status"] == "ORDER_LINKED_EVIDENCE_ATTACHED"
+    assert evidence["derived_status"] == "order_linked"
+    assert evidence["order_id"] == "order_42"
+    assert evidence["external_order_id"] == "ext_order_42"
+    assert evidence["idempotency_key"] == "idem_42"
+    assert evidence["customer_id"] == "cust_42"
+    assert evidence["channel_id"] == "channel_42"
+    assert evidence["source"] == "gray_partner"
+    assert evidence["internal_event_id"] == "evt_42"
+    assert evidence["admin_order_visibility"] == "visible"
+    assert evidence["operator_action_required"] is False
+    assert evidence["blocking_reasons"] == [
+        {
+            "code": "order_linked",
+            "message": "Order, idempotency, customer/channel/source, event, and admin visibility evidence are attached.",
+        }
+    ]
+    assert "server-token" not in json.dumps(payload, ensure_ascii=False)
 
 
 def test_ops_plan_e2e_without_plan_id_returns_blocking_reason() -> None:
@@ -228,3 +328,20 @@ def test_ops_plan_e2e_evidence_template_forbids_secrets_and_requires_fields() ->
     assert "external_effect_job_id" in template
     assert "不得提交 token" in template
     assert "不得提交 raw external_userid" in template
+
+
+def test_external_orders_evidence_template_forbids_secrets_and_requires_fields() -> None:
+    template = (ROOT / "docs" / "reports" / "external_orders_enablement_evidence_template.md").read_text(encoding="utf-8")
+
+    assert "READINESS_ONLY" in template
+    assert "ORDER_LINKED_EVIDENCE_ATTACHED" in template
+    assert "token_configured" in template
+    assert "idempotency_key" in template
+    assert "customer_id" in template
+    assert "channel_id" in template
+    assert "internal_event_id" in template
+    assert "admin_order_visibility" in template
+    assert "Do not commit" in template
+    assert "Authorization" in template
+    assert "raw external_userid" in template
+    assert "phone number" in template

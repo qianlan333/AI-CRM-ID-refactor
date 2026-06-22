@@ -58,6 +58,18 @@ SCENARIOS: dict[str, dict[str, Any]] = {
         ],
         "success_criteria": "External systems can safely authenticate and read local order state.",
     },
+    "external_orders": {
+        "title": "External orders enablement acceptance",
+        "capability_owner": "commerce",
+        "routes": ["/api/external/orders", "/api/external/orders/{order_no}"],
+        "required_env": ["AUTOMATION_INTERNAL_API_TOKEN"],
+        "checks": [
+            "missing server token remains controlled unavailable",
+            "missing or wrong bearer token is rejected",
+            "correct bearer token can read local order projection",
+        ],
+        "success_criteria": "External systems can safely authenticate and read local order state.",
+    },
     "external_orders_gray": {
         "title": "External orders gray acceptance",
         "capability_owner": "commerce",
@@ -309,12 +321,182 @@ def _ops_plan_e2e_evidence(
     }
 
 
+def _external_orders_request_mode(*, token_configured: bool, request_token: str, request_mode: str, env_token: str) -> str:
+    explicit = str(request_mode or "").strip().lower()
+    if explicit:
+        return explicit
+    if not token_configured:
+        return "dry_run"
+    if not str(request_token or "").strip():
+        return "no_token"
+    if str(request_token).strip() != str(env_token or "").strip():
+        return "wrong_token"
+    return "valid_token"
+
+
+def _visible_admin_order(value: str) -> bool:
+    return str(value or "").strip().lower() in {"true", "yes", "1", "visible", "found", "linked"}
+
+
+def _external_orders_evidence(
+    *,
+    env: dict[str, str],
+    request_token: str,
+    request_mode: str,
+    order_no: str,
+    external_order_id: str,
+    idempotency_key: str,
+    customer_id: str,
+    channel_id: str,
+    source: str,
+    internal_event_id: str,
+    admin_order_visibility: str,
+) -> dict[str, Any]:
+    server_token = str(env.get("AUTOMATION_INTERNAL_API_TOKEN") or "").strip()
+    token_configured = bool(server_token)
+    mode = _external_orders_request_mode(
+        token_configured=token_configured,
+        request_token=request_token,
+        request_mode=request_mode,
+        env_token=server_token,
+    )
+    blocking_reasons: list[dict[str, str]] = []
+
+    if not token_configured:
+        blocking_reasons.append(
+            {
+                "code": "missing_internal_token_config",
+                "message": "AUTOMATION_INTERNAL_API_TOKEN is not configured; external order routes should stay controlled-disabled.",
+            }
+        )
+    elif mode == "no_token":
+        blocking_reasons.append(
+            {
+                "code": "missing_request_token",
+                "message": "Attach a redacted request-token check before claiming external order API readiness.",
+            }
+        )
+    elif mode == "wrong_token":
+        blocking_reasons.append(
+            {
+                "code": "invalid_request_token",
+                "message": "The request token does not match the configured internal token; expect an auth rejection.",
+            }
+        )
+
+    order_attached = bool(str(order_no or "").strip() or str(external_order_id or "").strip())
+    idempotency_attached = bool(str(idempotency_key or "").strip())
+    customer_channel_attached = all(str(value or "").strip() for value in [customer_id, channel_id, source])
+    event_attached = bool(str(internal_event_id or "").strip())
+    admin_visible = _visible_admin_order(admin_order_visibility)
+    evidence_complete = bool(order_attached and idempotency_attached and customer_channel_attached and event_attached and admin_visible)
+
+    if token_configured and mode == "valid_token" and not evidence_complete:
+        blocking_reasons.append(
+            {
+                "code": "token_configured_but_not_executed",
+                "message": "Valid token readiness is present, but this diagnostic is dry-run and cannot claim order linkage without evidence ids.",
+            }
+        )
+    if not order_attached:
+        blocking_reasons.append(
+            {
+                "code": "missing_order_evidence",
+                "message": "Attach order_id or external_order_id evidence from the external order acceptance run.",
+            }
+        )
+    if not idempotency_attached:
+        blocking_reasons.append(
+            {
+                "code": "missing_idempotency_evidence",
+                "message": "Attach the idempotency key or duplicate-order evidence before claiming order readiness.",
+            }
+        )
+    if not customer_channel_attached:
+        blocking_reasons.append(
+            {
+                "code": "missing_customer_channel_link",
+                "message": "Attach customer_id, channel_id, and source correlation evidence.",
+            }
+        )
+    if not event_attached:
+        blocking_reasons.append(
+            {
+                "code": "missing_internal_event",
+                "message": "Attach the internal_event id created or reused by the order flow.",
+            }
+        )
+    if not admin_visible:
+        blocking_reasons.append(
+            {
+                "code": "missing_admin_visibility",
+                "message": "Attach admin order visibility evidence from the order page or diagnostic payload.",
+            }
+        )
+
+    derived_status = "order_linked" if token_configured and mode == "valid_token" and evidence_complete else (
+        "controlled_disabled" if not token_configured else "readiness_only"
+    )
+    auth_status = {
+        "dry_run": "not_executed",
+        "no_token": "missing_request_token",
+        "wrong_token": "invalid_request_token",
+        "valid_token": "valid_token_readiness",
+    }.get(mode, "not_executed")
+    if not token_configured:
+        auth_status = "controlled_disabled"
+
+    if derived_status == "order_linked":
+        blocking_reasons = [{"code": "order_linked", "message": "Order, idempotency, customer/channel/source, event, and admin visibility evidence are attached."}]
+
+    return {
+        "evidence_status": "ORDER_LINKED_EVIDENCE_ATTACHED" if derived_status == "order_linked" else "READINESS_ONLY",
+        "token_configured": token_configured,
+        "token_redacted": True,
+        "token_never_logged": True,
+        "auth_status": auth_status,
+        "route_owner": "ai_crm_next",
+        "fallback_used": False,
+        "controlled_disabled_reason": "AUTOMATION_INTERNAL_API_TOKEN not configured" if not token_configured else "",
+        "request_mode": mode,
+        "order_id": _value_or_not_provided(order_no),
+        "external_order_id": _value_or_not_provided(external_order_id),
+        "idempotency_key": _value_or_not_provided(idempotency_key),
+        "customer_id": _value_or_not_provided(customer_id),
+        "channel_id": _value_or_not_provided(channel_id),
+        "source": _value_or_not_provided(source),
+        "internal_event_id": _value_or_not_provided(internal_event_id),
+        "admin_order_visibility": _value_or_not_provided(admin_order_visibility),
+        "reconciliation_status": derived_status,
+        "derived_status": derived_status,
+        "retryable": False,
+        "operator_action_required": derived_status != "order_linked",
+        "business_explanation": (
+            "External order evidence is linked and ready for operator review without exposing token or customer secrets."
+            if derived_status == "order_linked"
+            else "External order acceptance remains readiness-only until token, order, idempotency, customer/channel/source, event, and admin visibility evidence are attached."
+        ),
+        "next_action_label": "Attach final evidence report" if derived_status == "order_linked" else "Resolve external order blocking reasons",
+        "real_external_call_executed": False,
+        "production_write_executed": False,
+        "blocking_reasons": blocking_reasons,
+    }
+
+
 def _scenario_payload(
     name: str,
     *,
     execute: bool = False,
     receiver_token: str = "",
+    request_token: str = "",
+    request_mode: str = "",
     order_no: str = "",
+    external_order_id: str = "",
+    idempotency_key: str = "",
+    customer_id: str = "",
+    channel_id: str = "",
+    source: str = "",
+    admin_order_visibility: str = "",
     plan_id: str = "",
     event_id: str = "",
     effect_job_id: str = "",
@@ -362,7 +544,16 @@ def _scenario_payload(
         "inputs": {
             "receiver_token_configured": bool(receiver_token),
             "receiver_token": "[redacted]" if receiver_token else "",
+            "request_token_configured": bool(request_token),
+            "request_token": "[redacted]" if request_token else "",
+            "request_mode": request_mode,
             "order_no": order_no,
+            "external_order_id": external_order_id,
+            "idempotency_key": idempotency_key,
+            "customer_id": customer_id,
+            "channel_id": channel_id,
+            "source": source,
+            "admin_order_visibility": admin_order_visibility,
             "plan_id": plan_id,
             "event_id": event_id,
             "effect_job_id": effect_job_id,
@@ -411,6 +602,23 @@ def _scenario_payload(
         payload["e2e_evidence"] = evidence
         payload["blocking_reasons"] = list(evidence["blocking_reasons"])
         payload["status"] = evidence["derived_status"]
+    if name in {"external_orders", "external_orders_enablement", "external_orders_gray"}:
+        evidence = _external_orders_evidence(
+            env=env,
+            request_token=request_token,
+            request_mode=request_mode,
+            order_no=order_no,
+            external_order_id=external_order_id,
+            idempotency_key=idempotency_key,
+            customer_id=customer_id,
+            channel_id=channel_id,
+            source=source,
+            internal_event_id=internal_event_id or event_id,
+            admin_order_visibility=admin_order_visibility,
+        )
+        payload["external_orders_evidence"] = evidence
+        payload["blocking_reasons"] = list(evidence["blocking_reasons"])
+        payload["status"] = evidence["derived_status"]
     return payload
 
 
@@ -429,7 +637,15 @@ def run(
     scenario: str,
     execute: bool = False,
     receiver_token: str = "",
+    request_token: str = "",
+    request_mode: str = "",
     order_no: str = "",
+    external_order_id: str = "",
+    idempotency_key: str = "",
+    customer_id: str = "",
+    channel_id: str = "",
+    source: str = "",
+    admin_order_visibility: str = "",
     plan_id: str = "",
     event_id: str = "",
     effect_job_id: str = "",
@@ -450,7 +666,15 @@ def run(
             name,
             execute=execute,
             receiver_token=receiver_token,
+            request_token=request_token,
+            request_mode=request_mode,
             order_no=order_no,
+            external_order_id=external_order_id,
+            idempotency_key=idempotency_key,
+            customer_id=customer_id,
+            channel_id=channel_id,
+            source=source,
+            admin_order_visibility=admin_order_visibility,
             plan_id=plan_id,
             event_id=event_id,
             effect_job_id=effect_job_id,
@@ -482,7 +706,15 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--scenario", choices=["all", *SCENARIOS.keys()], default="all")
     parser.add_argument("--execute", action="store_true", help="Request operator execution readiness; the script still performs no external call.")
     parser.add_argument("--receiver-token", default="")
+    parser.add_argument("--request-token", default="")
+    parser.add_argument("--request-mode", choices=["dry_run", "no_token", "wrong_token", "valid_token"], default="")
     parser.add_argument("--order-no", default="")
+    parser.add_argument("--external-order-id", default="")
+    parser.add_argument("--idempotency-key", default="")
+    parser.add_argument("--customer-id", default="")
+    parser.add_argument("--channel-id", default="")
+    parser.add_argument("--source", default="")
+    parser.add_argument("--admin-order-visibility", default="")
     parser.add_argument("--plan-id", default="")
     parser.add_argument("--event-id", default="")
     parser.add_argument("--effect-job-id", default="")
@@ -504,7 +736,15 @@ def main(argv: list[str] | None = None) -> int:
         scenario=args.scenario,
         execute=bool(args.execute),
         receiver_token=args.receiver_token,
+        request_token=args.request_token,
+        request_mode=args.request_mode,
         order_no=args.order_no,
+        external_order_id=args.external_order_id,
+        idempotency_key=args.idempotency_key,
+        customer_id=args.customer_id,
+        channel_id=args.channel_id,
+        source=args.source,
+        admin_order_visibility=args.admin_order_visibility,
         plan_id=args.plan_id,
         event_id=args.event_id,
         effect_job_id=args.effect_job_id,
