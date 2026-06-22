@@ -144,6 +144,8 @@ def test_channel_center_list_has_enable_disable_and_soft_delete_actions() -> Non
     assert ">删除</button>" in js
     assert "删除后会归档渠道并保留历史用户、二维码、绑定和入渠记录。确认删除？" in js
     assert "patchJson(`/api/admin/channels/${encodeURIComponent(channelId)}`, { status: nextStatus })" in js
+    assert 'nextStatus === "archived"' in js
+    assert "row.remove()" in js
     assert "row.outerHTML = renderRow(data.channel)" in js
     assert "渠道已下架" in js
     assert "渠道已启用" in js

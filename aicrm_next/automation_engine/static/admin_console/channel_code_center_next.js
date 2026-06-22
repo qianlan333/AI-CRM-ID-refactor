@@ -301,7 +301,9 @@
         if (!response.ok || data.ok === false) {
           throw new Error(data.detail || data.error || data.reason || "channel_status_update_failed");
         }
-        if (row && data.channel) {
+        if (row && nextStatus === "archived") {
+          row.remove();
+        } else if (row && data.channel) {
           row.outerHTML = renderRow(data.channel);
         }
         toast(statusSuccessMessage(nextStatus));

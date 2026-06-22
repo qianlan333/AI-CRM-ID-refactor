@@ -638,12 +638,20 @@ def get_channel_resource(channel_id: int) -> dict[str, Any] | None:
     return _attach_assignment_payload(_serialize_channel(dict(row)), include_assignees=True) if row else None
 
 
-def _list_channels_from_postgres(*, limit: int, status: str = "", available_for_program_id: int | None = None) -> list[dict[str, Any]]:
+def _list_channels_from_postgres(
+    *,
+    limit: int,
+    status: str = "",
+    available_for_program_id: int | None = None,
+    include_archived: bool = False,
+) -> list[dict[str, Any]]:
     conn = _connect()
     if conn is None:
         channels = [_serialize_channel(item) for item in _FIXTURE_CHANNELS.values()]
         if status:
             channels = [item for item in channels if item.get("status") == status]
+        elif not include_archived:
+            channels = [item for item in channels if item.get("status") != "archived"]
         if int(available_for_program_id or 0) > 0:
             active_channel_ids = {
                 int(item.get("channel_id") or 0)
@@ -657,6 +665,8 @@ def _list_channels_from_postgres(*, limit: int, status: str = "", available_for_
     if status:
         where = "WHERE c.status = %s"
         params.append(status)
+    elif not include_archived:
+        where = "WHERE (c.status IS NULL OR c.status <> 'archived')"
     if int(available_for_program_id or 0) > 0:
         where = where + (" AND " if where else "WHERE ")
         where += """
@@ -1352,13 +1362,19 @@ async def wecom_customer_acquisition_link_action(request: Request, link_id: str,
 
 
 @router.get("/api/admin/channels")
-def list_channels(limit: int = Query(100), status: str = "", available_for_program_id: int | None = None) -> dict[str, Any]:
+def list_channels(
+    limit: int = Query(100),
+    status: str = "",
+    available_for_program_id: int | None = None,
+    include_archived: bool = False,
+) -> dict[str, Any]:
     return {
         "ok": True,
         "channels": _list_channels_from_postgres(
             limit=max(1, min(int(limit or 100), 500)),
             status=_text(status),
             available_for_program_id=available_for_program_id,
+            include_archived=include_archived,
         ),
         "reason": "channels_listed",
         "source": "ai_crm_next",
