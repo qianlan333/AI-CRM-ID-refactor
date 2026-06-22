@@ -16,7 +16,12 @@ from aicrm_next.platform_foundation.external_effects.repo import build_external_
 from aicrm_next.platform_foundation.push_center.projection import BroadcastJobAdapter, PushCenterProjectionService
 from aicrm_next.platform_foundation.push_center.repository import PushCenterRepository
 from aicrm_next.platform_foundation.push_center.section_mapper import effect_types_for_section, label_for_section, section_for_job
-from aicrm_next.platform_foundation.push_center.view_model import build_job_detail_payload, build_jobs_payload, build_stats_payload
+from aicrm_next.platform_foundation.push_center.view_model import (
+    build_job_detail_payload,
+    build_job_reconciliation_payload,
+    build_jobs_payload,
+    build_stats_payload,
+)
 from tests.group_ops_test_helpers import group_ops_api_client
 
 
@@ -203,6 +208,7 @@ def test_push_center_group_ops_shadow_failed_with_sent_broadcast_is_warning_not_
     item = body["items"][0]
     stats = build_stats_payload({"section": "group_ops"}, repository=projection_repo)
     detail = build_job_detail_payload(item["projection_id"], repository=projection_repo)
+    reconciliation = build_job_reconciliation_payload(item["projection_id"], repository=projection_repo)
 
     assert item["effective_status"] == "sent_with_shadow_warning"
     assert item["status"] == "sent_with_shadow_warning"
@@ -221,6 +227,12 @@ def test_push_center_group_ops_shadow_failed_with_sent_broadcast_is_warning_not_
     assert len(detail["linked_records"]["external_effect_attempts"]) == 1
     assert len(detail["linked_records"]["broadcast_jobs"]) == 1
     assert detail["linked_records"]["outbound_tasks"][0]["response_payload"]["result"]["errcode"] == 0
+    assert reconciliation is not None
+    assert reconciliation["reconciliation"]["effective_status"] == "sent_with_shadow_warning"
+    assert reconciliation["reconciliation"]["retryable"] is False
+    assert reconciliation["reconciliation"]["operator_action_required"] is True
+    assert reconciliation["reconciliation"]["next_action_label"] == "检查影子链路"
+    assert "不要把它误判为业务发送失败" in reconciliation["reconciliation"]["business_explanation"]
 
 
 def test_push_center_group_ops_shadow_failed_without_primary_is_not_business_failed() -> None:
@@ -304,6 +316,7 @@ def test_push_center_sections_stats_retry_cancel_auth(next_client: TestClient, m
 
     sections = next_client.get("/api/admin/push-center/sections").json()
     stats = next_client.get("/api/admin/push-center/stats").json()
+    reconciliation = next_client.get(f"/api/admin/push-center/jobs/{failed['id']}/reconciliation")
     rejected = next_client.post(f"/api/admin/push-center/jobs/{failed['id']}/retry", json={})
     retried = next_client.post(
         f"/api/admin/push-center/jobs/{failed['id']}/retry",
@@ -318,6 +331,12 @@ def test_push_center_sections_stats_retry_cancel_auth(next_client: TestClient, m
 
     assert any(item["key"] == "questionnaire" and item["count"] == 1 for item in sections["sections"])
     assert stats["counts"]["failed"] == 1
+    assert reconciliation.status_code == 200
+    assert reconciliation.json()["reconciliation"]["effective_status"] == "failed"
+    assert reconciliation.json()["reconciliation"]["retryable"] is True
+    assert reconciliation.json()["reconciliation"]["operator_action_required"] is True
+    assert reconciliation.json()["reconciliation"]["next_action_label"] == "重试"
+    assert reconciliation.json()["reconciliation"]["linked_record_counts"]["external_effect_jobs"] == 1
     assert rejected.status_code == 401
     assert retried.status_code == 200
     assert retried.json()["job"]["status"] == "pending"

@@ -395,6 +395,17 @@ routes:
   data_source: read_model
   requires_auth: true
   rollback: previous_release
+- path: /api/admin/push-center/jobs/{job_id}/reconciliation
+  methods:
+  - GET
+  route_name: push_center_job_reconciliation
+  capability_owner: platform_foundation
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: none
+  data_source: read_model
+  requires_auth: true
+  rollback: previous_release
 - path: /api/admin/push-center/stats
   methods:
   - GET

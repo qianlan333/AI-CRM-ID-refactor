@@ -15,7 +15,14 @@ from aicrm_next.platform_foundation.external_effects.service import ExternalEffe
 
 from . import CAPABILITY_OWNER, ROUTE_OWNER
 from .repository import PushCenterRepository
-from .view_model import build_job_detail_payload, build_jobs_payload, build_sections_payload, build_stats_payload, push_center_filters
+from .view_model import (
+    build_job_detail_payload,
+    build_job_reconciliation_payload,
+    build_jobs_payload,
+    build_sections_payload,
+    build_stats_payload,
+    push_center_filters,
+)
 
 router = APIRouter()
 _TEMPLATES_DIR = Path(__file__).resolve().parent / "templates"
@@ -158,6 +165,14 @@ def push_center_jobs(
 @router.get("/api/admin/push-center/jobs/{job_id}")
 def push_center_job_detail(job_id: str) -> JSONResponse:
     payload = build_job_detail_payload(job_id, repository=PushCenterRepository())
+    if not payload:
+        return _json({"ok": False, "error": "push_center_job_not_found"}, status_code=404)
+    return _json(payload)
+
+
+@router.get("/api/admin/push-center/jobs/{job_id}/reconciliation")
+def push_center_job_reconciliation(job_id: str) -> JSONResponse:
+    payload = build_job_reconciliation_payload(job_id, repository=PushCenterRepository())
     if not payload:
         return _json({"ok": False, "error": "push_center_job_not_found"}, status_code=404)
     return _json(payload)
