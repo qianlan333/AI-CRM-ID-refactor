@@ -121,6 +121,7 @@ def test_architecture_gate_script_only_runs_delivered_static_checkers():
     assert "tools/check_architecture_boundaries.py" in script
     assert "tools/check_external_effects_boundary.py" in script
     assert "tools/check_db_access_boundary.py" in script
+    assert "tools/check_background_job_contract.py" in script
 
 
 def test_pr_smoke_excludes_specialized_contract_and_domain_suites():
