@@ -339,7 +339,19 @@ def test_push_center_page_smoke(next_client: TestClient) -> None:
     assert 'id="sectionTabs"' in response.text
     assert 'id="filterForm"' in response.text
     assert 'id="pushCenterTable"' in response.text
+    assert 'id="detailModal"' in response.text
     assert 'id="detailPanel"' in response.text
+    assert 'data-close-detail' in response.text
+    assert 'role="dialog"' in response.text
+    assert 'aria-modal="true"' in response.text
+    assert 'aria-hidden="true"' in response.text
+    assert "push-center-modal" in response.text
+    assert "push-center-modal-card" in response.text
+    assert "push-center-detail-card" not in response.text
+    assert "openDetailModal" in response.text
+    assert "closeDetailModal" in response.text
+    assert "is-open" in response.text
+    assert 'event.key === "Escape"' in response.text
     assert 'class="push-center-header"' not in response.text
     assert "push-center-title" not in response.text
     assert 'href="#refresh"' in response.text
