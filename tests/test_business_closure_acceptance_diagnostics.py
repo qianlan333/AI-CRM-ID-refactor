@@ -13,6 +13,7 @@ SCRIPT = ROOT / "scripts" / "diagnose_business_closure_acceptance.py"
 
 def test_all_business_closure_scenarios_are_dry_run_and_safe_by_default() -> None:
     payload = run(scenario="all", env={})
+    summary = payload["summary"]
 
     assert payload["ok"] is True
     assert payload["real_external_call_executed"] is False
@@ -21,6 +22,86 @@ def test_all_business_closure_scenarios_are_dry_run_and_safe_by_default() -> Non
     assert {item["scenario"] for item in payload["items"]} == set(SCENARIOS)
     assert all(item["dry_run"] is True for item in payload["items"])
     assert all(item["real_external_call_executed"] is False for item in payload["items"])
+    assert summary["closeout_status"] == "BLOCKED"
+    assert summary["can_claim_90_plus"] is False
+    assert {item["scenario"] for item in summary["items"]} == {
+        "group_ops_gray_send",
+        "ops_plan_to_broadcast",
+        "external_orders",
+        "wecom_auth",
+    }
+    assert all(item["sensitive_data_redaction_ok"] is True for item in summary["items"])
+    assert all(item["real_external_call_executed"] is False for item in summary["items"])
+    assert all(item["production_write_executed"] is False for item in summary["items"])
+    assert not any(item["can_claim_90_plus"] for item in summary["items"])
+
+
+def test_business_closure_summary_can_claim_90_plus_only_with_complete_core_evidence() -> None:
+    env = {
+        "AICRM_GROUP_OPS_GRAY_SEND_APPROVED": "true",
+        "AICRM_GROUP_OPS_GRAY_SEND_RECEIVER_ALLOWLIST": "receiver-a",
+        "AUTOMATION_INTERNAL_API_TOKEN": "server-token",
+        "AICRM_EXTERNAL_ORDERS_GRAY_APPROVED": "true",
+        "WECOM_CORP_ID": "corp-id",
+        "WECOM_AGENT_ID": "agent-id",
+        "ADMIN_LOGIN_REDIRECT_URI": "https://crm.example.test/auth/wecom/callback",
+        "WECOM_CONTACT_SECRET": "callback-secret",
+        "AICRM_WECOM_CALLBACK_GRAY_APPROVED": "true",
+    }
+    payload = run(
+        scenario="all",
+        execute=True,
+        receiver_token="receiver-a",
+        request_token="server-token",
+        order_no="order_42",
+        external_order_id="ext_order_42",
+        idempotency_key="idem_42",
+        customer_id="cust_42",
+        channel_id="channel_42",
+        source="gray_partner",
+        admin_order_visibility="visible",
+        plan_id="plan_42",
+        event_id="inbound_evt_42",
+        effect_job_id="effect_42",
+        attempt_id="attempt_42",
+        push_center_job_id="push_42",
+        approval_event_id="approval_42",
+        internal_event_id="inbound_evt_42",
+        consumer_run_id="consumer_42",
+        broadcast_job_id="broadcast_42",
+        approval_status="approved",
+        consumer_status="succeeded",
+        duplicate_handling="reused_idempotency_key",
+        redirect_uri_expected="https://crm.example.test/auth/wecom/callback",
+        auth_start_status="verified_302",
+        callback_missing_code_status="observed_400",
+        callback_invalid_state_status="observed_400",
+        operator_identity_evidence="operator_redacted_42",
+        callback_signature_status="valid",
+        callback_event_id="callback_evt_42",
+        duplicate_callback_handling="reused_idempotency_key",
+        permission_scope_evidence="contacts_and_groups_ready",
+        customer_event_visibility="visible",
+        group_ops_permission_evidence="group_ops_ready",
+        material_permission_evidence="materials_ready",
+        env=env,
+    )
+    summary = payload["summary"]
+    dumped = json.dumps(payload, ensure_ascii=False)
+
+    assert payload["ok"] is True
+    assert summary["closeout_status"] == "PASS_90_PLUS"
+    assert summary["can_claim_90_plus"] is True
+    assert all(item["readiness_status"] == "PASS_90_PLUS" for item in summary["items"])
+    assert all(item["can_claim_90_plus"] is True for item in summary["items"])
+    assert all(item["missing_operator_evidence"] == [] for item in summary["items"])
+    assert all(
+        item["blocking_reasons"] == [] or item["blocking_reasons"][0]["code"] in {"order_linked", "callback_linked"}
+        for item in summary["items"]
+    )
+    assert "server-token" not in dumped
+    assert "callback-secret" not in dumped
+    assert "receiver-a" not in dumped
 
 
 def test_group_ops_execute_request_is_blocked_without_approval_and_receiver() -> None:
@@ -503,3 +584,22 @@ def test_wecom_evidence_template_forbids_secrets_and_requires_fields() -> None:
     assert "Authorization" in template
     assert "access_token" in template
     assert "corpsecret" in template
+
+
+def test_business_closure_90_plus_closeout_doc_defines_status_model() -> None:
+    closeout = (ROOT / "docs" / "reports" / "business_closure_90_plus_evidence_closeout.md").read_text(encoding="utf-8")
+
+    assert "group_ops_gray_send" in closeout
+    assert "ops_plan_to_broadcast" in closeout
+    assert "external_orders" in closeout
+    assert "wecom_auth" in closeout
+    assert "READINESS_ONLY" in closeout
+    assert "EVIDENCE_COLLECTED" in closeout
+    assert "PASS_WITH_NOTES" in closeout
+    assert "PASS_90_PLUS" in closeout
+    assert "BLOCKED" in closeout
+    assert "The system must not output `PASS_90_PLUS` by default." in closeout
+    assert "real_external_call_executed=false" in closeout
+    assert "production_write_executed=false" in closeout
+    assert "Authorization" in closeout
+    assert "raw `external_userid`" in closeout
