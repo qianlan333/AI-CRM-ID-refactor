@@ -77,12 +77,20 @@ def test_production_like_evidence_classifies_pending_consumers_and_missing_custo
     assert payload["real_external_call_executed"] is False
     assert payload["production_write_executed"] is False
     assert conclusion["blocker_1_classification"] == "consumer_run_pending_due_to_config"
+    assert conclusion["blocker_1_repair_decision"] == "run_due_not_executed"
+    assert conclusion["blocker_1_next_pr_required"] is True
     assert conclusion["blocker_2_classification"] == "linkage_missing"
+    assert conclusion["blocker_2_repair_decision"] == "runtime_projection_repair_required"
+    assert conclusion["blocker_2_next_pr_required"] is True
     assert conclusion["operator_action_required"] is True
     assert conclusion["data_backfill_required"] is True
-    assert conclusion["runtime_fix_required"] is False
+    assert conclusion["runtime_fix_required"] is True
     assert conclusion["can_recollect_external_orders_evidence"] is False
+    assert conclusion["can_claim_external_orders_90_plus"] is False
     assert payload["external_effect_linkage"]["classification"] == "expected_not_applicable"
+    assert payload["internal_event_consumer_pending_decision"]["run_due_route_available"] is True
+    assert payload["internal_event_consumer_pending_decision"]["consumer_placeholder_only"] is False
+    assert payload["customer_read_model_linkage_decision"]["approved_backfill_runbook_required"] is True
 
 
 def test_complete_evidence_allows_recollection_without_blockers() -> None:
@@ -96,7 +104,9 @@ def test_complete_evidence_allows_recollection_without_blockers() -> None:
     conclusion = payload["conclusion"]
 
     assert conclusion["blocker_1_classification"] == "expected_not_applicable"
+    assert conclusion["blocker_1_repair_decision"] == "expected_not_applicable"
     assert conclusion["blocker_2_classification"] == "expected_not_applicable"
+    assert conclusion["blocker_2_repair_decision"] == "expected_not_applicable"
     assert conclusion["operator_action_required"] is False
     assert conclusion["can_recollect_external_orders_evidence"] is True
 
@@ -108,8 +118,21 @@ def test_missing_expected_consumer_is_classified_as_not_registered() -> None:
     payload = classify_evidence(fixture)
 
     assert payload["internal_event"]["classification"] == "consumer_not_registered"
+    assert payload["internal_event_consumer_pending_decision"]["repair_decision"] == "runtime_repair_required"
     assert "ai_assist_notify_consumer" in payload["internal_event"]["missing_consumers"]
     assert payload["conclusion"]["runtime_fix_required"] is True
+
+
+def test_missing_customer_identity_requires_identity_triage() -> None:
+    fixture = _production_like_fixture()
+    fixture["order_customer_channel_linkage"]["external_userid_present"] = False
+    fixture["order_customer_channel_linkage"]["channel_contact_rows"] = 0
+    fixture["order_customer_channel_linkage"]["channel_ids_present"] = 0
+
+    payload = classify_evidence(fixture)
+
+    assert payload["customer_read_model_linkage_decision"]["repair_decision"] == "customer_identity_missing"
+    assert payload["conclusion"]["blocker_2_next_pr_required"] is True
 
 
 def test_sensitive_values_are_redacted_from_output() -> None:
