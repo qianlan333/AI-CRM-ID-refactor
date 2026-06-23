@@ -116,6 +116,15 @@ class AudienceRepository:
     def publish_version(self, package_id: int, version_id: int) -> dict[str, Any] | None:
         raise NotImplementedError
 
+    def get_active_subscription_by_target(
+        self,
+        package_id: int,
+        trigger_event_type: str,
+        target_type: str,
+        webhook_url: str,
+    ) -> dict[str, Any] | None:
+        raise NotImplementedError
+
     def update_package_status(self, package_id: int, status: str, *, reason: str = "") -> dict[str, Any] | None:
         raise NotImplementedError
 
@@ -747,7 +756,78 @@ class SQLAlchemyAudienceRepository(AudienceRepository):
     def get_member_event(self, member_event_id: int) -> dict[str, Any] | None:
         return self._one("SELECT * FROM ai_audience_member_event WHERE id = :id LIMIT 1", {"id": int(member_event_id)})
 
+    def get_active_subscription_by_target(
+        self,
+        package_id: int,
+        trigger_event_type: str,
+        target_type: str,
+        webhook_url: str,
+    ) -> dict[str, Any] | None:
+        return self._one(
+            """
+            SELECT *
+            FROM ai_audience_outbound_subscription
+            WHERE package_id = :package_id
+              AND status = 'active'
+              AND trigger_event_type = :trigger_event_type
+              AND target_type = :target_type
+              AND webhook_url = :webhook_url
+            ORDER BY id ASC
+            LIMIT 1
+            """,
+            {
+                "package_id": int(package_id),
+                "trigger_event_type": _text(trigger_event_type),
+                "target_type": _text(target_type),
+                "webhook_url": _text(webhook_url),
+            },
+        )
+
     def create_subscription(self, package_id: int, payload: dict[str, Any]) -> dict[str, Any]:
+        trigger_event_type = _text(payload.get("trigger_event_type")) or "entered"
+        dispatch_mode = _text(payload.get("dispatch_mode")) or "per_member"
+        target_type = _text(payload.get("target_type")) or "webhook"
+        webhook_url = _text(payload.get("webhook_url"))
+        params = {
+            "package_id": int(package_id),
+            "trigger_event_type": trigger_event_type,
+            "dispatch_mode": dispatch_mode,
+            "target_type": target_type,
+            "webhook_url": webhook_url,
+            "signing_secret": _text(payload.get("signing_secret")),
+            "headers_json": _json_dumps(payload.get("headers") or {}),
+            "payload_template_json": _json_dumps(payload.get("payload_template") or {}),
+            "execution_mode": _text(payload.get("execution_mode")) or "execute",
+            "requires_approval": bool(payload.get("requires_approval", False)),
+            "max_attempts": max(1, int(payload.get("max_attempts") or 5)),
+        }
+        existing = self.get_active_subscription_by_target(
+            int(package_id),
+            trigger_event_type,
+            target_type,
+            webhook_url,
+        )
+        if existing:
+            row = self._write_one(
+                """
+                UPDATE ai_audience_outbound_subscription
+                SET dispatch_mode = :dispatch_mode,
+                    signing_secret = :signing_secret,
+                    headers_json = CAST(:headers_json AS jsonb),
+                    payload_template_json = CAST(:payload_template_json AS jsonb),
+                    execution_mode = :execution_mode,
+                    requires_approval = :requires_approval,
+                    max_attempts = :max_attempts,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = :subscription_id
+                RETURNING *, TRUE AS deduplicated
+                """,
+                {**params, "subscription_id": int(existing["id"])},
+            )
+            if row is None:
+                raise RuntimeError("ai audience outbound subscription update failed")
+            return row
+
         row = self._write_one(
             """
             INSERT INTO ai_audience_outbound_subscription (
@@ -760,21 +840,9 @@ class SQLAlchemyAudienceRepository(AudienceRepository):
                 :signing_secret, CAST(:headers_json AS jsonb), CAST(:payload_template_json AS jsonb),
                 :execution_mode, :requires_approval, :max_attempts, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
             )
-            RETURNING *
+            RETURNING *, FALSE AS deduplicated
             """,
-            {
-                "package_id": int(package_id),
-                "trigger_event_type": _text(payload.get("trigger_event_type")) or "entered",
-                "dispatch_mode": _text(payload.get("dispatch_mode")) or "per_member",
-                "target_type": _text(payload.get("target_type")) or "webhook",
-                "webhook_url": _text(payload.get("webhook_url")),
-                "signing_secret": _text(payload.get("signing_secret")),
-                "headers_json": _json_dumps(payload.get("headers") or {}),
-                "payload_template_json": _json_dumps(payload.get("payload_template") or {}),
-                "execution_mode": _text(payload.get("execution_mode")) or "execute",
-                "requires_approval": bool(payload.get("requires_approval", False)),
-                "max_attempts": max(1, int(payload.get("max_attempts") or 5)),
-            },
+            params,
         )
         if row is None:
             raise RuntimeError("ai audience outbound subscription create failed")

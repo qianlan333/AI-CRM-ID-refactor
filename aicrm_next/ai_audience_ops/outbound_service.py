@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 from typing import Any
 
 from aicrm_next.platform_foundation.command_bus.models import CommandContext
@@ -30,10 +31,20 @@ class AudienceOutboundService:
             trigger_event_type=_text(event.get("event_type")),
         )
         planned: list[dict[str, Any]] = []
+        seen_targets: set[tuple[str, str, str]] = set()
         for subscription in subscriptions:
             if _text(subscription.get("target_type")) != "webhook":
                 continue
+            target_key = (
+                _text(subscription.get("trigger_event_type")),
+                _text(subscription.get("target_type")),
+                _text(subscription.get("webhook_url")),
+            )
+            if target_key in seen_targets:
+                continue
+            seen_targets.add(target_key)
             payload = self._payload(package=package, member_event=event, subscription=subscription)
+            target_hash = hashlib.sha256(f"{target_key[1]}:{target_key[2]}".encode("utf-8")).hexdigest()[:16]
             job = self._external_effects.plan_effect(
                 effect_type=WEBHOOK_GENERIC_PUSH,
                 adapter_name="webhook",
@@ -55,7 +66,7 @@ class AudienceOutboundService:
                 requires_approval=bool(subscription.get("requires_approval")),
                 execution_mode=_text(subscription.get("execution_mode")) or "execute",
                 max_attempts=int(subscription.get("max_attempts") or 5),
-                idempotency_key=f"ai_audience_outbound:{subscription['id']}:{event['id']}",
+                idempotency_key=f"ai_audience_outbound:{package['id']}:{event['id']}:{event.get('event_type')}:{target_hash}",
                 status="queued",
                 context=CommandContext(
                     actor_id="ai_audience_outbound",
