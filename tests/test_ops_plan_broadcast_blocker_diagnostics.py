@@ -1,0 +1,170 @@
+from __future__ import annotations
+
+import json
+import subprocess
+import sys
+from pathlib import Path
+
+from scripts.diagnose_ops_plan_broadcast_blocker import classify_evidence
+
+
+ROOT = Path(__file__).resolve().parents[1]
+SCRIPT = ROOT / "scripts" / "diagnose_ops_plan_broadcast_blocker.py"
+PLANNER = "broadcast_task_planner_consumer"
+
+
+def _base_fixture() -> dict:
+    return {
+        "plan_id": "external_daily_lesson_20260617_1230_huangyoucan_v1_b11",
+        "source": {"type": "fixture"},
+        "approval_event": {
+            "exists": True,
+            "event_id": "iev_demo_should_be_redacted_fd6b",
+            "event_type": "ops_plan.approved",
+            "aggregate_type": "cloud_orchestrator_plan",
+            "aggregate_id": "external_daily_lesson_20260617_1230_huangyoucan_v1_b11",
+        },
+        "consumer_runs": [
+            {"consumer_name": "audit_projection_consumer", "status": "pending", "attempt_count": 0},
+            {"consumer_name": "automation_schedule_refresh_consumer", "status": "pending", "attempt_count": 0},
+            {"consumer_name": PLANNER, "status": "pending", "attempt_count": 0},
+            {"consumer_name": "ops_plan_ai_assist_notify_consumer", "status": "pending", "attempt_count": 0},
+        ],
+        "ops_plan_broadcast_run_due_config": {
+            "token_configured": True,
+            "auto_execute_enabled": True,
+            "allowed_event_types": ["ops_plan.approved"],
+            "allowed_consumers": [PLANNER],
+            "allowed_event_consumers": [f"ops_plan.approved:{PLANNER}"],
+            "allowlist_required": True,
+        },
+    }
+
+
+def test_pending_planner_attempt_zero_is_ready_for_operator_preview_when_gates_present() -> None:
+    payload = classify_evidence(_base_fixture())
+
+    assert payload["readonly"] is True
+    assert payload["real_external_call_executed"] is False
+    assert payload["production_write_executed"] is False
+    assert payload["classification"] == "run_due_ready_for_operator_preview"
+    assert payload["broadcast_task_planner_consumer"]["consumer_name"] == PLANNER
+    assert payload["attempt_count"] == 0
+    assert payload["preview_route_available"] is True
+    assert payload["run_due_eligible"] is True
+    assert payload["can_execute_in_operator_window"] is True
+    assert payload["downstream_job_expected"] is True
+    assert payload["push_center_visibility_expected"] is True
+
+
+def test_missing_token_blocks_preview_and_run() -> None:
+    fixture = _base_fixture()
+    fixture["ops_plan_broadcast_run_due_config"]["token_configured"] = False
+
+    payload = classify_evidence(fixture)
+
+    assert payload["classification"] == "run_due_blocked_by_token"
+    assert payload["token_gate_status"] == "missing_internal_token_config"
+    assert payload["blocking_reason"] == "missing_internal_token_or_admin_action_gate"
+
+
+def test_auto_execute_disabled_blocks_generic_run_due_execute() -> None:
+    fixture = _base_fixture()
+    fixture["ops_plan_broadcast_run_due_config"]["auto_execute_enabled"] = False
+
+    payload = classify_evidence(fixture)
+
+    assert payload["classification"] == "run_due_blocked_by_auto_execute_config"
+    assert payload["auto_execute_enabled"] is False
+    assert payload["recommended_execution_mode"] == "fix_gate_or_collect_operator_approval_before_any_execute"
+
+
+def test_missing_allowlist_blocks_execute() -> None:
+    fixture = _base_fixture()
+    fixture["ops_plan_broadcast_run_due_config"]["allowed_event_consumers"] = ["payment.succeeded:webhook_order_paid_consumer"]
+
+    payload = classify_evidence(fixture)
+
+    assert payload["classification"] == "run_due_blocked_by_allowlist"
+    assert payload["allowlist_missing"] is True
+    assert payload["allowlist_status"] == "missing_or_incomplete"
+
+
+def test_already_succeeded_is_classified_without_operator_action() -> None:
+    fixture = _base_fixture()
+    for row in fixture["consumer_runs"]:
+        if row["consumer_name"] == PLANNER:
+            row["status"] = "succeeded"
+            row["attempt_count"] = 1
+
+    payload = classify_evidence(fixture)
+
+    assert payload["classification"] == "consumer_already_succeeded"
+    assert payload["operator_action_required"] is False
+    assert payload["recommended_execution_mode"] == "no_execute_recollect_ops_plan_broadcast_evidence"
+
+
+def test_failed_retryable_is_classified_for_operator_retry_preview() -> None:
+    fixture = _base_fixture()
+    for row in fixture["consumer_runs"]:
+        if row["consumer_name"] == PLANNER:
+            row["status"] = "failed"
+            row["attempt_count"] = 1
+            row["last_error_code"] = "planner_transient_error"
+
+    payload = classify_evidence(fixture)
+
+    assert payload["classification"] == "consumer_failed_retryable"
+    assert payload["retry_route_available"] is True
+    assert payload["can_execute_in_operator_window"] is True
+
+
+def test_sensitive_values_are_redacted_from_output() -> None:
+    fixture = _base_fixture()
+    fixture["approval_event"]["raw_external_userid"] = "wm_raw_should_not_appear"
+    fixture["approval_event"]["phone"] = "13800000000"
+    fixture["approval_event"]["target_list"] = ["raw_member_should_not_appear"]
+    fixture["ops_plan_broadcast_run_due_config"]["secret"] = "secret_should_not_appear"
+    fixture["ops_plan_broadcast_run_due_config"]["Authorization"] = "Bearer token_should_not_appear"
+
+    payload = classify_evidence(fixture)
+    dumped = json.dumps(payload, ensure_ascii=False)
+
+    assert "wm_raw_should_not_appear" not in dumped
+    assert "13800000000" not in dumped
+    assert "raw_member_should_not_appear" not in dumped
+    assert "secret_should_not_appear" not in dumped
+    assert "token_should_not_appear" not in dumped
+    assert "iev_demo_should_be_redacted_fd6b" not in dumped
+    assert "iev_***fd6b" in dumped
+
+
+def test_cli_help_runs() -> None:
+    result = subprocess.run(
+        [sys.executable, str(SCRIPT), "--help"],
+        cwd=ROOT,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 0
+    assert "Readonly triage" in result.stdout
+
+
+def test_cli_can_classify_input_json_fixture(tmp_path: Path) -> None:
+    fixture_path = tmp_path / "fixture.json"
+    fixture_path.write_text(json.dumps(_base_fixture()), encoding="utf-8")
+
+    result = subprocess.run(
+        [sys.executable, str(SCRIPT), "--input-json", str(fixture_path), "--indent", "0"],
+        cwd=ROOT,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 0
+    payload = json.loads(result.stdout)
+    assert payload["classification"] == "run_due_ready_for_operator_preview"
+    assert payload["planner_consumer_pending_classification"] == "run_due_ready_for_operator_preview"
