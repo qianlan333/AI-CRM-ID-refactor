@@ -31,6 +31,7 @@ SINGLE_CONSUMER_RETRY_ROUTE = "/api/admin/internal-events/{event_id}/consumers/{
 SINGLE_CONSUMER_SKIP_ROUTE = "/api/admin/internal-events/{event_id}/consumers/{consumer_name}/skip"
 
 CLASSIFICATIONS = {
+    "legacy_event_non_applicable",
     "run_due_ready_for_operator_preview",
     "run_due_blocked_by_token",
     "run_due_blocked_by_auto_execute_config",
@@ -50,6 +51,17 @@ CLASSIFICATIONS = {
     "planner_failed_retryable",
     "planner_failed_terminal",
     "planner_runtime_repair_required",
+}
+
+NEXT_NATIVE_TARGET_STATUSES = {
+    "legacy_event_non_applicable",
+    "next_native_plan_ready_for_evidence",
+    "next_native_plan_missing_recipients",
+    "next_native_plan_missing_messages",
+    "planner_created_broadcast_job",
+    "planner_reused_broadcast_job",
+    "planner_succeeded_downstream_pending",
+    "BLOCKED_NEXT_NATIVE_TARGET_MISSING",
 }
 
 SENSITIVE_KEY_PARTS = (
@@ -98,9 +110,11 @@ def classify_evidence(evidence: dict[str, Any]) -> dict[str, Any]:
     runs = _consumer_run_records(evidence)
     planner_run = _planner_run(runs)
     config = _run_due_config(evidence=evidence, planner_run=planner_run)
-    classification = _classify(event_type=event_type, planner_run=planner_run, config=config)
+    classification = _classify(event=event, event_type=event_type, planner_run=planner_run, config=config)
     planner_result = _planner_result(planner_run)
     downstream = dict(evidence.get("downstream") or {})
+    plan_context = _plan_context(evidence=evidence, event=event)
+    target_selection = _next_native_target_selection(evidence=evidence, event=event, plan_context=plan_context)
     broadcast_job_id = _planner_field(planner_run, "broadcast_job_id")
     external_effect_job_id = _planner_field(planner_run, "external_effect_job_id")
     push_center_job_id = _planner_field(planner_run, "push_center_job_id")
@@ -123,6 +137,8 @@ def classify_evidence(evidence: dict[str, Any]) -> dict[str, Any]:
         "approval_event_id": _redact_id(str(event.get("approval_event_id") or event.get("event_id") or "")) or "not_found",
         "internal_event_id": _redact_id(str(event.get("internal_event_id") or event.get("event_id") or "")) or "not_found",
         "event_type": event_type or "not_found",
+        "event_plan_type": _event_plan_type(event) or "not_collected",
+        "event_source": _event_source(event) or "not_collected",
         "expected_consumer_names": list(EXPECTED_CONSUMERS),
         "actual_consumer_run_records": runs,
         "broadcast_task_planner_consumer": planner_run or {"consumer_name": PLANNER_CONSUMER, "status": "not_found"},
@@ -134,6 +150,20 @@ def classify_evidence(evidence: dict[str, Any]) -> dict[str, Any]:
         "duplicate_handling": duplicate_handling or "not_found",
         "downstream_status": downstream_status or "not_found",
         "downstream": downstream,
+        "plan_context": plan_context,
+        "legacy_event_reclassification": {
+            "classification": "legacy_event_non_applicable" if classification == "legacy_event_non_applicable" else "not_applicable",
+            "is_legacy_event": _is_legacy_event(event),
+            "can_judge_next_native_planner": classification != "legacy_event_non_applicable",
+            "reason": "legacy_campaign lacks Next-native recipient/message projection rows"
+            if classification == "legacy_event_non_applicable"
+            else "",
+        },
+        "next_native_evidence_target": target_selection["target"],
+        "next_native_evidence_target_status": target_selection["status"],
+        "next_native_target_blocking_reason": target_selection["blocking_reason"],
+        "can_recollect_ops_plan_e2e_now": target_selection["can_recollect"],
+        "required_operator_action": target_selection["required_operator_action"],
         "status": str((planner_run or {}).get("status") or "not_found"),
         "attempt_count": int((planner_run or {}).get("attempt_count") or 0),
         "last_error": _last_error(planner_run),
@@ -157,7 +187,12 @@ def classify_evidence(evidence: dict[str, Any]) -> dict[str, Any]:
         "allowlist_status": config["allowlist_status"],
         "allowlist_missing": config["allowlist_missing"],
         "operator_action_required": classification
-        not in {"consumer_already_succeeded", "consumer_non_applicable", "planner_created_broadcast_job", "planner_reused_broadcast_job"},
+        not in {
+            "consumer_already_succeeded",
+            "consumer_non_applicable",
+            "planner_created_broadcast_job",
+            "planner_reused_broadcast_job",
+        },
         "can_execute_in_operator_window": classification in {"run_due_ready_for_operator_preview", "consumer_failed_retryable", "planner_failed_retryable"},
         "real_external_call_risk": "none_from_internal_event_worker; planner may create broadcast_job and later external_effect_job only after execute",
         "production_write_risk": _production_write_risk(classification),
@@ -187,11 +222,19 @@ def classify_evidence(evidence: dict[str, Any]) -> dict[str, Any]:
     return _redact_payload(output)
 
 
-def _classify(*, event_type: str, planner_run: dict[str, Any] | None, config: dict[str, Any]) -> str:
+def _classify(
+    *,
+    event: dict[str, Any],
+    event_type: str,
+    planner_run: dict[str, Any] | None,
+    config: dict[str, Any],
+) -> str:
     if event_type in {"", "not_collected", "not_found"} and not planner_run:
         return "unknown_requires_manual_review"
     if event_type and event_type != OPS_PLAN_APPROVED_EVENT_TYPE:
         return "consumer_non_applicable"
+    if _is_legacy_event(event):
+        return "legacy_event_non_applicable"
     if not planner_run:
         return "runtime_repair_required"
 
@@ -230,6 +273,154 @@ def _classify(*, event_type: str, planner_run: dict[str, Any] | None, config: di
     if not _run_due_eligible(planner_run):
         return "run_due_not_eligible"
     return "run_due_ready_for_operator_preview"
+
+
+def _event_metadata(event: dict[str, Any]) -> dict[str, Any]:
+    merged: dict[str, Any] = {}
+    for key in ("payload_summary_json", "payload_summary", "payload_json", "payload"):
+        item = event.get(key)
+        if isinstance(item, dict):
+            merged.update(item)
+    for key in ("plan_type", "source"):
+        if key in event:
+            merged[key] = event.get(key)
+    return merged
+
+
+def _event_plan_type(event: dict[str, Any]) -> str:
+    metadata = _event_metadata(event)
+    return str(metadata.get("plan_type") or metadata.get("source_type") or "").strip()
+
+
+def _event_source(event: dict[str, Any]) -> str:
+    metadata = _event_metadata(event)
+    return str(metadata.get("source") or metadata.get("source_type") or "").strip()
+
+
+def _is_legacy_event(event: dict[str, Any]) -> bool:
+    plan_type = _event_plan_type(event).lower()
+    source = _event_source(event).lower()
+    return "legacy_campaign" in {plan_type, source}
+
+
+def _plan_context(*, evidence: dict[str, Any], event: dict[str, Any]) -> dict[str, Any]:
+    context = dict(evidence.get("plan_context") or {})
+    if not context:
+        context = dict(evidence.get("current_plan_context") or {})
+    if not context:
+        return {}
+    if "plan_type" not in context:
+        context["plan_type"] = _event_plan_type(event) or context.get("source_type") or "not_collected"
+    return _redact_payload(context)
+
+
+def _next_native_target_selection(
+    *,
+    evidence: dict[str, Any],
+    event: dict[str, Any],
+    plan_context: dict[str, Any],
+) -> dict[str, Any]:
+    target = dict(
+        evidence.get("next_native_evidence_target")
+        or evidence.get("next_native_target")
+        or evidence.get("next_native_target_candidate")
+        or {}
+    )
+    if not target and plan_context and _is_next_native_plan(plan_context):
+        target = dict(plan_context)
+    if not target and _is_legacy_event(event):
+        status = "BLOCKED_NEXT_NATIVE_TARGET_MISSING"
+        return _target_selection_payload(
+            target={},
+            status=status,
+            blocking_reason="legacy_event_non_applicable_next_native_target_required",
+            required_operator_action="create_or_approve_next_native_test_plan",
+        )
+    if not target:
+        status = "BLOCKED_NEXT_NATIVE_TARGET_MISSING"
+        return _target_selection_payload(
+            target={},
+            status=status,
+            blocking_reason="next_native_cloud_plan_target_not_found",
+            required_operator_action="create_or_approve_next_native_test_plan",
+        )
+
+    plan_type = str(target.get("plan_type") or target.get("source_type") or "").strip() or "cloud_plan"
+    target["plan_type"] = plan_type
+    if not _is_next_native_plan(target):
+        return _target_selection_payload(
+            target=target,
+            status="legacy_event_non_applicable",
+            blocking_reason="target_is_not_next_native_cloud_plan",
+            required_operator_action="create_or_approve_next_native_test_plan",
+        )
+
+    recipient_count = _int_value(
+        target.get("recipient_projection_count")
+        or target.get("recipient_count")
+        or target.get("recipients_count")
+        or 0
+    )
+    message_count = _int_value(
+        target.get("message_projection_count")
+        or target.get("message_count")
+        or target.get("messages_count")
+        or 0
+    )
+    target["recipient_projection_count"] = recipient_count
+    target["message_projection_count"] = message_count
+    target.setdefault("approval_event_exists", bool(target.get("approval_event_id") or target.get("internal_event_id")))
+    target.setdefault("planner_consumer_executable", True)
+
+    if recipient_count <= 0:
+        return _target_selection_payload(
+            target=target,
+            status="next_native_plan_missing_recipients",
+            blocking_reason="next_native_recipient_projection_missing",
+            required_operator_action="create_or_approve_next_native_test_plan_with_recipients",
+        )
+    if message_count <= 0:
+        return _target_selection_payload(
+            target=target,
+            status="next_native_plan_missing_messages",
+            blocking_reason="next_native_message_projection_missing",
+            required_operator_action="complete_next_native_send_content_projection",
+        )
+    return _target_selection_payload(
+        target=target,
+        status="next_native_plan_ready_for_evidence",
+        blocking_reason="",
+        required_operator_action="run_single_consumer_preview_for_selected_next_native_plan",
+    )
+
+
+def _target_selection_payload(
+    *,
+    target: dict[str, Any],
+    status: str,
+    blocking_reason: str,
+    required_operator_action: str,
+) -> dict[str, Any]:
+    assert status in NEXT_NATIVE_TARGET_STATUSES
+    return {
+        "target": _redact_payload(target) if target else {"status": "not_found"},
+        "status": status,
+        "blocking_reason": blocking_reason,
+        "required_operator_action": required_operator_action,
+        "can_recollect": status == "next_native_plan_ready_for_evidence",
+    }
+
+
+def _is_next_native_plan(value: dict[str, Any]) -> bool:
+    plan_type = str(value.get("plan_type") or value.get("source_type") or "cloud_plan").strip()
+    return plan_type in {"cloud_plan", "ops_plan", "next_native", "next_native_cloud_plan"}
+
+
+def _int_value(value: Any) -> int:
+    try:
+        return int(value or 0)
+    except (TypeError, ValueError):
+        return 0
 
 
 def _consumer_run_records(evidence: dict[str, Any]) -> list[dict[str, Any]]:
@@ -356,6 +547,8 @@ def _production_write_risk(classification: str) -> str:
         return "preview_none; execute_writes_consumer_attempts_and_may_create_broadcast_or_external_effect_job"
     if classification in {"planner_created_broadcast_job", "planner_reused_broadcast_job", "planner_succeeded_downstream_pending"}:
         return "readonly_diagnostic_none; prior consumer execution already wrote or reused broadcast_job"
+    if classification == "legacy_event_non_applicable":
+        return "none_for_readonly_diagnostic; do_not_execute_legacy_event_for_next_native_evidence"
     return "none_for_readonly_diagnostic"
 
 
@@ -370,6 +563,8 @@ def _recommended_execution_mode(classification: str) -> str:
         return "no_execute_recollect_ops_plan_broadcast_evidence"
     if classification in {"planner_created_broadcast_job", "planner_reused_broadcast_job", "planner_succeeded_downstream_pending"}:
         return "do_not_rerun_planner_recollect_downstream_broadcast_and_push_center_evidence"
+    if classification == "legacy_event_non_applicable":
+        return "do_not_rerun_legacy_event_select_next_native_cloud_plan_target"
     if classification in {"planner_skipped_missing_required_input", "planner_skipped_non_applicable"}:
         return "do_not_execute_repair_or_reclassify_plan_input_before_retry"
     return "manual_review_readonly_only"
@@ -383,6 +578,7 @@ def _blocking_reason(classification: str) -> str:
         "run_due_blocked_by_allowlist": "event_or_consumer_allowlist_missing",
         "run_due_not_eligible": "consumer_run_not_due_or_retry_window_not_reached",
         "consumer_already_succeeded": "",
+        "legacy_event_non_applicable": "legacy_campaign_event_not_applicable_to_next_native_planner_evidence",
         "consumer_failed_retryable": "retryable_consumer_failure",
         "consumer_failed_terminal": "terminal_consumer_failure",
         "consumer_non_applicable": "event_type_not_ops_plan_approved",
@@ -410,6 +606,8 @@ def _business_explanation(classification: str) -> str:
         return "Planner consumer is pending, but event/consumer allowlist does not include the requested ops_plan.approved planner scope."
     if classification == "consumer_already_succeeded":
         return "Planner consumer already finished; recollect downstream job and Push Center evidence."
+    if classification == "legacy_event_non_applicable":
+        return "The target approval event is a legacy_campaign event without Next-native recipient/message projections; select a current cloud_plan approval event for E2E evidence."
     if classification in {"consumer_failed_retryable", "planner_failed_retryable"}:
         return "Planner consumer has a retryable failure; operator should preview retry before execution."
     if classification in {"consumer_failed_terminal", "planner_failed_terminal"}:
@@ -459,7 +657,7 @@ def _load_readonly_db_evidence(*, plan_id: str, database_url: str | None) -> dic
         event = conn.execute(
             """
             select id, event_id, event_type, aggregate_type, aggregate_id, subject_type, subject_id,
-                   source_module, source_route, trace_id
+                   source_module, source_route, trace_id, payload_summary_json, payload_json
               from internal_event
              where event_type = %s
                and (aggregate_id = %s or subject_id = %s or trace_id = %s)
@@ -481,6 +679,8 @@ def _load_readonly_db_evidence(*, plan_id: str, database_url: str | None) -> dic
             ).fetchall()
         broadcast_jobs = _safe_related_rows(conn, "broadcast_jobs", plan_id)
         external_effect_jobs = _safe_related_rows(conn, "external_effect_job", plan_id)
+        plan_context = _safe_plan_context(conn, plan_id)
+        next_native_target = _safe_next_native_target(conn)
         conn.execute("ROLLBACK")
 
     return _redact_payload(
@@ -497,6 +697,8 @@ def _load_readonly_db_evidence(*, plan_id: str, database_url: str | None) -> dic
                 "subject_id": str(event.get("subject_id") or "not_found"),
                 "source_module": event.get("source_module") or "not_found",
                 "source_route": event.get("source_route") or "not_found",
+                "payload_summary_json": event.get("payload_summary_json") or {},
+                "payload_json": event.get("payload_json") or {},
             },
             "consumer_runs": runs,
             "downstream": {
@@ -505,6 +707,8 @@ def _load_readonly_db_evidence(*, plan_id: str, database_url: str | None) -> dic
                 "external_effect_job_count": len(external_effect_jobs),
                 "external_effect_job_ids": [row.get("id") for row in external_effect_jobs],
             },
+            "plan_context": plan_context,
+            "next_native_evidence_target": next_native_target,
             "ops_plan_broadcast_run_due_config": _collect_run_due_gate_config(),
         }
     )
@@ -541,6 +745,139 @@ def _safe_related_rows(conn: Any, table: str, plan_id: str) -> list[dict[str, An
         return [dict(row) for row in rows]
     except Exception:
         return []
+
+
+def _safe_plan_context(conn: Any, plan_id: str) -> dict[str, Any]:
+    try:
+        plan = conn.execute(
+            """
+            select plan_id, coalesce(source_type, 'cloud_plan') as plan_type,
+                   coalesce(review_status, status, '') as review_status
+              from cloud_broadcast_plans
+             where plan_id = %s
+             limit 1
+            """,
+            (str(plan_id),),
+        ).fetchone()
+        if not plan:
+            return {
+                "plan_id": str(plan_id),
+                "plan_type": "not_found",
+                "recipient_projection_count": 0,
+                "message_projection_count": 0,
+                "projection_source_found": False,
+            }
+        counts = _safe_plan_projection_counts(conn, str(plan_id))
+        return {
+            "plan_id": str(plan.get("plan_id") or plan_id),
+            "plan_type": str(plan.get("plan_type") or "cloud_plan"),
+            "review_status": str(plan.get("review_status") or ""),
+            **counts,
+            "projection_source_found": True,
+        }
+    except Exception:
+        return {
+            "plan_id": str(plan_id),
+            "plan_type": "not_collected",
+            "recipient_projection_count": 0,
+            "message_projection_count": 0,
+            "projection_source_found": False,
+        }
+
+
+def _safe_plan_projection_counts(conn: Any, plan_id: str) -> dict[str, int]:
+    recipient_count = 0
+    message_count = 0
+    try:
+        recipient_row = conn.execute(
+            """
+            select count(*)::int as count
+              from cloud_broadcast_plan_recipients
+             where plan_id = %s
+               and coalesce(approval_status, 'pending') <> 'rejected'
+               and coalesce(send_status, 'pending') not in ('cancelled', 'sent')
+               and coalesce(external_userid, '') <> ''
+            """,
+            (str(plan_id),),
+        ).fetchone()
+        recipient_count = int((recipient_row or {}).get("count") or 0)
+    except Exception:
+        recipient_count = 0
+    try:
+        message_row = conn.execute(
+            """
+            select count(*)::int as count
+              from cloud_broadcast_plan_recipient_messages
+             where plan_id = %s
+               and coalesce(status, 'pending') <> 'cancelled'
+            """,
+            (str(plan_id),),
+        ).fetchone()
+        message_count = int((message_row or {}).get("count") or 0)
+    except Exception:
+        message_count = 0
+    return {
+        "recipient_projection_count": recipient_count,
+        "message_projection_count": message_count,
+    }
+
+
+def _safe_next_native_target(conn: Any) -> dict[str, Any]:
+    try:
+        rows = conn.execute(
+            """
+            select p.plan_id, coalesce(p.source_type, 'cloud_plan') as plan_type,
+                   coalesce(p.review_status, p.status, '') as review_status,
+                   exists(
+                       select 1
+                         from internal_event ie
+                        where ie.event_type = %s
+                          and (ie.aggregate_id = p.plan_id or ie.subject_id = p.plan_id or ie.trace_id = p.plan_id)
+                   ) as approval_event_exists,
+                   (
+                       select count(*)::int
+                         from cloud_broadcast_plan_recipients r
+                        where r.plan_id = p.plan_id
+                          and coalesce(r.approval_status, 'pending') <> 'rejected'
+                          and coalesce(r.send_status, 'pending') not in ('cancelled', 'sent')
+                          and coalesce(r.external_userid, '') <> ''
+                   ) as recipient_projection_count,
+                   (
+                       select count(*)::int
+                         from cloud_broadcast_plan_recipient_messages m
+                        where m.plan_id = p.plan_id
+                          and coalesce(m.status, 'pending') <> 'cancelled'
+                   ) as message_projection_count
+              from cloud_broadcast_plans p
+             where coalesce(p.source_type, 'cloud_plan') = 'cloud_plan'
+               and coalesce(p.review_status, p.status, '') in ('approved', 'reviewing', 'committed')
+             order by p.updated_at desc nulls last, p.created_at desc nulls last
+             limit 20
+            """,
+            (OPS_PLAN_APPROVED_EVENT_TYPE,),
+        ).fetchall()
+    except Exception:
+        return {}
+    fallback: dict[str, Any] = {}
+    for row in rows:
+        candidate = {
+            "plan_id": str(row.get("plan_id") or ""),
+            "plan_type": str(row.get("plan_type") or "cloud_plan"),
+            "review_status": str(row.get("review_status") or ""),
+            "approval_event_exists": bool(row.get("approval_event_exists")),
+            "recipient_projection_count": int(row.get("recipient_projection_count") or 0),
+            "message_projection_count": int(row.get("message_projection_count") or 0),
+            "planner_consumer_executable": True,
+        }
+        if not fallback:
+            fallback = candidate
+        if (
+            candidate["approval_event_exists"]
+            and candidate["recipient_projection_count"] > 0
+            and candidate["message_projection_count"] > 0
+        ):
+            return candidate
+    return fallback
 
 
 def _collect_run_due_gate_config() -> dict[str, Any]:
