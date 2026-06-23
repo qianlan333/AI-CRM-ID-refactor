@@ -14,6 +14,8 @@ STATUS_MODEL = ROOT / "frontend" / "admin" / "business_closure" / "status_model.
 SHARED_STATUS_MODEL = ROOT / "frontend" / "admin" / "shared" / "status_model.ts"
 INTERACTION_CONTRACT = ROOT / "frontend" / "admin" / "shared" / "interaction_contract.ts"
 OVERVIEW_SCRIPT = ROOT / "frontend" / "admin" / "business_closure" / "business_closure_overview.ts"
+PUSH_CENTER_STATUS = ROOT / "frontend" / "admin" / "push_center" / "push_center_status.ts"
+PUSH_CENTER_OVERVIEW = ROOT / "frontend" / "admin" / "push_center" / "push_center_overview.ts"
 
 
 def _client(monkeypatch) -> TestClient:
@@ -27,6 +29,16 @@ def _client(monkeypatch) -> TestClient:
 def _payload_from_html(html: str) -> dict:
     match = re.search(
         r'<script id="businessClosurePayload" type="application/json">(.*?)</script>',
+        html,
+        re.S,
+    )
+    assert match, html
+    return json.loads(match.group(1))
+
+
+def _push_center_payload_from_html(html: str) -> dict:
+    match = re.search(
+        r'<script id="pushCenterP1StatusPayload" type="application/json">\s*(.*?)\s*</script>',
         html,
         re.S,
     )
@@ -113,3 +125,57 @@ def test_rendered_page_does_not_expose_sensitive_fixture_strings(monkeypatch) ->
         "unionid",
     ]:
         assert forbidden not in html
+
+
+def test_push_center_page_renders_p1_readonly_status_slice(monkeypatch) -> None:
+    response = _client(monkeypatch).get("/admin/push-center")
+    html = response.text
+    payload = _push_center_payload_from_html(html)
+
+    assert response.status_code == 200
+    assert "pushCenterP1StatusApp" in html
+    assert "pushCenterP1StatusPayload" in html
+    assert "push_center_overview.js" in html
+    assert "P1 Push Center 状态" in html
+    cards = payload["cards"]
+    assert any(item["rawStatus"] == "governance_missing" for item in cards)
+    assert any(item["rawStatus"] == "downstream_pending" for item in cards)
+    assert any(item["rawStatus"] == "external_config_blocked" for item in cards)
+    assert any(item["rawStatus"] == "order_linked" for item in cards)
+    assert "PASS_90_PLUS" not in json.dumps(payload, ensure_ascii=False)
+
+
+def test_push_center_frontend_slice_reuses_shared_status_contract() -> None:
+    status_source = PUSH_CENTER_STATUS.read_text(encoding="utf-8")
+    overview_source = PUSH_CENTER_OVERVIEW.read_text(encoding="utf-8")
+
+    assert 'from "../shared/status_model.js"' in status_source
+    assert 'from "../shared/interaction_contract.js"' in status_source
+    assert 'from "../shared/status_card.js"' in overview_source
+    assert '"pending"' in status_source
+    assert '"sent"' in status_source
+    assert '"retryable"' in status_source
+    assert '"operator-action-required"' in status_source
+    assert '"failed-terminal"' in status_source
+    assert '"downstream-pending"' in status_source
+    assert '"evidence-incomplete"' in status_source
+    assert 'validateDropIntent(scenario, "blocked_noop")' in status_source
+    assert "Readonly preview only; no direct send." in overview_source
+
+
+def test_push_center_readonly_status_copy_does_not_claim_false_completion() -> None:
+    status_source = PUSH_CENTER_STATUS.read_text(encoding="utf-8")
+    overview_source = PUSH_CENTER_OVERVIEW.read_text(encoding="utf-8")
+
+    assert "不能显示为已完成" in status_source
+    assert "不得显示为 sent 或 completed" in status_source
+    assert "不能假装授权完成" in status_source
+    assert "不新增写操作、不绕过 Push Center、不触发真实外呼" in overview_source
+    for forbidden in [
+        "WeCom 已授权完成",
+        "治理证据已完成",
+        "downstream completed",
+        "PASS_90_PLUS 已完成",
+    ]:
+        assert forbidden not in status_source
+        assert forbidden not in overview_source
