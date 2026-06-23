@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 from pathlib import Path
 
@@ -11,6 +12,8 @@ ROOT = Path(__file__).resolve().parents[1]
 GROUP_OPS_JS = ROOT / "aicrm_next/automation_engine/group_ops/static/admin_console/group_ops.js"
 GROUP_OPS_TEMPLATE = ROOT / "aicrm_next/automation_engine/group_ops/templates/admin_console/group_ops.html"
 PICKER_JS = ROOT / "aicrm_next/frontend_compat/static/admin_console/operation_member_picker.js"
+GROUP_OPS_STATUS_TS = ROOT / "frontend/admin/group_ops/group_ops_status.ts"
+GROUP_OPS_OVERVIEW_TS = ROOT / "frontend/admin/group_ops/group_ops_overview.ts"
 
 
 def _source() -> str:
@@ -22,6 +25,16 @@ def _function_source(name: str) -> str:
     start = source.index(f"function {name}")
     next_function = source.find("\n  function ", start + 1)
     return source[start:] if next_function == -1 else source[start:next_function]
+
+
+def _p1_payload_from_html(html: str) -> dict:
+    match = re.search(
+        r'<script id="groupOpsP1StatusPayload" type="application/json">\s*(.*?)\s*</script>',
+        html,
+        re.S,
+    )
+    assert match, html
+    return json.loads(match.group(1))
 
 
 @pytest.fixture()
@@ -46,6 +59,63 @@ def test_group_ops_frontend_routes_are_owned_by_next(group_ops_frontend_client):
         assert response.status_code == 200
         assert response.headers["X-AICRM-Route-Owner"] == "ai_crm_next"
         assert 'id="group-ops-app"' in response.text
+
+
+def test_group_ops_page_renders_p1_readonly_status_slice(group_ops_frontend_client):
+    response = group_ops_frontend_client.get("/admin/automation-conversion/group-ops/ui")
+    html = response.text
+    payload = _p1_payload_from_html(html)
+
+    assert response.status_code == 200
+    assert 'id="groupOpsP1StatusApp"' in html
+    assert 'id="groupOpsP1StatusPayload"' in html
+    assert "group_ops_overview.js" in html
+    assert payload["evidenceSummary"]["effectJobId"] == "external_effect_job:97"
+    assert payload["evidenceSummary"]["pushCenterStatus"] == "sent"
+    assert payload["evidenceSummary"]["retryable"] is False
+    assert payload["evidenceSummary"]["operatorActionRequired"] is False
+    assert any(item["rawStatus"] == "sent" for item in payload["cards"])
+    assert any(item["rawStatus"] == "governance_missing" for item in payload["cards"])
+    assert any(item["rawStatus"] == "evidence_incomplete" for item in payload["cards"])
+    assert "PASS_90_PLUS_CANDIDATE" in json.dumps(payload, ensure_ascii=False)
+    assert "governance_complete" not in json.dumps(payload, ensure_ascii=False)
+
+
+def test_group_ops_p1_slice_reuses_shared_status_and_drag_contract():
+    status_source = GROUP_OPS_STATUS_TS.read_text(encoding="utf-8")
+    overview_source = GROUP_OPS_OVERVIEW_TS.read_text(encoding="utf-8")
+
+    assert 'from "../shared/status_model.js"' in status_source
+    assert 'from "../shared/interaction_contract.js"' in status_source
+    assert 'from "../shared/status_card.js"' in overview_source
+    assert '"sent"' in status_source
+    assert '"governance-missing"' in status_source
+    assert '"evidence-incomplete"' in status_source
+    assert '"operator-action-required"' in status_source
+    assert '"retryable"' in status_source
+    assert '"failed-terminal"' in status_source
+    assert "requires_approval" in status_source
+    assert "requires_allowlist" in status_source
+    assert "requires_gray_window" in status_source
+    assert "no_direct_send" in status_source
+    assert 'validateDropIntent(scenario, "blocked_noop")' in status_source
+
+
+def test_group_ops_p1_slice_copy_does_not_claim_governance_completion():
+    status_source = GROUP_OPS_STATUS_TS.read_text(encoding="utf-8")
+    overview_source = GROUP_OPS_OVERVIEW_TS.read_text(encoding="utf-8")
+
+    assert "这不代表 governance 完整" in status_source
+    assert "不是 PASS_90_PLUS_CANDIDATE" in status_source
+    assert "不能进入 90%+ 候选" in status_source
+    assert "不新增发送、审批、名单或灰度窗口配置能力" in overview_source
+    for forbidden in [
+        "governance_complete",
+        "治理证据已完成",
+        "自动发送已开启",
+        "真实名单已提交",
+    ]:
+        assert forbidden not in overview_source
 
 
 def test_group_ops_list_frontend_contract_has_required_actions_and_columns():
