@@ -838,7 +838,7 @@ def _load_readonly_db_evidence(*, order_id: str, database_url: str | None) -> di
         conn.execute("BEGIN READ ONLY")
         order_row = conn.execute(
             """
-            select id, provider, order_source as source,
+            select id, 'wechat_pay' as provider, order_source as source,
                    coalesce(external_userid, '') as redacted_external_userid_source,
                    coalesce(external_userid, '') <> '' as external_userid_present
               from wechat_pay_orders
