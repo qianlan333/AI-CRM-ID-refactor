@@ -1,0 +1,13 @@
+{
+  "name": "ai-crm-frontend-foundation",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build:frontend": "tsc -p tsconfig.frontend.json",
+    "typecheck": "tsc -p tsconfig.frontend.json --noEmit",
+    "test:frontend": "node tests/frontend/p1_business_closure_status.test.mjs"
+  },
+  "devDependencies": {
+    "typescript": "5.9.3"
+  }
+}

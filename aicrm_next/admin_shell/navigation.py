@@ -15,6 +15,7 @@ class AdminRoute:
 
 ADMIN_ROUTE_REGISTRY: dict[str, AdminRoute] = {
     "api.admin_console_dashboard": AdminRoute("api.admin_console_dashboard", "/admin"),
+    "api.admin_business_closure_page": AdminRoute("api.admin_business_closure_page", "/admin/business-closure"),
     "api.admin_console_customers": AdminRoute("api.admin_console_customers", "/admin/customers"),
     "api.admin_owner_migration_page": AdminRoute("api.admin_owner_migration_page", "/admin/owner-migration"),
     "api.admin_owner_migration_action": AdminRoute("api.admin_owner_migration_action", "/admin/owner-migration"),
@@ -176,6 +177,7 @@ ADMIN_NAV_GROUPS: list[dict[str, Any]] = [
         "title": "配置及后台",
         "items": [
             {"key": "jobs", "label": "同步任务配置 / 同步任务", "endpoint": "api.admin_jobs"},
+            {"key": "business_closure", "label": "业务闭环状态", "endpoint": "api.admin_business_closure_page"},
             {"key": "push_center", "label": "推送中心", "endpoint": "api.admin_push_center_page"},
             {"key": "internal_events", "label": "事件中心", "endpoint": "api.admin_internal_events_page"},
             {"key": "owner_migration", "label": "负责人迁移", "endpoint": "api.admin_owner_migration_page"},
