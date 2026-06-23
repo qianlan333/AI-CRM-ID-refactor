@@ -182,7 +182,7 @@ def test_alembic_commands_can_walk_revision_graph() -> None:
         if args == ("heads",):
             heads = [line for line in result.stdout.splitlines() if "(head)" in line]
             assert len(heads) == 1
-            assert "0044_retire_legacy_webhook_deprecations" in heads[0]
+            assert "0045_ai_audience_ops" in heads[0]
 
 
 def test_legacy_webhook_retirement_migration_does_not_delete_history_data() -> None:

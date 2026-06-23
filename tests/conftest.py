@@ -76,6 +76,15 @@ def _resolve_worker_database_url() -> str:
 
 # 测试间需要清理的关键表（FK 反向顺序：子表先清，autouse 用 CASCADE 兜底剩余 FK）
 _TABLES_TO_TRUNCATE = [
+    # — ai audience ops
+    "ai_audience_inbound_webhook_event",
+    "ai_audience_outbound_subscription",
+    "ai_audience_member_event",
+    "ai_audience_member_current",
+    "ai_audience_package_run",
+    "ai_audience_package_dependency",
+    "ai_audience_package_version",
+    "ai_audience_package",
     # — automation / campaign domain
     "automation_touch_delivery_log",
     "automation_frequency_consumption",
@@ -418,6 +427,26 @@ def _bootstrap_next_test_baseline_schema(url: str) -> None:
         )
         """,
         """
+        CREATE TABLE IF NOT EXISTS automation_channel_contact (
+            id BIGSERIAL PRIMARY KEY,
+            channel_id BIGINT NOT NULL DEFAULT 0,
+            external_contact_id TEXT NOT NULL DEFAULT '',
+            external_userid TEXT NOT NULL DEFAULT '',
+            owner_staff_id TEXT NOT NULL DEFAULT '',
+            enter_count INTEGER NOT NULL DEFAULT 1,
+            first_channel_entered_at TIMESTAMPTZ,
+            last_channel_entered_at TIMESTAMPTZ,
+            source_payload_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """,
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_automation_channel_contact_external
+        ON automation_channel_contact(channel_id, external_contact_id)
+        WHERE external_contact_id <> ''
+        """,
+        """
         CREATE TABLE IF NOT EXISTS automation_ai_push_log (
             id BIGSERIAL PRIMARY KEY,
             member_id BIGINT NOT NULL DEFAULT 0,
@@ -496,6 +525,78 @@ def _bootstrap_next_test_baseline_schema(url: str) -> None:
             create_time TEXT NOT NULL DEFAULT '',
             dismissed_at TEXT NOT NULL DEFAULT '',
             raw_payload TEXT NOT NULL DEFAULT '{}',
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS people (
+            id BIGSERIAL PRIMARY KEY,
+            mobile TEXT NOT NULL DEFAULT '',
+            third_party_user_id TEXT NOT NULL DEFAULT '',
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS external_contact_bindings (
+            external_userid TEXT PRIMARY KEY,
+            person_id TEXT,
+            first_owner_userid TEXT NOT NULL DEFAULT '',
+            last_owner_userid TEXT NOT NULL DEFAULT '',
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS wecom_external_contact_identity_map (
+            id BIGSERIAL PRIMARY KEY,
+            external_userid TEXT NOT NULL DEFAULT '',
+            unionid TEXT NOT NULL DEFAULT '',
+            openid TEXT NOT NULL DEFAULT '',
+            follow_user_userid TEXT NOT NULL DEFAULT '',
+            name TEXT NOT NULL DEFAULT '',
+            status TEXT NOT NULL DEFAULT 'active',
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS wecom_external_contact_follow_users (
+            id BIGSERIAL PRIMARY KEY,
+            external_userid TEXT NOT NULL DEFAULT '',
+            user_id TEXT NOT NULL DEFAULT '',
+            relation_status TEXT NOT NULL DEFAULT 'active',
+            is_primary BOOLEAN NOT NULL DEFAULT FALSE,
+            remark TEXT NOT NULL DEFAULT '',
+            description TEXT NOT NULL DEFAULT '',
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS questionnaires (
+            id BIGSERIAL PRIMARY KEY,
+            slug TEXT NOT NULL DEFAULT '',
+            name TEXT NOT NULL DEFAULT '',
+            title TEXT NOT NULL DEFAULT '',
+            description TEXT NOT NULL DEFAULT '',
+            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS questionnaire_submissions (
+            id BIGSERIAL PRIMARY KEY,
+            questionnaire_id BIGINT NOT NULL DEFAULT 0,
+            respondent_key TEXT NOT NULL DEFAULT '',
+            external_userid TEXT NOT NULL DEFAULT '',
+            follow_user_userid TEXT NOT NULL DEFAULT '',
+            mobile_snapshot TEXT NOT NULL DEFAULT '',
+            source_channel TEXT NOT NULL DEFAULT '',
+            campaign_id TEXT NOT NULL DEFAULT '',
+            staff_id TEXT NOT NULL DEFAULT '',
+            total_score INTEGER NOT NULL DEFAULT 0,
+            final_tags JSONB NOT NULL DEFAULT '[]'::jsonb,
+            assessment_result_snapshot JSONB NOT NULL DEFAULT '{}'::jsonb,
+            result_token TEXT NOT NULL DEFAULT '',
+            submitted_at TIMESTAMPTZ,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
         )
         """,
