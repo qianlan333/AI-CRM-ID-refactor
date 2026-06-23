@@ -10,6 +10,10 @@
     <article class="admin-card push-center-stat"><div class="push-center-stat-label">发送失败</div><div class="push-center-stat-value" data-stat="failed">-</div></article>
   </section>
 
+  <section id="pushCenterP1StatusApp" class="push-center-p1-loading" aria-label="P1 Push Center read-only status slice">
+    <div class="admin-card">加载 P1 Push Center 状态...</div>
+  </section>
+
   <section class="push-center-layout">
     <div class="admin-card push-center-main">
       <div class="push-center-card-head">
@@ -100,6 +104,52 @@
       <div id="detailPanel" class="push-center-detail-empty">加载中...</div>
     </section>
   </div>
+  <script id="pushCenterP1StatusPayload" type="application/json">
+    {
+      "cards": [
+        {
+          "key": "group_ops",
+          "title": "Group Ops / Push Center",
+          "rawStatus": "governance_missing",
+          "evidenceStatus": "EVIDENCE_COLLECTED",
+          "derivedStatus": "sent_with_governance_residual_risk",
+          "summary": "真实发送和 Push Center sent 已成立，但 approval / allowlist / gray-window 治理证据仍未 attach。",
+          "guardrail": "展示 sent 与 governance_missing 的差异；不得渲染为治理完成。",
+          "route": "/admin/push-center?section=group_ops"
+        },
+        {
+          "key": "ops_plan_broadcast",
+          "title": "Ops Plan -> Broadcast",
+          "rawStatus": "downstream_pending",
+          "evidenceStatus": "EVIDENCE_COLLECTED",
+          "derivedStatus": "push_center_pending",
+          "summary": "Next-native cloud_plan 已生成 broadcast_job，并在 Push Center 中保持 pending。",
+          "guardrail": "显示 downstream-pending；不得显示为 sent 或 completed。",
+          "route": "/admin/push-center?section=group_broadcast"
+        },
+        {
+          "key": "wecom_auth",
+          "title": "WeCom Auth / Callback",
+          "rawStatus": "external_config_blocked",
+          "evidenceStatus": "BLOCKED_CONFIG_NOT_APPROVED",
+          "derivedStatus": "external_config_exception",
+          "summary": "企微外部配置尚未批准生效；不可进入可执行任务队列。",
+          "guardrail": "必须展示 external-config-blocked，不能假装授权完成。",
+          "route": "/admin/business-closure"
+        },
+        {
+          "key": "external_orders",
+          "title": "External Orders",
+          "rawStatus": "order_linked",
+          "evidenceStatus": "EVIDENCE_COLLECTED",
+          "derivedStatus": "order_linked",
+          "summary": "订单链路已完成鉴权、幂等、customer/channel/source、admin visibility 与 Push Center evidence。",
+          "guardrail": "只读展示 order_linked evidence；不新增外部订单写入。",
+          "route": "/admin/push-center?section=order"
+        }
+      ]
+    }
+  </script>
 </section>
 
 <style>
@@ -162,15 +212,53 @@
 .push-center-json { background: #111827; color: #e5e7eb; border-radius: 10px; padding: 10px; overflow: auto; max-height: 220px; font-size: 12px; line-height: 1.5; white-space: pre-wrap; }
 .push-center-footer-actions { display: flex; gap: 8px; padding-top: 8px; }
 .push-center-alert { border-radius: 12px; padding: 10px 12px; margin-bottom: 12px; font-size: 13px; border: 1px solid #bfdbfe; background: #eff6ff; color: #1d4ed8; }
-.push-center-page .admin-button--danger { border-color: #fecaca; color: var(--pc-danger); background: #fff7f7; }
-@media (max-width: 1100px) {
-  .push-center-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .push-center-filters { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-}
-@media (max-width: 680px) {
-  .push-center-stats, .push-center-filters { grid-template-columns: 1fr; }
-  .push-center-modal-card { width: calc(100vw - 16px); max-height: calc(100vh - 24px); margin: 12px auto; }
-}
+	.push-center-page .admin-button--danger { border-color: #fecaca; color: var(--pc-danger); background: #fff7f7; }
+  .push-center-p1-loading { margin-bottom: 16px; }
+  .p1-push-banner { display: flex; align-items: center; justify-content: space-between; gap: 16px; border: 1px solid #f59e0b; background: #fffbeb; border-radius: 8px; padding: 16px; margin-bottom: 16px; }
+  .p1-push-banner h2,
+  .p1-closure-card h2,
+  .p1-push-shell-head h2 { margin: 0 0 6px; font-size: 15px; }
+  .p1-push-banner p,
+  .p1-closure-card p,
+  .p1-push-shell-head p,
+  .p1-push-interaction-card p { margin: 0; color: #5b6472; }
+  .p1-closure-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin-bottom: 16px; }
+  .p1-closure-card { border: 1px solid #e5e7eb; border-radius: 8px; background: #fff; padding: 16px; display: grid; gap: 12px; }
+  .p1-closure-card--success { border-color: #bbf7d0; }
+  .p1-closure-card--info { border-color: #bfdbfe; }
+  .p1-closure-card--warning { border-color: #fde68a; }
+  .p1-closure-card--danger { border-color: #fecaca; }
+  .p1-closure-card__head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+  .p1-closure-title-row { display: inline-flex; align-items: center; gap: 8px; min-width: 0; }
+  .p1-closure-pill { display: inline-flex; align-items: center; justify-content: center; min-height: 24px; padding: 3px 9px; border-radius: 999px; font-size: 12px; font-weight: 700; white-space: nowrap; }
+  .p1-closure-pill--success { color: #166534; background: #dcfce7; }
+  .p1-closure-pill--info { color: #1d4ed8; background: #dbeafe; }
+  .p1-closure-pill--warning { color: #92400e; background: #fef3c7; }
+  .p1-closure-pill--danger { color: #991b1b; background: #fee2e2; }
+  .p1-closure-pill--neutral { color: #374151; background: #f3f4f6; }
+  .p1-closure-fields { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin: 0; }
+  .p1-closure-fields div { border: 1px solid #e5e7eb; border-radius: 8px; padding: 8px; min-width: 0; }
+  .p1-closure-fields dt { color: #6b7280; font-size: 12px; margin-bottom: 4px; }
+  .p1-closure-fields dd { margin: 0; font-weight: 700; overflow-wrap: anywhere; }
+  .p1-closure-guardrail { background: #f8fafc; border-radius: 8px; padding: 10px; }
+  .p1-drag-handle { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border: 1px solid #e5e7eb; border-radius: 6px; color: #64748b; background: #f8fafc; cursor: not-allowed; user-select: none; flex: 0 0 auto; }
+  .p1-drag-disabled-reason { color: #64748b; font-size: 12px; border-top: 1px solid #e5e7eb; padding-top: 8px; }
+  .p1-push-interaction-shell { display: grid; gap: 12px; margin-bottom: 16px; }
+  .p1-push-shell-head { border: 1px solid #e5e7eb; border-radius: 8px; padding: 16px; background: #f8fafc; }
+  .p1-push-interaction-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+  .p1-push-interaction-card { border: 1px dashed #cbd5e1; border-radius: 8px; background: #fff; padding: 14px; display: grid; gap: 10px; }
+  .p1-push-interaction-card__head { display: flex; align-items: center; gap: 8px; }
+  .p1-drag-guardrails { display: flex; flex-wrap: wrap; gap: 6px; }
+  .p1-drag-guardrails code { border-radius: 999px; background: #f1f5f9; color: #334155; padding: 3px 8px; font-size: 12px; }
+  @media (max-width: 1100px) {
+    .push-center-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .push-center-filters { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  }
+  @media (max-width: 680px) {
+	  .push-center-stats, .push-center-filters, .p1-closure-grid, .p1-push-interaction-grid, .p1-closure-fields { grid-template-columns: 1fr; }
+    .p1-push-banner { align-items: flex-start; flex-direction: column; }
+	  .push-center-modal-card { width: calc(100vw - 16px); max-height: calc(100vh - 24px); margin: 12px auto; }
+	}
 </style>
 
 <script>
@@ -543,4 +631,9 @@
   loadJobs();
 })();
 </script>
+{% endblock %}
+
+{% block scripts_extra %}
+{{ super() }}
+<script type="module" src="{{ url_for('static', filename='admin_console/p1/push_center/push_center_overview.js') }}?v=p1-push-center-ts-status-slice-20260623"></script>
 {% endblock %}
