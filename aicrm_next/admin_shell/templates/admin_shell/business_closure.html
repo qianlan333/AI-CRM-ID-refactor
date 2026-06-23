@@ -47,6 +47,7 @@
 .p1-closure-card--warning { border-color: #fde68a; }
 .p1-closure-card--danger { border-color: #fecaca; }
 .p1-closure-card__head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+.p1-closure-title-row { display: inline-flex; align-items: center; gap: 8px; min-width: 0; }
 .p1-closure-pill { display: inline-flex; align-items: center; justify-content: center; min-height: 24px; padding: 3px 9px; border-radius: 999px; font-size: 12px; font-weight: 700; white-space: nowrap; }
 .p1-closure-pill--success { color: #166534; background: #dcfce7; }
 .p1-closure-pill--info { color: #1d4ed8; background: #dbeafe; }
@@ -58,12 +59,25 @@
 .p1-closure-fields dt { color: #6b7280; font-size: 12px; margin-bottom: 4px; }
 .p1-closure-fields dd { margin: 0; font-weight: 700; overflow-wrap: anywhere; }
 .p1-closure-guardrail { background: #f8fafc; border-radius: 8px; padding: 10px; }
+.p1-drag-handle { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border: 1px solid #e5e7eb; border-radius: 6px; color: #64748b; background: #f8fafc; cursor: not-allowed; user-select: none; flex: 0 0 auto; }
+.p1-drag-disabled-reason { color: #64748b; font-size: 12px; border-top: 1px solid #e5e7eb; padding-top: 8px; }
+.p1-drag-demo { display: grid; gap: 12px; margin-top: 16px; }
+.p1-drag-demo__head { border: 1px solid #e5e7eb; border-radius: 8px; padding: 16px; background: #f8fafc; }
+.p1-drag-demo__head h2 { margin: 0 0 6px; font-size: 15px; }
+.p1-drag-demo__head p { margin: 0; color: #5b6472; }
+.p1-drag-demo__grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.p1-drag-demo-card { border: 1px dashed #cbd5e1; border-radius: 8px; background: #fff; padding: 14px; display: grid; gap: 10px; }
+.p1-drag-demo-card__head { display: flex; align-items: center; gap: 8px; }
+.p1-drag-demo-card p { margin: 0; color: #475569; }
+.p1-drag-guardrails { display: flex; flex-wrap: wrap; gap: 6px; }
+.p1-drag-guardrails code { border-radius: 999px; background: #f1f5f9; color: #334155; padding: 3px 8px; font-size: 12px; }
 .p1-closure-notes { display: grid; grid-template-columns: minmax(0, 1fr); }
 .p1-closure-note { padding: 16px; }
 .p1-closure-note ul { margin: 8px 0 0; padding-left: 20px; color: #374151; }
 .p1-closure-loading { padding: 16px; color: #6b7280; }
 @media (max-width: 900px) {
   .p1-closure-grid,
+  .p1-drag-demo__grid,
   .p1-closure-fields { grid-template-columns: 1fr; }
   .p1-closure-intro,
   .p1-closure-banner { align-items: flex-start; flex-direction: column; }
