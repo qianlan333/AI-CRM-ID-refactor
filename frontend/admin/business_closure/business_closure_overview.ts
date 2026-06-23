@@ -1,42 +1,40 @@
 import {
   type BusinessClosurePayload,
-  type ScenarioEvidence,
-  canRenderGlobalPass,
-  scenarioNeedsOperatorAction,
-  statusMeta
-} from "./status_model.js";
+  canRenderGlobalPass
+} from "../shared/status_model.js";
+import { escapeHtml } from "../shared/dom.js";
+import { renderStatusCard } from "../shared/status_card.js";
+import { dragPreviewForScenario, validateDropIntent } from "../shared/interaction_contract.js";
 
-function text(value: unknown): string {
-  return String(value ?? "");
-}
-
-function escapeHtml(value: unknown): string {
-  return text(value)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
-}
-
-function scenarioCard(scenario: ScenarioEvidence): string {
-  const meta = statusMeta(scenario.status);
-  const actionRequired = scenarioNeedsOperatorAction(scenario);
-  const actionText = actionRequired ? "需要继续跟踪" : "当前无需运营动作";
+function readonlyInteractionDemo(payload: BusinessClosurePayload): string {
+  const rows = payload.scenarios.map((scenario) => {
+    const preview = dragPreviewForScenario(scenario);
+    const blockedDrop = validateDropIntent(scenario, "blocked_noop");
+    const guardrails = preview.guardrails.map((guardrail) => `<code>${escapeHtml(guardrail)}</code>`).join(" ");
+    return `
+      <article class="p1-drag-demo-card" data-drag-entity="${escapeHtml(preview.entity)}" data-execution-mode="${escapeHtml(preview.executionMode)}" data-drop-intent="${escapeHtml(blockedDrop.intent)}" data-drop-allowed="${blockedDrop.allowed ? "true" : "false"}">
+        <div class="p1-drag-demo-card__head">
+          <span class="p1-drag-handle" aria-hidden="true">⋮⋮</span>
+          <strong>${escapeHtml(preview.label)}</strong>
+        </div>
+        <dl class="p1-closure-fields">
+          <div><dt>Execution</dt><dd>${escapeHtml(preview.executionMode)}</dd></div>
+          <div><dt>Drop</dt><dd>${escapeHtml(blockedDrop.intent)}</dd></div>
+          <div><dt>Status after drop</dt><dd>${escapeHtml(blockedDrop.statusAfterDrop)}</dd></div>
+        </dl>
+        <p>${escapeHtml(blockedDrop.reason)}</p>
+        <p class="p1-drag-guardrails">${guardrails}</p>
+      </article>
+    `;
+  }).join("");
   return `
-    <article class="p1-closure-card p1-closure-card--${meta.tone}" data-scenario="${escapeHtml(scenario.key)}" data-status="${escapeHtml(scenario.status)}">
-      <div class="p1-closure-card__head">
-        <h2>${escapeHtml(scenario.title)}</h2>
-        <span class="p1-closure-pill p1-closure-pill--${meta.tone}">${escapeHtml(meta.label)}</span>
+    <section class="p1-drag-demo" aria-label="Read-only drag-ready interaction contract">
+      <div class="p1-drag-demo__head">
+        <h2>Drag-ready interaction contract</h2>
+        <p>只读交互占位：blocked_noop 不会改变 evidence status，也不会触发 external effect。</p>
       </div>
-      <dl class="p1-closure-fields">
-        <div><dt>Evidence</dt><dd>${escapeHtml(scenario.evidenceStatus)}</dd></div>
-        <div><dt>Derived</dt><dd>${escapeHtml(scenario.derivedStatus)}</dd></div>
-        <div><dt>Operator</dt><dd>${escapeHtml(actionText)}</dd></div>
-      </dl>
-      <p>${escapeHtml(scenario.summary)}</p>
-      <p class="p1-closure-guardrail">${escapeHtml(scenario.guardrail)}</p>
-    </article>
+      <div class="p1-drag-demo__grid">${rows}</div>
+    </section>
   `;
 }
 
@@ -51,8 +49,12 @@ function renderBusinessClosure(root: HTMLElement, payload: BusinessClosurePayloa
       <span class="p1-closure-pill p1-closure-pill--warning">P1_READY_WITH_EXCEPTIONS</span>
     </section>
     <section class="p1-closure-grid" aria-label="Business closure scenario status">
-      ${payload.scenarios.map(scenarioCard).join("")}
+      ${payload.scenarios.map((scenario) => renderStatusCard(scenario, {
+        dragHandle: true,
+        dragDisabledReason: "Readonly preview only: drag-ready visual contract is not wired to execution."
+      })).join("")}
     </section>
+    ${readonlyInteractionDemo(payload)}
   `;
 }
 
