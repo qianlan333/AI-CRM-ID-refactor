@@ -184,6 +184,89 @@ def test_skipped_non_applicable_is_explicit() -> None:
     assert payload["classification"] == "planner_skipped_non_applicable"
 
 
+def test_legacy_campaign_event_is_reclassified_as_non_applicable() -> None:
+    fixture = _base_fixture()
+    fixture["approval_event"]["payload_summary_json"] = {
+        "plan_type": "legacy_campaign",
+        "source": "legacy_campaign",
+        "target_count": 47,
+    }
+    for row in fixture["consumer_runs"]:
+        if row["consumer_name"] == PLANNER:
+            row["status"] = "skipped"
+            row["attempt_count"] = 2
+            row["result_summary_json"] = {
+                "planner_result": "planner_skipped_non_applicable",
+                "reason": "consumer_non_applicable",
+                "plan_type": "legacy_campaign",
+            }
+
+    payload = classify_evidence(fixture)
+
+    assert payload["classification"] == "legacy_event_non_applicable"
+    assert payload["planner_consumer_pending_classification"] == "legacy_event_non_applicable"
+    assert payload["event_plan_type"] == "legacy_campaign"
+    assert payload["legacy_event_reclassification"]["classification"] == "legacy_event_non_applicable"
+    assert payload["legacy_event_reclassification"]["can_judge_next_native_planner"] is False
+    assert payload["next_native_evidence_target_status"] == "BLOCKED_NEXT_NATIVE_TARGET_MISSING"
+    assert payload["operator_action_required"] is True
+    assert payload["required_operator_action"] == "create_or_approve_next_native_test_plan"
+    assert payload["recommended_execution_mode"] == "do_not_rerun_legacy_event_select_next_native_cloud_plan_target"
+
+
+def test_next_native_plan_with_recipients_and_messages_is_ready_for_evidence() -> None:
+    fixture = _base_fixture()
+    fixture["next_native_evidence_target"] = {
+        "plan_id": "cloud_plan_ready_001",
+        "plan_type": "cloud_plan",
+        "approval_event_exists": True,
+        "recipient_projection_count": 3,
+        "message_projection_count": 3,
+        "planner_consumer_executable": True,
+    }
+
+    payload = classify_evidence(fixture)
+
+    assert payload["classification"] == "run_due_ready_for_operator_preview"
+    assert payload["next_native_evidence_target_status"] == "next_native_plan_ready_for_evidence"
+    assert payload["can_recollect_ops_plan_e2e_now"] is True
+    assert payload["next_native_target_blocking_reason"] == ""
+
+
+def test_next_native_plan_missing_recipients_blocks_evidence_target() -> None:
+    fixture = _base_fixture()
+    fixture["next_native_evidence_target"] = {
+        "plan_id": "cloud_plan_missing_recipients",
+        "plan_type": "cloud_plan",
+        "approval_event_exists": True,
+        "recipient_projection_count": 0,
+        "message_projection_count": 2,
+    }
+
+    payload = classify_evidence(fixture)
+
+    assert payload["next_native_evidence_target_status"] == "next_native_plan_missing_recipients"
+    assert payload["next_native_target_blocking_reason"] == "next_native_recipient_projection_missing"
+    assert payload["can_recollect_ops_plan_e2e_now"] is False
+
+
+def test_next_native_plan_missing_messages_blocks_evidence_target() -> None:
+    fixture = _base_fixture()
+    fixture["next_native_evidence_target"] = {
+        "plan_id": "cloud_plan_missing_messages",
+        "plan_type": "cloud_plan",
+        "approval_event_exists": True,
+        "recipient_projection_count": 2,
+        "message_projection_count": 0,
+    }
+
+    payload = classify_evidence(fixture)
+
+    assert payload["next_native_evidence_target_status"] == "next_native_plan_missing_messages"
+    assert payload["next_native_target_blocking_reason"] == "next_native_message_projection_missing"
+    assert payload["can_recollect_ops_plan_e2e_now"] is False
+
+
 def test_failed_retryable_is_classified_for_operator_retry_preview() -> None:
     fixture = _base_fixture()
     for row in fixture["consumer_runs"]:
@@ -204,6 +287,16 @@ def test_sensitive_values_are_redacted_from_output() -> None:
     fixture["approval_event"]["raw_external_userid"] = "wm_raw_should_not_appear"
     fixture["approval_event"]["phone"] = "13800000000"
     fixture["approval_event"]["target_list"] = ["raw_member_should_not_appear"]
+    fixture["next_native_evidence_target"] = {
+        "plan_id": "cloud_plan_sensitive_probe",
+        "plan_type": "cloud_plan",
+        "recipient_projection_count": 1,
+        "message_projection_count": 1,
+        "raw_external_userid": "wm_next_target_should_not_appear",
+        "mobile": "13900000000",
+        "raw_target_list": ["raw_target_should_not_appear"],
+        "member_customer_identifier": "member_customer_should_not_appear",
+    }
     fixture["ops_plan_broadcast_run_due_config"]["secret"] = "secret_should_not_appear"
     fixture["ops_plan_broadcast_run_due_config"]["Authorization"] = "Bearer token_should_not_appear"
 
@@ -215,6 +308,10 @@ def test_sensitive_values_are_redacted_from_output() -> None:
     assert "raw_member_should_not_appear" not in dumped
     assert "secret_should_not_appear" not in dumped
     assert "token_should_not_appear" not in dumped
+    assert "wm_next_target_should_not_appear" not in dumped
+    assert "13900000000" not in dumped
+    assert "raw_target_should_not_appear" not in dumped
+    assert "member_customer_should_not_appear" not in dumped
     assert "iev_demo_should_be_redacted_fd6b" not in dumped
     assert "iev_***fd6b" in dumped
 
