@@ -1,0 +1,76 @@
+{% extends "admin_shell/base.html" %}
+
+{% block content %}
+<section class="p1-closure-page" data-route-owner="ai_crm_next">
+  <section class="admin-card p1-closure-intro">
+    <div>
+      <h2>P1 入口判定</h2>
+      <p>Business Closure final closeout 允许启动 P1 TypeScript Frontend Foundation，但仍带例外。</p>
+    </div>
+    <span class="p1-closure-pill p1-closure-pill--warning">P1_READY_WITH_EXCEPTIONS</span>
+  </section>
+
+  <section id="businessClosureApp" aria-label="Business closure evidence overview">
+    <div class="admin-card p1-closure-loading">加载业务闭环状态...</div>
+  </section>
+
+  <section class="p1-closure-notes" aria-label="P1 guardrails">
+    <article class="admin-card p1-closure-note">
+      <h2>前端呈现护栏</h2>
+      <ul>
+        <li>WeCom 必须展示 external-config-blocked，不能显示为授权完成。</li>
+        <li>Group Ops 必须展示 governance_missing / evidence_incomplete。</li>
+        <li>Ops Plan 必须展示 downstream pending，不能显示为 completed。</li>
+        <li>全局状态是 P1_READY_WITH_EXCEPTIONS，不是 PASS_90_PLUS。</li>
+      </ul>
+    </article>
+  </section>
+
+  <script id="businessClosurePayload" type="application/json">{{ business_closure_payload | tojson }}</script>
+</section>
+
+<style>
+.p1-closure-page { display: grid; gap: 16px; }
+.p1-closure-intro { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 16px; }
+.p1-closure-intro h2,
+.p1-closure-card h2,
+.p1-closure-note h2,
+.p1-closure-banner h2 { margin: 0 0 6px; font-size: 15px; }
+.p1-closure-intro p,
+.p1-closure-card p,
+.p1-closure-banner p { margin: 0; color: #5b6472; }
+.p1-closure-banner { display: flex; align-items: center; justify-content: space-between; gap: 16px; border: 1px solid #f59e0b; background: #fffbeb; border-radius: 8px; padding: 16px; margin-bottom: 16px; }
+.p1-closure-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.p1-closure-card { border: 1px solid #e5e7eb; border-radius: 8px; background: #fff; padding: 16px; display: grid; gap: 12px; }
+.p1-closure-card--success { border-color: #bbf7d0; }
+.p1-closure-card--info { border-color: #bfdbfe; }
+.p1-closure-card--warning { border-color: #fde68a; }
+.p1-closure-card--danger { border-color: #fecaca; }
+.p1-closure-card__head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+.p1-closure-pill { display: inline-flex; align-items: center; justify-content: center; min-height: 24px; padding: 3px 9px; border-radius: 999px; font-size: 12px; font-weight: 700; white-space: nowrap; }
+.p1-closure-pill--success { color: #166534; background: #dcfce7; }
+.p1-closure-pill--info { color: #1d4ed8; background: #dbeafe; }
+.p1-closure-pill--warning { color: #92400e; background: #fef3c7; }
+.p1-closure-pill--danger { color: #991b1b; background: #fee2e2; }
+.p1-closure-pill--neutral { color: #374151; background: #f3f4f6; }
+.p1-closure-fields { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin: 0; }
+.p1-closure-fields div { border: 1px solid #e5e7eb; border-radius: 8px; padding: 8px; min-width: 0; }
+.p1-closure-fields dt { color: #6b7280; font-size: 12px; margin-bottom: 4px; }
+.p1-closure-fields dd { margin: 0; font-weight: 700; overflow-wrap: anywhere; }
+.p1-closure-guardrail { background: #f8fafc; border-radius: 8px; padding: 10px; }
+.p1-closure-notes { display: grid; grid-template-columns: minmax(0, 1fr); }
+.p1-closure-note { padding: 16px; }
+.p1-closure-note ul { margin: 8px 0 0; padding-left: 20px; color: #374151; }
+.p1-closure-loading { padding: 16px; color: #6b7280; }
+@media (max-width: 900px) {
+  .p1-closure-grid,
+  .p1-closure-fields { grid-template-columns: 1fr; }
+  .p1-closure-intro,
+  .p1-closure-banner { align-items: flex-start; flex-direction: column; }
+}
+</style>
+{% endblock %}
+
+{% block scripts_extra %}
+<script type="module" src="{{ admin_path_for('static', filename='admin_console/p1/business_closure/business_closure_overview.js') }}?v=p1-ts-foundation-20260623"></script>
+{% endblock %}

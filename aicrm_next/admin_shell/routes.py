@@ -6,6 +6,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import RedirectResponse
 from fastapi.templating import Jinja2Templates
 
+from .business_closure import business_closure_payload
 from .navigation import admin_path_for, shell_context
 from .view_model import AdminShellApiClient
 
@@ -52,6 +53,26 @@ def admin_dashboard(request: Request):
         }
     )
     return templates.TemplateResponse(request, "admin_shell/dashboard.html", context)
+
+
+@router.get("/admin/business-closure", name="api.admin_business_closure_page")
+def admin_business_closure_page(request: Request):
+    context = shell_context(
+        request=request,
+        page_title="Business Closure / P1 Readiness",
+        page_summary="只读展示 P1_READY_WITH_EXCEPTIONS、业务证据状态和 P1 入口护栏。",
+        active_endpoint="api.admin_business_closure_page",
+    )
+    context.update(
+        {
+            "breadcrumbs": [
+                {"label": "客户管理后台", "href": admin_path_for("api.admin_console_dashboard")},
+                {"label": "业务闭环状态", "href": ""},
+            ],
+            "business_closure_payload": business_closure_payload(),
+        }
+    )
+    return templates.TemplateResponse(request, "admin_shell/business_closure.html", context)
 
 
 @router.get("/api/admin/dashboard/shell-context", name="api.admin_dashboard_shell_context")
