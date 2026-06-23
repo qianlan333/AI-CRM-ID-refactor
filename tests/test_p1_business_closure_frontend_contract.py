@@ -16,6 +16,8 @@ INTERACTION_CONTRACT = ROOT / "frontend" / "admin" / "shared" / "interaction_con
 OVERVIEW_SCRIPT = ROOT / "frontend" / "admin" / "business_closure" / "business_closure_overview.ts"
 PUSH_CENTER_STATUS = ROOT / "frontend" / "admin" / "push_center" / "push_center_status.ts"
 PUSH_CENTER_OVERVIEW = ROOT / "frontend" / "admin" / "push_center" / "push_center_overview.ts"
+OPS_PLAN_STATUS = ROOT / "frontend" / "admin" / "ops_plan" / "ops_plan_status.ts"
+OPS_PLAN_OVERVIEW = ROOT / "frontend" / "admin" / "ops_plan" / "ops_plan_overview.ts"
 
 
 def _client(monkeypatch) -> TestClient:
@@ -39,6 +41,16 @@ def _payload_from_html(html: str) -> dict:
 def _push_center_payload_from_html(html: str) -> dict:
     match = re.search(
         r'<script id="pushCenterP1StatusPayload" type="application/json">\s*(.*?)\s*</script>',
+        html,
+        re.S,
+    )
+    assert match, html
+    return json.loads(match.group(1))
+
+
+def _ops_plan_payload_from_html(html: str) -> dict:
+    match = re.search(
+        r'<script id="opsPlanP1StatusPayload" type="application/json">\s*(.*?)\s*</script>',
         html,
         re.S,
     )
@@ -176,6 +188,66 @@ def test_push_center_readonly_status_copy_does_not_claim_false_completion() -> N
         "治理证据已完成",
         "downstream completed",
         "PASS_90_PLUS 已完成",
+    ]:
+        assert forbidden not in status_source
+        assert forbidden not in overview_source
+
+
+def test_ops_plan_page_renders_p1_readonly_downstream_status_slice(monkeypatch) -> None:
+    response = _client(monkeypatch).get("/admin/cloud-orchestrator/plans")
+    html = response.text
+    payload = _ops_plan_payload_from_html(html)
+
+    assert response.status_code == 200
+    assert "opsPlanP1StatusApp" in html
+    assert "opsPlanP1StatusPayload" in html
+    assert "ops_plan_overview.js" in html
+    assert "P1 Ops Plan" in html
+    cards = payload["cards"]
+    assert payload["evidenceSummary"]["planId"] == "p0-1283-plan-20260615152503"
+    assert payload["evidenceSummary"]["planType"] == "cloud_plan"
+    assert payload["evidenceSummary"]["plannerResult"] == "planner_created_broadcast_job"
+    assert payload["evidenceSummary"]["broadcastJobId"] == "broadcast_job:3644"
+    assert payload["evidenceSummary"]["pushCenterStatus"] == "pending"
+    assert payload["evidenceSummary"]["externalEffectJob"] == "not_created"
+    assert payload["evidenceSummary"]["realExternalCallExecuted"] is False
+    assert any(item["rawStatus"] == "push_center_pending" for item in cards)
+    assert any(item["rawStatus"] == "planner_created_broadcast_job" for item in cards)
+    assert any(item["rawStatus"] == "external_effect_not_created" for item in cards)
+    assert "PASS_90_PLUS_CANDIDATE" not in json.dumps(payload, ensure_ascii=False)
+
+
+def test_ops_plan_frontend_slice_reuses_shared_status_contract() -> None:
+    status_source = OPS_PLAN_STATUS.read_text(encoding="utf-8")
+    overview_source = OPS_PLAN_OVERVIEW.read_text(encoding="utf-8")
+
+    assert 'from "../shared/status_model.js"' in status_source
+    assert 'from "../shared/interaction_contract.js"' in status_source
+    assert 'from "../shared/status_card.js"' in overview_source
+    assert '"downstream-pending"' in status_source
+    assert '"pending"' in status_source
+    assert '"sent"' in status_source
+    assert '"blocked"' in status_source
+    assert '"retryable"' in status_source
+    assert '"operator-action-required"' in status_source
+    assert '"failed-terminal"' in status_source
+    assert '"evidence-incomplete"' in status_source
+    assert 'validateDropIntent(scenario, "blocked_noop")' in status_source
+    assert "Readonly preview only; no direct send." in overview_source
+
+
+def test_ops_plan_readonly_status_copy_does_not_claim_false_completion() -> None:
+    status_source = OPS_PLAN_STATUS.read_text(encoding="utf-8")
+    overview_source = OPS_PLAN_OVERVIEW.read_text(encoding="utf-8")
+
+    assert "下游 external effect 尚未执行，不能显示为 completed" in status_source
+    assert "Push Center pending 不能显示为 sent 或 completed" in status_source
+    assert "broadcast_job created 不等于 external-effect sent" in status_source
+    assert "不执行下游 external effect" in overview_source
+    for forbidden in [
+        "downstream completed",
+        "broadcast_job sent",
+        "全局 PASS_90_PLUS 已完成",
     ]:
         assert forbidden not in status_source
         assert forbidden not in overview_source
