@@ -2,6 +2,174 @@
 
 {% block head_extra %}
 <link rel="stylesheet" href="/static/automation-engine/admin_console/channel_admission_pages.css">
+<style>
+  .p1-wecom-panel {
+    display: grid;
+    gap: 14px;
+    margin-bottom: 18px;
+  }
+
+  .p1-wecom-banner,
+  .p1-wecom-evidence,
+  .p1-wecom-interaction-shell {
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    background: #fff;
+    padding: 16px;
+  }
+
+  .p1-wecom-banner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    border-color: #fecaca;
+    background: #fff1f2;
+  }
+
+  .p1-wecom-banner h2,
+  .p1-wecom-evidence h2,
+  .p1-wecom-shell-head h2,
+  .p1-closure-card h2 {
+    margin: 0 0 6px;
+    font-size: 15px;
+  }
+
+  .p1-wecom-banner p,
+  .p1-wecom-evidence p,
+  .p1-wecom-shell-head p,
+  .p1-closure-card p {
+    margin: 0;
+    color: #5b6472;
+  }
+
+  .p1-wecom-evidence__grid,
+  .p1-closure-fields {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+    margin: 0;
+  }
+
+  .p1-wecom-evidence__grid div,
+  .p1-closure-fields div {
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    padding: 8px;
+    min-width: 0;
+  }
+
+  .p1-wecom-evidence__grid dt,
+  .p1-closure-fields dt {
+    color: #6b7280;
+    font-size: 12px;
+    margin-bottom: 4px;
+  }
+
+  .p1-wecom-evidence__grid dd,
+  .p1-closure-fields dd {
+    margin: 0;
+    font-weight: 700;
+    overflow-wrap: anywhere;
+  }
+
+  .p1-closure-grid,
+  .p1-wecom-interaction-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14px;
+  }
+
+  .p1-closure-card,
+  .p1-wecom-interaction-card {
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    background: #fff;
+    padding: 16px;
+    display: grid;
+    gap: 12px;
+  }
+
+  .p1-closure-card--success { border-color: #bbf7d0; }
+  .p1-closure-card--info { border-color: #bfdbfe; }
+  .p1-closure-card--warning { border-color: #fde68a; }
+  .p1-closure-card--danger { border-color: #fecaca; }
+
+  .p1-closure-card__head,
+  .p1-wecom-interaction-card__head {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 12px;
+  }
+
+  .p1-closure-title-row {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+  }
+
+  .p1-closure-pill {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 24px;
+    padding: 3px 9px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 700;
+    white-space: nowrap;
+  }
+
+  .p1-closure-pill--success { color: #166534; background: #dcfce7; }
+  .p1-closure-pill--info { color: #1d4ed8; background: #dbeafe; }
+  .p1-closure-pill--warning { color: #92400e; background: #fef3c7; }
+  .p1-closure-pill--danger { color: #991b1b; background: #fee2e2; }
+  .p1-closure-pill--neutral { color: #374151; background: #f3f4f6; }
+
+  .p1-closure-guardrail,
+  .p1-drag-disabled-reason {
+    background: #f8fafc;
+    border-radius: 8px;
+    padding: 10px;
+  }
+
+  .p1-drag-handle {
+    color: #6b7280;
+    cursor: not-allowed;
+    font-weight: 900;
+    letter-spacing: 0;
+  }
+
+  .p1-drag-guardrails {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .p1-drag-guardrails code {
+    border-radius: 999px;
+    background: #eef2ff;
+    color: #3730a3;
+    padding: 2px 7px;
+    font-size: 12px;
+  }
+
+  @media (max-width: 920px) {
+    .p1-closure-grid,
+    .p1-wecom-interaction-grid,
+    .p1-wecom-evidence__grid,
+    .p1-closure-fields {
+      grid-template-columns: 1fr;
+    }
+
+    .p1-wecom-banner {
+      align-items: flex-start;
+      flex-direction: column;
+    }
+  }
+</style>
 {% endblock %}
 
 {% block content %}
@@ -12,6 +180,74 @@
   data-api-channels="{{ payload.api_urls.channels }}"
 >
   <script type="application/json" data-channel-bootstrap>{{ payload | tojson }}</script>
+
+  <section id="weComP1StatusApp" class="p1-wecom-panel" aria-label="P1 WeCom external config read-only status slice">
+    <div class="admin-card">加载 P1 WeCom 外部配置状态...</div>
+  </section>
+  <script id="weComP1StatusPayload" type="application/json">
+  {
+    "cards": [
+      {
+        "title": "Auth start",
+        "rawStatus": "external_config_blocked",
+        "evidenceStatus": "BLOCKED_CONFIG_NOT_APPROVED",
+        "derivedStatus": "external_call_blocked_503",
+        "evidenceId": "/auth/wecom/start",
+        "summary": "/auth/wecom/start 可达，但 controlled external_call_blocked 503；未进入真实 redirect/auth flow。",
+        "guardrail": "external-config-blocked 不能显示为授权完成。",
+        "route": "docs/reports/evidence/wecom_auth_callback_operator_evidence_20260623.md"
+      },
+      {
+        "title": "Auth callback",
+        "rawStatus": "external_config_blocked",
+        "evidenceStatus": "BLOCKED_CONFIG_NOT_APPROVED",
+        "derivedStatus": "callback_external_call_blocked_503",
+        "evidenceId": "/auth/wecom/callback",
+        "summary": "/auth/wecom/callback 可达，但 controlled external_call_blocked 503；没有 auth/callback record。",
+        "guardrail": "controlled blocked 不是授权完成。",
+        "route": "docs/reports/evidence/wecom_auth_callback_operator_evidence_20260623.md"
+      },
+      {
+        "title": "External contact callback",
+        "rawStatus": "callback_fail_closed",
+        "evidenceStatus": "EVIDENCE_COLLECTED_NOT_READY",
+        "derivedStatus": "missing_signature_fail_closed_400",
+        "evidenceId": "/wecom/external-contact/callback",
+        "summary": "缺签名时 fail-closed 400；没有 valid callback signature evidence。",
+        "guardrail": "fail-closed 不能显示为 callback success。",
+        "route": "docs/reports/evidence/wecom_auth_callback_evidence_20260623.md"
+      },
+      {
+        "title": "Admin event visibility",
+        "rawStatus": "evidence_incomplete",
+        "evidenceStatus": "EVIDENCE_COLLECTED_NOT_READY",
+        "derivedStatus": "no_callback_linked_event_found",
+        "evidenceId": "/api/admin/internal-events",
+        "summary": "admin internal events 查询可达，但 no callback-linked event / idempotency / permission scope evidence。",
+        "guardrail": "缺 auth record、internal_event、permission scope 不能显示为 complete。",
+        "route": "/api/admin/internal-events"
+      }
+    ],
+    "evidenceSummary": {
+      "authStartRoute": "/auth/wecom/start",
+      "authStartStatus": "controlled_external_call_blocked_503",
+      "authCallbackRoute": "/auth/wecom/callback",
+      "authCallbackStatus": "controlled_external_call_blocked_503",
+      "contactCallbackRoute": "/wecom/external-contact/callback",
+      "contactCallbackStatus": "fail_closed_400_missing_signature",
+      "eventsRoute": "/api/wecom/events",
+      "eventsStatus": "fail_closed_400_missing_signature",
+      "adminVisibility": "admin_internal_events_reachable",
+      "callbackLinkedEvent": "not_found",
+      "validCallbackSignature": "missing",
+      "authRecord": "not_found",
+      "idempotencyEvidence": "not_found",
+      "permissionScope": "not_found",
+      "realExternalCallExecuted": false,
+      "finalStatus": "BLOCKED_CONFIG_NOT_APPROVED"
+    }
+  }
+  </script>
 
   <section class="channel-metric-grid" data-channel-metrics>
     <article class="channel-metric">
@@ -81,4 +317,5 @@
 
 {% block scripts_extra %}
 <script defer src="/static/automation-engine/admin_console/channel_code_center_next.js?v=remove-recent-entry-20260608"></script>
+<script type="module" src="{{ url_for('static', filename='admin_console/p1/wecom/wecom_overview.js') }}?v=p1-wecom-status-20260623"></script>
 {% endblock %}
