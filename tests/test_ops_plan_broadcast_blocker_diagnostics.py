@@ -99,9 +99,89 @@ def test_already_succeeded_is_classified_without_operator_action() -> None:
 
     payload = classify_evidence(fixture)
 
-    assert payload["classification"] == "consumer_already_succeeded"
+    assert payload["classification"] == "planner_runtime_repair_required"
+    assert payload["operator_action_required"] is True
+    assert payload["recommended_execution_mode"] == "manual_review_readonly_only"
+
+
+def test_created_broadcast_job_is_classified_with_downstream_evidence_fields() -> None:
+    fixture = _base_fixture()
+    for row in fixture["consumer_runs"]:
+        if row["consumer_name"] == PLANNER:
+            row["status"] = "succeeded"
+            row["attempt_count"] = 1
+            row["result_summary_json"] = {
+                "planner_result": "planner_created_broadcast_job",
+                "broadcast_job_id": 42,
+                "push_center_job_id": "broadcast_job:42",
+                "idempotency_key": "ops_plan_approved_broadcast:demo",
+                "duplicate_handling": "created",
+                "downstream_status": "broadcast_job_queued",
+            }
+    fixture["downstream"] = {"broadcast_job_count": 1, "broadcast_job_ids": [42], "external_effect_job_count": 0}
+
+    payload = classify_evidence(fixture)
+
+    assert payload["classification"] == "planner_created_broadcast_job"
+    assert payload["planner_result"] == "planner_created_broadcast_job"
+    assert payload["broadcast_job_id"] == 42
+    assert payload["push_center_job_id"] == "broadcast_job:42"
+    assert payload["duplicate_handling"] == "created"
+    assert payload["downstream_status"] == "broadcast_job_queued"
     assert payload["operator_action_required"] is False
-    assert payload["recommended_execution_mode"] == "no_execute_recollect_ops_plan_broadcast_evidence"
+    assert payload["recommended_execution_mode"] == "do_not_rerun_planner_recollect_downstream_broadcast_and_push_center_evidence"
+
+
+def test_reused_broadcast_job_is_classified_idempotently() -> None:
+    fixture = _base_fixture()
+    for row in fixture["consumer_runs"]:
+        if row["consumer_name"] == PLANNER:
+            row["status"] = "succeeded"
+            row["attempt_count"] = 2
+            row["result_summary_json"] = {
+                "planner_result": "planner_reused_broadcast_job",
+                "broadcast_job_id": 42,
+                "push_center_job_id": "broadcast_job:42",
+                "duplicate_handling": "reused",
+            }
+
+    payload = classify_evidence(fixture)
+
+    assert payload["classification"] == "planner_reused_broadcast_job"
+    assert payload["duplicate_handling"] == "reused"
+
+
+def test_skipped_missing_required_input_is_explicit() -> None:
+    fixture = _base_fixture()
+    for row in fixture["consumer_runs"]:
+        if row["consumer_name"] == PLANNER:
+            row["status"] = "skipped"
+            row["attempt_count"] = 1
+            row["result_summary_json"] = {
+                "planner_result": "planner_skipped_missing_required_input",
+                "reason": "missing_audience",
+            }
+
+    payload = classify_evidence(fixture)
+
+    assert payload["classification"] == "planner_skipped_missing_required_input"
+    assert payload["blocking_reason"] == "planner_missing_required_input"
+
+
+def test_skipped_non_applicable_is_explicit() -> None:
+    fixture = _base_fixture()
+    for row in fixture["consumer_runs"]:
+        if row["consumer_name"] == PLANNER:
+            row["status"] = "skipped"
+            row["attempt_count"] = 1
+            row["result_summary_json"] = {
+                "planner_result": "planner_skipped_non_applicable",
+                "reason": "consumer_non_applicable",
+            }
+
+    payload = classify_evidence(fixture)
+
+    assert payload["classification"] == "planner_skipped_non_applicable"
 
 
 def test_failed_retryable_is_classified_for_operator_retry_preview() -> None:
@@ -114,7 +194,7 @@ def test_failed_retryable_is_classified_for_operator_retry_preview() -> None:
 
     payload = classify_evidence(fixture)
 
-    assert payload["classification"] == "consumer_failed_retryable"
+    assert payload["classification"] == "planner_failed_retryable"
     assert payload["retry_route_available"] is True
     assert payload["can_execute_in_operator_window"] is True
 

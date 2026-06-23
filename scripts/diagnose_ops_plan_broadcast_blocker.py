@@ -42,6 +42,14 @@ CLASSIFICATIONS = {
     "consumer_non_applicable",
     "runtime_repair_required",
     "unknown_requires_manual_review",
+    "planner_created_broadcast_job",
+    "planner_reused_broadcast_job",
+    "planner_succeeded_downstream_pending",
+    "planner_skipped_non_applicable",
+    "planner_skipped_missing_required_input",
+    "planner_failed_retryable",
+    "planner_failed_terminal",
+    "planner_runtime_repair_required",
 }
 
 SENSITIVE_KEY_PARTS = (
@@ -91,6 +99,14 @@ def classify_evidence(evidence: dict[str, Any]) -> dict[str, Any]:
     planner_run = _planner_run(runs)
     config = _run_due_config(evidence=evidence, planner_run=planner_run)
     classification = _classify(event_type=event_type, planner_run=planner_run, config=config)
+    planner_result = _planner_result(planner_run)
+    downstream = dict(evidence.get("downstream") or {})
+    broadcast_job_id = _planner_field(planner_run, "broadcast_job_id")
+    external_effect_job_id = _planner_field(planner_run, "external_effect_job_id")
+    push_center_job_id = _planner_field(planner_run, "push_center_job_id")
+    idempotency_key = _planner_field(planner_run, "idempotency_key")
+    duplicate_handling = _planner_field(planner_run, "duplicate_handling")
+    downstream_status = _planner_field(planner_run, "downstream_status")
 
     assert classification in CLASSIFICATIONS
     output = {
@@ -110,6 +126,14 @@ def classify_evidence(evidence: dict[str, Any]) -> dict[str, Any]:
         "expected_consumer_names": list(EXPECTED_CONSUMERS),
         "actual_consumer_run_records": runs,
         "broadcast_task_planner_consumer": planner_run or {"consumer_name": PLANNER_CONSUMER, "status": "not_found"},
+        "planner_result": planner_result,
+        "broadcast_job_id": broadcast_job_id or "not_found",
+        "external_effect_job_id": external_effect_job_id or "not_found",
+        "push_center_job_id": push_center_job_id or "not_found",
+        "idempotency_key": idempotency_key or "not_found",
+        "duplicate_handling": duplicate_handling or "not_found",
+        "downstream_status": downstream_status or "not_found",
+        "downstream": downstream,
         "status": str((planner_run or {}).get("status") or "not_found"),
         "attempt_count": int((planner_run or {}).get("attempt_count") or 0),
         "last_error": _last_error(planner_run),
@@ -119,7 +143,7 @@ def classify_evidence(evidence: dict[str, Any]) -> dict[str, Any]:
         "preview_route": RUN_DUE_PREVIEW_ROUTE,
         "run_route_available": True,
         "run_route": RUN_DUE_EXECUTE_ROUTE,
-        "retry_route_available": classification == "consumer_failed_retryable",
+        "retry_route_available": classification in {"consumer_failed_retryable", "planner_failed_retryable"},
         "retry_route": SINGLE_CONSUMER_RETRY_ROUTE,
         "skip_route_available": classification in {"run_due_ready_for_operator_preview", "run_due_blocked_by_auto_execute_config", "run_due_blocked_by_allowlist", "run_due_blocked_by_token"},
         "skip_route": SINGLE_CONSUMER_SKIP_ROUTE,
@@ -132,13 +156,29 @@ def classify_evidence(evidence: dict[str, Any]) -> dict[str, Any]:
         "allowlist_required": config["allowlist_required"],
         "allowlist_status": config["allowlist_status"],
         "allowlist_missing": config["allowlist_missing"],
-        "operator_action_required": classification not in {"consumer_already_succeeded", "consumer_non_applicable"},
-        "can_execute_in_operator_window": classification in {"run_due_ready_for_operator_preview", "consumer_failed_retryable"},
+        "operator_action_required": classification
+        not in {"consumer_already_succeeded", "consumer_non_applicable", "planner_created_broadcast_job", "planner_reused_broadcast_job"},
+        "can_execute_in_operator_window": classification in {"run_due_ready_for_operator_preview", "consumer_failed_retryable", "planner_failed_retryable"},
         "real_external_call_risk": "none_from_internal_event_worker; planner may create broadcast_job and later external_effect_job only after execute",
         "production_write_risk": _production_write_risk(classification),
         "recommended_execution_mode": _recommended_execution_mode(classification),
-        "downstream_job_expected": classification in {"run_due_ready_for_operator_preview", "consumer_failed_retryable"},
-        "push_center_visibility_expected": classification in {"run_due_ready_for_operator_preview", "consumer_failed_retryable", "consumer_already_succeeded"},
+        "downstream_job_expected": classification
+        in {
+            "run_due_ready_for_operator_preview",
+            "consumer_failed_retryable",
+            "planner_created_broadcast_job",
+            "planner_reused_broadcast_job",
+            "planner_succeeded_downstream_pending",
+        },
+        "push_center_visibility_expected": classification
+        in {
+            "run_due_ready_for_operator_preview",
+            "consumer_failed_retryable",
+            "consumer_already_succeeded",
+            "planner_created_broadcast_job",
+            "planner_reused_broadcast_job",
+            "planner_succeeded_downstream_pending",
+        },
         "blocking_reason": _blocking_reason(classification),
         "sensitive_data_redaction_ok": True,
         "can_claim_ops_plan_broadcast_90_plus": False,
@@ -156,12 +196,29 @@ def _classify(*, event_type: str, planner_run: dict[str, Any] | None, config: di
         return "runtime_repair_required"
 
     status = str(planner_run.get("status") or "").lower()
-    if status in {"succeeded", "skipped"}:
+    if status == "succeeded":
+        planner_result = _planner_result(planner_run)
+        if planner_result in {"planner_created_broadcast_job", "planner_reused_broadcast_job"}:
+            return planner_result
+        if _planner_field(planner_run, "broadcast_job_id"):
+            return "planner_succeeded_downstream_pending"
+        return "planner_runtime_repair_required"
+    if status == "skipped":
+        planner_result = _planner_result(planner_run)
+        if planner_result == "planner_skipped_non_applicable":
+            return "planner_skipped_non_applicable"
+        if planner_result == "planner_skipped_missing_required_input":
+            return "planner_skipped_missing_required_input"
+        reason = str((planner_run.get("result_summary_json") or {}).get("reason") or "").lower()
+        if reason in {"consumer_non_applicable", "unsupported_plan_type"}:
+            return "planner_skipped_non_applicable"
+        if reason.startswith("missing_"):
+            return "planner_skipped_missing_required_input"
         return "consumer_already_succeeded"
     if status in {"failed_retryable", "failed", "error"}:
-        return "consumer_failed_retryable"
+        return "planner_failed_retryable"
     if status in {"failed_terminal", "blocked"}:
-        return "consumer_failed_terminal"
+        return "planner_failed_terminal"
     if status != "pending":
         return "unknown_requires_manual_review"
     if config["token_configured"] is False:
@@ -190,6 +247,7 @@ def _consumer_run_records(evidence: dict[str, Any]) -> list[dict[str, Any]]:
                 "last_error_code": str(row.get("last_error_code") or row.get("error_code") or ""),
                 "last_error_message": str(row.get("last_error_message") or row.get("error_message") or ""),
                 "next_run_at": str(row.get("next_run_at") or row.get("next_retry_at") or ""),
+                "result_summary_json": _redact_payload(row.get("result_summary_json") or {}),
             }
         )
     return records
@@ -279,21 +337,41 @@ def _last_error(planner_run: dict[str, Any] | None) -> dict[str, str]:
     }
 
 
+def _planner_result(planner_run: dict[str, Any] | None) -> str:
+    if not planner_run:
+        return ""
+    summary = planner_run.get("result_summary_json") if isinstance(planner_run.get("result_summary_json"), dict) else {}
+    return str(summary.get("planner_result") or "")
+
+
+def _planner_field(planner_run: dict[str, Any] | None, key: str) -> Any:
+    if not planner_run:
+        return ""
+    summary = planner_run.get("result_summary_json") if isinstance(planner_run.get("result_summary_json"), dict) else {}
+    return summary.get(key) or ""
+
+
 def _production_write_risk(classification: str) -> str:
-    if classification in {"run_due_ready_for_operator_preview", "consumer_failed_retryable"}:
+    if classification in {"run_due_ready_for_operator_preview", "consumer_failed_retryable", "planner_failed_retryable"}:
         return "preview_none; execute_writes_consumer_attempts_and_may_create_broadcast_or_external_effect_job"
+    if classification in {"planner_created_broadcast_job", "planner_reused_broadcast_job", "planner_succeeded_downstream_pending"}:
+        return "readonly_diagnostic_none; prior consumer execution already wrote or reused broadcast_job"
     return "none_for_readonly_diagnostic"
 
 
 def _recommended_execution_mode(classification: str) -> str:
     if classification == "run_due_ready_for_operator_preview":
         return "operator_preview_first_then_single_consumer_execute_after_approval"
-    if classification == "consumer_failed_retryable":
+    if classification in {"consumer_failed_retryable", "planner_failed_retryable"}:
         return "operator_retry_preview_then_single_consumer_retry_or_run_after_approval"
     if classification in {"run_due_blocked_by_token", "run_due_blocked_by_auto_execute_config", "run_due_blocked_by_allowlist"}:
         return "fix_gate_or_collect_operator_approval_before_any_execute"
     if classification == "consumer_already_succeeded":
         return "no_execute_recollect_ops_plan_broadcast_evidence"
+    if classification in {"planner_created_broadcast_job", "planner_reused_broadcast_job", "planner_succeeded_downstream_pending"}:
+        return "do_not_rerun_planner_recollect_downstream_broadcast_and_push_center_evidence"
+    if classification in {"planner_skipped_missing_required_input", "planner_skipped_non_applicable"}:
+        return "do_not_execute_repair_or_reclassify_plan_input_before_retry"
     return "manual_review_readonly_only"
 
 
@@ -309,6 +387,14 @@ def _blocking_reason(classification: str) -> str:
         "consumer_failed_terminal": "terminal_consumer_failure",
         "consumer_non_applicable": "event_type_not_ops_plan_approved",
         "runtime_repair_required": "planner_consumer_run_missing_or_handler_not_registered",
+        "planner_created_broadcast_job": "",
+        "planner_reused_broadcast_job": "",
+        "planner_succeeded_downstream_pending": "broadcast_job_created_but_downstream_not_complete",
+        "planner_skipped_non_applicable": "planner_consumer_non_applicable",
+        "planner_skipped_missing_required_input": "planner_missing_required_input",
+        "planner_failed_retryable": "retryable_planner_failure",
+        "planner_failed_terminal": "terminal_planner_failure",
+        "planner_runtime_repair_required": "planner_succeeded_without_auditable_job_output",
         "unknown_requires_manual_review": "classifier_could_not_determine_safe_next_action",
     }.get(classification, "unknown_requires_manual_review")
 
@@ -324,10 +410,22 @@ def _business_explanation(classification: str) -> str:
         return "Planner consumer is pending, but event/consumer allowlist does not include the requested ops_plan.approved planner scope."
     if classification == "consumer_already_succeeded":
         return "Planner consumer already finished; recollect downstream job and Push Center evidence."
-    if classification == "consumer_failed_retryable":
+    if classification in {"consumer_failed_retryable", "planner_failed_retryable"}:
         return "Planner consumer has a retryable failure; operator should preview retry before execution."
-    if classification == "consumer_failed_terminal":
+    if classification in {"consumer_failed_terminal", "planner_failed_terminal"}:
         return "Planner consumer failed terminally and needs runtime repair or manual review."
+    if classification == "planner_created_broadcast_job":
+        return "Planner consumer created a broadcast_job; recollect downstream worker and Push Center evidence."
+    if classification == "planner_reused_broadcast_job":
+        return "Planner consumer reused the existing broadcast_job idempotently; recollect downstream worker and Push Center evidence."
+    if classification == "planner_succeeded_downstream_pending":
+        return "Planner consumer produced a broadcast job, but downstream external effect or Push Center completion still needs evidence."
+    if classification == "planner_skipped_non_applicable":
+        return "Planner consumer skipped because the event is not applicable to the Next ops plan broadcast planner."
+    if classification == "planner_skipped_missing_required_input":
+        return "Planner consumer skipped with an explicit missing-input reason; repair plan data before retry."
+    if classification == "planner_runtime_repair_required":
+        return "Planner consumer finished without auditable broadcast job output; runtime repair is required."
     if classification == "runtime_repair_required":
         return "Planner consumer run record was not found, indicating registration/runtime repair may be required."
     return "Readonly diagnostic could not safely classify the planner consumer blocker."
@@ -374,15 +472,15 @@ def _load_readonly_db_evidence(*, plan_id: str, database_url: str | None) -> dic
         if event:
             runs = conn.execute(
                 """
-                select id, consumer_name, status, attempt_count, last_error_code, last_error_message, next_retry_at
+                select id, consumer_name, status, attempt_count, last_error_code, last_error_message, next_retry_at, result_summary_json
                   from internal_event_consumer_run
                  where event_id = %s
                  order by consumer_name
                 """,
                 (event["event_id"],),
             ).fetchall()
-        broadcast_jobs = _safe_count(conn, "broadcast_jobs", plan_id)
-        external_effect_jobs = _safe_count(conn, "external_effect_job", plan_id)
+        broadcast_jobs = _safe_related_rows(conn, "broadcast_jobs", plan_id)
+        external_effect_jobs = _safe_related_rows(conn, "external_effect_job", plan_id)
         conn.execute("ROLLBACK")
 
     return _redact_payload(
@@ -402,29 +500,47 @@ def _load_readonly_db_evidence(*, plan_id: str, database_url: str | None) -> dic
             },
             "consumer_runs": runs,
             "downstream": {
-                "broadcast_job_count": broadcast_jobs,
-                "external_effect_job_count": external_effect_jobs,
+                "broadcast_job_count": len(broadcast_jobs),
+                "broadcast_job_ids": [row.get("id") for row in broadcast_jobs],
+                "external_effect_job_count": len(external_effect_jobs),
+                "external_effect_job_ids": [row.get("id") for row in external_effect_jobs],
             },
             "ops_plan_broadcast_run_due_config": _collect_run_due_gate_config(),
         }
     )
 
 
-def _safe_count(conn: Any, table: str, plan_id: str) -> int:
+def _safe_related_rows(conn: Any, table: str, plan_id: str) -> list[dict[str, Any]]:
     try:
-        row = conn.execute(
-            f"""
-            select count(*)::int as count
-              from {table}
+        if table == "broadcast_jobs":
+            rows = conn.execute(
+                """
+                select id, status, source_type, source_id, trace_id, idempotency_key
+                  from broadcast_jobs
+                 where cast(coalesce(source_id, '') as text) = %s
+                    or cast(coalesce(trace_id, '') as text) = %s
+                    or cast(coalesce(idempotency_key, '') as text) like %s
+                 order by id desc
+                 limit 20
+                """,
+                (str(plan_id), str(plan_id), f"%{str(plan_id)}%"),
+            ).fetchall()
+            return [dict(row) for row in rows]
+        rows = conn.execute(
+            """
+            select id, raw_status, source_command_id, trace_id, source_event_id
+              from external_effect_job
              where cast(coalesce(source_command_id, '') as text) = %s
                 or cast(coalesce(trace_id, '') as text) = %s
                 or cast(coalesce(source_event_id, '') as text) = %s
+             order by id desc
+             limit 20
             """,
             (str(plan_id), str(plan_id), str(plan_id)),
-        ).fetchone()
+        ).fetchall()
+        return [dict(row) for row in rows]
     except Exception:
-        return 0
-    return int((row or {}).get("count") or 0)
+        return []
 
 
 def _collect_run_due_gate_config() -> dict[str, Any]:

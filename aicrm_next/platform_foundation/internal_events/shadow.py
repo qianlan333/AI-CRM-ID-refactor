@@ -419,14 +419,101 @@ def campaign_summary_consumer(event: InternalEvent, run: InternalEventConsumerRu
     return _skipped("campaign_summary_not_configured", event, run)
 
 
+def _ops_plan_id_from_event(event: InternalEvent) -> str:
+    payload_summary = event.payload_summary_json if isinstance(event.payload_summary_json, dict) else {}
+    payload = event.payload_json if isinstance(event.payload_json, dict) else {}
+    plan_payload = payload.get("plan") if isinstance(payload.get("plan"), dict) else {}
+    for value in (
+        payload_summary.get("plan_id"),
+        payload.get("plan_id"),
+        plan_payload.get("plan_id"),
+        event.aggregate_id if event.aggregate_type == "cloud_orchestrator_plan" else "",
+        event.subject_id if event.subject_type == "ops_plan" else "",
+        event.source_command_id,
+    ):
+        if _text(value):
+            return _text(value)
+    return ""
+
+
+def _ops_plan_type_from_event(event: InternalEvent) -> str:
+    payload_summary = event.payload_summary_json if isinstance(event.payload_summary_json, dict) else {}
+    payload = event.payload_json if isinstance(event.payload_json, dict) else {}
+    return _text(payload_summary.get("plan_type") or payload.get("plan_type") or "cloud_plan")
+
+
 def broadcast_task_planner_consumer(event: InternalEvent, run: InternalEventConsumerRun) -> InternalEventConsumerResult:
-    _mark_legacy_hook(
-        event,
-        run,
-        legacy_path=f"{event.event_type}.legacy_broadcast_task_planner",
-        reason="broadcast_task_planner_replaced_by_internal_event_consumer",
+    plan_id = _ops_plan_id_from_event(event)
+    plan_type = _ops_plan_type_from_event(event)
+    request_summary = {
+        "event_id": event.event_id,
+        "consumer_name": run.consumer_name,
+        "plan_id": plan_id or "missing",
+    }
+    if not plan_id:
+        return InternalEventConsumerResult(
+            status="skipped",
+            request_summary=request_summary,
+            response_summary={"skipped": True, "reason": "missing_plan_id", "real_external_call_executed": False},
+            result_summary={"reason": "missing_plan_id", "planner_result": "planner_skipped_missing_required_input"},
+        )
+    if plan_type not in {"cloud_plan", "ops_plan"}:
+        return InternalEventConsumerResult(
+            status="skipped",
+            request_summary={**request_summary, "plan_type": plan_type},
+            response_summary={
+                "skipped": True,
+                "reason": "consumer_non_applicable",
+                "plan_type": plan_type,
+                "real_external_call_executed": False,
+            },
+            result_summary={
+                "reason": "consumer_non_applicable",
+                "plan_type": plan_type,
+                "planner_result": "planner_skipped_non_applicable",
+            },
+        )
+    from aicrm_next.cloud_orchestrator.repository import build_cloud_plan_repository
+
+    result = build_cloud_plan_repository().create_or_reuse_plan_broadcast_job(
+        plan_id,
+        operator=event.actor_id or "internal_event_worker",
+        source_event_id=event.event_id,
+        idempotency_key=event.idempotency_key,
     )
-    return _skipped("broadcast_task_planner_not_configured", event, run)
+    if _text(result.get("status")) == "skipped":
+        reason = _text(result.get("reason")) or "planner_skipped_missing_required_input"
+        planner_result = (
+            "planner_skipped_non_applicable"
+            if reason in {"consumer_non_applicable", "unsupported_plan_type"}
+            else "planner_skipped_missing_required_input"
+        )
+        return InternalEventConsumerResult(
+            status="skipped",
+            request_summary=request_summary,
+            response_summary={"skipped": True, "reason": reason, "real_external_call_executed": False},
+            result_summary={"reason": reason, "planner_result": planner_result},
+        )
+    duplicate_handling = "reused" if _text(result.get("status")) == "reused" else "created"
+    planner_result = "planner_reused_broadcast_job" if duplicate_handling == "reused" else "planner_created_broadcast_job"
+    response_summary = {
+        "succeeded": True,
+        "planner_result": planner_result,
+        "duplicate_handling": duplicate_handling,
+        "broadcast_job_id": int(result.get("broadcast_job_id") or 0),
+        "push_center_job_id": _text(result.get("push_center_job_id")),
+        "downstream_status": _text(result.get("downstream_status")) or "broadcast_job_queued",
+        "idempotency_key": _text(result.get("idempotency_key")),
+        "target_count": int(result.get("target_count") or 0),
+        "real_external_call_executed": False,
+        "external_effect_job_created": False,
+    }
+    return InternalEventConsumerResult(
+        status="succeeded",
+        request_summary=request_summary,
+        response_summary=response_summary,
+        result_summary=response_summary,
+    )
 
 
 def broadcast_queue_projection_consumer(event: InternalEvent, run: InternalEventConsumerRun) -> InternalEventConsumerResult:
