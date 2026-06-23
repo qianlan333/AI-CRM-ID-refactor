@@ -7677,6 +7677,17 @@ routes:
   data_source: command
   requires_auth: true
   rollback: previous_release
+- path: /api/ai/audience/test-agent/webhook
+  methods:
+  - POST
+  route_name: api.ai_audience_test_agent_webhook
+  capability_owner: ai_audience_ops
+  runtime_owner: ai_crm_next
+  layer: webhook
+  external_effects: staging_disabled
+  data_source: command
+  requires_auth: false
+  rollback: previous_release
 - path: /api/ai/audience/packages/{package_id}/runs
   methods:
   - GET

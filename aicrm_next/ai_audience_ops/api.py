@@ -21,6 +21,7 @@ from .schemas import (
 )
 from .service import AudiencePackageService
 from .sql_catalog import schema_catalog_payload
+from .test_agent_service import AudienceTestAgentService
 from .webhook_service import AudienceInboundWebhookService
 
 router = APIRouter()
@@ -243,6 +244,19 @@ async def inbound_webhook(package_key: str, request: Request) -> JSONResponse:
         signature=_text(request.headers.get("X-AICRM-Signature") or request.headers.get("X-AICRM-Audience-Signature")),
     )
     return _json(result, status_code=200 if result.get("ok") else 401 if result.get("error") == "invalid_signature" else 404)
+
+
+@router.post("/api/ai/audience/test-agent/webhook", name="api.ai_audience_test_agent_webhook")
+async def test_agent_webhook(request: Request) -> JSONResponse:
+    try:
+        payload = await _body(request)
+        result = AudienceTestAgentService().handle(
+            payload,
+            signature=_text(request.headers.get("X-AICRM-External-Effect-Signature")),
+        )
+        return _json(result, status_code=int(result.get("status_code") or (200 if result.get("ok") else 400)))
+    except Exception as exc:
+        return _json({"ok": False, "error": str(exc)}, status_code=400)
 
 
 @router.get("/api/ai/audience/packages/{package_id}/runs", name="api.ai_audience_package_runs")
