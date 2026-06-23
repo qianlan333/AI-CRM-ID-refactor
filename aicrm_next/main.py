@@ -8,6 +8,7 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from .admin_auth import reset_admin_auth_fixture_state
+from .ai_audience_ops import register_ai_audience_event_consumers
 from .admin_jobs.repository import reset_admin_jobs_fixture_state
 from .automation_engine.group_ops.repo import reset_group_ops_fixture_state
 from .automation_engine.customer_webhooks import reset_customer_webhook_fixture_state
@@ -47,6 +48,7 @@ def create_app() -> FastAPI:
     app = FastAPI(title="AI-CRM Next", version="0.1.0")
     register_payment_succeeded_consumers()
     register_shadow_event_consumers()
+    register_ai_audience_event_consumers()
 
     if fixture_mode():
         reset_user_ops_fixture_state()

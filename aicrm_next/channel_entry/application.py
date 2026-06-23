@@ -37,6 +37,7 @@ from aicrm_next.platform_foundation.external_effects import (
     WECOM_WELCOME_MESSAGE_SEND,
 )
 from aicrm_next.platform_foundation.external_effects.worker import ExternalEffectWorker
+from aicrm_next.platform_foundation.internal_events import InternalEventService
 from aicrm_next.shared.runtime_settings import runtime_bool, runtime_csv
 
 CUSTOMER_NAME_PLACEHOLDER_RE = re.compile(r"\{\{\s*客户名\s*\}\}")
@@ -213,6 +214,56 @@ def _wake_welcome_external_effect_job(job_id: Any) -> bool:
         return False
     _WELCOME_EFFECT_EXECUTOR.submit(_dispatch_welcome_external_effect_job, normalized_job_id)
     return True
+
+
+def _ai_audience_channel_entry_only_enabled() -> bool:
+    return runtime_bool("AICRM_AI_AUDIENCE_CHANNEL_ENTRY_ONLY")
+
+
+def _emit_channel_entry_internal_event(
+    command: ProcessChannelEntryCommand,
+    *,
+    channel_id: int,
+    scene: str,
+    channel_contact: dict[str, Any],
+) -> dict[str, Any]:
+    try:
+        result = InternalEventService().emit_event(
+            event_type="channel_entry.entered",
+            aggregate_type="automation_channel",
+            aggregate_id=str(channel_id),
+            subject_type="external_userid",
+            subject_id=text(command.external_contact_id),
+            idempotency_key=f"channel_entry:{command.event_log_id or channel_id}:{command.external_contact_id}:{scene}",
+            source_module="channel_entry.application",
+            source_command_id=str(command.event_log_id or ""),
+            payload={
+                "source_type": "channel_entry",
+                "source_key": f"channel:{channel_id}",
+                "channel_id": channel_id,
+                "scene_value": scene,
+                "external_userid": command.external_contact_id,
+                "owner_userid": command.follow_user_userid,
+                "channel_contact_id": channel_contact.get("id"),
+                "payload": repo.json_safe(command.payload_json or {}),
+            },
+            payload_summary={
+                "channel_id": channel_id,
+                "scene_value": scene,
+                "external_userid": command.external_contact_id,
+            },
+            context=CommandContext(
+                actor_id=text(command.follow_user_userid) or "channel_entry",
+                actor_type="system",
+                request_id=str(command.event_log_id or ""),
+                trace_id=f"channel-entry-{command.event_log_id}" if command.event_log_id else "",
+                source_route="channel_entry.process_channel_entry",
+            ),
+        )
+        return {"ok": True, "event_id": text((result.get("event") or {}).get("event_id")), "consumer_run_count": len(result.get("consumer_runs") or [])}
+    except Exception as exc:
+        LOGGER.warning("channel entry internal event emit failed: %s", exc)
+        return {"ok": False, "error": str(exc)}
 
 
 def _admit_program_binding(
@@ -619,11 +670,19 @@ def process_channel_entry(command: ProcessChannelEntryCommand) -> dict[str, Any]
         channel_contact = {"planned": True, "channel_id": channel_id, "external_contact_id": command.external_contact_id}
     else:
         channel_contact = repo.upsert_channel_contact(channel_id=channel_id, external_contact_id=command.external_contact_id, owner_staff_id=command.follow_user_userid, source_payload=command.payload_json)
+        channel_entry_event = _emit_channel_entry_internal_event(command, channel_id=channel_id, scene=scene, channel_contact=channel_contact)
         _log_effect(command, effect_type="channel_contact", idempotency_key=f"{corp_id}:{command.external_contact_id}:{command.follow_user_userid}:{channel_id}:contact", status="success", channel_id=channel_id, scene_value=scene, reason="upserted", response_json=channel_contact)
+    if command.dry_run:
+        channel_entry_event = {"ok": False, "reason": "dry_run"}
 
     welcome = _send_welcome(command, channel=channel, scene=scene)
     tag = _apply_tag(command, channel=channel, scene=scene)
-    admission_results, member_written, admission_reason = _admit(command, channel=channel, scene=scene)
+    if _ai_audience_channel_entry_only_enabled():
+        admission_results = []
+        member_written = False
+        admission_reason = "ai_audience_channel_entry_only"
+    else:
+        admission_results, member_written, admission_reason = _admit(command, channel=channel, scene=scene)
     workflow_triggered = any(bool(item.get("realtime_task_hook")) for item in admission_results)
     admission_effect_status = "success" if member_written else ("skipped" if admission_reason == "no_active_binding" else "attempted")
     _log_effect(command, effect_type="program_admission", idempotency_key=f"{corp_id}:{command.external_contact_id}:{channel_id}:{command.event_log_id or scene}:admission", status=admission_effect_status, channel_id=channel_id, scene_value=scene, reason=admission_reason, response_json={"admission_results": admission_results})
@@ -642,6 +701,7 @@ def process_channel_entry(command: ProcessChannelEntryCommand) -> dict[str, Any]
         "welcome_message": welcome,
         "entry_tag": tag,
         "assignment": assignment_result,
+        "channel_entry_internal_event": channel_entry_event,
     }
 
 

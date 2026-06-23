@@ -6,6 +6,7 @@ from typing import Any
 from fastapi import APIRouter, FastAPI
 
 from .ai_assist.api import router as ai_assist_router
+from .ai_audience_ops.api import router as ai_audience_ops_router
 from .admin_auth.api import router as admin_auth_router
 from .admin_config.api import router as admin_config_router
 from .admin_jobs.routes import router as admin_jobs_router
@@ -105,6 +106,7 @@ ROUTER_SPECS: tuple[RouterSpec, ...] = (
     RouterSpec("media_library", "media_library", media_library_router),
     RouterSpec("media_library", "media_library_admin_pages", media_library_admin_pages_router),
     RouterSpec("ai_assist", "ai_assist", ai_assist_router),
+    RouterSpec("ai_audience_ops", "ai_audience_ops", ai_audience_ops_router, "AI audience package SQL refresh APIs"),
     RouterSpec("send_content", "send_content", send_content_router),
     RouterSpec("admin_jobs", "admin_jobs", admin_jobs_router),
     RouterSpec("owner_migration", "owner_migration", owner_migration_router),

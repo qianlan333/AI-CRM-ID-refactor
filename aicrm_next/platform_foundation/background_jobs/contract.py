@@ -212,6 +212,7 @@ def webhook_route_contracts() -> tuple[WebhookRouteContract, ...]:
         W("/api/automation/group-ops/plans/{plan_id}/webhook/reset-token", ("POST",), "regenerate_group_ops_webhook", "none", "command", "token rotation command records state only"),
         W("/api/admin/automation-conversion/group-ops/plans/{plan_id}/webhook/regenerate", ("POST",), "regenerate_group_ops_webhook", "none", "command", "token rotation command records state only"),
         W("/api/automation/group-ops/webhooks/{webhook_key}", ("POST",), "receive_group_ops_webhook", "none", "command", "inbound group ops webhook records event/job before effects"),
+        W("/api/ai/audience/packages/{package_key}/webhook", ("POST",), "api.ai_audience_inbound_webhook", "staging_disabled", "command", "AI audience Agent callback records inbound event by default; optional actions are planned through external effects only when explicitly enabled"),
         W("/api/customers/automation/activation-webhook", ("OPTIONS",), "api_customer_automation_activation_webhook_options", "none", "read_model", "preflight route only"),
         W("/api/customers/automation/activation-webhook", ("POST",), "api_customer_automation_activation_webhook", "none", "command", "activation webhook plans work before effects"),
         W("/api/customers/automation/webhook-deliveries/{delivery_id:int}/retry", ("OPTIONS",), "api_customer_automation_webhook_delivery_retry_options", "none", "read_model", "preflight route only"),
