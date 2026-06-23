@@ -91,6 +91,9 @@ def test_production_like_evidence_classifies_pending_consumers_and_missing_custo
     assert payload["external_effect_linkage"]["classification"] == "expected_not_applicable"
     assert payload["internal_event_consumer_pending_decision"]["run_due_route_available"] is True
     assert payload["internal_event_consumer_pending_decision"]["consumer_placeholder_only"] is False
+    assert payload["payment_succeeded_consumer_run_due"]["classification"] == "run_due_ready_for_operator_preview"
+    assert payload["payment_succeeded_consumer_run_due"]["preview_route_available"] is True
+    assert payload["payment_succeeded_consumer_run_due"]["required_token_or_gate"]
     assert payload["customer_read_model_linkage_decision"]["projection_status"] == "backfill_required"
     assert payload["customer_read_model_linkage_decision"]["projection_source_found"] is True
     assert payload["customer_read_model_linkage_decision"]["projection_target_found"] is False
