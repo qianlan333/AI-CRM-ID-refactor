@@ -35,6 +35,10 @@ class PackageVersionCreateRequest(BaseModel):
     natural_language_explanation: str = ""
 
 
+class PackagePublishRequest(BaseModel):
+    version_id: int | None = None
+
+
 class PreviewRequest(BaseModel):
     sql_text: str = ""
     sql_kind: str = "incremental"

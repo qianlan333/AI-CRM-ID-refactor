@@ -63,12 +63,15 @@ class AudiencePackageService:
         self._repo.replace_dependencies(package_id, int(version["id"]), sorted(set(dependencies)))
         return {"ok": not validation_errors, "version": version, "validation_errors": sorted(set(validation_errors))}
 
-    def publish(self, package_id: int) -> dict[str, Any]:
+    def publish(self, package_id: int, *, version_id: int | None = None) -> dict[str, Any]:
         package = self._repo.get_package(package_id)
         if not package:
             return {"ok": False, "error": "package_not_found"}
-        version = self._repo.get_current_version(package_id)
-        if not version:
+        if version_id is not None:
+            version = self._repo.get_version(int(version_id))
+            if not version or int(version.get("package_id") or 0) != int(package_id):
+                return {"ok": False, "error": "version_not_found"}
+        else:
             version = self._repo.get_latest_version(package_id)
         if not version:
             return {"ok": False, "error": "version_not_found"}
@@ -113,7 +116,8 @@ class AudiencePackageService:
         return {"ok": True, "subscriptions": self._repo.list_subscriptions(package_id)}
 
     def create_subscription(self, package_id: int, payload: dict[str, Any]) -> dict[str, Any]:
-        return {"ok": True, "subscription": self._repo.create_subscription(package_id, payload)}
+        subscription = self._repo.create_subscription(package_id, payload)
+        return {"ok": True, "subscription": subscription, "deduplicated": bool(subscription.get("deduplicated"))}
 
     def update_subscription(self, subscription_id: int, payload: dict[str, Any]) -> dict[str, Any]:
         subscription = self._repo.update_subscription(subscription_id, payload)

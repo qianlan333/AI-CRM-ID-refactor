@@ -14,6 +14,7 @@ from .schemas import (
     OutboundSubscriptionCreateRequest,
     OutboundSubscriptionUpdateRequest,
     PackageCreateRequest,
+    PackagePublishRequest,
     PackageVersionCreateRequest,
     PreviewRequest,
     RefreshRequest,
@@ -135,8 +136,12 @@ async def preview_package(package_id: int, request: Request) -> JSONResponse:
 async def publish_package(package_id: int, request: Request) -> JSONResponse:
     if auth := _auth_error(request):
         return auth
-    result = AudiencePackageService().publish(package_id)
-    return _json(result, status_code=200 if result.get("ok") else 400)
+    try:
+        payload = PackagePublishRequest(**await _body(request))
+        result = AudiencePackageService().publish(package_id, version_id=payload.version_id)
+        return _json(result, status_code=200 if result.get("ok") else 400)
+    except Exception as exc:
+        return _json({"ok": False, "error": str(exc)}, status_code=400)
 
 
 @router.post("/api/ai/audience/packages/{package_id}/pause", name="api.ai_audience_pause_package")

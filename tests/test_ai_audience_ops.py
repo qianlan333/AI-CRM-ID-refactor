@@ -5,12 +5,14 @@ import hmac
 import json
 import os
 from datetime import datetime, timezone
+from typing import Any
 
 import pytest
 from sqlalchemy import text
 
 from aicrm_next.channel_entry.application import _ai_audience_channel_entry_only_enabled
 from aicrm_next.ai_audience_ops.event_types import MEMBER_EVENT_PREFIX, OUTBOUND_EFFECT_CONSUMER
+from aicrm_next.ai_audience_ops.outbound_service import AudienceOutboundService
 from aicrm_next.ai_audience_ops.repository import next_daily_refresh_at
 from aicrm_next.ai_audience_ops.service import AudiencePackageService
 from aicrm_next.ai_audience_ops.sql_linter import lint_sql
@@ -41,6 +43,23 @@ def _valid_incremental_sql() -> str:
         WHERE questionnaire_id = :questionnaire_id
           AND submitted_at >= :last_watermark_at
           AND submitted_at < :refresh_started_at
+    """
+
+
+def _valid_snapshot_sql(*, include_test_user: bool = True) -> str:
+    suffix = "" if include_test_user else " AND 1 = 0"
+    return f"""
+        SELECT
+            'external_userid' AS identity_type,
+            wc.external_userid AS identity_value,
+            'daily_snapshot:' || wc.external_userid AS event_source_key,
+            wc.payload_json AS payload_json,
+            wc.external_userid,
+            wc.owner_userid,
+            wc.updated_at AS event_at
+        FROM audience_read.wecom_contacts_v1 wc
+        WHERE wc.external_userid = :test_external_userid
+        {suffix}
     """
 
 
@@ -75,7 +94,7 @@ def test_publish_requires_sql_for_enabled_refresh_modes() -> None:
         def get_package(self, package_id):
             return {"id": package_id, "incremental_enabled": True, "daily_enabled": True}
 
-        def get_current_version(self, package_id):
+        def get_latest_version(self, package_id):
             return {"id": 9, "incremental_sql_text": _valid_incremental_sql(), "snapshot_sql_text": ""}
 
         def update_version_validation(self, *args, **kwargs):
@@ -86,6 +105,183 @@ def test_publish_requires_sql_for_enabled_refresh_modes() -> None:
     assert result["ok"] is False
     assert result["error"] == "sql_validation_failed"
     assert "snapshot_sql_required" in result["validation_errors"]
+
+
+@pytest.mark.usefixtures("next_pg_schema")
+def test_publish_defaults_to_latest_version(next_client, monkeypatch) -> None:
+    monkeypatch.setenv("AICRM_AI_AUDIENCE_API_TOKEN", TOKEN)
+
+    create_resp = next_client.post(
+        "/api/ai/audience/packages",
+        headers=_auth(),
+        json={
+            "package_key": "publish_latest_pkg",
+            "name": "发布 latest 测试",
+            "incremental_sql_text": _valid_incremental_sql(),
+        },
+    )
+    assert create_resp.status_code == 200
+    package_id = create_resp.json()["package"]["id"]
+    v1_id = create_resp.json()["version"]["id"]
+
+    publish_v1 = next_client.post(f"/api/ai/audience/packages/{package_id}/publish", headers=_auth(), json={})
+    assert publish_v1.status_code == 200
+
+    v2_resp = next_client.post(
+        f"/api/ai/audience/packages/{package_id}/versions",
+        headers=_auth(),
+        json={"incremental_sql_text": _valid_incremental_sql() + "\n-- version 2\n"},
+    )
+    assert v2_resp.status_code == 200
+    v2_id = v2_resp.json()["version"]["id"]
+
+    publish_latest = next_client.post(f"/api/ai/audience/packages/{package_id}/publish", headers=_auth(), json={})
+    assert publish_latest.status_code == 200
+    assert publish_latest.json()["version"]["id"] == v2_id
+    assert publish_latest.json()["package"]["current_version_id"] == v2_id
+
+    session_factory = get_session_factory()
+    with session_factory() as session:
+        rows = session.execute(
+            text(
+                """
+                SELECT id, status
+                FROM ai_audience_package_version
+                WHERE package_id = :package_id
+                ORDER BY id
+                """
+            ),
+            {"package_id": package_id},
+        ).mappings().all()
+    statuses = {int(row["id"]): row["status"] for row in rows}
+    assert statuses[v1_id] == "archived"
+    assert statuses[v2_id] == "published"
+
+
+@pytest.mark.usefixtures("next_pg_schema")
+def test_publish_can_target_specific_version(next_client, monkeypatch) -> None:
+    monkeypatch.setenv("AICRM_AI_AUDIENCE_API_TOKEN", TOKEN)
+
+    create_resp = next_client.post(
+        "/api/ai/audience/packages",
+        headers=_auth(),
+        json={
+            "package_key": "publish_specific_pkg",
+            "name": "指定发布测试",
+            "incremental_sql_text": _valid_incremental_sql(),
+        },
+    )
+    assert create_resp.status_code == 200
+    package_id = create_resp.json()["package"]["id"]
+    v1_id = create_resp.json()["version"]["id"]
+    v2_resp = next_client.post(
+        f"/api/ai/audience/packages/{package_id}/versions",
+        headers=_auth(),
+        json={"incremental_sql_text": _valid_incremental_sql() + "\n-- version 2\n"},
+    )
+    assert v2_resp.status_code == 200
+
+    publish_v1 = next_client.post(
+        f"/api/ai/audience/packages/{package_id}/publish",
+        headers=_auth(),
+        json={"version_id": v1_id},
+    )
+    assert publish_v1.status_code == 200
+    assert publish_v1.json()["version"]["id"] == v1_id
+    assert publish_v1.json()["package"]["current_version_id"] == v1_id
+
+
+@pytest.mark.usefixtures("next_pg_schema")
+def test_daily_snapshot_publish_latest_version_can_exit_member(next_client, monkeypatch) -> None:
+    database_url = os.environ["DATABASE_URL"]
+    monkeypatch.setenv("AICRM_AI_AUDIENCE_API_TOKEN", TOKEN)
+    monkeypatch.setenv("AICRM_AUDIENCE_READONLY_DATABASE_URL", database_url)
+    test_user = "wm_daily_exit"
+
+    session_factory = get_session_factory()
+    with session_factory() as session:
+        session.execute(
+            text(
+                """
+                INSERT INTO wecom_external_contact_identity_map (
+                    external_userid, follow_user_userid, name, status, updated_at
+                )
+                VALUES (:external_userid, 'HuangYouCan', 'Daily Exit User', 'active', CURRENT_TIMESTAMP)
+                """
+            ),
+            {"external_userid": test_user},
+        )
+        session.commit()
+
+    create_resp = next_client.post(
+        "/api/ai/audience/packages",
+        headers=_auth(),
+        json={
+            "package_key": "daily_snapshot_exit_pkg",
+            "name": "Daily exited 测试",
+            "query_mode": "hybrid",
+            "incremental_enabled": False,
+            "daily_enabled": True,
+            "snapshot_sql_text": _valid_snapshot_sql(include_test_user=True),
+        },
+    )
+    assert create_resp.status_code == 200
+    package_id = create_resp.json()["package"]["id"]
+    v1_id = create_resp.json()["version"]["id"]
+
+    publish_v1 = next_client.post(f"/api/ai/audience/packages/{package_id}/publish", headers=_auth(), json={})
+    assert publish_v1.status_code == 200
+    entered_resp = next_client.post(
+        f"/api/ai/audience/packages/{package_id}/refresh",
+        headers=_auth(),
+        json={"run_type": "daily", "params": {"test_external_userid": test_user}},
+    )
+    assert entered_resp.status_code == 200
+    assert entered_resp.json()["entered_count"] == 1
+
+    v2_resp = next_client.post(
+        f"/api/ai/audience/packages/{package_id}/versions",
+        headers=_auth(),
+        json={"snapshot_sql_text": _valid_snapshot_sql(include_test_user=False)},
+    )
+    assert v2_resp.status_code == 200
+    v2_id = v2_resp.json()["version"]["id"]
+
+    publish_v2 = next_client.post(f"/api/ai/audience/packages/{package_id}/publish", headers=_auth(), json={})
+    assert publish_v2.status_code == 200
+    assert publish_v2.json()["package"]["current_version_id"] == v2_id
+    exited_resp = next_client.post(
+        f"/api/ai/audience/packages/{package_id}/refresh",
+        headers=_auth(),
+        json={"run_type": "daily", "params": {"test_external_userid": test_user}},
+    )
+    assert exited_resp.status_code == 200
+    assert exited_resp.json()["exited_count"] == 1
+
+    repeat_resp = next_client.post(
+        f"/api/ai/audience/packages/{package_id}/refresh",
+        headers=_auth(),
+        json={"run_type": "daily", "params": {"test_external_userid": test_user}},
+    )
+    assert repeat_resp.status_code == 200
+    assert repeat_resp.json()["exited_count"] == 0
+
+    with session_factory() as session:
+        package_row = session.execute(
+            text("SELECT current_version_id FROM ai_audience_package WHERE id = :package_id"),
+            {"package_id": package_id},
+        ).mappings().one()
+        version_rows = session.execute(
+            text("SELECT id, status FROM ai_audience_package_version WHERE package_id = :package_id ORDER BY id"),
+            {"package_id": package_id},
+        ).mappings().all()
+        member_row = session.execute(
+            text("SELECT status FROM ai_audience_member_current WHERE package_id = :package_id AND external_userid = :external_userid"),
+            {"package_id": package_id, "external_userid": test_user},
+        ).mappings().one()
+    assert package_row["current_version_id"] == v2_id
+    assert {int(row["id"]): row["status"] for row in version_rows} == {v1_id: "archived", v2_id: "published"}
+    assert member_row["status"] == "exited"
 
 
 def test_ai_audience_test_agent_webhook_disabled(next_client, monkeypatch) -> None:
@@ -262,13 +458,122 @@ def test_ai_audience_test_agent_webhook_guards_and_plans_private_message(next_cl
 
 
 @pytest.mark.usefixtures("next_pg_schema")
+def test_create_outbound_subscription_deduplicates_active_target(next_client, monkeypatch) -> None:
+    monkeypatch.setenv("AICRM_AI_AUDIENCE_API_TOKEN", TOKEN)
+
+    create_resp = next_client.post(
+        "/api/ai/audience/packages",
+        headers=_auth(),
+        json={"package_key": "subscription_dedupe_pkg", "name": "订阅去重测试"},
+    )
+    assert create_resp.status_code == 200
+    package_id = create_resp.json()["package"]["id"]
+    webhook_url = "https://agent.example.test/audience"
+
+    first_resp = next_client.post(
+        f"/api/ai/audience/packages/{package_id}/outbound-subscriptions",
+        headers=_auth(),
+        json={
+            "trigger_event_type": "entered",
+            "webhook_url": webhook_url,
+            "signing_secret": "secret-v1",
+            "headers": {"X-Test": "v1"},
+        },
+    )
+    assert first_resp.status_code == 200
+    assert first_resp.json()["deduplicated"] is False
+    first_id = first_resp.json()["subscription"]["id"]
+
+    second_resp = next_client.post(
+        f"/api/ai/audience/packages/{package_id}/outbound-subscriptions",
+        headers=_auth(),
+        json={
+            "trigger_event_type": "entered",
+            "webhook_url": webhook_url,
+            "signing_secret": "secret-v2",
+            "headers": {"X-Test": "v2"},
+            "max_attempts": 7,
+        },
+    )
+    assert second_resp.status_code == 200
+    assert second_resp.json()["deduplicated"] is True
+    assert second_resp.json()["subscription"]["id"] == first_id
+    assert second_resp.json()["subscription"]["signing_secret"] == "secret-v2"
+    assert second_resp.json()["subscription"]["headers_json"] == {"X-Test": "v2"}
+    assert second_resp.json()["subscription"]["max_attempts"] == 7
+
+    session_factory = get_session_factory()
+    with session_factory() as session:
+        active_count = session.execute(
+            text(
+                """
+                SELECT COUNT(*) AS count
+                FROM ai_audience_outbound_subscription
+                WHERE package_id = :package_id
+                  AND status = 'active'
+                  AND trigger_event_type = 'entered'
+                  AND target_type = 'webhook'
+                  AND webhook_url = :webhook_url
+                """
+            ),
+            {"package_id": package_id, "webhook_url": webhook_url},
+        ).mappings().one()["count"]
+    assert active_count == 1
+
+
+def test_outbound_planner_deduplicates_historical_duplicate_subscriptions() -> None:
+    calls: list[dict[str, Any]] = []
+
+    class Repo:
+        def get_member_event(self, member_event_id):
+            return {
+                "id": member_event_id,
+                "package_id": 9,
+                "event_type": "entered",
+                "identity_type": "external_userid",
+                "identity_value": "wm_hist",
+                "external_userid": "wm_hist",
+                "owner_userid": "HuangYouCan",
+                "payload_json": {"case": "historical_duplicate"},
+                "internal_event_id": "evt_hist",
+            }
+
+        def get_package(self, package_id):
+            return {"id": package_id, "package_key": "hist_dup_pkg", "name": "历史重复订阅包"}
+
+        def list_subscriptions(self, package_id, *, active_only=False, trigger_event_type=""):
+            duplicate = {
+                "package_id": package_id,
+                "trigger_event_type": trigger_event_type,
+                "target_type": "webhook",
+                "webhook_url": "https://agent.example.test/audience",
+                "signing_secret": "secret",
+                "execution_mode": "execute",
+                "requires_approval": False,
+                "max_attempts": 5,
+            }
+            return [{**duplicate, "id": 1}, {**duplicate, "id": 2}]
+
+    class Effects:
+        def plan_effect(self, **kwargs):
+            calls.append(kwargs)
+            return {"id": len(calls), "idempotency_key": kwargs["idempotency_key"]}
+
+    result = AudienceOutboundService(repository=Repo(), external_effects=Effects()).plan_for_member_event(88)
+
+    assert result["ok"] is True
+    assert result["planned_count"] == 1
+    assert len(calls) == 1
+    assert calls[0]["idempotency_key"].startswith("ai_audience_outbound:9:88:entered:")
+    assert calls[0]["idempotency_key"] != "ai_audience_outbound:1:88"
+
+
+@pytest.mark.usefixtures("next_pg_schema")
 def test_package_refresh_uses_internal_event_and_external_effect_queue(next_client, monkeypatch) -> None:
     database_url = os.environ["DATABASE_URL"]
     monkeypatch.setenv("AICRM_AI_AUDIENCE_API_TOKEN", TOKEN)
     monkeypatch.setenv("AICRM_AUDIENCE_READONLY_DATABASE_URL", database_url)
     monkeypatch.setenv("AICRM_INTERNAL_EVENTS_ENABLED", "1")
-    monkeypatch.setenv("AICRM_INTERNAL_EVENTS_AUTO_EXECUTE", "1")
-    monkeypatch.setenv("AICRM_INTERNAL_EVENTS_AUTO_EXECUTE_MAX_BATCH_SIZE", "5")
     monkeypatch.setenv("AICRM_INTERNAL_EVENTS_ALLOWED_EVENT_CONSUMERS", f"{MEMBER_EVENT_PREFIX}entered:{OUTBOUND_EFFECT_CONSUMER}")
 
     session_factory = get_session_factory()
@@ -321,13 +626,44 @@ def test_package_refresh_uses_internal_event_and_external_effect_queue(next_clie
     assert body["entered_count"] == 1
     assert body["member_event_count"] == 1
 
-    worker_result = InternalEventWorker().run_due(
-        batch_size=5,
-        dry_run=False,
-        event_types=[f"{MEMBER_EVENT_PREFIX}entered"],
-        consumer_names=[OUTBOUND_EFFECT_CONSUMER],
+    with session_factory() as session:
+        member_event = session.execute(
+            text(
+                """
+                SELECT id, internal_event_id
+                FROM ai_audience_member_event
+                WHERE package_id = :package_id
+                ORDER BY id DESC
+                LIMIT 1
+                """
+            ),
+            {"package_id": package_id},
+        ).mappings().one()
+    assert member_event["internal_event_id"]
+
+    worker = InternalEventWorker()
+    dry_run = worker.dispatch_one_consumer(
+        str(member_event["internal_event_id"]),
+        OUTBOUND_EFFECT_CONSUMER,
+        dry_run=True,
     )
+    assert dry_run["ok"] is True
+    worker_result = worker.dispatch_one_consumer(
+        str(member_event["internal_event_id"]),
+        OUTBOUND_EFFECT_CONSUMER,
+        dry_run=False,
+    )
+    assert worker_result["ok"] is True
     assert worker_result["counts"]["succeeded_count"] == 1
+    for _ in range(2):
+        repeat_result = worker.dispatch_one_consumer(
+            str(member_event["internal_event_id"]),
+            OUTBOUND_EFFECT_CONSUMER,
+            dry_run=False,
+            force=True,
+            reason="test_repeat_idempotency",
+        )
+        assert repeat_result["ok"] is True
 
     effects_resp = next_client.get(f"/api/ai/audience/packages/{package_id}/external-effects", headers=_auth())
     assert effects_resp.status_code == 200
