@@ -27,6 +27,34 @@ EXPECTED_PAYMENT_CONSUMERS = (
 
 PAYMENT_PLACEHOLDER_CONSUMERS: tuple[str, ...] = ()
 
+PAYMENT_SUCCEEDED_CONSUMER_RUN_DUE_CLASSIFICATIONS = {
+    "run_due_ready_for_operator_preview",
+    "run_due_blocked_by_token",
+    "run_due_blocked_by_auto_execute_config",
+    "run_due_blocked_by_allowlist",
+    "run_due_not_eligible",
+    "consumer_already_succeeded",
+    "consumer_failed_retryable",
+    "consumer_failed_terminal",
+    "consumer_explicitly_skippable",
+    "consumer_non_applicable",
+    "runtime_repair_required",
+    "unknown_requires_manual_review",
+}
+
+PAYMENT_SUCCEEDED_EVENT_TYPE = "payment.succeeded"
+PAYMENT_RUN_DUE_PREVIEW_ROUTE = "/api/admin/internal-events/run-due/preview"
+PAYMENT_RUN_DUE_EXECUTE_ROUTE = "/api/admin/internal-events/run-due"
+PAYMENT_SINGLE_CONSUMER_RUN_ROUTE = "/api/admin/internal-events/{event_id}/consumers/{consumer_name}/run"
+PAYMENT_SINGLE_CONSUMER_RETRY_ROUTE = "/api/admin/internal-events/{event_id}/consumers/{consumer_name}/retry"
+PAYMENT_SINGLE_CONSUMER_SKIP_ROUTE = "/api/admin/internal-events/{event_id}/consumers/{consumer_name}/skip"
+PAYMENT_EXTERNAL_EFFECT_CONSUMERS = {"webhook_order_paid_consumer"}
+PAYMENT_OPTIONAL_SKIP_CONSUMERS = {
+    "customer_business_summary_consumer",
+    "dnd_policy_consumer",
+    "ai_assist_notify_consumer",
+}
+
 INTERNAL_EVENT_CONSUMER_PENDING_REPAIR_DECISIONS = {
     "expected_not_applicable",
     "scheduler_not_running",
@@ -65,6 +93,14 @@ SENSITIVE_KEY_PARTS = (
     "order_no",
 )
 
+SAFE_SENSITIVE_METADATA_KEYS = {
+    "required_token_or_gate",
+    "token_gate_status",
+    "token_configured",
+    "token_redacted",
+    "token_never_logged",
+}
+
 
 def run(
     *,
@@ -86,6 +122,7 @@ def classify_evidence(evidence: dict[str, Any]) -> dict[str, Any]:
     external_effect = _classify_external_effect_linkage(evidence)
     linkage = _classify_order_customer_channel_linkage(evidence)
     internal_event_repair = _decide_internal_event_consumer_repair(internal_event, evidence)
+    payment_run_due = _classify_payment_succeeded_consumer_run_due(internal_event, evidence)
     customer_linkage_repair = _decide_customer_linkage_repair(linkage, evidence)
 
     blocker_1 = internal_event["classification"]
@@ -109,6 +146,7 @@ def classify_evidence(evidence: dict[str, Any]) -> dict[str, Any]:
         "source": evidence.get("source") or {"type": "fixture_or_diagnostic"},
         "internal_event": internal_event,
         "internal_event_consumer_pending_decision": internal_event_repair,
+        "payment_succeeded_consumer_run_due": payment_run_due,
         "external_effect_linkage": external_effect,
         "order_customer_channel_linkage": linkage,
         "customer_read_model_linkage_decision": customer_linkage_repair,
@@ -140,6 +178,278 @@ def classify_evidence(evidence: dict[str, Any]) -> dict[str, Any]:
         "sensitive_data_redaction_ok": True,
     }
     return _redact_payload(output)
+
+
+def _classify_payment_succeeded_consumer_run_due(
+    internal_event: dict[str, Any],
+    evidence: dict[str, Any],
+) -> dict[str, Any]:
+    event_type = str(internal_event.get("event_type") or "")
+    actual_runs = _consumer_run_records(evidence)
+    pending_runs = [row for row in actual_runs if str(row.get("status") or "").lower() == "pending"]
+    failed_retryable_runs = [
+        row for row in actual_runs if str(row.get("status") or "").lower() in {"failed_retryable", "failed", "error"}
+    ]
+    failed_terminal_runs = [
+        row for row in actual_runs if str(row.get("status") or "").lower() in {"failed_terminal", "blocked"}
+    ]
+    finished_runs = [row for row in actual_runs if str(row.get("status") or "").lower() in {"succeeded", "skipped"}]
+    attempt_counts = [int(row.get("attempt_count") or 0) for row in actual_runs]
+    missing = list(internal_event.get("missing_consumers") or [])
+    config = _payment_run_due_config(evidence=evidence, pending_runs=pending_runs)
+    run_due_eligible = _payment_run_due_eligible(pending_runs=pending_runs, failed_retryable_runs=failed_retryable_runs)
+
+    if event_type and event_type != PAYMENT_SUCCEEDED_EVENT_TYPE:
+        classification = "consumer_non_applicable"
+    elif missing or not actual_runs:
+        classification = "runtime_repair_required"
+    elif actual_runs and len(finished_runs) == len(actual_runs):
+        classification = "consumer_already_succeeded"
+    elif failed_retryable_runs:
+        classification = "consumer_failed_retryable"
+    elif failed_terminal_runs:
+        classification = "consumer_failed_terminal"
+    elif pending_runs and _all_pending_runs_explicitly_skippable(pending_runs, evidence):
+        classification = "consumer_explicitly_skippable"
+    elif pending_runs and config["token_configured"] is False:
+        classification = "run_due_blocked_by_token"
+    elif pending_runs and config["auto_execute_enabled"] is False:
+        classification = "run_due_blocked_by_auto_execute_config"
+    elif pending_runs and config["allowlist_missing"] is True:
+        classification = "run_due_blocked_by_allowlist"
+    elif pending_runs and not run_due_eligible:
+        classification = "run_due_not_eligible"
+    elif pending_runs:
+        classification = "run_due_ready_for_operator_preview"
+    else:
+        classification = "unknown_requires_manual_review"
+
+    assert classification in PAYMENT_SUCCEEDED_CONSUMER_RUN_DUE_CLASSIFICATIONS
+    real_external_call_risk = (
+        "none_from_internal_event_worker; webhook_order_paid_consumer may create_or_reuse external_effect_job only"
+        if any(row.get("consumer_name") in PAYMENT_EXTERNAL_EFFECT_CONSUMERS for row in pending_runs + failed_retryable_runs)
+        else "none_from_internal_event_worker"
+    )
+    production_write_risk = (
+        "execute_writes_consumer_run_attempts_and_may_enqueue_external_effect_job"
+        if classification
+        in {
+            "run_due_ready_for_operator_preview",
+            "consumer_failed_retryable",
+            "consumer_explicitly_skippable",
+        }
+        else "none_for_readonly_diagnostic"
+    )
+    recommended_execution_mode = _payment_run_due_recommended_execution_mode(classification)
+    blocking_reason = _payment_run_due_blocking_reason(classification)
+    return {
+        "classification": classification,
+        "redacted_internal_event_id": internal_event.get("event_id") or "not_found",
+        "event_type": event_type or "not_found",
+        "expected_consumer_names": list(EXPECTED_PAYMENT_CONSUMERS),
+        "actual_consumer_run_records": [
+            {
+                "consumer_name": str(row.get("consumer_name") or ""),
+                "status": str(row.get("status") or ""),
+                "attempt_count": int(row.get("attempt_count") or 0),
+                "last_error": {
+                    "code": str(row.get("error_code") or row.get("last_error_code") or ""),
+                    "message": str(row.get("error_message") or row.get("last_error_message") or ""),
+                },
+                "next_run_at": str(row.get("next_run_at") or row.get("next_retry_at") or ""),
+            }
+            for row in actual_runs
+        ],
+        "consumer_status": _consumer_status_summary(actual_runs),
+        "attempt_count": sum(attempt_counts),
+        "last_error": _last_consumer_error(actual_runs),
+        "next_run_at": _next_run_at_summary(actual_runs),
+        "run_due_eligible": run_due_eligible,
+        "preview_route_available": True,
+        "preview_route": PAYMENT_RUN_DUE_PREVIEW_ROUTE,
+        "run_route_available": True,
+        "run_route": PAYMENT_RUN_DUE_EXECUTE_ROUTE,
+        "retry_route_available": True,
+        "retry_route": PAYMENT_SINGLE_CONSUMER_RETRY_ROUTE,
+        "skip_route_available": True,
+        "skip_route": PAYMENT_SINGLE_CONSUMER_SKIP_ROUTE,
+        "single_consumer_run_route_available": True,
+        "single_consumer_run_route": PAYMENT_SINGLE_CONSUMER_RUN_ROUTE,
+        "auto_execute_enabled": config["auto_execute_enabled"],
+        "required_token_or_gate": "AUTOMATION_INTERNAL_API_TOKEN for run-due preview/run; internal token or admin action token for single-consumer run/retry/skip",
+        "token_configured": config["token_configured"],
+        "token_gate_status": config["token_gate_status"],
+        "allowlist_required": config["allowlist_required"],
+        "allowlist_required_for_execute": config["allowlist_required_for_execute"],
+        "allowlist_status": config["allowlist_status"],
+        "allowlist_missing": config["allowlist_missing"],
+        "operator_action_required": classification
+        not in {"consumer_already_succeeded", "consumer_non_applicable"},
+        "can_execute_in_operator_window": classification
+        in {"run_due_ready_for_operator_preview", "consumer_failed_retryable", "consumer_explicitly_skippable"},
+        "real_external_call_risk": real_external_call_risk,
+        "production_write_risk": production_write_risk,
+        "recommended_execution_mode": recommended_execution_mode,
+        "blocking_reason": blocking_reason,
+        "can_claim_external_orders_90_plus": False,
+    }
+
+
+def _consumer_run_records(evidence: dict[str, Any]) -> list[dict[str, Any]]:
+    event = evidence.get("internal_event") or {}
+    runs = evidence.get("consumer_runs") or event.get("consumer_runs") or []
+    records: list[dict[str, Any]] = []
+    for row in runs:
+        if not isinstance(row, dict):
+            continue
+        records.append(
+            {
+                "consumer_name": str(row.get("consumer_name") or row.get("consumer") or ""),
+                "status": str(row.get("status") or ""),
+                "attempt_count": int(row.get("attempt_count") or 0),
+                "last_error_code": str(row.get("last_error_code") or row.get("error_code") or ""),
+                "last_error_message": str(row.get("last_error_message") or row.get("error_message") or ""),
+                "next_retry_at": str(row.get("next_retry_at") or row.get("next_run_at") or ""),
+            }
+        )
+    return records
+
+
+def _payment_run_due_config(*, evidence: dict[str, Any], pending_runs: list[dict[str, Any]]) -> dict[str, Any]:
+    config = dict(evidence.get("payment_succeeded_consumer_run_due_config") or evidence.get("internal_event_config") or {})
+    if "token_configured" in config:
+        token_configured: bool | str = bool(config.get("token_configured"))
+    elif "internal_token_configured" in config:
+        token_configured = bool(config.get("internal_token_configured"))
+    else:
+        token_configured = "not_collected"
+    if "auto_execute_enabled" in config:
+        auto_execute: bool | str = bool(config.get("auto_execute_enabled"))
+    else:
+        auto_execute = "not_collected"
+
+    allowed_event_types = _csv_config(config.get("allowed_event_types"))
+    allowed_consumers = _csv_config(config.get("allowed_consumers"))
+    allowed_event_consumers = _csv_config(config.get("allowed_event_consumers"))
+    requested_pending_consumers = [row.get("consumer_name") for row in pending_runs if str(row.get("consumer_name") or "")]
+    event_allowed = not allowed_event_types or PAYMENT_SUCCEEDED_EVENT_TYPE in allowed_event_types
+    consumers_allowed = not allowed_consumers or all(name in allowed_consumers for name in requested_pending_consumers)
+    pair_allowed = not allowed_event_consumers or all(
+        f"{PAYMENT_SUCCEEDED_EVENT_TYPE}:{name}" in allowed_event_consumers for name in requested_pending_consumers
+    )
+    allowlist_required = bool(config.get("allowlist_required", True))
+    allowlist_missing = (
+        bool(config.get("allowlist_missing"))
+        if "allowlist_missing" in config
+        else bool(allowlist_required and not (event_allowed and consumers_allowed and pair_allowed))
+    )
+    if not allowlist_required:
+        allowlist_status = "not_required"
+    elif allowlist_missing:
+        allowlist_status = "missing_or_incomplete"
+    elif allowed_event_types or allowed_consumers or allowed_event_consumers:
+        allowlist_status = "configured_for_requested_scope"
+    else:
+        allowlist_status = "not_collected"
+        allowlist_missing = bool(config.get("allowlist_missing", False))
+
+    if token_configured is False:
+        token_gate_status = "missing_internal_token_config"
+    elif token_configured is True:
+        token_gate_status = "configured_redacted"
+    else:
+        token_gate_status = "not_collected"
+    return {
+        "token_configured": token_configured,
+        "token_gate_status": token_gate_status,
+        "auto_execute_enabled": auto_execute,
+        "allowlist_required": allowlist_required,
+        "allowlist_required_for_execute": True,
+        "allowlist_missing": allowlist_missing,
+        "allowlist_status": allowlist_status,
+    }
+
+
+def _csv_config(value: Any) -> list[str]:
+    if isinstance(value, list):
+        return [str(item or "").strip() for item in value if str(item or "").strip()]
+    return [item.strip() for item in str(value or "").replace("\n", ",").split(",") if item.strip()]
+
+
+def _payment_run_due_eligible(
+    *,
+    pending_runs: list[dict[str, Any]],
+    failed_retryable_runs: list[dict[str, Any]],
+) -> bool:
+    due_status_runs = pending_runs + failed_retryable_runs
+    if not due_status_runs:
+        return False
+    return all(not str(row.get("next_retry_at") or "") for row in due_status_runs)
+
+
+def _all_pending_runs_explicitly_skippable(pending_runs: list[dict[str, Any]], evidence: dict[str, Any]) -> bool:
+    configured = set(_csv_config(evidence.get("explicitly_skippable_consumers") or []))
+    if not configured:
+        configured = set(PAYMENT_OPTIONAL_SKIP_CONSUMERS)
+    return bool(pending_runs) and all(str(row.get("consumer_name") or "") in configured for row in pending_runs)
+
+
+def _consumer_status_summary(runs: list[dict[str, Any]]) -> dict[str, int]:
+    summary = {"pending": 0, "succeeded": 0, "skipped": 0, "failed_retryable": 0, "failed_terminal": 0, "blocked": 0, "other": 0}
+    for row in runs:
+        status = str(row.get("status") or "").lower()
+        if status in summary:
+            summary[status] += 1
+        elif status in {"failed", "error"}:
+            summary["failed_retryable"] += 1
+        else:
+            summary["other"] += 1
+    return summary
+
+
+def _last_consumer_error(runs: list[dict[str, Any]]) -> dict[str, str]:
+    for row in reversed(runs):
+        code = str(row.get("last_error_code") or row.get("error_code") or "")
+        message = str(row.get("last_error_message") or row.get("error_message") or "")
+        if code or message:
+            return {"code": code, "message": message}
+    return {"code": "", "message": ""}
+
+
+def _next_run_at_summary(runs: list[dict[str, Any]]) -> str:
+    values = sorted(str(row.get("next_retry_at") or row.get("next_run_at") or "") for row in runs if str(row.get("next_retry_at") or row.get("next_run_at") or ""))
+    return values[0] if values else ""
+
+
+def _payment_run_due_recommended_execution_mode(classification: str) -> str:
+    if classification == "run_due_ready_for_operator_preview":
+        return "operator_preview_first_then_batch_size_one_single_consumer_execute_after_approval"
+    if classification == "consumer_failed_retryable":
+        return "operator_retry_preview_then_single_consumer_retry_or_run_after_approval"
+    if classification == "consumer_explicitly_skippable":
+        return "operator_preview_then_manual_skip_with_approved_reason_if_non_applicable"
+    if classification in {"run_due_blocked_by_token", "run_due_blocked_by_auto_execute_config", "run_due_blocked_by_allowlist"}:
+        return "fix_gate_or_collect_operator_approval_before_any_execute"
+    if classification == "consumer_already_succeeded":
+        return "no_execute_recollect_external_orders_evidence"
+    return "manual_review_readonly_only"
+
+
+def _payment_run_due_blocking_reason(classification: str) -> str:
+    return {
+        "run_due_ready_for_operator_preview": "",
+        "run_due_blocked_by_token": "missing_internal_token_config",
+        "run_due_blocked_by_auto_execute_config": "auto_execute_disabled_for_run_due_execute",
+        "run_due_blocked_by_allowlist": "event_or_consumer_allowlist_missing",
+        "run_due_not_eligible": "consumer_run_not_due_or_retry_window_not_reached",
+        "consumer_already_succeeded": "",
+        "consumer_failed_retryable": "retryable_consumer_failure",
+        "consumer_failed_terminal": "terminal_consumer_failure",
+        "consumer_explicitly_skippable": "consumer_can_be_skipped_with_approved_reason",
+        "consumer_non_applicable": "event_type_not_payment_succeeded",
+        "runtime_repair_required": "consumer_run_records_missing_or_handler_not_registered",
+        "unknown_requires_manual_review": "classifier_could_not_determine_safe_next_action",
+    }.get(classification, "unknown_requires_manual_review")
 
 
 def _decide_internal_event_consumer_repair(internal_event: dict[str, Any], evidence: dict[str, Any]) -> dict[str, Any]:
@@ -552,7 +862,7 @@ def _load_readonly_db_evidence(*, order_id: str, database_url: str | None) -> di
         if event_row:
             consumer_runs = conn.execute(
                 """
-                select consumer_name, status, attempt_count, last_error_code, last_error_message
+                select consumer_name, status, attempt_count, last_error_code, last_error_message, next_retry_at
                   from internal_event_consumer_run
                  where event_id = %s
                  order by consumer_name
@@ -642,6 +952,7 @@ def _load_readonly_db_evidence(*, order_id: str, database_url: str | None) -> di
                 "source_route": event_row.get("source_route") or "not_found",
             },
             "consumer_runs": consumer_runs,
+            "payment_succeeded_consumer_run_due_config": _collect_payment_run_due_gate_config(),
             "external_effect_linkage": {
                 "jobs": jobs,
                 "attempts": attempts,
@@ -662,13 +973,42 @@ def _load_readonly_db_evidence(*, order_id: str, database_url: str | None) -> di
     )
 
 
+def _collect_payment_run_due_gate_config() -> dict[str, Any]:
+    try:
+        from aicrm_next.platform_foundation.internal_events.config import (
+            allowed_consumers,
+            allowed_event_consumers,
+            allowed_event_types,
+            auto_execute_enabled,
+        )
+    except Exception:
+        return {
+            "token_configured": bool(os.getenv("AUTOMATION_INTERNAL_API_TOKEN", "").strip()),
+            "auto_execute_enabled": "not_collected",
+            "allowed_event_types": [],
+            "allowed_consumers": [],
+            "allowed_event_consumers": [],
+            "allowlist_required": True,
+        }
+    return {
+        "token_configured": bool(os.getenv("AUTOMATION_INTERNAL_API_TOKEN", "").strip()),
+        "auto_execute_enabled": auto_execute_enabled(),
+        "allowed_event_types": allowed_event_types(),
+        "allowed_consumers": allowed_consumers(),
+        "allowed_event_consumers": allowed_event_consumers(),
+        "allowlist_required": True,
+    }
+
+
 def _redact_payload(value: Any) -> Any:
     if isinstance(value, dict):
         redacted: dict[str, Any] = {}
         for key, item in value.items():
             lowered = str(key).lower()
             if any(part in lowered for part in SENSITIVE_KEY_PARTS):
-                if isinstance(item, bool):
+                if lowered in SAFE_SENSITIVE_METADATA_KEYS:
+                    redacted[key] = _redact_payload(item)
+                elif isinstance(item, bool):
                     redacted[key] = item
                 elif key in {"external_userid_present", "token_configured"}:
                     redacted[key] = bool(item)
