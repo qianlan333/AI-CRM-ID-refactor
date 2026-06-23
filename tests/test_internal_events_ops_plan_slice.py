@@ -225,8 +225,9 @@ def test_ops_plan_consumers_are_noop_or_skipped_without_external_work(monkeypatc
     assert ai_assist["attempt"]["response_summary_json"]["reason"] == "ops_plan_ai_assist_notify_not_configured"
     assert audit["consumer_run"]["status"] == "succeeded"
     assert audit["attempt"]["response_summary_json"]["audit_projection"] == "ops_plan_approved_recorded"
-    assert planner["consumer_run"]["status"] == "skipped"
-    assert planner["attempt"]["response_summary_json"]["reason"] == "broadcast_task_planner_not_configured"
+    assert planner["consumer_run"]["status"] == "succeeded"
+    assert planner["attempt"]["response_summary_json"]["planner_result"] == "planner_created_broadcast_job"
+    assert planner["attempt"]["response_summary_json"]["real_external_call_executed"] is False
     assert job_total == 0
 
 
