@@ -14,6 +14,7 @@ from .service import (
     authenticate_break_glass,
     diagnostics_payload,
     login_context,
+    login_error_message,
     normalize_text,
     route_headers,
     safe_next_path,
@@ -37,7 +38,11 @@ def admin_login_page(request: Request):
     next_path = safe_next_path(request.query_params.get("next"))
     if verify_session(request.cookies.get(SESSION_COOKIE)):
         return RedirectResponse(next_path, status_code=302, headers=route_headers())
-    context = login_context(request=request, next_path=next_path)
+    context = login_context(
+        request=request,
+        next_path=next_path,
+        page_error=login_error_message(request.query_params.get("auth_error")),
+    )
     return templates.TemplateResponse(request, "admin_console/login.html", context, headers=route_headers())
 
 

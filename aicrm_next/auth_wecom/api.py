@@ -1,8 +1,20 @@
 from __future__ import annotations
 
+from urllib.parse import urlencode
+
 from fastapi import APIRouter, Request
 from fastapi.encoders import jsonable_encoder
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, RedirectResponse
+
+from .service import (
+    SESSION_COOKIE,
+    SESSION_MAX_AGE_SECONDS,
+    auth_route_headers,
+    auth_safe_next_path,
+    build_authorize_url,
+    handle_callback,
+    signed_session_cookie,
+)
 
 router = APIRouter()
 
@@ -10,6 +22,24 @@ router = APIRouter()
 def _response(payload: dict) -> JSONResponse:
     status_code = int(payload.pop("status_code", 200) or 200)
     return JSONResponse(jsonable_encoder(payload), status_code=status_code)
+
+
+def _request_base_url(request: Request) -> str:
+    return f"{request.url.scheme}://{request.url.netloc}"
+
+
+def _wants_html(request: Request) -> bool:
+    accept = request.headers.get("accept", "")
+    return "text/html" in accept.lower()
+
+
+def _login_redirect(next_path: str, error_code: str) -> RedirectResponse:
+    safe_next = auth_safe_next_path(next_path)
+    return RedirectResponse(
+        f"/login?{urlencode({'next': safe_next, 'auth_error': error_code})}",
+        status_code=302,
+        headers=auth_route_headers(),
+    )
 
 
 def _options_payload(route: str) -> dict:
@@ -69,6 +99,16 @@ def _deprecated_payload(*, route: str, replacement_route: str = "") -> dict:
 def auth_wecom_start(request: Request):
     if request.method == "OPTIONS":
         return _response(_options_payload("/auth/wecom/start"))
+    next_path = auth_safe_next_path(request.query_params.get("next"))
+    start = build_authorize_url(
+        mode=str(request.query_params.get("mode") or "qr"),
+        next_path=next_path,
+        request_base_url=_request_base_url(request),
+    )
+    if start.ok and start.redirect_url:
+        return RedirectResponse(start.redirect_url, status_code=302, headers=auth_route_headers())
+    if _wants_html(request):
+        return _login_redirect(next_path, start.error_code or "wecom_admin_auth_not_enabled")
     return _response(
         _blocked_auth_payload(
             auth_step="wecom_sso_start",
@@ -82,6 +122,27 @@ def auth_wecom_start(request: Request):
 def auth_wecom_callback(request: Request):
     if request.method == "OPTIONS":
         return _response(_options_payload("/auth/wecom/callback"))
+    result = handle_callback(
+        code=str(request.query_params.get("code") or ""),
+        state=str(request.query_params.get("state") or ""),
+        request_base_url=_request_base_url(request),
+        ip=request.client.host if request.client else "",
+        user_agent=request.headers.get("user-agent", ""),
+    )
+    if result.ok and result.session_payload:
+        response = RedirectResponse(result.next_path, status_code=302, headers=auth_route_headers())
+        response.set_cookie(
+            SESSION_COOKIE,
+            signed_session_cookie(result.session_payload),
+            max_age=SESSION_MAX_AGE_SECONDS,
+            httponly=True,
+            samesite="lax",
+            secure=False,
+            path="/",
+        )
+        return response
+    if _wants_html(request):
+        return _login_redirect(result.next_path, result.error_code or "wecom_admin_auth_failed")
     return _response(
         _blocked_auth_payload(
             auth_step="wecom_sso_callback",
