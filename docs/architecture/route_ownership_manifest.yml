@@ -527,6 +527,61 @@ routes:
   data_source: read_model
   requires_auth: true
   rollback: previous_release
+- path: /api/admin/p1/group-ops-workspace/drafts
+  methods:
+  - GET
+  route_name: api.admin_p1_group_ops_workspace_drafts
+  capability_owner: automation_engine
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: none
+  data_source: read_model
+  requires_auth: true
+  rollback: previous_release
+- path: /api/admin/p1/group-ops-workspace/drafts/{draft_id}
+  methods:
+  - GET
+  route_name: api.admin_p1_group_ops_workspace_draft_detail
+  capability_owner: automation_engine
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: none
+  data_source: read_model
+  requires_auth: true
+  rollback: previous_release
+- path: /api/admin/p1/group-ops-workspace/drafts
+  methods:
+  - POST
+  route_name: api.admin_p1_group_ops_workspace_draft_create
+  capability_owner: automation_engine
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: none
+  data_source: command
+  requires_auth: true
+  rollback: previous_release
+- path: /api/admin/p1/group-ops-workspace/drafts/{draft_id}
+  methods:
+  - PATCH
+  route_name: api.admin_p1_group_ops_workspace_draft_update
+  capability_owner: automation_engine
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: none
+  data_source: command
+  requires_auth: true
+  rollback: previous_release
+- path: /api/admin/p1/group-ops-workspace/drafts/{draft_id}/archive
+  methods:
+  - POST
+  route_name: api.admin_p1_group_ops_workspace_draft_archive
+  capability_owner: automation_engine
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: none
+  data_source: command
+  requires_auth: true
+  rollback: previous_release
 - path: /api/admin/dashboard/shell-context
   methods:
   - GET
