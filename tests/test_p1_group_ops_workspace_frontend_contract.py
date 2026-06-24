@@ -35,6 +35,7 @@ def test_p1_group_ops_workspace_route_smoke(frontend_client):
     assert "P1 Native Group Ops Workspace" in html
     assert "TS-native draft-only / preview-only" in html
     assert 'id="p1GroupOpsWorkspaceApp"' in html
+    assert 'id="p1GroupOpsWorkspaceApiConfig"' in html
     assert "workspace_layout.js" in html
     assert "不会发送、不审批、不写生产" in html
     assert "返回群运营计划" in html
@@ -78,6 +79,8 @@ def test_p1_group_ops_workspace_reuses_shared_modules():
     assert "getExecutionModeForStatus" in sources
     assert "serializeDraftPreviewForDisplay" in sources
     assert "canRenderGlobalPass" in sources
+    assert "loadGroupOpsWorkspaceData" in sources
+    assert "AdminApi" in sources
 
 
 def test_p1_group_ops_workspace_copy_preserves_guardrails():
@@ -128,3 +131,37 @@ def test_p1_group_ops_workspace_does_not_replace_legacy_group_ops_page(frontend_
     assert '"/admin/p1/group-ops-workspace"' in navigation
     assert "admin_p1_group_ops_workspace" in routes
     assert '"endpoint": "api.admin_p1_group_ops_workspace"' not in navigation
+
+
+def test_p1_group_ops_workspace_existing_readonly_api_contract(frontend_client):
+    plans = frontend_client.get("/api/admin/automation-conversion/group-ops/plans?limit=2")
+    assert plans.status_code == 200
+    plans_payload = plans.json()
+    assert plans_payload["ok"] is True
+    assert plans_payload["route_owner"] == "ai_crm_next"
+    assert plans_payload["side_effect_safety"]["real_external_call_executed"] is False
+    assert plans_payload["side_effect_safety"]["db_write_executed"] is False
+    assert isinstance(plans_payload["items"], list)
+
+    if plans_payload["items"]:
+        plan_id = int(plans_payload["items"][0]["id"])
+        for path in [
+            f"/api/admin/automation-conversion/group-ops/plans/{plan_id}",
+            f"/api/admin/automation-conversion/group-ops/plans/{plan_id}/groups",
+            f"/api/admin/automation-conversion/group-ops/plans/{plan_id}/nodes",
+            f"/api/automation/group-ops/plans/{plan_id}/executions?limit=2",
+        ]:
+            response = frontend_client.get(path)
+            assert response.status_code == 200
+            payload = response.json()
+            assert payload["ok"] is True
+            assert payload["route_owner"] == "ai_crm_next"
+            assert payload["side_effect_safety"]["real_external_call_executed"] is False
+            assert payload["side_effect_safety"]["db_write_executed"] is False
+
+    push_center = frontend_client.get("/api/admin/push-center/jobs?section=group_ops&limit=2")
+    assert push_center.status_code == 200
+    push_payload = push_center.json()
+    assert push_payload["ok"] is True
+    assert push_payload["route_owner"] == "ai_crm_next"
+    assert push_payload["real_external_call_executed"] is False

@@ -10,6 +10,8 @@ export interface WorkspaceFixture {
     payload: BusinessClosurePayload;
     leftRailItems: WorkspaceListItem[];
     workspaceMode: "draft_only_preview_only";
+    dataSourceLabel: string;
+    dataBindingStatus: "fixture_fallback" | "real_data_bound" | "real_data_unavailable";
     realExternalCallExecuted: false;
     productionWriteExecuted: false;
 }

@@ -70,6 +70,8 @@ export const P1_GROUP_OPS_WORKSPACE_FIXTURE = {
         }
     ],
     workspaceMode: "draft_only_preview_only",
+    dataSourceLabel: "fixture_fallback",
+    dataBindingStatus: "fixture_fallback",
     realExternalCallExecuted: false,
     productionWriteExecuted: false
 };
