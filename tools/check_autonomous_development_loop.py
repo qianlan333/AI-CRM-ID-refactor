@@ -65,6 +65,7 @@ EXPECTED_COMPLETED_RUNTIME_TRACKS = {
     "media_material_libraries_next_ownership",
     "sidebar_customer_broad_fallback_narrowing",
     "sidebar_customer_readonly_cleanup",
+    "automation_member_manual_send_focus_sop_retired",
 }
 EXPECTED_REMAINING_RUNTIME_TRACKS = {
     "wecom_callback_events",
@@ -72,7 +73,6 @@ EXPECTED_REMAINING_RUNTIME_TRACKS = {
     "wecom_tags_tag_groups",
     "payment_checkout_orders_public_products",
     "automation_runtime_run_due_reply_monitor_jobs",
-    "automation_member_manual_send_focus_sop",
     "sidebar_write_external_paths",
     "hxc_dashboard_cloud_orchestrator",
 }
