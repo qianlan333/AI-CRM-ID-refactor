@@ -6,7 +6,51 @@
   .p1-wecom-panel {
     display: grid;
     gap: 14px;
-    margin-bottom: 18px;
+  }
+
+  .p1-wecom-diagnostic-link {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    border: 1px solid #fde68a;
+    border-radius: 8px;
+    background: #fffbeb;
+    color: #92400e;
+    padding: 10px 12px;
+    margin: 12px 0;
+    font-size: 13px;
+  }
+
+  .p1-wecom-diagnostic-link a {
+    color: #1d4ed8;
+    font-weight: 700;
+    text-decoration: none;
+    white-space: nowrap;
+  }
+
+  .p1-diagnostics-toggle {
+    margin-top: 16px;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    background: #fff;
+  }
+
+  .p1-diagnostics-toggle > summary {
+    cursor: pointer;
+    padding: 12px 14px;
+    color: #374151;
+    font-weight: 700;
+  }
+
+  .p1-diagnostics-toggle > summary span {
+    color: #6b7280;
+    font-weight: 500;
+    margin-left: 8px;
+  }
+
+  .p1-diagnostics-toggle .p1-wecom-panel {
+    padding: 0 14px 14px;
   }
 
   .p1-wecom-banner,
@@ -181,9 +225,72 @@
 >
   <script type="application/json" data-channel-bootstrap>{{ payload | tojson }}</script>
 
-  <section id="weComP1StatusApp" class="p1-wecom-panel" aria-label="P1 WeCom external config read-only status slice">
-    <div class="admin-card">加载 P1 WeCom 外部配置状态...</div>
+  <section class="channel-metric-grid" data-channel-metrics>
+    <article class="channel-metric">
+      <span>渠道总数</span>
+      <strong data-channel-metric="total">0</strong>
+      <em>独立获客资源</em>
+    </article>
+    <article class="channel-metric">
+      <span>独立使用</span>
+      <strong data-channel-metric="standalone">0</strong>
+      <em>未绑定自动化运营</em>
+    </article>
+    <article class="channel-metric">
+      <span>企微获客助手链接</span>
+      <strong data-channel-metric="link">0</strong>
+      <em>复制 / 分享链接</em>
+    </article>
+    <article class="channel-metric">
+      <span>渠道用户</span>
+      <strong data-channel-metric="entered">0</strong>
+      <em>渠道进入记录</em>
+    </article>
   </section>
+
+  <div class="p1-wecom-diagnostic-link" data-p1-wecom-lite-notice>
+    <span>企微授权配置未完成，日常渠道配置不受阻塞。</span>
+    <a href="{{ url_for('api.admin_business_closure_page') }}">查看诊断</a>
+  </div>
+
+  <section class="admin-card channel-section">
+    <div class="admin-card-head admin-card-head--tight">
+      <div>
+        <h2>渠道码列表</h2>
+        <p>渠道码中心只管理渠道资产。绑定自动化运营入口请进入具体方案的“入口渠道”页面。</p>
+      </div>
+      <div class="channel-actions">
+        <input class="channel-search" type="search" data-channel-search placeholder="搜索渠道名称">
+        <a class="admin-button admin-button--primary" href="{{ url_for('api.admin_channel_new_page') }}">新建渠道</a>
+      </div>
+    </div>
+
+    <div class="admin-table-wrap">
+      <table class="admin-table channel-table">
+        <thead>
+          <tr>
+            <th>渠道</th>
+            <th>类型</th>
+            <th>状态</th>
+            <th>欢迎/素材/标签</th>
+            <th>渠道用户</th>
+            <th>绑定自动化运营</th>
+            <th class="channel-actions-heading" aria-label="行操作"></th>
+          </tr>
+        </thead>
+        <tbody data-channel-list>
+          <tr><td colspan="7">加载中...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <details class="p1-diagnostics-toggle" data-p1-diagnostics="wecom" data-default-collapsed="true">
+    <summary>企微诊断状态 <span>external-config-blocked / fail-closed 证据，仅验收或管理员查看</span></summary>
+    <section id="weComP1StatusApp" class="p1-wecom-panel" aria-label="P1 WeCom external config read-only status slice">
+      <div class="admin-card">加载 P1 WeCom 外部配置状态...</div>
+    </section>
+  </details>
   <script id="weComP1StatusPayload" type="application/json">
   {
     "cards": [
@@ -248,61 +355,6 @@
     }
   }
   </script>
-
-  <section class="channel-metric-grid" data-channel-metrics>
-    <article class="channel-metric">
-      <span>渠道总数</span>
-      <strong data-channel-metric="total">0</strong>
-      <em>独立获客资源</em>
-    </article>
-    <article class="channel-metric">
-      <span>独立使用</span>
-      <strong data-channel-metric="standalone">0</strong>
-      <em>未绑定自动化运营</em>
-    </article>
-    <article class="channel-metric">
-      <span>企微获客助手链接</span>
-      <strong data-channel-metric="link">0</strong>
-      <em>复制 / 分享链接</em>
-    </article>
-    <article class="channel-metric">
-      <span>渠道用户</span>
-      <strong data-channel-metric="entered">0</strong>
-      <em>渠道进入记录</em>
-    </article>
-  </section>
-
-  <section class="admin-card channel-section">
-    <div class="admin-card-head admin-card-head--tight">
-      <div>
-        <h2>渠道码列表</h2>
-        <p>渠道码中心只管理渠道资产。绑定自动化运营入口请进入具体方案的“入口渠道”页面。</p>
-      </div>
-      <div class="channel-actions">
-        <input class="channel-search" type="search" data-channel-search placeholder="搜索渠道名称">
-        <a class="admin-button admin-button--primary" href="{{ url_for('api.admin_channel_new_page') }}">新建渠道</a>
-      </div>
-    </div>
-
-    <div class="admin-table-wrap">
-      <table class="admin-table channel-table">
-        <thead>
-          <tr>
-            <th>渠道</th>
-            <th>类型</th>
-            <th>状态</th>
-            <th>欢迎/素材/标签</th>
-            <th>渠道用户</th>
-            <th>绑定自动化运营</th>
-            <th class="channel-actions-heading" aria-label="行操作"></th>
-          </tr>
-        </thead>
-        <tbody data-channel-list>
-          <tr><td colspan="7">加载中...</td></tr>
-        </tbody>
-      </table>
-    </div>
-  </section>
 
   <aside class="channel-drawer" data-channel-drawer hidden>
     <div class="channel-drawer__panel">

@@ -43,6 +43,15 @@ def test_channels_page_renders_wecom_p1_external_config_status(monkeypatch) -> N
     assert "weComP1StatusApp" in html
     assert "weComP1StatusPayload" in html
     assert "wecom_overview.js" in html
+    assert "渠道总数" in html
+    assert "渠道码列表" in html
+    assert "新建渠道" in html
+    assert "企微授权配置未完成，日常渠道配置不受阻塞。" in html
+    assert 'data-p1-diagnostics="wecom"' in html
+    assert 'data-default-collapsed="true"' in html
+    assert html.index("渠道总数") < html.index("weComP1StatusApp")
+    assert html.index("渠道码列表") < html.index("weComP1StatusApp")
+    assert html.index("新建渠道") < html.index("weComP1StatusApp")
     assert payload["evidenceSummary"]["authStartStatus"] == "controlled_external_call_blocked_503"
     assert payload["evidenceSummary"]["authCallbackStatus"] == "controlled_external_call_blocked_503"
     assert payload["evidenceSummary"]["contactCallbackStatus"] == "fail_closed_400_missing_signature"
@@ -128,6 +137,8 @@ def test_channel_template_mounts_wecom_p1_slice_without_replacing_channel_center
 
     assert "weComP1StatusApp" in template
     assert "weComP1StatusPayload" in template
+    assert 'data-p1-diagnostics="wecom"' in template
+    assert "企微授权配置未完成，日常渠道配置不受阻塞。" in template
     assert "admin_console/p1/wecom/wecom_overview.js" in template
     assert 'data-channel-admission-page="channel-center"' in template
     assert "channel_code_center_next.js" in template

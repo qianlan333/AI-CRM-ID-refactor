@@ -10,10 +10,6 @@
     <article class="admin-card push-center-stat"><div class="push-center-stat-label">发送失败</div><div class="push-center-stat-value" data-stat="failed">-</div></article>
   </section>
 
-  <section id="pushCenterP1StatusApp" class="push-center-p1-loading" aria-label="P1 Push Center read-only status slice">
-    <div class="admin-card">加载 P1 Push Center 状态...</div>
-  </section>
-
   <section class="push-center-layout">
     <div class="admin-card push-center-main">
       <div class="push-center-card-head">
@@ -90,6 +86,13 @@
     </div>
 
   </section>
+
+  <details class="p1-diagnostics-toggle" data-p1-diagnostics="push_center" data-default-collapsed="true">
+    <summary>P1 预览诊断 <span>Business Closure exception / preview shell，仅验收或管理员查看</span></summary>
+    <section id="pushCenterP1StatusApp" class="push-center-p1-loading" aria-label="P1 Push Center read-only status slice">
+      <div class="admin-card">加载 P1 Push Center 状态...</div>
+    </section>
+  </details>
 
   <div class="push-center-modal" id="detailModal" aria-hidden="true">
     <div class="push-center-modal-backdrop" data-close-detail></div>
@@ -213,7 +216,11 @@
 .push-center-footer-actions { display: flex; gap: 8px; padding-top: 8px; }
 .push-center-alert { border-radius: 12px; padding: 10px 12px; margin-bottom: 12px; font-size: 13px; border: 1px solid #bfdbfe; background: #eff6ff; color: #1d4ed8; }
 	.push-center-page .admin-button--danger { border-color: #fecaca; color: var(--pc-danger); background: #fff7f7; }
-  .push-center-p1-loading { margin-bottom: 16px; }
+  .push-center-p1-loading { margin-bottom: 0; }
+  .p1-diagnostics-toggle { margin-top: 16px; border: 1px solid #e5e7eb; border-radius: 8px; background: #fff; }
+  .p1-diagnostics-toggle > summary { cursor: pointer; padding: 12px 14px; color: #374151; font-weight: 700; }
+  .p1-diagnostics-toggle > summary span { color: #6b7280; font-weight: 500; margin-left: 8px; }
+  .p1-diagnostics-toggle .push-center-p1-loading { padding: 0 14px 14px; }
   .p1-push-banner { display: flex; align-items: center; justify-content: space-between; gap: 16px; border: 1px solid #f59e0b; background: #fffbeb; border-radius: 8px; padding: 16px; margin-bottom: 16px; }
   .p1-push-banner h2,
   .p1-closure-card h2,

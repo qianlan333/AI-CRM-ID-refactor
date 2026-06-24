@@ -34,6 +34,9 @@ def test_plan_list_page_contract(monkeypatch):
     assert "一级页加载人员" in html
     assert "0 人" in html
     assert "计划列表加载中" in html
+    assert 'data-p1-diagnostics="ops_plan"' in html
+    assert 'data-default-collapsed="true"' in html
+    assert html.index("计划列表加载中") < html.index("opsPlanP1StatusApp")
     assert "计划编号" not in html
     assert "<div>已批准</div>" not in html
     assert "<div>待处理</div>" not in html
@@ -61,6 +64,8 @@ def test_plan_detail_page_contract(monkeypatch):
     assert "批准这个人发送" in html
     assert "拒绝这个人" in html
     assert "继续加载 50 人" in html
+    assert 'data-p1-diagnostics="ops_plan"' in html
+    assert html.index("目标人员") < html.index("opsPlanP1StatusApp")
     assert "已加载 0 / 0 人" in html
     assert "data-page-mode=\"detail\"" in html
     assert "material_picker.css" in html

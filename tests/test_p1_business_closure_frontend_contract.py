@@ -87,7 +87,8 @@ def test_business_closure_nav_entry_is_available(monkeypatch) -> None:
 
     assert response.status_code == 200
     assert 'href="/admin/business-closure"' in response.text
-    assert "业务闭环状态" in response.text
+    assert "P1 诊断状态" in response.text
+    assert "业务闭环状态" not in response.text
 
 
 def test_status_model_keeps_blocked_and_pending_out_of_success() -> None:
@@ -248,7 +249,11 @@ def test_push_center_page_renders_p1_readonly_status_slice(monkeypatch) -> None:
     assert "pushCenterP1StatusApp" in html
     assert "pushCenterP1StatusPayload" in html
     assert "push_center_overview.js" in html
-    assert "P1 Push Center 状态" in html
+    assert "推送任务" in html
+    assert html.index("推送任务") < html.index("pushCenterP1StatusApp")
+    assert 'data-p1-diagnostics="push_center"' in html
+    assert 'data-default-collapsed="true"' in html
+    assert "<details" in html
     cards = payload["cards"]
     assert any(item["rawStatus"] == "governance_missing" for item in cards)
     assert any(item["rawStatus"] == "downstream_pending" for item in cards)
@@ -306,7 +311,12 @@ def test_ops_plan_page_renders_p1_readonly_downstream_status_slice(monkeypatch) 
     assert "opsPlanP1StatusApp" in html
     assert "opsPlanP1StatusPayload" in html
     assert "ops_plan_overview.js" in html
-    assert "P1 Ops Plan" in html
+    assert "计划筛选" in html
+    assert "计划列表加载中" in html
+    assert html.index("计划筛选") < html.index("opsPlanP1StatusApp")
+    assert html.index("计划列表加载中") < html.index("opsPlanP1StatusApp")
+    assert 'data-p1-diagnostics="ops_plan"' in html
+    assert 'data-default-collapsed="true"' in html
     cards = payload["cards"]
     assert payload["evidenceSummary"]["planId"] == "p0-1283-plan-20260615152503"
     assert payload["evidenceSummary"]["planType"] == "cloud_plan"
