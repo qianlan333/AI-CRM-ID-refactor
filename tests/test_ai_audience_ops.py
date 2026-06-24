@@ -11,7 +11,6 @@ from zoneinfo import ZoneInfo
 import pytest
 from sqlalchemy import text
 
-from aicrm_next.channel_entry.application import _ai_audience_channel_entry_only_enabled
 from aicrm_next.ai_audience_ops.event_types import (
     DAILY_REFRESH_CONSUMER,
     DAILY_TICK_EVENT,
@@ -127,12 +126,6 @@ def test_ai_audience_scheduler_consumer_pairs_cover_source_refresh_and_outbound(
     assert f"{MEMBER_EVENT_PREFIX}entered:{OUTBOUND_EFFECT_CONSUMER}" in pairs
     assert f"{MEMBER_EVENT_PREFIX}updated:{OUTBOUND_EFFECT_CONSUMER}" in pairs
     assert f"{MEMBER_EVENT_PREFIX}exited:{OUTBOUND_EFFECT_CONSUMER}" in pairs
-
-
-def test_channel_entry_ai_audience_only_flag(monkeypatch) -> None:
-    monkeypatch.setattr("aicrm_next.channel_entry.application.runtime_bool", lambda key: key == "AICRM_AI_AUDIENCE_CHANNEL_ENTRY_ONLY")
-
-    assert _ai_audience_channel_entry_only_enabled() is True
 
 
 def test_publish_requires_sql_for_enabled_refresh_modes() -> None:

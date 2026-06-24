@@ -222,7 +222,6 @@ def webhook_route_contracts() -> tuple[WebhookRouteContract, ...]:
         W("/api/customers/automation/webhook-deliveries/retry-due", ("POST",), "api_plan_customer_automation_webhook_delivery_retry_due", "none", "command", "retry-due command creates queued external effect job"),
         W("/api/customer-automation/activation-webhook", ("POST",), "activation_webhook", "none", "command", "activation webhook plans work before effects"),
         W("/api/customers/automation/webhook-deliveries", ("GET",), "customer_automation_webhook_deliveries", "none", "read_model", "read-only delivery inventory"),
-        W("/api/automation-runtime/v2/webhooks/{webhook_key}", ("POST",), "api.automation_runtime_v2_webhook", "none", "command", "runtime webhook validates and records inbound event"),
         W("/api/h5/wechat-pay/refund/notify", ("POST",), "wechat_refund_notify", "none", "command", "refund notify records transaction/internal event before outbound effects"),
         W("/api/wechat-pay/notify", ("POST",), "wechat_notify", "none", "command", "WeChat Pay notify records transaction/internal event before outbound effects"),
         W("/api/alipay/notify", ("POST",), "alipay_notify", "none", "command", "Alipay notify records transaction/internal event before outbound effects"),

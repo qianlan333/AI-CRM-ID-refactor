@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from typing import Any
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
-from fastapi import APIRouter, HTTPException, Query, Request, Response
+from fastapi import APIRouter, Body, HTTPException, Query, Request, Response
 from fastapi.responses import JSONResponse, RedirectResponse
 
 from aicrm_next.common_operation_members import search_operation_members
@@ -26,6 +26,26 @@ _NEXT_BINDING_ID = 1
 _NEXT_ASSIGNEE_ID = 1
 _NEXT_ASSIGNMENT_EVENT_ID = 1
 _NEXT_WE_COM_LINK_ID = 1
+
+
+_RETIRED_BINDING_HEADERS = {
+    "X-AICRM-Route-Owner": "ai_crm_next",
+    "X-AICRM-Legacy-Automation-Retired": "true",
+    "X-AICRM-Real-External-Call-Executed": "false",
+}
+
+
+def _retired_program_binding_response() -> JSONResponse:
+    return JSONResponse(
+        {
+            "ok": False,
+            "error": "legacy_program_channel_binding_retired",
+            "message": "旧 automation_program 渠道绑定已退场；渠道进入仅写 channel_contact 并发出 channel_entry.entered internal event。",
+            "real_external_call_executed": False,
+        },
+        status_code=410,
+        headers=_RETIRED_BINDING_HEADERS,
+    )
 
 
 def _iso(value: Any) -> str:
@@ -493,7 +513,7 @@ def _serialize_channel(row: dict[str, Any]) -> dict[str, Any]:
     channel["assignee_count"] = int(channel.get("assignee_count") or 0)
     channel["channel_contact_count"] = int(channel.get("channel_contact_count") or 0)
     channel["latest_channel_entered_at"] = _iso(channel.get("latest_channel_entered_at"))
-    channel["bound_program_name"] = _text(channel.get("bound_program_name"))
+    channel["bound_program_name"] = ""
     channel["qr_download_url"] = f"/api/admin/channels/{channel['id']}/qrcode/download" if carrier_type != "link" and channel["id"] else ""
     channel["qrcode_status"] = _text(channel.get("qrcode_status")) or ("legacy_untracked" if channel["qr_url"] and channel["scene_value"] else "not_generated")
     channel["qrcode_asset_id"] = int(channel.get("qrcode_asset_id") or channel.get("active_qrcode_asset_id") or 0)
@@ -573,7 +593,7 @@ def get_channel_resource(channel_id: int) -> dict[str, Any] | None:
                        active_asset.status AS qrcode_status,
                        COALESCE(contact_stats.channel_contact_count, 0) AS channel_contact_count,
                        contact_stats.latest_channel_entered_at,
-                       binding.program_name AS bound_program_name,
+                       '' AS bound_program_name,
                        wca.customer_channel AS wca_customer_channel,
                        wca.link_url AS wca_link_url,
                        wca.final_url AS wca_final_url,
@@ -592,14 +612,6 @@ def get_channel_resource(channel_id: int) -> dict[str, Any] | None:
                     FROM automation_channel_contact
                     GROUP BY channel_id
                 ) contact_stats ON contact_stats.channel_id = c.id
-                LEFT JOIN (
-                    SELECT DISTINCT ON (b.channel_id)
-                           b.channel_id, p.program_name
-                    FROM automation_program_channel_binding b
-                    LEFT JOIN automation_program p ON p.id = b.program_id
-                    WHERE b.binding_status = 'active'
-                    ORDER BY b.channel_id, b.priority DESC, b.id DESC
-                ) binding ON binding.channel_id = c.id
                 LEFT JOIN wecom_customer_acquisition_links wca
                   ON wca.automation_channel_id = c.id AND wca.status = 'active'
                 LEFT JOIN LATERAL (
@@ -632,13 +644,6 @@ def _list_channels_from_postgres(
             channels = [item for item in channels if item.get("status") == status]
         elif not include_archived:
             channels = [item for item in channels if item.get("status") != "archived"]
-        if int(available_for_program_id or 0) > 0:
-            active_channel_ids = {
-                int(item.get("channel_id") or 0)
-                for item in _FIXTURE_PROGRAM_BINDINGS.values()
-                if _text(item.get("binding_status")) == "active"
-            }
-            channels = [item for item in channels if int(item.get("id") or 0) not in active_channel_ids]
         return [_attach_assignment_payload(item, include_assignees=False) for item in sorted(channels, key=lambda item: int(item.get("id") or 0), reverse=True)[:limit]]
     params: list[Any] = []
     where = ""
@@ -647,16 +652,6 @@ def _list_channels_from_postgres(
         params.append(status)
     elif not include_archived:
         where = "WHERE (c.status IS NULL OR c.status <> 'archived')"
-    if int(available_for_program_id or 0) > 0:
-        where = where + (" AND " if where else "WHERE ")
-        where += """
-            NOT EXISTS (
-                SELECT 1
-                FROM automation_program_channel_binding active_b
-                WHERE active_b.channel_id = c.id
-                  AND active_b.binding_status = 'active'
-            )
-        """
     params.append(limit)
     with conn:
         with conn.cursor() as cur:
@@ -667,7 +662,7 @@ def _list_channels_from_postgres(
                        active_asset.status AS qrcode_status,
                        COALESCE(contact_stats.channel_contact_count, 0) AS channel_contact_count,
                        contact_stats.latest_channel_entered_at,
-                       binding.program_name AS bound_program_name,
+                       '' AS bound_program_name,
                        wca.customer_channel AS wca_customer_channel,
                        wca.link_url AS wca_link_url,
                        wca.final_url AS wca_final_url,
@@ -686,14 +681,6 @@ def _list_channels_from_postgres(
                     FROM automation_channel_contact
                     GROUP BY channel_id
                 ) contact_stats ON contact_stats.channel_id = c.id
-                LEFT JOIN (
-                    SELECT DISTINCT ON (b.channel_id)
-                           b.channel_id, p.program_name
-                    FROM automation_program_channel_binding b
-                    LEFT JOIN automation_program p ON p.id = b.program_id
-                    WHERE b.binding_status = 'active'
-                    ORDER BY b.channel_id, b.priority DESC, b.id DESC
-                ) binding ON binding.channel_id = c.id
                 LEFT JOIN wecom_customer_acquisition_links wca
                   ON wca.automation_channel_id = c.id AND wca.status = 'active'
                 LEFT JOIN LATERAL (
@@ -1500,63 +1487,27 @@ def list_channel_contacts(channel_id: int, limit: int = Query(100)) -> dict[str,
 
 
 @router.get("/api/admin/channels/{channel_id:int}/bindings")
-def list_channel_bindings(channel_id: int) -> dict[str, Any]:
-    conn = _connect()
-    if conn is None:
-        return {"ok": True, "bindings": [], "reason": "channel_bindings_listed", "source": "ai_crm_next"}
-    with conn:
-        with conn.cursor() as cur:
-            cur.execute(
-                """
-                SELECT b.id, b.program_id, p.program_name, b.binding_status, b.priority
-                FROM automation_program_channel_binding b
-                LEFT JOIN automation_program p ON p.id = b.program_id
-                WHERE b.channel_id = %s
-                ORDER BY b.priority DESC, b.id DESC
-                """,
-                (int(channel_id),),
-            )
-            bindings = [dict(row) for row in cur.fetchall() or []]
-    return {"ok": True, "bindings": bindings, "reason": "channel_bindings_listed", "source": "ai_crm_next"}
+def list_channel_bindings(channel_id: int) -> JSONResponse:
+    del channel_id
+    return _retired_program_binding_response()
 
 
 @router.get("/api/admin/automation-conversion/programs/{program_id:int}/channel-bindings")
-def list_program_channel_bindings(program_id: int) -> dict[str, Any]:
-    return {
-        "ok": True,
-        "bindings": list_program_channel_bindings_resource(int(program_id)),
-        "reason": "program_channel_bindings_listed",
-        "source": "ai_crm_next",
-    }
+def list_program_channel_bindings(program_id: int) -> JSONResponse:
+    del program_id
+    return _retired_program_binding_response()
 
 
 @router.post("/api/admin/automation-conversion/programs/{program_id:int}/channel-bindings", status_code=201)
-def bind_program_channels(program_id: int, payload: dict[str, Any], response: Response) -> dict[str, Any]:
-    channel_ids = payload.get("channel_ids") or payload.get("channel_id") or []
-    if not isinstance(channel_ids, list):
-        channel_ids = [channel_ids]
-    try:
-        result = bind_channels_to_program_resource(
-            int(program_id),
-            [int(item) for item in channel_ids if _text(item)],
-            payload,
-        )
-    except LookupError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    if bool(result.get("requires_batch_import")):
-        response.status_code = 200
-    return {"ok": True, **result, "source": "ai_crm_next"}
+def bind_program_channels(program_id: int, payload: dict[str, Any] | None = Body(default=None)) -> JSONResponse:
+    del program_id, payload
+    return _retired_program_binding_response()
 
 
 @router.delete("/api/admin/automation-conversion/programs/{program_id:int}/channel-bindings/{binding_id:int}")
-def unbind_program_channel(program_id: int, binding_id: int, payload: dict[str, Any] | None = None) -> dict[str, Any]:
-    try:
-        result = archive_program_channel_binding_resource(int(program_id), int(binding_id))
-    except LookupError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-    return {"ok": True, **result, "source": "ai_crm_next"}
+def unbind_program_channel(program_id: int, binding_id: int, payload: dict[str, Any] | None = None) -> JSONResponse:
+    del program_id, binding_id, payload
+    return _retired_program_binding_response()
 
 
 @router.get("/api/admin/channels/{channel_id:int}/share-link")

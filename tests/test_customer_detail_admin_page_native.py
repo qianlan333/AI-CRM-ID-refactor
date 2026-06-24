@@ -64,13 +64,14 @@ def test_customer_detail_page_renders_from_native_shell(monkeypatch) -> None:
     assert "data-tags-url=" in response.text
     assert "data-questionnaire-url=" in response.text
     assert "data-messages-url=" in response.text
-    assert "data-automation-put-in-pool-url=" in response.text
-    assert "data-automation-remove-from-pool-url=" in response.text
-    assert "data-automation-set-focus-url=" in response.text
-    assert "data-automation-set-normal-url=" in response.text
-    assert "data-automation-mark-won-url=" in response.text
-    assert "data-automation-unmark-won-url=" in response.text
-    assert "data-automation-push-openclaw-url=" in response.text
+    assert "data-automation-put-in-pool-url=" not in response.text
+    assert "data-automation-remove-from-pool-url=" not in response.text
+    assert "data-automation-set-focus-url=" not in response.text
+    assert "data-automation-set-normal-url=" not in response.text
+    assert "data-automation-mark-won-url=" not in response.text
+    assert "data-automation-unmark-won-url=" not in response.text
+    assert "data-automation-push-openclaw-url=" not in response.text
+    assert "customer-automation-sidebar" not in response.text
     assert _endpoint_module("/admin/customers/{external_userid}") == "aicrm_next.customer_read_model.admin_pages"
 
 
@@ -82,7 +83,7 @@ def test_customer_detail_page_tab_mapping_is_preserved(monkeypatch) -> None:
         "questionnaire": "customer-questionnaire-answers",
         "questionnaires": "customer-questionnaire-answers",
         "messages": "customer-message-records",
-        "automation": "customer-automation-sidebar",
+        "automation": "",
     }
 
     for tab, section in expected.items():
@@ -104,6 +105,9 @@ def test_customer_detail_page_url_contract_is_preserved(monkeypatch) -> None:
         "/api/admin/customers/profile/tags?external_userid=ext_test_001",
         "/api/admin/customers/profile/questionnaire-answers?external_userid=ext_test_001",
         "/api/admin/customers/profile/messages?external_userid=ext_test_001",
+    ):
+        assert marker in response.text
+    for marker in (
         "/api/admin/automation-conversion/member?external_contact_id=ext_test_001",
         "/api/admin/automation-conversion/member/put-in-pool",
         "/api/admin/automation-conversion/member/remove-from-pool",
@@ -113,7 +117,7 @@ def test_customer_detail_page_url_contract_is_preserved(monkeypatch) -> None:
         "/api/admin/automation-conversion/member/unmark-won",
         "/api/admin/automation-conversion/member/push-openclaw",
     ):
-        assert marker in response.text
+        assert marker not in response.text
 
 
 def test_customer_detail_page_not_found_state_is_preserved(monkeypatch) -> None:

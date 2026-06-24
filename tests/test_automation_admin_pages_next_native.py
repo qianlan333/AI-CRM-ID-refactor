@@ -51,10 +51,9 @@ def test_automation_project_pages_are_served_by_next_native_bundle(monkeypatch) 
 
     for url in urls:
         response = client.get(url)
-        assert response.status_code == 200, url
-        assert response.headers.get("X-AICRM-Compatibility-Facade") is None, url
-        assert "客户管理后台" in response.text
-        assert "Not Found" not in response.text
+        assert response.status_code == 410, url
+        assert response.headers.get("X-AICRM-Legacy-Automation-Retired") == "true", url
+        assert response.json()["error"] == "legacy_automation_program_retired"
 
     list_response = client.get("/admin/automation-conversion", cookies=_admin_cookies())
     assert list_response.status_code == 200
@@ -74,15 +73,8 @@ def test_automation_project_pages_are_served_by_next_native_bundle(monkeypatch) 
     assert "/api/ai/audience/packages" not in list_response.text
 
     legacy_response = client.get("/admin/automation-conversion/legacy", cookies=_admin_cookies())
-    assert legacy_response.status_code == 200
-    assert "方案列表" in legacy_response.text
-
-    entry_response = client.get("/admin/automation-conversion/programs/1/setup?step=entry")
-    basic_response = client.get("/admin/automation-conversion/programs/1/setup?step=basic")
-    assert "/static/automation-engine/admin_console/automation_conversion_workspace.css" in entry_response.text
-    assert "/static/automation-engine/admin_console/channel_admission_pages.js" in entry_response.text
-    assert 'href="/admin/automation-conversion/programs/1/overview"' in entry_response.text
-    assert 'action="/admin/automation-conversion/programs/1/update"' in basic_response.text
+    assert legacy_response.status_code == 410
+    assert legacy_response.json()["error"] == "legacy_automation_program_retired"
 
 
 def test_ai_audience_admin_pages_require_admin_session(monkeypatch) -> None:
