@@ -12,6 +12,8 @@ ROOT = Path(__file__).resolve().parents[1]
 DOC = ROOT / "docs/development/autonomous_development_loop.md"
 STATE = ROOT / "docs/development/phase_execution_state.yaml"
 STOP = ROOT / "docs/development/autonomous_stop_conditions.yaml"
+MANIFEST = ROOT / "docs/architecture/route_ownership_manifest.yml"
+BACKLOG = ROOT / "docs/development/codex_autopilot_runtime_runbook.md"
 
 REQUIRED_STATE_FIELDS = {
     "version",
@@ -113,11 +115,10 @@ GOVERNANCE_ALLOWED_EXACT = {
     "README.md",
     ".github/workflows/ci.yml",
     "aicrm_next/automation_engine/channels_api.py",
-    "aicrm_next/automation_runtime_v2/bridge.py",
-    "aicrm_next/automation_runtime_v2/channel_binding_service.py",
+    "aicrm_next/ai_audience_ops/agent_copywriting.py",
+    "aicrm_next/ai_audience_ops/agent_gateway.py",
     "scripts/codex_autopilot_tick.sh",
     "scripts/run_lint.py",
-    "scripts/smoke_automation_runtime_v2.py",
     "requirements.txt",
     "aicrm_next/production_compat/api.py",
 }
@@ -164,9 +165,6 @@ REQUIRED_HIGH_RISK_FALLBACK_STRINGS = {
     '"/api/h5/wechat/oauth/start"',
     '"/api/h5/questionnaires/{slug}/submit"',
     '"/api/admin/wecom/tags"',
-    '"/api/admin/automation-conversion/jobs/run-due"',
-    '"/api/admin/automation-conversion/tasks/run-due"',
-    '"/api/admin/automation-conversion/execution-items/{execution_item_id:int}/send-via-bazhuayu"',
     '"/api/admin/wechat-pay/products"',
     '"/api/orders/{path:path}"',
     '"/api/checkout/{path:path}"',
