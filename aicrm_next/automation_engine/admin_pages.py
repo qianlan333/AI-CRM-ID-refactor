@@ -7,6 +7,7 @@ from fastapi.encoders import jsonable_encoder
 from fastapi.responses import RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 
+from aicrm_next.admin_auth.guards import admin_page_auth_redirect
 from aicrm_next.admin_shell import admin_path_for, shell_context
 from aicrm_next.automation_engine.channels_api import (
     list_program_channel_bindings_resource,
@@ -33,6 +34,8 @@ templates = Jinja2Templates(directory=_TEMPLATES_DIR)
 
 @router.get("/admin/automation-conversion/legacy", name="api.admin_automation_conversion_legacy")
 def admin_automation_conversion_legacy(request: Request):
+    if redirect := admin_page_auth_redirect(request):
+        return redirect
     try:
         program_list_payload = list_automation_programs_payload()
     except AutomationProgramDataUnavailable:

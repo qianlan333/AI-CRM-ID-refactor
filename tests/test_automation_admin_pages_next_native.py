@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 from pathlib import Path
+from time import time
 
 from fastapi.testclient import TestClient
 
+from aicrm_next.admin_auth.service import SESSION_COOKIE, sign_session
 from aicrm_next.main import create_app
 
 
@@ -21,10 +23,24 @@ def _client(monkeypatch) -> TestClient:
     return TestClient(create_app(), raise_server_exceptions=False)
 
 
+def _admin_cookies() -> dict[str, str]:
+    return {
+        SESSION_COOKIE: sign_session(
+            {
+                "auth_source": "break_glass",
+                "login_type": "break_glass",
+                "username": "admin",
+                "display_name": "admin",
+                "roles": ["super_admin"],
+                "iat": int(time()),
+            }
+        )
+    }
+
+
 def test_automation_project_pages_are_served_by_next_native_bundle(monkeypatch) -> None:
     client = _client(monkeypatch)
     urls = [
-        "/admin/automation-conversion",
         "/admin/automation-conversion/programs/1/setup?step=basic",
         "/admin/automation-conversion/programs/1/setup?step=entry",
         "/admin/automation-conversion/programs/1/overview",
@@ -40,7 +56,8 @@ def test_automation_project_pages_are_served_by_next_native_bundle(monkeypatch) 
         assert "客户管理后台" in response.text
         assert "Not Found" not in response.text
 
-    list_response = client.get("/admin/automation-conversion")
+    list_response = client.get("/admin/automation-conversion", cookies=_admin_cookies())
+    assert list_response.status_code == 200
     assert "AI 自动化运营" in list_response.text
     assert "通过 AI 创建 SQL 人群包；查看当前命中人数、最后一次刷新时间与刷新方式。" in list_response.text
     assert "人群包名称" in list_response.text
@@ -56,7 +73,7 @@ def test_automation_project_pages_are_served_by_next_native_bundle(monkeypatch) 
     assert "AICRM_AI_AUDIENCE_API_TOKEN" not in list_response.text
     assert "/api/ai/audience/packages" not in list_response.text
 
-    legacy_response = client.get("/admin/automation-conversion/legacy")
+    legacy_response = client.get("/admin/automation-conversion/legacy", cookies=_admin_cookies())
     assert legacy_response.status_code == 200
     assert "方案列表" in legacy_response.text
 
@@ -66,6 +83,18 @@ def test_automation_project_pages_are_served_by_next_native_bundle(monkeypatch) 
     assert "/static/automation-engine/admin_console/channel_admission_pages.js" in entry_response.text
     assert 'href="/admin/automation-conversion/programs/1/overview"' in entry_response.text
     assert 'action="/admin/automation-conversion/programs/1/update"' in basic_response.text
+
+
+def test_ai_audience_admin_pages_require_admin_session(monkeypatch) -> None:
+    client = _client(monkeypatch)
+
+    page_response = client.get("/admin/automation-conversion", follow_redirects=False)
+    legacy_response = client.get("/admin/automation-conversion/legacy", follow_redirects=False)
+
+    assert page_response.status_code == 302
+    assert page_response.headers["location"] == "/login?next=/admin/automation-conversion"
+    assert legacy_response.status_code == 302
+    assert legacy_response.headers["location"] == "/login?next=/admin/automation-conversion/legacy"
 
 
 def test_automation_project_routes_are_removed_from_frontend_compat_inventory() -> None:

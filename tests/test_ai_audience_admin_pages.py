@@ -1,10 +1,27 @@
 from __future__ import annotations
 
 import json
+from time import time
 
 from sqlalchemy import text
 
+from aicrm_next.admin_auth.service import SESSION_COOKIE, sign_session
 from aicrm_next.shared.db_session import get_session_factory
+
+
+def _admin_cookies() -> dict[str, str]:
+    return {
+        SESSION_COOKIE: sign_session(
+            {
+                "auth_source": "break_glass",
+                "login_type": "break_glass",
+                "username": "admin",
+                "display_name": "admin",
+                "roles": ["super_admin"],
+                "iat": int(time()),
+            }
+        )
+    }
 
 
 def _insert_package(
@@ -96,8 +113,16 @@ def _insert_run(session, *, package_id: int, refresh_finished_at: str, run_statu
     )
 
 
-def test_admin_ai_audience_packages_api_returns_lightweight_read_model(next_client, next_pg_schema) -> None:
+def test_admin_ai_audience_packages_requires_admin_session(next_client) -> None:
+    response = next_client.get("/api/admin/ai-audience/packages")
+
+    assert response.status_code == 401
+    assert response.json()["error"] == "admin_auth_required"
+
+
+def test_admin_ai_audience_packages_api_returns_lightweight_read_model(next_client, next_pg_schema, monkeypatch) -> None:
     del next_pg_schema
+    monkeypatch.setenv("SECRET_KEY", "ai-audience-admin-api-test")
     session_factory = get_session_factory()
     with session_factory() as session:
         no_run_id = _insert_package(
@@ -147,7 +172,7 @@ def test_admin_ai_audience_packages_api_returns_lightweight_read_model(next_clie
         _insert_run(session, package_id=counted_id, refresh_finished_at="2026-06-24 09:05:12+08")
         session.commit()
 
-    response = next_client.get("/api/admin/ai-audience/packages")
+    response = next_client.get("/api/admin/ai-audience/packages", cookies=_admin_cookies())
 
     assert response.status_code == 200
     payload = response.json()

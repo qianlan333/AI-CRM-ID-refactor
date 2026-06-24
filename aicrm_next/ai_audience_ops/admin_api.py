@@ -1,8 +1,10 @@
 from __future__ import annotations
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
+
+from aicrm_next.admin_auth.guards import admin_api_auth_error
 
 from .service import AudiencePackageService
 
@@ -16,7 +18,9 @@ _HEADERS = {
 
 
 @router.get("/api/admin/ai-audience/packages", name="api.admin_ai_audience_packages")
-def admin_ai_audience_packages() -> JSONResponse:
+def admin_ai_audience_packages(request: Request) -> JSONResponse:
+    if auth := admin_api_auth_error(request):
+        return auth
     try:
         payload = AudiencePackageService().list_admin_package_summaries(limit=200)
         status_code = 200
