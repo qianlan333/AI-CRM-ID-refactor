@@ -40,7 +40,7 @@ def _allowed_source_path_prefixes() -> tuple[str, ...]:
 
 
 def _allowed_target_hosts() -> set[str]:
-    return _csv_env("AICRM_COMPLETION_URL_LINK_TARGET_ALLOWLIST", "wxaurl.cn")
+    return _csv_env("AICRM_COMPLETION_URL_LINK_TARGET_ALLOWLIST", "wxaurl.cn,wxmpurl.cn")
 
 
 def _normalize_response_key(value: Any) -> str:

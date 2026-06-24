@@ -19,19 +19,19 @@ class _FakeResponse:
         return self._body
 
 
-def test_dynamic_url_link_resolver_allows_wxlink_and_wxaurl(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_dynamic_url_link_resolver_allows_wxlink_and_default_short_url_hosts(monkeypatch: pytest.MonkeyPatch) -> None:
     captured = {}
 
     def fake_urlopen(request, timeout):
         captured["url"] = request.full_url
         captured["timeout"] = timeout
-        return _FakeResponse(b'{"ok": true, "url_link": "https://wxaurl.cn/freshLink"}')
+        return _FakeResponse(b'{"ok": true, "url_link": "https://wxmpurl.cn/freshLink"}')
 
     monkeypatch.setattr(resolver, "urlopen", fake_urlopen)
 
     url = resolver.resolve_dynamic_url_link("https://ip.lhbl.com.cn/api/wxlink?from=qianlan_pay")
 
-    assert url == "https://wxaurl.cn/freshLink"
+    assert url == "https://wxmpurl.cn/freshLink"
     assert captured["url"] == "https://ip.lhbl.com.cn/api/wxlink?from=qianlan_pay"
 
 
