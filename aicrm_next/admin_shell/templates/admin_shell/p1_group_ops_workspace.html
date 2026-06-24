@@ -58,6 +58,8 @@
 .p1-workspace-panel-head { border-bottom: 1px solid #e5e7eb; padding-bottom: 10px; }
 .p1-workspace-list,
 .p1-workspace-canvas-grid,
+.p1-workspace-canvas-lanes,
+.p1-workspace-canvas-lane-grid,
 .p1-workspace-status-stack,
 .p1-workspace-validation-grid { display: grid; gap: 10px; }
 .p1-workspace-list-item,
@@ -67,6 +69,7 @@
 .p1-workspace-selected-preview,
 .p1-workspace-empty-state,
 .p1-workspace-guardrail-summary,
+.p1-workspace-canvas-lane,
 .p1-closure-card,
 .p1-draft-shell-card { border: 1px solid #e5e7eb; border-radius: 8px; background: #fff; padding: 12px; display: grid; gap: 8px; }
 button.p1-workspace-list-item,
@@ -83,9 +86,12 @@ button.p1-workspace-canvas-card { appearance: none; width: 100%; text-align: lef
 .p1-workspace-canvas-card--selected { outline: 2px solid #2563eb; outline-offset: 2px; }
 .p1-workspace-list-item__head,
 .p1-workspace-canvas-card__head,
+.p1-workspace-lane-head,
 .p1-workspace-detail__title,
 .p1-closure-card__head,
 .p1-draft-shell-card__head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+.p1-workspace-lane-head h3 { margin: 0 0 4px; font-size: 14px; }
+.p1-workspace-lane-head p { margin: 0; color: #64748b; }
 .p1-closure-title-row { display: inline-flex; align-items: center; gap: 8px; min-width: 0; }
 .p1-workspace-list-item__head span { color: #64748b; font-size: 12px; text-transform: uppercase; }
 .p1-workspace-list-item p,
@@ -112,6 +118,12 @@ button.p1-workspace-canvas-card { appearance: none; width: 100%; text-align: lef
 .p1-workspace-filter-grid label { display: grid; gap: 5px; min-width: 0; color: #475569; font-size: 12px; }
 .p1-workspace-filter-grid input,
 .p1-workspace-filter-grid select { width: 100%; min-height: 34px; border: 1px solid #d1d5db; border-radius: 8px; padding: 6px 8px; color: #111827; background: #fff; box-sizing: border-box; }
+.p1-workspace-canvas-controls { display: grid; grid-template-columns: repeat(2, minmax(140px, 1fr)); gap: 10px; }
+.p1-workspace-canvas-controls label { display: grid; gap: 5px; min-width: 0; color: #475569; font-size: 12px; }
+.p1-workspace-canvas-controls select { width: 100%; min-height: 34px; border: 1px solid #d1d5db; border-radius: 8px; padding: 6px 8px; color: #111827; background: #fff; box-sizing: border-box; }
+.p1-workspace-lane-toggle-list { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 6px; }
+.p1-workspace-lane-toggle { border: 1px solid #d1d5db; border-radius: 999px; background: #fff; color: #374151; padding: 6px 10px; font: inherit; font-size: 12px; cursor: pointer; }
+.p1-workspace-canvas-lane[data-lane-collapsed="true"] { background: #f8fafc; }
 .p1-workspace-filter-summary,
 .p1-workspace-empty-state p { margin: 0; color: #64748b; }
 .p1-workspace-state-banner { background: #f8fafc; }

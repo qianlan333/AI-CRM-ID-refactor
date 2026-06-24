@@ -164,6 +164,15 @@ function leftRailFromRealData(plan, detail, groups, nodes, executions, pushCente
             detailId: detailId("push_center", pushCenterProjectionId(pushItem)),
             status: pushStatus,
             summary: pushItem ? "找到只读 Push Center projection；详情仍需通过 Push Center gate 解释。" : "未找到 linked Push Center projection，不能伪造成 sent。"
+        },
+        {
+            id: `evidence-plan-${planId(plan)}-governance`,
+            label: "Evidence / guardrails",
+            kind: "evidence",
+            entityType: "evidence",
+            detailId: detailId("evidence", `plan-${planId(plan)}-governance`),
+            status: "governance-missing",
+            summary: "发送或 projection evidence 不代表 governance complete；approval / allowlist / gray-window 仍需 attach。"
         }
     ];
 }

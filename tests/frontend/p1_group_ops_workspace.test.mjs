@@ -9,6 +9,12 @@ import {
   filterWorkspaceView
 } from "../../aicrm_next/frontend_compat/static/admin_console/p1/p1_group_ops_workspace/workspace_filters.js";
 import {
+  buildWorkspaceCanvasLanes
+} from "../../aicrm_next/frontend_compat/static/admin_console/p1/p1_group_ops_workspace/workspace_grouping.js";
+import {
+  sortCanvasCards
+} from "../../aicrm_next/frontend_compat/static/admin_console/p1/p1_group_ops_workspace/workspace_sorting.js";
+import {
   createWorkspaceSelectionState,
   findWorkspaceDetail,
 } from "../../aicrm_next/frontend_compat/static/admin_console/p1/p1_group_ops_workspace/workspace_detail.js";
@@ -20,6 +26,7 @@ import {
 import {
   createWorkspaceViewState,
   selectEntityInViewState,
+  toggleWorkspaceCanvasLane,
   updateWorkspaceViewState
 } from "../../aicrm_next/frontend_compat/static/admin_console/p1/p1_group_ops_workspace/workspace_view_state.js";
 
@@ -83,10 +90,19 @@ renderP1GroupOpsWorkspace(root, P1_GROUP_OPS_WORKSPACE_FIXTURE);
 assert.equal(root.innerHTML.includes("P1 Native workspace preview"), true);
 assert.equal(root.innerHTML.includes("draft-only / preview-only"), true);
 assert.equal(root.innerHTML.includes("计划 / 人群 / 任务"), true);
-assert.equal(root.innerHTML.includes("编排预览区 / draft-only canvas shell"), true);
+assert.equal(root.innerHTML.includes("Read-only grouped canvas"), true);
+assert.equal(root.innerHTML.includes("Plans"), true);
+assert.equal(root.innerHTML.includes("Audiences / Groups"), true);
+assert.equal(root.innerHTML.includes("Tasks / Nodes"), true);
+assert.equal(root.innerHTML.includes("Executions"), true);
+assert.equal(root.innerHTML.includes("Push Center"), true);
+assert.equal(root.innerHTML.includes("Evidence / Guardrails"), true);
 assert.equal(root.innerHTML.includes("属性面板 / guardrail / evidence state"), true);
 assert.equal(root.innerHTML.includes("Search / filters"), true);
 assert.equal(root.innerHTML.includes("data-view-state-memory-only=\"true\""), true);
+assert.equal(root.innerHTML.includes("data-canvas-local-state=\"true\""), true);
+assert.equal(root.innerHTML.includes("data-canvas-sort-mode=\"default\""), true);
+assert.equal(root.innerHTML.includes("data-canvas-group-mode=\"entity_lane\""), true);
 assert.equal(root.innerHTML.includes("Plan detail"), true);
 assert.equal(root.innerHTML.includes("Selected preview result"), true);
 assert.equal(root.innerHTML.includes("Preview result / blocked reason"), true);
@@ -95,6 +111,8 @@ assert.equal(root.innerHTML.includes("data-can-claim-pass90=\"false\""), true);
 assert.equal(root.innerHTML.includes("data-real-external-call-executed=\"false\""), true);
 assert.equal(root.innerHTML.includes("data-production-write-executed=\"false\""), true);
 assert.equal(root.innerHTML.includes("sent evidence 不等于 governance complete"), true);
+assert.equal(root.innerHTML.includes("Push Center pending 不等于 completed"), true);
+assert.equal(root.innerHTML.includes("evidence-incomplete 不等于 success"), true);
 assert.equal(root.innerHTML.includes("P1_READY_WITH_EXCEPTIONS 不等于 PASS_90_PLUS"), true);
 assert.equal(root.innerHTML.includes("data-selected-entity-type=\"plan\""), true);
 assert.equal(root.innerHTML.includes("data-can-render-pass90=\"true\""), false);
@@ -238,6 +256,10 @@ const pushFiltered = filterWorkspaceView(fixture, updateWorkspaceViewState(realV
 assert.equal(pushFiltered.visibleLeftRailItems.length, 1);
 assert.equal(pushFiltered.visibleLeftRailItems[0].entityType, "push_center");
 
+const evidenceFiltered = filterWorkspaceView(fixture, updateWorkspaceViewState(realViewState, { entityTypeFilter: "evidence" }));
+assert.equal(evidenceFiltered.visibleLeftRailItems.length, 1);
+assert.equal(evidenceFiltered.visibleLeftRailItems[0].entityType, "evidence");
+
 const selectedPushThenPlanOnly = filterWorkspaceView(
   fixture,
   updateWorkspaceViewState(selectEntityInViewState(realViewState, "push_center", "push_center-external_effect_job:97"), { entityTypeFilter: "plan" })
@@ -254,6 +276,12 @@ renderP1GroupOpsWorkspace(realRoot, fixture);
 assert.equal(realRoot.innerHTML.includes("真实群运营计划"), true);
 assert.equal(realRoot.innerHTML.includes("real_data_bound"), true);
 assert.equal(realRoot.innerHTML.includes("Search / filters"), true);
+assert.equal(realRoot.innerHTML.includes("data-canvas-lane-id=\"plans\""), true);
+assert.equal(realRoot.innerHTML.includes("data-canvas-lane-id=\"groups\""), true);
+assert.equal(realRoot.innerHTML.includes("data-canvas-lane-id=\"nodes\""), true);
+assert.equal(realRoot.innerHTML.includes("data-canvas-lane-id=\"executions\""), true);
+assert.equal(realRoot.innerHTML.includes("data-canvas-lane-id=\"push_center\""), true);
+assert.equal(realRoot.innerHTML.includes("data-canvas-lane-id=\"evidence\""), true);
 assert.equal(realRoot.innerHTML.includes("Read-only data loaded"), true);
 assert.equal(realRoot.innerHTML.includes("external_effect_job:97"), true);
 assert.equal(realRoot.innerHTML.includes("wrOgAAA001"), false);
@@ -263,6 +291,30 @@ assert.equal(realRoot.innerHTML.includes("data-real-external-call-executed=\"fal
 assert.equal(realRoot.innerHTML.includes("data-production-write-executed=\"false\""), true);
 assert.equal(realRoot.innerHTML.includes("data-can-claim-pass90=\"false\""), true);
 assertNoSensitiveFixtureStrings(realRoot.innerHTML);
+
+const lanes = buildWorkspaceCanvasLanes(fixture, filterWorkspaceView(fixture, realViewState), realViewState);
+assert.deepEqual(lanes.map((lane) => lane.id), ["plans", "groups", "nodes", "executions", "push_center", "evidence"]);
+assert.equal(lanes.every((lane) => lane.cards.length === 1), true);
+
+const statusSorted = sortCanvasCards([
+  { originalIndex: 0, status: "sent", entityType: "push_center", updatedOrCreatedTime: "" },
+  { originalIndex: 1, status: "governance-missing", entityType: "evidence", updatedOrCreatedTime: "" },
+  { originalIndex: 2, status: "pending", entityType: "execution", updatedOrCreatedTime: "" }
+], "blocked_first");
+assert.deepEqual(statusSorted.map((card) => card.status), ["governance-missing", "pending", "sent"]);
+
+const collapsedViewState = toggleWorkspaceCanvasLane(realViewState, "push_center");
+const collapsedLanes = buildWorkspaceCanvasLanes(fixture, filterWorkspaceView(fixture, collapsedViewState), collapsedViewState);
+assert.equal(collapsedLanes.find((lane) => lane.id === "push_center").isCollapsed, true);
+const collapsedRoot = { innerHTML: "" };
+renderP1GroupOpsWorkspace(collapsedRoot, fixture, collapsedViewState);
+assert.equal(collapsedRoot.innerHTML.includes("data-canvas-lane-id=\"push_center\" data-lane-collapsed=\"true\""), true);
+assertNoSensitiveFixtureStrings(collapsedRoot.innerHTML);
+
+const executionCanvasFilter = filterWorkspaceView(fixture, updateWorkspaceViewState(realViewState, { entityTypeFilter: "execution" }));
+const executionLanes = buildWorkspaceCanvasLanes(fixture, executionCanvasFilter, executionCanvasFilter.viewState);
+assert.equal(executionLanes.find((lane) => lane.id === "executions").cards.length, 1);
+assert.equal(executionLanes.find((lane) => lane.id === "plans").cards.length, 0);
 
 const realSelection = createWorkspaceViewState(fixture);
 const realExecutionSelection = selectEntityInViewState(realSelection, "execution", "execution-plan-7");

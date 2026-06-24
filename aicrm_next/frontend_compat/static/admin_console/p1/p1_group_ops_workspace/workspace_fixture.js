@@ -91,6 +91,15 @@ export const P1_GROUP_OPS_WORKSPACE_FIXTURE = {
             detailId: "push-center-preview",
             status: "evidence-incomplete",
             summary: "未绑定真实 projection，不能伪造成 sent。"
+        },
+        {
+            id: "evidence-p1-governance",
+            label: "Evidence / guardrails",
+            kind: "evidence",
+            entityType: "evidence",
+            detailId: "evidence-p1-governance",
+            status: "governance-missing",
+            summary: "发送 evidence 不等于 governance complete；approval / allowlist / gray-window 仍缺失。"
         }
     ],
     detailItems: [
@@ -164,6 +173,22 @@ export const P1_GROUP_OPS_WORKSPACE_FIXTURE = {
                 { label: "projection_id", value: "not_found" },
                 { label: "can_claim_pass_90_plus", value: "false" }
             ]
+        },
+        {
+            id: "evidence-p1-governance",
+            entityType: "evidence",
+            title: "Evidence / guardrail summary",
+            status: "governance-missing",
+            evidenceStatus: "fixture_fallback",
+            derivedStatus: "approval_allowlist_window_missing",
+            summary: "fixture 只说明治理证据缺口；不能把 sent 渲染成 governance complete。",
+            guardrail: "requires_approval / requires_allowlist / requires_gray_window。",
+            fields: [
+                { label: "approval_evidence", value: "missing" },
+                { label: "allowlist_evidence", value: "missing" },
+                { label: "gray_window_evidence", value: "missing" },
+                { label: "can_claim_pass_90_plus", value: "false" }
+            ]
         }
     ],
     defaultSelection: {
@@ -194,6 +219,15 @@ export function createUnavailableWorkspaceFixture(dataSourceLabel = "read_only_a
                 detailId: "plan-p1-group-ops-preview",
                 status: "evidence-incomplete",
                 summary: "只读 API 不可用或没有可绑定计划；不能伪造成 sent。"
+            },
+            {
+                id: "evidence-empty",
+                label: "Evidence unavailable",
+                kind: "evidence",
+                entityType: "evidence",
+                detailId: "evidence-p1-governance",
+                status: "evidence-incomplete",
+                summary: "只读数据不可用；治理 evidence 保持 incomplete。"
             }
         ],
         payload: {

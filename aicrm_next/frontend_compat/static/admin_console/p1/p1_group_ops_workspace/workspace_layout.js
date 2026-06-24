@@ -4,12 +4,13 @@ import { renderStatusBadge } from "../shared/status_badge.js";
 import { renderStatusCard } from "../shared/status_card.js";
 import { statusMeta } from "../shared/status_model.js";
 import { defaultRequestJson, loadGroupOpsWorkspaceData, parseWorkspaceApiConfig } from "./workspace_api.js";
+import { renderGroupedWorkspaceCanvas } from "./workspace_canvas.js";
 import { renderWorkspaceDetailPanel, renderWorkspaceSelectedPreviewResult, } from "./workspace_detail.js";
 import { ENTITY_FILTER_OPTIONS, STATUS_FILTER_OPTIONS, filterWorkspaceView } from "./workspace_filters.js";
 import { P1_GROUP_OPS_WORKSPACE_FIXTURE, createUnavailableWorkspaceFixture } from "./workspace_fixture.js";
-import { renderWorkspaceCanvas, renderWorkspacePreviewResult } from "./workspace_preview.js";
+import { renderWorkspacePreviewResult } from "./workspace_preview.js";
 import { buildGroupOpsWorkspaceStatusModel, workspaceCanRenderGlobalPass } from "./workspace_status.js";
-import { createWorkspaceViewState, selectEntityInViewState, selectionFromViewState, updateWorkspaceViewState } from "./workspace_view_state.js";
+import { createWorkspaceViewState, selectEntityInViewState, selectionFromViewState, toggleWorkspaceCanvasLane, updateWorkspaceViewState } from "./workspace_view_state.js";
 function isSelectedListItem(item, viewState) {
     return item.entityType === viewState.selectedEntityType && item.detailId === viewState.selectedEntityId;
 }
@@ -181,6 +182,19 @@ function attachFilterHandlers(root, fixture, viewState) {
         });
     });
 }
+function attachCanvasLaneHandlers(root, fixture, viewState) {
+    if (typeof root.querySelectorAll !== "function")
+        return;
+    const nodes = root.querySelectorAll("[data-workspace-lane-toggle]");
+    nodes.forEach((node) => {
+        node.addEventListener("click", () => {
+            const laneId = node.dataset.workspaceLaneToggle;
+            if (!laneId)
+                return;
+            renderP1GroupOpsWorkspace(root, fixture, toggleWorkspaceCanvasLane(viewState, laneId));
+        });
+    });
+}
 export function renderP1GroupOpsWorkspace(root, fixture = P1_GROUP_OPS_WORKSPACE_FIXTURE, viewState = createWorkspaceViewState(fixture)) {
     const model = buildGroupOpsWorkspaceStatusModel(fixture);
     const filtered = filterWorkspaceView(fixture, viewState);
@@ -192,7 +206,7 @@ export function renderP1GroupOpsWorkspace(root, fixture = P1_GROUP_OPS_WORKSPACE
       ${renderStateBanner(fixture, filtered)}
       <div class="p1-workspace-grid">
         ${renderLeftRail(filtered)}
-        ${renderWorkspaceCanvas(model, fixture, selection)}
+        ${renderGroupedWorkspaceCanvas(fixture, filtered, filtered.viewState)}
         ${renderPropertyPanel(fixture, filtered)}
       </div>
       ${renderWorkspaceSelectedPreviewResult(fixture, selection)}
@@ -201,6 +215,7 @@ export function renderP1GroupOpsWorkspace(root, fixture = P1_GROUP_OPS_WORKSPACE
   `;
     attachSelectionHandlers(root, fixture, filtered.viewState);
     attachFilterHandlers(root, fixture, filtered.viewState);
+    attachCanvasLaneHandlers(root, fixture, filtered.viewState);
 }
 function boot() {
     const root = document.getElementById("p1GroupOpsWorkspaceApp");
