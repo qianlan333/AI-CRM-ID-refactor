@@ -5,7 +5,7 @@ export const DEFAULT_WORKSPACE_DRAFT_API_CONFIG = {
 function text(value) {
     return String(value ?? "").trim();
 }
-function simpleHash(value) {
+export function workspaceSimpleHash(value) {
     let hash = 2166136261;
     for (let index = 0; index < value.length; index += 1) {
         hash ^= value.charCodeAt(index);
@@ -32,12 +32,14 @@ function sensitiveFragments() {
         "raw_" + "message_body",
         "raw_" + "callback_body",
         "target_" + "list",
-        "raw_" + "target"
+        "raw_" + "target",
+        "phone",
+        "mobile"
     ];
 }
-function assertSensitiveSafe(value, path = "$") {
+export function assertWorkspaceSensitiveSafe(value, path = "$") {
     if (Array.isArray(value)) {
-        value.forEach((item, index) => assertSensitiveSafe(item, `${path}[${index}]`));
+        value.forEach((item, index) => assertWorkspaceSensitiveSafe(item, `${path}[${index}]`));
         return;
     }
     if (value && typeof value === "object") {
@@ -46,7 +48,7 @@ function assertSensitiveSafe(value, path = "$") {
             if (sensitiveFragments().some((fragment) => key.includes(fragment))) {
                 throw new Error(`draft_payload_sensitive_field:${path}.${rawKey}`);
             }
-            assertSensitiveSafe(item, `${path}.${rawKey}`);
+            assertWorkspaceSensitiveSafe(item, `${path}.${rawKey}`);
         }
         return;
     }
@@ -61,11 +63,11 @@ function assertSensitiveSafe(value, path = "$") {
     }
 }
 export function assertWorkspaceDraftPayloadSafe(payload) {
-    assertSensitiveSafe(payload);
+    assertWorkspaceSensitiveSafe(payload);
     return true;
 }
 export function assertWorkspaceDraftReviewPayloadSafe(payload) {
-    assertSensitiveSafe(payload);
+    assertWorkspaceSensitiveSafe(payload);
     return true;
 }
 function sourcePlanId(fixture) {
@@ -114,7 +116,7 @@ function selectedDraftItems(fixture, filtered, viewState) {
     return current ? [itemPayload(current, 0, true)] : [];
 }
 function stableIdempotencyKey(sourcePlan, items) {
-    const hash = simpleHash(JSON.stringify({
+    const hash = workspaceSimpleHash(JSON.stringify({
         sourcePlan,
         items: items.map((item) => ({
             item_type: item.item_type,

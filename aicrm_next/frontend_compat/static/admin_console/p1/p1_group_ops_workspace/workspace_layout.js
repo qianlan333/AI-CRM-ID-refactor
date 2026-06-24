@@ -8,6 +8,7 @@ import { buildCopySafeBundleJson, buildCopySafeBundleText, copyBundleSummaryToCl
 import { renderGroupedWorkspaceCanvas } from "./workspace_canvas.js";
 import { renderWorkspaceDetailPanel, renderWorkspaceSelectedPreviewResult, } from "./workspace_detail.js";
 import { archiveDraft, buildWorkspaceDraftReviewPayload, buildWorkspaceDraftPayload, createDraft, isDraftConflictError, requestDraftReview, updateDraft } from "./workspace_draft_api.js";
+import { buildWorkspaceGovernanceRequestPayload, getDraftGovernance, getGovernanceReview, isGovernanceConflictError, requestGovernance } from "./workspace_governance_api.js";
 import { ENTITY_FILTER_OPTIONS, STATUS_FILTER_OPTIONS, filterWorkspaceView } from "./workspace_filters.js";
 import { buildWorkspaceCanvasLanes } from "./workspace_grouping.js";
 import { moveWorkspaceCanvasSelection } from "./workspace_keyboard.js";
@@ -275,6 +276,156 @@ function renderDraftPersistencePanel(fixture, filtered) {
     </section>
   `;
 }
+function governanceTone(status) {
+    if (status === "requested")
+        return "success";
+    if (status === "failed" || status === "conflict" || status === "blocked")
+        return "danger";
+    if (status === "requesting")
+        return "info";
+    return "neutral";
+}
+function defaultGovernanceSteps() {
+    return [
+        { step_type: "operator_approval", step_status: "pending" },
+        { step_type: "receiver_allowlist", step_status: "pending" },
+        { step_type: "gray_window", step_status: "pending" }
+    ];
+}
+function governanceReviewFromResponse(payload) {
+    return {
+        review_id: String(payload.review_id || ""),
+        draft_id: String(payload.draft_id || ""),
+        review_status: String(payload.review_status || "approval_pending"),
+        steps: (payload.steps && payload.steps.length > 0 ? payload.steps : defaultGovernanceSteps()).map((step) => ({
+            step_type: String(step.step_type || ""),
+            step_status: String(step.step_status || "pending")
+        })),
+        allowlist_summary: {
+            hash: String(payload.allowlist_summary?.hash || ""),
+            count: Number(payload.allowlist_summary?.count || 0),
+            source_reference_summary: payload.allowlist_summary?.source_reference_summary || {}
+        },
+        gray_window: {
+            start_at: String(payload.gray_window?.start_at || ""),
+            end_at: String(payload.gray_window?.end_at || ""),
+            timezone: String(payload.gray_window?.timezone || ""),
+            window_status: String(payload.gray_window?.window_status || "pending")
+        },
+        approved: false,
+        execution_status: "not_execution",
+        push_center_job_created: false,
+        external_effect_job_created: false,
+        broadcast_job_created: false,
+        internal_event_created: false,
+        real_external_call: false,
+        can_claim_pass_90_plus: false
+    };
+}
+function isActiveGovernanceStatus(status) {
+    return !["", "governance_not_started", "governance_rejected", "governance_expired", "rejected", "expired"].includes(status);
+}
+function renderGovernanceStepRows(steps) {
+    return steps.map((step) => `
+    <li data-governance-step-type="${escapeHtml(step.step_type)}" data-governance-step-status="${escapeHtml(step.step_status)}">
+      <strong>${escapeHtml(step.step_type)}</strong>
+      <span>${escapeHtml(step.step_status)}</span>
+    </li>
+  `).join("");
+}
+function renderGovernancePanel(filtered) {
+    const viewState = filtered.viewState;
+    const hasDraft = Boolean(viewState.currentDraftId);
+    const hasSnapshot = Boolean(viewState.currentDraftSnapshotHash);
+    const isReadyForReview = viewState.currentDraftStatus === "ready_for_review";
+    const currentReview = viewState.currentGovernanceReview;
+    const activeReviewExists = Boolean(viewState.currentGovernanceReviewId) && isActiveGovernanceStatus(viewState.currentGovernanceStatus);
+    let payloadPreview;
+    let payloadSafe = false;
+    let disabledReason = "";
+    try {
+        if (hasDraft && hasSnapshot) {
+            payloadPreview = buildWorkspaceGovernanceRequestPayload(viewState.currentDraftId, viewState.currentDraftSnapshotHash);
+            payloadSafe = true;
+        }
+    }
+    catch (error) {
+        disabledReason = error instanceof Error ? error.message : "governance_payload_invalid";
+    }
+    if (!hasDraft)
+        disabledReason = "保存 draft 后才能 request governance。";
+    else if (!isReadyForReview)
+        disabledReason = "draft_status 必须是 ready_for_review。";
+    else if (!hasSnapshot)
+        disabledReason = "snapshot_hash 缺失，请重新保存草稿。";
+    else if (activeReviewExists)
+        disabledReason = "已有 active governance review；请刷新查看。";
+    else if (!payloadSafe)
+        disabledReason || (disabledReason = "governance payload 未通过脱敏校验。");
+    const canRequestGovernance = hasDraft
+        && isReadyForReview
+        && hasSnapshot
+        && !activeReviewExists
+        && payloadSafe
+        && viewState.governanceRequestStatus !== "requesting";
+    const steps = currentReview?.steps || defaultGovernanceSteps();
+    const allowlistHash = currentReview?.allowlist_summary.hash || payloadPreview?.allowlist_summary.allowlist_hash || "not_requested";
+    const allowlistCount = currentReview?.allowlist_summary.count ?? payloadPreview?.allowlist_summary.allowlist_count ?? 0;
+    const sourceReference = currentReview?.allowlist_summary.source_reference_summary
+        || payloadPreview?.allowlist_summary.source_reference
+        || { summary_only: true };
+    const grayWindow = {
+        ...(payloadPreview?.gray_window || {
+            start_at: "not_requested",
+            end_at: "not_requested",
+            timezone: "not_requested"
+        }),
+        ...(currentReview?.gray_window || {}),
+        window_status: currentReview?.gray_window.window_status || "pending"
+    };
+    const tone = governanceTone(viewState.governanceRequestStatus);
+    return `
+    <section class="p1-workspace-governance-panel" aria-label="Governance request panel" data-governance-panel="frontend_pending_only" data-approved="false" data-execution-status="not_execution" data-push-center-job-created="false" data-external-effect-job-created="false" data-broadcast-job-created="false" data-internal-event-created="false" data-real-external-call-executed="false" data-can-claim-pass90="false">
+      <div class="p1-workspace-panel-head">
+        <h2>Governance panel</h2>
+        <p>治理 request 只创建 approval_pending review 和 pending steps；不审批、不创建任务、不发送。</p>
+      </div>
+      <dl class="p1-workspace-mini-fields">
+        <div><dt>draft_status</dt><dd>${escapeHtml(viewState.currentDraftStatus)}</dd></div>
+        <div><dt>governance_status</dt><dd>${escapeHtml(viewState.currentGovernanceStatus)}</dd></div>
+        <div><dt>review_id</dt><dd>${escapeHtml(viewState.currentGovernanceReviewId || "not_requested")}</dd></div>
+        <div><dt>approved</dt><dd>false</dd></div>
+        <div><dt>execution_status</dt><dd>not_execution</dd></div>
+        <div><dt>push_center_job_created</dt><dd>false</dd></div>
+        <div><dt>external_effect_job_created</dt><dd>false</dd></div>
+        <div><dt>broadcast_job_created</dt><dd>false</dd></div>
+        <div><dt>internal_event_created</dt><dd>false</dd></div>
+        <div><dt>real_external_call</dt><dd>false</dd></div>
+        <div><dt>can_claim_pass90</dt><dd>false</dd></div>
+      </dl>
+      <div class="p1-workspace-governance-actions" aria-label="治理 request 操作">
+        <button type="button" data-workspace-request-governance="true"${canRequestGovernance ? "" : " disabled"}>Request governance</button>
+        <button type="button" data-workspace-refresh-governance="true"${hasDraft ? "" : " disabled"}>Refresh governance</button>
+      </div>
+      <p class="p1-workspace-draft-status p1-workspace-draft-status--${tone}" aria-live="polite" data-governance-request-status="${escapeHtml(viewState.governanceRequestStatus)}">${escapeHtml(viewState.governanceRequestMessage)}</p>
+      ${disabledReason && !canRequestGovernance ? `<p class="p1-workspace-draft-guardrail" data-governance-disabled-reason="${escapeHtml(disabledReason)}">${escapeHtml(disabledReason)}</p>` : ""}
+      <section class="p1-workspace-governance-timeline" aria-label="Governance pending step timeline">
+        <h3>Step timeline</h3>
+        <ul>${renderGovernanceStepRows(steps)}</ul>
+      </section>
+      <dl class="p1-workspace-mini-fields">
+        <div><dt>allowlist_hash</dt><dd>${escapeHtml(allowlistHash)}</dd></div>
+        <div><dt>allowlist_count</dt><dd>${allowlistCount}</dd></div>
+        <div><dt>source_reference</dt><dd>${escapeHtml(JSON.stringify(sourceReference))}</dd></div>
+        <div><dt>window_start</dt><dd>${escapeHtml(grayWindow.start_at)}</dd></div>
+        <div><dt>window_end</dt><dd>${escapeHtml(grayWindow.end_at)}</dd></div>
+        <div><dt>timezone</dt><dd>${escapeHtml(grayWindow.timezone)}</dd></div>
+        <div><dt>window_status</dt><dd>${escapeHtml(grayWindow.window_status || "pending")}</dd></div>
+      </dl>
+      <p class="p1-workspace-draft-guardrail">governance request 不等于 approval；pending steps 不等于 approved；governance approved 当前也不等于 execution。当前不会创建 Push Center job、external_effect_job、broadcast_job、internal_event，也不会发送，不能 claim PASS_90_PLUS。</p>
+    </section>
+  `;
+}
 function renderPropertyPanel(fixture, filtered) {
     const selection = selectionFromViewState(fixture, filtered.viewState);
     const multiSelectedCount = countMultiSelected(filtered.viewState);
@@ -297,6 +448,7 @@ function renderPropertyPanel(fixture, filtered) {
         <p>P1_READY_WITH_EXCEPTIONS 不等于 PASS_90_PLUS；sent evidence 不等于 governance complete。</p>
       </section>
       ${renderDraftPersistencePanel(fixture, filtered)}
+      ${renderGovernancePanel(filtered)}
       ${filtered.viewState.activeSelectionMode === "multi" && multiSelectedCount > 0 ? renderBundleSummary(fixture, filtered) : renderWorkspaceDetailPanel(fixture, selection)}
       <div class="p1-workspace-status-stack">${cards}</div>
     </aside>
@@ -460,6 +612,21 @@ function draftStateFromResponse(viewState, payload, message) {
         draftSaveMessage: message
     };
 }
+function governanceStateFromResponse(payload, message) {
+    const review = governanceReviewFromResponse(payload);
+    return {
+        currentGovernanceReviewId: review.review_id,
+        currentGovernanceStatus: review.review_status,
+        currentGovernanceReview: review,
+        governanceRequestStatus: "requested",
+        governanceRequestMessage: message
+    };
+}
+function firstActiveGovernanceReview(items) {
+    return items.find((item) => isActiveGovernanceStatus(String(item.review_status || "")))
+        || items[0]
+        || null;
+}
 function attachDraftPersistenceHandlers(root, fixture, viewState) {
     if (typeof root.querySelectorAll !== "function")
         return;
@@ -592,6 +759,115 @@ function attachDraftPersistenceHandlers(root, fixture, viewState) {
         });
     });
 }
+function attachGovernanceHandlers(root, fixture, viewState) {
+    if (typeof root.querySelectorAll !== "function")
+        return;
+    const renderWithGovernanceUpdates = (updates) => {
+        renderP1GroupOpsWorkspace(root, fixture, updateWorkspaceViewState(viewState, updates));
+    };
+    root.querySelectorAll("[data-workspace-request-governance]").forEach((node) => {
+        node.addEventListener("click", () => {
+            if (!viewState.currentDraftId
+                || viewState.currentDraftStatus !== "ready_for_review"
+                || !viewState.currentDraftSnapshotHash
+                || (viewState.currentGovernanceReviewId && isActiveGovernanceStatus(viewState.currentGovernanceStatus))) {
+                renderWithGovernanceUpdates({
+                    governanceRequestStatus: "blocked",
+                    governanceRequestMessage: "governance request 需要 saved ready_for_review draft、snapshot_hash，且不能已有 active review。"
+                });
+                return;
+            }
+            let payload;
+            try {
+                payload = buildWorkspaceGovernanceRequestPayload(viewState.currentDraftId, viewState.currentDraftSnapshotHash);
+            }
+            catch (error) {
+                renderWithGovernanceUpdates({
+                    governanceRequestStatus: "blocked",
+                    governanceRequestMessage: error instanceof Error ? error.message : "governance payload 未通过脱敏校验。"
+                });
+                return;
+            }
+            renderWithGovernanceUpdates({
+                currentGovernanceIdempotencyKey: payload.idempotency_key,
+                governanceRequestStatus: "requesting",
+                governanceRequestMessage: "正在 request governance；只写 governance review/step 表，不审批、不执行。"
+            });
+            requestGovernance(viewState.currentDraftId, payload)
+                .then((response) => {
+                renderP1GroupOpsWorkspace(root, fixture, updateWorkspaceViewState(viewState, {
+                    currentGovernanceIdempotencyKey: payload.idempotency_key,
+                    ...governanceStateFromResponse(response, "governance request 已记录 approval_pending；三个治理 step 仍为 pending。")
+                }));
+            })
+                .catch((error) => {
+                if (isGovernanceConflictError(error)) {
+                    getDraftGovernance(viewState.currentDraftId)
+                        .then((response) => {
+                        const active = firstActiveGovernanceReview(response.items);
+                        renderP1GroupOpsWorkspace(root, fixture, updateWorkspaceViewState(viewState, {
+                            currentGovernanceIdempotencyKey: payload.idempotency_key,
+                            ...(active
+                                ? governanceStateFromResponse(active, "已存在 active governance review；已刷新为只读 pending 状态。")
+                                : {
+                                    governanceRequestStatus: "conflict",
+                                    governanceRequestMessage: "governance request 冲突：请刷新治理状态；不会覆盖。"
+                                })
+                        }));
+                    })
+                        .catch(() => {
+                        renderP1GroupOpsWorkspace(root, fixture, updateWorkspaceViewState(viewState, {
+                            currentGovernanceIdempotencyKey: payload.idempotency_key,
+                            governanceRequestStatus: "conflict",
+                            governanceRequestMessage: "governance request 冲突，且读取现有 review 失败；不会覆盖本地状态。"
+                        }));
+                    });
+                    return;
+                }
+                renderP1GroupOpsWorkspace(root, fixture, updateWorkspaceViewState(viewState, {
+                    currentGovernanceIdempotencyKey: payload.idempotency_key,
+                    governanceRequestStatus: "failed",
+                    governanceRequestMessage: "governance request 失败：未审批、未发送、未创建 Push Center job。"
+                }));
+            });
+        });
+    });
+    root.querySelectorAll("[data-workspace-refresh-governance]").forEach((node) => {
+        node.addEventListener("click", () => {
+            if (!viewState.currentDraftId && !viewState.currentGovernanceReviewId) {
+                renderWithGovernanceUpdates({
+                    governanceRequestStatus: "blocked",
+                    governanceRequestMessage: "没有可刷新的 draft 或 governance review。"
+                });
+                return;
+            }
+            renderWithGovernanceUpdates({
+                governanceRequestStatus: "requesting",
+                governanceRequestMessage: "正在读取 governance review；不会执行任何治理 step。"
+            });
+            const request = viewState.currentGovernanceReviewId
+                ? getGovernanceReview(viewState.currentGovernanceReviewId).then((response) => response)
+                : getDraftGovernance(viewState.currentDraftId).then((response) => firstActiveGovernanceReview(response.items));
+            request
+                .then((response) => {
+                if (!response) {
+                    renderP1GroupOpsWorkspace(root, fixture, updateWorkspaceViewState(viewState, {
+                        governanceRequestStatus: "idle",
+                        governanceRequestMessage: "当前 draft 尚无 governance review；ready_for_review 后可 request governance。"
+                    }));
+                    return;
+                }
+                renderP1GroupOpsWorkspace(root, fixture, updateWorkspaceViewState(viewState, governanceStateFromResponse(response, "governance review 已刷新；仍为 not_execution。")));
+            })
+                .catch(() => {
+                renderP1GroupOpsWorkspace(root, fixture, updateWorkspaceViewState(viewState, {
+                    governanceRequestStatus: "failed",
+                    governanceRequestMessage: "刷新 governance 失败；不会审批、不会执行。"
+                }));
+            });
+        });
+    });
+}
 function attachKeyboardHandlers(root, fixture, viewState) {
     if (typeof root.querySelector !== "function")
         return;
@@ -638,6 +914,7 @@ export function renderP1GroupOpsWorkspace(root, fixture = P1_GROUP_OPS_WORKSPACE
     attachMultiSelectHandlers(root, fixture, filtered.viewState);
     attachBundleExportHandlers(root, fixture, filtered.viewState);
     attachDraftPersistenceHandlers(root, fixture, filtered.viewState);
+    attachGovernanceHandlers(root, fixture, filtered.viewState);
     attachKeyboardHandlers(root, fixture, filtered.viewState);
 }
 function boot() {

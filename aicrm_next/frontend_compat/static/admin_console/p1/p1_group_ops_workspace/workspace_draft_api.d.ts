@@ -67,6 +67,8 @@ export interface BuildWorkspaceDraftPayloadOptions {
     version?: number;
 }
 export declare const DEFAULT_WORKSPACE_DRAFT_API_CONFIG: WorkspaceDraftApiConfig;
+export declare function workspaceSimpleHash(value: string): string;
+export declare function assertWorkspaceSensitiveSafe(value: unknown, path?: string): void;
 export declare function assertWorkspaceDraftPayloadSafe(payload: WorkspaceDraftPayload): true;
 export declare function assertWorkspaceDraftReviewPayloadSafe(payload: WorkspaceDraftReviewPayload): true;
 export declare function stableRequestReviewIdempotencyKey(draftId: string, version: number, snapshotHash: string): string;

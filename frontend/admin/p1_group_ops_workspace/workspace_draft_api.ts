@@ -88,7 +88,7 @@ function text(value: unknown): string {
   return String(value ?? "").trim();
 }
 
-function simpleHash(value: string): string {
+export function workspaceSimpleHash(value: string): string {
   let hash = 2166136261;
   for (let index = 0; index < value.length; index += 1) {
     hash ^= value.charCodeAt(index);
@@ -116,13 +116,15 @@ function sensitiveFragments(): string[] {
     "raw_" + "message_body",
     "raw_" + "callback_body",
     "target_" + "list",
-    "raw_" + "target"
+    "raw_" + "target",
+    "phone",
+    "mobile"
   ];
 }
 
-function assertSensitiveSafe(value: unknown, path = "$"): void {
+export function assertWorkspaceSensitiveSafe(value: unknown, path = "$"): void {
   if (Array.isArray(value)) {
-    value.forEach((item, index) => assertSensitiveSafe(item, `${path}[${index}]`));
+    value.forEach((item, index) => assertWorkspaceSensitiveSafe(item, `${path}[${index}]`));
     return;
   }
   if (value && typeof value === "object") {
@@ -131,7 +133,7 @@ function assertSensitiveSafe(value: unknown, path = "$"): void {
       if (sensitiveFragments().some((fragment) => key.includes(fragment))) {
         throw new Error(`draft_payload_sensitive_field:${path}.${rawKey}`);
       }
-      assertSensitiveSafe(item, `${path}.${rawKey}`);
+      assertWorkspaceSensitiveSafe(item, `${path}.${rawKey}`);
     }
     return;
   }
@@ -147,12 +149,12 @@ function assertSensitiveSafe(value: unknown, path = "$"): void {
 }
 
 export function assertWorkspaceDraftPayloadSafe(payload: WorkspaceDraftPayload): true {
-  assertSensitiveSafe(payload);
+  assertWorkspaceSensitiveSafe(payload);
   return true;
 }
 
 export function assertWorkspaceDraftReviewPayloadSafe(payload: WorkspaceDraftReviewPayload): true {
-  assertSensitiveSafe(payload);
+  assertWorkspaceSensitiveSafe(payload);
   return true;
 }
 
@@ -209,7 +211,7 @@ function selectedDraftItems(fixture: WorkspaceFixture, filtered: FilteredWorkspa
 }
 
 function stableIdempotencyKey(sourcePlan: string, items: WorkspaceDraftItemPayload[]): string {
-  const hash = simpleHash(JSON.stringify({
+  const hash = workspaceSimpleHash(JSON.stringify({
     sourcePlan,
     items: items.map((item) => ({
       item_type: item.item_type,

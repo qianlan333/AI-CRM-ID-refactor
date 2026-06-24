@@ -22,6 +22,36 @@ export type WorkspaceCopyStatus = "idle" | "copied" | "copy_failed";
 export type WorkspaceDraftSaveStatus = "idle" | "saving" | "saved" | "failed" | "conflict" | "archived";
 export type WorkspaceDraftStatus = "not_saved" | "draft" | "ready_for_review" | "archived" | "rejected";
 export type WorkspaceDraftReviewStatus = "idle" | "requesting" | "ready_for_review" | "failed" | "conflict" | "blocked";
+export type WorkspaceGovernanceRequestStatus = "idle" | "requesting" | "requested" | "failed" | "conflict" | "blocked";
+
+export interface WorkspaceGovernanceReviewView {
+  review_id: string;
+  draft_id: string;
+  review_status: string;
+  steps: {
+    step_type: string;
+    step_status: string;
+  }[];
+  allowlist_summary: {
+    hash: string;
+    count: number;
+    source_reference_summary: Record<string, unknown>;
+  };
+  gray_window: {
+    start_at: string;
+    end_at: string;
+    timezone: string;
+    window_status: string;
+  };
+  approved: false;
+  execution_status: "not_execution";
+  push_center_job_created: false;
+  external_effect_job_created: false;
+  broadcast_job_created: false;
+  internal_event_created: false;
+  real_external_call: false;
+  can_claim_pass_90_plus: false;
+}
 
 export const WORKSPACE_CANVAS_LANE_IDS: WorkspaceCanvasLaneId[] = [
   "plans",
@@ -86,6 +116,12 @@ export interface WorkspaceViewState {
   draftSaveMessage: string;
   draftReviewStatus: WorkspaceDraftReviewStatus;
   draftReviewMessage: string;
+  currentGovernanceReviewId: string;
+  currentGovernanceStatus: string;
+  currentGovernanceIdempotencyKey: string;
+  currentGovernanceReview: WorkspaceGovernanceReviewView | null;
+  governanceRequestStatus: WorkspaceGovernanceRequestStatus;
+  governanceRequestMessage: string;
 }
 
 function defaultLaneCollapsedState(): WorkspaceLaneCollapsedState {
@@ -154,7 +190,13 @@ export function createWorkspaceViewState(fixture: WorkspaceFixture): WorkspaceVi
     draftSaveStatus: "idle",
     draftSaveMessage: "草稿尚未保存；保存只写 draft 表，不会发送。",
     draftReviewStatus: "idle",
-    draftReviewMessage: "request-review 仅适用于已保存的 draft；不会审批、不会进入执行。"
+    draftReviewMessage: "request-review 仅适用于已保存的 draft；不会审批、不会进入执行。",
+    currentGovernanceReviewId: "",
+    currentGovernanceStatus: "governance_not_started",
+    currentGovernanceIdempotencyKey: "",
+    currentGovernanceReview: null,
+    governanceRequestStatus: "idle",
+    governanceRequestMessage: "治理 request 仅适用于 ready_for_review draft；不会审批、不会发送。"
   };
 }
 

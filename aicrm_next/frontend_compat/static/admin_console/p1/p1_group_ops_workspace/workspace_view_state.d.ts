@@ -11,6 +11,35 @@ export type WorkspaceCopyStatus = "idle" | "copied" | "copy_failed";
 export type WorkspaceDraftSaveStatus = "idle" | "saving" | "saved" | "failed" | "conflict" | "archived";
 export type WorkspaceDraftStatus = "not_saved" | "draft" | "ready_for_review" | "archived" | "rejected";
 export type WorkspaceDraftReviewStatus = "idle" | "requesting" | "ready_for_review" | "failed" | "conflict" | "blocked";
+export type WorkspaceGovernanceRequestStatus = "idle" | "requesting" | "requested" | "failed" | "conflict" | "blocked";
+export interface WorkspaceGovernanceReviewView {
+    review_id: string;
+    draft_id: string;
+    review_status: string;
+    steps: {
+        step_type: string;
+        step_status: string;
+    }[];
+    allowlist_summary: {
+        hash: string;
+        count: number;
+        source_reference_summary: Record<string, unknown>;
+    };
+    gray_window: {
+        start_at: string;
+        end_at: string;
+        timezone: string;
+        window_status: string;
+    };
+    approved: false;
+    execution_status: "not_execution";
+    push_center_job_created: false;
+    external_effect_job_created: false;
+    broadcast_job_created: false;
+    internal_event_created: false;
+    real_external_call: false;
+    can_claim_pass_90_plus: false;
+}
 export declare const WORKSPACE_CANVAS_LANE_IDS: WorkspaceCanvasLaneId[];
 export declare const WORKSPACE_CANVAS_SORT_MODES: WorkspaceCanvasSortMode[];
 export declare const WORKSPACE_CANVAS_GROUP_MODES: WorkspaceCanvasGroupMode[];
@@ -55,6 +84,12 @@ export interface WorkspaceViewState {
     draftSaveMessage: string;
     draftReviewStatus: WorkspaceDraftReviewStatus;
     draftReviewMessage: string;
+    currentGovernanceReviewId: string;
+    currentGovernanceStatus: string;
+    currentGovernanceIdempotencyKey: string;
+    currentGovernanceReview: WorkspaceGovernanceReviewView | null;
+    governanceRequestStatus: WorkspaceGovernanceRequestStatus;
+    governanceRequestMessage: string;
 }
 export declare function createWorkspaceViewState(fixture: WorkspaceFixture): WorkspaceViewState;
 export declare function selectEntityInViewState(viewState: WorkspaceViewState, selectedEntityType: WorkspaceEntityType, selectedEntityId: string): WorkspaceViewState;
