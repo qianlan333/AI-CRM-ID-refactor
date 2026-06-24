@@ -16,18 +16,7 @@ class ExternalCampaignRepositoryError(Exception):
 class ExternalCampaignRepository(Protocol):
     def table_columns(self, table_name: str) -> set[str]: ...
     def fetch_user_ops_pool_current_row(self, external_userid: str) -> JsonDict: ...
-    def fetch_automation_member_row(self, external_userid: str) -> JsonDict: ...
     def fetch_contact_row(self, external_userid: str) -> JsonDict: ...
-    def get_sidebar_binding_candidate(self, external_userid: str) -> JsonDict: ...
-    def ensure_automation_member_for_external_campaign(
-        self,
-        *,
-        external_userid: str,
-        owner_userid: str,
-        operator: str,
-        dry_run: bool,
-        allow_owner_mismatch: bool,
-    ) -> JsonDict: ...
     def get_campaign_by_code(self, campaign_code: str) -> JsonDict | None: ...
     def get_campaign_by_id(self, campaign_id: int) -> JsonDict | None: ...
     def count_open_campaign_jobs(self, campaign_id: int) -> int: ...
@@ -123,14 +112,6 @@ def _row_to_dict(row: Any) -> JsonDict:
     return dict(row) if row else {}
 
 
-def _positive_int(value: Any) -> int | None:
-    try:
-        parsed = int(value)
-    except (TypeError, ValueError):
-        return None
-    return parsed if parsed > 0 else None
-
-
 class PostgresExternalCampaignRepository:
     def __init__(self, db: Any | None = None) -> None:
         self.db = db or get_db()
@@ -187,19 +168,6 @@ class PostgresExternalCampaignRepository:
         ).fetchone()
         return _row_to_dict(row)
 
-    def fetch_automation_member_row(self, external_userid: str) -> JsonDict:
-        row = self.db.execute(
-            """
-            SELECT id, external_contact_id, owner_staff_id
-            FROM automation_member
-            WHERE external_contact_id = ?
-            ORDER BY updated_at DESC, id DESC
-            LIMIT 1
-            """,
-            (_text(external_userid),),
-        ).fetchone()
-        return _row_to_dict(row)
-
     def fetch_contact_row(self, external_userid: str) -> JsonDict:
         row = self.db.execute(
             """
@@ -212,167 +180,6 @@ class PostgresExternalCampaignRepository:
             (_text(external_userid),),
         ).fetchone()
         return _row_to_dict(row)
-
-    def get_sidebar_binding_candidate(self, external_userid: str) -> JsonDict:
-        row = self.db.execute(
-            """
-            SELECT
-                b.external_userid,
-                p.id AS person_id,
-                p.mobile AS phone,
-                b.last_owner_userid,
-                b.first_owner_userid,
-                c.owner_userid AS contact_owner_userid,
-                COALESCE(NULLIF(c.customer_name, ''), NULLIF(c.remark, '')) AS customer_name,
-                (
-                    SELECT wf.user_id
-                    FROM wecom_external_contact_follow_users wf
-                    WHERE wf.external_userid = b.external_userid
-                      AND wf.relation_status = 'active'
-                      AND wf.user_id <> ''
-                    ORDER BY
-                      CASE WHEN wf.is_primary THEN 0 ELSE 1 END ASC,
-                      wf.updated_at DESC,
-                      wf.id DESC
-                    LIMIT 1
-                ) AS active_follow_userid
-            FROM external_contact_bindings b
-            JOIN people p ON p.id = b.person_id
-            LEFT JOIN contacts c ON c.external_userid = b.external_userid
-            WHERE b.external_userid = ?
-              AND b.external_userid <> ''
-              AND p.mobile <> ''
-            LIMIT 1
-            """,
-            (_text(external_userid),),
-        ).fetchone()
-        candidate = _row_to_dict(row)
-        if not candidate:
-            return {}
-        owner = (
-            _text(candidate.get("active_follow_userid"))
-            or _text(candidate.get("last_owner_userid"))
-            or _text(candidate.get("first_owner_userid"))
-            or _text(candidate.get("contact_owner_userid"))
-        )
-        return {
-            "external_userid": _text(candidate.get("external_userid")),
-            "phone": _text(candidate.get("phone")),
-            "person_id": _positive_int(candidate.get("person_id")),
-            "owner_staff_id": owner,
-            "customer_name": _text(candidate.get("customer_name")),
-        }
-
-    def _backfill_source(self, external_userid: str) -> JsonDict:
-        contact = self.fetch_contact_row(external_userid)
-        pool_current = self.fetch_user_ops_pool_current_row(external_userid)
-        if contact or pool_current:
-            source = contact or pool_current
-            return {
-                "source": "contacts" if contact else "user_ops_pool_current",
-                "external_userid": external_userid,
-                "owner_userid": _text(contact.get("owner_userid")) or _text(pool_current.get("owner_userid")),
-                "customer_name": _text(contact.get("customer_name")) or _text(pool_current.get("customer_name")),
-                "remark": _text(contact.get("remark")),
-                "phone": _text(pool_current.get("mobile")) or _text(pool_current.get("phone")),
-                "person_id": _positive_int(pool_current.get("person_id") or pool_current.get("master_customer_id")),
-                "contact": contact,
-                "pool_current": pool_current,
-            }
-        candidate = self.get_sidebar_binding_candidate(external_userid)
-        if not candidate:
-            return {}
-        return {
-            "source": "sidebar_binding",
-            "external_userid": external_userid,
-            "owner_userid": _text(candidate.get("owner_staff_id")),
-            "customer_name": _text(candidate.get("customer_name")),
-            "phone": _text(candidate.get("phone")),
-            "person_id": _positive_int(candidate.get("person_id")),
-            "contact": {},
-            "pool_current": {},
-        }
-
-    def ensure_automation_member_for_external_campaign(
-        self,
-        *,
-        external_userid: str,
-        owner_userid: str,
-        operator: str,
-        dry_run: bool,
-        allow_owner_mismatch: bool,
-    ) -> JsonDict:
-        external = _text(external_userid)
-        requested_owner = _text(owner_userid)
-        existing = self.fetch_automation_member_row(external)
-        if existing:
-            return {
-                "external_userid": external,
-                "status": "exists",
-                "source": "automation_member",
-                "automation_member_id": int(existing.get("id") or 0),
-                "owner_userid": _text(existing.get("owner_staff_id")),
-            }
-        source = self._backfill_source(external)
-        if not source:
-            return {"external_userid": external, "status": "unresolved", "source": "", "owner_userid": ""}
-        source_owner = _text(source.get("owner_userid"))
-        if source_owner and requested_owner and source_owner != requested_owner and not allow_owner_mismatch:
-            return {
-                "external_userid": external,
-                "status": "owner_mismatch",
-                "source": _text(source.get("source")),
-                "owner_userid": source_owner,
-                "requested_owner_userid": requested_owner,
-                "customer_name": _text(source.get("customer_name")),
-            }
-        result = {
-            "external_userid": external,
-            "status": "would_insert" if dry_run else "inserted",
-            "source": _text(source.get("source")),
-            "owner_userid": source_owner or requested_owner,
-            "requested_owner_userid": requested_owner,
-            "customer_name": _text(source.get("customer_name")),
-            "operator": _text(operator),
-            "target": source,
-        }
-        if dry_run:
-            return result
-
-        columns = self.table_columns("automation_member")
-        if "external_contact_id" not in columns:
-            raise ExternalCampaignRepositoryError("automation_member.external_contact_id column is required")
-        sidebar = _text(source.get("source")) == "sidebar_binding"
-        values: JsonDict = {
-            "external_contact_id": external,
-            "phone": _text(source.get("phone")),
-            "master_customer_id": _positive_int(source.get("person_id")),
-            "owner_staff_id": source_owner or requested_owner,
-            "in_pool": True,
-            "current_pool": "campaign_ready" if sidebar else "operating",
-            "current_audience_code": "pending_questionnaire" if sidebar else "operating",
-            "source_type": "sidebar_binding_campaign_backfill" if sidebar else "external_campaign_backfill",
-            "joined_at": "CURRENT_TIMESTAMP",
-            "created_at": "CURRENT_TIMESTAMP",
-            "updated_at": "CURRENT_TIMESTAMP",
-        }
-        insert_columns = [column for column in values if column in columns and values[column] is not None]
-        placeholders: list[str] = []
-        params: list[Any] = []
-        for column in insert_columns:
-            value = values[column]
-            if value == "CURRENT_TIMESTAMP":
-                placeholders.append("CURRENT_TIMESTAMP")
-            else:
-                placeholders.append("?")
-                params.append(value)
-        cur = self.db.cursor()
-        cur.execute(
-            f"INSERT INTO automation_member ({', '.join(insert_columns)}) VALUES ({', '.join(placeholders)})",
-            tuple(params),
-        )
-        result["automation_member_id"] = int(cur.lastrowid or 0)
-        return result
 
     def _decode_campaign(self, row: Any) -> JsonDict | None:
         if not row:
@@ -775,4 +582,3 @@ class PostgresExternalCampaignRepository:
 
 def build_external_campaign_repository() -> ExternalCampaignRepository:
     return PostgresExternalCampaignRepository()
-

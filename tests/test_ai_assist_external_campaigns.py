@@ -51,72 +51,9 @@ class FakeExternalCampaignRepository:
         self.calls.append("fetch_user_ops_pool_current_row")
         return dict(self.pool_rows.get(external_userid) or {})
 
-    def fetch_automation_member_row(self, external_userid: str) -> dict[str, Any]:
-        self.calls.append("fetch_automation_member_row")
-        return dict(self.member_rows.get(external_userid) or {})
-
     def fetch_contact_row(self, external_userid: str) -> dict[str, Any]:
         self.calls.append("fetch_contact_row")
         return dict(self.contact_rows.get(external_userid) or {})
-
-    def get_sidebar_binding_candidate(self, external_userid: str) -> dict[str, Any]:
-        return dict(self.backfill_rows.get(external_userid) or {})
-
-    def ensure_automation_member_for_external_campaign(
-        self,
-        *,
-        external_userid: str,
-        owner_userid: str,
-        operator: str,
-        dry_run: bool,
-        allow_owner_mismatch: bool,
-    ) -> dict[str, Any]:
-        self.calls.append("ensure_automation_member_for_external_campaign")
-        existing = self.member_rows.get(external_userid)
-        if existing:
-            return {
-                "external_userid": external_userid,
-                "status": "exists",
-                "source": "automation_member",
-                "automation_member_id": int(existing.get("id") or 1),
-                "owner_userid": str(existing.get("owner_staff_id") or ""),
-            }
-        candidate = self.backfill_rows.get(external_userid)
-        if not candidate:
-            return {"external_userid": external_userid, "status": "unresolved", "source": "", "owner_userid": ""}
-        source_owner = str(candidate.get("owner_userid") or candidate.get("owner_staff_id") or "")
-        if source_owner and owner_userid and source_owner != owner_userid and not allow_owner_mismatch:
-            return {
-                "external_userid": external_userid,
-                "status": "owner_mismatch",
-                "source": str(candidate.get("source") or "sidebar_binding"),
-                "owner_userid": source_owner,
-                "requested_owner_userid": owner_userid,
-            }
-        result = {
-            "external_userid": external_userid,
-            "status": "would_insert" if dry_run else "inserted",
-            "source": str(candidate.get("source") or "sidebar_binding"),
-            "owner_userid": source_owner or owner_userid,
-            "requested_owner_userid": owner_userid,
-            "customer_name": str(candidate.get("customer_name") or ""),
-            "target": {
-                "source": str(candidate.get("source") or "sidebar_binding"),
-                "external_userid": external_userid,
-                "owner_userid": source_owner or owner_userid,
-                "customer_name": str(candidate.get("customer_name") or ""),
-                "contact": {},
-                "pool_current": {},
-            },
-        }
-        if not dry_run:
-            self.write_calls.append("insert_automation_member")
-            self.member_rows[external_userid] = {
-                "id": len(self.member_rows) + 1,
-                "external_contact_id": external_userid,
-                "owner_staff_id": source_owner or owner_userid,
-            }
-        return result
 
     def get_campaign_by_code(self, campaign_code: str) -> dict[str, Any] | None:
         self.calls.append("get_campaign_by_code")
@@ -373,27 +310,22 @@ def test_external_campaign_owner_mismatch() -> None:
     assert status_code == 409
 
 
-def test_external_campaign_auto_backfill_dry_run_would_insert() -> None:
+def test_external_campaign_automation_member_backfill_is_retired() -> None:
     repo = FakeExternalCampaignRepository()
     repo.backfill_rows["ext_1"] = {"source": "sidebar_binding", "owner_userid": "owner_1", "customer_name": "Alice"}
-    result = service.create_external_campaigns(_payload(dry_run=True, auto_backfill_automation_member=True), repo=repo)
 
-    assert result["backfill_summary"]["results"][0]["status"] == "would_insert"
-    assert result["backfill_summary"]["would_insert_count"] == 1
-    assert result["campaigns"][0]["would_create"] is True
+    try:
+        service.create_external_campaigns(_payload(dry_run=True, auto_backfill_automation_member=True), repo=repo)
+    except service.ExternalCampaignError as exc:
+        payload = exc.to_response()
+        status_code = exc.status_code
+    else:  # pragma: no cover
+        raise AssertionError("expected ExternalCampaignError")
+
+    assert status_code == 410
+    assert payload["error"] == "automation_member_backfill_retired"
     assert "insert_automation_member" not in repo.write_calls
     assert repo.write_calls == []
-
-
-def test_external_campaign_auto_backfill_insert_then_create() -> None:
-    repo = FakeExternalCampaignRepository()
-    repo.backfill_rows["ext_1"] = {"source": "sidebar_binding", "owner_userid": "owner_1", "customer_name": "Alice"}
-    result = service.create_external_campaigns(_payload(auto_backfill_automation_member=True), repo=repo)
-
-    assert result["created_count"] == 1
-    assert result["backfill_summary"]["inserted_count"] == 1
-    assert "insert_automation_member" in repo.write_calls
-    assert "create_campaign_draft" in repo.write_calls
 
 
 def test_external_campaign_multi_recipient_campaign_code_suffix() -> None:

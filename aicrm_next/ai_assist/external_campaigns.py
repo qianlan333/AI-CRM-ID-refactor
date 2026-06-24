@@ -20,21 +20,11 @@ _ONE_RECIPIENT_SEGMENT_SQL = """
 SELECT member_id, external_contact_id
 FROM (
     SELECT (900000000000 + 2147483648 + hashtext(external_userid)::bigint) AS member_id,
-           external_userid AS external_contact_id,
-           0 AS source_rank
+           external_userid AS external_contact_id
     FROM user_ops_pool_current
     WHERE external_userid = %(external_userid)s
-    UNION ALL
-    SELECT (900000000000 + 2147483648 + hashtext(external_contact_id)::bigint) AS member_id,
-           external_contact_id,
-           1 AS source_rank
-    FROM automation_member
-    WHERE external_contact_id = %(external_userid)s
-      AND NOT EXISTS (
-          SELECT 1 FROM user_ops_pool_current WHERE external_userid = %(external_userid)s
-      )
 ) matched
-ORDER BY source_rank ASC, member_id DESC
+ORDER BY member_id DESC
 LIMIT 1
 """
 
@@ -317,7 +307,6 @@ def _lookup_target(
     repo: ExternalCampaignRepository,
 ) -> JsonDict:
     pool_current = repo.fetch_user_ops_pool_current_row(external_userid)
-    member = repo.fetch_automation_member_row(external_userid)
     contact = repo.fetch_contact_row(external_userid)
     contact_owner = _text(contact.get("owner_userid"))
     if strict_owner_match and contact_owner and contact_owner != owner_userid:
@@ -329,7 +318,7 @@ def _lookup_target(
             external_userid=external_userid,
             owner_userid=owner_userid,
         )
-    if not pool_current and not member:
+    if not pool_current:
         raise ExternalCampaignError(
             "target_not_found",
             status_code=404,
@@ -340,60 +329,9 @@ def _lookup_target(
         )
     return {
         "resolved": True,
-        "source": "user_ops_pool_current" if pool_current else "automation_member",
+        "source": "user_ops_pool_current",
         "pool_current": pool_current,
-        "member": member,
         "contact": contact,
-    }
-
-
-def backfill_automation_members_for_external_campaign(
-    *,
-    owner_userid: str,
-    external_userids: list[str],
-    operator: str = "",
-    dry_run: bool = True,
-    allow_owner_mismatch: bool = False,
-    repo: ExternalCampaignRepository | None = None,
-) -> JsonDict:
-    owns_repo = repo is None
-    repository = _build_repo(repo)
-    normalized_owner = _text(owner_userid)
-    seen: set[str] = set()
-    targets = []
-    for external_userid in external_userids:
-        normalized = _text(external_userid)
-        if normalized and normalized not in seen:
-            seen.add(normalized)
-            targets.append(normalized)
-    results = [
-        repository.ensure_automation_member_for_external_campaign(
-            external_userid=external_userid,
-            owner_userid=normalized_owner,
-            operator=operator,
-            dry_run=dry_run,
-            allow_owner_mismatch=allow_owner_mismatch,
-        )
-        for external_userid in targets
-    ]
-    if dry_run:
-        repository.rollback()
-    elif owns_repo:
-        repository.commit()
-    status_counts = {status: sum(1 for item in results if item["status"] == status) for status in sorted({item["status"] for item in results})}
-    return {
-        "ok": True,
-        "dry_run": dry_run,
-        "owner_userid": normalized_owner,
-        "operator": _text(operator),
-        "total": len(targets),
-        "status_counts": status_counts,
-        "exists_count": status_counts.get("exists", 0),
-        "would_insert_count": status_counts.get("would_insert", 0),
-        "inserted_count": status_counts.get("inserted", 0),
-        "unresolved_count": status_counts.get("unresolved", 0),
-        "owner_mismatch_count": status_counts.get("owner_mismatch", 0),
-        "results": results,
     }
 
 
@@ -616,7 +554,6 @@ def _preview_single_recipient_campaign(
     timezone_name: str,
     strict_owner_match: bool,
     repo: ExternalCampaignRepository,
-    target_override: JsonDict | None = None,
 ) -> JsonDict:
     external_userid = _text(recipient["external_userid"])
     steps, first_dt, campaign_code, trace_id, fingerprint = _campaign_identity(
@@ -627,7 +564,7 @@ def _preview_single_recipient_campaign(
         timezone_name=timezone_name,
     )
     try:
-        target = target_override or _lookup_target(
+        target = _lookup_target(
             external_userid=external_userid,
             owner_userid=owner_userid,
             strict_owner_match=strict_owner_match,
@@ -653,69 +590,8 @@ def _preview_single_recipient_campaign(
         ],
         "contact": target.get("contact") or {},
         "target_source": _text(target.get("source")),
-        "automation_member_backfill": target.get("automation_member_backfill") or {},
         "would_create": _existing_campaign_response(campaign_code, repo=repo) is None,
     }
-
-
-def _public_backfill_result(item: JsonDict) -> JsonDict:
-    return {key: value for key, value in item.items() if key != "target"}
-
-
-def _auto_backfill_for_recipients(
-    *,
-    recipients: list[JsonDict],
-    owner_userid: str,
-    operator: str,
-    dry_run: bool,
-    allow_owner_mismatch: bool,
-    repo: ExternalCampaignRepository,
-) -> tuple[list[JsonDict], JsonDict, dict[str, JsonDict]]:
-    external_userids = [_text(recipient.get("external_userid")) for recipient in recipients]
-    backfill = backfill_automation_members_for_external_campaign(
-        owner_userid=owner_userid,
-        external_userids=external_userids,
-        operator=operator,
-        dry_run=dry_run,
-        allow_owner_mismatch=allow_owner_mismatch,
-        repo=repo,
-    )
-    by_external = {_text(item.get("external_userid")): item for item in backfill.get("results") or []}
-    allowed_statuses = {"exists", "would_insert"} if dry_run else {"exists", "inserted"}
-    resolved_recipients: list[JsonDict] = []
-    skipped: list[JsonDict] = []
-    target_overrides: dict[str, JsonDict] = {}
-    for recipient in recipients:
-        external_userid = _text(recipient.get("external_userid"))
-        result = by_external.get(external_userid) or {"external_userid": external_userid, "status": "unresolved"}
-        status = _text(result.get("status"))
-        if status in allowed_statuses:
-            resolved_recipients.append(recipient)
-            target = result.get("target")
-            if isinstance(target, dict):
-                target_overrides[external_userid] = {
-                    "resolved": True,
-                    "source": _text(target.get("source")),
-                    "pool_current": target.get("pool_current") or {},
-                    "member": {},
-                    "contact": target.get("contact") or {},
-                    "automation_member_backfill": _public_backfill_result(result),
-                }
-        else:
-            skipped.append(_public_backfill_result(result))
-    public_results = [_public_backfill_result(item) for item in backfill.get("results") or []]
-    backfill_summary = {key: value for key, value in backfill.items() if key not in {"results"}}
-    backfill_summary["results"] = public_results
-    backfill_summary["resolved_count"] = len(resolved_recipients)
-    backfill_summary["skipped_count"] = len(skipped)
-    return resolved_recipients, {
-        "backfill_summary": backfill_summary,
-        "resolved_count": len(resolved_recipients),
-        "skipped_count": len(skipped),
-        "skipped_recipients": skipped,
-        "owner_mismatch_count": int(backfill.get("owner_mismatch_count") or 0),
-        "unresolved_count": int(backfill.get("unresolved_count") or 0),
-    }, target_overrides
 
 
 def create_external_campaigns(payload: JsonDict, repo: ExternalCampaignRepository | None = None) -> JsonDict:
@@ -732,20 +608,16 @@ def create_external_campaigns(payload: JsonDict, repo: ExternalCampaignRepositor
     strict_owner_match = not _truthy(payload.get("allow_owner_mismatch"))
     recipients = _normalize_recipients(payload)
     dry_run = _truthy(payload.get("dry_run")) or _truthy(payload.get("preview"))
-    auto_backfill = _truthy(payload.get("auto_backfill_automation_member"))
-
-    backfill_response: JsonDict = {}
-    target_overrides: dict[str, JsonDict] = {}
-    effective_recipients = recipients
-    if auto_backfill:
-        effective_recipients, backfill_response, target_overrides = _auto_backfill_for_recipients(
-            recipients=recipients,
+    if _truthy(payload.get("auto_backfill_automation_member")):
+        raise ExternalCampaignError(
+            "automation_member_backfill_retired",
+            status_code=410,
+            message="automation_member backfill is retired; use user_ops_pool_current or AI Audience membership instead",
+            phase="target_lookup",
             owner_userid=owner_userid,
-            operator=operator,
-            dry_run=dry_run,
-            allow_owner_mismatch=not strict_owner_match,
-            repo=repository,
         )
+
+    effective_recipients = recipients
     if dry_run:
         previews = [
             _preview_single_recipient_campaign(
@@ -757,7 +629,6 @@ def create_external_campaigns(payload: JsonDict, repo: ExternalCampaignRepositor
                 timezone_name=timezone_name,
                 strict_owner_match=strict_owner_match,
                 repo=repository,
-                target_override=target_overrides.get(_text(recipient.get("external_userid"))),
             )
             for recipient in effective_recipients
         ]
@@ -773,7 +644,6 @@ def create_external_campaigns(payload: JsonDict, repo: ExternalCampaignRepositor
             "owner_userid": owner_userid,
             "recipient_count": len(previews),
             "campaigns": previews,
-            **backfill_response,
         }
 
     created: list[JsonDict] = []
@@ -801,7 +671,6 @@ def create_external_campaigns(payload: JsonDict, repo: ExternalCampaignRepositor
         "created_count": sum(1 for item in created if item.get("status") == "created"),
         "existing_count": sum(1 for item in created if item.get("status") == "exists"),
         "campaigns": created,
-        **backfill_response,
     }
 
 

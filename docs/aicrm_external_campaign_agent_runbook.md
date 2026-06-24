@@ -86,7 +86,6 @@ export AICRM_AGENT_TOKEN="<configured-token>"
 - 多人每人定制话术
 - 多人每人多天定制话术
 - `dry_run=true` 预检，不写 DB、不创建 campaign、不排 broadcast job
-- `auto_backfill_automation_member=true` 时，在创建前把 owner 匹配的 `contacts` / `user_ops_pool_current` 客户受控回填到 `automation_member`
 - 幂等创建：相同 `idempotency_key + group_code + owner_userid + external_userid + steps` 会生成稳定 `campaign_code`
 - 默认校验联系人 owner：`contacts.owner_userid` 与请求 `owner_userid` 不一致时返回 409
 - 自动创建一人 segment、一人 campaign、steps、campaign_member
@@ -110,10 +109,9 @@ export AICRM_AGENT_TOKEN="<configured-token>"
 | `external_userid` | 企微外部联系人的稳定 ID | 外部 Agent 的最终用户识别字段；创建接口不直接接受手机号 |
 | `contacts` | 客户列表 / 客户激活读模型里的联系人资料 | 用于展示和 owner 校验；客户存在于这里不代表已进入自动化发送成员池 |
 | `user_ops_pool_current` | 用户运营池当前快照 | 可作为 Campaign segment 的目标来源；`_lookup_target` 命中它即可认为目标已解析 |
-| `automation_member` | 自动化转化 / 发送成员池 | 旧链路依赖它；现在不再把缺失它作为唯一阻断条件，可按需回填 |
 | `campaign_members` | 某个 Campaign 创建后分配出来的成员明细 | 创建 Campaign 时由 segment allocation 生成，不需要 Agent 手工写入 |
 
-历史错误 `automation_member_not_found` 的真实含义是：客户能在 `contacts` / 客户列表里查到，但还没有对应的 `automation_member` 行。当前修复后，`user_ops_pool_current` 或 `automation_member` 任一命中即可创建；如果只有 `contacts` 命中，可以先回填或在请求里显式打开 `auto_backfill_automation_member=true`。
+旧 `automation_member` 自动化转化成员池已退场，不再作为外部 Campaign 目标来源，也不允许通过本接口回填。目标用户必须先进入 `user_ops_pool_current` 或后续 AI Audience 新链路。
 
 ---
 
@@ -382,7 +380,7 @@ curl -sS -X GET "${AICRM_BASE_URL}/api/ai-assist/external/campaigns/${CAMPAIGN_C
 | `operator` | 否 | 默认 `external:{owner_userid}` |
 | `dry_run` / `preview` | 否 | true 时只预检，不写 DB |
 | `allow_owner_mismatch` | 否 | true 时允许联系人 owner 与请求 owner 不一致 |
-| `auto_backfill_automation_member` | 否 | true 时创建前受控回填缺失的 `automation_member`；默认 false |
+| `auto_backfill_automation_member` | 否 | 已退场；传 true 会返回 `410 automation_member_backfill_retired` |
 
 至少需要 `external_userid`、`external_userids`、`recipients` 三者之一。
 
@@ -396,9 +394,9 @@ curl -sS -X GET "${AICRM_BASE_URL}/api/ai-assist/external/campaigns/${CAMPAIGN_C
 | `steps` | 条件 | 该用户多步定制话术 |
 | `campaign_code` | 否 | 指定 campaign_code；多人时会自动追加 hash 后缀 |
 
-### 7.3 auto backfill 字段
+### 7.3 已退场的 auto backfill 字段
 
-当 dry-run 或创建遇到客户列表存在、但自动化成员池缺失时，可以显式传：
+旧 `automation_member` 回填能力已退场。请求中显式传：
 
 ```json
 {
@@ -406,28 +404,16 @@ curl -sS -X GET "${AICRM_BASE_URL}/api/ai-assist/external/campaigns/${CAMPAIGN_C
 }
 ```
 
-规则：
-
-- 默认是 false，避免突然改变生产行为。
-- 只回填 owner 匹配的客户。
-- `contacts.owner_userid` 和请求 `owner_userid` 不一致时，默认进入 `skipped_recipients`，不会创建 Campaign。
-- `dry_run=true` 时只返回 `would_insert` / `exists` / `unresolved` / `owner_mismatch`，不写库。
-- 真实创建时会先插入缺失的 `automation_member`，再继续创建 Campaign。
-
-响应会包含：
+会返回：
 
 ```json
 {
-  "backfill_summary": {
-    "inserted_count": 1,
-    "owner_mismatch_count": 0,
-    "unresolved_count": 0
-  },
-  "resolved_count": 1,
-  "skipped_count": 0,
-  "skipped_recipients": []
+  "ok": false,
+  "error": "automation_member_backfill_retired"
 }
 ```
+
+如果目标只存在于 `contacts`，应先通过新的 AI Audience / 用户运营池链路沉淀到 `user_ops_pool_current`，不要再写旧自动化成员池。
 
 ### 7.4 step 字段
 
@@ -452,7 +438,8 @@ curl -sS -X GET "${AICRM_BASE_URL}/api/ai-assist/external/campaigns/${CAMPAIGN_C
 | 503 | `external_campaign_token_not_configured` | 服务端没有配置 token |
 | 400 | `scheduled_for is required` | 没有可推导的首发时间 |
 | 400 | `message/content_text is required` | 没有话术 |
-| 404 | `target_not_found` | `user_ops_pool_current` 和 `automation_member` 都未命中 |
+| 404 | `target_not_found` | `user_ops_pool_current` 未命中 |
+| 410 | `automation_member_backfill_retired` | 旧 `automation_member` 回填参数已退场 |
 | 409 | `owner_mismatch` | 联系人 owner 与请求 owner 不一致 |
 | 409 | `target_headcount_invalid` | 单人 segment 没有精确命中 1 人 |
 | 409 | `campaign_member_allocation_failed` | Campaign 已建草稿但 allocation 未分配到 1 人，系统会自动清理半创建草稿 |
@@ -487,7 +474,8 @@ allocation 失败会额外包含：
 Agent 规则：
 
 - 401/503：停止，要求配置 token。
-- 404：先确认 `external_userid` 是否存在于 `user_ops_pool_current` 或 `automation_member`；如果只存在于 `contacts`，先 backfill 或设置 `auto_backfill_automation_member=true` 后重试。
+- 404：先确认 `external_userid` 是否存在于 `user_ops_pool_current`；如果只存在于 `contacts`，先走 AI Audience / 用户运营池链路沉淀，不要回填旧 `automation_member`。
+- 410 `automation_member_backfill_retired`：移除 `auto_backfill_automation_member` 参数，改用 `user_ops_pool_current` 或 AI Audience 新链路。
 - 409 owner mismatch：默认停止；除非用户明确允许改用该 owner 或设置 `allow_owner_mismatch=true`。
 - 任何 500：不要重试大量请求；先反馈错误并查服务日志。
 
@@ -501,7 +489,7 @@ Agent 规则：
 3. 确定首发时间，必须是未来时间。
 4. 生成稳定 idempotency_key 和 group_code。
 5. 先 dry_run=true 调预检。
-6. 如果返回 target_not_found，但客户只缺 automation_member，则先 backfill 或加 auto_backfill_automation_member=true 再 dry-run。
+6. 如果返回 target_not_found，则先让目标进入 user_ops_pool_current 或 AI Audience 新链路，不要写旧 automation_member。
 7. dry-run 通过后，移除 dry_run 再真实创建。
 8. 返回 group_code、campaign_code、scheduled_jobs、状态查询命令。
 9. 不要手动调用 run-due 或直接写 DB。
