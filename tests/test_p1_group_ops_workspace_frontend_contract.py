@@ -81,6 +81,9 @@ def test_p1_group_ops_workspace_reuses_shared_modules():
     assert "canRenderGlobalPass" in sources
     assert "loadGroupOpsWorkspaceData" in sources
     assert "AdminApi" in sources
+    assert "createWorkspaceSelectionState" in sources
+    assert "selectWorkspaceEntity" in sources
+    assert "renderWorkspaceDetailPanel" in sources
 
 
 def test_p1_group_ops_workspace_copy_preserves_guardrails():
@@ -96,6 +99,14 @@ def test_p1_group_ops_workspace_copy_preserves_guardrails():
         "真正执行必须走 approval / allowlist / Push Center / external effect gates",
         "sent evidence 不等于 governance complete",
         "P1_READY_WITH_EXCEPTIONS 不等于 PASS_90_PLUS",
+        "selectedPlanId",
+        "selectedGroupId",
+        "selectedNodeId",
+        "selectedExecutionId",
+        "selectedPushCenterJobId",
+        "selectedEntityType",
+        "Selected preview result",
+        "Read-only drilldown only",
         "requires_approval",
         "requires_allowlist",
         "requires_gray_window",

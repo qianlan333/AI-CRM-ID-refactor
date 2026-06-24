@@ -1,2 +1,2 @@
-import { type WorkspaceFixture } from "./workspace_fixture.js";
-export declare function renderP1GroupOpsWorkspace(root: HTMLElement, fixture?: WorkspaceFixture): void;
+import { type WorkspaceFixture, type WorkspaceSelectionState } from "./workspace_fixture.js";
+export declare function renderP1GroupOpsWorkspace(root: HTMLElement, fixture?: WorkspaceFixture, selection?: WorkspaceSelectionState): void;

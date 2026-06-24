@@ -2,13 +2,41 @@ import { type BusinessClosurePayload, type ScenarioEvidence } from "../shared/st
 export interface WorkspaceListItem {
     id: string;
     label: string;
-    kind: "plan" | "audience" | "task";
+    kind: "plan" | "group" | "node" | "execution" | "push_center";
     status: ScenarioEvidence["status"];
     summary: string;
+    detailId: string;
+    entityType: WorkspaceEntityType;
+}
+export type WorkspaceEntityType = "plan" | "group" | "node" | "execution" | "push_center" | "evidence";
+export interface WorkspaceDetailField {
+    label: string;
+    value: string;
+}
+export interface WorkspaceDetailItem {
+    id: string;
+    entityType: WorkspaceEntityType;
+    title: string;
+    status: ScenarioEvidence["status"];
+    evidenceStatus: string;
+    derivedStatus: string;
+    summary: string;
+    guardrail: string;
+    fields: WorkspaceDetailField[];
+}
+export interface WorkspaceSelectionState {
+    selectedPlanId: string;
+    selectedGroupId: string;
+    selectedNodeId: string;
+    selectedExecutionId: string;
+    selectedPushCenterJobId: string;
+    selectedEntityType: WorkspaceEntityType;
 }
 export interface WorkspaceFixture {
     payload: BusinessClosurePayload;
     leftRailItems: WorkspaceListItem[];
+    detailItems: WorkspaceDetailItem[];
+    defaultSelection: WorkspaceSelectionState;
     workspaceMode: "draft_only_preview_only";
     dataSourceLabel: string;
     dataBindingStatus: "fixture_fallback" | "real_data_bound" | "real_data_unavailable";

@@ -1,15 +1,45 @@
 import { escapeHtml } from "../shared/dom.js";
 import { renderInteractionShell } from "../shared/interaction_shell.js";
 import { renderStatusBadge } from "../shared/status_badge.js";
+import { type WorkspaceDetailItem, type WorkspaceFixture, type WorkspaceSelectionState } from "./workspace_fixture.js";
 import { type WorkspaceStatusModel } from "./workspace_status.js";
 
 function renderGuardrailChips(guardrails: string[]): string {
   return guardrails.map((guardrail) => `<code>${escapeHtml(guardrail)}</code>`).join(" ");
 }
 
-export function renderWorkspaceCanvas(model: WorkspaceStatusModel): string {
-  const rows = model.display.cards.map((card) => `
-    <article class="p1-workspace-canvas-card" data-card-id="${escapeHtml(card.id)}" data-evidence-status="${escapeHtml(card.status)}" data-mutated-evidence-status="${card.mutatedEvidenceStatus ? "true" : "false"}">
+function detailTargetForCard(cardStatus: string, fixture?: WorkspaceFixture): WorkspaceDetailItem | undefined {
+  if (!fixture) return undefined;
+  if (cardStatus === "sent") return fixture.detailItems.find((item) => item.entityType === "push_center");
+  if (cardStatus === "governance-missing") return fixture.detailItems.find((item) => item.entityType === "evidence");
+  if (cardStatus === "downstream-pending" || cardStatus === "pending") return fixture.detailItems.find((item) => item.entityType === "node");
+  if (cardStatus === "evidence-incomplete") return fixture.detailItems.find((item) => item.entityType === "execution");
+  return fixture.detailItems.find((item) => item.entityType === "plan");
+}
+
+function selectedClass(target: WorkspaceDetailItem | undefined, selection?: WorkspaceSelectionState): string {
+  if (!target || !selection) return "";
+  if (selection.selectedEntityType !== target.entityType) return "";
+  if (selection.selectedEntityType === "plan" && selection.selectedPlanId === target.id) return " p1-workspace-canvas-card--selected";
+  if (selection.selectedEntityType === "group" && selection.selectedGroupId === target.id) return " p1-workspace-canvas-card--selected";
+  if (selection.selectedEntityType === "node" && selection.selectedNodeId === target.id) return " p1-workspace-canvas-card--selected";
+  if (selection.selectedEntityType === "execution" && selection.selectedExecutionId === target.id) return " p1-workspace-canvas-card--selected";
+  if (selection.selectedEntityType === "push_center" && selection.selectedPushCenterJobId === target.id) return " p1-workspace-canvas-card--selected";
+  return "";
+}
+
+export function renderWorkspaceCanvas(
+  model: WorkspaceStatusModel,
+  fixture?: WorkspaceFixture,
+  selection?: WorkspaceSelectionState
+): string {
+  const rows = model.display.cards.map((card) => {
+    const target = detailTargetForCard(card.status, fixture);
+    const dataTarget = target
+      ? ` data-workspace-select-type="${escapeHtml(target.entityType)}" data-workspace-select-id="${escapeHtml(target.id)}"`
+      : "";
+    return `
+    <button type="button" class="p1-workspace-canvas-card${selectedClass(target, selection)}" data-card-id="${escapeHtml(card.id)}" data-evidence-status="${escapeHtml(card.status)}" data-mutated-evidence-status="${card.mutatedEvidenceStatus ? "true" : "false"}"${dataTarget}>
       <div class="p1-workspace-canvas-card__head">
         <span class="p1-drag-handle" aria-hidden="true">⋮⋮</span>
         <strong>${escapeHtml(card.title)}</strong>
@@ -22,8 +52,9 @@ export function renderWorkspaceCanvas(model: WorkspaceStatusModel): string {
       </dl>
       <p>Readonly reorder preview only; evidence status remains ${escapeHtml(card.status)}.</p>
       <p class="p1-workspace-guardrails">${renderGuardrailChips(card.guardrails)}</p>
-    </article>
-  `).join("");
+    </button>
+  `;
+  }).join("");
 
   return `
     <section class="p1-workspace-canvas" aria-label="Draft-only canvas shell" data-draft-persistence="${escapeHtml(model.display.persistence)}" data-can-claim-pass90="false">

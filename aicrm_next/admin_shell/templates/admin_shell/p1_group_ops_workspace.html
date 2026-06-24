@@ -61,9 +61,13 @@
 .p1-workspace-list-item,
 .p1-workspace-canvas-card,
 .p1-workspace-validation,
+.p1-workspace-detail,
+.p1-workspace-selected-preview,
 .p1-workspace-guardrail-summary,
 .p1-closure-card,
 .p1-draft-shell-card { border: 1px solid #e5e7eb; border-radius: 8px; background: #fff; padding: 12px; display: grid; gap: 8px; }
+button.p1-workspace-list-item,
+button.p1-workspace-canvas-card { appearance: none; width: 100%; text-align: left; font: inherit; color: inherit; cursor: pointer; }
 .p1-workspace-list-item--success,
 .p1-closure-card--success { border-color: #bbf7d0; }
 .p1-workspace-list-item--info,
@@ -72,8 +76,11 @@
 .p1-closure-card--warning { border-color: #fde68a; }
 .p1-workspace-list-item--danger,
 .p1-closure-card--danger { border-color: #fecaca; }
+.p1-workspace-list-item--selected,
+.p1-workspace-canvas-card--selected { outline: 2px solid #2563eb; outline-offset: 2px; }
 .p1-workspace-list-item__head,
 .p1-workspace-canvas-card__head,
+.p1-workspace-detail__title,
 .p1-closure-card__head,
 .p1-draft-shell-card__head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
 .p1-closure-title-row { display: inline-flex; align-items: center; gap: 8px; min-width: 0; }
@@ -81,16 +88,23 @@
 .p1-workspace-list-item p,
 .p1-workspace-canvas-card p,
 .p1-workspace-validation p,
+.p1-workspace-detail p,
+.p1-workspace-selected-preview p,
 .p1-workspace-guardrail-summary p,
 .p1-draft-shell-card p { margin: 0; color: #475569; }
 .p1-workspace-mini-fields,
+.p1-workspace-detail-fields,
 .p1-closure-fields { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin: 0; }
 .p1-workspace-mini-fields div,
+.p1-workspace-detail-fields div,
 .p1-closure-fields div { border: 1px solid #e5e7eb; border-radius: 8px; padding: 8px; min-width: 0; }
 .p1-workspace-mini-fields dt,
+.p1-workspace-detail-fields dt,
 .p1-closure-fields dt { color: #6b7280; font-size: 12px; margin-bottom: 4px; }
 .p1-workspace-mini-fields dd,
+.p1-workspace-detail-fields dd,
 .p1-closure-fields dd { margin: 0; font-weight: 700; overflow-wrap: anywhere; }
+.p1-workspace-detail h3 { margin: 0; font-size: 15px; }
 .p1-workspace-guardrails,
 .p1-drag-guardrails { display: flex; flex-wrap: wrap; gap: 6px; }
 .p1-workspace-guardrails code,
@@ -109,6 +123,7 @@
   .p1-workspace-page-intro,
   .p1-workspace-banner { flex-direction: column; align-items: flex-start; }
   .p1-workspace-mini-fields,
+  .p1-workspace-detail-fields,
   .p1-closure-fields,
   .p1-draft-shell__grid { grid-template-columns: 1fr; }
 }

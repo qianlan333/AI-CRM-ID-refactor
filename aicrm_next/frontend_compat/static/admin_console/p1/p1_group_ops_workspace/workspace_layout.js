@@ -4,20 +4,37 @@ import { renderStatusBadge } from "../shared/status_badge.js";
 import { renderStatusCard } from "../shared/status_card.js";
 import { statusMeta } from "../shared/status_model.js";
 import { defaultRequestJson, loadGroupOpsWorkspaceData, parseWorkspaceApiConfig } from "./workspace_api.js";
+import { createWorkspaceSelectionState, renderWorkspaceDetailPanel, renderWorkspaceSelectedPreviewResult, selectWorkspaceEntity } from "./workspace_detail.js";
 import { P1_GROUP_OPS_WORKSPACE_FIXTURE } from "./workspace_fixture.js";
 import { renderWorkspaceCanvas, renderWorkspacePreviewResult } from "./workspace_preview.js";
 import { buildGroupOpsWorkspaceStatusModel, workspaceCanRenderGlobalPass } from "./workspace_status.js";
-function renderLeftRailItem(item) {
+function isSelectedListItem(item, selection) {
+    if (item.entityType !== selection.selectedEntityType)
+        return false;
+    if (item.entityType === "plan")
+        return selection.selectedPlanId === item.detailId;
+    if (item.entityType === "group")
+        return selection.selectedGroupId === item.detailId;
+    if (item.entityType === "node")
+        return selection.selectedNodeId === item.detailId;
+    if (item.entityType === "execution")
+        return selection.selectedExecutionId === item.detailId;
+    if (item.entityType === "push_center")
+        return selection.selectedPushCenterJobId === item.detailId;
+    return false;
+}
+function renderLeftRailItem(item, selection) {
     const meta = statusMeta(item.status);
+    const selectedClass = isSelectedListItem(item, selection) ? " p1-workspace-list-item--selected" : "";
     return `
-    <article class="p1-workspace-list-item p1-workspace-list-item--${meta.tone}" data-kind="${escapeHtml(item.kind)}" data-status="${escapeHtml(item.status)}">
+    <button type="button" class="p1-workspace-list-item p1-workspace-list-item--${meta.tone}${selectedClass}" data-kind="${escapeHtml(item.kind)}" data-status="${escapeHtml(item.status)}" data-workspace-select-type="${escapeHtml(item.entityType)}" data-workspace-select-id="${escapeHtml(item.detailId)}">
       <div class="p1-workspace-list-item__head">
         <span>${escapeHtml(item.kind)}</span>
         ${renderStatusBadge(item.status)}
       </div>
       <strong>${escapeHtml(item.label)}</strong>
       <p>${escapeHtml(item.summary)}</p>
-    </article>
+    </button>
   `;
 }
 function renderWorkspaceHeader(fixture) {
@@ -31,18 +48,18 @@ function renderWorkspaceHeader(fixture) {
     </section>
   `;
 }
-function renderLeftRail(fixture) {
+function renderLeftRail(fixture, selection) {
     return `
     <aside class="p1-workspace-left" aria-label="计划、人群、任务列表">
       <div class="p1-workspace-panel-head">
         <h2>计划 / 人群 / 任务</h2>
-        <p>脱敏 fixture 只用于工作台结构验证，不包含真实 receiver 或成员标识。</p>
+        <p>点击计划、人群、节点、执行或 Push Center 项只会更新本地只读 detail selection。</p>
       </div>
-      <div class="p1-workspace-list">${fixture.leftRailItems.map(renderLeftRailItem).join("")}</div>
+      <div class="p1-workspace-list">${fixture.leftRailItems.map((item) => renderLeftRailItem(item, selection)).join("")}</div>
     </aside>
   `;
 }
-function renderPropertyPanel(fixture) {
+function renderPropertyPanel(fixture, selection) {
     const cards = fixture.payload.scenarios.map((scenario) => renderStatusCard(scenario, {
         dragHandle: true,
         dragDisabledReason: "P1 native workspace uses readonly preview only; no direct send."
@@ -61,23 +78,40 @@ function renderPropertyPanel(fixture) {
         ${guardrailNotice}
         <p>P1_READY_WITH_EXCEPTIONS 不等于 PASS_90_PLUS；sent evidence 不等于 governance complete。</p>
       </section>
+      ${renderWorkspaceDetailPanel(fixture, selection)}
       <div class="p1-workspace-status-stack">${cards}</div>
     </aside>
   `;
 }
-export function renderP1GroupOpsWorkspace(root, fixture = P1_GROUP_OPS_WORKSPACE_FIXTURE) {
+function attachSelectionHandlers(root, fixture, selection) {
+    if (typeof root.querySelectorAll !== "function")
+        return;
+    const nodes = root.querySelectorAll("[data-workspace-select-type][data-workspace-select-id]");
+    nodes.forEach((node) => {
+        node.addEventListener("click", () => {
+            const entityType = node.dataset.workspaceSelectType;
+            const detailId = node.dataset.workspaceSelectId;
+            if (!entityType || !detailId)
+                return;
+            renderP1GroupOpsWorkspace(root, fixture, selectWorkspaceEntity(selection, entityType, detailId));
+        });
+    });
+}
+export function renderP1GroupOpsWorkspace(root, fixture = P1_GROUP_OPS_WORKSPACE_FIXTURE, selection = createWorkspaceSelectionState(fixture)) {
     const model = buildGroupOpsWorkspaceStatusModel(fixture);
     root.innerHTML = `
     <section class="p1-native-group-ops-workspace" data-p1-native-workspace="group_ops" data-draft-only="true" data-preview-only="true" data-can-claim-pass90="false">
       ${renderWorkspaceHeader(fixture)}
       <div class="p1-workspace-grid">
-        ${renderLeftRail(fixture)}
-        ${renderWorkspaceCanvas(model)}
-        ${renderPropertyPanel(fixture)}
+        ${renderLeftRail(fixture, selection)}
+        ${renderWorkspaceCanvas(model, fixture, selection)}
+        ${renderPropertyPanel(fixture, selection)}
       </div>
+      ${renderWorkspaceSelectedPreviewResult(fixture, selection)}
       ${renderWorkspacePreviewResult(model)}
     </section>
   `;
+    attachSelectionHandlers(root, fixture, selection);
 }
 function boot() {
     const root = document.getElementById("p1GroupOpsWorkspaceApp");

@@ -1,7 +1,11 @@
 import {
   P1_GROUP_OPS_WORKSPACE_FIXTURE,
   type WorkspaceFixture,
-  type WorkspaceListItem
+  type WorkspaceDetailField,
+  type WorkspaceDetailItem,
+  type WorkspaceEntityType,
+  type WorkspaceListItem,
+  type WorkspaceSelectionState
 } from "./workspace_fixture.js";
 import { type EvidenceStatus, type ScenarioEvidence } from "../shared/status_model.js";
 
@@ -120,6 +124,64 @@ function firstPushCenterItem(payload: PushCenterPayload): Record<string, unknown
   return item ? asRecord(item) : null;
 }
 
+function firstNode(detail: GroupOpsPayload, nodes: GroupOpsPayload): Record<string, unknown> | null {
+  const item = asArray(nodes.items)[0] || asArray(detail.nodes)[0];
+  return item ? asRecord(item) : null;
+}
+
+function firstExecution(executions: GroupOpsPayload): Record<string, unknown> | null {
+  const item = asArray(executions.items)[0];
+  return item ? asRecord(item) : null;
+}
+
+function detailId(entityType: WorkspaceEntityType, id: string | number): string {
+  return `${entityType}-${text(id) || "unknown"}`;
+}
+
+function field(label: string, value: unknown): WorkspaceDetailField {
+  return { label, value: text(value) || "not_found" };
+}
+
+function detailItem(
+  entityType: WorkspaceEntityType,
+  id: string | number,
+  title: string,
+  status: EvidenceStatus,
+  evidenceStatus: string,
+  derivedStatus: string,
+  summary: string,
+  guardrail: string,
+  fields: WorkspaceDetailField[]
+): WorkspaceDetailItem {
+  return {
+    id: detailId(entityType, id),
+    entityType,
+    title,
+    status,
+    evidenceStatus,
+    derivedStatus,
+    summary,
+    guardrail,
+    fields
+  };
+}
+
+function pushCenterProjectionId(pushItem: Record<string, unknown> | null): string {
+  return text(pushItem?.projection_id || pushItem?.id || pushItem?.display_id) || "not_found";
+}
+
+function defaultSelectionForPlan(plan: GroupOpsPlanItem, pushItem: Record<string, unknown> | null): WorkspaceSelectionState {
+  const id = String(planId(plan));
+  return {
+    selectedPlanId: detailId("plan", id),
+    selectedGroupId: detailId("group", `plan-${id}`),
+    selectedNodeId: detailId("node", `plan-${id}`),
+    selectedExecutionId: detailId("execution", `plan-${id}`),
+    selectedPushCenterJobId: detailId("push_center", pushCenterProjectionId(pushItem)),
+    selectedEntityType: "plan"
+  };
+}
+
 function leftRailFromRealData(
   plan: GroupOpsPlanItem,
   detail: GroupOpsPayload,
@@ -144,30 +206,177 @@ function leftRailFromRealData(
       id: `plan-${planId(plan)}`,
       label: planName(plan),
       kind: "plan",
+      entityType: "plan",
+      detailId: detailId("plan", planId(plan)),
       status: normalizePlanStatus(plan.status),
       summary: `${text(plan.plan_type) || "standard"} / ${text(plan.status) || "unknown"} / 只读绑定`
     },
     {
       id: `audience-plan-${planId(plan)}`,
       label: "Audience / receiver summary",
-      kind: "audience",
+      kind: "group",
+      entityType: "group",
+      detailId: detailId("group", `plan-${planId(plan)}`),
       status: intValue(summary.bound_group_count) > 0 ? "ready" : "evidence-incomplete",
       summary: `${intValue(summary.bound_group_count)} 个绑定群，预计触达 ${intValue(summary.estimated_reach)}；不展示 raw receiver 或群成员标识。`
     },
     {
       id: `task-plan-${planId(plan)}`,
       label: "Task / content summary",
-      kind: "task",
+      kind: "node",
+      entityType: "node",
+      detailId: detailId("node", `plan-${planId(plan)}`),
       status: nodeCount > 0 ? "pending" : "evidence-incomplete",
       summary: `${nodeCount} 个动作节点，${executionTotal} 条执行记录；preview-only，不执行任务。`
     },
     {
+      id: `execution-plan-${planId(plan)}`,
+      label: "Execution summary",
+      kind: "execution",
+      entityType: "execution",
+      detailId: detailId("execution", `plan-${planId(plan)}`),
+      status: executionTotal > 0 ? "pending" : "evidence-incomplete",
+      summary: `${executionTotal} 条执行记录；只显示状态摘要，不展示 receiver 或成员标识。`
+    },
+    {
       id: `push-center-plan-${planId(plan)}`,
       label: "Push Center linked status",
-      kind: "task",
+      kind: "push_center",
+      entityType: "push_center",
+      detailId: detailId("push_center", pushCenterProjectionId(pushItem)),
       status: pushStatus,
       summary: pushItem ? "找到只读 Push Center projection；详情仍需通过 Push Center gate 解释。" : "未找到 linked Push Center projection，不能伪造成 sent。"
     }
+  ];
+}
+
+function detailsFromRealData(
+  plan: GroupOpsPlanItem,
+  detail: GroupOpsPayload,
+  groups: GroupOpsPayload,
+  nodes: GroupOpsPayload,
+  executions: GroupOpsPayload,
+  pushCenter: PushCenterPayload
+): WorkspaceDetailItem[] {
+  const id = planId(plan);
+  const summary = groupSummary(detail, groups, plan);
+  const node = firstNode(detail, nodes);
+  const execution = firstExecution(executions);
+  const pushItem = firstPushCenterItem(pushCenter);
+  const nodeCount = asArray(nodes.items ?? detail.nodes).length;
+  const executionTotal = intValue(executions.total);
+  const pushStatus = pushItem
+    ? normalizePushCenterStatus(
+        pushItem.effective_status || pushItem.status || pushItem.raw_status,
+        Boolean(pushItem.retryable),
+        Boolean(pushItem.operator_action_required)
+      )
+    : "evidence-incomplete";
+  const executionStatus = execution
+    ? normalizePushCenterStatus(execution.status || execution.execution_status || execution.raw_status)
+    : "evidence-incomplete";
+  return [
+    detailItem(
+      "plan",
+      id,
+      planName(plan),
+      normalizePlanStatus(plan.status),
+      "REAL_DATA_BOUND",
+      `plan_${id}_readonly`,
+      "计划详情为只读绑定；不审批、不保存、不发送。",
+      "draft-only / preview-only；必须继续走 approval / allowlist / Push Center gates。",
+      [
+        field("plan_id", id),
+        field("plan_name", planName(plan)),
+        field("plan_type", plan.plan_type || "standard"),
+        field("status", plan.status || "unknown"),
+        field("node_count", nodeCount),
+        field("execution_count", executionTotal)
+      ]
+    ),
+    detailItem(
+      "group",
+      `plan-${id}`,
+      "Audience / receiver summary",
+      intValue(summary.bound_group_count) > 0 ? "ready" : "evidence-incomplete",
+      "REAL_DATA_BOUND",
+      "receiver_summary_redacted",
+      "只展示人群聚合统计，不展示 receiver、群、成员或客户明文。",
+      "requires_allowlist / no_direct_send。",
+      [
+        field("bound_group_count", summary.bound_group_count),
+        field("estimated_reach", summary.estimated_reach),
+        field("internal_member_count", summary.internal_member_count),
+        field("external_member_count", summary.external_member_count),
+        field("sensitive_data", "redacted")
+      ]
+    ),
+    detailItem(
+      "node",
+      `plan-${id}`,
+      "Node / task summary",
+      nodeCount > 0 ? "pending" : "evidence-incomplete",
+      nodeCount > 0 ? "REAL_DATA_BOUND" : "EVIDENCE_INCOMPLETE",
+      `nodes_${nodeCount}`,
+      "节点详情只展示类型、状态与数量；不展示消息正文或接收人明文。",
+      "preview_only / no_external_call / no_production_write。",
+      [
+        field("node_id", node?.id || "not_found"),
+        field("node_type", node?.node_type || node?.action_type || "not_found"),
+        field("action_title", node?.action_title || "redacted_or_not_found"),
+        field("node_count", nodeCount),
+        field("execution", "not_triggered_by_workspace")
+      ]
+    ),
+    detailItem(
+      "execution",
+      `plan-${id}`,
+      "Execution summary",
+      executionStatus,
+      execution ? "REAL_DATA_BOUND" : "EVIDENCE_INCOMPLETE",
+      execution ? `execution_${text(execution.id) || "found"}` : "execution_not_found",
+      execution ? "执行记录只读可见；状态不代表 workspace 执行过发送。" : "未找到执行记录；保持 evidence-incomplete。",
+      "preview_only / no_direct_send。",
+      [
+        field("execution_id", execution?.id || "not_found"),
+        field("execution_status", execution?.status || execution?.execution_status || "not_found"),
+        field("attempt_count", execution?.attempt_count || "not_found"),
+        field("real_external_call", "false")
+      ]
+    ),
+    detailItem(
+      "push_center",
+      pushCenterProjectionId(pushItem),
+      "Push Center projection summary",
+      pushStatus,
+      pushItem ? "REAL_DATA_BOUND" : "EVIDENCE_INCOMPLETE",
+      pushCenterProjectionId(pushItem),
+      pushItem ? "Push Center projection 只读可见；sent 不等于 governance complete。" : "未找到 Push Center projection，不能伪造成 sent。",
+      "requires_push_center / no_direct_send。",
+      [
+        field("projection_id", pushCenterProjectionId(pushItem)),
+        field("push_center_status", pushItem?.effective_status || pushItem?.status || "not_found"),
+        field("retryable", pushItem?.retryable ?? "not_found"),
+        field("operator_action_required", pushItem?.operator_action_required ?? "not_found"),
+        field("can_claim_pass_90_plus", "false")
+      ]
+    ),
+    detailItem(
+      "evidence",
+      `plan-${id}-governance`,
+      "Evidence / guardrail summary",
+      "governance-missing",
+      "EVIDENCE_COLLECTED",
+      "approval_allowlist_window_missing",
+      "发送或 projection evidence 不代表治理证据完整。",
+      "requires_approval / requires_allowlist / requires_gray_window。",
+      [
+        field("approval_evidence", "missing"),
+        field("allowlist_evidence", "missing"),
+        field("gray_window_evidence", "missing"),
+        field("sent_bypasses_governance", "false")
+      ]
+    )
   ];
 }
 
@@ -282,6 +491,8 @@ export async function loadGroupOpsWorkspaceData(
           id: "plan-empty",
           label: "No Group Ops plan found",
           kind: "plan",
+          entityType: "plan",
+          detailId: "plan-p1-group-ops-preview",
           status: "evidence-incomplete",
           summary: "只读 API 可达，但没有可绑定的 Group Ops 计划。"
         }
@@ -301,7 +512,9 @@ export async function loadGroupOpsWorkspaceData(
             route: "/admin/automation-conversion/group-ops/ui"
           }
         ]
-      }
+      },
+      detailItems: P1_GROUP_OPS_WORKSPACE_FIXTURE.detailItems,
+      defaultSelection: P1_GROUP_OPS_WORKSPACE_FIXTURE.defaultSelection
     };
   }
 
@@ -326,6 +539,8 @@ export async function loadGroupOpsWorkspaceData(
       scenarios: scenariosFromRealData(plan, detailPayload, groupsPayload, nodesPayload, executionsPayload, pushPayload)
     },
     leftRailItems: leftRailFromRealData(plan, detailPayload, groupsPayload, nodesPayload, executionsPayload, pushPayload),
+    detailItems: detailsFromRealData(plan, detailPayload, groupsPayload, nodesPayload, executionsPayload, pushPayload),
+    defaultSelection: defaultSelectionForPlan(plan, firstPushCenterItem(pushPayload)),
     workspaceMode: "draft_only_preview_only",
     dataSourceLabel: sourceStatus(plans, detailPayload, groupsPayload, nodesPayload, executionsPayload),
     dataBindingStatus: "real_data_bound",
