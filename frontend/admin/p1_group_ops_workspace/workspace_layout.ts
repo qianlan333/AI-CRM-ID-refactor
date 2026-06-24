@@ -3,6 +3,7 @@ import { renderGuardrailNotice } from "../shared/guardrail_notice.js";
 import { renderStatusBadge } from "../shared/status_badge.js";
 import { renderStatusCard } from "../shared/status_card.js";
 import { statusMeta } from "../shared/status_model.js";
+import { defaultRequestJson, loadGroupOpsWorkspaceData, parseWorkspaceApiConfig } from "./workspace_api.js";
 import { P1_GROUP_OPS_WORKSPACE_FIXTURE, type WorkspaceFixture, type WorkspaceListItem } from "./workspace_fixture.js";
 import { renderWorkspaceCanvas, renderWorkspacePreviewResult } from "./workspace_preview.js";
 import { buildGroupOpsWorkspaceStatusModel, workspaceCanRenderGlobalPass } from "./workspace_status.js";
@@ -23,10 +24,10 @@ function renderLeftRailItem(item: WorkspaceListItem): string {
 
 function renderWorkspaceHeader(fixture: WorkspaceFixture): string {
   return `
-    <section class="admin-card p1-workspace-banner" data-workspace-mode="${escapeHtml(fixture.workspaceMode)}" data-final-verdict="${escapeHtml(fixture.payload.finalVerdict)}" data-real-external-call-executed="false" data-production-write-executed="false">
+    <section class="admin-card p1-workspace-banner" data-workspace-mode="${escapeHtml(fixture.workspaceMode)}" data-final-verdict="${escapeHtml(fixture.payload.finalVerdict)}" data-data-binding-status="${escapeHtml(fixture.dataBindingStatus)}" data-real-external-call-executed="false" data-production-write-executed="false">
       <div>
         <h2>P1 Native workspace preview</h2>
-        <p>当前为 draft-only / preview-only；不会发送、不审批、不写生产。</p>
+        <p>当前为 draft-only / preview-only；不会发送、不审批、不写生产。数据源：${escapeHtml(fixture.dataSourceLabel)}。</p>
       </div>
       <span class="p1-closure-pill p1-closure-pill--warning">${escapeHtml(fixture.payload.finalVerdict)}</span>
     </section>
@@ -89,6 +90,17 @@ function boot(): void {
   const root = document.getElementById("p1GroupOpsWorkspaceApp");
   if (!root) return;
   renderP1GroupOpsWorkspace(root);
+  loadGroupOpsWorkspaceData(parseWorkspaceApiConfig(), defaultRequestJson())
+    .then((fixture) => {
+      renderP1GroupOpsWorkspace(root, fixture);
+    })
+    .catch(() => {
+      renderP1GroupOpsWorkspace(root, {
+        ...P1_GROUP_OPS_WORKSPACE_FIXTURE,
+        dataBindingStatus: "real_data_unavailable",
+        dataSourceLabel: "read_only_api_unavailable"
+      });
+    });
 }
 
 if (typeof document !== "undefined") {
