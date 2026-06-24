@@ -87,6 +87,10 @@ def test_p1_group_ops_workspace_reuses_shared_modules():
     assert "createWorkspaceViewState" in sources
     assert "updateWorkspaceViewState" in sources
     assert "filterWorkspaceView" in sources
+    assert "buildWorkspaceCanvasLanes" in sources
+    assert "sortCanvasCards" in sources
+    assert "renderGroupedWorkspaceCanvas" in sources
+    assert "toggleWorkspaceCanvasLane" in sources
 
 
 def test_p1_group_ops_workspace_copy_preserves_guardrails():
@@ -116,8 +120,24 @@ def test_p1_group_ops_workspace_copy_preserves_guardrails():
         "executionStatusFilter",
         "pushCenterStatusFilter",
         "panelMode",
+        "laneCollapsedState",
+        "canvasSortMode",
+        "canvasGroupMode",
+        "visibleLaneIds",
         "Search / filters",
+        "Read-only grouped canvas",
+        "Plans",
+        "Audiences / Groups",
+        "Tasks / Nodes",
+        "Executions",
+        "Push Center",
+        "Evidence / Guardrails",
+        "data-canvas-local-state",
+        "data-canvas-sort-mode",
+        "data-canvas-group-mode",
+        "data-workspace-lane-toggle",
         "Empty search result",
+        "Empty lane",
         "real_data_unavailable",
         "requires_approval",
         "requires_allowlist",

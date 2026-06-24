@@ -2,7 +2,7 @@ import { type BusinessClosurePayload, type ScenarioEvidence } from "../shared/st
 export interface WorkspaceListItem {
     id: string;
     label: string;
-    kind: "plan" | "group" | "node" | "execution" | "push_center";
+    kind: "plan" | "group" | "node" | "execution" | "push_center" | "evidence";
     status: ScenarioEvidence["status"];
     summary: string;
     detailId: string;

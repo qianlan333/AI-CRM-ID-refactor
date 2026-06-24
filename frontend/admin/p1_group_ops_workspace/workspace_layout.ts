@@ -4,6 +4,7 @@ import { renderStatusBadge } from "../shared/status_badge.js";
 import { renderStatusCard } from "../shared/status_card.js";
 import { statusMeta } from "../shared/status_model.js";
 import { defaultRequestJson, loadGroupOpsWorkspaceData, parseWorkspaceApiConfig } from "./workspace_api.js";
+import { renderGroupedWorkspaceCanvas } from "./workspace_canvas.js";
 import {
   renderWorkspaceDetailPanel,
   renderWorkspaceSelectedPreviewResult,
@@ -16,13 +17,15 @@ import {
   type WorkspaceFixture,
   type WorkspaceListItem
 } from "./workspace_fixture.js";
-import { renderWorkspaceCanvas, renderWorkspacePreviewResult } from "./workspace_preview.js";
+import { renderWorkspacePreviewResult } from "./workspace_preview.js";
 import { buildGroupOpsWorkspaceStatusModel, workspaceCanRenderGlobalPass } from "./workspace_status.js";
 import {
   createWorkspaceViewState,
   selectEntityInViewState,
   selectionFromViewState,
+  toggleWorkspaceCanvasLane,
   updateWorkspaceViewState,
+  type WorkspaceCanvasLaneId,
   type WorkspacePanelMode,
   type WorkspaceViewState
 } from "./workspace_view_state.js";
@@ -209,6 +212,18 @@ function attachFilterHandlers(root: HTMLElement, fixture: WorkspaceFixture, view
   });
 }
 
+function attachCanvasLaneHandlers(root: HTMLElement, fixture: WorkspaceFixture, viewState: WorkspaceViewState): void {
+  if (typeof root.querySelectorAll !== "function") return;
+  const nodes = root.querySelectorAll<HTMLElement>("[data-workspace-lane-toggle]");
+  nodes.forEach((node) => {
+    node.addEventListener("click", () => {
+      const laneId = node.dataset.workspaceLaneToggle;
+      if (!laneId) return;
+      renderP1GroupOpsWorkspace(root, fixture, toggleWorkspaceCanvasLane(viewState, laneId as WorkspaceCanvasLaneId));
+    });
+  });
+}
+
 export function renderP1GroupOpsWorkspace(
   root: HTMLElement,
   fixture: WorkspaceFixture = P1_GROUP_OPS_WORKSPACE_FIXTURE,
@@ -224,7 +239,7 @@ export function renderP1GroupOpsWorkspace(
       ${renderStateBanner(fixture, filtered)}
       <div class="p1-workspace-grid">
         ${renderLeftRail(filtered)}
-        ${renderWorkspaceCanvas(model, fixture, selection)}
+        ${renderGroupedWorkspaceCanvas(fixture, filtered, filtered.viewState)}
         ${renderPropertyPanel(fixture, filtered)}
       </div>
       ${renderWorkspaceSelectedPreviewResult(fixture, selection)}
@@ -233,6 +248,7 @@ export function renderP1GroupOpsWorkspace(
   `;
   attachSelectionHandlers(root, fixture, filtered.viewState);
   attachFilterHandlers(root, fixture, filtered.viewState);
+  attachCanvasLaneHandlers(root, fixture, filtered.viewState);
 }
 
 function boot(): void {

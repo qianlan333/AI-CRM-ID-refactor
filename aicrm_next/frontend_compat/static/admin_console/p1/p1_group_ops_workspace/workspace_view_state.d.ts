@@ -1,6 +1,13 @@
 import { type WorkspaceEntityType, type WorkspaceFixture, type WorkspaceSelectionState } from "./workspace_fixture.js";
 export type WorkspacePanelMode = "summary" | "detail" | "guardrail";
 export type WorkspaceFilterValue = "all" | string;
+export type WorkspaceCanvasLaneId = "plans" | "groups" | "nodes" | "executions" | "push_center" | "evidence";
+export type WorkspaceCanvasSortMode = "default" | "status" | "entity_type" | "updated_or_created_time" | "blocked_first" | "action_required_first";
+export type WorkspaceCanvasGroupMode = "entity_lane";
+export declare const WORKSPACE_CANVAS_LANE_IDS: WorkspaceCanvasLaneId[];
+export declare const WORKSPACE_CANVAS_SORT_MODES: WorkspaceCanvasSortMode[];
+export declare const WORKSPACE_CANVAS_GROUP_MODES: WorkspaceCanvasGroupMode[];
+export type WorkspaceLaneCollapsedState = Record<WorkspaceCanvasLaneId, boolean>;
 export interface WorkspaceViewState {
     keyword: string;
     planStatusFilter: WorkspaceFilterValue;
@@ -10,8 +17,13 @@ export interface WorkspaceViewState {
     selectedEntityType: WorkspaceEntityType;
     selectedEntityId: string;
     panelMode: WorkspacePanelMode;
+    laneCollapsedState: WorkspaceLaneCollapsedState;
+    canvasSortMode: WorkspaceCanvasSortMode;
+    canvasGroupMode: WorkspaceCanvasGroupMode;
+    visibleLaneIds: WorkspaceCanvasLaneId[];
 }
 export declare function createWorkspaceViewState(fixture: WorkspaceFixture): WorkspaceViewState;
 export declare function selectEntityInViewState(viewState: WorkspaceViewState, selectedEntityType: WorkspaceEntityType, selectedEntityId: string): WorkspaceViewState;
 export declare function updateWorkspaceViewState(viewState: WorkspaceViewState, updates: Partial<WorkspaceViewState>): WorkspaceViewState;
+export declare function toggleWorkspaceCanvasLane(viewState: WorkspaceViewState, laneId: WorkspaceCanvasLaneId): WorkspaceViewState;
 export declare function selectionFromViewState(fixture: WorkspaceFixture, viewState: WorkspaceViewState): WorkspaceSelectionState;
