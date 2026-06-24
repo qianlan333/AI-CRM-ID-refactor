@@ -194,6 +194,68 @@ def _step_payload(
     return payload
 
 
+def _bridge_payload(
+    review: dict,
+    *,
+    idempotency_key: str = "bridge-push-center",
+    allowlist_hash: str | None = None,
+    allowlist_count: int | None = None,
+    snapshot_hash: str | None = None,
+) -> dict:
+    return {
+        "idempotency_key": idempotency_key,
+        "client_snapshot_hash": snapshot_hash or review["snapshot_hash"],
+        "allowlist_hash": allowlist_hash or review["allowlist_summary"]["hash"],
+        "allowlist_count": review["allowlist_summary"]["count"] if allowlist_count is None else allowlist_count,
+        "bridge_note": "safe bridge note",
+    }
+
+
+def _approve_all_governance_steps(next_client: TestClient, review: dict, *, key_prefix: str = "bridge-approve") -> dict:
+    cookies = _admin_cookies()
+    operator = next_client.post(
+        f"/api/admin/p1/group-ops-workspace/governance/{review['review_id']}/steps/{_step_id(review, 'operator_approval')}/approve",
+        json=_step_payload(idempotency_key=f"{key_prefix}-operator"),
+        cookies=cookies,
+    )
+    assert operator.status_code == 200, operator.text
+    allowlist = next_client.post(
+        f"/api/admin/p1/group-ops-workspace/governance/{review['review_id']}/steps/{_step_id(review, 'receiver_allowlist')}/approve",
+        json=_step_payload(
+            idempotency_key=f"{key_prefix}-allowlist",
+            allowlist_hash=review["allowlist_summary"]["hash"],
+            allowlist_count=review["allowlist_summary"]["count"],
+        ),
+        cookies=cookies,
+    )
+    assert allowlist.status_code == 200, allowlist.text
+    gray = next_client.post(
+        f"/api/admin/p1/group-ops-workspace/governance/{review['review_id']}/steps/{_step_id(review, 'gray_window')}/approve",
+        json=_step_payload(idempotency_key=f"{key_prefix}-gray-window"),
+        cookies=cookies,
+    )
+    assert gray.status_code == 200, gray.text
+    return gray.json()
+
+
+def _assert_bridge_pending_not_execution(payload: dict) -> None:
+    assert payload["preview_only"] is True
+    assert payload["approved"] is False
+    assert payload["governance_approved"] is True
+    assert payload["push_center_job_created"] is True
+    assert payload["push_center_job_id"].startswith("p1-gow-push-center:")
+    assert payload["push_center_status"] == "pending"
+    assert payload["external_effect_job_created"] is False
+    assert payload["broadcast_job_created"] is False
+    assert payload["internal_event_created"] is False
+    assert payload["real_external_call"] is False
+    assert payload["real_external_call_executed"] is False
+    assert payload["execution_status"] == "push_center_pending_not_sent"
+    assert payload["can_claim_pass_90_plus"] is False
+    assert payload["push_center_status"] not in {"sent", "completed"}
+    assert payload.get("review_status") not in {"sent", "completed"}
+
+
 def test_group_ops_workspace_governance_apis_fail_closed_without_admin_cookie(next_client: TestClient) -> None:
     request = next_client.post(
         "/api/admin/p1/group-ops-workspace/drafts/gowd_missing/governance/request",
@@ -667,3 +729,274 @@ def test_governance_api_does_not_break_legacy_group_ops_read_routes(
 
     assert response.status_code == 200
     assert response.headers["X-AICRM-Route-Owner"] == "ai_crm_next"
+
+
+def test_push_center_bridge_apis_fail_closed_without_admin_cookie(next_client: TestClient) -> None:
+    bridged = next_client.post(
+        "/api/admin/p1/group-ops-workspace/governance/gowg_missing/bridge-push-center",
+        json={
+            "idempotency_key": "unauth-bridge",
+            "client_snapshot_hash": "safe-snapshot",
+            "allowlist_hash": "safe-allowlist",
+            "allowlist_count": 1,
+        },
+    )
+    detail = next_client.get("/api/admin/p1/group-ops-workspace/governance/gowg_missing/push-center-bridge")
+
+    for response in [bridged, detail]:
+        assert response.status_code == 401
+        payload = response.json()
+        assert payload["error"] == "admin_auth_required"
+        assert payload["real_external_call_executed"] is False
+
+
+def test_push_center_bridge_preconditions_reject_non_approved_reviews(
+    next_client: TestClient,
+    next_pg_schema,
+) -> None:
+    del next_pg_schema
+    cookies = _admin_cookies()
+    review = _governance_review(next_client, create_key="bridge-precondition-pending")
+    pending = next_client.post(
+        f"/api/admin/p1/group-ops-workspace/governance/{review['review_id']}/bridge-push-center",
+        json=_bridge_payload(review, idempotency_key="bridge-pending"),
+        cookies=cookies,
+    )
+
+    operator_only_review = _governance_review(next_client, create_key="bridge-precondition-operator")
+    operator = next_client.post(
+        f"/api/admin/p1/group-ops-workspace/governance/{operator_only_review['review_id']}/steps/{_step_id(operator_only_review, 'operator_approval')}/approve",
+        json=_step_payload(idempotency_key="bridge-precondition-operator-approve"),
+        cookies=cookies,
+    )
+    assert operator.status_code == 200, operator.text
+    missing_allowlist = next_client.post(
+        f"/api/admin/p1/group-ops-workspace/governance/{operator_only_review['review_id']}/bridge-push-center",
+        json=_bridge_payload(operator_only_review, idempotency_key="bridge-missing-allowlist"),
+        cookies=cookies,
+    )
+
+    two_step_review = _governance_review(next_client, create_key="bridge-precondition-gray")
+    next_client.post(
+        f"/api/admin/p1/group-ops-workspace/governance/{two_step_review['review_id']}/steps/{_step_id(two_step_review, 'operator_approval')}/approve",
+        json=_step_payload(idempotency_key="bridge-precondition-gray-operator"),
+        cookies=cookies,
+    )
+    next_client.post(
+        f"/api/admin/p1/group-ops-workspace/governance/{two_step_review['review_id']}/steps/{_step_id(two_step_review, 'receiver_allowlist')}/approve",
+        json=_step_payload(
+            idempotency_key="bridge-precondition-gray-allowlist",
+            allowlist_hash=two_step_review["allowlist_summary"]["hash"],
+            allowlist_count=two_step_review["allowlist_summary"]["count"],
+        ),
+        cookies=cookies,
+    )
+    missing_gray = next_client.post(
+        f"/api/admin/p1/group-ops-workspace/governance/{two_step_review['review_id']}/bridge-push-center",
+        json=_bridge_payload(two_step_review, idempotency_key="bridge-missing-gray"),
+        cookies=cookies,
+    )
+
+    assert pending.status_code == 400, pending.text
+    assert missing_allowlist.status_code == 400, missing_allowlist.text
+    assert missing_gray.status_code == 400, missing_gray.text
+    assert _count("external_effect_job") == 0
+    assert _count("broadcast_jobs") == 0
+    assert _count("internal_event") == 0
+
+
+def test_governance_approved_review_can_bridge_to_push_center_pending_without_execution(
+    next_client: TestClient,
+    next_pg_schema,
+) -> None:
+    del next_pg_schema
+    cookies = _admin_cookies()
+    review = _governance_review(next_client, create_key="bridge-success")
+    approved = _approve_all_governance_steps(next_client, review, key_prefix="bridge-success-approve")
+    before = {
+        "external_effect_job": _count("external_effect_job"),
+        "broadcast_jobs": _count("broadcast_jobs"),
+        "internal_event": _count("internal_event"),
+        "outbound_tasks": _count("outbound_tasks"),
+    }
+
+    response = next_client.post(
+        f"/api/admin/p1/group-ops-workspace/governance/{approved['review_id']}/bridge-push-center",
+        json=_bridge_payload(approved, idempotency_key="bridge-success-key"),
+        cookies=cookies,
+    )
+    detail = next_client.get(
+        f"/api/admin/p1/group-ops-workspace/governance/{approved['review_id']}/push-center-bridge",
+        cookies=cookies,
+    )
+
+    assert response.status_code == 200, response.text
+    assert detail.status_code == 200, detail.text
+    payload = response.json()
+    detail_payload = detail.json()
+    assert payload["operation"] == "bridge_push_center"
+    assert payload["production_write"] is True
+    assert payload["production_write_scope"] == "governance_bridge_metadata_only"
+    _assert_bridge_pending_not_execution(payload)
+    _assert_bridge_pending_not_execution(detail_payload)
+    assert payload["push_center_job_id"] == detail_payload["push_center_job_id"]
+    assert payload["push_center_metadata"]["source"] == "p1_group_ops_workspace"
+    assert payload["push_center_metadata"]["allowlist_hash"] == approved["allowlist_summary"]["hash"]
+    assert payload["push_center_metadata"]["allowlist_count"] == approved["allowlist_summary"]["count"]
+    assert payload["push_center_metadata"]["no_external_call"] is True
+    assert _count("external_effect_job") == before["external_effect_job"]
+    assert _count("broadcast_jobs") == before["broadcast_jobs"]
+    assert _count("internal_event") == before["internal_event"]
+    assert _count("outbound_tasks") == before["outbound_tasks"]
+
+
+def test_push_center_bridge_rejects_snapshot_allowlist_and_expired_window_conflicts(
+    next_client: TestClient,
+    next_pg_schema,
+) -> None:
+    del next_pg_schema
+    cookies = _admin_cookies()
+
+    snapshot_review = _approve_all_governance_steps(
+        next_client,
+        _governance_review(next_client, create_key="bridge-snapshot-mismatch"),
+        key_prefix="bridge-snapshot-mismatch-approve",
+    )
+    with get_engine().begin() as conn:
+        conn.execute(
+            text("UPDATE group_ops_workspace_drafts SET snapshot_hash = :snapshot_hash WHERE draft_id = :draft_id"),
+            {"snapshot_hash": "different-safe-snapshot", "draft_id": snapshot_review["draft_id"]},
+        )
+    snapshot_mismatch = next_client.post(
+        f"/api/admin/p1/group-ops-workspace/governance/{snapshot_review['review_id']}/bridge-push-center",
+        json=_bridge_payload(snapshot_review, idempotency_key="bridge-snapshot-mismatch"),
+        cookies=cookies,
+    )
+
+    allowlist_review = _approve_all_governance_steps(
+        next_client,
+        _governance_review(next_client, create_key="bridge-allowlist-mismatch"),
+        key_prefix="bridge-allowlist-mismatch-approve",
+    )
+    allowlist_mismatch = next_client.post(
+        f"/api/admin/p1/group-ops-workspace/governance/{allowlist_review['review_id']}/bridge-push-center",
+        json=_bridge_payload(allowlist_review, idempotency_key="bridge-allowlist-mismatch", allowlist_hash="different-safe-allowlist"),
+        cookies=cookies,
+    )
+
+    expired_review = _approve_all_governance_steps(
+        next_client,
+        _governance_review(next_client, create_key="bridge-expired-window"),
+        key_prefix="bridge-expired-window-approve",
+    )
+    with get_engine().begin() as conn:
+        conn.execute(
+            text(
+                """
+                UPDATE group_ops_workspace_gray_window_approvals
+                SET start_at = CURRENT_TIMESTAMP - INTERVAL '2 hours',
+                    end_at = CURRENT_TIMESTAMP - INTERVAL '1 hour'
+                WHERE review_id = :review_id
+                """
+            ),
+            {"review_id": expired_review["review_id"]},
+        )
+    expired_window = next_client.post(
+        f"/api/admin/p1/group-ops-workspace/governance/{expired_review['review_id']}/bridge-push-center",
+        json=_bridge_payload(expired_review, idempotency_key="bridge-expired-window"),
+        cookies=cookies,
+    )
+
+    assert snapshot_mismatch.status_code == 409, snapshot_mismatch.text
+    assert allowlist_mismatch.status_code == 409, allowlist_mismatch.text
+    assert expired_window.status_code in {400, 409}, expired_window.text
+    assert _count("external_effect_job") == 0
+    assert _count("broadcast_jobs") == 0
+    assert _count("internal_event") == 0
+
+
+def test_push_center_bridge_idempotency_replay_conflict_and_already_bridged(
+    next_client: TestClient,
+    next_pg_schema,
+) -> None:
+    del next_pg_schema
+    cookies = _admin_cookies()
+    approved = _approve_all_governance_steps(
+        next_client,
+        _governance_review(next_client, create_key="bridge-idempotency"),
+        key_prefix="bridge-idempotency-approve",
+    )
+    payload = _bridge_payload(approved, idempotency_key="same-bridge-key")
+
+    first = next_client.post(
+        f"/api/admin/p1/group-ops-workspace/governance/{approved['review_id']}/bridge-push-center",
+        json=payload,
+        cookies=cookies,
+    )
+    replay = next_client.post(
+        f"/api/admin/p1/group-ops-workspace/governance/{approved['review_id']}/bridge-push-center",
+        json=payload,
+        cookies=cookies,
+    )
+    conflict = next_client.post(
+        f"/api/admin/p1/group-ops-workspace/governance/{approved['review_id']}/bridge-push-center",
+        json={**payload, "bridge_note": "changed safe bridge note"},
+        cookies=cookies,
+    )
+    already_bridged = next_client.post(
+        f"/api/admin/p1/group-ops-workspace/governance/{approved['review_id']}/bridge-push-center",
+        json=_bridge_payload(approved, idempotency_key="different-bridge-key"),
+        cookies=cookies,
+    )
+
+    assert first.status_code == 200, first.text
+    assert replay.status_code == 200, replay.text
+    assert conflict.status_code == 409, conflict.text
+    assert already_bridged.status_code == 409, already_bridged.text
+    assert first.json()["push_center_job_id"] == replay.json()["push_center_job_id"]
+    assert replay.json()["idempotent_replay"] is True
+    assert replay.json()["production_write"] is False
+    _assert_bridge_pending_not_execution(first.json())
+    _assert_bridge_pending_not_execution(replay.json())
+    assert _count("external_effect_job") == 0
+    assert _count("broadcast_jobs") == 0
+    assert _count("internal_event") == 0
+
+
+def test_push_center_bridge_rejects_sensitive_fields_and_values(
+    next_client: TestClient,
+    next_pg_schema,
+) -> None:
+    del next_pg_schema
+    cookies = _admin_cookies()
+    approved = _approve_all_governance_steps(
+        next_client,
+        _governance_review(next_client, create_key="bridge-sensitive"),
+        key_prefix="bridge-sensitive-approve",
+    )
+
+    sensitive_key = next_client.post(
+        f"/api/admin/p1/group-ops-workspace/governance/{approved['review_id']}/bridge-push-center",
+        json={**_bridge_payload(approved, idempotency_key="bridge-sensitive-key"), "raw_external_userid": "unsafe"},
+        cookies=cookies,
+    )
+    sensitive_value = next_client.post(
+        f"/api/admin/p1/group-ops-workspace/governance/{approved['review_id']}/bridge-push-center",
+        json={**_bridge_payload(approved, idempotency_key="bridge-sensitive-value"), "bridge_note": "call 13800138000"},
+        cookies=cookies,
+    )
+    sensitive_auth = next_client.post(
+        f"/api/admin/p1/group-ops-workspace/governance/{approved['review_id']}/bridge-push-center",
+        json={**_bridge_payload(approved, idempotency_key="bridge-sensitive-auth"), "bridge_note": "Authorization: Bearer unsafe"},
+        cookies=cookies,
+    )
+
+    assert sensitive_key.status_code == 400, sensitive_key.text
+    assert sensitive_value.status_code == 400, sensitive_value.text
+    assert sensitive_auth.status_code == 400, sensitive_auth.text
+    assert "sensitive" in sensitive_key.json()["detail"]
+    assert "sensitive" in sensitive_value.json()["detail"]
+    assert "sensitive" in sensitive_auth.json()["detail"]
+    assert _count("external_effect_job") == 0
+    assert _count("broadcast_jobs") == 0
+    assert _count("internal_event") == 0

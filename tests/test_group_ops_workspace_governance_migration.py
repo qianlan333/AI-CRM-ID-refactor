@@ -166,7 +166,7 @@ def test_group_ops_workspace_governance_schema_uses_only_safe_summary_hash_count
     assert {fragment for fragment in forbidden_schema_fragments if fragment in upgrade_sql} == set()
 
 
-def test_group_ops_workspace_governance_migration_does_not_add_runtime_writers_or_bridge_routes() -> None:
+def test_group_ops_workspace_governance_migration_does_not_add_runtime_writers_or_execution_routes() -> None:
     migration_source = _migration_source()
     upgrade_sql = _upgrade_source()
 
@@ -188,6 +188,10 @@ def test_group_ops_workspace_governance_migration_does_not_add_runtime_writers_o
         "/api/admin/p1/group-ops-workspace/governance/{review_id}/steps/{step_id}/reject",
         "/api/admin/p1/group-ops-workspace/governance/{review_id}/expire",
     }
+    allowed_bridge_routes = {
+        "/api/admin/p1/group-ops-workspace/governance/{review_id}/bridge-push-center",
+        "/api/admin/p1/group-ops-workspace/governance/{review_id}/push-center-bridge",
+    }
     step_routes = {
         route["path"]
         for route in manifest["routes"]
@@ -198,17 +202,23 @@ def test_group_ops_workspace_governance_migration_does_not_add_runtime_writers_o
         )
     }
     assert allowed_step_routes.issubset(step_routes)
-    forbidden_bridge_routes = [
+    bridge_routes = {
+        route["path"]
+        for route in manifest["routes"]
+        if "/api/admin/p1/group-ops-workspace/" in route["path"]
+        and "/push-center" in route["path"]
+    }
+    assert bridge_routes.issubset(allowed_bridge_routes)
+    forbidden_execution_routes = [
         route
         for route in manifest["routes"]
         if "/api/admin/p1/group-ops-workspace/" in route["path"]
         and (
-            "/push-center" in route["path"]
-            or "/execute" in route["path"]
+            "/execute" in route["path"]
             or "/send" in route["path"]
         )
     ]
-    assert forbidden_bridge_routes == []
+    assert forbidden_execution_routes == []
 
     group_ops_runtime_sources = "\n".join(
         path.read_text(encoding="utf-8")
