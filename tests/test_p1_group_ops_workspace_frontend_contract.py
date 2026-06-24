@@ -13,6 +13,7 @@ ROUTES = ROOT / "aicrm_next/admin_shell/routes.py"
 NAVIGATION = ROOT / "aicrm_next/admin_shell/navigation.py"
 WORKSPACE_TS_DIR = ROOT / "frontend/admin/p1_group_ops_workspace"
 READ_ONLY_CLOSEOUT = ROOT / "docs/reports/p1_group_ops_workspace_read_only_closeout_20260624.md"
+DRAFT_PERSISTENCE_RFC = ROOT / "docs/rfcs/p1_group_ops_workspace_draft_persistence_rfc_20260624.md"
 
 
 @pytest.fixture()
@@ -308,3 +309,55 @@ def test_p1_group_ops_workspace_read_only_closeout_report_contract():
         "Frontend Skill Checklist",
     ]:
         assert expected in report
+
+
+def test_p1_group_ops_workspace_draft_persistence_rfc_contract():
+    rfc = DRAFT_PERSISTENCE_RFC.read_text(encoding="utf-8")
+
+    for expected in [
+        "RFC_READY_FOR_REVIEW",
+        "IMPLEMENTATION_NOT_STARTED",
+        "EXECUTION_NOT_IN_SCOPE",
+        "PASS_90_PLUS_NOT_CLAIMED",
+        "/admin/p1/group-ops-workspace",
+        "docs/reports/p1_group_ops_workspace_read_only_closeout_20260624.md",
+        "group_ops_workspace_drafts",
+        "group_ops_workspace_draft_items",
+        "group_ops_workspace_draft_audit_logs",
+        "draft_status",
+        "idempotency_key",
+        "snapshot_hash",
+        "sanitized_payload_json",
+        "guardrail_summary_json",
+        "approval_requirements_json",
+        "GET `/api/admin/p1/group-ops-workspace/drafts`",
+        "GET `/api/admin/p1/group-ops-workspace/drafts/{draft_id}`",
+        "POST `/api/admin/p1/group-ops-workspace/drafts`",
+        "PATCH `/api/admin/p1/group-ops-workspace/drafts/{draft_id}`",
+        "POST `/api/admin/p1/group-ops-workspace/drafts/{draft_id}/archive`",
+        "POST `/api/admin/p1/group-ops-workspace/drafts/{draft_id}/request-review`",
+        "No external call guarantee: true",
+        "No Push Center execution guarantee: true",
+        "unauthenticated requests fail closed",
+        "create",
+        "update",
+        "archive",
+        "request-review",
+        "draft model migration",
+        "read/write API",
+        "frontend save draft integration",
+        "approval/review request integration",
+        "Push Center bridge",
+        "not execution",
+        "PASS_90_PLUS",
+        "Frontend Skill Checklist",
+    ]:
+        assert expected in rfc
+
+    for forbidden in [
+        "This RFC implements",
+        "migration is created in this PR",
+        "Draft APIs must create Push Center jobs",
+        "Draft APIs must create `external_effect_job`",
+    ]:
+        assert forbidden not in rfc
