@@ -63,7 +63,8 @@ def test_preview_is_local_only_and_does_not_create_tasks(client, monkeypatch) ->
         raise AssertionError("preview must not perform external HTTP calls")
 
     monkeypatch.setattr(requests, "post", _fail_external_call)
-    before = client.get("/api/admin/automation-conversion/tasks").json()["total"]
+    retired_before = client.get("/api/admin/automation-conversion/tasks")
+    assert retired_before.status_code == 410
 
     response = client.post(
         "/api/admin/send-content/preview",
@@ -88,8 +89,9 @@ def test_preview_is_local_only_and_does_not_create_tasks(client, monkeypatch) ->
         "attachment_count": 1,
     }
     assert all("media_id" not in item for item in body["preview"]["materials"])
-    after = client.get("/api/admin/automation-conversion/tasks").json()["total"]
-    assert after == before
+    retired_after = client.get("/api/admin/automation-conversion/tasks")
+    assert retired_after.status_code == 410
+    assert retired_after.json()["error"] == "legacy_automation_task_authoring_retired"
 
 
 def test_material_picker_image_shape_excludes_base64(client) -> None:
