@@ -6,6 +6,8 @@ from typing import Any
 from fastapi import APIRouter, FastAPI
 
 from .ai_assist.api import router as ai_assist_router
+from .ai_audience_ops.admin_api import router as ai_audience_admin_api_router
+from .ai_audience_ops.admin_pages import router as ai_audience_admin_pages_router
 from .ai_audience_ops.api import router as ai_audience_ops_router
 from .admin_auth.api import router as admin_auth_router
 from .admin_config.api import router as admin_config_router
@@ -97,6 +99,8 @@ ROUTER_SPECS: tuple[RouterSpec, ...] = (
     RouterSpec("radar_links", "radar_links", radar_links_router),
     RouterSpec("auth_wecom", "auth_wecom", auth_wecom_router),
     RouterSpec("automation_engine", "group_ops_admin_pages", group_ops_admin_pages_router),
+    RouterSpec("ai_audience_ops", "ai_audience_admin_pages", ai_audience_admin_pages_router, "AI audience admin package list page"),
+    RouterSpec("ai_audience_ops", "ai_audience_admin_api", ai_audience_admin_api_router, "AI audience admin read APIs"),
     RouterSpec("automation_engine", "automation_admin_pages", automation_admin_pages_router),
     RouterSpec("automation_engine", "channel_admin_pages", channel_admin_pages_router),
     RouterSpec("customer_tags", "customer_tags_admin_pages", customer_tags_admin_pages_router),

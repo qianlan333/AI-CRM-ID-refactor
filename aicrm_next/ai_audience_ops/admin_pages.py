@@ -1,0 +1,40 @@
+from __future__ import annotations
+
+from pathlib import Path
+
+from fastapi import APIRouter, Request
+from fastapi.templating import Jinja2Templates
+
+from aicrm_next.admin_shell import shell_context
+
+router = APIRouter()
+_TEMPLATES_DIR = Path(__file__).resolve().parent / "templates"
+_AUTOMATION_TEMPLATES_DIR = Path(__file__).resolve().parents[1] / "automation_engine" / "templates"
+templates = Jinja2Templates(directory=[_TEMPLATES_DIR, _AUTOMATION_TEMPLATES_DIR])
+
+_HEADERS = {
+    "X-AICRM-Route-Owner": "ai_crm_next",
+    "X-AICRM-Fallback-Used": "false",
+    "X-AICRM-Real-External-Call-Executed": "false",
+}
+
+
+@router.get("/admin/automation-conversion", name="api.admin_automation_conversion")
+def admin_ai_audience_automation(request: Request):
+    context = shell_context(
+        request=request,
+        page_title="AI 自动化运营",
+        page_summary="通过 AI 创建 SQL 人群包；查看当前命中人数、最后一次刷新时间与刷新方式。",
+        active_endpoint="api.admin_automation_conversion",
+    )
+    context.update(
+        {
+            "ai_audience_packages_api_url": "/api/admin/ai-audience/packages",
+        }
+    )
+    return templates.TemplateResponse(
+        request,
+        "admin_console/ai_audience_package_list.html",
+        context,
+        headers=_HEADERS,
+    )

@@ -1,0 +1,200 @@
+{% extends "admin_console/base.html" %}
+
+{% block head_extra %}
+<style>
+  .ai-audience-shell {
+    display: grid;
+    gap: 16px;
+  }
+
+  .ai-audience-card-head {
+    align-items: center;
+    margin-bottom: 12px;
+  }
+
+  .ai-audience-total {
+    color: #64748b;
+    font-size: 13px;
+    font-weight: 700;
+    white-space: nowrap;
+  }
+
+  .ai-audience-table {
+    min-width: 760px;
+    table-layout: fixed;
+  }
+
+  .ai-audience-table th,
+  .ai-audience-table td {
+    vertical-align: middle;
+  }
+
+  .ai-audience-name {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+    font-weight: 800;
+    color: #0f172a;
+  }
+
+  .ai-audience-dot {
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    background: #2563eb;
+    box-shadow: 0 0 0 4px #eff6ff;
+    flex: 0 0 auto;
+  }
+
+  .ai-audience-truncate {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .ai-audience-num,
+  .ai-audience-time {
+    font-variant-numeric: tabular-nums;
+  }
+
+  .ai-audience-num {
+    font-weight: 800;
+    color: #0f172a;
+  }
+
+  .ai-audience-time {
+    color: #334155;
+  }
+
+  .ai-audience-pill {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    max-width: 100%;
+    min-height: 28px;
+    padding: 4px 10px;
+    border: 1px solid #dbeafe;
+    border-radius: 999px;
+    background: #eff6ff;
+    color: #1d4ed8;
+    font-size: 12px;
+    font-weight: 800;
+    white-space: nowrap;
+  }
+
+  .ai-audience-empty {
+    padding: 42px 12px;
+    color: #64748b;
+    text-align: center;
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="ai-audience-shell">
+  <section class="admin-card" aria-label="AI 自动化运营人群包列表">
+    <div class="admin-card-head admin-card-head--tight ai-audience-card-head">
+      <div>
+        <h2>人群包列表</h2>
+      </div>
+      <div class="ai-audience-total" id="aiAudienceTotal">加载中</div>
+    </div>
+    <div class="admin-table-wrap">
+      <table class="admin-table ai-audience-table">
+        <thead>
+          <tr>
+            <th style="width: 44%">人群包名称</th>
+            <th style="width: 16%">人数</th>
+            <th style="width: 24%">最后一次刷新时间</th>
+            <th style="width: 16%">刷新方式</th>
+          </tr>
+        </thead>
+        <tbody id="aiAudienceRows">
+          <tr>
+            <td class="ai-audience-empty" colspan="4">加载中</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+</div>
+{% endblock %}
+
+{% block scripts_extra %}
+<script>
+  (() => {
+    const apiUrl = {{ ai_audience_packages_api_url | tojson }};
+    const totalEl = document.getElementById("aiAudienceTotal");
+    const rowsEl = document.getElementById("aiAudienceRows");
+
+    const escapeHtml = (value) => String(value ?? "")
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll("\"", "&quot;")
+      .replaceAll("'", "&#039;");
+
+    const formatNumber = (value) => new Intl.NumberFormat("zh-CN").format(Number(value || 0));
+
+    const formatTime = (value) => {
+      if (!value) return "-";
+      const date = new Date(value);
+      if (Number.isNaN(date.getTime())) return escapeHtml(value);
+      const parts = new Intl.DateTimeFormat("zh-CN", {
+        timeZone: "Asia/Shanghai",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false
+      }).formatToParts(date).reduce((acc, item) => {
+        acc[item.type] = item.value;
+        return acc;
+      }, {});
+      return `${parts.year}-${parts.month}-${parts.day} ${parts.hour}:${parts.minute}`;
+    };
+
+    const render = (payload) => {
+      const items = Array.isArray(payload.items) ? payload.items : [];
+      totalEl.textContent = `共 ${Number(payload.total ?? items.length)} 个`;
+      if (!items.length) {
+        rowsEl.innerHTML = '<tr><td class="ai-audience-empty" colspan="4">暂无人群包</td></tr>';
+        return;
+      }
+      rowsEl.innerHTML = items.map((item) => {
+        const name = item.name || "未命名人群包";
+        return `
+          <tr>
+            <td>
+              <div class="ai-audience-name">
+                <span class="ai-audience-dot" aria-hidden="true"></span>
+                <span class="ai-audience-truncate" title="${escapeHtml(name)}">${escapeHtml(name)}</span>
+              </div>
+            </td>
+            <td class="ai-audience-num">${formatNumber(item.member_count)}</td>
+            <td class="ai-audience-time">${formatTime(item.last_refreshed_at)}</td>
+            <td><span class="ai-audience-pill">${escapeHtml(item.refresh_mode_label || "手动")}</span></td>
+          </tr>
+        `;
+      }).join("");
+    };
+
+    fetch(apiUrl, { credentials: "same-origin" })
+      .then((response) => {
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return response.json();
+      })
+      .then((payload) => {
+        if (!payload || payload.ok === false) throw new Error("api_error");
+        render(payload);
+      })
+      .catch(() => {
+        totalEl.textContent = "加载失败";
+        rowsEl.innerHTML = '<tr><td class="ai-audience-empty" colspan="4">加载失败，请稍后重试</td></tr>';
+      });
+  })();
+</script>
+{% endblock %}
