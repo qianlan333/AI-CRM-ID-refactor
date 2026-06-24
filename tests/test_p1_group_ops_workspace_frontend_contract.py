@@ -84,6 +84,9 @@ def test_p1_group_ops_workspace_reuses_shared_modules():
     assert "createWorkspaceSelectionState" in sources
     assert "selectWorkspaceEntity" in sources
     assert "renderWorkspaceDetailPanel" in sources
+    assert "createWorkspaceViewState" in sources
+    assert "updateWorkspaceViewState" in sources
+    assert "filterWorkspaceView" in sources
 
 
 def test_p1_group_ops_workspace_copy_preserves_guardrails():
@@ -107,6 +110,15 @@ def test_p1_group_ops_workspace_copy_preserves_guardrails():
         "selectedEntityType",
         "Selected preview result",
         "Read-only drilldown only",
+        "keyword",
+        "planStatusFilter",
+        "entityTypeFilter",
+        "executionStatusFilter",
+        "pushCenterStatusFilter",
+        "panelMode",
+        "Search / filters",
+        "Empty search result",
+        "real_data_unavailable",
         "requires_approval",
         "requires_allowlist",
         "requires_gray_window",

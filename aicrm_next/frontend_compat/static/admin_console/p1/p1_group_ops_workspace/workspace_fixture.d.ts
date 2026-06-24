@@ -45,3 +45,4 @@ export interface WorkspaceFixture {
 }
 export declare const GROUP_OPS_WORKSPACE_SCENARIOS: ScenarioEvidence[];
 export declare const P1_GROUP_OPS_WORKSPACE_FIXTURE: WorkspaceFixture;
+export declare function createUnavailableWorkspaceFixture(dataSourceLabel?: string): WorkspaceFixture;

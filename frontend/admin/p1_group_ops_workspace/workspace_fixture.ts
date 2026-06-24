@@ -126,6 +126,24 @@ export const P1_GROUP_OPS_WORKSPACE_FIXTURE: WorkspaceFixture = {
       detailId: "node-preview-task",
       status: "downstream-pending",
       summary: "任务流只读预览，必须经 Push Center gate。"
+    },
+    {
+      id: "execution-preview-empty",
+      label: "Execution preview",
+      kind: "execution",
+      entityType: "execution",
+      detailId: "execution-preview-empty",
+      status: "pending",
+      summary: "只读执行记录占位，不代表 workspace 触发过执行。"
+    },
+    {
+      id: "push-center-preview",
+      label: "Push Center projection",
+      kind: "push_center",
+      entityType: "push_center",
+      detailId: "push-center-preview",
+      status: "evidence-incomplete",
+      summary: "未绑定真实 projection，不能伪造成 sent。"
     }
   ],
   detailItems: [
@@ -215,3 +233,38 @@ export const P1_GROUP_OPS_WORKSPACE_FIXTURE: WorkspaceFixture = {
   realExternalCallExecuted: false,
   productionWriteExecuted: false
 };
+
+export function createUnavailableWorkspaceFixture(dataSourceLabel = "read_only_api_unavailable"): WorkspaceFixture {
+  return {
+    ...P1_GROUP_OPS_WORKSPACE_FIXTURE,
+    dataSourceLabel,
+    dataBindingStatus: "real_data_unavailable",
+    leftRailItems: [
+      {
+        id: "plan-empty",
+        label: "No Group Ops plan found",
+        kind: "plan",
+        entityType: "plan",
+        detailId: "plan-p1-group-ops-preview",
+        status: "evidence-incomplete",
+        summary: "只读 API 不可用或没有可绑定计划；不能伪造成 sent。"
+      }
+    ],
+    payload: {
+      finalVerdict: "P1_READY_WITH_EXCEPTIONS",
+      canClaimPass90Plus: false,
+      scenarios: [
+        {
+          key: "group_ops",
+          title: "Group Ops real-data binding",
+          status: "evidence-incomplete",
+          evidenceStatus: "REAL_DATA_UNAVAILABLE",
+          derivedStatus: "read_only_api_unavailable",
+          summary: "只读数据不可用，保留 preview-only fallback。",
+          guardrail: "API 失败不能渲染为 sent/completed，也不能 claim PASS_90_PLUS。",
+          route: "/admin/automation-conversion/group-ops/ui"
+        }
+      ]
+    }
+  };
+}
