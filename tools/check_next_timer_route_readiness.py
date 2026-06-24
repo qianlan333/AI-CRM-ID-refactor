@@ -22,10 +22,13 @@ except ModuleNotFoundError:
         os.execv(str(venv_python), [str(venv_python), *sys.argv])
     raise
 
-TIMER_ROUTES = [
-    "/api/admin/automation-conversion/reply-monitor/run-due",
-    "/api/admin/automation-conversion/reply-monitor/capture",
-    "/api/admin/automation-conversion/jobs/run-due",
+RETIRED_TIMER_ROUTES = {
+    "/api/admin/automation-conversion/reply-monitor/run-due": "legacy_automation_reply_monitor_retired",
+    "/api/admin/automation-conversion/reply-monitor/capture": "legacy_automation_reply_monitor_retired",
+    "/api/admin/automation-conversion/jobs/run-due": "legacy_automation_jobs_runner_retired",
+}
+
+ACTIVE_TIMER_ROUTES = [
     "/api/admin/cloud-orchestrator/campaigns/run-due",
 ]
 
@@ -125,13 +128,51 @@ def _sentinel_comparison(before: dict[str, Any], after: dict[str, Any]) -> dict[
     }
 
 
+def _retired_payload_ok(payload: dict[str, Any], expected_error: str) -> bool:
+    return (
+        payload.get("ok") is False
+        and payload.get("error") == expected_error
+        and payload.get("real_external_call_executed") is False
+        and payload.get("automation_runtime_executed") is False
+    )
+
+
 def run_check() -> dict[str, Any]:
     with timer_probe_env():
         client = _client()
         results: dict[str, Any] = {}
         sentinel_before = _read_db_sentinel()
         probe_token = os.getenv("AUTOMATION_INTERNAL_API_TOKEN", "probe-token")
-        for route in TIMER_ROUTES:
+        for route, expected_error in RETIRED_TIMER_ROUTES.items():
+            unauth = client.post(route, json={}, follow_redirects=False)
+            body_dry_run = client.post(
+                route,
+                json={"dry_run": True},
+                headers={"Authorization": f"Bearer {probe_token}"},
+                follow_redirects=False,
+            )
+            query_dry_run = client.post(
+                f"{route}?dry_run=true",
+                json={},
+                headers={"Authorization": f"Bearer {probe_token}"},
+                follow_redirects=False,
+            )
+            retired_payloads = []
+            for response in [unauth, body_dry_run, query_dry_run]:
+                try:
+                    retired_payloads.append(response.json())
+                except Exception:
+                    retired_payloads.append({})
+            results[route] = {
+                "route_status": "retired",
+                "unauth_status": unauth.status_code,
+                "body_dry_run_status": body_dry_run.status_code,
+                "query_dry_run_status": query_dry_run.status_code,
+                "retired_410": all(response.status_code == 410 for response in [unauth, body_dry_run, query_dry_run]),
+                "retired_payload_ok": all(_retired_payload_ok(payload, expected_error) for payload in retired_payloads),
+                "dry_run_payloads": retired_payloads,
+            }
+        for route in ACTIVE_TIMER_ROUTES:
             unauth = client.post(route, json={}, follow_redirects=False)
             header_dry_run = client.post(
                 route,
@@ -145,12 +186,7 @@ def run_check() -> dict[str, Any]:
                 headers={"Authorization": f"Bearer {probe_token}"},
                 follow_redirects=False,
             )
-            query_dry_run = client.post(
-                f"{route}?dry_run=true",
-                json={},
-                headers={"Authorization": f"Bearer {probe_token}"},
-                follow_redirects=False,
-            )
+            query_dry_run = client.post(f"{route}?dry_run=true", json={}, headers={"Authorization": f"Bearer {probe_token}"}, follow_redirects=False)
             dry_run_payloads = []
             for response in [header_dry_run, body_dry_run, query_dry_run]:
                 try:
@@ -158,6 +194,7 @@ def run_check() -> dict[str, Any]:
                 except Exception:
                     dry_run_payloads.append({})
             results[route] = {
+                "route_status": "active",
                 "unauth_status": unauth.status_code,
                 "header_dry_run_status": header_dry_run.status_code,
                 "body_dry_run_status": body_dry_run.status_code,
@@ -196,10 +233,19 @@ def run_check() -> dict[str, Any]:
     blockers = [
         route
         for route, payload in results.items()
-        if not payload["route_not_404"]
-        or not payload["auth_guard_present"]
-        or not payload["dry_run_or_noop_available"]
-        or not payload["dry_run_noop"]
+        if (
+            payload.get("route_status") == "retired"
+            and (not payload["retired_410"] or not payload["retired_payload_ok"])
+        )
+        or (
+            payload.get("route_status") == "active"
+            and (
+                not payload["route_not_404"]
+                or not payload["auth_guard_present"]
+                or not payload["dry_run_or_noop_available"]
+                or not payload["dry_run_noop"]
+            )
+        )
     ]
     if not db_sentinel["ok"]:
         blockers.append("dry_run_db_sentinel_not_passed")
@@ -215,7 +261,17 @@ def run_check() -> dict[str, Any]:
         "automation_overview": overview_payload,
         "automation_production_data_ready": automation_production_data_ready,
         "dry_run_db_sentinel": db_sentinel,
-        "safe_to_enable_timers": not blockers and not warnings and db_sentinel["ok"],
+        "retired_timer_routes_ok": all(
+            payload.get("route_status") != "retired" or (payload["retired_410"] and payload["retired_payload_ok"])
+            for payload in results.values()
+        ),
+        "active_timer_routes_ok": all(
+            payload.get("route_status") != "active"
+            or (payload["route_not_404"] and payload["auth_guard_present"] and payload["dry_run_or_noop_available"] and payload["dry_run_noop"])
+            for payload in results.values()
+        ),
+        "safe_to_enable_timers": False,
+        "safe_to_enable_active_timers": not blockers and not warnings and db_sentinel["ok"],
         "recommendation": "READY_TO_ENABLE_TIMERS_AFTER_SERVER_ENV_TOKEN_VERIFICATION" if not blockers and not warnings else "TIMER_ROUTE_GUARD_READY_WITH_SERVER_DATA_WARNING" if not blockers else "TIMER_ROUTES_NOT_READY",
     }
     return result
@@ -230,6 +286,9 @@ def write_outputs(result: dict[str, Any], output_md: str | None, output_json: st
             "",
             f"- ok: {result['ok']}",
             f"- safe_to_enable_timers: {result['safe_to_enable_timers']}",
+            f"- safe_to_enable_active_timers: {result['safe_to_enable_active_timers']}",
+            f"- retired_timer_routes_ok: {result['retired_timer_routes_ok']}",
+            f"- active_timer_routes_ok: {result['active_timer_routes_ok']}",
             f"- automation_production_data_ready: {result['automation_production_data_ready']}",
             f"- blockers: {result['blockers']}",
             f"- warnings: {result['warnings']}",
@@ -237,13 +296,19 @@ def write_outputs(result: dict[str, Any], output_md: str | None, output_json: st
             "## Timer Routes",
         ]
         for route, payload in result["timer_routes"].items():
-            lines.append(
-                f"- {route}: unauth={payload['unauth_status']} "
-                f"header_dry_run={payload['header_dry_run_status']} "
-                f"body_dry_run={payload['body_dry_run_status']} "
-                f"query_dry_run={payload['query_dry_run_status']} "
-                f"guard={payload['auth_guard_present']}"
-            )
+            if payload.get("route_status") == "retired":
+                lines.append(
+                    f"- {route}: retired_410={payload['retired_410']} "
+                    f"retired_payload_ok={payload['retired_payload_ok']}"
+                )
+            else:
+                lines.append(
+                    f"- {route}: unauth={payload['unauth_status']} "
+                    f"header_dry_run={payload['header_dry_run_status']} "
+                    f"body_dry_run={payload['body_dry_run_status']} "
+                    f"query_dry_run={payload['query_dry_run_status']} "
+                    f"guard={payload['auth_guard_present']}"
+                )
         lines.extend(["", "## DB Sentinel", f"- status: {result['dry_run_db_sentinel']['status']}"])
         Path(output_md).write_text("\n".join(lines) + "\n")
 
