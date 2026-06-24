@@ -525,9 +525,6 @@ def process_channel_entry(command: ProcessChannelEntryCommand) -> dict[str, Any]
                 "welcome_message": {"attempted": False, "sent": False, "reason": "channel_disabled"},
                 "entry_tag": {"attempted": False, "applied": False, "reason": "channel_disabled"},
             },
-            "admission_results": [],
-            "program_member_written": False,
-            "workflow_triggered": False,
         }
 
     if command.dry_run:
@@ -541,23 +538,13 @@ def process_channel_entry(command: ProcessChannelEntryCommand) -> dict[str, Any]
 
     welcome = _send_welcome(command, channel=channel, scene=scene)
     tag = _apply_tag(command, channel=channel, scene=scene)
-    admission_results: list[dict[str, Any]] = []
-    member_written = False
-    admission_reason = "legacy_program_admission_retired"
-    workflow_triggered = any(bool(item.get("realtime_task_hook")) for item in admission_results)
-    admission_effect_status = "success" if member_written else ("skipped" if admission_reason == "no_active_binding" else "attempted")
-    _log_effect(command, effect_type="program_admission", idempotency_key=f"{corp_id}:{command.external_contact_id}:{channel_id}:{command.event_log_id or scene}:admission", status=admission_effect_status, channel_id=channel_id, scene_value=scene, reason=admission_reason, response_json={"admission_results": admission_results})
-    mode = "program_admission" if member_written else ("standalone_channel" if admission_reason == "no_active_binding" else "channel_baseline_only")
     return {
         "handled": True,
-        "mode": mode,
-        "reason": "program_admission_processed" if member_written else admission_reason,
+        "mode": "channel_baseline_only",
+        "reason": "channel_entry_baseline_recorded",
         "scene_match": match,
         "channel": channel_payload(channel),
         "baseline_effects": {"channel_contact": channel_contact, "welcome_message": welcome, "entry_tag": tag},
-        "admission_results": admission_results,
-        "program_member_written": bool(member_written),
-        "workflow_triggered": bool(workflow_triggered),
         "channel_contact": channel_contact,
         "welcome_message": welcome,
         "entry_tag": tag,
@@ -630,10 +617,7 @@ def diagnose_channel_runtime(query: DiagnoseChannelRuntimeQuery) -> dict[str, An
         "entry_tag_configured": bool(text((channel or {}).get("entry_tag_id"))),
         "recent_wecom_external_contact_event_logs": repo.list_recent_events(text(query.scene_value), limit=20) if text(query.scene_value) else [],
         "recent_automation_channel_entry_effect_log": effects,
-        "active_bindings": [],
-        "bound_program_status": [],
         "expected_baseline_effects": {"channel_contact": bool(channel and channel_enabled(channel)), "welcome_message": bool(text((channel or {}).get("welcome_message"))), "entry_tag": bool(text((channel or {}).get("entry_tag_id")))},
-        "expected_program_admission_result": "legacy_program_admission_retired",
         "real_wecom_adapter_enabled": adapter["real_wecom_adapter_enabled"],
         "real_wecom_adapter_reason": adapter["real_wecom_adapter_reason"],
         "can_send_welcome": adapter["can_send_welcome"],
@@ -655,7 +639,6 @@ def dry_run_channel_entry(command: ProcessChannelEntryCommand) -> dict[str, Any]
     baseline = result.get("baseline_effects") or {}
     result["would_send_welcome"] = bool((baseline.get("welcome_message") or {}).get("request_payload"))
     result["would_apply_tag"] = bool((baseline.get("entry_tag") or {}).get("request_payload"))
-    result["would_write_member"] = False
     return result
 
 

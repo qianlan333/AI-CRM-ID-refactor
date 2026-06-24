@@ -53,14 +53,11 @@ class RuntimeHarness:
         }
         self.aliases: dict[str, dict] = {}
         self.historical = {}
-        self.bindings = {101: [{"id": 201, "program_id": 301, "program_status": "active"}]}
         self.effect_success: set[tuple[str, str]] = set()
         self.effect_logs: list[dict] = []
         self.contacts: list[dict] = []
         self.tags: set[tuple[str, str, str]] = set()
         self.tag_snapshots: list[dict] = []
-        self.members: dict[tuple[int, str], dict] = {}
-        self.admission_attempts: list[dict] = []
         self.events = {
             9001: {
                 "id": 9001,
@@ -170,74 +167,6 @@ class RuntimeHarness:
             self.effect_success.add((kwargs["effect_type"], kwargs["idempotency_key"]))
         return row
 
-    def upsert_member(self, **kwargs):
-        key = (kwargs["program_id"], kwargs["external_contact_id"])
-        self.members[key] = {"id": len(self.members) + 1, **kwargs}
-        return self.members[key]
-
-    def insert_attempt(self, **kwargs):
-        row = {"id": len(self.admission_attempts) + 1, **kwargs}
-        self.admission_attempts.append(row)
-        return row
-
-    def admit_program_binding(self, **kwargs):
-        member = self.upsert_member(
-            program_id=kwargs["program_id"],
-            channel_id=kwargs["channel_id"],
-            binding_id=kwargs["binding_id"],
-            external_contact_id=kwargs["external_contact_id"],
-            payload=kwargs["trigger_payload"],
-        )
-        attempt = self.insert_attempt(
-            program_id=kwargs["program_id"],
-            channel_id=kwargs["channel_id"],
-            binding_id=kwargs["binding_id"],
-            external_contact_id=kwargs["external_contact_id"],
-            trigger_type=kwargs["trigger_type"],
-            trigger_event_id=str((kwargs["trigger_payload"] or {}).get("event_log_id") or ""),
-            trigger_payload_json=kwargs["trigger_payload"],
-            admission_status="accepted",
-            entry_reason="audience_entry_rule_passed",
-        )
-        return {
-            "admission_status": "accepted",
-            "accepted": True,
-            "reason": "audience_entry_rule_passed",
-            "program_member": member,
-            "legacy_member": {"id": 501, "external_contact_id": kwargs["external_contact_id"]},
-            "admission_attempt": attempt,
-            "audience_entry_id": 601,
-            "audience_code": "operating",
-            "entry_reason": "audience_entry_rule_passed",
-            "realtime_task_hook": {"ok": True},
-            "realtime_operation_tasks_ran": 1,
-            "realtime_operation_tasks_enqueued_count": 1,
-        }
-
-    def process_runtime_event(self, *, channel_id: int, external_userid: str, event_log_id: int | None, payload_json: dict):
-        bindings = list(self.bindings.get(int(channel_id), []))
-        if not bindings:
-            return {"processed": [], "reason": "channel_without_active_binding"}
-        processed = []
-        for binding in bindings:
-            admission = self.admit_program_binding(
-                program_id=int(binding.get("program_id") or 0),
-                channel_id=int(channel_id),
-                binding_id=int(binding.get("id") or 0),
-                external_contact_id=external_userid,
-                trigger_type=str(payload_json.get("trigger_type") or "add_external_contact"),
-                trigger_payload={**dict(payload_json or {}), "event_log_id": event_log_id},
-            )
-            processed.append(
-                {
-                    "membership": {"program_id": int(binding.get("program_id") or 0), "current_stage": admission["audience_code"]},
-                    "legacy_projection": admission["program_member"],
-                    "stage_entry": {"entry_reason": admission["entry_reason"]},
-                    "counts": {"planned": admission["realtime_operation_tasks_ran"], "enqueued": admission["realtime_operation_tasks_enqueued_count"]},
-                }
-            )
-        return {"processed": processed, "reason": "processed"}
-
     def save_tag_snapshot(self, owner_staff_id, external_contact_id, tag_ids, tag_names):
         for tag_id in tag_ids:
             self.tags.add((owner_staff_id, external_contact_id, tag_id))
@@ -265,11 +194,11 @@ def test_realistic_active_channel_flow_has_qr_alias_effects_without_legacy_membe
     result = process_channel_entry(_command())
 
     assert result["mode"] == "channel_baseline_only"
-    assert result["reason"] == "legacy_program_admission_retired"
+    assert result["reason"] == "channel_entry_baseline_recorded"
     assert result["scene_match"]["match_type"] == "qrcode_asset_active"
-    assert result["program_member_written"] is False
-    assert result["workflow_triggered"] is False
-    assert result["admission_results"] == []
+    assert "program_member_written" not in result
+    assert "workflow_triggered" not in result
+    assert "admission_results" not in result
     assert runtime.aliases["scene-current"]["config_id"] == "config-101"
     assert runtime.contacts[0]["owner_staff_id"] == "owner-a"
     assert result["welcome_message"]["queued"] is True
@@ -278,11 +207,10 @@ def test_realistic_active_channel_flow_has_qr_alias_effects_without_legacy_membe
     assert result["entry_tag"]["real_external_call_executed"] is False
     assert runtime.welcome_calls == []
     assert runtime.tag_calls == []
-    assert {row["effect_type"] for row in runtime.effect_logs} >= {"channel_contact", "welcome_message", "entry_tag", "program_admission"}
+    assert {row["effect_type"] for row in runtime.effect_logs} >= {"channel_contact", "welcome_message", "entry_tag"}
     assert any(row["effect_type"] == "welcome_message" and row["status"] == "queued" for row in runtime.effect_logs)
     assert any(row["effect_type"] == "entry_tag" and row["status"] == "queued" for row in runtime.effect_logs)
-    assert any(row["effect_type"] == "program_admission" and row["reason"] == "legacy_program_admission_retired" for row in runtime.effect_logs)
-    assert runtime.members == {}
+    assert all(row["effect_type"] != "program_admission" for row in runtime.effect_logs)
 
 
 def test_effect_log_json_payload_accepts_database_scalar_types():
@@ -310,24 +238,22 @@ def test_channel_contact_db_timestamps_do_not_block_baseline_effects(runtime):
     assert result["handled"] is True
     assert result["welcome_message"]["queued"] is True
     assert result["entry_tag"]["queued"] is True
-    assert result["program_member_written"] is False
+    assert "program_member_written" not in result
     channel_contact_effect = next(row for row in runtime.effect_logs if row["effect_type"] == "channel_contact")
     assert channel_contact_effect["response_json"]["created_at"] == "2026-05-31T15:35:05+00:00"
 
 
 def test_no_binding_runs_standalone_baseline(runtime):
-    runtime.bindings[101] = []
-
     result = process_channel_entry(_command(external="wm-standalone"))
 
     assert result["mode"] == "channel_baseline_only"
-    assert result["reason"] == "legacy_program_admission_retired"
-    assert result["program_member_written"] is False
+    assert result["reason"] == "channel_entry_baseline_recorded"
+    assert "program_member_written" not in result
     assert result["welcome_message"]["queued"] is True
     assert result["entry_tag"]["queued"] is True
     assert runtime.welcome_calls == []
     assert runtime.tag_calls == []
-    assert any(row["effect_type"] == "program_admission" and row["reason"] == "legacy_program_admission_retired" for row in runtime.effect_logs)
+    assert all(row["effect_type"] != "program_admission" for row in runtime.effect_logs)
 
 
 def test_scene_alias_is_primary_and_updates_last_seen(runtime):
@@ -355,21 +281,18 @@ def test_historical_fallback_is_diagnostic_only(runtime):
     assert "scene-vote" not in runtime.aliases
 
 
-def test_archived_program_binding_is_ignored_after_legacy_admission_retirement(runtime):
-    runtime.bindings[101] = [{"id": 202, "program_id": 302, "program_status": "archived"}]
-
+def test_channel_baseline_does_not_depend_on_program_binding_state(runtime):
     result = process_channel_entry(_command(external="wm-archived"))
 
     assert result["mode"] == "channel_baseline_only"
-    assert result["reason"] == "legacy_program_admission_retired"
-    assert result["program_member_written"] is False
-    assert result["workflow_triggered"] is False
+    assert result["reason"] == "channel_entry_baseline_recorded"
+    assert "program_member_written" not in result
+    assert "workflow_triggered" not in result
     assert result["welcome_message"]["queued"] is True
     assert result["entry_tag"]["queued"] is True
     assert runtime.welcome_calls == []
     assert runtime.tag_calls == []
-    assert runtime.members == {}
-    assert runtime.admission_attempts == []
+    assert all(row["effect_type"] != "program_admission" for row in runtime.effect_logs)
 
 
 def test_disabled_channel_writes_skipped_diagnostics_without_side_effects(runtime):
@@ -381,7 +304,6 @@ def test_disabled_channel_writes_skipped_diagnostics_without_side_effects(runtim
     assert result["reason"] == "channel_disabled"
     assert runtime.welcome_calls == []
     assert runtime.tag_calls == []
-    assert runtime.members == {}
     assert {row["reason"] for row in runtime.effect_logs} == {"channel_disabled"}
 
 
@@ -390,7 +312,7 @@ def test_missing_welcome_code_does_not_block_tag_or_channel_entry(runtime):
 
     assert result["welcome_message"]["reason"] == "welcome_code_missing"
     assert result["entry_tag"]["queued"] is True
-    assert result["program_member_written"] is False
+    assert "program_member_written" not in result
     assert runtime.welcome_calls == []
     assert runtime.tag_calls == []
 
@@ -404,7 +326,6 @@ def test_duplicate_welcome_and_tag_are_idempotent(runtime):
     assert second["entry_tag"]["queued"] is True
     assert len(runtime.welcome_calls) == 0
     assert len(runtime.tag_calls) == 0
-    assert len(runtime.members) == 0
 
 
 def test_follow_user_dimension_is_not_hardcoded(runtime):
@@ -490,13 +411,11 @@ def test_diagnosis_dry_run_and_repair(runtime):
     assert diagnosis["entry_tag_configured"] is True
     assert diagnosis["recent_automation_channel_entry_effect_log"]
 
-    before_members = dict(runtime.members)
     dry = dry_run_channel_entry(_command(external="wm-dry-run", welcome_code="welcome-dry-run"))
     assert dry["dry_run"] is True
     assert dry["would_send_welcome"] is True
     assert dry["would_apply_tag"] is True
-    assert dry["would_write_member"] is False
-    assert runtime.members == before_members
+    assert "would_write_member" not in dry
 
     repair = repair_channel_entry(RepairChannelEntryCommand(event_log_id=9001))
     assert repair["handled"] is True
