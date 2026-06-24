@@ -12,6 +12,7 @@ TEMPLATE = ROOT / "aicrm_next/admin_shell/templates/admin_shell/p1_group_ops_wor
 ROUTES = ROOT / "aicrm_next/admin_shell/routes.py"
 NAVIGATION = ROOT / "aicrm_next/admin_shell/navigation.py"
 WORKSPACE_TS_DIR = ROOT / "frontend/admin/p1_group_ops_workspace"
+READ_ONLY_CLOSEOUT = ROOT / "docs/reports/p1_group_ops_workspace_read_only_closeout_20260624.md"
 
 
 @pytest.fixture()
@@ -261,3 +262,49 @@ def test_p1_group_ops_workspace_existing_readonly_api_contract(frontend_client):
     assert push_payload["ok"] is True
     assert push_payload["route_owner"] == "ai_crm_next"
     assert push_payload["real_external_call_executed"] is False
+
+
+def test_p1_group_ops_workspace_read_only_closeout_report_contract():
+    report = READ_ONLY_CLOSEOUT.read_text(encoding="utf-8")
+
+    for expected in [
+        "READ_ONLY_WORKSPACE_READY",
+        "DRAFT_PERSISTENCE_NOT_READY",
+        "EXECUTION_NOT_READY",
+        "PASS_90_PLUS_NOT_CLAIMED",
+        "/admin/p1/group-ops-workspace",
+        "/admin/automation-conversion/group-ops/ui",
+        "#1369",
+        "#1370",
+        "#1372",
+        "#1374",
+        "#1375",
+        "#1376",
+        "#1377",
+        "#1379",
+        "preview-only=true",
+        "production_write=false",
+        "real_external_call=false",
+        "can_claim_pass_90_plus=false",
+        "preview bundle cannot execute",
+        "copied summary cannot execute",
+        "P1_READY_WITH_EXCEPTIONS",
+        "PASS_90_PLUS",
+        "backend draft model",
+        "DB migration plan",
+        "idempotency key design",
+        "audit log design",
+        "approval gate design",
+        "receiver allowlist gate design",
+        "gray-window gate design",
+        "Push Center bridge design",
+        "external-effect boundary preservation",
+        "P1 Group Ops Workspace Draft Persistence Design RFC",
+        "npm run build:frontend",
+        "npm run typecheck",
+        "npm run test:frontend",
+        "scripts/diagnose_business_closure_acceptance.py --scenario all",
+        "bash scripts/ci/run_architecture_gates.sh",
+        "Frontend Skill Checklist",
+    ]:
+        assert expected in report
