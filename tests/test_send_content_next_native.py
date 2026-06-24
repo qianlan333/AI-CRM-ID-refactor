@@ -114,15 +114,10 @@ def test_material_picker_rejects_unknown_type_with_json(client) -> None:
         ("get", "/api/admin/automation-conversion/behavior-segment-rules"),
     ],
 )
-def test_legacy_automation_task_content_routes_are_retired(client, method: str, path: str) -> None:
+def test_legacy_automation_task_content_routes_are_removed(client, method: str, path: str) -> None:
     if method == "get":
         response = client.get(path)
     else:
         response = getattr(client, method)(path, json={"content_package": {"content_text": "旧配置"}})
 
-    assert response.status_code == 410
-    assert response.headers["X-AICRM-Legacy-Automation-Retired"] == "true"
-    body = response.json()
-    assert body["ok"] is False
-    assert body["error"] == "legacy_automation_task_authoring_retired"
-    assert body["automation_runtime_executed"] is False
+    assert response.status_code == 404

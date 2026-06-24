@@ -29,13 +29,7 @@ def test_jobs_run_due_routes_are_retired(monkeypatch):
         (checker.ACTIVE_JOBS_ROUTE, {"dry_run": False, "jobs": ["sop"], "operator": "checker"}),
     ]:
         response = client.post(route, json=body, headers=_auth_headers())
-        assert response.status_code == 410, route
-        payload = response.json()
-        assert payload["ok"] is False
-        assert payload["error"] == "legacy_automation_jobs_runner_retired"
-        assert payload["real_external_call_executed"] is False
-        assert payload["automation_runtime_executed"] is False
-        assert response.headers["X-AICRM-Legacy-Automation-Retired"] == "true"
+        assert response.status_code == 404, route
         assert "X-AICRM-Compatibility-Facade" not in response.headers
 
 
@@ -71,8 +65,7 @@ def test_retired_jobs_route_does_not_expose_legacy_auth_path(monkeypatch):
 
     response = client.post(checker.ACTIVE_JOBS_ROUTE, json={"preview": True})
 
-    assert response.status_code == 410
-    assert response.json()["error"] == "legacy_automation_jobs_runner_retired"
+    assert response.status_code == 404
 
 
 def test_checker_returns_ok_and_keeps_local_sentinel_stable(monkeypatch):
@@ -105,7 +98,7 @@ def test_checker_detects_sentinel_change(monkeypatch):
             if not headers:
                 return FakeResponse(401, {})
             if route == checker.ACTIVE_JOBS_ROUTE or route == checker.ACTIVE_JOBS_PREVIEW_ROUTE:
-                return FakeResponse(410, {"ok": False, "error": "legacy_automation_jobs_runner_retired", "real_external_call_executed": False, "automation_runtime_executed": False})
+                return FakeResponse(404, {})
             if route.endswith("/preview") or (json or {}).get("preview"):
                 return FakeResponse(200, _noop_payload(route, preview=True))
             if (json or {}).get("dry_run"):

@@ -98,9 +98,7 @@ def test_next_sidebar_detail_dependencies_exclude_retired_automation_member(monk
     member_response = client.get("/api/admin/automation-conversion/member")
     tags_response = client.get("/api/admin/customers/profile/tags")
 
-    assert member_response.status_code == 410
-    assert member_response.headers["X-AICRM-Route-Owner"] == "ai_crm_next"
-    assert member_response.json()["error"] == "legacy_automation_member_action_retired"
+    assert member_response.status_code == 404
     assert tags_response.status_code == 400
     assert tags_response.json()["error"] == "external_userid is required"
 

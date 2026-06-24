@@ -304,22 +304,29 @@ def test_automation_program_api_routes_are_retired(monkeypatch):
     monkeypatch.setenv("SECRET_KEY", "admin-pages-real-data-binding-test")
     client = TestClient(create_app(), raise_server_exceptions=False)
 
-    for method, path in [
+    retired_program_paths = [
         ("get", "/api/admin/automation-conversion/programs"),
-        ("get", "/api/admin/automation-conversion/contract"),
-        ("get", "/api/admin/automation-conversion/overview"),
-        ("get", "/api/admin/automation-conversion/pools"),
-        ("get", "/api/admin/automation-conversion/execution-records"),
         ("post", "/api/admin/automation-conversion/programs/7/channel-bindings"),
-        ("post", "/api/admin/automation-conversion/tasks/run-due"),
-        ("post", "/api/admin/automation-conversion/execution-items/12/send-via-bazhuayu"),
-        ("post", "/api/admin/automation-conversion/jobs/run-due"),
-    ]:
+    ]
+    for method, path in retired_program_paths:
         response = getattr(client, method)(path, cookies=_admin_cookies())
         assert response.status_code == 410, path
         error = response.json()["error"]
         assert error.startswith(("legacy_automation_", "legacy_program_"))
         assert error.endswith("_retired")
+
+    removed_action_paths = [
+        ("get", "/api/admin/automation-conversion/contract"),
+        ("get", "/api/admin/automation-conversion/overview"),
+        ("get", "/api/admin/automation-conversion/pools"),
+        ("get", "/api/admin/automation-conversion/execution-records"),
+        ("post", "/api/admin/automation-conversion/tasks/run-due"),
+        ("post", "/api/admin/automation-conversion/execution-items/12/send-via-bazhuayu"),
+        ("post", "/api/admin/automation-conversion/jobs/run-due"),
+    ]
+    for method, path in removed_action_paths:
+        response = getattr(client, method)(path, cookies=_admin_cookies())
+        assert response.status_code == 404, path
 
 
 def test_admin_login_route_is_next_owned_when_production_facade_is_enabled(monkeypatch):

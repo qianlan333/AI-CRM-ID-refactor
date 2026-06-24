@@ -19,7 +19,7 @@ def _auth_headers():
     return {"Authorization": "Bearer probe-token"}
 
 
-def test_jobs_scheduled_safe_mode_route_is_retired(monkeypatch):
+def test_jobs_scheduled_safe_mode_route_is_removed(monkeypatch):
     client = _production_client(monkeypatch)
 
     for expected_due_count in (0, 1):
@@ -35,12 +35,7 @@ def test_jobs_scheduled_safe_mode_route_is_retired(monkeypatch):
             headers=_auth_headers(),
         )
 
-        assert response.status_code == 410
-        payload = response.json()
-        assert payload["ok"] is False
-        assert payload["error"] == "legacy_automation_jobs_runner_retired"
-        assert payload["real_external_call_executed"] is False
-        assert payload["automation_runtime_executed"] is False
+        assert response.status_code == 404
 
 
 def test_campaign_scheduled_safe_mode_no_due_returns_idle_200(monkeypatch):
@@ -96,8 +91,7 @@ def test_raw_true_execution_without_allowlist_still_returns_409(monkeypatch):
     jobs = client.post(checker.ACTIVE_JOBS_ROUTE, json={"operator": "manual", "jobs": ["sop"], "dry_run": False}, headers=_auth_headers())
     campaign = client.post(checker.CAMPAIGN_ROUTE, json={"operator": "manual", "batch_size": 1, "dry_run": False}, headers=_auth_headers())
 
-    assert jobs.status_code == 410
-    assert jobs.json()["error"] == "legacy_automation_jobs_runner_retired"
+    assert jobs.status_code == 404
     assert campaign.status_code == 409
     assert campaign.json()["error_code"] == "campaign_run_due_allowlist_required"
 
@@ -130,7 +124,7 @@ def test_checker_detects_sentinel_change(monkeypatch):
     class FakeClient:
         def post(self, route, json=None, headers=None, follow_redirects=False):
             if route == checker.ACTIVE_JOBS_ROUTE:
-                return FakeResponse(410, {"ok": False, "error": "legacy_automation_jobs_runner_retired", "real_external_call_executed": False, "automation_runtime_executed": False})
+                return FakeResponse(404, {})
             if (json or {}).get("scheduled_safe_mode"):
                 status = 409 if (json or {}).get("expected_due_count") else 200
                 state = "blocked_not_executed" if status == 409 else "idle"

@@ -96,11 +96,9 @@ def test_sidebar_api_routes_stay_next_native(monkeypatch) -> None:
         assert "X-AICRM-Compatibility-Facade" not in response.headers
 
 
-def test_retired_automation_member_route_is_not_sidebar_dependency(monkeypatch) -> None:
+def test_retired_automation_member_route_is_removed(monkeypatch) -> None:
     client = _client(monkeypatch)
 
     response = client.get("/api/admin/automation-conversion/member")
 
-    assert response.status_code == 410
-    assert response.headers["X-AICRM-Route-Owner"] == "ai_crm_next"
-    assert response.json()["error"] == "legacy_automation_member_action_retired"
+    assert response.status_code == 404

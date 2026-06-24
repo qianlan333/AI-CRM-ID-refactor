@@ -26,11 +26,9 @@ def test_profile_segment_template_routes_are_not_registered() -> None:
     assert "/api/admin/automation-conversion/profile-segment-templates/options" not in registered_paths
 
 
-def test_behavior_segment_rules_route_remains_retired() -> None:
+def test_behavior_segment_rules_route_is_removed() -> None:
     client = TestClient(create_app(), raise_server_exceptions=False)
 
     response = client.get("/api/admin/automation-conversion/behavior-segment-rules")
 
-    assert response.status_code == 410
-    assert response.headers["X-AICRM-Legacy-Automation-Retired"] == "true"
-    assert response.json()["error"] == "legacy_automation_task_authoring_retired"
+    assert response.status_code == 404

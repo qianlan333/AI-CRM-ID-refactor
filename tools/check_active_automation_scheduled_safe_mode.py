@@ -30,7 +30,7 @@ from tools.check_active_automation_run_due_guardrails import (
     CAMPAIGN_ROUTE,
     DB_SENTINEL_QUERIES,
     RETIRED_TIMER_UNITS,
-    _retired_jobs_payload_ok,
+    _removed_jobs_route_ok,
     _is_local_probe_database,
     _sentinel_comparison,
     production_config_modified,
@@ -216,8 +216,8 @@ def run_check() -> dict[str, Any]:
 
     blockers: list[str] = list(docs_blockers)
     for key in ("jobs_retired_idle", "jobs_retired_due", "jobs_raw_without_allowlist"):
-        if responses[key]["status"] != 410 or not _retired_jobs_payload_ok(responses[key]["payload"]):
-            blockers.append(f"{key}_not_retired_410")
+        if not _removed_jobs_route_ok(responses[key]["status"]):
+            blockers.append(f"{key}_not_removed_404")
     payload = responses["campaign_idle"]["payload"]
     if responses["campaign_idle"]["status"] != 200 or payload.get("status") != "idle":
         blockers.append("campaign_idle_not_idle_200")
@@ -245,7 +245,7 @@ def run_check() -> dict[str, Any]:
         "blockers": blockers,
         "responses": responses,
         "jobs_route_retired": all(
-            responses[key]["status"] == 410 and _retired_jobs_payload_ok(responses[key]["payload"])
+            _removed_jobs_route_ok(responses[key]["status"])
             for key in ("jobs_retired_idle", "jobs_retired_due", "jobs_raw_without_allowlist")
         ),
         "scheduled_safe_mode_idle_ok": responses["campaign_idle"]["status"] == 200 and responses["campaign_idle"]["payload"].get("status") == "idle",

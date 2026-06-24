@@ -167,13 +167,8 @@ def _noop_payload_ok(payload: dict[str, Any], *, expected_preview: bool | None =
     return True
 
 
-def _retired_jobs_payload_ok(payload: dict[str, Any]) -> bool:
-    return (
-        payload.get("ok") is False
-        and payload.get("error") == "legacy_automation_jobs_runner_retired"
-        and payload.get("real_external_call_executed") is False
-        and payload.get("automation_runtime_executed") is False
-    )
+def _removed_jobs_route_ok(status_code: int) -> bool:
+    return int(status_code or 0) == 404
 
 
 def _plan_only_blocked_ok(payload: dict[str, Any]) -> bool:
@@ -267,8 +262,8 @@ def run_check() -> dict[str, Any]:
 
     blockers: list[str] = []
     for key in ("jobs_dry_run", "jobs_preview", "jobs_preview_endpoint", "jobs_without_allowlist"):
-        if responses[key]["status"] != 410 or not _retired_jobs_payload_ok(responses[key]["payload"]):
-            blockers.append(f"{key}_not_retired_410")
+        if not _removed_jobs_route_ok(responses[key]["status"]):
+            blockers.append(f"{key}_not_removed_404")
     if responses["campaign_dry_run"]["status"] != 200 or not _noop_payload_ok(responses["campaign_dry_run"]["payload"]):
         blockers.append("campaign_dry_run_not_noop")
     for key in ("campaign_preview", "campaign_preview_endpoint"):
@@ -293,7 +288,7 @@ def run_check() -> dict[str, Any]:
         "blockers": blockers,
         "responses": responses,
         "jobs_routes_retired": all(
-            responses[key]["status"] == 410 and _retired_jobs_payload_ok(responses[key]["payload"])
+            _removed_jobs_route_ok(responses[key]["status"])
             for key in ("jobs_dry_run", "jobs_preview", "jobs_preview_endpoint", "jobs_without_allowlist")
         ),
         "dry_run_noop": _noop_payload_ok(responses["campaign_dry_run"]["payload"]),
@@ -303,7 +298,7 @@ def run_check() -> dict[str, Any]:
         ),
         "true_execution_without_allowlist_rejected": "campaign_without_allowlist_not_rejected" not in blockers,
         "bounded_execution_parameters": {
-            "jobs": "retired_410",
+            "jobs": "removed_404",
             "campaigns": ["batch_size", "allow_campaign_ids", "max_dispatch_count"],
         },
         "db_sentinel": db_sentinel,
