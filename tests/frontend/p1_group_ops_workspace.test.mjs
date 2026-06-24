@@ -57,21 +57,27 @@ import {
 import * as WorkspaceGovernanceApi from "../../aicrm_next/frontend_compat/static/admin_console/p1/p1_group_ops_workspace/workspace_governance_api.js";
 import {
   assertGovernanceResponseSafe,
+  assertPushCenterBridgeResponseSafe,
   assertWorkspaceGovernanceStepPayloadSafe,
+  assertWorkspacePushCenterBridgePayloadSafe,
   approveGovernanceStep,
+  bridgeGovernanceToPushCenter,
   buildApproveGovernanceStepPayload,
   buildExpireGovernanceReviewPayload,
+  buildPushCenterBridgePayload,
   buildRejectGovernanceStepPayload,
   assertWorkspaceGovernancePayloadSafe,
   buildWorkspaceGovernanceRequestPayload,
   expireGovernanceReview,
   getDraftGovernance,
   getGovernanceReview,
+  getGovernancePushCenterBridge,
   isGovernanceConflictError,
   rejectGovernanceStep,
   requestGovernance,
   stableGovernanceStepIdempotencyKey,
-  stableGovernanceIdempotencyKey
+  stableGovernanceIdempotencyKey,
+  stablePushCenterBridgeIdempotencyKey
 } from "../../aicrm_next/frontend_compat/static/admin_console/p1/p1_group_ops_workspace/workspace_governance_api.js";
 import { P1_GROUP_OPS_WORKSPACE_FIXTURE } from "../../aicrm_next/frontend_compat/static/admin_console/p1/p1_group_ops_workspace/workspace_fixture.js";
 import {
@@ -175,7 +181,7 @@ assert.equal(root.innerHTML.includes("approved</dt><dd>false"), true);
 assert.equal(root.innerHTML.includes("data-draft-persistence=\"frontend_save_only\""), true);
 assert.equal(root.innerHTML.includes("data-push-center-job-created=\"false\""), true);
 assert.equal(root.innerHTML.includes("data-external-effect-job-created=\"false\""), true);
-assert.equal(root.innerHTML.includes("不会创建 Push Center job"), true);
+assert.equal(root.innerHTML.includes("Push Center bridge 仅在治理通过后创建 pending projection"), true);
 assert.equal(root.innerHTML.includes("data-multi-selected=\"false\""), true);
 assert.equal(root.innerHTML.includes("Plan detail"), true);
 assert.equal(root.innerHTML.includes("Selected preview result"), true);
@@ -193,12 +199,18 @@ assert.equal(root.innerHTML.includes("ready_for_review 不等于 approved"), tru
 assert.equal(root.innerHTML.includes("Governance panel"), true);
 assert.equal(root.innerHTML.includes("Request governance"), true);
 assert.equal(root.innerHTML.includes("Refresh governance"), true);
-assert.equal(root.innerHTML.includes("data-governance-panel=\"frontend_step_integration\""), true);
+assert.equal(root.innerHTML.includes("Bridge to Push Center"), true);
+assert.equal(root.innerHTML.includes("Refresh bridge status"), true);
+assert.equal(root.innerHTML.includes("data-governance-panel=\"frontend_bridge_integration\""), true);
+assert.equal(root.innerHTML.includes("data-push-center-bridge-panel=\"true\""), true);
 assert.equal(root.innerHTML.includes("data-workspace-request-governance=\"true\" disabled"), true);
+assert.equal(root.innerHTML.includes("data-workspace-bridge-push-center=\"true\" disabled"), true);
 assert.equal(root.innerHTML.includes("governance request 不等于 approval"), true);
 assert.equal(root.innerHTML.includes("pending steps 不等于 approved"), true);
 assert.equal(root.innerHTML.includes("execution_status</dt><dd>not_execution"), true);
 assert.equal(root.innerHTML.includes("push_center_job_created</dt><dd>false"), true);
+assert.equal(root.innerHTML.includes("Bridge 只进入 Push Center pending，不会发送"), true);
+assert.equal(root.innerHTML.includes("push_center_pending_not_sent"), false);
 assert.equal(root.innerHTML.includes("external_effect_job_created</dt><dd>false"), true);
 assert.equal(root.innerHTML.includes("broadcast_job_created</dt><dd>false"), true);
 assert.equal(root.innerHTML.includes("internal_event_created</dt><dd>false"), true);
@@ -415,6 +427,80 @@ assert.equal(readyReviewRoot.innerHTML.includes("window_status</dt><dd>pending")
 assert.equal(readyReviewRoot.innerHTML.includes("这不是 approval"), true);
 assertNoSensitiveFixtureStrings(readyReviewRoot.innerHTML);
 
+const governanceApprovedReviewView = {
+  review_id: "gowg_safe",
+  draft_id: "gowd_safe",
+  review_status: "governance_approved",
+  snapshot_hash: "snapshot_safe",
+  steps: [
+    { step_id: "gows_operator", step_type: "operator_approval", step_status: "approved", actor_metadata: { actor_label_present: true }, updated_at: "2026-06-24T12:00:00Z" },
+    { step_id: "gows_allowlist", step_type: "receiver_allowlist", step_status: "approved", actor_metadata: { actor_id_present: true }, updated_at: "2026-06-24T12:01:00Z" },
+    { step_id: "gows_gray", step_type: "gray_window", step_status: "approved", actor_metadata: { actor_label_present: true }, updated_at: "2026-06-24T12:02:00Z" }
+  ],
+  allowlist_summary: { hash: "allowlist-safe-hash", count: 2, source_reference_summary: { summary_only: true } },
+  gray_window: {
+    start_at: "2026-06-24T09:00:00+08:00",
+    end_at: "2026-06-25T10:00:00+08:00",
+    timezone: "Asia/Shanghai",
+    window_status: "approved"
+  },
+  approved: false,
+  execution_status: "not_execution",
+  push_center_job_created: false,
+  external_effect_job_created: false,
+  broadcast_job_created: false,
+  internal_event_created: false,
+  real_external_call: false,
+  can_claim_pass_90_plus: false
+};
+const bridgeReadyState = updateWorkspaceViewState(readyReviewState, {
+  currentGovernanceReviewId: "gowg_safe",
+  currentGovernanceStatus: "governance_approved",
+  currentGovernanceReview: governanceApprovedReviewView,
+  governanceRequestStatus: "requested",
+  governanceRequestMessage: "三个 governance steps 已 approved，状态为 governance_approved；仍为 not_execution。"
+});
+const bridgeReadyRoot = { innerHTML: "" };
+renderP1GroupOpsWorkspace(bridgeReadyRoot, fixture, bridgeReadyState);
+assert.equal(bridgeReadyRoot.innerHTML.includes("governance_approved</dt><dd>true"), true);
+assert.equal(bridgeReadyRoot.innerHTML.includes("data-workspace-bridge-push-center=\"true\" disabled"), false);
+assert.equal(bridgeReadyRoot.innerHTML.includes("push_center_bridge_payload_invalid"), false);
+assert.equal(bridgeReadyRoot.innerHTML.includes("Push Center bridge 仅适用于 governance_approved"), false);
+assertNoSensitiveFixtureStrings(bridgeReadyRoot.innerHTML);
+
+const bridgedState = updateWorkspaceViewState(bridgeReadyState, {
+  currentPushCenterBridge: {
+    review_id: "gowg_safe",
+    draft_id: "gowd_safe",
+    review_status: "governance_approved",
+    push_center_job_created: true,
+    push_center_job_id: "p1-gow-push-center:gowg_safe",
+    push_center_projection_id: "p1-gow-push-center:gowg_safe",
+    push_center_status: "pending",
+    execution_status: "push_center_pending_not_sent",
+    external_effect_job_created: false,
+    broadcast_job_created: false,
+    internal_event_created: false,
+    real_external_call: false,
+    can_claim_pass_90_plus: false
+  },
+  pushCenterBridgeStatus: "bridged",
+  pushCenterBridgeMessage: "Push Center bridge 已创建 pending projection；仍不是 sent/completed。"
+});
+const bridgedRoot = { innerHTML: "" };
+renderP1GroupOpsWorkspace(bridgedRoot, fixture, bridgedState);
+assert.equal(bridgedRoot.innerHTML.includes("push_center_job_created</dt><dd>true"), true);
+assert.equal(bridgedRoot.innerHTML.includes("push_center_status</dt><dd>pending"), true);
+assert.equal(bridgedRoot.innerHTML.includes("push_center_pending_not_sent"), true);
+assert.equal(bridgedRoot.innerHTML.includes("external_effect_job_created</dt><dd>false"), true);
+assert.equal(bridgedRoot.innerHTML.includes("broadcast_job_created</dt><dd>false"), true);
+assert.equal(bridgedRoot.innerHTML.includes("internal_event_created</dt><dd>false"), true);
+assert.equal(bridgedRoot.innerHTML.includes("data-workspace-bridge-push-center=\"true\" disabled"), true);
+assert.equal(bridgedRoot.innerHTML.includes("execution_status</dt><dd>sent"), false);
+assert.equal(bridgedRoot.innerHTML.includes("push_center_status</dt><dd>sent"), false);
+assert.equal(bridgedRoot.innerHTML.includes("execution_status</dt><dd>completed"), false);
+assertNoSensitiveFixtureStrings(bridgedRoot.innerHTML);
+
 const lanes = buildWorkspaceCanvasLanes(fixture, filterWorkspaceView(fixture, realViewState), realViewState);
 assert.deepEqual(lanes.map((lane) => lane.id), ["plans", "groups", "nodes", "executions", "push_center", "evidence"]);
 assert.equal(lanes.every((lane) => lane.cards.length === 1), true);
@@ -485,8 +571,9 @@ assert.equal(draftPayload.guardrail_summary.real_external_call, false);
 assert.equal(draftPayload.guardrail_summary.push_center_job_created, false);
 assert.equal(draftPayload.guardrail_summary.external_effect_job_created, false);
 assert.equal(draftPayload.guardrail_summary.can_claim_pass_90_plus, false);
-assert.equal(draftPayload.approval_requirements.request_review_not_implemented, true);
-assert.equal(draftPayload.approval_requirements.push_center_bridge_not_implemented, true);
+assert.equal(draftPayload.approval_requirements.request_review_required, true);
+assert.equal(draftPayload.approval_requirements.governance_review_required, true);
+assert.equal(draftPayload.approval_requirements.push_center_bridge_requires_governance_approved, true);
 assert.equal(draftPayload.items.length, 2);
 assert.equal(draftPayload.items.every((item) => ["plan", "evidence"].includes(item.item_type)), true);
 assertWorkspaceDraftPayloadSafe(draftPayload);
@@ -524,7 +611,9 @@ assertWorkspaceGovernancePayloadSafe(governancePayload);
 assert.equal(typeof WorkspaceGovernanceApi.approveGovernanceStep, "function");
 assert.equal(typeof WorkspaceGovernanceApi.rejectGovernanceStep, "function");
 assert.equal(typeof WorkspaceGovernanceApi.expireGovernanceReview, "function");
-assert.equal(Object.keys(WorkspaceGovernanceApi).some((name) => /bridge|execute|send|run/i.test(name)), false);
+assert.equal(typeof WorkspaceGovernanceApi.bridgeGovernanceToPushCenter, "function");
+assert.equal(typeof WorkspaceGovernanceApi.getGovernancePushCenterBridge, "function");
+assert.equal(Object.keys(WorkspaceGovernanceApi).some((name) => /execute|send|run/i.test(name)), false);
 for (const bait of [
   { sanitized_payload: { ["raw_" + "external_userid"]: "wrOgAAA001" } },
   { sanitized_payload: { contact: "13800138000" } },
@@ -562,11 +651,22 @@ const governanceReviewContext = {
 const operatorStepContext = { step_id: "gows_operator", step_type: "operator_approval", step_status: "pending" };
 const allowlistStepContext = { step_id: "gows_allowlist", step_type: "receiver_allowlist", step_status: "pending" };
 const grayWindowStepContext = { step_id: "gows_gray", step_type: "gray_window", step_status: "pending" };
+const governanceApprovedContext = {
+  ...governanceReviewContext,
+  review_status: "governance_approved",
+  snapshot_hash: "snapshot_safe",
+  gray_window: {
+    ...governanceReviewContext.gray_window,
+    window_status: "approved"
+  }
+};
 const operatorApprovePayload = buildApproveGovernanceStepPayload(governanceReviewContext, operatorStepContext, { approvalNote: "safe approval note" });
 const allowlistApprovePayload = buildApproveGovernanceStepPayload(governanceReviewContext, allowlistStepContext);
 const grayApprovePayload = buildApproveGovernanceStepPayload(governanceReviewContext, grayWindowStepContext);
 const rejectStepPayload = buildRejectGovernanceStepPayload(governanceReviewContext, operatorStepContext, { rejectReason: "safe reject reason" });
 const expireReviewPayload = buildExpireGovernanceReviewPayload(governanceReviewContext, { expireReason: "safe expire reason" });
+const bridgePayload = buildPushCenterBridgePayload(governanceApprovedContext);
+const bridgePayloadRepeat = buildPushCenterBridgePayload(governanceApprovedContext);
 assert.equal(operatorApprovePayload.idempotency_key.startsWith("p1-gow-step-approve:gowg_safe:gows_operator:pending:"), true);
 assert.equal(allowlistApprovePayload.allowlist_hash, "allowlist-safe-hash");
 assert.equal(allowlistApprovePayload.allowlist_count, 2);
@@ -575,7 +675,14 @@ assert.equal(rejectStepPayload.idempotency_key.startsWith("p1-gow-step-reject:go
 assert.equal(expireReviewPayload.idempotency_key.startsWith("p1-gow-review-expire:gowg_safe:approval_pending:"), true);
 assert.equal(stableGovernanceStepIdempotencyKey("approve", "review", "step", "pending", "hash"), "p1-gow-step-approve:review:step:pending:hash");
 assert.equal(stableGovernanceStepIdempotencyKey("expire", "review", "review", "approval_pending", "hash"), "p1-gow-review-expire:review:approval_pending:hash");
+assert.equal(bridgePayload.idempotency_key, bridgePayloadRepeat.idempotency_key);
+assert.equal(bridgePayload.idempotency_key.startsWith("p1-gow-push-center-bridge:gowg_safe:snapshot_safe:allowlist-safe-hash:"), true);
+assert.equal(stablePushCenterBridgeIdempotencyKey("review", "snapshot", "allowlist", "window"), "p1-gow-push-center-bridge:review:snapshot:allowlist:window");
+assert.equal(bridgePayload.client_snapshot_hash, "snapshot_safe");
+assert.equal(bridgePayload.allowlist_hash, "allowlist-safe-hash");
+assert.equal(bridgePayload.allowlist_count, 2);
 assertWorkspaceGovernanceStepPayloadSafe(operatorApprovePayload);
+assertWorkspacePushCenterBridgePayloadSafe(bridgePayload);
 for (const bait of [
   { approval_note: "raw_" + "receiver" },
   { reject_reason: "13800138000" },
@@ -583,6 +690,14 @@ for (const bait of [
   { allowlist_hash: "raw_" + "target" }
 ]) {
   assert.throws(() => assertWorkspaceGovernanceStepPayloadSafe({ ...operatorApprovePayload, ...bait }), /draft_payload_sensitive/);
+}
+for (const bait of [
+  { bridge_note: "raw_" + "receiver" },
+  { bridge_note: "13800138000" },
+  { allowlist_hash: "raw_" + "target" },
+  { gray_window_summary: { ...bridgePayload.gray_window_summary, ["Authorization".toLowerCase()]: "unsafe" } }
+]) {
+  assert.throws(() => assertWorkspacePushCenterBridgePayloadSafe({ ...bridgePayload, ...bait }), /draft_payload_sensitive/);
 }
 assert.throws(
   () => buildWorkspaceGovernanceRequestPayload("gowd_safe", "snapshot_safe", {
@@ -604,6 +719,7 @@ const requestJson = async (url, options = {}) => {
       operation: "request_governance",
       review_id: "gowg_safe",
       draft_id: "gowd_safe",
+      snapshot_hash: "snapshot_safe",
       review_status: "approval_pending",
       steps: [
         { step_id: "gows_operator", step_type: "operator_approval", step_status: "pending" },
@@ -641,6 +757,7 @@ const requestJson = async (url, options = {}) => {
       operation: "approve_governance_step",
       review_id: "gowg_safe",
       draft_id: "gowd_safe",
+      snapshot_hash: "snapshot_safe",
       review_status: "allowlist_pending",
       step_id: "gows_operator",
       step_type: "operator_approval",
@@ -672,6 +789,7 @@ const requestJson = async (url, options = {}) => {
       operation: "approve_governance_step",
       review_id: "gowg_safe",
       draft_id: "gowd_safe",
+      snapshot_hash: "snapshot_safe",
       review_status: "gray_window_pending",
       step_id: "gows_allowlist",
       step_type: "receiver_allowlist",
@@ -703,6 +821,7 @@ const requestJson = async (url, options = {}) => {
       operation: "approve_governance_step",
       review_id: "gowg_safe",
       draft_id: "gowd_safe",
+      snapshot_hash: "snapshot_safe",
       review_status: "governance_approved",
       step_id: "gows_gray",
       step_type: "gray_window",
@@ -734,6 +853,7 @@ const requestJson = async (url, options = {}) => {
       operation: "reject_governance_step",
       review_id: "gowg_safe",
       draft_id: "gowd_safe",
+      snapshot_hash: "snapshot_safe",
       review_status: "governance_rejected",
       step_id: "gows_operator",
       step_type: "operator_approval",
@@ -764,6 +884,7 @@ const requestJson = async (url, options = {}) => {
       operation: "expire_governance_review",
       review_id: "gowg_safe",
       draft_id: "gowd_safe",
+      snapshot_hash: "snapshot_safe",
       review_status: "governance_expired",
       steps: [
         { step_id: "gows_operator", step_type: "operator_approval", step_status: "expired" },
@@ -786,12 +907,85 @@ const requestJson = async (url, options = {}) => {
       execution_status: "not_execution"
     };
   }
+  if (options.method === "POST" && url.endsWith("/governance/gowg_safe/bridge-push-center")) {
+    return {
+      ok: true,
+      operation: "bridge_push_center",
+      review_id: "gowg_safe",
+      draft_id: "gowd_safe",
+      snapshot_hash: "snapshot_safe",
+      review_status: "governance_approved",
+      push_center_job_created: true,
+      push_center_job_id: "p1-gow-push-center:gowg_safe",
+      push_center_projection_id: "p1-gow-push-center:gowg_safe",
+      push_center_status: "pending",
+      push_center_metadata: {
+        source: "p1_group_ops_workspace",
+        draft_id: "gowd_safe",
+        review_id: "gowg_safe",
+        governance_status: "governance_approved",
+        snapshot_hash: "snapshot_safe",
+        allowlist_hash: "allowlist-safe-hash",
+        allowlist_count: 2,
+        gray_window: { start_at: "2026-06-24T09:00:00+08:00", end_at: "2026-06-25T10:00:00+08:00", timezone: "Asia/Shanghai", window_status: "approved" },
+        no_external_call: true
+      },
+      preview_only: true,
+      production_write: true,
+      production_write_scope: "governance_bridge_metadata_only",
+      approved: false,
+      governance_approved: true,
+      ready_for_review: true,
+      external_effect_job_created: false,
+      broadcast_job_created: false,
+      internal_event_created: false,
+      real_external_call: false,
+      real_external_call_executed: false,
+      execution_status: "push_center_pending_not_sent",
+      can_claim_pass_90_plus: false
+    };
+  }
+  if (url.endsWith("/governance/gowg_safe/push-center-bridge")) {
+    return {
+      ok: true,
+      operation: "get_push_center_bridge",
+      review_id: "gowg_safe",
+      draft_id: "gowd_safe",
+      snapshot_hash: "snapshot_safe",
+      review_status: "governance_approved",
+      push_center_job_created: true,
+      push_center_job_id: "p1-gow-push-center:gowg_safe",
+      push_center_projection_id: "p1-gow-push-center:gowg_safe",
+      push_center_status: "pending",
+      push_center_metadata: {
+        source: "p1_group_ops_workspace",
+        no_external_call: true,
+        snapshot_hash: "snapshot_safe",
+        allowlist_hash: "allowlist-safe-hash",
+        allowlist_count: 2
+      },
+      preview_only: true,
+      production_write: false,
+      production_write_scope: "none",
+      approved: false,
+      governance_approved: true,
+      ready_for_review: true,
+      external_effect_job_created: false,
+      broadcast_job_created: false,
+      internal_event_created: false,
+      real_external_call: false,
+      real_external_call_executed: false,
+      execution_status: "push_center_pending_not_sent",
+      can_claim_pass_90_plus: false
+    };
+  }
   if (url.endsWith("/governance/gowg_safe")) {
     return {
       ok: true,
       operation: "get_governance",
       review_id: "gowg_safe",
       draft_id: "gowd_safe",
+      snapshot_hash: "snapshot_safe",
       review_status: "approval_pending",
       steps: [
         { step_id: "gows_operator", step_type: "operator_approval", step_status: "pending" },
@@ -822,6 +1016,7 @@ const requestJson = async (url, options = {}) => {
           ok: true,
           review_id: "gowg_safe",
           draft_id: "gowd_safe",
+          snapshot_hash: "snapshot_safe",
           review_status: "approval_pending",
           steps: [
             { step_id: "gows_operator", step_type: "operator_approval", step_status: "pending" },
@@ -993,6 +1188,20 @@ assert.equal(approvedGrayStep.governance_approved, true);
 assert.equal(approvedGrayStep.approved, false);
 assert.equal(approvedGrayStep.execution_status, "not_execution");
 assertGovernanceResponseSafe(approvedGrayStep);
+const bridgeResponse = await bridgeGovernanceToPushCenter("gowg_safe", bridgePayload, undefined, requestJson);
+assert.equal(bridgeResponse.push_center_job_created, true);
+assert.equal(bridgeResponse.push_center_status, "pending");
+assert.equal(bridgeResponse.execution_status, "push_center_pending_not_sent");
+assert.equal(bridgeResponse.external_effect_job_created, false);
+assert.equal(bridgeResponse.broadcast_job_created, false);
+assert.equal(bridgeResponse.internal_event_created, false);
+assert.equal(bridgeResponse.real_external_call, false);
+assert.equal(bridgeResponse.can_claim_pass_90_plus, false);
+assertPushCenterBridgeResponseSafe(bridgeResponse);
+const bridgeRefresh = await getGovernancePushCenterBridge("gowg_safe", undefined, requestJson);
+assert.equal(bridgeRefresh.push_center_job_id, "p1-gow-push-center:gowg_safe");
+assert.equal(bridgeRefresh.execution_status, "push_center_pending_not_sent");
+assertPushCenterBridgeResponseSafe(bridgeRefresh);
 const rejectedOperatorStep = await rejectGovernanceStep("gowg_safe", "gows_operator", rejectStepPayload, undefined, requestJson);
 assert.equal(rejectedOperatorStep.review_status, "governance_rejected");
 const expiredGovernance = await expireGovernanceReview("gowg_safe", expireReviewPayload, undefined, requestJson);
@@ -1024,7 +1233,19 @@ const rejectRequest = draftRequests.find((entry) => entry.url.endsWith("/steps/g
 assert.ok(rejectRequest);
 const expireRequest = draftRequests.find((entry) => entry.url.endsWith("/governance/gowg_safe/expire"));
 assert.ok(expireRequest);
-assert.equal(draftRequests.some((entry) => entry.url.includes("/push-center")), false);
+const bridgeRequest = draftRequests.find((entry) => entry.url.endsWith("/governance/gowg_safe/bridge-push-center"));
+assert.ok(bridgeRequest);
+assert.equal(bridgeRequest.options.method, "POST");
+const bridgeRequestBody = JSON.parse(bridgeRequest.options.body);
+assert.equal(bridgeRequestBody.idempotency_key, bridgePayload.idempotency_key);
+assert.equal(bridgeRequestBody.client_snapshot_hash, "snapshot_safe");
+assert.equal(bridgeRequestBody.allowlist_hash, "allowlist-safe-hash");
+assert.equal(bridgeRequestBody.allowlist_count, 2);
+const bridgeReadRequest = draftRequests.find((entry) => entry.url.endsWith("/governance/gowg_safe/push-center-bridge"));
+assert.ok(bridgeReadRequest);
+assert.equal(bridgeReadRequest.options.method, undefined);
+assert.equal(draftRequests.filter((entry) => entry.url.endsWith("/governance/gowg_safe/bridge-push-center")
+  || entry.url.endsWith("/governance/gowg_safe/push-center-bridge")).length, 2);
 assert.equal(draftRequests.some((entry) => entry.url.includes("external-effect")), false);
 assert.equal(draftRequests.some((entry) => entry.url.includes("broadcast")), false);
 assert.equal(draftRequests.some((entry) => entry.url.includes("internal-event")), false);
@@ -1108,6 +1329,57 @@ await assert.rejects(
     execution_status: "not_execution"
   })),
   /governance_api_response_claims_execution_state/
+);
+await assert.rejects(
+  () => bridgeGovernanceToPushCenter("gowg_bad", bridgePayload, undefined, async () => ({
+    ok: true,
+    review_id: "gowg_bad",
+    draft_id: "gowd_bad",
+    push_center_job_created: true,
+    push_center_job_id: "p1-gow-push-center:gowg_bad",
+    push_center_status: "sent",
+    external_effect_job_created: false,
+    broadcast_job_created: false,
+    internal_event_created: false,
+    real_external_call: false,
+    can_claim_pass_90_plus: false,
+    execution_status: "sent"
+  })),
+  /push_center_bridge_response/
+);
+await assert.rejects(
+  () => bridgeGovernanceToPushCenter("gowg_bad", bridgePayload, undefined, async () => ({
+    ok: true,
+    review_id: "gowg_bad",
+    draft_id: "gowd_bad",
+    push_center_job_created: true,
+    push_center_job_id: "p1-gow-push-center:gowg_bad",
+    push_center_status: "pending",
+    external_effect_job_created: true,
+    broadcast_job_created: false,
+    internal_event_created: false,
+    real_external_call: false,
+    can_claim_pass_90_plus: false,
+    execution_status: "push_center_pending_not_sent"
+  })),
+  /push_center_bridge_response_violates_execution_guardrail/
+);
+await assert.rejects(
+  () => getGovernancePushCenterBridge("gowg_bad", undefined, async () => ({
+    ok: true,
+    review_id: "gowg_bad",
+    draft_id: "gowd_bad",
+    push_center_job_created: false,
+    push_center_job_id: "p1-gow-push-center:unsafe",
+    push_center_status: "not_bridged",
+    external_effect_job_created: false,
+    broadcast_job_created: false,
+    internal_event_created: false,
+    real_external_call: false,
+    can_claim_pass_90_plus: false,
+    execution_status: "not_execution"
+  })),
+  /push_center_bridge_response_not_safe_read_state/
 );
 const governanceReviewRoot = { innerHTML: "" };
 renderP1GroupOpsWorkspace(governanceReviewRoot, fixture, updateWorkspaceViewState(readyReviewState, {

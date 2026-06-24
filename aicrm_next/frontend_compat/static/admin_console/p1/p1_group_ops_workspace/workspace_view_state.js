@@ -89,7 +89,11 @@ export function createWorkspaceViewState(fixture) {
         currentGovernanceIdempotencyKey: "",
         currentGovernanceReview: null,
         governanceRequestStatus: "idle",
-        governanceRequestMessage: "治理 request 仅适用于 ready_for_review draft；不会审批、不会发送。"
+        governanceRequestMessage: "治理 request 仅适用于 ready_for_review draft；不会审批、不会发送。",
+        currentPushCenterBridge: null,
+        pushCenterBridgeStatus: "idle",
+        pushCenterBridgeMessage: "Push Center bridge 仅适用于 governance_approved review；bridge 只进入 pending，不会发送。",
+        currentPushCenterBridgeIdempotencyKey: ""
     };
 }
 export function selectEntityInViewState(viewState, selectedEntityType, selectedEntityId) {

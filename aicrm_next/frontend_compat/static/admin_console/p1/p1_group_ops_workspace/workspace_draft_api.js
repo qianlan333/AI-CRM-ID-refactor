@@ -162,9 +162,9 @@ export function buildWorkspaceDraftPayload(fixture, filtered, viewState, options
             requires_gray_window: true
         },
         approval_requirements: {
-            request_review_not_implemented: true,
-            approval_bridge_not_implemented: true,
-            push_center_bridge_not_implemented: true,
+            request_review_required: true,
+            governance_review_required: true,
+            push_center_bridge_requires_governance_approved: true,
             execution_not_allowed_from_draft: true
         },
         items,

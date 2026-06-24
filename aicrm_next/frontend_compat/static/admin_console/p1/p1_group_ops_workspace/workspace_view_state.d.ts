@@ -12,10 +12,12 @@ export type WorkspaceDraftSaveStatus = "idle" | "saving" | "saved" | "failed" | 
 export type WorkspaceDraftStatus = "not_saved" | "draft" | "ready_for_review" | "archived" | "rejected";
 export type WorkspaceDraftReviewStatus = "idle" | "requesting" | "ready_for_review" | "failed" | "conflict" | "blocked";
 export type WorkspaceGovernanceRequestStatus = "idle" | "requesting" | "requested" | "failed" | "conflict" | "blocked";
+export type WorkspacePushCenterBridgeStatus = "idle" | "requesting" | "bridged" | "failed" | "conflict" | "blocked";
 export interface WorkspaceGovernanceReviewView {
     review_id: string;
     draft_id: string;
     review_status: string;
+    snapshot_hash: string;
     steps: {
         step_id: string;
         step_type: string;
@@ -42,6 +44,22 @@ export interface WorkspaceGovernanceReviewView {
     internal_event_created: false;
     real_external_call: false;
     can_claim_pass_90_plus: false;
+}
+export interface WorkspacePushCenterBridgeView {
+    review_id: string;
+    draft_id: string;
+    review_status: string;
+    push_center_job_created: true;
+    push_center_job_id: string;
+    push_center_projection_id: string;
+    push_center_status: "pending";
+    execution_status: "push_center_pending_not_sent";
+    external_effect_job_created: false;
+    broadcast_job_created: false;
+    internal_event_created: false;
+    real_external_call: false;
+    can_claim_pass_90_plus: false;
+    idempotent_replay?: boolean;
 }
 export declare const WORKSPACE_CANVAS_LANE_IDS: WorkspaceCanvasLaneId[];
 export declare const WORKSPACE_CANVAS_SORT_MODES: WorkspaceCanvasSortMode[];
@@ -93,6 +111,10 @@ export interface WorkspaceViewState {
     currentGovernanceReview: WorkspaceGovernanceReviewView | null;
     governanceRequestStatus: WorkspaceGovernanceRequestStatus;
     governanceRequestMessage: string;
+    currentPushCenterBridge: WorkspacePushCenterBridgeView | null;
+    pushCenterBridgeStatus: WorkspacePushCenterBridgeStatus;
+    pushCenterBridgeMessage: string;
+    currentPushCenterBridgeIdempotencyKey: string;
 }
 export declare function createWorkspaceViewState(fixture: WorkspaceFixture): WorkspaceViewState;
 export declare function selectEntityInViewState(viewState: WorkspaceViewState, selectedEntityType: WorkspaceEntityType, selectedEntityId: string): WorkspaceViewState;
