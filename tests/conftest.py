@@ -234,6 +234,10 @@ _TABLES_TO_TRUNCATE = [
     # — message batches
     "message_batch_items",
     "message_batches",
+    # — P1 group ops workspace drafts
+    "group_ops_workspace_draft_audit_logs",
+    "group_ops_workspace_draft_items",
+    "group_ops_workspace_drafts",
     # — broadcast_jobs
     "broadcast_job_events",
     "broadcast_jobs",

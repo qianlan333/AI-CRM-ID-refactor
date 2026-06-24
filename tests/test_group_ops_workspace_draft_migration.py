@@ -138,16 +138,7 @@ def test_group_ops_workspace_draft_schema_uses_only_sanitized_payload_columns() 
     assert {fragment for fragment in forbidden_schema_fragments if fragment in lowered} == set()
 
 
-def test_group_ops_workspace_draft_migration_does_not_add_runtime_routes_or_writers() -> None:
-    forbidden_route = "/api/admin/p1/group-ops-workspace/drafts"
-    runtime_sources = [
-        ROOT / "aicrm_next" / "admin_shell" / "routes.py",
-        ROOT / "aicrm_next" / "router_registry.py",
-    ]
-
-    for path in runtime_sources:
-        assert forbidden_route not in path.read_text(encoding="utf-8")
-
+def test_group_ops_workspace_draft_migration_does_not_add_runtime_writers() -> None:
     migration_source = _migration_source()
     for forbidden in [
         "external_effect_job",
