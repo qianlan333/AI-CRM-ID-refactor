@@ -1,4 +1,5 @@
 import { escapeHtml } from "../shared/dom.js";
+import { renderInteractionShell } from "../shared/interaction_shell.js";
 import { renderStatusCard } from "../shared/status_card.js";
 import {
   type GroupOpsStatusInput,
@@ -58,35 +59,16 @@ function renderEvidenceSummary(summary: GroupOpsOverviewPayload["evidenceSummary
   `;
 }
 
-function renderReadonlyInteractionShell(cards: GroupOpsStatusInput[]): string {
-  const rows = cards.map((card) => {
-    const viewModel = buildGroupOpsStatusViewModel(card);
-    const guardrails = viewModel.guardrails.map((guardrail) => `<code>${escapeHtml(guardrail)}</code>`).join(" ");
-    return `
-      <article class="p1-group-ops-interaction-card" data-group-ops-evidence="${escapeHtml(viewModel.evidenceId)}" data-execution-mode="${escapeHtml(viewModel.executionMode)}" data-drop-intent="${escapeHtml(viewModel.blockedNoop.intent)}" data-drop-allowed="${viewModel.blockedNoop.allowed ? "true" : "false"}" data-status-after-drop="${escapeHtml(viewModel.blockedNoop.statusAfterDrop)}">
-        <div class="p1-group-ops-interaction-card__head">
-          <span class="p1-drag-handle" aria-hidden="true">⋮⋮</span>
-          <strong>${escapeHtml(viewModel.scenario.title)}</strong>
-        </div>
-        <dl class="p1-closure-fields">
-          <div><dt>Execution</dt><dd>${escapeHtml(viewModel.executionMode)}</dd></div>
-          <div><dt>Drop</dt><dd>${escapeHtml(viewModel.blockedNoop.intent)}</dd></div>
-          <div><dt>After</dt><dd>${escapeHtml(viewModel.blockedNoop.statusAfterDrop)}</dd></div>
-        </dl>
-        <p>${escapeHtml(viewModel.operatorPrompt)}</p>
-        <p class="p1-drag-guardrails">${guardrails}</p>
-      </article>
-    `;
-  }).join("");
-  return `
-    <section class="p1-group-ops-interaction-shell" aria-label="Group Ops read-only interaction shell">
-      <div class="p1-group-ops-shell-head">
-        <h2>只读交互契约</h2>
-        <p>Drag handle 只是视觉占位；blocked_noop 不会改状态，也不会触发真实发送、审批、名单或灰度窗口配置。</p>
-      </div>
-      <div class="p1-group-ops-interaction-grid">${rows}</div>
-    </section>
-  `;
+function renderGroupOpsInteractionShell(cards: GroupOpsStatusInput[]): string {
+  return renderInteractionShell({
+    finalVerdict: "P1_READY_WITH_EXCEPTIONS",
+    canClaimPass90Plus: false,
+    scenarios: cards.map((card) => buildGroupOpsStatusViewModel(card).scenario)
+  }, {
+    id: "group-ops-draft-preview",
+    title: "Group Ops draft-only preview shell",
+    description: "证据卡只做前端内存 reorder preview；sent 不代表治理完成，也不会触发发送、审批、名单或灰度窗口配置。"
+  });
 }
 
 export function renderGroupOpsOverview(root: HTMLElement, payload: GroupOpsOverviewPayload): void {
@@ -110,7 +92,7 @@ export function renderGroupOpsOverview(root: HTMLElement, payload: GroupOpsOverv
     <section class="p1-closure-grid" aria-label="Group Ops P1 status cards">
       ${cardHtml}
     </section>
-    ${renderReadonlyInteractionShell(cards)}
+    ${renderGroupOpsInteractionShell(cards)}
   `;
 }
 

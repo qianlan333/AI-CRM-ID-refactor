@@ -9,6 +9,7 @@ from aicrm_next.main import create_app
 ROOT = Path(__file__).resolve().parents[1]
 TEMPLATE = ROOT / "aicrm_next" / "frontend_compat" / "templates" / "admin_console" / "cloud_plan_review.html"
 SCRIPT = ROOT / "aicrm_next" / "frontend_compat" / "static" / "admin_console" / "cloud_plan_review.js"
+OPS_PLAN_OVERVIEW_TS = ROOT / "frontend" / "admin" / "ops_plan" / "ops_plan_overview.ts"
 
 
 def _client(monkeypatch) -> TestClient:
@@ -73,8 +74,15 @@ def test_plan_detail_page_contract(monkeypatch):
 def test_plan_review_static_contract():
     template = TEMPLATE.read_text(encoding="utf-8")
     script = SCRIPT.read_text(encoding="utf-8")
+    overview_source = OPS_PLAN_OVERVIEW_TS.read_text(encoding="utf-8")
     combined = template + "\n" + script
 
+    assert 'from "../shared/interaction_shell.js"' in overview_source
+    assert "renderInteractionShell" in overview_source
+    assert "renderOpsPlanInteractionShell" in overview_source
+    assert "renderReadonlyInteractionShell" not in overview_source
+    assert "p1-draft-shell" in template
+    assert "p1-ops-plan-interaction-shell" not in template
     assert "params.set(\"limit\", \"20\")" in script
     assert "plan.approved_count" not in script
     assert "plan.pending_count" not in script

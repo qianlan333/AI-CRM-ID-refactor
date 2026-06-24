@@ -88,6 +88,10 @@ def test_group_ops_p1_slice_reuses_shared_status_and_drag_contract():
     assert 'from "../shared/status_model.js"' in status_source
     assert 'from "../shared/interaction_contract.js"' in status_source
     assert 'from "../shared/status_card.js"' in overview_source
+    assert 'from "../shared/interaction_shell.js"' in overview_source
+    assert "renderInteractionShell" in overview_source
+    assert "renderGroupOpsInteractionShell" in overview_source
+    assert "renderReadonlyInteractionShell" not in overview_source
     assert '"sent"' in status_source
     assert '"governance-missing"' in status_source
     assert '"evidence-incomplete"' in status_source

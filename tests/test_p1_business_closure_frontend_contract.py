@@ -212,6 +212,10 @@ def test_push_center_frontend_slice_reuses_shared_status_contract() -> None:
     assert 'from "../shared/status_model.js"' in status_source
     assert 'from "../shared/interaction_contract.js"' in status_source
     assert 'from "../shared/status_card.js"' in overview_source
+    assert 'from "../shared/interaction_shell.js"' in overview_source
+    assert "renderInteractionShell" in overview_source
+    assert "renderPushCenterInteractionShell" in overview_source
+    assert "renderReadonlyInteractionShell" not in overview_source
     assert '"pending"' in status_source
     assert '"sent"' in status_source
     assert '"retryable"' in status_source
@@ -272,6 +276,10 @@ def test_ops_plan_frontend_slice_reuses_shared_status_contract() -> None:
     assert 'from "../shared/status_model.js"' in status_source
     assert 'from "../shared/interaction_contract.js"' in status_source
     assert 'from "../shared/status_card.js"' in overview_source
+    assert 'from "../shared/interaction_shell.js"' in overview_source
+    assert "renderInteractionShell" in overview_source
+    assert "renderOpsPlanInteractionShell" in overview_source
+    assert "renderReadonlyInteractionShell" not in overview_source
     assert '"downstream-pending"' in status_source
     assert '"pending"' in status_source
     assert '"sent"' in status_source

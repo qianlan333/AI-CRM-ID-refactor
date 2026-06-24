@@ -1,4 +1,5 @@
 import { escapeHtml } from "../shared/dom.js";
+import { renderInteractionShell } from "../shared/interaction_shell.js";
 import { renderStatusCard } from "../shared/status_card.js";
 import { OPS_PLAN_P1_DEFAULT_INPUTS, buildOpsPlanStatusViewModel } from "./ops_plan_status.js";
 const DEFAULT_EVIDENCE_SUMMARY = {
@@ -48,35 +49,16 @@ function renderEvidenceSummary(summary) {
     </section>
   `;
 }
-function renderReadonlyInteractionShell(cards) {
-    const rows = cards.map((card) => {
-        const viewModel = buildOpsPlanStatusViewModel(card);
-        const guardrails = viewModel.guardrails.map((guardrail) => `<code>${escapeHtml(guardrail)}</code>`).join(" ");
-        return `
-      <article class="p1-ops-plan-interaction-card" data-ops-plan-evidence="${escapeHtml(viewModel.evidenceId)}" data-execution-mode="${escapeHtml(viewModel.executionMode)}" data-drop-intent="${escapeHtml(viewModel.blockedNoop.intent)}" data-drop-allowed="${viewModel.blockedNoop.allowed ? "true" : "false"}" data-status-after-drop="${escapeHtml(viewModel.blockedNoop.statusAfterDrop)}">
-        <div class="p1-ops-plan-interaction-card__head">
-          <span class="p1-drag-handle" aria-hidden="true">⋮⋮</span>
-          <strong>${escapeHtml(viewModel.scenario.title)}</strong>
-        </div>
-        <dl class="p1-closure-fields">
-          <div><dt>Execution</dt><dd>${escapeHtml(viewModel.executionMode)}</dd></div>
-          <div><dt>Drop</dt><dd>${escapeHtml(viewModel.blockedNoop.intent)}</dd></div>
-          <div><dt>After</dt><dd>${escapeHtml(viewModel.blockedNoop.statusAfterDrop)}</dd></div>
-        </dl>
-        <p>${escapeHtml(viewModel.operatorPrompt)}</p>
-        <p class="p1-drag-guardrails">${guardrails}</p>
-      </article>
-    `;
-    }).join("");
-    return `
-    <section class="p1-ops-plan-interaction-shell" aria-label="Ops Plan read-only interaction shell">
-      <div class="p1-ops-plan-shell-head">
-        <h2>只读交互契约</h2>
-        <p>Drag handle 只是视觉占位；blocked_noop 不改变状态，也不会触发审批、任务执行、外呼或生产写入。</p>
-      </div>
-      <div class="p1-ops-plan-interaction-grid">${rows}</div>
-    </section>
-  `;
+function renderOpsPlanInteractionShell(cards) {
+    return renderInteractionShell({
+        finalVerdict: "P1_READY_WITH_EXCEPTIONS",
+        canClaimPass90Plus: false,
+        scenarios: cards.map((card) => buildOpsPlanStatusViewModel(card).scenario)
+    }, {
+        id: "ops-plan-draft-preview",
+        title: "Ops Plan draft-only preview shell",
+        description: "计划证据卡只做前端内存 reorder preview；downstream pending、broadcast_job created 和 Push Center pending 都不会渲染成 completed 或 sent。"
+    });
 }
 export function renderOpsPlanOverview(root, payload) {
     const cards = payload.cards.length ? payload.cards : OPS_PLAN_P1_DEFAULT_INPUTS;
@@ -99,7 +81,7 @@ export function renderOpsPlanOverview(root, payload) {
     <section class="p1-closure-grid" aria-label="Ops Plan P1 status cards">
       ${cardHtml}
     </section>
-    ${renderReadonlyInteractionShell(cards)}
+    ${renderOpsPlanInteractionShell(cards)}
   `;
 }
 function boot() {
