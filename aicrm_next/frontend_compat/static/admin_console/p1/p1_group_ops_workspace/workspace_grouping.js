@@ -31,6 +31,19 @@ function fieldValue(detail, names) {
     const field = detail.fields.find((candidate) => normalizedNames.has(candidate.label.toLowerCase()));
     return field?.value || "";
 }
+function isBlockedStatus(status) {
+    return status === "blocked"
+        || status === "external-config-blocked"
+        || status === "governance-missing"
+        || status === "evidence-incomplete"
+        || status === "failed-terminal";
+}
+function requiresOperatorAction(status) {
+    return status === "operator-action-required"
+        || status === "governance-missing"
+        || status === "retryable"
+        || status === "blocked";
+}
 export function buildWorkspaceCanvasCards(fixture, filtered) {
     return filtered.visibleLeftRailItems.map((item, index) => {
         const detail = detailForItem(fixture, item);
@@ -60,6 +73,9 @@ export function buildWorkspaceCanvasLanes(fixture, filtered, viewState) {
         return {
             ...lane,
             cards: sortCanvasCards(laneCards, viewState.canvasSortMode),
+            visibleCount: laneCards.length,
+            blockedCount: laneCards.filter((card) => isBlockedStatus(card.status)).length,
+            actionRequiredCount: laneCards.filter((card) => requiresOperatorAction(card.status)).length,
             isCollapsed: Boolean(viewState.laneCollapsedState[lane.id]),
             isVisible: visibleLaneIds.has(lane.id),
             emptyReason: filtered.isEmpty

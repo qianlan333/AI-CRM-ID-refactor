@@ -39,6 +39,9 @@ export interface WorkspaceCanvasLane {
   title: string;
   description: string;
   cards: WorkspaceCanvasCard[];
+  visibleCount: number;
+  blockedCount: number;
+  actionRequiredCount: number;
   isCollapsed: boolean;
   isVisible: boolean;
   emptyReason: string;
@@ -71,6 +74,21 @@ function fieldValue(detail: WorkspaceDetailItem | undefined, names: string[]): s
   const normalizedNames = new Set(names.map((name) => name.toLowerCase()));
   const field = detail.fields.find((candidate) => normalizedNames.has(candidate.label.toLowerCase()));
   return field?.value || "";
+}
+
+function isBlockedStatus(status: EvidenceStatus): boolean {
+  return status === "blocked"
+    || status === "external-config-blocked"
+    || status === "governance-missing"
+    || status === "evidence-incomplete"
+    || status === "failed-terminal";
+}
+
+function requiresOperatorAction(status: EvidenceStatus): boolean {
+  return status === "operator-action-required"
+    || status === "governance-missing"
+    || status === "retryable"
+    || status === "blocked";
 }
 
 export function buildWorkspaceCanvasCards(
@@ -110,6 +128,9 @@ export function buildWorkspaceCanvasLanes(
       return {
         ...lane,
         cards: sortCanvasCards(laneCards, viewState.canvasSortMode),
+        visibleCount: laneCards.length,
+        blockedCount: laneCards.filter((card) => isBlockedStatus(card.status)).length,
+        actionRequiredCount: laneCards.filter((card) => requiresOperatorAction(card.status)).length,
         isCollapsed: Boolean(viewState.laneCollapsedState[lane.id]),
         isVisible: visibleLaneIds.has(lane.id),
         emptyReason: filtered.isEmpty

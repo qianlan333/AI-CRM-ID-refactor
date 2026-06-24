@@ -3,6 +3,8 @@ import { renderStatusBadge } from "../shared/status_badge.js";
 import { type FilteredWorkspaceView } from "./workspace_filters.js";
 import { type WorkspaceFixture } from "./workspace_fixture.js";
 import { buildWorkspaceCanvasLanes, type WorkspaceCanvasCard, type WorkspaceCanvasLane } from "./workspace_grouping.js";
+import { densityClassName, densityDescription, densityLabel, WORKSPACE_DENSITY_OPTIONS } from "./workspace_density.js";
+import { keyboardHintText } from "./workspace_keyboard.js";
 import {
   WORKSPACE_CANVAS_GROUP_MODES,
   WORKSPACE_CANVAS_SORT_MODES,
@@ -49,14 +51,23 @@ function renderCanvasControls(viewState: WorkspaceViewState, lanes: WorkspaceCan
           ${WORKSPACE_CANVAS_GROUP_MODES.map((mode: WorkspaceCanvasGroupMode) => renderOption(mode, viewState.canvasGroupMode)).join("")}
         </select>
       </label>
+      <label>
+        <span>Density</span>
+        <select data-workspace-filter="density">
+          ${WORKSPACE_DENSITY_OPTIONS.map((mode) => renderOption(mode, viewState.density)).join("")}
+        </select>
+      </label>
       <div class="p1-workspace-lane-toggle-list" aria-label="Memory-only lane collapse controls">${laneToggles}</div>
+      <p class="p1-workspace-keyboard-hint" data-keyboard-hint="true">${escapeHtml(keyboardHintText())}</p>
+      <p class="p1-workspace-filter-summary" data-density-state="${escapeHtml(viewState.density)}">${escapeHtml(densityLabel(viewState.density))}: ${escapeHtml(densityDescription(viewState.density))}</p>
     </section>
   `;
 }
 
 function renderCanvasCard(card: WorkspaceCanvasCard, viewState: WorkspaceViewState): string {
+  const isSelected = selectedClass(card, viewState) !== "";
   return `
-    <button type="button" class="p1-workspace-canvas-card${selectedClass(card, viewState)}" data-canvas-card-id="${escapeHtml(card.id)}" data-canvas-lane="${escapeHtml(card.laneId)}" data-entity-type="${escapeHtml(card.entityType)}" data-evidence-status="${escapeHtml(card.status)}" data-derived-status="${escapeHtml(card.derivedStatus)}" data-preview-only="true" data-production-write-executed="false" data-real-external-call-executed="false" data-can-claim-pass90="false" data-workspace-select-type="${escapeHtml(card.entityType)}" data-workspace-select-id="${escapeHtml(card.detailId)}">
+    <button type="button" class="p1-workspace-canvas-card${selectedClass(card, viewState)}" role="option" aria-selected="${isSelected ? "true" : "false"}" aria-label="${escapeHtml(`${card.title}, ${card.status}, preview only`)}" data-keyboard-card="true" data-canvas-card-id="${escapeHtml(card.id)}" data-canvas-lane="${escapeHtml(card.laneId)}" data-entity-type="${escapeHtml(card.entityType)}" data-evidence-status="${escapeHtml(card.status)}" data-derived-status="${escapeHtml(card.derivedStatus)}" data-preview-only="true" data-production-write-executed="false" data-real-external-call-executed="false" data-can-claim-pass90="false" data-workspace-select-type="${escapeHtml(card.entityType)}" data-workspace-select-id="${escapeHtml(card.detailId)}">
       <div class="p1-workspace-canvas-card__head">
         <span class="p1-drag-handle" aria-hidden="true">⋮⋮</span>
         <strong>${escapeHtml(card.title)}</strong>
@@ -79,13 +90,17 @@ function renderCanvasLane(lane: WorkspaceCanvasLane, viewState: WorkspaceViewSta
     ? lane.cards.map((card) => renderCanvasCard(card, viewState)).join("")
     : `<section class="p1-workspace-empty-state" data-empty-lane="true" data-lane-id="${escapeHtml(lane.id)}"><strong>Empty lane</strong><p>${escapeHtml(lane.emptyReason)}</p></section>`;
   return `
-    <section class="p1-workspace-canvas-lane" data-canvas-lane-id="${escapeHtml(lane.id)}" data-lane-collapsed="${lane.isCollapsed ? "true" : "false"}" data-card-count="${lane.cards.length}">
+    <section class="p1-workspace-canvas-lane" aria-label="${escapeHtml(`${lane.title} lane, ${lane.visibleCount} visible cards`)}" data-canvas-lane-id="${escapeHtml(lane.id)}" data-lane-collapsed="${lane.isCollapsed ? "true" : "false"}" data-card-count="${lane.cards.length}" data-visible-count="${lane.visibleCount}" data-blocked-count="${lane.blockedCount}" data-action-required-count="${lane.actionRequiredCount}">
       <div class="p1-workspace-lane-head">
         <div>
           <h3>${escapeHtml(lane.title)}</h3>
           <p>${escapeHtml(lane.description)}</p>
         </div>
-        ${renderStatusBadge(lane.cards.length > 0 ? lane.cards[0].status : "evidence-incomplete")}
+        <dl class="p1-workspace-lane-counts" aria-label="Lane counts">
+          <div><dt>visible</dt><dd>${lane.visibleCount}</dd></div>
+          <div><dt>blocked</dt><dd>${lane.blockedCount}</dd></div>
+          <div><dt>action</dt><dd>${lane.actionRequiredCount}</dd></div>
+        </dl>
       </div>
       ${lane.isCollapsed ? `<p class="p1-workspace-filter-summary">Lane collapsed in memory only; original evidence status is unchanged.</p>` : `<div class="p1-workspace-canvas-lane-grid">${cards}</div>`}
     </section>
@@ -99,7 +114,7 @@ export function renderGroupedWorkspaceCanvas(
 ): string {
   const lanes = buildWorkspaceCanvasLanes(fixture, filtered, viewState);
   return `
-    <section class="p1-workspace-canvas" aria-label="Read-only grouped canvas" data-draft-persistence="memory_only" data-canvas-group-mode="${escapeHtml(viewState.canvasGroupMode)}" data-canvas-sort-mode="${escapeHtml(viewState.canvasSortMode)}" data-can-claim-pass90="false">
+    <section class="p1-workspace-canvas ${escapeHtml(densityClassName(viewState.density))}" role="listbox" aria-label="Read-only grouped canvas" data-draft-persistence="memory_only" data-density="${escapeHtml(viewState.density)}" data-canvas-group-mode="${escapeHtml(viewState.canvasGroupMode)}" data-canvas-sort-mode="${escapeHtml(viewState.canvasSortMode)}" data-can-claim-pass90="false" data-keyboard-navigation="readonly-selection-only">
       <div class="p1-workspace-panel-head">
         <h2>Read-only grouped canvas</h2>
         <p>按 plan / audience / task / execution / Push Center / evidence 分 lane 展示；本地排序和折叠不保存、不执行、不外呼。</p>

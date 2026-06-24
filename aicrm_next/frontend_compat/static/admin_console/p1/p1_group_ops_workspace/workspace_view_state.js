@@ -51,7 +51,10 @@ export function createWorkspaceViewState(fixture) {
         laneCollapsedState: defaultLaneCollapsedState(),
         canvasSortMode: "default",
         canvasGroupMode: "entity_lane",
-        visibleLaneIds: [...WORKSPACE_CANVAS_LANE_IDS]
+        visibleLaneIds: [...WORKSPACE_CANVAS_LANE_IDS],
+        density: "comfortable",
+        focusedCanvasLaneId: "plans",
+        focusedCanvasCardId: selectedIdFromSelection(fixture.defaultSelection)
     };
 }
 export function selectEntityInViewState(viewState, selectedEntityType, selectedEntityId) {
@@ -59,7 +62,19 @@ export function selectEntityInViewState(viewState, selectedEntityType, selectedE
         ...viewState,
         selectedEntityType,
         selectedEntityId,
-        panelMode: selectedEntityType === "evidence" ? "guardrail" : "detail"
+        panelMode: selectedEntityType === "evidence" ? "guardrail" : "detail",
+        focusedCanvasLaneId: selectedEntityType === "plan"
+            ? "plans"
+            : selectedEntityType === "group"
+                ? "groups"
+                : selectedEntityType === "node"
+                    ? "nodes"
+                    : selectedEntityType === "execution"
+                        ? "executions"
+                        : selectedEntityType === "push_center"
+                            ? "push_center"
+                            : "evidence",
+        focusedCanvasCardId: selectedEntityId
     };
 }
 export function updateWorkspaceViewState(viewState, updates) {
@@ -70,7 +85,9 @@ export function updateWorkspaceViewState(viewState, updates) {
         laneCollapsedState: updates.laneCollapsedState
             ? { ...viewState.laneCollapsedState, ...updates.laneCollapsedState }
             : viewState.laneCollapsedState,
-        visibleLaneIds: updates.visibleLaneIds ? [...updates.visibleLaneIds] : viewState.visibleLaneIds
+        visibleLaneIds: updates.visibleLaneIds ? [...updates.visibleLaneIds] : viewState.visibleLaneIds,
+        focusedCanvasLaneId: updates.focusedCanvasLaneId || viewState.focusedCanvasLaneId,
+        focusedCanvasCardId: updates.focusedCanvasCardId || viewState.focusedCanvasCardId
     };
 }
 export function toggleWorkspaceCanvasLane(viewState, laneId) {

@@ -4,6 +4,7 @@ export type WorkspaceFilterValue = "all" | string;
 export type WorkspaceCanvasLaneId = "plans" | "groups" | "nodes" | "executions" | "push_center" | "evidence";
 export type WorkspaceCanvasSortMode = "default" | "status" | "entity_type" | "updated_or_created_time" | "blocked_first" | "action_required_first";
 export type WorkspaceCanvasGroupMode = "entity_lane";
+export type WorkspaceDensity = "compact" | "comfortable";
 export declare const WORKSPACE_CANVAS_LANE_IDS: WorkspaceCanvasLaneId[];
 export declare const WORKSPACE_CANVAS_SORT_MODES: WorkspaceCanvasSortMode[];
 export declare const WORKSPACE_CANVAS_GROUP_MODES: WorkspaceCanvasGroupMode[];
@@ -21,6 +22,9 @@ export interface WorkspaceViewState {
     canvasSortMode: WorkspaceCanvasSortMode;
     canvasGroupMode: WorkspaceCanvasGroupMode;
     visibleLaneIds: WorkspaceCanvasLaneId[];
+    density: WorkspaceDensity;
+    focusedCanvasLaneId: WorkspaceCanvasLaneId;
+    focusedCanvasCardId: string;
 }
 export declare function createWorkspaceViewState(fixture: WorkspaceFixture): WorkspaceViewState;
 export declare function selectEntityInViewState(viewState: WorkspaceViewState, selectedEntityType: WorkspaceEntityType, selectedEntityId: string): WorkspaceViewState;
