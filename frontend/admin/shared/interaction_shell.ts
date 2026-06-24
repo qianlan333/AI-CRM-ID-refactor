@@ -23,6 +23,13 @@ export interface DraftPreviewDisplay {
   canClaimPass90Plus: false;
 }
 
+export interface InteractionShellOptions {
+  id?: string;
+  title?: string;
+  description?: string;
+  createdAt?: string;
+}
+
 function normalizeIndex(index: number, length: number): number {
   if (length <= 0) return 0;
   if (index < 0) return 0;
@@ -73,15 +80,16 @@ function renderGuardrails(guardrails: string[]): string {
   return guardrails.map((guardrail) => `<code>${escapeHtml(guardrail)}</code>`).join(" ");
 }
 
-export function renderInteractionShell(payload: BusinessClosurePayload): string {
+export function renderInteractionShell(payload: BusinessClosurePayload, options: InteractionShellOptions = {}): string {
   const draft = createDraftState(payload.scenarios, {
-    id: "business-closure-draft-preview",
-    createdAt: "2026-06-23T00:00:00.000Z"
+    id: options.id ?? "business-closure-draft-preview",
+    createdAt: options.createdAt ?? "2026-06-23T00:00:00.000Z"
   });
   const preview = applyReadonlyReorderPreview(draft, 0, Math.min(1, draft.cards.length - 1));
   const display = serializeDraftPreviewForDisplay(preview);
+  const scenarioByCardId = new Map(draft.cards.map((card) => [card.id, payload.scenarios[card.originalIndex]]));
   const rows = display.cards.map((card) => {
-    const scenario = payload.scenarios.find((item) => item.key === card.id.split(":")[0]);
+    const scenario = scenarioByCardId.get(card.id);
     const blockedDrop = scenario
       ? validateDropIntent(scenario, "blocked_noop")
       : null;
@@ -106,8 +114,8 @@ export function renderInteractionShell(payload: BusinessClosurePayload): string 
   return `
     <section class="p1-draft-shell" aria-label="Draft-only preview interaction shell" data-persistence="${escapeHtml(display.persistence)}" data-real-external-call-executed="false" data-production-write-executed="false" data-can-claim-pass90="false">
       <div class="p1-draft-shell__head">
-        <h2>Draft-only / preview-only interaction shell</h2>
-        <p>前端内存预览：重排只改变本地 preview 顺序，刷新后丢弃，不保存、不执行、不生成 PASS_90_PLUS。</p>
+        <h2>${escapeHtml(options.title ?? "Draft-only / preview-only interaction shell")}</h2>
+        <p>${escapeHtml(options.description ?? "前端内存预览：重排只改变本地 preview 顺序，刷新后丢弃，不保存、不执行、不生成 PASS_90_PLUS。")}</p>
       </div>
       <div class="p1-draft-shell__grid">${rows}</div>
     </section>

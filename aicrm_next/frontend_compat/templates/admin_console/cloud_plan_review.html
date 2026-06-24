@@ -414,7 +414,7 @@
 
   .p1-ops-plan-banner,
   .p1-ops-plan-evidence,
-  .p1-ops-plan-interaction-shell {
+  .p1-draft-shell {
     border: 1px solid var(--plan-line);
     border-radius: 8px;
     background: #fff;
@@ -432,7 +432,7 @@
 
   .p1-ops-plan-banner h2,
   .p1-ops-plan-evidence h2,
-  .p1-ops-plan-shell-head h2,
+  .p1-draft-shell__head h2,
   .p1-closure-card h2 {
     margin: 0 0 6px;
     font-size: 15px;
@@ -440,7 +440,8 @@
 
   .p1-ops-plan-banner p,
   .p1-ops-plan-evidence p,
-  .p1-ops-plan-shell-head p,
+  .p1-draft-shell__head p,
+  .p1-draft-shell-card p,
   .p1-closure-card p {
     margin: 0;
     color: var(--plan-muted);
@@ -477,14 +478,14 @@
   }
 
   .p1-closure-grid,
-  .p1-ops-plan-interaction-grid {
+  .p1-draft-shell__grid {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 14px;
   }
 
   .p1-closure-card,
-  .p1-ops-plan-interaction-card {
+  .p1-draft-shell-card {
     border: 1px solid #e5e7eb;
     border-radius: 8px;
     background: #fff;
@@ -499,7 +500,7 @@
   .p1-closure-card--danger { border-color: #fecaca; }
 
   .p1-closure-card__head,
-  .p1-ops-plan-interaction-card__head {
+  .p1-draft-shell-card__head {
     display: flex;
     justify-content: space-between;
     align-items: flex-start;
@@ -563,7 +564,7 @@
     .cloud-plan-stats,
     .cloud-plan-layout,
     .p1-closure-grid,
-    .p1-ops-plan-interaction-grid,
+    .p1-draft-shell__grid,
     .p1-ops-plan-evidence__grid,
     .p1-closure-fields {
       grid-template-columns: 1fr;

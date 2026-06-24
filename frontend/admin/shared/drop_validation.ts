@@ -10,6 +10,7 @@ import { type EvidenceStatus, type ScenarioEvidence } from "./status_model.js";
 
 export function getExecutionModeForStatus(status: EvidenceStatus): ExecutionMode {
   if (status === "ready") return "draft_only";
+  if (status === "retryable") return "preview_only";
   if (status === "downstream-pending" || status === "pending" || status === "evidence-incomplete") return "preview_only";
   return executionModeForStatus(status);
 }

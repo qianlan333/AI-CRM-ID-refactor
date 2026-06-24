@@ -18,6 +18,12 @@ export interface DraftPreviewDisplay {
     productionWriteExecuted: false;
     canClaimPass90Plus: false;
 }
+export interface InteractionShellOptions {
+    id?: string;
+    title?: string;
+    description?: string;
+    createdAt?: string;
+}
 export declare function applyReadonlyReorderPreview(state: DraftState, fromIndex: number, toIndex: number): DraftState;
 export declare function serializeDraftPreviewForDisplay(state: DraftState): DraftPreviewDisplay;
-export declare function renderInteractionShell(payload: BusinessClosurePayload): string;
+export declare function renderInteractionShell(payload: BusinessClosurePayload, options?: InteractionShellOptions): string;

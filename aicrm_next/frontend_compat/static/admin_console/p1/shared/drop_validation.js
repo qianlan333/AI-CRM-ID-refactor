@@ -2,6 +2,8 @@ import { executionModeForStatus, guardrailsForScenario, validateDropIntent as va
 export function getExecutionModeForStatus(status) {
     if (status === "ready")
         return "draft_only";
+    if (status === "retryable")
+        return "preview_only";
     if (status === "downstream-pending" || status === "pending" || status === "evidence-incomplete")
         return "preview_only";
     return executionModeForStatus(status);

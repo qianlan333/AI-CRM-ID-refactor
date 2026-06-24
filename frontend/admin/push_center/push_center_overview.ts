@@ -1,4 +1,4 @@
-import { escapeHtml } from "../shared/dom.js";
+import { renderInteractionShell } from "../shared/interaction_shell.js";
 import { renderStatusCard } from "../shared/status_card.js";
 import {
   type PushCenterStatusInput,
@@ -19,35 +19,16 @@ function parsePayload(): PushCenterOverviewPayload {
   };
 }
 
-function renderReadonlyInteractionShell(inputs: PushCenterStatusInput[]): string {
-  const rows = inputs.map((input) => {
-    const viewModel = buildPushCenterStatusViewModel(input);
-    const guardrails = viewModel.guardrails.map((guardrail) => `<code>${escapeHtml(guardrail)}</code>`).join(" ");
-    return `
-      <article class="p1-push-interaction-card" data-push-center-card="${escapeHtml(viewModel.scenario.key)}" data-execution-mode="${escapeHtml(viewModel.executionMode)}" data-drop-intent="${escapeHtml(viewModel.blockedNoop.intent)}" data-drop-allowed="${viewModel.blockedNoop.allowed ? "true" : "false"}" data-status-after-drop="${escapeHtml(viewModel.blockedNoop.statusAfterDrop)}">
-        <div class="p1-push-interaction-card__head">
-          <span class="p1-drag-handle" aria-hidden="true">⋮⋮</span>
-          <strong>${escapeHtml(viewModel.scenario.title)}</strong>
-        </div>
-        <dl class="p1-closure-fields">
-          <div><dt>Execution</dt><dd>${escapeHtml(viewModel.executionMode)}</dd></div>
-          <div><dt>Drop</dt><dd>${escapeHtml(viewModel.blockedNoop.intent)}</dd></div>
-          <div><dt>After</dt><dd>${escapeHtml(viewModel.blockedNoop.statusAfterDrop)}</dd></div>
-        </dl>
-        <p>${escapeHtml(viewModel.operatorPrompt)}</p>
-        <p class="p1-drag-guardrails">${guardrails}</p>
-      </article>
-    `;
-  }).join("");
-  return `
-    <section class="p1-push-interaction-shell" aria-label="Push Center read-only interaction shell">
-      <div class="p1-push-shell-head">
-        <h2>只读交互契约</h2>
-        <p>Drag handle 只是视觉占位；blocked_noop 不改变状态，也不会触发 external effect 或生产写入。</p>
-      </div>
-      <div class="p1-push-interaction-grid">${rows}</div>
-    </section>
-  `;
+function renderPushCenterInteractionShell(inputs: PushCenterStatusInput[]): string {
+  return renderInteractionShell({
+    finalVerdict: "P1_READY_WITH_EXCEPTIONS",
+    canClaimPass90Plus: false,
+    scenarios: inputs.map((input) => buildPushCenterStatusViewModel(input).scenario)
+  }, {
+    id: "push-center-draft-preview",
+    title: "Push Center draft-only preview shell",
+    description: "任务卡只做前端内存 reorder preview；pending / retryable / operator-action-required 不会变成 sent 或 complete。"
+  });
 }
 
 export function renderPushCenterOverview(root: HTMLElement, payload: PushCenterOverviewPayload): void {
@@ -70,7 +51,7 @@ export function renderPushCenterOverview(root: HTMLElement, payload: PushCenterO
     <section class="p1-closure-grid" aria-label="Push Center P1 status cards">
       ${cardHtml}
     </section>
-    ${renderReadonlyInteractionShell(cards)}
+    ${renderPushCenterInteractionShell(cards)}
   `;
 }
 
