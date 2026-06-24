@@ -66,7 +66,6 @@ _PATH_LABELS = {
     "automation-conversion": "自动化运营",
     "contract": "运行契约",
     "pools": "池",
-    "action-templates": "动作模板",
     "task-groups": "任务组",
     "workflows": "工作流",
     "workflow-nodes": "工作流节点",

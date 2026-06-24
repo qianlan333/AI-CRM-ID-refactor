@@ -120,6 +120,25 @@ def test_retired_automation_project_templates_and_static_are_removed() -> None:
         assert not (FRONTEND_STATIC / filename).exists()
 
 
+def test_retired_action_template_modules_are_removed() -> None:
+    retired_modules = {
+        ROOT / "aicrm_next" / "automation_engine" / "action_templates.py",
+        ROOT / "aicrm_next" / "automation_engine" / "action_template_repository.py",
+        ROOT / "aicrm_next" / "automation_engine" / "action_template_sqlalchemy_repository.py",
+    }
+
+    for module in retired_modules:
+        assert not module.exists()
+
+    dto_source = (ROOT / "aicrm_next" / "automation_engine" / "dto.py").read_text(encoding="utf-8")
+    api_docs_source = (ROOT / "aicrm_next" / "admin_config" / "api_docs_view_model.py").read_text(encoding="utf-8")
+
+    assert "ActionTemplateListRequest" not in dto_source
+    assert "ActionTemplateCreateRequest" not in dto_source
+    assert "ActionTemplateValidationError" not in dto_source
+    assert '"action-templates"' not in api_docs_source
+
+
 def test_retired_automation_workspace_static_asset_is_gone(monkeypatch) -> None:
     client = _client(monkeypatch)
 
