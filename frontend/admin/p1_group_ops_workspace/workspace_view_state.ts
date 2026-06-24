@@ -15,6 +15,7 @@ export type WorkspaceCanvasSortMode =
   | "blocked_first"
   | "action_required_first";
 export type WorkspaceCanvasGroupMode = "entity_lane";
+export type WorkspaceDensity = "compact" | "comfortable";
 
 export const WORKSPACE_CANVAS_LANE_IDS: WorkspaceCanvasLaneId[] = [
   "plans",
@@ -51,6 +52,9 @@ export interface WorkspaceViewState {
   canvasSortMode: WorkspaceCanvasSortMode;
   canvasGroupMode: WorkspaceCanvasGroupMode;
   visibleLaneIds: WorkspaceCanvasLaneId[];
+  density: WorkspaceDensity;
+  focusedCanvasLaneId: WorkspaceCanvasLaneId;
+  focusedCanvasCardId: string;
 }
 
 function defaultLaneCollapsedState(): WorkspaceLaneCollapsedState {
@@ -86,7 +90,10 @@ export function createWorkspaceViewState(fixture: WorkspaceFixture): WorkspaceVi
     laneCollapsedState: defaultLaneCollapsedState(),
     canvasSortMode: "default",
     canvasGroupMode: "entity_lane",
-    visibleLaneIds: [...WORKSPACE_CANVAS_LANE_IDS]
+    visibleLaneIds: [...WORKSPACE_CANVAS_LANE_IDS],
+    density: "comfortable",
+    focusedCanvasLaneId: "plans",
+    focusedCanvasCardId: selectedIdFromSelection(fixture.defaultSelection)
   };
 }
 
@@ -99,7 +106,19 @@ export function selectEntityInViewState(
     ...viewState,
     selectedEntityType,
     selectedEntityId,
-    panelMode: selectedEntityType === "evidence" ? "guardrail" : "detail"
+    panelMode: selectedEntityType === "evidence" ? "guardrail" : "detail",
+    focusedCanvasLaneId: selectedEntityType === "plan"
+      ? "plans"
+      : selectedEntityType === "group"
+        ? "groups"
+        : selectedEntityType === "node"
+          ? "nodes"
+          : selectedEntityType === "execution"
+            ? "executions"
+            : selectedEntityType === "push_center"
+              ? "push_center"
+              : "evidence",
+    focusedCanvasCardId: selectedEntityId
   };
 }
 
@@ -114,7 +133,9 @@ export function updateWorkspaceViewState(
     laneCollapsedState: updates.laneCollapsedState
       ? { ...viewState.laneCollapsedState, ...updates.laneCollapsedState }
       : viewState.laneCollapsedState,
-    visibleLaneIds: updates.visibleLaneIds ? [...updates.visibleLaneIds] : viewState.visibleLaneIds
+    visibleLaneIds: updates.visibleLaneIds ? [...updates.visibleLaneIds] : viewState.visibleLaneIds,
+    focusedCanvasLaneId: updates.focusedCanvasLaneId || viewState.focusedCanvasLaneId,
+    focusedCanvasCardId: updates.focusedCanvasCardId || viewState.focusedCanvasCardId
   };
 }
 

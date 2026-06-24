@@ -7,6 +7,8 @@ import { defaultRequestJson, loadGroupOpsWorkspaceData, parseWorkspaceApiConfig 
 import { renderGroupedWorkspaceCanvas } from "./workspace_canvas.js";
 import { renderWorkspaceDetailPanel, renderWorkspaceSelectedPreviewResult, } from "./workspace_detail.js";
 import { ENTITY_FILTER_OPTIONS, STATUS_FILTER_OPTIONS, filterWorkspaceView } from "./workspace_filters.js";
+import { buildWorkspaceCanvasLanes } from "./workspace_grouping.js";
+import { moveWorkspaceCanvasSelection } from "./workspace_keyboard.js";
 import { P1_GROUP_OPS_WORKSPACE_FIXTURE, createUnavailableWorkspaceFixture } from "./workspace_fixture.js";
 import { renderWorkspacePreviewResult } from "./workspace_preview.js";
 import { buildGroupOpsWorkspaceStatusModel, workspaceCanRenderGlobalPass } from "./workspace_status.js";
@@ -113,6 +115,22 @@ function renderWorkspaceHeader(fixture) {
     </section>
   `;
 }
+function renderSafePreviewBanner() {
+    return `
+    <section class="p1-workspace-safe-preview-banner" aria-label="Read-only safety state" data-safe-preview-affordance="true" data-preview-only="true" data-production-write-executed="false" data-real-external-call-executed="false" data-can-claim-pass90="false">
+      <strong>Safe preview only</strong>
+      <span>不会发送、不审批、不写生产；preview 不等于已执行，sent evidence 不等于 governance complete。</span>
+    </section>
+  `;
+}
+function renderSafePreviewFooter() {
+    return `
+    <section class="p1-workspace-safe-preview-footer" aria-label="Fixed safe preview summary" data-safe-preview-footer="true" data-preview-only="true" data-production-write-executed="false" data-real-external-call-executed="false" data-can-claim-pass90="false">
+      <strong>Safety summary</strong>
+      <p>preview-only=true；production_write=false；real_external_call=false；can_claim_pass_90_plus=false。Requires approval / allowlist / gray-window 的项目仍需运营治理证据。</p>
+    </section>
+  `;
+}
 function renderLeftRail(filtered) {
     const rows = filtered.visibleLeftRailItems.length > 0
         ? filtered.visibleLeftRailItems.map((item) => renderLeftRailItem(item, filtered.viewState)).join("")
@@ -195,6 +213,22 @@ function attachCanvasLaneHandlers(root, fixture, viewState) {
         });
     });
 }
+function attachKeyboardHandlers(root, fixture, viewState) {
+    if (typeof root.querySelector !== "function")
+        return;
+    const canvas = root.querySelector("[data-keyboard-navigation]");
+    if (!canvas)
+        return;
+    canvas.addEventListener("keydown", (event) => {
+        const allowedKeys = ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Enter", " ", "Escape"];
+        if (!allowedKeys.includes(event.key))
+            return;
+        event.preventDefault();
+        const filtered = filterWorkspaceView(fixture, viewState);
+        const lanes = buildWorkspaceCanvasLanes(fixture, filtered, filtered.viewState);
+        renderP1GroupOpsWorkspace(root, fixture, moveWorkspaceCanvasSelection(lanes, filtered.viewState, event.key));
+    });
+}
 export function renderP1GroupOpsWorkspace(root, fixture = P1_GROUP_OPS_WORKSPACE_FIXTURE, viewState = createWorkspaceViewState(fixture)) {
     const model = buildGroupOpsWorkspaceStatusModel(fixture);
     const filtered = filterWorkspaceView(fixture, viewState);
@@ -202,6 +236,7 @@ export function renderP1GroupOpsWorkspace(root, fixture = P1_GROUP_OPS_WORKSPACE
     root.innerHTML = `
     <section class="p1-native-group-ops-workspace" data-p1-native-workspace="group_ops" data-draft-only="true" data-preview-only="true" data-can-claim-pass90="false" data-view-state-memory-only="true" data-selected-entity-type="${escapeHtml(filtered.viewState.selectedEntityType)}" data-selected-entity-id="${escapeHtml(filtered.viewState.selectedEntityId)}" data-panel-mode="${escapeHtml(filtered.viewState.panelMode)}">
       ${renderWorkspaceHeader(fixture)}
+      ${renderSafePreviewBanner()}
       ${renderFilterToolbar(filtered.viewState, filtered)}
       ${renderStateBanner(fixture, filtered)}
       <div class="p1-workspace-grid">
@@ -211,11 +246,13 @@ export function renderP1GroupOpsWorkspace(root, fixture = P1_GROUP_OPS_WORKSPACE
       </div>
       ${renderWorkspaceSelectedPreviewResult(fixture, selection)}
       ${renderWorkspacePreviewResult(model)}
+      ${renderSafePreviewFooter()}
     </section>
   `;
     attachSelectionHandlers(root, fixture, filtered.viewState);
     attachFilterHandlers(root, fixture, filtered.viewState);
     attachCanvasLaneHandlers(root, fixture, filtered.viewState);
+    attachKeyboardHandlers(root, fixture, filtered.viewState);
 }
 function boot() {
     const root = document.getElementById("p1GroupOpsWorkspaceApp");

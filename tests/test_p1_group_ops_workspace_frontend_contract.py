@@ -91,6 +91,9 @@ def test_p1_group_ops_workspace_reuses_shared_modules():
     assert "sortCanvasCards" in sources
     assert "renderGroupedWorkspaceCanvas" in sources
     assert "toggleWorkspaceCanvasLane" in sources
+    assert "densityClassName" in sources
+    assert "moveWorkspaceCanvasSelection" in sources
+    assert "keyboardHintText" in sources
 
 
 def test_p1_group_ops_workspace_copy_preserves_guardrails():
@@ -124,8 +127,21 @@ def test_p1_group_ops_workspace_copy_preserves_guardrails():
         "canvasSortMode",
         "canvasGroupMode",
         "visibleLaneIds",
+        "density",
+        "focusedCanvasLaneId",
+        "focusedCanvasCardId",
         "Search / filters",
         "Read-only grouped canvas",
+        "Safe preview only",
+        "Safety summary",
+        "Keyboard preview",
+        "aria-selected",
+        "data-keyboard-navigation",
+        "data-safe-preview-affordance",
+        "data-safe-preview-footer",
+        "data-density",
+        "compact",
+        "comfortable",
         "Plans",
         "Audiences / Groups",
         "Tasks / Nodes",
@@ -136,6 +152,9 @@ def test_p1_group_ops_workspace_copy_preserves_guardrails():
         "data-canvas-sort-mode",
         "data-canvas-group-mode",
         "data-workspace-lane-toggle",
+        "data-visible-count",
+        "data-blocked-count",
+        "data-action-required-count",
         "Empty search result",
         "Empty lane",
         "real_data_unavailable",

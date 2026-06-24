@@ -12,6 +12,14 @@ import {
   buildWorkspaceCanvasLanes
 } from "../../aicrm_next/frontend_compat/static/admin_console/p1/p1_group_ops_workspace/workspace_grouping.js";
 import {
+  densityClassName,
+  densityDescription
+} from "../../aicrm_next/frontend_compat/static/admin_console/p1/p1_group_ops_workspace/workspace_density.js";
+import {
+  keyboardHintText,
+  moveWorkspaceCanvasSelection
+} from "../../aicrm_next/frontend_compat/static/admin_console/p1/p1_group_ops_workspace/workspace_keyboard.js";
+import {
   sortCanvasCards
 } from "../../aicrm_next/frontend_compat/static/admin_console/p1/p1_group_ops_workspace/workspace_sorting.js";
 import {
@@ -103,6 +111,11 @@ assert.equal(root.innerHTML.includes("data-view-state-memory-only=\"true\""), tr
 assert.equal(root.innerHTML.includes("data-canvas-local-state=\"true\""), true);
 assert.equal(root.innerHTML.includes("data-canvas-sort-mode=\"default\""), true);
 assert.equal(root.innerHTML.includes("data-canvas-group-mode=\"entity_lane\""), true);
+assert.equal(root.innerHTML.includes("data-density=\"comfortable\""), true);
+assert.equal(root.innerHTML.includes("Safe preview only"), true);
+assert.equal(root.innerHTML.includes("data-safe-preview-affordance=\"true\""), true);
+assert.equal(root.innerHTML.includes("data-safe-preview-footer=\"true\""), true);
+assert.equal(root.innerHTML.includes("Keyboard preview"), true);
 assert.equal(root.innerHTML.includes("Plan detail"), true);
 assert.equal(root.innerHTML.includes("Selected preview result"), true);
 assert.equal(root.innerHTML.includes("Preview result / blocked reason"), true);
@@ -295,6 +308,12 @@ assertNoSensitiveFixtureStrings(realRoot.innerHTML);
 const lanes = buildWorkspaceCanvasLanes(fixture, filterWorkspaceView(fixture, realViewState), realViewState);
 assert.deepEqual(lanes.map((lane) => lane.id), ["plans", "groups", "nodes", "executions", "push_center", "evidence"]);
 assert.equal(lanes.every((lane) => lane.cards.length === 1), true);
+assert.equal(lanes.find((lane) => lane.id === "evidence").blockedCount, 1);
+assert.equal(lanes.find((lane) => lane.id === "evidence").actionRequiredCount, 1);
+assert.equal(lanes.find((lane) => lane.id === "push_center").visibleCount, 1);
+assert.equal(keyboardHintText().includes("No task is executed"), true);
+assert.equal(densityClassName("compact"), "p1-workspace-density--compact");
+assert.equal(densityDescription("compact").includes("does not hide status or guardrails"), true);
 
 const statusSorted = sortCanvasCards([
   { originalIndex: 0, status: "sent", entityType: "push_center", updatedOrCreatedTime: "" },
@@ -310,6 +329,25 @@ const collapsedRoot = { innerHTML: "" };
 renderP1GroupOpsWorkspace(collapsedRoot, fixture, collapsedViewState);
 assert.equal(collapsedRoot.innerHTML.includes("data-canvas-lane-id=\"push_center\" data-lane-collapsed=\"true\""), true);
 assertNoSensitiveFixtureStrings(collapsedRoot.innerHTML);
+
+const compactViewState = updateWorkspaceViewState(realViewState, { density: "compact" });
+const compactRoot = { innerHTML: "" };
+renderP1GroupOpsWorkspace(compactRoot, fixture, compactViewState);
+assert.equal(compactRoot.innerHTML.includes("data-density=\"compact\""), true);
+assert.equal(compactRoot.innerHTML.includes("p1-workspace-density--compact"), true);
+assert.equal(compactRoot.innerHTML.includes("Compact density keeps cards shorter"), true);
+assert.equal(fixture.leftRailItems.some((item) => item.status === "sent"), true);
+assertNoSensitiveFixtureStrings(compactRoot.innerHTML);
+
+const keyboardDown = moveWorkspaceCanvasSelection(lanes, realViewState, "ArrowRight");
+assert.equal(keyboardDown.selectedEntityType, "group");
+assert.equal(keyboardDown.selectedEntityId, "group-plan-7");
+const keyboardEnter = moveWorkspaceCanvasSelection(lanes, keyboardDown, "Enter");
+assert.equal(keyboardEnter.selectedEntityType, "group");
+assert.equal(keyboardEnter.selectedEntityId, "group-plan-7");
+const keyboardEscape = moveWorkspaceCanvasSelection(lanes, keyboardEnter, "Escape");
+assert.equal(keyboardEscape.panelMode, "summary");
+assert.equal(fixture.payload.canClaimPass90Plus, false);
 
 const executionCanvasFilter = filterWorkspaceView(fixture, updateWorkspaceViewState(realViewState, { entityTypeFilter: "execution" }));
 const executionLanes = buildWorkspaceCanvasLanes(fixture, executionCanvasFilter, executionCanvasFilter.viewState);

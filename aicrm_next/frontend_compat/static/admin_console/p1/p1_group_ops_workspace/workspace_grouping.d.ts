@@ -26,6 +26,9 @@ export interface WorkspaceCanvasLane {
     title: string;
     description: string;
     cards: WorkspaceCanvasCard[];
+    visibleCount: number;
+    blockedCount: number;
+    actionRequiredCount: number;
     isCollapsed: boolean;
     isVisible: boolean;
     emptyReason: string;
