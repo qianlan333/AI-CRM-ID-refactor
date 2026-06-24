@@ -50,6 +50,10 @@
   .p1-draft-shell-card__head { display: flex; align-items: center; gap: 8px; }
   .p1-drag-guardrails { display: flex; flex-wrap: wrap; gap: 6px; }
   .p1-drag-guardrails code { border-radius: 999px; background: #f1f5f9; color: #334155; padding: 3px 8px; font-size: 12px; }
+  .p1-diagnostics-toggle { margin-top: 16px; border: 1px solid #e5e7eb; border-radius: 8px; background: #fff; }
+  .p1-diagnostics-toggle > summary { cursor: pointer; padding: 12px 14px; color: #374151; font-weight: 700; }
+  .p1-diagnostics-toggle > summary span { color: #6b7280; font-weight: 500; margin-left: 8px; }
+  .p1-diagnostics-toggle .p1-group-ops-panel { padding: 0 14px 14px; margin-bottom: 0; }
   @media (max-width: 960px) {
     .p1-closure-grid,
     .p1-group-ops-evidence__grid,
@@ -61,9 +65,18 @@
 {% endblock %}
 
 {% block content %}
-<section id="groupOpsP1StatusApp" class="p1-group-ops-panel" aria-label="P1 Group Ops read-only status slice">
-  <div class="group-ops__card p1-group-ops-loading">加载 Group Ops P1 状态...</div>
-</section>
+<div
+  id="group-ops-app"
+  class="group-ops"
+  data-page-mode="{{ group_ops_page_mode }}"
+  data-plan-id="{{ group_ops_plan_id }}"
+></div>
+<details class="p1-diagnostics-toggle" data-p1-diagnostics="group_ops" data-default-collapsed="true">
+  <summary>诊断状态 <span>Group Ops evidence / governance / preview，仅验收或管理员查看</span></summary>
+  <section id="groupOpsP1StatusApp" class="p1-group-ops-panel" aria-label="P1 Group Ops read-only status slice">
+    <div class="group-ops__card p1-group-ops-loading">加载 Group Ops P1 状态...</div>
+  </section>
+</details>
 <script id="groupOpsP1StatusPayload" type="application/json">
   {
     "cards": [
@@ -108,12 +121,6 @@
     }
   }
 </script>
-<div
-  id="group-ops-app"
-  class="group-ops"
-  data-page-mode="{{ group_ops_page_mode }}"
-  data-plan-id="{{ group_ops_plan_id }}"
-></div>
 {% endblock %}
 
 {% block scripts_extra %}

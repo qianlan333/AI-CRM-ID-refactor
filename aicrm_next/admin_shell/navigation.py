@@ -177,9 +177,9 @@ ADMIN_NAV_GROUPS: list[dict[str, Any]] = [
         "title": "配置及后台",
         "items": [
             {"key": "jobs", "label": "同步任务配置 / 同步任务", "endpoint": "api.admin_jobs"},
-            {"key": "business_closure", "label": "业务闭环状态", "endpoint": "api.admin_business_closure_page"},
             {"key": "push_center", "label": "推送中心", "endpoint": "api.admin_push_center_page"},
             {"key": "internal_events", "label": "事件中心", "endpoint": "api.admin_internal_events_page"},
+            {"key": "business_closure", "label": "P1 诊断状态", "endpoint": "api.admin_business_closure_page"},
             {"key": "owner_migration", "label": "负责人迁移", "endpoint": "api.admin_owner_migration_page"},
             {"key": "config", "label": "配置", "endpoint": "api.admin_config"},
             {"key": "api_docs", "label": "API 文档", "endpoint": "api.admin_api_docs"},

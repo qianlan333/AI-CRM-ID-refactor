@@ -67,8 +67,12 @@ def test_group_ops_page_renders_p1_readonly_status_slice(group_ops_frontend_clie
     payload = _p1_payload_from_html(html)
 
     assert response.status_code == 200
+    assert html.index('id="group-ops-app"') < html.index('id="groupOpsP1StatusApp"')
     assert 'id="groupOpsP1StatusApp"' in html
     assert 'id="groupOpsP1StatusPayload"' in html
+    assert 'data-p1-diagnostics="group_ops"' in html
+    assert 'data-default-collapsed="true"' in html
+    assert "<details" in html
     assert "group_ops_overview.js" in html
     assert payload["evidenceSummary"]["effectJobId"] == "external_effect_job:97"
     assert payload["evidenceSummary"]["pushCenterStatus"] == "sent"
