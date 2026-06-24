@@ -1,10 +1,6 @@
 from __future__ import annotations
 
-from aicrm_next.automation_engine.application import (
-    CreateTaskCommand,
-    ListAutomationMembersQuery,
-    ListTasksQuery,
-)
+import aicrm_next.automation_engine.application as automation_application
 from aicrm_next.automation_engine.customer_webhooks import (
     ApplyCustomerActivationWebhookCommand,
     execute_customer_webhook_command,
@@ -13,10 +9,33 @@ from aicrm_next.automation_engine.customer_webhooks import (
 
 
 def test_automation_application_surface_is_next_native() -> None:
-    assert ListTasksQuery
-    assert CreateTaskCommand
-    assert ListAutomationMembersQuery
     assert ApplyCustomerActivationWebhookCommand
+
+
+def test_retired_task_workflow_member_action_surface_is_not_exported() -> None:
+    retired_names = {
+        "ListTasksQuery",
+        "CreateTaskCommand",
+        "GetTaskDetailQuery",
+        "UpdateTaskCommand",
+        "ListWorkflowsQuery",
+        "CreateWorkflowCommand",
+        "ListWorkflowNodesQuery",
+        "CreateWorkflowNodeCommand",
+        "ListAutomationMembersQuery",
+        "GetAutomationMemberDetailQuery",
+        "OverrideFollowupTypeCommand",
+        "ConfirmConversionCommand",
+        "EnterSilentPoolCommand",
+        "ExitMarketingCommand",
+        "PushMemberContextToOpenClawCommand",
+        "RunDueWorkflowsCommand",
+        "GenerateAgentOutputCommand",
+        "ReviewAgentOutputCommand",
+    }
+
+    for name in retired_names:
+        assert not hasattr(automation_application, name)
 
 
 def test_activation_webhook_command_plans_local_projection_without_external_call() -> None:
