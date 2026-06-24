@@ -128,33 +128,9 @@ def find_confirmed_channel_by_scene_alias(corp_id: str, scene_value: str) -> dic
 
 
 def find_channel_by_historical_scene_value(scene_value: str) -> dict[str, Any] | None:
-    with _connect() as conn, conn.cursor() as cur:
-        cur.execute(
-            """
-            WITH scene_events AS (
-                SELECT external_userid, created_at
-                FROM wecom_external_contact_event_logs
-                WHERE change_type = 'add_external_contact'
-                  AND external_userid <> ''
-                  AND COALESCE(NULLIF(payload_json->>'State', ''), NULLIF(payload_json->>'state', '')) = %s
-            ),
-            channel_votes AS (
-                SELECT m.source_channel_id AS channel_id, COUNT(*) AS vote_count, MAX(e.created_at) AS latest_event_at
-                FROM scene_events e
-                JOIN automation_member m ON m.external_contact_id = e.external_userid
-                WHERE m.source_channel_id IS NOT NULL
-                GROUP BY m.source_channel_id
-            )
-            SELECT c.*
-            FROM channel_votes votes
-            JOIN automation_channel c ON c.id = votes.channel_id
-            ORDER BY votes.vote_count DESC, votes.latest_event_at DESC, c.updated_at DESC, c.id DESC
-            LIMIT 1
-            """,
-            (text(scene_value),),
-        )
-        row = cur.fetchone()
-        return dict(row) if row else None
+    # Channel entry is now channel-only; unknown scenes should remain diagnostic
+    # instead of being inferred from retired program-admission projections.
+    return None
 
 
 def qrcode_asset_hash(qr_url: str) -> str:

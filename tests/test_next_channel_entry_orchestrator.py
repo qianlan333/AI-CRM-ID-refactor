@@ -37,17 +37,17 @@ def test_active_channel_baseline_emits_only_channel_entry_without_program_admiss
 
     assert result["handled"] is True
     assert result["mode"] == "channel_baseline_only"
-    assert result["reason"] == "legacy_program_admission_retired"
+    assert result["reason"] == "channel_entry_baseline_recorded"
     assert calls[0] == "contact"
     assert result["welcome_message"]["queued"] is True
     assert result["entry_tag"]["queued"] is True
-    assert result["program_member_written"] is False
-    assert result["admission_results"] == []
+    assert "program_member_written" not in result
+    assert "admission_results" not in result
     assert "member" not in calls
     assert "legacy_member" not in calls
 
 
-def test_archived_program_is_ignored_after_legacy_admission_retirement(monkeypatch):
+def test_archived_program_state_is_not_part_of_channel_baseline(monkeypatch):
     calls, previous = _patch_repo(monkeypatch, bindings=[{"id": 20, "program_id": 30, "program_status": "archived"}])
     try:
         result = process_channel_entry(ProcessChannelEntryCommand(external_contact_id="wm-a", payload_json={"State": "scene-a", "WelcomeCode": "wc"}, send_welcome_message=True))
@@ -55,9 +55,9 @@ def test_archived_program_is_ignored_after_legacy_admission_retirement(monkeypat
         set_wecom_adapter(previous)
 
     assert result["mode"] == "channel_baseline_only"
-    assert result["reason"] == "legacy_program_admission_retired"
-    assert result["program_member_written"] is False
-    assert result["admission_results"] == []
+    assert result["reason"] == "channel_entry_baseline_recorded"
+    assert "program_member_written" not in result
+    assert "admission_results" not in result
     assert calls == ["contact"]
     assert result["welcome_message"]["queued"] is True
     assert result["entry_tag"]["queued"] is True
