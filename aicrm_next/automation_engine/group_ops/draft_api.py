@@ -32,6 +32,8 @@ def _safe_error(error: str, detail: str, *, status_code: int) -> JSONResponse:
             "capability_owner": "automation_engine",
             "preview_only": True,
             "production_write": False,
+            "ready_for_review": False,
+            "approved": False,
             "real_external_call": False,
             "real_external_call_executed": False,
             "push_center_job_created": False,
@@ -124,3 +126,15 @@ async def archive_group_ops_workspace_draft(draft_id: str, request: Request) -> 
         return actor
     payload = await _json_body(request)
     return _service_result(lambda: GroupOpsWorkspaceDraftService().archive_draft(draft_id, payload, actor=actor))
+
+
+@router.post(
+    "/api/admin/p1/group-ops-workspace/drafts/{draft_id}/request-review",
+    name="api.admin_p1_group_ops_workspace_draft_request_review",
+)
+async def request_review_group_ops_workspace_draft(draft_id: str, request: Request) -> JSONResponse:
+    actor = _admin_actor_or_response(request)
+    if isinstance(actor, JSONResponse):
+        return actor
+    payload = await _json_body(request)
+    return _service_result(lambda: GroupOpsWorkspaceDraftService().request_review(draft_id, payload, actor=actor))

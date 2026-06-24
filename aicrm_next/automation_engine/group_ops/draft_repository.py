@@ -280,6 +280,79 @@ class GroupOpsWorkspaceDraftRepository:
         except SQLAlchemyError as exc:
             raise RepositoryProviderError(f"group ops workspace draft repository unavailable: {exc}") from exc
 
+    def request_review_draft(
+        self,
+        draft_id: str,
+        *,
+        expected_version: int,
+        actor_id: str,
+        actor_label: str,
+        actor_metadata: dict[str, Any],
+        before_metadata: dict[str, Any],
+        after_metadata: dict[str, Any],
+    ) -> dict[str, Any]:
+        try:
+            with self._engine.begin() as conn:
+                current = self._get_draft_sql(conn, draft_id)
+                if not current:
+                    raise NotFoundError("draft not found")
+                if int(current["version"]) != int(expected_version):
+                    raise ContractError("draft version conflict")
+                if current["draft_status"] != "draft":
+                    raise ContractError("draft status cannot request review")
+                next_version = int(current["version"]) + 1
+                conn.execute(
+                    text(
+                        """
+                        UPDATE group_ops_workspace_drafts
+                        SET draft_status = 'ready_for_review',
+                            version = :version,
+                            updated_by = :actor_id,
+                            updated_at = CURRENT_TIMESTAMP
+                        WHERE draft_id = :draft_id
+                        """
+                    ),
+                    {"draft_id": draft_id, "version": next_version, "actor_id": actor_id},
+                )
+                self._insert_audit_sql(
+                    conn,
+                    draft_id=draft_id,
+                    action="request_review",
+                    actor_id=actor_id,
+                    actor_label=actor_label,
+                    actor_metadata=actor_metadata,
+                    version=next_version,
+                    snapshot_hash=str(current.get("snapshot_hash") or ""),
+                    before_metadata=before_metadata,
+                    after_metadata={**after_metadata, "version": next_version},
+                )
+                return self._get_draft_sql(conn, draft_id) or {}
+        except (ContractError, NotFoundError):
+            raise
+        except SQLAlchemyError as exc:
+            raise RepositoryProviderError(f"group ops workspace draft repository unavailable: {exc}") from exc
+
+    def find_request_review_audit(self, *, draft_id: str, idempotency_key: str) -> dict[str, Any] | None:
+        try:
+            with self._engine.connect() as conn:
+                row = conn.execute(
+                    text(
+                        """
+                        SELECT *
+                        FROM group_ops_workspace_draft_audit_logs
+                        WHERE draft_id = :draft_id
+                          AND action = 'request_review'
+                          AND after_metadata_json ->> 'request_review_idempotency_key' = :idempotency_key
+                        ORDER BY id DESC
+                        LIMIT 1
+                        """
+                    ),
+                    {"draft_id": draft_id, "idempotency_key": idempotency_key},
+                ).fetchone()
+                return self._row_to_audit(_as_mapping(row) or {}) if row else None
+        except SQLAlchemyError as exc:
+            raise RepositoryProviderError(f"group ops workspace draft repository unavailable: {exc}") from exc
+
     def count_audit_logs(self, draft_id: str) -> int:
         try:
             with self._engine.connect() as conn:
@@ -412,6 +485,21 @@ class GroupOpsWorkspaceDraftRepository:
             "guardrail_summary": _json_loads(row.get("guardrail_summary_json"), {}),
             "created_at": _iso(row.get("created_at")),
             "updated_at": _iso(row.get("updated_at")),
+        }
+
+    def _row_to_audit(self, row: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "id": _int(row.get("id")),
+            "draft_id": str(row.get("draft_id") or ""),
+            "action": str(row.get("action") or ""),
+            "actor_id": str(row.get("actor_id") or ""),
+            "actor_label": str(row.get("actor_label") or ""),
+            "actor_metadata": _json_loads(row.get("actor_metadata_json"), {}),
+            "version": _int(row.get("version")),
+            "snapshot_hash": str(row.get("snapshot_hash") or ""),
+            "before_metadata": _json_loads(row.get("before_metadata_json"), {}),
+            "after_metadata": _json_loads(row.get("after_metadata_json"), {}),
+            "created_at": _iso(row.get("created_at")),
         }
 
 

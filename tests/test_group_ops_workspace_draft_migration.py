@@ -10,10 +10,15 @@ from alembic.runtime.migration import MigrationContext
 
 ROOT = Path(__file__).resolve().parents[1]
 MIGRATION_PATH = ROOT / "migrations" / "versions" / "0047_group_ops_workspace_drafts.py"
+REQUEST_REVIEW_MIGRATION_PATH = ROOT / "migrations" / "versions" / "0048_group_ops_workspace_request_review_audit_action.py"
 
 
 def _migration_source() -> str:
     return MIGRATION_PATH.read_text(encoding="utf-8")
+
+
+def _request_review_migration_source() -> str:
+    return REQUEST_REVIEW_MIGRATION_PATH.read_text(encoding="utf-8")
 
 
 def _load_migration_module():
@@ -47,9 +52,12 @@ def test_group_ops_workspace_draft_migration_is_executable_in_postgres_offline_m
 
 def test_group_ops_workspace_draft_migration_revision_chain() -> None:
     source = _migration_source()
+    request_review_source = _request_review_migration_source()
 
     assert 'revision = "0047_group_ops_workspace_drafts"' in source
     assert 'down_revision = "0046_ai_audience_publish_and_subscription_dedupe"' in source
+    assert 'revision = "0048_group_ops_workspace_request_review_audit_action"' in request_review_source
+    assert 'down_revision = "0047_group_ops_workspace_drafts"' in request_review_source
 
 
 def test_group_ops_workspace_draft_tables_fields_indexes_and_constraints() -> None:
@@ -140,6 +148,7 @@ def test_group_ops_workspace_draft_schema_uses_only_sanitized_payload_columns() 
 
 def test_group_ops_workspace_draft_migration_does_not_add_runtime_writers() -> None:
     migration_source = _migration_source()
+    request_review_migration_source = _request_review_migration_source()
     for forbidden in [
         "external_effect_job",
         "external_effect_attempt",
@@ -149,3 +158,13 @@ def test_group_ops_workspace_draft_migration_does_not_add_runtime_writers() -> N
         "httpx.",
     ]:
         assert forbidden not in migration_source
+        assert forbidden not in request_review_migration_source
+
+
+def test_group_ops_workspace_request_review_migration_allows_underscore_audit_action() -> None:
+    source = _request_review_migration_source()
+
+    assert "group_ops_workspace_draft_audit_logs_action_check" in source
+    assert "'request_review'" in source
+    assert "'request-review'" in source
+    assert "ADD CONSTRAINT group_ops_workspace_draft_audit_logs_action_check" in source
