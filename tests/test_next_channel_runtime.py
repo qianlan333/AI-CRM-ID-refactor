@@ -106,7 +106,7 @@ def test_next_channel_center_page_and_channel_crud_routes(monkeypatch):
     assert materials.json()["reason"] == "channel_welcome_materials_listed"
 
 
-def test_retired_program_channel_binding_routes_return_410(monkeypatch):
+def test_program_channel_binding_routes_are_removed(monkeypatch):
     client = _client(monkeypatch)
 
     qrcode = client.post(
@@ -140,18 +140,18 @@ def test_retired_program_channel_binding_routes_return_410(monkeypatch):
         json={"channel_ids": [qrcode["id"], link["id"]]},
     )
     assert bound.status_code == 410
-    assert bound.json()["error"] == "legacy_program_channel_binding_retired"
+    assert bound.json()["error"] == "legacy_automation_program_retired"
 
     rebound = client.post(
         "/api/admin/automation-conversion/programs/1/channel-bindings",
         json={"channel_ids": [link["id"], candidate["id"]]},
     )
     assert rebound.status_code == 410
-    assert rebound.json()["error"] == "legacy_program_channel_binding_retired"
+    assert rebound.json()["error"] == "legacy_automation_program_retired"
 
     bindings = client.get("/api/admin/automation-conversion/programs/1/channel-bindings")
     assert bindings.status_code == 410
-    assert bindings.json()["error"] == "legacy_program_channel_binding_retired"
+    assert bindings.json()["error"] == "legacy_automation_program_retired"
 
     other_program_channel = client.post(
         "/api/admin/channels",
@@ -165,11 +165,10 @@ def test_retired_program_channel_binding_routes_return_410(monkeypatch):
         json={"channel_ids": [other_program_channel["id"]]},
     )
     assert other_bound.status_code == 410
-    assert other_bound.json()["error"] == "legacy_program_channel_binding_retired"
+    assert other_bound.json()["error"] == "legacy_automation_program_retired"
 
     qrcode_bindings = client.get(f"/api/admin/channels/{qrcode['id']}/bindings")
-    assert qrcode_bindings.status_code == 410
-    assert qrcode_bindings.json()["error"] == "legacy_program_channel_binding_retired"
+    assert qrcode_bindings.status_code == 404
 
     page = client.get("/admin/automation-conversion/programs/1/entry-channels")
     assert page.status_code == 410
@@ -188,11 +187,11 @@ def test_retired_program_channel_binding_routes_return_410(monkeypatch):
         json={},
     )
     assert deleted.status_code == 410
-    assert deleted.json()["error"] == "legacy_program_channel_binding_retired"
+    assert deleted.json()["error"] == "legacy_automation_program_retired"
 
     after_delete = client.get("/api/admin/automation-conversion/programs/1/channel-bindings")
     assert after_delete.status_code == 410
-    assert after_delete.json()["error"] == "legacy_program_channel_binding_retired"
+    assert after_delete.json()["error"] == "legacy_automation_program_retired"
 
     available_after_delete = client.get("/api/admin/channels?available_for_program_id=1")
     assert available_after_delete.status_code == 200
