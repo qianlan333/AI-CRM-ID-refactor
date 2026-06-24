@@ -11,7 +11,9 @@
   </section>
 
   <section id="businessClosureApp" aria-label="Business closure evidence overview">
-    <div class="admin-card p1-closure-loading">加载业务闭环状态...</div>
+    <div class="admin-card p1-closure-loading" data-persistence="memory_only" data-real-external-call-executed="false" data-production-write-executed="false" data-can-claim-pass90="false" data-preview-guardrails="requires_gray_window no_direct_send">
+      加载业务闭环状态与 Draft-only / preview-only interaction shell；重排只改变本地 preview 顺序，不保存、不执行、不生成 PASS_90_PLUS。
+    </div>
   </section>
 
   <section class="p1-closure-notes" aria-label="P1 guardrails">
@@ -61,14 +63,14 @@
 .p1-closure-guardrail { background: #f8fafc; border-radius: 8px; padding: 10px; }
 .p1-drag-handle { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border: 1px solid #e5e7eb; border-radius: 6px; color: #64748b; background: #f8fafc; cursor: not-allowed; user-select: none; flex: 0 0 auto; }
 .p1-drag-disabled-reason { color: #64748b; font-size: 12px; border-top: 1px solid #e5e7eb; padding-top: 8px; }
-.p1-drag-demo { display: grid; gap: 12px; margin-top: 16px; }
-.p1-drag-demo__head { border: 1px solid #e5e7eb; border-radius: 8px; padding: 16px; background: #f8fafc; }
-.p1-drag-demo__head h2 { margin: 0 0 6px; font-size: 15px; }
-.p1-drag-demo__head p { margin: 0; color: #5b6472; }
-.p1-drag-demo__grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
-.p1-drag-demo-card { border: 1px dashed #cbd5e1; border-radius: 8px; background: #fff; padding: 14px; display: grid; gap: 10px; }
-.p1-drag-demo-card__head { display: flex; align-items: center; gap: 8px; }
-.p1-drag-demo-card p { margin: 0; color: #475569; }
+.p1-draft-shell { display: grid; gap: 12px; margin-top: 16px; }
+.p1-draft-shell__head { border: 1px solid #e5e7eb; border-radius: 8px; padding: 16px; background: #f8fafc; }
+.p1-draft-shell__head h2 { margin: 0 0 6px; font-size: 15px; }
+.p1-draft-shell__head p { margin: 0; color: #5b6472; }
+.p1-draft-shell__grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.p1-draft-shell-card { border: 1px dashed #cbd5e1; border-radius: 8px; background: #fff; padding: 14px; display: grid; gap: 10px; }
+.p1-draft-shell-card__head { display: flex; align-items: center; gap: 8px; }
+.p1-draft-shell-card p { margin: 0; color: #475569; }
 .p1-drag-guardrails { display: flex; flex-wrap: wrap; gap: 6px; }
 .p1-drag-guardrails code { border-radius: 999px; background: #f1f5f9; color: #334155; padding: 3px 8px; font-size: 12px; }
 .p1-closure-notes { display: grid; grid-template-columns: minmax(0, 1fr); }
@@ -77,7 +79,7 @@
 .p1-closure-loading { padding: 16px; color: #6b7280; }
 @media (max-width: 900px) {
   .p1-closure-grid,
-  .p1-drag-demo__grid,
+  .p1-draft-shell__grid,
   .p1-closure-fields { grid-template-columns: 1fr; }
   .p1-closure-intro,
   .p1-closure-banner { align-items: flex-start; flex-direction: column; }
