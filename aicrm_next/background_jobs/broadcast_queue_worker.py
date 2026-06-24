@@ -168,10 +168,6 @@ def _is_wecom_private_job(job: dict[str, Any], payload: dict[str, Any]) -> bool:
             and _text(job.get("source_table")) == "campaign_members"
             and _text(job.get("content_type")) == "private_message"
         )
-        or (
-            _text(job.get("source_type")) == "automation_runtime_v2"
-            and _text(job.get("target_kind")) == "external_userid"
-        )
     )
 
 

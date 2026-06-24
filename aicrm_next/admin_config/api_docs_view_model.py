@@ -105,7 +105,6 @@ _PATH_LABELS = {
     "notify": "支付通知",
     "ai-assist": "AI 助手",
     "cloud-orchestrator": "云编排",
-    "reply-monitor": "回复监听",
     "jobs": "后台任务",
     "push-center": "推送中心",
     "external-effects": "外部动作队列",
@@ -125,6 +124,8 @@ _AUTH_LABEL_MD = {
 
 
 def _router_sources(frontend_router: APIRouter | None = None) -> list[APIRouter]:
+    from aicrm_next.ai_audience_ops.admin_api import router as ai_audience_admin_router
+    from aicrm_next.ai_audience_ops.api import router as ai_audience_router
     from aicrm_next.ai_assist.api import router as ai_assist_router
     from aicrm_next.admin_shell.routes import router as admin_shell_router
     from aicrm_next.automation_engine.api import router as automation_router
@@ -161,6 +162,8 @@ def _router_sources(frontend_router: APIRouter | None = None) -> list[APIRouter]
         public_product_router,
         commerce_router,
         media_library_router,
+        ai_audience_admin_router,
+        ai_audience_router,
         ai_assist_router,
         send_content_router,
         push_center_router,
@@ -259,9 +262,9 @@ def _group_id_for(path: str) -> str:
         return "commerce"
     if (
         path.startswith("/api/admin/ai-assist")
+        or path.startswith("/api/admin/ai-audience")
+        or path.startswith("/api/ai/audience")
         or path.startswith("/api/admin/cloud-orchestrator")
-        or path.startswith("/api/admin/automation-conversion/reply-monitor")
-        or path.startswith("/api/admin/automation-conversion/jobs")
     ):
         return "ai-assist-compat"
     if path.startswith("/api/admin/push-center"):

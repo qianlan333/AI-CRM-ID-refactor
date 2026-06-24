@@ -119,28 +119,6 @@ def admin_path_for(name: str, **path_params: object) -> str:
     if name == "api.admin_console_questionnaire_detail":
         return "/admin/questionnaires/" + str(path_params.get("questionnaire_id", "")).strip()
 
-    program_id = str(path_params.get("program_id") or "").strip()
-    program_route_map = {
-        "api.admin_automation_program_setup": "setup",
-        "api.admin_automation_program_overview": "overview",
-        "api.admin_automation_program_members": "members",
-        "api.admin_automation_program_update": "update",
-        "api.admin_automation_program_copy_form": "copy",
-        "api.admin_automation_program_copy": "copy",
-        "api.admin_automation_program_pause": "pause",
-        "api.admin_automation_program_activate": "activate",
-        "api.admin_automation_program_archive": "archive",
-        "api.admin_automation_program_entry_channels": "entry-channels",
-    }
-    if name in program_route_map and program_id:
-        base = f"/admin/automation-conversion/programs/{program_id}/{program_route_map[name]}"
-        query = {
-            key: value
-            for key, value in path_params.items()
-            if key != "program_id" and value not in (None, "")
-        }
-        return base + (f"?{urlencode(query)}" if query else "")
-
     route = ADMIN_ROUTE_REGISTRY.get(name)
     base = route.path if route else "#"
     query = {key: value for key, value in path_params.items() if value not in (None, "")}

@@ -183,7 +183,6 @@
     };
 
     const requestUrl = `${apiUrl}${apiUrl.includes("?") ? "&" : "?"}_=${Date.now()}`;
-
     fetch(requestUrl, { credentials: "same-origin", cache: "no-store" })
       .then((response) => {
         if (!response.ok) throw new Error(`HTTP ${response.status}`);

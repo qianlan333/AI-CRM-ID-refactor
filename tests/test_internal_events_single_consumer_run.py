@@ -14,6 +14,7 @@ PAYMENT_CONSUMERS = {
     "order_projection_consumer",
     "webhook_order_paid_consumer",
     "automation_payment_consumer",
+    "ai_audience_source_poke_consumer",
     "customer_business_summary_consumer",
     "dnd_policy_consumer",
     "ai_assist_notify_consumer",
@@ -164,7 +165,7 @@ def _emit_payment(monkeypatch, *, out_trade_no: str = "WXP_SINGLE_CONSUMER"):
     _apply_transaction(_PaymentConn(out_trade_no=out_trade_no), _transaction(out_trade_no))
     event = InternalEventService().list_events({"event_type": PAYMENT_SUCCEEDED_EVENT_TYPE})[0][0]
     runs, total = InternalEventService().list_consumer_runs({"event_id": event.event_id})
-    assert total == 6
+    assert total == 7
     assert {run.consumer_name for run in runs} == PAYMENT_CONSUMERS
     return event
 
@@ -242,6 +243,7 @@ def test_single_consumer_execute_only_updates_specified_consumer(monkeypatch) ->
     assert {name: status for name, status in statuses.items() if name != "order_projection_consumer"} == {
         "webhook_order_paid_consumer": "pending",
         "automation_payment_consumer": "pending",
+        "ai_audience_source_poke_consumer": "pending",
         "customer_business_summary_consumer": "pending",
         "dnd_policy_consumer": "pending",
         "ai_assist_notify_consumer": "pending",
@@ -289,18 +291,14 @@ def test_skipped_single_consumer_records_reason_without_touching_other_runs(monk
     assert {run.status for run in runs if run.consumer_name != "dnd_policy_consumer"} == {"pending"}
 
 
-def test_failed_single_consumer_only_marks_itself_failed(monkeypatch) -> None:
+def test_retired_automation_single_consumer_only_marks_itself_skipped(monkeypatch) -> None:
     event = _emit_payment(monkeypatch)
 
-    def broken_automation(*, order, transaction):
-        raise RuntimeError("automation serialization not ready")
-
-    monkeypatch.setattr("aicrm_next.automation_runtime_v2.bridge.process_payment_succeeded_event", broken_automation)
     result = _run(event.event_id, "automation_payment_consumer")
     statuses = _statuses(event.event_id)
 
-    assert result["counts"]["failed_retryable_count"] == 1
-    assert statuses["automation_payment_consumer"] == "failed_retryable"
+    assert result["counts"]["skipped_count"] == 1
+    assert statuses["automation_payment_consumer"] == "skipped"
     assert {status for name, status in statuses.items() if name != "automation_payment_consumer"} == {"pending"}
 
 

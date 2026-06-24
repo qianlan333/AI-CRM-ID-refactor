@@ -513,7 +513,6 @@ def _serialize_channel(row: dict[str, Any]) -> dict[str, Any]:
     channel["assignee_count"] = int(channel.get("assignee_count") or 0)
     channel["channel_contact_count"] = int(channel.get("channel_contact_count") or 0)
     channel["latest_channel_entered_at"] = _iso(channel.get("latest_channel_entered_at"))
-    channel["bound_program_name"] = ""
     channel["qr_download_url"] = f"/api/admin/channels/{channel['id']}/qrcode/download" if carrier_type != "link" and channel["id"] else ""
     channel["qrcode_status"] = _text(channel.get("qrcode_status")) or ("legacy_untracked" if channel["qr_url"] and channel["scene_value"] else "not_generated")
     channel["qrcode_asset_id"] = int(channel.get("qrcode_asset_id") or channel.get("active_qrcode_asset_id") or 0)
@@ -593,7 +592,6 @@ def get_channel_resource(channel_id: int) -> dict[str, Any] | None:
                        active_asset.status AS qrcode_status,
                        COALESCE(contact_stats.channel_contact_count, 0) AS channel_contact_count,
                        contact_stats.latest_channel_entered_at,
-                       '' AS bound_program_name,
                        wca.customer_channel AS wca_customer_channel,
                        wca.link_url AS wca_link_url,
                        wca.final_url AS wca_final_url,
@@ -662,7 +660,6 @@ def _list_channels_from_postgres(
                        active_asset.status AS qrcode_status,
                        COALESCE(contact_stats.channel_contact_count, 0) AS channel_contact_count,
                        contact_stats.latest_channel_entered_at,
-                       '' AS bound_program_name,
                        wca.customer_channel AS wca_customer_channel,
                        wca.link_url AS wca_link_url,
                        wca.final_url AS wca_final_url,
@@ -701,167 +698,23 @@ def _list_channels_from_postgres(
 
 
 def list_program_channel_bindings_resource(program_id: int) -> list[dict[str, Any]]:
-    conn = _connect()
-    if conn is None:
-        bindings = [
-            _serialize_program_binding({**(_FIXTURE_CHANNELS.get(int(binding.get("channel_id") or 0), {})), **binding})
-            for binding in _FIXTURE_PROGRAM_BINDINGS.values()
-            if int(binding.get("program_id") or 0) == int(program_id) and _text(binding.get("binding_status")) != "archived"
-        ]
-        return sorted(bindings, key=lambda item: (int(item.get("priority") or 0), int(item.get("id") or 0)), reverse=True)
-    with conn:
-        with conn.cursor() as cur:
-            cur.execute(
-                """
-                SELECT
-                    b.id,
-                    b.program_id,
-                    b.channel_id,
-                    b.binding_status,
-                    b.auto_enter_pool,
-                    b.initial_audience_code,
-                    b.priority,
-                    b.bound_at,
-                    b.unbound_at,
-                    b.created_at,
-                    b.updated_at,
-                    c.channel_code,
-                    c.channel_name,
-                    c.channel_type,
-                    c.carrier_type,
-                    c.scene_value,
-                    c.qr_url,
-                    c.customer_channel,
-                    c.link_url,
-                    c.final_url,
-                    c.status AS channel_status,
-                    c.owner_staff_id,
-                    c.auto_accept_friend,
-                    c.entry_tag_id,
-                    c.entry_tag_name,
-                    c.entry_tag_group_name,
-                    c.updated_at AS channel_updated_at,
-                    c.created_at AS channel_created_at,
-                    wca.customer_channel AS wca_customer_channel,
-                    wca.link_url AS wca_link_url,
-                    wca.final_url AS wca_final_url
-                FROM automation_program_channel_binding b
-                JOIN automation_channel c ON c.id = b.channel_id
-                LEFT JOIN wecom_customer_acquisition_links wca
-                  ON wca.automation_channel_id = c.id AND wca.status = 'active'
-                WHERE b.program_id = %s
-                  AND b.binding_status <> 'archived'
-                ORDER BY b.priority DESC, b.id DESC
-                """,
-                (int(program_id),),
-            )
-            return [_serialize_program_binding(dict(row)) for row in cur.fetchall() or []]
+    del program_id
+    return []
 
 
 def list_program_entry_candidate_channels(program_id: int) -> list[dict[str, Any]]:
-    return _list_channels_from_postgres(limit=200, status="", available_for_program_id=int(program_id))
+    del program_id
+    return []
 
 
 def bind_channels_to_program_resource(program_id: int, channel_ids: list[int], payload: dict[str, Any] | None = None) -> dict[str, Any]:
-    global _NEXT_BINDING_ID
-    normalized_ids: list[int] = []
-    for item in channel_ids:
-        channel_id = int(item or 0)
-        if channel_id > 0 and channel_id not in normalized_ids:
-            normalized_ids.append(channel_id)
-    if not normalized_ids:
-        raise ValueError("channel_ids_required")
-    payload = payload or {}
-    conn = _connect()
-    if conn is not None:
-        conn.close()
-        from aicrm_next.automation_runtime_v2.channel_binding_service import bind_channels_to_program
-
-        operator_id = _text(payload.get("operator_id") or payload.get("bound_by")) or "next_admin"
-        result = bind_channels_to_program(
-            int(program_id),
-            normalized_ids,
-            payload,
-            operator_id=operator_id,
-        )
-        result["bindings"] = list_program_channel_bindings_resource(int(program_id))
-        return result
-    initial_audience_code = _text(payload.get("initial_audience_code")) or "pending_questionnaire"
-    if initial_audience_code not in {"pending_questionnaire", "operating", "converted"}:
-        raise ValueError("invalid_initial_audience_code")
-    priority = int(payload.get("priority") or 0)
-    now = datetime.now(timezone.utc).isoformat()
-    for channel_id in normalized_ids:
-        if channel_id not in _FIXTURE_CHANNELS:
-            raise LookupError("channel_not_found")
-        active_conflict = next(
-            (
-                item
-                for item in _FIXTURE_PROGRAM_BINDINGS.values()
-                if int(item.get("channel_id") or 0) == channel_id
-                and int(item.get("program_id") or 0) != int(program_id)
-                and _text(item.get("binding_status")) == "active"
-            ),
-            None,
-        )
-        if active_conflict:
-            raise ValueError("channel_already_bound")
-        existing_id = next(
-            (
-                binding_id
-                for binding_id, item in _FIXTURE_PROGRAM_BINDINGS.items()
-                if int(item.get("program_id") or 0) == int(program_id) and int(item.get("channel_id") or 0) == channel_id
-            ),
-            None,
-        )
-        binding_id = int(existing_id or _NEXT_BINDING_ID)
-        if existing_id is None:
-            _NEXT_BINDING_ID += 1
-        _FIXTURE_PROGRAM_BINDINGS[binding_id] = {
-            "id": binding_id,
-            "program_id": int(program_id),
-            "channel_id": channel_id,
-            "binding_status": "active",
-            "auto_enter_pool": True,
-            "initial_audience_code": initial_audience_code,
-            "priority": priority,
-            "bound_at": now,
-            "created_at": now,
-            "updated_at": now,
-        }
-    return {"bindings": list_program_channel_bindings_resource(int(program_id)), "reason": "program_channels_bound"}
+    del program_id, channel_ids, payload
+    return {"ok": False, "error": "legacy_program_channel_binding_retired", "bindings": []}
 
 
 def archive_program_channel_binding_resource(program_id: int, binding_id: int) -> dict[str, Any]:
-    conn = _connect()
-    if conn is None:
-        binding = _FIXTURE_PROGRAM_BINDINGS.get(int(binding_id))
-        if not binding or int(binding.get("program_id") or 0) != int(program_id):
-            raise LookupError("binding_not_found")
-        binding["binding_status"] = "archived"
-        binding["unbound_at"] = datetime.now(timezone.utc).isoformat()
-        binding["updated_at"] = binding["unbound_at"]
-        return {"binding": _serialize_program_binding({**(_FIXTURE_CHANNELS.get(int(binding.get("channel_id") or 0), {})), **binding}), "reason": "program_channel_unbound"}
-    with conn:
-        with conn.cursor() as cur:
-            cur.execute(
-                """
-                UPDATE automation_program_channel_binding
-                SET binding_status = 'archived',
-                    unbound_at = CURRENT_TIMESTAMP,
-                    updated_at = CURRENT_TIMESTAMP
-                WHERE id = %s
-                  AND program_id = %s
-                RETURNING id
-                """,
-                (int(binding_id), int(program_id)),
-            )
-            row = cur.fetchone()
-        conn.commit()
-    if not row:
-        raise LookupError("binding_not_found")
-    return {"binding_id": int(binding_id), "reason": "program_channel_unbound"}
-
+    del program_id, binding_id
+    return {"ok": False, "error": "legacy_program_channel_binding_retired"}
 
 def _payload_value(payload: dict[str, Any], existing: dict[str, Any], key: str, *, partial: bool) -> Any:
     if partial and key not in payload:

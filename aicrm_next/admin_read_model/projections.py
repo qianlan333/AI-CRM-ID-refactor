@@ -233,9 +233,6 @@ def jobs_payload(repo: AdminReadRepository) -> dict[str, Any]:
     batch_count = repo.count("reply_message_batch")
     outbound_count = repo.count("outbound_tasks")
     timer_rows = [
-        ["aicrm-reply-monitor-capture.timer", "server_observed", "capture only"],
-        ["aicrm-reply-monitor-run-due.timer", "server_observed", "item-level failure guarded"],
-        ["aicrm-automation-jobs-run-due.timer", "scheduled_safe_mode", "safe mode payload required"],
         ["aicrm-campaign-run-due.timer", "scheduled_safe_mode", "safe mode payload required"],
     ]
     cards = [

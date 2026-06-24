@@ -152,7 +152,7 @@ ORDER BY priority ASC, scheduled_for ASC, id ASC
 LIMIT 20;
 ```
 
-只有第一条 due job 是本 case job，并且 `source_type='automation_runtime_v2'`、
+旧 automation_runtime_v2 due job 已退场；生产验证应使用 AI Audience / external_effect_job 的当前链路，
 `channel='wecom_private'`、目标只包含测试 external_userid、`content_payload.sender_userid`
 等于预期 sender、`content_summary` 包含测试标识，才允许运行 worker。
 
