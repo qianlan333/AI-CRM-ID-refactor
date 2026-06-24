@@ -212,6 +212,19 @@ def test_questionnaire_dynamic_url_link_completion_target(client: TestClient) ->
     assert submit.json()["completion_target"]["target_type"] == "url_link"
     assert submit.json()["completion_target"]["url_link"]["response_url_key"] == "url_link"
 
+    repeat_page = client.get(
+        "/s/dynamic-url-link-survey",
+        params={"respondent_key": "dynamic-url-link-user"},
+        follow_redirects=False,
+    )
+    assert repeat_page.status_code == 302
+    assert repeat_page.headers["location"].startswith("/api/h5/navigation-target/url-link/resolve?")
+    assert "source_url=https%3A%2F%2Fip.lhbl.com.cn%2Fapi%2Fwxlink%3Ffrom%3Dquestionnaire" in repeat_page.headers["location"]
+
+    submitted_page = client.get("/s/dynamic-url-link-survey/submitted", follow_redirects=False)
+    assert submitted_page.status_code == 302
+    assert submitted_page.headers["location"].startswith("/api/h5/navigation-target/url-link/resolve?")
+
 
 def test_questionnaire_legacy_redirect_auto_builds_h5_completion_target(client: TestClient) -> None:
     create = client.post(

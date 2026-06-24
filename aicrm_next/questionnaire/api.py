@@ -17,6 +17,7 @@ from fastapi.encoders import jsonable_encoder
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 
+from aicrm_next.navigation_target import safe_completion_url
 from aicrm_next.shared.errors import ContractError, NotFoundError
 from aicrm_next.shared.runtime import production_data_ready
 
@@ -78,6 +79,34 @@ _QUESTIONNAIRE_SOURCE_PARAM_FIELDS = (
     "staff_id",
 )
 _QUESTIONNAIRE_META_FIELDS = _QUESTIONNAIRE_IDENTITY_HINT_FIELDS + _QUESTIONNAIRE_SOURCE_PARAM_FIELDS
+
+
+def _completion_target_redirect_url(slug: str, completion_target: Any, *, fallback_url: Any = "") -> str:
+    if not isinstance(completion_target, dict) or not completion_target.get("enabled"):
+        return ""
+    if str(completion_target.get("target_type") or "").strip() != "url_link":
+        return ""
+    link = completion_target.get("url_link") if isinstance(completion_target.get("url_link"), dict) else {}
+    source_url = str(link.get("source_url") or "").strip()
+    if source_url:
+        query = {
+            "source_url": source_url,
+            "response_url_key": str(link.get("response_url_key") or "url_link") or "url_link",
+        }
+        safe_fallback = _safe_completion_fallback(slug, fallback_url)
+        if safe_fallback:
+            query["fallback_url"] = safe_fallback
+        return f"/api/h5/navigation-target/url-link/resolve?{urlencode(query)}"
+    return safe_completion_url(link.get("url"))
+
+
+def _safe_completion_fallback(slug: str, fallback_url: Any) -> str:
+    safe_url = safe_completion_url(fallback_url)
+    if safe_url in {"", f"/s/{slug}/submitted"}:
+        return ""
+    return safe_url
+
+
 def _raise_http(exc: Exception) -> None:
     if isinstance(exc, NotFoundError):
         raise HTTPException(status_code=404, detail=str(exc)) from exc
@@ -1105,7 +1134,11 @@ def public_questionnaire_h5_page(request: Request, slug: str):
     should_require_oauth = is_wechat_browser and oauth_configured and not is_authorized
     submission_status = GetPublicQuestionnaireSubmissionStatusQuery()(slug, identity=identity)
     if submission_status.get("submitted") and not should_require_oauth:
-        redirect_url = str(
+        redirect_url = _completion_target_redirect_url(
+            slug,
+            submission_status.get("completion_target"),
+            fallback_url=submission_status.get("redirect_url") or "",
+        ) or str(
             submission_status.get("redirect_url") or submission_status.get("submitted_url") or f"/s/{slug}/submitted"
         ).strip()
         return _with_identity_cookie(RedirectResponse(redirect_url, status_code=302), identity_result)
@@ -1145,4 +1178,16 @@ def public_questionnaire_h5_page(request: Request, slug: str):
 
 @router.get("/s/{slug}/submitted", response_class=HTMLResponse)
 def public_questionnaire_submitted(request: Request, slug: str):
+    try:
+        payload = GetPublicQuestionnaireQuery()(slug)
+    except Exception as exc:
+        _raise_http(exc)
+    questionnaire = jsonable_encoder(payload["questionnaire"])
+    redirect_url = _completion_target_redirect_url(
+        slug,
+        questionnaire.get("completion_target"),
+        fallback_url=questionnaire.get("redirect_url") or "",
+    )
+    if redirect_url:
+        return RedirectResponse(redirect_url, status_code=302)
     return templates.TemplateResponse(request, "questionnaire_h5_submitted.html", {"request": request})
