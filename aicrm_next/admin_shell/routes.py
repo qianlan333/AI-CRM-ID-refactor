@@ -75,6 +75,37 @@ def admin_business_closure_page(request: Request):
     return templates.TemplateResponse(request, "admin_shell/business_closure.html", context)
 
 
+@router.get("/admin/p1/group-ops-workspace", name="api.admin_p1_group_ops_workspace")
+def admin_p1_group_ops_workspace(request: Request):
+    context = shell_context(
+        request=request,
+        page_title="P1 Native Group Ops Workspace",
+        page_summary="TS-native draft-only / preview-only 群运营工作台壳；不发送、不审批、不写生产。",
+        active_endpoint="api.admin_p1_group_ops_workspace",
+    )
+    context.update(
+        {
+            "breadcrumbs": [
+                {"label": "客户管理后台", "href": admin_path_for("api.admin_console_dashboard")},
+                {"label": "P1 Group Ops Workspace", "href": ""},
+            ],
+            "page_actions": [
+                {
+                    "label": "返回群运营计划",
+                    "href": admin_path_for("api.admin_group_ops_ui"),
+                    "variant": "secondary",
+                },
+                {
+                    "label": "查看 P1 诊断状态",
+                    "href": admin_path_for("api.admin_business_closure_page"),
+                    "variant": "ghost",
+                },
+            ],
+        }
+    )
+    return templates.TemplateResponse(request, "admin_shell/p1_group_ops_workspace.html", context)
+
+
 @router.get("/api/admin/dashboard/shell-context", name="api.admin_dashboard_shell_context")
 def admin_dashboard_shell_context() -> dict:
     return AdminShellApiClient().shell_context_payload()

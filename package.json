@@ -5,7 +5,7 @@
   "scripts": {
     "build:frontend": "tsc -p tsconfig.frontend.json",
     "typecheck": "tsc -p tsconfig.frontend.json --noEmit",
-    "test:frontend": "node tests/frontend/p1_business_closure_status.test.mjs && node tests/frontend/p1_push_center_status.test.mjs && node tests/frontend/p1_group_ops_status.test.mjs && node tests/frontend/p1_ops_plan_status.test.mjs && node tests/frontend/p1_wecom_status.test.mjs && node tests/frontend/p1_interaction_shell.test.mjs && node tests/frontend/p1_business_pages_interaction_shell.test.mjs && node tests/frontend/p1_preview_board.test.mjs"
+    "test:frontend": "node tests/frontend/p1_business_closure_status.test.mjs && node tests/frontend/p1_push_center_status.test.mjs && node tests/frontend/p1_group_ops_status.test.mjs && node tests/frontend/p1_ops_plan_status.test.mjs && node tests/frontend/p1_wecom_status.test.mjs && node tests/frontend/p1_interaction_shell.test.mjs && node tests/frontend/p1_business_pages_interaction_shell.test.mjs && node tests/frontend/p1_preview_board.test.mjs && node tests/frontend/p1_group_ops_workspace.test.mjs"
   },
   "devDependencies": {
     "typescript": "5.9.3"

@@ -1,0 +1,110 @@
+{% extends "admin_shell/base.html" %}
+
+{% block content %}
+<section class="p1-workspace-page" data-route-owner="ai_crm_next" data-page-purpose="ts_native_group_ops_workspace">
+  <section class="admin-card p1-workspace-page-intro">
+    <div>
+      <h2>P1 Native Group Ops Workspace</h2>
+      <p>这是新的 TS-native 交互工作台壳，不是诊断页，也不是 legacy Group Ops 页面顶部补丁。</p>
+    </div>
+    <span class="p1-closure-pill p1-closure-pill--warning">draft-only / preview-only</span>
+  </section>
+
+  <section id="p1GroupOpsWorkspaceApp" aria-label="P1 native group ops workspace">
+    <div class="admin-card p1-workspace-loading" data-real-external-call-executed="false" data-production-write-executed="false" data-can-claim-pass90="false">
+      加载 P1 Native workspace preview；不会发送、不审批、不写生产。
+    </div>
+  </section>
+</section>
+
+<style>
+.p1-workspace-page { display: grid; gap: 16px; }
+.p1-workspace-page-intro,
+.p1-workspace-banner { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 16px; }
+.p1-workspace-page-intro h2,
+.p1-workspace-banner h2,
+.p1-workspace-panel-head h2,
+.p1-closure-card h2,
+.p1-draft-shell__head h2 { margin: 0 0 6px; font-size: 15px; }
+.p1-workspace-page-intro p,
+.p1-workspace-banner p,
+.p1-workspace-panel-head p,
+.p1-closure-card p,
+.p1-draft-shell__head p { margin: 0; color: #5b6472; }
+.p1-closure-pill { display: inline-flex; align-items: center; justify-content: center; min-height: 24px; padding: 3px 9px; border-radius: 999px; font-size: 12px; font-weight: 700; white-space: nowrap; }
+.p1-closure-pill--success { color: #166534; background: #dcfce7; }
+.p1-closure-pill--info { color: #1d4ed8; background: #dbeafe; }
+.p1-closure-pill--warning { color: #92400e; background: #fef3c7; }
+.p1-closure-pill--danger { color: #991b1b; background: #fee2e2; }
+.p1-closure-pill--neutral { color: #374151; background: #f3f4f6; }
+.p1-native-group-ops-workspace { display: grid; gap: 16px; }
+.p1-workspace-grid { display: grid; grid-template-columns: minmax(220px, 0.8fr) minmax(360px, 1.4fr) minmax(260px, 1fr); gap: 14px; align-items: start; }
+.p1-workspace-left,
+.p1-workspace-canvas,
+.p1-workspace-right,
+.p1-workspace-preview-result { border: 1px solid #e5e7eb; border-radius: 8px; background: #fff; padding: 14px; display: grid; gap: 12px; }
+.p1-workspace-panel-head { border-bottom: 1px solid #e5e7eb; padding-bottom: 10px; }
+.p1-workspace-list,
+.p1-workspace-canvas-grid,
+.p1-workspace-status-stack,
+.p1-workspace-validation-grid { display: grid; gap: 10px; }
+.p1-workspace-list-item,
+.p1-workspace-canvas-card,
+.p1-workspace-validation,
+.p1-workspace-guardrail-summary,
+.p1-closure-card,
+.p1-draft-shell-card { border: 1px solid #e5e7eb; border-radius: 8px; background: #fff; padding: 12px; display: grid; gap: 8px; }
+.p1-workspace-list-item--success,
+.p1-closure-card--success { border-color: #bbf7d0; }
+.p1-workspace-list-item--info,
+.p1-closure-card--info { border-color: #bfdbfe; }
+.p1-workspace-list-item--warning,
+.p1-closure-card--warning { border-color: #fde68a; }
+.p1-workspace-list-item--danger,
+.p1-closure-card--danger { border-color: #fecaca; }
+.p1-workspace-list-item__head,
+.p1-workspace-canvas-card__head,
+.p1-closure-card__head,
+.p1-draft-shell-card__head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+.p1-closure-title-row { display: inline-flex; align-items: center; gap: 8px; min-width: 0; }
+.p1-workspace-list-item__head span { color: #64748b; font-size: 12px; text-transform: uppercase; }
+.p1-workspace-list-item p,
+.p1-workspace-canvas-card p,
+.p1-workspace-validation p,
+.p1-workspace-guardrail-summary p,
+.p1-draft-shell-card p { margin: 0; color: #475569; }
+.p1-workspace-mini-fields,
+.p1-closure-fields { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin: 0; }
+.p1-workspace-mini-fields div,
+.p1-closure-fields div { border: 1px solid #e5e7eb; border-radius: 8px; padding: 8px; min-width: 0; }
+.p1-workspace-mini-fields dt,
+.p1-closure-fields dt { color: #6b7280; font-size: 12px; margin-bottom: 4px; }
+.p1-workspace-mini-fields dd,
+.p1-closure-fields dd { margin: 0; font-weight: 700; overflow-wrap: anywhere; }
+.p1-workspace-guardrails,
+.p1-drag-guardrails { display: flex; flex-wrap: wrap; gap: 6px; }
+.p1-workspace-guardrails code,
+.p1-drag-guardrails code { border-radius: 999px; background: #f1f5f9; color: #334155; padding: 3px 8px; font-size: 12px; }
+.p1-closure-guardrail { background: #f8fafc; border-radius: 8px; padding: 10px; }
+.p1-drag-handle { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border: 1px solid #e5e7eb; border-radius: 6px; color: #64748b; background: #f8fafc; cursor: not-allowed; user-select: none; flex: 0 0 auto; }
+.p1-drag-disabled-reason { color: #64748b; font-size: 12px; border-top: 1px solid #e5e7eb; padding-top: 8px; }
+.p1-draft-shell { display: grid; gap: 12px; border-top: 1px solid #e5e7eb; padding-top: 12px; }
+.p1-draft-shell__head { border: 1px solid #e5e7eb; border-radius: 8px; padding: 12px; background: #f8fafc; }
+.p1-draft-shell__grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.p1-workspace-loading { padding: 16px; color: #6b7280; }
+@media (max-width: 1100px) {
+  .p1-workspace-grid { grid-template-columns: 1fr; }
+}
+@media (max-width: 720px) {
+  .p1-workspace-page-intro,
+  .p1-workspace-banner { flex-direction: column; align-items: flex-start; }
+  .p1-workspace-mini-fields,
+  .p1-closure-fields,
+  .p1-draft-shell__grid { grid-template-columns: 1fr; }
+}
+</style>
+{% endblock %}
+
+{% block scripts_extra %}
+<script type="module" src="{{ admin_path_for('static', filename='admin_console/p1/p1_group_ops_workspace/workspace_layout.js') }}?v=p1-native-group-ops-workspace-20260624"></script>
+{% endblock %}
