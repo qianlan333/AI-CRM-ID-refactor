@@ -42,6 +42,29 @@ FORBIDDEN_EXECUTION_TOKENS = [
     "execute_external",
 ]
 
+SENSITIVE_OUTPUT_TOKENS = [
+    "raw_receiver",
+    "raw_external_userid",
+    "external_userid",
+    "phone",
+    "mobile",
+    "raw_chat",
+    "raw_member",
+    "openid",
+    "unionid",
+    "access_token",
+    "refresh_token",
+    "corp_secret",
+    "suite_secret",
+    "secret=",
+    "authorization:",
+    "bearer ",
+    "raw_target",
+    "target_list_raw",
+    "raw_message",
+    "callback_body",
+]
+
 
 def _read(path: str) -> str:
     return (ROOT / path).read_text(encoding="utf-8")
@@ -188,7 +211,120 @@ def _business_closure_check() -> dict[str, Any]:
         return {"ok": False, "error": f"business_closure_check_unavailable: {exc}"}
 
 
-def run(*, allow_write_validation: bool = False) -> dict[str, Any]:
+def _classify_db_error(exc: Exception, *, table: str) -> str:
+    message = str(exc).lower()
+    if "permission denied" in message or "insufficient privilege" in message:
+        if table == "external_effect_job":
+            return "EXTERNAL_EFFECT_JOB_READ_SKIPPED_PERMISSION_LIMITED"
+        return "READ_SKIPPED_PERMISSION_LIMITED"
+    if "does not exist" in message or "undefinedtable" in message:
+        return "TABLE_NOT_FOUND"
+    if "column" in message and ("does not exist" in message or "undefinedcolumn" in message):
+        return "READ_SKIPPED_SCHEMA_LIMITED"
+    return "READ_SKIPPED_UNAVAILABLE"
+
+
+def _read_recent_count(conn: Any, *, table: str, where: str = "TRUE", window_minutes: int) -> dict[str, Any]:
+    from sqlalchemy import text
+
+    allowed_tables = {"external_effect_job", "broadcast_jobs", "internal_event"}
+    if table not in allowed_tables:
+        return {"status": "TABLE_NOT_ALLOWED", "verified": False}
+    try:
+        recent_count = conn.execute(
+            text(
+                f"""
+                SELECT count(*)::int
+                FROM {table}
+                WHERE created_at >= now() - (:window_minutes * interval '1 minute')
+                  AND ({where})
+                """
+            ),
+            {"window_minutes": int(window_minutes)},
+        ).scalar_one()
+        return {
+            "status": "COUNTED",
+            "verified": True,
+            "recent_count": int(recent_count or 0),
+        }
+    except Exception as exc:  # pragma: no cover - production permission/schema differences
+        return {
+            "status": _classify_db_error(exc, table=table),
+            "verified": False,
+        }
+
+
+def _aggregate_evidence_check(*, window_minutes: int = 30) -> dict[str, Any]:
+    try:
+        from aicrm_next.shared.runtime import raw_database_url
+
+        if not raw_database_url():
+            return {
+                "ok": True,
+                "dry_run_read_only": True,
+                "status": "AGGREGATE_EVIDENCE_SKIPPED_DATABASE_URL_MISSING",
+                "window_minutes": window_minutes,
+                "external_effect_job_aggregate_verified": False,
+                "sensitive_payload_exposed": False,
+            }
+
+        from aicrm_next.shared.db_session import get_engine
+
+        with get_engine().connect() as conn:
+            external_effect = _read_recent_count(
+                conn,
+                table="external_effect_job",
+                where="TRUE",
+                window_minutes=window_minutes,
+            )
+            broadcast = _read_recent_count(
+                conn,
+                table="broadcast_jobs",
+                where="COALESCE(status, '') NOT IN ('sent', 'completed')",
+                window_minutes=window_minutes,
+            )
+            internal_event = _read_recent_count(
+                conn,
+                table="internal_event",
+                where="COALESCE(event_type, '') ILIKE '%p1%group%ops%' OR COALESCE(event_type, '') ILIKE '%bridge%'",
+                window_minutes=window_minutes,
+            )
+        return {
+            "ok": True,
+            "dry_run_read_only": True,
+            "status": "AGGREGATE_EVIDENCE_COLLECTED"
+            if any(item.get("verified") is True for item in [external_effect, broadcast, internal_event])
+            else "AGGREGATE_EVIDENCE_SAFE_SKIP",
+            "window_minutes": window_minutes,
+            "external_effect_job": external_effect,
+            "broadcast_jobs": broadcast,
+            "internal_event": internal_event,
+            "external_effect_job_aggregate_verified": external_effect.get("verified") is True,
+            "sensitive_payload_exposed": False,
+        }
+    except Exception as exc:  # pragma: no cover - defensive production diagnostic
+        return {
+            "ok": True,
+            "dry_run_read_only": True,
+            "status": "AGGREGATE_EVIDENCE_SAFE_SKIP",
+            "window_minutes": window_minutes,
+            "external_effect_job_aggregate_verified": False,
+            "sensitive_payload_exposed": False,
+            "error_code": "aggregate_evidence_unavailable",
+            "error": str(exc).splitlines()[0][:180],
+        }
+
+
+def _redaction_check(payload: dict[str, Any]) -> dict[str, Any]:
+    rendered = str(payload).lower()
+    hits = [token for token in SENSITIVE_OUTPUT_TOKENS if token in rendered]
+    return {
+        "ok": not hits,
+        "sensitive_token_hits": hits,
+    }
+
+
+def run(*, allow_write_validation: bool = False, window_minutes: int = 30) -> dict[str, Any]:
     route_manifest = _route_manifest_check()
     registered_routes = _registered_route_check()
     auth_fail_closed = _auth_fail_closed_check()
@@ -196,6 +332,7 @@ def run(*, allow_write_validation: bool = False) -> dict[str, Any]:
     static_assets = _static_asset_check()
     source_inventory = _source_inventory_check()
     business_closure = _business_closure_check()
+    aggregate_evidence = _aggregate_evidence_check(window_minutes=window_minutes)
     write_validation_status = (
         "WRITE_VALIDATION_NOT_IMPLEMENTED_IN_DIAGNOSTIC"
         if allow_write_validation
@@ -209,10 +346,12 @@ def run(*, allow_write_validation: bool = False) -> dict[str, Any]:
         "static_assets": static_assets,
         "source_inventory": source_inventory,
         "business_closure": business_closure,
+        "aggregate_evidence": aggregate_evidence,
     }
-    ok = all(item.get("ok") is True for item in checks.values())
-    return {
-        "ok": ok,
+    initial_ok = all(item.get("ok") is True for item in checks.values())
+    payload = {
+        "dry_run_read_only": True,
+        "ok": initial_ok,
         "diagnostic": "p1_group_ops_workspace_bridge_acceptance",
         "mode": "dry_run_read_only",
         "write_validation_status": write_validation_status,
@@ -224,14 +363,21 @@ def run(*, allow_write_validation: bool = False) -> dict[str, Any]:
         "can_claim_pass_90_plus": False,
         "checks": checks,
         "summary": {
-            "bridge_contract_ready_for_final_closeout": ok,
+            "bridge_contract_ready_for_final_closeout": initial_ok,
             "pending_projection_not_sent": True,
             "no_execution_contract": source_inventory.get("ok") is True,
             "auth_fail_closed": auth_fail_closed.get("ok") is True,
             "write_validation": write_validation_status,
+            "external_effect_job_aggregate_verified": aggregate_evidence.get("external_effect_job_aggregate_verified") is True,
             "next_action": "final closeout / acceptance report PR; external effect execution remains out of scope",
         },
     }
+    redaction = _redaction_check(payload)
+    checks["redaction"] = redaction
+    ok = all(item.get("ok") is True for item in checks.values())
+    payload["ok"] = ok
+    payload["summary"]["bridge_contract_ready_for_final_closeout"] = ok
+    return payload
 
 
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -241,12 +387,18 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         action="store_true",
         help="Reserved for an explicitly approved operator window. This script still does not implement production writes.",
     )
+    parser.add_argument(
+        "--window-minutes",
+        type=int,
+        default=30,
+        help="Recent aggregate observation window. Counts only; no raw payload output.",
+    )
     return parser.parse_args(argv)
 
 
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv)
-    payload = run(allow_write_validation=bool(args.allow_write_validation))
+    payload = run(allow_write_validation=bool(args.allow_write_validation), window_minutes=max(1, int(args.window_minutes)))
     print_json(payload)
     return 0 if payload.get("ok") else 2
 

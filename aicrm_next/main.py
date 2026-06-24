@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -32,6 +31,7 @@ from .radar_links.repo import reset_radar_links_fixture_state
 from .sidebar_write import reset_sidebar_write_fixture_state
 from .router_registry import register_routers
 from .shared.repository_provider import RepositoryProviderError
+from .shared.release import current_release_sha
 from .shared.runtime import fixture_mode
 from .questionnaire.repo import reset_questionnaire_fixture_state
 from .questionnaire.admin_write import reset_questionnaire_admin_write_fixture_state
@@ -94,7 +94,7 @@ def create_app() -> FastAPI:
         response = await call_next(request)
         response.headers.setdefault("X-AICRM-Route-Owner", "ai_crm_next")
         response.headers.setdefault("X-AICRM-App", "ai_crm_next")
-        response.headers.setdefault("X-AICRM-Release-SHA", os.getenv("AICRM_NEXT_RELEASE_SHA") or os.getenv("RELEASE_SHA") or "unknown")
+        response.headers.setdefault("X-AICRM-Release-SHA", current_release_sha())
         return response
 
     app.mount(

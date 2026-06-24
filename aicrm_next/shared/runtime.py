@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import os
 
+from aicrm_next.shared.release import current_release_sha
+
 
 def _env_flag(name: str, *, default: bool = False) -> bool:
     value = str(os.getenv(name, "") or "").strip().lower()
@@ -79,7 +81,7 @@ def runtime_health_state() -> dict:
 
 def runtime_route_map_state() -> dict:
     return {
-        "web_release_sha": str(os.getenv("RELEASE_SHA") or os.getenv("GIT_SHA") or "unknown").strip() or "unknown",
+        "web_release_sha": current_release_sha(),
         "worker_release_sha": str(os.getenv("WORKER_RELEASE_SHA") or "unknown").strip() or "unknown",
         "route_owner": "ai_crm_next",
         "app_name": "aicrm-next",

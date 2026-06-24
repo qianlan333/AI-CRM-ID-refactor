@@ -48,6 +48,18 @@ def test_production_deploy_installs_dependencies_only_when_requirements_change()
     assert "requirements.txt unchanged; skipping pip install" in workflow
 
 
+def test_production_deploy_refreshes_release_marker_before_restart_and_checks_health_header():
+    workflow = (ROOT / ".github" / "workflows" / "deploy.yml").read_text(encoding="utf-8")
+
+    after_sha_index = workflow.index('after_sha="$(git rev-parse HEAD)"')
+    marker_index = workflow.index('printf \'%s\\n\' "$after_sha" > .release-sha')
+    restart_index = workflow.index("sudo systemctl restart openclaw-wecom-postgres.service")
+    header_curl_index = workflow.index("curl -sSf -D /tmp/aicrm_health_headers.txt http://127.0.0.1:5001/health")
+    header_grep_index = workflow.index('grep -i "x-aicrm-release-sha: $after_sha" /tmp/aicrm_health_headers.txt')
+
+    assert after_sha_index < marker_index < restart_index < header_curl_index < header_grep_index
+
+
 def test_production_deploy_runs_alembic_upgrade_before_service_restart():
     workflow = (ROOT / ".github" / "workflows" / "deploy.yml").read_text(encoding="utf-8")
 
