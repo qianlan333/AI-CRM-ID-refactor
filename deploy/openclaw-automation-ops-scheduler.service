@@ -1,5 +1,5 @@
 [Unit]
-Description=OpenClaw Automation Ops Scheduler — enqueue due automation ops into broadcast_jobs
+Description=OpenClaw Group Ops Scheduler — plan due group ops external effects
 After=network.target openclaw-wecom-postgres.service
 Requires=openclaw-wecom-postgres.service
 

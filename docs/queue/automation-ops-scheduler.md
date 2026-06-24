@@ -1,6 +1,6 @@
 # Automation Ops Scheduler
 
-`scripts/run_automation_ops_scheduler.py` is the business-domain scheduler for automation ops. For group_ops, it now creates due `external_effect_job` rows with `effect_type=wecom.message.group.send`; historical `broadcast_jobs` remain read-only compatibility records. Real WeCom group delivery is handled by the External Effect worker and the `wecom_group_message` adapter guard.
+`scripts/run_automation_ops_scheduler.py` is now the production scheduler entry for group_ops only. It creates due `external_effect_job` rows with `effect_type=wecom.message.group.send`; historical `broadcast_jobs` remain read-only compatibility records. Real WeCom group delivery is handled by the External Effect worker and the `wecom_group_message` adapter guard.
 
 ## group_ops due_at
 
@@ -38,18 +38,13 @@ The scheduler uses a stable source/idempotency shape that includes:
 
 The `external_effect_job` idempotency guard is the primary protection, with a historical `broadcast_jobs` lookup only for older rows. Rerunning the timer does not duplicate External Effect jobs.
 
-## operation_task
+## Retired legacy components
 
-The same runner calls `run_due_operation_tasks(...)` for `scheduled_daily` operation tasks. That service pre-schedules `operation_task` jobs into `broadcast_jobs`; the worker later resolves the audience and sends through the existing operation-task handler.
-
-## HXC dashboard snapshot
-
-The HXC dashboard is backend-refreshed. The scheduler checks `user_ops_hxc_dashboard_meta` every minute and calls `refresh_hxc_dashboard_snapshot(...)` only when the latest successful snapshot is at least 30 minutes old. The admin page must not auto-POST `/api/admin/hxc-dashboard/refresh`; it only reads the snapshot and keeps the manual refresh button for operator-initiated repair.
+The old `operation_task` scheduler path, HXC dashboard refresh hook, and Feishu hourly report hook have been removed from this runner. They no longer appear as skipped components and must not be used as compatibility placeholders for old automation program/task orchestration.
 
 ## Responsibility Boundary
 
 - Automation ops scheduler: compute due group_ops work and plan External Effect jobs.
-- HXC dashboard scheduler path: refresh the snapshot read model at a 30-minute cadence.
 - External Effect worker: claim due group-send effects and dispatch the guarded `wecom_group_message` adapter.
 - Broadcast queue worker: remains for historical/non-group_ops broadcast rows.
 - WeCom adapter: decide whether fake, blocked, or production side effects may run.
@@ -71,7 +66,7 @@ Real group_ops acceptance must use only:
 
 ```bash
 python scripts/run_automation_ops_scheduler.py
-python scripts/run_broadcast_queue_worker.py
+python scripts/run_external_effect_queue_worker.py --execute --effect-type wecom.message.group.send
 ```
 
 Do not use group_ops run-due or direct queue writes to stand in for automatic scheduling.
