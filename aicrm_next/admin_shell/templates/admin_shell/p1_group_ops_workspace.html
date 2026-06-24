@@ -68,6 +68,8 @@
 .p1-workspace-canvas-card,
 .p1-workspace-validation,
 .p1-workspace-detail,
+.p1-workspace-preview-bundle,
+.p1-workspace-bundle-item,
 .p1-workspace-selected-preview,
 .p1-workspace-empty-state,
 .p1-workspace-guardrail-summary,
@@ -94,6 +96,7 @@ button.p1-workspace-canvas-card { appearance: none; width: 100%; text-align: lef
 .p1-draft-shell-card__head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
 .p1-workspace-lane-head h3 { margin: 0 0 4px; font-size: 14px; }
 .p1-workspace-lane-head p { margin: 0; color: #64748b; }
+.p1-workspace-lane-select { border: 1px solid #d1d5db; border-radius: 6px; background: #fff; color: #374151; padding: 5px 8px; font: inherit; font-size: 12px; cursor: pointer; }
 .p1-workspace-lane-counts { display: grid; grid-template-columns: repeat(3, auto); gap: 4px; margin: 0; }
 .p1-workspace-lane-counts div { min-width: 42px; border: 1px solid #e5e7eb; border-radius: 6px; padding: 4px 6px; text-align: center; background: #f8fafc; }
 .p1-workspace-lane-counts dt { color: #64748b; font-size: 10px; line-height: 1.1; }
@@ -102,6 +105,8 @@ button.p1-workspace-canvas-card { appearance: none; width: 100%; text-align: lef
 .p1-workspace-list-item__head span { color: #64748b; font-size: 12px; text-transform: uppercase; }
 .p1-workspace-list-item p,
 .p1-workspace-canvas-card p,
+.p1-workspace-preview-bundle p,
+.p1-workspace-bundle-item em,
 .p1-workspace-validation p,
 .p1-workspace-detail p,
 .p1-workspace-selected-preview p,
@@ -130,6 +135,17 @@ button.p1-workspace-canvas-card { appearance: none; width: 100%; text-align: lef
 .p1-workspace-lane-toggle-list { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 6px; }
 .p1-workspace-lane-toggle { border: 1px solid #d1d5db; border-radius: 999px; background: #fff; color: #374151; padding: 6px 10px; font: inherit; font-size: 12px; cursor: pointer; }
 .p1-workspace-canvas-lane[data-lane-collapsed="true"] { background: #f8fafc; }
+.p1-workspace-bulk-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.p1-workspace-bulk-actions button,
+.p1-workspace-multi-select-affordance { border: 1px solid #bfdbfe; border-radius: 999px; background: #eff6ff; color: #1d4ed8; padding: 5px 9px; font: inherit; font-size: 12px; line-height: 1.2; }
+.p1-workspace-multi-select-affordance { display: inline-flex; width: fit-content; cursor: pointer; }
+[data-multi-selected="true"] .p1-workspace-multi-select-affordance,
+.p1-workspace-multi-select-affordance[aria-checked="true"] { border-color: #bbf7d0; background: #dcfce7; color: #166534; }
+.p1-workspace-bundle-list { display: grid; gap: 8px; }
+.p1-workspace-bundle-item { appearance: none; width: 100%; text-align: left; font: inherit; color: inherit; cursor: pointer; grid-template-columns: minmax(80px, auto) 1fr auto auto; align-items: center; }
+.p1-workspace-bundle-item span { color: #64748b; font-size: 12px; text-transform: uppercase; }
+.p1-workspace-bundle-item em { font-style: normal; font-size: 12px; }
+.p1-workspace-bundle-item[data-visible-in-filter="false"] { background: #f8fafc; border-style: dashed; }
 .p1-workspace-density--compact .p1-workspace-canvas-card,
 .p1-workspace-density--compact .p1-workspace-canvas-lane { gap: 6px; padding: 9px; }
 .p1-workspace-density--compact .p1-workspace-mini-fields { grid-template-columns: repeat(3, minmax(0, 1fr)); }
@@ -179,5 +195,5 @@ button.p1-workspace-canvas-card { appearance: none; width: 100%; text-align: lef
 {% endblock %}
 
 {% block scripts_extra %}
-<script type="module" src="{{ admin_path_for('static', filename='admin_console/p1/p1_group_ops_workspace/workspace_layout.js') }}?v=p1-native-group-ops-workspace-ux-polish-20260624"></script>
+<script type="module" src="{{ admin_path_for('static', filename='admin_console/p1/p1_group_ops_workspace/workspace_layout.js') }}?v=p1-native-group-ops-workspace-multiselect-20260624"></script>
 {% endblock %}

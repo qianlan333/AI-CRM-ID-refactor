@@ -20,6 +20,15 @@ import {
   moveWorkspaceCanvasSelection
 } from "../../aicrm_next/frontend_compat/static/admin_console/p1/p1_group_ops_workspace/workspace_keyboard.js";
 import {
+  clearMultiSelection,
+  countMultiSelected,
+  selectVisibleItems,
+  toggleMultiSelectedEntity
+} from "../../aicrm_next/frontend_compat/static/admin_console/p1/p1_group_ops_workspace/workspace_multi_select.js";
+import {
+  buildWorkspacePreviewBundle
+} from "../../aicrm_next/frontend_compat/static/admin_console/p1/p1_group_ops_workspace/workspace_preview_bundle.js";
+import {
   sortCanvasCards
 } from "../../aicrm_next/frontend_compat/static/admin_console/p1/p1_group_ops_workspace/workspace_sorting.js";
 import {
@@ -116,6 +125,8 @@ assert.equal(root.innerHTML.includes("Safe preview only"), true);
 assert.equal(root.innerHTML.includes("data-safe-preview-affordance=\"true\""), true);
 assert.equal(root.innerHTML.includes("data-safe-preview-footer=\"true\""), true);
 assert.equal(root.innerHTML.includes("Keyboard preview"), true);
+assert.equal(root.innerHTML.includes("Select for preview bundle"), true);
+assert.equal(root.innerHTML.includes("data-multi-selected=\"false\""), true);
 assert.equal(root.innerHTML.includes("Plan detail"), true);
 assert.equal(root.innerHTML.includes("Selected preview result"), true);
 assert.equal(root.innerHTML.includes("Preview result / blocked reason"), true);
@@ -312,6 +323,7 @@ assert.equal(lanes.find((lane) => lane.id === "evidence").blockedCount, 1);
 assert.equal(lanes.find((lane) => lane.id === "evidence").actionRequiredCount, 1);
 assert.equal(lanes.find((lane) => lane.id === "push_center").visibleCount, 1);
 assert.equal(keyboardHintText().includes("No task is executed"), true);
+assert.equal(keyboardHintText().includes("Space toggles bundle selection"), true);
 assert.equal(densityClassName("compact"), "p1-workspace-density--compact");
 assert.equal(densityDescription("compact").includes("does not hide status or guardrails"), true);
 
@@ -348,6 +360,44 @@ assert.equal(keyboardEnter.selectedEntityId, "group-plan-7");
 const keyboardEscape = moveWorkspaceCanvasSelection(lanes, keyboardEnter, "Escape");
 assert.equal(keyboardEscape.panelMode, "summary");
 assert.equal(fixture.payload.canClaimPass90Plus, false);
+
+const multiSelectedPlan = toggleMultiSelectedEntity(realViewState, "plan", "plan-7");
+assert.equal(multiSelectedPlan.activeSelectionMode, "multi");
+assert.equal(countMultiSelected(multiSelectedPlan), 1);
+assert.equal(multiSelectedPlan.previewBundleId.includes("preview-bundle-1"), true);
+const multiSelectedBundle = toggleMultiSelectedEntity(multiSelectedPlan, "evidence", "evidence-plan-7-governance");
+assert.equal(countMultiSelected(multiSelectedBundle), 2);
+const bundle = buildWorkspacePreviewBundle(fixture, filterWorkspaceView(fixture, multiSelectedBundle), multiSelectedBundle);
+assert.equal(bundle.selectedCount, 2);
+assert.equal(bundle.canExecute, false);
+assert.equal(bundle.previewOnly, true);
+assert.equal(bundle.productionWrite, false);
+assert.equal(bundle.realExternalCall, false);
+assert.equal(bundle.canClaimPass90Plus, false);
+assert.equal(bundle.governanceMissingCount, 1);
+assert.equal(bundle.blockedCount, 1);
+assert.equal(bundle.guardrails.includes("any blocked item -> bundle cannot execute"), true);
+const multiRoot = { innerHTML: "" };
+renderP1GroupOpsWorkspace(multiRoot, fixture, multiSelectedBundle);
+assert.equal(multiRoot.innerHTML.includes("Read-only preview bundle (2)"), true);
+assert.equal(multiRoot.innerHTML.includes("data-preview-bundle-id=\"preview-bundle-2-"), true);
+assert.equal(multiRoot.innerHTML.includes("data-can-execute=\"false\""), true);
+assert.equal(multiRoot.innerHTML.includes("Selected for preview bundle"), true);
+assertNoSensitiveFixtureStrings(multiRoot.innerHTML);
+
+const hiddenFilteredView = filterWorkspaceView(fixture, updateWorkspaceViewState(multiSelectedBundle, { entityTypeFilter: "execution" }));
+const hiddenBundle = buildWorkspacePreviewBundle(fixture, hiddenFilteredView, hiddenFilteredView.viewState);
+assert.equal(hiddenBundle.hiddenSelectedCount, 2);
+const hiddenRoot = { innerHTML: "" };
+renderP1GroupOpsWorkspace(hiddenRoot, fixture, hiddenFilteredView.viewState);
+assert.equal(hiddenRoot.innerHTML.includes("not currently visible"), true);
+assertNoSensitiveFixtureStrings(hiddenRoot.innerHTML);
+
+const visibleSelection = selectVisibleItems(realViewState, filterWorkspaceView(fixture, realViewState).visibleLeftRailItems);
+assert.equal(countMultiSelected(visibleSelection), fixture.leftRailItems.length);
+const clearedSelection = clearMultiSelection(visibleSelection);
+assert.equal(countMultiSelected(clearedSelection), 0);
+assert.equal(clearedSelection.activeSelectionMode, "single");
 
 const executionCanvasFilter = filterWorkspaceView(fixture, updateWorkspaceViewState(realViewState, { entityTypeFilter: "execution" }));
 const executionLanes = buildWorkspaceCanvasLanes(fixture, executionCanvasFilter, executionCanvasFilter.viewState);

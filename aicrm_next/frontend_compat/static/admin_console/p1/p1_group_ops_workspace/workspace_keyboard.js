@@ -49,5 +49,5 @@ export function moveWorkspaceCanvasSelection(lanes, viewState, key) {
     return viewState;
 }
 export function keyboardHintText() {
-    return "Keyboard preview: Arrow keys move local selection, Enter/Space selects, Escape returns to summary. No task is executed.";
+    return "Keyboard preview: Arrow keys move local detail selection, Enter opens detail, Space toggles bundle selection, Escape returns to summary. No task is executed.";
 }

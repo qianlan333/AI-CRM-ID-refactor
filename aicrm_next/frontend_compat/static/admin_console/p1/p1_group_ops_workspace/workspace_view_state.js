@@ -25,6 +25,16 @@ function defaultLaneCollapsedState() {
         evidence: false
     };
 }
+function defaultSelectedEntityIds() {
+    return {
+        plan: [],
+        group: [],
+        node: [],
+        execution: [],
+        push_center: [],
+        evidence: []
+    };
+}
 function selectedIdFromSelection(selection) {
     if (selection.selectedEntityType === "plan")
         return selection.selectedPlanId;
@@ -54,7 +64,12 @@ export function createWorkspaceViewState(fixture) {
         visibleLaneIds: [...WORKSPACE_CANVAS_LANE_IDS],
         density: "comfortable",
         focusedCanvasLaneId: "plans",
-        focusedCanvasCardId: selectedIdFromSelection(fixture.defaultSelection)
+        focusedCanvasCardId: selectedIdFromSelection(fixture.defaultSelection),
+        selectedEntityIds: defaultSelectedEntityIds(),
+        activeSelectionMode: "single",
+        lastSelectedEntity: null,
+        previewBundleId: "preview-bundle-empty",
+        bulkGuardrailSummary: []
     };
 }
 export function selectEntityInViewState(viewState, selectedEntityType, selectedEntityId) {
@@ -87,7 +102,11 @@ export function updateWorkspaceViewState(viewState, updates) {
             : viewState.laneCollapsedState,
         visibleLaneIds: updates.visibleLaneIds ? [...updates.visibleLaneIds] : viewState.visibleLaneIds,
         focusedCanvasLaneId: updates.focusedCanvasLaneId || viewState.focusedCanvasLaneId,
-        focusedCanvasCardId: updates.focusedCanvasCardId || viewState.focusedCanvasCardId
+        focusedCanvasCardId: updates.focusedCanvasCardId || viewState.focusedCanvasCardId,
+        selectedEntityIds: updates.selectedEntityIds
+            ? { ...viewState.selectedEntityIds, ...updates.selectedEntityIds }
+            : viewState.selectedEntityIds,
+        bulkGuardrailSummary: updates.bulkGuardrailSummary ? [...updates.bulkGuardrailSummary] : viewState.bulkGuardrailSummary
     };
 }
 export function toggleWorkspaceCanvasLane(viewState, laneId) {

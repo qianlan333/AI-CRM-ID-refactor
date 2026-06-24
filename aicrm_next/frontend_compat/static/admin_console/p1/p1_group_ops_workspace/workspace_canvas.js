@@ -3,6 +3,7 @@ import { renderStatusBadge } from "../shared/status_badge.js";
 import { buildWorkspaceCanvasLanes } from "./workspace_grouping.js";
 import { densityClassName, densityDescription, densityLabel, WORKSPACE_DENSITY_OPTIONS } from "./workspace_density.js";
 import { keyboardHintText } from "./workspace_keyboard.js";
+import { isEntityMultiSelected } from "./workspace_multi_select.js";
 import { WORKSPACE_CANVAS_GROUP_MODES, WORKSPACE_CANVAS_SORT_MODES } from "./workspace_view_state.js";
 function renderOption(value, currentValue) {
     return `<option value="${escapeHtml(value)}"${value === currentValue ? " selected" : ""}>${escapeHtml(value)}</option>`;
@@ -53,13 +54,17 @@ function renderCanvasControls(viewState, lanes) {
 }
 function renderCanvasCard(card, viewState) {
     const isSelected = selectedClass(card, viewState) !== "";
+    const isMultiSelected = isEntityMultiSelected(viewState, card.entityType, card.detailId);
     return `
-    <button type="button" class="p1-workspace-canvas-card${selectedClass(card, viewState)}" role="option" aria-selected="${isSelected ? "true" : "false"}" aria-label="${escapeHtml(`${card.title}, ${card.status}, preview only`)}" data-keyboard-card="true" data-canvas-card-id="${escapeHtml(card.id)}" data-canvas-lane="${escapeHtml(card.laneId)}" data-entity-type="${escapeHtml(card.entityType)}" data-evidence-status="${escapeHtml(card.status)}" data-derived-status="${escapeHtml(card.derivedStatus)}" data-preview-only="true" data-production-write-executed="false" data-real-external-call-executed="false" data-can-claim-pass90="false" data-workspace-select-type="${escapeHtml(card.entityType)}" data-workspace-select-id="${escapeHtml(card.detailId)}">
+    <button type="button" class="p1-workspace-canvas-card${selectedClass(card, viewState)}" role="option" aria-selected="${isSelected ? "true" : "false"}" aria-label="${escapeHtml(`${card.title}, ${card.status}, preview only`)}" data-keyboard-card="true" data-multi-selected="${isMultiSelected ? "true" : "false"}" data-canvas-card-id="${escapeHtml(card.id)}" data-canvas-lane="${escapeHtml(card.laneId)}" data-entity-type="${escapeHtml(card.entityType)}" data-evidence-status="${escapeHtml(card.status)}" data-derived-status="${escapeHtml(card.derivedStatus)}" data-preview-only="true" data-production-write-executed="false" data-real-external-call-executed="false" data-can-claim-pass90="false" data-workspace-select-type="${escapeHtml(card.entityType)}" data-workspace-select-id="${escapeHtml(card.detailId)}">
       <div class="p1-workspace-canvas-card__head">
         <span class="p1-drag-handle" aria-hidden="true">⋮⋮</span>
         <strong>${escapeHtml(card.title)}</strong>
         ${renderStatusBadge(card.status)}
       </div>
+      <span class="p1-workspace-multi-select-affordance" role="checkbox" aria-checked="${isMultiSelected ? "true" : "false"}" tabindex="0" data-workspace-multi-toggle="true" data-workspace-multi-type="${escapeHtml(card.entityType)}" data-workspace-multi-id="${escapeHtml(card.detailId)}">
+        ${isMultiSelected ? "Selected for preview bundle" : "Select for preview bundle"}
+      </span>
       <dl class="p1-workspace-mini-fields">
         <div><dt>Entity</dt><dd>${escapeHtml(card.entityType)}</dd></div>
         <div><dt>Evidence</dt><dd>${escapeHtml(card.evidenceStatus)}</dd></div>
@@ -82,6 +87,7 @@ function renderCanvasLane(lane, viewState) {
           <h3>${escapeHtml(lane.title)}</h3>
           <p>${escapeHtml(lane.description)}</p>
         </div>
+        <button type="button" class="p1-workspace-lane-select" data-workspace-select-lane="${escapeHtml(lane.id)}" aria-label="${escapeHtml(`Select visible ${lane.title} lane for preview bundle`)}">Select lane</button>
         <dl class="p1-workspace-lane-counts" aria-label="Lane counts">
           <div><dt>visible</dt><dd>${lane.visibleCount}</dd></div>
           <div><dt>blocked</dt><dd>${lane.blockedCount}</dd></div>

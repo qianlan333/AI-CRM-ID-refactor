@@ -9,6 +9,8 @@ import { renderWorkspaceDetailPanel, renderWorkspaceSelectedPreviewResult, } fro
 import { ENTITY_FILTER_OPTIONS, STATUS_FILTER_OPTIONS, filterWorkspaceView } from "./workspace_filters.js";
 import { buildWorkspaceCanvasLanes } from "./workspace_grouping.js";
 import { moveWorkspaceCanvasSelection } from "./workspace_keyboard.js";
+import { clearMultiSelection, countMultiSelected, isEntityMultiSelected, selectVisibleItems, selectVisibleLaneItems, toggleMultiSelectedEntity } from "./workspace_multi_select.js";
+import { buildWorkspacePreviewBundle } from "./workspace_preview_bundle.js";
 import { P1_GROUP_OPS_WORKSPACE_FIXTURE, createUnavailableWorkspaceFixture } from "./workspace_fixture.js";
 import { renderWorkspacePreviewResult } from "./workspace_preview.js";
 import { buildGroupOpsWorkspaceStatusModel, workspaceCanRenderGlobalPass } from "./workspace_status.js";
@@ -93,14 +95,18 @@ function renderStateBanner(fixture, filtered) {
 function renderLeftRailItem(item, viewState) {
     const meta = statusMeta(item.status);
     const selectedClass = isSelectedListItem(item, viewState) ? " p1-workspace-list-item--selected" : "";
+    const multiSelected = isEntityMultiSelected(viewState, item.entityType, item.detailId);
     return `
-    <button type="button" class="p1-workspace-list-item p1-workspace-list-item--${meta.tone}${selectedClass}" data-kind="${escapeHtml(item.kind)}" data-status="${escapeHtml(item.status)}" data-workspace-select-type="${escapeHtml(item.entityType)}" data-workspace-select-id="${escapeHtml(item.detailId)}">
+    <button type="button" class="p1-workspace-list-item p1-workspace-list-item--${meta.tone}${selectedClass}" data-kind="${escapeHtml(item.kind)}" data-status="${escapeHtml(item.status)}" data-multi-selected="${multiSelected ? "true" : "false"}" data-workspace-select-type="${escapeHtml(item.entityType)}" data-workspace-select-id="${escapeHtml(item.detailId)}">
       <div class="p1-workspace-list-item__head">
         <span>${escapeHtml(item.kind)}</span>
         ${renderStatusBadge(item.status)}
       </div>
       <strong>${escapeHtml(item.label)}</strong>
       <p>${escapeHtml(item.summary)}</p>
+      <span class="p1-workspace-multi-select-affordance" role="checkbox" aria-checked="${multiSelected ? "true" : "false"}" tabindex="0" data-workspace-multi-toggle="true" data-workspace-multi-type="${escapeHtml(item.entityType)}" data-workspace-multi-id="${escapeHtml(item.detailId)}">
+        ${multiSelected ? "Selected for preview bundle" : "Select for preview bundle"}
+      </span>
     </button>
   `;
 }
@@ -141,12 +147,55 @@ function renderLeftRail(filtered) {
         <h2>计划 / 人群 / 任务</h2>
         <p>点击计划、人群、节点、执行或 Push Center 项只会更新本地只读 detail selection。</p>
       </div>
+      <div class="p1-workspace-bulk-actions" data-multi-select-memory-only="true">
+        <button type="button" data-workspace-select-visible="true">Select visible filtered results</button>
+        <button type="button" data-workspace-clear-selection="true">Clear selection</button>
+      </div>
       <div class="p1-workspace-list">${rows}</div>
     </aside>
   `;
 }
+function renderBundleSummary(fixture, filtered) {
+    const bundle = buildWorkspacePreviewBundle(fixture, filtered, filtered.viewState);
+    const countRows = Object.entries(bundle.countsByEntityType).map(([entityType, count]) => `
+    <div><dt>${escapeHtml(entityType)}</dt><dd>${count}</dd></div>
+  `).join("");
+    const selectedRows = bundle.items.length > 0
+        ? bundle.items.map((item) => `
+      <button type="button" class="p1-workspace-bundle-item" data-workspace-select-type="${escapeHtml(item.entityType)}" data-workspace-select-id="${escapeHtml(item.detailId)}" data-visible-in-filter="${item.isVisible ? "true" : "false"}">
+        <span>${escapeHtml(item.entityType)}</span>
+        <strong>${escapeHtml(item.title)}</strong>
+        ${renderStatusBadge(item.status)}
+        <em>${item.isVisible ? "visible" : "not currently visible"}</em>
+      </button>
+    `).join("")
+        : `<section class="p1-workspace-empty-state" data-empty-preview-bundle="true"><strong>No selected item</strong><p>Use Select for preview bundle; selection remains memory-only and clears on refresh.</p></section>`;
+    return `
+    <section class="p1-workspace-preview-bundle" aria-live="polite" data-preview-bundle-id="${escapeHtml(bundle.bundleId)}" data-selected-count="${bundle.selectedCount}" data-can-execute="false" data-preview-only="${bundle.previewOnly ? "true" : "false"}" data-production-write-executed="false" data-real-external-call-executed="false" data-can-claim-pass90="false">
+      <div class="p1-workspace-panel-head">
+        <h2>${escapeHtml(bundle.title)}</h2>
+        <p>Multi-select preview is memory-only. Hidden filtered-out selected items remain in the bundle and are marked as not currently visible.</p>
+      </div>
+      <dl class="p1-workspace-mini-fields">
+        <div><dt>selected</dt><dd>${bundle.selectedCount}</dd></div>
+        <div><dt>blocked</dt><dd>${bundle.blockedCount}</dd></div>
+        <div><dt>action_required</dt><dd>${bundle.actionRequiredCount}</dd></div>
+        <div><dt>governance_missing</dt><dd>${bundle.governanceMissingCount}</dd></div>
+        <div><dt>push_center_pending</dt><dd>${bundle.pushCenterPendingCount}</dd></div>
+        <div><dt>evidence_incomplete</dt><dd>${bundle.evidenceIncompleteCount}</dd></div>
+        <div><dt>hidden_selected</dt><dd>${bundle.hiddenSelectedCount}</dd></div>
+        <div><dt>preview-only</dt><dd>true</dd></div>
+        <div><dt>can_claim_pass90</dt><dd>false</dd></div>
+      </dl>
+      <dl class="p1-workspace-mini-fields">${countRows}</dl>
+      <p class="p1-workspace-guardrails">${bundle.guardrails.map((guardrail) => `<code>${escapeHtml(guardrail)}</code>`).join(" ")}</p>
+      <div class="p1-workspace-bundle-list">${selectedRows}</div>
+    </section>
+  `;
+}
 function renderPropertyPanel(fixture, filtered) {
     const selection = selectionFromViewState(fixture, filtered.viewState);
+    const multiSelectedCount = countMultiSelected(filtered.viewState);
     const cards = fixture.payload.scenarios.map((scenario) => renderStatusCard(scenario, {
         dragHandle: true,
         dragDisabledReason: "P1 native workspace uses readonly preview only; no direct send."
@@ -165,7 +214,7 @@ function renderPropertyPanel(fixture, filtered) {
         ${guardrailNotice}
         <p>P1_READY_WITH_EXCEPTIONS 不等于 PASS_90_PLUS；sent evidence 不等于 governance complete。</p>
       </section>
-      ${renderWorkspaceDetailPanel(fixture, selection)}
+      ${filtered.viewState.activeSelectionMode === "multi" && multiSelectedCount > 0 ? renderBundleSummary(fixture, filtered) : renderWorkspaceDetailPanel(fixture, selection)}
       <div class="p1-workspace-status-stack">${cards}</div>
     </aside>
   `;
@@ -213,6 +262,69 @@ function attachCanvasLaneHandlers(root, fixture, viewState) {
         });
     });
 }
+function entityTypeForLane(laneId) {
+    if (laneId === "plans")
+        return "plan";
+    if (laneId === "groups")
+        return "group";
+    if (laneId === "nodes")
+        return "node";
+    if (laneId === "executions")
+        return "execution";
+    if (laneId === "push_center")
+        return "push_center";
+    if (laneId === "evidence")
+        return "evidence";
+    return null;
+}
+function attachMultiSelectHandlers(root, fixture, viewState) {
+    if (typeof root.querySelectorAll !== "function")
+        return;
+    root.querySelectorAll("[data-workspace-multi-toggle]").forEach((node) => {
+        node.addEventListener("click", (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            const entityType = node.dataset.workspaceMultiType;
+            const detailId = node.dataset.workspaceMultiId;
+            if (!entityType || !detailId)
+                return;
+            renderP1GroupOpsWorkspace(root, fixture, toggleMultiSelectedEntity(viewState, entityType, detailId));
+        });
+        node.addEventListener("keydown", (event) => {
+            if (event.key !== " " && event.key !== "Enter")
+                return;
+            event.preventDefault();
+            event.stopPropagation();
+            const entityType = node.dataset.workspaceMultiType;
+            const detailId = node.dataset.workspaceMultiId;
+            if (!entityType || !detailId)
+                return;
+            renderP1GroupOpsWorkspace(root, fixture, toggleMultiSelectedEntity(viewState, entityType, detailId));
+        });
+    });
+    root.querySelectorAll("[data-workspace-clear-selection]").forEach((node) => {
+        node.addEventListener("click", () => {
+            renderP1GroupOpsWorkspace(root, fixture, clearMultiSelection(viewState));
+        });
+    });
+    root.querySelectorAll("[data-workspace-select-visible]").forEach((node) => {
+        node.addEventListener("click", () => {
+            const filtered = filterWorkspaceView(fixture, viewState);
+            renderP1GroupOpsWorkspace(root, fixture, selectVisibleItems(filtered.viewState, filtered.visibleLeftRailItems));
+        });
+    });
+    root.querySelectorAll("[data-workspace-select-lane]").forEach((node) => {
+        node.addEventListener("click", (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            const entityType = entityTypeForLane(node.dataset.workspaceSelectLane || "");
+            if (!entityType)
+                return;
+            const filtered = filterWorkspaceView(fixture, viewState);
+            renderP1GroupOpsWorkspace(root, fixture, selectVisibleLaneItems(filtered.viewState, filtered.visibleLeftRailItems, entityType));
+        });
+    });
+}
 function attachKeyboardHandlers(root, fixture, viewState) {
     if (typeof root.querySelector !== "function")
         return;
@@ -226,6 +338,10 @@ function attachKeyboardHandlers(root, fixture, viewState) {
         event.preventDefault();
         const filtered = filterWorkspaceView(fixture, viewState);
         const lanes = buildWorkspaceCanvasLanes(fixture, filtered, filtered.viewState);
+        if (event.key === " ") {
+            renderP1GroupOpsWorkspace(root, fixture, toggleMultiSelectedEntity(filtered.viewState, filtered.viewState.selectedEntityType, filtered.viewState.selectedEntityId));
+            return;
+        }
         renderP1GroupOpsWorkspace(root, fixture, moveWorkspaceCanvasSelection(lanes, filtered.viewState, event.key));
     });
 }
@@ -252,6 +368,7 @@ export function renderP1GroupOpsWorkspace(root, fixture = P1_GROUP_OPS_WORKSPACE
     attachSelectionHandlers(root, fixture, filtered.viewState);
     attachFilterHandlers(root, fixture, filtered.viewState);
     attachCanvasLaneHandlers(root, fixture, filtered.viewState);
+    attachMultiSelectHandlers(root, fixture, filtered.viewState);
     attachKeyboardHandlers(root, fixture, filtered.viewState);
 }
 function boot() {
