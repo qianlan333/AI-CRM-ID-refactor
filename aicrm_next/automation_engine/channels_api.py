@@ -572,7 +572,6 @@ def _list_channels_from_postgres(
     *,
     limit: int,
     status: str = "",
-    available_for_program_id: int | None = None,
     include_archived: bool = False,
 ) -> list[dict[str, Any]]:
     conn = _connect()
@@ -1106,7 +1105,6 @@ async def wecom_customer_acquisition_link_action(request: Request, link_id: str,
 def list_channels(
     limit: int = Query(100),
     status: str = "",
-    available_for_program_id: int | None = None,
     include_archived: bool = False,
 ) -> dict[str, Any]:
     return {
@@ -1114,7 +1112,6 @@ def list_channels(
         "channels": _list_channels_from_postgres(
             limit=max(1, min(int(limit or 100), 500)),
             status=_text(status),
-            available_for_program_id=available_for_program_id,
             include_archived=include_archived,
         ),
         "reason": "channels_listed",
