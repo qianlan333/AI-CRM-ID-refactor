@@ -69,7 +69,7 @@ Execute one allowed event type after gray approval:
 curl -sS -X POST "$BASE_URL/api/admin/internal-events/run-due" \
   -H "Authorization: Bearer $AUTOMATION_INTERNAL_API_TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"batch_size":1,"dry_run":false,"event_types":["payment.succeeded"],"consumer_names":["automation_payment_consumer"]}'
+  -d '{"batch_size":1,"dry_run":false,"event_types":["payment.succeeded"],"consumer_names":["ai_audience_source_poke_consumer"]}'
 ```
 
 Retry or skip a single consumer run:

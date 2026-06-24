@@ -30,7 +30,7 @@ an internal order. Expected consumers:
 
 - `order_projection_consumer`
 - `webhook_order_paid_consumer`
-- `automation_payment_consumer`
+- `ai_audience_source_poke_consumer`
 - `customer_business_summary_consumer`
 - `dnd_policy_consumer`
 - `ai_assist_notify_consumer`
@@ -255,6 +255,7 @@ For future approved execution, rollback depends on the consumer result:
   should have happened.
 - `webhook_order_paid_consumer`: inspect the external effect job it created or
   reused; cancel/retry according to external effect runbook if needed.
-- `automation_payment_consumer`: inspect automation event output.
+- `ai_audience_source_poke_consumer`: inspect dependent AI Audience packages and
+  their `next_incremental_refresh_at` update evidence.
 - skipped optional consumers: record the manual skip reason and retry only after
   a new approval.

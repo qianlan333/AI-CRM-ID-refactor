@@ -116,7 +116,7 @@ def _configure(
         "AICRM_INTERNAL_EVENTS_ALLOWED_EVENT_CONSUMERS",
         "payment.succeeded:order_projection_consumer,payment.succeeded:customer_business_summary_consumer,"
         "payment.succeeded:dnd_policy_consumer,payment.succeeded:ai_assist_notify_consumer,"
-        "payment.succeeded:automation_payment_consumer",
+        "payment.succeeded:webhook_order_paid_consumer",
     )
     monkeypatch.setenv("AICRM_EXTERNAL_EFFECT_WEBHOOK_EXECUTE", "0")
     monkeypatch.setenv("AICRM_EXTERNAL_EFFECT_ALLOWED_TYPES", "")

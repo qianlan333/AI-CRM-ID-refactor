@@ -27,7 +27,6 @@ PAYMENT_CONSUMERS = [
     "customer_business_summary_consumer",
     "dnd_policy_consumer",
     "ai_assist_notify_consumer",
-    "automation_payment_consumer",
     "webhook_order_paid_consumer",
 ]
 
@@ -250,11 +249,11 @@ def test_stage_1_payment_consumers_auto_execute_under_allowlist(monkeypatch) -> 
     assert statuses["customer_business_summary_consumer"] == "skipped"
     assert statuses["dnd_policy_consumer"] == "skipped"
     assert statuses["ai_assist_notify_consumer"] == "skipped"
-    assert statuses["automation_payment_consumer"] == "pending"
     assert statuses["webhook_order_paid_consumer"] == "pending"
+    assert "automation_payment_consumer" not in statuses
 
 
-def test_automation_payment_consumer_only_runs_when_allowlisted(monkeypatch) -> None:
+def test_retired_automation_payment_consumer_is_not_registered(monkeypatch) -> None:
     reset_internal_event_fixture_state()
     reset_external_effect_fixture_state()
     _enable_auto_execute(monkeypatch, consumers=STAGE_1_CONSUMERS)
@@ -262,18 +261,15 @@ def test_automation_payment_consumer_only_runs_when_allowlisted(monkeypatch) -> 
     emitted = _emit_payment(service)
 
     _run_until_empty(InternalEventWorker(repo, registry), limit=6)
-    automation_run = service.list_consumer_runs({"event_id": emitted["event"]["event_id"], "consumer_name": "automation_payment_consumer"})[0][0]
-    assert automation_run.status == "pending"
+    automation_runs, automation_total = service.list_consumer_runs({"event_id": emitted["event"]["event_id"], "consumer_name": "automation_payment_consumer"})
+    assert automation_total == 0
+    assert automation_runs == []
 
     monkeypatch.setenv("AICRM_INTERNAL_EVENTS_ALLOWED_CONSUMERS", ",".join([*STAGE_1_CONSUMERS, "automation_payment_consumer"]))
-    result = InternalEventWorker(repo, registry).run_due(batch_size=1, dry_run=False)
-    automation_run = service.list_consumer_runs({"event_id": emitted["event"]["event_id"], "consumer_name": "automation_payment_consumer"})[0][0]
+    result = InternalEventWorker(repo, registry).dispatch_one_consumer(emitted["event"]["event_id"], "automation_payment_consumer", dry_run=False)
 
-    assert result["processed"][0]["consumer_name"] == "automation_payment_consumer"
-    assert result["counts"]["skipped_count"] == 1
-    assert automation_run.status == "skipped"
-    assert automation_run.result_summary_json["automation_processed"] is False
-    assert automation_run.result_summary_json["reason"] == "automation_runtime_v2_retired"
+    assert result["ok"] is False
+    assert result["error"] == "consumer_run_not_found"
 
 
 def test_webhook_payment_consumer_skips_without_configured_external_effect(monkeypatch) -> None:
