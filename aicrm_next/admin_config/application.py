@@ -642,7 +642,6 @@ def _default_tool_description(tool_name: str, fallback: str = "") -> str:
         "resolve_customer": "根据手机号、客户编号或 external_userid 定位客户。",
         "get_customer_context": "查看客户资料、互动记录和最近聊天。",
         "get_recent_messages": "查看客户最近聊天。",
-        "get_automation_context": "查看自动化成员上下文。",
     }
     return mapping.get(tool_name, fallback)
 
