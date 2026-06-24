@@ -220,7 +220,7 @@ class SQLAlchemyAudienceRepository(AudienceRepository):
 
     def create_package(self, payload: dict[str, Any]) -> dict[str, Any]:
         daily_enabled = bool(payload.get("daily_enabled", False))
-        daily_refresh_time = _text(payload.get("daily_refresh_time")) or "03:00"
+        daily_refresh_time = _text(payload.get("daily_refresh_time")) or "02:00"
         timezone_name = _text(payload.get("timezone")) or "Asia/Shanghai"
         row = self._write_one(
             """
@@ -371,7 +371,7 @@ class SQLAlchemyAudienceRepository(AudienceRepository):
             next_daily = None
             if package_row and bool(package_row.get("daily_enabled")):
                 next_daily = next_daily_refresh_at(
-                    _text(package_row.get("daily_refresh_time")) or "03:00",
+                    _text(package_row.get("daily_refresh_time")) or "02:00",
                     _text(package_row.get("timezone")) or "Asia/Shanghai",
                 )
             session.execute(
@@ -686,7 +686,7 @@ class SQLAlchemyAudienceRepository(AudienceRepository):
         refresh_kind: str,
         started_at: datetime,
         interval_seconds: int,
-        daily_refresh_time: str = "03:00",
+        daily_refresh_time: str = "02:00",
         timezone_name: str = "Asia/Shanghai",
     ) -> dict[str, Any] | None:
         if refresh_kind == "daily":
@@ -1028,7 +1028,7 @@ def previous_watermark(package: dict[str, Any], refresh_kind: str, *, started_at
     return started_at - timedelta(seconds=lookback_seconds)
 
 
-def next_daily_refresh_at(daily_refresh_time: str = "03:00", timezone_name: str = "Asia/Shanghai", *, after: datetime | None = None) -> datetime:
+def next_daily_refresh_at(daily_refresh_time: str = "02:00", timezone_name: str = "Asia/Shanghai", *, after: datetime | None = None) -> datetime:
     hour, minute = _parse_daily_refresh_time(daily_refresh_time)
     try:
         local_tz = ZoneInfo(_text(timezone_name) or "Asia/Shanghai")
@@ -1045,7 +1045,7 @@ def next_daily_refresh_at(daily_refresh_time: str = "03:00", timezone_name: str 
 
 
 def _parse_daily_refresh_time(value: str) -> tuple[int, int]:
-    text_value = _text(value) or "03:00"
+    text_value = _text(value) or "02:00"
     parts = text_value.split(":", 1)
     try:
         hour = int(parts[0])

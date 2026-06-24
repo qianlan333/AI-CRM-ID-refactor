@@ -225,7 +225,7 @@ def _refresh_mode_label(row: dict[str, Any]) -> str:
         else:
             labels.append(f"每 {seconds} 秒")
     if bool(row.get("daily_enabled")):
-        labels.append(f"每日 {_text(row.get('daily_refresh_time')) or '03:00'}")
+        labels.append(f"每日 {_text(row.get('daily_refresh_time')) or '02:00'}")
     return " + ".join(labels) if labels else "手动"
 
 

@@ -132,7 +132,7 @@ class AudienceRefreshService:
                 refresh_kind=refresh_kind,
                 started_at=started_at,
                 interval_seconds=int(package.get("incremental_interval_seconds") or 180),
-                daily_refresh_time=_text(package.get("daily_refresh_time")) or "03:00",
+                daily_refresh_time=_text(package.get("daily_refresh_time")) or "02:00",
                 timezone_name=_text(package.get("timezone")) or "Asia/Shanghai",
             )
             return {
