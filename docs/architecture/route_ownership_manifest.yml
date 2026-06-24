@@ -3965,6 +3965,39 @@ routes:
   data_source: command
   requires_auth: true
   rollback: previous_release
+- path: /api/admin/p1/group-ops-workspace/drafts/{draft_id}/governance/request
+  methods:
+  - POST
+  route_name: api.admin_p1_group_ops_workspace_governance_request
+  capability_owner: automation_engine
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: none
+  data_source: command
+  requires_auth: true
+  rollback: previous_release
+- path: /api/admin/p1/group-ops-workspace/governance/{review_id}
+  methods:
+  - GET
+  route_name: api.admin_p1_group_ops_workspace_governance_detail
+  capability_owner: automation_engine
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: none
+  data_source: read_model
+  requires_auth: true
+  rollback: previous_release
+- path: /api/admin/p1/group-ops-workspace/drafts/{draft_id}/governance
+  methods:
+  - GET
+  route_name: api.admin_p1_group_ops_workspace_draft_governance_list
+  capability_owner: automation_engine
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: none
+  data_source: read_model
+  requires_auth: true
+  rollback: previous_release
 - path: /admin/automation-conversion
   methods:
   - GET

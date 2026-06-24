@@ -166,7 +166,7 @@ def test_group_ops_workspace_governance_schema_uses_only_safe_summary_hash_count
     assert {fragment for fragment in forbidden_schema_fragments if fragment in upgrade_sql} == set()
 
 
-def test_group_ops_workspace_governance_migration_does_not_add_runtime_writers_or_routes() -> None:
+def test_group_ops_workspace_governance_migration_does_not_add_runtime_writers_or_step_or_bridge_routes() -> None:
     migration_source = _migration_source()
     upgrade_sql = _upgrade_source()
 
@@ -183,19 +183,27 @@ def test_group_ops_workspace_governance_migration_does_not_add_runtime_writers_o
         assert forbidden not in migration_source.split("def upgrade", 1)[1]
 
     manifest = yaml.safe_load(ROUTE_MANIFEST.read_text(encoding="utf-8"))
-    governance_routes = [
+    forbidden_governance_routes = [
         route
         for route in manifest["routes"]
-        if "/api/admin/p1/group-ops-workspace/governance" in route["path"]
-        or "/governance/request" in route["path"]
+        if "/api/admin/p1/group-ops-workspace/" in route["path"]
+        and (
+            "/steps/" in route["path"]
+            or "/approve" in route["path"]
+            or "/reject" in route["path"]
+            or "/expire" in route["path"]
+            or "/push-center" in route["path"]
+            or "/execute" in route["path"]
+            or "/send" in route["path"]
+        )
     ]
-    assert governance_routes == []
+    assert forbidden_governance_routes == []
 
     group_ops_runtime_sources = "\n".join(
         path.read_text(encoding="utf-8")
         for path in GROUP_OPS_PACKAGE.glob("*.py")
         if path.name not in {"__init__.py"}
     )
-    assert "governance/request" not in group_ops_runtime_sources
-    assert "governance_approved" not in group_ops_runtime_sources
     assert "create_push_center" not in group_ops_runtime_sources
+    assert "push_center_job_created=True" not in group_ops_runtime_sources
+    assert '"approved": True' not in group_ops_runtime_sources
