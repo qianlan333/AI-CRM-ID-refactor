@@ -8,7 +8,7 @@ import { buildCopySafeBundleJson, buildCopySafeBundleText, copyBundleSummaryToCl
 import { renderGroupedWorkspaceCanvas } from "./workspace_canvas.js";
 import { renderWorkspaceDetailPanel, renderWorkspaceSelectedPreviewResult, } from "./workspace_detail.js";
 import { archiveDraft, buildWorkspaceDraftReviewPayload, buildWorkspaceDraftPayload, createDraft, isDraftConflictError, requestDraftReview, updateDraft } from "./workspace_draft_api.js";
-import { approveGovernanceStep, buildApproveGovernanceStepPayload, buildExpireGovernanceReviewPayload, buildRejectGovernanceStepPayload, buildWorkspaceGovernanceRequestPayload, expireGovernanceReview, getDraftGovernance, getGovernanceReview, isGovernanceConflictError, rejectGovernanceStep, requestGovernance } from "./workspace_governance_api.js";
+import { approveGovernanceStep, buildApproveGovernanceStepPayload, buildExpireGovernanceReviewPayload, buildRejectGovernanceStepPayload, bridgeGovernanceToPushCenter, buildPushCenterBridgePayload, buildWorkspaceGovernanceRequestPayload, expireGovernanceReview, getDraftGovernance, getGovernanceReview, getGovernancePushCenterBridge, isGovernanceConflictError, rejectGovernanceStep, requestGovernance } from "./workspace_governance_api.js";
 import { ENTITY_FILTER_OPTIONS, STATUS_FILTER_OPTIONS, filterWorkspaceView } from "./workspace_filters.js";
 import { buildWorkspaceCanvasLanes } from "./workspace_grouping.js";
 import { moveWorkspaceCanvasSelection } from "./workspace_keyboard.js";
@@ -251,7 +251,7 @@ function renderDraftPersistencePanel(fixture, filtered) {
     <section class="p1-workspace-draft-save" aria-label="Save sanitized workspace draft" data-draft-persistence="frontend_save_only" data-preview-only="true" data-real-external-call-executed="false" data-push-center-job-created="false" data-external-effect-job-created="false" data-can-claim-pass90="false">
       <div class="p1-workspace-panel-head">
         <h2>Draft persistence</h2>
-        <p>保存草稿与 request-review 只写 draft 表；不会发送、不会审批、不会创建 Push Center job、不会创建 external_effect_job。</p>
+        <p>保存草稿与 request-review 只写 draft 表；Push Center bridge 仅在治理通过后创建 pending projection，不会发送、不会创建 external_effect_job。</p>
       </div>
       <dl class="p1-workspace-mini-fields">
         <div><dt>draft_id</dt><dd>${escapeHtml(filtered.viewState.currentDraftId || "not_saved")}</dd></div>
@@ -297,6 +297,7 @@ function governanceReviewFromResponse(payload) {
         review_id: String(payload.review_id || ""),
         draft_id: String(payload.draft_id || ""),
         review_status: String(payload.review_status || "approval_pending"),
+        snapshot_hash: String(payload.snapshot_hash || ""),
         steps: (payload.steps && payload.steps.length > 0 ? payload.steps : defaultGovernanceSteps()).map((step) => ({
             step_id: String(step.step_id || ""),
             step_type: String(step.step_type || ""),
@@ -325,6 +326,26 @@ function governanceReviewFromResponse(payload) {
         can_claim_pass_90_plus: false
     };
 }
+function pushCenterBridgeFromResponse(payload) {
+    if (!payload.push_center_job_created || !payload.push_center_job_id)
+        return null;
+    return {
+        review_id: String(payload.review_id || ""),
+        draft_id: String(payload.draft_id || ""),
+        review_status: String(payload.review_status || ""),
+        push_center_job_created: true,
+        push_center_job_id: String(payload.push_center_job_id || ""),
+        push_center_projection_id: String(payload.push_center_projection_id || payload.push_center_job_id || ""),
+        push_center_status: "pending",
+        execution_status: "push_center_pending_not_sent",
+        external_effect_job_created: false,
+        broadcast_job_created: false,
+        internal_event_created: false,
+        real_external_call: false,
+        can_claim_pass_90_plus: false,
+        idempotent_replay: Boolean(payload.idempotent_replay)
+    };
+}
 function isActiveGovernanceStatus(status) {
     return !["", "governance_not_started", "governance_rejected", "governance_expired", "rejected", "expired"].includes(status);
 }
@@ -334,6 +355,22 @@ function governanceTerminal(status) {
 function grayWindowExpired(review) {
     const endAt = Date.parse(String(review?.gray_window.end_at || ""));
     return Number.isFinite(endAt) && endAt <= Date.now();
+}
+function governanceStepsAllApproved(review) {
+    const required = new Set(["operator_approval", "receiver_allowlist", "gray_window"]);
+    const approved = new Set((review?.steps || [])
+        .filter((step) => step.step_status === "approved")
+        .map((step) => step.step_type));
+    return [...required].every((stepType) => approved.has(stepType));
+}
+function bridgeTone(status) {
+    if (status === "bridged")
+        return "success";
+    if (status === "failed" || status === "conflict" || status === "blocked")
+        return "danger";
+    if (status === "requesting")
+        return "warning";
+    return "neutral";
 }
 function renderStepActorSummary(actorMetadata) {
     const actorLabelPresent = Boolean(actorMetadata?.actor_label_present);
@@ -369,6 +406,7 @@ function renderGovernancePanel(filtered) {
     const hasSnapshot = Boolean(viewState.currentDraftSnapshotHash);
     const isReadyForReview = viewState.currentDraftStatus === "ready_for_review";
     const currentReview = viewState.currentGovernanceReview;
+    const currentBridge = viewState.currentPushCenterBridge;
     const activeReviewExists = Boolean(viewState.currentGovernanceReviewId) && isActiveGovernanceStatus(viewState.currentGovernanceStatus);
     let payloadPreview;
     let payloadSafe = false;
@@ -413,15 +451,57 @@ function renderGovernancePanel(filtered) {
         window_status: currentReview?.gray_window.window_status || "pending"
     };
     const tone = governanceTone(viewState.governanceRequestStatus);
+    const bridgeStatusTone = bridgeTone(viewState.pushCenterBridgeStatus);
     const busy = viewState.governanceRequestStatus === "requesting";
     const canExpireReview = Boolean(currentReview?.review_id)
         && isActiveGovernanceStatus(viewState.currentGovernanceStatus)
         && !busy;
+    let bridgeDisabledReason = "";
+    let bridgePayloadSafe = false;
+    let bridgePayloadPreview;
+    try {
+        if (currentReview) {
+            bridgePayloadPreview = buildPushCenterBridgePayload(currentReview);
+            bridgePayloadSafe = true;
+        }
+    }
+    catch (error) {
+        bridgeDisabledReason = error instanceof Error ? error.message : "push_center_bridge_payload_invalid";
+    }
+    const alreadyBridged = Boolean(currentBridge?.push_center_job_id);
+    if (!hasDraft)
+        bridgeDisabledReason = "保存 draft 后才能 bridge。";
+    else if (!isReadyForReview)
+        bridgeDisabledReason = "draft_status 必须是 ready_for_review。";
+    else if (!currentReview?.review_id)
+        bridgeDisabledReason = "需要先创建 governance review。";
+    else if (viewState.currentGovernanceStatus !== "governance_approved")
+        bridgeDisabledReason = "governance_status 必须是 governance_approved。";
+    else if (!governanceStepsAllApproved(currentReview))
+        bridgeDisabledReason = "operator / allowlist / gray-window 三个 step 都必须 approved。";
+    else if (grayWindowExpired(currentReview))
+        bridgeDisabledReason = "gray-window 已过期，不能 bridge。";
+    else if (alreadyBridged)
+        bridgeDisabledReason = "已经存在 Push Center pending bridge projection。";
+    else if (!bridgePayloadSafe)
+        bridgeDisabledReason || (bridgeDisabledReason = "Push Center bridge payload 未通过脱敏校验。");
+    const canBridgePushCenter = hasDraft
+        && isReadyForReview
+        && Boolean(currentReview?.review_id)
+        && viewState.currentGovernanceStatus === "governance_approved"
+        && governanceStepsAllApproved(currentReview)
+        && !grayWindowExpired(currentReview)
+        && !alreadyBridged
+        && bridgePayloadSafe
+        && viewState.pushCenterBridgeStatus !== "requesting";
+    const bridgeMessage = canBridgePushCenter && viewState.pushCenterBridgeStatus === "idle"
+        ? "governance_approved 已满足；可 bridge 到 Push Center pending projection，但不会发送。"
+        : viewState.pushCenterBridgeMessage;
     return `
-    <section class="p1-workspace-governance-panel" aria-label="Governance request panel" data-governance-panel="frontend_step_integration" data-approved="false" data-governance-approved="${viewState.currentGovernanceStatus === "governance_approved" ? "true" : "false"}" data-execution-status="not_execution" data-push-center-job-created="false" data-external-effect-job-created="false" data-broadcast-job-created="false" data-internal-event-created="false" data-real-external-call-executed="false" data-can-claim-pass90="false">
+    <section class="p1-workspace-governance-panel" aria-label="Governance request panel" data-governance-panel="frontend_bridge_integration" data-approved="false" data-governance-approved="${viewState.currentGovernanceStatus === "governance_approved" ? "true" : "false"}" data-execution-status="${currentBridge ? "push_center_pending_not_sent" : "not_execution"}" data-push-center-job-created="${currentBridge ? "true" : "false"}" data-external-effect-job-created="false" data-broadcast-job-created="false" data-internal-event-created="false" data-real-external-call-executed="false" data-can-claim-pass90="false">
       <div class="p1-workspace-panel-head">
         <h2>Governance panel</h2>
-        <p>治理 step 操作只更新 approval / allowlist / gray-window 状态；governance_approved 也不创建任务、不发送。</p>
+        <p>治理 step 操作只更新 approval / allowlist / gray-window 状态；Push Center bridge 只进入 pending，不发送。</p>
       </div>
       <dl class="p1-workspace-mini-fields">
         <div><dt>draft_status</dt><dd>${escapeHtml(viewState.currentDraftStatus)}</dd></div>
@@ -429,8 +509,9 @@ function renderGovernancePanel(filtered) {
         <div><dt>review_id</dt><dd>${escapeHtml(viewState.currentGovernanceReviewId || "not_requested")}</dd></div>
         <div><dt>approved</dt><dd>false</dd></div>
         <div><dt>governance_approved</dt><dd>${viewState.currentGovernanceStatus === "governance_approved" ? "true" : "false"}</dd></div>
-        <div><dt>execution_status</dt><dd>not_execution</dd></div>
-        <div><dt>push_center_job_created</dt><dd>false</dd></div>
+        <div><dt>execution_status</dt><dd>${currentBridge ? "push_center_pending_not_sent" : "not_execution"}</dd></div>
+        <div><dt>push_center_job_created</dt><dd>${currentBridge ? "true" : "false"}</dd></div>
+        <div><dt>push_center_status</dt><dd>${escapeHtml(currentBridge?.push_center_status || "not_bridged")}</dd></div>
         <div><dt>external_effect_job_created</dt><dd>false</dd></div>
         <div><dt>broadcast_job_created</dt><dd>false</dd></div>
         <div><dt>internal_event_created</dt><dd>false</dd></div>
@@ -457,7 +538,29 @@ function renderGovernancePanel(filtered) {
         <div><dt>timezone</dt><dd>${escapeHtml(grayWindow.timezone)}</dd></div>
         <div><dt>window_status</dt><dd>${escapeHtml(grayWindow.window_status || "pending")}</dd></div>
       </dl>
-      <p class="p1-workspace-draft-guardrail">governance request 不等于 approval；pending steps 不等于 approved；step approved 不等于发送；governance_approved 不等于 execution。当前不会创建 Push Center job、external_effect_job、broadcast_job、internal_event，也不会发送，不能 claim PASS_90_PLUS；Push Center bridge 后置独立 PR。</p>
+      <section class="p1-workspace-governance-bridge" aria-label="Push Center bridge pending panel" data-push-center-bridge-panel="true" data-bridge-status="${escapeHtml(viewState.pushCenterBridgeStatus)}" data-push-center-status="${escapeHtml(currentBridge?.push_center_status || "not_bridged")}" data-execution-status="${currentBridge ? "push_center_pending_not_sent" : "not_execution"}" data-external-effect-job-created="false" data-broadcast-job-created="false" data-internal-event-created="false" data-real-external-call-executed="false" data-can-claim-pass90="false">
+        <h3>Push Center bridge</h3>
+        <p>Bridge 只进入 Push Center pending，不会发送；Push Center pending 不等于 sent/completed。</p>
+        <div class="p1-workspace-governance-actions" aria-label="Push Center bridge 操作">
+          <button type="button" data-workspace-bridge-push-center="true"${canBridgePushCenter ? "" : " disabled"}>Bridge to Push Center</button>
+          <button type="button" data-workspace-refresh-push-center-bridge="true"${currentReview?.review_id ? "" : " disabled"}>Refresh bridge status</button>
+        </div>
+        <p class="p1-workspace-draft-status p1-workspace-draft-status--${bridgeStatusTone}" aria-live="polite" data-push-center-bridge-status="${escapeHtml(viewState.pushCenterBridgeStatus)}">${escapeHtml(bridgeMessage)}</p>
+        ${bridgeDisabledReason && !canBridgePushCenter ? `<p class="p1-workspace-draft-guardrail" data-push-center-bridge-disabled-reason="${escapeHtml(bridgeDisabledReason)}">${escapeHtml(bridgeDisabledReason)}</p>` : ""}
+        <dl class="p1-workspace-mini-fields">
+          <div><dt>bridge_idempotency_key</dt><dd>${escapeHtml(bridgePayloadPreview?.idempotency_key || viewState.currentPushCenterBridgeIdempotencyKey || "not_ready")}</dd></div>
+          <div><dt>push_center_job_id</dt><dd>${escapeHtml(currentBridge?.push_center_job_id || "not_bridged")}</dd></div>
+          <div><dt>push_center_projection_id</dt><dd>${escapeHtml(currentBridge?.push_center_projection_id || "not_bridged")}</dd></div>
+          <div><dt>push_center_status</dt><dd>${escapeHtml(currentBridge?.push_center_status || "not_bridged")}</dd></div>
+          <div><dt>execution_status</dt><dd>${currentBridge ? "push_center_pending_not_sent" : "not_execution"}</dd></div>
+          <div><dt>external_effect_job_created</dt><dd>false</dd></div>
+          <div><dt>broadcast_job_created</dt><dd>false</dd></div>
+          <div><dt>internal_event_created</dt><dd>false</dd></div>
+          <div><dt>real_external_call</dt><dd>false</dd></div>
+          <div><dt>can_claim_pass90</dt><dd>false</dd></div>
+        </dl>
+      </section>
+      <p class="p1-workspace-draft-guardrail">governance request 不等于 approval；pending steps 不等于 approved；step approved 不等于发送；governance_approved 不等于 execution。Bridge 只创建 Push Center pending projection，不创建 external_effect_job、broadcast_job、internal_event，不发送，不能 claim PASS_90_PLUS；真实发送仍由 Push Center / external effect boundary 控制。</p>
     </section>
   `;
 }
@@ -655,6 +758,15 @@ function governanceStateFromResponse(payload, message) {
         currentGovernanceReview: review,
         governanceRequestStatus: "requested",
         governanceRequestMessage: message
+    };
+}
+function pushCenterBridgeStateFromResponse(payload, message) {
+    const bridge = pushCenterBridgeFromResponse(payload);
+    return {
+        currentPushCenterBridge: bridge,
+        pushCenterBridgeStatus: bridge ? "bridged" : "idle",
+        pushCenterBridgeMessage: message,
+        currentPushCenterBridgeIdempotencyKey: ""
     };
 }
 function governanceStepById(review, stepId) {
@@ -1045,6 +1157,106 @@ function attachGovernanceHandlers(root, fixture, viewState) {
                 renderWithGovernanceUpdates({
                     governanceRequestStatus: "failed",
                     governanceRequestMessage: "expire governance review 失败；不会审批、不会执行。"
+                });
+            });
+        });
+    });
+    root.querySelectorAll("[data-workspace-bridge-push-center]").forEach((node) => {
+        node.addEventListener("click", () => {
+            const review = viewState.currentGovernanceReview;
+            const reviewId = viewState.currentGovernanceReviewId || review?.review_id || "";
+            if (!review || !reviewId) {
+                renderWithGovernanceUpdates({
+                    pushCenterBridgeStatus: "blocked",
+                    pushCenterBridgeMessage: "Push Center bridge 需要已加载的 governance review；不会执行。"
+                });
+                return;
+            }
+            if (viewState.currentDraftStatus !== "ready_for_review"
+                || viewState.currentGovernanceStatus !== "governance_approved"
+                || !governanceStepsAllApproved(review)
+                || grayWindowExpired(review)
+                || viewState.currentPushCenterBridge) {
+                renderWithGovernanceUpdates({
+                    pushCenterBridgeStatus: "blocked",
+                    pushCenterBridgeMessage: "Bridge precondition 未满足：需要 ready_for_review + governance_approved + 三步 approved + 未过期 gray-window + 尚未 bridged。"
+                });
+                return;
+            }
+            let payload;
+            try {
+                payload = buildPushCenterBridgePayload(review);
+            }
+            catch (error) {
+                renderWithGovernanceUpdates({
+                    pushCenterBridgeStatus: "blocked",
+                    pushCenterBridgeMessage: error instanceof Error ? error.message : "Push Center bridge payload 未通过脱敏校验。"
+                });
+                return;
+            }
+            renderWithGovernanceUpdates({
+                currentPushCenterBridgeIdempotencyKey: payload.idempotency_key,
+                pushCenterBridgeStatus: "requesting",
+                pushCenterBridgeMessage: "正在 bridge 到 Push Center pending；不会发送、不会创建 external effect。"
+            });
+            bridgeGovernanceToPushCenter(reviewId, payload)
+                .then((response) => {
+                renderP1GroupOpsWorkspace(root, fixture, updateWorkspaceViewState(viewState, {
+                    ...pushCenterBridgeStateFromResponse(response, "Push Center bridge 已创建 pending projection；仍不是 sent/completed。"),
+                    currentPushCenterBridgeIdempotencyKey: payload.idempotency_key
+                }));
+            })
+                .catch((error) => {
+                if (isGovernanceConflictError(error)) {
+                    getGovernancePushCenterBridge(reviewId)
+                        .then((response) => {
+                        renderP1GroupOpsWorkspace(root, fixture, updateWorkspaceViewState(viewState, {
+                            ...pushCenterBridgeStateFromResponse(response, "Bridge conflict / already bridged；已刷新 pending projection 状态。"),
+                            currentPushCenterBridgeIdempotencyKey: payload.idempotency_key
+                        }));
+                    })
+                        .catch(() => {
+                        renderWithGovernanceUpdates({
+                            currentPushCenterBridgeIdempotencyKey: payload.idempotency_key,
+                            pushCenterBridgeStatus: "conflict",
+                            pushCenterBridgeMessage: "Bridge conflict，且刷新 bridge status 失败；不会 fallback 执行。"
+                        });
+                    });
+                    return;
+                }
+                renderWithGovernanceUpdates({
+                    currentPushCenterBridgeIdempotencyKey: payload.idempotency_key,
+                    pushCenterBridgeStatus: "failed",
+                    pushCenterBridgeMessage: "Push Center bridge 失败：未发送、未创建 external_effect_job。"
+                });
+            });
+        });
+    });
+    root.querySelectorAll("[data-workspace-refresh-push-center-bridge]").forEach((node) => {
+        node.addEventListener("click", () => {
+            const reviewId = viewState.currentGovernanceReviewId || viewState.currentGovernanceReview?.review_id || "";
+            if (!reviewId) {
+                renderWithGovernanceUpdates({
+                    pushCenterBridgeStatus: "blocked",
+                    pushCenterBridgeMessage: "没有可刷新的 governance review；不会执行。"
+                });
+                return;
+            }
+            renderWithGovernanceUpdates({
+                pushCenterBridgeStatus: "requesting",
+                pushCenterBridgeMessage: "正在读取 Push Center bridge status；不会发送。"
+            });
+            getGovernancePushCenterBridge(reviewId)
+                .then((response) => {
+                const bridge = pushCenterBridgeFromResponse(response);
+                renderP1GroupOpsWorkspace(root, fixture, updateWorkspaceViewState(viewState, pushCenterBridgeStateFromResponse(response, bridge
+                    ? "Push Center bridge status 已刷新：pending/not sent。"
+                    : "当前 review 尚未 bridge；仍为 not_execution。")));
+            })
+                .catch(() => {
+                renderWithGovernanceUpdates({
+                    pushCenterBridgeStatus: "failed",
+                    pushCenterBridgeMessage: "刷新 Push Center bridge status 失败；不会发送。"
                 });
             });
         });

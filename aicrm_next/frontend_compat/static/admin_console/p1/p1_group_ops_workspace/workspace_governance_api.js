@@ -28,6 +28,15 @@ function stableGrayWindowHash(grayWindow) {
         timezone: grayWindow.timezone
     }));
 }
+export function stablePushCenterBridgeIdempotencyKey(reviewId, snapshotHash, allowlistHash, grayWindowHash) {
+    return [
+        "p1-gow-push-center-bridge",
+        text(reviewId),
+        text(snapshotHash || "no_snapshot"),
+        text(allowlistHash || "allowlist_missing"),
+        text(grayWindowHash || "window_missing")
+    ].join(":");
+}
 export function stableGovernanceIdempotencyKey(draftId, snapshotHash, allowlistHash, grayWindowHash) {
     return [
         "p1-gow-governance",
@@ -79,6 +88,23 @@ export function assertWorkspaceGovernanceStepPayloadSafe(payload) {
     }
     return true;
 }
+export function assertWorkspacePushCenterBridgePayloadSafe(payload) {
+    assertWorkspaceSensitiveSafe(payload);
+    if (!payload.idempotency_key || !payload.client_snapshot_hash || !payload.allowlist_hash) {
+        throw new Error("push_center_bridge_payload_missing_required_field");
+    }
+    if (!Number.isFinite(payload.allowlist_count) || payload.allowlist_count < 0) {
+        throw new Error("push_center_bridge_payload_invalid_allowlist_count");
+    }
+    if (payload.gray_window_summary) {
+        const start = Date.parse(payload.gray_window_summary.start_at);
+        const end = Date.parse(payload.gray_window_summary.end_at);
+        if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) {
+            throw new Error("push_center_bridge_payload_invalid_gray_window");
+        }
+    }
+    return true;
+}
 export function buildWorkspaceGovernanceRequestPayload(draftId, snapshotHash, options = {}) {
     const grayWindow = options.grayWindow || defaultGrayWindow(snapshotHash);
     const allowlistHash = options.allowlistHash || `allowlist-${workspaceSimpleHash(`${draftId}:${snapshotHash}:summary`)}`;
@@ -101,6 +127,37 @@ export function buildWorkspaceGovernanceRequestPayload(draftId, snapshotHash, op
         payload.request_note = options.requestNote;
     }
     assertWorkspaceGovernancePayloadSafe(payload);
+    return payload;
+}
+export function buildPushCenterBridgePayload(review, options = {}) {
+    const reviewId = requireReviewId(review);
+    const snapshotHash = text(review.snapshot_hash);
+    if (!snapshotHash)
+        throw new Error("push_center_bridge_missing_snapshot_hash");
+    const allowlistHash = options.allowlistHash || text(review.allowlist_summary?.hash);
+    const allowlistCount = options.allowlistCount ?? Number(review.allowlist_summary?.count ?? 0);
+    const grayWindow = options.grayWindow || review.gray_window;
+    if (!grayWindow?.start_at || !grayWindow?.end_at || !grayWindow?.timezone) {
+        throw new Error("push_center_bridge_missing_gray_window");
+    }
+    const safeGrayWindow = {
+        start_at: grayWindow.start_at,
+        end_at: grayWindow.end_at,
+        timezone: grayWindow.timezone,
+        window_status: text(grayWindow.window_status || "approved")
+    };
+    const grayWindowHash = stableGrayWindowHash(safeGrayWindow);
+    const payload = {
+        idempotency_key: stablePushCenterBridgeIdempotencyKey(reviewId, snapshotHash, allowlistHash, grayWindowHash),
+        client_snapshot_hash: snapshotHash,
+        allowlist_hash: allowlistHash,
+        allowlist_count: allowlistCount,
+        gray_window_summary: safeGrayWindow
+    };
+    if (options.bridgeNote) {
+        payload.bridge_note = options.bridgeNote;
+    }
+    assertWorkspacePushCenterBridgePayloadSafe(payload);
     return payload;
 }
 function requireReviewId(review) {
@@ -208,6 +265,40 @@ export function assertGovernanceResponseSafe(value) {
     }
     return true;
 }
+export function assertPushCenterBridgeResponseSafe(value) {
+    assertWorkspaceSensitiveSafe(value);
+    const serialized = JSON.stringify(value).toLowerCase();
+    if (value.approved === true
+        || value.external_effect_job_created === true
+        || value.broadcast_job_created === true
+        || value.internal_event_created === true
+        || value.real_external_call === true
+        || value.real_external_call_executed === true
+        || value.can_claim_pass_90_plus === true) {
+        throw new Error("push_center_bridge_response_violates_execution_guardrail");
+    }
+    if (value.push_center_job_created === true
+        && (value.push_center_status !== "pending"
+            || value.execution_status !== "push_center_pending_not_sent")) {
+        throw new Error("push_center_bridge_response_not_pending_projection");
+    }
+    if (value.push_center_job_created !== true
+        && (value.push_center_status !== "not_bridged"
+            || value.execution_status !== "not_execution"
+            || Boolean(value.push_center_job_id)
+            || Boolean(value.push_center_projection_id))) {
+        throw new Error("push_center_bridge_response_not_safe_read_state");
+    }
+    if (serialized.includes("\"external_effect_job_id\"")
+        || serialized.includes("\"broadcast_job_id\"")
+        || serialized.includes("\"internal_event_id\"")
+        || serialized.includes("execution started")
+        || serialized.includes("\"sent\"")
+        || serialized.includes("\"completed\"")) {
+        throw new Error("push_center_bridge_response_claims_execution_state");
+    }
+    return true;
+}
 function asGovernanceResponse(value) {
     const payload = value && typeof value === "object" ? value : { ok: false };
     assertGovernanceResponseSafe(payload);
@@ -219,6 +310,11 @@ function asGovernanceListResponse(value) {
         payload.items = [];
     }
     assertGovernanceResponseSafe(payload);
+    return payload;
+}
+function asPushCenterBridgeResponse(value) {
+    const payload = value && typeof value === "object" ? value : { ok: false };
+    assertPushCenterBridgeResponseSafe(payload);
     return payload;
 }
 export function isGovernanceConflictError(error) {
@@ -246,4 +342,11 @@ export async function rejectGovernanceStep(reviewId, stepId, payload, config = D
 export async function expireGovernanceReview(reviewId, payload, config = DEFAULT_WORKSPACE_GOVERNANCE_API_CONFIG, requestJson = defaultWorkspaceDraftRequestJson()) {
     assertWorkspaceGovernanceStepPayloadSafe(payload);
     return asGovernanceResponse(await requestJson(`${config.governanceUrl}/${encodeURIComponent(reviewId)}/expire`, bodyOptions(payload)));
+}
+export async function bridgeGovernanceToPushCenter(reviewId, payload, config = DEFAULT_WORKSPACE_GOVERNANCE_API_CONFIG, requestJson = defaultWorkspaceDraftRequestJson()) {
+    assertWorkspacePushCenterBridgePayloadSafe(payload);
+    return asPushCenterBridgeResponse(await requestJson(`${config.governanceUrl}/${encodeURIComponent(reviewId)}/bridge-push-center`, bodyOptions(payload)));
+}
+export async function getGovernancePushCenterBridge(reviewId, config = DEFAULT_WORKSPACE_GOVERNANCE_API_CONFIG, requestJson = defaultWorkspaceDraftRequestJson()) {
+    return asPushCenterBridgeResponse(await requestJson(`${config.governanceUrl}/${encodeURIComponent(reviewId)}/push-center-bridge`));
 }
