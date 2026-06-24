@@ -149,7 +149,6 @@ def _static_production_data_contracts_ready() -> tuple[bool, list[str]]:
     blockers: list[str] = []
     checks = {
         "ai_audience_admin_read_api": ROOT / "aicrm_next" / "ai_audience_ops" / "admin_api.py",
-        "automation_program_legacy_facade": ROOT / "aicrm_next" / "frontend_compat" / "legacy_routes.py",
         "questionnaire_legacy_facade": ROOT / "aicrm_next" / "questionnaire" / "api.py",
         "customer_legacy_facade": ROOT / "aicrm_next" / "customer_read_model" / "api.py",
     }
@@ -161,6 +160,9 @@ def _static_production_data_contracts_ready() -> tuple[bool, list[str]]:
             continue
         if "production_data_ready()" not in source:
             blockers.append(f"{name}:missing_production_data_ready_guard")
+    frontend_compat_facade = ROOT / "aicrm_next" / "frontend_compat" / "legacy_routes.py"
+    if frontend_compat_facade.exists():
+        blockers.append("frontend_compat_legacy_routes:should_be_removed")
     for facade in (
         ROOT / "aicrm_next" / "integration_gateway" / "legacy_automation_facade.py",
         ROOT / "aicrm_next" / "integration_gateway" / "legacy_questionnaire_facade.py",
