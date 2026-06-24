@@ -162,8 +162,8 @@ def test_public_pay_landing_reopens_existing_paid_order(monkeypatch) -> None:
                         "unionid": "un_paid",
                     }
                 )
-            if "SELECT lead_channel_id, lead_program_id" in query:
-                return Cursor({"lead_channel_id": 7, "lead_program_id": None})
+            if "SELECT lead_channel_id" in query:
+                return Cursor({"lead_channel_id": 7})
             if "FROM automation_channel c" in query:
                 return Cursor({"channel_id": 7, "channel_name": "已购引流", "qr_url": "https://example.com/paid-qr.png", "status": "active"})
             return Cursor(None)
@@ -220,8 +220,8 @@ def test_public_h5_create_order_returns_existing_paid_order(monkeypatch) -> None
                         "payer_openid": "op_paid",
                     }
                 )
-            if "SELECT lead_channel_id, lead_program_id" in query:
-                return Cursor({"lead_channel_id": None, "lead_program_id": None})
+            if "SELECT lead_channel_id" in query:
+                return Cursor({"lead_channel_id": None})
             return Cursor(None)
 
     class FailingClient:
