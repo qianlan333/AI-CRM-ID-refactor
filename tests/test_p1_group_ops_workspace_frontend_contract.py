@@ -14,6 +14,7 @@ NAVIGATION = ROOT / "aicrm_next/admin_shell/navigation.py"
 WORKSPACE_TS_DIR = ROOT / "frontend/admin/p1_group_ops_workspace"
 READ_ONLY_CLOSEOUT = ROOT / "docs/reports/p1_group_ops_workspace_read_only_closeout_20260624.md"
 DRAFT_PERSISTENCE_RFC = ROOT / "docs/rfcs/p1_group_ops_workspace_draft_persistence_rfc_20260624.md"
+GOVERNANCE_RFC = ROOT / "docs/rfcs/p1_group_ops_workspace_governance_rfc_20260624.md"
 
 
 @pytest.fixture()
@@ -394,5 +395,80 @@ def test_p1_group_ops_workspace_draft_persistence_rfc_contract():
         "migration is created in this PR",
         "Draft APIs must create Push Center jobs",
         "Draft APIs must create `external_effect_job`",
+    ]:
+        assert forbidden not in rfc
+
+
+def test_p1_group_ops_workspace_governance_rfc_contract():
+    rfc = GOVERNANCE_RFC.read_text(encoding="utf-8")
+
+    for expected in [
+        "GOVERNANCE_RFC_READY_FOR_REVIEW",
+        "GOVERNANCE_IMPLEMENTATION_NOT_STARTED",
+        "PUSH_CENTER_BRIDGE_NOT_STARTED",
+        "EXECUTION_NOT_IN_SCOPE",
+        "PASS_90_PLUS_NOT_CLAIMED",
+        "ready_for_review is not approved",
+        "operator approval",
+        "receiver allowlist approval",
+        "gray-window approval",
+        "Push Center remains the only future sending entry point",
+        "Draft status",
+        "Governance status",
+        "governance_not_started",
+        "approval_pending",
+        "allowlist_pending",
+        "gray_window_pending",
+        "governance_approved",
+        "governance_rejected",
+        "governance_expired",
+        "group_ops_workspace_governance_reviews",
+        "group_ops_workspace_governance_review_steps",
+        "group_ops_workspace_allowlist_snapshots",
+        "group_ops_workspace_gray_window_approvals",
+        "step_type",
+        "operator_approval",
+        "receiver_allowlist",
+        "gray_window",
+        "allowlist_summary_json",
+        "gray_window_json",
+        "audit_metadata_json",
+        "POST `/api/admin/p1/group-ops-workspace/drafts/{draft_id}/governance/request`",
+        "GET `/api/admin/p1/group-ops-workspace/governance/{review_id}`",
+        "POST `/api/admin/p1/group-ops-workspace/governance/{review_id}/steps/{step_id}/approve`",
+        "POST `/api/admin/p1/group-ops-workspace/governance/{review_id}/steps/{step_id}/reject`",
+        "POST `/api/admin/p1/group-ops-workspace/governance/{review_id}/expire`",
+        "No external call guarantee: true",
+        "No Push Center job creation guarantee: true",
+        "unauthenticated requests fail closed",
+        "allowlist_hash_mismatch",
+        "allowlist_count_mismatch",
+        "gray_window_expired",
+        "gray_window_snapshot_mismatch",
+        "draft_status=ready_for_review",
+        "governance_status=governance_approved",
+        "draft `snapshot_hash` matches governance `snapshot_hash`",
+        "Only a later Push Center bridge PR may create",
+        "Governance panel",
+        "request governance button",
+        "step status timeline",
+        "no execute button",
+        "no send button",
+        "governance migration only",
+        "backend governance request/review API",
+        "frontend governance panel",
+        "approval/allowlist/gray-window step APIs",
+        "frontend approval step integration",
+        "Push Center bridge later",
+        "Frontend Skill Checklist",
+    ]:
+        assert expected in rfc
+
+    for forbidden in [
+        "This RFC implements",
+        "migration is created in this PR",
+        "Governance APIs must create Push Center jobs",
+        "Governance APIs must create `external_effect_job`",
+        "governance_approved can execute by itself",
     ]:
         assert forbidden not in rfc
