@@ -21,6 +21,9 @@ PUSH_CENTER_STATUS = ROOT / "frontend" / "admin" / "push_center" / "push_center_
 PUSH_CENTER_OVERVIEW = ROOT / "frontend" / "admin" / "push_center" / "push_center_overview.ts"
 OPS_PLAN_STATUS = ROOT / "frontend" / "admin" / "ops_plan" / "ops_plan_status.ts"
 OPS_PLAN_OVERVIEW = ROOT / "frontend" / "admin" / "ops_plan" / "ops_plan_overview.ts"
+PREVIEW_BOARD = ROOT / "frontend" / "admin" / "p1_preview_board" / "preview_board.ts"
+PREVIEW_BOARD_FIXTURE = ROOT / "frontend" / "admin" / "p1_preview_board" / "preview_board_fixture.ts"
+BUSINESS_CLOSURE_TEMPLATE = ROOT / "aicrm_next" / "admin_shell" / "templates" / "admin_shell" / "business_closure.html"
 
 
 def _client(monkeypatch) -> TestClient:
@@ -109,6 +112,55 @@ def test_business_closure_frontend_copy_does_not_claim_false_completion() -> Non
     assert "renderStatusCard" in script
     for forbidden in ["WeCom 已授权完成", "全局 PASS_90_PLUS 已完成", "downstream completed"]:
         assert forbidden not in script
+
+
+def test_business_closure_preview_board_is_fixture_driven_and_non_executing() -> None:
+    overview_source = OVERVIEW_SCRIPT.read_text(encoding="utf-8")
+    board_source = PREVIEW_BOARD.read_text(encoding="utf-8")
+    fixture_source = PREVIEW_BOARD_FIXTURE.read_text(encoding="utf-8")
+    template_source = BUSINESS_CLOSURE_TEMPLATE.read_text(encoding="utf-8")
+
+    assert 'from "../p1_preview_board/preview_board.js"' in overview_source
+    assert "renderP1PreviewBoard()" in overview_source
+    assert "P1 Preview Board" in board_source
+    for shared_call in [
+        "createDraftState",
+        "applyReadonlyReorderPreview",
+        "validateDropIntent",
+        "explainBlockedDrop",
+        "getExecutionModeForStatus",
+        "serializeDraftPreviewForDisplay",
+        "renderInteractionShell",
+    ]:
+        assert shared_call in board_source
+    assert 'globalVerdict: "P1_READY_WITH_EXCEPTIONS"' in fixture_source
+    assert "canClaimPass90Plus: false" in fixture_source
+    assert "previewOnly: true" in fixture_source
+    assert "productionWriteExecuted: false" in fixture_source
+    assert "realExternalCallExecuted: false" in fixture_source
+    assert "External Orders / order linked" in fixture_source
+    assert "Push Center / pending" in fixture_source
+    assert "Group Ops / governance missing" in fixture_source
+    assert "Ops Plan / downstream pending" in fixture_source
+    assert "WeCom / external config blocked" in fixture_source
+    assert ".p1-preview-board" in template_source
+    assert "不保存、不执行、不生成 PASS_90_PLUS" in board_source
+
+
+def test_preview_board_fixture_does_not_embed_sensitive_strings() -> None:
+    source = PREVIEW_BOARD_FIXTURE.read_text(encoding="utf-8")
+    for forbidden in [
+        "Authorization",
+        "access_token",
+        "corpsecret",
+        "raw_external_userid",
+        "external_userid=",
+        "openid",
+        "unionid",
+        "13800138000",
+        "receiver_plaintext",
+    ]:
+        assert forbidden not in source
 
 
 def test_interaction_contract_blocks_unsafe_drag_outcomes() -> None:

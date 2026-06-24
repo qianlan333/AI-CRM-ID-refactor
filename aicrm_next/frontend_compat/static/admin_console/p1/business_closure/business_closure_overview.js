@@ -2,6 +2,7 @@ import { canRenderGlobalPass } from "../shared/status_model.js";
 import { escapeHtml } from "../shared/dom.js";
 import { renderStatusCard } from "../shared/status_card.js";
 import { renderInteractionShell } from "../shared/interaction_shell.js";
+import { renderP1PreviewBoard } from "../p1_preview_board/preview_board.js";
 function renderBusinessClosure(root, payload) {
     const globalPass = canRenderGlobalPass(payload);
     root.innerHTML = `
@@ -19,6 +20,7 @@ function renderBusinessClosure(root, payload) {
     })).join("")}
     </section>
     ${renderInteractionShell(payload)}
+    ${renderP1PreviewBoard()}
   `;
 }
 function parsePayload() {

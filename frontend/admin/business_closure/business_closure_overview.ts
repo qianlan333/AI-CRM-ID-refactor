@@ -5,6 +5,7 @@ import {
 import { escapeHtml } from "../shared/dom.js";
 import { renderStatusCard } from "../shared/status_card.js";
 import { renderInteractionShell } from "../shared/interaction_shell.js";
+import { renderP1PreviewBoard } from "../p1_preview_board/preview_board.js";
 
 function renderBusinessClosure(root: HTMLElement, payload: BusinessClosurePayload): void {
   const globalPass = canRenderGlobalPass(payload);
@@ -23,6 +24,7 @@ function renderBusinessClosure(root: HTMLElement, payload: BusinessClosurePayloa
       })).join("")}
     </section>
     ${renderInteractionShell(payload)}
+    ${renderP1PreviewBoard()}
   `;
 }
 
