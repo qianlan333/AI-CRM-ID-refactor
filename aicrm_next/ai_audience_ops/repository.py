@@ -140,6 +140,21 @@ class AudienceRepository:
     def explain_readonly_query(self, sql: str, params: dict[str, Any], *, timeout_seconds: int) -> Any:
         raise NotImplementedError
 
+    def get_agent_prompt(self, agent_code: str) -> dict[str, Any]:
+        raise NotImplementedError
+
+    def create_agent_run(self, payload: dict[str, Any]) -> dict[str, Any]:
+        raise NotImplementedError
+
+    def complete_agent_run(self, row_id: int, payload: dict[str, Any]) -> dict[str, Any]:
+        raise NotImplementedError
+
+    def log_agent_llm_call(self, payload: dict[str, Any]) -> dict[str, Any]:
+        raise NotImplementedError
+
+    def record_agent_output(self, payload: dict[str, Any]) -> dict[str, Any]:
+        raise NotImplementedError
+
 
 class SQLAlchemyAudienceRepository(AudienceRepository):
     def __init__(self, session_factory: Callable[[], Session] | None = None):
@@ -166,6 +181,44 @@ class SQLAlchemyAudienceRepository(AudienceRepository):
             rows = session.execute(text(statement), params or {}).mappings().fetchall()
             session.commit()
             return [_public_row(dict(row)) or {} for row in rows]
+
+    def _table_columns(self, table: str) -> set[str]:
+        rows = self._all(
+            """
+            SELECT column_name
+            FROM information_schema.columns
+            WHERE table_schema = 'public' AND table_name = :table
+            """,
+            {"table": table},
+        )
+        return {_text(row.get("column_name")) for row in rows}
+
+    def _insert_available(self, table: str, values: dict[str, Any]) -> dict[str, Any]:
+        columns = [key for key in values if key in self._table_columns(table)]
+        if not columns:
+            return {}
+        params = {f"p{i}": values[column] for i, column in enumerate(columns)}
+        placeholders = ", ".join(f":p{i}" for i, _column in enumerate(columns))
+        column_sql = ", ".join(columns)
+        return self._write_one(
+            f"INSERT INTO {table} ({column_sql}) VALUES ({placeholders}) RETURNING *",
+            params,
+        ) or {}
+
+    def _update_available(self, table: str, row_id: int, values: dict[str, Any]) -> dict[str, Any]:
+        available_columns = self._table_columns(table)
+        columns = [key for key in values if key in available_columns]
+        if not columns or int(row_id or 0) <= 0:
+            return {}
+        params = {f"p{i}": values[column] for i, column in enumerate(columns)}
+        params["row_id"] = int(row_id)
+        assignments = ", ".join(f"{column} = :p{i}" for i, column in enumerate(columns))
+        if "updated_at" in available_columns:
+            assignments = f"{assignments}, updated_at = CURRENT_TIMESTAMP"
+        return self._write_one(
+            f"UPDATE {table} SET {assignments} WHERE id = :row_id RETURNING *",
+            params,
+        ) or {}
 
     def list_packages(self) -> list[dict[str, Any]]:
         return self._all(
@@ -995,6 +1048,36 @@ class SQLAlchemyAudienceRepository(AudienceRepository):
             """
         )
         return row or {}
+
+    def get_agent_prompt(self, agent_code: str) -> dict[str, Any]:
+        row = self._one(
+            """
+            SELECT *
+            FROM automation_agent_config
+            WHERE agent_code = :agent_code
+            LIMIT 1
+            """,
+            {"agent_code": _text(agent_code)},
+        )
+        item = dict(row or {})
+        return {
+            "role_prompt": _text(item.get("published_role_prompt") or item.get("role_prompt")),
+            "task_prompt": _text(item.get("published_task_prompt") or item.get("task_prompt")),
+            "published_version": int(item.get("published_version") or 0),
+            "raw": item,
+        }
+
+    def create_agent_run(self, payload: dict[str, Any]) -> dict[str, Any]:
+        return self._insert_available("automation_agent_run", payload)
+
+    def complete_agent_run(self, row_id: int, payload: dict[str, Any]) -> dict[str, Any]:
+        return self._update_available("automation_agent_run", row_id, payload)
+
+    def log_agent_llm_call(self, payload: dict[str, Any]) -> dict[str, Any]:
+        return self._insert_available("automation_agent_llm_call_log", payload)
+
+    def record_agent_output(self, payload: dict[str, Any]) -> dict[str, Any]:
+        return self._insert_available("automation_agent_output", payload)
 
 
 def _dependency_source_type(view_name: str) -> str:
