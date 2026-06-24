@@ -211,45 +211,6 @@ class _GuardedAutomationAdapter:
         )
 
 
-class AutomationWriteGateway(_GuardedAutomationAdapter):
-    adapter_name = "AutomationWriteGateway"
-    production_flag = "AICRM_NEXT_ENABLE_REAL_AUTOMATION_WRITES"
-
-    def override_followup_type(self, *, member_id: str, followup_type: str, operator: str = "system", reason: str = "", external_userid: str = "", idempotency_key: str | None = None) -> Json:
-        return self._write_operation("override_followup_type", member_id=member_id, external_userid=external_userid, operator=operator, reason=reason, write_payload={"followup_type": followup_type}, idempotency_key=idempotency_key)
-
-    def confirm_conversion(self, *, member_id: str, operator: str = "system", reason: str = "", external_userid: str = "", idempotency_key: str | None = None) -> Json:
-        return self._write_operation("confirm_conversion", member_id=member_id, external_userid=external_userid, operator=operator, reason=reason, write_payload={"converted": True}, idempotency_key=idempotency_key)
-
-    def enter_silent(self, *, member_id: str, operator: str = "system", reason: str = "", external_userid: str = "", idempotency_key: str | None = None) -> Json:
-        return self._write_operation("enter_silent", member_id=member_id, external_userid=external_userid, operator=operator, reason=reason, write_payload={"silent": True}, idempotency_key=idempotency_key)
-
-    def exit_marketing(self, *, member_id: str, operator: str = "system", reason: str = "", external_userid: str = "", idempotency_key: str | None = None) -> Json:
-        return self._write_operation("exit_marketing", member_id=member_id, external_userid=external_userid, operator=operator, reason=reason, write_payload={"exited": True}, idempotency_key=idempotency_key)
-
-    def build_write_preview(self, *, operation: str, member_id: str = "", external_userid: str = "", payload_summary: dict[str, Any] | None = None, idempotency_key: str | None = None) -> Json:
-        return self._write_operation(operation, member_id=member_id, external_userid=external_userid, write_payload=_payload_summary(payload_summary), idempotency_key=idempotency_key)
-
-    def record_write_audit(self, *, operation: str, target: dict[str, Any], result: dict[str, Any] | None = None, error_code: str = "", idempotency_key: str | None = None) -> Json:
-        return self._audit_only(operation=operation, target=target, result=result, error_code=error_code, idempotency_key=idempotency_key)
-
-    def _write_operation(self, operation: str, *, member_id: str, external_userid: str = "", operator: str = "system", reason: str = "", write_payload: dict[str, Any] | None = None, idempotency_key: str | None = None) -> Json:
-        target = {"member_id": member_id, "external_userid": external_userid, "operator": operator, "reason": reason, "write_payload": _safe_target(write_payload or {})}
-        mode_prefix = _mode_prefix(self.mode)
-        return self._operation(
-            operation,
-            target=target,
-            idempotency_key=idempotency_key,
-            result_factory=lambda: {
-                "write_id": f"{mode_prefix}_automation_write_{_digest(operation + repr(target))[:16]}",
-                "operation": operation,
-                "source_status": mode_prefix,
-                "applied": False,
-                "real_automation_write_executed": False,
-            },
-        )
-
-
 class AutomationActivationGateway(_GuardedAutomationAdapter):
     adapter_name = "AutomationActivationGateway"
     production_flag = "AICRM_NEXT_ENABLE_REAL_AUTOMATION_ACTIVATION"
@@ -297,78 +258,6 @@ class AutomationActivationGateway(_GuardedAutomationAdapter):
         return self._audit_only(operation=operation, target=target, result=result, error_code=error_code, idempotency_key=idempotency_key)
 
 
-class OpenClawWebhookAdapter(_GuardedAutomationAdapter):
-    adapter_name = "OpenClawWebhookAdapter"
-    production_flag = "AICRM_NEXT_ENABLE_REAL_OPENCLAW_WEBHOOK"
-
-    def push_member_context(self, *, member_id: str, external_userid: str = "", openclaw_context_id: str = "", payload_summary: dict[str, Any] | None = None, idempotency_key: str | None = None) -> Json:
-        target = {"member_id": member_id, "external_userid": external_userid, "openclaw_context_id": openclaw_context_id, "payload_summary": _payload_summary(payload_summary)}
-        return self._openclaw_operation("push_member_context", target=target, idempotency_key=idempotency_key)
-
-    def push_workflow_context(self, *, workflow_id: str, member_id: str = "", execution_id: str = "", openclaw_context_id: str = "", payload_summary: dict[str, Any] | None = None, idempotency_key: str | None = None) -> Json:
-        target = {"workflow_id": workflow_id, "member_id": member_id, "execution_id": execution_id, "openclaw_context_id": openclaw_context_id, "payload_summary": _payload_summary(payload_summary)}
-        return self._openclaw_operation("push_workflow_context", target=target, idempotency_key=idempotency_key)
-
-    def build_openclaw_payload_preview(self, *, member_id: str = "", workflow_id: str = "", openclaw_context_id: str = "", payload_summary: dict[str, Any] | None = None, idempotency_key: str | None = None) -> Json:
-        target = {"member_id": member_id, "workflow_id": workflow_id, "openclaw_context_id": openclaw_context_id, "payload_summary": _payload_summary(payload_summary)}
-        return self._openclaw_operation("build_openclaw_payload_preview", target=target, idempotency_key=idempotency_key)
-
-    def record_openclaw_audit(self, *, operation: str, target: dict[str, Any], result: dict[str, Any] | None = None, error_code: str = "", idempotency_key: str | None = None) -> Json:
-        return self._audit_only(operation=operation, target=target, result=result, error_code=error_code, idempotency_key=idempotency_key)
-
-    def _openclaw_operation(self, operation: str, *, target: dict[str, Any], idempotency_key: str | None) -> Json:
-        mode_prefix = _mode_prefix(self.mode)
-        return self._operation(
-            operation,
-            target=target,
-            idempotency_key=idempotency_key,
-            result_factory=lambda: {
-                "openclaw_request_id": f"{mode_prefix}_openclaw_{_digest(operation + repr(target))[:16]}",
-                "queued": False,
-                "sent": False,
-                "real_openclaw_push_executed": False,
-                "real_external_webhook_executed": False,
-            },
-        )
-
-
-class AutomationWorkflowRuntimeAdapter(_GuardedAutomationAdapter):
-    adapter_name = "AutomationWorkflowRuntimeAdapter"
-    production_flag = "AICRM_NEXT_ENABLE_REAL_AUTOMATION_WORKFLOW_RUNTIME"
-
-    def enqueue_workflow_run(self, *, workflow_id: str, member_id: str = "", execution_id: str = "", program_id: str = "", idempotency_key: str | None = None) -> Json:
-        return self._workflow_operation("enqueue_workflow_run", workflow_id=workflow_id, member_id=member_id, execution_id=execution_id, program_id=program_id, idempotency_key=idempotency_key)
-
-    def run_workflow_node(self, *, workflow_id: str, node_id: str, member_id: str = "", execution_id: str = "", idempotency_key: str | None = None) -> Json:
-        return self._workflow_operation("run_workflow_node", workflow_id=workflow_id, node_id=node_id, member_id=member_id, execution_id=execution_id, idempotency_key=idempotency_key)
-
-    def run_due_workflows(self, *, workflow_id: str = "", program_id: str = "", limit: int = 50, idempotency_key: str | None = None) -> Json:
-        return self._workflow_operation("run_due_workflows", workflow_id=workflow_id, program_id=program_id, limit=limit, idempotency_key=idempotency_key)
-
-    def build_workflow_runtime_preview(self, *, workflow_id: str = "", node_id: str = "", member_id: str = "", execution_id: str = "", payload_summary: dict[str, Any] | None = None, idempotency_key: str | None = None) -> Json:
-        return self._workflow_operation("build_workflow_runtime_preview", workflow_id=workflow_id, node_id=node_id, member_id=member_id, execution_id=execution_id, payload_summary=payload_summary, idempotency_key=idempotency_key)
-
-    def record_workflow_runtime_audit(self, *, operation: str, target: dict[str, Any], result: dict[str, Any] | None = None, error_code: str = "", idempotency_key: str | None = None) -> Json:
-        return self._audit_only(operation=operation, target=target, result=result, error_code=error_code, idempotency_key=idempotency_key)
-
-    def _workflow_operation(self, operation: str, *, workflow_id: str = "", node_id: str = "", member_id: str = "", execution_id: str = "", program_id: str = "", limit: int | None = None, payload_summary: dict[str, Any] | None = None, idempotency_key: str | None = None) -> Json:
-        target = {"workflow_id": workflow_id, "node_id": node_id, "member_id": member_id, "execution_id": execution_id, "program_id": program_id, "limit": limit, "payload_summary": _payload_summary(payload_summary)}
-        mode_prefix = _mode_prefix(self.mode)
-        return self._operation(
-            operation,
-            target=target,
-            idempotency_key=idempotency_key,
-            result_factory=lambda: {
-                "workflow_run_id": f"{mode_prefix}_workflow_{_digest(operation + repr(target))[:16]}",
-                "queued": False,
-                "would_enqueue": operation == "enqueue_workflow_run",
-                "executed": False,
-                "executed_count": 0,
-                "real_workflow_runtime_executed": False,
-            },
-        )
-
-
 class AutomationAgentRuntimeAdapter(_GuardedAutomationAdapter):
     adapter_name = "AutomationAgentRuntimeAdapter"
     production_flag = "AICRM_NEXT_ENABLE_REAL_AUTOMATION_AGENT_RUNTIME"
@@ -406,20 +295,8 @@ class AutomationAgentRuntimeAdapter(_GuardedAutomationAdapter):
         )
 
 
-def build_automation_write_gateway() -> AutomationWriteGateway:
-    return AutomationWriteGateway(os.getenv("AICRM_NEXT_AUTOMATION_WRITE_MODE", "fake"))
-
-
 def build_automation_activation_gateway() -> AutomationActivationGateway:
     return AutomationActivationGateway(os.getenv("AICRM_NEXT_AUTOMATION_ACTIVATION_MODE", "fake"))
-
-
-def build_openclaw_webhook_adapter() -> OpenClawWebhookAdapter:
-    return OpenClawWebhookAdapter(os.getenv("AICRM_NEXT_OPENCLAW_WEBHOOK_MODE", "fake"))
-
-
-def build_automation_workflow_runtime_adapter() -> AutomationWorkflowRuntimeAdapter:
-    return AutomationWorkflowRuntimeAdapter(os.getenv("AICRM_NEXT_AUTOMATION_WORKFLOW_RUNTIME_MODE", "fake"))
 
 
 def build_automation_agent_runtime_adapter() -> AutomationAgentRuntimeAdapter:
