@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from typing import Any
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
-from fastapi import APIRouter, Body, HTTPException, Query, Request, Response
+from fastapi import APIRouter, HTTPException, Query, Request, Response
 from fastapi.responses import JSONResponse, RedirectResponse
 
 from aicrm_next.common_operation_members import search_operation_members
@@ -24,26 +24,6 @@ _NEXT_ID = 1
 _NEXT_ASSIGNEE_ID = 1
 _NEXT_ASSIGNMENT_EVENT_ID = 1
 _NEXT_WE_COM_LINK_ID = 1
-
-
-_RETIRED_BINDING_HEADERS = {
-    "X-AICRM-Route-Owner": "ai_crm_next",
-    "X-AICRM-Legacy-Automation-Retired": "true",
-    "X-AICRM-Real-External-Call-Executed": "false",
-}
-
-
-def _retired_program_binding_response() -> JSONResponse:
-    return JSONResponse(
-        {
-            "ok": False,
-            "error": "legacy_program_channel_binding_retired",
-            "message": "旧 automation_program 渠道绑定已退场；渠道进入仅写 channel_contact 并发出 channel_entry.entered internal event。",
-            "real_external_call_executed": False,
-        },
-        status_code=410,
-        headers=_RETIRED_BINDING_HEADERS,
-    )
 
 
 def _iso(value: Any) -> str:
@@ -1278,30 +1258,6 @@ def list_channel_contacts(channel_id: int, limit: int = Query(100)) -> dict[str,
             )
             contacts = [{**dict(row), "last_channel_entered_at": _iso(row.get("last_channel_entered_at"))} for row in cur.fetchall() or []]
     return {"ok": True, "contacts": contacts, "reason": "channel_contacts_listed", "source": "ai_crm_next"}
-
-
-@router.get("/api/admin/channels/{channel_id:int}/bindings")
-def list_channel_bindings(channel_id: int) -> JSONResponse:
-    del channel_id
-    return _retired_program_binding_response()
-
-
-@router.get("/api/admin/automation-conversion/programs/{program_id:int}/channel-bindings")
-def list_program_channel_bindings(program_id: int) -> JSONResponse:
-    del program_id
-    return _retired_program_binding_response()
-
-
-@router.post("/api/admin/automation-conversion/programs/{program_id:int}/channel-bindings", status_code=201)
-def bind_program_channels(program_id: int, payload: dict[str, Any] | None = Body(default=None)) -> JSONResponse:
-    del program_id, payload
-    return _retired_program_binding_response()
-
-
-@router.delete("/api/admin/automation-conversion/programs/{program_id:int}/channel-bindings/{binding_id:int}")
-def unbind_program_channel(program_id: int, binding_id: int, payload: dict[str, Any] | None = None) -> JSONResponse:
-    del program_id, binding_id, payload
-    return _retired_program_binding_response()
 
 
 @router.get("/api/admin/channels/{channel_id:int}/share-link")
