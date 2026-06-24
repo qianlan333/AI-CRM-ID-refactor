@@ -20,6 +20,7 @@ export interface WorkspaceGovernanceRequestPayload {
     request_note?: string;
 }
 export interface WorkspaceGovernanceStep {
+    step_id?: string;
     step_type: "operator_approval" | "receiver_allowlist" | "gray_window" | string;
     step_status: "pending" | "approved" | "rejected" | "expired" | string;
     actor_metadata?: Record<string, unknown>;
@@ -61,6 +62,10 @@ export interface WorkspaceGovernanceResponse {
     can_claim_pass_90_plus?: boolean;
     execution_status?: string;
     idempotent_replay?: boolean;
+    step_id?: string;
+    step_type?: string;
+    step_status?: string;
+    governance_approved?: boolean;
     error?: string;
     detail?: string;
 }
@@ -86,12 +91,55 @@ export interface BuildWorkspaceGovernancePayloadOptions {
     grayWindow?: WorkspaceGovernanceGrayWindow;
     requestNote?: string;
 }
+export type WorkspaceGovernanceStepAction = "approve" | "reject" | "expire";
+export interface WorkspaceGovernanceStepCommandPayload {
+    idempotency_key: string;
+    approval_note?: string;
+    reject_reason?: string;
+    expire_reason?: string;
+    allowlist_hash?: string;
+    allowlist_count?: number;
+}
+export interface WorkspaceGovernanceStepContext {
+    step_id?: string;
+    step_type?: string;
+    step_status?: string;
+}
+export interface WorkspaceGovernanceReviewContext {
+    review_id?: string;
+    review_status?: string;
+    allowlist_summary?: {
+        hash?: string;
+        count?: number;
+    };
+    gray_window?: {
+        start_at?: string;
+        end_at?: string;
+        timezone?: string;
+        window_status?: string;
+    };
+}
+export interface BuildWorkspaceGovernanceStepPayloadOptions {
+    approvalNote?: string;
+    rejectReason?: string;
+    expireReason?: string;
+    allowlistHash?: string;
+    allowlistCount?: number;
+}
 export declare const DEFAULT_WORKSPACE_GOVERNANCE_API_CONFIG: WorkspaceGovernanceApiConfig;
 export declare function stableGovernanceIdempotencyKey(draftId: string, snapshotHash: string, allowlistHash: string, grayWindowHash: string): string;
+export declare function stableGovernanceStepIdempotencyKey(action: WorkspaceGovernanceStepAction, reviewId: string, stepIdOrReview: string, currentStatus: string, payloadHash: string): string;
 export declare function assertWorkspaceGovernancePayloadSafe(payload: WorkspaceGovernanceRequestPayload): true;
+export declare function assertWorkspaceGovernanceStepPayloadSafe(payload: WorkspaceGovernanceStepCommandPayload): true;
 export declare function buildWorkspaceGovernanceRequestPayload(draftId: string, snapshotHash: string, options?: BuildWorkspaceGovernancePayloadOptions): WorkspaceGovernanceRequestPayload;
+export declare function buildApproveGovernanceStepPayload(review: WorkspaceGovernanceReviewContext, step: WorkspaceGovernanceStepContext, options?: BuildWorkspaceGovernanceStepPayloadOptions): WorkspaceGovernanceStepCommandPayload;
+export declare function buildRejectGovernanceStepPayload(review: WorkspaceGovernanceReviewContext, step: WorkspaceGovernanceStepContext, options?: BuildWorkspaceGovernanceStepPayloadOptions): WorkspaceGovernanceStepCommandPayload;
+export declare function buildExpireGovernanceReviewPayload(review: WorkspaceGovernanceReviewContext, options?: BuildWorkspaceGovernanceStepPayloadOptions): WorkspaceGovernanceStepCommandPayload;
 export declare function assertGovernanceResponseSafe(value: WorkspaceGovernanceResponse | WorkspaceGovernanceListResponse): true;
 export declare function isGovernanceConflictError(error: unknown): boolean;
 export declare function requestGovernance(draftId: string, payload: WorkspaceGovernanceRequestPayload, config?: WorkspaceGovernanceApiConfig, requestJson?: WorkspaceDraftRequestJson): Promise<WorkspaceGovernanceResponse>;
 export declare function getGovernanceReview(reviewId: string, config?: WorkspaceGovernanceApiConfig, requestJson?: WorkspaceDraftRequestJson): Promise<WorkspaceGovernanceResponse>;
 export declare function getDraftGovernance(draftId: string, config?: WorkspaceGovernanceApiConfig, requestJson?: WorkspaceDraftRequestJson): Promise<WorkspaceGovernanceListResponse>;
+export declare function approveGovernanceStep(reviewId: string, stepId: string, payload: WorkspaceGovernanceStepCommandPayload, config?: WorkspaceGovernanceApiConfig, requestJson?: WorkspaceDraftRequestJson): Promise<WorkspaceGovernanceResponse>;
+export declare function rejectGovernanceStep(reviewId: string, stepId: string, payload: WorkspaceGovernanceStepCommandPayload, config?: WorkspaceGovernanceApiConfig, requestJson?: WorkspaceDraftRequestJson): Promise<WorkspaceGovernanceResponse>;
+export declare function expireGovernanceReview(reviewId: string, payload: WorkspaceGovernanceStepCommandPayload, config?: WorkspaceGovernanceApiConfig, requestJson?: WorkspaceDraftRequestJson): Promise<WorkspaceGovernanceResponse>;

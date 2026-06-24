@@ -26,10 +26,16 @@ import {
   type WorkspaceDraftResponse
 } from "./workspace_draft_api.js";
 import {
+  approveGovernanceStep,
+  buildApproveGovernanceStepPayload,
+  buildExpireGovernanceReviewPayload,
+  buildRejectGovernanceStepPayload,
   buildWorkspaceGovernanceRequestPayload,
+  expireGovernanceReview,
   getDraftGovernance,
   getGovernanceReview,
   isGovernanceConflictError,
+  rejectGovernanceStep,
   requestGovernance,
   type WorkspaceGovernanceResponse
 } from "./workspace_governance_api.js";
@@ -337,11 +343,13 @@ function governanceTone(status: WorkspaceViewState["governanceRequestStatus"]): 
   return "neutral";
 }
 
-function defaultGovernanceSteps(): { step_type: string; step_status: string }[] {
+type GovernanceStepView = NonNullable<WorkspaceViewState["currentGovernanceReview"]>["steps"][number];
+
+function defaultGovernanceSteps(): GovernanceStepView[] {
   return [
-    { step_type: "operator_approval", step_status: "pending" },
-    { step_type: "receiver_allowlist", step_status: "pending" },
-    { step_type: "gray_window", step_status: "pending" }
+    { step_id: "", step_type: "operator_approval", step_status: "pending" },
+    { step_id: "", step_type: "receiver_allowlist", step_status: "pending" },
+    { step_id: "", step_type: "gray_window", step_status: "pending" }
   ];
 }
 
@@ -351,8 +359,11 @@ function governanceReviewFromResponse(payload: WorkspaceGovernanceResponse): Wor
     draft_id: String(payload.draft_id || ""),
     review_status: String(payload.review_status || "approval_pending"),
     steps: (payload.steps && payload.steps.length > 0 ? payload.steps : defaultGovernanceSteps()).map((step) => ({
+      step_id: String(step.step_id || ""),
       step_type: String(step.step_type || ""),
-      step_status: String(step.step_status || "pending")
+      step_status: String(step.step_status || "pending"),
+      actor_metadata: step.actor_metadata || {},
+      updated_at: String(step.updated_at || "")
     })),
     allowlist_summary: {
       hash: String(payload.allowlist_summary?.hash || ""),
@@ -380,11 +391,43 @@ function isActiveGovernanceStatus(status: string): boolean {
   return !["", "governance_not_started", "governance_rejected", "governance_expired", "rejected", "expired"].includes(status);
 }
 
-function renderGovernanceStepRows(steps: { step_type: string; step_status: string }[]): string {
+function governanceTerminal(status: string): boolean {
+  return ["governance_rejected", "governance_expired"].includes(status);
+}
+
+function grayWindowExpired(review: NonNullable<WorkspaceViewState["currentGovernanceReview"]> | null): boolean {
+  const endAt = Date.parse(String(review?.gray_window.end_at || ""));
+  return Number.isFinite(endAt) && endAt <= Date.now();
+}
+
+function renderStepActorSummary(actorMetadata?: Record<string, unknown>): string {
+  const actorLabelPresent = Boolean(actorMetadata?.actor_label_present);
+  const actorIdPresent = Boolean(actorMetadata?.actor_id_present);
+  if (!actorLabelPresent && !actorIdPresent) return "actor_not_recorded";
+  return `actor_label_present=${actorLabelPresent}; actor_id_present=${actorIdPresent}`;
+}
+
+function renderGovernanceStepRows(
+  review: NonNullable<WorkspaceViewState["currentGovernanceReview"]> | null,
+  busy: boolean
+): string {
+  const steps = review?.steps || defaultGovernanceSteps();
+  const reviewId = review?.review_id || "";
+  const reviewStatus = review?.review_status || "governance_not_started";
+  const terminal = governanceTerminal(reviewStatus);
+  const grayExpired = grayWindowExpired(review);
   return steps.map((step) => `
-    <li data-governance-step-type="${escapeHtml(step.step_type)}" data-governance-step-status="${escapeHtml(step.step_status)}">
-      <strong>${escapeHtml(step.step_type)}</strong>
-      <span>${escapeHtml(step.step_status)}</span>
+    <li data-governance-step-id="${escapeHtml(step.step_id)}" data-governance-step-type="${escapeHtml(step.step_type)}" data-governance-step-status="${escapeHtml(step.step_status)}">
+      <div>
+        <strong>${escapeHtml(step.step_type)}</strong>
+        <span>${escapeHtml(step.step_status)}</span>
+      </div>
+      <small>${escapeHtml(renderStepActorSummary(step.actor_metadata))}${step.updated_at ? `；updated_at=${escapeHtml(step.updated_at)}` : ""}</small>
+      ${step.step_type === "gray_window" && grayExpired && step.step_status === "pending" ? `<small data-governance-step-expired="true">gray-window 已过期，不能 approve，只能 expire。</small>` : ""}
+      <div class="p1-workspace-governance-step-actions" aria-label="${escapeHtml(step.step_type)} step 操作">
+        <button type="button" data-workspace-governance-step-action="approve" data-governance-review-id="${escapeHtml(reviewId)}" data-governance-step-id="${escapeHtml(step.step_id)}" data-governance-step-type="${escapeHtml(step.step_type)}"${reviewId && step.step_id && step.step_status === "pending" && !terminal && !busy && !(step.step_type === "gray_window" && grayExpired) ? "" : " disabled"}>Approve</button>
+        <button type="button" data-workspace-governance-step-action="reject" data-governance-review-id="${escapeHtml(reviewId)}" data-governance-step-id="${escapeHtml(step.step_id)}" data-governance-step-type="${escapeHtml(step.step_type)}"${reviewId && step.step_id && step.step_status === "pending" && !terminal && !busy ? "" : " disabled"}>Reject</button>
+      </div>
     </li>
   `).join("");
 }
@@ -418,7 +461,6 @@ function renderGovernancePanel(filtered: FilteredWorkspaceView): string {
     && !activeReviewExists
     && payloadSafe
     && viewState.governanceRequestStatus !== "requesting";
-  const steps = currentReview?.steps || defaultGovernanceSteps();
   const allowlistHash = currentReview?.allowlist_summary.hash || payloadPreview?.allowlist_summary.allowlist_hash || "not_requested";
   const allowlistCount = currentReview?.allowlist_summary.count ?? payloadPreview?.allowlist_summary.allowlist_count ?? 0;
   const sourceReference = currentReview?.allowlist_summary.source_reference_summary
@@ -434,17 +476,22 @@ function renderGovernancePanel(filtered: FilteredWorkspaceView): string {
     window_status: currentReview?.gray_window.window_status || "pending"
   };
   const tone = governanceTone(viewState.governanceRequestStatus);
+  const busy = viewState.governanceRequestStatus === "requesting";
+  const canExpireReview = Boolean(currentReview?.review_id)
+    && isActiveGovernanceStatus(viewState.currentGovernanceStatus)
+    && !busy;
   return `
-    <section class="p1-workspace-governance-panel" aria-label="Governance request panel" data-governance-panel="frontend_pending_only" data-approved="false" data-execution-status="not_execution" data-push-center-job-created="false" data-external-effect-job-created="false" data-broadcast-job-created="false" data-internal-event-created="false" data-real-external-call-executed="false" data-can-claim-pass90="false">
+    <section class="p1-workspace-governance-panel" aria-label="Governance request panel" data-governance-panel="frontend_step_integration" data-approved="false" data-governance-approved="${viewState.currentGovernanceStatus === "governance_approved" ? "true" : "false"}" data-execution-status="not_execution" data-push-center-job-created="false" data-external-effect-job-created="false" data-broadcast-job-created="false" data-internal-event-created="false" data-real-external-call-executed="false" data-can-claim-pass90="false">
       <div class="p1-workspace-panel-head">
         <h2>Governance panel</h2>
-        <p>治理 request 只创建 approval_pending review 和 pending steps；不审批、不创建任务、不发送。</p>
+        <p>治理 step 操作只更新 approval / allowlist / gray-window 状态；governance_approved 也不创建任务、不发送。</p>
       </div>
       <dl class="p1-workspace-mini-fields">
         <div><dt>draft_status</dt><dd>${escapeHtml(viewState.currentDraftStatus)}</dd></div>
         <div><dt>governance_status</dt><dd>${escapeHtml(viewState.currentGovernanceStatus)}</dd></div>
         <div><dt>review_id</dt><dd>${escapeHtml(viewState.currentGovernanceReviewId || "not_requested")}</dd></div>
         <div><dt>approved</dt><dd>false</dd></div>
+        <div><dt>governance_approved</dt><dd>${viewState.currentGovernanceStatus === "governance_approved" ? "true" : "false"}</dd></div>
         <div><dt>execution_status</dt><dd>not_execution</dd></div>
         <div><dt>push_center_job_created</dt><dd>false</dd></div>
         <div><dt>external_effect_job_created</dt><dd>false</dd></div>
@@ -456,12 +503,13 @@ function renderGovernancePanel(filtered: FilteredWorkspaceView): string {
       <div class="p1-workspace-governance-actions" aria-label="治理 request 操作">
         <button type="button" data-workspace-request-governance="true"${canRequestGovernance ? "" : " disabled"}>Request governance</button>
         <button type="button" data-workspace-refresh-governance="true"${hasDraft ? "" : " disabled"}>Refresh governance</button>
+        <button type="button" data-workspace-expire-governance-review="true"${canExpireReview ? "" : " disabled"}>Expire review</button>
       </div>
       <p class="p1-workspace-draft-status p1-workspace-draft-status--${tone}" aria-live="polite" data-governance-request-status="${escapeHtml(viewState.governanceRequestStatus)}">${escapeHtml(viewState.governanceRequestMessage)}</p>
       ${disabledReason && !canRequestGovernance ? `<p class="p1-workspace-draft-guardrail" data-governance-disabled-reason="${escapeHtml(disabledReason)}">${escapeHtml(disabledReason)}</p>` : ""}
       <section class="p1-workspace-governance-timeline" aria-label="Governance pending step timeline">
         <h3>Step timeline</h3>
-        <ul>${renderGovernanceStepRows(steps)}</ul>
+        <ul>${renderGovernanceStepRows(currentReview, busy)}</ul>
       </section>
       <dl class="p1-workspace-mini-fields">
         <div><dt>allowlist_hash</dt><dd>${escapeHtml(allowlistHash)}</dd></div>
@@ -472,7 +520,7 @@ function renderGovernancePanel(filtered: FilteredWorkspaceView): string {
         <div><dt>timezone</dt><dd>${escapeHtml(grayWindow.timezone)}</dd></div>
         <div><dt>window_status</dt><dd>${escapeHtml(grayWindow.window_status || "pending")}</dd></div>
       </dl>
-      <p class="p1-workspace-draft-guardrail">governance request 不等于 approval；pending steps 不等于 approved；governance approved 当前也不等于 execution。当前不会创建 Push Center job、external_effect_job、broadcast_job、internal_event，也不会发送，不能 claim PASS_90_PLUS。</p>
+      <p class="p1-workspace-draft-guardrail">governance request 不等于 approval；pending steps 不等于 approved；step approved 不等于发送；governance_approved 不等于 execution。当前不会创建 Push Center job、external_effect_job、broadcast_job、internal_event，也不会发送，不能 claim PASS_90_PLUS；Push Center bridge 后置独立 PR。</p>
     </section>
   `;
 }
@@ -677,6 +725,13 @@ function governanceStateFromResponse(
   };
 }
 
+function governanceStepById(
+  review: NonNullable<WorkspaceViewState["currentGovernanceReview"]> | null,
+  stepId: string
+): NonNullable<WorkspaceViewState["currentGovernanceReview"]>["steps"][number] | null {
+  return (review?.steps || []).find((step) => step.step_id === stepId) || null;
+}
+
 function firstActiveGovernanceReview(items: WorkspaceGovernanceResponse[]): WorkspaceGovernanceResponse | null {
   return items.find((item) => isActiveGovernanceStatus(String(item.review_status || "")))
     || items[0]
@@ -823,6 +878,25 @@ function attachGovernanceHandlers(root: HTMLElement, fixture: WorkspaceFixture, 
   const renderWithGovernanceUpdates = (updates: Partial<WorkspaceViewState>) => {
     renderP1GroupOpsWorkspace(root, fixture, updateWorkspaceViewState(viewState, updates));
   };
+  const refreshAfterConflict = (message: string) => {
+    if (!viewState.currentGovernanceReviewId) {
+      renderWithGovernanceUpdates({
+        governanceRequestStatus: "conflict",
+        governanceRequestMessage: message
+      });
+      return;
+    }
+    getGovernanceReview(viewState.currentGovernanceReviewId)
+      .then((response) => {
+        renderP1GroupOpsWorkspace(root, fixture, updateWorkspaceViewState(viewState, governanceStateFromResponse(response, message)));
+      })
+      .catch(() => {
+        renderWithGovernanceUpdates({
+          governanceRequestStatus: "conflict",
+          governanceRequestMessage: "governance step 冲突，刷新 review 失败；不会覆盖本地状态。"
+        });
+      });
+  };
   root.querySelectorAll<HTMLElement>("[data-workspace-request-governance]").forEach((node) => {
     node.addEventListener("click", () => {
       if (
@@ -923,6 +997,127 @@ function attachGovernanceHandlers(root: HTMLElement, fixture: WorkspaceFixture, 
             governanceRequestStatus: "failed",
             governanceRequestMessage: "刷新 governance 失败；不会审批、不会执行。"
           }));
+        });
+    });
+  });
+  root.querySelectorAll<HTMLElement>("[data-workspace-governance-step-action]").forEach((node) => {
+    node.addEventListener("click", () => {
+      const action = node.dataset.workspaceGovernanceStepAction;
+      const review = viewState.currentGovernanceReview;
+      const reviewId = viewState.currentGovernanceReviewId || review?.review_id || "";
+      const stepId = node.dataset.governanceStepId || "";
+      const step = governanceStepById(review, stepId);
+      if (!review || !reviewId || !step) {
+        renderWithGovernanceUpdates({
+          governanceRequestStatus: "blocked",
+          governanceRequestMessage: "governance step 操作需要已加载的 review 和 step；不会执行。"
+        });
+        return;
+      }
+      if (step.step_status !== "pending") {
+        renderWithGovernanceUpdates({
+          governanceRequestStatus: "conflict",
+          governanceRequestMessage: "该 governance step 已经 transition；不会重复推进。"
+        });
+        return;
+      }
+      let request;
+      let successMessage = "";
+      try {
+        if (action === "approve") {
+          const payload = buildApproveGovernanceStepPayload(review, step);
+          successMessage = step.step_type === "receiver_allowlist"
+            ? "receiver allowlist step 已 approve；仅使用 hash/count summary，不含 raw receiver list。"
+            : step.step_type === "gray_window"
+              ? "gray-window step 已 approve；仍不会发送。"
+              : "operator approval step 已 approve；这不是 Push Center bridge。";
+          renderWithGovernanceUpdates({
+            currentGovernanceIdempotencyKey: payload.idempotency_key,
+            governanceRequestStatus: "requesting",
+            governanceRequestMessage: "正在 approve governance step；只写 governance 表，不执行。"
+          });
+          request = approveGovernanceStep(reviewId, step.step_id, payload);
+        } else if (action === "reject") {
+          const payload = buildRejectGovernanceStepPayload(review, step);
+          successMessage = "governance step 已 reject；review 标记为 governance_rejected，不会创建下游任务。";
+          renderWithGovernanceUpdates({
+            currentGovernanceIdempotencyKey: payload.idempotency_key,
+            governanceRequestStatus: "requesting",
+            governanceRequestMessage: "正在 reject governance step；不会执行。"
+          });
+          request = rejectGovernanceStep(reviewId, step.step_id, payload);
+        } else {
+          renderWithGovernanceUpdates({
+            governanceRequestStatus: "blocked",
+            governanceRequestMessage: "未知 governance step action；不会执行。"
+          });
+          return;
+        }
+      } catch (error) {
+        renderWithGovernanceUpdates({
+          governanceRequestStatus: "blocked",
+          governanceRequestMessage: error instanceof Error ? error.message : "governance step payload 未通过脱敏或窗口校验。"
+        });
+        return;
+      }
+      request
+        .then((response) => {
+          const message = response.review_status === "governance_approved"
+            ? "三个 governance steps 已 approved，状态为 governance_approved；仍为 not_execution。"
+            : successMessage;
+          renderP1GroupOpsWorkspace(root, fixture, updateWorkspaceViewState(viewState, governanceStateFromResponse(response, message)));
+        })
+        .catch((error) => {
+          if (isGovernanceConflictError(error)) {
+            refreshAfterConflict("governance step conflict / already transitioned；已尝试刷新 review，未覆盖本地状态。");
+            return;
+          }
+          renderWithGovernanceUpdates({
+            governanceRequestStatus: "failed",
+            governanceRequestMessage: "governance step 操作失败：未发送、未创建 Push Center job。"
+          });
+        });
+    });
+  });
+  root.querySelectorAll<HTMLElement>("[data-workspace-expire-governance-review]").forEach((node) => {
+    node.addEventListener("click", () => {
+      const review = viewState.currentGovernanceReview;
+      const reviewId = viewState.currentGovernanceReviewId || review?.review_id || "";
+      if (!review || !reviewId) {
+        renderWithGovernanceUpdates({
+          governanceRequestStatus: "blocked",
+          governanceRequestMessage: "expire review 需要已加载 governance review；不会执行。"
+        });
+        return;
+      }
+      let payload;
+      try {
+        payload = buildExpireGovernanceReviewPayload(review);
+      } catch (error) {
+        renderWithGovernanceUpdates({
+          governanceRequestStatus: "blocked",
+          governanceRequestMessage: error instanceof Error ? error.message : "expire payload 未通过脱敏校验。"
+        });
+        return;
+      }
+      renderWithGovernanceUpdates({
+        currentGovernanceIdempotencyKey: payload.idempotency_key,
+        governanceRequestStatus: "requesting",
+        governanceRequestMessage: "正在 expire governance review；只更新治理表，不执行。"
+      });
+      expireGovernanceReview(reviewId, payload)
+        .then((response) => {
+          renderP1GroupOpsWorkspace(root, fixture, updateWorkspaceViewState(viewState, governanceStateFromResponse(response, "governance review 已 expire；不会创建任何下游任务。")));
+        })
+        .catch((error) => {
+          if (isGovernanceConflictError(error)) {
+            refreshAfterConflict("expire governance review conflict；已尝试刷新 review，未覆盖本地状态。");
+            return;
+          }
+          renderWithGovernanceUpdates({
+            governanceRequestStatus: "failed",
+            governanceRequestMessage: "expire governance review 失败；不会审批、不会执行。"
+          });
         });
     });
   });
