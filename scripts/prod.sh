@@ -19,6 +19,7 @@ usage() {
   git-status               项目 git status / log -3
   ps / disk / mem          关键进程 / 磁盘 / 内存
   whoami                   当前用户 + 子命令清单
+  diagnose-p1-bridge       只读运行 P1 Group Ops Workspace bridge acceptance 诊断
 
 需扩展（见 docs/claude_prod_sandbox_extension.md）:
   psql <SQL>               执行任意 SQL；写操作需追加 --write 才放行
@@ -75,6 +76,14 @@ EOF
 
   logs|status|tail|health|pg-status|git-status|ps|disk|mem|whoami|cat|ls)
     exec ssh "$HOST" "$cmd" "$@"
+    ;;
+
+  diagnose-p1-bridge)
+    if [[ $# -ne 0 ]]; then
+      echo "用法: prod.sh diagnose-p1-bridge" >&2
+      exit 2
+    fi
+    exec ssh "$HOST" diagnose-p1-bridge
     ;;
 
   *)

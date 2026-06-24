@@ -4,6 +4,8 @@ import os
 from datetime import datetime, timezone
 from typing import Any
 
+from aicrm_next.shared.release import current_release_sha
+
 from .repo import AdminReadRepository
 
 
@@ -254,7 +256,7 @@ def config_payload(repo: AdminReadRepository) -> dict[str, Any]:
     rows = [
         ["database_mode", db_label],
         ["production_data_ready", health.get("production_data_ready")],
-        ["release_sha", os.getenv("AICRM_NEXT_RELEASE_SHA") or os.getenv("RELEASE_SHA") or "unknown"],
+        ["release_sha", current_release_sha()],
         ["callback_fallback", "5013 retained until observation completes"],
         ["wechat_callback_token", "configured" if os.getenv("WECOM_CALLBACK_TOKEN") else "missing"],
         ["wechat_pay_config", "configured" if os.getenv("WECHAT_PAY_MCH_ID") else "missing"],

@@ -8,6 +8,8 @@ import secrets
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
+from aicrm_next.shared.release import current_release_sha
+
 from . import repo
 from .domain import (
     ENTRY_CHANGE_TYPES,
@@ -626,7 +628,7 @@ def diagnose_channel_runtime(query: DiagnoseChannelRuntimeQuery) -> dict[str, An
         "missing_config": adapter["missing_config"],
         "runtime_route_map": runtime_route_map_payload(),
         "callback_route_owner": "aicrm_next.channel_entry",
-        "web_release_sha": text(os.getenv("RELEASE_SHA") or os.getenv("GIT_SHA")) or "unknown",
+        "web_release_sha": current_release_sha(),
         "worker_release_sha": text(os.getenv("WORKER_RELEASE_SHA")) or "unknown",
     }
 
@@ -842,6 +844,6 @@ def runtime_route_map_payload() -> dict[str, Any]:
         "next_live_callback_gateway_enabled": True,
         "callback_async_enabled": "next_task_queue",
         "legacy_callback_fallback_enabled": False,
-        "web_release_sha": text(os.getenv("RELEASE_SHA") or os.getenv("GIT_SHA")) or "unknown",
+        "web_release_sha": current_release_sha(),
         "worker_release_sha": text(os.getenv("WORKER_RELEASE_SHA")) or "unknown",
     }
