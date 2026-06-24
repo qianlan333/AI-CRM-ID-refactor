@@ -22,11 +22,11 @@ except ModuleNotFoundError:
         os.execv(str(venv_python), [str(venv_python), *sys.argv])
     raise
 
-RETIRED_TIMER_ROUTES = {
-    "/api/admin/automation-conversion/reply-monitor/run-due": "legacy_automation_reply_monitor_retired",
-    "/api/admin/automation-conversion/reply-monitor/capture": "legacy_automation_reply_monitor_retired",
-    "/api/admin/automation-conversion/jobs/run-due": "legacy_automation_jobs_runner_retired",
-}
+RETIRED_TIMER_ROUTES = (
+    "/api/admin/automation-conversion/reply-monitor/run-due",
+    "/api/admin/automation-conversion/reply-monitor/capture",
+    "/api/admin/automation-conversion/jobs/run-due",
+)
 
 ACTIVE_TIMER_ROUTES = [
     "/api/admin/cloud-orchestrator/campaigns/run-due",
@@ -128,22 +128,13 @@ def _sentinel_comparison(before: dict[str, Any], after: dict[str, Any]) -> dict[
     }
 
 
-def _retired_payload_ok(payload: dict[str, Any], expected_error: str) -> bool:
-    return (
-        payload.get("ok") is False
-        and payload.get("error") == expected_error
-        and payload.get("real_external_call_executed") is False
-        and payload.get("automation_runtime_executed") is False
-    )
-
-
 def run_check() -> dict[str, Any]:
     with timer_probe_env():
         client = _client()
         results: dict[str, Any] = {}
         sentinel_before = _read_db_sentinel()
         probe_token = os.getenv("AUTOMATION_INTERNAL_API_TOKEN", "probe-token")
-        for route, expected_error in RETIRED_TIMER_ROUTES.items():
+        for route in RETIRED_TIMER_ROUTES:
             unauth = client.post(route, json={}, follow_redirects=False)
             body_dry_run = client.post(
                 route,
@@ -164,12 +155,11 @@ def run_check() -> dict[str, Any]:
                 except Exception:
                     retired_payloads.append({})
             results[route] = {
-                "route_status": "retired",
+                "route_status": "removed",
                 "unauth_status": unauth.status_code,
                 "body_dry_run_status": body_dry_run.status_code,
                 "query_dry_run_status": query_dry_run.status_code,
-                "retired_410": all(response.status_code == 410 for response in [unauth, body_dry_run, query_dry_run]),
-                "retired_payload_ok": all(_retired_payload_ok(payload, expected_error) for payload in retired_payloads),
+                "removed_404": all(response.status_code == 404 for response in [unauth, body_dry_run, query_dry_run]),
                 "dry_run_payloads": retired_payloads,
             }
         for route in ACTIVE_TIMER_ROUTES:
@@ -219,23 +209,12 @@ def run_check() -> dict[str, Any]:
             }
         sentinel_after = _read_db_sentinel()
         db_sentinel = _sentinel_comparison(sentinel_before, sentinel_after)
-        overview = client.get("/api/admin/automation-conversion/overview", follow_redirects=False)
-        try:
-            overview_payload: Any = overview.json()
-        except Exception:
-            overview_payload = {}
-        automation_production_data_ready = (
-            overview.status_code == 200
-            and str(overview_payload.get("generated_at") or "").strip().lower() != "fixture"
-            and str(overview_payload.get("status") or "").strip().lower() != "partial"
-            and str(overview_payload.get("source_status") or "").strip().lower() == "production_postgres"
-        )
     blockers = [
         route
         for route, payload in results.items()
         if (
-            payload.get("route_status") == "retired"
-            and (not payload["retired_410"] or not payload["retired_payload_ok"])
+            payload.get("route_status") == "removed"
+            and not payload["removed_404"]
         )
         or (
             payload.get("route_status") == "active"
@@ -250,19 +229,14 @@ def run_check() -> dict[str, Any]:
     if not db_sentinel["ok"]:
         blockers.append("dry_run_db_sentinel_not_passed")
     warnings: list[str] = []
-    if not automation_production_data_ready:
-        warnings.append("automation_production_data_not_ready")
     result = {
         "ok": not blockers,
         "blockers": blockers,
         "warnings": warnings,
         "timer_routes": results,
-        "automation_overview_status": overview.status_code,
-        "automation_overview": overview_payload,
-        "automation_production_data_ready": automation_production_data_ready,
         "dry_run_db_sentinel": db_sentinel,
         "retired_timer_routes_ok": all(
-            payload.get("route_status") != "retired" or (payload["retired_410"] and payload["retired_payload_ok"])
+            payload.get("route_status") != "removed" or payload["removed_404"]
             for payload in results.values()
         ),
         "active_timer_routes_ok": all(
@@ -271,8 +245,8 @@ def run_check() -> dict[str, Any]:
             for payload in results.values()
         ),
         "safe_to_enable_timers": False,
-        "safe_to_enable_active_timers": not blockers and not warnings and db_sentinel["ok"],
-        "recommendation": "READY_TO_ENABLE_TIMERS_AFTER_SERVER_ENV_TOKEN_VERIFICATION" if not blockers and not warnings else "TIMER_ROUTE_GUARD_READY_WITH_SERVER_DATA_WARNING" if not blockers else "TIMER_ROUTES_NOT_READY",
+        "safe_to_enable_active_timers": not blockers and db_sentinel["ok"],
+        "recommendation": "READY_TO_ENABLE_TIMERS_AFTER_SERVER_ENV_TOKEN_VERIFICATION" if not blockers else "TIMER_ROUTES_NOT_READY",
     }
     return result
 
@@ -289,17 +263,15 @@ def write_outputs(result: dict[str, Any], output_md: str | None, output_json: st
             f"- safe_to_enable_active_timers: {result['safe_to_enable_active_timers']}",
             f"- retired_timer_routes_ok: {result['retired_timer_routes_ok']}",
             f"- active_timer_routes_ok: {result['active_timer_routes_ok']}",
-            f"- automation_production_data_ready: {result['automation_production_data_ready']}",
             f"- blockers: {result['blockers']}",
             f"- warnings: {result['warnings']}",
             "",
             "## Timer Routes",
         ]
         for route, payload in result["timer_routes"].items():
-            if payload.get("route_status") == "retired":
+            if payload.get("route_status") == "removed":
                 lines.append(
-                    f"- {route}: retired_410={payload['retired_410']} "
-                    f"retired_payload_ok={payload['retired_payload_ok']}"
+                    f"- {route}: removed_404={payload['removed_404']}"
                 )
             else:
                 lines.append(

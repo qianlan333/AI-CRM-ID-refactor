@@ -19,16 +19,8 @@ def client(monkeypatch):
     return TestClient(create_app(), raise_server_exceptions=False)
 
 
-def _assert_retired(response, *, error: str = "legacy_automation_task_authoring_retired") -> None:
-    assert response.status_code == 410
-    assert response.headers["X-AICRM-Route-Owner"] == "ai_crm_next"
-    assert response.headers["X-AICRM-Legacy-Automation-Retired"] == "true"
-    body = response.json()
-    assert body["ok"] is False
-    assert body["error"] == error
-    assert body["replacement"] == "/admin/automation-conversion"
-    assert body["real_external_call_executed"] is False
-    assert body["automation_runtime_executed"] is False
+def _assert_removed(response) -> None:
+    assert response.status_code == 404
 
 
 @pytest.mark.parametrize(
@@ -51,16 +43,16 @@ def test_legacy_automation_task_authoring_routes_are_retired(client, method: str
     else:
         response = getattr(client, method)(path, json={"content_package": {"content_text": "旧任务配置"}})
 
-    _assert_retired(response)
+    _assert_removed(response)
 
 
-def test_behavior_segment_rules_route_is_retired_with_task_authoring(client) -> None:
+def test_behavior_segment_rules_route_is_removed_with_task_authoring(client) -> None:
     response = client.get("/api/admin/automation-conversion/behavior-segment-rules")
 
-    _assert_retired(response)
+    _assert_removed(response)
 
 
-def test_task_runner_route_keeps_specific_retired_error(client) -> None:
+def test_task_runner_route_is_removed(client) -> None:
     response = client.post("/api/admin/automation-conversion/tasks/run-due")
 
-    _assert_retired(response, error="legacy_automation_task_runner_retired")
+    _assert_removed(response)

@@ -59,10 +59,6 @@ _AUTOMATION_READ_MODEL_HEADERS = {
     "X-AICRM-Route-Owner": "ai_crm_next",
     "X-AICRM-Fallback-Used": "false",
 }
-_AUTOMATION_PROGRAM_HEADERS = {
-    "X-AICRM-Route-Owner": "ai_crm_next",
-    "X-AICRM-Fallback-Used": "false",
-}
 _RETIRED_AUTOMATION_HEADERS = {
     "X-AICRM-Route-Owner": "ai_crm_next",
     "X-AICRM-Fallback-Used": "false",
@@ -104,112 +100,6 @@ def retired_automation_programs_api() -> JSONResponse:
 def retired_automation_program_detail_api(retired_path: str = "") -> JSONResponse:
     del retired_path
     return _retired_automation_response("legacy_automation_program_retired")
-
-
-@router.api_route(
-    "/api/admin/automation-conversion/member/{retired_path:path}",
-    methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    name="api_automation_member_actions_retired",
-)
-def retired_automation_member_action_api(retired_path: str = "") -> JSONResponse:
-    del retired_path
-    return _retired_automation_response("legacy_automation_member_action_retired")
-
-
-
-
-@router.api_route(
-    "/api/admin/automation-conversion/member",
-    methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"],
-    name="api_automation_member_detail_retired",
-)
-def retired_automation_member_detail_api() -> JSONResponse:
-    return _retired_automation_response("legacy_automation_member_action_retired")
-
-
-@router.api_route(
-    "/api/admin/automation-conversion/members/{member_id}/push-openclaw-context",
-    methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    name="api_automation_member_push_openclaw_retired",
-)
-def retired_automation_member_push_openclaw_api(member_id: str = "") -> JSONResponse:
-    del member_id
-    return _retired_automation_response("legacy_automation_member_action_retired")
-
-
-@router.api_route(
-    "/api/admin/automation-conversion/tasks/run-due",
-    methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    name="api_automation_tasks_run_due_retired",
-)
-def retired_automation_tasks_run_due_api() -> JSONResponse:
-    return _retired_automation_response("legacy_automation_task_runner_retired")
-
-
-@router.api_route(
-    "/api/admin/automation-conversion/tasks",
-    methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    name="api_automation_tasks_retired",
-)
-def retired_automation_tasks_api() -> JSONResponse:
-    return _retired_automation_response("legacy_automation_task_authoring_retired")
-
-
-@router.api_route(
-    "/api/admin/automation-conversion/tasks/{retired_path:path}",
-    methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    name="api_automation_task_detail_retired",
-)
-def retired_automation_task_detail_api(retired_path: str = "") -> JSONResponse:
-    del retired_path
-    return _retired_automation_response("legacy_automation_task_authoring_retired")
-
-
-@router.api_route(
-    "/api/admin/automation-conversion/behavior-segment-rules",
-    methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    name="api_automation_behavior_segment_rules_retired",
-)
-def retired_automation_behavior_segment_rules_api() -> JSONResponse:
-    return _retired_automation_response("legacy_automation_task_authoring_retired")
-
-
-@router.api_route(
-    "/api/admin/automation-conversion/execution-items/{execution_item_id}/send-via-bazhuayu",
-    methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    name="api_automation_execution_item_outbound_retired",
-)
-def retired_automation_execution_item_outbound_api(execution_item_id: int) -> JSONResponse:
-    del execution_item_id
-    return _retired_automation_response("legacy_automation_execution_outbound_retired")
-
-
-@router.api_route(
-    "/api/admin/automation-conversion/reply-monitor/{retired_path:path}",
-    methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    name="api_automation_reply_monitor_retired",
-)
-def retired_automation_reply_monitor_api(retired_path: str = "") -> JSONResponse:
-    del retired_path
-    return _retired_automation_response("legacy_automation_reply_monitor_retired")
-
-
-@router.api_route(
-    "/api/admin/automation-conversion/jobs/run-due/preview",
-    methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    name="api_automation_jobs_run_due_preview_retired",
-)
-def retired_automation_jobs_run_due_preview_api() -> JSONResponse:
-    return _retired_automation_response("legacy_automation_jobs_runner_retired")
-
-
-@router.api_route(
-    "/api/admin/automation-conversion/jobs/run-due",
-    methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    name="api_automation_jobs_run_due_retired",
-)
-def retired_automation_jobs_run_due_api() -> JSONResponse:
-    return _retired_automation_response("legacy_automation_jobs_runner_retired")
 
 
 def _raise_http(exc: Exception) -> None:
@@ -381,21 +271,6 @@ async def api_plan_customer_automation_webhook_delivery_retry_due(request: Reque
     return _customer_webhook_response(command, source_status=source_status)
 
 
-@router.get("/api/admin/automation-conversion/contract")
-def automation_contract() -> JSONResponse:
-    return _retired_automation_response("legacy_automation_contract_retired")
-
-
-@router.get("/api/admin/automation-conversion/overview")
-def automation_overview() -> JSONResponse:
-    return _retired_automation_response("legacy_automation_overview_retired")
-
-
-@router.get("/api/admin/automation-conversion/pools")
-def automation_pools() -> JSONResponse:
-    return _retired_automation_response("legacy_automation_pools_retired")
-
-
 @router.get("/api/admin/automation-conversion/agents")
 def list_agents(
     program_id: int | None = None,
@@ -548,12 +423,6 @@ def get_agent_run_detail(run_id: str, visibility: str = "masked") -> JSONRespons
         return _json_result(GetAgentRunDetailQuery()(request))
     except Exception as exc:
         _raise_http(exc)
-
-
-@router.get("/api/admin/automation-conversion/execution-records")
-def automation_execution_records(limit: int = 50, offset: int = 0) -> JSONResponse:
-    del limit, offset
-    return _retired_automation_response("legacy_automation_execution_records_retired")
 
 
 @router.post("/api/customer-automation/activation-webhook")

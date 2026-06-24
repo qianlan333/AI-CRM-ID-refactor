@@ -27,14 +27,12 @@ def test_retired_customer_profile_automation_actions_static_file_is_removed() ->
     assert not (STATIC_ROOT / "customer_profile_automation.js").exists()
 
 
-def test_retired_automation_overview_api_remains_gone() -> None:
+def test_retired_automation_overview_api_is_removed() -> None:
     client = TestClient(create_app(), raise_server_exceptions=False)
 
     response = client.get("/api/admin/automation-conversion/overview")
 
-    assert response.status_code == 410
-    assert response.headers["X-AICRM-Legacy-Automation-Retired"] == "true"
-    assert response.json()["error"] == "legacy_automation_overview_retired"
+    assert response.status_code == 404
 
 
 def test_retired_runtime_v2_package_is_removed() -> None:
