@@ -190,7 +190,7 @@
 
   function confirmStatusAction(nextStatus) {
     if (nextStatus !== "archived") return true;
-    return window.confirm("删除后会归档渠道并保留历史用户、二维码、绑定和入渠记录。确认删除？");
+    return window.confirm("删除后会归档渠道并保留历史用户、二维码、配置和入渠记录。确认删除？");
   }
 
   function renderRow(channel) {

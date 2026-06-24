@@ -519,44 +519,6 @@ def _serialize_channel(row: dict[str, Any]) -> dict[str, Any]:
     return channel
 
 
-def _serialize_program_binding(row: dict[str, Any]) -> dict[str, Any]:
-    binding = {
-        "id": int(row.get("id") or row.get("binding_id") or 0),
-        "program_id": int(row.get("program_id") or 0),
-        "channel_id": int(row.get("channel_id") or 0),
-        "binding_status": _text(row.get("binding_status")) or "active",
-        "auto_enter_pool": bool(row.get("auto_enter_pool", True)),
-        "initial_audience_code": _text(row.get("initial_audience_code")) or "pending_questionnaire",
-        "priority": int(row.get("priority") or 0),
-        "bound_at": _iso(row.get("bound_at")),
-        "unbound_at": _iso(row.get("unbound_at")),
-        "created_at": _iso(row.get("created_at")),
-        "updated_at": _iso(row.get("updated_at")),
-    }
-    channel = {
-        "id": binding["channel_id"],
-        "channel_code": row.get("channel_code"),
-        "channel_name": row.get("channel_name"),
-        "channel_type": row.get("channel_type"),
-        "carrier_type": row.get("carrier_type"),
-        "scene_value": row.get("scene_value"),
-        "qr_url": row.get("qr_url"),
-        "customer_channel": row.get("customer_channel") or row.get("wca_customer_channel"),
-        "link_url": row.get("link_url") or row.get("wca_link_url"),
-        "final_url": row.get("final_url") or row.get("wca_final_url"),
-        "status": row.get("channel_status") or row.get("status"),
-        "owner_staff_id": row.get("owner_staff_id"),
-        "auto_accept_friend": row.get("auto_accept_friend"),
-        "entry_tag_id": row.get("entry_tag_id"),
-        "entry_tag_name": row.get("entry_tag_name"),
-        "entry_tag_group_name": row.get("entry_tag_group_name"),
-        "updated_at": row.get("channel_updated_at") or row.get("updated_at"),
-        "created_at": row.get("channel_created_at") or row.get("created_at"),
-    }
-    binding["channel"] = _serialize_channel(channel)
-    return binding
-
-
 def _default_channel() -> dict[str, Any]:
     return {
         "channel_type": "qrcode",
