@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import importlib.util
+
 import aicrm_next.automation_engine.application as automation_application
+from aicrm_next.automation_engine.repo import build_automation_repository
 from aicrm_next.automation_engine.customer_webhooks import (
     ApplyCustomerActivationWebhookCommand,
     execute_customer_webhook_command,
@@ -36,6 +39,35 @@ def test_retired_task_workflow_member_action_surface_is_not_exported() -> None:
 
     for name in retired_names:
         assert not hasattr(automation_application, name)
+
+
+def test_retired_task_workflow_sql_repository_modules_are_removed() -> None:
+    retired_modules = {
+        "aicrm_next.automation_engine.postgres_repo",
+        "aicrm_next.automation_engine.task_sqlalchemy_repository",
+        "aicrm_next.automation_engine.task_group_sqlalchemy_repository",
+        "aicrm_next.automation_engine.workflow_sqlalchemy_repository",
+        "aicrm_next.automation_engine.workflow_node_sqlalchemy_repository",
+    }
+
+    for module_name in retired_modules:
+        assert importlib.util.find_spec(module_name) is None
+
+
+def test_retired_task_workflow_repository_backends_are_not_accepted() -> None:
+    retired_kwargs = (
+        {"task_backend": "postgres"},
+        {"task_group_backend": "sqlalchemy"},
+        {"workflow_backend": "sqlalchemy"},
+        {"workflow_node_backend": "sqlalchemy"},
+    )
+
+    for kwargs in retired_kwargs:
+        try:
+            build_automation_repository(**kwargs)
+        except TypeError:
+            continue
+        raise AssertionError(f"retired repository backend was still accepted: {kwargs}")
 
 
 def test_activation_webhook_command_plans_local_projection_without_external_call() -> None:

@@ -26,22 +26,6 @@ from .workflow_nodes import (
 )
 from .workflows import WORKFLOW_ROUTE_FAMILY, normalize_workflow_create_payload, workflow_projection, workflow_side_effect_safety
 
-TASK_GROUP_BACKEND_ENV = "AICRM_TASK_GROUPS_REPO_BACKEND"
-TASK_GROUP_TEST_DATABASE_URL_ENV = "AICRM_TASK_GROUPS_TEST_DATABASE_URL"
-TASK_GROUP_STAGING_DATABASE_URL_ENV = "AICRM_TASK_GROUPS_STAGING_DATABASE_URL"
-TASK_GROUP_SQL_BACKENDS = {"sql", "sqlalchemy", "postgres", "postgresql"}
-WORKFLOW_BACKEND_ENV = "AICRM_WORKFLOWS_REPO_BACKEND"
-WORKFLOW_TEST_DATABASE_URL_ENV = "AICRM_WORKFLOWS_TEST_DATABASE_URL"
-WORKFLOW_STAGING_DATABASE_URL_ENV = "AICRM_WORKFLOWS_STAGING_DATABASE_URL"
-WORKFLOW_SQL_BACKENDS = {"sql", "sqlalchemy", "postgres", "postgresql"}
-WORKFLOW_NODE_BACKEND_ENV = "AICRM_WORKFLOW_NODES_REPO_BACKEND"
-WORKFLOW_NODE_TEST_DATABASE_URL_ENV = "AICRM_WORKFLOW_NODES_TEST_DATABASE_URL"
-WORKFLOW_NODE_STAGING_DATABASE_URL_ENV = "AICRM_WORKFLOW_NODES_STAGING_DATABASE_URL"
-WORKFLOW_NODE_SQL_BACKENDS = {"sql", "sqlalchemy", "postgres", "postgresql"}
-TASK_BACKEND_ENV = "AICRM_TASKS_REPO_BACKEND"
-TASK_TEST_DATABASE_URL_ENV = "AICRM_TASKS_TEST_DATABASE_URL"
-TASK_STAGING_DATABASE_URL_ENV = "AICRM_TASKS_STAGING_DATABASE_URL"
-TASK_SQL_BACKENDS = {"sql", "sqlalchemy", "postgres", "postgresql"}
 AGENT_BACKEND_ENV = "AICRM_AGENTS_REPO_BACKEND"
 AGENT_TEST_DATABASE_URL_ENV = "AICRM_AGENTS_TEST_DATABASE_URL"
 AGENT_STAGING_DATABASE_URL_ENV = "AICRM_AGENTS_STAGING_DATABASE_URL"
@@ -1514,42 +1498,6 @@ class InMemoryAutomationRepository:
 _fixture_repo = InMemoryAutomationRepository()
 
 
-def _task_group_repository_backend() -> str:
-    return str(os.getenv(TASK_GROUP_BACKEND_ENV) or "fixture").strip().lower()
-
-
-def _task_group_database_url() -> str:
-    return str(os.getenv(TASK_GROUP_TEST_DATABASE_URL_ENV) or os.getenv(TASK_GROUP_STAGING_DATABASE_URL_ENV) or "").strip()
-
-
-def _workflow_repository_backend() -> str:
-    return str(os.getenv(WORKFLOW_BACKEND_ENV) or "fixture").strip().lower()
-
-
-def _workflow_database_url() -> str:
-    return str(os.getenv(WORKFLOW_TEST_DATABASE_URL_ENV) or os.getenv(WORKFLOW_STAGING_DATABASE_URL_ENV) or "").strip()
-
-
-def _workflow_node_repository_backend() -> str:
-    return str(os.getenv(WORKFLOW_NODE_BACKEND_ENV) or "fixture").strip().lower()
-
-
-def _workflow_node_database_url() -> str:
-    return str(os.getenv(WORKFLOW_NODE_TEST_DATABASE_URL_ENV) or os.getenv(WORKFLOW_NODE_STAGING_DATABASE_URL_ENV) or "").strip()
-
-
-def _task_repository_backend() -> str:
-    return str(os.getenv(TASK_BACKEND_ENV) or "fixture").strip().lower()
-
-
-def _task_database_url() -> str:
-    return str(os.getenv(TASK_TEST_DATABASE_URL_ENV) or os.getenv(TASK_STAGING_DATABASE_URL_ENV) or raw_database_url()).strip()
-
-
-def task_postgres_enabled() -> bool:
-    return _task_repository_backend() in TASK_SQL_BACKENDS or bool(production_data_ready() and raw_database_url())
-
-
 def _agent_repository_backend() -> str:
     return str(os.getenv(AGENT_BACKEND_ENV) or "fixture").strip().lower()
 
@@ -1580,14 +1528,6 @@ def _agent_run_database_url() -> str:
 
 def build_automation_repository(
     *,
-    task_group_backend: str | None = None,
-    task_group_engine: Any | None = None,
-    workflow_backend: str | None = None,
-    workflow_engine: Any | None = None,
-    workflow_node_backend: str | None = None,
-    workflow_node_engine: Any | None = None,
-    task_backend: str | None = None,
-    task_engine: Any | None = None,
     agent_backend: str | None = None,
     agent_engine: Any | None = None,
     agent_output_backend: str | None = None,
@@ -1595,85 +1535,9 @@ def build_automation_repository(
     agent_run_backend: str | None = None,
     agent_run_engine: Any | None = None,
 ) -> AutomationRepository:
-    selected_task_group_backend = str(task_group_backend or _task_group_repository_backend()).strip().lower()
-    if selected_task_group_backend in TASK_GROUP_SQL_BACKENDS:
-        engine = task_group_engine
-        if engine is None:
-            database_url = _task_group_database_url()
-            if not database_url:
-                raise ContractError(
-                    f"{TASK_GROUP_TEST_DATABASE_URL_ENV} or {TASK_GROUP_STAGING_DATABASE_URL_ENV} is required when {TASK_GROUP_BACKEND_ENV}=sqlalchemy"
-                )
-            engine = get_engine(database_url)
-        from .task_group_sqlalchemy_repository import SqlAlchemyTaskGroupRepository
-
-        return assert_repository_allowed(
-            SqlAlchemyTaskGroupRepository(engine),
-            capability_owner="automation_engine.task_groups",
-        )
-    selected_workflow_backend = str(workflow_backend or _workflow_repository_backend()).strip().lower()
-    if selected_workflow_backend in WORKFLOW_SQL_BACKENDS:
-        engine = workflow_engine
-        if engine is None:
-            database_url = _workflow_database_url()
-            if not database_url:
-                raise ContractError(
-                    f"{WORKFLOW_TEST_DATABASE_URL_ENV} or {WORKFLOW_STAGING_DATABASE_URL_ENV} is required when {WORKFLOW_BACKEND_ENV}=sqlalchemy"
-                )
-            engine = get_engine(database_url)
-        from .workflow_sqlalchemy_repository import SqlAlchemyWorkflowRepository
-
-        return assert_repository_allowed(
-            SqlAlchemyWorkflowRepository(engine),
-            capability_owner="automation_engine.workflows",
-        )
-    selected_workflow_node_backend = str(workflow_node_backend or _workflow_node_repository_backend()).strip().lower()
-    if selected_workflow_node_backend in WORKFLOW_NODE_SQL_BACKENDS:
-        engine = workflow_node_engine
-        if engine is None:
-            database_url = _workflow_node_database_url()
-            if not database_url:
-                raise ContractError(
-                    f"{WORKFLOW_NODE_TEST_DATABASE_URL_ENV} or {WORKFLOW_NODE_STAGING_DATABASE_URL_ENV} is required when {WORKFLOW_NODE_BACKEND_ENV}=sqlalchemy"
-                )
-            engine = get_engine(database_url)
-        from .workflow_node_sqlalchemy_repository import SqlAlchemyWorkflowNodeRepository
-
-        return assert_repository_allowed(
-            SqlAlchemyWorkflowNodeRepository(engine),
-            capability_owner="automation_engine.workflow_nodes",
-        )
-    explicit_non_task_backend = any(
-        value is not None
-        for value in (
-            task_group_backend,
-            workflow_backend,
-            workflow_node_backend,
-            agent_backend,
-            agent_output_backend,
-            agent_run_backend,
-        )
-    )
-    selected_task_backend = str(task_backend or _task_repository_backend()).strip().lower()
-    if task_backend is None and not explicit_non_task_backend and production_data_ready() and raw_database_url():
-        selected_task_backend = "postgres"
-    if selected_task_backend in TASK_SQL_BACKENDS:
-        engine = task_engine
-        if engine is None:
-            database_url = _task_database_url()
-            if not database_url:
-                raise ContractError(
-                    f"{TASK_TEST_DATABASE_URL_ENV} or {TASK_STAGING_DATABASE_URL_ENV} is required when {TASK_BACKEND_ENV}=sqlalchemy"
-                )
-            engine = get_engine(database_url)
-        from .postgres_repo import PostgresTaskRepository
-
-        return assert_repository_allowed(
-            PostgresTaskRepository(engine),
-            capability_owner="automation_engine.tasks",
-        )
+    explicit_agent_backend = any(value is not None for value in (agent_backend, agent_output_backend, agent_run_backend))
     selected_agent_backend = str(agent_backend or _agent_repository_backend()).strip().lower()
-    if agent_backend is None and not explicit_non_task_backend and production_data_ready() and raw_database_url():
+    if agent_backend is None and not explicit_agent_backend and production_data_ready() and raw_database_url():
         selected_agent_backend = "postgres"
     if selected_agent_backend in AGENT_SQL_BACKENDS:
         engine = agent_engine
