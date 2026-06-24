@@ -26,6 +26,12 @@ export interface WorkspaceDraftPayload {
     idempotency_key: string;
     version?: number;
 }
+export interface WorkspaceDraftReviewPayload {
+    version: number;
+    idempotency_key: string;
+    review_note?: string;
+    client_snapshot_hash?: string;
+}
 export interface WorkspaceDraftResponse {
     ok: boolean;
     operation?: string;
@@ -43,6 +49,8 @@ export interface WorkspaceDraftResponse {
     archived_at?: string;
     preview_only?: boolean;
     production_write?: boolean;
+    ready_for_review?: boolean;
+    approved?: boolean;
     real_external_call?: boolean;
     real_external_call_executed?: boolean;
     push_center_job_created?: boolean;
@@ -60,7 +68,10 @@ export interface BuildWorkspaceDraftPayloadOptions {
 }
 export declare const DEFAULT_WORKSPACE_DRAFT_API_CONFIG: WorkspaceDraftApiConfig;
 export declare function assertWorkspaceDraftPayloadSafe(payload: WorkspaceDraftPayload): true;
+export declare function assertWorkspaceDraftReviewPayloadSafe(payload: WorkspaceDraftReviewPayload): true;
+export declare function stableRequestReviewIdempotencyKey(draftId: string, version: number, snapshotHash: string): string;
 export declare function buildWorkspaceDraftPayload(fixture: WorkspaceFixture, filtered: FilteredWorkspaceView, viewState: WorkspaceViewState, options?: BuildWorkspaceDraftPayloadOptions): WorkspaceDraftPayload;
+export declare function buildWorkspaceDraftReviewPayload(draftId: string, version: number, snapshotHash: string, reviewNote?: string): WorkspaceDraftReviewPayload;
 export declare function defaultWorkspaceDraftRequestJson(): WorkspaceDraftRequestJson;
 export declare function isDraftConflictError(error: unknown): boolean;
 export declare function listDrafts(config?: WorkspaceDraftApiConfig, requestJson?: WorkspaceDraftRequestJson): Promise<WorkspaceDraftResponse>;
@@ -68,3 +79,4 @@ export declare function getDraft(draftId: string, config?: WorkspaceDraftApiConf
 export declare function createDraft(payload: WorkspaceDraftPayload, config?: WorkspaceDraftApiConfig, requestJson?: WorkspaceDraftRequestJson): Promise<WorkspaceDraftResponse>;
 export declare function updateDraft(draftId: string, payload: WorkspaceDraftPayload, config?: WorkspaceDraftApiConfig, requestJson?: WorkspaceDraftRequestJson): Promise<WorkspaceDraftResponse>;
 export declare function archiveDraft(draftId: string, version: number, config?: WorkspaceDraftApiConfig, requestJson?: WorkspaceDraftRequestJson): Promise<WorkspaceDraftResponse>;
+export declare function requestDraftReview(draftId: string, payload: WorkspaceDraftReviewPayload, config?: WorkspaceDraftApiConfig, requestJson?: WorkspaceDraftRequestJson): Promise<WorkspaceDraftResponse>;

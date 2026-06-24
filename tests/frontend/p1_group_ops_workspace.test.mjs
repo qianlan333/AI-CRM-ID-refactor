@@ -43,12 +43,15 @@ import {
 } from "../../aicrm_next/frontend_compat/static/admin_console/p1/p1_group_ops_workspace/workspace_detail.js";
 import {
   archiveDraft,
+  assertWorkspaceDraftReviewPayloadSafe,
   assertWorkspaceDraftPayloadSafe,
+  buildWorkspaceDraftReviewPayload,
   buildWorkspaceDraftPayload,
   createDraft,
   getDraft,
   isDraftConflictError,
   listDrafts,
+  requestDraftReview,
   updateDraft
 } from "../../aicrm_next/frontend_compat/static/admin_console/p1/p1_group_ops_workspace/workspace_draft_api.js";
 import { P1_GROUP_OPS_WORKSPACE_FIXTURE } from "../../aicrm_next/frontend_compat/static/admin_console/p1/p1_group_ops_workspace/workspace_fixture.js";
@@ -145,7 +148,11 @@ assert.equal(root.innerHTML.includes("Select for preview bundle"), true);
 assert.equal(root.innerHTML.includes("Draft persistence"), true);
 assert.equal(root.innerHTML.includes("Save draft"), true);
 assert.equal(root.innerHTML.includes("Save as new draft"), true);
+assert.equal(root.innerHTML.includes("Request review"), true);
 assert.equal(root.innerHTML.includes("Archive draft"), true);
+assert.equal(root.innerHTML.includes("draft_status"), true);
+assert.equal(root.innerHTML.includes("ready_for_review"), true);
+assert.equal(root.innerHTML.includes("approved</dt><dd>false"), true);
 assert.equal(root.innerHTML.includes("data-draft-persistence=\"frontend_save_only\""), true);
 assert.equal(root.innerHTML.includes("data-push-center-job-created=\"false\""), true);
 assert.equal(root.innerHTML.includes("data-external-effect-job-created=\"false\""), true);
@@ -162,6 +169,8 @@ assert.equal(root.innerHTML.includes("sent evidence 不等于 governance complet
 assert.equal(root.innerHTML.includes("Push Center pending 不等于 completed"), true);
 assert.equal(root.innerHTML.includes("evidence-incomplete 不等于 success"), true);
 assert.equal(root.innerHTML.includes("P1_READY_WITH_EXCEPTIONS 不等于 PASS_90_PLUS"), true);
+assert.equal(root.innerHTML.includes("request-review 不等于 approval"), true);
+assert.equal(root.innerHTML.includes("ready_for_review 不等于 approved"), true);
 assert.equal(root.innerHTML.includes("data-selected-entity-type=\"plan\""), true);
 assert.equal(root.innerHTML.includes("data-can-render-pass90=\"true\""), false);
 assertNoSensitiveFixtureStrings(root.innerHTML);
@@ -340,6 +349,38 @@ assert.equal(realRoot.innerHTML.includes("data-production-write-executed=\"false
 assert.equal(realRoot.innerHTML.includes("data-can-claim-pass90=\"false\""), true);
 assertNoSensitiveFixtureStrings(realRoot.innerHTML);
 
+const savedDraftState = updateWorkspaceViewState(realViewState, {
+  currentDraftId: "gowd_safe",
+  currentDraftVersion: 2,
+  currentDraftSnapshotHash: "snapshot_safe",
+  currentDraftStatus: "draft",
+  draftSaveStatus: "saved",
+  draftSaveMessage: "草稿已保存；仍为 preview-only，不可执行。"
+});
+const savedDraftRoot = { innerHTML: "" };
+renderP1GroupOpsWorkspace(savedDraftRoot, fixture, savedDraftState);
+assert.equal(savedDraftRoot.innerHTML.includes("draft_status</dt><dd>draft"), true);
+assert.equal(savedDraftRoot.innerHTML.includes("data-workspace-request-review-draft=\"true\" disabled"), false);
+assert.equal(savedDraftRoot.innerHTML.includes("Request review"), true);
+assert.equal(savedDraftRoot.innerHTML.includes("ready_for_review</dt><dd>false"), true);
+assertNoSensitiveFixtureStrings(savedDraftRoot.innerHTML);
+
+const readyReviewState = updateWorkspaceViewState(savedDraftState, {
+  currentDraftVersion: 3,
+  currentDraftStatus: "ready_for_review",
+  currentDraftReviewIdempotencyKey: "p1-gow-request-review:gowd_safe:2:snapshot_safe",
+  draftReviewStatus: "ready_for_review",
+  draftReviewMessage: "ready_for_review 已记录；这不是 approval，也不是 Push Center bridge。"
+});
+const readyReviewRoot = { innerHTML: "" };
+renderP1GroupOpsWorkspace(readyReviewRoot, fixture, readyReviewState);
+assert.equal(readyReviewRoot.innerHTML.includes("draft_status</dt><dd>ready_for_review"), true);
+assert.equal(readyReviewRoot.innerHTML.includes("ready_for_review</dt><dd>true"), true);
+assert.equal(readyReviewRoot.innerHTML.includes("approved</dt><dd>false"), true);
+assert.equal(readyReviewRoot.innerHTML.includes("data-workspace-request-review-draft=\"true\" disabled"), true);
+assert.equal(readyReviewRoot.innerHTML.includes("这不是 approval"), true);
+assertNoSensitiveFixtureStrings(readyReviewRoot.innerHTML);
+
 const lanes = buildWorkspaceCanvasLanes(fixture, filterWorkspaceView(fixture, realViewState), realViewState);
 assert.deepEqual(lanes.map((lane) => lane.id), ["plans", "groups", "nodes", "executions", "push_center", "evidence"]);
 assert.equal(lanes.every((lane) => lane.cards.length === 1), true);
@@ -415,6 +456,13 @@ assert.equal(draftPayload.approval_requirements.push_center_bridge_not_implement
 assert.equal(draftPayload.items.length, 2);
 assert.equal(draftPayload.items.every((item) => ["plan", "evidence"].includes(item.item_type)), true);
 assertWorkspaceDraftPayloadSafe(draftPayload);
+const reviewPayload = buildWorkspaceDraftReviewPayload("gowd_safe", 2, "snapshot_safe");
+const reviewPayloadRepeat = buildWorkspaceDraftReviewPayload("gowd_safe", 2, "snapshot_safe");
+assert.equal(reviewPayload.idempotency_key, "p1-gow-request-review:gowd_safe:2:snapshot_safe");
+assert.equal(reviewPayload.idempotency_key, reviewPayloadRepeat.idempotency_key);
+assert.equal(reviewPayload.version, 2);
+assert.equal(reviewPayload.client_snapshot_hash, "snapshot_safe");
+assertWorkspaceDraftReviewPayloadSafe(reviewPayload);
 for (const bait of [
   { sanitized_payload: { ["raw_" + "external_userid"]: "wrOgAAA001" } },
   { sanitized_payload: { contact: "13800138000" } },
@@ -424,9 +472,36 @@ for (const bait of [
 ]) {
   assert.throws(() => assertWorkspaceDraftPayloadSafe({ ...draftPayload, ...bait }), /draft_payload_sensitive/);
 }
+for (const bait of [
+  { version: 2, idempotency_key: "p1-safe", review_note: "13800138000" },
+  { version: 2, idempotency_key: "p1-safe", client_snapshot_hash: "access_" + "token" }
+]) {
+  assert.throws(() => assertWorkspaceDraftReviewPayloadSafe(bait), /draft_payload_sensitive/);
+}
 const draftRequests = [];
 const requestJson = async (url, options = {}) => {
   draftRequests.push({ url, options });
+  if (options.method === "POST" && url.endsWith("/request-review")) {
+    return {
+      ok: true,
+      operation: "request_review",
+      draft_id: "gowd_safe",
+      draft_status: "ready_for_review",
+      ready_for_review: true,
+      approved: false,
+      version: 3,
+      preview_only: true,
+      production_write: true,
+      real_external_call: false,
+      real_external_call_executed: false,
+      push_center_job_created: false,
+      external_effect_job_created: false,
+      broadcast_job_created: false,
+      internal_event_created: false,
+      can_claim_pass_90_plus: false,
+      execution_status: "not_execution"
+    };
+  }
   if (options.method === "POST" && url.endsWith("/archive")) {
     return {
       ok: true,
@@ -508,14 +583,51 @@ assert.equal(updatedDraft.version, 2);
 assert.equal(archivedDraft.draft_status, "archived");
 assert.equal(draftRequests.some((entry) => entry.url.includes("/push-center")), false);
 assert.equal(draftRequests.some((entry) => entry.url.includes("external-effect")), false);
+assert.equal(draftRequests.some((entry) => entry.url.includes("broadcast")), false);
+assert.equal(draftRequests.some((entry) => entry.url.includes("internal-event")), false);
 assert.equal(draftRequests.some((entry) => entry.url.includes("request-review")), false);
 assert.equal(draftRequests.some((entry) => entry.options.method === "POST"), true);
 assert.equal(draftRequests.some((entry) => entry.options.method === "PATCH"), true);
 assert.equal(JSON.parse(draftRequests.find((entry) => entry.options.method === "POST" && !entry.url.endsWith("/archive")).options.body).idempotency_key, draftPayload.idempotency_key);
+const reviewedDraft = await requestDraftReview("gowd_safe", reviewPayload, undefined, requestJson);
+assert.equal(reviewedDraft.draft_status, "ready_for_review");
+assert.equal(reviewedDraft.ready_for_review, true);
+assert.equal(reviewedDraft.approved, false);
+const reviewRequest = draftRequests.find((entry) => entry.url.endsWith("/request-review"));
+assert.ok(reviewRequest);
+assert.equal(reviewRequest.options.method, "POST");
+const reviewRequestBody = JSON.parse(reviewRequest.options.body);
+assert.equal(reviewRequestBody.idempotency_key, reviewPayload.idempotency_key);
+assert.equal(reviewRequestBody.version, 2);
+assert.equal(draftRequests.some((entry) => entry.url.includes("/push-center")), false);
+assert.equal(draftRequests.some((entry) => entry.url.includes("external-effect")), false);
+assert.equal(draftRequests.some((entry) => entry.url.includes("broadcast")), false);
+assert.equal(draftRequests.some((entry) => entry.url.includes("internal-event")), false);
 assert.equal(isDraftConflictError(new Error("409 conflict")), true);
 await assert.rejects(
   () => createDraft({ ...draftPayload, guardrail_summary: { ...draftPayload.guardrail_summary, ["raw_" + "target"]: "unsafe" } }, undefined, requestJson),
   /draft_payload_sensitive/
+);
+await assert.rejects(
+  () => requestDraftReview("gowd_safe", { ...reviewPayload, review_note: "raw_" + "target" }, undefined, requestJson),
+  /draft_payload_sensitive/
+);
+await assert.rejects(
+  () => requestDraftReview("gowd_bad", reviewPayload, undefined, async () => ({
+    ok: true,
+    draft_id: "gowd_bad",
+    draft_status: "ready_for_review",
+    approved: true,
+    preview_only: true,
+    production_write: true,
+    real_external_call: false,
+    push_center_job_created: false,
+    external_effect_job_created: false,
+    broadcast_job_created: false,
+    internal_event_created: false,
+    can_claim_pass_90_plus: false
+  })),
+  /draft_api_response_violates_execution_guardrail/
 );
 const bundleText = buildCopySafeBundleText(bundle, { finalVerdict: fixture.payload.finalVerdict });
 const bundleJson = buildCopySafeBundleJson(bundle, { finalVerdict: fixture.payload.finalVerdict });
