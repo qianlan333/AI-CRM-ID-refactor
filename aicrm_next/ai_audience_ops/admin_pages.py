@@ -5,6 +5,7 @@ from pathlib import Path
 from fastapi import APIRouter, Request
 from fastapi.templating import Jinja2Templates
 
+from aicrm_next.admin_auth.guards import admin_page_auth_redirect
 from aicrm_next.admin_shell import shell_context
 
 router = APIRouter()
@@ -21,6 +22,8 @@ _HEADERS = {
 
 @router.get("/admin/automation-conversion", name="api.admin_automation_conversion")
 def admin_ai_audience_automation(request: Request):
+    if redirect := admin_page_auth_redirect(request):
+        return redirect
     context = shell_context(
         request=request,
         page_title="AI 自动化运营",
