@@ -31,8 +31,8 @@ _TEMPLATES_DIR = Path(__file__).resolve().parent / "templates"
 templates = Jinja2Templates(directory=_TEMPLATES_DIR)
 
 
-@router.get("/admin/automation-conversion", name="api.admin_automation_conversion")
-def admin_automation_conversion(request: Request):
+@router.get("/admin/automation-conversion/legacy", name="api.admin_automation_conversion_legacy")
+def admin_automation_conversion_legacy(request: Request):
     try:
         program_list_payload = list_automation_programs_payload()
     except AutomationProgramDataUnavailable:
@@ -50,8 +50,8 @@ def admin_automation_conversion(request: Request):
         automation_pool_payload = AutomationPoolReadModel(rows=[]).execute()
     context = shell_context(
         request=request,
-        page_title="自动化运营",
-        page_summary="查看自动化运营方案列表与当前方案人数；生产环境读取 PostgreSQL。",
+        page_title="自动化运营方案（旧版）",
+        page_summary="隐藏回滚入口：查看旧 automation_program 方案列表与当前方案人数。",
         active_endpoint="api.admin_automation_conversion",
     )
     context.update(

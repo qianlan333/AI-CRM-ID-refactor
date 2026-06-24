@@ -3929,6 +3929,17 @@ routes:
   methods:
   - GET
   route_name: api.admin_automation_conversion
+  capability_owner: ai_audience_ops
+  runtime_owner: ai_crm_next
+  layer: admin_page
+  external_effects: none
+  data_source: read_model
+  requires_auth: true
+  rollback: previous_release
+- path: /admin/automation-conversion/legacy
+  methods:
+  - GET
+  route_name: api.admin_automation_conversion_legacy
   capability_owner: automation_engine
   runtime_owner: ai_crm_next
   layer: admin_page
@@ -7483,6 +7494,17 @@ routes:
   methods:
   - GET
   route_name: api.ai_audience_schema_catalog
+  capability_owner: ai_audience_ops
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: none
+  data_source: read_model
+  requires_auth: true
+  rollback: previous_release
+- path: /api/admin/ai-audience/packages
+  methods:
+  - GET
+  route_name: api.admin_ai_audience_packages
   capability_owner: ai_audience_ops
   runtime_owner: ai_crm_next
   layer: api

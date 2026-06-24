@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from aicrm_next.platform_foundation.command_bus.models import CommandContext
 from aicrm_next.platform_foundation.external_effects import ExternalEffectService
@@ -23,6 +25,20 @@ class AudiencePackageService:
 
     def list_packages(self) -> dict[str, Any]:
         return {"ok": True, "packages": self._repo.list_packages()}
+
+    def list_admin_package_summaries(self, *, limit: int = 200) -> dict[str, Any]:
+        rows = self._repo.list_package_summaries(limit=limit)
+        items = [_admin_package_item(row) for row in rows]
+        total = int(rows[0].get("total_count") or len(items)) if rows else 0
+        return {
+            "ok": True,
+            "items": items,
+            "total": total,
+            "generated_at": _admin_datetime(datetime.now(timezone.utc)),
+        }
+
+    def list_admin_packages(self, *, limit: int = 200) -> dict[str, Any]:
+        return self.list_admin_package_summaries(limit=limit)
 
     def create_package(self, request: PackageCreateRequest) -> dict[str, Any]:
         payload = request.model_dump()
@@ -187,3 +203,37 @@ def _tick_bucket(tick_type: str) -> str:
         return now.strftime("%Y-%m-%d")
     minute = (now.minute // 3) * 3
     return now.replace(minute=minute, second=0, microsecond=0).isoformat()
+
+
+def _admin_package_item(row: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "id": int(row.get("id") or 0),
+        "package_key": _text(row.get("package_key")),
+        "name": _text(row.get("name")) or _text(row.get("package_key")) or "未命名人群包",
+        "member_count": int(row.get("member_count") or 0),
+        "last_refreshed_at": _admin_datetime(row.get("last_refreshed_at")) if row.get("last_refreshed_at") else None,
+        "refresh_mode_label": _refresh_mode_label(row),
+    }
+
+
+def _refresh_mode_label(row: dict[str, Any]) -> str:
+    labels: list[str] = []
+    if bool(row.get("incremental_enabled")):
+        seconds = max(1, int(row.get("incremental_interval_seconds") or 180))
+        if seconds >= 60 and seconds % 60 == 0:
+            labels.append(f"每 {max(1, seconds // 60)} 分钟")
+        else:
+            labels.append(f"每 {seconds} 秒")
+    if bool(row.get("daily_enabled")):
+        labels.append(f"每日 {_text(row.get('daily_refresh_time')) or '03:00'}")
+    return " + ".join(labels) if labels else "手动"
+
+
+def _admin_datetime(value: Any) -> str:
+    if isinstance(value, datetime):
+        dt = value
+    else:
+        dt = datetime.fromisoformat(_text(value).replace("Z", "+00:00"))
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(ZoneInfo("Asia/Shanghai")).isoformat(timespec="seconds")

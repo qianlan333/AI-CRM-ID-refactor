@@ -40,6 +40,26 @@ def test_automation_project_pages_are_served_by_next_native_bundle(monkeypatch) 
         assert "客户管理后台" in response.text
         assert "Not Found" not in response.text
 
+    list_response = client.get("/admin/automation-conversion")
+    assert "AI 自动化运营" in list_response.text
+    assert "通过 AI 创建 SQL 人群包；查看当前命中人数、最后一次刷新时间与刷新方式。" in list_response.text
+    assert "人群包名称" in list_response.text
+    assert "最后一次刷新时间" in list_response.text
+    assert "刷新方式" in list_response.text
+    assert "方案列表" not in list_response.text
+    assert "编辑" not in list_response.text
+    assert "数据概览" not in list_response.text
+    assert "复制" not in list_response.text
+    assert "停用" not in list_response.text
+    assert "归档" not in list_response.text
+    assert "/api/admin/ai-audience/packages" in list_response.text
+    assert "AICRM_AI_AUDIENCE_API_TOKEN" not in list_response.text
+    assert "/api/ai/audience/packages" not in list_response.text
+
+    legacy_response = client.get("/admin/automation-conversion/legacy")
+    assert legacy_response.status_code == 200
+    assert "方案列表" in legacy_response.text
+
     entry_response = client.get("/admin/automation-conversion/programs/1/setup?step=entry")
     basic_response = client.get("/admin/automation-conversion/programs/1/setup?step=basic")
     assert "/static/automation-engine/admin_console/automation_conversion_workspace.css" in entry_response.text

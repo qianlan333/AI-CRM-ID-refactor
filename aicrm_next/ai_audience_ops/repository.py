@@ -92,6 +92,9 @@ class AudienceRepository:
     def list_packages(self) -> list[dict[str, Any]]:
         raise NotImplementedError
 
+    def list_package_summaries(self, *, limit: int = 200) -> list[dict[str, Any]]:
+        raise NotImplementedError
+
     def create_package(self, payload: dict[str, Any]) -> dict[str, Any]:
         raise NotImplementedError
 
@@ -172,6 +175,47 @@ class SQLAlchemyAudienceRepository(AudienceRepository):
             LEFT JOIN ai_audience_package_version v ON v.id = p.current_version_id
             ORDER BY p.id DESC
             """
+        )
+
+    def list_package_summaries(self, *, limit: int = 200) -> list[dict[str, Any]]:
+        return self._all(
+            """
+            WITH member_counts AS (
+                SELECT
+                    package_id,
+                    COUNT(*) FILTER (WHERE status = 'active') AS member_count
+                FROM ai_audience_member_current
+                GROUP BY package_id
+            ),
+            latest_runs AS (
+                SELECT DISTINCT ON (package_id)
+                    package_id,
+                    refresh_finished_at,
+                    refresh_started_at,
+                    status AS run_status
+                FROM ai_audience_package_run
+                ORDER BY package_id, refresh_finished_at DESC NULLS LAST, id DESC
+            )
+            SELECT
+                p.id,
+                p.package_key,
+                p.name,
+                COALESCE(mc.member_count, 0) AS member_count,
+                lr.refresh_finished_at AS last_refreshed_at,
+                p.incremental_enabled,
+                p.incremental_interval_seconds,
+                p.daily_enabled,
+                p.daily_refresh_time,
+                p.updated_at,
+                COUNT(*) OVER () AS total_count
+            FROM ai_audience_package p
+            LEFT JOIN member_counts mc ON mc.package_id = p.id
+            LEFT JOIN latest_runs lr ON lr.package_id = p.id
+            WHERE p.status <> 'archived'
+            ORDER BY p.updated_at DESC, p.id DESC
+            LIMIT :limit
+            """,
+            {"limit": max(1, min(int(limit or 200), 200))},
         )
 
     def create_package(self, payload: dict[str, Any]) -> dict[str, Any]:
