@@ -29,6 +29,12 @@ import {
   buildWorkspacePreviewBundle
 } from "../../aicrm_next/frontend_compat/static/admin_console/p1/p1_group_ops_workspace/workspace_preview_bundle.js";
 import {
+  assertCopySafeBundleOutput,
+  buildCopySafeBundleJson,
+  buildCopySafeBundleText,
+  copyBundleSummaryToClipboard
+} from "../../aicrm_next/frontend_compat/static/admin_console/p1/p1_group_ops_workspace/workspace_bundle_export.js";
+import {
   sortCanvasCards
 } from "../../aicrm_next/frontend_compat/static/admin_console/p1/p1_group_ops_workspace/workspace_sorting.js";
 import {
@@ -377,12 +383,66 @@ assert.equal(bundle.canClaimPass90Plus, false);
 assert.equal(bundle.governanceMissingCount, 1);
 assert.equal(bundle.blockedCount, 1);
 assert.equal(bundle.guardrails.includes("any blocked item -> bundle cannot execute"), true);
+const bundleText = buildCopySafeBundleText(bundle, { finalVerdict: fixture.payload.finalVerdict });
+const bundleJson = buildCopySafeBundleJson(bundle, { finalVerdict: fixture.payload.finalVerdict });
+const bundleJsonPayload = JSON.parse(bundleJson);
+assert.equal(bundleText.includes("previewOnly: true"), true);
+assert.equal(bundleText.includes("productionWrite: false"), true);
+assert.equal(bundleText.includes("realExternalCall: false"), true);
+assert.equal(bundleText.includes("canClaimPass90Plus: false"), true);
+assert.equal(bundleText.includes("This bundle is read-only and cannot execute."), true);
+assert.equal(bundleText.includes("sent evidence is not governance complete."), true);
+assert.equal(bundleJsonPayload.workspace, "P1 Group Ops Workspace");
+assert.equal(bundleJsonPayload.previewOnly, true);
+assert.equal(bundleJsonPayload.productionWrite, false);
+assert.equal(bundleJsonPayload.realExternalCall, false);
+assert.equal(bundleJsonPayload.canClaimPass90Plus, false);
+assert.equal(bundleJsonPayload.selectedCount, 2);
+assert.equal(bundleJsonPayload.blockedCount, 1);
+assert.equal(bundleJsonPayload.selectedItems.length, 2);
+assertCopySafeBundleOutput(bundleText);
+assertCopySafeBundleOutput(bundleJson);
+for (const bait of [
+  "raw_external_userid=wrOgAAA001",
+  "phone=13800138000",
+  "receiver_plaintext=member id",
+  "token=abc",
+  "secret=abc",
+  "Authorization header",
+  "openid value",
+  "unionid value",
+  "raw message body",
+  "raw callback body"
+]) {
+  assert.throws(() => assertCopySafeBundleOutput(`safe summary ${bait}`), /copy_safe_output_contains_sensitive/);
+}
+const copiedValues = [];
+const copyResult = await copyBundleSummaryToClipboard(bundleText, {
+  writeText: async (value) => {
+    copiedValues.push(value);
+  }
+});
+assert.equal(copyResult.ok, true);
+assert.equal(copiedValues.length, 1);
+assert.equal(copiedValues[0], bundleText);
+const failedCopy = await copyBundleSummaryToClipboard(bundleText, {
+  writeText: async () => {
+    throw new Error("clipboard denied");
+  }
+});
+assert.equal(failedCopy.ok, false);
+assert.equal(failedCopy.status, "copy_failed");
 const multiRoot = { innerHTML: "" };
 renderP1GroupOpsWorkspace(multiRoot, fixture, multiSelectedBundle);
 assert.equal(multiRoot.innerHTML.includes("Read-only preview bundle (2)"), true);
 assert.equal(multiRoot.innerHTML.includes("data-preview-bundle-id=\"preview-bundle-2-"), true);
 assert.equal(multiRoot.innerHTML.includes("data-can-execute=\"false\""), true);
 assert.equal(multiRoot.innerHTML.includes("Selected for preview bundle"), true);
+assert.equal(multiRoot.innerHTML.includes("复制安全摘要"), true);
+assert.equal(multiRoot.innerHTML.includes("复制脱敏 JSON"), true);
+assert.equal(multiRoot.innerHTML.includes("查看复制内容预览"), true);
+assert.equal(multiRoot.innerHTML.includes("只读复制，不会发送"), true);
+assert.equal(multiRoot.innerHTML.includes("data-copy-safe-export=\"true\""), true);
 assertNoSensitiveFixtureStrings(multiRoot.innerHTML);
 
 const hiddenFilteredView = filterWorkspaceView(fixture, updateWorkspaceViewState(multiSelectedBundle, { entityTypeFilter: "execution" }));

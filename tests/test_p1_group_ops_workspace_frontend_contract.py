@@ -98,6 +98,10 @@ def test_p1_group_ops_workspace_reuses_shared_modules():
     assert "clearMultiSelection" in sources
     assert "selectVisibleItems" in sources
     assert "buildWorkspacePreviewBundle" in sources
+    assert "buildCopySafeBundleText" in sources
+    assert "buildCopySafeBundleJson" in sources
+    assert "assertCopySafeBundleOutput" in sources
+    assert "copyBundleSummaryToClipboard" in sources
 
 
 def test_p1_group_ops_workspace_copy_preserves_guardrails():
@@ -139,6 +143,10 @@ def test_p1_group_ops_workspace_copy_preserves_guardrails():
         "lastSelectedEntity",
         "previewBundleId",
         "bulkGuardrailSummary",
+        "copyPreviewVisible",
+        "copyPreviewFormat",
+        "copyStatus",
+        "copyStatusMessage",
         "Search / filters",
         "Read-only grouped canvas",
         "Safe preview only",
@@ -166,6 +174,13 @@ def test_p1_group_ops_workspace_copy_preserves_guardrails():
         "data-action-required-count",
         "Select for preview bundle",
         "Read-only preview bundle",
+        "复制安全摘要",
+        "复制脱敏 JSON",
+        "查看复制内容预览",
+        "只读复制，不会发送",
+        "data-copy-safe-export",
+        "data-workspace-copy-bundle",
+        "data-workspace-toggle-copy-preview",
         "data-workspace-multi-toggle",
         "data-workspace-select-visible",
         "data-workspace-clear-selection",

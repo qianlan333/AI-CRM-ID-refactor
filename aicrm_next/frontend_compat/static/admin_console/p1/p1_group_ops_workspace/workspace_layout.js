@@ -4,6 +4,7 @@ import { renderStatusBadge } from "../shared/status_badge.js";
 import { renderStatusCard } from "../shared/status_card.js";
 import { statusMeta } from "../shared/status_model.js";
 import { defaultRequestJson, loadGroupOpsWorkspaceData, parseWorkspaceApiConfig } from "./workspace_api.js";
+import { buildCopySafeBundleJson, buildCopySafeBundleText, copyBundleSummaryToClipboard } from "./workspace_bundle_export.js";
 import { renderGroupedWorkspaceCanvas } from "./workspace_canvas.js";
 import { renderWorkspaceDetailPanel, renderWorkspaceSelectedPreviewResult, } from "./workspace_detail.js";
 import { ENTITY_FILTER_OPTIONS, STATUS_FILTER_OPTIONS, filterWorkspaceView } from "./workspace_filters.js";
@@ -157,6 +158,14 @@ function renderLeftRail(filtered) {
 }
 function renderBundleSummary(fixture, filtered) {
     const bundle = buildWorkspacePreviewBundle(fixture, filtered, filtered.viewState);
+    const textSummary = buildCopySafeBundleText(bundle, { finalVerdict: fixture.payload.finalVerdict });
+    const jsonSummary = buildCopySafeBundleJson(bundle, { finalVerdict: fixture.payload.finalVerdict });
+    const previewOutput = filtered.viewState.copyPreviewFormat === "json" ? jsonSummary : textSummary;
+    const copyStatusClass = filtered.viewState.copyStatus === "copy_failed"
+        ? " p1-workspace-copy-status--danger"
+        : filtered.viewState.copyStatus === "copied"
+            ? " p1-workspace-copy-status--success"
+            : "";
     const countRows = Object.entries(bundle.countsByEntityType).map(([entityType, count]) => `
     <div><dt>${escapeHtml(entityType)}</dt><dd>${count}</dd></div>
   `).join("");
@@ -189,6 +198,16 @@ function renderBundleSummary(fixture, filtered) {
       </dl>
       <dl class="p1-workspace-mini-fields">${countRows}</dl>
       <p class="p1-workspace-guardrails">${bundle.guardrails.map((guardrail) => `<code>${escapeHtml(guardrail)}</code>`).join(" ")}</p>
+      <section class="p1-workspace-copy-export" data-copy-safe-export="true" data-copy-preview-visible="${filtered.viewState.copyPreviewVisible ? "true" : "false"}" data-copy-preview-format="${escapeHtml(filtered.viewState.copyPreviewFormat)}">
+        <div class="p1-workspace-copy-actions" aria-label="只读复制安全摘要">
+          <button type="button" data-workspace-copy-bundle="text">复制安全摘要</button>
+          <button type="button" data-workspace-copy-bundle="json">复制脱敏 JSON</button>
+          <button type="button" data-workspace-toggle-copy-preview="true">查看复制内容预览</button>
+        </div>
+        <p class="p1-workspace-copy-note">只读复制，不会发送；复制内容不保存后端、不下载文件、不写浏览器持久存储。</p>
+        <p class="p1-workspace-copy-status${copyStatusClass}" aria-live="polite" data-copy-status="${escapeHtml(filtered.viewState.copyStatus)}">${escapeHtml(filtered.viewState.copyStatusMessage)}</p>
+        ${filtered.viewState.copyPreviewVisible ? `<pre class="p1-workspace-copy-preview" tabindex="0" data-copy-preview="true">${escapeHtml(previewOutput)}</pre>` : ""}
+      </section>
       <div class="p1-workspace-bundle-list">${selectedRows}</div>
     </section>
   `;
@@ -325,6 +344,46 @@ function attachMultiSelectHandlers(root, fixture, viewState) {
         });
     });
 }
+function copyStatusUpdate(result) {
+    return {
+        copyStatus: result.status,
+        copyStatusMessage: result.ok
+            ? "复制成功：只读脱敏摘要已进入剪贴板，不会发送。"
+            : `复制失败：${result.message}`
+    };
+}
+function attachBundleExportHandlers(root, fixture, viewState) {
+    if (typeof root.querySelectorAll !== "function")
+        return;
+    root.querySelectorAll("[data-workspace-toggle-copy-preview]").forEach((node) => {
+        node.addEventListener("click", () => {
+            const nextFormat = viewState.copyPreviewFormat === "text" ? "json" : "text";
+            renderP1GroupOpsWorkspace(root, fixture, updateWorkspaceViewState(viewState, {
+                copyPreviewVisible: !viewState.copyPreviewVisible || viewState.copyPreviewFormat !== nextFormat,
+                copyPreviewFormat: nextFormat,
+                copyStatus: "idle",
+                copyStatusMessage: "只读复制预览已更新；不会发送。"
+            }));
+        });
+    });
+    root.querySelectorAll("[data-workspace-copy-bundle]").forEach((node) => {
+        node.addEventListener("click", () => {
+            const format = node.dataset.workspaceCopyBundle === "json" ? "json" : "text";
+            const filtered = filterWorkspaceView(fixture, viewState);
+            const bundle = buildWorkspacePreviewBundle(fixture, filtered, filtered.viewState);
+            const output = format === "json"
+                ? buildCopySafeBundleJson(bundle, { finalVerdict: fixture.payload.finalVerdict })
+                : buildCopySafeBundleText(bundle, { finalVerdict: fixture.payload.finalVerdict });
+            copyBundleSummaryToClipboard(output).then((result) => {
+                renderP1GroupOpsWorkspace(root, fixture, updateWorkspaceViewState(filtered.viewState, {
+                    copyPreviewVisible: true,
+                    copyPreviewFormat: format,
+                    ...copyStatusUpdate(result)
+                }));
+            });
+        });
+    });
+}
 function attachKeyboardHandlers(root, fixture, viewState) {
     if (typeof root.querySelector !== "function")
         return;
@@ -369,6 +428,7 @@ export function renderP1GroupOpsWorkspace(root, fixture = P1_GROUP_OPS_WORKSPACE
     attachFilterHandlers(root, fixture, filtered.viewState);
     attachCanvasLaneHandlers(root, fixture, filtered.viewState);
     attachMultiSelectHandlers(root, fixture, filtered.viewState);
+    attachBundleExportHandlers(root, fixture, filtered.viewState);
     attachKeyboardHandlers(root, fixture, filtered.viewState);
 }
 function boot() {
