@@ -3,14 +3,46 @@ import { type BusinessClosurePayload, type ScenarioEvidence } from "../shared/st
 export interface WorkspaceListItem {
   id: string;
   label: string;
-  kind: "plan" | "audience" | "task";
+  kind: "plan" | "group" | "node" | "execution" | "push_center";
   status: ScenarioEvidence["status"];
   summary: string;
+  detailId: string;
+  entityType: WorkspaceEntityType;
+}
+
+export type WorkspaceEntityType = "plan" | "group" | "node" | "execution" | "push_center" | "evidence";
+
+export interface WorkspaceDetailField {
+  label: string;
+  value: string;
+}
+
+export interface WorkspaceDetailItem {
+  id: string;
+  entityType: WorkspaceEntityType;
+  title: string;
+  status: ScenarioEvidence["status"];
+  evidenceStatus: string;
+  derivedStatus: string;
+  summary: string;
+  guardrail: string;
+  fields: WorkspaceDetailField[];
+}
+
+export interface WorkspaceSelectionState {
+  selectedPlanId: string;
+  selectedGroupId: string;
+  selectedNodeId: string;
+  selectedExecutionId: string;
+  selectedPushCenterJobId: string;
+  selectedEntityType: WorkspaceEntityType;
 }
 
 export interface WorkspaceFixture {
   payload: BusinessClosurePayload;
   leftRailItems: WorkspaceListItem[];
+  detailItems: WorkspaceDetailItem[];
+  defaultSelection: WorkspaceSelectionState;
   workspaceMode: "draft_only_preview_only";
   dataSourceLabel: string;
   dataBindingStatus: "fixture_fallback" | "real_data_bound" | "real_data_unavailable";
@@ -72,24 +104,111 @@ export const P1_GROUP_OPS_WORKSPACE_FIXTURE: WorkspaceFixture = {
       id: "plan-p1-group-ops-preview",
       label: "P1 群运营测试计划",
       kind: "plan",
+      entityType: "plan",
+      detailId: "plan-p1-group-ops-preview",
       status: "governance-missing",
       summary: "计划可进入草稿编排预览，但不能发送或审批。"
     },
     {
       id: "audience-redacted-segment",
       label: "脱敏人群包",
-      kind: "audience",
+      kind: "group",
+      entityType: "group",
+      detailId: "group-redacted-summary",
       status: "evidence-incomplete",
       summary: "仅用于布局占位，不包含真实 receiver 明文。"
     },
     {
       id: "task-push-center-preview",
       label: "Push Center preview",
-      kind: "task",
+      kind: "node",
+      entityType: "node",
+      detailId: "node-preview-task",
       status: "downstream-pending",
       summary: "任务流只读预览，必须经 Push Center gate。"
     }
   ],
+  detailItems: [
+    {
+      id: "plan-p1-group-ops-preview",
+      entityType: "plan",
+      title: "P1 群运营测试计划",
+      status: "governance-missing",
+      evidenceStatus: "fixture_fallback",
+      derivedStatus: "draft_only_preview_only",
+      summary: "计划只用于 workspace 结构验证；不会审批、发送或写生产。",
+      guardrail: "requires_approval / requires_allowlist / requires_gray_window。",
+      fields: [
+        { label: "plan_id", value: "plan-p1-group-ops-preview" },
+        { label: "status", value: "governance-missing" },
+        { label: "mode", value: "draft-only / preview-only" }
+      ]
+    },
+    {
+      id: "group-redacted-summary",
+      entityType: "group",
+      title: "脱敏人群包",
+      status: "evidence-incomplete",
+      evidenceStatus: "fixture_fallback",
+      derivedStatus: "receiver_summary_redacted",
+      summary: "仅展示聚合人群摘要，不展示 receiver 或成员明文。",
+      guardrail: "requires_allowlist / no_direct_send。",
+      fields: [
+        { label: "group_summary", value: "redacted aggregate only" },
+        { label: "sensitive_data", value: "removed" }
+      ]
+    },
+    {
+      id: "node-preview-task",
+      entityType: "node",
+      title: "Push Center preview node",
+      status: "downstream-pending",
+      evidenceStatus: "fixture_fallback",
+      derivedStatus: "push_center_gate_required",
+      summary: "任务节点仅支持只读预览；不保存、不执行。",
+      guardrail: "requires_push_center / no_external_call / no_production_write。",
+      fields: [
+        { label: "node_type", value: "preview" },
+        { label: "execution", value: "not executed" }
+      ]
+    },
+    {
+      id: "execution-preview-empty",
+      entityType: "execution",
+      title: "Execution preview",
+      status: "pending",
+      evidenceStatus: "fixture_fallback",
+      derivedStatus: "execution_not_selected",
+      summary: "暂无真实执行记录；保持 pending，不渲染为 sent。",
+      guardrail: "preview_only / no_direct_send。",
+      fields: [
+        { label: "execution_id", value: "not_provided" },
+        { label: "real_external_call", value: "false" }
+      ]
+    },
+    {
+      id: "push-center-preview",
+      entityType: "push_center",
+      title: "Push Center projection",
+      status: "evidence-incomplete",
+      evidenceStatus: "fixture_fallback",
+      derivedStatus: "projection_not_linked",
+      summary: "未绑定真实 projection；不能伪造成已发送。",
+      guardrail: "requires_push_center / no_direct_send。",
+      fields: [
+        { label: "projection_id", value: "not_found" },
+        { label: "can_claim_pass_90_plus", value: "false" }
+      ]
+    }
+  ],
+  defaultSelection: {
+    selectedPlanId: "plan-p1-group-ops-preview",
+    selectedGroupId: "group-redacted-summary",
+    selectedNodeId: "node-preview-task",
+    selectedExecutionId: "execution-preview-empty",
+    selectedPushCenterJobId: "push-center-preview",
+    selectedEntityType: "plan"
+  },
   workspaceMode: "draft_only_preview_only",
   dataSourceLabel: "fixture_fallback",
   dataBindingStatus: "fixture_fallback",

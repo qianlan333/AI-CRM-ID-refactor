@@ -5,6 +5,11 @@ import {
   DEFAULT_WORKSPACE_API_CONFIG,
   loadGroupOpsWorkspaceData
 } from "../../aicrm_next/frontend_compat/static/admin_console/p1/p1_group_ops_workspace/workspace_api.js";
+import {
+  createWorkspaceSelectionState,
+  findWorkspaceDetail,
+  selectWorkspaceEntity
+} from "../../aicrm_next/frontend_compat/static/admin_console/p1/p1_group_ops_workspace/workspace_detail.js";
 import { P1_GROUP_OPS_WORKSPACE_FIXTURE } from "../../aicrm_next/frontend_compat/static/admin_console/p1/p1_group_ops_workspace/workspace_fixture.js";
 import {
   buildGroupOpsWorkspaceStatusModel,
@@ -26,6 +31,7 @@ function assertNoSensitiveFixtureStrings(value) {
     "access_token",
     "corpsecret",
     "suite secret",
+    "fixture text",
     "13800138000",
     "secret",
     "token"
@@ -72,6 +78,8 @@ assert.equal(root.innerHTML.includes("draft-only / preview-only"), true);
 assert.equal(root.innerHTML.includes("计划 / 人群 / 任务"), true);
 assert.equal(root.innerHTML.includes("编排预览区 / draft-only canvas shell"), true);
 assert.equal(root.innerHTML.includes("属性面板 / guardrail / evidence state"), true);
+assert.equal(root.innerHTML.includes("Plan detail"), true);
+assert.equal(root.innerHTML.includes("Selected preview result"), true);
 assert.equal(root.innerHTML.includes("Preview result / blocked reason"), true);
 assert.equal(root.innerHTML.includes("data-p1-native-workspace=\"group_ops\""), true);
 assert.equal(root.innerHTML.includes("data-can-claim-pass90=\"false\""), true);
@@ -79,8 +87,30 @@ assert.equal(root.innerHTML.includes("data-real-external-call-executed=\"false\"
 assert.equal(root.innerHTML.includes("data-production-write-executed=\"false\""), true);
 assert.equal(root.innerHTML.includes("sent evidence 不等于 governance complete"), true);
 assert.equal(root.innerHTML.includes("P1_READY_WITH_EXCEPTIONS 不等于 PASS_90_PLUS"), true);
+assert.equal(root.innerHTML.includes("data-selected-entity-type=\"plan\""), true);
 assert.equal(root.innerHTML.includes("data-can-render-pass90=\"true\""), false);
 assertNoSensitiveFixtureStrings(root.innerHTML);
+
+const defaultSelection = createWorkspaceSelectionState(P1_GROUP_OPS_WORKSPACE_FIXTURE);
+const selectedPlan = findWorkspaceDetail(P1_GROUP_OPS_WORKSPACE_FIXTURE, defaultSelection);
+assert.equal(selectedPlan.entityType, "plan");
+
+const selectedNode = selectWorkspaceEntity(defaultSelection, "node", "node-preview-task");
+const nodeRoot = { innerHTML: "" };
+renderP1GroupOpsWorkspace(nodeRoot, P1_GROUP_OPS_WORKSPACE_FIXTURE, selectedNode);
+assert.equal(nodeRoot.innerHTML.includes("data-selected-entity-type=\"node\""), true);
+assert.equal(nodeRoot.innerHTML.includes("Node / task summary"), true);
+assert.equal(nodeRoot.innerHTML.includes("preview-only"), true);
+assertNoSensitiveFixtureStrings(nodeRoot.innerHTML);
+
+const selectedExecution = selectWorkspaceEntity(defaultSelection, "execution", "execution-preview-empty");
+const executionRoot = { innerHTML: "" };
+renderP1GroupOpsWorkspace(executionRoot, P1_GROUP_OPS_WORKSPACE_FIXTURE, selectedExecution);
+assert.equal(executionRoot.innerHTML.includes("data-selected-entity-type=\"execution\""), true);
+assert.equal(executionRoot.innerHTML.includes("Execution summary"), true);
+assert.equal(model.originalStatuses.includes("sent"), true);
+assert.equal(buildGroupOpsWorkspaceStatusModel(P1_GROUP_OPS_WORKSPACE_FIXTURE).originalStatuses[0], "sent");
+assertNoSensitiveFixtureStrings(executionRoot.innerHTML);
 
 const requests = [];
 const fixture = await loadGroupOpsWorkspaceData(DEFAULT_WORKSPACE_API_CONFIG, async (url) => {
@@ -140,8 +170,8 @@ const fixture = await loadGroupOpsWorkspaceData(DEFAULT_WORKSPACE_API_CONFIG, as
       ok: true,
       route_owner: "ai_crm_next",
       side_effect_safety: { db_write_executed: false, real_external_call_executed: false },
-      items: [],
-      total: 0
+      items: [{ id: 11, status: "pending", raw_external_userid: "wrOgAAA001", phone: "13800138000" }],
+      total: 1
     };
   }
   if (url.includes("/push-center/jobs")) {
@@ -173,6 +203,11 @@ assert.equal(fixture.leftRailItems.some((item) => item.label === "真实群运�
 assert.equal(fixture.leftRailItems.some((item) => item.summary.includes("2 个绑定群")), true);
 assert.equal(fixture.payload.scenarios.some((scenario) => scenario.status === "governance-missing"), true);
 assert.equal(fixture.payload.scenarios.some((scenario) => scenario.status === "sent"), true);
+assert.equal(fixture.detailItems.some((item) => item.entityType === "plan" && item.title === "真实群运营计划"), true);
+assert.equal(fixture.detailItems.some((item) => item.entityType === "group" && item.fields.some((field) => field.label === "bound_group_count" && field.value === "2")), true);
+assert.equal(fixture.detailItems.some((item) => item.entityType === "node"), true);
+assert.equal(fixture.detailItems.some((item) => item.entityType === "execution" && item.fields.some((field) => field.value === "11")), true);
+assert.equal(fixture.detailItems.some((item) => item.entityType === "push_center" && item.fields.some((field) => field.value === "external_effect_job:97")), true);
 
 const realRoot = { innerHTML: "" };
 renderP1GroupOpsWorkspace(realRoot, fixture);
@@ -186,5 +221,24 @@ assert.equal(realRoot.innerHTML.includes("data-real-external-call-executed=\"fal
 assert.equal(realRoot.innerHTML.includes("data-production-write-executed=\"false\""), true);
 assert.equal(realRoot.innerHTML.includes("data-can-claim-pass90=\"false\""), true);
 assertNoSensitiveFixtureStrings(realRoot.innerHTML);
+
+const realSelection = createWorkspaceSelectionState(fixture);
+const realExecutionSelection = selectWorkspaceEntity(realSelection, "execution", "execution-plan-7");
+const realExecutionRoot = { innerHTML: "" };
+renderP1GroupOpsWorkspace(realExecutionRoot, fixture, realExecutionSelection);
+assert.equal(realExecutionRoot.innerHTML.includes("data-selected-entity-type=\"execution\""), true);
+assert.equal(realExecutionRoot.innerHTML.includes("Execution summary"), true);
+assert.equal(realExecutionRoot.innerHTML.includes("pending"), true);
+assert.equal(realExecutionRoot.innerHTML.includes("wrOgAAA001"), false);
+assert.equal(realExecutionRoot.innerHTML.includes("13800138000"), false);
+assertNoSensitiveFixtureStrings(realExecutionRoot.innerHTML);
+
+const realPushSelection = selectWorkspaceEntity(realSelection, "push_center", "push_center-external_effect_job:97");
+const realPushRoot = { innerHTML: "" };
+renderP1GroupOpsWorkspace(realPushRoot, fixture, realPushSelection);
+assert.equal(realPushRoot.innerHTML.includes("data-selected-entity-type=\"push_center\""), true);
+assert.equal(realPushRoot.innerHTML.includes("Push Center projection summary"), true);
+assert.equal(realPushRoot.innerHTML.includes("governance complete"), true);
+assertNoSensitiveFixtureStrings(realPushRoot.innerHTML);
 
 console.log("p1 native group ops workspace OK");
