@@ -58,6 +58,23 @@ def _payload(*, idempotency_key: str = "draft-api-idem-1", source_plan_id: str =
     }
 
 
+def _request_review_payload(
+    *,
+    version: int,
+    idempotency_key: str = "request-review-idem-1",
+    client_snapshot_hash: str = "",
+    review_note: str = "safe review note",
+) -> dict:
+    payload = {
+        "version": version,
+        "idempotency_key": idempotency_key,
+        "review_note": review_note,
+    }
+    if client_snapshot_hash:
+        payload["client_snapshot_hash"] = client_snapshot_hash
+    return payload
+
+
 def _count(table: str) -> int:
     with get_engine().connect() as conn:
         return int(conn.execute(text(f"SELECT COUNT(*) FROM {table}")).scalar_one() or 0)
@@ -90,6 +107,7 @@ def _assert_non_execution_response(payload: dict) -> None:
     assert payload["internal_event_created"] is False
     assert payload["can_claim_pass_90_plus"] is False
     assert payload["execution_status"] == "not_execution"
+    assert payload.get("approved") is False
     assert payload.get("draft_status") not in {"sent", "completed"}
 
 
@@ -99,24 +117,30 @@ def test_group_ops_workspace_draft_write_apis_fail_closed_without_admin_cookie(
     create = next_client.post("/api/admin/p1/group-ops-workspace/drafts", json=_payload())
     update = next_client.patch("/api/admin/p1/group-ops-workspace/drafts/gowd_missing", json={**_payload(), "version": 1})
     archive = next_client.post("/api/admin/p1/group-ops-workspace/drafts/gowd_missing/archive", json={"version": 1})
+    request_review = next_client.post(
+        "/api/admin/p1/group-ops-workspace/drafts/gowd_missing/request-review",
+        json=_request_review_payload(version=1),
+    )
 
-    for response in [create, update, archive]:
+    for response in [create, update, archive, request_review]:
         assert response.status_code == 401
         payload = response.json()
         assert payload["error"] == "admin_auth_required"
         assert payload["real_external_call_executed"] is False
 
 
-def test_group_ops_workspace_draft_api_does_not_expose_request_review_route(
+def test_group_ops_workspace_draft_request_review_route_requires_admin_cookie(
     next_client: TestClient,
 ) -> None:
     response = next_client.post(
         "/api/admin/p1/group-ops-workspace/drafts/gowd_safe/request-review",
-        json={},
-        cookies=_admin_cookies(),
+        json=_request_review_payload(version=1),
     )
 
-    assert response.status_code in {404, 405}
+    assert response.status_code == 401
+    payload = response.json()
+    assert payload["error"] == "admin_auth_required"
+    assert payload["real_external_call_executed"] is False
 
 
 def test_group_ops_workspace_create_draft_writes_only_draft_tables_and_audit(
@@ -294,13 +318,6 @@ def test_group_ops_workspace_draft_api_does_not_implement_review_or_execution_ro
         cookies=cookies,
     ).json()
 
-    review = next_client.post(
-        f"/api/admin/p1/group-ops-workspace/drafts/{created['draft_id']}/request-review",
-        json={},
-        cookies=cookies,
-    )
-
-    assert review.status_code in {404, 405}
     assert _count("external_effect_job") == 0
     assert _count("broadcast_jobs") == 0
     assert _count("internal_event") == 0
@@ -314,3 +331,153 @@ def test_group_ops_workspace_draft_api_does_not_break_legacy_group_ops_read_rout
 
     assert response.status_code == 200
     assert response.headers["X-AICRM-Route-Owner"] == "ai_crm_next"
+
+
+def test_group_ops_workspace_request_review_marks_ready_and_writes_audit_without_execution(
+    next_client: TestClient,
+    next_pg_schema,
+) -> None:
+    cookies = _admin_cookies()
+    created = next_client.post(
+        "/api/admin/p1/group-ops-workspace/drafts",
+        json=_payload(idempotency_key="review-key"),
+        cookies=cookies,
+    ).json()
+    before = {
+        "audit": _count("group_ops_workspace_draft_audit_logs"),
+        "external_effect_job": _count("external_effect_job"),
+        "broadcast_jobs": _count("broadcast_jobs"),
+        "internal_event": _count("internal_event"),
+    }
+
+    reviewed = next_client.post(
+        f"/api/admin/p1/group-ops-workspace/drafts/{created['draft_id']}/request-review",
+        json=_request_review_payload(
+            version=created["version"],
+            idempotency_key="review-ready-key",
+            client_snapshot_hash=created["snapshot_hash"],
+        ),
+        cookies=cookies,
+    )
+
+    assert reviewed.status_code == 200, reviewed.text
+    payload = reviewed.json()
+    assert payload["operation"] == "request_review"
+    assert payload["draft_status"] == "ready_for_review"
+    assert payload["ready_for_review"] is True
+    assert payload["approved"] is False
+    assert payload["version"] == 2
+    assert payload["production_write"] is True
+    _assert_non_execution_response(payload)
+    assert _count("group_ops_workspace_draft_audit_logs") == before["audit"] + 1
+    assert _count("external_effect_job") == before["external_effect_job"]
+    assert _count("broadcast_jobs") == before["broadcast_jobs"]
+    assert _count("internal_event") == before["internal_event"]
+
+    audit = _audit_rows(created["draft_id"])
+    assert [row["action"] for row in audit] == ["create", "request_review"]
+    assert audit[-1]["actor_id"] == "draft-api-admin"
+    assert audit[-1]["version"] == 2
+    after = audit[-1]["after_metadata_json"]
+    assert after["request_review_idempotency_key"] == "review-ready-key"
+    assert after["approved"] is False
+    assert after["push_center_job_created"] is False
+    assert "safe review note" not in json.dumps(audit, ensure_ascii=False)
+
+
+def test_group_ops_workspace_request_review_idempotency_replays_same_payload_and_conflicts_changed_payload(
+    next_client: TestClient,
+    next_pg_schema,
+) -> None:
+    cookies = _admin_cookies()
+    created = next_client.post(
+        "/api/admin/p1/group-ops-workspace/drafts",
+        json=_payload(idempotency_key="review-idem-create"),
+        cookies=cookies,
+    ).json()
+    request_payload = _request_review_payload(
+        version=created["version"],
+        idempotency_key="request-review-same-key",
+        client_snapshot_hash=created["snapshot_hash"],
+    )
+
+    first = next_client.post(
+        f"/api/admin/p1/group-ops-workspace/drafts/{created['draft_id']}/request-review",
+        json=request_payload,
+        cookies=cookies,
+    )
+    replay = next_client.post(
+        f"/api/admin/p1/group-ops-workspace/drafts/{created['draft_id']}/request-review",
+        json=request_payload,
+        cookies=cookies,
+    )
+    changed = next_client.post(
+        f"/api/admin/p1/group-ops-workspace/drafts/{created['draft_id']}/request-review",
+        json={**request_payload, "review_note": "changed safe review note"},
+        cookies=cookies,
+    )
+
+    assert first.status_code == 200, first.text
+    assert replay.status_code == 200, replay.text
+    assert changed.status_code == 409, changed.text
+    assert replay.json()["idempotent_replay"] is True
+    assert replay.json()["production_write"] is False
+    assert replay.json()["draft_status"] == "ready_for_review"
+    assert _count("group_ops_workspace_draft_audit_logs") == 2
+
+
+def test_group_ops_workspace_request_review_rejects_stale_archived_and_sensitive_payloads(
+    next_client: TestClient,
+    next_pg_schema,
+) -> None:
+    cookies = _admin_cookies()
+    stale_draft = next_client.post(
+        "/api/admin/p1/group-ops-workspace/drafts",
+        json=_payload(idempotency_key="review-stale-create"),
+        cookies=cookies,
+    ).json()
+    stale = next_client.post(
+        f"/api/admin/p1/group-ops-workspace/drafts/{stale_draft['draft_id']}/request-review",
+        json=_request_review_payload(version=stale_draft["version"] + 1, idempotency_key="review-stale"),
+        cookies=cookies,
+    )
+    snapshot_conflict = next_client.post(
+        f"/api/admin/p1/group-ops-workspace/drafts/{stale_draft['draft_id']}/request-review",
+        json=_request_review_payload(version=stale_draft["version"], idempotency_key="review-snapshot", client_snapshot_hash="not-the-current-snapshot"),
+        cookies=cookies,
+    )
+    sensitive = next_client.post(
+        f"/api/admin/p1/group-ops-workspace/drafts/{stale_draft['draft_id']}/request-review",
+        json={**_request_review_payload(version=stale_draft["version"], idempotency_key="review-sensitive"), "raw_external_userid": "wm_unsafe"},
+        cookies=cookies,
+    )
+    sensitive_note = next_client.post(
+        f"/api/admin/p1/group-ops-workspace/drafts/{stale_draft['draft_id']}/request-review",
+        json=_request_review_payload(version=stale_draft["version"], idempotency_key="review-sensitive-note", review_note="contains token marker"),
+        cookies=cookies,
+    )
+
+    archived_draft = next_client.post(
+        "/api/admin/p1/group-ops-workspace/drafts",
+        json=_payload(idempotency_key="review-archived-create"),
+        cookies=cookies,
+    ).json()
+    next_client.post(
+        f"/api/admin/p1/group-ops-workspace/drafts/{archived_draft['draft_id']}/archive",
+        json={"version": archived_draft["version"], "archive_reason": "safe archive"},
+        cookies=cookies,
+    )
+    archived = next_client.post(
+        f"/api/admin/p1/group-ops-workspace/drafts/{archived_draft['draft_id']}/request-review",
+        json=_request_review_payload(version=archived_draft["version"], idempotency_key="review-archived"),
+        cookies=cookies,
+    )
+
+    assert stale.status_code == 409, stale.text
+    assert snapshot_conflict.status_code == 409, snapshot_conflict.text
+    assert sensitive.status_code == 400, sensitive.text
+    assert sensitive_note.status_code == 400, sensitive_note.text
+    assert archived.status_code in {400, 409}, archived.text
+    assert _count("external_effect_job") == 0
+    assert _count("broadcast_jobs") == 0
+    assert _count("internal_event") == 0

@@ -100,6 +100,9 @@ def _raise_if_sensitive(value: Any, *, path: str = "$") -> None:
             _raise_if_sensitive(item, path=f"{path}[{index}]")
         return
     if isinstance(value, str):
+        lowered = value.lower()
+        if any(fragment in lowered for fragment in FORBIDDEN_KEY_FRAGMENTS):
+            raise ContractError(f"sensitive value rejected: {path}")
         for pattern in FORBIDDEN_VALUE_PATTERNS:
             if pattern.search(value):
                 raise ContractError(f"sensitive value rejected: {path}")
@@ -165,6 +168,30 @@ def _normalize_save_payload(payload: dict[str, Any], actor: dict[str, Any], *, d
     }
 
 
+def _normalize_request_review_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    if not isinstance(payload, dict):
+        raise ContractError("request body must be a JSON object")
+    _raise_if_sensitive(payload)
+    expected_version = int(payload.get("version") or 0)
+    if expected_version <= 0:
+        raise ContractError("version is required")
+    idempotency_key = _text(payload.get("idempotency_key"))
+    if not idempotency_key:
+        raise ContractError("idempotency_key is required")
+    review_note = _text(payload.get("review_note"))
+    client_snapshot_hash = _text(payload.get("client_snapshot_hash"))
+    normalized = {
+        "version": expected_version,
+        "idempotency_key": idempotency_key,
+        "review_note": review_note,
+        "client_snapshot_hash": client_snapshot_hash,
+    }
+    return {
+        **normalized,
+        "request_review_payload_hash": _snapshot_hash(normalized),
+    }
+
+
 def _envelope(
     draft: dict[str, Any],
     *,
@@ -179,6 +206,7 @@ def _envelope(
         "draft_status": draft.get("draft_status"),
         "version": draft.get("version"),
         "source_plan_id": draft.get("source_plan_id"),
+        "snapshot_hash": draft.get("snapshot_hash"),
         "sanitized_payload": draft.get("sanitized_payload") or {},
         "guardrail_summary": draft.get("guardrail_summary") or {},
         "approval_requirements": draft.get("approval_requirements") or {},
@@ -189,6 +217,8 @@ def _envelope(
         "preview_only": True,
         "production_write": production_write,
         "production_write_scope": "draft_tables_only" if production_write else "none",
+        "ready_for_review": draft.get("draft_status") == "ready_for_review",
+        "approved": False,
         "real_external_call": False,
         "real_external_call_executed": False,
         "push_center_job_created": False,
@@ -288,3 +318,57 @@ class GroupOpsWorkspaceDraftService:
             after_metadata=after,
         )
         return _envelope(archived, operation="archive", production_write=True)
+
+    def request_review(self, draft_id: str, payload: dict[str, Any], *, actor: dict[str, Any]) -> dict[str, Any]:
+        normalized = _normalize_request_review_payload(payload)
+        current = self.repo.get_draft(_text(draft_id))
+        if not current:
+            raise NotFoundError("draft not found")
+
+        existing_review = self.repo.find_request_review_audit(
+            draft_id=_text(draft_id),
+            idempotency_key=normalized["idempotency_key"],
+        )
+        if existing_review:
+            after_metadata = existing_review.get("after_metadata") or {}
+            if after_metadata.get("request_review_payload_hash") != normalized["request_review_payload_hash"]:
+                raise ContractError("request-review idempotency key conflict")
+            return _envelope(current, operation="request_review", production_write=False, idempotent_replay=True)
+
+        expected_version = int(normalized["version"])
+        if int(current.get("version") or 0) != expected_version:
+            raise ContractError("draft version conflict")
+        if current.get("draft_status") == "archived":
+            raise ContractError("archived draft cannot request review")
+        if current.get("draft_status") == "rejected":
+            raise ContractError("rejected draft cannot request review")
+        if current.get("draft_status") == "ready_for_review":
+            raise ContractError("draft already ready_for_review")
+        if current.get("draft_status") != "draft":
+            raise ContractError("draft status cannot request review")
+        if normalized["client_snapshot_hash"] and normalized["client_snapshot_hash"] != _text(current.get("snapshot_hash")):
+            raise ContractError("draft snapshot conflict")
+
+        after_metadata = {
+            **_audit_metadata(current),
+            "draft_status": "ready_for_review",
+            "request_review_idempotency_key": normalized["idempotency_key"],
+            "request_review_payload_hash": normalized["request_review_payload_hash"],
+            "review_note_present": bool(normalized["review_note"]),
+            "client_snapshot_hash": normalized["client_snapshot_hash"],
+            "approved": False,
+            "push_center_job_created": False,
+            "external_effect_job_created": False,
+            "broadcast_job_created": False,
+            "internal_event_created": False,
+        }
+        reviewed = self.repo.request_review_draft(
+            _text(draft_id),
+            expected_version=expected_version,
+            actor_id=_actor_id(actor),
+            actor_label=_actor_label(actor),
+            actor_metadata=_actor_metadata(actor),
+            before_metadata=_audit_metadata(current),
+            after_metadata=after_metadata,
+        )
+        return _envelope(reviewed, operation="request_review", production_write=True)
