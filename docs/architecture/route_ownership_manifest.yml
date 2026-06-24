@@ -4730,6 +4730,51 @@ routes:
   data_source: command
   requires_auth: true
   rollback: previous_release
+- path: /api/admin/automation-conversion/tasks
+  methods:
+  - DELETE
+  - GET
+  - PATCH
+  - POST
+  - PUT
+  route_name: api_automation_tasks_retired
+  capability_owner: automation_engine
+  runtime_owner: retired
+  layer: api
+  external_effects: none
+  data_source: command
+  requires_auth: true
+  rollback: previous_release
+- path: /api/admin/automation-conversion/tasks/{retired_path:path}
+  methods:
+  - DELETE
+  - GET
+  - PATCH
+  - POST
+  - PUT
+  route_name: api_automation_task_detail_retired
+  capability_owner: automation_engine
+  runtime_owner: retired
+  layer: api
+  external_effects: none
+  data_source: command
+  requires_auth: true
+  rollback: previous_release
+- path: /api/admin/automation-conversion/behavior-segment-rules
+  methods:
+  - DELETE
+  - GET
+  - PATCH
+  - POST
+  - PUT
+  route_name: api_automation_behavior_segment_rules_retired
+  capability_owner: automation_engine
+  runtime_owner: retired
+  layer: api
+  external_effects: none
+  data_source: read_model
+  requires_auth: true
+  rollback: previous_release
 - path: /api/admin/automation-conversion/execution-items/{execution_item_id}/send-via-bazhuayu
   methods:
   - DELETE

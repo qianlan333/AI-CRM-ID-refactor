@@ -147,6 +147,34 @@ def retired_automation_tasks_run_due_api() -> JSONResponse:
 
 
 @router.api_route(
+    "/api/admin/automation-conversion/tasks",
+    methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    name="api_automation_tasks_retired",
+)
+def retired_automation_tasks_api() -> JSONResponse:
+    return _retired_automation_response("legacy_automation_task_authoring_retired")
+
+
+@router.api_route(
+    "/api/admin/automation-conversion/tasks/{retired_path:path}",
+    methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    name="api_automation_task_detail_retired",
+)
+def retired_automation_task_detail_api(retired_path: str = "") -> JSONResponse:
+    del retired_path
+    return _retired_automation_response("legacy_automation_task_authoring_retired")
+
+
+@router.api_route(
+    "/api/admin/automation-conversion/behavior-segment-rules",
+    methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    name="api_automation_behavior_segment_rules_retired",
+)
+def retired_automation_behavior_segment_rules_api() -> JSONResponse:
+    return _retired_automation_response("legacy_automation_task_authoring_retired")
+
+
+@router.api_route(
     "/api/admin/automation-conversion/execution-items/{execution_item_id}/send-via-bazhuayu",
     methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     name="api_automation_execution_item_outbound_retired",
