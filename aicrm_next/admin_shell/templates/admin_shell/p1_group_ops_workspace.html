@@ -146,6 +146,14 @@ button.p1-workspace-canvas-card { appearance: none; width: 100%; text-align: lef
 .p1-workspace-bundle-item span { color: #64748b; font-size: 12px; text-transform: uppercase; }
 .p1-workspace-bundle-item em { font-style: normal; font-size: 12px; }
 .p1-workspace-bundle-item[data-visible-in-filter="false"] { background: #f8fafc; border-style: dashed; }
+.p1-workspace-copy-export { border: 1px dashed #bfdbfe; border-radius: 8px; background: #f8fbff; padding: 10px; display: grid; gap: 8px; }
+.p1-workspace-copy-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.p1-workspace-copy-actions button { border: 1px solid #bfdbfe; border-radius: 6px; background: #eff6ff; color: #1d4ed8; padding: 6px 10px; font: inherit; font-size: 12px; cursor: pointer; }
+.p1-workspace-copy-note,
+.p1-workspace-copy-status { margin: 0; color: #475569; font-size: 12px; }
+.p1-workspace-copy-status--success { color: #166534; }
+.p1-workspace-copy-status--danger { color: #991b1b; }
+.p1-workspace-copy-preview { max-height: 220px; overflow: auto; margin: 0; border: 1px solid #e5e7eb; border-radius: 8px; background: #0f172a; color: #e2e8f0; padding: 10px; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; line-height: 1.45; }
 .p1-workspace-density--compact .p1-workspace-canvas-card,
 .p1-workspace-density--compact .p1-workspace-canvas-lane { gap: 6px; padding: 9px; }
 .p1-workspace-density--compact .p1-workspace-mini-fields { grid-template-columns: repeat(3, minmax(0, 1fr)); }
@@ -195,5 +203,5 @@ button.p1-workspace-canvas-card { appearance: none; width: 100%; text-align: lef
 {% endblock %}
 
 {% block scripts_extra %}
-<script type="module" src="{{ admin_path_for('static', filename='admin_console/p1/p1_group_ops_workspace/workspace_layout.js') }}?v=p1-native-group-ops-workspace-multiselect-20260624"></script>
+<script type="module" src="{{ admin_path_for('static', filename='admin_console/p1/p1_group_ops_workspace/workspace_layout.js') }}?v=p1-native-group-ops-workspace-bundle-export-20260624"></script>
 {% endblock %}

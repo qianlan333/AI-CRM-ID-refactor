@@ -69,7 +69,11 @@ export function createWorkspaceViewState(fixture) {
         activeSelectionMode: "single",
         lastSelectedEntity: null,
         previewBundleId: "preview-bundle-empty",
-        bulkGuardrailSummary: []
+        bulkGuardrailSummary: [],
+        copyPreviewVisible: false,
+        copyPreviewFormat: "text",
+        copyStatus: "idle",
+        copyStatusMessage: "只读复制尚未触发。"
     };
 }
 export function selectEntityInViewState(viewState, selectedEntityType, selectedEntityId) {

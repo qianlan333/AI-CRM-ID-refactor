@@ -17,6 +17,8 @@ export type WorkspaceCanvasSortMode =
 export type WorkspaceCanvasGroupMode = "entity_lane";
 export type WorkspaceDensity = "compact" | "comfortable";
 export type WorkspaceSelectionMode = "single" | "multi";
+export type WorkspaceCopyPreviewFormat = "text" | "json";
+export type WorkspaceCopyStatus = "idle" | "copied" | "copy_failed";
 
 export const WORKSPACE_CANVAS_LANE_IDS: WorkspaceCanvasLaneId[] = [
   "plans",
@@ -67,6 +69,10 @@ export interface WorkspaceViewState {
   lastSelectedEntity: WorkspaceSelectedEntityRef | null;
   previewBundleId: string;
   bulkGuardrailSummary: string[];
+  copyPreviewVisible: boolean;
+  copyPreviewFormat: WorkspaceCopyPreviewFormat;
+  copyStatus: WorkspaceCopyStatus;
+  copyStatusMessage: string;
 }
 
 function defaultLaneCollapsedState(): WorkspaceLaneCollapsedState {
@@ -121,7 +127,11 @@ export function createWorkspaceViewState(fixture: WorkspaceFixture): WorkspaceVi
     activeSelectionMode: "single",
     lastSelectedEntity: null,
     previewBundleId: "preview-bundle-empty",
-    bulkGuardrailSummary: []
+    bulkGuardrailSummary: [],
+    copyPreviewVisible: false,
+    copyPreviewFormat: "text",
+    copyStatus: "idle",
+    copyStatusMessage: "只读复制尚未触发。"
   };
 }
 
