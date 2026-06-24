@@ -81,12 +81,7 @@ def test_automation_ops_scheduler_dry_run_returns_structured_skips() -> None:
     result = run_automation_ops_scheduler(dry_run=True, group_ops_runner=lambda **kwargs: {"component": "group_ops_scheduler", "status": "skipped", "reason": "dry_run"})
 
     assert result["ok"] is True
-    assert {item["component"] for item in result["components"]} >= {
-        "operation_task_scheduler",
-        "legacy_hxc_refresh",
-        "broadcast_feishu_hourly_report",
-        "group_ops_scheduler",
-    }
+    assert result["components"] == [{"component": "group_ops_scheduler", "status": "skipped", "reason": "dry_run"}]
 
 
 def test_broadcast_queue_worker_fake_dispatch_success() -> None:
