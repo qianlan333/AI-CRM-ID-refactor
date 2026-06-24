@@ -260,27 +260,20 @@ def test_automation_payment_consumer_only_runs_when_allowlisted(monkeypatch) -> 
     _enable_auto_execute(monkeypatch, consumers=STAGE_1_CONSUMERS)
     service, repo, registry = _payment_service()
     emitted = _emit_payment(service)
-    calls: list[str] = []
 
-    def fake_automation(*, order, transaction):
-        calls.append(order["out_trade_no"])
-        return {"event_id": 88, "status": "ignored", "reason": "membership_unresolved", "counts": {}}
-
-    monkeypatch.setattr("aicrm_next.automation_runtime_v2.bridge.process_payment_succeeded_event", fake_automation)
     _run_until_empty(InternalEventWorker(repo, registry), limit=6)
     automation_run = service.list_consumer_runs({"event_id": emitted["event"]["event_id"], "consumer_name": "automation_payment_consumer"})[0][0]
     assert automation_run.status == "pending"
-    assert calls == []
 
     monkeypatch.setenv("AICRM_INTERNAL_EVENTS_ALLOWED_CONSUMERS", ",".join([*STAGE_1_CONSUMERS, "automation_payment_consumer"]))
     result = InternalEventWorker(repo, registry).run_due(batch_size=1, dry_run=False)
     automation_run = service.list_consumer_runs({"event_id": emitted["event"]["event_id"], "consumer_name": "automation_payment_consumer"})[0][0]
 
     assert result["processed"][0]["consumer_name"] == "automation_payment_consumer"
-    assert result["counts"]["succeeded_count"] == 1
-    assert automation_run.status == "succeeded"
-    assert automation_run.result_summary_json["automation_processed"] is True
-    assert calls == ["WXP_WORKER_ALLOWLIST"]
+    assert result["counts"]["skipped_count"] == 1
+    assert automation_run.status == "skipped"
+    assert automation_run.result_summary_json["automation_processed"] is False
+    assert automation_run.result_summary_json["reason"] == "automation_runtime_v2_retired"
 
 
 def test_webhook_payment_consumer_skips_without_configured_external_effect(monkeypatch) -> None:

@@ -776,36 +776,6 @@ def _apply_transaction(conn: Any, transaction: dict[str, Any], *, source_route: 
                 "was_paid": was_paid,
             },
         )
-        direct_automation_disabled = payment_internal_events_enabled() and _env_bool(
-            "AICRM_INTERNAL_EVENTS_PAYMENT_DISABLE_LEGACY_AUTOMATION_DIRECT",
-            False,
-        )
-        if not was_paid and not direct_automation_disabled:
-            try:
-                from aicrm_next.platform_foundation.internal_events.legacy_path_markers import mark_legacy_path_invoked
-                from aicrm_next.platform_foundation.legacy_cleanup.service import LegacyWebhookCleanupService
-
-                mark_legacy_path_invoked(
-                    legacy_path="payment.legacy_direct_automation",
-                    replacement_event_type="payment.succeeded",
-                    replacement_consumer="automation_payment_consumer",
-                    source_module="public_product.h5_wechat_pay",
-                    source_route="/api/h5/wechat-pay/notify",
-                    aggregate_id=trade_no,
-                    reason="payment_direct_automation_replaced_by_internal_event_consumer",
-                )
-                LegacyWebhookCleanupService().record_runtime_marker(
-                    "old_payment_direct_automation_bridge",
-                    marker="legacy_real_execution",
-                    operator="public_product.h5_wechat_pay",
-                    metadata={"event_type": "payment.succeeded", "out_trade_no_present": bool(trade_no)},
-                    real_external_call_executed=False,
-                )
-                from aicrm_next.automation_runtime_v2.bridge import process_payment_succeeded_event
-
-                process_payment_succeeded_event(order=order_payload, transaction=transaction)
-            except Exception:
-                LOGGER.exception("automation_runtime_v2_payment_event_failed", extra={"out_trade_no": trade_no})
     return order_payload
 
 

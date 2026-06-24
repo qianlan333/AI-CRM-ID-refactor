@@ -164,8 +164,8 @@ def test_channel_center_list_compacts_binding_status_and_long_channel_names() ->
     assert 'title="${escapeHtml(channelName)}"' in js
     assert "data-search-text" in js
     assert "searchText = String(channel.channel_name || \"\").toLowerCase()" in js
-    assert '<span class="channel-pill is-bound">已绑定</span>' in js
-    assert '<span class="channel-pill is-standalone">独立使用</span>' in js
+    assert '<span class="channel-pill is-bound">已绑定</span>' not in js
+    assert '<span class="channel-pill is-standalone">独立使用</span>' not in js
     assert "escapeHtml(channel.bound_program_name)" not in js
     assert "is-status ${statusClass(channel.status)}" in js
     assert "is-status-inactive" in css

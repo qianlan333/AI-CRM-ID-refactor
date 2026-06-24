@@ -53,11 +53,13 @@ def _job(**overrides: Any) -> dict[str, Any]:
     payload.update(overrides.pop("payload", {}))
     job = {
         "id": 101,
-        "source_type": "automation_runtime_v2",
-        "source_id": "v2:event:1:task:2:member:3",
-        "idempotency_key": "v2:event:1:task:2:member:3",
-        "trace_id": "v2:event:1:task:2:member:3",
+        "source_type": "campaign",
+        "source_table": "campaign_members",
+        "source_id": "campaign:1:member:3",
+        "idempotency_key": "campaign:1:member:3",
+        "trace_id": "campaign:1:member:3",
         "channel": "wecom_private",
+        "content_type": "private_message",
         "target_kind": "external_userid",
         "target_external_userids": json.dumps(["wm_test"]),
         "target_count": 1,

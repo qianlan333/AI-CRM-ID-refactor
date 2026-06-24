@@ -1,12 +1,12 @@
 # Cloud Orchestrator Run-Due Route Inventory
 
-Scope: Legacy Exit group 20 locks Cloud campaign run-due and preview timers to Next safe-mode planner routes. The production_compat rollback removed state is intentional. This group does not enable real campaign runtime, real automation runtime, real WeCom send, payment, storage, OpenClaw, Automation conversion timers, reply monitor timers, jobs timers, or send-via-bazhuayu.
+Scope: Legacy Exit group 20 locks Cloud campaign run-due and preview timers to Next safe-mode planner routes. The production_compat rollback removed state is intentional. This group does not enable real campaign runtime, real WeCom send, payment, storage, or OpenClaw. Legacy automation conversion timers, reply monitor timers, jobs timers, and send-via-bazhuayu are retired.
 
 Route precedence:
 
 - `aicrm_next.cloud_orchestrator.api` registers exact POST/OPTIONS routes, and production_compat is no longer registered by `aicrm_next.main`.
 - `aicrm_next/production_compat/api.py` has been removed; no production_compat runtime route or fallback remains for `/api/admin/cloud-orchestrator/campaigns/run-due` or `/api/admin/cloud-orchestrator/campaigns/run-due/preview`.
-- Automation timer fallback routes remain production_compat and out-of-scope: `/api/admin/automation-conversion/reply-monitor/run-due`, `/api/admin/automation-conversion/reply-monitor/capture`, `/api/admin/automation-conversion/jobs/run-due`, `/api/admin/automation-conversion/jobs/run-due/preview`.
+- Legacy automation conversion timer fallback routes are retired and no longer part of cloud orchestrator run-due scope.
 
 ## Caller ↔ API ↔ CommandBus ↔ SideEffectPlan Matrix
 

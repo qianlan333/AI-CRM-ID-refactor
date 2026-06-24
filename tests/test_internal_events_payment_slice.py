@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 from datetime import datetime, timezone
 from decimal import Decimal
 
@@ -10,7 +9,6 @@ from aicrm_next.platform_foundation.internal_events.payment import PAYMENT_SUCCE
 from aicrm_next.platform_foundation.internal_events.worker import InternalEventWorker
 from aicrm_next.public_product import h5_wechat_pay
 from aicrm_next.public_product.h5_wechat_pay import _apply_transaction
-from tests.automation_runtime_v2_test_helpers import db
 
 
 class _FakeCursor:
@@ -153,33 +151,14 @@ def _patch_legacy_outbox(monkeypatch, outbox_id: int = 9001) -> list[dict]:
 
 
 def _delete_order_paid_external_effect_jobs(business_id: str) -> None:
-    if not os.getenv("DATABASE_URL"):
-        return
-    conn = db()
-    rows = conn.execute(
-        """
-        SELECT id
-        FROM external_effect_job
-        WHERE effect_type = ? AND business_id = ?
-        """,
-        (WEBHOOK_ORDER_PAID_PUSH, business_id),
-    ).fetchall()
-    ids = [int(row["id"]) for row in rows]
-    for job_id in ids:
-        conn.execute("DELETE FROM external_effect_attempt WHERE job_id = ?", (job_id,))
-        conn.execute("DELETE FROM external_effect_job WHERE id = ?", (job_id,))
-    conn.commit()
+    del business_id
+    reset_external_effect_fixture_state()
 
 
 def test_payment_success_emits_payment_succeeded_and_duplicate_notify_is_idempotent(monkeypatch) -> None:
     _reset_state()
     _enable_payment_events(monkeypatch)
     _patch_legacy_outbox(monkeypatch)
-    direct_runtime_calls: list[dict] = []
-    monkeypatch.setattr(
-        "aicrm_next.automation_runtime_v2.bridge.process_payment_succeeded_event",
-        lambda *, order, transaction: direct_runtime_calls.append({"order": order, "transaction": transaction}),
-    )
 
     conn = _PaymentConn()
     first = _apply_transaction(conn, _transaction())
@@ -201,16 +180,25 @@ def test_payment_success_emits_payment_succeeded_and_duplicate_notify_is_idempot
     assert events[0].trace_id == "WXP_INTERNAL_PAYMENT"
     assert events[0].payload_summary_json["mobile_masked"] == "138****1234"
     assert "13800001234" not in str(events[0].payload_summary_json)
-    assert run_total == 6
-    assert sorted(run.consumer_name for run in runs) == [
+    consumer_names = {run.consumer_name for run in runs}
+    assert run_total == len(consumer_names)
+    assert {
         "ai_assist_notify_consumer",
         "automation_payment_consumer",
         "customer_business_summary_consumer",
         "dnd_policy_consumer",
         "order_projection_consumer",
         "webhook_order_paid_consumer",
-    ]
-    assert direct_runtime_calls == []
+    }.issubset(consumer_names)
+    assert consumer_names <= {
+        "ai_assist_notify_consumer",
+        "ai_audience_source_poke_consumer",
+        "automation_payment_consumer",
+        "customer_business_summary_consumer",
+        "dnd_policy_consumer",
+        "order_projection_consumer",
+        "webhook_order_paid_consumer",
+    }
 
 
 def test_webhook_order_paid_consumer_creates_external_effect_job_without_external_call(monkeypatch) -> None:
@@ -244,17 +232,10 @@ def test_webhook_order_paid_consumer_creates_external_effect_job_without_externa
     assert event.event_id
 
 
-def test_automation_payment_consumer_executes_and_records_attempt(monkeypatch) -> None:
+def test_automation_payment_consumer_is_retired_and_records_skipped_attempt(monkeypatch) -> None:
     _reset_state()
     _enable_payment_events(monkeypatch)
     _patch_legacy_outbox(monkeypatch)
-    automation_calls: list[dict] = []
-
-    def fake_automation(*, order, transaction):
-        automation_calls.append({"order": dict(order), "transaction": dict(transaction)})
-        return {"ok": True, "processed": [{"event": "payment_succeeded"}]}
-
-    monkeypatch.setattr("aicrm_next.automation_runtime_v2.bridge.process_payment_succeeded_event", fake_automation)
     _apply_transaction(_PaymentConn(), _transaction())
     event = InternalEventService().list_events({"event_type": PAYMENT_SUCCEEDED_EVENT_TYPE})[0][0]
 
@@ -262,11 +243,11 @@ def test_automation_payment_consumer_executes_and_records_attempt(monkeypatch) -
     runs, _ = InternalEventService().list_consumer_runs({"event_id": event.event_id, "consumer_name": "automation_payment_consumer"})
     attempts = InternalEventService().list_attempts(event_id=event.event_id)
 
-    assert result["counts"]["succeeded_count"] == 1
-    assert len(automation_calls) == 1
-    assert automation_calls[0]["order"]["out_trade_no"] == "WXP_INTERNAL_PAYMENT"
-    assert runs[0].status == "succeeded"
-    assert [attempt for attempt in attempts if attempt.consumer_name == "automation_payment_consumer"][0].status == "succeeded"
+    assert result["counts"]["skipped_count"] == 1
+    assert runs[0].status == "skipped"
+    attempt = [attempt for attempt in attempts if attempt.consumer_name == "automation_payment_consumer"][0]
+    assert attempt.status == "skipped"
+    assert attempt.response_summary_json["reason"] == "automation_runtime_v2_retired"
 
 
 def test_automation_payment_consumer_handles_datetime_payload_without_terminal_failure(monkeypatch, next_pg_schema) -> None:
@@ -285,15 +266,14 @@ def test_automation_payment_consumer_handles_datetime_payload_without_terminal_f
     runs, _ = InternalEventService().list_consumer_runs({"event_id": event.event_id, "consumer_name": "automation_payment_consumer"})
     attempts = [attempt for attempt in InternalEventService().list_attempts(event_id=event.event_id) if attempt.consumer_name == "automation_payment_consumer"]
 
-    assert result["counts"]["succeeded_count"] == 1
+    assert result["counts"]["skipped_count"] == 1
     assert result["counts"]["failed_terminal_count"] == 0
     assert result["counts"]["failed_retryable_count"] == 0
-    assert runs[0].status == "succeeded"
-    assert runs[0].result_summary_json["automation_processed"] is True
-    assert attempts[0].status == "succeeded"
-    assert attempts[0].response_summary_json["automation_processed"] is True
-    assert attempts[0].response_summary_json["automation_status"] == "ignored"
-    assert attempts[0].response_summary_json["automation_reason"] == "membership_unresolved"
+    assert runs[0].status == "skipped"
+    assert runs[0].result_summary_json["automation_processed"] is False
+    assert attempts[0].status == "skipped"
+    assert attempts[0].response_summary_json["automation_processed"] is False
+    assert attempts[0].response_summary_json["reason"] == "automation_runtime_v2_retired"
     assert "handler_exception" not in attempts[0].response_summary_json
     assert attempts[0].error_code == ""
     assert attempts[0].error_message == ""
@@ -339,18 +319,14 @@ def test_dnd_consumer_is_skipped_with_visible_reason(monkeypatch) -> None:
     assert attempts[0].response_summary_json["reason"] == "dnd_policy_not_configured"
 
 
-def test_consumer_failure_does_not_affect_payment_apply_result(monkeypatch) -> None:
+def test_retired_automation_consumer_does_not_affect_payment_apply_result(monkeypatch) -> None:
     _reset_state()
     _enable_payment_events(monkeypatch)
     _patch_legacy_outbox(monkeypatch)
 
-    def broken_automation(*, order, transaction):
-        raise RuntimeError("automation temporarily down")
-
-    monkeypatch.setattr("aicrm_next.automation_runtime_v2.bridge.process_payment_succeeded_event", broken_automation)
     order = _apply_transaction(_PaymentConn(), _transaction())
     result = InternalEventWorker().run_due(batch_size=1, dry_run=False, consumer_names=["automation_payment_consumer"])
 
     assert order["status"] == "paid"
-    assert result["counts"]["failed_retryable_count"] == 1
-    assert result["items"][0]["attempt"]["error_code"] == "handler_exception"
+    assert result["counts"]["skipped_count"] == 1
+    assert result["items"][0]["attempt"]["response_summary_json"]["reason"] == "automation_runtime_v2_retired"

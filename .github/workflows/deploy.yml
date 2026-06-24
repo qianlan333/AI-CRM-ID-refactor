@@ -44,6 +44,8 @@ jobs:
             sudo systemctl stop openclaw-internal-event-worker.service || true
             sudo systemctl stop openclaw-external-effect-worker.timer || true
             sudo systemctl stop openclaw-external-effect-worker.service || true
+            sudo systemctl stop openclaw-ai-audience-scheduler.timer || true
+            sudo systemctl stop openclaw-ai-audience-scheduler.service || true
             python3 -m alembic upgrade head
             sudo systemctl restart openclaw-wecom-postgres.service
             for _ in $(seq 1 20); do
@@ -55,10 +57,6 @@ jobs:
             curl -sSf http://127.0.0.1:5001/health
             sudo cp deploy/openclaw-external-push-worker.service /etc/systemd/system/
             sudo cp deploy/openclaw-external-push-worker.timer /etc/systemd/system/
-            sudo cp deploy/aicrm-reply-monitor-capture.service /etc/systemd/system/
-            sudo cp deploy/aicrm-reply-monitor-capture.timer /etc/systemd/system/
-            sudo cp deploy/aicrm-reply-monitor-run-due.service /etc/systemd/system/
-            sudo cp deploy/aicrm-reply-monitor-run-due.timer /etc/systemd/system/
             sudo cp deploy/openclaw-broadcast-queue-worker.service /etc/systemd/system/
             sudo cp deploy/openclaw-broadcast-queue-worker.timer /etc/systemd/system/
             sudo cp deploy/aicrm-wechat-shop-order-sync.service /etc/systemd/system/
@@ -67,6 +65,8 @@ jobs:
             sudo cp deploy/openclaw-internal-event-worker.timer /etc/systemd/system/
             sudo cp deploy/openclaw-external-effect-worker.service /etc/systemd/system/
             sudo cp deploy/openclaw-external-effect-worker.timer /etc/systemd/system/
+            sudo cp deploy/openclaw-ai-audience-scheduler.service /etc/systemd/system/
+            sudo cp deploy/openclaw-ai-audience-scheduler.timer /etc/systemd/system/
             sudo systemctl daemon-reload
             sudo systemctl enable openclaw-external-push-worker.timer
             sudo systemctl restart openclaw-external-push-worker.timer
@@ -79,16 +79,13 @@ jobs:
               sudo journalctl -u aicrm-wechat-shop-order-sync.service -n 80 --no-pager || true
             fi
             sudo systemctl status aicrm-wechat-shop-order-sync.timer --no-pager
-            sudo systemctl enable aicrm-reply-monitor-capture.timer
-            sudo systemctl restart aicrm-reply-monitor-capture.timer
-            sudo systemctl status aicrm-reply-monitor-capture.timer --no-pager
-            sudo systemctl enable aicrm-reply-monitor-run-due.timer
-            sudo systemctl restart aicrm-reply-monitor-run-due.timer
-            if ! sudo systemctl start aicrm-reply-monitor-run-due.service; then
-              sudo systemctl status aicrm-reply-monitor-run-due.service --no-pager || true
-              sudo journalctl -u aicrm-reply-monitor-run-due.service -n 80 --no-pager || true
+            sudo systemctl enable openclaw-ai-audience-scheduler.timer
+            sudo systemctl restart openclaw-ai-audience-scheduler.timer
+            if ! sudo systemctl start openclaw-ai-audience-scheduler.service; then
+              sudo systemctl status openclaw-ai-audience-scheduler.service --no-pager || true
+              sudo journalctl -u openclaw-ai-audience-scheduler.service -n 80 --no-pager || true
             fi
-            sudo systemctl status aicrm-reply-monitor-run-due.timer --no-pager
+            sudo systemctl status openclaw-ai-audience-scheduler.timer --no-pager
             sudo systemctl enable openclaw-broadcast-queue-worker.timer
             sudo systemctl restart openclaw-broadcast-queue-worker.timer
             if ! sudo systemctl start openclaw-broadcast-queue-worker.service; then

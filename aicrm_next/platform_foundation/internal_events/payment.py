@@ -166,31 +166,16 @@ def webhook_order_paid_consumer(event: InternalEvent, run: InternalEventConsumer
 
 
 def automation_payment_consumer(event: InternalEvent, run: InternalEventConsumerRun) -> InternalEventConsumerResult:
-    order = _order_from_event(event)
-    transaction = _transaction_from_event(event)
-    if not order:
-        return InternalEventConsumerResult(
-            status="failed_retryable",
-            request_summary={"event_id": event.event_id},
-            response_summary={"automation_processed": False},
-            error_code="order_payload_missing",
-            error_message="payment.succeeded event is missing the order payload",
-        )
-    from aicrm_next.automation_runtime_v2.bridge import process_payment_succeeded_event
-
-    result = process_payment_succeeded_event(order=order, transaction=transaction)
-    automation_summary = {
-        "automation_processed": True,
-        "automation_event_id": result.get("event_id"),
-        "automation_status": result.get("status") or "processed",
-        "automation_reason": result.get("reason") or "",
-        "automation_counts": result.get("counts") or {},
-    }
     return InternalEventConsumerResult(
-        status="succeeded",
-        request_summary={"event_id": event.event_id, "out_trade_no": _text(order.get("out_trade_no"))},
-        response_summary=automation_summary,
-        result_summary={"automation_processed": True},
+        status="skipped",
+        request_summary={"event_id": event.event_id},
+        response_summary={
+            "automation_processed": False,
+            "skipped": True,
+            "reason": "automation_runtime_v2_retired",
+            "replacement": "ai_audience_source_poke_consumer",
+        },
+        result_summary={"automation_processed": False, "reason": "automation_runtime_v2_retired"},
     )
 
 

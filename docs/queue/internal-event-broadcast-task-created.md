@@ -174,7 +174,7 @@ Current emit surfaces are the existing broadcast job creation paths:
   - private message broadcast job enqueue
 - `aicrm_next/integration_gateway/wecom_group_adapter.py`
   - group message broadcast job enqueue
-- `aicrm_next/automation_runtime_v2/outbox.py`
+- AI Audience outbound planner / external_effect_job
   - automation task-plan broadcast job enqueue
 
 Each path creates or reuses the broadcast job first, then calls `safe_emit`.

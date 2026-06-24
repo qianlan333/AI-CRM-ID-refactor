@@ -1296,20 +1296,15 @@ def test_questionnaire_queue_mode_job_creation_failure_does_not_fail_submission(
     assert body["external_effect_job_id"] is None
 
 
-def test_payment_paid_keeps_outbox_and_runtime_and_creates_configured_order_paid_job(monkeypatch) -> None:
+def test_payment_paid_keeps_outbox_and_creates_configured_order_paid_job(monkeypatch) -> None:
     reset_external_effect_fixture_state()
     outbox_calls: list[dict] = []
-    runtime_calls: list[dict] = []
 
     def fake_enqueue(conn, order):
         outbox_calls.append(dict(order))
         return {"id": 9}
 
-    def fake_runtime(*, order, transaction):
-        runtime_calls.append({"order": dict(order), "transaction": dict(transaction)})
-
     monkeypatch.setattr(h5_wechat_pay, "enqueue_transaction_paid_outbox", fake_enqueue)
-    monkeypatch.setattr("aicrm_next.automation_runtime_v2.bridge.process_payment_succeeded_event", fake_runtime)
     monkeypatch.setattr(external_push_admin, "resolve_and_validate_public_https_url", lambda url: url)
 
     order = _apply_transaction(
@@ -1327,7 +1322,6 @@ def test_payment_paid_keeps_outbox_and_runtime_and_creates_configured_order_paid
     items, total = ExternalEffectService().list_jobs({"effect_type": WEBHOOK_ORDER_PAID_PUSH, "business_id": "7"})
     assert order["status"] == "paid"
     assert len(outbox_calls) == 1
-    assert len(runtime_calls) == 1
     assert total == 1
     assert items[0].target_type == "external_push_delivery"
     assert items[0].execution_mode == "execute"

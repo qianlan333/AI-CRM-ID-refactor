@@ -527,72 +527,6 @@ routes:
   data_source: read_model
   requires_auth: true
   rollback: previous_release
-- path: /api/admin/p1/group-ops-workspace/drafts
-  methods:
-  - GET
-  route_name: api.admin_p1_group_ops_workspace_drafts
-  capability_owner: automation_engine
-  runtime_owner: ai_crm_next
-  layer: api
-  external_effects: none
-  data_source: read_model
-  requires_auth: true
-  rollback: previous_release
-- path: /api/admin/p1/group-ops-workspace/drafts/{draft_id}
-  methods:
-  - GET
-  route_name: api.admin_p1_group_ops_workspace_draft_detail
-  capability_owner: automation_engine
-  runtime_owner: ai_crm_next
-  layer: api
-  external_effects: none
-  data_source: read_model
-  requires_auth: true
-  rollback: previous_release
-- path: /api/admin/p1/group-ops-workspace/drafts
-  methods:
-  - POST
-  route_name: api.admin_p1_group_ops_workspace_draft_create
-  capability_owner: automation_engine
-  runtime_owner: ai_crm_next
-  layer: api
-  external_effects: none
-  data_source: command
-  requires_auth: true
-  rollback: previous_release
-- path: /api/admin/p1/group-ops-workspace/drafts/{draft_id}
-  methods:
-  - PATCH
-  route_name: api.admin_p1_group_ops_workspace_draft_update
-  capability_owner: automation_engine
-  runtime_owner: ai_crm_next
-  layer: api
-  external_effects: none
-  data_source: command
-  requires_auth: true
-  rollback: previous_release
-- path: /api/admin/p1/group-ops-workspace/drafts/{draft_id}/archive
-  methods:
-  - POST
-  route_name: api.admin_p1_group_ops_workspace_draft_archive
-  capability_owner: automation_engine
-  runtime_owner: ai_crm_next
-  layer: api
-  external_effects: none
-  data_source: command
-  requires_auth: true
-  rollback: previous_release
-- path: /api/admin/p1/group-ops-workspace/drafts/{draft_id}/request-review
-  methods:
-  - POST
-  route_name: api.admin_p1_group_ops_workspace_draft_request_review
-  capability_owner: automation_engine
-  runtime_owner: ai_crm_next
-  layer: api
-  external_effects: none
-  data_source: command
-  requires_auth: true
-  rollback: previous_release
 - path: /api/admin/dashboard/shell-context
   methods:
   - GET
@@ -1025,7 +959,6 @@ routes:
 - path: /api/admin/class-user-management/export
   methods:
   - GET
-  - OPTIONS
   - POST
   route_name: class_user_management_export
   capability_owner: class_user_management
@@ -1049,8 +982,6 @@ routes:
 - path: /wecom/external-contact/callback
   methods:
   - GET
-  - HEAD
-  - OPTIONS
   - POST
   route_name: external_contact_callback
   capability_owner: channel_entry
@@ -1063,8 +994,6 @@ routes:
 - path: /api/wecom/events
   methods:
   - GET
-  - HEAD
-  - OPTIONS
   - POST
   route_name: wecom_events
   capability_owner: channel_entry
@@ -1132,7 +1061,6 @@ routes:
 - path: /api/admin/wecom-customer-acquisition-links
   methods:
   - GET
-  - OPTIONS
   - POST
   route_name: wecom_customer_acquisition_links
   capability_owner: automation_engine
@@ -1146,7 +1074,6 @@ routes:
   methods:
   - DELETE
   - GET
-  - OPTIONS
   - PATCH
   route_name: wecom_customer_acquisition_link_detail
   capability_owner: automation_engine
@@ -1158,7 +1085,6 @@ routes:
   rollback: previous_release
 - path: /api/admin/wecom-customer-acquisition-links/{link_id}/{action}
   methods:
-  - OPTIONS
   - POST
   route_name: wecom_customer_acquisition_link_action
   capability_owner: automation_engine
@@ -1283,10 +1209,10 @@ routes:
   - GET
   route_name: list_program_channel_bindings
   capability_owner: automation_engine
-  runtime_owner: ai_crm_next
+  runtime_owner: retired
   layer: api
   external_effects: none
-  data_source: read_model
+  data_source: command
   requires_auth: true
   rollback: previous_release
 - path: /api/admin/automation-conversion/programs/{program_id:int}/channel-bindings
@@ -1294,7 +1220,7 @@ routes:
   - POST
   route_name: bind_program_channels
   capability_owner: automation_engine
-  runtime_owner: ai_crm_next
+  runtime_owner: retired
   layer: api
   external_effects: none
   data_source: command
@@ -1305,7 +1231,7 @@ routes:
   - DELETE
   route_name: unbind_program_channel
   capability_owner: automation_engine
-  runtime_owner: ai_crm_next
+  runtime_owner: retired
   layer: api
   external_effects: none
   data_source: command
@@ -1523,7 +1449,6 @@ routes:
 - path: /api/admin/hxc-dashboard/{unknown_path:path}
   methods:
   - GET
-  - OPTIONS
   - POST
   route_name: hxc_dashboard_unknown_path
   capability_owner: hxc_dashboard
@@ -1547,7 +1472,6 @@ routes:
 - path: /p/{path:path}
   methods:
   - GET
-  - HEAD
   route_name: api.public_product_page
   capability_owner: public_product
   runtime_owner: ai_crm_next
@@ -1570,7 +1494,6 @@ routes:
 - path: /pay/{path:path}
   methods:
   - GET
-  - HEAD
   route_name: api.public_pay_landing
   capability_owner: public_product
   runtime_owner: ai_crm_next
@@ -1670,7 +1593,6 @@ routes:
 - path: /api/products/{path:path}
   methods:
   - GET
-  - HEAD
   route_name: api.public_product_api
   capability_owner: public_product
   runtime_owner: ai_crm_next
@@ -1695,7 +1617,6 @@ routes:
   rollback: previous_release
 - path: /api/sidebar/bind-mobile
   methods:
-  - OPTIONS
   - POST
   route_name: bind_mobile
   capability_owner: sidebar_write
@@ -1707,7 +1628,6 @@ routes:
   rollback: previous_release
 - path: /api/sidebar/lead-pool/upsert-class-term
   methods:
-  - OPTIONS
   - POST
   route_name: upsert_lead_pool_class_term
   capability_owner: sidebar_write
@@ -1719,7 +1639,6 @@ routes:
   rollback: previous_release
 - path: /api/sidebar/signup-tags/mark
   methods:
-  - OPTIONS
   - POST
   route_name: mark_signup_tag
   capability_owner: sidebar_write
@@ -1731,7 +1650,6 @@ routes:
   rollback: previous_release
 - path: /api/sidebar/marketing-status/set-followup-segment
   methods:
-  - OPTIONS
   - POST
   route_name: set_followup_segment
   capability_owner: sidebar_write
@@ -1743,7 +1661,6 @@ routes:
   rollback: previous_release
 - path: /api/sidebar/marketing-status/mark-enrolled
   methods:
-  - OPTIONS
   - POST
   route_name: mark_enrolled
   capability_owner: sidebar_write
@@ -1755,7 +1672,6 @@ routes:
   rollback: previous_release
 - path: /api/sidebar/marketing-status/unmark-enrolled
   methods:
-  - OPTIONS
   - POST
   route_name: unmark_enrolled
   capability_owner: sidebar_write
@@ -1767,7 +1683,6 @@ routes:
   rollback: previous_release
 - path: /api/sidebar/v2/profile
   methods:
-  - OPTIONS
   - PUT
   route_name: update_sidebar_v2_profile
   capability_owner: sidebar_write
@@ -1779,7 +1694,6 @@ routes:
   rollback: previous_release
 - path: /api/sidebar/v2/materials/send
   methods:
-  - OPTIONS
   - POST
   route_name: plan_material_send
   capability_owner: sidebar_write
@@ -1792,8 +1706,6 @@ routes:
 - path: /api/sidebar/jssdk-config
   methods:
   - GET
-  - HEAD
-  - OPTIONS
   route_name: sidebar_jssdk_config
   capability_owner: identity_contact
   runtime_owner: ai_crm_next
@@ -1859,7 +1771,6 @@ routes:
   rollback: previous_release
 - path: /api/admin/wecom/tags/sync-due
   methods:
-  - OPTIONS
   - POST
   route_name: sync_admin_wecom_tags_command
   capability_owner: customer_tags
@@ -1871,7 +1782,6 @@ routes:
   rollback: previous_release
 - path: /api/admin/wecom/tags/sync
   methods:
-  - OPTIONS
   - POST
   route_name: sync_admin_wecom_tags_command
   capability_owner: customer_tags
@@ -1883,7 +1793,6 @@ routes:
   rollback: previous_release
 - path: /api/admin/wecom/tag-groups
   methods:
-  - OPTIONS
   - POST
   route_name: create_admin_wecom_tag_group_command
   capability_owner: customer_tags
@@ -1896,7 +1805,6 @@ routes:
 - path: /api/admin/wecom/tag-groups/{group_id}
   methods:
   - DELETE
-  - OPTIONS
   - PATCH
   - PUT
   route_name: mutate_admin_wecom_tag_group_command
@@ -1909,7 +1817,6 @@ routes:
   rollback: previous_release
 - path: /api/admin/wecom/tags
   methods:
-  - OPTIONS
   - POST
   route_name: create_admin_wecom_tag_command
   capability_owner: customer_tags
@@ -1922,7 +1829,6 @@ routes:
 - path: /api/admin/wecom/tags/{tag_id}
   methods:
   - DELETE
-  - OPTIONS
   - PATCH
   - PUT
   route_name: mutate_admin_wecom_tag_command
@@ -1980,7 +1886,6 @@ routes:
 - path: /api/admin/cloud-orchestrator/audit
   methods:
   - GET
-  - OPTIONS
   route_name: api_cloud_orchestrator_audit
   capability_owner: cloud_orchestrator
   runtime_owner: ai_crm_next
@@ -1992,7 +1897,6 @@ routes:
 - path: /api/admin/cloud-orchestrator/observability
   methods:
   - GET
-  - OPTIONS
   route_name: api_cloud_orchestrator_observability
   capability_owner: cloud_orchestrator
   runtime_owner: ai_crm_next
@@ -2652,7 +2556,6 @@ routes:
   rollback: previous_release
 - path: /api/admin/wecom/tags/live/mark
   methods:
-  - OPTIONS
   - POST
   route_name: mark_tags_live
   capability_owner: customer_tags
@@ -2664,7 +2567,6 @@ routes:
   rollback: previous_release
 - path: /api/admin/wecom/tags/live/unmark
   methods:
-  - OPTIONS
   - POST
   route_name: unmark_tags_live
   capability_owner: customer_tags
@@ -3007,7 +2909,6 @@ routes:
 - path: /api/messages/send
   methods:
   - GET
-  - OPTIONS
   - POST
   route_name: blocked_message_send
   capability_owner: message_archive
@@ -3020,7 +2921,6 @@ routes:
 - path: /api/messages/broadcast
   methods:
   - GET
-  - OPTIONS
   - POST
   route_name: blocked_message_broadcast
   capability_owner: message_archive
@@ -3033,7 +2933,6 @@ routes:
 - path: /api/messages/archive/sync
   methods:
   - GET
-  - OPTIONS
   - POST
   route_name: blocked_message_archive_sync
   capability_owner: message_archive
@@ -3904,7 +3803,6 @@ routes:
 - path: /auth/wecom/start
   methods:
   - GET
-  - OPTIONS
   route_name: auth_wecom_start
   capability_owner: auth_wecom
   runtime_owner: ai_crm_next
@@ -3916,7 +3814,6 @@ routes:
 - path: /auth/wecom/callback
   methods:
   - GET
-  - OPTIONS
   route_name: auth_wecom_callback
   capability_owner: auth_wecom
   runtime_owner: ai_crm_next
@@ -4002,6 +3899,72 @@ routes:
   data_source: read_model
   requires_auth: true
   rollback: previous_release
+- path: /api/admin/p1/group-ops-workspace/drafts
+  methods:
+  - GET
+  route_name: api.admin_p1_group_ops_workspace_drafts
+  capability_owner: automation_engine
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: none
+  data_source: read_model
+  requires_auth: true
+  rollback: previous_release
+- path: /api/admin/p1/group-ops-workspace/drafts/{draft_id}
+  methods:
+  - GET
+  route_name: api.admin_p1_group_ops_workspace_draft_detail
+  capability_owner: automation_engine
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: none
+  data_source: read_model
+  requires_auth: true
+  rollback: previous_release
+- path: /api/admin/p1/group-ops-workspace/drafts
+  methods:
+  - POST
+  route_name: api.admin_p1_group_ops_workspace_draft_create
+  capability_owner: automation_engine
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: none
+  data_source: command
+  requires_auth: true
+  rollback: previous_release
+- path: /api/admin/p1/group-ops-workspace/drafts/{draft_id}
+  methods:
+  - PATCH
+  route_name: api.admin_p1_group_ops_workspace_draft_update
+  capability_owner: automation_engine
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: none
+  data_source: command
+  requires_auth: true
+  rollback: previous_release
+- path: /api/admin/p1/group-ops-workspace/drafts/{draft_id}/archive
+  methods:
+  - POST
+  route_name: api.admin_p1_group_ops_workspace_draft_archive
+  capability_owner: automation_engine
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: none
+  data_source: command
+  requires_auth: true
+  rollback: previous_release
+- path: /api/admin/p1/group-ops-workspace/drafts/{draft_id}/request-review
+  methods:
+  - POST
+  route_name: api.admin_p1_group_ops_workspace_draft_request_review
+  capability_owner: automation_engine
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: none
+  data_source: command
+  requires_auth: true
+  rollback: previous_release
 - path: /admin/automation-conversion
   methods:
   - GET
@@ -4013,12 +3976,23 @@ routes:
   data_source: read_model
   requires_auth: true
   rollback: previous_release
+- path: /api/admin/ai-audience/packages
+  methods:
+  - GET
+  route_name: api.admin_ai_audience_packages
+  capability_owner: ai_audience_ops
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: none
+  data_source: read_model
+  requires_auth: true
+  rollback: previous_release
 - path: /admin/automation-conversion/legacy
   methods:
   - GET
   route_name: api.admin_automation_conversion_legacy
   capability_owner: automation_engine
-  runtime_owner: ai_crm_next
+  runtime_owner: retired
   layer: admin_page
   external_effects: none
   data_source: read_model
@@ -4033,117 +4007,7 @@ routes:
   - PUT
   route_name: api.admin_automation_program_retired
   capability_owner: automation_engine
-  runtime_owner: ai_crm_next
-  layer: admin_page
-  external_effects: none
-  data_source: read_model
-  requires_auth: true
-  rollback: previous_release
-- path: /admin/automation-conversion/programs/{program_id:int}/setup
-  methods:
-  - GET
-  route_name: api.admin_automation_program_setup
-  capability_owner: automation_engine
-  runtime_owner: ai_crm_next
-  layer: admin_page
-  external_effects: none
-  data_source: read_model
-  requires_auth: true
-  rollback: previous_release
-- path: /admin/automation-conversion/programs/{program_id:int}/overview
-  methods:
-  - GET
-  route_name: api.admin_automation_program_overview
-  capability_owner: automation_engine
-  runtime_owner: ai_crm_next
-  layer: admin_page
-  external_effects: none
-  data_source: read_model
-  requires_auth: true
-  rollback: previous_release
-- path: /admin/automation-conversion/programs/{program_id:int}/members
-  methods:
-  - GET
-  route_name: api.admin_automation_program_members
-  capability_owner: automation_engine
-  runtime_owner: ai_crm_next
-  layer: admin_page
-  external_effects: none
-  data_source: read_model
-  requires_auth: true
-  rollback: previous_release
-- path: /admin/automation-conversion/programs/{program_id:int}/copy
-  methods:
-  - GET
-  route_name: api.admin_automation_program_copy_form
-  capability_owner: automation_engine
-  runtime_owner: ai_crm_next
-  layer: admin_page
-  external_effects: none
-  data_source: read_model
-  requires_auth: true
-  rollback: previous_release
-- path: /admin/automation-conversion/programs/{program_id:int}/copy
-  methods:
-  - POST
-  route_name: api.admin_automation_program_copy
-  capability_owner: automation_engine
-  runtime_owner: ai_crm_next
-  layer: admin_page
-  external_effects: none
-  data_source: command
-  requires_auth: true
-  rollback: previous_release
-- path: /admin/automation-conversion/programs/{program_id:int}/update
-  methods:
-  - POST
-  route_name: api.admin_automation_program_update
-  capability_owner: automation_engine
-  runtime_owner: ai_crm_next
-  layer: admin_page
-  external_effects: none
-  data_source: command
-  requires_auth: true
-  rollback: previous_release
-- path: /admin/automation-conversion/programs/{program_id:int}/pause
-  methods:
-  - POST
-  route_name: api.admin_automation_program_pause
-  capability_owner: automation_engine
-  runtime_owner: ai_crm_next
-  layer: admin_page
-  external_effects: none
-  data_source: command
-  requires_auth: true
-  rollback: previous_release
-- path: /admin/automation-conversion/programs/{program_id:int}/activate
-  methods:
-  - POST
-  route_name: api.admin_automation_program_activate
-  capability_owner: automation_engine
-  runtime_owner: ai_crm_next
-  layer: admin_page
-  external_effects: none
-  data_source: command
-  requires_auth: true
-  rollback: previous_release
-- path: /admin/automation-conversion/programs/{program_id:int}/archive
-  methods:
-  - POST
-  route_name: api.admin_automation_program_archive
-  capability_owner: automation_engine
-  runtime_owner: ai_crm_next
-  layer: admin_page
-  external_effects: none
-  data_source: command
-  requires_auth: true
-  rollback: previous_release
-- path: /admin/automation-conversion/programs/{program_id:int}/entry-channels
-  methods:
-  - GET
-  route_name: api.admin_automation_program_entry_channels
-  capability_owner: automation_engine
-  runtime_owner: ai_crm_next
+  runtime_owner: retired
   layer: admin_page
   external_effects: none
   data_source: read_model
@@ -4688,6 +4552,156 @@ routes:
   data_source: command
   requires_auth: false
   rollback: previous_release
+- path: /api/admin/automation-conversion/programs
+  methods:
+  - DELETE
+  - GET
+  - PATCH
+  - POST
+  - PUT
+  route_name: api_automation_programs_retired
+  capability_owner: automation_engine
+  runtime_owner: retired
+  layer: api
+  external_effects: none
+  data_source: command
+  requires_auth: true
+  rollback: previous_release
+- path: /api/admin/automation-conversion/programs/{retired_path:path}
+  methods:
+  - DELETE
+  - GET
+  - PATCH
+  - POST
+  - PUT
+  route_name: api_automation_program_detail_retired
+  capability_owner: automation_engine
+  runtime_owner: retired
+  layer: api
+  external_effects: none
+  data_source: command
+  requires_auth: true
+  rollback: previous_release
+- path: /api/admin/automation-conversion/member/{retired_path:path}
+  methods:
+  - DELETE
+  - GET
+  - PATCH
+  - POST
+  - PUT
+  route_name: api_automation_member_actions_retired
+  capability_owner: automation_engine
+  runtime_owner: retired
+  layer: api
+  external_effects: none
+  data_source: command
+  requires_auth: true
+  rollback: previous_release
+- path: /api/admin/automation-conversion/member
+  methods:
+  - DELETE
+  - GET
+  - PATCH
+  - POST
+  - PUT
+  route_name: api_automation_member_detail_retired
+  capability_owner: automation_engine
+  runtime_owner: retired
+  layer: api
+  external_effects: none
+  data_source: command
+  requires_auth: true
+  rollback: previous_release
+- path: /api/admin/automation-conversion/members/{member_id}/push-openclaw-context
+  methods:
+  - DELETE
+  - GET
+  - PATCH
+  - POST
+  - PUT
+  route_name: api_automation_member_push_openclaw_retired
+  capability_owner: automation_engine
+  runtime_owner: retired
+  layer: api
+  external_effects: none
+  data_source: command
+  requires_auth: true
+  rollback: previous_release
+- path: /api/admin/automation-conversion/tasks/run-due
+  methods:
+  - DELETE
+  - GET
+  - PATCH
+  - POST
+  - PUT
+  route_name: api_automation_tasks_run_due_retired
+  capability_owner: automation_engine
+  runtime_owner: retired
+  layer: api
+  external_effects: none
+  data_source: command
+  requires_auth: true
+  rollback: previous_release
+- path: /api/admin/automation-conversion/execution-items/{execution_item_id}/send-via-bazhuayu
+  methods:
+  - DELETE
+  - GET
+  - PATCH
+  - POST
+  - PUT
+  route_name: api_automation_execution_item_outbound_retired
+  capability_owner: automation_engine
+  runtime_owner: retired
+  layer: api
+  external_effects: none
+  data_source: command
+  requires_auth: true
+  rollback: previous_release
+- path: /api/admin/automation-conversion/reply-monitor/{retired_path:path}
+  methods:
+  - DELETE
+  - GET
+  - PATCH
+  - POST
+  - PUT
+  route_name: api_automation_reply_monitor_retired
+  capability_owner: automation_engine
+  runtime_owner: retired
+  layer: api
+  external_effects: none
+  data_source: command
+  requires_auth: true
+  rollback: previous_release
+- path: /api/admin/automation-conversion/jobs/run-due/preview
+  methods:
+  - DELETE
+  - GET
+  - PATCH
+  - POST
+  - PUT
+  route_name: api_automation_jobs_run_due_preview_retired
+  capability_owner: automation_engine
+  runtime_owner: retired
+  layer: api
+  external_effects: none
+  data_source: command
+  requires_auth: true
+  rollback: previous_release
+- path: /api/admin/automation-conversion/jobs/run-due
+  methods:
+  - DELETE
+  - GET
+  - PATCH
+  - POST
+  - PUT
+  route_name: api_automation_jobs_run_due_retired
+  capability_owner: automation_engine
+  runtime_owner: retired
+  layer: api
+  external_effects: none
+  data_source: command
+  requires_auth: true
+  rollback: previous_release
 - path: /api/customers/automation/activation-webhook
   methods:
   - OPTIONS
@@ -4754,424 +4768,6 @@ routes:
   data_source: command
   requires_auth: false
   rollback: previous_release
-- path: /api/admin/automation-conversion/programs
-  methods:
-  - DELETE
-  - GET
-  - PATCH
-  - POST
-  - PUT
-  route_name: api_automation_programs_retired
-  capability_owner: automation_engine
-  runtime_owner: ai_crm_next
-  layer: api
-  external_effects: none
-  data_source: read_model
-  requires_auth: true
-  rollback: previous_release
-- path: /api/admin/automation-conversion/programs/{retired_path:path}
-  methods:
-  - DELETE
-  - GET
-  - PATCH
-  - POST
-  - PUT
-  route_name: api_automation_program_detail_retired
-  capability_owner: automation_engine
-  runtime_owner: ai_crm_next
-  layer: api
-  external_effects: none
-  data_source: read_model
-  requires_auth: true
-  rollback: previous_release
-- path: /api/admin/automation-conversion/member/{retired_path:path}
-  methods:
-  - DELETE
-  - GET
-  - PATCH
-  - POST
-  - PUT
-  route_name: api_automation_member_actions_retired
-  capability_owner: automation_engine
-  runtime_owner: ai_crm_next
-  layer: api
-  external_effects: none
-  data_source: read_model
-  requires_auth: true
-  rollback: previous_release
-- path: /api/admin/automation-conversion/tasks/run-due
-  methods:
-  - DELETE
-  - GET
-  - PATCH
-  - POST
-  - PUT
-  route_name: api_automation_tasks_run_due_retired
-  capability_owner: automation_engine
-  runtime_owner: ai_crm_next
-  layer: api
-  external_effects: none
-  data_source: read_model
-  requires_auth: true
-  rollback: previous_release
-- path: /api/admin/automation-conversion/execution-items/{execution_item_id}/send-via-bazhuayu
-  methods:
-  - DELETE
-  - GET
-  - PATCH
-  - POST
-  - PUT
-  route_name: api_automation_execution_item_outbound_retired
-  capability_owner: automation_engine
-  runtime_owner: ai_crm_next
-  layer: api
-  external_effects: none
-  data_source: read_model
-  requires_auth: true
-  rollback: previous_release
-- path: /api/admin/automation-conversion/reply-monitor/{retired_path:path}
-  methods:
-  - DELETE
-  - GET
-  - PATCH
-  - POST
-  - PUT
-  route_name: api_automation_reply_monitor_retired
-  capability_owner: automation_engine
-  runtime_owner: ai_crm_next
-  layer: api
-  external_effects: none
-  data_source: read_model
-  requires_auth: true
-  rollback: previous_release
-- path: /api/admin/automation-conversion/jobs/run-due/preview
-  methods:
-  - DELETE
-  - GET
-  - PATCH
-  - POST
-  - PUT
-  route_name: api_automation_jobs_run_due_preview_retired
-  capability_owner: automation_engine
-  runtime_owner: ai_crm_next
-  layer: api
-  external_effects: none
-  data_source: read_model
-  requires_auth: true
-  rollback: previous_release
-- path: /api/admin/automation-conversion/jobs/run-due
-  methods:
-  - DELETE
-  - GET
-  - PATCH
-  - POST
-  - PUT
-  route_name: api_automation_jobs_run_due_retired
-  capability_owner: automation_engine
-  runtime_owner: ai_crm_next
-  layer: api
-  external_effects: none
-  data_source: read_model
-  requires_auth: true
-  rollback: previous_release
-- path: /api/admin/automation-conversion/member
-  methods:
-  - GET
-  - HEAD
-  route_name: api_automation_member_detail
-  capability_owner: automation_engine
-  runtime_owner: ai_crm_next
-  layer: api
-  external_effects: none
-  data_source: read_model
-  requires_auth: true
-  rollback: previous_release
-- path: /api/admin/automation-conversion/member/put-in-pool
-  methods:
-  - OPTIONS
-  route_name: api_automation_member_put_in_pool_options
-  capability_owner: automation_engine
-  runtime_owner: ai_crm_next
-  layer: api
-  external_effects: none
-  data_source: read_model
-  requires_auth: true
-  rollback: previous_release
-- path: /api/admin/automation-conversion/member/put-in-pool
-  methods:
-  - POST
-  route_name: api_plan_automation_member_put_in_pool
-  capability_owner: automation_engine
-  runtime_owner: ai_crm_next
-  layer: api
-  external_effects: none
-  data_source: command
-  requires_auth: true
-  rollback: previous_release
-- path: /api/admin/automation-conversion/member/remove-from-pool
-  methods:
-  - OPTIONS
-  route_name: api_automation_member_remove_from_pool_options
-  capability_owner: automation_engine
-  runtime_owner: ai_crm_next
-  layer: api
-  external_effects: none
-  data_source: read_model
-  requires_auth: true
-  rollback: previous_release
-- path: /api/admin/automation-conversion/member/remove-from-pool
-  methods:
-  - POST
-  route_name: api_plan_automation_member_remove_from_pool
-  capability_owner: automation_engine
-  runtime_owner: ai_crm_next
-  layer: api
-  external_effects: none
-  data_source: command
-  requires_auth: true
-  rollback: previous_release
-- path: /api/admin/automation-conversion/member/set-focus
-  methods:
-  - OPTIONS
-  route_name: api_automation_member_set_focus_options
-  capability_owner: automation_engine
-  runtime_owner: ai_crm_next
-  layer: api
-  external_effects: none
-  data_source: read_model
-  requires_auth: true
-  rollback: previous_release
-- path: /api/admin/automation-conversion/member/set-focus
-  methods:
-  - POST
-  route_name: api_plan_automation_member_set_focus
-  capability_owner: automation_engine
-  runtime_owner: ai_crm_next
-  layer: api
-  external_effects: none
-  data_source: command
-  requires_auth: true
-  rollback: previous_release
-- path: /api/admin/automation-conversion/member/set-normal
-  methods:
-  - OPTIONS
-  route_name: api_automation_member_set_normal_options
-  capability_owner: automation_engine
-  runtime_owner: ai_crm_next
-  layer: api
-  external_effects: none
-  data_source: read_model
-  requires_auth: true
-  rollback: previous_release
-- path: /api/admin/automation-conversion/member/set-normal
-  methods:
-  - POST
-  route_name: api_plan_automation_member_set_normal
-  capability_owner: automation_engine
-  runtime_owner: ai_crm_next
-  layer: api
-  external_effects: none
-  data_source: command
-  requires_auth: true
-  rollback: previous_release
-- path: /api/admin/automation-conversion/member/mark-won
-  methods:
-  - OPTIONS
-  route_name: api_automation_member_mark_won_options
-  capability_owner: automation_engine
-  runtime_owner: ai_crm_next
-  layer: api
-  external_effects: none
-  data_source: read_model
-  requires_auth: true
-  rollback: previous_release
-- path: /api/admin/automation-conversion/member/mark-won
-  methods:
-  - POST
-  route_name: api_plan_automation_member_mark_won
-  capability_owner: automation_engine
-  runtime_owner: ai_crm_next
-  layer: api
-  external_effects: none
-  data_source: command
-  requires_auth: true
-  rollback: previous_release
-- path: /api/admin/automation-conversion/member/unmark-won
-  methods:
-  - OPTIONS
-  route_name: api_automation_member_unmark_won_options
-  capability_owner: automation_engine
-  runtime_owner: ai_crm_next
-  layer: api
-  external_effects: none
-  data_source: read_model
-  requires_auth: true
-  rollback: previous_release
-- path: /api/admin/automation-conversion/member/unmark-won
-  methods:
-  - POST
-  route_name: api_plan_automation_member_unmark_won
-  capability_owner: automation_engine
-  runtime_owner: ai_crm_next
-  layer: api
-  external_effects: none
-  data_source: command
-  requires_auth: true
-  rollback: previous_release
-- path: /api/admin/automation-conversion/member/push-openclaw
-  methods:
-  - OPTIONS
-  route_name: api_automation_member_push_openclaw_options
-  capability_owner: automation_engine
-  runtime_owner: ai_crm_next
-  layer: api
-  external_effects: none
-  data_source: read_model
-  requires_auth: true
-  rollback: previous_release
-- path: /api/admin/automation-conversion/member/push-openclaw
-  methods:
-  - POST
-  route_name: api_plan_automation_member_push_openclaw
-  capability_owner: automation_engine
-  runtime_owner: ai_crm_next
-  layer: api
-  external_effects: none
-  data_source: command
-  requires_auth: true
-  rollback: previous_release
-- path: /api/admin/automation-conversion/tasks/run-due
-  methods:
-  - OPTIONS
-  route_name: api_automation_workspace_tasks_run_due_options
-  capability_owner: automation_engine
-  runtime_owner: ai_crm_next
-  layer: api
-  external_effects: none
-  data_source: read_model
-  requires_auth: true
-  rollback: previous_release
-- path: /api/admin/automation-conversion/tasks/run-due
-  methods:
-  - POST
-  route_name: api_plan_automation_workspace_tasks_run_due
-  capability_owner: automation_engine
-  runtime_owner: ai_crm_next
-  layer: api
-  external_effects: none
-  data_source: command
-  requires_auth: true
-  rollback: previous_release
-- path: /api/admin/automation-conversion/execution-items/{execution_item_id}/send-via-bazhuayu
-  methods:
-  - OPTIONS
-  route_name: api_automation_workspace_execution_item_outbound_options
-  capability_owner: automation_engine
-  runtime_owner: ai_crm_next
-  layer: api
-  external_effects: none
-  data_source: read_model
-  requires_auth: true
-  rollback: previous_release
-- path: /api/admin/automation-conversion/execution-items/{execution_item_id}/send-via-bazhuayu
-  methods:
-  - POST
-  route_name: api_plan_automation_workspace_execution_item_outbound
-  capability_owner: automation_engine
-  runtime_owner: ai_crm_next
-  layer: api
-  external_effects: none
-  data_source: command
-  requires_auth: true
-  rollback: previous_release
-- path: /api/admin/automation-conversion/reply-monitor/capture
-  methods:
-  - OPTIONS
-  route_name: api_automation_conversion_reply_monitor_capture_options
-  capability_owner: automation_engine
-  runtime_owner: ai_crm_next
-  layer: api
-  external_effects: none
-  data_source: read_model
-  requires_auth: true
-  rollback: previous_release
-- path: /api/admin/automation-conversion/reply-monitor/capture
-  methods:
-  - POST
-  route_name: api_plan_automation_conversion_reply_monitor_capture
-  capability_owner: automation_engine
-  runtime_owner: ai_crm_next
-  layer: api
-  external_effects: none
-  data_source: command
-  requires_auth: true
-  rollback: previous_release
-- path: /api/admin/automation-conversion/reply-monitor/run-due
-  methods:
-  - OPTIONS
-  route_name: api_automation_conversion_reply_monitor_run_due_options
-  capability_owner: automation_engine
-  runtime_owner: ai_crm_next
-  layer: api
-  external_effects: none
-  data_source: read_model
-  requires_auth: true
-  rollback: previous_release
-- path: /api/admin/automation-conversion/reply-monitor/run-due
-  methods:
-  - POST
-  route_name: api_plan_automation_conversion_reply_monitor_run_due
-  capability_owner: automation_engine
-  runtime_owner: ai_crm_next
-  layer: api
-  external_effects: none
-  data_source: command
-  requires_auth: true
-  rollback: previous_release
-- path: /api/admin/automation-conversion/jobs/run-due/preview
-  methods:
-  - OPTIONS
-  route_name: api_automation_conversion_jobs_run_due_preview_options
-  capability_owner: automation_engine
-  runtime_owner: ai_crm_next
-  layer: api
-  external_effects: none
-  data_source: read_model
-  requires_auth: true
-  rollback: previous_release
-- path: /api/admin/automation-conversion/jobs/run-due/preview
-  methods:
-  - POST
-  route_name: api_preview_automation_conversion_jobs_run_due
-  capability_owner: automation_engine
-  runtime_owner: ai_crm_next
-  layer: api
-  external_effects: none
-  data_source: command
-  requires_auth: true
-  rollback: previous_release
-- path: /api/admin/automation-conversion/jobs/run-due
-  methods:
-  - OPTIONS
-  route_name: api_automation_conversion_jobs_run_due_options
-  capability_owner: automation_engine
-  runtime_owner: ai_crm_next
-  layer: api
-  external_effects: none
-  data_source: read_model
-  requires_auth: true
-  rollback: previous_release
-- path: /api/admin/automation-conversion/jobs/run-due
-  methods:
-  - POST
-  route_name: api_plan_automation_conversion_jobs_run_due
-  capability_owner: automation_engine
-  runtime_owner: ai_crm_next
-  layer: api
-  external_effects: none
-  data_source: command
-  requires_auth: true
-  rollback: previous_release
 - path: /api/admin/automation-conversion/contract
   methods:
   - GET
@@ -5198,501 +4794,6 @@ routes:
   methods:
   - GET
   route_name: automation_pools
-  capability_owner: automation_engine
-  runtime_owner: ai_crm_next
-  layer: api
-  external_effects: none
-  data_source: read_model
-  requires_auth: true
-  rollback: previous_release
-- path: /api/admin/automation-conversion/programs
-  methods:
-  - GET
-  route_name: automation_programs
-  capability_owner: automation_engine
-  runtime_owner: ai_crm_next
-  layer: api
-  external_effects: none
-  data_source: read_model
-  requires_auth: true
-  rollback: previous_release
-- path: /api/admin/automation-conversion/programs/{program_id}/overview
-  methods:
-  - GET
-  route_name: automation_program_data_overview
-  capability_owner: automation_engine
-  runtime_owner: ai_crm_next
-  layer: api
-  external_effects: none
-  data_source: read_model
-  requires_auth: true
-  rollback: previous_release
-- path: /api/admin/automation-conversion/programs/{program_id}/members
-  methods:
-  - GET
-  route_name: automation_program_members
-  capability_owner: automation_engine
-  runtime_owner: ai_crm_next
-  layer: api
-  external_effects: none
-  data_source: read_model
-  requires_auth: true
-  rollback: previous_release
-- path: /api/admin/automation-conversion/programs/{program_id}/setup/segmentation
-  methods:
-  - POST
-  route_name: api_admin_automation_program_setup_segmentation
-  capability_owner: automation_engine
-  runtime_owner: ai_crm_next
-  layer: api
-  external_effects: none
-  data_source: command
-  requires_auth: true
-  rollback: previous_release
-- path: /api/admin/automation-conversion/programs/{program_id}/setup/audience-entry-rule
-  methods:
-  - POST
-  route_name: api_admin_automation_program_setup_audience_entry_rule
-  capability_owner: automation_engine
-  runtime_owner: ai_crm_next
-  layer: api
-  external_effects: none
-  data_source: command
-  requires_auth: true
-  rollback: previous_release
-- path: /api/admin/automation-conversion/programs/{program_id}/publish-entry
-  methods:
-  - POST
-  route_name: api_admin_automation_program_publish_entry
-  capability_owner: automation_engine
-  runtime_owner: ai_crm_next
-  layer: api
-  external_effects: none
-  data_source: command
-  requires_auth: true
-  rollback: previous_release
-- path: /api/admin/automation-conversion/programs/{program_id}/publish-full
-  methods:
-  - POST
-  route_name: api_admin_automation_program_publish_full
-  capability_owner: automation_engine
-  runtime_owner: ai_crm_next
-  layer: api
-  external_effects: none
-  data_source: command
-  requires_auth: true
-  rollback: previous_release
-- path: /api/admin/automation-conversion/programs/{program_id}/setup/operation-tasks
-  methods:
-  - GET
-  route_name: api_admin_automation_program_setup_operation_tasks
-  capability_owner: automation_engine
-  runtime_owner: ai_crm_next
-  layer: api
-  external_effects: none
-  data_source: read_model
-  requires_auth: true
-  rollback: previous_release
-- path: /api/admin/automation-conversion/programs/{program_id}/setup/operation-task-groups
-  methods:
-  - POST
-  route_name: api_admin_automation_program_setup_operation_task_groups_create
-  capability_owner: automation_engine
-  runtime_owner: ai_crm_next
-  layer: api
-  external_effects: none
-  data_source: command
-  requires_auth: true
-  rollback: previous_release
-- path: /api/admin/automation-conversion/programs/{program_id}/setup/operation-task-groups/{group_id}
-  methods:
-  - DELETE
-  route_name: api_admin_automation_program_setup_operation_task_groups_delete
-  capability_owner: automation_engine
-  runtime_owner: ai_crm_next
-  layer: api
-  external_effects: none
-  data_source: command
-  requires_auth: true
-  rollback: previous_release
-- path: /api/admin/automation-conversion/programs/{program_id}/setup/operation-tasks
-  methods:
-  - POST
-  route_name: api_admin_automation_program_setup_operation_tasks_create
-  capability_owner: automation_engine
-  runtime_owner: ai_crm_next
-  layer: api
-  external_effects: none
-  data_source: command
-  requires_auth: true
-  rollback: previous_release
-- path: /api/admin/automation-conversion/programs/{program_id}/setup/operation-tasks/{task_id}
-  methods:
-  - GET
-  route_name: api_admin_automation_program_setup_operation_tasks_get
-  capability_owner: automation_engine
-  runtime_owner: ai_crm_next
-  layer: api
-  external_effects: none
-  data_source: read_model
-  requires_auth: true
-  rollback: previous_release
-- path: /api/admin/automation-conversion/programs/{program_id}/setup/operation-tasks/{task_id}
-  methods:
-  - PUT
-  route_name: api_admin_automation_program_setup_operation_tasks_update
-  capability_owner: automation_engine
-  runtime_owner: ai_crm_next
-  layer: api
-  external_effects: none
-  data_source: command
-  requires_auth: true
-  rollback: previous_release
-- path: /api/admin/automation-conversion/programs/{program_id}/setup/operation-tasks/{task_id}/copy
-  methods:
-  - POST
-  route_name: api_admin_automation_program_setup_operation_tasks_copy
-  capability_owner: automation_engine
-  runtime_owner: ai_crm_next
-  layer: api
-  external_effects: none
-  data_source: command
-  requires_auth: true
-  rollback: previous_release
-- path: /api/admin/automation-conversion/programs/{program_id}/setup/operation-tasks/{task_id}/activate
-  methods:
-  - POST
-  route_name: api_admin_automation_program_setup_operation_tasks_activate
-  capability_owner: automation_engine
-  runtime_owner: ai_crm_next
-  layer: api
-  external_effects: none
-  data_source: command
-  requires_auth: true
-  rollback: previous_release
-- path: /api/admin/automation-conversion/programs/{program_id}/setup/operation-tasks/{task_id}/pause
-  methods:
-  - POST
-  route_name: api_admin_automation_program_setup_operation_tasks_pause
-  capability_owner: automation_engine
-  runtime_owner: ai_crm_next
-  layer: api
-  external_effects: none
-  data_source: command
-  requires_auth: true
-  rollback: previous_release
-- path: /api/admin/automation-conversion/programs/{program_id}/setup/operation-tasks/{task_id}
-  methods:
-  - DELETE
-  route_name: api_admin_automation_program_setup_operation_tasks_archive
-  capability_owner: automation_engine
-  runtime_owner: ai_crm_next
-  layer: api
-  external_effects: none
-  data_source: command
-  requires_auth: true
-  rollback: previous_release
-- path: /api/admin/automation-conversion/programs/{program_id}/setup/operation-tasks/{task_id}/preview-audience
-  methods:
-  - POST
-  route_name: api_admin_automation_program_setup_operation_tasks_preview_audience
-  capability_owner: automation_engine
-  runtime_owner: ai_crm_next
-  layer: api
-  external_effects: none
-  data_source: command
-  requires_auth: true
-  rollback: previous_release
-- path: /api/admin/automation-conversion/programs/{program_id}/setup/operation-tasks/{task_id}/send-strategy
-  methods:
-  - PUT
-  route_name: api_admin_automation_program_setup_operation_tasks_send_strategy
-  capability_owner: automation_engine
-  runtime_owner: ai_crm_next
-  layer: api
-  external_effects: none
-  data_source: command
-  requires_auth: true
-  rollback: previous_release
-- path: /api/admin/automation-conversion/programs/{program_id}/setup/operation-tasks/{task_id}/send-content/unified
-  methods:
-  - PUT
-  route_name: api_admin_automation_program_setup_operation_tasks_send_content_unified
-  capability_owner: automation_engine
-  runtime_owner: ai_crm_next
-  layer: api
-  external_effects: none
-  data_source: command
-  requires_auth: true
-  rollback: previous_release
-- path: /api/admin/automation-conversion/programs/{program_id}/setup/operation-tasks/{task_id}/send-content/profile-segments/{segment_key}
-  methods:
-  - PUT
-  route_name: api_admin_automation_program_setup_operation_tasks_send_content_profile
-  capability_owner: automation_engine
-  runtime_owner: ai_crm_next
-  layer: api
-  external_effects: none
-  data_source: command
-  requires_auth: true
-  rollback: previous_release
-- path: /api/admin/automation-conversion/programs/{program_id}/setup/operation-tasks/{task_id}/send-content/behavior-segments/{segment_key}
-  methods:
-  - PUT
-  route_name: api_admin_automation_program_setup_operation_tasks_send_content_behavior
-  capability_owner: automation_engine
-  runtime_owner: ai_crm_next
-  layer: api
-  external_effects: none
-  data_source: command
-  requires_auth: true
-  rollback: previous_release
-- path: /api/admin/automation-conversion/programs/{program_id}/setup/operation-tasks/{task_id}/send-content/agent-materials
-  methods:
-  - PUT
-  route_name: api_admin_automation_program_setup_operation_tasks_send_content_agent
-  capability_owner: automation_engine
-  runtime_owner: ai_crm_next
-  layer: api
-  external_effects: none
-  data_source: command
-  requires_auth: true
-  rollback: previous_release
-- path: /api/admin/automation-conversion/action-templates
-  methods:
-  - GET
-  route_name: list_action_templates
-  capability_owner: automation_engine
-  runtime_owner: ai_crm_next
-  layer: api
-  external_effects: none
-  data_source: read_model
-  requires_auth: true
-  rollback: previous_release
-- path: /api/admin/automation-conversion/action-templates
-  methods:
-  - POST
-  route_name: create_action_template
-  capability_owner: automation_engine
-  runtime_owner: ai_crm_next
-  layer: api
-  external_effects: none
-  data_source: command
-  requires_auth: true
-  rollback: previous_release
-- path: /api/admin/automation-conversion/task-groups
-  methods:
-  - GET
-  route_name: list_task_groups
-  capability_owner: automation_engine
-  runtime_owner: ai_crm_next
-  layer: api
-  external_effects: none
-  data_source: read_model
-  requires_auth: true
-  rollback: previous_release
-- path: /api/admin/automation-conversion/task-groups
-  methods:
-  - POST
-  route_name: create_task_group
-  capability_owner: automation_engine
-  runtime_owner: ai_crm_next
-  layer: api
-  external_effects: none
-  data_source: command
-  requires_auth: true
-  rollback: previous_release
-- path: /api/admin/automation-conversion/workflows
-  methods:
-  - GET
-  route_name: list_workflows
-  capability_owner: automation_engine
-  runtime_owner: ai_crm_next
-  layer: api
-  external_effects: none
-  data_source: read_model
-  requires_auth: true
-  rollback: previous_release
-- path: /api/admin/automation-conversion/workflows
-  methods:
-  - POST
-  route_name: create_workflow
-  capability_owner: automation_engine
-  runtime_owner: ai_crm_next
-  layer: api
-  external_effects: none
-  data_source: command
-  requires_auth: true
-  rollback: previous_release
-- path: /api/admin/automation-conversion/workflow-nodes
-  methods:
-  - GET
-  route_name: list_workflow_nodes
-  capability_owner: automation_engine
-  runtime_owner: ai_crm_next
-  layer: api
-  external_effects: none
-  data_source: read_model
-  requires_auth: true
-  rollback: previous_release
-- path: /api/admin/automation-conversion/workflow-nodes
-  methods:
-  - POST
-  route_name: create_workflow_node
-  capability_owner: automation_engine
-  runtime_owner: ai_crm_next
-  layer: api
-  external_effects: none
-  data_source: command
-  requires_auth: true
-  rollback: previous_release
-- path: /api/admin/automation-conversion/workflows/{workflow_id}/nodes
-  methods:
-  - GET
-  route_name: list_workflow_nodes_for_workflow
-  capability_owner: automation_engine
-  runtime_owner: ai_crm_next
-  layer: api
-  external_effects: none
-  data_source: read_model
-  requires_auth: true
-  rollback: previous_release
-- path: /api/admin/automation-conversion/workflows/{workflow_id}/nodes
-  methods:
-  - POST
-  route_name: create_workflow_node_for_workflow
-  capability_owner: automation_engine
-  runtime_owner: ai_crm_next
-  layer: api
-  external_effects: none
-  data_source: command
-  requires_auth: true
-  rollback: previous_release
-- path: /api/admin/automation-conversion/workflow-nodes/{node_id}
-  methods:
-  - PUT
-  route_name: update_workflow_node
-  capability_owner: automation_engine
-  runtime_owner: ai_crm_next
-  layer: api
-  external_effects: none
-  data_source: command
-  requires_auth: true
-  rollback: previous_release
-- path: /api/admin/automation-conversion/workflow-nodes/{node_id}
-  methods:
-  - DELETE
-  route_name: delete_workflow_node
-  capability_owner: automation_engine
-  runtime_owner: ai_crm_next
-  layer: api
-  external_effects: none
-  data_source: command
-  requires_auth: true
-  rollback: previous_release
-- path: /api/admin/automation-conversion/tasks
-  methods:
-  - GET
-  route_name: list_tasks
-  capability_owner: automation_engine
-  runtime_owner: ai_crm_next
-  layer: api
-  external_effects: none
-  data_source: read_model
-  requires_auth: true
-  rollback: previous_release
-- path: /api/admin/automation-conversion/tasks
-  methods:
-  - POST
-  route_name: create_task
-  capability_owner: automation_engine
-  runtime_owner: ai_crm_next
-  layer: api
-  external_effects: none
-  data_source: command
-  requires_auth: true
-  rollback: previous_release
-- path: /api/admin/automation-conversion/tasks/{task_id}
-  methods:
-  - GET
-  route_name: get_task_detail
-  capability_owner: automation_engine
-  runtime_owner: ai_crm_next
-  layer: api
-  external_effects: none
-  data_source: read_model
-  requires_auth: true
-  rollback: previous_release
-- path: /api/admin/automation-conversion/tasks/{task_id}
-  methods:
-  - PUT
-  route_name: update_task
-  capability_owner: automation_engine
-  runtime_owner: ai_crm_next
-  layer: api
-  external_effects: none
-  data_source: command
-  requires_auth: true
-  rollback: previous_release
-- path: /api/admin/automation-conversion/tasks/{task_id}/send-strategy
-  methods:
-  - PUT
-  route_name: update_task_send_strategy
-  capability_owner: automation_engine
-  runtime_owner: ai_crm_next
-  layer: api
-  external_effects: none
-  data_source: command
-  requires_auth: true
-  rollback: previous_release
-- path: /api/admin/automation-conversion/tasks/{task_id}/send-content/unified
-  methods:
-  - PUT
-  route_name: save_unified_send_content
-  capability_owner: automation_engine
-  runtime_owner: ai_crm_next
-  layer: api
-  external_effects: none
-  data_source: command
-  requires_auth: true
-  rollback: previous_release
-- path: /api/admin/automation-conversion/tasks/{task_id}/send-content/profile-segments/{segment_key}
-  methods:
-  - PUT
-  route_name: save_profile_segment_send_content
-  capability_owner: automation_engine
-  runtime_owner: ai_crm_next
-  layer: api
-  external_effects: none
-  data_source: command
-  requires_auth: true
-  rollback: previous_release
-- path: /api/admin/automation-conversion/tasks/{task_id}/send-content/behavior-segments/{segment_key}
-  methods:
-  - PUT
-  route_name: save_behavior_segment_send_content
-  capability_owner: automation_engine
-  runtime_owner: ai_crm_next
-  layer: api
-  external_effects: none
-  data_source: command
-  requires_auth: true
-  rollback: previous_release
-- path: /api/admin/automation-conversion/tasks/{task_id}/send-content/agent-materials
-  methods:
-  - PUT
-  route_name: save_agent_materials
-  capability_owner: automation_engine
-  runtime_owner: ai_crm_next
-  layer: api
-  external_effects: none
-  data_source: command
-  requires_auth: true
-  rollback: previous_release
-- path: /api/admin/automation-conversion/behavior-segment-rules
-  methods:
-  - GET
-  route_name: behavior_segment_rules
   capability_owner: automation_engine
   runtime_owner: ai_crm_next
   layer: api
@@ -5775,149 +4876,6 @@ routes:
   layer: api
   external_effects: none
   data_source: read_model
-  requires_auth: true
-  rollback: previous_release
-- path: /api/admin/automation-conversion/profile-segment-templates/catalog
-  methods:
-  - GET
-  route_name: profile_segment_template_catalog
-  capability_owner: automation_engine
-  runtime_owner: ai_crm_next
-  layer: api
-  external_effects: none
-  data_source: read_model
-  requires_auth: true
-  rollback: previous_release
-- path: /api/admin/automation-conversion/profile-segment-templates
-  methods:
-  - GET
-  route_name: list_profile_segment_templates
-  capability_owner: automation_engine
-  runtime_owner: ai_crm_next
-  layer: api
-  external_effects: none
-  data_source: read_model
-  requires_auth: true
-  rollback: previous_release
-- path: /api/admin/automation-conversion/profile-segment-templates/options
-  methods:
-  - GET
-  route_name: profile_segment_template_options
-  capability_owner: automation_engine
-  runtime_owner: ai_crm_next
-  layer: api
-  external_effects: none
-  data_source: read_model
-  requires_auth: true
-  rollback: previous_release
-- path: /api/admin/automation-conversion/profile-segment-templates/{template_id}
-  methods:
-  - GET
-  route_name: get_profile_segment_template
-  capability_owner: automation_engine
-  runtime_owner: ai_crm_next
-  layer: api
-  external_effects: none
-  data_source: read_model
-  requires_auth: true
-  rollback: previous_release
-- path: /api/admin/automation-conversion/profile-segment-templates
-  methods:
-  - POST
-  route_name: create_profile_segment_template
-  capability_owner: automation_engine
-  runtime_owner: ai_crm_next
-  layer: api
-  external_effects: none
-  data_source: command
-  requires_auth: true
-  rollback: previous_release
-- path: /api/admin/automation-conversion/profile-segment-templates/{template_id}
-  methods:
-  - PUT
-  route_name: update_profile_segment_template
-  capability_owner: automation_engine
-  runtime_owner: ai_crm_next
-  layer: api
-  external_effects: none
-  data_source: command
-  requires_auth: true
-  rollback: previous_release
-- path: /api/admin/automation-conversion/members
-  methods:
-  - GET
-  route_name: automation_members
-  capability_owner: automation_engine
-  runtime_owner: ai_crm_next
-  layer: api
-  external_effects: none
-  data_source: read_model
-  requires_auth: true
-  rollback: previous_release
-- path: /api/admin/automation-conversion/members/{member_id}
-  methods:
-  - GET
-  route_name: automation_member_detail
-  capability_owner: automation_engine
-  runtime_owner: ai_crm_next
-  layer: api
-  external_effects: none
-  data_source: read_model
-  requires_auth: true
-  rollback: previous_release
-- path: /api/admin/automation-conversion/members/{member_id}/override-followup-type
-  methods:
-  - POST
-  route_name: automation_override_followup_type
-  capability_owner: automation_engine
-  runtime_owner: ai_crm_next
-  layer: api
-  external_effects: none
-  data_source: command
-  requires_auth: true
-  rollback: previous_release
-- path: /api/admin/automation-conversion/members/{member_id}/confirm-conversion
-  methods:
-  - POST
-  route_name: automation_confirm_conversion
-  capability_owner: automation_engine
-  runtime_owner: ai_crm_next
-  layer: api
-  external_effects: none
-  data_source: command
-  requires_auth: true
-  rollback: previous_release
-- path: /api/admin/automation-conversion/members/{member_id}/enter-silent
-  methods:
-  - POST
-  route_name: automation_enter_silent
-  capability_owner: automation_engine
-  runtime_owner: ai_crm_next
-  layer: api
-  external_effects: none
-  data_source: command
-  requires_auth: true
-  rollback: previous_release
-- path: /api/admin/automation-conversion/members/{member_id}/exit-marketing
-  methods:
-  - POST
-  route_name: automation_exit_marketing
-  capability_owner: automation_engine
-  runtime_owner: ai_crm_next
-  layer: api
-  external_effects: none
-  data_source: command
-  requires_auth: true
-  rollback: previous_release
-- path: /api/admin/automation-conversion/members/{member_id}/push-openclaw-context
-  methods:
-  - POST
-  route_name: automation_push_openclaw_context
-  capability_owner: automation_engine
-  runtime_owner: ai_crm_next
-  layer: api
-  external_effects: none
-  data_source: command
   requires_auth: true
   rollback: previous_release
 - path: /api/admin/automation-conversion/execution-records
@@ -6419,8 +5377,6 @@ routes:
   methods:
   - DELETE
   - GET
-  - HEAD
-  - OPTIONS
   - PATCH
   - POST
   - PUT
@@ -6480,8 +5436,6 @@ routes:
   methods:
   - DELETE
   - GET
-  - HEAD
-  - OPTIONS
   - PATCH
   - POST
   - PUT
@@ -6585,8 +5539,6 @@ routes:
   methods:
   - DELETE
   - GET
-  - HEAD
-  - OPTIONS
   - PATCH
   - POST
   - PUT
@@ -6602,8 +5554,6 @@ routes:
   methods:
   - DELETE
   - GET
-  - HEAD
-  - OPTIONS
   - PATCH
   - POST
   - PUT
@@ -6817,7 +5767,6 @@ routes:
   methods:
   - DELETE
   - GET
-  - HEAD
   - PATCH
   - POST
   - PUT
@@ -6888,7 +5837,6 @@ routes:
   methods:
   - DELETE
   - GET
-  - HEAD
   - PATCH
   - POST
   - PUT
@@ -6915,7 +5863,6 @@ routes:
   methods:
   - DELETE
   - GET
-  - HEAD
   - PATCH
   - POST
   - PUT
@@ -6942,7 +5889,6 @@ routes:
   methods:
   - DELETE
   - GET
-  - HEAD
   - PATCH
   - POST
   - PUT
@@ -7267,6 +6213,270 @@ routes:
   - GET
   route_name: get_external_campaign
   capability_owner: ai_assist
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: none
+  data_source: read_model
+  requires_auth: false
+  rollback: previous_release
+- path: /api/ai/audience/schema-catalog
+  methods:
+  - GET
+  route_name: api.ai_audience_schema_catalog
+  capability_owner: ai_audience_ops
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: none
+  data_source: read_model
+  requires_auth: false
+  rollback: previous_release
+- path: /api/ai/audience/packages
+  methods:
+  - GET
+  route_name: api.ai_audience_list_packages
+  capability_owner: ai_audience_ops
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: none
+  data_source: read_model
+  requires_auth: false
+  rollback: previous_release
+- path: /api/ai/audience/packages
+  methods:
+  - POST
+  route_name: api.ai_audience_create_package
+  capability_owner: ai_audience_ops
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: none
+  data_source: command
+  requires_auth: false
+  rollback: previous_release
+- path: /api/ai/audience/packages/{package_id}
+  methods:
+  - GET
+  route_name: api.ai_audience_get_package
+  capability_owner: ai_audience_ops
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: none
+  data_source: read_model
+  requires_auth: false
+  rollback: previous_release
+- path: /api/ai/audience/packages/{package_id}/versions
+  methods:
+  - POST
+  route_name: api.ai_audience_create_version
+  capability_owner: ai_audience_ops
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: none
+  data_source: command
+  requires_auth: false
+  rollback: previous_release
+- path: /api/ai/audience/packages/{package_id}/preview
+  methods:
+  - POST
+  route_name: api.ai_audience_preview_package
+  capability_owner: ai_audience_ops
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: none
+  data_source: command
+  requires_auth: false
+  rollback: previous_release
+- path: /api/ai/audience/packages/{package_id}/publish
+  methods:
+  - POST
+  route_name: api.ai_audience_publish_package
+  capability_owner: ai_audience_ops
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: none
+  data_source: command
+  requires_auth: false
+  rollback: previous_release
+- path: /api/ai/audience/packages/{package_id}/pause
+  methods:
+  - POST
+  route_name: api.ai_audience_pause_package
+  capability_owner: ai_audience_ops
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: none
+  data_source: command
+  requires_auth: false
+  rollback: previous_release
+- path: /api/ai/audience/packages/{package_id}/archive
+  methods:
+  - POST
+  route_name: api.ai_audience_archive_package
+  capability_owner: ai_audience_ops
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: none
+  data_source: command
+  requires_auth: false
+  rollback: previous_release
+- path: /api/ai/audience/packages/{package_id}/refresh
+  methods:
+  - POST
+  route_name: api.ai_audience_refresh_package
+  capability_owner: ai_audience_ops
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: none
+  data_source: command
+  requires_auth: false
+  rollback: previous_release
+- path: /api/ai/audience/ticks/incremental
+  methods:
+  - POST
+  route_name: api.ai_audience_incremental_tick
+  capability_owner: ai_audience_ops
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: none
+  data_source: command
+  requires_auth: false
+  rollback: previous_release
+- path: /api/ai/audience/ticks/daily
+  methods:
+  - POST
+  route_name: api.ai_audience_daily_tick
+  capability_owner: ai_audience_ops
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: none
+  data_source: command
+  requires_auth: false
+  rollback: previous_release
+- path: /api/ai/audience/source-dirty
+  methods:
+  - POST
+  route_name: api.ai_audience_source_dirty
+  capability_owner: ai_audience_ops
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: none
+  data_source: command
+  requires_auth: false
+  rollback: previous_release
+- path: /api/ai/audience/packages/{package_id}/outbound-subscriptions
+  methods:
+  - GET
+  route_name: api.ai_audience_list_outbound_subscriptions
+  capability_owner: ai_audience_ops
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: none
+  data_source: read_model
+  requires_auth: false
+  rollback: previous_release
+- path: /api/ai/audience/packages/{package_id}/outbound-subscriptions
+  methods:
+  - POST
+  route_name: api.ai_audience_create_outbound_subscription
+  capability_owner: ai_audience_ops
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: none
+  data_source: command
+  requires_auth: false
+  rollback: previous_release
+- path: /api/ai/audience/outbound-subscriptions/{subscription_id}
+  methods:
+  - PATCH
+  route_name: api.ai_audience_update_outbound_subscription
+  capability_owner: ai_audience_ops
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: none
+  data_source: command
+  requires_auth: false
+  rollback: previous_release
+- path: /api/ai/audience/outbound-subscriptions/{subscription_id}/pause
+  methods:
+  - POST
+  route_name: api.ai_audience_pause_outbound_subscription
+  capability_owner: ai_audience_ops
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: none
+  data_source: command
+  requires_auth: false
+  rollback: previous_release
+- path: /api/ai/audience/packages/{package_key}/webhook
+  methods:
+  - POST
+  route_name: api.ai_audience_inbound_webhook
+  capability_owner: ai_audience_ops
+  runtime_owner: ai_crm_next
+  layer: webhook
+  external_effects: staging_disabled
+  data_source: command
+  requires_auth: false
+  rollback: previous_release
+- path: /api/ai/audience/test-agent/webhook
+  methods:
+  - POST
+  route_name: api.ai_audience_test_agent_webhook
+  capability_owner: ai_audience_ops
+  runtime_owner: ai_crm_next
+  layer: webhook
+  external_effects: staging_disabled
+  data_source: command
+  requires_auth: false
+  rollback: previous_release
+- path: /api/ai/audience/packages/{package_id}/runs
+  methods:
+  - GET
+  route_name: api.ai_audience_package_runs
+  capability_owner: ai_audience_ops
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: none
+  data_source: read_model
+  requires_auth: false
+  rollback: previous_release
+- path: /api/ai/audience/packages/{package_id}/members
+  methods:
+  - GET
+  route_name: api.ai_audience_package_members
+  capability_owner: ai_audience_ops
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: none
+  data_source: read_model
+  requires_auth: false
+  rollback: previous_release
+- path: /api/ai/audience/packages/{package_id}/events
+  methods:
+  - GET
+  route_name: api.ai_audience_package_events
+  capability_owner: ai_audience_ops
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: none
+  data_source: read_model
+  requires_auth: false
+  rollback: previous_release
+- path: /api/ai/audience/packages/{package_id}/external-effects
+  methods:
+  - GET
+  route_name: api.ai_audience_package_external_effects
+  capability_owner: ai_audience_ops
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: staging_disabled
+  data_source: read_model
+  requires_auth: false
+  rollback: previous_release
+- path: /api/ai/audience/health
+  methods:
+  - GET
+  route_name: api.ai_audience_health
+  capability_owner: ai_audience_ops
   runtime_owner: ai_crm_next
   layer: api
   external_effects: none
@@ -7645,280 +6855,5 @@ routes:
   layer: api
   external_effects: none
   data_source: command
-  requires_auth: true
-  rollback: previous_release
-- path: /api/ai/audience/schema-catalog
-  methods:
-  - GET
-  route_name: api.ai_audience_schema_catalog
-  capability_owner: ai_audience_ops
-  runtime_owner: ai_crm_next
-  layer: api
-  external_effects: none
-  data_source: read_model
-  requires_auth: true
-  rollback: previous_release
-- path: /api/admin/ai-audience/packages
-  methods:
-  - GET
-  route_name: api.admin_ai_audience_packages
-  capability_owner: ai_audience_ops
-  runtime_owner: ai_crm_next
-  layer: api
-  external_effects: none
-  data_source: read_model
-  requires_auth: true
-  rollback: previous_release
-- path: /api/ai/audience/packages
-  methods:
-  - GET
-  route_name: api.ai_audience_list_packages
-  capability_owner: ai_audience_ops
-  runtime_owner: ai_crm_next
-  layer: api
-  external_effects: none
-  data_source: read_model
-  requires_auth: true
-  rollback: previous_release
-- path: /api/ai/audience/packages
-  methods:
-  - POST
-  route_name: api.ai_audience_create_package
-  capability_owner: ai_audience_ops
-  runtime_owner: ai_crm_next
-  layer: api
-  external_effects: none
-  data_source: command
-  requires_auth: true
-  rollback: previous_release
-- path: /api/ai/audience/packages/{package_id}
-  methods:
-  - GET
-  route_name: api.ai_audience_get_package
-  capability_owner: ai_audience_ops
-  runtime_owner: ai_crm_next
-  layer: api
-  external_effects: none
-  data_source: read_model
-  requires_auth: true
-  rollback: previous_release
-- path: /api/ai/audience/packages/{package_id}/versions
-  methods:
-  - POST
-  route_name: api.ai_audience_create_version
-  capability_owner: ai_audience_ops
-  runtime_owner: ai_crm_next
-  layer: api
-  external_effects: none
-  data_source: command
-  requires_auth: true
-  rollback: previous_release
-- path: /api/ai/audience/packages/{package_id}/preview
-  methods:
-  - POST
-  route_name: api.ai_audience_preview_package
-  capability_owner: ai_audience_ops
-  runtime_owner: ai_crm_next
-  layer: api
-  external_effects: none
-  data_source: read_model
-  requires_auth: true
-  rollback: previous_release
-- path: /api/ai/audience/packages/{package_id}/publish
-  methods:
-  - POST
-  route_name: api.ai_audience_publish_package
-  capability_owner: ai_audience_ops
-  runtime_owner: ai_crm_next
-  layer: api
-  external_effects: none
-  data_source: command
-  requires_auth: true
-  rollback: previous_release
-- path: /api/ai/audience/packages/{package_id}/pause
-  methods:
-  - POST
-  route_name: api.ai_audience_pause_package
-  capability_owner: ai_audience_ops
-  runtime_owner: ai_crm_next
-  layer: api
-  external_effects: none
-  data_source: command
-  requires_auth: true
-  rollback: previous_release
-- path: /api/ai/audience/packages/{package_id}/archive
-  methods:
-  - POST
-  route_name: api.ai_audience_archive_package
-  capability_owner: ai_audience_ops
-  runtime_owner: ai_crm_next
-  layer: api
-  external_effects: none
-  data_source: command
-  requires_auth: true
-  rollback: previous_release
-- path: /api/ai/audience/packages/{package_id}/refresh
-  methods:
-  - POST
-  route_name: api.ai_audience_refresh_package
-  capability_owner: ai_audience_ops
-  runtime_owner: ai_crm_next
-  layer: api
-  external_effects: none
-  data_source: command
-  requires_auth: true
-  rollback: previous_release
-- path: /api/ai/audience/ticks/incremental
-  methods:
-  - POST
-  route_name: api.ai_audience_incremental_tick
-  capability_owner: ai_audience_ops
-  runtime_owner: ai_crm_next
-  layer: api
-  external_effects: none
-  data_source: command
-  requires_auth: true
-  rollback: previous_release
-- path: /api/ai/audience/ticks/daily
-  methods:
-  - POST
-  route_name: api.ai_audience_daily_tick
-  capability_owner: ai_audience_ops
-  runtime_owner: ai_crm_next
-  layer: api
-  external_effects: none
-  data_source: command
-  requires_auth: true
-  rollback: previous_release
-- path: /api/ai/audience/source-dirty
-  methods:
-  - POST
-  route_name: api.ai_audience_source_dirty
-  capability_owner: ai_audience_ops
-  runtime_owner: ai_crm_next
-  layer: api
-  external_effects: none
-  data_source: command
-  requires_auth: true
-  rollback: previous_release
-- path: /api/ai/audience/packages/{package_id}/outbound-subscriptions
-  methods:
-  - GET
-  route_name: api.ai_audience_list_outbound_subscriptions
-  capability_owner: ai_audience_ops
-  runtime_owner: ai_crm_next
-  layer: api
-  external_effects: none
-  data_source: read_model
-  requires_auth: true
-  rollback: previous_release
-- path: /api/ai/audience/packages/{package_id}/outbound-subscriptions
-  methods:
-  - POST
-  route_name: api.ai_audience_create_outbound_subscription
-  capability_owner: ai_audience_ops
-  runtime_owner: ai_crm_next
-  layer: api
-  external_effects: none
-  data_source: command
-  requires_auth: true
-  rollback: previous_release
-- path: /api/ai/audience/outbound-subscriptions/{subscription_id}
-  methods:
-  - PATCH
-  route_name: api.ai_audience_update_outbound_subscription
-  capability_owner: ai_audience_ops
-  runtime_owner: ai_crm_next
-  layer: api
-  external_effects: none
-  data_source: command
-  requires_auth: true
-  rollback: previous_release
-- path: /api/ai/audience/outbound-subscriptions/{subscription_id}/pause
-  methods:
-  - POST
-  route_name: api.ai_audience_pause_outbound_subscription
-  capability_owner: ai_audience_ops
-  runtime_owner: ai_crm_next
-  layer: api
-  external_effects: none
-  data_source: command
-  requires_auth: true
-  rollback: previous_release
-- path: /api/ai/audience/packages/{package_key}/webhook
-  methods:
-  - POST
-  route_name: api.ai_audience_inbound_webhook
-  capability_owner: ai_audience_ops
-  runtime_owner: ai_crm_next
-  layer: webhook
-  external_effects: staging_disabled
-  data_source: command
-  requires_auth: true
-  rollback: previous_release
-- path: /api/ai/audience/test-agent/webhook
-  methods:
-  - POST
-  route_name: api.ai_audience_test_agent_webhook
-  capability_owner: ai_audience_ops
-  runtime_owner: ai_crm_next
-  layer: webhook
-  external_effects: staging_disabled
-  data_source: command
-  requires_auth: false
-  rollback: previous_release
-- path: /api/ai/audience/packages/{package_id}/runs
-  methods:
-  - GET
-  route_name: api.ai_audience_package_runs
-  capability_owner: ai_audience_ops
-  runtime_owner: ai_crm_next
-  layer: api
-  external_effects: none
-  data_source: read_model
-  requires_auth: true
-  rollback: previous_release
-- path: /api/ai/audience/packages/{package_id}/members
-  methods:
-  - GET
-  route_name: api.ai_audience_package_members
-  capability_owner: ai_audience_ops
-  runtime_owner: ai_crm_next
-  layer: api
-  external_effects: none
-  data_source: read_model
-  requires_auth: true
-  rollback: previous_release
-- path: /api/ai/audience/packages/{package_id}/events
-  methods:
-  - GET
-  route_name: api.ai_audience_package_events
-  capability_owner: ai_audience_ops
-  runtime_owner: ai_crm_next
-  layer: api
-  external_effects: none
-  data_source: read_model
-  requires_auth: true
-  rollback: previous_release
-- path: /api/ai/audience/packages/{package_id}/external-effects
-  methods:
-  - GET
-  route_name: api.ai_audience_package_external_effects
-  capability_owner: ai_audience_ops
-  runtime_owner: ai_crm_next
-  layer: api
-  external_effects: staging_disabled
-  data_source: read_model
-  requires_auth: true
-  rollback: previous_release
-- path: /api/ai/audience/health
-  methods:
-  - GET
-  route_name: api.ai_audience_health
-  capability_owner: ai_audience_ops
-  runtime_owner: ai_crm_next
-  layer: api
-  external_effects: none
-  data_source: read_model
   requires_auth: true
   rollback: previous_release
