@@ -126,7 +126,6 @@ POLICY_FILES_CAN_DEFINE_STOP_TERMS = {
         "scripts/codex_autopilot_tick.sh",
         "tools/check_autonomous_development_loop.py",
         "tools/check_automerge_eligibility.py",
-        "tools/check_reply_monitor_run_due_readiness.py",
         "tools/collect_server_readonly_evidence.py",
         "tools/run_codex_autopilot_tick.py",
     }
