@@ -29,8 +29,11 @@ export interface WorkspaceGovernanceReviewView {
   draft_id: string;
   review_status: string;
   steps: {
+    step_id: string;
     step_type: string;
     step_status: string;
+    actor_metadata?: Record<string, unknown>;
+    updated_at?: string;
   }[];
   allowlist_summary: {
     hash: string;

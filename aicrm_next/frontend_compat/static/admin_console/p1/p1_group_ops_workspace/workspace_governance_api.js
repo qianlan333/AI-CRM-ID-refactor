@@ -37,6 +37,26 @@ export function stableGovernanceIdempotencyKey(draftId, snapshotHash, allowlistH
         text(grayWindowHash || "window_missing")
     ].join(":");
 }
+function stableStepPayloadHash(payload) {
+    return workspaceSimpleHash(JSON.stringify(payload, Object.keys(payload).sort()));
+}
+export function stableGovernanceStepIdempotencyKey(action, reviewId, stepIdOrReview, currentStatus, payloadHash) {
+    if (action === "expire") {
+        return [
+            "p1-gow-review-expire",
+            text(reviewId),
+            text(currentStatus || "unknown_status"),
+            text(payloadHash || "empty_payload")
+        ].join(":");
+    }
+    return [
+        `p1-gow-step-${action}`,
+        text(reviewId),
+        text(stepIdOrReview),
+        text(currentStatus || "unknown_status"),
+        text(payloadHash || "empty_payload")
+    ].join(":");
+}
 export function assertWorkspaceGovernancePayloadSafe(payload) {
     assertWorkspaceSensitiveSafe(payload);
     const start = Date.parse(payload.gray_window.start_at);
@@ -46,6 +66,16 @@ export function assertWorkspaceGovernancePayloadSafe(payload) {
     }
     if (!payload.idempotency_key || !payload.client_snapshot_hash || !payload.allowlist_summary.allowlist_hash) {
         throw new Error("governance_payload_missing_required_field");
+    }
+    return true;
+}
+export function assertWorkspaceGovernanceStepPayloadSafe(payload) {
+    assertWorkspaceSensitiveSafe(payload);
+    if (!payload.idempotency_key) {
+        throw new Error("governance_step_payload_missing_idempotency_key");
+    }
+    if (payload.allowlist_count !== undefined && (!Number.isFinite(payload.allowlist_count) || payload.allowlist_count < 0)) {
+        throw new Error("governance_step_payload_invalid_allowlist_count");
     }
     return true;
 }
@@ -73,9 +103,79 @@ export function buildWorkspaceGovernanceRequestPayload(draftId, snapshotHash, op
     assertWorkspaceGovernancePayloadSafe(payload);
     return payload;
 }
+function requireReviewId(review) {
+    const reviewId = text(review.review_id);
+    if (!reviewId)
+        throw new Error("governance_step_missing_review_id");
+    return reviewId;
+}
+function requireStepId(step) {
+    const stepId = text(step.step_id);
+    if (!stepId)
+        throw new Error("governance_step_missing_step_id");
+    return stepId;
+}
+function assertGrayWindowCanApprove(review) {
+    const endAt = Date.parse(String(review.gray_window?.end_at || ""));
+    if (!Number.isFinite(endAt)) {
+        throw new Error("governance_step_invalid_gray_window");
+    }
+    if (endAt <= Date.now()) {
+        throw new Error("governance_step_gray_window_expired");
+    }
+}
+export function buildApproveGovernanceStepPayload(review, step, options = {}) {
+    const reviewId = requireReviewId(review);
+    const stepId = requireStepId(step);
+    const stepType = text(step.step_type);
+    const body = {};
+    if (options.approvalNote)
+        body.approval_note = options.approvalNote;
+    if (stepType === "receiver_allowlist") {
+        body.allowlist_hash = options.allowlistHash || text(review.allowlist_summary?.hash);
+        body.allowlist_count = options.allowlistCount ?? Number(review.allowlist_summary?.count ?? 0);
+        if (!body.allowlist_hash)
+            throw new Error("governance_step_allowlist_hash_missing");
+    }
+    if (stepType === "gray_window") {
+        assertGrayWindowCanApprove(review);
+    }
+    const payload = {
+        ...body,
+        idempotency_key: stableGovernanceStepIdempotencyKey("approve", reviewId, stepId, text(step.step_status || "pending"), stableStepPayloadHash(body))
+    };
+    assertWorkspaceGovernanceStepPayloadSafe(payload);
+    return payload;
+}
+export function buildRejectGovernanceStepPayload(review, step, options = {}) {
+    const reviewId = requireReviewId(review);
+    const stepId = requireStepId(step);
+    const body = {};
+    if (options.rejectReason)
+        body.reject_reason = options.rejectReason;
+    const payload = {
+        ...body,
+        idempotency_key: stableGovernanceStepIdempotencyKey("reject", reviewId, stepId, text(step.step_status || "pending"), stableStepPayloadHash(body))
+    };
+    assertWorkspaceGovernanceStepPayloadSafe(payload);
+    return payload;
+}
+export function buildExpireGovernanceReviewPayload(review, options = {}) {
+    const reviewId = requireReviewId(review);
+    const body = {};
+    if (options.expireReason)
+        body.expire_reason = options.expireReason;
+    const payload = {
+        ...body,
+        idempotency_key: stableGovernanceStepIdempotencyKey("expire", reviewId, reviewId, text(review.review_status || "unknown_status"), stableStepPayloadHash(body))
+    };
+    assertWorkspaceGovernanceStepPayloadSafe(payload);
+    return payload;
+}
 export function assertGovernanceResponseSafe(value) {
     assertWorkspaceSensitiveSafe(value);
     const payload = value;
+    const serialized = JSON.stringify(value).toLowerCase();
     if (payload.approved === true
         || payload.push_center_job_created === true
         || payload.external_effect_job_created === true
@@ -89,7 +189,17 @@ export function assertGovernanceResponseSafe(value) {
     if (payload.execution_status && payload.execution_status !== "not_execution"
         || payload.review_status === "sent"
         || payload.review_status === "completed"
-        || payload.review_status === "approved") {
+        || payload.review_status === "approved"
+        || payload.step_status === "sent"
+        || payload.step_status === "completed") {
+        throw new Error("governance_api_response_claims_execution_state");
+    }
+    if (serialized.includes("\"push_center_job_id\"")
+        || serialized.includes("\"external_effect_job_id\"")
+        || serialized.includes("execution started")) {
+        throw new Error("governance_api_response_claims_execution_state");
+    }
+    if (Array.isArray(payload.steps) && payload.steps.some((step) => step.step_status === "sent" || step.step_status === "completed")) {
         throw new Error("governance_api_response_claims_execution_state");
     }
     const list = value;
@@ -124,4 +234,16 @@ export async function getGovernanceReview(reviewId, config = DEFAULT_WORKSPACE_G
 }
 export async function getDraftGovernance(draftId, config = DEFAULT_WORKSPACE_GOVERNANCE_API_CONFIG, requestJson = defaultWorkspaceDraftRequestJson()) {
     return asGovernanceListResponse(await requestJson(`${config.draftsUrl}/${encodeURIComponent(draftId)}/governance`));
+}
+export async function approveGovernanceStep(reviewId, stepId, payload, config = DEFAULT_WORKSPACE_GOVERNANCE_API_CONFIG, requestJson = defaultWorkspaceDraftRequestJson()) {
+    assertWorkspaceGovernanceStepPayloadSafe(payload);
+    return asGovernanceResponse(await requestJson(`${config.governanceUrl}/${encodeURIComponent(reviewId)}/steps/${encodeURIComponent(stepId)}/approve`, bodyOptions(payload)));
+}
+export async function rejectGovernanceStep(reviewId, stepId, payload, config = DEFAULT_WORKSPACE_GOVERNANCE_API_CONFIG, requestJson = defaultWorkspaceDraftRequestJson()) {
+    assertWorkspaceGovernanceStepPayloadSafe(payload);
+    return asGovernanceResponse(await requestJson(`${config.governanceUrl}/${encodeURIComponent(reviewId)}/steps/${encodeURIComponent(stepId)}/reject`, bodyOptions(payload)));
+}
+export async function expireGovernanceReview(reviewId, payload, config = DEFAULT_WORKSPACE_GOVERNANCE_API_CONFIG, requestJson = defaultWorkspaceDraftRequestJson()) {
+    assertWorkspaceGovernanceStepPayloadSafe(payload);
+    return asGovernanceResponse(await requestJson(`${config.governanceUrl}/${encodeURIComponent(reviewId)}/expire`, bodyOptions(payload)));
 }

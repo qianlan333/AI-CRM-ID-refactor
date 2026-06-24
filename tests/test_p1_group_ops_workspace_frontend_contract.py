@@ -117,6 +117,13 @@ def test_p1_group_ops_workspace_reuses_shared_modules():
     assert "requestGovernance" in sources
     assert "getGovernanceReview" in sources
     assert "getDraftGovernance" in sources
+    assert "approveGovernanceStep" in sources
+    assert "rejectGovernanceStep" in sources
+    assert "expireGovernanceReview" in sources
+    assert "buildApproveGovernanceStepPayload" in sources
+    assert "buildRejectGovernanceStepPayload" in sources
+    assert "buildExpireGovernanceReviewPayload" in sources
+    assert "assertWorkspaceGovernanceStepPayloadSafe" in sources
     assert "createDraft" in sources
     assert "updateDraft" in sources
     assert "archiveDraft" in sources
@@ -229,10 +236,15 @@ def test_p1_group_ops_workspace_copy_preserves_guardrails():
         "Governance panel",
         "Request governance",
         "Refresh governance",
+        "Approve",
+        "Reject",
+        "Expire review",
         "data-governance-panel",
-        "frontend_pending_only",
+        "frontend_step_integration",
         "data-workspace-request-governance",
         "data-workspace-refresh-governance",
+        "data-workspace-governance-step-action",
+        "data-workspace-expire-governance-review",
         "governanceRequestStatus",
         "governanceRequestMessage",
         "currentGovernanceReviewId",
@@ -241,6 +253,8 @@ def test_p1_group_ops_workspace_copy_preserves_guardrails():
         "currentGovernanceReview",
         "governance request 不等于 approval",
         "pending steps 不等于 approved",
+        "step approved 不等于发送",
+        "governance_approved 不等于 execution",
         "execution_status",
         "not_execution",
         "push_center_job_created",

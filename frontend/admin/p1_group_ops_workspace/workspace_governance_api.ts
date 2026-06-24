@@ -33,6 +33,7 @@ export interface WorkspaceGovernanceRequestPayload {
 }
 
 export interface WorkspaceGovernanceStep {
+  step_id?: string;
   step_type: "operator_approval" | "receiver_allowlist" | "gray_window" | string;
   step_status: "pending" | "approved" | "rejected" | "expired" | string;
   actor_metadata?: Record<string, unknown>;
@@ -75,6 +76,10 @@ export interface WorkspaceGovernanceResponse {
   can_claim_pass_90_plus?: boolean;
   execution_status?: string;
   idempotent_replay?: boolean;
+  step_id?: string;
+  step_type?: string;
+  step_status?: string;
+  governance_approved?: boolean;
   error?: string;
   detail?: string;
 }
@@ -101,6 +106,46 @@ export interface BuildWorkspaceGovernancePayloadOptions {
   sourceReference?: Record<string, unknown>;
   grayWindow?: WorkspaceGovernanceGrayWindow;
   requestNote?: string;
+}
+
+export type WorkspaceGovernanceStepAction = "approve" | "reject" | "expire";
+
+export interface WorkspaceGovernanceStepCommandPayload {
+  idempotency_key: string;
+  approval_note?: string;
+  reject_reason?: string;
+  expire_reason?: string;
+  allowlist_hash?: string;
+  allowlist_count?: number;
+}
+
+export interface WorkspaceGovernanceStepContext {
+  step_id?: string;
+  step_type?: string;
+  step_status?: string;
+}
+
+export interface WorkspaceGovernanceReviewContext {
+  review_id?: string;
+  review_status?: string;
+  allowlist_summary?: {
+    hash?: string;
+    count?: number;
+  };
+  gray_window?: {
+    start_at?: string;
+    end_at?: string;
+    timezone?: string;
+    window_status?: string;
+  };
+}
+
+export interface BuildWorkspaceGovernanceStepPayloadOptions {
+  approvalNote?: string;
+  rejectReason?: string;
+  expireReason?: string;
+  allowlistHash?: string;
+  allowlistCount?: number;
 }
 
 export const DEFAULT_WORKSPACE_GOVERNANCE_API_CONFIG: WorkspaceGovernanceApiConfig = {
@@ -152,6 +197,34 @@ export function stableGovernanceIdempotencyKey(
   ].join(":");
 }
 
+function stableStepPayloadHash(payload: Record<string, unknown>): string {
+  return workspaceSimpleHash(JSON.stringify(payload, Object.keys(payload).sort()));
+}
+
+export function stableGovernanceStepIdempotencyKey(
+  action: WorkspaceGovernanceStepAction,
+  reviewId: string,
+  stepIdOrReview: string,
+  currentStatus: string,
+  payloadHash: string
+): string {
+  if (action === "expire") {
+    return [
+      "p1-gow-review-expire",
+      text(reviewId),
+      text(currentStatus || "unknown_status"),
+      text(payloadHash || "empty_payload")
+    ].join(":");
+  }
+  return [
+    `p1-gow-step-${action}`,
+    text(reviewId),
+    text(stepIdOrReview),
+    text(currentStatus || "unknown_status"),
+    text(payloadHash || "empty_payload")
+  ].join(":");
+}
+
 export function assertWorkspaceGovernancePayloadSafe(payload: WorkspaceGovernanceRequestPayload): true {
   assertWorkspaceSensitiveSafe(payload);
   const start = Date.parse(payload.gray_window.start_at);
@@ -161,6 +234,17 @@ export function assertWorkspaceGovernancePayloadSafe(payload: WorkspaceGovernanc
   }
   if (!payload.idempotency_key || !payload.client_snapshot_hash || !payload.allowlist_summary.allowlist_hash) {
     throw new Error("governance_payload_missing_required_field");
+  }
+  return true;
+}
+
+export function assertWorkspaceGovernanceStepPayloadSafe(payload: WorkspaceGovernanceStepCommandPayload): true {
+  assertWorkspaceSensitiveSafe(payload);
+  if (!payload.idempotency_key) {
+    throw new Error("governance_step_payload_missing_idempotency_key");
+  }
+  if (payload.allowlist_count !== undefined && (!Number.isFinite(payload.allowlist_count) || payload.allowlist_count < 0)) {
+    throw new Error("governance_step_payload_invalid_allowlist_count");
   }
   return true;
 }
@@ -194,9 +278,108 @@ export function buildWorkspaceGovernanceRequestPayload(
   return payload;
 }
 
+function requireReviewId(review: WorkspaceGovernanceReviewContext): string {
+  const reviewId = text(review.review_id);
+  if (!reviewId) throw new Error("governance_step_missing_review_id");
+  return reviewId;
+}
+
+function requireStepId(step: WorkspaceGovernanceStepContext): string {
+  const stepId = text(step.step_id);
+  if (!stepId) throw new Error("governance_step_missing_step_id");
+  return stepId;
+}
+
+function assertGrayWindowCanApprove(review: WorkspaceGovernanceReviewContext): void {
+  const endAt = Date.parse(String(review.gray_window?.end_at || ""));
+  if (!Number.isFinite(endAt)) {
+    throw new Error("governance_step_invalid_gray_window");
+  }
+  if (endAt <= Date.now()) {
+    throw new Error("governance_step_gray_window_expired");
+  }
+}
+
+export function buildApproveGovernanceStepPayload(
+  review: WorkspaceGovernanceReviewContext,
+  step: WorkspaceGovernanceStepContext,
+  options: BuildWorkspaceGovernanceStepPayloadOptions = {}
+): WorkspaceGovernanceStepCommandPayload {
+  const reviewId = requireReviewId(review);
+  const stepId = requireStepId(step);
+  const stepType = text(step.step_type);
+  const body: Record<string, unknown> = {};
+  if (options.approvalNote) body.approval_note = options.approvalNote;
+  if (stepType === "receiver_allowlist") {
+    body.allowlist_hash = options.allowlistHash || text(review.allowlist_summary?.hash);
+    body.allowlist_count = options.allowlistCount ?? Number(review.allowlist_summary?.count ?? 0);
+    if (!body.allowlist_hash) throw new Error("governance_step_allowlist_hash_missing");
+  }
+  if (stepType === "gray_window") {
+    assertGrayWindowCanApprove(review);
+  }
+  const payload: WorkspaceGovernanceStepCommandPayload = {
+    ...body,
+    idempotency_key: stableGovernanceStepIdempotencyKey(
+      "approve",
+      reviewId,
+      stepId,
+      text(step.step_status || "pending"),
+      stableStepPayloadHash(body)
+    )
+  };
+  assertWorkspaceGovernanceStepPayloadSafe(payload);
+  return payload;
+}
+
+export function buildRejectGovernanceStepPayload(
+  review: WorkspaceGovernanceReviewContext,
+  step: WorkspaceGovernanceStepContext,
+  options: BuildWorkspaceGovernanceStepPayloadOptions = {}
+): WorkspaceGovernanceStepCommandPayload {
+  const reviewId = requireReviewId(review);
+  const stepId = requireStepId(step);
+  const body: Record<string, unknown> = {};
+  if (options.rejectReason) body.reject_reason = options.rejectReason;
+  const payload: WorkspaceGovernanceStepCommandPayload = {
+    ...body,
+    idempotency_key: stableGovernanceStepIdempotencyKey(
+      "reject",
+      reviewId,
+      stepId,
+      text(step.step_status || "pending"),
+      stableStepPayloadHash(body)
+    )
+  };
+  assertWorkspaceGovernanceStepPayloadSafe(payload);
+  return payload;
+}
+
+export function buildExpireGovernanceReviewPayload(
+  review: WorkspaceGovernanceReviewContext,
+  options: BuildWorkspaceGovernanceStepPayloadOptions = {}
+): WorkspaceGovernanceStepCommandPayload {
+  const reviewId = requireReviewId(review);
+  const body: Record<string, unknown> = {};
+  if (options.expireReason) body.expire_reason = options.expireReason;
+  const payload: WorkspaceGovernanceStepCommandPayload = {
+    ...body,
+    idempotency_key: stableGovernanceStepIdempotencyKey(
+      "expire",
+      reviewId,
+      reviewId,
+      text(review.review_status || "unknown_status"),
+      stableStepPayloadHash(body)
+    )
+  };
+  assertWorkspaceGovernanceStepPayloadSafe(payload);
+  return payload;
+}
+
 export function assertGovernanceResponseSafe(value: WorkspaceGovernanceResponse | WorkspaceGovernanceListResponse): true {
   assertWorkspaceSensitiveSafe(value);
   const payload = value as WorkspaceGovernanceResponse;
+  const serialized = JSON.stringify(value).toLowerCase();
   if (
     payload.approved === true
     || payload.push_center_job_created === true
@@ -214,7 +397,19 @@ export function assertGovernanceResponseSafe(value: WorkspaceGovernanceResponse 
     || payload.review_status === "sent"
     || payload.review_status === "completed"
     || payload.review_status === "approved"
+    || payload.step_status === "sent"
+    || payload.step_status === "completed"
   ) {
+    throw new Error("governance_api_response_claims_execution_state");
+  }
+  if (
+    serialized.includes("\"push_center_job_id\"")
+    || serialized.includes("\"external_effect_job_id\"")
+    || serialized.includes("execution started")
+  ) {
+    throw new Error("governance_api_response_claims_execution_state");
+  }
+  if (Array.isArray(payload.steps) && payload.steps.some((step) => step.step_status === "sent" || step.step_status === "completed")) {
     throw new Error("governance_api_response_claims_execution_state");
   }
   const list = value as WorkspaceGovernanceListResponse;
@@ -271,4 +466,45 @@ export async function getDraftGovernance(
   requestJson: WorkspaceDraftRequestJson = defaultWorkspaceDraftRequestJson()
 ): Promise<WorkspaceGovernanceListResponse> {
   return asGovernanceListResponse(await requestJson(`${config.draftsUrl}/${encodeURIComponent(draftId)}/governance`));
+}
+
+export async function approveGovernanceStep(
+  reviewId: string,
+  stepId: string,
+  payload: WorkspaceGovernanceStepCommandPayload,
+  config: WorkspaceGovernanceApiConfig = DEFAULT_WORKSPACE_GOVERNANCE_API_CONFIG,
+  requestJson: WorkspaceDraftRequestJson = defaultWorkspaceDraftRequestJson()
+): Promise<WorkspaceGovernanceResponse> {
+  assertWorkspaceGovernanceStepPayloadSafe(payload);
+  return asGovernanceResponse(await requestJson(
+    `${config.governanceUrl}/${encodeURIComponent(reviewId)}/steps/${encodeURIComponent(stepId)}/approve`,
+    bodyOptions(payload)
+  ));
+}
+
+export async function rejectGovernanceStep(
+  reviewId: string,
+  stepId: string,
+  payload: WorkspaceGovernanceStepCommandPayload,
+  config: WorkspaceGovernanceApiConfig = DEFAULT_WORKSPACE_GOVERNANCE_API_CONFIG,
+  requestJson: WorkspaceDraftRequestJson = defaultWorkspaceDraftRequestJson()
+): Promise<WorkspaceGovernanceResponse> {
+  assertWorkspaceGovernanceStepPayloadSafe(payload);
+  return asGovernanceResponse(await requestJson(
+    `${config.governanceUrl}/${encodeURIComponent(reviewId)}/steps/${encodeURIComponent(stepId)}/reject`,
+    bodyOptions(payload)
+  ));
+}
+
+export async function expireGovernanceReview(
+  reviewId: string,
+  payload: WorkspaceGovernanceStepCommandPayload,
+  config: WorkspaceGovernanceApiConfig = DEFAULT_WORKSPACE_GOVERNANCE_API_CONFIG,
+  requestJson: WorkspaceDraftRequestJson = defaultWorkspaceDraftRequestJson()
+): Promise<WorkspaceGovernanceResponse> {
+  assertWorkspaceGovernanceStepPayloadSafe(payload);
+  return asGovernanceResponse(await requestJson(
+    `${config.governanceUrl}/${encodeURIComponent(reviewId)}/expire`,
+    bodyOptions(payload)
+  ));
 }
