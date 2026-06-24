@@ -687,34 +687,18 @@ class QuestionnaireSubmitSideEffectGateway:
         return payload
 
     def emit_automation_questionnaire_result(self, *, questionnaire: dict[str, Any], submission: dict[str, Any], final_tags: list[str]) -> Json:
-        from aicrm_next.automation_engine.application import ApplyQuestionnaireResultCommand
-        from aicrm_next.automation_engine.dto import ApplyQuestionnaireResultRequest
-
         followup_type = "priority" if "tag_interest_ai_tools" in final_tags else "normal"
-        result = ApplyQuestionnaireResultCommand()(
-            ApplyQuestionnaireResultRequest(
-                person_id=submission.get("person_id"),
-                external_userid=submission.get("external_userid"),
-                mobile=submission.get("mobile"),
-                customer_name="问卷提交用户",
-                followup_type=followup_type,
-                questionnaire_id=questionnaire.get("id"),
-                submission_id=submission.get("submission_id"),
-                final_tags=final_tags,
-                source="questionnaire_submit_pipeline",
-                operator="system",
-                reason="questionnaire_submit_boundary",
-            )
-        )
         return self.record_side_effect_audit(
             operation="emit_automation_questionnaire_result",
             target={"questionnaire_id": questionnaire.get("id"), "submission_id": submission.get("submission_id"), "external_userid": submission.get("external_userid") or ""},
             result={
-                "ok": True,
-                "source_status": result.get("source_status", "fixture_boundary"),
-                "member_id": result.get("member", {}).get("member_id", ""),
+                "ok": False,
+                "source_status": "retired_automation_member_noop",
+                "retired": True,
+                "member_id": "",
                 "followup_type": followup_type,
-                "current_pool": result.get("member", {}).get("current_pool", ""),
+                "current_pool": "",
+                "message": "旧 automation_member 问卷分流已退场；请使用 AI Audience source-poke / refresh 链路。",
             },
         )
 

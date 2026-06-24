@@ -2,9 +2,6 @@ from __future__ import annotations
 
 from typing import Any
 
-from aicrm_next.identity_contact.application import ResolvePersonIdentityQuery
-from aicrm_next.identity_contact.dto import ResolvePersonIdentityRequest
-from aicrm_next.integration_gateway.automation_adapters import build_automation_activation_gateway
 from aicrm_next.shared.errors import ContractError, NotFoundError
 from aicrm_next.shared.repository_provider import RepositoryProviderError, blocked_production_payload
 from aicrm_next.shared.runtime import production_data_ready, production_environment
@@ -13,9 +10,6 @@ from .agent_outputs import agent_output_run_projection, agent_output_side_effect
 from .agent_runs import agent_run_side_effect_safety
 from .agents import agent_side_effect_safety
 from .dto import (
-    ActivationWebhookRequest,
-    ApplyActivationFactRequest,
-    ApplyQuestionnaireResultRequest,
     AgentCreateRequest,
     AgentListRequest,
     AgentOutputDetailRequest,
@@ -24,7 +18,6 @@ from .dto import (
     AgentRunListRequest,
 )
 from .repo import AutomationRepository, agent_postgres_enabled, build_automation_repository
-from .state_machine import apply_transition, normalize_followup_type
 
 
 def _automation_side_effect_safety(**overrides: bool) -> dict[str, bool]:
@@ -228,7 +221,6 @@ class ListAgentsQuery(_AgentRepositoryOwner):
 
     __call__ = execute
 
-
 class CreateAgentCommand(_AgentRepositoryOwner):
     def execute(self, request: AgentCreateRequest) -> dict[str, Any]:
         repo = self._repo_or_none()
@@ -359,176 +351,5 @@ class GetAgentRunDetailQuery(_AgentRunRepositoryOwner):
         if not run:
             raise NotFoundError("agent run not found")
         return _agent_run_response({"run": run})
-
-    __call__ = execute
-
-
-class ApplyQuestionnaireResultCommand:
-    def __init__(self, repo: AutomationRepository | None = None) -> None:
-        self._repo = repo or build_automation_repository()
-
-    def execute(self, request: ApplyQuestionnaireResultRequest) -> dict[str, Any]:
-        followup_type = normalize_followup_type(request.followup_type)
-        member = self._repo.find_member(
-            external_userid=request.external_userid,
-            mobile=request.mobile,
-            person_id=request.person_id,
-        )
-        is_new_member = False
-        if not member:
-            create_member = getattr(self._repo, "create_member_from_questionnaire", None)
-            if not create_member:
-                raise NotFoundError("automation member not found")
-            member = create_member(request.model_dump())
-            is_new_member = True
-        if not is_new_member and self._should_ignore_questionnaire_reroute(member):
-            updated, history = apply_transition(
-                member,
-                trigger="questionnaire_result_ignored",
-                source=request.source,
-                operator=request.operator,
-                reason="questionnaire_result_received_after_initial_split",
-                patch={
-                    "last_ignored_questionnaire_result": {
-                        "incoming_followup_type": followup_type,
-                        "questionnaire_id": request.questionnaire_id,
-                        "submission_id": request.submission_id,
-                        "final_tags": request.final_tags,
-                    }
-                },
-            )
-            self._repo.save_member(updated)
-            self._repo.create_execution_record(
-                {
-                    "record_type": "questionnaire_event",
-                    "member_id": updated["member_id"],
-                    "trigger": "questionnaire_result_ignored",
-                    "status": "succeeded",
-                    "status_label": "已记录问卷结果，未重新分流",
-                    "payload_preview": {
-                        "incoming_followup_type": followup_type,
-                        "effective_followup_type": updated["followup_type"],
-                        "after_pool": updated["current_pool"],
-                    },
-                }
-            )
-            return {"ok": True, "member": updated, "history": history, "source_status": "fixture_boundary", "rerouted": False}
-        updated, history = apply_transition(
-            member,
-            trigger="questionnaire_result",
-            source=request.source,
-            operator=request.operator,
-            reason=request.reason,
-            patch={
-                "questionnaire_followup_type": followup_type,
-                "followup_type": followup_type,
-                "last_questionnaire_id": request.questionnaire_id,
-                "last_submission_id": request.submission_id,
-                "last_final_tags": request.final_tags,
-            },
-        )
-        self._repo.save_member(updated)
-        self._repo.create_execution_record(
-            {
-                "record_type": "questionnaire_event",
-                "member_id": updated["member_id"],
-                "trigger": "questionnaire_result",
-                "status": "succeeded",
-                "status_label": "已记录问卷分流",
-                "payload_preview": {"followup_type": followup_type, "after_pool": updated["current_pool"]},
-            }
-        )
-        return {"ok": True, "member": updated, "history": history, "source_status": "fixture_boundary"}
-
-    __call__ = execute
-
-    def _should_ignore_questionnaire_reroute(self, member: dict[str, Any]) -> bool:
-        has_questionnaire_split = bool(str(member.get("questionnaire_followup_type") or "").strip())
-        has_manual_override = bool(str(member.get("manual_followup_type") or "").strip())
-        already_left_initial_pool = str(member.get("current_pool") or "new_user") != "new_user"
-        return has_questionnaire_split or has_manual_override or already_left_initial_pool
-
-
-class ApplyActivationFactCommand:
-    def __init__(
-        self,
-        repo: AutomationRepository | None = None,
-        identity_query: ResolvePersonIdentityQuery | None = None,
-    ) -> None:
-        self._repo = repo or build_automation_repository()
-        self._identity_query = identity_query or ResolvePersonIdentityQuery()
-
-    def execute(self, request: ApplyActivationFactRequest) -> dict[str, Any]:
-        member = self._resolve_member(member_id=request.member_id, external_userid=request.external_userid, mobile=request.mobile)
-        previous_pool = member["current_pool"]
-        updated, history = apply_transition(
-            member,
-            trigger="activation_fact",
-            source=request.source,
-            operator=request.operator,
-            reason=request.reason,
-            occurred_at=request.activated_at,
-            patch={"activated": True, "trial_opened": True},
-        )
-        self._repo.save_member(updated)
-        self._repo.create_execution_record(
-            {
-                "record_type": "activation_webhook",
-                "member_id": updated["member_id"],
-                "trigger": "activation_fact",
-                "status": "succeeded",
-                "status_label": "已记录激活",
-                "payload_preview": {"previous_pool": previous_pool, "current_pool": updated["current_pool"]},
-            }
-        )
-        return {"ok": True, "member": updated, "previous_pool": previous_pool, "current_pool": updated["current_pool"], "history": history, "warnings": []}
-
-    def _resolve_member(self, *, member_id: str | None, external_userid: str | None, mobile: str | None) -> dict[str, Any]:
-        if member_id:
-            member = self._repo.get_member(member_id)
-            if member:
-                return member
-        if external_userid or mobile:
-            identity = self._identity_query(ResolvePersonIdentityRequest(external_userid=external_userid, mobile=mobile))
-            member = self._repo.find_member(
-                external_userid=external_userid or (identity.external_userid if identity else None),
-                mobile=mobile or (identity.mobile if identity else None),
-                person_id=identity.person_id if identity else None,
-            )
-            if member:
-                return member
-        raise NotFoundError("automation member not found")
-
-    __call__ = execute
-
-
-class ApplyActivationWebhookCommand:
-    def __init__(self, repo: AutomationRepository | None = None, activation_gateway: Any | None = None) -> None:
-        self._repo = repo or build_automation_repository()
-        self._activation_gateway = activation_gateway or build_automation_activation_gateway()
-
-    def execute(self, request: ActivationWebhookRequest) -> dict[str, Any]:
-        if not (request.mobile or request.external_userid):
-            raise ContractError("mobile or external_userid is required")
-        activation_result = self._activation_gateway.receive_activation_event(
-            external_userid=request.external_userid,
-            mobile=request.mobile,
-            source=request.source,
-        )
-        result = ApplyActivationFactCommand(self._repo)(
-            ApplyActivationFactRequest(
-                mobile=request.mobile,
-                external_userid=request.external_userid,
-                activated_at=request.activated_at,
-                source=request.source,
-                operator=request.operator,
-                reason="activation_webhook",
-            )
-        )
-        result["adapter_contract"] = {"activation": activation_result}
-        result["side_effect_safety"] = _automation_side_effect_safety(
-            real_activation_webhook_executed=bool(activation_result.get("side_effect_executed"))
-        )
-        return result
 
     __call__ = execute
