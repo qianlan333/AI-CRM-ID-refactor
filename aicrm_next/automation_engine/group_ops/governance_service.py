@@ -3,9 +3,10 @@ from __future__ import annotations
 import hashlib
 import json
 from copy import deepcopy
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 from uuid import uuid4
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from aicrm_next.shared.errors import ContractError, NotFoundError
 
@@ -43,6 +44,12 @@ def _parse_datetime(value: Any, *, field: str) -> datetime:
         return datetime.fromisoformat(raw.replace("Z", "+00:00"))
     except ValueError as exc:
         raise ContractError(f"{field} must be ISO datetime") from exc
+
+
+def _ensure_aware(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value
 
 
 def _normalize_allowlist_summary(value: Any) -> dict[str, Any]:
@@ -129,6 +136,7 @@ def _review_envelope(
     operation: str,
     production_write: bool,
     idempotent_replay: bool = False,
+    step: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     return {
         "ok": True,
@@ -136,8 +144,12 @@ def _review_envelope(
         "review_id": review.get("review_id"),
         "draft_id": review.get("draft_id"),
         "review_status": review.get("review_status"),
+        "step_id": (step or {}).get("step_id", ""),
+        "step_type": (step or {}).get("step_type", ""),
+        "step_status": (step or {}).get("step_status", ""),
         "steps": [
             {
+                "step_id": step.get("step_id"),
                 "step_type": step.get("step_type"),
                 "step_status": step.get("step_status"),
                 "actor_metadata": {
@@ -168,6 +180,7 @@ def _review_envelope(
         "production_write": production_write,
         "production_write_scope": "governance_tables_only" if production_write else "none",
         "approved": False,
+        "governance_approved": review.get("review_status") == "governance_approved",
         "ready_for_review": True,
         "push_center_job_created": False,
         "external_effect_job_created": False,
@@ -181,6 +194,152 @@ def _review_envelope(
         "route_owner": "ai_crm_next",
         "capability_owner": "automation_engine",
     }
+
+
+def _find_step(review: dict[str, Any], step_id: str) -> dict[str, Any]:
+    for step in review.get("steps") or []:
+        if _text(step.get("step_id")) == step_id:
+            return step
+    raise NotFoundError("governance step not found")
+
+
+def _step_by_type(review: dict[str, Any], step_type: str) -> dict[str, Any] | None:
+    for step in review.get("steps") or []:
+        if _text(step.get("step_type")) == step_type:
+            return step
+    return None
+
+
+def _normalize_step_payload(payload: dict[str, Any], *, action: str) -> dict[str, Any]:
+    if not isinstance(payload, dict):
+        raise ContractError("request body must be a JSON object")
+    _raise_if_sensitive(payload)
+    idempotency_key = _text(payload.get("idempotency_key"))
+    if not idempotency_key:
+        raise ContractError("idempotency_key is required")
+    note = _text(payload.get("approval_note") or payload.get("reject_reason") or payload.get("expire_reason") or payload.get("note"))
+    normalized: dict[str, Any] = {
+        "action": action,
+        "idempotency_key": idempotency_key,
+        "note_present": bool(note),
+        "note_hash": _hash({"note": note}) if note else "",
+    }
+    if "allowlist_hash" in payload:
+        normalized["allowlist_hash"] = _text(payload.get("allowlist_hash"))
+    if "allowlist_count" in payload:
+        try:
+            normalized["allowlist_count"] = int(payload.get("allowlist_count"))
+        except (TypeError, ValueError) as exc:
+            raise ContractError("allowlist_count must be an integer") from exc
+    normalized["payload_hash"] = _hash(normalized)
+    _raise_if_sensitive(normalized)
+    return normalized
+
+
+def _transition_metadata(
+    *,
+    review: dict[str, Any],
+    step: dict[str, Any] | None,
+    normalized: dict[str, Any],
+    actor: dict[str, Any],
+) -> dict[str, Any]:
+    return {
+        **((step or {}).get("metadata") or {}),
+        "transition": {
+            "action": normalized["action"],
+            "idempotency_key": normalized["idempotency_key"],
+            "payload_hash": normalized["payload_hash"],
+            "actor": {
+                "actor_id": _actor_id(actor),
+                "actor_label": _actor_label(actor),
+                "actor_metadata": _actor_metadata(actor),
+            },
+            "review_id": review.get("review_id"),
+            "step_id": (step or {}).get("step_id", ""),
+            "step_type": (step or {}).get("step_type", ""),
+            "real_external_call": False,
+            "push_center_job_created": False,
+            "external_effect_job_created": False,
+            "broadcast_job_created": False,
+            "internal_event_created": False,
+        },
+    }
+
+
+def _audit_metadata(
+    review: dict[str, Any],
+    *,
+    normalized: dict[str, Any],
+    actor: dict[str, Any],
+    action_key: str,
+) -> dict[str, Any]:
+    existing = _json_clone(review.get("audit_metadata"), {})
+    actions = _json_clone(existing.get("governance_step_actions"), {})
+    actions[action_key] = {
+        "action": normalized["action"],
+        "idempotency_key": normalized["idempotency_key"],
+        "payload_hash": normalized["payload_hash"],
+        "actor": {
+            "actor_id": _actor_id(actor),
+            "actor_label": _actor_label(actor),
+            "actor_metadata": _actor_metadata(actor),
+        },
+        "real_external_call": False,
+        "push_center_job_created": False,
+        "external_effect_job_created": False,
+        "broadcast_job_created": False,
+        "internal_event_created": False,
+    }
+    return {
+        **existing,
+        "governance_step_actions": actions,
+    }
+
+
+def _existing_transition(step: dict[str, Any]) -> dict[str, Any]:
+    metadata = step.get("metadata") or {}
+    transition = metadata.get("transition") if isinstance(metadata, dict) else None
+    return transition if isinstance(transition, dict) else {}
+
+
+def _assert_idempotent_or_pending(step: dict[str, Any], normalized: dict[str, Any], action: str) -> bool:
+    existing = _existing_transition(step)
+    if _text(step.get("step_status")) == "pending":
+        if _text(step.get("idempotency_key")) and _text(step.get("idempotency_key")) == normalized["idempotency_key"]:
+            if existing.get("payload_hash") != normalized["payload_hash"]:
+                raise ContractError("governance step idempotency key conflict")
+        return False
+    if existing.get("action") == action and existing.get("idempotency_key") == normalized["idempotency_key"]:
+        if existing.get("payload_hash") != normalized["payload_hash"]:
+            raise ContractError("governance step idempotency key conflict")
+        return True
+    raise ContractError("governance step already transitioned")
+
+
+def _review_action_metadata(review: dict[str, Any], action_key: str) -> dict[str, Any]:
+    metadata = review.get("audit_metadata") or {}
+    actions = metadata.get("governance_step_actions") if isinstance(metadata, dict) else None
+    action = actions.get(action_key) if isinstance(actions, dict) else None
+    return action if isinstance(action, dict) else {}
+
+
+def _assert_review_can_transition(review: dict[str, Any]) -> None:
+    if _text(review.get("review_status")) in {"governance_rejected", "governance_expired"}:
+        raise ContractError("governance review is terminal")
+
+
+def _review_status_for_steps(steps: list[dict[str, Any]]) -> str:
+    if any(_text(step.get("step_status")) == "rejected" for step in steps):
+        return "governance_rejected"
+    if any(_text(step.get("step_status")) == "expired" for step in steps):
+        return "governance_expired"
+    if all(_text(step.get("step_status")) == "approved" for step in steps):
+        return "governance_approved"
+    if _text((_step_by_type({"steps": steps}, "operator_approval") or {}).get("step_status")) == "pending":
+        return "approval_pending"
+    if _text((_step_by_type({"steps": steps}, "receiver_allowlist") or {}).get("step_status")) == "pending":
+        return "allowlist_pending"
+    return "gray_window_pending"
 
 
 class GroupOpsWorkspaceGovernanceService:
@@ -288,6 +447,148 @@ class GroupOpsWorkspaceGovernanceService:
             }
         )
         return _review_envelope(created, operation="request_governance", production_write=True)
+
+    def approve_step(self, review_id: str, step_id: str, payload: dict[str, Any], *, actor: dict[str, Any]) -> dict[str, Any]:
+        normalized = _normalize_step_payload(payload, action="approve")
+        review = self.repo.get_review(_text(review_id))
+        if not review:
+            raise NotFoundError("governance review not found")
+        _assert_review_can_transition(review)
+        draft = self.repo.get_draft(_text(review.get("draft_id")))
+        if not draft:
+            raise NotFoundError("draft not found")
+        if draft.get("draft_status") in {"archived", "rejected"}:
+            raise ContractError("archived or rejected draft governance cannot be approved")
+        step = _find_step(review, _text(step_id))
+        idempotent_replay = _assert_idempotent_or_pending(step, normalized, "approve")
+        if idempotent_replay:
+            return _review_envelope(review, operation="approve_governance_step", production_write=False, idempotent_replay=True, step=step)
+
+        step_type = _text(step.get("step_type"))
+        gray_window_status = ""
+        if step_type == "receiver_allowlist":
+            allowlist = review.get("allowlist_summary") or {}
+            if "allowlist_hash" not in normalized or "allowlist_count" not in normalized:
+                raise ContractError("allowlist_hash and allowlist_count are required")
+            if normalized["allowlist_hash"] != _text(allowlist.get("allowlist_hash")):
+                raise ContractError("allowlist hash mismatch")
+            if int(normalized["allowlist_count"]) != int(allowlist.get("allowlist_count") or 0):
+                raise ContractError("allowlist count mismatch")
+            expires_at = _text(allowlist.get("expires_at"))
+            if expires_at and _ensure_aware(_parse_datetime(expires_at, field="allowlist.expires_at")) <= datetime.now(timezone.utc):
+                raise ContractError("allowlist snapshot expired")
+        elif step_type == "gray_window":
+            gray_window = review.get("gray_window") or {}
+            if not gray_window:
+                raise ContractError("gray window record is required")
+            start_at = _ensure_aware(_parse_datetime(gray_window.get("start_at"), field="gray_window.start_at"))
+            end_at = _ensure_aware(_parse_datetime(gray_window.get("end_at"), field="gray_window.end_at"))
+            if end_at <= start_at:
+                raise ContractError("gray_window end_at must be after start_at")
+            try:
+                ZoneInfo(_text(gray_window.get("timezone")) or "UTC")
+            except ZoneInfoNotFoundError as exc:
+                raise ContractError("gray_window timezone is invalid") from exc
+            if datetime.now(timezone.utc) > end_at:
+                raise ContractError("gray window expired")
+            gray_window_status = "approved"
+        elif step_type != "operator_approval":
+            raise ContractError("unsupported governance step type")
+
+        next_steps = [
+            {**candidate, "step_status": "approved"} if candidate.get("step_id") == step.get("step_id") else candidate
+            for candidate in review.get("steps") or []
+        ]
+        review_status = _review_status_for_steps(next_steps)
+        metadata = _transition_metadata(review=review, step=step, normalized=normalized, actor=actor)
+        updated = self.repo.transition_governance_step(
+            {
+                "review_id": review["review_id"],
+                "step_id": step["step_id"],
+                "step_status": "approved",
+                "review_status": review_status,
+                "actor_id": _actor_id(actor),
+                "actor_label": _actor_label(actor),
+                "idempotency_key": normalized["idempotency_key"],
+                "metadata": metadata,
+                "audit_metadata": _audit_metadata(review, normalized=normalized, actor=actor, action_key=f"{step['step_id']}:approve"),
+                "gray_window_status": gray_window_status,
+            }
+        )
+        updated_step = _find_step(updated, _text(step_id))
+        return _review_envelope(updated, operation="approve_governance_step", production_write=True, step=updated_step)
+
+    def reject_step(self, review_id: str, step_id: str, payload: dict[str, Any], *, actor: dict[str, Any]) -> dict[str, Any]:
+        normalized = _normalize_step_payload(payload, action="reject")
+        review = self.repo.get_review(_text(review_id))
+        if not review:
+            raise NotFoundError("governance review not found")
+        _assert_review_can_transition(review)
+        step = _find_step(review, _text(step_id))
+        idempotent_replay = _assert_idempotent_or_pending(step, normalized, "reject")
+        if idempotent_replay:
+            return _review_envelope(review, operation="reject_governance_step", production_write=False, idempotent_replay=True, step=step)
+        metadata = _transition_metadata(review=review, step=step, normalized=normalized, actor=actor)
+        updated = self.repo.transition_governance_step(
+            {
+                "review_id": review["review_id"],
+                "step_id": step["step_id"],
+                "step_status": "rejected",
+                "review_status": "governance_rejected",
+                "actor_id": _actor_id(actor),
+                "actor_label": _actor_label(actor),
+                "idempotency_key": normalized["idempotency_key"],
+                "metadata": metadata,
+                "audit_metadata": _audit_metadata(review, normalized=normalized, actor=actor, action_key=f"{step['step_id']}:reject"),
+                "gray_window_status": "rejected" if step.get("step_type") == "gray_window" else "",
+            }
+        )
+        updated_step = _find_step(updated, _text(step_id))
+        return _review_envelope(updated, operation="reject_governance_step", production_write=True, step=updated_step)
+
+    def expire_review(self, review_id: str, payload: dict[str, Any], *, actor: dict[str, Any]) -> dict[str, Any]:
+        normalized = _normalize_step_payload(payload, action="expire")
+        review = self.repo.get_review(_text(review_id))
+        if not review:
+            raise NotFoundError("governance review not found")
+        existing = _review_action_metadata(review, "review:expire")
+        if review.get("review_status") == "governance_expired":
+            if existing.get("idempotency_key") == normalized["idempotency_key"]:
+                if existing.get("payload_hash") != normalized["payload_hash"]:
+                    raise ContractError("governance review expire idempotency key conflict")
+                return _review_envelope(review, operation="expire_governance_review", production_write=False, idempotent_replay=True, step={"step_id": "", "step_type": "review", "step_status": "expired"})
+            raise ContractError("governance review already expired")
+        if review.get("review_status") == "governance_rejected":
+            raise ContractError("governance review is rejected")
+        metadata = {
+            "transition": {
+                "action": "expire",
+                "idempotency_key": normalized["idempotency_key"],
+                "payload_hash": normalized["payload_hash"],
+                "actor": {
+                    "actor_id": _actor_id(actor),
+                    "actor_label": _actor_label(actor),
+                    "actor_metadata": _actor_metadata(actor),
+                },
+                "review_id": review["review_id"],
+                "real_external_call": False,
+                "push_center_job_created": False,
+                "external_effect_job_created": False,
+                "broadcast_job_created": False,
+                "internal_event_created": False,
+            }
+        }
+        updated = self.repo.expire_governance_review(
+            {
+                "review_id": review["review_id"],
+                "actor_id": _actor_id(actor),
+                "actor_label": _actor_label(actor),
+                "idempotency_key": normalized["idempotency_key"],
+                "metadata": metadata,
+                "audit_metadata": _audit_metadata(review, normalized=normalized, actor=actor, action_key="review:expire"),
+            }
+        )
+        return _review_envelope(updated, operation="expire_governance_review", production_write=True, step={"step_id": "", "step_type": "review", "step_status": "expired"})
 
     def get_review(self, review_id: str) -> dict[str, Any]:
         review = self.repo.get_review(_text(review_id))
