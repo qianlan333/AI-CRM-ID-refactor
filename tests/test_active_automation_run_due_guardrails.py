@@ -19,68 +19,24 @@ def _auth_headers():
     return {"Authorization": "Bearer probe-token"}
 
 
-def test_jobs_run_due_dry_run_is_noop_and_not_forwarded(monkeypatch):
+def test_jobs_run_due_routes_are_retired(monkeypatch):
     client = _production_client(monkeypatch)
 
-    response = client.post(
-        checker.ACTIVE_JOBS_ROUTE,
-        json={"dry_run": True, "jobs": ["sop", "conversion_workflow"]},
-        headers=_auth_headers(),
-    )
-
-    assert response.status_code == 200
-    payload = response.json()
-    assert payload["ok"] is True
-    assert payload["dry_run"] is True
-    assert payload.get("side_effect_executed", False) is False
-    assert payload["fallback_used"] is False
-    assert payload["route_owner"] == "ai_crm_next"
-    assert "X-AICRM-Compatibility-Facade" not in response.headers
-
-
-def test_jobs_run_due_preview_body_is_read_only_and_not_forwarded(monkeypatch):
-    client = _production_client(monkeypatch)
-
-    response = client.post(
-        checker.ACTIVE_JOBS_ROUTE,
-        json={"preview": True, "jobs": ["sop", "conversion_workflow"]},
-        headers=_auth_headers(),
-    )
-
-    assert response.status_code == 200
-    payload = response.json()
-    assert payload["timer_status"] == "preview_only"
-    assert payload.get("side_effect_executed", False) is False
-    assert payload["fallback_used"] is False
-    assert "X-AICRM-Compatibility-Facade" not in response.headers
-    assert [item["job_code"] for item in payload["candidates"]] == ["sop", "conversion_workflow"]
-    assert set(payload["candidates"][0]) >= {"job_code", "status", "estimated_actions"}
-
-
-def test_jobs_run_due_preview_endpoint_is_available(monkeypatch):
-    client = _production_client(monkeypatch)
-
-    response = client.post(checker.ACTIVE_JOBS_PREVIEW_ROUTE, json={"jobs": ["sop"]}, headers=_auth_headers())
-
-    assert response.status_code == 200
-    assert response.json()["timer_status"] == "preview_only"
-
-
-def test_jobs_run_due_real_execution_requires_allowlist_in_production(monkeypatch):
-    client = _production_client(monkeypatch)
-
-    response = client.post(
-        checker.ACTIVE_JOBS_ROUTE,
-        json={"dry_run": False, "jobs": ["sop", "conversion_workflow"], "max_send_records": 1, "max_outbound_tasks": 1},
-        headers=_auth_headers(),
-    )
-
-    assert response.status_code == 409
-    payload = response.json()
-    assert payload["error_code"] == "automation_run_due_allowlist_required"
-    assert payload["side_effect_executed"] is False
-    assert payload["fallback_used"] is False
-    assert payload["preflight_summary"]["allowlist_present"] is False
+    for route, body in [
+        (checker.ACTIVE_JOBS_ROUTE, {"dry_run": True, "jobs": ["sop", "conversion_workflow"]}),
+        (checker.ACTIVE_JOBS_ROUTE, {"preview": True, "jobs": ["sop", "conversion_workflow"]}),
+        (checker.ACTIVE_JOBS_PREVIEW_ROUTE, {"jobs": ["sop"]}),
+        (checker.ACTIVE_JOBS_ROUTE, {"dry_run": False, "jobs": ["sop"], "operator": "checker"}),
+    ]:
+        response = client.post(route, json=body, headers=_auth_headers())
+        assert response.status_code == 410, route
+        payload = response.json()
+        assert payload["ok"] is False
+        assert payload["error"] == "legacy_automation_jobs_runner_retired"
+        assert payload["real_external_call_executed"] is False
+        assert payload["automation_runtime_executed"] is False
+        assert response.headers["X-AICRM-Legacy-Automation-Retired"] == "true"
+        assert "X-AICRM-Compatibility-Facade" not in response.headers
 
 
 def test_campaign_dry_run_and_preview_are_noop(monkeypatch):
@@ -110,12 +66,13 @@ def test_campaign_real_execution_requires_allowlist_in_production(monkeypatch):
     assert payload["fallback_used"] is False
 
 
-def test_active_guardrail_routes_still_require_internal_token(monkeypatch):
+def test_retired_jobs_route_does_not_expose_legacy_auth_path(monkeypatch):
     client = _production_client(monkeypatch)
 
     response = client.post(checker.ACTIVE_JOBS_ROUTE, json={"preview": True})
 
-    assert response.status_code == 401
+    assert response.status_code == 410
+    assert response.json()["error"] == "legacy_automation_jobs_runner_retired"
 
 
 def test_checker_returns_ok_and_keeps_local_sentinel_stable(monkeypatch):
@@ -124,11 +81,12 @@ def test_checker_returns_ok_and_keeps_local_sentinel_stable(monkeypatch):
     result = checker.run_check()
 
     assert result["ok"] is True
+    assert result["jobs_routes_retired"] is True
     assert result["dry_run_noop"] is True
     assert result["preview_noop"] is True
     assert result["true_execution_without_allowlist_rejected"] is True
     assert result["db_sentinel"]["ok"] is True
-    assert result["timers_not_enabled"] is True
+    assert result["retired_timers_not_enabled"] is True
 
 
 def test_checker_detects_sentinel_change(monkeypatch):
@@ -146,12 +104,12 @@ def test_checker_detects_sentinel_change(monkeypatch):
         def post(self, route, json=None, headers=None, follow_redirects=False):
             if not headers:
                 return FakeResponse(401, {})
+            if route == checker.ACTIVE_JOBS_ROUTE or route == checker.ACTIVE_JOBS_PREVIEW_ROUTE:
+                return FakeResponse(410, {"ok": False, "error": "legacy_automation_jobs_runner_retired", "real_external_call_executed": False, "automation_runtime_executed": False})
             if route.endswith("/preview") or (json or {}).get("preview"):
                 return FakeResponse(200, _noop_payload(route, preview=True))
             if (json or {}).get("dry_run"):
                 return FakeResponse(200, _noop_payload(route, dry_run=True))
-            if route == checker.ACTIVE_JOBS_ROUTE:
-                return FakeResponse(409, {"error_code": "automation_run_due_allowlist_required"})
             return FakeResponse(409, {"error_code": "campaign_run_due_allowlist_required"})
 
     sentinels = iter(
@@ -162,7 +120,7 @@ def test_checker_detects_sentinel_change(monkeypatch):
     )
     monkeypatch.setattr(checker, "_client", lambda: FakeClient())
     monkeypatch.setattr(checker, "_read_db_sentinel", lambda: next(sentinels))
-    monkeypatch.setattr(checker, "_timer_enablement_status", lambda: {"timers_not_enabled": True, "units": {}})
+    monkeypatch.setattr(checker, "_timer_enablement_status", lambda: {"retired_timers_not_enabled": True, "units": {}})
 
     result = checker.run_check()
 
@@ -172,8 +130,7 @@ def test_checker_detects_sentinel_change(monkeypatch):
 
 def test_docs_do_not_use_forbidden_status_markers():
     docs = [
-        "docs/reply_system_reenable_runbook.md",
-        "docs/active_automation_reenable_runbook.md",
+        "docs/runbooks/active_automation_retirement.md",
     ]
     content = "\n".join(open(path, encoding="utf-8").read() for path in docs)
     for marker in ("delete_ready", "production_ready", "production_approved"):

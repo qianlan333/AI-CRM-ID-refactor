@@ -271,10 +271,12 @@ def run_check() -> dict[str, Any]:
     oauth_blockers = _oauth_blockers(routes)
     content_blockers = questionnaire_blockers + automation_blockers
     warnings = questionnaire_warnings + automation_warnings
-    timer_disabled = [
+    retired_timer_units = [
         "aicrm-reply-monitor-run-due.timer",
         "aicrm-reply-monitor-capture.timer",
         "aicrm-automation-jobs-run-due.timer",
+    ]
+    active_timer_units = [
         "aicrm-campaign-run-due.timer",
     ]
     result = {
@@ -289,7 +291,9 @@ def run_check() -> dict[str, Any]:
         "warnings": warnings,
         "questionnaire_production_data_ready": not questionnaire_blockers and not questionnaire_warnings,
         "automation_production_data_ready": not automation_blockers and not automation_warnings,
-        "timers_currently_disabled": timer_disabled,
+        "timers_currently_disabled": retired_timer_units,
+        "retired_timers_currently_disabled": retired_timer_units,
+        "active_timer_units": active_timer_units,
         "callback_currently_has_5013_fallback": True,
         "fixture_only_modules_present": _static_fixture_modules(),
         "fake_or_disabled_adapter_warning": "D7 fake/staging-disabled adapters remain contract-only unless production env enables real adapters.",

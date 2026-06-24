@@ -29,8 +29,10 @@ ACTIVE_JOBS_PREVIEW_ROUTE = "/api/admin/automation-conversion/jobs/run-due/previ
 CAMPAIGN_ROUTE = "/api/admin/cloud-orchestrator/campaigns/run-due"
 CAMPAIGN_PREVIEW_ROUTE = "/api/admin/cloud-orchestrator/campaigns/run-due/preview"
 
-ACTIVE_TIMER_UNITS = [
+RETIRED_TIMER_UNITS = [
     "aicrm-automation-jobs-run-due.timer",
+]
+ACTIVE_TIMER_UNITS = [
     "aicrm-campaign-run-due.timer",
 ]
 
@@ -165,12 +167,12 @@ def _noop_payload_ok(payload: dict[str, Any], *, expected_preview: bool | None =
     return True
 
 
-def _operation_task_plan_only_ok(payload: dict[str, Any]) -> bool:
+def _retired_jobs_payload_ok(payload: dict[str, Any]) -> bool:
     return (
-        payload.get("jobs_run_due_executed") is False
-        and int(payload.get("operation_tasks_executed") or 0) == 0
-        and int(payload.get("actual_enqueued_count") or 0) == 0
-        and payload.get("blocked_reason") == "next_plan_only_route"
+        payload.get("ok") is False
+        and payload.get("error") == "legacy_automation_jobs_runner_retired"
+        and payload.get("real_external_call_executed") is False
+        and payload.get("automation_runtime_executed") is False
     )
 
 
@@ -204,19 +206,27 @@ def production_config_modified() -> bool:
 
 def _timer_enablement_status() -> dict[str, Any]:
     systemctl = shutil.which("systemctl")
+    units_to_check = [*RETIRED_TIMER_UNITS, *ACTIVE_TIMER_UNITS]
     if not systemctl:
         return {
             "checked": False,
             "reason": "systemctl_unavailable",
-            "timers_not_enabled": True,
-            "units": {unit: "not_checked" for unit in ACTIVE_TIMER_UNITS},
+            "retired_timers_not_enabled": True,
+            "active_timers": {unit: "not_checked" for unit in ACTIVE_TIMER_UNITS},
+            "units": {unit: "not_checked" for unit in units_to_check},
         }
     units: dict[str, str] = {}
-    for unit in ACTIVE_TIMER_UNITS:
+    for unit in units_to_check:
         proc = subprocess.run([systemctl, "is-enabled", unit], text=True, capture_output=True, check=False)
         units[unit] = (proc.stdout or proc.stderr or "").strip() or f"exit_{proc.returncode}"
-    enabled = [unit for unit, state in units.items() if state == "enabled"]
-    return {"checked": True, "reason": "", "timers_not_enabled": not enabled, "units": units}
+    retired_enabled = [unit for unit in RETIRED_TIMER_UNITS if units.get(unit) == "enabled"]
+    return {
+        "checked": True,
+        "reason": "",
+        "retired_timers_not_enabled": not retired_enabled,
+        "active_timers": {unit: units[unit] for unit in ACTIVE_TIMER_UNITS},
+        "units": units,
+    }
 
 
 def run_check() -> dict[str, Any]:
@@ -227,7 +237,6 @@ def run_check() -> dict[str, Any]:
         sentinel_before = _read_db_sentinel()
 
         jobs_dry_run = client.post(ACTIVE_JOBS_ROUTE, json={"dry_run": True, "jobs": ["sop", "conversion_workflow"]}, headers=headers)
-        jobs_operation_task_plan = client.post(ACTIVE_JOBS_ROUTE, json={"dry_run": True, "jobs": ["operation_task"]}, headers=headers)
         jobs_preview = client.post(ACTIVE_JOBS_ROUTE, json={"preview": True, "jobs": ["sop", "conversion_workflow"]}, headers=headers)
         jobs_preview_endpoint = client.post(ACTIVE_JOBS_PREVIEW_ROUTE, json={"jobs": ["sop", "conversion_workflow"]}, headers=headers)
         jobs_without_allowlist = client.post(
@@ -247,7 +256,6 @@ def run_check() -> dict[str, Any]:
     timer_status = _timer_enablement_status()
     responses = {
         "jobs_dry_run": {"status": jobs_dry_run.status_code, "payload": _json(jobs_dry_run)},
-        "jobs_operation_task_plan": {"status": jobs_operation_task_plan.status_code, "payload": _json(jobs_operation_task_plan)},
         "jobs_preview": {"status": jobs_preview.status_code, "payload": _json(jobs_preview)},
         "jobs_preview_endpoint": {"status": jobs_preview_endpoint.status_code, "payload": _json(jobs_preview_endpoint)},
         "jobs_without_allowlist": {"status": jobs_without_allowlist.status_code, "payload": _json(jobs_without_allowlist)},
@@ -258,36 +266,25 @@ def run_check() -> dict[str, Any]:
     }
 
     blockers: list[str] = []
-    for key in ("jobs_dry_run", "campaign_dry_run"):
-        if responses[key]["status"] != 200 or not _noop_payload_ok(responses[key]["payload"]):
-            blockers.append(f"{key}_not_noop")
-    if (
-        responses["jobs_operation_task_plan"]["status"] != 200
-        or not _noop_payload_ok(responses["jobs_operation_task_plan"]["payload"])
-        or not _operation_task_plan_only_ok(responses["jobs_operation_task_plan"]["payload"])
-    ):
-        blockers.append("operation_task_plan_route_not_blocked")
-    for key in ("jobs_preview", "jobs_preview_endpoint", "campaign_preview", "campaign_preview_endpoint"):
+    for key in ("jobs_dry_run", "jobs_preview", "jobs_preview_endpoint", "jobs_without_allowlist"):
+        if responses[key]["status"] != 410 or not _retired_jobs_payload_ok(responses[key]["payload"]):
+            blockers.append(f"{key}_not_retired_410")
+    if responses["campaign_dry_run"]["status"] != 200 or not _noop_payload_ok(responses["campaign_dry_run"]["payload"]):
+        blockers.append("campaign_dry_run_not_noop")
+    for key in ("campaign_preview", "campaign_preview_endpoint"):
         if responses[key]["status"] != 200 or not _noop_payload_ok(responses[key]["payload"], expected_preview=True):
             blockers.append(f"{key}_not_preview_noop")
-    jobs_without_allowlist_rejected = responses["jobs_without_allowlist"]["status"] in {400, 409} or _plan_only_blocked_ok(
-        responses["jobs_without_allowlist"]["payload"]
-    )
     campaign_without_allowlist_rejected = responses["campaign_without_allowlist"]["status"] in {400, 409} or _plan_only_blocked_ok(
         responses["campaign_without_allowlist"]["payload"]
     )
-    if not jobs_without_allowlist_rejected:
-        blockers.append("jobs_without_allowlist_not_rejected")
-    if responses["jobs_without_allowlist"]["status"] in {400, 409} and responses["jobs_without_allowlist"]["payload"].get("error_code") != "automation_run_due_allowlist_required":
-        blockers.append("jobs_without_allowlist_missing_error_code")
     if not campaign_without_allowlist_rejected:
         blockers.append("campaign_without_allowlist_not_rejected")
     if responses["campaign_without_allowlist"]["status"] in {400, 409} and responses["campaign_without_allowlist"]["payload"].get("error_code") != "campaign_run_due_allowlist_required":
         blockers.append("campaign_without_allowlist_missing_error_code")
     if not db_sentinel["ok"]:
         blockers.append("db_sentinel_changed_or_unavailable")
-    if not timer_status["timers_not_enabled"]:
-        blockers.append("active_automation_timers_enabled")
+    if not timer_status["retired_timers_not_enabled"]:
+        blockers.append("retired_automation_timers_enabled")
     if production_config_modified():
         blockers.append("production_config_modified")
 
@@ -295,23 +292,26 @@ def run_check() -> dict[str, Any]:
         "ok": not blockers,
         "blockers": blockers,
         "responses": responses,
-        "dry_run_noop": all(_noop_payload_ok(responses[key]["payload"]) for key in ("jobs_dry_run", "campaign_dry_run")),
+        "jobs_routes_retired": all(
+            responses[key]["status"] == 410 and _retired_jobs_payload_ok(responses[key]["payload"])
+            for key in ("jobs_dry_run", "jobs_preview", "jobs_preview_endpoint", "jobs_without_allowlist")
+        ),
+        "dry_run_noop": _noop_payload_ok(responses["campaign_dry_run"]["payload"]),
         "preview_noop": all(
             _noop_payload_ok(responses[key]["payload"], expected_preview=True)
-            for key in ("jobs_preview", "jobs_preview_endpoint", "campaign_preview", "campaign_preview_endpoint")
+            for key in ("campaign_preview", "campaign_preview_endpoint")
         ),
-        "operation_task_plan_only": "operation_task_plan_route_not_blocked" not in blockers,
-        "true_execution_without_allowlist_rejected": "jobs_without_allowlist_not_rejected" not in blockers
-        and "campaign_without_allowlist_not_rejected" not in blockers,
+        "true_execution_without_allowlist_rejected": "campaign_without_allowlist_not_rejected" not in blockers,
         "bounded_execution_parameters": {
-            "jobs": ["max_send_records", "max_outbound_tasks", "allow_task_ids", "allow_workflow_ids", "allow_node_ids", "operator"],
+            "jobs": "retired_410",
             "campaigns": ["batch_size", "allow_campaign_ids", "max_dispatch_count"],
         },
         "db_sentinel": db_sentinel,
-        "timers_not_enabled": timer_status["timers_not_enabled"],
+        "timers_not_enabled": timer_status["retired_timers_not_enabled"],
+        "retired_timers_not_enabled": timer_status["retired_timers_not_enabled"],
         "timer_enablement_status": timer_status,
         "production_config_modified": production_config_modified(),
-        "recommendation": "READY_FOR_ACTIVE_AUTOMATION_BOUNDED_SERVER_PREVIEW_NOT_TIMER_ENABLE" if not blockers else "ACTIVE_AUTOMATION_GUARDRAILS_NOT_READY",
+        "recommendation": "READY_FOR_RETIRED_AUTOMATION_JOBS_AND_CAMPAIGN_PREVIEW" if not blockers else "ACTIVE_AUTOMATION_GUARDRAILS_NOT_READY",
     }
     return result
 
@@ -325,6 +325,7 @@ def write_outputs(result: dict[str, Any], output_md: str | None, output_json: st
             "",
             f"- ok: {result['ok']}",
             f"- blockers: {result['blockers']}",
+            f"- jobs_routes_retired: {result['jobs_routes_retired']}",
             f"- dry_run_noop: {result['dry_run_noop']}",
             f"- preview_noop: {result['preview_noop']}",
             f"- true_execution_without_allowlist_rejected: {result['true_execution_without_allowlist_rejected']}",
