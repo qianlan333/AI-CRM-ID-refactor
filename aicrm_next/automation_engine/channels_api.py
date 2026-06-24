@@ -17,12 +17,10 @@ from aicrm_next.automation_engine.repo import connect_channel_admin_db as _conne
 router = APIRouter()
 
 _FIXTURE_CHANNELS: dict[int, dict[str, Any]] = {}
-_FIXTURE_PROGRAM_BINDINGS: dict[int, dict[str, Any]] = {}
 _FIXTURE_CHANNEL_ASSIGNEES: dict[int, list[dict[str, Any]]] = {}
 _FIXTURE_ASSIGNMENT_EVENTS: list[dict[str, Any]] = []
 _FIXTURE_WE_COM_LINKS: list[dict[str, Any]] = []
 _NEXT_ID = 1
-_NEXT_BINDING_ID = 1
 _NEXT_ASSIGNEE_ID = 1
 _NEXT_ASSIGNMENT_EVENT_ID = 1
 _NEXT_WE_COM_LINK_ID = 1
@@ -696,25 +694,6 @@ def _list_channels_from_postgres(
             )
             return [_attach_assignment_payload(_serialize_channel(dict(row)), include_assignees=False) for row in cur.fetchall() or []]
 
-
-def list_program_channel_bindings_resource(program_id: int) -> list[dict[str, Any]]:
-    del program_id
-    return []
-
-
-def list_program_entry_candidate_channels(program_id: int) -> list[dict[str, Any]]:
-    del program_id
-    return []
-
-
-def bind_channels_to_program_resource(program_id: int, channel_ids: list[int], payload: dict[str, Any] | None = None) -> dict[str, Any]:
-    del program_id, channel_ids, payload
-    return {"ok": False, "error": "legacy_program_channel_binding_retired", "bindings": []}
-
-
-def archive_program_channel_binding_resource(program_id: int, binding_id: int) -> dict[str, Any]:
-    del program_id, binding_id
-    return {"ok": False, "error": "legacy_program_channel_binding_retired"}
 
 def _payload_value(payload: dict[str, Any], existing: dict[str, Any], key: str, *, partial: bool) -> Any:
     if partial and key not in payload:

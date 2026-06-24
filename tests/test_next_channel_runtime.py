@@ -12,9 +12,7 @@ def _client(monkeypatch) -> TestClient:
     monkeypatch.delenv("AICRM_NEXT_ENABLE_LEGACY_PRODUCTION_FACADE", raising=False)
     monkeypatch.setenv("SECRET_KEY", "next-channel-runtime-test")
     channels_api._FIXTURE_CHANNELS.clear()
-    channels_api._FIXTURE_PROGRAM_BINDINGS.clear()
     channels_api._NEXT_ID = 1
-    channels_api._NEXT_BINDING_ID = 1
     return TestClient(create_app(), raise_server_exceptions=False)
 
 

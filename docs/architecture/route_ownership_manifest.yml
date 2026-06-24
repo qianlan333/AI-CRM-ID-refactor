@@ -1198,10 +1198,10 @@ routes:
   - GET
   route_name: list_channel_bindings
   capability_owner: automation_engine
-  runtime_owner: ai_crm_next
+  runtime_owner: retired
   layer: api
   external_effects: none
-  data_source: read_model
+  data_source: command
   requires_auth: true
   rollback: previous_release
 - path: /api/admin/automation-conversion/programs/{program_id:int}/channel-bindings
