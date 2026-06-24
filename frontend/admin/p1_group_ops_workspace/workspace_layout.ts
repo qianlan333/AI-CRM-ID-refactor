@@ -15,6 +15,14 @@ import {
   renderWorkspaceDetailPanel,
   renderWorkspaceSelectedPreviewResult,
 } from "./workspace_detail.js";
+import {
+  archiveDraft,
+  buildWorkspaceDraftPayload,
+  createDraft,
+  isDraftConflictError,
+  updateDraft,
+  type WorkspaceDraftResponse
+} from "./workspace_draft_api.js";
 import { ENTITY_FILTER_OPTIONS, STATUS_FILTER_OPTIONS, filterWorkspaceView, type FilteredWorkspaceView } from "./workspace_filters.js";
 import { buildWorkspaceCanvasLanes } from "./workspace_grouping.js";
 import { moveWorkspaceCanvasSelection, type WorkspaceKeyboardKey } from "./workspace_keyboard.js";
@@ -253,6 +261,42 @@ function renderBundleSummary(fixture: WorkspaceFixture, filtered: FilteredWorksp
   `;
 }
 
+function draftStatusTone(status: WorkspaceViewState["draftSaveStatus"]): string {
+  if (status === "saved" || status === "archived") return "success";
+  if (status === "failed" || status === "conflict") return "danger";
+  if (status === "saving") return "info";
+  return "neutral";
+}
+
+function renderDraftPersistencePanel(fixture: WorkspaceFixture, filtered: FilteredWorkspaceView): string {
+  const draftPayload = buildWorkspaceDraftPayload(fixture, filtered, filtered.viewState);
+  const hasDraft = Boolean(filtered.viewState.currentDraftId);
+  const tone = draftStatusTone(filtered.viewState.draftSaveStatus);
+  return `
+    <section class="p1-workspace-draft-save" aria-label="Save sanitized workspace draft" data-draft-persistence="frontend_save_only" data-preview-only="true" data-real-external-call-executed="false" data-push-center-job-created="false" data-external-effect-job-created="false" data-can-claim-pass90="false">
+      <div class="p1-workspace-panel-head">
+        <h2>Draft persistence</h2>
+        <p>保存草稿只写 draft 表；不会发送、不会审批、不会创建 Push Center job、不会创建 external_effect_job。</p>
+      </div>
+      <dl class="p1-workspace-mini-fields">
+        <div><dt>draft_id</dt><dd>${escapeHtml(filtered.viewState.currentDraftId || "not_saved")}</dd></div>
+        <div><dt>version</dt><dd>${filtered.viewState.currentDraftVersion || 0}</dd></div>
+        <div><dt>items</dt><dd>${draftPayload.items.length}</dd></div>
+        <div><dt>preview_only</dt><dd>true</dd></div>
+        <div><dt>real_external_call</dt><dd>false</dd></div>
+        <div><dt>can_claim_pass90</dt><dd>false</dd></div>
+      </dl>
+      <div class="p1-workspace-draft-actions" aria-label="草稿保存操作">
+        <button type="button" data-workspace-save-draft="true">${hasDraft ? "Save draft update" : "Save draft"}</button>
+        <button type="button" data-workspace-save-as-new-draft="true">Save as new draft</button>
+        <button type="button" data-workspace-archive-draft="true"${hasDraft && filtered.viewState.draftSaveStatus !== "archived" ? "" : " disabled"}>Archive draft</button>
+      </div>
+      <p class="p1-workspace-draft-status p1-workspace-draft-status--${tone}" aria-live="polite" data-draft-save-status="${escapeHtml(filtered.viewState.draftSaveStatus)}">${escapeHtml(filtered.viewState.draftSaveMessage)}</p>
+      <p class="p1-workspace-draft-guardrail">Draft persistence is not execution. request-review、approval bridge、Push Center bridge 均未接入；草稿不等于 sent/completed，也不等于 PASS_90_PLUS。</p>
+    </section>
+  `;
+}
+
 function renderPropertyPanel(fixture: WorkspaceFixture, filtered: FilteredWorkspaceView): string {
   const selection = selectionFromViewState(fixture, filtered.viewState);
   const multiSelectedCount = countMultiSelected(filtered.viewState);
@@ -275,6 +319,7 @@ function renderPropertyPanel(fixture: WorkspaceFixture, filtered: FilteredWorksp
         ${guardrailNotice}
         <p>P1_READY_WITH_EXCEPTIONS 不等于 PASS_90_PLUS；sent evidence 不等于 governance complete。</p>
       </section>
+      ${renderDraftPersistencePanel(fixture, filtered)}
       ${filtered.viewState.activeSelectionMode === "multi" && multiSelectedCount > 0 ? renderBundleSummary(fixture, filtered) : renderWorkspaceDetailPanel(fixture, selection)}
       <div class="p1-workspace-status-stack">${cards}</div>
     </aside>
@@ -420,6 +465,112 @@ function attachBundleExportHandlers(root: HTMLElement, fixture: WorkspaceFixture
   });
 }
 
+function draftStateFromResponse(
+  viewState: WorkspaceViewState,
+  payload: WorkspaceDraftResponse,
+  message: string
+): Partial<WorkspaceViewState> {
+  return {
+    currentDraftId: payload.draft_id || viewState.currentDraftId,
+    currentDraftVersion: Number(payload.version || viewState.currentDraftVersion || 0),
+    currentDraftSnapshotHash: String(payload.snapshot_hash || viewState.currentDraftSnapshotHash || ""),
+    currentDraftIdempotencyKey: viewState.currentDraftIdempotencyKey,
+    draftSaveStatus: payload.draft_status === "archived" ? "archived" : "saved",
+    draftSaveMessage: message
+  };
+}
+
+function attachDraftPersistenceHandlers(root: HTMLElement, fixture: WorkspaceFixture, viewState: WorkspaceViewState): void {
+  if (typeof root.querySelectorAll !== "function") return;
+  const renderWithDraftUpdates = (updates: Partial<WorkspaceViewState>) => {
+    renderP1GroupOpsWorkspace(root, fixture, updateWorkspaceViewState(viewState, updates));
+  };
+  root.querySelectorAll<HTMLElement>("[data-workspace-save-draft]").forEach((node) => {
+    node.addEventListener("click", () => {
+      const filtered = filterWorkspaceView(fixture, viewState);
+      const basePayload = buildWorkspaceDraftPayload(fixture, filtered, filtered.viewState, {
+        version: filtered.viewState.currentDraftVersion || undefined
+      });
+      const idempotencyKey = filtered.viewState.currentDraftIdempotencyKey || basePayload.idempotency_key;
+      renderWithDraftUpdates({
+        currentDraftIdempotencyKey: idempotencyKey,
+        draftSaveStatus: "saving",
+        draftSaveMessage: "正在保存脱敏草稿；不会发送、不审批、不创建 Push Center job。"
+      });
+      const request = filtered.viewState.currentDraftId && filtered.viewState.currentDraftVersion > 0
+        ? updateDraft(filtered.viewState.currentDraftId, { ...basePayload, idempotency_key: idempotencyKey, version: filtered.viewState.currentDraftVersion })
+        : createDraft({ ...basePayload, idempotency_key: idempotencyKey });
+      request
+        .then((response) => {
+          renderP1GroupOpsWorkspace(root, fixture, updateWorkspaceViewState(filtered.viewState, {
+            ...draftStateFromResponse(filtered.viewState, response, "草稿已保存；仍为 preview-only，不可执行。"),
+            currentDraftIdempotencyKey: idempotencyKey
+          }));
+        })
+        .catch((error) => {
+          renderP1GroupOpsWorkspace(root, fixture, updateWorkspaceViewState(filtered.viewState, {
+            currentDraftIdempotencyKey: idempotencyKey,
+            draftSaveStatus: isDraftConflictError(error) ? "conflict" : "failed",
+            draftSaveMessage: isDraftConflictError(error)
+              ? "保存冲突：服务端版本更新了，请重新加载草稿或另存为新草稿；不会自动覆盖。"
+              : "保存失败：草稿未写入；不会发送、不审批、不创建外部任务。"
+          }));
+        });
+    });
+  });
+  root.querySelectorAll<HTMLElement>("[data-workspace-save-as-new-draft]").forEach((node) => {
+    node.addEventListener("click", () => {
+      const filtered = filterWorkspaceView(fixture, viewState);
+      const idempotencyKey = `p1-gow-draft-new:${Date.now()}`;
+      const payload = buildWorkspaceDraftPayload(fixture, filtered, filtered.viewState, { idempotencyKeyOverride: idempotencyKey });
+      renderWithDraftUpdates({
+        currentDraftId: "",
+        currentDraftVersion: 0,
+        currentDraftSnapshotHash: "",
+        currentDraftIdempotencyKey: idempotencyKey,
+        draftSaveStatus: "saving",
+        draftSaveMessage: "正在另存为新脱敏草稿；不会执行。"
+      });
+      createDraft(payload)
+        .then((response) => {
+          renderP1GroupOpsWorkspace(root, fixture, updateWorkspaceViewState(filtered.viewState, {
+            ...draftStateFromResponse(filtered.viewState, response, "已另存为新草稿；仍不可执行。"),
+            currentDraftIdempotencyKey: idempotencyKey
+          }));
+        })
+        .catch((error) => {
+          renderP1GroupOpsWorkspace(root, fixture, updateWorkspaceViewState(filtered.viewState, {
+            currentDraftIdempotencyKey: idempotencyKey,
+            draftSaveStatus: isDraftConflictError(error) ? "conflict" : "failed",
+            draftSaveMessage: "另存失败：未写入草稿表，不会发送。"
+          }));
+        });
+    });
+  });
+  root.querySelectorAll<HTMLElement>("[data-workspace-archive-draft]").forEach((node) => {
+    node.addEventListener("click", () => {
+      if (!viewState.currentDraftId || viewState.currentDraftVersion <= 0) return;
+      const filtered = filterWorkspaceView(fixture, viewState);
+      renderWithDraftUpdates({
+        draftSaveStatus: "saving",
+        draftSaveMessage: "正在归档草稿；只更新 draft 状态，不删除 audit，不执行任务。"
+      });
+      archiveDraft(viewState.currentDraftId, viewState.currentDraftVersion)
+        .then((response) => {
+          renderP1GroupOpsWorkspace(root, fixture, updateWorkspaceViewState(filtered.viewState, draftStateFromResponse(filtered.viewState, response, "草稿已归档；不会执行。")));
+        })
+        .catch((error) => {
+          renderP1GroupOpsWorkspace(root, fixture, updateWorkspaceViewState(filtered.viewState, {
+            draftSaveStatus: isDraftConflictError(error) ? "conflict" : "failed",
+            draftSaveMessage: isDraftConflictError(error)
+              ? "归档冲突：请重新加载草稿版本。"
+              : "归档失败：未执行任何发送或外呼。"
+          }));
+        });
+    });
+  });
+}
+
 function attachKeyboardHandlers(root: HTMLElement, fixture: WorkspaceFixture, viewState: WorkspaceViewState): void {
   if (typeof root.querySelector !== "function") return;
   const canvas = root.querySelector<HTMLElement>("[data-keyboard-navigation]");
@@ -467,6 +618,7 @@ export function renderP1GroupOpsWorkspace(
   attachCanvasLaneHandlers(root, fixture, filtered.viewState);
   attachMultiSelectHandlers(root, fixture, filtered.viewState);
   attachBundleExportHandlers(root, fixture, filtered.viewState);
+  attachDraftPersistenceHandlers(root, fixture, filtered.viewState);
   attachKeyboardHandlers(root, fixture, filtered.viewState);
 }
 

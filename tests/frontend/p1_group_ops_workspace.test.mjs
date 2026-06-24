@@ -41,6 +41,16 @@ import {
   createWorkspaceSelectionState,
   findWorkspaceDetail,
 } from "../../aicrm_next/frontend_compat/static/admin_console/p1/p1_group_ops_workspace/workspace_detail.js";
+import {
+  archiveDraft,
+  assertWorkspaceDraftPayloadSafe,
+  buildWorkspaceDraftPayload,
+  createDraft,
+  getDraft,
+  isDraftConflictError,
+  listDrafts,
+  updateDraft
+} from "../../aicrm_next/frontend_compat/static/admin_console/p1/p1_group_ops_workspace/workspace_draft_api.js";
 import { P1_GROUP_OPS_WORKSPACE_FIXTURE } from "../../aicrm_next/frontend_compat/static/admin_console/p1/p1_group_ops_workspace/workspace_fixture.js";
 import {
   buildGroupOpsWorkspaceStatusModel,
@@ -132,6 +142,14 @@ assert.equal(root.innerHTML.includes("data-safe-preview-affordance=\"true\""), t
 assert.equal(root.innerHTML.includes("data-safe-preview-footer=\"true\""), true);
 assert.equal(root.innerHTML.includes("Keyboard preview"), true);
 assert.equal(root.innerHTML.includes("Select for preview bundle"), true);
+assert.equal(root.innerHTML.includes("Draft persistence"), true);
+assert.equal(root.innerHTML.includes("Save draft"), true);
+assert.equal(root.innerHTML.includes("Save as new draft"), true);
+assert.equal(root.innerHTML.includes("Archive draft"), true);
+assert.equal(root.innerHTML.includes("data-draft-persistence=\"frontend_save_only\""), true);
+assert.equal(root.innerHTML.includes("data-push-center-job-created=\"false\""), true);
+assert.equal(root.innerHTML.includes("data-external-effect-job-created=\"false\""), true);
+assert.equal(root.innerHTML.includes("不会创建 Push Center job"), true);
 assert.equal(root.innerHTML.includes("data-multi-selected=\"false\""), true);
 assert.equal(root.innerHTML.includes("Plan detail"), true);
 assert.equal(root.innerHTML.includes("Selected preview result"), true);
@@ -383,6 +401,122 @@ assert.equal(bundle.canClaimPass90Plus, false);
 assert.equal(bundle.governanceMissingCount, 1);
 assert.equal(bundle.blockedCount, 1);
 assert.equal(bundle.guardrails.includes("any blocked item -> bundle cannot execute"), true);
+const draftPayload = buildWorkspaceDraftPayload(fixture, filterWorkspaceView(fixture, multiSelectedBundle), multiSelectedBundle);
+const draftPayloadRepeat = buildWorkspaceDraftPayload(fixture, filterWorkspaceView(fixture, multiSelectedBundle), multiSelectedBundle);
+assert.equal(draftPayload.idempotency_key, draftPayloadRepeat.idempotency_key);
+assert.equal(draftPayload.source_plan_id, "plan-7");
+assert.equal(draftPayload.sanitized_payload.preview_only, true);
+assert.equal(draftPayload.guardrail_summary.real_external_call, false);
+assert.equal(draftPayload.guardrail_summary.push_center_job_created, false);
+assert.equal(draftPayload.guardrail_summary.external_effect_job_created, false);
+assert.equal(draftPayload.guardrail_summary.can_claim_pass_90_plus, false);
+assert.equal(draftPayload.approval_requirements.request_review_not_implemented, true);
+assert.equal(draftPayload.approval_requirements.push_center_bridge_not_implemented, true);
+assert.equal(draftPayload.items.length, 2);
+assert.equal(draftPayload.items.every((item) => ["plan", "evidence"].includes(item.item_type)), true);
+assertWorkspaceDraftPayloadSafe(draftPayload);
+for (const bait of [
+  { sanitized_payload: { ["raw_" + "external_userid"]: "wrOgAAA001" } },
+  { sanitized_payload: { contact: "13800138000" } },
+  { items: [{ item_type: "group", item_ref_id: "safe", item_order: 0, sanitized_item: { ["raw_" + "receiver"]: "unsafe" }, guardrail_summary: {} }] },
+  { guardrail_summary: { ["access_" + "token"]: "unsafe" } },
+  { approval_requirements: { ["Authorization".toLowerCase()]: "unsafe" } }
+]) {
+  assert.throws(() => assertWorkspaceDraftPayloadSafe({ ...draftPayload, ...bait }), /draft_payload_sensitive/);
+}
+const draftRequests = [];
+const requestJson = async (url, options = {}) => {
+  draftRequests.push({ url, options });
+  if (options.method === "POST" && url.endsWith("/archive")) {
+    return {
+      ok: true,
+      operation: "archive",
+      draft_id: "gowd_safe",
+      draft_status: "archived",
+      version: 2,
+      preview_only: true,
+      production_write: true,
+      real_external_call: false,
+      real_external_call_executed: false,
+      push_center_job_created: false,
+      external_effect_job_created: false,
+      broadcast_job_created: false,
+      internal_event_created: false,
+      can_claim_pass_90_plus: false,
+      execution_status: "not_execution"
+    };
+  }
+  if (options.method === "PATCH") {
+    return {
+      ok: true,
+      operation: "update",
+      draft_id: "gowd_safe",
+      draft_status: "draft",
+      version: 2,
+      preview_only: true,
+      production_write: true,
+      real_external_call: false,
+      real_external_call_executed: false,
+      push_center_job_created: false,
+      external_effect_job_created: false,
+      broadcast_job_created: false,
+      internal_event_created: false,
+      can_claim_pass_90_plus: false,
+      execution_status: "not_execution"
+    };
+  }
+  if (options.method === "POST") {
+    return {
+      ok: true,
+      operation: "create",
+      draft_id: "gowd_safe",
+      draft_status: "draft",
+      version: 1,
+      preview_only: true,
+      production_write: true,
+      real_external_call: false,
+      real_external_call_executed: false,
+      push_center_job_created: false,
+      external_effect_job_created: false,
+      broadcast_job_created: false,
+      internal_event_created: false,
+      can_claim_pass_90_plus: false,
+      execution_status: "not_execution"
+    };
+  }
+  return {
+    ok: true,
+    total: 0,
+    items: [],
+    preview_only: true,
+    production_write: false,
+    real_external_call: false,
+    real_external_call_executed: false,
+    push_center_job_created: false,
+    external_effect_job_created: false,
+    can_claim_pass_90_plus: false,
+    execution_status: "not_execution"
+  };
+};
+const createdDraft = await createDraft(draftPayload, undefined, requestJson);
+const updatedDraft = await updateDraft("gowd_safe", { ...draftPayload, version: 1 }, undefined, requestJson);
+const archivedDraft = await archiveDraft("gowd_safe", 2, undefined, requestJson);
+await listDrafts(undefined, requestJson);
+await getDraft("gowd_safe", undefined, requestJson);
+assert.equal(createdDraft.draft_id, "gowd_safe");
+assert.equal(updatedDraft.version, 2);
+assert.equal(archivedDraft.draft_status, "archived");
+assert.equal(draftRequests.some((entry) => entry.url.includes("/push-center")), false);
+assert.equal(draftRequests.some((entry) => entry.url.includes("external-effect")), false);
+assert.equal(draftRequests.some((entry) => entry.url.includes("request-review")), false);
+assert.equal(draftRequests.some((entry) => entry.options.method === "POST"), true);
+assert.equal(draftRequests.some((entry) => entry.options.method === "PATCH"), true);
+assert.equal(JSON.parse(draftRequests.find((entry) => entry.options.method === "POST" && !entry.url.endsWith("/archive")).options.body).idempotency_key, draftPayload.idempotency_key);
+assert.equal(isDraftConflictError(new Error("409 conflict")), true);
+await assert.rejects(
+  () => createDraft({ ...draftPayload, guardrail_summary: { ...draftPayload.guardrail_summary, ["raw_" + "target"]: "unsafe" } }, undefined, requestJson),
+  /draft_payload_sensitive/
+);
 const bundleText = buildCopySafeBundleText(bundle, { finalVerdict: fixture.payload.finalVerdict });
 const bundleJson = buildCopySafeBundleJson(bundle, { finalVerdict: fixture.payload.finalVerdict });
 const bundleJsonPayload = JSON.parse(bundleJson);
