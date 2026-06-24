@@ -66,7 +66,13 @@ def _service_result(callable_result) -> JSONResponse:
         return _safe_error("not_found", str(exc), status_code=404)
     except ContractError as exc:
         message = str(exc)
-        if "conflict" in message or "active governance review exists" in message:
+        if (
+            "conflict" in message
+            or "active governance review exists" in message
+            or "already transitioned" in message
+            or "already expired" in message
+            or "mismatch" in message
+        ):
             return _safe_error("conflict", message, status_code=409)
         return _safe_error("contract_error", message, status_code=400)
     except RepositoryProviderError as exc:
@@ -111,3 +117,39 @@ def list_group_ops_workspace_draft_governance(draft_id: str, request: Request) -
     if isinstance(actor, JSONResponse):
         return actor
     return _service_result(lambda: GroupOpsWorkspaceGovernanceService().list_reviews_for_draft(draft_id))
+
+
+@router.post(
+    "/api/admin/p1/group-ops-workspace/governance/{review_id}/steps/{step_id}/approve",
+    name="api.admin_p1_group_ops_workspace_governance_step_approve",
+)
+async def approve_group_ops_workspace_governance_step(review_id: str, step_id: str, request: Request) -> JSONResponse:
+    actor = _admin_actor_or_response(request)
+    if isinstance(actor, JSONResponse):
+        return actor
+    payload = await _json_body(request)
+    return _service_result(lambda: GroupOpsWorkspaceGovernanceService().approve_step(review_id, step_id, payload, actor=actor))
+
+
+@router.post(
+    "/api/admin/p1/group-ops-workspace/governance/{review_id}/steps/{step_id}/reject",
+    name="api.admin_p1_group_ops_workspace_governance_step_reject",
+)
+async def reject_group_ops_workspace_governance_step(review_id: str, step_id: str, request: Request) -> JSONResponse:
+    actor = _admin_actor_or_response(request)
+    if isinstance(actor, JSONResponse):
+        return actor
+    payload = await _json_body(request)
+    return _service_result(lambda: GroupOpsWorkspaceGovernanceService().reject_step(review_id, step_id, payload, actor=actor))
+
+
+@router.post(
+    "/api/admin/p1/group-ops-workspace/governance/{review_id}/expire",
+    name="api.admin_p1_group_ops_workspace_governance_expire",
+)
+async def expire_group_ops_workspace_governance(review_id: str, request: Request) -> JSONResponse:
+    actor = _admin_actor_or_response(request)
+    if isinstance(actor, JSONResponse):
+        return actor
+    payload = await _json_body(request)
+    return _service_result(lambda: GroupOpsWorkspaceGovernanceService().expire_review(review_id, payload, actor=actor))

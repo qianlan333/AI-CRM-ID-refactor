@@ -73,8 +73,8 @@ def _governance_payload(
     idempotency_key: str = "governance-request-idem",
     allowlist_hash: str = "allowlist-hash-safe-1",
     allowlist_count: int = 2,
-    start_at: str = "2026-06-24T10:00:00+00:00",
-    end_at: str = "2026-06-24T11:00:00+00:00",
+    start_at: str = "2026-06-25T10:00:00+00:00",
+    end_at: str = "2026-06-25T11:00:00+00:00",
 ) -> dict:
     return {
         "idempotency_key": idempotency_key,
@@ -131,6 +131,7 @@ def _ready_draft(next_client: TestClient, *, create_key: str = "ready-draft") ->
 def _assert_non_execution_response(payload: dict) -> None:
     assert payload["preview_only"] is True
     assert payload["approved"] is False
+    assert payload.get("governance_approved", False) is False
     assert payload["real_external_call"] is False
     assert payload["real_external_call_executed"] is False
     assert payload["push_center_job_created"] is False
@@ -140,6 +141,57 @@ def _assert_non_execution_response(payload: dict) -> None:
     assert payload["can_claim_pass_90_plus"] is False
     assert payload["execution_status"] == "not_execution"
     assert payload.get("review_status") not in {"governance_approved", "sent", "completed"}
+
+
+def _assert_step_non_execution_response(payload: dict) -> None:
+    assert payload["preview_only"] is True
+    assert payload["approved"] is False
+    assert payload["execution_status"] == "not_execution"
+    assert payload["real_external_call"] is False
+    assert payload["real_external_call_executed"] is False
+    assert payload["push_center_job_created"] is False
+    assert payload["external_effect_job_created"] is False
+    assert payload["broadcast_job_created"] is False
+    assert payload["internal_event_created"] is False
+    assert payload["can_claim_pass_90_plus"] is False
+    assert payload.get("review_status") not in {"sent", "completed"}
+
+
+def _governance_review(next_client: TestClient, *, create_key: str = "step-governance") -> dict:
+    cookies = _admin_cookies()
+    ready = _ready_draft(next_client, create_key=create_key)
+    created = next_client.post(
+        f"/api/admin/p1/group-ops-workspace/drafts/{ready['draft_id']}/governance/request",
+        json=_governance_payload(snapshot_hash=ready["snapshot_hash"], idempotency_key=f"{create_key}-governance"),
+        cookies=cookies,
+    )
+    assert created.status_code == 200, created.text
+    return created.json()
+
+
+def _step_id(review: dict, step_type: str) -> str:
+    for step in review["steps"]:
+        if step["step_type"] == step_type:
+            return step["step_id"]
+    raise AssertionError(f"missing step {step_type}")
+
+
+def _step_payload(
+    *,
+    idempotency_key: str,
+    allowlist_hash: str | None = None,
+    allowlist_count: int | None = None,
+    note: str = "safe governance step note",
+) -> dict:
+    payload = {
+        "idempotency_key": idempotency_key,
+        "note": note,
+    }
+    if allowlist_hash is not None:
+        payload["allowlist_hash"] = allowlist_hash
+    if allowlist_count is not None:
+        payload["allowlist_count"] = allowlist_count
+    return payload
 
 
 def test_group_ops_workspace_governance_apis_fail_closed_without_admin_cookie(next_client: TestClient) -> None:
@@ -405,6 +457,205 @@ def test_get_governance_returns_sanitized_summary_only(
         "raw callback",
     ]:
         assert forbidden not in rendered
+
+
+def test_governance_step_apis_fail_closed_without_admin_cookie(next_client: TestClient) -> None:
+    approve = next_client.post(
+        "/api/admin/p1/group-ops-workspace/governance/gowg_missing/steps/gowgs_missing/approve",
+        json=_step_payload(idempotency_key="unauth-approve"),
+    )
+    reject = next_client.post(
+        "/api/admin/p1/group-ops-workspace/governance/gowg_missing/steps/gowgs_missing/reject",
+        json=_step_payload(idempotency_key="unauth-reject"),
+    )
+    expire = next_client.post(
+        "/api/admin/p1/group-ops-workspace/governance/gowg_missing/expire",
+        json=_step_payload(idempotency_key="unauth-expire"),
+    )
+
+    for response in [approve, reject, expire]:
+        assert response.status_code == 401
+        payload = response.json()
+        assert payload["error"] == "admin_auth_required"
+        assert payload["real_external_call_executed"] is False
+
+
+def test_approve_governance_steps_to_governance_approved_without_execution(
+    next_client: TestClient,
+    next_pg_schema,
+) -> None:
+    del next_pg_schema
+    cookies = _admin_cookies()
+    review = _governance_review(next_client, create_key="step-approve-all")
+    before = {
+        "external_effect_job": _count("external_effect_job"),
+        "broadcast_jobs": _count("broadcast_jobs"),
+        "internal_event": _count("internal_event"),
+        "outbound_tasks": _count("outbound_tasks"),
+    }
+
+    operator = next_client.post(
+        f"/api/admin/p1/group-ops-workspace/governance/{review['review_id']}/steps/{_step_id(review, 'operator_approval')}/approve",
+        json=_step_payload(idempotency_key="approve-operator"),
+        cookies=cookies,
+    )
+    allowlist = next_client.post(
+        f"/api/admin/p1/group-ops-workspace/governance/{review['review_id']}/steps/{_step_id(review, 'receiver_allowlist')}/approve",
+        json=_step_payload(
+            idempotency_key="approve-allowlist",
+            allowlist_hash=review["allowlist_summary"]["hash"],
+            allowlist_count=review["allowlist_summary"]["count"],
+        ),
+        cookies=cookies,
+    )
+    gray = next_client.post(
+        f"/api/admin/p1/group-ops-workspace/governance/{review['review_id']}/steps/{_step_id(review, 'gray_window')}/approve",
+        json=_step_payload(idempotency_key="approve-gray-window"),
+        cookies=cookies,
+    )
+
+    assert operator.status_code == 200, operator.text
+    assert allowlist.status_code == 200, allowlist.text
+    assert gray.status_code == 200, gray.text
+    assert operator.json()["step_status"] == "approved"
+    assert allowlist.json()["step_status"] == "approved"
+    final_payload = gray.json()
+    assert final_payload["step_status"] == "approved"
+    assert final_payload["review_status"] == "governance_approved"
+    assert final_payload["governance_approved"] is True
+    assert {step["step_status"] for step in final_payload["steps"]} == {"approved"}
+    _assert_step_non_execution_response(final_payload)
+    assert final_payload["execution_status"] == "not_execution"
+    assert _count("external_effect_job") == before["external_effect_job"]
+    assert _count("broadcast_jobs") == before["broadcast_jobs"]
+    assert _count("internal_event") == before["internal_event"]
+    assert _count("outbound_tasks") == before["outbound_tasks"]
+
+
+def test_governance_step_specific_validation_and_rejection_paths(
+    next_client: TestClient,
+    next_pg_schema,
+) -> None:
+    del next_pg_schema
+    cookies = _admin_cookies()
+    review = _governance_review(next_client, create_key="step-validation")
+
+    allowlist_missing = next_client.post(
+        f"/api/admin/p1/group-ops-workspace/governance/{review['review_id']}/steps/{_step_id(review, 'receiver_allowlist')}/approve",
+        json=_step_payload(idempotency_key="allowlist-missing"),
+        cookies=cookies,
+    )
+    allowlist_mismatch = next_client.post(
+        f"/api/admin/p1/group-ops-workspace/governance/{review['review_id']}/steps/{_step_id(review, 'receiver_allowlist')}/approve",
+        json=_step_payload(idempotency_key="allowlist-mismatch", allowlist_hash="different-safe-hash", allowlist_count=review["allowlist_summary"]["count"]),
+        cookies=cookies,
+    )
+
+    with get_engine().begin() as conn:
+        conn.execute(
+            text(
+                """
+                UPDATE group_ops_workspace_gray_window_approvals
+                SET start_at = CURRENT_TIMESTAMP - INTERVAL '2 hours',
+                    end_at = CURRENT_TIMESTAMP - INTERVAL '1 hour'
+                WHERE review_id = :review_id
+                """
+            ),
+            {"review_id": review["review_id"]},
+        )
+    expired_gray = next_client.post(
+        f"/api/admin/p1/group-ops-workspace/governance/{review['review_id']}/steps/{_step_id(review, 'gray_window')}/approve",
+        json=_step_payload(idempotency_key="gray-expired"),
+        cookies=cookies,
+    )
+    rejected = next_client.post(
+        f"/api/admin/p1/group-ops-workspace/governance/{review['review_id']}/steps/{_step_id(review, 'operator_approval')}/reject",
+        json=_step_payload(idempotency_key="operator-reject", note="safe reject reason"),
+        cookies=cookies,
+    )
+
+    assert allowlist_missing.status_code == 400, allowlist_missing.text
+    assert allowlist_mismatch.status_code in {400, 409}, allowlist_mismatch.text
+    assert expired_gray.status_code in {400, 409}, expired_gray.text
+    assert rejected.status_code == 200, rejected.text
+    rejected_payload = rejected.json()
+    assert rejected_payload["step_status"] == "rejected"
+    assert rejected_payload["review_status"] == "governance_rejected"
+    assert rejected_payload["governance_approved"] is False
+    _assert_step_non_execution_response(rejected_payload)
+
+
+def test_expire_governance_review_marks_pending_steps_and_window_expired(
+    next_client: TestClient,
+    next_pg_schema,
+) -> None:
+    del next_pg_schema
+    cookies = _admin_cookies()
+    review = _governance_review(next_client, create_key="step-expire")
+
+    expired = next_client.post(
+        f"/api/admin/p1/group-ops-workspace/governance/{review['review_id']}/expire",
+        json=_step_payload(idempotency_key="expire-review", note="safe expire reason"),
+        cookies=cookies,
+    )
+
+    assert expired.status_code == 200, expired.text
+    payload = expired.json()
+    assert payload["review_status"] == "governance_expired"
+    assert payload["step_status"] == "expired"
+    assert payload["governance_approved"] is False
+    assert payload["gray_window"]["window_status"] == "expired"
+    assert {step["step_status"] for step in payload["steps"]} == {"expired"}
+    _assert_step_non_execution_response(payload)
+
+
+def test_governance_step_idempotency_conflicts_and_sensitive_fields(
+    next_client: TestClient,
+    next_pg_schema,
+) -> None:
+    del next_pg_schema
+    cookies = _admin_cookies()
+    review = _governance_review(next_client, create_key="step-idempotency")
+    operator_step = _step_id(review, "operator_approval")
+
+    first = next_client.post(
+        f"/api/admin/p1/group-ops-workspace/governance/{review['review_id']}/steps/{operator_step}/approve",
+        json=_step_payload(idempotency_key="same-step-key", note="safe same note"),
+        cookies=cookies,
+    )
+    replay = next_client.post(
+        f"/api/admin/p1/group-ops-workspace/governance/{review['review_id']}/steps/{operator_step}/approve",
+        json=_step_payload(idempotency_key="same-step-key", note="safe same note"),
+        cookies=cookies,
+    )
+    conflict = next_client.post(
+        f"/api/admin/p1/group-ops-workspace/governance/{review['review_id']}/steps/{operator_step}/approve",
+        json=_step_payload(idempotency_key="same-step-key", note="changed safe note"),
+        cookies=cookies,
+    )
+    transitioned = next_client.post(
+        f"/api/admin/p1/group-ops-workspace/governance/{review['review_id']}/steps/{operator_step}/approve",
+        json=_step_payload(idempotency_key="different-step-key", note="safe different key"),
+        cookies=cookies,
+    )
+    sensitive = next_client.post(
+        f"/api/admin/p1/group-ops-workspace/governance/{review['review_id']}/steps/{_step_id(review, 'receiver_allowlist')}/approve",
+        json={
+            **_step_payload(idempotency_key="sensitive-step", allowlist_hash=review["allowlist_summary"]["hash"], allowlist_count=review["allowlist_summary"]["count"]),
+            "raw_external_userid": "unsafe",
+        },
+        cookies=cookies,
+    )
+
+    assert first.status_code == 200, first.text
+    assert replay.status_code == 200, replay.text
+    assert replay.json()["idempotent_replay"] is True
+    assert replay.json()["production_write"] is False
+    assert conflict.status_code == 409, conflict.text
+    assert transitioned.status_code == 409, transitioned.text
+    assert sensitive.status_code == 400, sensitive.text
+    _assert_step_non_execution_response(first.json())
+    _assert_step_non_execution_response(replay.json())
 
 
 def test_governance_api_does_not_break_legacy_group_ops_read_routes(

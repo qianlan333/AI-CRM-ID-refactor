@@ -147,6 +147,137 @@ class GroupOpsWorkspaceGovernanceRepository:
         except SQLAlchemyError as exc:
             raise RepositoryProviderError(f"group ops workspace governance repository unavailable: {exc}") from exc
 
+    def transition_governance_step(self, payload: dict[str, Any]) -> dict[str, Any]:
+        try:
+            with self._engine.begin() as conn:
+                conn.execute(
+                    text(
+                        """
+                        UPDATE group_ops_workspace_governance_review_steps
+                        SET step_status = :step_status,
+                            actor_id = :actor_id,
+                            actor_label = :actor_label,
+                            idempotency_key = :idempotency_key,
+                            metadata_json = CAST(:metadata_json AS jsonb),
+                            updated_at = CURRENT_TIMESTAMP
+                        WHERE review_id = :review_id
+                          AND step_id = :step_id
+                        """
+                    ),
+                    {
+                        "review_id": payload["review_id"],
+                        "step_id": payload["step_id"],
+                        "step_status": payload["step_status"],
+                        "actor_id": payload["actor_id"],
+                        "actor_label": payload.get("actor_label", ""),
+                        "idempotency_key": payload["idempotency_key"],
+                        "metadata_json": _json_dumps(payload.get("metadata")),
+                    },
+                )
+                if payload.get("gray_window_status"):
+                    conn.execute(
+                        text(
+                            """
+                            UPDATE group_ops_workspace_gray_window_approvals
+                            SET window_status = :gray_window_status,
+                                approved_by = CASE WHEN :gray_window_status = 'approved' THEN :actor_id ELSE approved_by END,
+                                rejected_by = CASE WHEN :gray_window_status IN ('rejected', 'expired') THEN :actor_id ELSE rejected_by END,
+                                metadata_json = CAST(:metadata_json AS jsonb),
+                                updated_at = CURRENT_TIMESTAMP
+                            WHERE review_id = :review_id
+                            """
+                        ),
+                        {
+                            "review_id": payload["review_id"],
+                            "gray_window_status": payload["gray_window_status"],
+                            "actor_id": payload["actor_id"],
+                            "metadata_json": _json_dumps(payload.get("metadata")),
+                        },
+                    )
+                conn.execute(
+                    text(
+                        """
+                        UPDATE group_ops_workspace_governance_reviews
+                        SET review_status = :review_status,
+                            approved_by = CASE WHEN :review_status = 'governance_approved' THEN :actor_id ELSE approved_by END,
+                            rejected_by = CASE WHEN :review_status = 'governance_rejected' THEN :actor_id ELSE rejected_by END,
+                            audit_metadata_json = CAST(:audit_metadata_json AS jsonb),
+                            updated_at = CURRENT_TIMESTAMP
+                        WHERE review_id = :review_id
+                        """
+                    ),
+                    {
+                        "review_id": payload["review_id"],
+                        "review_status": payload["review_status"],
+                        "actor_id": payload["actor_id"],
+                        "audit_metadata_json": _json_dumps(payload.get("audit_metadata")),
+                    },
+                )
+                return self._get_review_sql(conn, payload["review_id"]) or {}
+        except SQLAlchemyError as exc:
+            raise RepositoryProviderError(f"group ops workspace governance repository unavailable: {exc}") from exc
+
+    def expire_governance_review(self, payload: dict[str, Any]) -> dict[str, Any]:
+        try:
+            with self._engine.begin() as conn:
+                conn.execute(
+                    text(
+                        """
+                        UPDATE group_ops_workspace_governance_review_steps
+                        SET step_status = 'expired',
+                            actor_id = :actor_id,
+                            actor_label = :actor_label,
+                            idempotency_key = CASE WHEN idempotency_key = '' THEN :idempotency_key ELSE idempotency_key END,
+                            metadata_json = CAST(:metadata_json AS jsonb),
+                            updated_at = CURRENT_TIMESTAMP
+                        WHERE review_id = :review_id
+                          AND step_status = 'pending'
+                        """
+                    ),
+                    {
+                        "review_id": payload["review_id"],
+                        "actor_id": payload["actor_id"],
+                        "actor_label": payload.get("actor_label", ""),
+                        "idempotency_key": payload["idempotency_key"],
+                        "metadata_json": _json_dumps(payload.get("metadata")),
+                    },
+                )
+                conn.execute(
+                    text(
+                        """
+                        UPDATE group_ops_workspace_gray_window_approvals
+                        SET window_status = 'expired',
+                            rejected_by = :actor_id,
+                            metadata_json = CAST(:metadata_json AS jsonb),
+                            updated_at = CURRENT_TIMESTAMP
+                        WHERE review_id = :review_id
+                        """
+                    ),
+                    {
+                        "review_id": payload["review_id"],
+                        "actor_id": payload["actor_id"],
+                        "metadata_json": _json_dumps(payload.get("metadata")),
+                    },
+                )
+                conn.execute(
+                    text(
+                        """
+                        UPDATE group_ops_workspace_governance_reviews
+                        SET review_status = 'governance_expired',
+                            audit_metadata_json = CAST(:audit_metadata_json AS jsonb),
+                            updated_at = CURRENT_TIMESTAMP
+                        WHERE review_id = :review_id
+                        """
+                    ),
+                    {
+                        "review_id": payload["review_id"],
+                        "audit_metadata_json": _json_dumps(payload.get("audit_metadata")),
+                    },
+                )
+                return self._get_review_sql(conn, payload["review_id"]) or {}
+        except SQLAlchemyError as exc:
+            raise RepositoryProviderError(f"group ops workspace governance repository unavailable: {exc}") from exc
+
     def create_governance_review(self, payload: dict[str, Any]) -> dict[str, Any]:
         try:
             with self._engine.begin() as conn:
@@ -331,6 +462,7 @@ class GroupOpsWorkspaceGovernanceRepository:
             "step_status": str(row.get("step_status") or ""),
             "actor_id": str(row.get("actor_id") or ""),
             "actor_label": str(row.get("actor_label") or ""),
+            "idempotency_key": str(row.get("idempotency_key") or ""),
             "snapshot_hash": str(row.get("snapshot_hash") or ""),
             "metadata": _json_loads(row.get("metadata_json"), {}),
             "created_at": _iso(row.get("created_at")),
