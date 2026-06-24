@@ -106,15 +106,22 @@ def test_p1_group_ops_workspace_reuses_shared_modules():
     assert "assertCopySafeBundleOutput" in sources
     assert "copyBundleSummaryToClipboard" in sources
     assert "workspace_draft_api" in sources
+    assert "workspace_governance_api" in sources
     assert "buildWorkspaceDraftPayload" in sources
     assert "assertWorkspaceDraftPayloadSafe" in sources
     assert "buildWorkspaceDraftReviewPayload" in sources
     assert "assertWorkspaceDraftReviewPayloadSafe" in sources
     assert "requestDraftReview" in sources
+    assert "buildWorkspaceGovernanceRequestPayload" in sources
+    assert "assertWorkspaceGovernancePayloadSafe" in sources
+    assert "requestGovernance" in sources
+    assert "getGovernanceReview" in sources
+    assert "getDraftGovernance" in sources
     assert "createDraft" in sources
     assert "updateDraft" in sources
     assert "archiveDraft" in sources
     assert "isDraftConflictError" in sources
+    assert "isGovernanceConflictError" in sources
 
 
 def test_p1_group_ops_workspace_copy_preserves_guardrails():
@@ -219,6 +226,29 @@ def test_p1_group_ops_workspace_copy_preserves_guardrails():
         "request-review 不等于 approval",
         "ready_for_review 不等于 approved",
         "草稿不等于 sent/completed",
+        "Governance panel",
+        "Request governance",
+        "Refresh governance",
+        "data-governance-panel",
+        "frontend_pending_only",
+        "data-workspace-request-governance",
+        "data-workspace-refresh-governance",
+        "governanceRequestStatus",
+        "governanceRequestMessage",
+        "currentGovernanceReviewId",
+        "currentGovernanceStatus",
+        "currentGovernanceIdempotencyKey",
+        "currentGovernanceReview",
+        "governance request 不等于 approval",
+        "pending steps 不等于 approved",
+        "execution_status",
+        "not_execution",
+        "push_center_job_created",
+        "external_effect_job_created",
+        "broadcast_job_created",
+        "internal_event_created",
+        "real_external_call",
+        "can_claim_pass90",
         "data-workspace-multi-toggle",
         "data-workspace-select-visible",
         "data-workspace-clear-selection",

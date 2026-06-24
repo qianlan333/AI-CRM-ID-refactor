@@ -83,7 +83,13 @@ export function createWorkspaceViewState(fixture) {
         draftSaveStatus: "idle",
         draftSaveMessage: "草稿尚未保存；保存只写 draft 表，不会发送。",
         draftReviewStatus: "idle",
-        draftReviewMessage: "request-review 仅适用于已保存的 draft；不会审批、不会进入执行。"
+        draftReviewMessage: "request-review 仅适用于已保存的 draft；不会审批、不会进入执行。",
+        currentGovernanceReviewId: "",
+        currentGovernanceStatus: "governance_not_started",
+        currentGovernanceIdempotencyKey: "",
+        currentGovernanceReview: null,
+        governanceRequestStatus: "idle",
+        governanceRequestMessage: "治理 request 仅适用于 ready_for_review draft；不会审批、不会发送。"
     };
 }
 export function selectEntityInViewState(viewState, selectedEntityType, selectedEntityId) {
