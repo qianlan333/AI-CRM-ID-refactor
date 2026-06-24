@@ -175,6 +175,8 @@ def test_admin_ai_audience_packages_api_returns_lightweight_read_model(next_clie
     response = next_client.get("/api/admin/ai-audience/packages", cookies=_admin_cookies())
 
     assert response.status_code == 200
+    assert response.headers["cache-control"] == "no-store, max-age=0"
+    assert response.headers["pragma"] == "no-cache"
     payload = response.json()
     assert payload["ok"] is True
     assert payload["total"] == 4
