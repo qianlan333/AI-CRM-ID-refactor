@@ -4031,6 +4031,28 @@ routes:
   data_source: command
   requires_auth: true
   rollback: previous_release
+- path: /api/admin/p1/group-ops-workspace/governance/{review_id}/bridge-push-center
+  methods:
+  - POST
+  route_name: api.admin_p1_group_ops_workspace_governance_bridge_push_center
+  capability_owner: automation_engine
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: none
+  data_source: command
+  requires_auth: true
+  rollback: previous_release
+- path: /api/admin/p1/group-ops-workspace/governance/{review_id}/push-center-bridge
+  methods:
+  - GET
+  route_name: api.admin_p1_group_ops_workspace_governance_push_center_bridge_detail
+  capability_owner: automation_engine
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: none
+  data_source: read_model
+  requires_auth: true
+  rollback: previous_release
 - path: /admin/automation-conversion
   methods:
   - GET

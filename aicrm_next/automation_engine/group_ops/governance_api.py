@@ -71,6 +71,7 @@ def _service_result(callable_result) -> JSONResponse:
             or "active governance review exists" in message
             or "already transitioned" in message
             or "already expired" in message
+            or "already bridged" in message
             or "mismatch" in message
         ):
             return _safe_error("conflict", message, status_code=409)
@@ -153,3 +154,26 @@ async def expire_group_ops_workspace_governance(review_id: str, request: Request
         return actor
     payload = await _json_body(request)
     return _service_result(lambda: GroupOpsWorkspaceGovernanceService().expire_review(review_id, payload, actor=actor))
+
+
+@router.post(
+    "/api/admin/p1/group-ops-workspace/governance/{review_id}/bridge-push-center",
+    name="api.admin_p1_group_ops_workspace_governance_bridge_push_center",
+)
+async def bridge_group_ops_workspace_governance_push_center(review_id: str, request: Request) -> JSONResponse:
+    actor = _admin_actor_or_response(request)
+    if isinstance(actor, JSONResponse):
+        return actor
+    payload = await _json_body(request)
+    return _service_result(lambda: GroupOpsWorkspaceGovernanceService().bridge_push_center(review_id, payload, actor=actor))
+
+
+@router.get(
+    "/api/admin/p1/group-ops-workspace/governance/{review_id}/push-center-bridge",
+    name="api.admin_p1_group_ops_workspace_governance_push_center_bridge_detail",
+)
+def get_group_ops_workspace_governance_push_center_bridge(review_id: str, request: Request) -> JSONResponse:
+    actor = _admin_actor_or_response(request)
+    if isinstance(actor, JSONResponse):
+        return actor
+    return _service_result(lambda: GroupOpsWorkspaceGovernanceService().get_push_center_bridge(review_id))

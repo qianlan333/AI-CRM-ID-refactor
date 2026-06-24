@@ -144,6 +144,8 @@ def _review_envelope(
         "review_id": review.get("review_id"),
         "draft_id": review.get("draft_id"),
         "review_status": review.get("review_status"),
+        "snapshot_hash": review.get("snapshot_hash", ""),
+        "sanitized_payload_hash": review.get("sanitized_payload_hash", ""),
         "step_id": (step or {}).get("step_id", ""),
         "step_type": (step or {}).get("step_type", ""),
         "step_status": (step or {}).get("step_status", ""),
@@ -232,6 +234,39 @@ def _normalize_step_payload(payload: dict[str, Any], *, action: str) -> dict[str
         except (TypeError, ValueError) as exc:
             raise ContractError("allowlist_count must be an integer") from exc
     normalized["payload_hash"] = _hash(normalized)
+    _raise_if_sensitive(normalized)
+    return normalized
+
+
+def _normalize_bridge_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    if not isinstance(payload, dict):
+        raise ContractError("request body must be a JSON object")
+    _raise_if_sensitive(payload)
+    idempotency_key = _text(payload.get("idempotency_key"))
+    if not idempotency_key:
+        raise ContractError("idempotency_key is required")
+    client_snapshot_hash = _text(payload.get("client_snapshot_hash"))
+    if not client_snapshot_hash:
+        raise ContractError("client_snapshot_hash is required")
+    allowlist_hash = _text(payload.get("allowlist_hash"))
+    if not allowlist_hash:
+        raise ContractError("allowlist_hash is required")
+    try:
+        allowlist_count = int(payload.get("allowlist_count"))
+    except (TypeError, ValueError) as exc:
+        raise ContractError("allowlist_count is required") from exc
+    if allowlist_count < 0:
+        raise ContractError("allowlist_count must be non-negative")
+    bridge_note = _text(payload.get("bridge_note") or payload.get("note"))
+    normalized = {
+        "idempotency_key": idempotency_key,
+        "client_snapshot_hash": client_snapshot_hash,
+        "allowlist_hash": allowlist_hash,
+        "allowlist_count": allowlist_count,
+        "bridge_note_present": bool(bridge_note),
+        "bridge_note_hash": _hash({"bridge_note": bridge_note}) if bridge_note else "",
+    }
+    normalized["bridge_payload_hash"] = _hash(normalized)
     _raise_if_sensitive(normalized)
     return normalized
 
@@ -340,6 +375,150 @@ def _review_status_for_steps(steps: list[dict[str, Any]]) -> str:
     if _text((_step_by_type({"steps": steps}, "receiver_allowlist") or {}).get("step_status")) == "pending":
         return "allowlist_pending"
     return "gray_window_pending"
+
+
+def _bridge_job_id(review_id: str) -> str:
+    return f"p1-gow-push-center:{review_id}"
+
+
+def _existing_bridge_metadata(review: dict[str, Any]) -> dict[str, Any]:
+    metadata = review.get("audit_metadata") or {}
+    bridge = metadata.get("push_center_bridge") if isinstance(metadata, dict) else None
+    return bridge if isinstance(bridge, dict) else {}
+
+
+def _bridge_envelope(
+    review: dict[str, Any],
+    *,
+    operation: str,
+    production_write: bool,
+    idempotent_replay: bool = False,
+) -> dict[str, Any]:
+    bridge = _existing_bridge_metadata(review)
+    created = bool(bridge)
+    return {
+        "ok": True,
+        "operation": operation,
+        "review_id": review.get("review_id"),
+        "draft_id": review.get("draft_id"),
+        "review_status": review.get("review_status"),
+        "push_center_job_created": created,
+        "push_center_job_id": bridge.get("push_center_job_id", "") if created else "",
+        "push_center_projection_id": bridge.get("push_center_projection_id", "") if created else "",
+        "push_center_status": bridge.get("push_center_status", "not_bridged") if created else "not_bridged",
+        "push_center_metadata": {
+            "source": "p1_group_ops_workspace" if created else "",
+            "draft_id": review.get("draft_id") if created else "",
+            "review_id": review.get("review_id") if created else "",
+            "governance_status": review.get("review_status") if created else "",
+            "snapshot_hash": bridge.get("snapshot_hash", "") if created else "",
+            "allowlist_hash": bridge.get("allowlist_hash", "") if created else "",
+            "allowlist_count": bridge.get("allowlist_count", 0) if created else 0,
+            "gray_window": bridge.get("gray_window", {}) if created else {},
+            "no_external_call": True,
+        },
+        "preview_only": True,
+        "production_write": production_write,
+        "production_write_scope": "governance_bridge_metadata_only" if production_write else "none",
+        "approved": False,
+        "governance_approved": review.get("review_status") == "governance_approved",
+        "ready_for_review": True,
+        "external_effect_job_created": False,
+        "broadcast_job_created": False,
+        "internal_event_created": False,
+        "real_external_call": False,
+        "real_external_call_executed": False,
+        "execution_status": "push_center_pending_not_sent" if created else "not_execution",
+        "can_claim_pass_90_plus": False,
+        "idempotent_replay": idempotent_replay,
+        "route_owner": "ai_crm_next",
+        "capability_owner": "automation_engine",
+    }
+
+
+def _assert_required_steps_approved(review: dict[str, Any]) -> None:
+    for step_type in REQUIRED_STEP_TYPES:
+        step = _step_by_type(review, step_type)
+        if not step or _text(step.get("step_status")) != "approved":
+            raise ContractError(f"{step_type} step must be approved before Push Center bridge")
+
+
+def _assert_bridge_window_and_allowlist(review: dict[str, Any], normalized: dict[str, Any]) -> None:
+    allowlist = review.get("allowlist_summary") or {}
+    if normalized["allowlist_hash"] != _text(allowlist.get("allowlist_hash")):
+        raise ContractError("allowlist hash mismatch")
+    if int(normalized["allowlist_count"]) != int(allowlist.get("allowlist_count") or 0):
+        raise ContractError("allowlist count mismatch")
+    expires_at = _text(allowlist.get("expires_at"))
+    if expires_at and _ensure_aware(_parse_datetime(expires_at, field="allowlist.expires_at")) <= datetime.now(timezone.utc):
+        raise ContractError("allowlist snapshot expired")
+
+    gray_window = review.get("gray_window") or {}
+    if _text(gray_window.get("window_status")) != "approved":
+        raise ContractError("gray window step must be approved before Push Center bridge")
+    start_at = _ensure_aware(_parse_datetime(gray_window.get("start_at"), field="gray_window.start_at"))
+    end_at = _ensure_aware(_parse_datetime(gray_window.get("end_at"), field="gray_window.end_at"))
+    if end_at <= start_at:
+        raise ContractError("gray_window end_at must be after start_at")
+    try:
+        ZoneInfo(_text(gray_window.get("timezone")) or "UTC")
+    except ZoneInfoNotFoundError as exc:
+        raise ContractError("gray_window timezone is invalid") from exc
+    if datetime.now(timezone.utc) > end_at:
+        raise ContractError("gray window expired")
+
+
+def _bridge_audit_metadata(
+    review: dict[str, Any],
+    *,
+    draft: dict[str, Any],
+    normalized: dict[str, Any],
+    actor: dict[str, Any],
+) -> dict[str, Any]:
+    existing = _json_clone(review.get("audit_metadata"), {})
+    gray_window = review.get("gray_window") or {}
+    allowlist = review.get("allowlist_summary") or {}
+    push_center_job_id = _bridge_job_id(_text(review.get("review_id")))
+    bridge = {
+        "action": "bridge_push_center",
+        "idempotency_key": normalized["idempotency_key"],
+        "bridge_payload_hash": normalized["bridge_payload_hash"],
+        "source": "p1_group_ops_workspace",
+        "draft_id": draft.get("draft_id"),
+        "review_id": review.get("review_id"),
+        "governance_status": review.get("review_status"),
+        "push_center_job_id": push_center_job_id,
+        "push_center_projection_id": push_center_job_id,
+        "push_center_status": "pending",
+        "snapshot_hash": review.get("snapshot_hash"),
+        "allowlist_hash": allowlist.get("allowlist_hash", ""),
+        "allowlist_count": allowlist.get("allowlist_count", 0),
+        "gray_window": {
+            "start_at": gray_window.get("start_at", ""),
+            "end_at": gray_window.get("end_at", ""),
+            "timezone": gray_window.get("timezone", ""),
+            "window_status": gray_window.get("window_status", ""),
+        },
+        "created_by": _actor_id(actor),
+        "actor": {
+            "actor_id": _actor_id(actor),
+            "actor_label": _actor_label(actor),
+            "actor_metadata": _actor_metadata(actor),
+        },
+        "no_external_call": True,
+        "push_center_job_created": True,
+        "external_effect_job_created": False,
+        "broadcast_job_created": False,
+        "internal_event_created": False,
+        "real_external_call": False,
+        "execution_status": "push_center_pending_not_sent",
+        "can_claim_pass_90_plus": False,
+    }
+    _raise_if_sensitive(bridge)
+    return {
+        **existing,
+        "push_center_bridge": bridge,
+    }
 
 
 class GroupOpsWorkspaceGovernanceService:
@@ -615,3 +794,46 @@ class GroupOpsWorkspaceGovernanceService:
             "route_owner": "ai_crm_next",
             "capability_owner": "automation_engine",
         }
+
+    def bridge_push_center(self, review_id: str, payload: dict[str, Any], *, actor: dict[str, Any]) -> dict[str, Any]:
+        normalized = _normalize_bridge_payload(payload)
+        review = self.repo.get_review(_text(review_id))
+        if not review:
+            raise NotFoundError("governance review not found")
+        existing_bridge = _existing_bridge_metadata(review)
+        if existing_bridge:
+            if existing_bridge.get("idempotency_key") == normalized["idempotency_key"]:
+                if existing_bridge.get("bridge_payload_hash") != normalized["bridge_payload_hash"]:
+                    raise ContractError("Push Center bridge idempotency key conflict")
+                return _bridge_envelope(review, operation="bridge_push_center", production_write=False, idempotent_replay=True)
+            raise ContractError("governance review already bridged")
+
+        if _text(review.get("review_status")) != "governance_approved":
+            raise ContractError("governance review must be governance_approved before Push Center bridge")
+        draft = self.repo.get_draft(_text(review.get("draft_id")))
+        if not draft:
+            raise NotFoundError("draft not found")
+        if _text(draft.get("draft_status")) != "ready_for_review":
+            raise ContractError("draft must be ready_for_review before Push Center bridge")
+        draft_snapshot_hash = _text(draft.get("snapshot_hash"))
+        review_snapshot_hash = _text(review.get("snapshot_hash"))
+        if not draft_snapshot_hash or not review_snapshot_hash:
+            raise ContractError("snapshot_hash is required before Push Center bridge")
+        if draft_snapshot_hash != review_snapshot_hash:
+            raise ContractError("draft snapshot mismatch")
+        if normalized["client_snapshot_hash"] != review_snapshot_hash:
+            raise ContractError("client snapshot mismatch")
+        _assert_required_steps_approved(review)
+        _assert_bridge_window_and_allowlist(review, normalized)
+
+        updated = self.repo.record_push_center_bridge(
+            review_id=review["review_id"],
+            audit_metadata=_bridge_audit_metadata(review, draft=draft, normalized=normalized, actor=actor),
+        )
+        return _bridge_envelope(updated, operation="bridge_push_center", production_write=True)
+
+    def get_push_center_bridge(self, review_id: str) -> dict[str, Any]:
+        review = self.repo.get_review(_text(review_id))
+        if not review:
+            raise NotFoundError("governance review not found")
+        return _bridge_envelope(review, operation="get_push_center_bridge", production_write=False)

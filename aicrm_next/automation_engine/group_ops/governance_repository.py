@@ -278,6 +278,27 @@ class GroupOpsWorkspaceGovernanceRepository:
         except SQLAlchemyError as exc:
             raise RepositoryProviderError(f"group ops workspace governance repository unavailable: {exc}") from exc
 
+    def record_push_center_bridge(self, *, review_id: str, audit_metadata: dict[str, Any]) -> dict[str, Any]:
+        try:
+            with self._engine.begin() as conn:
+                conn.execute(
+                    text(
+                        """
+                        UPDATE group_ops_workspace_governance_reviews
+                        SET audit_metadata_json = CAST(:audit_metadata_json AS jsonb),
+                            updated_at = CURRENT_TIMESTAMP
+                        WHERE review_id = :review_id
+                        """
+                    ),
+                    {
+                        "review_id": review_id,
+                        "audit_metadata_json": _json_dumps(audit_metadata),
+                    },
+                )
+                return self._get_review_sql(conn, review_id) or {}
+        except SQLAlchemyError as exc:
+            raise RepositoryProviderError(f"group ops workspace governance repository unavailable: {exc}") from exc
+
     def create_governance_review(self, payload: dict[str, Any]) -> dict[str, Any]:
         try:
             with self._engine.begin() as conn:
