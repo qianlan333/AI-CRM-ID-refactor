@@ -14,6 +14,8 @@ _HEADERS = {
     "X-AICRM-Route-Owner": "ai_crm_next",
     "X-AICRM-Fallback-Used": "false",
     "X-AICRM-Real-External-Call-Executed": "false",
+    "Cache-Control": "no-store, max-age=0",
+    "Pragma": "no-cache",
 }
 
 
