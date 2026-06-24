@@ -276,11 +276,7 @@ def test_automation_conversion_legacy_page_is_retired(monkeypatch):
 
     response = TestClient(create_app(), raise_server_exceptions=False).get("/admin/automation-conversion/legacy", cookies=_admin_cookies())
 
-    assert response.status_code == 410
-    payload = response.json()
-    assert payload["ok"] is False
-    assert payload["error"] == "legacy_automation_program_retired"
-    assert payload["replacement"] == "/admin/automation-conversion"
+    assert response.status_code == 404
 
 
 def test_automation_program_pages_are_retired(monkeypatch):
@@ -294,10 +290,7 @@ def test_automation_program_pages_are_retired(monkeypatch):
         "/admin/automation-conversion/programs/7/entry-channels",
     ]:
         response = client.get(path, cookies=_admin_cookies())
-        assert response.status_code == 410, path
-        error = response.json()["error"]
-        assert error.startswith(("legacy_automation_", "legacy_program_"))
-        assert error.endswith("_retired")
+        assert response.status_code == 404, path
 
 
 def test_automation_program_api_routes_are_retired(monkeypatch):
@@ -310,6 +303,9 @@ def test_automation_program_api_routes_are_retired(monkeypatch):
     ]
     for method, path in retired_program_paths:
         response = getattr(client, method)(path, cookies=_admin_cookies())
+        if "/programs" in path:
+            assert response.status_code == 404, path
+            continue
         assert response.status_code == 410, path
         error = response.json()["error"]
         assert error.startswith(("legacy_automation_", "legacy_program_"))

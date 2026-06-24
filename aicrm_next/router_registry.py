@@ -13,7 +13,6 @@ from .admin_auth.api import router as admin_auth_router
 from .admin_config.api import router as admin_config_router
 from .admin_jobs.routes import router as admin_jobs_router
 from .admin_shell.routes import router as admin_shell_router
-from .automation_engine.admin_pages import router as automation_admin_pages_router
 from .automation_engine.api import router as automation_router
 from .automation_engine.channel_admin_pages import router as channel_admin_pages_router
 from .automation_engine.channels_api import router as automation_channels_router
@@ -104,7 +103,6 @@ ROUTER_SPECS: tuple[RouterSpec, ...] = (
     RouterSpec("automation_engine", "group_ops_governance_api", group_ops_governance_api_router, "P1 Group Ops workspace governance request/read/step APIs"),
     RouterSpec("ai_audience_ops", "ai_audience_admin_pages", ai_audience_admin_pages_router, "AI audience admin package list page"),
     RouterSpec("ai_audience_ops", "ai_audience_admin_api", ai_audience_admin_api_router, "AI audience admin read APIs"),
-    RouterSpec("automation_engine", "automation_admin_pages", automation_admin_pages_router),
     RouterSpec("automation_engine", "channel_admin_pages", channel_admin_pages_router),
     RouterSpec("customer_tags", "customer_tags_admin_pages", customer_tags_admin_pages_router),
     RouterSpec("automation_engine", "automation", automation_router),
