@@ -93,42 +93,36 @@ def test_automation_project_routes_are_removed_from_frontend_compat_inventory() 
     assert not (ROOT / "aicrm_next/frontend_compat/legacy_routes.py").exists()
 
 
-def test_automation_project_templates_and_static_are_owned_by_automation_engine() -> None:
-    native_templates = {
+def test_retired_automation_project_templates_and_static_are_removed() -> None:
+    retained_templates = {
         "base.html",
         "placeholder.html",
+    }
+    retired_templates = {
         "automation_program_list.html",
         "automation_program_setup_next.html",
         "automation_program_overview_next.html",
         "automation_program_members.html",
         "automation_program_copy_next.html",
         "automation_conversion_entry_channels.html",
-        "_automation_operation_orchestration_panel.html",
     }
-    native_static = {
-        "automation_conversion_workspace.css",
-        "automation_operation_orchestration_panel.js",
-    }
+    retired_static = {"automation_conversion_workspace.css"}
 
-    for filename in native_templates:
+    for filename in retained_templates:
         assert (AUTOMATION_TEMPLATES / filename).exists()
-    for filename in native_static:
-        assert (AUTOMATION_STATIC / filename).exists()
+
+    for filename in retired_templates:
+        assert not (AUTOMATION_TEMPLATES / filename).exists()
+        assert not (FRONTEND_TEMPLATES / filename).exists()
+
+    for filename in retired_static:
+        assert not (AUTOMATION_STATIC / filename).exists()
         assert not (FRONTEND_STATIC / filename).exists()
 
-    assert not (FRONTEND_TEMPLATES / "automation_program_list.html").exists()
-    assert not (FRONTEND_TEMPLATES / "automation_program_setup_next.html").exists()
-    assert not (FRONTEND_TEMPLATES / "automation_program_overview_next.html").exists()
-    assert not (FRONTEND_TEMPLATES / "automation_program_members.html").exists()
-    assert not (FRONTEND_TEMPLATES / "automation_program_copy_next.html").exists()
-    assert not (FRONTEND_TEMPLATES / "automation_conversion_entry_channels.html").exists()
-    assert not (FRONTEND_TEMPLATES / "_automation_operation_orchestration_panel.html").exists()
 
-
-def test_automation_native_static_mount_serves_page_assets(monkeypatch) -> None:
+def test_retired_automation_workspace_static_asset_is_gone(monkeypatch) -> None:
     client = _client(monkeypatch)
 
     response = client.get("/static/automation-engine/admin_console/automation_conversion_workspace.css")
 
-    assert response.status_code == 200
-    assert "ac-workspace-tabs" in response.text
+    assert response.status_code == 404

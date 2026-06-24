@@ -55,6 +55,8 @@ def test_wecom_tag_read_inventory_frontend_backend_matrix_covers_entry_pages() -
         "/admin/channels/{channel_id}/edit",
         "/admin/automation-conversion",
         "/admin/automation-conversion/programs/{program_id}/setup",
+        "retired old automation program setup page",
+        "route now returns `410 legacy_automation_program_retired`",
         "config_wecom_tags.html",
         "wecom_tag_management.js",
         "admin_questionnaires.html",
