@@ -20,6 +20,8 @@ export type WorkspaceSelectionMode = "single" | "multi";
 export type WorkspaceCopyPreviewFormat = "text" | "json";
 export type WorkspaceCopyStatus = "idle" | "copied" | "copy_failed";
 export type WorkspaceDraftSaveStatus = "idle" | "saving" | "saved" | "failed" | "conflict" | "archived";
+export type WorkspaceDraftStatus = "not_saved" | "draft" | "ready_for_review" | "archived" | "rejected";
+export type WorkspaceDraftReviewStatus = "idle" | "requesting" | "ready_for_review" | "failed" | "conflict" | "blocked";
 
 export const WORKSPACE_CANVAS_LANE_IDS: WorkspaceCanvasLaneId[] = [
   "plans",
@@ -78,8 +80,12 @@ export interface WorkspaceViewState {
   currentDraftVersion: number;
   currentDraftSnapshotHash: string;
   currentDraftIdempotencyKey: string;
+  currentDraftReviewIdempotencyKey: string;
+  currentDraftStatus: WorkspaceDraftStatus;
   draftSaveStatus: WorkspaceDraftSaveStatus;
   draftSaveMessage: string;
+  draftReviewStatus: WorkspaceDraftReviewStatus;
+  draftReviewMessage: string;
 }
 
 function defaultLaneCollapsedState(): WorkspaceLaneCollapsedState {
@@ -143,8 +149,12 @@ export function createWorkspaceViewState(fixture: WorkspaceFixture): WorkspaceVi
     currentDraftVersion: 0,
     currentDraftSnapshotHash: "",
     currentDraftIdempotencyKey: "",
+    currentDraftReviewIdempotencyKey: "",
+    currentDraftStatus: "not_saved",
     draftSaveStatus: "idle",
-    draftSaveMessage: "草稿尚未保存；保存只写 draft 表，不会发送。"
+    draftSaveMessage: "草稿尚未保存；保存只写 draft 表，不会发送。",
+    draftReviewStatus: "idle",
+    draftReviewMessage: "request-review 仅适用于已保存的 draft；不会审批、不会进入执行。"
   };
 }
 

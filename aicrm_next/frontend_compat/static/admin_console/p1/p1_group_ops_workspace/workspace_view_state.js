@@ -78,8 +78,12 @@ export function createWorkspaceViewState(fixture) {
         currentDraftVersion: 0,
         currentDraftSnapshotHash: "",
         currentDraftIdempotencyKey: "",
+        currentDraftReviewIdempotencyKey: "",
+        currentDraftStatus: "not_saved",
         draftSaveStatus: "idle",
-        draftSaveMessage: "草稿尚未保存；保存只写 draft 表，不会发送。"
+        draftSaveMessage: "草稿尚未保存；保存只写 draft 表，不会发送。",
+        draftReviewStatus: "idle",
+        draftReviewMessage: "request-review 仅适用于已保存的 draft；不会审批、不会进入执行。"
     };
 }
 export function selectEntityInViewState(viewState, selectedEntityType, selectedEntityId) {

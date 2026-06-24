@@ -37,6 +37,13 @@ export interface WorkspaceDraftPayload {
   version?: number;
 }
 
+export interface WorkspaceDraftReviewPayload {
+  version: number;
+  idempotency_key: string;
+  review_note?: string;
+  client_snapshot_hash?: string;
+}
+
 export interface WorkspaceDraftResponse {
   ok: boolean;
   operation?: string;
@@ -54,6 +61,8 @@ export interface WorkspaceDraftResponse {
   archived_at?: string;
   preview_only?: boolean;
   production_write?: boolean;
+  ready_for_review?: boolean;
+  approved?: boolean;
   real_external_call?: boolean;
   real_external_call_executed?: boolean;
   push_center_job_created?: boolean;
@@ -142,6 +151,11 @@ export function assertWorkspaceDraftPayloadSafe(payload: WorkspaceDraftPayload):
   return true;
 }
 
+export function assertWorkspaceDraftReviewPayloadSafe(payload: WorkspaceDraftReviewPayload): true {
+  assertSensitiveSafe(payload);
+  return true;
+}
+
 function sourcePlanId(fixture: WorkspaceFixture): string {
   const detailPlan = fixture.detailItems.find((item) => item.entityType === "plan");
   if (detailPlan) return text(detailPlan.id) || "p1_group_ops_workspace";
@@ -208,6 +222,10 @@ function stableIdempotencyKey(sourcePlan: string, items: WorkspaceDraftItemPaylo
   return `p1-gow-draft:${sourcePlan}:${hash}`;
 }
 
+export function stableRequestReviewIdempotencyKey(draftId: string, version: number, snapshotHash: string): string {
+  return `p1-gow-request-review:${text(draftId)}:${Number(version || 0)}:${text(snapshotHash || "no_snapshot")}`;
+}
+
 export function buildWorkspaceDraftPayload(
   fixture: WorkspaceFixture,
   filtered: FilteredWorkspaceView,
@@ -259,6 +277,26 @@ export function buildWorkspaceDraftPayload(
   return payload;
 }
 
+export function buildWorkspaceDraftReviewPayload(
+  draftId: string,
+  version: number,
+  snapshotHash: string,
+  reviewNote?: string
+): WorkspaceDraftReviewPayload {
+  const payload: WorkspaceDraftReviewPayload = {
+    version,
+    idempotency_key: stableRequestReviewIdempotencyKey(draftId, version, snapshotHash)
+  };
+  if (snapshotHash) {
+    payload.client_snapshot_hash = snapshotHash;
+  }
+  if (reviewNote) {
+    payload.review_note = reviewNote;
+  }
+  assertWorkspaceDraftReviewPayloadSafe(payload);
+  return payload;
+}
+
 export function defaultWorkspaceDraftRequestJson(): WorkspaceDraftRequestJson {
   const adminApi = (globalThis as typeof globalThis & { AdminApi?: { requestJson?: WorkspaceDraftRequestJson } }).AdminApi;
   if (adminApi?.requestJson) return adminApi.requestJson.bind(adminApi);
@@ -279,10 +317,26 @@ export function defaultWorkspaceDraftRequestJson(): WorkspaceDraftRequestJson {
 
 function asDraftResponse(value: unknown): WorkspaceDraftResponse {
   const payload = value && typeof value === "object" ? value as WorkspaceDraftResponse : { ok: false };
-  if (payload.can_claim_pass_90_plus === true || payload.real_external_call === true || payload.external_effect_job_created === true || payload.push_center_job_created === true) {
+  if (
+    payload.can_claim_pass_90_plus === true
+    || payload.real_external_call === true
+    || payload.real_external_call_executed === true
+    || payload.external_effect_job_created === true
+    || payload.push_center_job_created === true
+    || payload.broadcast_job_created === true
+    || payload.internal_event_created === true
+    || payload.approved === true
+  ) {
     throw new Error("draft_api_response_violates_execution_guardrail");
   }
-  if (payload.draft_status === "sent" || payload.draft_status === "completed" || payload.execution_status === "sent" || payload.execution_status === "completed") {
+  if (
+    payload.draft_status === "sent"
+    || payload.draft_status === "completed"
+    || payload.draft_status === "approved"
+    || payload.execution_status === "sent"
+    || payload.execution_status === "completed"
+    || payload.execution_status === "approved"
+  ) {
     throw new Error("draft_api_response_claims_execution_state");
   }
   return payload;
@@ -342,5 +396,18 @@ export async function archiveDraft(
   return asDraftResponse(await requestJson(`${config.draftsUrl}/${encodeURIComponent(draftId)}/archive`, {
     method: "POST",
     body: JSON.stringify({ version, archive_reason: "p1_workspace_user_archive" })
+  }));
+}
+
+export async function requestDraftReview(
+  draftId: string,
+  payload: WorkspaceDraftReviewPayload,
+  config: WorkspaceDraftApiConfig = DEFAULT_WORKSPACE_DRAFT_API_CONFIG,
+  requestJson: WorkspaceDraftRequestJson = defaultWorkspaceDraftRequestJson()
+): Promise<WorkspaceDraftResponse> {
+  assertWorkspaceDraftReviewPayloadSafe(payload);
+  return asDraftResponse(await requestJson(`${config.draftsUrl}/${encodeURIComponent(draftId)}/request-review`, {
+    method: "POST",
+    body: JSON.stringify(payload)
   }));
 }

@@ -7,7 +7,7 @@ import { defaultRequestJson, loadGroupOpsWorkspaceData, parseWorkspaceApiConfig 
 import { buildCopySafeBundleJson, buildCopySafeBundleText, copyBundleSummaryToClipboard } from "./workspace_bundle_export.js";
 import { renderGroupedWorkspaceCanvas } from "./workspace_canvas.js";
 import { renderWorkspaceDetailPanel, renderWorkspaceSelectedPreviewResult, } from "./workspace_detail.js";
-import { archiveDraft, buildWorkspaceDraftPayload, createDraft, isDraftConflictError, updateDraft } from "./workspace_draft_api.js";
+import { archiveDraft, buildWorkspaceDraftReviewPayload, buildWorkspaceDraftPayload, createDraft, isDraftConflictError, requestDraftReview, updateDraft } from "./workspace_draft_api.js";
 import { ENTITY_FILTER_OPTIONS, STATUS_FILTER_OPTIONS, filterWorkspaceView } from "./workspace_filters.js";
 import { buildWorkspaceCanvasLanes } from "./workspace_grouping.js";
 import { moveWorkspaceCanvasSelection } from "./workspace_keyboard.js";
@@ -222,31 +222,56 @@ function draftStatusTone(status) {
         return "info";
     return "neutral";
 }
+function draftReviewTone(status) {
+    if (status === "ready_for_review")
+        return "success";
+    if (status === "failed" || status === "conflict" || status === "blocked")
+        return "danger";
+    if (status === "requesting")
+        return "info";
+    return "neutral";
+}
+function normalizeDraftStatus(value) {
+    if (value === "draft" || value === "ready_for_review" || value === "archived" || value === "rejected")
+        return value;
+    return "not_saved";
+}
 function renderDraftPersistencePanel(fixture, filtered) {
     const draftPayload = buildWorkspaceDraftPayload(fixture, filtered, filtered.viewState);
     const hasDraft = Boolean(filtered.viewState.currentDraftId);
     const tone = draftStatusTone(filtered.viewState.draftSaveStatus);
+    const reviewTone = draftReviewTone(filtered.viewState.draftReviewStatus);
+    const canRequestReview = hasDraft
+        && filtered.viewState.currentDraftVersion > 0
+        && filtered.viewState.currentDraftStatus === "draft"
+        && filtered.viewState.draftSaveStatus !== "conflict"
+        && filtered.viewState.draftReviewStatus !== "requesting";
     return `
     <section class="p1-workspace-draft-save" aria-label="Save sanitized workspace draft" data-draft-persistence="frontend_save_only" data-preview-only="true" data-real-external-call-executed="false" data-push-center-job-created="false" data-external-effect-job-created="false" data-can-claim-pass90="false">
       <div class="p1-workspace-panel-head">
         <h2>Draft persistence</h2>
-        <p>保存草稿只写 draft 表；不会发送、不会审批、不会创建 Push Center job、不会创建 external_effect_job。</p>
+        <p>保存草稿与 request-review 只写 draft 表；不会发送、不会审批、不会创建 Push Center job、不会创建 external_effect_job。</p>
       </div>
       <dl class="p1-workspace-mini-fields">
         <div><dt>draft_id</dt><dd>${escapeHtml(filtered.viewState.currentDraftId || "not_saved")}</dd></div>
+        <div><dt>draft_status</dt><dd>${escapeHtml(filtered.viewState.currentDraftStatus)}</dd></div>
         <div><dt>version</dt><dd>${filtered.viewState.currentDraftVersion || 0}</dd></div>
         <div><dt>items</dt><dd>${draftPayload.items.length}</dd></div>
         <div><dt>preview_only</dt><dd>true</dd></div>
         <div><dt>real_external_call</dt><dd>false</dd></div>
+        <div><dt>ready_for_review</dt><dd>${filtered.viewState.currentDraftStatus === "ready_for_review" ? "true" : "false"}</dd></div>
+        <div><dt>approved</dt><dd>false</dd></div>
         <div><dt>can_claim_pass90</dt><dd>false</dd></div>
       </dl>
       <div class="p1-workspace-draft-actions" aria-label="草稿保存操作">
         <button type="button" data-workspace-save-draft="true">${hasDraft ? "Save draft update" : "Save draft"}</button>
         <button type="button" data-workspace-save-as-new-draft="true">Save as new draft</button>
+        <button type="button" data-workspace-request-review-draft="true"${canRequestReview ? "" : " disabled"}>Request review</button>
         <button type="button" data-workspace-archive-draft="true"${hasDraft && filtered.viewState.draftSaveStatus !== "archived" ? "" : " disabled"}>Archive draft</button>
       </div>
       <p class="p1-workspace-draft-status p1-workspace-draft-status--${tone}" aria-live="polite" data-draft-save-status="${escapeHtml(filtered.viewState.draftSaveStatus)}">${escapeHtml(filtered.viewState.draftSaveMessage)}</p>
-      <p class="p1-workspace-draft-guardrail">Draft persistence is not execution. request-review、approval bridge、Push Center bridge 均未接入；草稿不等于 sent/completed，也不等于 PASS_90_PLUS。</p>
+      <p class="p1-workspace-draft-status p1-workspace-draft-status--${reviewTone}" aria-live="polite" data-draft-review-status="${escapeHtml(filtered.viewState.draftReviewStatus)}">${escapeHtml(filtered.viewState.draftReviewMessage)}</p>
+      <p class="p1-workspace-draft-guardrail">request-review 不等于 approval；ready_for_review 不等于 approved、sent、completed；草稿不等于 sent/completed。approval bridge、Push Center bridge 与 execution 仍未接入，也不能 claim PASS_90_PLUS。</p>
     </section>
   `;
 }
@@ -424,11 +449,13 @@ function attachBundleExportHandlers(root, fixture, viewState) {
     });
 }
 function draftStateFromResponse(viewState, payload, message) {
+    const status = normalizeDraftStatus(payload.draft_status);
     return {
         currentDraftId: payload.draft_id || viewState.currentDraftId,
         currentDraftVersion: Number(payload.version || viewState.currentDraftVersion || 0),
         currentDraftSnapshotHash: String(payload.snapshot_hash || viewState.currentDraftSnapshotHash || ""),
         currentDraftIdempotencyKey: viewState.currentDraftIdempotencyKey,
+        currentDraftStatus: status,
         draftSaveStatus: payload.draft_status === "archived" ? "archived" : "saved",
         draftSaveMessage: message
     };
@@ -482,6 +509,10 @@ function attachDraftPersistenceHandlers(root, fixture, viewState) {
                 currentDraftVersion: 0,
                 currentDraftSnapshotHash: "",
                 currentDraftIdempotencyKey: idempotencyKey,
+                currentDraftReviewIdempotencyKey: "",
+                currentDraftStatus: "not_saved",
+                draftReviewStatus: "idle",
+                draftReviewMessage: "新草稿保存后才能 request-review；不会审批。",
                 draftSaveStatus: "saving",
                 draftSaveMessage: "正在另存为新脱敏草稿；不会执行。"
             });
@@ -520,6 +551,42 @@ function attachDraftPersistenceHandlers(root, fixture, viewState) {
                     draftSaveMessage: isDraftConflictError(error)
                         ? "归档冲突：请重新加载草稿版本。"
                         : "归档失败：未执行任何发送或外呼。"
+                }));
+            });
+        });
+    });
+    root.querySelectorAll("[data-workspace-request-review-draft]").forEach((node) => {
+        node.addEventListener("click", () => {
+            if (!viewState.currentDraftId || viewState.currentDraftVersion <= 0 || viewState.currentDraftStatus !== "draft") {
+                renderWithDraftUpdates({
+                    draftReviewStatus: "blocked",
+                    draftReviewMessage: "只有已保存且状态仍为 draft 的草稿可以 request-review；不会自动推进。"
+                });
+                return;
+            }
+            const filtered = filterWorkspaceView(fixture, viewState);
+            const payload = buildWorkspaceDraftReviewPayload(filtered.viewState.currentDraftId, filtered.viewState.currentDraftVersion, filtered.viewState.currentDraftSnapshotHash);
+            renderWithDraftUpdates({
+                currentDraftReviewIdempotencyKey: payload.idempotency_key,
+                draftReviewStatus: "requesting",
+                draftReviewMessage: "正在提交 request-review；只更新 draft 状态，不审批、不发送、不创建下游任务。"
+            });
+            requestDraftReview(filtered.viewState.currentDraftId, payload)
+                .then((response) => {
+                renderP1GroupOpsWorkspace(root, fixture, updateWorkspaceViewState(filtered.viewState, {
+                    ...draftStateFromResponse(filtered.viewState, response, "草稿已进入 ready_for_review；仍未审批、未发送。"),
+                    currentDraftReviewIdempotencyKey: payload.idempotency_key,
+                    draftReviewStatus: "ready_for_review",
+                    draftReviewMessage: "ready_for_review 已记录；这不是 approval，也不是 Push Center bridge。"
+                }));
+            })
+                .catch((error) => {
+                renderP1GroupOpsWorkspace(root, fixture, updateWorkspaceViewState(filtered.viewState, {
+                    currentDraftReviewIdempotencyKey: payload.idempotency_key,
+                    draftReviewStatus: isDraftConflictError(error) ? "conflict" : "failed",
+                    draftReviewMessage: isDraftConflictError(error)
+                        ? "request-review 冲突：服务端版本更新了，请重新加载草稿；不会覆盖。"
+                        : "request-review 失败：草稿未推进，不会审批、不发送。"
                 }));
             });
         });
