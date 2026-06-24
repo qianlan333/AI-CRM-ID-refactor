@@ -4,7 +4,10 @@
 
 Legacy Exit group 26 replaces `/login` and `/logout` with Next-owned admin auth routes and removes their `production_compat` rollback.
 
-`/auth/wecom/start` and `/auth/wecom/callback` remain out of scope for this group. They are already exact Next blocked responses and must not perform real WeCom token exchange by default.
+`/auth/wecom/start` and `/auth/wecom/callback` are Next-owned. They remain
+blocked by default, but can run the Next-native WeCom SSO flow only when the
+explicit `AICRM_WECOM_ADMIN_AUTH_ENABLE_REAL=true` operator gate and required
+WeCom configuration are present.
 
 ## Frontend <-> API <-> Backend Contract Matrix
 
@@ -15,8 +18,8 @@ Legacy Exit group 26 replaces `/login` and `/logout` with Next-owned admin auth 
 | `/login` | OPTIONS | API diagnostics | Preflight/diagnostics | `aicrm_next.admin_auth.api.admin_login_options` | `diagnostics_payload` | None | `legacy_fallback_allowed=false`, `deletion_locked`, `replacement_status=locked` | OPTIONS 200 Next JSON |
 | `/logout` | GET | Admin/user initiated | Clear Next admin auth cookie and redirect | `aicrm_next.admin_auth.api.admin_logout` | `SESSION_COOKIE` deletion | None | `legacy_fallback_allowed=false`, `deletion_locked`, `replacement_status=locked` | 302 `/login`, cookie cleared |
 | `/logout` | OPTIONS | API diagnostics | Preflight/diagnostics | `aicrm_next.admin_auth.api.admin_logout_options` | `diagnostics_payload` | None | `legacy_fallback_allowed=false`, `deletion_locked`, `replacement_status=locked` | OPTIONS 200 Next JSON |
-| `/auth/wecom/start` link | GET/OPTIONS | Login page links | SSO start link only | Existing `aicrm_next.auth_wecom.api.auth_wecom_start` | Existing blocked exact response | Real WeCom authorize/token exchange blocked | Out of scope; keep current `deletion_locked` exact route | GET 503 controlled blocked |
-| `/auth/wecom/callback` | GET/OPTIONS | WeCom SSO return path | SSO callback | Existing `aicrm_next.auth_wecom.api.auth_wecom_callback` | Existing blocked exact response | Real WeCom code/token exchange blocked | Out of scope; keep current `deletion_locked` exact route | Existing auth_wecom tests |
+| `/auth/wecom/start` link | GET/OPTIONS | Login page links | SSO start link; browser blocked states return to `/login` with an auth error | `aicrm_next.auth_wecom.api.auth_wecom_start` | `auth_wecom.service.build_authorize_url` | Default blocked; gated real redirect to WeCom QR/OAuth authorize URL only with `AICRM_WECOM_ADMIN_AUTH_ENABLE_REAL=true` | Next-owned gated route | JSON GET without HTML accept remains controlled blocked; HTML blocked state redirects to login error |
+| `/auth/wecom/callback` | GET/OPTIONS | WeCom SSO return path | SSO callback signs Next admin session for authorized `admin_users` members | `aicrm_next.auth_wecom.api.auth_wecom_callback` | `auth_wecom.service.handle_callback`, `admin_users`, `admin_user_roles`, `admin_login_audit` | Default blocked; gated real `gettoken` and `user/getuserinfo` only with `AICRM_WECOM_ADMIN_AUTH_ENABLE_REAL=true` | Next-owned gated route | Existing blocked tests plus gated fake-client callback test |
 
 ## Behavior Notes
 
@@ -34,8 +37,8 @@ Legacy Exit group 26 replaces `/login` and `/logout` with Next-owned admin auth 
 
 ## Explicit Non-Goals
 
-- Do not rebuild `/auth/wecom/start`.
-- Do not rebuild `/auth/wecom/callback`.
 - Do not enable real WeCom OAuth, token exchange, or access-token fetch by default.
+- Do not enable the gated WeCom SSO flow without the explicit operator env gate
+  and required WeCom configuration.
 - Do not change `/api/h5/wechat/oauth/*`.
 - Do not change payment, checkout, order, product, `/p/*`, or `/pay/*` fallbacks.
