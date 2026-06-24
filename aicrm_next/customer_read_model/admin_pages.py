@@ -54,7 +54,6 @@ def _customer_profile_initial_section(tab: str) -> str:
         "questionnaire": "customer-questionnaire-answers",
         "questionnaires": "customer-questionnaire-answers",
         "messages": "customer-message-records",
-        "automation": "customer-automation-sidebar",
     }
     return tab_map.get(str(tab or "").strip().lower(), "")
 
@@ -88,14 +87,6 @@ def _customer_profile_urls(external_userid: str) -> dict[str, str]:
         "tags": f"/api/admin/customers/profile/tags?{query}",
         "questionnaire_answers": f"/api/admin/customers/profile/questionnaire-answers?{query}",
         "messages": f"/api/admin/customers/profile/messages?{query}",
-        "automation_member": f"/api/admin/automation-conversion/member?{urlencode({'external_contact_id': external_userid})}",
-        "automation_put_in_pool": "/api/admin/automation-conversion/member/put-in-pool",
-        "automation_remove_from_pool": "/api/admin/automation-conversion/member/remove-from-pool",
-        "automation_set_focus": "/api/admin/automation-conversion/member/set-focus",
-        "automation_set_normal": "/api/admin/automation-conversion/member/set-normal",
-        "automation_mark_won": "/api/admin/automation-conversion/member/mark-won",
-        "automation_unmark_won": "/api/admin/automation-conversion/member/unmark-won",
-        "automation_push_openclaw": "/api/admin/automation-conversion/member/push-openclaw",
     }
 
 

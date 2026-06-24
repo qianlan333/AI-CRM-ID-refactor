@@ -18,7 +18,6 @@ from .automation_engine.api import router as automation_router
 from .automation_engine.channel_admin_pages import router as channel_admin_pages_router
 from .automation_engine.channels_api import router as automation_channels_router
 from .automation_engine.group_ops.admin_pages import router as group_ops_admin_pages_router
-from .automation_runtime_v2.api import router as automation_runtime_v2_router
 from .auth_wecom.api import router as auth_wecom_router
 from .channel_entry.api import router as channel_entry_router
 from .class_user_management.api import router as class_user_management_router
@@ -105,7 +104,6 @@ ROUTER_SPECS: tuple[RouterSpec, ...] = (
     RouterSpec("automation_engine", "channel_admin_pages", channel_admin_pages_router),
     RouterSpec("customer_tags", "customer_tags_admin_pages", customer_tags_admin_pages_router),
     RouterSpec("automation_engine", "automation", automation_router),
-    RouterSpec("automation_runtime_v2", "automation_runtime_v2", automation_runtime_v2_router),
     RouterSpec("commerce", "commerce", commerce_router),
     RouterSpec("media_library", "media_library", media_library_router),
     RouterSpec("media_library", "media_library_admin_pages", media_library_admin_pages_router),

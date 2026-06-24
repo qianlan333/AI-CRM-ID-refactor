@@ -201,6 +201,104 @@ _AUTOMATION_PROGRAM_HEADERS = {
     "X-AICRM-Route-Owner": "ai_crm_next",
     "X-AICRM-Fallback-Used": "false",
 }
+_RETIRED_AUTOMATION_HEADERS = {
+    "X-AICRM-Route-Owner": "ai_crm_next",
+    "X-AICRM-Fallback-Used": "false",
+    "X-AICRM-Legacy-Automation-Retired": "true",
+    "X-AICRM-Real-External-Call-Executed": "false",
+    "X-AICRM-Automation-Runtime-Executed": "false",
+}
+
+
+def _retired_automation_response(error: str, *, replacement: str = "/admin/automation-conversion") -> JSONResponse:
+    return JSONResponse(
+        {
+            "ok": False,
+            "error": error,
+            "message": "旧自动化运营方案 / 阶段 / 任务编排链路已退场，请使用 AI 自动化运营人群包。",
+            "replacement": replacement,
+            "real_external_call_executed": False,
+            "automation_runtime_executed": False,
+        },
+        status_code=410,
+        headers=_RETIRED_AUTOMATION_HEADERS,
+    )
+
+
+@router.api_route(
+    "/api/admin/automation-conversion/programs",
+    methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    name="api_automation_programs_retired",
+)
+def retired_automation_programs_api() -> JSONResponse:
+    return _retired_automation_response("legacy_automation_program_retired")
+
+
+@router.api_route(
+    "/api/admin/automation-conversion/programs/{retired_path:path}",
+    methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    name="api_automation_program_detail_retired",
+)
+def retired_automation_program_detail_api(retired_path: str = "") -> JSONResponse:
+    del retired_path
+    return _retired_automation_response("legacy_automation_program_retired")
+
+
+@router.api_route(
+    "/api/admin/automation-conversion/member/{retired_path:path}",
+    methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    name="api_automation_member_actions_retired",
+)
+def retired_automation_member_action_api(retired_path: str = "") -> JSONResponse:
+    del retired_path
+    return _retired_automation_response("legacy_automation_member_action_retired")
+
+
+@router.api_route(
+    "/api/admin/automation-conversion/tasks/run-due",
+    methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    name="api_automation_tasks_run_due_retired",
+)
+def retired_automation_tasks_run_due_api() -> JSONResponse:
+    return _retired_automation_response("legacy_automation_task_runner_retired")
+
+
+@router.api_route(
+    "/api/admin/automation-conversion/execution-items/{execution_item_id}/send-via-bazhuayu",
+    methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    name="api_automation_execution_item_outbound_retired",
+)
+def retired_automation_execution_item_outbound_api(execution_item_id: int) -> JSONResponse:
+    del execution_item_id
+    return _retired_automation_response("legacy_automation_execution_outbound_retired")
+
+
+@router.api_route(
+    "/api/admin/automation-conversion/reply-monitor/{retired_path:path}",
+    methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    name="api_automation_reply_monitor_retired",
+)
+def retired_automation_reply_monitor_api(retired_path: str = "") -> JSONResponse:
+    del retired_path
+    return _retired_automation_response("legacy_automation_reply_monitor_retired")
+
+
+@router.api_route(
+    "/api/admin/automation-conversion/jobs/run-due/preview",
+    methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    name="api_automation_jobs_run_due_preview_retired",
+)
+def retired_automation_jobs_run_due_preview_api() -> JSONResponse:
+    return _retired_automation_response("legacy_automation_jobs_runner_retired")
+
+
+@router.api_route(
+    "/api/admin/automation-conversion/jobs/run-due",
+    methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    name="api_automation_jobs_run_due_retired",
+)
+def retired_automation_jobs_run_due_api() -> JSONResponse:
+    return _retired_automation_response("legacy_automation_jobs_runner_retired")
 
 
 def _raise_http(exc: Exception) -> None:
