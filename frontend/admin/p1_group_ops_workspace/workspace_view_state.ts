@@ -16,6 +16,7 @@ export type WorkspaceCanvasSortMode =
   | "action_required_first";
 export type WorkspaceCanvasGroupMode = "entity_lane";
 export type WorkspaceDensity = "compact" | "comfortable";
+export type WorkspaceSelectionMode = "single" | "multi";
 
 export const WORKSPACE_CANVAS_LANE_IDS: WorkspaceCanvasLaneId[] = [
   "plans",
@@ -38,6 +39,12 @@ export const WORKSPACE_CANVAS_SORT_MODES: WorkspaceCanvasSortMode[] = [
 export const WORKSPACE_CANVAS_GROUP_MODES: WorkspaceCanvasGroupMode[] = ["entity_lane"];
 
 export type WorkspaceLaneCollapsedState = Record<WorkspaceCanvasLaneId, boolean>;
+export type WorkspaceSelectedEntityIds = Record<WorkspaceEntityType, string[]>;
+
+export interface WorkspaceSelectedEntityRef {
+  entityType: WorkspaceEntityType;
+  id: string;
+}
 
 export interface WorkspaceViewState {
   keyword: string;
@@ -55,6 +62,11 @@ export interface WorkspaceViewState {
   density: WorkspaceDensity;
   focusedCanvasLaneId: WorkspaceCanvasLaneId;
   focusedCanvasCardId: string;
+  selectedEntityIds: WorkspaceSelectedEntityIds;
+  activeSelectionMode: WorkspaceSelectionMode;
+  lastSelectedEntity: WorkspaceSelectedEntityRef | null;
+  previewBundleId: string;
+  bulkGuardrailSummary: string[];
 }
 
 function defaultLaneCollapsedState(): WorkspaceLaneCollapsedState {
@@ -65,6 +77,17 @@ function defaultLaneCollapsedState(): WorkspaceLaneCollapsedState {
     executions: false,
     push_center: false,
     evidence: false
+  };
+}
+
+function defaultSelectedEntityIds(): WorkspaceSelectedEntityIds {
+  return {
+    plan: [],
+    group: [],
+    node: [],
+    execution: [],
+    push_center: [],
+    evidence: []
   };
 }
 
@@ -93,7 +116,12 @@ export function createWorkspaceViewState(fixture: WorkspaceFixture): WorkspaceVi
     visibleLaneIds: [...WORKSPACE_CANVAS_LANE_IDS],
     density: "comfortable",
     focusedCanvasLaneId: "plans",
-    focusedCanvasCardId: selectedIdFromSelection(fixture.defaultSelection)
+    focusedCanvasCardId: selectedIdFromSelection(fixture.defaultSelection),
+    selectedEntityIds: defaultSelectedEntityIds(),
+    activeSelectionMode: "single",
+    lastSelectedEntity: null,
+    previewBundleId: "preview-bundle-empty",
+    bulkGuardrailSummary: []
   };
 }
 
@@ -135,7 +163,11 @@ export function updateWorkspaceViewState(
       : viewState.laneCollapsedState,
     visibleLaneIds: updates.visibleLaneIds ? [...updates.visibleLaneIds] : viewState.visibleLaneIds,
     focusedCanvasLaneId: updates.focusedCanvasLaneId || viewState.focusedCanvasLaneId,
-    focusedCanvasCardId: updates.focusedCanvasCardId || viewState.focusedCanvasCardId
+    focusedCanvasCardId: updates.focusedCanvasCardId || viewState.focusedCanvasCardId,
+    selectedEntityIds: updates.selectedEntityIds
+      ? { ...viewState.selectedEntityIds, ...updates.selectedEntityIds }
+      : viewState.selectedEntityIds,
+    bulkGuardrailSummary: updates.bulkGuardrailSummary ? [...updates.bulkGuardrailSummary] : viewState.bulkGuardrailSummary
   };
 }
 

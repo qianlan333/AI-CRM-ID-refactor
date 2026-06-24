@@ -94,6 +94,10 @@ def test_p1_group_ops_workspace_reuses_shared_modules():
     assert "densityClassName" in sources
     assert "moveWorkspaceCanvasSelection" in sources
     assert "keyboardHintText" in sources
+    assert "toggleMultiSelectedEntity" in sources
+    assert "clearMultiSelection" in sources
+    assert "selectVisibleItems" in sources
+    assert "buildWorkspacePreviewBundle" in sources
 
 
 def test_p1_group_ops_workspace_copy_preserves_guardrails():
@@ -130,6 +134,11 @@ def test_p1_group_ops_workspace_copy_preserves_guardrails():
         "density",
         "focusedCanvasLaneId",
         "focusedCanvasCardId",
+        "selectedEntityIds",
+        "activeSelectionMode",
+        "lastSelectedEntity",
+        "previewBundleId",
+        "bulkGuardrailSummary",
         "Search / filters",
         "Read-only grouped canvas",
         "Safe preview only",
@@ -155,6 +164,16 @@ def test_p1_group_ops_workspace_copy_preserves_guardrails():
         "data-visible-count",
         "data-blocked-count",
         "data-action-required-count",
+        "Select for preview bundle",
+        "Read-only preview bundle",
+        "data-workspace-multi-toggle",
+        "data-workspace-select-visible",
+        "data-workspace-clear-selection",
+        "data-workspace-select-lane",
+        "aria-checked",
+        "aria-live=\"polite\"",
+        "not currently visible",
+        "any blocked item -> bundle cannot execute",
         "Empty search result",
         "Empty lane",
         "real_data_unavailable",
