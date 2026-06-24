@@ -225,16 +225,48 @@ def _live_source_has_matching_customers(
     *,
     repo: CustomerReadRepository | None = None,
 ) -> bool:
+    count = _live_source_matching_customer_count(query, repo=repo)
+    return count > 0
+
+
+def _live_source_matching_customer_count(
+    query: ListCustomersRequest,
+    *,
+    repo: CustomerReadRepository | None = None,
+) -> int:
     if not _customer_read_model_live_source_fallback_enabled():
-        return False
+        return 0
     owned_repo = repo is None
     repo = repo or build_customer_live_source_repository()
     try:
         filters = _list_filters(query)
-        return _count_customers(repo, filters, [], limit=query.limit, offset=query.offset) > 0
+        return _count_customers(repo, filters, [], limit=query.limit, offset=query.offset)
     finally:
         if owned_repo:
             _close_repository(repo)
+
+
+def _primary_customer_list_stale_reason(
+    query: ListCustomersRequest,
+    *,
+    primary_total: int,
+    live_source_repo: CustomerReadRepository | None = None,
+) -> str:
+    if not _customer_read_model_live_source_fallback_enabled():
+        return ""
+    if primary_total > query.offset + query.limit:
+        return ""
+    try:
+        live_total = _live_source_matching_customer_count(query, repo=live_source_repo)
+    except Exception as exc:
+        LOGGER.warning("customer read model live source freshness check failed: %s", exc)
+        return ""
+    if live_total > primary_total:
+        return (
+            "customer read model stale: "
+            f"primary returned {primary_total} matching customers while live source has {live_total}"
+        )
+    return ""
 
 
 def _list_customers_live_source_payload(query: ListCustomersRequest, exc: Exception, repo: CustomerReadRepository | None = None) -> JsonDict:
@@ -395,8 +427,13 @@ class ListCustomersQuery:
                     filters = _list_filters(query)
                     page = [list_item_projection(item) for item in repo.list_customers(filters, limit=query.limit, offset=query.offset)]
                     total = _count_customers(repo, filters, page, limit=query.limit, offset=query.offset)
-                    if total == 0 and not page and _live_source_has_matching_customers(query, repo=self._live_source_repo):
-                        raise RuntimeError("customer read model stale: primary returned 0 while live source has matching customers")
+                    stale_reason = _primary_customer_list_stale_reason(
+                        query,
+                        primary_total=total,
+                        live_source_repo=self._live_source_repo,
+                    )
+                    if stale_reason:
+                        raise RuntimeError(stale_reason)
                 finally:
                     if self._repo is None:
                         _close_repository(repo)
@@ -513,8 +550,16 @@ class GetCustomerDetailQuery:
                 customer = repo.get_customer(query.external_userid)
                 if not customer:
                     raise NotFoundError("customer not found")
-            except NotFoundError:
-                raise
+            except NotFoundError as exc:
+                if self._repo is None:
+                    _close_repository(repo)
+                    repo = None
+                try:
+                    return _customer_detail_live_source_payload(query, exc, self._live_source_repo)
+                except NotFoundError:
+                    raise
+                except Exception:
+                    raise exc
             except Exception as exc:
                 if self._repo is None:
                     _read_model_primary_failed(exc, repo)
@@ -584,8 +629,16 @@ class GetCustomerTimelineQuery:
                 items = repo.list_timeline(query.external_userid, {"event_type": query.event_type or ""}, limit=None, offset=0)
                 total = len(items)
                 page = items[query.offset : query.offset + query.limit]
-            except NotFoundError:
-                raise
+            except NotFoundError as exc:
+                if self._repo is None:
+                    _close_repository(repo)
+                    repo = None
+                try:
+                    return _customer_timeline_live_source_payload(query, exc, self._live_source_repo)
+                except NotFoundError:
+                    raise
+                except Exception:
+                    raise exc
             except Exception as exc:
                 if self._repo is None:
                     _read_model_primary_failed(exc, repo)
@@ -674,8 +727,16 @@ class ListRecentMessagesQuery:
                 if not repo.customer_exists(query.external_userid):
                     raise NotFoundError("customer not found")
                 messages = repo.list_recent_messages(query.external_userid, limit=query.limit)
-            except NotFoundError:
-                raise
+            except NotFoundError as exc:
+                if self._repo is None:
+                    _close_repository(repo)
+                    repo = None
+                try:
+                    return _recent_messages_live_source_payload(query, exc, self._live_source_repo)
+                except NotFoundError:
+                    raise
+                except Exception:
+                    raise exc
             except Exception as exc:
                 if self._repo is None:
                     _read_model_primary_failed(exc, repo)
