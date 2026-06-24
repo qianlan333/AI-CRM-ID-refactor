@@ -5,34 +5,112 @@ import { renderStatusCard } from "../shared/status_card.js";
 import { statusMeta } from "../shared/status_model.js";
 import { defaultRequestJson, loadGroupOpsWorkspaceData, parseWorkspaceApiConfig } from "./workspace_api.js";
 import {
-  createWorkspaceSelectionState,
   renderWorkspaceDetailPanel,
   renderWorkspaceSelectedPreviewResult,
-  selectWorkspaceEntity
 } from "./workspace_detail.js";
+import { ENTITY_FILTER_OPTIONS, STATUS_FILTER_OPTIONS, filterWorkspaceView, type FilteredWorkspaceView } from "./workspace_filters.js";
 import {
   P1_GROUP_OPS_WORKSPACE_FIXTURE,
+  createUnavailableWorkspaceFixture,
   type WorkspaceEntityType,
   type WorkspaceFixture,
-  type WorkspaceListItem,
-  type WorkspaceSelectionState
+  type WorkspaceListItem
 } from "./workspace_fixture.js";
 import { renderWorkspaceCanvas, renderWorkspacePreviewResult } from "./workspace_preview.js";
 import { buildGroupOpsWorkspaceStatusModel, workspaceCanRenderGlobalPass } from "./workspace_status.js";
+import {
+  createWorkspaceViewState,
+  selectEntityInViewState,
+  selectionFromViewState,
+  updateWorkspaceViewState,
+  type WorkspacePanelMode,
+  type WorkspaceViewState
+} from "./workspace_view_state.js";
 
-function isSelectedListItem(item: WorkspaceListItem, selection: WorkspaceSelectionState): boolean {
-  if (item.entityType !== selection.selectedEntityType) return false;
-  if (item.entityType === "plan") return selection.selectedPlanId === item.detailId;
-  if (item.entityType === "group") return selection.selectedGroupId === item.detailId;
-  if (item.entityType === "node") return selection.selectedNodeId === item.detailId;
-  if (item.entityType === "execution") return selection.selectedExecutionId === item.detailId;
-  if (item.entityType === "push_center") return selection.selectedPushCenterJobId === item.detailId;
-  return false;
+function isSelectedListItem(item: WorkspaceListItem, viewState: WorkspaceViewState): boolean {
+  return item.entityType === viewState.selectedEntityType && item.detailId === viewState.selectedEntityId;
 }
 
-function renderLeftRailItem(item: WorkspaceListItem, selection: WorkspaceSelectionState): string {
+function renderOption(value: string, currentValue: string): string {
+  return `<option value="${escapeHtml(value)}"${value === currentValue ? " selected" : ""}>${escapeHtml(value)}</option>`;
+}
+
+function renderFilterToolbar(viewState: WorkspaceViewState, filtered: FilteredWorkspaceView): string {
+  return `
+    <section class="p1-workspace-filters" aria-label="Workspace local filters" data-view-state-memory-only="true" data-filter-result-count="${filtered.visibleLeftRailItems.length}" data-filter-data-state="${escapeHtml(filtered.dataState)}">
+      <div class="p1-workspace-panel-head">
+        <h2>Search / filters</h2>
+        <p>筛选只作用于已加载的脱敏只读数据；不写 URL、不保存后端、不触发执行。</p>
+      </div>
+      <div class="p1-workspace-filter-grid">
+        <label>
+          <span>Keyword</span>
+          <input type="search" value="${escapeHtml(viewState.keyword)}" placeholder="plan name or internal id" data-workspace-filter="keyword" autocomplete="off">
+        </label>
+        <label>
+          <span>Plan status</span>
+          <select data-workspace-filter="planStatusFilter">${STATUS_FILTER_OPTIONS.map((option) => renderOption(option, viewState.planStatusFilter)).join("")}</select>
+        </label>
+        <label>
+          <span>Entity type</span>
+          <select data-workspace-filter="entityTypeFilter">${ENTITY_FILTER_OPTIONS.map((option) => renderOption(option, viewState.entityTypeFilter)).join("")}</select>
+        </label>
+        <label>
+          <span>Execution status</span>
+          <select data-workspace-filter="executionStatusFilter">${STATUS_FILTER_OPTIONS.map((option) => renderOption(option, viewState.executionStatusFilter)).join("")}</select>
+        </label>
+        <label>
+          <span>Push Center status</span>
+          <select data-workspace-filter="pushCenterStatusFilter">${STATUS_FILTER_OPTIONS.map((option) => renderOption(option, viewState.pushCenterStatusFilter)).join("")}</select>
+        </label>
+        <label>
+          <span>Panel mode</span>
+          <select data-workspace-filter="panelMode">
+            ${["summary", "detail", "guardrail"].map((option) => renderOption(option, viewState.panelMode)).join("")}
+          </select>
+        </label>
+      </div>
+      <p class="p1-workspace-filter-summary">${escapeHtml(filtered.resultSummary)}；原始 evidence status 不会被筛选改变。</p>
+    </section>
+  `;
+}
+
+function renderStateBanner(fixture: WorkspaceFixture, filtered: FilteredWorkspaceView): string {
+  if (filtered.isEmpty) {
+    return `
+      <section class="p1-workspace-state-banner p1-workspace-state-banner--empty" data-empty-search-result="true" data-can-claim-pass90="false">
+        <strong>Empty search result</strong>
+        <p>${escapeHtml(filtered.emptyReason)}</p>
+      </section>
+    `;
+  }
+  if (filtered.dataState === "real_data_unavailable") {
+    return `
+      <section class="p1-workspace-state-banner p1-workspace-state-banner--danger" data-real-data-unavailable="true" data-can-claim-pass90="false">
+        <strong>Read-only API unavailable</strong>
+        <p>API read failure keeps this workspace in preview fallback; it must not render sent or completed.</p>
+      </section>
+    `;
+  }
+  if (filtered.dataState === "partial_data") {
+    return `
+      <section class="p1-workspace-state-banner p1-workspace-state-banner--warning" data-partial-data="true" data-can-claim-pass90="false">
+        <strong>Partial data</strong>
+        <p>部分 Push Center 或 governance evidence 仍不完整；缺失项继续显示 evidence-incomplete / governance-missing。</p>
+      </section>
+    `;
+  }
+  return `
+    <section class="p1-workspace-state-banner" data-readonly-data-ready="true" data-can-claim-pass90="false">
+      <strong>Read-only data loaded</strong>
+      <p>${escapeHtml(fixture.dataSourceLabel)} 已绑定；筛选不改变任何 evidence status。</p>
+    </section>
+  `;
+}
+
+function renderLeftRailItem(item: WorkspaceListItem, viewState: WorkspaceViewState): string {
   const meta = statusMeta(item.status);
-  const selectedClass = isSelectedListItem(item, selection) ? " p1-workspace-list-item--selected" : "";
+  const selectedClass = isSelectedListItem(item, viewState) ? " p1-workspace-list-item--selected" : "";
   return `
     <button type="button" class="p1-workspace-list-item p1-workspace-list-item--${meta.tone}${selectedClass}" data-kind="${escapeHtml(item.kind)}" data-status="${escapeHtml(item.status)}" data-workspace-select-type="${escapeHtml(item.entityType)}" data-workspace-select-id="${escapeHtml(item.detailId)}">
       <div class="p1-workspace-list-item__head">
@@ -57,19 +135,23 @@ function renderWorkspaceHeader(fixture: WorkspaceFixture): string {
   `;
 }
 
-function renderLeftRail(fixture: WorkspaceFixture, selection: WorkspaceSelectionState): string {
+function renderLeftRail(filtered: FilteredWorkspaceView): string {
+  const rows = filtered.visibleLeftRailItems.length > 0
+    ? filtered.visibleLeftRailItems.map((item) => renderLeftRailItem(item, filtered.viewState)).join("")
+    : `<section class="p1-workspace-empty-state" data-empty-search-result="true"><strong>No matching item</strong><p>${escapeHtml(filtered.emptyReason)}</p></section>`;
   return `
     <aside class="p1-workspace-left" aria-label="计划、人群、任务列表">
       <div class="p1-workspace-panel-head">
         <h2>计划 / 人群 / 任务</h2>
         <p>点击计划、人群、节点、执行或 Push Center 项只会更新本地只读 detail selection。</p>
       </div>
-      <div class="p1-workspace-list">${fixture.leftRailItems.map((item) => renderLeftRailItem(item, selection)).join("")}</div>
+      <div class="p1-workspace-list">${rows}</div>
     </aside>
   `;
 }
 
-function renderPropertyPanel(fixture: WorkspaceFixture, selection: WorkspaceSelectionState): string {
+function renderPropertyPanel(fixture: WorkspaceFixture, filtered: FilteredWorkspaceView): string {
+  const selection = selectionFromViewState(fixture, filtered.viewState);
   const cards = fixture.payload.scenarios.map((scenario) => renderStatusCard(scenario, {
     dragHandle: true,
     dragDisabledReason: "P1 native workspace uses readonly preview only; no direct send."
@@ -98,7 +180,7 @@ function renderPropertyPanel(fixture: WorkspaceFixture, selection: WorkspaceSele
 function attachSelectionHandlers(
   root: HTMLElement,
   fixture: WorkspaceFixture,
-  selection: WorkspaceSelectionState
+  viewState: WorkspaceViewState
 ): void {
   if (typeof root.querySelectorAll !== "function") return;
   const nodes = root.querySelectorAll<HTMLElement>("[data-workspace-select-type][data-workspace-select-id]");
@@ -107,7 +189,22 @@ function attachSelectionHandlers(
       const entityType = node.dataset.workspaceSelectType as WorkspaceEntityType | undefined;
       const detailId = node.dataset.workspaceSelectId;
       if (!entityType || !detailId) return;
-      renderP1GroupOpsWorkspace(root, fixture, selectWorkspaceEntity(selection, entityType, detailId));
+      renderP1GroupOpsWorkspace(root, fixture, selectEntityInViewState(viewState, entityType, detailId));
+    });
+  });
+}
+
+function attachFilterHandlers(root: HTMLElement, fixture: WorkspaceFixture, viewState: WorkspaceViewState): void {
+  if (typeof root.querySelectorAll !== "function") return;
+  const nodes = root.querySelectorAll<HTMLInputElement | HTMLSelectElement>("[data-workspace-filter]");
+  nodes.forEach((node) => {
+    const eventName = node.tagName === "INPUT" ? "input" : "change";
+    node.addEventListener(eventName, () => {
+      const key = node.dataset.workspaceFilter as keyof WorkspaceViewState | undefined;
+      if (!key) return;
+      renderP1GroupOpsWorkspace(root, fixture, updateWorkspaceViewState(viewState, {
+        [key]: node.value
+      } as Partial<WorkspaceViewState>));
     });
   });
 }
@@ -115,22 +212,27 @@ function attachSelectionHandlers(
 export function renderP1GroupOpsWorkspace(
   root: HTMLElement,
   fixture: WorkspaceFixture = P1_GROUP_OPS_WORKSPACE_FIXTURE,
-  selection: WorkspaceSelectionState = createWorkspaceSelectionState(fixture)
+  viewState: WorkspaceViewState = createWorkspaceViewState(fixture)
 ): void {
   const model = buildGroupOpsWorkspaceStatusModel(fixture);
+  const filtered = filterWorkspaceView(fixture, viewState);
+  const selection = selectionFromViewState(fixture, filtered.viewState);
   root.innerHTML = `
-    <section class="p1-native-group-ops-workspace" data-p1-native-workspace="group_ops" data-draft-only="true" data-preview-only="true" data-can-claim-pass90="false">
+    <section class="p1-native-group-ops-workspace" data-p1-native-workspace="group_ops" data-draft-only="true" data-preview-only="true" data-can-claim-pass90="false" data-view-state-memory-only="true" data-selected-entity-type="${escapeHtml(filtered.viewState.selectedEntityType)}" data-selected-entity-id="${escapeHtml(filtered.viewState.selectedEntityId)}" data-panel-mode="${escapeHtml(filtered.viewState.panelMode)}">
       ${renderWorkspaceHeader(fixture)}
+      ${renderFilterToolbar(filtered.viewState, filtered)}
+      ${renderStateBanner(fixture, filtered)}
       <div class="p1-workspace-grid">
-        ${renderLeftRail(fixture, selection)}
+        ${renderLeftRail(filtered)}
         ${renderWorkspaceCanvas(model, fixture, selection)}
-        ${renderPropertyPanel(fixture, selection)}
+        ${renderPropertyPanel(fixture, filtered)}
       </div>
       ${renderWorkspaceSelectedPreviewResult(fixture, selection)}
       ${renderWorkspacePreviewResult(model)}
     </section>
   `;
-  attachSelectionHandlers(root, fixture, selection);
+  attachSelectionHandlers(root, fixture, filtered.viewState);
+  attachFilterHandlers(root, fixture, filtered.viewState);
 }
 
 function boot(): void {
@@ -142,11 +244,7 @@ function boot(): void {
       renderP1GroupOpsWorkspace(root, fixture);
     })
     .catch(() => {
-      renderP1GroupOpsWorkspace(root, {
-        ...P1_GROUP_OPS_WORKSPACE_FIXTURE,
-        dataBindingStatus: "real_data_unavailable",
-        dataSourceLabel: "read_only_api_unavailable"
-      });
+      renderP1GroupOpsWorkspace(root, createUnavailableWorkspaceFixture("read_only_api_unavailable"));
     });
 }
 

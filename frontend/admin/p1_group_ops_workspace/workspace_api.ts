@@ -1,5 +1,5 @@
 import {
-  P1_GROUP_OPS_WORKSPACE_FIXTURE,
+  createUnavailableWorkspaceFixture,
   type WorkspaceFixture,
   type WorkspaceDetailField,
   type WorkspaceDetailItem,
@@ -482,24 +482,12 @@ export async function loadGroupOpsWorkspaceData(
   const plan = firstPlan(plans);
   const selectedPlanId = planId(plan);
   if (!plan || selectedPlanId <= 0) {
+    const unavailable = createUnavailableWorkspaceFixture(sourceStatus(plans));
     return {
-      ...P1_GROUP_OPS_WORKSPACE_FIXTURE,
+      ...unavailable,
       dataSourceLabel: sourceStatus(plans),
-      dataBindingStatus: "real_data_unavailable",
-      leftRailItems: [
-        {
-          id: "plan-empty",
-          label: "No Group Ops plan found",
-          kind: "plan",
-          entityType: "plan",
-          detailId: "plan-p1-group-ops-preview",
-          status: "evidence-incomplete",
-          summary: "只读 API 可达，但没有可绑定的 Group Ops 计划。"
-        }
-      ],
       payload: {
-        finalVerdict: "P1_READY_WITH_EXCEPTIONS",
-        canClaimPass90Plus: false,
+        ...unavailable.payload,
         scenarios: [
           {
             key: "group_ops",
@@ -512,9 +500,7 @@ export async function loadGroupOpsWorkspaceData(
             route: "/admin/automation-conversion/group-ops/ui"
           }
         ]
-      },
-      detailItems: P1_GROUP_OPS_WORKSPACE_FIXTURE.detailItems,
-      defaultSelection: P1_GROUP_OPS_WORKSPACE_FIXTURE.defaultSelection
+      }
     };
   }
 

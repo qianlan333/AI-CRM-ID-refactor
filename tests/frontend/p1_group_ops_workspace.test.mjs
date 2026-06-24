@@ -6,15 +6,22 @@ import {
   loadGroupOpsWorkspaceData
 } from "../../aicrm_next/frontend_compat/static/admin_console/p1/p1_group_ops_workspace/workspace_api.js";
 import {
+  filterWorkspaceView
+} from "../../aicrm_next/frontend_compat/static/admin_console/p1/p1_group_ops_workspace/workspace_filters.js";
+import {
   createWorkspaceSelectionState,
   findWorkspaceDetail,
-  selectWorkspaceEntity
 } from "../../aicrm_next/frontend_compat/static/admin_console/p1/p1_group_ops_workspace/workspace_detail.js";
 import { P1_GROUP_OPS_WORKSPACE_FIXTURE } from "../../aicrm_next/frontend_compat/static/admin_console/p1/p1_group_ops_workspace/workspace_fixture.js";
 import {
   buildGroupOpsWorkspaceStatusModel,
   workspaceCanRenderGlobalPass
 } from "../../aicrm_next/frontend_compat/static/admin_console/p1/p1_group_ops_workspace/workspace_status.js";
+import {
+  createWorkspaceViewState,
+  selectEntityInViewState,
+  updateWorkspaceViewState
+} from "../../aicrm_next/frontend_compat/static/admin_console/p1/p1_group_ops_workspace/workspace_view_state.js";
 
 function assertNoSensitiveFixtureStrings(value) {
   for (const forbidden of [
@@ -78,6 +85,8 @@ assert.equal(root.innerHTML.includes("draft-only / preview-only"), true);
 assert.equal(root.innerHTML.includes("计划 / 人群 / 任务"), true);
 assert.equal(root.innerHTML.includes("编排预览区 / draft-only canvas shell"), true);
 assert.equal(root.innerHTML.includes("属性面板 / guardrail / evidence state"), true);
+assert.equal(root.innerHTML.includes("Search / filters"), true);
+assert.equal(root.innerHTML.includes("data-view-state-memory-only=\"true\""), true);
 assert.equal(root.innerHTML.includes("Plan detail"), true);
 assert.equal(root.innerHTML.includes("Selected preview result"), true);
 assert.equal(root.innerHTML.includes("Preview result / blocked reason"), true);
@@ -95,7 +104,8 @@ const defaultSelection = createWorkspaceSelectionState(P1_GROUP_OPS_WORKSPACE_FI
 const selectedPlan = findWorkspaceDetail(P1_GROUP_OPS_WORKSPACE_FIXTURE, defaultSelection);
 assert.equal(selectedPlan.entityType, "plan");
 
-const selectedNode = selectWorkspaceEntity(defaultSelection, "node", "node-preview-task");
+const defaultViewState = createWorkspaceViewState(P1_GROUP_OPS_WORKSPACE_FIXTURE);
+const selectedNode = selectEntityInViewState(defaultViewState, "node", "node-preview-task");
 const nodeRoot = { innerHTML: "" };
 renderP1GroupOpsWorkspace(nodeRoot, P1_GROUP_OPS_WORKSPACE_FIXTURE, selectedNode);
 assert.equal(nodeRoot.innerHTML.includes("data-selected-entity-type=\"node\""), true);
@@ -103,7 +113,7 @@ assert.equal(nodeRoot.innerHTML.includes("Node / task summary"), true);
 assert.equal(nodeRoot.innerHTML.includes("preview-only"), true);
 assertNoSensitiveFixtureStrings(nodeRoot.innerHTML);
 
-const selectedExecution = selectWorkspaceEntity(defaultSelection, "execution", "execution-preview-empty");
+const selectedExecution = selectEntityInViewState(defaultViewState, "execution", "execution-preview-empty");
 const executionRoot = { innerHTML: "" };
 renderP1GroupOpsWorkspace(executionRoot, P1_GROUP_OPS_WORKSPACE_FIXTURE, selectedExecution);
 assert.equal(executionRoot.innerHTML.includes("data-selected-entity-type=\"execution\""), true);
@@ -209,10 +219,42 @@ assert.equal(fixture.detailItems.some((item) => item.entityType === "node"), tru
 assert.equal(fixture.detailItems.some((item) => item.entityType === "execution" && item.fields.some((field) => field.value === "11")), true);
 assert.equal(fixture.detailItems.some((item) => item.entityType === "push_center" && item.fields.some((field) => field.value === "external_effect_job:97")), true);
 
+const realViewState = createWorkspaceViewState(fixture);
+const keywordFiltered = filterWorkspaceView(fixture, updateWorkspaceViewState(realViewState, { keyword: "真实群运营" }));
+assert.equal(keywordFiltered.visibleLeftRailItems.length, 1);
+assert.equal(keywordFiltered.visibleLeftRailItems[0].entityType, "plan");
+assert.equal(keywordFiltered.viewState.selectedEntityType, "plan");
+
+const planStatusFiltered = filterWorkspaceView(fixture, updateWorkspaceViewState(realViewState, { planStatusFilter: "ready" }));
+assert.equal(planStatusFiltered.visibleLeftRailItems.length, 1);
+assert.equal(planStatusFiltered.visibleLeftRailItems[0].status, "ready");
+
+const executionFiltered = filterWorkspaceView(fixture, updateWorkspaceViewState(realViewState, { entityTypeFilter: "execution", executionStatusFilter: "pending" }));
+assert.equal(executionFiltered.visibleLeftRailItems.length, 1);
+assert.equal(executionFiltered.visibleLeftRailItems[0].entityType, "execution");
+assert.equal(executionFiltered.viewState.selectedEntityType, "execution");
+
+const pushFiltered = filterWorkspaceView(fixture, updateWorkspaceViewState(realViewState, { entityTypeFilter: "push_center", pushCenterStatusFilter: "sent" }));
+assert.equal(pushFiltered.visibleLeftRailItems.length, 1);
+assert.equal(pushFiltered.visibleLeftRailItems[0].entityType, "push_center");
+
+const selectedPushThenPlanOnly = filterWorkspaceView(
+  fixture,
+  updateWorkspaceViewState(selectEntityInViewState(realViewState, "push_center", "push_center-external_effect_job:97"), { entityTypeFilter: "plan" })
+);
+assert.equal(selectedPushThenPlanOnly.viewState.selectedEntityType, "plan");
+assert.equal(selectedPushThenPlanOnly.viewState.selectedEntityId, "plan-7");
+
+const emptyFiltered = filterWorkspaceView(fixture, updateWorkspaceViewState(realViewState, { keyword: "no matching redacted item" }));
+assert.equal(emptyFiltered.isEmpty, true);
+assert.equal(emptyFiltered.viewState.panelMode, "summary");
+
 const realRoot = { innerHTML: "" };
 renderP1GroupOpsWorkspace(realRoot, fixture);
 assert.equal(realRoot.innerHTML.includes("真实群运营计划"), true);
 assert.equal(realRoot.innerHTML.includes("real_data_bound"), true);
+assert.equal(realRoot.innerHTML.includes("Search / filters"), true);
+assert.equal(realRoot.innerHTML.includes("Read-only data loaded"), true);
 assert.equal(realRoot.innerHTML.includes("external_effect_job:97"), true);
 assert.equal(realRoot.innerHTML.includes("wrOgAAA001"), false);
 assert.equal(realRoot.innerHTML.includes("owner_001"), false);
@@ -222,8 +264,8 @@ assert.equal(realRoot.innerHTML.includes("data-production-write-executed=\"false
 assert.equal(realRoot.innerHTML.includes("data-can-claim-pass90=\"false\""), true);
 assertNoSensitiveFixtureStrings(realRoot.innerHTML);
 
-const realSelection = createWorkspaceSelectionState(fixture);
-const realExecutionSelection = selectWorkspaceEntity(realSelection, "execution", "execution-plan-7");
+const realSelection = createWorkspaceViewState(fixture);
+const realExecutionSelection = selectEntityInViewState(realSelection, "execution", "execution-plan-7");
 const realExecutionRoot = { innerHTML: "" };
 renderP1GroupOpsWorkspace(realExecutionRoot, fixture, realExecutionSelection);
 assert.equal(realExecutionRoot.innerHTML.includes("data-selected-entity-type=\"execution\""), true);
@@ -233,12 +275,34 @@ assert.equal(realExecutionRoot.innerHTML.includes("wrOgAAA001"), false);
 assert.equal(realExecutionRoot.innerHTML.includes("13800138000"), false);
 assertNoSensitiveFixtureStrings(realExecutionRoot.innerHTML);
 
-const realPushSelection = selectWorkspaceEntity(realSelection, "push_center", "push_center-external_effect_job:97");
+const realPushSelection = selectEntityInViewState(realSelection, "push_center", "push_center-external_effect_job:97");
 const realPushRoot = { innerHTML: "" };
 renderP1GroupOpsWorkspace(realPushRoot, fixture, realPushSelection);
 assert.equal(realPushRoot.innerHTML.includes("data-selected-entity-type=\"push_center\""), true);
 assert.equal(realPushRoot.innerHTML.includes("Push Center projection summary"), true);
 assert.equal(realPushRoot.innerHTML.includes("governance complete"), true);
 assertNoSensitiveFixtureStrings(realPushRoot.innerHTML);
+
+const emptyFixture = await loadGroupOpsWorkspaceData(DEFAULT_WORKSPACE_API_CONFIG, async (url) => {
+  if (url.includes("/plans?")) {
+    return { ok: true, source_status: "fixture_empty", items: [], total: 0 };
+  }
+  throw new Error(`Unexpected URL for empty fixture: ${url}`);
+});
+const emptyRoot = { innerHTML: "" };
+renderP1GroupOpsWorkspace(emptyRoot, emptyFixture);
+assert.equal(emptyFixture.dataBindingStatus, "real_data_unavailable");
+assert.equal(emptyRoot.innerHTML.includes("Read-only API unavailable"), true);
+assert.equal(emptyRoot.innerHTML.includes("data-real-data-unavailable=\"true\""), true);
+assert.equal(emptyRoot.innerHTML.includes("PASS_90_PLUS"), true);
+assert.equal(emptyRoot.innerHTML.includes("data-can-claim-pass90=\"false\""), true);
+assertNoSensitiveFixtureStrings(emptyRoot.innerHTML);
+
+const filteredRoot = { innerHTML: "" };
+renderP1GroupOpsWorkspace(filteredRoot, fixture, updateWorkspaceViewState(realViewState, { keyword: "no matching redacted item" }));
+assert.equal(filteredRoot.innerHTML.includes("Empty search result"), true);
+assert.equal(filteredRoot.innerHTML.includes("data-empty-search-result=\"true\""), true);
+assert.equal(filteredRoot.innerHTML.includes("external_effect_job:97"), true);
+assertNoSensitiveFixtureStrings(filteredRoot.innerHTML);
 
 console.log("p1 native group ops workspace OK");
