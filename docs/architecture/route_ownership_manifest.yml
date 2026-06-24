@@ -4861,10 +4861,10 @@ routes:
   - GET
   route_name: automation_contract
   capability_owner: automation_engine
-  runtime_owner: ai_crm_next
+  runtime_owner: retired
   layer: api
   external_effects: none
-  data_source: read_model
+  data_source: command
   requires_auth: true
   rollback: previous_release
 - path: /api/admin/automation-conversion/overview
@@ -4872,10 +4872,10 @@ routes:
   - GET
   route_name: automation_overview
   capability_owner: automation_engine
-  runtime_owner: ai_crm_next
+  runtime_owner: retired
   layer: api
   external_effects: none
-  data_source: read_model
+  data_source: command
   requires_auth: true
   rollback: previous_release
 - path: /api/admin/automation-conversion/pools
@@ -4883,10 +4883,10 @@ routes:
   - GET
   route_name: automation_pools
   capability_owner: automation_engine
-  runtime_owner: ai_crm_next
+  runtime_owner: retired
   layer: api
   external_effects: none
-  data_source: read_model
+  data_source: command
   requires_auth: true
   rollback: previous_release
 - path: /api/admin/automation-conversion/agents
@@ -4971,10 +4971,10 @@ routes:
   - GET
   route_name: automation_execution_records
   capability_owner: automation_engine
-  runtime_owner: ai_crm_next
+  runtime_owner: retired
   layer: api
   external_effects: none
-  data_source: read_model
+  data_source: command
   requires_auth: true
   rollback: previous_release
 - path: /api/customer-automation/activation-webhook
