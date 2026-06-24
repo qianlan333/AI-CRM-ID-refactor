@@ -116,10 +116,6 @@ def list_operation_member_rows() -> list[dict[str, Any]]:
                 "channel_owner_field",
             ),
             (
-                "SELECT DISTINCT owner_staff_id AS user_id FROM automation_member WHERE COALESCE(owner_staff_id, '') <> ''",
-                "automation_member_owner_field",
-            ),
-            (
                 "SELECT DISTINCT follow_user_userid AS user_id FROM wecom_external_contact_identity_map WHERE COALESCE(follow_user_userid, '') <> ''",
                 "external_contact_follow_user",
             ),

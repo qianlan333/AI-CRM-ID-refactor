@@ -101,12 +101,12 @@ def funnel_payload(repo: AdminReadRepository) -> dict[str, Any]:
         "客户总数": repo.count("contacts"),
         "问卷提交": repo.count("questionnaire_submissions"),
         "订单数": repo.count("wechat_pay_orders"),
-        "自动化成员": repo.count("automation_member"),
-        "运营任务": repo.count("automation_operation_task"),
-        "工作流执行": repo.count("automation_workflow_execution"),
+        "AI 人群包成员": repo.count("ai_audience_member_current"),
+        "内部事件": repo.count("internal_event"),
+        "外推任务": repo.count("external_effect_job"),
     }
     if not repo.is_production:
-        counts = {"客户总数": 1, "问卷提交": 1, "订单数": 1, "自动化成员": 1, "运营任务": 1, "工作流执行": 1}
+        counts = {"客户总数": 1, "问卷提交": 1, "订单数": 1, "AI 人群包成员": 1, "内部事件": 1, "外推任务": 1}
     cards = [{"label": key, "value": value, "description": "生产统计" if repo.is_production else "本地结构校验"} for key, value in counts.items()]
     recent_contacts = repo.rows(
         """
