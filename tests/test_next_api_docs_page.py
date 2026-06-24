@@ -59,8 +59,8 @@ def test_api_docs_view_model_scans_current_fastapi_routes() -> None:
         ("GET", "/api/admin/channels/{channel_id}/contacts"),
         ("GET", "/api/admin/questionnaires/{questionnaire_id}/latest-submit-debug"),
         ("POST", "/api/admin/user-ops/batch-send/execute"),
-        ("GET", "/api/admin/automation-conversion/contract"),
-        ("PUT", "/api/admin/automation-conversion/tasks/{task_id}/send-content/unified"),
+        ("GET", "/api/admin/automation-conversion/agent-outputs"),
+        ("GET", "/api/admin/ai-audience/packages"),
         ("POST", "/api/admin/automation-conversion/group-ops/plans/{plan_id}/run-due"),
         ("POST", "/api/automation/group-ops/webhooks/{webhook_key}"),
         ("POST", "/api/admin/wecom/tags/live/mark"),
@@ -87,7 +87,8 @@ def test_admin_api_docs_page_renders_rich_docs_not_real_data_table(monkeypatch) 
     assert "API 快速索引" in html
     assert "复制全部 API 文档" in html
     assert "复制此分组（MD）" in html
-    assert "/api/admin/automation-conversion/contract" in html
+    assert "/api/admin/automation-conversion/agent-outputs" in html
+    assert "/api/admin/ai-audience/packages" in html
     assert "/api/admin/automation-conversion/group-ops/plans" in html
     assert "/api/admin/image-library/upload" in html
     assert "/api/products/{page_slug}" in html

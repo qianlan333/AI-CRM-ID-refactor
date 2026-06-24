@@ -306,6 +306,10 @@ def test_automation_program_api_routes_are_retired(monkeypatch):
 
     for method, path in [
         ("get", "/api/admin/automation-conversion/programs"),
+        ("get", "/api/admin/automation-conversion/contract"),
+        ("get", "/api/admin/automation-conversion/overview"),
+        ("get", "/api/admin/automation-conversion/pools"),
+        ("get", "/api/admin/automation-conversion/execution-records"),
         ("post", "/api/admin/automation-conversion/programs/7/channel-bindings"),
         ("post", "/api/admin/automation-conversion/tasks/run-due"),
         ("post", "/api/admin/automation-conversion/execution-items/12/send-via-bazhuayu"),

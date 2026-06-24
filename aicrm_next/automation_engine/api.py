@@ -9,47 +9,12 @@ from aicrm_next.shared.errors import ContractError, NotFoundError
 
 from .application import (
     ApplyActivationWebhookCommand,
-    GetBehaviorSegmentRulesQuery,
-    ConfirmConversionCommand,
     CreateAgentCommand,
-    CreateTaskCommand,
-    CreateWorkflowCommand,
-    CreateWorkflowNodeCommand,
-    DeleteWorkflowNodeCommand,
-    EnterSilentPoolCommand,
-    ExitMarketingCommand,
-    CreateActionTemplateCommand,
-    CreateProfileSegmentTemplateCommand,
-    CreateTaskGroupCommand,
     GetAgentOutputDetailQuery,
     GetAgentRunDetailQuery,
-    GetTaskDetailQuery,
-    ListActionTemplatesQuery,
     ListAgentsQuery,
     ListAgentOutputsQuery,
     ListAgentRunsQuery,
-    ListTasksQuery,
-    ListTaskGroupsQuery,
-    ListWorkflowsQuery,
-    ListWorkflowNodesQuery,
-    GetProfileSegmentTemplateCatalogQuery,
-    GetProfileSegmentTemplateOptionsQuery,
-    GetProfileSegmentTemplateQuery,
-    GetAutomationMemberDetailQuery,
-    GetAutomationRuntimeContractQuery,
-    ListProfileSegmentTemplatesQuery,
-    ListAutomationExecutionRecordsQuery,
-    ListAutomationMembersQuery,
-    OverrideFollowupTypeCommand,
-    PushMemberContextToOpenClawCommand,
-    SaveAgentMaterialsCommand,
-    SaveBehaviorSegmentSendContentCommand,
-    SaveProfileSegmentSendContentCommand,
-    SaveUnifiedSendContentCommand,
-    UpdateTaskCommand,
-    UpdateWorkflowNodeCommand,
-    UpdateTaskSendStrategyCommand,
-    UpdateProfileSegmentTemplateCommand,
 )
 from .signup_conversion_read_model import SignupConversionReadModel
 
@@ -70,38 +35,14 @@ from .customer_webhooks import (
 )
 from .dto import (
     ActivationWebhookRequest,
-    AgentMaterialsUpdateRequest,
     AgentCreateRequest,
     AgentListRequest,
     AgentOutputDetailRequest,
     AgentOutputListRequest,
     AgentRunDetailRequest,
     AgentRunListRequest,
-    ActionTemplateCreateRequest,
-    ActionTemplateListRequest,
-    AutomationActionRequest,
-    BehaviorSegmentSendContentUpdateRequest,
-    OverrideFollowupTypeRequest,
-    ProfileSegmentSendContentUpdateRequest,
-    ProfileSegmentTemplateCreateRequest,
-    ProfileSegmentTemplateListRequest,
-    ProfileSegmentTemplateUpdateRequest,
-    PushOpenClawContextRequest,
-    SendStrategyUpdateRequest,
-    TaskCreateRequest,
-    TaskGroupCreateRequest,
-    TaskGroupListRequest,
-    TaskListRequest,
-    TaskUpdateRequest,
-    UnifiedSendContentUpdateRequest,
-    WorkflowCreateRequest,
-    WorkflowListRequest,
-    WorkflowNodeCreateRequest,
-    WorkflowNodeListRequest,
-    WorkflowNodeUpdateRequest,
 )
 from .group_ops.api import router as group_ops_router
-from .overview_read_model import AutomationOverviewReadModel, AutomationPoolReadModel
 
 router = APIRouter()
 router.include_router(group_ops_router)
@@ -302,6 +243,21 @@ async def _customer_webhook_payload(request: Request) -> dict[str, Any]:
     return merged
 
 
+def _bool_payload(value: Any, *, default: bool) -> bool:
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return bool(value)
+    normalized = str(value).strip().lower()
+    if normalized in {"1", "true", "yes", "y", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "n", "off"}:
+        return False
+    return default
+
+
 def _customer_webhook_common(request: Request, payload: dict[str, Any], source_route: str) -> dict[str, Any]:
     return {
         "idempotency_key": str(request.headers.get("Idempotency-Key") or payload.get("idempotency_key") or "").strip(),
@@ -398,24 +354,18 @@ async def api_plan_customer_automation_webhook_delivery_retry_due(request: Reque
 
 
 @router.get("/api/admin/automation-conversion/contract")
-def automation_contract() -> dict:
-    return GetAutomationRuntimeContractQuery()()
+def automation_contract() -> JSONResponse:
+    return _retired_automation_response("legacy_automation_contract_retired")
 
 
 @router.get("/api/admin/automation-conversion/overview")
 def automation_overview() -> JSONResponse:
-    try:
-        return JSONResponse(AutomationOverviewReadModel().execute(), headers=_AUTOMATION_READ_MODEL_HEADERS)
-    except Exception as exc:
-        _raise_http(exc)
+    return _retired_automation_response("legacy_automation_overview_retired")
 
 
 @router.get("/api/admin/automation-conversion/pools")
 def automation_pools() -> JSONResponse:
-    try:
-        return JSONResponse(AutomationPoolReadModel().execute(), headers=_AUTOMATION_READ_MODEL_HEADERS)
-    except Exception as exc:
-        _raise_http(exc)
+    return _retired_automation_response("legacy_automation_pools_retired")
 
 
 @router.get("/api/admin/automation-conversion/agents")
@@ -573,8 +523,9 @@ def get_agent_run_detail(run_id: str, visibility: str = "masked") -> JSONRespons
 
 
 @router.get("/api/admin/automation-conversion/execution-records")
-def automation_execution_records(limit: int = 50, offset: int = 0) -> dict:
-    return ListAutomationExecutionRecordsQuery()(limit=limit, offset=offset)
+def automation_execution_records(limit: int = 50, offset: int = 0) -> JSONResponse:
+    del limit, offset
+    return _retired_automation_response("legacy_automation_execution_records_retired")
 
 
 @router.post("/api/customer-automation/activation-webhook")
