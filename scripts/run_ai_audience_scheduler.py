@@ -12,6 +12,7 @@ except ModuleNotFoundError:  # pragma: no cover - direct script execution
 
 ensure_repo_root_on_path()
 
+from aicrm_next.ai_audience_ops import register_ai_audience_event_consumers
 from aicrm_next.ai_audience_ops.scheduler import (
     DEFAULT_DAILY_REFRESH_TIME,
     DEFAULT_DAILY_TICK_WINDOW_MINUTES,
@@ -19,6 +20,8 @@ from aicrm_next.ai_audience_ops.scheduler import (
     run_due_ai_audience_consumers,
     run_due_refresh_consumers,
 )
+
+register_ai_audience_event_consumers()
 
 
 def _default_batch_size() -> int:

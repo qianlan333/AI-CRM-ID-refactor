@@ -349,9 +349,13 @@ def test_ai_audience_scheduler_runs_through_internal_event_queue_only():
     assert stop_timer_index < stop_service_index < alembic_upgrade_index
     assert copy_service_index < copy_timer_index < daemon_reload_index
     assert daemon_reload_index < enable_index < restart_index < start_index < status_index
+    assert "register_ai_audience_event_consumers()" in scheduler
     assert 'read_int_env("AICRM_AI_AUDIENCE_SCHEDULER_BATCH_SIZE", 20)' in scheduler
     assert "run_due_ai_audience_consumers" in scheduler
     assert "--run-consumers --execute" in service
+    assert "ExecStart=/bin/bash -c" in service
+    assert "AICRM_INTERNAL_EVENTS_ALLOWED_EVENT_TYPES=" in service
+    assert "ai_audience.refresh.incremental_tick,ai_audience.refresh.daily_tick" in service
     assert "AICRM_INTERNAL_EVENTS_ALLOWED_EVENT_CONSUMERS=" in service
     assert "ai_audience.refresh.incremental_tick:ai_audience_incremental_refresh_consumer" in service
     assert "ai_audience.refresh.daily_tick:ai_audience_daily_refresh_consumer" in service
