@@ -235,6 +235,10 @@ _TABLES_TO_TRUNCATE = [
     "message_batch_items",
     "message_batches",
     # — P1 group ops workspace drafts
+    "group_ops_workspace_gray_window_approvals",
+    "group_ops_workspace_allowlist_snapshots",
+    "group_ops_workspace_governance_review_steps",
+    "group_ops_workspace_governance_reviews",
     "group_ops_workspace_draft_audit_logs",
     "group_ops_workspace_draft_items",
     "group_ops_workspace_drafts",
