@@ -104,6 +104,13 @@ def test_p1_group_ops_workspace_reuses_shared_modules():
     assert "buildCopySafeBundleJson" in sources
     assert "assertCopySafeBundleOutput" in sources
     assert "copyBundleSummaryToClipboard" in sources
+    assert "workspace_draft_api" in sources
+    assert "buildWorkspaceDraftPayload" in sources
+    assert "assertWorkspaceDraftPayloadSafe" in sources
+    assert "createDraft" in sources
+    assert "updateDraft" in sources
+    assert "archiveDraft" in sources
+    assert "isDraftConflictError" in sources
 
 
 def test_p1_group_ops_workspace_copy_preserves_guardrails():
@@ -183,6 +190,22 @@ def test_p1_group_ops_workspace_copy_preserves_guardrails():
         "data-copy-safe-export",
         "data-workspace-copy-bundle",
         "data-workspace-toggle-copy-preview",
+        "Draft persistence",
+        "Save draft",
+        "Save as new draft",
+        "Archive draft",
+        "data-draft-persistence",
+        "frontend_save_only",
+        "data-workspace-save-draft",
+        "data-workspace-save-as-new-draft",
+        "data-workspace-archive-draft",
+        "draftSaveStatus",
+        "currentDraftId",
+        "currentDraftVersion",
+        "currentDraftIdempotencyKey",
+        "buildWorkspaceDraftPayload",
+        "request-review、approval bridge、Push Center bridge 均未接入",
+        "草稿不等于 sent/completed",
         "data-workspace-multi-toggle",
         "data-workspace-select-visible",
         "data-workspace-clear-selection",

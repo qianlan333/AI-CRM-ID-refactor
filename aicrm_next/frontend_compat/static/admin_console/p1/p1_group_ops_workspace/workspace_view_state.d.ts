@@ -8,6 +8,7 @@ export type WorkspaceDensity = "compact" | "comfortable";
 export type WorkspaceSelectionMode = "single" | "multi";
 export type WorkspaceCopyPreviewFormat = "text" | "json";
 export type WorkspaceCopyStatus = "idle" | "copied" | "copy_failed";
+export type WorkspaceDraftSaveStatus = "idle" | "saving" | "saved" | "failed" | "conflict" | "archived";
 export declare const WORKSPACE_CANVAS_LANE_IDS: WorkspaceCanvasLaneId[];
 export declare const WORKSPACE_CANVAS_SORT_MODES: WorkspaceCanvasSortMode[];
 export declare const WORKSPACE_CANVAS_GROUP_MODES: WorkspaceCanvasGroupMode[];
@@ -42,6 +43,12 @@ export interface WorkspaceViewState {
     copyPreviewFormat: WorkspaceCopyPreviewFormat;
     copyStatus: WorkspaceCopyStatus;
     copyStatusMessage: string;
+    currentDraftId: string;
+    currentDraftVersion: number;
+    currentDraftSnapshotHash: string;
+    currentDraftIdempotencyKey: string;
+    draftSaveStatus: WorkspaceDraftSaveStatus;
+    draftSaveMessage: string;
 }
 export declare function createWorkspaceViewState(fixture: WorkspaceFixture): WorkspaceViewState;
 export declare function selectEntityInViewState(viewState: WorkspaceViewState, selectedEntityType: WorkspaceEntityType, selectedEntityId: string): WorkspaceViewState;

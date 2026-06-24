@@ -19,6 +19,7 @@ export type WorkspaceDensity = "compact" | "comfortable";
 export type WorkspaceSelectionMode = "single" | "multi";
 export type WorkspaceCopyPreviewFormat = "text" | "json";
 export type WorkspaceCopyStatus = "idle" | "copied" | "copy_failed";
+export type WorkspaceDraftSaveStatus = "idle" | "saving" | "saved" | "failed" | "conflict" | "archived";
 
 export const WORKSPACE_CANVAS_LANE_IDS: WorkspaceCanvasLaneId[] = [
   "plans",
@@ -73,6 +74,12 @@ export interface WorkspaceViewState {
   copyPreviewFormat: WorkspaceCopyPreviewFormat;
   copyStatus: WorkspaceCopyStatus;
   copyStatusMessage: string;
+  currentDraftId: string;
+  currentDraftVersion: number;
+  currentDraftSnapshotHash: string;
+  currentDraftIdempotencyKey: string;
+  draftSaveStatus: WorkspaceDraftSaveStatus;
+  draftSaveMessage: string;
 }
 
 function defaultLaneCollapsedState(): WorkspaceLaneCollapsedState {
@@ -131,7 +138,13 @@ export function createWorkspaceViewState(fixture: WorkspaceFixture): WorkspaceVi
     copyPreviewVisible: false,
     copyPreviewFormat: "text",
     copyStatus: "idle",
-    copyStatusMessage: "只读复制尚未触发。"
+    copyStatusMessage: "只读复制尚未触发。",
+    currentDraftId: "",
+    currentDraftVersion: 0,
+    currentDraftSnapshotHash: "",
+    currentDraftIdempotencyKey: "",
+    draftSaveStatus: "idle",
+    draftSaveMessage: "草稿尚未保存；保存只写 draft 表，不会发送。"
   };
 }
 

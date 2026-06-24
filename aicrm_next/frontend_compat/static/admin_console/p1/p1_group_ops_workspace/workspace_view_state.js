@@ -73,7 +73,13 @@ export function createWorkspaceViewState(fixture) {
         copyPreviewVisible: false,
         copyPreviewFormat: "text",
         copyStatus: "idle",
-        copyStatusMessage: "只读复制尚未触发。"
+        copyStatusMessage: "只读复制尚未触发。",
+        currentDraftId: "",
+        currentDraftVersion: 0,
+        currentDraftSnapshotHash: "",
+        currentDraftIdempotencyKey: "",
+        draftSaveStatus: "idle",
+        draftSaveMessage: "草稿尚未保存；保存只写 draft 表，不会发送。"
     };
 }
 export function selectEntityInViewState(viewState, selectedEntityType, selectedEntityId) {
