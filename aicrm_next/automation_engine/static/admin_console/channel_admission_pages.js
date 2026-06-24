@@ -276,19 +276,14 @@
         const urls = (bootstrap.api_urls || {});
         Promise.all([
           apiJson(urlFromBase(urls.contacts_base, channelId) + "?limit=20", { method: "GET" }).catch(() => ({ data: { contacts: [] } })),
-          apiJson(urlFromBase(urls.bindings_base, channelId), { method: "GET" }).catch(() => ({ data: { bindings: [] } })),
-        ]).then(([contactsResult, bindingsResult]) => {
+        ]).then(([contactsResult]) => {
           const contacts = (contactsResult.data || {}).contacts || [];
-          const bindings = (bindingsResult.data || {}).bindings || [];
           const contactRows = contacts.length
             ? contacts.map((item) => "<tr><td>" + (item.display_name || item.name || item.external_contact_id || "-") + "</td><td>" + (item.enter_count || 0) + "</td><td>" + (item.last_channel_entered_at || "-") + "</td></tr>").join("")
             : "<tr><td colspan=\"3\">暂无渠道用户。</td></tr>";
-          const bindingText = bindings.length
-            ? bindings.map((item) => (item.program_name || item.program_id || "-") + " / " + statusLabel(item.binding_status)).join("<br>")
-            : "独立使用";
           body.innerHTML =
             "<p><strong>" + row.querySelector("strong").textContent + "</strong></p>" +
-            "<p class=\"channel-muted\">当前绑定自动化运营状态：" + bindingText + "</p>" +
+            "<p class=\"channel-muted\">以下为最近渠道用户。</p>" +
             "<h3>渠道用户列表</h3>" +
             "<table class=\"admin-table channel-table\"><thead><tr><th>客户</th><th>进入次数</th><th>最近进入</th></tr></thead><tbody>" +
             contactRows +
@@ -834,39 +829,6 @@
       renderSelectedMaterials();
     });
     renderSelectedMaterials();
-  }
-
-  function setupBindModal() {
-    const modal = root.querySelector("[data-bind-modal]");
-    if (!modal) return;
-    root.querySelector("[data-open-bind-modal]")?.addEventListener("click", () => {
-      modal.hidden = false;
-    });
-    root.querySelector("[data-close-bind-modal]")?.addEventListener("click", () => {
-      modal.hidden = true;
-    });
-    root.querySelector("[data-confirm-bind]")?.addEventListener("click", () => {
-      const ids = bySelector("[data-bind-channel-checkbox]:checked", modal).map((item) => parseInt(item.value, 10)).filter(Boolean);
-      if (!ids.length) {
-        toast("请选择渠道");
-        return;
-      }
-      apiJson(root.dataset.apiBindings, {
-        method: "POST",
-        body: JSON.stringify({
-          admin_action_token: adminToken,
-          channel_ids: ids,
-          initial_audience_code: "pending_questionnaire",
-          operator_id: "next_admin",
-        }),
-      }).then(({ response, data }) => {
-        if (!response.ok || data.ok === false) {
-          toast(data.error || data.reason || "绑定失败");
-          return;
-        }
-        window.location.reload();
-      });
-    });
   }
 
   function importPayload(dryRun) {

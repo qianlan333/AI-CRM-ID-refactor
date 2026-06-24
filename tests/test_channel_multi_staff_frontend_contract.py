@@ -6,6 +6,7 @@ import re
 
 ROOT = Path(__file__).resolve().parents[1]
 CHANNEL_FORM = ROOT / "aicrm_next/automation_engine/templates/admin_console/channel_code_form.html"
+CHANNEL_CENTER_TEMPLATE = ROOT / "aicrm_next/automation_engine/templates/admin_console/channel_code_center.html"
 CHANNEL_PAGES = ROOT / "aicrm_next/automation_engine/channel_admin_pages.py"
 CHANNEL_BASE = ROOT / "aicrm_next/automation_engine/templates/admin_console/base.html"
 CHANNEL_JS = ROOT / "aicrm_next/automation_engine/static/admin_console/channel_admission_pages.js"
@@ -142,7 +143,7 @@ def test_channel_center_list_has_enable_disable_and_soft_delete_actions() -> Non
     assert ">启用</button>" in js
     assert 'data-next-status="archived"' in js
     assert ">删除</button>" in js
-    assert "删除后会归档渠道并保留历史用户、二维码、绑定和入渠记录。确认删除？" in js
+    assert "删除后会归档渠道并保留历史用户、二维码、配置和入渠记录。确认删除？" in js
     assert "patchJson(`/api/admin/channels/${encodeURIComponent(channelId)}`, { status: nextStatus })" in js
     assert 'nextStatus === "archived"' in js
     assert "row.remove()" in js
@@ -152,8 +153,11 @@ def test_channel_center_list_has_enable_disable_and_soft_delete_actions() -> Non
     assert "渠道已删除" in js
 
 
-def test_channel_center_list_compacts_binding_status_and_long_channel_names() -> None:
+def test_channel_center_list_retired_program_binding_status_and_long_channel_names() -> None:
     js = _read(CHANNEL_CENTER_JS)
+    drawer_js = _read(CHANNEL_JS)
+    template = _read(CHANNEL_CENTER_TEMPLATE)
+    pages = _read(CHANNEL_PAGES)
     css = _read(CHANNEL_CSS)
 
     assert "function truncateChannelName(name, maxLength = 20)" in js
@@ -167,6 +171,17 @@ def test_channel_center_list_compacts_binding_status_and_long_channel_names() ->
     assert '<span class="channel-pill is-bound">已绑定</span>' not in js
     assert '<span class="channel-pill is-standalone">独立使用</span>' not in js
     assert "escapeHtml(channel.bound_program_name)" not in js
+    assert "绑定自动化运营" not in template
+    assert "未绑定自动化运营" not in template
+    assert "当前绑定自动化运营状态" not in template
+    assert "绑定自动化运营" not in pages
+    assert "bindings_base" not in pages
+    assert "urlFromBase(urls.bindings_base" not in drawer_js
+    assert "当前绑定自动化运营状态" not in drawer_js
+    assert "program_name || item.program_id" not in drawer_js
+    assert "apiBindings" not in drawer_js
+    assert "initial_audience_code" not in drawer_js
+    assert "data-bind-modal" not in drawer_js
     assert "is-status ${statusClass(channel.status)}" in js
     assert "is-status-inactive" in css
     assert "#b42318" in css
