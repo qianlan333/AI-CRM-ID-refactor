@@ -6,14 +6,25 @@ import json
 import os
 from datetime import datetime, timezone
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import pytest
 from sqlalchemy import text
 
 from aicrm_next.channel_entry.application import _ai_audience_channel_entry_only_enabled
-from aicrm_next.ai_audience_ops.event_types import MEMBER_EVENT_PREFIX, OUTBOUND_EFFECT_CONSUMER
+from aicrm_next.ai_audience_ops.event_types import (
+    DAILY_REFRESH_CONSUMER,
+    DAILY_TICK_EVENT,
+    INCREMENTAL_REFRESH_CONSUMER,
+    INCREMENTAL_TICK_EVENT,
+    MEMBER_EVENT_PREFIX,
+    OUTBOUND_EFFECT_CONSUMER,
+    SOURCE_CHANGED_EVENT,
+    SOURCE_POKE_CONSUMER,
+)
 from aicrm_next.ai_audience_ops.outbound_service import AudienceOutboundService
 from aicrm_next.ai_audience_ops.repository import next_daily_refresh_at
+from aicrm_next.ai_audience_ops.scheduler import ai_audience_event_consumer_pairs, emit_due_ticks
 from aicrm_next.ai_audience_ops.service import AudiencePackageService
 from aicrm_next.ai_audience_ops.sql_linter import lint_sql
 from aicrm_next.ai_audience_ops.test_agent_service import AudienceTestAgentService, TEST_AGENT_MESSAGE_TEXT
@@ -81,6 +92,41 @@ def test_next_daily_refresh_uses_package_timezone_and_time() -> None:
     after = datetime(2026, 6, 22, 20, 5, tzinfo=timezone.utc)
 
     assert next_daily_refresh_at("03:00", "Asia/Shanghai", after=after) == datetime(2026, 6, 23, 19, 0, tzinfo=timezone.utc)
+
+
+def test_ai_audience_scheduler_emits_incremental_every_run_and_daily_only_in_2am_window() -> None:
+    class Service:
+        def emit_tick(self, tick_type):
+            return {"ok": True, "tick_type": tick_type}
+
+    inside_window = datetime(2026, 6, 24, 2, 1, tzinfo=ZoneInfo("Asia/Shanghai"))
+    outside_window = datetime(2026, 6, 24, 1, 59, tzinfo=ZoneInfo("Asia/Shanghai"))
+
+    from aicrm_next.ai_audience_ops import scheduler as scheduler_module
+
+    original = scheduler_module.AudiencePackageService
+    scheduler_module.AudiencePackageService = lambda: Service()
+    try:
+        due = emit_due_ticks(now=inside_window, daily_refresh_time="02:00", daily_window_minutes=60)
+        not_due = emit_due_ticks(now=outside_window, daily_refresh_time="02:00", daily_window_minutes=60)
+    finally:
+        scheduler_module.AudiencePackageService = original
+
+    assert [item["tick_type"] for item in due["items"]] == ["incremental", "daily"]
+    assert due["daily_tick_due"] is True
+    assert [item["tick_type"] for item in not_due["items"]] == ["incremental"]
+    assert not_due["daily_tick_due"] is False
+
+
+def test_ai_audience_scheduler_consumer_pairs_cover_source_refresh_and_outbound() -> None:
+    pairs = ai_audience_event_consumer_pairs()
+
+    assert f"{SOURCE_CHANGED_EVENT}:{SOURCE_POKE_CONSUMER}" in pairs
+    assert f"{INCREMENTAL_TICK_EVENT}:{INCREMENTAL_REFRESH_CONSUMER}" in pairs
+    assert f"{DAILY_TICK_EVENT}:{DAILY_REFRESH_CONSUMER}" in pairs
+    assert f"{MEMBER_EVENT_PREFIX}entered:{OUTBOUND_EFFECT_CONSUMER}" in pairs
+    assert f"{MEMBER_EVENT_PREFIX}updated:{OUTBOUND_EFFECT_CONSUMER}" in pairs
+    assert f"{MEMBER_EVENT_PREFIX}exited:{OUTBOUND_EFFECT_CONSUMER}" in pairs
 
 
 def test_channel_entry_ai_audience_only_flag(monkeypatch) -> None:

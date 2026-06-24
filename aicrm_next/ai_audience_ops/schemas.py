@@ -14,7 +14,7 @@ class PackageCreateRequest(BaseModel):
     incremental_enabled: bool = True
     daily_enabled: bool = False
     incremental_interval_seconds: int = Field(default=180, ge=60, le=86400)
-    daily_refresh_time: str = "03:00"
+    daily_refresh_time: str = "02:00"
     timezone: str = "Asia/Shanghai"
     lookback_seconds: int = Field(default=600, ge=0, le=86400)
     sql_text: str = ""

@@ -398,6 +398,23 @@ def test_due_runner_scripts_share_int_env_reader():
     assert "int(os.environ.get" not in internal_event_worker
 
 
+def test_ai_audience_scheduler_runs_through_internal_event_queue_only():
+    scheduler = (ROOT / "scripts" / "run_ai_audience_scheduler.py").read_text(encoding="utf-8")
+    service = (ROOT / "deploy" / "openclaw-ai-audience-scheduler.service").read_text(encoding="utf-8")
+    timer = (ROOT / "deploy" / "openclaw-ai-audience-scheduler.timer").read_text(encoding="utf-8")
+
+    assert 'read_int_env("AICRM_AI_AUDIENCE_SCHEDULER_BATCH_SIZE", 20)' in scheduler
+    assert "run_due_ai_audience_consumers" in scheduler
+    assert "--run-consumers --execute" in service
+    assert "AICRM_INTERNAL_EVENTS_ALLOWED_EVENT_CONSUMERS=" in service
+    assert "ai_audience.refresh.incremental_tick:ai_audience_incremental_refresh_consumer" in service
+    assert "ai_audience.refresh.daily_tick:ai_audience_daily_refresh_consumer" in service
+    assert "ai_audience.member.entered:ai_audience_outbound_effect_planner" in service
+    assert "ExternalEffectWorker" not in service
+    assert "run_external_effect_queue_worker.py" not in service
+    assert "OnCalendar=*-*-* *:0/3:00" in timer
+
+
 def _calls_utcnow(path: Path) -> bool:
     tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
     for node in ast.walk(tree):
