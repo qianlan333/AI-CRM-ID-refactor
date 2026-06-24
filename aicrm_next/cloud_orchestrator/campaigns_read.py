@@ -345,12 +345,11 @@ class PostgresCloudCampaignReadRepository:
                        cm.last_error_text, cm.retry_count, cm.anchor_date, cm.joined_at,
                        cs.label AS segment_label, cs.priority AS segment_priority,
                        s.display_name AS segment_name, s.segment_code,
-                       am.phone, am.current_pool, am.current_audience_code,
-                       am.profile_segment_key, am.behavior_tier_key
+                       '' AS phone, '' AS current_pool, '' AS current_audience_code,
+                       '' AS profile_segment_key, '' AS behavior_tier_key
                 FROM campaign_members cm
                 JOIN campaign_segments cs ON cs.id = cm.campaign_segment_id
                 JOIN segments s ON s.id = cs.segment_id
-                LEFT JOIN automation_member am ON am.id = cm.member_id
                 WHERE """
                 + " AND ".join(where)
                 + """
