@@ -14,8 +14,6 @@ ALLOWED_AGENT_RUN_VISIBILITY = {"masked", "console"}
 DANGEROUS_AGENT_RUN_FIELDS = {
     "run_creation",
     "run_execution",
-    "workflow_execution",
-    "task_execution",
     "execute",
     "execution",
     "replay",
@@ -44,8 +42,6 @@ def agent_run_side_effect_safety() -> dict[str, bool]:
         "real_replay_executed": False,
         "real_orchestration_executed": False,
         "real_agent_output_generated": False,
-        "real_workflow_executed": False,
-        "real_task_executed": False,
         "real_llm_call_executed": False,
         "real_deepseek_call_executed": False,
         "real_openclaw_call_executed": False,

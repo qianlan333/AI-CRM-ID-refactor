@@ -102,3 +102,19 @@ def test_agent_run_api_is_not_filtered_or_projected_by_retired_workflow_task(mon
     for retired in ("workflow_id", "task_id"):
         assert retired not in payload["filters"]
         assert all(retired not in item for item in payload["items"])
+
+
+def test_agent_run_fixture_source_has_no_retired_workflow_task_columns() -> None:
+    repo = build_automation_repository()
+    runs, total, _filters = repo.list_agent_runs({"visibility": "console"})
+
+    assert total > 0
+    for run in runs:
+        assert "workflow_id" not in run
+        assert "task_id" not in run
+
+    raw_runs = getattr(repo, "_agent_runs", {})
+    assert raw_runs
+    for run in raw_runs.values():
+        assert "workflow_id" not in run
+        assert "task_id" not in run

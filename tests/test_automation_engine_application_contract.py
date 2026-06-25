@@ -112,3 +112,14 @@ def test_retired_automation_member_write_dtos_and_repo_methods_are_not_exported(
 
 def test_retired_customer_webhook_command_module_is_not_application_surface() -> None:
     assert not hasattr(automation_application, "customer_webhooks")
+
+
+def test_agent_run_side_effect_safety_is_not_workflow_task_scoped() -> None:
+    from aicrm_next.automation_engine.agent_runs import agent_run_side_effect_safety
+
+    safety = agent_run_side_effect_safety()
+
+    assert "real_workflow_executed" not in safety
+    assert "real_task_executed" not in safety
+    assert safety["real_agent_output_generated"] is False
+    assert safety["real_llm_call_executed"] is False
