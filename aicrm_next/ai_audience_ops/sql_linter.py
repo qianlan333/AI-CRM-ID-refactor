@@ -69,7 +69,7 @@ def lint_sql(sql: str) -> SqlValidationResult:
 
     stripped = _strip_comments(normalized).strip()
     lowered = stripped.lower()
-    if not (lowered.startswith("select ") or lowered.startswith("with ")):
+    if not (re.match(r"^(select|with)\s", lowered)):
         errors.append("only_select_allowed")
 
     for keyword in FORBIDDEN_KEYWORDS:

@@ -101,6 +101,7 @@ class AudienceRefreshService:
         started_at = default_refresh_started_at()
         watermark = previous_watermark(package, refresh_kind, started_at=started_at)
         system_params = {
+            **dict(version.get("parameters_json") or {}),
             "last_watermark_at": watermark,
             "refresh_started_at": started_at,
             "lookback_seconds": int(package.get("lookback_seconds") or 600),

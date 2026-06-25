@@ -120,6 +120,109 @@ def test_admin_ai_audience_packages_requires_admin_session(next_client) -> None:
     assert response.json()["error"] == "admin_auth_required"
 
 
+def test_admin_ai_audience_package_create_requires_admin_session(next_client) -> None:
+    response = next_client.post(
+        "/api/admin/ai-audience/packages",
+        json={"package_key": "no_cookie", "name": "No Cookie", "refresh_mode": "manual"},
+    )
+
+    assert response.status_code == 401
+    assert response.json()["error"] == "admin_auth_required"
+
+
+def test_admin_ai_audience_package_create_version_publish_contract(next_client, next_pg_schema, monkeypatch) -> None:
+    del next_pg_schema
+    monkeypatch.setenv("SECRET_KEY", "ai-audience-create-test")
+    sql_text = """
+        SELECT
+          'external_userid' AS identity_type,
+          qs.external_userid AS identity_value,
+          'questionnaire_submission:' || qs.submission_id::text AS event_source_key,
+          jsonb_build_object('questionnaire_id', qs.questionnaire_id) AS payload_json,
+          qs.external_userid,
+          qs.submitted_at AS event_at
+        FROM audience_read.questionnaire_submissions_v1 qs
+        JOIN audience_read.wecom_contacts_v1 wc ON wc.external_userid = qs.external_userid
+        WHERE qs.questionnaire_id = :questionnaire_id
+          AND qs.submitted_at >= :last_watermark_at
+    """
+
+    invalid_refresh = next_client.post(
+        "/api/admin/ai-audience/packages",
+        cookies=_admin_cookies(),
+        json={"package_key": "create_invalid", "name": "非法刷新", "refresh_mode": "incremental_5m"},
+    )
+    assert invalid_refresh.status_code == 400
+    assert invalid_refresh.json()["error"] == "invalid_refresh_mode"
+
+    active_create = next_client.post(
+        "/api/admin/ai-audience/packages",
+        cookies=_admin_cookies(),
+        json={"package_key": "create_active", "name": "禁止直接 active", "refresh_mode": "manual", "status": "active"},
+    )
+    assert active_create.status_code == 400
+    assert active_create.json()["error"] == "invalid_initial_status"
+
+    created = next_client.post(
+        "/api/admin/ai-audience/packages",
+        cookies=_admin_cookies(),
+        json={
+            "package_key": "create_pkg",
+            "name": "创建包",
+            "status": "paused",
+            "refresh_mode": "incremental_3m",
+            "natural_language_definition": "提交问卷且已加微",
+            "parameters": {"questionnaire_id": 101},
+            "incremental_sql_text": sql_text,
+        },
+    )
+    assert created.status_code == 200
+    body = created.json()
+    assert body["ok"] is True
+    package_id = body["package"]["id"]
+    assert body["package"]["status"] == "paused"
+    assert body["package"]["refresh_mode"] == "incremental_3m"
+    assert body["version"]["parameters"] == {"questionnaire_id": 101}
+    response_text = json.dumps(body, ensure_ascii=False)
+    for forbidden in ("incremental_sql_text", "snapshot_sql_text", "inbound_webhook_secret", "signing_secret"):
+        assert forbidden not in response_text
+
+    session_factory = get_session_factory()
+    with session_factory() as session:
+        package_row = session.execute(text("SELECT status, incremental_enabled, incremental_interval_seconds, next_incremental_refresh_at FROM ai_audience_package WHERE id = :id"), {"id": package_id}).mappings().one()
+        version_row = session.execute(text("SELECT parameters_json FROM ai_audience_package_version WHERE package_id = :id"), {"id": package_id}).mappings().one()
+    assert package_row["status"] == "paused"
+    assert package_row["incremental_enabled"] is True
+    assert package_row["incremental_interval_seconds"] == 180
+    assert package_row["next_incremental_refresh_at"] is None
+    assert version_row["parameters_json"] == {"questionnaire_id": 101}
+
+    version = next_client.post(
+        f"/api/admin/ai-audience/packages/{package_id}/versions",
+        cookies=_admin_cookies(),
+        json={"incremental_sql_text": sql_text, "parameters": {"questionnaire_id": 202}},
+    )
+    assert version.status_code == 200
+    assert version.json()["version"]["parameters"] == {"questionnaire_id": 202}
+
+    invalid_preview = next_client.post(
+        f"/api/admin/ai-audience/packages/{package_id}/preview",
+        cookies=_admin_cookies(),
+        json={"sql_text": "SELECT * FROM public.users", "limit": 5},
+    )
+    assert invalid_preview.status_code == 400
+    assert "select_star_forbidden" in invalid_preview.json()["validation_errors"]
+
+    published = next_client.post(
+        f"/api/admin/ai-audience/packages/{package_id}/publish",
+        cookies=_admin_cookies(),
+        json={},
+    )
+    assert published.status_code == 200
+    assert published.json()["package"]["status"] == "active"
+    assert "incremental_sql_text" not in json.dumps(published.json(), ensure_ascii=False)
+
+
 def test_admin_ai_audience_packages_api_returns_lightweight_read_model(next_client, next_pg_schema, monkeypatch) -> None:
     del next_pg_schema
     monkeypatch.setenv("SECRET_KEY", "ai-audience-admin-api-test")

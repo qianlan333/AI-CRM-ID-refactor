@@ -49,6 +49,70 @@ class AudiencePackageService:
             return {"ok": False, "error": "package_not_found"}
         return {"ok": True, "package": _admin_package_detail(row)}
 
+    def create_admin_package(self, payload: dict[str, Any]) -> dict[str, Any]:
+        package_key = _text(payload.get("package_key"))
+        name = _text(payload.get("name"))
+        if not package_key or not name:
+            return {"ok": False, "error": "package_key_and_name_required"}
+        if self._repo.get_package_by_key(package_key):
+            return {"ok": False, "error": "package_key_exists"}
+
+        refresh_mode = _text(payload.get("refresh_mode")) or "manual"
+        refresh_config = refresh_mode_config(refresh_mode)
+        if refresh_config is None:
+            return {"ok": False, "error": "invalid_refresh_mode"}
+
+        status = _text(payload.get("status")) or "draft"
+        if status not in {"draft", "paused"}:
+            return {"ok": False, "error": "invalid_initial_status"}
+
+        parameters = payload.get("parameters") if isinstance(payload.get("parameters"), dict) else {}
+        incremental_sql = _text(payload.get("incremental_sql_text"))
+        snapshot_sql = _text(payload.get("snapshot_sql_text"))
+        if _text(payload.get("sql_text")):
+            if _text(payload.get("query_mode")) == "snapshot_current":
+                snapshot_sql = _text(payload.get("sql_text"))
+            else:
+                incremental_sql = _text(payload.get("sql_text"))
+
+        validation = _validate_sql_payload(
+            incremental_sql=incremental_sql,
+            snapshot_sql=snapshot_sql,
+            parameters=parameters,
+        )
+        if validation["validation_errors"]:
+            return {"ok": False, "error": "sql_validation_failed", **validation}
+
+        package_payload = {
+            **dict(payload or {}),
+            **refresh_config,
+            "package_key": package_key,
+            "name": name,
+            "status": status,
+            "parameters": parameters,
+            "inbound_webhook_secret": _text(payload.get("inbound_webhook_secret")) or "audsec_" + secrets.token_urlsafe(32),
+        }
+        package = self._repo.create_package(package_payload)
+        version = None
+        if incremental_sql or snapshot_sql:
+            version_payload = {
+                **dict(payload or {}),
+                "incremental_sql_text": incremental_sql,
+                "snapshot_sql_text": snapshot_sql,
+                "parameters": parameters,
+                "dependencies": validation["dependencies"],
+                "validation_errors": [],
+            }
+            version = self._repo.create_version(int(package["id"]), version_payload)
+            self._repo.replace_dependencies(int(package["id"]), int(version["id"]), validation["dependencies"])
+        detail = self._repo.get_package_detail(int(package["id"])) or package
+        return {
+            "ok": True,
+            "package": _admin_package_detail(detail),
+            "version": _safe_version(version),
+            "created": True,
+        }
+
     def update_admin_package(self, package_id: int, payload: dict[str, Any]) -> dict[str, Any]:
         current = self._repo.get_package(int(package_id))
         if not current:
@@ -187,6 +251,58 @@ class AudiencePackageService:
         rows = self._repo.replace_senders(int(package_id), normalized)
         return {"ok": True, "items": [_sender_item(row) for row in rows]}
 
+    def create_admin_version(self, package_id: int, payload: dict[str, Any]) -> dict[str, Any]:
+        package = self._repo.get_package(int(package_id))
+        if not package:
+            return {"ok": False, "error": "package_not_found"}
+        request = PackageVersionCreateRequest(**dict(payload or {}))
+        result = self.create_version(int(package_id), request)
+        return {
+            "ok": bool(result.get("ok")),
+            "version": _safe_version(result.get("version")),
+            "validation_errors": result.get("validation_errors", []),
+            "error": result.get("error", ""),
+        }
+
+    def preview_admin_package(self, package_id: int, payload: dict[str, Any]) -> dict[str, Any]:
+        package = self._repo.get_package(int(package_id))
+        if not package:
+            return {"ok": False, "error": "package_not_found"}
+        version = None
+        sql_text = _text(payload.get("sql_text"))
+        sql_kind = _text(payload.get("sql_kind")) or "incremental"
+        if not sql_text:
+            version_id = int(payload.get("version_id") or 0)
+            version = self._repo.get_version(version_id) if version_id > 0 else self._repo.get_latest_version(int(package_id))
+            if version and int(version.get("package_id") or 0) != int(package_id):
+                version = None
+            if not version:
+                return {"ok": False, "error": "version_not_found"}
+            sql_text = _text(version.get("snapshot_sql_text" if sql_kind in {"daily", "snapshot", "snapshot_current"} else "incremental_sql_text"))
+        params = dict((version or {}).get("parameters_json") or {})
+        if isinstance(payload.get("params"), dict):
+            params.update(payload.get("params") or {})
+        result = self.preview(int(package_id), PreviewRequest(sql_text=sql_text, sql_kind=sql_kind, params=params, limit=int(payload.get("limit") or 20)))
+        return {
+            "ok": bool(result.get("ok")),
+            "sample_rows": result.get("sample_rows", []),
+            "dependencies": result.get("dependencies", []),
+            "validation_errors": (result.get("validation") or {}).get("errors", []),
+            "natural_language_summary": _text(package.get("natural_language_definition")),
+            "error": result.get("error", ""),
+        }
+
+    def publish_admin_package(self, package_id: int, payload: dict[str, Any]) -> dict[str, Any]:
+        result = self.publish(int(package_id), version_id=payload.get("version_id"))
+        if not result.get("ok"):
+            return result
+        package = self._repo.get_package_detail(int(package_id)) or result.get("package") or {}
+        return {
+            "ok": True,
+            "package": _admin_package_detail(package),
+            "version": _safe_version(result.get("version")),
+        }
+
     def _available_copy_key(self, base_key: str) -> str:
         candidate = base_key
         suffix = 2
@@ -197,6 +313,11 @@ class AudiencePackageService:
 
     def create_package(self, request: PackageCreateRequest) -> dict[str, Any]:
         payload = request.model_dump()
+        if _text(payload.get("refresh_mode")):
+            refresh_config = refresh_mode_config(_text(payload.get("refresh_mode")))
+            if refresh_config is None:
+                raise ValueError("invalid_refresh_mode")
+            payload.update(refresh_config)
         package = self._repo.create_package(payload)
         version = None
         incremental_sql = _text(payload.get("incremental_sql_text"))
@@ -225,7 +346,7 @@ class AudiencePackageService:
         for sql_text in (_text(payload.get("incremental_sql_text")), _text(payload.get("snapshot_sql_text"))):
             if not sql_text:
                 continue
-            plan = build_execution_plan(sql_text)
+            plan = build_execution_plan(sql_text, payload.get("parameters") or {})
             dependencies.extend(plan.dependencies)
             validation_errors.extend(plan.validation.errors)
         payload["dependencies"] = sorted(set(dependencies))
@@ -255,7 +376,7 @@ class AudiencePackageService:
         for sql_text in (_text(version.get("incremental_sql_text")), _text(version.get("snapshot_sql_text"))):
             if not sql_text:
                 continue
-            plan = build_execution_plan(sql_text)
+            plan = build_execution_plan(sql_text, version.get("parameters_json") or {})
             errors.extend(plan.validation.errors)
             dependencies.extend(plan.dependencies)
         if errors:
@@ -437,6 +558,37 @@ def _sender_item(row: dict[str, Any]) -> dict[str, Any]:
         "display_name": _text(row.get("display_name")),
         "priority": int(row.get("priority") or 100),
         "status": _text(row.get("status")) or "active",
+    }
+
+
+def _validate_sql_payload(*, incremental_sql: str, snapshot_sql: str, parameters: dict[str, Any]) -> dict[str, Any]:
+    dependencies: list[str] = []
+    validation_errors: list[str] = []
+    for sql_text in (incremental_sql, snapshot_sql):
+        if not _text(sql_text):
+            continue
+        plan = build_execution_plan(sql_text, parameters)
+        dependencies.extend(plan.dependencies)
+        validation_errors.extend(plan.validation.errors)
+    return {
+        "dependencies": sorted(set(dependencies)),
+        "validation_errors": sorted(set(validation_errors)),
+    }
+
+
+def _safe_version(row: dict[str, Any] | None) -> dict[str, Any] | None:
+    if not row:
+        return None
+    return {
+        "id": int(row.get("id") or 0),
+        "package_id": int(row.get("package_id") or 0),
+        "version_number": int(row.get("version_number") or 0),
+        "status": _text(row.get("status")) or "draft",
+        "dependencies": list(row.get("dependencies_json") or []),
+        "validation_errors": list(row.get("validation_errors_json") or []),
+        "parameters": dict(row.get("parameters_json") or {}),
+        "created_at": _admin_datetime(row.get("created_at")) if row.get("created_at") else "",
+        "published_at": _admin_datetime(row.get("published_at")) if row.get("published_at") else "",
     }
 
 

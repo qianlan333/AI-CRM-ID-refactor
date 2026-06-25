@@ -34,6 +34,13 @@ def admin_ai_audience_packages(request: Request) -> JSONResponse:
     return JSONResponse(jsonable_encoder(payload), status_code=status_code, headers=_HEADERS)
 
 
+@router.post("/api/admin/ai-audience/packages", name="api.admin_ai_audience_package_create")
+def admin_ai_audience_package_create(request: Request, payload: dict[str, Any] = Body(default_factory=dict)) -> JSONResponse:
+    if auth := admin_api_auth_error(request):
+        return auth
+    return _response(AudiencePackageService().create_admin_package(payload))
+
+
 def _request_base_url(request: Request) -> str:
     proto = str(request.headers.get("X-Forwarded-Proto") or request.url.scheme or "https").split(",", 1)[0].strip()
     host = str(request.headers.get("X-Forwarded-Host") or request.headers.get("Host") or request.url.netloc or "").split(",", 1)[0].strip()
@@ -60,6 +67,27 @@ def admin_ai_audience_package_update(package_id: int, request: Request, payload:
     if auth := admin_api_auth_error(request):
         return auth
     return _response(AudiencePackageService().update_admin_package(package_id, payload))
+
+
+@router.post("/api/admin/ai-audience/packages/{package_id}/versions", name="api.admin_ai_audience_package_version_create")
+def admin_ai_audience_package_version_create(package_id: int, request: Request, payload: dict[str, Any] = Body(default_factory=dict)) -> JSONResponse:
+    if auth := admin_api_auth_error(request):
+        return auth
+    return _response(AudiencePackageService().create_admin_version(package_id, payload))
+
+
+@router.post("/api/admin/ai-audience/packages/{package_id}/preview", name="api.admin_ai_audience_package_preview")
+def admin_ai_audience_package_preview(package_id: int, request: Request, payload: dict[str, Any] = Body(default_factory=dict)) -> JSONResponse:
+    if auth := admin_api_auth_error(request):
+        return auth
+    return _response(AudiencePackageService().preview_admin_package(package_id, payload))
+
+
+@router.post("/api/admin/ai-audience/packages/{package_id}/publish", name="api.admin_ai_audience_package_publish")
+def admin_ai_audience_package_publish(package_id: int, request: Request, payload: dict[str, Any] = Body(default_factory=dict)) -> JSONResponse:
+    if auth := admin_api_auth_error(request):
+        return auth
+    return _response(AudiencePackageService().publish_admin_package(package_id, payload))
 
 
 @router.post("/api/admin/ai-audience/packages/{package_id}/copy", name="api.admin_ai_audience_package_copy")
