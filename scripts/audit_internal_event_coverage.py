@@ -89,7 +89,6 @@ QUEUE_PATTERNS = (
     "broadcast_jobs",
     "external_effect_job",
     "domain_event_outbox",
-    "automation_event_v2",
     "side_effect_plan",
     "queue",
     "outbox",

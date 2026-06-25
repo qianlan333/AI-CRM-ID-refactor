@@ -62,3 +62,10 @@ def test_retired_runtime_v2_realtest_guard_is_removed_from_broadcast_worker() ->
     assert "runtime_v2_realtest_" not in source
     assert "realtest_sender_not_allowed" not in source
     assert "realtest_target_not_allowed" not in source
+
+
+def test_internal_event_audit_no_longer_treats_runtime_v2_event_store_as_queue() -> None:
+    source = (PROJECT_ROOT / "scripts" / "audit_internal_event_coverage.py").read_text(encoding="utf-8")
+
+    queue_patterns_block = source.split("QUEUE_PATTERNS =", 1)[1].split(")", 1)[0]
+    assert "automation_event_v2" not in queue_patterns_block
