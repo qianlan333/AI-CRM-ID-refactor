@@ -11,7 +11,6 @@ AICRM_NEXT_ROUTE_PRODUCT_READONLY=false
 AICRM_NEXT_ROUTE_CUSTOMER_READONLY=false
 AICRM_NEXT_ROUTE_USER_OPS_READONLY=false
 AICRM_NEXT_ROUTE_QUESTIONNAIRE_READONLY=false
-AICRM_NEXT_ROUTE_AUTOMATION_READONLY=false
 ```
 
 ## Media Library Example
@@ -90,18 +89,8 @@ location /api/h5/questionnaires {
 
 Submit, OAuth callback, and external push routes are excluded from readonly gray.
 
-## Automation Readonly Example
+## Retired Automation Conversion Readonly
 
-```nginx
-# PSEUDO ONLY - do not apply directly
-location /admin/automation-conversion {
-    proxy_pass http://aicrm_next;
-}
-
-# PSEUDO ONLY - do not apply directly
-location /api/admin/automation-conversion/overview {
-    proxy_pass http://aicrm_next;
-}
-```
-
-Manual override, activation webhook, OpenClaw push, workflow runtime, and agent runtime are excluded from readonly gray.
+Do not add proxy examples for old automation program overview/member/runtime routes.
+`/admin/automation-conversion` is now the AI Audience page owned by `ai_audience_ops`;
+old Automation Conversion readonly is not a route-level canary batch.

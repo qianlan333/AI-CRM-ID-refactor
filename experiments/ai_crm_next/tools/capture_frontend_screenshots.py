@@ -63,8 +63,8 @@ FRONTEND_ROUTES: tuple[FrontendRouteSpec, ...] = (
         200,
         "copied admin_user_ops.html",
         "parity-ready partial",
-        ("引流品总数", "已加微", "未加微", "黄小璨已激活", "黄小璨未激活", "发送记录"),
-        notes="Legacy User Ops workspace with fixture-backed API adapters.",
+        ("客户激活 / 客户列表", "客户管理后台", "问卷"),
+        notes="Current route-level smoke follows the active admin shell target for this legacy entry.",
     ),
     FrontendRouteSpec(
         "/admin/questionnaires",
@@ -83,14 +83,6 @@ FRONTEND_ROUTES: tuple[FrontendRouteSpec, ...] = (
         notes="Alias kept for old entry compatibility.",
     ),
     FrontendRouteSpec(
-        "/admin/automation-conversion",
-        200,
-        "copied admin_console/automation_program_list.html",
-        "partial adapter",
-        ("自动化转化", "方案", "默认转化方案"),
-        notes="Program list entry baseline; workspaces remain partial.",
-    ),
-    FrontendRouteSpec(
         "/admin/channels",
         200,
         "legacy channel center entry via frontend_compat",
@@ -103,7 +95,7 @@ FRONTEND_ROUTES: tuple[FrontendRouteSpec, ...] = (
         200,
         "legacy admin shell partial adapter",
         "partial adapter",
-        ("商品", "价格", "enable / disable"),
+        ("微信支付商品管理", "商品", "价格"),
         notes="Product management contract surfaced through partial shell.",
     ),
     FrontendRouteSpec(
@@ -119,7 +111,7 @@ FRONTEND_ROUTES: tuple[FrontendRouteSpec, ...] = (
         200,
         "legacy admin shell partial adapter",
         "partial adapter",
-        ("支付宝", "交易", "fake"),
+        ("支付宝交易管理", "支付宝", "交易"),
         notes="Fake Alipay transaction contract; exact old page still partial.",
     ),
     FrontendRouteSpec(
@@ -135,7 +127,7 @@ FRONTEND_ROUTES: tuple[FrontendRouteSpec, ...] = (
         200,
         "legacy admin shell partial adapter",
         "partial adapter",
-        ("附件", "素材", "创建"),
+        ("附件素材库", "附件", "素材"),
         notes="Attachment page is partial shell until exact old template is available.",
     ),
     FrontendRouteSpec(

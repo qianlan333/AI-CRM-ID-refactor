@@ -56,7 +56,6 @@ Screenshot status: PNG screenshots and HTML snapshots were generated for every r
 | `/admin/user-ops/ui` | PASS | HTML snapshot and PNG generated | Legacy User Ops UI with 8-card contract. |
 | `/admin/questionnaires` | PASS | HTML snapshot and PNG generated | Questionnaire admin baseline. |
 | `/admin/questionnaires/ui` | PASS | HTML snapshot and PNG generated | Alias route. |
-| `/admin/automation-conversion` | PASS | HTML snapshot and PNG generated | Automation conversion program list adapter. |
 | `/admin/wechat-pay/products` | PASS | HTML snapshot and PNG generated | Product management partial adapter. |
 | `/admin/wechat-pay/transactions` | PASS | HTML snapshot and PNG generated | WeChat Pay transaction template. |
 | `/admin/alipay/transactions` | PASS | HTML snapshot and PNG generated | Alipay partial adapter. |
@@ -93,4 +92,4 @@ User Ops readonly gray-release preparation uses the existing `/admin/user-ops/ui
 
 Questionnaire readonly gray-release preparation uses the existing `/admin/questionnaires`, `/admin/questionnaires/ui`, and `/s/hxc-activation-v1` screenshots as route-level evidence only. It does not authorize production submit, real WeChat OAuth, WeCom tag mutation, external webhook push, or production traffic cutover.
 
-Automation readonly gray-release preparation uses the existing `/admin/automation-conversion` screenshot as route-level evidence only. It does not authorize manual override writes, confirm conversion writes, activation webhook, OpenClaw push, real WeCom dispatch, external webhook calls, workflow runtime, agent runtime, or production traffic cutover.
+`/admin/automation-conversion` is no longer part of this historical experiment screenshot baseline. The current main application validates that route as the AI Audience package list through the `ai_audience_ops` admin page/API tests.

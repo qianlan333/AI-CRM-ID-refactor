@@ -478,65 +478,15 @@ Current Batch 5 simulated evidence:
 - submit/OAuth/WeCom tag/external webhook executed: false
 - signoff status: `staging_simulated_only`
 
-## Batch 6: Automation Readonly
+## Retired Automation Conversion Readonly Batch
 
-Included routes:
+The previous Batch 6 Automation readonly plan is retired. `/admin/automation-conversion`
+now belongs to `ai_audience_ops` and renders the AI Audience package list. Old
+automation program overview, pool, member, execution-record, Runtime V2,
+activation webhook, and member-action routes are no longer canary candidates
+and must return 404/410 in the main application.
 
-- `GET /admin/automation-conversion`
-- `GET /api/admin/automation-conversion/overview`
-- `GET /api/admin/automation-conversion/pools`
-- `GET /api/admin/automation-conversion/members`
-- `GET /api/admin/automation-conversion/members/{member_id}`
-- `GET /api/admin/automation-conversion/execution-records`
-
-Excluded routes:
-
-- manual override
-- confirm conversion
-- enter silent
-- exit marketing
-- activation webhook
-- OpenClaw push
-- workflow runtime
-- agent runtime
-- real WeCom dispatch
-- external webhook
-- old system writes
-- production route cutover
-
-Entry criteria:
-
-- Retired. The old Automation Conversion readonly/parity path is no longer a
-  controlled execution batch because automation_program/runtime-v2 has been
-  replaced by AI Audience.
-
-Smoke commands:
-
-```bash
-# No command. Batch 6 old Automation readonly tooling was retired.
-```
-
-Monitoring signals:
-
-- overview/pools/members read status
-- old route alias status
-- OpenClaw/WeCom/webhook/runtime safety flags
-
-Rollback trigger:
-
-- Next route 5xx
-- required Next shape key missing
-- activation webhook/OpenClaw/WeCom/webhook/runtime detected
-
-Rollback command placeholder:
-
-```bash
-# PSEUDO ONLY
-export AICRM_NEXT_ROUTE_AUTOMATION_READONLY=false
-# Restore Automation read routes to old Flask.
-```
-
-Signoff required:
-
-- automation owner
-- release owner
+There is no smoke command, readiness checker, production proxy flag, or rollback
+switch for restoring the old Automation Conversion readonly surface. Validation
+now happens through AI Audience admin/API contracts plus old route retirement
+tests.

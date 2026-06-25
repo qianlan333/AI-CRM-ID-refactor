@@ -21,10 +21,12 @@ def _included_section(text: str, heading: str) -> str:
     return section[included_start:excluded_start]
 
 
-def test_route_level_gray_release_batches_include_batch_0_to_6() -> None:
+def test_route_level_gray_release_batches_include_batch_0_to_5_and_retire_automation() -> None:
     text = _read_doc("route_level_gray_release_batches.md")
-    for number in range(7):
+    for number in range(6):
         assert f"## Batch {number}" in text
+    assert "## Retired Automation Conversion Readonly Batch" in text
+    assert "tools/automation_readonly_gray_smoke.py" not in text
 
 
 def test_no_batch_included_routes_contain_known_write_routes() -> None:
@@ -43,7 +45,7 @@ def test_no_batch_included_routes_contain_known_write_routes() -> None:
         "push-openclaw",
         "workflow runtime",
     ]
-    for number in range(1, 7):
+    for number in range(1, 6):
         included = _included_section(text, f"## Batch {number}")
         lowered = included.lower()
         for fragment in forbidden:
@@ -68,17 +70,17 @@ def test_user_ops_batch_excludes_dnd_and_batch_send() -> None:
 
 def test_questionnaire_batch_excludes_submit_and_oauth_callback() -> None:
     text = _read_doc("route_level_gray_release_batches.md")
-    section = text[text.index("## Batch 5") : text.index("## Batch 6")]
+    section = text[text.index("## Batch 5") : text.index("## Retired Automation Conversion Readonly Batch")]
     assert "submit" in section
     assert "OAuth callback" in section
 
 
-def test_automation_batch_excludes_activation_and_openclaw_push() -> None:
+def test_automation_batch_is_retired_from_readonly_canary_scope() -> None:
     text = _read_doc("route_level_gray_release_batches.md")
-    section = text[text.index("## Batch 6") :]
-    assert "activation webhook" in section
-    assert "OpenClaw push" in section
-    assert "workflow runtime" in section
+    section = text[text.index("## Retired Automation Conversion Readonly Batch") :]
+    assert "ai_audience_ops" in section
+    assert "404/410" in section
+    assert "Runtime V2" in section
 
 
 def test_proxy_template_is_pseudo_and_has_no_production_secrets() -> None:

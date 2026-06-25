@@ -417,103 +417,15 @@ The copied `admin_user_ops.html` also references these legacy paths. They are pr
 - `GET /api/admin/user-ops/export`
 - `GET /api/admin/miniprogram-library`
 
-## Automation Conversion
+## Retired Automation Conversion
 
-Status: `partial`.
+Status: `retired`.
 
-This first slice implements the Automation Conversion member pool contract, state-machine transitions, activation webhook stub, fake OpenClaw context push, execution records, and old-template admin route. It remains fixture/in-memory only. It does not call real WeCom, does not call OpenClaw, does not send external webhooks, and is not connected to production PostgreSQL.
-
-Questionnaire results only perform the first automation split. After a member already has `questionnaire_followup_type`, has left the initial `new_user` stage, or has a `manual_followup_type`, later questionnaire results are recorded as history/execution events but do not change `questionnaire_followup_type`, `followup_type`, or `current_pool`. Manual override remains higher priority than questionnaire output. A reset/re-evaluate command is not implemented in this phase.
-
-### `GET /api/admin/automation-conversion/overview`
-
-Returns:
-
-- `ok`
-- `cards`
-- `total`
-- `filters`
-- `generated_at`
-
-### `GET /api/admin/automation-conversion/pools`
-
-Returns:
-
-- `ok`
-- `pools`
-- `total`
-- `generated_at`
-
-Pool item fields:
-
-- `pool_key`
-- `label`
-- `count`
-- `description`
-- `active_action_count`
-- `allow_broadcast`
-
-### `GET /api/admin/automation-conversion/members`
-
-Returns `ok`, `items`, `total`, `limit`, `offset`, and `filters`.
-
-Member item fields:
-
-- `member_id`
-- `person_id`
-- `external_userid`
-- `mobile`
-- `customer_name`
-- `owner_userid`
-- `current_pool`
-- `current_pool_label`
-- `followup_type`
-- `questionnaire_followup_type`
-- `manual_followup_type`
-- `trial_opened`
-- `activated`
-- `converted`
-- `exited`
-- `silent`
-- `latest_event_at`
-- `next_action`
-- `can_manual_override`
-- `can_confirm_conversion`
-- `can_enter_silent`
-- `can_exit_marketing`
-
-### `GET /api/admin/automation-conversion/members/{member_id}`
-
-Returns `member`, `history`, `customer_context`, `recent_timeline_events`, and `warnings`.
-
-### Member commands
-
-All are `partial` and fixture-backed:
-
-- `POST /api/admin/automation-conversion/members/{member_id}/override-followup-type`
-- `POST /api/admin/automation-conversion/members/{member_id}/confirm-conversion`
-- `POST /api/admin/automation-conversion/members/{member_id}/enter-silent`
-- `POST /api/admin/automation-conversion/members/{member_id}/exit-marketing`
-
-Each state change records `before_pool`, `after_pool`, `trigger`, `source`, `operator`, `reason`, and `occurred_at`.
-
-### `POST /api/customer-automation/activation-webhook`
-
-Status: `partial`.
-
-Accepts `mobile` or `external_userid` plus `activated_at`, `source`, and `operator`. It resolves through the Identity boundary and updates only the fixture Automation repository.
-
-Returns `ok`, `member`, `previous_pool`, `current_pool`, and `warnings`.
-
-### `POST /api/admin/automation-conversion/members/{member_id}/push-openclaw-context`
-
-Status: `fake/stubbed`.
-
-Returns `ok`, `delivery_status=fake`, `payload_preview`, and `warnings`. It does not call OpenClaw.
-
-### `GET /api/admin/automation-conversion/execution-records`
-
-Returns `ok`, `items`, `total`, `limit`, and `offset`.
+Old Automation Conversion program, pool, member, state-transition, activation
+webhook, fake OpenClaw push, execution-record, and Runtime V2 APIs are no longer
+active API contracts. `/admin/automation-conversion` now belongs to
+`ai_audience_ops` and renders the AI Audience package list. The admin read API
+for that page is `/api/admin/ai-audience/packages`.
 
 ## MCP
 

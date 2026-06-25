@@ -106,7 +106,6 @@ def _approval_package_check(path: Path, batch: str) -> Json:
         "Batch 3",
         "Batch 4",
         "Batch 5",
-        "Batch 6",
         "Batch 1 Media readonly",
     ]
     missing = [item for item in required if item not in text]

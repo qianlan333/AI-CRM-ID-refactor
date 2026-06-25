@@ -136,36 +136,13 @@ Result:
 | readonly result |  |  |
 | no submit/external action |  |  |
 
-## Batch 6: Automation Conversion Readonly
+## Retired Automation Conversion Readonly Batch
 
-Tester opens:
-
-- `/admin/automation-conversion`
-- overview
-- pools
-- members list
-- one member detail if available
-- execution records
-
-Check:
-
-- overview displays
-- pools display
-- members list displays
-- member detail reads normally
-- execution records display
-- no manual override, confirm conversion, activation webhook, OpenClaw, workflow runtime, WeCom dispatch, or external webhook is triggered
-
-Result:
-
-| item | pass / issue | notes |
-| --- | --- | --- |
-| overview |  |  |
-| pools |  |  |
-| members list |  |  |
-| member detail |  |  |
-| execution records |  |  |
-| no write/runtime/external action |  |  |
+Do not test old automation program overview, pool, member detail, execution-record,
+manual override, confirm conversion, activation webhook, OpenClaw push, workflow
+runtime, or Runtime V2 routes. Those surfaces are retired. The surviving
+`/admin/automation-conversion` page belongs to `ai_audience_ops` and should be
+validated by the main application AI Audience admin page tests instead.
 
 ## User Response Format
 
