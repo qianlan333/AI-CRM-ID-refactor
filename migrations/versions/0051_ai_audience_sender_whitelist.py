@@ -1,7 +1,7 @@
 """add ai audience package sender whitelist.
 
 Revision ID: 0051_ai_audience_sender_whitelist
-Revises: 0049_group_ops_workspace_governance
+Revises: 0050_channel_entry_effect_status_queued
 """
 
 from __future__ import annotations
@@ -10,7 +10,7 @@ from alembic import op
 
 
 revision = "0051_ai_audience_sender_whitelist"
-down_revision = "0049_group_ops_workspace_governance"
+down_revision = "0050_channel_entry_effect_status_queued"
 branch_labels = None
 depends_on = None
 
