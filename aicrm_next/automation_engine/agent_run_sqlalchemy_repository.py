@@ -130,11 +130,6 @@ class SqlAlchemyAgentRunRepository(InMemoryAutomationRepository):
             if value:
                 clauses.append(f"{field} = :{field}")
                 params[field] = value
-        for field in ("task_id", "workflow_id"):
-            value = filters.get(field)
-            if value not in (None, ""):
-                clauses.append(f"{field} = :{field}")
-                params[field] = int(value)
         if filters.get("started_after"):
             clauses.append("started_at >= :started_after")
             params["started_after"] = str(filters["started_after"])
@@ -160,8 +155,6 @@ class SqlAlchemyAgentRunRepository(InMemoryAutomationRepository):
                 "trigger_source": row.get("trigger_source") or "fixture",
                 "external_contact_id": row.get("external_contact_id"),
                 "userid": row.get("userid"),
-                "task_id": row.get("task_id"),
-                "workflow_id": row.get("workflow_id"),
                 "started_at": row.get("started_at"),
                 "finished_at": row.get("finished_at"),
                 "duration_ms": row.get("duration_ms"),

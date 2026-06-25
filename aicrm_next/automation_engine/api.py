@@ -103,10 +103,6 @@ async def api_plan_customer_automation_webhook_delivery_retry_due() -> JSONRespo
 
 @router.get("/api/admin/automation-conversion/agents")
 def list_agents(
-    program_id: int | None = None,
-    workflow_id: int | None = None,
-    node_id: int | None = None,
-    task_id: int | None = None,
     agent_type: str = "",
     status: str = "",
     include_archived: bool = False,
@@ -114,10 +110,6 @@ def list_agents(
     offset: int = 0,
 ) -> JSONResponse:
     request = AgentListRequest(
-        program_id=program_id,
-        workflow_id=workflow_id,
-        node_id=node_id,
-        task_id=task_id,
         agent_type=agent_type,
         status=status,
         include_archived=include_archived,
@@ -129,10 +121,6 @@ def list_agents(
 
 @router.get("/api/admin/automation-conversion/agents/options")
 def agent_options(
-    program_id: int | None = None,
-    workflow_id: int | None = None,
-    node_id: int | None = None,
-    task_id: int | None = None,
     agent_type: str = "",
     status: str = "",
     include_archived: bool = False,
@@ -140,10 +128,6 @@ def agent_options(
     offset: int = 0,
 ) -> JSONResponse:
     request = AgentListRequest(
-        program_id=program_id,
-        workflow_id=workflow_id,
-        node_id=node_id,
-        task_id=task_id,
         agent_type=agent_type,
         status=status,
         include_archived=include_archived,
@@ -216,8 +200,6 @@ def list_agent_runs(
     trigger_source: str = "",
     external_contact_id: str = "",
     userid: str = "",
-    task_id: int | None = None,
-    workflow_id: int | None = None,
     started_after: str = "",
     started_before: str = "",
     has_error: bool | None = None,
@@ -233,8 +215,6 @@ def list_agent_runs(
         trigger_source=trigger_source,
         external_contact_id=external_contact_id,
         userid=userid,
-        task_id=task_id,
-        workflow_id=workflow_id,
         started_after=started_after,
         started_before=started_before,
         has_error=has_error,

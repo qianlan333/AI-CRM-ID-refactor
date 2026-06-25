@@ -72,10 +72,6 @@ class InMemoryAutomationRepository:
             index: agent_projection(
                 {
                     "id": index,
-                    "program_id": 0,
-                    "workflow_id": 0,
-                    "node_id": 0,
-                    "task_id": 0,
                     "status": "active",
                     "metadata": {"source": "next_default_fixture"},
                     "config": {"description": "metadata only"},
@@ -186,17 +182,13 @@ class InMemoryAutomationRepository:
         limit = int(filters.get("limit") or 50)
         offset = int(filters.get("offset") or 0)
         rows = [agent_projection(item) for item in self._agents.values()]
-        for field in ("program_id", "workflow_id", "node_id", "task_id"):
-            value = filters.get(field)
-            if value not in (None, ""):
-                rows = [item for item in rows if int(item.get(field) or 0) == int(value)]
         if agent_type:
             rows = [item for item in rows if str(item.get("agent_type") or "") == agent_type]
         if status:
             rows = [item for item in rows if str(item.get("status") or "") == status]
         if not include_archived:
             rows = [item for item in rows if not str(item.get("archived_at") or "").strip()]
-        rows.sort(key=lambda item: (int(item.get("task_id") or 0), int(item.get("sort_order") or 0), int(item.get("id") or 0)))
+        rows.sort(key=lambda item: (int(item.get("sort_order") or 0), int(item.get("id") or 0)))
         total = len(rows)
         return deepcopy(rows[offset : offset + limit]), total
 
@@ -215,7 +207,7 @@ class InMemoryAutomationRepository:
             response = deepcopy(replay.get("response_snapshot") or {})
             response["idempotent_replay"] = True
             return response
-        self._assert_unique_agent(normalized["workflow_id"], normalized["agent_code"])
+        self._assert_unique_agent(normalized["agent_code"])
         now = utc_now_iso()
         agent_id = max(self._agents) + 1 if self._agents else 1
         saved = agent_projection({**normalized, "id": agent_id, "created_at": now, "updated_at": now})
@@ -290,10 +282,6 @@ class InMemoryAutomationRepository:
             value = str(normalized.get(field) or "").strip()
             if value:
                 rows = [item for item in rows if str(item.get(field) or "") == value]
-        for field in ("task_id", "workflow_id"):
-            value = normalized.get(field)
-            if value not in (None, ""):
-                rows = [item for item in rows if int(item.get(field) or 0) == int(value)]
         if normalized["started_after"]:
             rows = [item for item in rows if str(item.get("started_at") or "") >= normalized["started_after"]]
         if normalized["started_before"]:
@@ -321,14 +309,12 @@ class InMemoryAutomationRepository:
 
         return hashlib.sha256(json.dumps(payload, ensure_ascii=False, sort_keys=True).encode("utf-8")).hexdigest()
 
-    def _assert_unique_agent(self, workflow_id: int, agent_code: str) -> None:
+    def _assert_unique_agent(self, agent_code: str) -> None:
         normalized_code = str(agent_code or "").strip().lower()
         for agent in self._agents.values():
             item = agent_projection(agent)
-            if int(item.get("workflow_id") or 0) != int(workflow_id):
-                continue
             if str(item.get("agent_code") or "").strip().lower() == normalized_code:
-                raise ContractError("agent code already exists for workflow")
+                raise ContractError("agent code already exists")
 
     def _append_agent_audit_event(
         self,

@@ -171,10 +171,6 @@ class AgentMaterialsUpdateRequest(BaseModel):
 
 
 class AgentListRequest(BaseModel):
-    program_id: int | None = None
-    workflow_id: int | None = None
-    node_id: int | None = None
-    task_id: int | None = None
     agent_type: str = ""
     status: str = ""
     include_archived: bool = False
@@ -183,10 +179,6 @@ class AgentListRequest(BaseModel):
 
 
 class AgentCreateRequest(BaseModel):
-    program_id: int = 0
-    workflow_id: int = 0
-    node_id: int = 0
-    task_id: int = 0
     agent_name: str | None = None
     name: str | None = None
     agent_code: str | None = None
@@ -230,8 +222,6 @@ class AgentRunListRequest(BaseModel):
     trigger_source: str = ""
     external_contact_id: str = ""
     userid: str = ""
-    task_id: int | None = None
-    workflow_id: int | None = None
     started_after: str = ""
     started_before: str = ""
     has_error: bool | None = None
