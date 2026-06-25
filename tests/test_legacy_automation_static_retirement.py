@@ -39,6 +39,10 @@ def test_retired_runtime_v2_package_is_removed() -> None:
     assert not (PROJECT_ROOT / "aicrm_next" / "automation_runtime_v2").exists()
 
 
+def test_retired_operation_task_publish_contract_is_removed() -> None:
+    assert not (PROJECT_ROOT / "aicrm_next" / "automation_engine" / "operation_task_contract.py").exists()
+
+
 def test_retired_runtime_v2_routes_are_not_registered() -> None:
     client = TestClient(create_app(), raise_server_exceptions=False)
 
