@@ -551,7 +551,10 @@ class SQLAlchemyAudienceRepository(AudienceRepository):
             UPDATE ai_audience_package
             SET status = 'active',
                 next_incremental_refresh_at = CASE WHEN incremental_enabled THEN CURRENT_TIMESTAMP ELSE NULL END,
-                next_daily_refresh_at = CASE WHEN daily_enabled THEN :next_daily_refresh_at ELSE NULL END,
+                next_daily_refresh_at = CASE
+                    WHEN daily_enabled THEN CAST(:next_daily_refresh_at AS TIMESTAMPTZ)
+                    ELSE NULL
+                END,
                 paused_reason = '',
                 updated_at = CURRENT_TIMESTAMP
             WHERE id = :package_id
