@@ -254,10 +254,14 @@ async def inbound_webhook(package_key: str, request: Request) -> JSONResponse:
 @router.post("/api/ai/audience/test-agent/webhook", name="api.ai_audience_test_agent_webhook")
 async def test_agent_webhook(request: Request) -> JSONResponse:
     try:
-        payload = await _body(request)
+        try:
+            payload = await request.json()
+        except Exception:
+            payload = {}
         result = AudienceTestAgentService().handle(
             payload,
             signature=_text(request.headers.get("X-AICRM-External-Effect-Signature")),
+            headers=dict(request.headers),
         )
         return _json(result, status_code=int(result.get("status_code") or (200 if result.get("ok") else 400)))
     except Exception as exc:

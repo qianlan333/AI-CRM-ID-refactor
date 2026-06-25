@@ -58,3 +58,66 @@ curl -sS -X POST \
 - Outbound job body 只有 `external_userid[]`。
 - User Ops preview/execute 只调用标准 batch-send 端口。
 - 清理时通过 `DELETE /api/admin/ai-audience/packages/{id}` archive。
+
+## 真实链路 E2E
+
+真实 E2E 只能在生产发布包含 `/api/external/ai-audience/e2e/run` 的版本后执行。该接口默认关闭，只用于测试账号的受控验收，不是业务发送器。
+
+固定测试边界：
+
+- `external_userid=wmbNXyCwAAXhagLBNjtlFj2jbQevWinQ`
+- `sender_userid=HuangYouCan`
+- package key 由 runner 生成，均为 `prod_e2e_*`
+- 每个场景最多 1 次真实私聊发送，总量最多 5 条
+- runner 结束会 archive 本轮创建的 `prod_e2e_*` package
+- 响应和报告不得写入 token、cookie、DSN、secret
+
+生产临时配置示例：
+
+```bash
+export AICRM_AI_AUDIENCE_SPEC_ALLOWED_PREFIXES=prod_verify_,prod_e2e_
+export AICRM_AI_AUDIENCE_SPEC_ALLOW_PUBLISH=true
+export AICRM_AI_AUDIENCE_SPEC_ALLOW_NON_VERIFY_PREFIX=true
+export AICRM_AI_AUDIENCE_E2E_RUNNER_ENABLED=true
+
+export AICRM_AI_AUDIENCE_TEST_AGENT_ENABLED=true
+export AICRM_AI_AUDIENCE_TEST_AGENT_ALLOWED_EXTERNAL_USERIDS=wmbNXyCwAAXhagLBNjtlFj2jbQevWinQ
+export AICRM_AI_AUDIENCE_TEST_AGENT_SENDER_USERID=HuangYouCan
+
+export AICRM_AI_AUDIENCE_INBOUND_ACTION_EXECUTE=true
+export AICRM_EXTERNAL_EFFECT_TEST_EXECUTION_ONLY=true
+export AICRM_EXTERNAL_EFFECT_WEBHOOK_EXECUTE=true
+export AICRM_EXTERNAL_EFFECT_WECOM_EXECUTE=true
+export AICRM_EXTERNAL_EFFECT_ALLOWED_TYPES=webhook.generic.push,wecom.message.private.send
+export AICRM_EXTERNAL_EFFECT_ALLOWED_TARGET_EXTERNAL_USERIDS=wmbNXyCwAAXhagLBNjtlFj2jbQevWinQ
+export AICRM_EXTERNAL_EFFECT_ALLOWED_OWNER_USERIDS=HuangYouCan
+```
+
+执行：
+
+```bash
+RUN_ID="e2e_$(date +%Y%m%d_%H%M%S)"
+
+curl -sS -X POST \
+  -H "Authorization: Bearer $AICRM_AI_AUDIENCE_SPEC_API_TOKEN" \
+  -H "Content-Type: application/json" \
+  https://www.youcangogogo.com/api/external/ai-audience/e2e/run \
+  -d "{
+    \"run_id\":\"${RUN_ID}\",
+    \"external_userid\":\"wmbNXyCwAAXhagLBNjtlFj2jbQevWinQ\",
+    \"sender_userid\":\"HuangYouCan\",
+    \"scenarios\":[\"questionnaire\",\"payment\",\"channel_entry\",\"dedupe\",\"sender_whitelist\",\"user_ops_batch_send\"],
+    \"confirm_real_send\":true,
+    \"operator\":\"prod-e2e\"
+  }" | tee "ai_audience_real_e2e_test_${RUN_ID}.json"
+```
+
+执行后必须恢复临时开关：
+
+```bash
+unset AICRM_AI_AUDIENCE_E2E_RUNNER_ENABLED
+unset AICRM_AI_AUDIENCE_TEST_AGENT_ENABLED
+unset AICRM_AI_AUDIENCE_INBOUND_ACTION_EXECUTE
+```
+
+若任一步返回非测试用户、非 `HuangYouCan` sender、或 package 未 archive，结论必须判定为失败。

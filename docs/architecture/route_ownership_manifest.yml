@@ -4251,6 +4251,17 @@ routes:
   data_source: command
   requires_auth: true
   rollback: previous_release
+- path: /api/external/ai-audience/e2e/run
+  methods:
+  - POST
+  route_name: api.external_ai_audience_e2e_run
+  capability_owner: ai_audience_ops
+  runtime_owner: ai_crm_next
+  layer: integration
+  external_effects: staging_disabled
+  data_source: command
+  requires_auth: true
+  rollback: previous_release
 - path: /admin/channels
   methods:
   - GET

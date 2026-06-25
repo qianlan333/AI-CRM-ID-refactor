@@ -7,6 +7,7 @@ from fastapi import APIRouter, Body, Request
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 
+from .e2e_runner import AudienceRealE2ERunner
 from .external_auth import external_spec_auth_error
 from .package_spec import package_payload_from_spec, parse_markdown_spec_text, validate_spec
 from .repository import build_audience_repository, _text
@@ -113,6 +114,23 @@ def external_ai_audience_package_archive(package_key: str, request: Request, pay
     }
     _audit(repo, operator=_operator(payload), action_type="external_spec_archive", package_key=package_key, before=_audit_before(payload), after=result)
     return _response(result, status_code=200 if result["ok"] else 400)
+
+
+@router.post("/api/external/ai-audience/e2e/run", name="api.external_ai_audience_e2e_run")
+def external_ai_audience_e2e_run(request: Request, payload: dict[str, Any] = Body(default_factory=dict)) -> JSONResponse:
+    if auth := external_spec_auth_error(request):
+        return auth
+    repo = build_audience_repository()
+    result = AudienceRealE2ERunner(repository=repo).run(payload)
+    _audit(
+        repo,
+        operator=_operator(payload),
+        action_type="external_e2e_run",
+        package_key="prod_e2e",
+        before=_audit_before(payload),
+        after=result,
+    )
+    return _response(result, status_code=int(result.get("status_code") or (200 if result.get("ok") else 400)))
 
 
 def _dry_run(payload: dict[str, Any], *, repo) -> dict[str, Any]:

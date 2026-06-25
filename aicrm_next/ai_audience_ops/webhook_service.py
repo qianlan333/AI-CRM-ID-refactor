@@ -84,6 +84,7 @@ class AudienceInboundWebhookService:
                 "owner_userid": sender,
                 "content_text": content,
                 "source": "ai_audience_inbound_webhook",
+                **_test_scope(package),
             },
             payload_summary={
                 "package_key": package.get("package_key"),
@@ -100,3 +101,9 @@ class AudienceInboundWebhookService:
             context=CommandContext(actor_id="ai_audience_agent", actor_type="external_agent", source_route="ai_audience.inbound_webhook"),
         )
         return int(job.get("id") or 0) or None
+
+
+def _test_scope(package: dict[str, Any]) -> dict[str, Any]:
+    if _text(package.get("package_key")).startswith("prod_e2e_"):
+        return {"is_test": True, "execution_scope": "test_loopback"}
+    return {}
