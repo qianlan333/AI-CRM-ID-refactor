@@ -32,8 +32,16 @@ def _client(monkeypatch) -> TestClient:
 
 def _admin_action_token(html: str) -> str:
     match = re.search(r'name="admin_action_token" value="([^"]+)"', html)
+    if not match:
+        match = re.search(r"admin_action_token:\s*'([^']+)'", html)
+    if not match:
+        match = re.search(r"dataset\.adminActionToken\s*\|\|\s*'([^']+)'", html)
     assert match, html[:1000]
     return match.group(1)
+
+
+def _jobs_action_token(client: TestClient) -> str:
+    return _admin_action_token(client.get("/admin/broadcast-jobs").text)
 
 
 def test_admin_jobs_page_is_native_jobs_console(monkeypatch):
@@ -56,7 +64,7 @@ def test_admin_jobs_deferred_runner_is_retired(monkeypatch):
 
     page = client.get("/admin/jobs?tab=deferred")
     html = page.text
-    token = _admin_action_token(client.get("/admin/jobs?tab=webhooks").text)
+    token = _jobs_action_token(client)
 
     assert page.status_code == 200
     assert "待处理作业执行已退场" in html
@@ -92,18 +100,32 @@ def test_admin_jobs_legacy_actions_return_disabled_payload(monkeypatch):
     assert retry_due["error"] == "legacy_webhook_retry_disabled"
 
 
-def test_admin_jobs_webhooks_tab_filters_retries_and_audits(monkeypatch):
+def test_admin_jobs_webhooks_tab_is_read_only_for_legacy_retries(monkeypatch):
     client = _client(monkeypatch)
 
     response = client.get("/admin/jobs?tab=webhooks&webhook_status=retry_scheduled")
     html = response.text
-    token = _admin_action_token(html)
+    token = _jobs_action_token(client)
 
     assert response.status_code == 200
     assert "Webhook 投递状态" in html
-    assert "执行到期重试" in html
+    assert "Webhook 重试执行已退场" in html
+    assert "执行到期重试" not in html
+    assert 'name="action" value="run-webhook-retries"' not in html
+    assert 'name="action" value="retry-webhook-delivery"' not in html
+    assert "重试已退场" in html
     assert "ext-3" in html
     assert "Payload 摘要" in html
+
+    run_due = client.post(
+        "/api/admin/jobs/webhook-deliveries/run",
+        json={"confirm": True, "admin_action_token": token, "operator": "tester-webhook"},
+    )
+    assert run_due.status_code == 409
+    assert run_due.json()["ok"] is False
+    assert run_due.json()["legacy_outbound_disabled"] is True
+    assert run_due.json()["error"] == "legacy_webhook_retry_disabled"
+    assert run_due.json()["real_external_call_executed"] is False
 
     retry = client.post(
         "/api/admin/jobs/webhook-deliveries/2/retry",
@@ -123,7 +145,7 @@ def test_admin_broadcast_jobs_page_filters_and_actions(monkeypatch):
 
     page = client.get("/admin/broadcast-jobs?status=waiting_approval&source_type=campaign")
     html = page.text
-    token = _admin_action_token(client.get("/admin/jobs?tab=webhooks").text)
+    token = _jobs_action_token(client)
 
     assert page.status_code == 200
     assert "群发任务队列" in html
@@ -213,7 +235,7 @@ def test_validate_feishu_webhook_url_accepts_only_official_https_hooks():
 
 def test_broadcast_queue_feishu_settings_api_masks_saves_and_validates(monkeypatch):
     client = _client(monkeypatch)
-    token = _admin_action_token(client.get("/admin/jobs?tab=webhooks").text)
+    token = _jobs_action_token(client)
     webhook = "https://open.feishu.cn/open-apis/bot/v2/hook/secret-token-abcd"
 
     no_token = client.put(
@@ -272,7 +294,7 @@ def test_broadcast_queue_feishu_settings_api_masks_saves_and_validates(monkeypat
 
 def test_broadcast_queue_feishu_validate_failure_does_not_leak_webhook(monkeypatch):
     client = _client(monkeypatch)
-    token = _admin_action_token(client.get("/admin/jobs?tab=webhooks").text)
+    token = _jobs_action_token(client)
     webhook = "https://open.larksuite.com/open-apis/bot/v2/hook/top-secret-7890"
 
     monkeypatch.setattr(
@@ -458,7 +480,7 @@ def test_broadcast_queue_hourly_report_run_api_requires_auth_and_supports_cron_s
 
 def test_broadcast_queue_hourly_report_run_api_real_no_jobs_duplicate_and_no_webhook_leak(monkeypatch):
     client = _client(monkeypatch)
-    token = _admin_action_token(client.get("/admin/jobs?tab=webhooks").text)
+    token = _jobs_action_token(client)
     repo = build_admin_jobs_repository()
     webhook = "https://open.larksuite.com/open-apis/bot/v2/hook/api-secret-7890"
     repo.upsert_broadcast_notification_setting(

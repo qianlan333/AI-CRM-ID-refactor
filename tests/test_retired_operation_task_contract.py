@@ -41,3 +41,13 @@ def test_retired_admin_jobs_deferred_runner_is_removed() -> None:
     for source in (template_source, frontend_jobs_source, frontend_operations_source):
         assert 'name="action" value="run-deferred-jobs"' not in source
         assert "待处理作业执行已退场" in source
+
+
+def test_retired_admin_jobs_webhook_retry_runner_is_removed() -> None:
+    template_source = (PROJECT_ROOT / "aicrm_next" / "admin_jobs" / "templates" / "admin_console" / "jobs.html").read_text(encoding="utf-8")
+    frontend_jobs_source = (PROJECT_ROOT / "aicrm_next" / "frontend_compat" / "templates" / "admin_console" / "jobs.html").read_text(encoding="utf-8")
+
+    for source in (template_source, frontend_jobs_source):
+        assert 'name="action" value="run-webhook-retries"' not in source
+        assert 'name="action" value="retry-webhook-delivery"' not in source
+        assert "Webhook 重试执行已退场" in source

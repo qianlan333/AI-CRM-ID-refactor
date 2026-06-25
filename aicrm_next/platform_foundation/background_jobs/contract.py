@@ -236,6 +236,6 @@ def webhook_route_contracts() -> tuple[WebhookRouteContract, ...]:
         W("/api/admin/webhooks/replay", ("POST",), "replay_admin_webhook", "none", "command", "admin replay enqueues/plans work without direct external effects"),
         W("/api/admin/jobs/callbacks", ("GET",), "api_admin_jobs_callbacks", "none", "read_model", "read-only callback inventory"),
         W("/api/admin/jobs/webhook-deliveries", ("GET",), "api_admin_jobs_webhook_deliveries", "none", "read_model", "read-only delivery inventory"),
-        W("/api/admin/jobs/webhook-deliveries/run", ("POST",), "api_admin_jobs_webhook_deliveries_run", "none", "command", "admin run command remains gated and records outcome"),
-        W("/api/admin/jobs/webhook-deliveries/{delivery_id}/retry", ("POST",), "api_admin_jobs_webhook_delivery_retry", "none", "command", "admin retry command remains gated and records outcome"),
+        W("/api/admin/jobs/webhook-deliveries/run", ("POST",), "api_admin_jobs_webhook_deliveries_run", "none", "command", "retired customer webhook retry route returns disabled payload and creates no jobs"),
+        W("/api/admin/jobs/webhook-deliveries/{delivery_id}/retry", ("POST",), "api_admin_jobs_webhook_delivery_retry", "none", "command", "retired customer webhook retry route returns disabled payload and creates no jobs"),
     )
