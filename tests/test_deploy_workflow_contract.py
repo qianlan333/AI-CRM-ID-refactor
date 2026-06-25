@@ -324,19 +324,16 @@ def test_batch_scripts_share_int_env_reader():
 
 
 def test_due_runner_scripts_share_int_env_reader():
-    sop_runner = (ROOT / "scripts" / "run_automation_sop.py").read_text(encoding="utf-8")
     external_push_worker = (ROOT / "scripts" / "run_external_push_worker.py").read_text(encoding="utf-8")
     internal_event_worker = (ROOT / "scripts" / "run_internal_event_worker.py").read_text(encoding="utf-8")
     ai_audience_scheduler = (ROOT / "scripts" / "run_ai_audience_scheduler.py").read_text(encoding="utf-8")
 
-    assert 'read_int_env("AUTOMATION_SOP_RETRY_COUNT"' in sop_runner
-    assert "AUTOMATION_SOP_RETRY_INTERVAL_SECONDS" in sop_runner
+    assert not (ROOT / "scripts" / "run_automation_sop.py").exists()
     assert 'read_int_env("EXTERNAL_PUSH_WORKER_BATCH_SIZE", DEFAULT_BATCH_SIZE)' in external_push_worker
     assert 'read_int_env("AICRM_INTERNAL_EVENT_WORKER_BATCH_SIZE", DEFAULT_WORKER_BATCH_SIZE)' in internal_event_worker
     assert 'read_int_env("AICRM_AI_AUDIENCE_SCHEDULER_BATCH_SIZE", 20)' in ai_audience_scheduler
     assert "--execute" in internal_event_worker
     assert "InternalEventWorker().run_due" in internal_event_worker
-    assert "int((os.getenv" not in sop_runner
     assert "int(os.environ.get" not in external_push_worker
     assert "int(os.environ.get" not in internal_event_worker
     assert "int(os.environ.get" not in ai_audience_scheduler

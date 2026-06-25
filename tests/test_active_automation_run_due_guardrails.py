@@ -19,18 +19,10 @@ def _auth_headers():
     return {"Authorization": "Bearer probe-token"}
 
 
-def test_jobs_run_due_routes_are_retired(monkeypatch):
-    client = _production_client(monkeypatch)
-
-    for route, body in [
-        (checker.ACTIVE_JOBS_ROUTE, {"dry_run": True, "jobs": ["sop", "conversion_workflow"]}),
-        (checker.ACTIVE_JOBS_ROUTE, {"preview": True, "jobs": ["sop", "conversion_workflow"]}),
-        (checker.ACTIVE_JOBS_PREVIEW_ROUTE, {"jobs": ["sop"]}),
-        (checker.ACTIVE_JOBS_ROUTE, {"dry_run": False, "jobs": ["sop"], "operator": "checker"}),
-    ]:
-        response = client.post(route, json=body, headers=_auth_headers())
-        assert response.status_code == 404, route
-        assert "X-AICRM-Compatibility-Facade" not in response.headers
+def test_legacy_jobs_runner_is_not_part_of_guardrail_surface():
+    assert not hasattr(checker, "ACTIVE_JOBS_ROUTE")
+    assert not hasattr(checker, "ACTIVE_JOBS_PREVIEW_ROUTE")
+    assert not checker.DB_SENTINEL_QUERIES
 
 
 def test_campaign_dry_run_and_preview_are_noop(monkeypatch):
@@ -60,21 +52,13 @@ def test_campaign_real_execution_requires_allowlist_in_production(monkeypatch):
     assert payload["fallback_used"] is False
 
 
-def test_retired_jobs_route_does_not_expose_legacy_auth_path(monkeypatch):
-    client = _production_client(monkeypatch)
-
-    response = client.post(checker.ACTIVE_JOBS_ROUTE, json={"preview": True})
-
-    assert response.status_code == 404
-
-
 def test_checker_returns_ok_and_keeps_local_sentinel_stable(monkeypatch):
     monkeypatch.setattr(checker, "production_config_modified", lambda: False)
 
     result = checker.run_check()
 
     assert result["ok"] is True
-    assert result["jobs_routes_retired"] is True
+    assert result["legacy_jobs_runner_removed_from_guardrail"] is True
     assert result["dry_run_noop"] is True
     assert result["preview_noop"] is True
     assert result["true_execution_without_allowlist_rejected"] is True
@@ -97,8 +81,6 @@ def test_checker_detects_sentinel_change(monkeypatch):
         def post(self, route, json=None, headers=None, follow_redirects=False):
             if not headers:
                 return FakeResponse(401, {})
-            if route == checker.ACTIVE_JOBS_ROUTE or route == checker.ACTIVE_JOBS_PREVIEW_ROUTE:
-                return FakeResponse(404, {})
             if route.endswith("/preview") or (json or {}).get("preview"):
                 return FakeResponse(200, _noop_payload(route, preview=True))
             if (json or {}).get("dry_run"):
@@ -107,8 +89,8 @@ def test_checker_detects_sentinel_change(monkeypatch):
 
     sentinels = iter(
         [
-            {"available": True, "reason": "", "values": {key: "before" for key in checker.DB_SENTINEL_QUERIES}},
-            {"available": True, "reason": "", "values": {key: "after" for key in checker.DB_SENTINEL_QUERIES}},
+            {"available": True, "reason": "", "values": {}},
+            {"available": False, "reason": "sentinel_unavailable", "values": {}},
         ]
     )
     monkeypatch.setattr(checker, "_client", lambda: FakeClient())

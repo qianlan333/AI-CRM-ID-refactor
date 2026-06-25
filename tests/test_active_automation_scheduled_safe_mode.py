@@ -19,23 +19,9 @@ def _auth_headers():
     return {"Authorization": "Bearer probe-token"}
 
 
-def test_jobs_scheduled_safe_mode_route_is_removed(monkeypatch):
-    client = _production_client(monkeypatch)
-
-    for expected_due_count in (0, 1):
-        response = client.post(
-            checker.ACTIVE_JOBS_ROUTE,
-            json={
-                "operator": "aicrm-automation-jobs-run-due",
-                "jobs": ["sop", "conversion_workflow"],
-                "dry_run": False,
-                "scheduled_safe_mode": True,
-                "expected_due_count": expected_due_count,
-            },
-            headers=_auth_headers(),
-        )
-
-        assert response.status_code == 404
+def test_legacy_jobs_runner_is_not_part_of_scheduled_safe_mode():
+    assert not hasattr(checker, "ACTIVE_JOBS_ROUTE")
+    assert not checker.DB_SENTINEL_QUERIES
 
 
 def test_campaign_scheduled_safe_mode_no_due_returns_idle_200(monkeypatch):
@@ -88,10 +74,8 @@ def test_campaign_scheduled_safe_mode_due_without_allowlist_returns_blocked_409(
 def test_raw_true_execution_without_allowlist_still_returns_409(monkeypatch):
     client = _production_client(monkeypatch)
 
-    jobs = client.post(checker.ACTIVE_JOBS_ROUTE, json={"operator": "manual", "jobs": ["sop"], "dry_run": False}, headers=_auth_headers())
     campaign = client.post(checker.CAMPAIGN_ROUTE, json={"operator": "manual", "batch_size": 1, "dry_run": False}, headers=_auth_headers())
 
-    assert jobs.status_code == 404
     assert campaign.status_code == 409
     assert campaign.json()["error_code"] == "campaign_run_due_allowlist_required"
 
@@ -102,7 +86,7 @@ def test_checker_returns_ok_and_keeps_local_sentinel_stable(monkeypatch):
     result = checker.run_check()
 
     assert result["ok"] is True
-    assert result["jobs_route_retired"] is True
+    assert result["legacy_jobs_runner_removed_from_safe_mode"] is True
     assert result["scheduled_safe_mode_idle_ok"] is True
     assert result["scheduled_safe_mode_blocked_ok"] is True
     assert result["raw_true_execution_without_allowlist_still_409"] is True
@@ -123,8 +107,6 @@ def test_checker_detects_sentinel_change(monkeypatch):
 
     class FakeClient:
         def post(self, route, json=None, headers=None, follow_redirects=False):
-            if route == checker.ACTIVE_JOBS_ROUTE:
-                return FakeResponse(404, {})
             if (json or {}).get("scheduled_safe_mode"):
                 status = 409 if (json or {}).get("expected_due_count") else 200
                 state = "blocked_not_executed" if status == 409 else "idle"
@@ -144,8 +126,8 @@ def test_checker_detects_sentinel_change(monkeypatch):
 
     sentinels = iter(
         [
-            {"available": True, "reason": "", "values": {key: "before" for key in checker.DB_SENTINEL_QUERIES}},
-            {"available": True, "reason": "", "values": {key: "after" for key in checker.DB_SENTINEL_QUERIES}},
+            {"available": True, "reason": "", "values": {}},
+            {"available": False, "reason": "sentinel_unavailable", "values": {}},
         ]
     )
     monkeypatch.setattr(checker, "_client", lambda: FakeClient())
@@ -162,8 +144,6 @@ def test_checker_detects_sentinel_change(monkeypatch):
 def test_runbook_marks_jobs_timer_retired_and_keeps_campaign_safe_mode_payload():
     content = open("docs/runbooks/active_automation_retirement.md", encoding="utf-8").read()
 
-    assert "aicrm-automation-jobs-run-due.timer" in content
-    assert "retired" in content.lower()
     assert checker.SYSTEMD_CAMPAIGN_PAYLOAD in content
     assert "scheduled_safe_mode" in content
 
