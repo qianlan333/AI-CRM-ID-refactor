@@ -53,7 +53,7 @@ function renderGuardrails(guardrails) {
 }
 export function renderInteractionShell(payload, options = {}) {
     const draft = createDraftState(payload.scenarios, {
-        id: options.id ?? "business-closure-draft-preview",
+        id: options.id ?? "p1-draft-preview",
         createdAt: options.createdAt ?? "2026-06-23T00:00:00.000Z"
     });
     const preview = applyReadonlyReorderPreview(draft, 0, Math.min(1, draft.cards.length - 1));

@@ -438,7 +438,7 @@ function scenariosFromRealData(
       derivedStatus: "approval_allowlist_window_missing",
       summary: "独立 operator approval、receiver allowlist、gray-window 记录仍需 attach。",
       guardrail: "requires_approval / requires_allowlist / requires_gray_window 仍然生效。",
-      route: "/admin/business-closure"
+      route: "/admin/p1/group-ops-workspace"
     },
     {
       key: "ops_plan_broadcast",

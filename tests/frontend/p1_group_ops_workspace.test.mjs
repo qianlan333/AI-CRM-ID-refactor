@@ -440,7 +440,7 @@ const governanceApprovedReviewView = {
   allowlist_summary: { hash: "allowlist-safe-hash", count: 2, source_reference_summary: { summary_only: true } },
   gray_window: {
     start_at: "2026-06-24T09:00:00+08:00",
-    end_at: "2026-06-25T10:00:00+08:00",
+    end_at: "2099-06-25T10:00:00+08:00",
     timezone: "Asia/Shanghai",
     window_status: "approved"
   },
@@ -589,7 +589,7 @@ const governancePayload = buildWorkspaceGovernanceRequestPayload("gowd_safe", "s
   allowlistCount: 2,
   grayWindow: {
     start_at: "2026-06-24T09:00:00+08:00",
-    end_at: "2026-06-25T10:00:00+08:00",
+    end_at: "2099-06-25T10:00:00+08:00",
     timezone: "Asia/Shanghai"
   }
 });
@@ -598,7 +598,7 @@ const governancePayloadRepeat = buildWorkspaceGovernanceRequestPayload("gowd_saf
   allowlistCount: 2,
   grayWindow: {
     start_at: "2026-06-24T09:00:00+08:00",
-    end_at: "2026-06-25T10:00:00+08:00",
+    end_at: "2099-06-25T10:00:00+08:00",
     timezone: "Asia/Shanghai"
   }
 });
@@ -643,7 +643,7 @@ const governanceReviewContext = {
   allowlist_summary: { hash: "allowlist-safe-hash", count: 2 },
   gray_window: {
     start_at: "2026-06-24T09:00:00+08:00",
-    end_at: "2026-06-25T10:00:00+08:00",
+    end_at: "2099-06-25T10:00:00+08:00",
     timezone: "Asia/Shanghai",
     window_status: "pending"
   }
@@ -733,7 +733,7 @@ const requestJson = async (url, options = {}) => {
       },
       gray_window: {
         start_at: "2026-06-24T09:00:00+08:00",
-        end_at: "2026-06-25T10:00:00+08:00",
+        end_at: "2099-06-25T10:00:00+08:00",
         timezone: "Asia/Shanghai",
         window_status: "pending"
       },
@@ -768,7 +768,7 @@ const requestJson = async (url, options = {}) => {
         { step_id: "gows_gray", step_type: "gray_window", step_status: "pending" }
       ],
       allowlist_summary: { hash: "allowlist-safe-hash", count: 2, source_reference_summary: { summary_only: true } },
-      gray_window: { start_at: "2026-06-24T09:00:00+08:00", end_at: "2026-06-25T10:00:00+08:00", timezone: "Asia/Shanghai", window_status: "pending" },
+      gray_window: { start_at: "2026-06-24T09:00:00+08:00", end_at: "2099-06-25T10:00:00+08:00", timezone: "Asia/Shanghai", window_status: "pending" },
       preview_only: true,
       production_write: true,
       approved: false,
@@ -800,7 +800,7 @@ const requestJson = async (url, options = {}) => {
         { step_id: "gows_gray", step_type: "gray_window", step_status: "pending" }
       ],
       allowlist_summary: { hash: "allowlist-safe-hash", count: 2, source_reference_summary: { summary_only: true } },
-      gray_window: { start_at: "2026-06-24T09:00:00+08:00", end_at: "2026-06-25T10:00:00+08:00", timezone: "Asia/Shanghai", window_status: "pending" },
+      gray_window: { start_at: "2026-06-24T09:00:00+08:00", end_at: "2099-06-25T10:00:00+08:00", timezone: "Asia/Shanghai", window_status: "pending" },
       preview_only: true,
       production_write: true,
       approved: false,
@@ -832,7 +832,7 @@ const requestJson = async (url, options = {}) => {
         { step_id: "gows_gray", step_type: "gray_window", step_status: "approved", actor_metadata: { actor_label_present: true }, updated_at: "2026-06-24T12:02:00Z" }
       ],
       allowlist_summary: { hash: "allowlist-safe-hash", count: 2, source_reference_summary: { summary_only: true } },
-      gray_window: { start_at: "2026-06-24T09:00:00+08:00", end_at: "2026-06-25T10:00:00+08:00", timezone: "Asia/Shanghai", window_status: "approved" },
+      gray_window: { start_at: "2026-06-24T09:00:00+08:00", end_at: "2099-06-25T10:00:00+08:00", timezone: "Asia/Shanghai", window_status: "approved" },
       preview_only: true,
       production_write: true,
       approved: false,
@@ -864,7 +864,7 @@ const requestJson = async (url, options = {}) => {
         { step_id: "gows_gray", step_type: "gray_window", step_status: "pending" }
       ],
       allowlist_summary: { hash: "allowlist-safe-hash", count: 2, source_reference_summary: { summary_only: true } },
-      gray_window: { start_at: "2026-06-24T09:00:00+08:00", end_at: "2026-06-25T10:00:00+08:00", timezone: "Asia/Shanghai", window_status: "pending" },
+      gray_window: { start_at: "2026-06-24T09:00:00+08:00", end_at: "2099-06-25T10:00:00+08:00", timezone: "Asia/Shanghai", window_status: "pending" },
       preview_only: true,
       production_write: true,
       approved: false,
@@ -892,7 +892,7 @@ const requestJson = async (url, options = {}) => {
         { step_id: "gows_gray", step_type: "gray_window", step_status: "expired" }
       ],
       allowlist_summary: { hash: "allowlist-safe-hash", count: 2, source_reference_summary: { summary_only: true } },
-      gray_window: { start_at: "2026-06-24T09:00:00+08:00", end_at: "2026-06-25T10:00:00+08:00", timezone: "Asia/Shanghai", window_status: "expired" },
+      gray_window: { start_at: "2026-06-24T09:00:00+08:00", end_at: "2099-06-25T10:00:00+08:00", timezone: "Asia/Shanghai", window_status: "expired" },
       preview_only: true,
       production_write: true,
       approved: false,
@@ -927,7 +927,7 @@ const requestJson = async (url, options = {}) => {
         snapshot_hash: "snapshot_safe",
         allowlist_hash: "allowlist-safe-hash",
         allowlist_count: 2,
-        gray_window: { start_at: "2026-06-24T09:00:00+08:00", end_at: "2026-06-25T10:00:00+08:00", timezone: "Asia/Shanghai", window_status: "approved" },
+        gray_window: { start_at: "2026-06-24T09:00:00+08:00", end_at: "2099-06-25T10:00:00+08:00", timezone: "Asia/Shanghai", window_status: "approved" },
         no_external_call: true
       },
       preview_only: true,
@@ -993,7 +993,7 @@ const requestJson = async (url, options = {}) => {
         { step_id: "gows_gray", step_type: "gray_window", step_status: "pending" }
       ],
       allowlist_summary: { hash: "allowlist-safe-hash", count: 2, source_reference_summary: { summary_only: true } },
-      gray_window: { start_at: "2026-06-24T09:00:00+08:00", end_at: "2026-06-25T10:00:00+08:00", timezone: "Asia/Shanghai", window_status: "pending" },
+      gray_window: { start_at: "2026-06-24T09:00:00+08:00", end_at: "2099-06-25T10:00:00+08:00", timezone: "Asia/Shanghai", window_status: "pending" },
       preview_only: true,
       production_write: false,
       approved: false,
@@ -1024,7 +1024,7 @@ const requestJson = async (url, options = {}) => {
             { step_id: "gows_gray", step_type: "gray_window", step_status: "pending" }
           ],
           allowlist_summary: { hash: "allowlist-safe-hash", count: 2, source_reference_summary: { summary_only: true } },
-          gray_window: { start_at: "2026-06-24T09:00:00+08:00", end_at: "2026-06-25T10:00:00+08:00", timezone: "Asia/Shanghai", window_status: "pending" },
+          gray_window: { start_at: "2026-06-24T09:00:00+08:00", end_at: "2099-06-25T10:00:00+08:00", timezone: "Asia/Shanghai", window_status: "pending" },
           preview_only: true,
           production_write: false,
           approved: false,
@@ -1395,7 +1395,7 @@ renderP1GroupOpsWorkspace(governanceReviewRoot, fixture, updateWorkspaceViewStat
       { step_id: "gows_gray", step_type: "gray_window", step_status: "pending" }
     ],
     allowlist_summary: { hash: "allowlist-safe-hash", count: 2, source_reference_summary: { summary_only: true } },
-    gray_window: { start_at: "2026-06-24T09:00:00+08:00", end_at: "2026-06-25T10:00:00+08:00", timezone: "Asia/Shanghai", window_status: "pending" },
+    gray_window: { start_at: "2026-06-24T09:00:00+08:00", end_at: "2099-06-25T10:00:00+08:00", timezone: "Asia/Shanghai", window_status: "pending" },
     approved: false,
     execution_status: "not_execution",
     push_center_job_created: false,
@@ -1434,7 +1434,7 @@ renderP1GroupOpsWorkspace(governanceApprovedRoot, fixture, updateWorkspaceViewSt
       { step_id: "gows_gray", step_type: "gray_window", step_status: "approved" }
     ],
     allowlist_summary: { hash: "allowlist-safe-hash", count: 2, source_reference_summary: { summary_only: true } },
-    gray_window: { start_at: "2026-06-24T09:00:00+08:00", end_at: "2026-06-25T10:00:00+08:00", timezone: "Asia/Shanghai", window_status: "approved" },
+    gray_window: { start_at: "2026-06-24T09:00:00+08:00", end_at: "2099-06-25T10:00:00+08:00", timezone: "Asia/Shanghai", window_status: "approved" },
     approved: false,
     execution_status: "not_execution",
     push_center_job_created: false,

@@ -159,7 +159,7 @@ export const PUSH_CENTER_P1_DEFAULT_INPUTS: PushCenterStatusInput[] = [
     derivedStatus: "external_config_exception",
     summary: "企微外部配置尚未批准生效；不可进入可执行任务队列。",
     guardrail: "必须展示 external-config-blocked，不能假装授权完成。",
-    route: "/admin/business-closure"
+    route: "/admin/channels"
   },
   {
     key: "external_orders",
