@@ -54,10 +54,6 @@ class SqlAlchemyAgentRepository(InMemoryAutomationRepository):
 
     def list_agents(self, filters: dict[str, Any] | None = None) -> tuple[list[dict[str, Any]], int]:
         filters = filters or {}
-        program_id = filters.get("program_id")
-        workflow_id = filters.get("workflow_id")
-        node_id = filters.get("node_id")
-        task_id = filters.get("task_id")
         agent_type = str(filters.get("agent_type") or "").strip()
         status = str(filters.get("status") or "").strip()
         include_archived = bool(filters.get("include_archived"))
@@ -67,13 +63,6 @@ class SqlAlchemyAgentRepository(InMemoryAutomationRepository):
             with self._engine.connect() as conn:
                 clauses = []
                 params: dict[str, Any] = {"limit": limit, "offset": offset}
-                if program_id not in (None, ""):
-                    clauses.append("(program_id = :program_id OR COALESCE(program_id, 0) = 0)")
-                    params["program_id"] = int(program_id)
-                for field, value in (("workflow_id", workflow_id), ("node_id", node_id), ("task_id", task_id)):
-                    if value not in (None, ""):
-                        clauses.append(f"{field} = :{field}")
-                        params[field] = int(value)
                 if agent_type:
                     clauses.append("agent_type = :agent_type")
                     params["agent_type"] = agent_type
@@ -89,7 +78,7 @@ class SqlAlchemyAgentRepository(InMemoryAutomationRepository):
                         SELECT *
                         FROM automation_agents
                         {where}
-                        ORDER BY workflow_id ASC, node_id ASC, sort_order ASC, id ASC
+                        ORDER BY sort_order ASC, id ASC
                         LIMIT :limit OFFSET :offset
                         """
                     ),
@@ -265,22 +254,21 @@ class SqlAlchemyAgentRepository(InMemoryAutomationRepository):
                 """
                 SELECT id
                 FROM automation_agents
-                WHERE workflow_id = :workflow_id
-                  AND LOWER(agent_code) = LOWER(:agent_code)
+                WHERE LOWER(agent_code) = LOWER(:agent_code)
                 LIMIT 1
                 """
             ),
-            {"workflow_id": int(normalized["workflow_id"]), "agent_code": normalized["agent_code"]},
+            {"agent_code": normalized["agent_code"]},
         ).fetchone()
         if row is not None:
-            raise ContractError("agent code already exists for workflow")
+            raise ContractError("agent code already exists")
 
     def _insert_agent(self, conn: Any, normalized: dict[str, Any]) -> dict[str, Any]:
         params = {
-            "program_id": int(normalized["program_id"]),
-            "workflow_id": int(normalized["workflow_id"]),
-            "node_id": int(normalized["node_id"]),
-            "task_id": int(normalized["task_id"]),
+            "program_id": 0,
+            "workflow_id": 0,
+            "node_id": 0,
+            "task_id": 0,
             "agent_code": normalized["agent_code"],
             "agent_name": normalized["agent_name"],
             "agent_type": normalized["agent_type"],

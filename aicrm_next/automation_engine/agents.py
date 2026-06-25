@@ -115,7 +115,7 @@ def normalize_agent_create_payload(payload: dict[str, Any]) -> dict[str, Any]:
         raise ContractError(f"agent_name must be at most {MAX_AGENT_NAME_LENGTH} characters")
 
     ints: dict[str, int] = {}
-    for field in ("program_id", "workflow_id", "node_id", "task_id", "sort_order"):
+    for field in ("sort_order",):
         try:
             value = int(source.get(field) or 0)
         except (TypeError, ValueError) as exc:
@@ -158,10 +158,6 @@ def agent_projection(agent: dict[str, Any]) -> dict[str, Any]:
     return {
         "id": agent_id,
         "agent_id": agent_id,
-        "program_id": int(item.get("program_id") or 0),
-        "workflow_id": int(item.get("workflow_id") or 0),
-        "node_id": int(item.get("node_id") or 0),
-        "task_id": int(item.get("task_id") or 0),
         "agent_code": code,
         "code": code,
         "agent_name": name,
