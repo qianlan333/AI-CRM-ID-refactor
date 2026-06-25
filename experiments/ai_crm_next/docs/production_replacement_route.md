@@ -80,7 +80,9 @@ Frontend smoke evidence:
 - Customer Read Model readonly gray-release preparation evidence is available in `docs/customer_read_model_gray_release_plan.md`, `docs/customer_read_model_route_cutover_manifest.md`, `docs/customer_read_model_sample_data_checklist.md`, `tools/seed_old_flask_customer_sample.py`, and `tools/customer_read_model_gray_smoke.py`. Default smoke is GET-only; optional old-base-url dual mode also sends only GET. The latest local masked sample run covered detail/timeline/recent messages with `skipped=0`.
 - User Ops readonly gray-release preparation evidence is available in `docs/user_ops_readonly_gray_release_plan.md`, `docs/user_ops_readonly_route_cutover_manifest.md`, `docs/user_ops_readonly_sample_and_drift_checklist.md`, and `tools/user_ops_readonly_gray_smoke.py`. Default smoke is GET-only; optional old-base-url dual mode also sends only GET. DND, batch-send preview/execute, deferred jobs, internal writes, and real WeCom dispatch are excluded.
 - Questionnaire readonly gray-release preparation evidence is available in `docs/questionnaire_readonly_gray_release_plan.md`, `docs/questionnaire_readonly_route_cutover_manifest.md`, `docs/questionnaire_readonly_sample_and_fake_checklist.md`, `tools/seed_old_flask_questionnaire_sample.py`, and `tools/questionnaire_readonly_gray_smoke.py`. Default smoke is GET-only; fake submit is explicit opt-in and Next TestClient only. The latest local masked sample run passed with `blockers=0`; old WeChat-gate/public-result route differences are recorded as legacy drift. Real OAuth, WeCom tag mutation, external webhook push/retry, and admin writes are excluded.
-- Automation readonly gray-release preparation evidence is available in `docs/automation_readonly_gray_release_plan.md`, `docs/automation_readonly_route_cutover_manifest.md`, `docs/automation_readonly_sample_and_fake_checklist.md`, `tools/seed_old_flask_automation_sample.py`, and `tools/automation_readonly_gray_smoke.py`. Default smoke is GET-only; optional old-base-url dual mode also sends only GET. The local masked old-test sample run used documented old route aliases and produced `blockers=0`; the remaining default skip is `fake_writes_not_requested`. Fake state-machine writes are explicit opt-in and Next TestClient only. Activation webhook, OpenClaw push, WeCom dispatch, external webhook, workflow runtime, and agent runtime are excluded.
+- Automation readonly gray-release preparation is retired. `/admin/automation-conversion`
+  now belongs to AI Audience, and the old automation_program/runtime-v2
+  smoke/parity artifacts were removed instead of carried forward.
 
 Current known gaps:
 
@@ -129,7 +131,7 @@ Rules:
 - Disable fake mode only after real provider tests pass.
 - User Ops readonly promotion requires `tools/user_ops_readonly_gray_smoke.py` to pass, with old-service writes disabled and only accepted legacy drift recorded.
 - Questionnaire readonly promotion requires `tools/questionnaire_readonly_gray_smoke.py` to pass, with old-service writes disabled, fake submit disabled by default, and real OAuth/WeCom/webhook calls disabled.
-- Automation readonly promotion requires `tools/automation_readonly_gray_smoke.py` to pass, with old-service writes disabled, fake writes disabled by default, and real OpenClaw/WeCom/webhook/workflow runtime calls disabled.
+- Automation readonly promotion is retired; validate the AI Audience page and API instead.
 
 Controlled execution materials:
 
@@ -158,7 +160,8 @@ Staging-simulated canary evidence:
 - Batch 3 Customer readonly: `docs/batch_3_customer_readonly_canary_execution_report.md` and `docs/batch_3_customer_readonly_canary_signoff.md`.
 - Batch 4 User Ops readonly: `docs/batch_4_user_ops_readonly_canary_execution_report.md` and `docs/batch_4_user_ops_readonly_canary_signoff.md`.
 - Batch 5 Questionnaire readonly: `docs/batch_5_questionnaire_readonly_canary_execution_report.md` and `docs/batch_5_questionnaire_readonly_canary_signoff.md`.
-- Batch 6 Automation readonly: `docs/batch_6_automation_readonly_canary_execution_report.md` and `docs/batch_6_automation_readonly_canary_signoff.md`.
+- Batch 6 Automation readonly: retired with the old automation_program/runtime-v2
+  migration artifacts.
 
 All six records are staging-simulated or local rehearsal evidence only. They do not approve production rollout, do not modify production proxy/deploy config, and keep module-specific write/external adapters disabled.
 

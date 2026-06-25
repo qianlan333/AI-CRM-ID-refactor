@@ -85,7 +85,6 @@ Implementation note: the migration revision identifiers were shortened to fit Al
 | User Ops | old fixture + Next TestClient | PASS | `/tmp/user_ops_parity_pg_real_actual.md` |
 | Customer Read Model | old fixture + Next TestClient | PASS | `/tmp/customer_read_model_parity_pg_real_actual.md` |
 | Questionnaire | old fixture + Next TestClient | PASS | `/tmp/questionnaire_parity_pg_real_actual.md` |
-| Automation Conversion | old fixture + Next TestClient | PASS | `/tmp/automation_conversion_parity_pg_real_actual.md` |
 | Commerce | old fixture + Next TestClient | PASS | `/tmp/commerce_parity_pg_real_actual.md` |
 | Media Library | old fixture + Next TestClient | PASS | `/tmp/media_library_parity_pg_real_actual.md` |
 

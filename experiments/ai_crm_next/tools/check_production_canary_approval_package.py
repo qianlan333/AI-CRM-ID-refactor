@@ -38,11 +38,6 @@ KNOWN_BATCHES: dict[str, Json] = {
         "signoff": "docs/batch_5_questionnaire_readonly_canary_signoff.md",
         "rollback_flag": "AICRM_NEXT_ROUTE_QUESTIONNAIRE_READONLY=false",
     },
-    "automation_readonly": {
-        "readonly": True,
-        "signoff": "docs/batch_6_automation_readonly_canary_signoff.md",
-        "rollback_flag": "AICRM_NEXT_ROUTE_AUTOMATION_READONLY=false",
-    },
 }
 
 ALLOWED_TRUE_SAFETY = {"default_endpoints_get_only", "fake_writes_next_testclient_only"}

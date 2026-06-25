@@ -227,8 +227,8 @@ Excluded:
 Validation:
 
 ```bash
-.venv/bin/python tools/automation_readonly_gray_smoke.py --next-testclient --output-md /tmp/automation_fast_smoke.md --output-json /tmp/automation_fast_smoke.json
-.venv/bin/python tools/compare_automation_conversion_parity.py --old-fixture-dir tests/fixtures/old_automation_conversion --next-testclient --output-md /tmp/automation_fast_parity.md --output-json /tmp/automation_fast_parity.json
+# Old Automation Conversion readonly/parity validation is retired.
+# /admin/automation-conversion is now validated through AI Audience tests.
 ```
 
 Rollback:
