@@ -369,6 +369,19 @@ def test_config_category_detail_returns_blocks_and_masks_sensitive_fields(monkey
     assert any(field["key"] == "WECOM_CALLBACK_TOKEN" for field in fields)
 
 
+def test_retired_reply_monitor_chat_settings_are_not_exposed(monkeypatch, tmp_path) -> None:
+    client = _prepare_client(monkeypatch, tmp_path)
+
+    response = client.get("/api/admin/config/categories/ai_automation")
+
+    assert response.status_code == 200
+    fields = [field for block in response.json()["config"]["blocks"] for field in block["fields"]]
+    keys = {field["key"] for field in fields}
+    assert "DEEPSEEK_ENABLED" in keys
+    assert "AUTOMATION_INTERNAL_API_TOKEN" in keys
+    assert not {key for key in keys if key.startswith("LAOHUANG_CHAT_")}
+
+
 def test_config_category_enabled_update_uses_app_settings_and_preserves_auth_tables(monkeypatch, tmp_path) -> None:
     client = _prepare_client(monkeypatch, tmp_path)
     database_url = _db_url(monkeypatch)
