@@ -114,21 +114,6 @@
     gap: 12px;
   }
 
-  .ai-hint {
-    color: #667085;
-    font-size: 12px;
-  }
-
-  .ai-note {
-    padding: 10px 12px;
-    border: 1px solid #fedf89;
-    border-radius: 12px;
-    margin-top: 10px;
-    background: #fffaeb;
-    color: #93370d;
-    font-size: 13px;
-  }
-
   .ai-codebox {
     padding: 11px 12px;
     border: 1px solid #d0d5dd;
@@ -276,6 +261,10 @@
     color: var(--ai-danger);
   }
 
+  .admin-page-summary {
+    display: none;
+  }
+
   @media (max-width: 960px) {
     .ai-summary,
     .ai-grid2,
@@ -321,7 +310,6 @@
             <option value="off">关闭</option>
             <option value="incremental_3m">每 3 分钟</option>
           </select>
-          <div class="ai-hint">固定逻辑：不提供 5/15/30 分钟。</div>
         </div>
         <div class="ai-field">
           <label class="ai-label" for="dailySelect">每日快照</label>
@@ -342,14 +330,11 @@
       <div class="ai-field">
         <label class="ai-label">接收 Webhook 地址（系统生成）</label>
         <div class="ai-codebox ai-mono" id="inboundWebhookUrl">加载中</div>
-        <div class="ai-hint">外部 Agent 生成内容后回调；地址不可编辑，可重置 secret。</div>
       </div>
       <div class="ai-field">
         <label class="ai-label" for="outboundWebhookInput">外推 Webhook 地址（增量刷新后触发）</label>
         <input class="ai-input" id="outboundWebhookInput" value="">
-        <div class="ai-hint">每 3 分钟增量刷新后，如果有新增用户，则外推。</div>
       </div>
-      <div class="ai-note">每 3 分钟增量刷新后，如果有新增用户，则外推。请求 body 仅为 external_userid 数组，包信息、签名、幂等键走 Header。</div>
       <div class="ai-btns" style="margin-top:18px">
         <button class="ai-btn" id="rotateInboundSecretBtn" type="button">重置接收 secret</button>
         <button class="ai-btn primary" id="saveWebhookBtn" type="button">保存 Webhook</button>
@@ -364,7 +349,6 @@
         <h3>发送人白名单</h3>
         <button class="ai-btn soft" id="addSenderBtn" type="button">添加发送人</button>
       </div>
-      <div class="ai-hint" style="margin-bottom:12px">用户被多个客服添加时，只在白名单里选；多个命中按优先级取第一个；无命中则跳过。</div>
       <div class="ai-table-wrap">
         <table class="ai-table">
           <thead>

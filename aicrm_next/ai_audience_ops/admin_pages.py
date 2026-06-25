@@ -27,7 +27,7 @@ def admin_ai_audience_automation(request: Request):
     context = shell_context(
         request=request,
         page_title="AI 自动化运营",
-        page_summary="通过 AI 创建 SQL 人群包；查看当前命中人数、最后一次刷新时间与刷新方式。",
+        page_summary="",
         active_endpoint="api.admin_automation_conversion",
     )
     context.update(
@@ -53,7 +53,7 @@ def admin_ai_audience_package_detail_page(request: Request, package_id: int):
     context = shell_context(
         request=request,
         page_title="AI 自动化运营",
-        page_summary="通过 AI 创建 SQL 人群包；查看当前命中人数、最后一次刷新时间与刷新方式。",
+        page_summary="",
         active_endpoint="api.admin_automation_conversion",
     )
     context.update(

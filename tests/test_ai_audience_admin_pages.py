@@ -240,7 +240,6 @@ def test_admin_ai_audience_list_page_matches_management_contract(next_client, mo
     html = response.text
     for expected in (
         "AI 自动化运营",
-        "通过 AI 创建 SQL 人群包；查看当前命中人数、最后一次刷新时间与刷新方式。",
         "人群包名称",
         "人数",
         "最后一次刷新时间",
@@ -284,8 +283,6 @@ def test_admin_ai_audience_detail_page_has_required_sections_without_top_actions
         "每日 2:00",
         "接收 Webhook 地址（系统生成）",
         "外推 Webhook 地址（增量刷新后触发）",
-        "请求 body 仅为 external_userid 数组，包信息、签名、幂等键走 Header。",
-        "用户被多个客服添加时，只在白名单里选；多个命中按优先级取第一个；无命中则跳过。",
         "外部联系人 ID",
         "/api/admin/ai-audience/packages/123",
         "/api/admin/ai-audience/packages/123/members",
@@ -311,6 +308,12 @@ def test_admin_ai_audience_detail_page_has_required_sections_without_top_actions
         "inbound_webhook_secret",
         "signing_secret",
         "window.prompt",
+        "通过 AI 创建 SQL 人群包；查看当前命中人数、最后一次刷新时间与刷新方式。",
+        "固定逻辑：不提供 5/15/30 分钟。",
+        "外部 Agent 生成内容后回调；地址不可编辑，可重置 secret。",
+        "每 3 分钟增量刷新后，如果有新增用户，则外推。",
+        "请求 body 仅为 external_userid 数组，包信息、签名、幂等键走 Header。",
+        "用户被多个客服添加时，只在白名单里选；多个命中按优先级取第一个；无命中则跳过。",
     ):
         assert forbidden not in html
 
