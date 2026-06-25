@@ -507,8 +507,6 @@ def _broadcast_source_detail(row: dict[str, Any]) -> str:
         match = re.search(r"step[-_:]?(\d+)|:(\d+)$", source_id)
         step = next((item for item in (match.groups() if match else []) if item), "")
         return f"第 {step} 步" if step else "营销活动"
-    if source_type == "operation_task":
-        return "运营任务"
     if source_type == "cloud_plan":
         return "智能助手方案"
     return broadcast_source_type_label(source_type)
