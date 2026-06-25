@@ -28,6 +28,7 @@ from aicrm_next.platform_foundation.external_effects.models import (
     WECOM_MESSAGE_GROUP_SEND,
     WECOM_MESSAGE_PRIVATE_SEND,
     WECOM_WELCOME_MESSAGE_SEND,
+    WECOM_PROFILE_UPDATE,
 )
 
 
@@ -175,12 +176,12 @@ PUSH_CAPABILITIES: tuple[PushCapability, ...] = (
     PushCapability(
         key="tags",
         label="企微标签",
-        description="企微客户标签标记与取消标记外部动作统一入队；真实执行仍受企微门禁约束。",
+        description="企微客户标签标记、取消标记和外部联系人描述更新统一入队；真实执行仍受企微门禁约束。",
         section="tags",
         section_label="企微标签",
         owner_module="wecom_tags",
         owner_label="企微标签",
-        effect_types=(WECOM_CONTACT_TAG_MARK, WECOM_CONTACT_TAG_UNMARK),
+        effect_types=(WECOM_CONTACT_TAG_MARK, WECOM_CONTACT_TAG_UNMARK, WECOM_PROFILE_UPDATE),
         adapter_family="wecom",
         supports_real_execution=True,
         main_visible=True,

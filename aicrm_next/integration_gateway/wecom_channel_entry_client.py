@@ -72,6 +72,9 @@ class GuardedWeComAdapter:
     def create_contact_way(self, payload: dict[str, Any]) -> dict[str, Any]:
         raise WeComAdapterBlocked(self.contact_way_reason, missing_config=self.missing_config)
 
+    def update_external_contact_remark(self, payload: dict[str, Any]) -> dict[str, Any]:
+        raise WeComAdapterBlocked(self.detail_reason, missing_config=self.missing_config)
+
     def list_follow_users(self) -> list[str]:
         raise WeComAdapterBlocked(self.detail_reason, missing_config=self.missing_config)
 
@@ -185,6 +188,9 @@ class ProductionWeComAdapter:
 
     def create_contact_way(self, payload: dict[str, Any]) -> dict[str, Any]:
         return self._request("POST", "/cgi-bin/externalcontact/add_contact_way", json_payload=payload)
+
+    def update_external_contact_remark(self, payload: dict[str, Any]) -> dict[str, Any]:
+        return self._request("POST", "/cgi-bin/externalcontact/remark", json_payload=payload)
 
     def list_follow_users(self) -> list[str]:
         payload = self._request("GET", "/cgi-bin/externalcontact/get_follow_user_list")

@@ -16,9 +16,12 @@ from .models import (
     WEBHOOK_ORDER_PAID_PUSH,
     WEBHOOK_QUESTIONNAIRE_SUBMISSION_PUSH,
     WEBHOOK_GENERIC_PUSH,
+    WECOM_CONTACT_TAG_MARK,
+    WECOM_CONTACT_TAG_UNMARK,
     WECOM_MESSAGE_GROUP_SEND,
     WECOM_MESSAGE_PRIVATE_SEND,
     WECOM_WELCOME_MESSAGE_SEND,
+    WECOM_PROFILE_UPDATE,
     ExternalEffectDispatchResult,
     ExternalEffectJob,
 )
@@ -640,6 +643,306 @@ class WeComWelcomeMessageAdapter:
         )
 
 
+class WeComContactTagAdapter:
+    def __init__(self, adapter_factory=None) -> None:
+        self._adapter_factory = adapter_factory
+
+    def dispatch(self, job: ExternalEffectJob) -> ExternalEffectDispatchResult:
+        payload = dict(job.payload_json or {})
+        request_summary = self._request_summary(job, payload)
+        gate_error = self._execution_gate_error(job, payload)
+        if gate_error:
+            return ExternalEffectDispatchResult(
+                status="failed_terminal",
+                adapter_mode=job.execution_mode or "execute",
+                request_summary=request_summary,
+                response_summary={
+                    "blocked": True,
+                    "execution_gate": gate_error,
+                    "real_external_call_executed": False,
+                    "wecom_tag_executed": False,
+                },
+                error_code=gate_error,
+                error_message="WeCom contact-tag adapter execution is blocked by external effect gates.",
+                real_external_call_executed=False,
+            )
+
+        try:
+            adapter = self._build_adapter()
+            result = adapter.mark_external_contact_tags(
+                external_userid=str(payload.get("external_userid") or "").strip(),
+                follow_user_userid=str(payload.get("follow_user_userid") or payload.get("userid") or "").strip(),
+                add_tags=self._add_tags(job, payload),
+                remove_tags=self._remove_tags(job, payload),
+            )
+        except Exception as exc:
+            return self._failure_result(exc, request_summary=request_summary)
+
+        return ExternalEffectDispatchResult(
+            status="succeeded",
+            adapter_mode="execute",
+            request_summary=request_summary,
+            response_summary={
+                "errcode": int(result.get("errcode") or 0) if isinstance(result, dict) else 0,
+                "errmsg_present": bool(str((result or {}).get("errmsg") or "").strip()) if isinstance(result, dict) else False,
+                "real_external_call_executed": True,
+                "wecom_tag_executed": True,
+            },
+            real_external_call_executed=True,
+        )
+
+    def _request_summary(self, job: ExternalEffectJob, payload: dict[str, Any]) -> dict[str, Any]:
+        add_tags = self._add_tags(job, payload)
+        remove_tags = self._remove_tags(job, payload)
+        return {
+            "effect_type": job.effect_type,
+            "operation": job.operation,
+            "target_type": job.target_type,
+            "target_id": job.target_id,
+            "external_userid": str(payload.get("external_userid") or ""),
+            "follow_user_userid": str(payload.get("follow_user_userid") or payload.get("userid") or ""),
+            "add_tag_count": len(add_tags),
+            "remove_tag_count": len(remove_tags),
+        }
+
+    def _execution_gate_error(self, job: ExternalEffectJob, payload: dict[str, Any]) -> str:
+        if job.execution_mode in {"disabled", "shadow", "plan_only", "execute_dryrun"}:
+            return "shadow_only"
+        if job.effect_type not in {WECOM_CONTACT_TAG_MARK, WECOM_CONTACT_TAG_UNMARK}:
+            return "unsupported_effect_type"
+        if not _enabled("AICRM_EXTERNAL_EFFECT_WECOM_EXECUTE"):
+            return "execution_disabled"
+        allowed_types = _csv_env("AICRM_EXTERNAL_EFFECT_ALLOWED_TYPES")
+        if job.effect_type not in allowed_types:
+            return "effect_type_not_allowed"
+        external_userid = str(payload.get("external_userid") or "").strip()
+        if not external_userid or str(job.target_id or "").strip() != external_userid:
+            return "target_mismatch"
+        allowed_targets = _csv_env("AICRM_EXTERNAL_EFFECT_ALLOWED_TARGET_EXTERNAL_USERIDS")
+        if allowed_targets and external_userid not in allowed_targets:
+            return "target_not_allowed"
+        follow_user_userid = str(payload.get("follow_user_userid") or payload.get("userid") or "").strip()
+        if not follow_user_userid:
+            return "owner_userid_missing"
+        allowed_owners = _csv_env("AICRM_EXTERNAL_EFFECT_ALLOWED_OWNER_USERIDS")
+        if allowed_owners and follow_user_userid not in allowed_owners:
+            return "owner_userid_not_allowed"
+        add_tags = self._add_tags(job, payload)
+        remove_tags = self._remove_tags(job, payload)
+        if not add_tags and not remove_tags:
+            return "tag_ids_missing"
+        if job.effect_type == WECOM_CONTACT_TAG_MARK and not add_tags:
+            return "add_tags_missing"
+        if job.effect_type == WECOM_CONTACT_TAG_UNMARK and not remove_tags:
+            return "remove_tags_missing"
+        return ""
+
+    def _build_adapter(self):
+        if self._adapter_factory is not None:
+            return self._adapter_factory()
+        from aicrm_next.integration_gateway.wecom_channel_entry_client import (
+            ProductionWeComAdapter,
+            missing_wecom_config,
+        )
+
+        missing = missing_wecom_config()
+        if missing:
+            raise RuntimeError("missing_wecom_config:" + ",".join(missing))
+        return ProductionWeComAdapter()
+
+    def _failure_result(self, exc: Exception, *, request_summary: dict[str, Any]) -> ExternalEffectDispatchResult:
+        error_code = "wecom_tag_mark_failed"
+        error_message = str(exc)[:500]
+        retryable = False
+        response_summary: dict[str, Any] = {"real_external_call_executed": True, "wecom_tag_executed": False}
+        try:
+            from aicrm_next.integration_gateway.wecom_channel_entry_client import WeComApiError
+
+            if isinstance(exc, WeComApiError):
+                payload = dict(exc.payload or {})
+                errcode = int(payload.get("errcode") or 0)
+                response_summary.update(
+                    {
+                        "errcode": errcode,
+                        "errmsg_present": bool(str(payload.get("errmsg") or "").strip()),
+                    }
+                )
+                error_code = f"wecom_error_{errcode}" if errcode else "network_error"
+                error_message = str(payload.get("errmsg") or exc.message or exc)[:500]
+                retryable = errcode in {-1, 42001, 45009, 45011} or errcode == 0
+        except Exception:
+            pass
+        if error_message.startswith("missing_wecom_config:"):
+            error_code = "config_missing"
+            retryable = False
+            response_summary["real_external_call_executed"] = False
+        return ExternalEffectDispatchResult(
+            status="failed_retryable" if retryable else "failed_terminal",
+            adapter_mode="execute",
+            request_summary=request_summary,
+            response_summary=response_summary,
+            error_code=error_code,
+            error_message=error_message,
+            real_external_call_executed=bool(response_summary.get("real_external_call_executed")),
+        )
+
+    def _tags(self, value: Any) -> list[str]:
+        return [str(item or "").strip() for item in list(value or []) if str(item or "").strip()]
+
+    def _add_tags(self, job: ExternalEffectJob, payload: dict[str, Any]) -> list[str]:
+        explicit = self._tags(payload.get("add_tags"))
+        if explicit or job.effect_type != WECOM_CONTACT_TAG_MARK:
+            return explicit
+        return self._tags(payload.get("tag_ids"))
+
+    def _remove_tags(self, job: ExternalEffectJob, payload: dict[str, Any]) -> list[str]:
+        explicit = self._tags(payload.get("remove_tags"))
+        if explicit or job.effect_type != WECOM_CONTACT_TAG_UNMARK:
+            return explicit
+        return self._tags(payload.get("tag_ids"))
+
+
+class WeComProfileUpdateAdapter:
+    def __init__(self, adapter_factory=None) -> None:
+        self._adapter_factory = adapter_factory
+
+    def dispatch(self, job: ExternalEffectJob) -> ExternalEffectDispatchResult:
+        payload = dict(job.payload_json or {})
+        request_summary = self._request_summary(job, payload)
+        gate_error = self._execution_gate_error(job, payload)
+        if gate_error:
+            return ExternalEffectDispatchResult(
+                status="failed_terminal",
+                adapter_mode=job.execution_mode or "execute",
+                request_summary=request_summary,
+                response_summary={
+                    "blocked": True,
+                    "execution_gate": gate_error,
+                    "real_external_call_executed": False,
+                    "wecom_profile_update_executed": False,
+                },
+                error_code=gate_error,
+                error_message="WeCom profile-update adapter execution is blocked by external effect gates.",
+                real_external_call_executed=False,
+            )
+
+        wecom_payload = {
+            "userid": str(payload.get("follow_user_userid") or payload.get("userid") or "").strip(),
+            "external_userid": str(payload.get("external_userid") or "").strip(),
+        }
+        for key in ("remark", "description", "remark_company"):
+            value = str(payload.get(key) or "").strip()
+            if value:
+                wecom_payload[key] = value
+        remark_mobiles = [str(item or "").strip() for item in list(payload.get("remark_mobiles") or []) if str(item or "").strip()]
+        if remark_mobiles:
+            wecom_payload["remark_mobiles"] = remark_mobiles
+        try:
+            result = self._build_adapter().update_external_contact_remark(wecom_payload)
+        except Exception as exc:
+            return self._failure_result(exc, request_summary=request_summary)
+
+        return ExternalEffectDispatchResult(
+            status="succeeded",
+            adapter_mode="execute",
+            request_summary=request_summary,
+            response_summary={
+                "errcode": int(result.get("errcode") or 0) if isinstance(result, dict) else 0,
+                "errmsg_present": bool(str((result or {}).get("errmsg") or "").strip()) if isinstance(result, dict) else False,
+                "real_external_call_executed": True,
+                "wecom_profile_update_executed": True,
+            },
+            real_external_call_executed=True,
+        )
+
+    def _request_summary(self, job: ExternalEffectJob, payload: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "effect_type": job.effect_type,
+            "operation": job.operation,
+            "target_type": job.target_type,
+            "target_id": job.target_id,
+            "external_userid": str(payload.get("external_userid") or ""),
+            "follow_user_userid": str(payload.get("follow_user_userid") or payload.get("userid") or ""),
+            "remark_present": bool(str(payload.get("remark") or "").strip()),
+            "description_present": bool(str(payload.get("description") or "").strip()),
+        }
+
+    def _execution_gate_error(self, job: ExternalEffectJob, payload: dict[str, Any]) -> str:
+        if job.execution_mode in {"disabled", "shadow", "plan_only", "execute_dryrun"}:
+            return "shadow_only"
+        if job.effect_type != WECOM_PROFILE_UPDATE:
+            return "unsupported_effect_type"
+        if not _enabled("AICRM_EXTERNAL_EFFECT_WECOM_EXECUTE"):
+            return "execution_disabled"
+        allowed_types = _csv_env("AICRM_EXTERNAL_EFFECT_ALLOWED_TYPES")
+        if job.effect_type not in allowed_types:
+            return "effect_type_not_allowed"
+        external_userid = str(payload.get("external_userid") or "").strip()
+        if not external_userid or str(job.target_id or "").strip() != external_userid:
+            return "target_mismatch"
+        allowed_targets = _csv_env("AICRM_EXTERNAL_EFFECT_ALLOWED_TARGET_EXTERNAL_USERIDS")
+        if allowed_targets and external_userid not in allowed_targets:
+            return "target_not_allowed"
+        follow_user_userid = str(payload.get("follow_user_userid") or payload.get("userid") or "").strip()
+        if not follow_user_userid:
+            return "owner_userid_missing"
+        allowed_owners = _csv_env("AICRM_EXTERNAL_EFFECT_ALLOWED_OWNER_USERIDS")
+        if allowed_owners and follow_user_userid not in allowed_owners:
+            return "owner_userid_not_allowed"
+        if not any(str(payload.get(key) or "").strip() for key in ("remark", "description", "remark_company")) and not payload.get("remark_mobiles"):
+            return "profile_update_payload_missing"
+        return ""
+
+    def _build_adapter(self):
+        if self._adapter_factory is not None:
+            return self._adapter_factory()
+        from aicrm_next.integration_gateway.wecom_channel_entry_client import (
+            ProductionWeComAdapter,
+            missing_wecom_config,
+        )
+
+        missing = missing_wecom_config()
+        if missing:
+            raise RuntimeError("missing_wecom_config:" + ",".join(missing))
+        return ProductionWeComAdapter()
+
+    def _failure_result(self, exc: Exception, *, request_summary: dict[str, Any]) -> ExternalEffectDispatchResult:
+        error_code = "wecom_profile_update_failed"
+        error_message = str(exc)[:500]
+        retryable = False
+        response_summary: dict[str, Any] = {"real_external_call_executed": True, "wecom_profile_update_executed": False}
+        try:
+            from aicrm_next.integration_gateway.wecom_channel_entry_client import WeComApiError
+
+            if isinstance(exc, WeComApiError):
+                payload = dict(exc.payload or {})
+                errcode = int(payload.get("errcode") or 0)
+                response_summary.update(
+                    {
+                        "errcode": errcode,
+                        "errmsg_present": bool(str(payload.get("errmsg") or "").strip()),
+                    }
+                )
+                error_code = f"wecom_error_{errcode}" if errcode else "network_error"
+                error_message = str(payload.get("errmsg") or exc.message or exc)[:500]
+                retryable = errcode in {-1, 42001, 45009, 45011} or errcode == 0
+        except Exception:
+            pass
+        if error_message.startswith("missing_wecom_config:"):
+            error_code = "config_missing"
+            retryable = False
+            response_summary["real_external_call_executed"] = False
+        return ExternalEffectDispatchResult(
+            status="failed_retryable" if retryable else "failed_terminal",
+            adapter_mode="execute",
+            request_summary=request_summary,
+            response_summary=response_summary,
+            error_code=error_code,
+            error_message=error_message,
+            real_external_call_executed=bool(response_summary.get("real_external_call_executed")),
+        )
+
+
 class ExternalEffectAdapterRegistry:
     def __init__(self) -> None:
         self._adapters: dict[str, ExternalEffectAdapter] = {
@@ -648,6 +951,8 @@ class ExternalEffectAdapterRegistry:
             "wecom_private_message": WeComPrivateMessageAdapter(),
             "wecom_group_message": WeComGroupMessageExternalEffectAdapter(),
             "wecom_welcome_message": WeComWelcomeMessageAdapter(),
+            "wecom_tag": WeComContactTagAdapter(),
+            "wecom_profile": WeComProfileUpdateAdapter(),
         }
         self._disabled = DisabledAdapter()
 

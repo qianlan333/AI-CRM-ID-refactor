@@ -41,6 +41,8 @@ def test_active_channel_baseline_emits_only_channel_entry_without_program_admiss
     assert calls[0] == "contact"
     assert result["welcome_message"]["queued"] is True
     assert result["entry_tag"]["queued"] is True
+    assert result["profile_description"]["queued"] is True
+    assert result["profile_description"]["description"] == "wm-a"
     assert "program_member_written" not in result
     assert "admission_results" not in result
     assert "member" not in calls
