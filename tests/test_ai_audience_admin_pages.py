@@ -255,6 +255,10 @@ def test_admin_ai_audience_list_page_matches_management_contract(next_client, mo
         "/api/admin/user-ops/batch-send/execute",
         "targetSource: \"ai_audience_package\"",
         "UserOpsBatchSendModal.open",
+        "send_content_composer.css",
+        "send_content_composer.js",
+        "material_picker.css",
+        "material_picker.js",
         "user_ops_batch_send_modal.js",
     ):
         assert expected in html
@@ -287,6 +291,7 @@ def test_admin_ai_audience_detail_page_has_required_sections_without_top_actions
         "/api/admin/ai-audience/packages/123/members",
         "/api/admin/ai-audience/packages/123/webhooks",
         "/api/admin/ai-audience/packages/123/senders",
+        "OperationMemberPicker.open",
     ):
         assert expected in html
     for forbidden in (
@@ -305,6 +310,7 @@ def test_admin_ai_audience_detail_page_has_required_sections_without_top_actions
         "/api/ai/audience/packages",
         "inbound_webhook_secret",
         "signing_secret",
+        "window.prompt",
     ):
         assert forbidden not in html
 
@@ -318,15 +324,20 @@ def test_user_ops_batch_send_modal_static_component_uses_standard_endpoints(next
         "window.UserOpsBatchSendModal",
         "/api/admin/user-ops/batch-send/preview",
         "/api/admin/user-ops/batch-send/execute",
+        "AICRMSendContentComposer.open",
         "target_source",
         "target_source_id",
-        "ai_audience_package",
         "selection_mode: \"all_filtered\"",
-        "images: []",
-        "attachments: []",
+        "requestImages(contentPackage)",
+        "requestAttachments(contentPackage)",
+        "image_library_ids",
+        "miniprogram_library_ids",
+        "attachment_library_ids",
     ):
         assert expected in script
     assert "/api/admin/ai-audience/packages/" not in script
+    assert "uops-batch-modal" not in script
+    assert "标准私信群发组件" not in script
 
 
 def test_admin_ai_audience_package_detail_requires_admin_and_redacts_sensitive_fields(next_client, next_pg_schema, monkeypatch) -> None:
