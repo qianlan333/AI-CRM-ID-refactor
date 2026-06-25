@@ -8,7 +8,6 @@ from fastapi.responses import JSONResponse
 from aicrm_next.shared.errors import ContractError, NotFoundError
 
 from .application import (
-    ApplyActivationWebhookCommand,
     CreateAgentCommand,
     GetAgentOutputDetailQuery,
     GetAgentRunDetailQuery,
@@ -385,7 +384,16 @@ def get_agent_run_detail(run_id: str, visibility: str = "masked") -> JSONRespons
 @router.post("/api/customer-automation/activation-webhook")
 def activation_webhook(payload: ActivationWebhookRequest) -> dict:
     try:
-        return ApplyActivationWebhookCommand()(payload)
+        return execute_customer_webhook_command(
+            ApplyCustomerActivationWebhookCommand(
+                mobile=normalize_mobile(payload.mobile),
+                activated_at=str(payload.activated_at or "").strip(),
+                source=str(payload.source or "").strip(),
+                actor_id=normalize_customer_webhook_actor(payload.operator),
+                source_route="/api/customer-automation/activation-webhook",
+                raw_payload=payload.model_dump(),
+            )
+        )
     except Exception as exc:
         _raise_http(exc)
 

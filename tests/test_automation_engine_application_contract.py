@@ -35,6 +35,9 @@ def test_retired_task_workflow_member_action_surface_is_not_exported() -> None:
         "RunDueWorkflowsCommand",
         "GenerateAgentOutputCommand",
         "ReviewAgentOutputCommand",
+        "ApplyQuestionnaireResultCommand",
+        "ApplyActivationFactCommand",
+        "ApplyActivationWebhookCommand",
     }
 
     for name in retired_names:
@@ -88,3 +91,26 @@ def test_activation_webhook_command_plans_local_projection_without_external_call
     assert result["fallback_used"] is False
     assert result["real_external_call_executed"] is False
     assert result["side_effect_plan"]["adapter_mode"] == "local"
+
+
+def test_retired_automation_member_write_dtos_and_repo_methods_are_not_exported() -> None:
+    import aicrm_next.automation_engine.dto as automation_dto
+    import aicrm_next.automation_engine.repo as automation_repo
+
+    for name in (
+        "ApplyQuestionnaireResultRequest",
+        "ApplyTrialOpenedFactRequest",
+        "ApplyActivationFactRequest",
+        "OverrideFollowupTypeRequest",
+        "AutomationActionRequest",
+        "PushOpenClawContextRequest",
+    ):
+        assert not hasattr(automation_dto, name)
+
+    source = automation_repo.__loader__.get_source(automation_repo.__name__) or ""
+    for marker in (
+        "def save_member(",
+        "def create_member_from_questionnaire(",
+        "def create_execution_record(",
+    ):
+        assert marker not in source

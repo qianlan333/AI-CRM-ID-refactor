@@ -82,10 +82,8 @@ class AutomationRepository(Protocol):
     def list_members(self, filters: dict[str, Any] | None = None, *, limit: int = 50, offset: int = 0) -> tuple[list[dict[str, Any]], int]: ...
     def get_member(self, member_id: str) -> dict[str, Any] | None: ...
     def find_member(self, *, external_userid: str | None = None, mobile: str | None = None, person_id: str | None = None) -> dict[str, Any] | None: ...
-    def save_member(self, member: dict[str, Any]) -> dict[str, Any]: ...
     def append_history(self, member_id: str, event: dict[str, Any]) -> None: ...
     def list_history(self, member_id: str) -> list[dict[str, Any]]: ...
-    def create_execution_record(self, record: dict[str, Any]) -> dict[str, Any]: ...
     def list_execution_records(self, *, limit: int = 50, offset: int = 0) -> tuple[list[dict[str, Any]], int]: ...
     def profile_segment_template_catalog(self) -> dict[str, Any]: ...
     def list_profile_segment_templates(
@@ -529,50 +527,12 @@ class InMemoryAutomationRepository:
                 return project_member(member)
         return None
 
-    def save_member(self, member: dict[str, Any]) -> dict[str, Any]:
-        self._members[member["member_id"]] = deepcopy(project_member(member))
-        return self.get_member(member["member_id"]) or deepcopy(member)
-
     def append_history(self, member_id: str, event: dict[str, Any]) -> None:
         if member_id in self._members:
             self._members[member_id].setdefault("history", []).append(deepcopy(event))
 
     def list_history(self, member_id: str) -> list[dict[str, Any]]:
         return deepcopy((self._members.get(member_id) or {}).get("history") or [])
-
-    def create_member_from_questionnaire(self, payload: dict[str, Any]) -> dict[str, Any]:
-        next_number = len(self._members) + 1
-        member_id = f"member_{next_number:03d}"
-        member = {
-            "member_id": member_id,
-            "person_id": payload.get("person_id") or f"person_fixture_{next_number:03d}",
-            "external_userid": payload.get("external_userid") or "",
-            "mobile": payload.get("mobile") or "",
-            "customer_name": payload.get("customer_name") or "问卷提交用户",
-            "owner_userid": "",
-            "current_pool": "new_user",
-            "followup_type": payload.get("followup_type") or "normal",
-            "questionnaire_followup_type": payload.get("followup_type") or "normal",
-            "manual_followup_type": "",
-            "trial_opened": False,
-            "activated": False,
-            "converted": False,
-            "exited": False,
-            "silent": False,
-            "latest_event_at": utc_now_iso(),
-            "history": [],
-            "warnings": ["fixture_created_from_questionnaire"],
-        }
-        self._members[member_id] = member
-        return project_member(member)
-
-    def create_execution_record(self, record: dict[str, Any]) -> dict[str, Any]:
-        saved = deepcopy(record)
-        saved.setdefault("id", f"exec_{len(self._execution_records) + 1:03d}")
-        saved.setdefault("created_at", utc_now_iso())
-        saved.setdefault("delivery_status", "fake")
-        self._execution_records.insert(0, saved)
-        return deepcopy(saved)
 
     def list_execution_records(self, *, limit: int = 50, offset: int = 0) -> tuple[list[dict[str, Any]], int]:
         return deepcopy(self._execution_records[offset : offset + limit]), len(self._execution_records)
