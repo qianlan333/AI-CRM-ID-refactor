@@ -4,7 +4,7 @@
 
 AI-CRM Next has entered the production canary approval package stage. This package collects readonly route-level evidence for requesting a controlled production canary review.
 
-This is not a production cutover. No production route has been enabled, no production proxy/deploy configuration has been modified, and no production traffic has been routed to AI-CRM Next. All Batch 1-6 records are local, staging, or staging-simulated evidence. A real production canary requires fresh evidence, an approved change request, and human signoff before any route flag or proxy rule can be changed.
+This is not a production cutover. No production route has been enabled, no production proxy/deploy configuration has been modified, and no production traffic has been routed to AI-CRM Next. All active Batch 1-5 records are local, staging, or staging-simulated evidence. A real production canary requires fresh evidence, an approved change request, and human signoff before any route flag or proxy rule can be changed.
 
 Current approval status: `pending_human_signoff`.
 
@@ -13,7 +13,7 @@ Current approval status: `pending_human_signoff`.
 | evidence | status | source |
 | --- | --- | --- |
 | ordinary pytest | PASS | latest local run: `361 passed, 3 skipped` |
-| six parity reports | PASS | User Ops, Customer Read Model, Questionnaire, Automation, Commerce, Media |
+| five active parity reports | PASS | User Ops, Customer Read Model, Questionnaire, Commerce, Media |
 | real PostgreSQL integration | PASS for local test DB | `docs/real_postgres_integration_run.md` |
 | frontend PNG screenshot baseline | PASS | `docs/frontend_screenshot_baseline.md`, `artifacts/frontend_screenshots/route_status.json` |
 | readonly HTTP dual-run | PASS with documented legacy drift | `docs/real_readonly_http_dual_run.md` |
@@ -33,7 +33,6 @@ Current approval status: `pending_human_signoff`.
 | Batch 3 | Customer readonly | staging_simulated_canary_pass | staging_simulated + old GET dual evidence | PASS | PASS | PASS | all false | old admin login redirect accepted | pending_human_signoff | Uses masked local customer sample. |
 | Batch 4 | User Ops readonly | staging_simulated_canary_pass | staging_simulated + old GET dual evidence | PASS | PASS | PASS | all false | old missing `激活待录入` accepted | pending_human_signoff | DND, batch-send, deferred jobs excluded. |
 | Batch 5 | Questionnaire readonly | staging_simulated_canary_pass | staging_simulated + old GET dual evidence | PASS | PASS | PASS | all false | old WeChat gate/result route drift accepted | pending_human_signoff | Submit, OAuth, WeCom tag, webhook excluded. |
-| Batch 6 | Automation readonly | staging_simulated_canary_pass | staging_simulated + old GET alias evidence | PASS | PASS | PASS | all false | old route alias/admin auth drift accepted | pending_human_signoff | Manual writes, activation webhook, OpenClaw, workflow runtime excluded. |
 
 ## Accepted Legacy Drift
 
@@ -42,7 +41,7 @@ Current approval status: `pending_human_signoff`.
 | User Ops | old Flask overview lacks `激活待录入` | Next satisfies the current 8-card contract; old gap is legacy behavior | Operators may see a card count difference during comparison | Monitor Next overview card integrity and keep old drift documented in signoff | Batch 4 smoke/readiness reports; `docs/user_ops_readonly_sample_and_drift_checklist.md` |
 | Customer | old `/admin/customers` can redirect to login | Page-layer admin auth redirect is not an API read-model blocker; Next page stays 200 | Canary page checks may see old 302 during rollback verification | Treat old page redirect as expected legacy auth behavior; API routes remain the primary dual evidence | Batch 3 smoke/readiness reports; `docs/customer_read_model_gray_release_plan.md` |
 | Questionnaire | old non-WeChat public API can return `403 please_open_in_wechat`; old result route differs from Next JSON result route | Next satisfies the readonly API/page contract; old public behavior is environment/route-shape drift | Public route comparison may show old-side 403/404 in non-WeChat canary checks | Use route-specific expected status, validate Next JSON result contract, do not enable submit/OAuth | Batch 5 smoke/readiness reports; `docs/questionnaire_readonly_sample_and_fake_checklist.md` |
-| Automation | old exact Next-style readonly APIs can be missing; old aliases return legacy payloads; old admin page may redirect unauthenticated users | Old route aliases provide GET-only evidence while Next contract remains stable | Canary comparison may produce old-side shape warnings or 302 for page auth | Use documented old aliases, keep exact old missing routes as legacy drift, monitor Next required shape | Batch 6 smoke/readiness reports; `docs/automation_readonly_route_cutover_manifest.md` |
+| Automation | old automation program readonly is retired | `/admin/automation-conversion` is now an AI Audience page, and old program/member/action Runtime V2 routes are not canary targets | Attempting to route old automation readonly would revive retired behavior | Keep old automation readonly docs/tools/tests deleted; validate AI Audience through the main application contracts | Main app AI Audience admin/API tests |
 
 ## Current No-Go Items
 

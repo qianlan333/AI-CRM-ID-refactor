@@ -39,7 +39,6 @@ def _fixture_args(
                 "Batch 3",
                 "Batch 4",
                 "Batch 5",
-                "Batch 6",
                 "Batch 1 Media readonly",
                 batch,
             ]
@@ -87,10 +86,12 @@ def test_approval_package_exists_and_mentions_no_production_cutover() -> None:
     assert "No production route has been enabled" in text
 
 
-def test_approval_package_lists_batch_1_to_6() -> None:
+def test_approval_package_lists_active_batch_1_to_5() -> None:
     text = _read_doc("production_canary_approval_package.md")
-    for batch in range(1, 7):
+    for batch in range(1, 6):
         assert f"Batch {batch}" in text
+    assert "Batch 6 Automation readonly" not in text
+    assert "old automation program readonly is retired" in text
 
 
 def test_recommended_first_production_canary_is_media_readonly() -> None:
@@ -111,7 +112,7 @@ def test_observability_plan_includes_core_signals() -> None:
         assert expected in text
 
 
-def test_rollback_runbook_includes_route_flags_for_all_six_batches() -> None:
+def test_rollback_runbook_includes_route_flags_for_active_readonly_batches() -> None:
     text = _read_doc("production_canary_rollback_runbook.md")
     for flag in (
         "AICRM_NEXT_ROUTE_MEDIA_READONLY=false",
@@ -119,9 +120,9 @@ def test_rollback_runbook_includes_route_flags_for_all_six_batches() -> None:
         "AICRM_NEXT_ROUTE_CUSTOMER_READONLY=false",
         "AICRM_NEXT_ROUTE_USER_OPS_READONLY=false",
         "AICRM_NEXT_ROUTE_QUESTIONNAIRE_READONLY=false",
-        "AICRM_NEXT_ROUTE_AUTOMATION_READONLY=false",
     ):
         assert flag in text
+    assert "AICRM_NEXT_ROUTE_AUTOMATION_READONLY=false" not in text
 
 
 def test_readiness_checker_passes_with_good_media_readonly_fixture_evidence(tmp_path: Path) -> None:

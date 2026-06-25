@@ -24,6 +24,7 @@ Do not combine batches in a single route change. The speed comes from short cycl
 - no real WeCom, OAuth, payment, OpenClaw, cloud storage, WeCom media, or external webhook unless a separate adapter approval exists
 - no production approval wording is implied by this document
 - rollback owner must be online before each batch starts
+- workflow runtime remains out of scope for readonly replacement batches
 
 ## Batch Sequence
 
@@ -34,7 +35,6 @@ Do not combine batches in a single route change. The speed comes from short cycl
 | 3 | `customer_readonly` | Customer Read Model | 15-25 min | list/detail/timeline/recent messages read normally |
 | 4 | `user_ops_readonly` | User Ops | 15-20 min | overview/list/filter/send records read normally |
 | 5 | `questionnaire_readonly` | Questionnaire | 15-25 min | admin/public/result reads work; no submit/OAuth |
-| 6 | `automation_readonly` | Automation Conversion | 15-25 min | overview/pools/members/execution records read normally |
 
 ## Batch 1: Media Library Readonly
 
@@ -201,42 +201,16 @@ Rollback:
 AICRM_NEXT_ROUTE_QUESTIONNAIRE_READONLY=false
 ```
 
-## Batch 6: Automation Conversion Readonly
+## Retired Automation Conversion Readonly Batch
 
-Included:
+The old Automation Conversion readonly batch is retired. `/admin/automation-conversion`
+is now the `ai_audience_ops` AI Audience package list, and old overview, pool,
+member, execution-record, Runtime V2, activation webhook, and member-action
+routes must stay retired instead of becoming a gray-release target.
 
-- `GET /admin/automation-conversion`
-- `GET /api/admin/automation-conversion/overview`
-- `GET /api/admin/automation-conversion/pools`
-- `GET /api/admin/automation-conversion/members`
-- `GET /api/admin/automation-conversion/members/{member_id}`
-- `GET /api/admin/automation-conversion/execution-records`
-
-Excluded:
-
-- manual override
-- confirm conversion
-- enter silent / exit marketing
-- activation webhook
-- OpenClaw push
-- workflow runtime
-- agent runtime
-- WeCom dispatch
-- external webhook
-
-Validation:
-
-```bash
-# Old Automation Conversion readonly/parity validation is retired.
-# /admin/automation-conversion is now validated through AI Audience tests.
-```
-
-Rollback:
-
-```bash
-# Manual approved environment only
-AICRM_NEXT_ROUTE_AUTOMATION_READONLY=false
-```
+Validation now lives in the main AI Audience admin/API tests and old route
+404/410 contracts. There is no replacement route flag or rollback switch for
+the retired old Automation Conversion readonly batch.
 
 ## Stop Rules
 

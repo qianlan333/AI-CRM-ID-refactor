@@ -25,7 +25,8 @@ This is a monitoring plan for future production canary review. It is not an alre
 | Batch 3 | Customer readonly | list/detail/timeline/recent-message GET status | WeCom sync, archive sync, tag refresh, OpenClaw call |
 | Batch 4 | User Ops readonly | overview 8-card integrity, list filters, send-records GET status | DND, batch-send, deferred jobs, WeCom dispatch/media |
 | Batch 5 | Questionnaire readonly | admin list/detail/export/debug and public page/read/result GET status | submit, OAuth, WeCom tag, external webhook |
-| Batch 6 | Automation readonly | overview/pools/members/detail/execution-records GET status | manual override, confirm conversion, activation webhook, OpenClaw, workflow/agent runtime, WeCom dispatch |
+
+Old Automation Conversion readonly is retired and is not monitored as a canary batch.
 
 ## Expected Alerts
 

@@ -15,9 +15,11 @@ def test_old_automation_conversion_experiment_parity_tools_are_removed() -> None
         ROOT / "experiments" / "ai_crm_next" / "tools" / "compare_automation_conversion_parity.py",
         ROOT / "experiments" / "ai_crm_next" / "tools" / "automation_readonly_gray_smoke.py",
         ROOT / "experiments" / "ai_crm_next" / "tools" / "check_batch_6_automation_canary_readiness.py",
+        ROOT / "experiments" / "ai_crm_next" / "tools" / "seed_old_flask_automation_sample.py",
         ROOT / "experiments" / "ai_crm_next" / "tests" / "test_automation_conversion_parity.py",
         ROOT / "experiments" / "ai_crm_next" / "tests" / "test_automation_readonly_gray_smoke.py",
         ROOT / "experiments" / "ai_crm_next" / "tests" / "test_batch_6_automation_canary_readiness.py",
+        ROOT / "experiments" / "ai_crm_next" / "tests" / "test_seed_old_flask_automation_sample.py",
     ]
     for path in retired_paths:
         assert not path.exists(), str(path.relative_to(ROOT))

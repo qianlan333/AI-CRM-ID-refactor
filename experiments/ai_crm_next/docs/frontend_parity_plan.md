@@ -36,7 +36,7 @@ The copied files are the baseline. Any future edits must be limited to compatibi
 | `/admin/customers` | partial | copied customers template; customer read-model adapter now supplies list filters and detail/timeline/recent-message API support |
 | `/admin/questionnaires` | partial | copied questionnaire console/list template and root editor template; fixture context adapter supplies preflight and questionnaire list |
 | `/admin/user-ops/ui` | copied | copied `admin_user_ops.html`; support existing drawer/modal JS contract through API adapters |
-| `/admin/automation-conversion` | planned | copy program list, setup wizard, workspace templates and JS/CSS |
+| `/admin/automation-conversion` | next-native | retired old program list; route now renders the AI Audience package list from `ai_audience_ops` |
 | `/admin/jobs` | planned | copy jobs page; keep action confirmation flow |
 | `/admin/wechat-pay/transactions` | planned | copy transaction admin page and adapters |
 | `/admin/wechat-pay/products` | planned | copy product management page and editor interactions |
@@ -61,7 +61,6 @@ Current legacy route support:
 - `GET /admin/customers`
 - `GET /admin/questionnaires`
 - `GET /admin/questionnaires/ui`
-- `GET /admin/automation-conversion`
 - `GET /admin/user-ops/ui`
 
 Current Customer Center adapter support:
@@ -111,27 +110,12 @@ Questionnaire status:
 - The backend adapter is `partial`: it supports fixture-backed admin list/detail/create/update/enable/disable/delete/export/debug contracts, public H5 get/submit/result contracts, and fake OAuth start/callback contracts.
 - Real WeChat OAuth, real WeCom tagging/contact calls, external webhook push, and production database persistence are not connected.
 
-Current Automation Conversion adapter support:
+Current Automation Conversion / AI Audience status:
 
-- `GET /admin/automation-conversion`
-- `GET /api/admin/automation-conversion/overview`
-- `GET /api/admin/automation-conversion/pools`
-- `GET /api/admin/automation-conversion/members`
-- `GET /api/admin/automation-conversion/members/{member_id}`
-- `POST /api/admin/automation-conversion/members/{member_id}/override-followup-type`
-- `POST /api/admin/automation-conversion/members/{member_id}/confirm-conversion`
-- `POST /api/admin/automation-conversion/members/{member_id}/enter-silent`
-- `POST /api/admin/automation-conversion/members/{member_id}/exit-marketing`
-- `POST /api/admin/automation-conversion/members/{member_id}/push-openclaw-context`
-- `POST /api/customer-automation/activation-webhook`
-- `GET /api/admin/automation-conversion/execution-records`
-
-Automation Conversion status:
-
-- `/admin/automation-conversion` uses the copied legacy `admin_console/automation_program_list.html` template with a minimal context adapter.
-- The backend adapter is `partial`: it supports fixture-backed pools, members, state transitions, activation fact capture, fake OpenClaw payload preview, and execution records.
-- The copied workspace templates/static are retained as the parity baseline; the page must not be redesigned while backend contracts are migrated.
-- Real WeCom, real OpenClaw webhook delivery, external activation webhook calls, and production database persistence are not connected.
+- `GET /admin/automation-conversion` is no longer part of the experiment frontend-compat smoke manifest.
+- In the main application, the first-level route is owned by `ai_audience_ops` and renders the AI Audience package list.
+- Old automation program overview, pool, member, state-transition, activation-webhook, fake OpenClaw push, execution-record, setup, workspace, and Runtime V2 routes are retired and must not be restored as frontend parity targets.
+- The frontend baseline for this route is intentionally narrow: page title `AI 自动化运营`, card title `人群包列表`, and the four-column AI audience package table.
 
 ## Forbidden UI Changes
 
@@ -173,8 +157,8 @@ Current evidence:
 
 Latest local result:
 
-- 14 routes checked through AI-CRM Next TestClient.
-- 14 routes returned expected status and required text.
+- 13 routes checked through AI-CRM Next TestClient.
+- 13 routes returned expected status and required text.
 - Forbidden placeholder text was absent.
 - HTML snapshots were generated under `artifacts/frontend_screenshots/html/`.
 - PNG screenshots were generated under `artifacts/frontend_screenshots/png/`.

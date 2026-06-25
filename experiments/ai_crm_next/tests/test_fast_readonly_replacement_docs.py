@@ -17,9 +17,10 @@ def test_fast_execution_plan_lists_all_batches() -> None:
         "customer_readonly",
         "user_ops_readonly",
         "questionnaire_readonly",
-        "automation_readonly",
     ):
         assert batch in text
+    assert "Retired Automation Conversion Readonly Batch" in text
+    assert "automation_readonly" not in text
 
 
 def test_fast_execution_plan_keeps_writes_excluded() -> None:
@@ -44,7 +45,6 @@ def test_fast_execution_plan_has_rollbacks_for_all_batches() -> None:
         "AICRM_NEXT_ROUTE_CUSTOMER_READONLY=false",
         "AICRM_NEXT_ROUTE_USER_OPS_READONLY=false",
         "AICRM_NEXT_ROUTE_QUESTIONNAIRE_READONLY=false",
-        "AICRM_NEXT_ROUTE_AUTOMATION_READONLY=false",
     ):
         assert flag in text
 
@@ -57,9 +57,10 @@ def test_human_test_tasks_cover_all_batches() -> None:
         "Batch 3: Customer Read Model Readonly",
         "Batch 4: User Ops Readonly",
         "Batch 5: Questionnaire Readonly",
-        "Batch 6: Automation Conversion Readonly",
     ):
         assert label in text
+    assert "Retired Automation Conversion Readonly Batch" in text
+    assert "overview\n- pools\n- members list" not in text
 
 
 def test_fast_docs_do_not_mark_production_ready_or_approved() -> None:
