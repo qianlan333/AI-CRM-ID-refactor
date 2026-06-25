@@ -4031,32 +4031,6 @@ routes:
   data_source: read_model
   requires_auth: true
   rollback: previous_release
-- path: /admin/automation-conversion/legacy
-  methods:
-  - GET
-  route_name: api.admin_automation_conversion_legacy
-  capability_owner: automation_engine
-  runtime_owner: retired
-  layer: admin_page
-  external_effects: none
-  data_source: read_model
-  requires_auth: true
-  rollback: previous_release
-- path: /admin/automation-conversion/programs/{retired_path:path}
-  methods:
-  - DELETE
-  - GET
-  - PATCH
-  - POST
-  - PUT
-  route_name: api.admin_automation_program_retired
-  capability_owner: automation_engine
-  runtime_owner: retired
-  layer: admin_page
-  external_effects: none
-  data_source: read_model
-  requires_auth: true
-  rollback: previous_release
 - path: /admin/channels
   methods:
   - GET
@@ -4596,36 +4570,7 @@ routes:
   data_source: command
   requires_auth: false
   rollback: previous_release
-- path: /api/admin/automation-conversion/programs
-  methods:
-  - DELETE
-  - GET
-  - PATCH
-  - POST
-  - PUT
-  route_name: api_automation_programs_retired
-  capability_owner: automation_engine
-  runtime_owner: retired
-  layer: api
-  external_effects: none
-  data_source: command
-  requires_auth: true
-  rollback: previous_release
-- path: /api/admin/automation-conversion/programs/{retired_path:path}
-  methods:
-  - DELETE
-  - GET
-  - PATCH
-  - POST
-  - PUT
-  route_name: api_automation_program_detail_retired
-  capability_owner: automation_engine
-  runtime_owner: retired
-  layer: api
-  external_effects: none
-  data_source: command
-  requires_auth: true
-  rollback: previous_release
+
 - path: /api/customers/automation/activation-webhook
   methods:
   - OPTIONS

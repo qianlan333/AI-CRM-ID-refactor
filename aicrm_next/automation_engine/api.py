@@ -59,49 +59,6 @@ _AUTOMATION_READ_MODEL_HEADERS = {
     "X-AICRM-Route-Owner": "ai_crm_next",
     "X-AICRM-Fallback-Used": "false",
 }
-_RETIRED_AUTOMATION_HEADERS = {
-    "X-AICRM-Route-Owner": "ai_crm_next",
-    "X-AICRM-Fallback-Used": "false",
-    "X-AICRM-Legacy-Automation-Retired": "true",
-    "X-AICRM-Real-External-Call-Executed": "false",
-    "X-AICRM-Automation-Runtime-Executed": "false",
-}
-
-
-def _retired_automation_response(error: str, *, replacement: str = "/admin/automation-conversion") -> JSONResponse:
-    return JSONResponse(
-        {
-            "ok": False,
-            "error": error,
-            "message": "旧自动化运营方案 / 阶段 / 任务编排链路已退场，请使用 AI 自动化运营人群包。",
-            "replacement": replacement,
-            "real_external_call_executed": False,
-            "automation_runtime_executed": False,
-        },
-        status_code=410,
-        headers=_RETIRED_AUTOMATION_HEADERS,
-    )
-
-
-@router.api_route(
-    "/api/admin/automation-conversion/programs",
-    methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    name="api_automation_programs_retired",
-)
-def retired_automation_programs_api() -> JSONResponse:
-    return _retired_automation_response("legacy_automation_program_retired")
-
-
-@router.api_route(
-    "/api/admin/automation-conversion/programs/{retired_path:path}",
-    methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    name="api_automation_program_detail_retired",
-)
-def retired_automation_program_detail_api(retired_path: str = "") -> JSONResponse:
-    del retired_path
-    return _retired_automation_response("legacy_automation_program_retired")
-
-
 def _raise_http(exc: Exception) -> None:
     if isinstance(exc, NotFoundError):
         raise HTTPException(status_code=404, detail=str(exc)) from exc

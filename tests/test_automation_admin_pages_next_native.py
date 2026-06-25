@@ -51,9 +51,7 @@ def test_automation_project_pages_are_served_by_next_native_bundle(monkeypatch) 
 
     for url in urls:
         response = client.get(url)
-        assert response.status_code == 410, url
-        assert response.headers.get("X-AICRM-Legacy-Automation-Retired") == "true", url
-        assert response.json()["error"] == "legacy_automation_program_retired"
+        assert response.status_code == 404, url
 
     list_response = client.get("/admin/automation-conversion", cookies=_admin_cookies())
     assert list_response.status_code == 200
@@ -73,8 +71,7 @@ def test_automation_project_pages_are_served_by_next_native_bundle(monkeypatch) 
     assert "/api/ai/audience/packages" not in list_response.text
 
     legacy_response = client.get("/admin/automation-conversion/legacy", cookies=_admin_cookies())
-    assert legacy_response.status_code == 410
-    assert legacy_response.json()["error"] == "legacy_automation_program_retired"
+    assert legacy_response.status_code == 404
 
 
 def test_ai_audience_admin_pages_require_admin_session(monkeypatch) -> None:
@@ -85,8 +82,7 @@ def test_ai_audience_admin_pages_require_admin_session(monkeypatch) -> None:
 
     assert page_response.status_code == 302
     assert page_response.headers["location"] == "/login?next=/admin/automation-conversion"
-    assert legacy_response.status_code == 302
-    assert legacy_response.headers["location"] == "/login?next=/admin/automation-conversion/legacy"
+    assert legacy_response.status_code == 404
 
 
 def test_automation_project_routes_are_removed_from_frontend_compat_inventory() -> None:
