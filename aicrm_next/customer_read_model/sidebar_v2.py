@@ -137,10 +137,9 @@ class SidebarV2SqlRepository:
     def get_workflow_title_for_customer(self, external_userid: str) -> str:
         row = self._one(
             """
-            SELECT COALESCE(NULLIF(w.workflow_name, ''), NULLIF(p.program_name, ''), NULLIF(c.channel_name, '')) AS title
+            SELECT COALESCE(NULLIF(w.workflow_name, ''), NULLIF(c.channel_name, '')) AS title
             FROM automation_member m
             LEFT JOIN automation_channel c ON c.id = m.source_channel_id
-            LEFT JOIN automation_program p ON p.id = c.program_id
             LEFT JOIN wecom_customer_acquisition_links l ON l.automation_channel_id = c.id
             LEFT JOIN automation_workflow w ON w.id = l.workflow_id
             WHERE m.external_contact_id = :external_userid
@@ -625,7 +624,6 @@ class SidebarWorkbenchReadModel:
         workflow_title = (
             _text(sidebar_context.get("workflow_title"))
             or _text(sidebar_context.get("sop_title"))
-            or _text(sidebar_context.get("program_name"))
             or self._repo.get_workflow_title_for_customer(normalized_external)
         )
         payload = {

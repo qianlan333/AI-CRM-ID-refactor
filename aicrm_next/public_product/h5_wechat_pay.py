@@ -475,7 +475,7 @@ def _lead_qr_payload(row: dict[str, Any] | None) -> dict[str, Any]:
     }
 
 
-def _resolve_lead_channel_qr(conn: Any, *, channel_id: int | None = None, program_id: int | None = None) -> dict[str, Any]:
+def _resolve_lead_channel_qr(conn: Any, *, channel_id: int | None = None) -> dict[str, Any]:
     if channel_id:
         row = conn.execute(
             """
@@ -500,39 +500,13 @@ def _resolve_lead_channel_qr(conn: Any, *, channel_id: int | None = None, progra
             (int(channel_id),),
         ).fetchone()
         return _lead_qr_payload(row)
-    if program_id:
-        row = conn.execute(
-            """
-            SELECT
-                c.id AS channel_id,
-                c.channel_name,
-                COALESCE(NULLIF(active_asset.qr_url, ''), NULLIF(c.qr_url, ''), '') AS qr_url,
-                c.status
-            FROM automation_channel c
-            LEFT JOIN LATERAL (
-                SELECT qa.qr_url
-                FROM automation_channel_qrcode_asset qa
-                WHERE qa.channel_id = c.id
-                  AND qa.status = 'active'
-                  AND NULLIF(qa.qr_url, '') IS NOT NULL
-                ORDER BY qa.generated_at DESC, qa.id DESC
-                LIMIT 1
-            ) active_asset ON TRUE
-            WHERE c.program_id = %s
-              AND c.status IN ('active', 'configured')
-            ORDER BY c.updated_at DESC NULLS LAST, c.id DESC
-            LIMIT 1
-            """,
-            (int(program_id),),
-        ).fetchone()
-        return _lead_qr_payload(row)
     return {}
 
 
 def _lead_qr_for_product_code(conn: Any, product_code: str) -> dict[str, Any]:
     product = conn.execute(
         """
-        SELECT lead_channel_id, lead_program_id
+        SELECT lead_channel_id
         FROM wechat_pay_products
         WHERE product_code = %s
         LIMIT 1
@@ -542,8 +516,7 @@ def _lead_qr_for_product_code(conn: Any, product_code: str) -> dict[str, Any]:
     if not product:
         return {}
     channel_id = int(product.get("lead_channel_id") or 0) or None
-    program_id = int(product.get("lead_program_id") or 0) or None
-    return _resolve_lead_channel_qr(conn, channel_id=channel_id, program_id=program_id)
+    return _resolve_lead_channel_qr(conn, channel_id=channel_id)
 
 
 def _paid_order_for_product_identity(conn: Any, *, product: dict[str, Any], identity: dict[str, str]) -> dict[str, Any] | None:

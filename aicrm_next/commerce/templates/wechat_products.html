@@ -693,9 +693,8 @@
     if (!select) return;
     select.innerHTML = leadChannels.map(channel => {
       const disabled = channel.selectable === false ? " disabled" : "";
-      const program = channel.program_name ? ` · ${channel.program_name}` : "";
       const suffix = channel.selectable === false ? " · 未配置二维码" : "";
-      return `<option value="${Number(channel.channel_id || 0)}"${disabled}>${esc((channel.channel_name || "渠道") + program + suffix)}</option>`;
+      return `<option value="${Number(channel.channel_id || 0)}"${disabled}>${esc((channel.channel_name || "渠道") + suffix)}</option>`;
     }).join("");
   }
 

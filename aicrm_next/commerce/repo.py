@@ -286,7 +286,7 @@ class InMemoryCommerceRepository:
         return self.save_product(payload)
 
     def list_lead_channels(self) -> list[dict[str, Any]]:
-        return [{"channel_id": 0, "channel_name": "不配置引流渠道码", "program_name": "", "qr_url": "", "selectable": True}]
+        return [{"channel_id": 0, "channel_name": "不配置引流渠道码", "qr_url": "", "selectable": True}]
 
     def get_external_push_config(self, product_id: str) -> dict[str, Any]:
         if not self.get_product(product_id):
@@ -391,7 +391,7 @@ class InMemoryCommerceRepository:
             "buy_button_text": str(payload.get("buy_button_text") or payload.get("cta_text") or "立即购买").strip() or "立即购买",
             "cta_text": str(payload.get("buy_button_text") or payload.get("cta_text") or "立即购买").strip() or "立即购买",
             "require_mobile": bool(payload.get("require_mobile", False)),
-            "lead_program_id": _positive_int_or_none(payload.get("lead_program_id")),
+            "lead_program_id": None,
             "lead_channel_id": _positive_int_or_none(payload.get("lead_channel_id")),
             "slices": slices,
             "slice_count": len(slices),
@@ -429,7 +429,7 @@ class InMemoryCommerceRepository:
             "buy_button_text": cta,
             "cta_text": cta,
             "require_mobile": bool(item.get("require_mobile", False)),
-            "lead_program_id": _positive_int_or_none(item.get("lead_program_id")),
+            "lead_program_id": None,
             "lead_channel_id": _positive_int_or_none(item.get("lead_channel_id")),
             "slices": slices,
             "slice_count": len(slices),
@@ -633,7 +633,6 @@ class PostgresCommerceRepository:
         enabled = status == "active"
         metadata = self._metadata_from_payload(payload)
         lead_channel_id = _positive_int_or_none(payload.get("lead_channel_id"))
-        lead_program_id = _positive_int_or_none(payload.get("lead_program_id"))
         params = {
             "product_code": code,
             "name": str(payload.get("title") or "").strip(),
@@ -643,7 +642,7 @@ class PostgresCommerceRepository:
             "enabled": enabled,
             "cta_text": str(payload.get("buy_button_text") or "立即购买").strip() or "立即购买",
             "require_mobile": bool(payload.get("require_mobile", False)),
-            "lead_program_id": lead_program_id,
+            "lead_program_id": None,
             "lead_channel_id": lead_channel_id,
             "completion_redirect_enabled": bool(completion_fields["completion_redirect_enabled"]),
             "completion_redirect_url": str(completion_fields["completion_redirect_url"] or ""),
@@ -654,7 +653,7 @@ class PostgresCommerceRepository:
             if lead_channel_id:
                 channel = conn.execute(
                     """
-                    SELECT id, program_id, qr_url
+                    SELECT id, qr_url
                     FROM automation_channel
                     WHERE id = %s
                     LIMIT 1
@@ -663,7 +662,6 @@ class PostgresCommerceRepository:
                 ).fetchone()
                 if not channel or not str(channel.get("qr_url") or "").strip():
                     raise ContractError("selected lead channel is missing qr_url")
-                params["lead_program_id"] = int(channel.get("program_id") or 0) or lead_program_id
             if product_id:
                 existing = conn.execute(
                     "SELECT product_code FROM wechat_pay_products WHERE id::text = %s LIMIT 1",
@@ -845,9 +843,7 @@ class PostgresCommerceRepository:
                     c.id AS channel_id,
                     c.channel_name,
                     COALESCE(NULLIF(active_asset.qr_url, ''), NULLIF(c.qr_url, ''), '') AS qr_url,
-                    c.status,
-                    c.program_id,
-                    p.program_name AS program_name
+                    c.status
                 FROM automation_channel c
                 LEFT JOIN LATERAL (
                     SELECT qa.qr_url
@@ -858,19 +854,16 @@ class PostgresCommerceRepository:
                     ORDER BY qa.generated_at DESC, qa.id DESC
                     LIMIT 1
                 ) active_asset ON TRUE
-                LEFT JOIN automation_program p ON p.id = c.program_id
                 ORDER BY c.updated_at DESC NULLS LAST, c.id DESC
                 LIMIT 200
                 """
             ).fetchall()
         return [
-            {"channel_id": 0, "channel_name": "不配置引流渠道码", "program_name": "", "qr_url": "", "selectable": True}
+            {"channel_id": 0, "channel_name": "不配置引流渠道码", "qr_url": "", "selectable": True}
         ] + [
             {
                 "channel_id": int(row.get("channel_id") or 0),
                 "channel_name": str(row.get("channel_name") or f"渠道 {row.get('channel_id')}"),
-                "program_id": int(row.get("program_id") or 0) or None,
-                "program_name": str(row.get("program_name") or ""),
                 "qr_url": str(row.get("qr_url") or ""),
                 "status": str(row.get("status") or ""),
                 "selectable": bool(str(row.get("qr_url") or "").strip()),
@@ -1004,7 +997,7 @@ class PostgresCommerceRepository:
             "buy_button_text": cta,
             "cta_text": cta,
             "require_mobile": bool(row.get("require_mobile")),
-            "lead_program_id": _positive_int_or_none(row.get("lead_program_id")),
+            "lead_program_id": None,
             "lead_channel_id": _positive_int_or_none(row.get("lead_channel_id")),
             "slices": slices,
             "slice_count": int(row.get("slice_count") or len(slices)),
