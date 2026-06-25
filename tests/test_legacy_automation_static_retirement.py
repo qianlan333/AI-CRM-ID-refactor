@@ -90,3 +90,19 @@ def test_internal_event_audit_no_longer_treats_runtime_v2_event_store_as_queue()
 
     queue_patterns_block = source.split("QUEUE_PATTERNS =", 1)[1].split(")", 1)[0]
     assert "automation_event_v2" not in queue_patterns_block
+
+
+def test_internal_event_audit_artifacts_do_not_reference_removed_runtime_modules() -> None:
+    removed_markers = [
+        "aicrm_next/automation_runtime_v2/",
+        "aicrm_next/automation_engine/automation_program_admission.py",
+        "aicrm_next/automation_engine/timers.py",
+        "aicrm_next/automation_engine/workspace_runtime.py",
+        "aicrm_next/automation_engine/member_actions.py",
+    ]
+    audit_artifact = (PROJECT_ROOT / "artifacts" / "internal_event_coverage_audit.json").read_text(encoding="utf-8")
+    audit_docs = (PROJECT_ROOT / "docs" / "queue" / "internal-event-coverage-audit.md").read_text(encoding="utf-8")
+
+    for marker in removed_markers:
+        assert marker not in audit_artifact
+        assert marker not in audit_docs

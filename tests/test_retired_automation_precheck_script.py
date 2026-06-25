@@ -1,10 +1,24 @@
 from __future__ import annotations
 
+import importlib.util
 import json
+from pathlib import Path
 
 import pytest
 
 from scripts import precheck_retired_automation_tables as precheck
+
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+
+
+def _load_retirement_migration():
+    path = PROJECT_ROOT / "migrations" / "versions" / "0053_retire_legacy_automation_tables.py"
+    spec = importlib.util.spec_from_file_location("retire_legacy_automation_tables_0053", path)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 def test_retired_automation_precheck_scope_keeps_agent_and_channel_tables_out_of_drop_candidates():
@@ -25,6 +39,17 @@ def test_retired_automation_precheck_scope_keeps_agent_and_channel_tables_out_of
     assert "automation_agent_output" in preserve_tables
 
     assert not (drop_tables & preserve_tables)
+
+
+def test_retired_automation_drop_migration_matches_precheck_scope():
+    migration = _load_retirement_migration()
+    drop_tables = set(migration.DROP_TABLES)
+
+    assert set(precheck.DROP_CANDIDATES) <= drop_tables
+    assert not (drop_tables & set(precheck.PRESERVE_SAMPLES))
+    assert "automation_agent_run" not in drop_tables
+    assert "automation_channel_contact" not in drop_tables
+    assert "ai_audience_package" not in drop_tables
 
 
 def test_temporal_detection_keeps_text_time_like_columns_out_of_recent_predicate():
