@@ -28,3 +28,13 @@ def test_retired_operation_task_label_is_not_special_cased_in_admin_jobs() -> No
 
     assert 'source_type == "operation_task"' not in source
     assert '"运营任务"' not in source
+
+
+def test_retired_admin_jobs_deferred_runner_is_removed() -> None:
+    repository_source = (PROJECT_ROOT / "aicrm_next" / "admin_jobs" / "repository.py").read_text(encoding="utf-8")
+    template_source = (PROJECT_ROOT / "aicrm_next" / "admin_jobs" / "templates" / "admin_console" / "jobs.html").read_text(encoding="utf-8")
+
+    assert "def run_due_deferred_jobs" not in repository_source
+    assert "UPDATE user_ops_deferred_jobs" not in repository_source
+    assert 'name="action" value="run-deferred-jobs"' not in template_source
+    assert "待处理作业执行已退场" in template_source

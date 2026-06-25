@@ -260,10 +260,11 @@ async def api_admin_jobs_deferred_jobs_run(request: Request):
     token_error = await _action_token_error(request, payload)
     if token_error:
         return JSONResponse({"ok": False, "error": token_error}, status_code=401)
-    try:
-        return _jsonable(execute_jobs_action(action="run-deferred-jobs", form={"limit": payload.get("limit"), "confirm": normalized_bool(payload.get("confirm"))}, operator=_operator_from_request(request, payload)))
-    except ValueError as exc:
-        return JSONResponse({"ok": False, "error": str(exc)}, status_code=400)
+    body = LegacyWebhookCleanupService().disabled_payload(
+        "old_admin_jobs_deferred_run",
+        error="legacy_deferred_jobs_runner_disabled",
+    )
+    return JSONResponse(body, status_code=409)
 
 
 @router.get("/api/admin/jobs/webhook-deliveries")

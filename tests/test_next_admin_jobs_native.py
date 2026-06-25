@@ -51,6 +51,47 @@ def test_admin_jobs_page_is_native_jobs_console(monkeypatch):
     assert "degraded" not in html
 
 
+def test_admin_jobs_deferred_runner_is_retired(monkeypatch):
+    client = _client(monkeypatch)
+
+    page = client.get("/admin/jobs?tab=deferred")
+    html = page.text
+    token = _admin_action_token(client.get("/admin/jobs?tab=webhooks").text)
+
+    assert page.status_code == 200
+    assert "待处理作业执行已退场" in html
+    assert "手动执行待处理作业" not in html
+    assert 'name="action" value="run-deferred-jobs"' not in html
+
+    response = client.post(
+        "/api/admin/jobs/deferred-jobs/run",
+        json={"confirm": True, "admin_action_token": token, "operator": "tester-deferred"},
+    )
+
+    assert response.status_code == 409
+    assert response.json()["ok"] is False
+    assert response.json()["legacy_outbound_disabled"] is True
+    assert response.json()["error"] == "legacy_deferred_jobs_runner_disabled"
+    assert response.json()["real_external_call_executed"] is False
+
+
+def test_admin_jobs_legacy_actions_return_disabled_payload(monkeypatch):
+    _client(monkeypatch)
+
+    from aicrm_next.admin_jobs.application import execute_jobs_action
+
+    deferred = execute_jobs_action(action="run-deferred-jobs", form={"confirm": True}, operator="pytest")
+    retry_one = execute_jobs_action(action="retry-webhook-delivery", form={"confirm": True, "delivery_id": 1}, operator="pytest")
+    retry_due = execute_jobs_action(action="run-webhook-retries", form={"confirm": True}, operator="pytest")
+
+    assert deferred["ok"] is False
+    assert deferred["error"] == "legacy_deferred_jobs_runner_disabled"
+    assert retry_one["ok"] is False
+    assert retry_one["error"] == "legacy_webhook_retry_disabled"
+    assert retry_due["ok"] is False
+    assert retry_due["error"] == "legacy_webhook_retry_disabled"
+
+
 def test_admin_jobs_webhooks_tab_filters_retries_and_audits(monkeypatch):
     client = _client(monkeypatch)
 

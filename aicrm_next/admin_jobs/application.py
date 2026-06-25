@@ -1,16 +1,12 @@
 from __future__ import annotations
 
-import json
 import os
 import re
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 from typing import Any
 
-from aicrm_next.shared.runtime import production_data_ready
 from aicrm_next.message_archive.sync_service import execute_archive_sync
-from aicrm_next.platform_foundation.command_bus import CommandContext
-from aicrm_next.platform_foundation.external_effects import ExternalEffectService, WEBHOOK_GENERIC_PUSH
 from aicrm_next.platform_foundation.legacy_cleanup.service import LegacyWebhookCleanupService
 
 from .domain import (
@@ -337,131 +333,12 @@ def execute_jobs_action(*, action: str, form: Any, operator: str, repo: AdminJob
         _audit(repo, operator=operator_value, action_type="ack_message_batch", target_type=TARGET_JOBS_ACTION, target_id=str(batch_id), before=before, after=result)
         return result
     if action == "run-deferred-jobs":
-        if not normalized_bool(form.get("confirm")):
-            raise ValueError("执行待处理作业前请先勾选确认")
-        limit = normalized_int(form.get("limit"), default=20)
-        _record_legacy_marker("old_admin_jobs_deferred_run", metadata={"action": action, "limit": limit})
-        payload = repo.run_due_deferred_jobs(limit=limit, operator=operator_value)
-        _audit(repo, operator=operator_value, action_type="run_deferred_jobs", target_type=TARGET_JOBS_ACTION, target_id=f"limit:{limit}", before={"limit": limit}, after=payload)
-        return payload
+        return LegacyWebhookCleanupService().disabled_payload("old_admin_jobs_deferred_run", error="legacy_deferred_jobs_runner_disabled")
     if action == "retry-webhook-delivery":
-        if not normalized_bool(form.get("confirm")):
-            raise ValueError("重试 webhook 投递前请先勾选确认")
-        delivery_id = normalized_int(form.get("delivery_id"), default=0, minimum=1, maximum=10**9)
-        before = repo.get_webhook_delivery(delivery_id)
-        if not before:
-            raise LookupError("delivery not found")
-        _record_legacy_marker("old_customer_webhook_delivery_retry", metadata={"action": action, "delivery_id_present": True})
-        payload = retry_webhook_delivery(repo, before)
-        _audit(repo, operator=operator_value, action_type="retry_webhook_delivery", target_type=TARGET_JOBS_ACTION, target_id=str(delivery_id), before=before, after=payload)
-        return payload
+        return LegacyWebhookCleanupService().disabled_payload("old_customer_webhook_delivery_retry", error="legacy_webhook_retry_disabled")
     if action == "run-webhook-retries":
-        if not normalized_bool(form.get("confirm")):
-            raise ValueError("执行 webhook 自动重试前请先勾选确认")
-        limit = normalized_int(form.get("limit"), default=20)
-        deliveries = repo.due_webhook_deliveries(limit=limit)
-        _record_legacy_marker("old_customer_webhook_delivery_retry", metadata={"action": action, "limit": limit, "candidate_count": len(deliveries)})
-        results = [retry_webhook_delivery(repo, row) for row in deliveries]
-        payload = {"ok": True, "count": len(results), "retried_count": len(results), "success_count": sum(1 for item in results if item.get("ok")), "failed_count": sum(1 for item in results if not item.get("ok")), "deliveries": results}
-        _audit(repo, operator=operator_value, action_type="run_webhook_retries", target_type=TARGET_JOBS_ACTION, target_id=f"limit:{limit}", before={"limit": limit}, after=payload)
-        return payload
+        return LegacyWebhookCleanupService().disabled_payload("old_customer_webhook_delivery_retry", error="legacy_webhook_retry_disabled")
     raise ValueError("不支持的同步任务操作")
-
-
-def retry_webhook_delivery(repo: AdminJobsRepository, delivery: dict[str, Any]) -> dict[str, Any]:
-    _record_legacy_marker("old_customer_webhook_delivery_retry", metadata={"operation": "retry_webhook_delivery", "delivery_id_present": bool(delivery.get("id"))})
-    if normalized_text(delivery.get("status")) == "success":
-        raise ValueError("delivery already succeeded")
-    now = datetime.now(timezone.utc)
-    attempt_count = int(delivery.get("attempt_count") or 0) + 1
-    max_attempts = max(1, int(delivery.get("max_attempts") or 3))
-    target_url = normalized_text(delivery.get("target_url"))
-    if not target_url:
-        updated = repo.update_webhook_delivery(
-            int(delivery["id"]),
-            {"status": "failed", "attempt_count": int(delivery.get("attempt_count") or 0), "last_error": "webhook_not_configured", "last_attempted_at": _iso(now), "next_retry_at": "", "response_status_code": None, "response_body_summary": ""},
-        )
-        return {"ok": False, "sent": False, "reason": "webhook_not_configured", "delivery": _webhook_row_view(updated or delivery)}
-    if not production_data_ready():
-        retryable = attempt_count < max_attempts
-        updated = repo.update_webhook_delivery(
-            int(delivery["id"]),
-            {"status": "retry_scheduled" if retryable else "exhausted", "attempt_count": attempt_count, "last_error": "fixture_retry_suppressed", "last_attempted_at": _iso(now), "next_retry_at": _iso(now + timedelta(seconds=60)) if retryable else "", "response_status_code": None, "response_body_summary": ""},
-        )
-        return {"ok": False, "sent": False, "reason": "fixture_retry_suppressed", "delivery": _webhook_row_view(updated or delivery)}
-    payload = delivery.get("payload_json")
-    if isinstance(payload, str):
-        payload = json.loads(payload or "{}")
-    effect_job = ExternalEffectService().plan_effect(
-        effect_type=WEBHOOK_GENERIC_PUSH,
-        adapter_name="outbound_webhook",
-        operation="post",
-        target_type="admin_webhook_delivery",
-        target_id=str(delivery.get("id") or ""),
-        business_type="admin_webhook_delivery",
-        business_id=str(delivery.get("id") or ""),
-        payload={
-            "webhook_url": target_url,
-            "body": payload or {},
-            "source_delivery_id": delivery.get("id"),
-            "source_event_type": delivery.get("event_type"),
-        },
-        payload_summary={
-            "target_url_present": bool(target_url),
-            "source_delivery_id": delivery.get("id"),
-            "source_event_type": delivery.get("event_type"),
-            "body_type": type(payload or {}).__name__,
-        },
-        context=CommandContext(
-            actor_id="admin_jobs",
-            actor_type="system",
-            trace_id=str(delivery.get("trace_id") or delivery.get("id") or ""),
-            source_route="admin_jobs.retry_webhook_delivery",
-        ),
-        source_module="admin_jobs.application",
-        source_event_id=str(delivery.get("id") or ""),
-        idempotency_key=f"admin-webhook-delivery:{delivery.get('id')}:external-effect:{attempt_count}",
-    )
-    updated = repo.update_webhook_delivery(
-        int(delivery["id"]),
-        {
-            "status": "retry_scheduled",
-            "attempt_count": int(delivery.get("attempt_count") or 0),
-            "last_error": "external_effect_job_queued",
-            "last_attempted_at": _iso(now),
-            "next_retry_at": "",
-            "response_status_code": None,
-            "response_body_summary": f"external_effect_job_id={effect_job.get('id')}",
-        },
-    )
-    return {
-        "ok": True,
-        "sent": False,
-        "queued": True,
-        "external_effect_job_id": effect_job.get("id"),
-        "real_external_call_executed": False,
-        "delivery": _webhook_row_view(updated or delivery),
-    }
-
-
-def _webhook_timeout(delivery: dict[str, Any]) -> int:
-    event_type = normalized_text(delivery.get("event_type"))
-    key = "QUESTIONNAIRE_SUBMIT_WEBHOOK_TIMEOUT_SECONDS" if event_type == "questionnaire_submit" else "OPENCLAW_FOCUS_MESSAGE_WEBHOOK_TIMEOUT_SECONDS"
-    return normalized_int(os.getenv(key), default=10, minimum=1, maximum=60)
-
-
-def _webhook_headers(delivery: dict[str, Any]) -> dict[str, str]:
-    event_type = normalized_text(delivery.get("event_type"))
-    key = "QUESTIONNAIRE_SUBMIT_WEBHOOK_TOKEN" if event_type == "questionnaire_submit" else "OPENCLAW_FOCUS_MESSAGE_WEBHOOK_TOKEN"
-    token = normalized_text(os.getenv(key))
-    headers = {"Content-Type": "application/json"}
-    if token:
-        headers["Authorization"] = f"Bearer {token}"
-    return headers
-
-
-def _iso(value: datetime) -> str:
-    return value.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M:%S+00:00")
 
 
 def _beijing_time_label(value: Any) -> str:

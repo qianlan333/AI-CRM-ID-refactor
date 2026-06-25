@@ -40,7 +40,6 @@ class AdminJobsRepository(Protocol):
     def ack_message_batch(self, batch_id: int, *, ack_note: str, acked_by: str) -> dict[str, Any] | None: ...
     def list_deferred_jobs(self, *, status: str = "", owner_userid: str = "", external_userid: str = "", limit: int = 20) -> list[dict[str, Any]]: ...
     def deferred_job_counts(self) -> dict[str, int]: ...
-    def run_due_deferred_jobs(self, *, limit: int, operator: str) -> dict[str, Any]: ...
     def webhook_counts(self) -> dict[str, int]: ...
     def list_webhook_deliveries(self, *, event_type: str = "", status: str = "", limit: int = 20) -> list[dict[str, Any]]: ...
     def get_webhook_delivery(self, delivery_id: int) -> dict[str, Any] | None: ...
@@ -263,27 +262,6 @@ class PostgresAdminJobsRepository:
         rows = self._rows("SELECT status, COUNT(*) AS cnt FROM user_ops_deferred_jobs GROUP BY status")
         del row
         return _status_counts(rows)
-
-    def run_due_deferred_jobs(self, *, limit: int, operator: str) -> dict[str, Any]:
-        rows = self._rows(
-            """
-            UPDATE user_ops_deferred_jobs
-            SET status = 'success',
-                attempt_count = attempt_count + 1,
-                result_json = jsonb_build_object('ok', true, 'runner', 'aicrm_next_admin_jobs', 'operator', %s),
-                updated_at = CURRENT_TIMESTAMP
-            WHERE id IN (
-                SELECT id FROM user_ops_deferred_jobs
-                WHERE status = 'pending' AND run_after <= CURRENT_TIMESTAMP
-                ORDER BY run_after ASC, id ASC
-                LIMIT %s
-                FOR UPDATE SKIP LOCKED
-            )
-            RETURNING id, status
-            """,
-            (operator, limit),
-        )
-        return {"ok": True, "count": len(rows), "updated_jobs": rows, "runner": "aicrm_next_admin_jobs"}
 
     def webhook_counts(self) -> dict[str, int]:
         row = self._one(
@@ -655,16 +633,6 @@ class FixtureAdminJobsRepository:
 
     def deferred_job_counts(self) -> dict[str, int]:
         return _simple_counts(self.deferred_jobs, "status", total_name="total_count")
-
-    def run_due_deferred_jobs(self, *, limit: int, operator: str) -> dict[str, Any]:
-        updated: list[dict[str, Any]] = []
-        for row in self.deferred_jobs:
-            if row["status"] == "pending" and len(updated) < limit:
-                row["status"] = "success"
-                row["attempt_count"] = int(row["attempt_count"]) + 1
-                row["result_json"] = {"ok": True, "runner": "aicrm_next_admin_jobs", "operator": operator}
-                updated.append(copy.deepcopy(row))
-        return {"ok": True, "count": len(updated), "updated_jobs": updated, "runner": "aicrm_next_admin_jobs"}
 
     def webhook_counts(self) -> dict[str, int]:
         return _simple_counts(self.webhooks, "status", total_name="total_count")
