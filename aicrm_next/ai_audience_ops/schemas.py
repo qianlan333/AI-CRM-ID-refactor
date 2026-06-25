@@ -8,9 +8,12 @@ from pydantic import BaseModel, Field
 class PackageCreateRequest(BaseModel):
     package_key: str
     name: str
+    status: str = "draft"
     natural_language_definition: str = ""
+    refresh_mode: str = ""
     query_mode: str = "hybrid"
     identity_policy: str = "external_userid"
+    parameters: dict[str, Any] = Field(default_factory=dict)
     incremental_enabled: bool = True
     daily_enabled: bool = False
     incremental_interval_seconds: int = Field(default=180, ge=60, le=86400)
@@ -30,6 +33,7 @@ class PackageVersionCreateRequest(BaseModel):
     incremental_sql_text: str = ""
     snapshot_sql_text: str = ""
     sql_text: str = ""
+    parameters: dict[str, Any] = Field(default_factory=dict)
     ai_prompt: str = ""
     ai_rationale: str = ""
     natural_language_explanation: str = ""

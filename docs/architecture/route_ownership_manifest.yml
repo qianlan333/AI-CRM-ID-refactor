@@ -4031,6 +4031,17 @@ routes:
   data_source: read_model
   requires_auth: true
   rollback: previous_release
+- path: /api/admin/ai-audience/packages
+  methods:
+  - POST
+  route_name: api.admin_ai_audience_package_create
+  capability_owner: ai_audience_ops
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: none
+  data_source: command
+  requires_auth: true
+  rollback: previous_release
 - path: /api/admin/ai-audience/packages/{package_id}
   methods:
   - GET
@@ -4046,6 +4057,39 @@ routes:
   methods:
   - PATCH
   route_name: api.admin_ai_audience_package_update
+  capability_owner: ai_audience_ops
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: none
+  data_source: command
+  requires_auth: true
+  rollback: previous_release
+- path: /api/admin/ai-audience/packages/{package_id}/versions
+  methods:
+  - POST
+  route_name: api.admin_ai_audience_package_version_create
+  capability_owner: ai_audience_ops
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: none
+  data_source: command
+  requires_auth: true
+  rollback: previous_release
+- path: /api/admin/ai-audience/packages/{package_id}/preview
+  methods:
+  - POST
+  route_name: api.admin_ai_audience_package_preview
+  capability_owner: ai_audience_ops
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: none
+  data_source: read_model
+  requires_auth: true
+  rollback: previous_release
+- path: /api/admin/ai-audience/packages/{package_id}/publish
+  methods:
+  - POST
+  route_name: api.admin_ai_audience_package_publish
   capability_owner: ai_audience_ops
   runtime_owner: ai_crm_next
   layer: api

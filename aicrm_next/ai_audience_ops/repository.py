@@ -68,7 +68,9 @@ def _public_row(row: dict[str, Any] | None) -> dict[str, Any] | None:
         return None
     payload = dict(row)
     for key, value in list(payload.items()):
-        if key.endswith("_json") or key.endswith("_jsonb") or key in {
+        if key.endswith("_jsons") or key in {"dependencies_json", "sample_rows_json", "validation_errors_json"}:
+            payload[key] = _json_list(value)
+        elif key.endswith("_json") or key.endswith("_jsonb") or key in {
             "payload_json",
             "message_json",
             "action_json",
@@ -77,8 +79,6 @@ def _public_row(row: dict[str, Any] | None) -> dict[str, Any] | None:
             "explain_json",
         }:
             payload[key] = _json_obj(value)
-        elif key.endswith("_jsons") or key in {"dependencies_json", "sample_rows_json", "validation_errors_json"}:
-            payload[key] = _json_list(value)
         elif isinstance(value, datetime):
             payload[key] = _public_datetime(value)
     return payload
@@ -444,12 +444,12 @@ class SQLAlchemyAudienceRepository(AudienceRepository):
                         """
                         INSERT INTO ai_audience_package_version (
                             package_id, version_number, status, incremental_sql_text, snapshot_sql_text,
-                            ai_prompt, ai_rationale, natural_language_explanation, dependencies_json,
+                            ai_prompt, ai_rationale, natural_language_explanation, parameters_json, dependencies_json,
                             explain_json, sample_rows_json, validation_errors_json, created_at
                         )
                         VALUES (
                             :package_id, 1, 'draft', :incremental_sql_text, :snapshot_sql_text,
-                            :ai_prompt, :ai_rationale, :natural_language_explanation, CAST(:dependencies_json AS jsonb),
+                            :ai_prompt, :ai_rationale, :natural_language_explanation, CAST(:parameters_json AS jsonb), CAST(:dependencies_json AS jsonb),
                             CAST(:explain_json AS jsonb), CAST(:sample_rows_json AS jsonb), CAST(:validation_errors_json AS jsonb),
                             CURRENT_TIMESTAMP
                         )
@@ -463,6 +463,7 @@ class SQLAlchemyAudienceRepository(AudienceRepository):
                         "ai_prompt": _text(version.get("ai_prompt")),
                         "ai_rationale": _text(version.get("ai_rationale")),
                         "natural_language_explanation": _text(version.get("natural_language_explanation")),
+                        "parameters_json": _json_dumps(version.get("parameters_json") or {}),
                         "dependencies_json": _json_dumps(version.get("dependencies_json") or []),
                         "explain_json": _json_dumps(version.get("explain_json") or {}),
                         "sample_rows_json": _json_dumps(version.get("sample_rows_json") or []),
@@ -557,6 +558,9 @@ class SQLAlchemyAudienceRepository(AudienceRepository):
         daily_enabled = bool(payload.get("daily_enabled", False))
         daily_refresh_time = _text(payload.get("daily_refresh_time")) or "02:00"
         timezone_name = _text(payload.get("timezone")) or "Asia/Shanghai"
+        status = _text(payload.get("status")) or "draft"
+        if status not in {"draft", "paused", "active"}:
+            status = "draft"
         row = self._write_one(
             """
             INSERT INTO ai_audience_package (
@@ -566,10 +570,10 @@ class SQLAlchemyAudienceRepository(AudienceRepository):
                 next_incremental_refresh_at, next_daily_refresh_at, created_at, updated_at
             )
             VALUES (
-                :package_key, :name, :natural_language_definition, 'draft', :query_mode, :identity_policy,
+                :package_key, :name, :natural_language_definition, :status, :query_mode, :identity_policy,
                 :incremental_enabled, :daily_enabled, :incremental_interval_seconds, :daily_refresh_time,
                 :timezone, :lookback_seconds, :inbound_webhook_secret,
-                CURRENT_TIMESTAMP, :next_daily_refresh_at,
+                :next_incremental_refresh_at, :next_daily_refresh_at,
                 CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
             )
             RETURNING *
@@ -577,6 +581,7 @@ class SQLAlchemyAudienceRepository(AudienceRepository):
             {
                 "package_key": _text(payload.get("package_key")),
                 "name": _text(payload.get("name")),
+                "status": status,
                 "natural_language_definition": _text(payload.get("natural_language_definition")),
                 "query_mode": _text(payload.get("query_mode")) or "hybrid",
                 "identity_policy": _text(payload.get("identity_policy")) or "external_userid",
@@ -587,7 +592,8 @@ class SQLAlchemyAudienceRepository(AudienceRepository):
                 "timezone": timezone_name,
                 "lookback_seconds": max(0, int(payload.get("lookback_seconds") or 600)),
                 "inbound_webhook_secret": _text(payload.get("inbound_webhook_secret")),
-                "next_daily_refresh_at": next_daily_refresh_at(daily_refresh_time, timezone_name) if daily_enabled else None,
+                "next_incremental_refresh_at": default_refresh_started_at() if status == "active" and bool(payload.get("incremental_enabled", True)) else None,
+                "next_daily_refresh_at": next_daily_refresh_at(daily_refresh_time, timezone_name) if status == "active" and daily_enabled else None,
             },
         )
         if row is None:
@@ -605,7 +611,7 @@ class SQLAlchemyAudienceRepository(AudienceRepository):
             """
             INSERT INTO ai_audience_package_version (
                 package_id, version_number, status, incremental_sql_text, snapshot_sql_text,
-                ai_prompt, ai_rationale, natural_language_explanation, dependencies_json,
+                ai_prompt, ai_rationale, natural_language_explanation, parameters_json, dependencies_json,
                 explain_json, sample_rows_json, validation_errors_json, created_at
             )
             SELECT
@@ -617,6 +623,7 @@ class SQLAlchemyAudienceRepository(AudienceRepository):
                 :ai_prompt,
                 :ai_rationale,
                 :natural_language_explanation,
+                CAST(:parameters_json AS jsonb),
                 CAST(:dependencies_json AS jsonb),
                 CAST(:explain_json AS jsonb),
                 CAST(:sample_rows_json AS jsonb),
@@ -633,6 +640,7 @@ class SQLAlchemyAudienceRepository(AudienceRepository):
                 "ai_prompt": _text(payload.get("ai_prompt")),
                 "ai_rationale": _text(payload.get("ai_rationale")),
                 "natural_language_explanation": _text(payload.get("natural_language_explanation")),
+                "parameters_json": _json_dumps(payload.get("parameters") or payload.get("parameters_json") or {}),
                 "dependencies_json": _json_dumps(payload.get("dependencies") or []),
                 "explain_json": _json_dumps(payload.get("explain") or {}),
                 "sample_rows_json": _json_dumps(payload.get("sample_rows") or []),
@@ -750,6 +758,16 @@ class SQLAlchemyAudienceRepository(AudienceRepository):
             UPDATE ai_audience_package
             SET status = :status,
                 paused_reason = :paused_reason,
+                next_incremental_refresh_at = CASE
+                    WHEN :status = 'active' AND incremental_enabled THEN COALESCE(next_incremental_refresh_at, CURRENT_TIMESTAMP)
+                    WHEN :status = 'active' THEN NULL
+                    ELSE NULL
+                END,
+                next_daily_refresh_at = CASE
+                    WHEN :status = 'active' AND daily_enabled THEN COALESCE(next_daily_refresh_at, CURRENT_TIMESTAMP)
+                    WHEN :status = 'active' THEN NULL
+                    ELSE NULL
+                END,
                 updated_at = CURRENT_TIMESTAMP
             WHERE id = :package_id
             RETURNING *
