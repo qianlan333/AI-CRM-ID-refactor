@@ -3,11 +3,10 @@ from __future__ import annotations
 import json
 import re
 from copy import deepcopy
+from datetime import datetime, timezone
 from typing import Any
 
 from aicrm_next.shared.errors import ContractError
-
-from .state_machine import utc_now_iso
 
 
 AGENT_ROUTE_FAMILY = "/api/admin/automation-conversion/agents*"
@@ -56,6 +55,10 @@ def agent_side_effect_safety() -> dict[str, bool]:
 
 def _text(value: Any) -> str:
     return str(value or "").strip()
+
+
+def utc_now_iso() -> str:
+    return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
 def _slugify(value: str) -> str:

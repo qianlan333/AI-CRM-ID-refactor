@@ -13,7 +13,7 @@ from aicrm_next.shared.errors import ContractError
 from aicrm_next.shared.repository_provider import RepositoryProviderError
 
 from .repo import InMemoryAutomationRepository
-from .state_machine import utc_now_iso
+from .agents import utc_now_iso
 from .agents import AGENT_ROUTE_FAMILY, normalize_agent_create_payload, agent_projection, agent_side_effect_safety
 
 
