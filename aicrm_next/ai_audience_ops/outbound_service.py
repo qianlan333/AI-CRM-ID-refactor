@@ -215,9 +215,17 @@ class AudienceOutboundService:
             "signing_secret": secret,
             "headers": headers,
             "body": body,
+            **_test_scope(package),
         }
 
 
 def _signature(secret: str, body: list[str]) -> str:
     canonical_body = json.dumps(body, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     return hmac.new(secret.encode("utf-8"), canonical_body.encode("utf-8"), hashlib.sha256).hexdigest()
+
+
+def _test_scope(package: dict[str, Any]) -> dict[str, Any]:
+    package_key = _text(package.get("package_key"))
+    if not package_key.startswith("prod_e2e_"):
+        return {}
+    return {"is_test": True, "execution_scope": "test_loopback"}
