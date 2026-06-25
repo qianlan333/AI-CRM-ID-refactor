@@ -80,6 +80,8 @@ def test_e2e_generated_specs_are_linted_and_hard_filter_test_user() -> None:
         assert errors == []
         assert warnings == []
         assert "wc.external_userid = :test_external_userid" in spec.incremental_sql
+        if scenario in {"questionnaire", "payment", "channel_entry"}:
+            assert "WHEN :e2e_force_test_match THEN CAST(:refresh_started_at AS timestamptz)" in spec.incremental_sql
         if scenario == "questionnaire":
             assert "audience_read.questionnaire_submissions_v1" in spec.incremental_sql
         if scenario == "payment":
