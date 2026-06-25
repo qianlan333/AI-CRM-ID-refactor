@@ -847,7 +847,7 @@ class PostgresCommerceRepository:
                     COALESCE(NULLIF(active_asset.qr_url, ''), NULLIF(c.qr_url, ''), '') AS qr_url,
                     c.status,
                     c.program_id,
-                    p.program_name AS program_name
+                    '' AS program_name
                 FROM automation_channel c
                 LEFT JOIN LATERAL (
                     SELECT qa.qr_url
@@ -858,7 +858,6 @@ class PostgresCommerceRepository:
                     ORDER BY qa.generated_at DESC, qa.id DESC
                     LIMIT 1
                 ) active_asset ON TRUE
-                LEFT JOIN automation_program p ON p.id = c.program_id
                 ORDER BY c.updated_at DESC NULLS LAST, c.id DESC
                 LIMIT 200
                 """
