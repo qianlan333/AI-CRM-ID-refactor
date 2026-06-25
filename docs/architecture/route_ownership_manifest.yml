@@ -6913,3 +6913,135 @@ routes:
   data_source: command
   requires_auth: true
   rollback: previous_release
+- path: /admin/automation-agents
+  methods:
+  - GET
+  route_name: api.admin_automation_agents_page
+  capability_owner: automation_agents
+  runtime_owner: ai_crm_next
+  layer: admin_page
+  external_effects: none
+  data_source: read_model
+  requires_auth: true
+  rollback: previous_release
+- path: /admin/automation-agents/{agent_id}/edit
+  methods:
+  - GET
+  route_name: api.admin_automation_agent_edit_page
+  capability_owner: automation_agents
+  runtime_owner: ai_crm_next
+  layer: admin_page
+  external_effects: none
+  data_source: read_model
+  requires_auth: true
+  rollback: previous_release
+- path: /api/admin/automation-agents
+  methods:
+  - GET
+  route_name: api.admin_automation_agents
+  capability_owner: automation_agents
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: none
+  data_source: read_model
+  requires_auth: true
+  rollback: previous_release
+- path: /api/admin/automation-agents
+  methods:
+  - POST
+  route_name: api.admin_automation_agent_create
+  capability_owner: automation_agents
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: none
+  data_source: command
+  requires_auth: true
+  rollback: previous_release
+- path: /api/admin/automation-agents/{agent_id}
+  methods:
+  - GET
+  route_name: api.admin_automation_agent_detail
+  capability_owner: automation_agents
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: none
+  data_source: read_model
+  requires_auth: true
+  rollback: previous_release
+- path: /api/admin/automation-agents/{agent_id}
+  methods:
+  - PATCH
+  route_name: api.admin_automation_agent_update
+  capability_owner: automation_agents
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: none
+  data_source: command
+  requires_auth: true
+  rollback: previous_release
+- path: /api/admin/automation-agents/{agent_id}/copy
+  methods:
+  - POST
+  route_name: api.admin_automation_agent_copy
+  capability_owner: automation_agents
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: none
+  data_source: command
+  requires_auth: true
+  rollback: previous_release
+- path: /api/admin/automation-agents/{agent_id}/pause
+  methods:
+  - POST
+  route_name: api.admin_automation_agent_pause
+  capability_owner: automation_agents
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: none
+  data_source: command
+  requires_auth: true
+  rollback: previous_release
+- path: /api/admin/automation-agents/{agent_id}/activate
+  methods:
+  - POST
+  route_name: api.admin_automation_agent_activate
+  capability_owner: automation_agents
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: none
+  data_source: command
+  requires_auth: true
+  rollback: previous_release
+- path: /api/admin/automation-agents/{agent_id}
+  methods:
+  - DELETE
+  route_name: api.admin_automation_agent_delete
+  capability_owner: automation_agents
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: none
+  data_source: command
+  requires_auth: true
+  rollback: previous_release
+- path: /api/admin/automation-agents/{agent_id}/fixed-content
+  methods:
+  - PUT
+  route_name: api.admin_automation_agent_fixed_content
+  capability_owner: automation_agents
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: none
+  data_source: command
+  requires_auth: true
+  rollback: previous_release
+- path: /api/ai/agents/{agent_code}/audience-webhook
+  methods:
+  - POST
+  route_name: api.ai_automation_agent_audience_webhook
+  capability_owner: automation_agents
+  runtime_owner: ai_crm_next
+  layer: webhook
+  external_effects: none
+  data_source: command
+  requires_auth: false
+  rollback: previous_release

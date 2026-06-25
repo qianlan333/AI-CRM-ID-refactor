@@ -14,6 +14,9 @@ from .admin_auth.api import router as admin_auth_router
 from .admin_config.api import router as admin_config_router
 from .admin_jobs.routes import router as admin_jobs_router
 from .admin_shell.routes import router as admin_shell_router
+from .automation_agents.admin_api import router as automation_agents_admin_router
+from .automation_agents.admin_pages import router as automation_agents_admin_pages_router
+from .automation_agents.api import router as automation_agents_router
 from .automation_engine.api import router as automation_router
 from .automation_engine.channel_admin_pages import router as channel_admin_pages_router
 from .automation_engine.channels_api import router as automation_channels_router
@@ -78,6 +81,9 @@ ROUTER_SPECS: tuple[RouterSpec, ...] = (
     RouterSpec("platform_foundation", "common_operation_members", common_operation_members_router),
     RouterSpec("channel_entry", "channel_entry", channel_entry_router),
     RouterSpec("automation_engine", "automation_channels", automation_channels_router),
+    RouterSpec("automation_agents", "automation_agents_admin_pages", automation_agents_admin_pages_router, "Automation agent admin config pages"),
+    RouterSpec("automation_agents", "automation_agents_admin_api", automation_agents_admin_router, "Automation agent admin config APIs"),
+    RouterSpec("automation_agents", "automation_agents_api", automation_agents_router, "Automation agent audience webhook APIs"),
     RouterSpec("hxc_dashboard", "hxc_dashboard", hxc_dashboard_router),
     RouterSpec("public_product", "public_product", public_product_router),
     RouterSpec("sidebar_write", "sidebar_write", sidebar_write_router),

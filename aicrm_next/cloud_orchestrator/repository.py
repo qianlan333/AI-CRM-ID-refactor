@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import hashlib
 import json
 import os
 from datetime import date, datetime, timezone
@@ -89,6 +90,16 @@ class CloudPlanRepository(Protocol):
         operator: str,
         source_event_id: str = "",
         idempotency_key: str = "",
+    ) -> dict[str, Any]: ...
+    def create_or_reuse_agent_send_plan(
+        self,
+        *,
+        external_event_id: str,
+        package_key: str,
+        external_userid: str,
+        owner_userid: str,
+        content_package: dict[str, Any],
+        operator: str,
     ) -> dict[str, Any]: ...
     def approve_recipient(self, plan_id: str, recipient_id: int, *, operator: str) -> dict[str, Any]: ...
     def reject_recipient(self, plan_id: str, recipient_id: int, *, operator: str, reason: str = "") -> dict[str, Any]: ...
@@ -284,6 +295,13 @@ def _plan_broadcast_content_payload(*, plan_id: str, owner_userid: str, target_c
 def _plan_broadcast_summary(plan: dict[str, Any], *, target_count: int) -> str:
     label = _text(plan.get("display_name")) or _text(plan.get("intent")) or _text(plan.get("plan_id"))
     return f"{label} · {int(target_count or 0)} recipients"
+
+
+def _agent_plan_id(external_event_id: str) -> str:
+    normalized = _text(external_event_id)
+    digest = hashlib.sha256(normalized.encode("utf-8")).hexdigest()[:16]
+    safe = "".join(ch if ch.isalnum() or ch in {"_", "-", ":"} else "_" for ch in normalized)[:120]
+    return f"agent_plan:{safe or digest}:{digest}"
 
 
 class PostgresCloudPlanRepository:
@@ -1284,6 +1302,149 @@ class PostgresCloudPlanRepository:
             "push_center_job_id": f"broadcast_job:{job_id}" if job_id else "",
         }
 
+    def create_or_reuse_agent_send_plan(
+        self,
+        *,
+        external_event_id: str,
+        package_key: str,
+        external_userid: str,
+        owner_userid: str,
+        content_package: dict[str, Any],
+        operator: str,
+    ) -> dict[str, Any]:
+        normalized_event_id = _text(external_event_id)
+        normalized_external_userid = _text(external_userid)
+        normalized_owner = _text(owner_userid)
+        if not normalized_event_id:
+            return {"status": "skipped", "reason": "missing_external_event_id"}
+        if not normalized_external_userid:
+            return {"status": "skipped", "reason": "missing_external_userid"}
+        if not normalized_owner:
+            return {"status": "skipped", "reason": "missing_owner_userid"}
+        plan_id = _agent_plan_id(normalized_event_id)
+        content_payload = _content_payload_for_package(content_package)
+        with self._connect() as conn:
+            existing_plan = conn.execute(
+                "SELECT plan_id FROM cloud_broadcast_plans WHERE plan_id = %s",
+                (plan_id,),
+            ).fetchone()
+            if not existing_plan:
+                conn.execute(
+                    """
+                    INSERT INTO cloud_broadcast_plans (
+                        plan_id, trace_id, session_id, operator, intent, display_name, owner_userid,
+                        selection_json, content_strategy, max_recipients, candidate_count,
+                        explanation_json, status, review_status, run_status, created_at, updated_at
+                    ) VALUES (
+                        %s, %s, %s, %s, %s, %s, %s,
+                        %s::jsonb, 'agent_generated_single', 1, 1,
+                        %s::jsonb, 'draft', 'reviewing', 'draft', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+                    )
+                    ON CONFLICT (plan_id) DO NOTHING
+                    """,
+                    (
+                        plan_id,
+                        normalized_event_id,
+                        normalized_event_id,
+                        _text(operator) or "automation_agent",
+                        f"Agent generated send plan {normalized_external_userid}",
+                        f"Agent 生成待发送计划 · {normalized_external_userid}",
+                        normalized_owner,
+                        _json_dump(
+                            {
+                                "source": "automation_agent",
+                                "package_key": _text(package_key),
+                                "external_event_id": normalized_event_id,
+                                "external_userid": normalized_external_userid,
+                            }
+                        ),
+                        _json_dump({"source": "automation_agent", "external_event_id": normalized_event_id}),
+                    ),
+                )
+            recipient = conn.execute(
+                """
+                INSERT INTO cloud_broadcast_plan_recipients (
+                    plan_id, external_userid, owner_userid, display_name, planned_message_count,
+                    approval_status, send_status, created_at, updated_at
+                ) VALUES (
+                    %s, %s, %s, %s, 1, 'pending', 'pending', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+                )
+                ON CONFLICT (plan_id, external_userid) DO UPDATE SET
+                    owner_userid = EXCLUDED.owner_userid,
+                    planned_message_count = 1,
+                    updated_at = CURRENT_TIMESTAMP
+                RETURNING *
+                """,
+                (plan_id, normalized_external_userid, normalized_owner, normalized_external_userid),
+            ).fetchone()
+            recipient_id = int((recipient or {}).get("id") or 0)
+            existing_message = conn.execute(
+                """
+                SELECT id
+                FROM cloud_broadcast_plan_recipient_messages
+                WHERE plan_id = %s AND recipient_id = %s AND sequence_index = 1
+                ORDER BY id ASC
+                LIMIT 1
+                """,
+                (plan_id, recipient_id),
+            ).fetchone()
+            if existing_message:
+                message_id = int(existing_message["id"])
+                conn.execute(
+                    """
+                    UPDATE cloud_broadcast_plan_recipient_messages
+                    SET content_text = %s,
+                        content_payload_json = %s::jsonb,
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE id = %s
+                    """,
+                    (_text(content_package.get("content_text")), _json_dump(content_payload), message_id),
+                )
+            else:
+                inserted_message = conn.execute(
+                    """
+                    INSERT INTO cloud_broadcast_plan_recipient_messages (
+                        plan_id, recipient_id, external_userid, sequence_index, day_offset, send_time,
+                        content_text, content_payload_json, attachments_json, status, created_at, updated_at
+                    ) VALUES (
+                        %s, %s, %s, 1, 0, '', %s, %s::jsonb, '[]'::jsonb, 'pending', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+                    )
+                    RETURNING id
+                    """,
+                    (
+                        plan_id,
+                        recipient_id,
+                        normalized_external_userid,
+                        _text(content_package.get("content_text")),
+                        _json_dump(content_payload),
+                    ),
+                ).fetchone()
+                message_id = int((inserted_message or {}).get("id") or 0)
+            self._audit(
+                conn,
+                operator=_text(operator) or "automation_agent",
+                action_type="automation_agent_enqueue_send_plan",
+                target_type="cloud_broadcast_plan",
+                target_id=plan_id,
+                before={},
+                after={
+                    "plan_id": plan_id,
+                    "recipient_id": recipient_id,
+                    "message_id": message_id,
+                    "external_event_id": normalized_event_id,
+                    "duplicate_handling": "reused" if existing_plan else "created",
+                },
+            )
+            conn.commit()
+        return {
+            "status": "reused" if existing_plan else "created",
+            "plan_id": plan_id,
+            "recipient_id": recipient_id,
+            "message_id": message_id,
+            "downstream_status": "send_plan_pending",
+            "push_center_job_id": f"cloud_plan:{plan_id}",
+        }
+
     def approve_recipient(self, plan_id: str, recipient_id: int, *, operator: str) -> dict[str, Any]:
         normalized_plan_id = _text(plan_id)
         with self._connect() as conn:
@@ -1897,6 +2058,114 @@ class InMemoryCloudPlanRepository:
             "trace_id": normalized_plan_id,
             "downstream_status": "broadcast_job_queued",
             "push_center_job_id": f"broadcast_job:{job_id}",
+        }
+
+    def create_or_reuse_agent_send_plan(
+        self,
+        *,
+        external_event_id: str,
+        package_key: str,
+        external_userid: str,
+        owner_userid: str,
+        content_package: dict[str, Any],
+        operator: str,
+    ) -> dict[str, Any]:
+        normalized_event_id = _text(external_event_id)
+        normalized_external_userid = _text(external_userid)
+        normalized_owner = _text(owner_userid)
+        if not normalized_event_id:
+            return {"status": "skipped", "reason": "missing_external_event_id"}
+        if not normalized_external_userid:
+            return {"status": "skipped", "reason": "missing_external_userid"}
+        if not normalized_owner:
+            return {"status": "skipped", "reason": "missing_owner_userid"}
+        plan_id = _agent_plan_id(normalized_event_id)
+        existing = next((item for item in self.plans if item.get("plan_id") == plan_id), None)
+        if not existing:
+            self.plans.append(
+                {
+                    "id": len(self.plans) + len(self.legacy_plans) + 1,
+                    "plan_id": plan_id,
+                    "display_name": f"Agent 生成待发送计划 · {normalized_external_userid}",
+                    "intent": f"Agent generated send plan {normalized_external_userid}",
+                    "owner_userid": normalized_owner,
+                    "candidate_count": 1,
+                    "review_status": "reviewing",
+                    "run_status": "draft",
+                    "status": "draft",
+                    "selection_json": {
+                        "source": "automation_agent",
+                        "package_key": _text(package_key),
+                        "external_event_id": normalized_event_id,
+                        "external_userid": normalized_external_userid,
+                    },
+                    "updated_at": _now(),
+                    "source_type": "cloud_plan",
+                }
+            )
+        recipient = next(
+            (
+                item
+                for item in self.recipients
+                if item.get("plan_id") == plan_id and item.get("external_userid") == normalized_external_userid
+            ),
+            None,
+        )
+        if recipient is None:
+            recipient = {
+                "id": len(self.recipients) + 1,
+                "plan_id": plan_id,
+                "external_userid": normalized_external_userid,
+                "owner_userid": normalized_owner,
+                "display_name": normalized_external_userid,
+                "planned_message_count": 1,
+                "approval_status": "pending",
+                "send_status": "pending",
+                "updated_at": _now(),
+            }
+            self.recipients.append(recipient)
+        content_payload = _content_payload_for_package(content_package)
+        message = next(
+            (
+                item
+                for item in self.messages
+                if item.get("plan_id") == plan_id and int(item.get("recipient_id") or 0) == int(recipient["id"]) and int(item.get("sequence_index") or 0) == 1
+            ),
+            None,
+        )
+        if message is None:
+            message = {
+                "id": len(self.messages) + 1,
+                "plan_id": plan_id,
+                "recipient_id": int(recipient["id"]),
+                "external_userid": normalized_external_userid,
+                "sequence_index": 1,
+                "day_offset": 0,
+                "send_time": "",
+                "content_text": _text(content_package.get("content_text")),
+                "content_payload_json": content_payload,
+                "attachments_json": [],
+                "status": "pending",
+            }
+            self.messages.append(message)
+        else:
+            message["content_text"] = _text(content_package.get("content_text"))
+            message["content_payload_json"] = content_payload
+        self.audits.append(
+            {
+                "action_type": "automation_agent_enqueue_send_plan",
+                "target_id": plan_id,
+                "operator": operator,
+                "external_event_id": normalized_event_id,
+            }
+        )
+        return {
+            "status": "reused" if existing else "created",
+            "plan_id": plan_id,
+            "recipient_id": int(recipient["id"]),
+            "message_id": int(message["id"]),
+            "downstream_status": "send_plan_pending",
+            "push_center_job_id": f"cloud_plan:{plan_id}",
         }
 
     def approve_recipient(self, plan_id: str, recipient_id: int, *, operator: str) -> dict[str, Any]:
