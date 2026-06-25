@@ -137,13 +137,12 @@ class SidebarV2SqlRepository:
     def get_workflow_title_for_customer(self, external_userid: str) -> str:
         row = self._one(
             """
-            SELECT COALESCE(NULLIF(w.workflow_name, ''), NULLIF(c.channel_name, '')) AS title
+            SELECT COALESCE(NULLIF(l.link_name, ''), NULLIF(c.channel_name, ''), NULLIF(l.initial_audience_code, ''), NULLIF(c.channel_code, '')) AS title
             FROM automation_member m
             LEFT JOIN automation_channel c ON c.id = m.source_channel_id
             LEFT JOIN wecom_customer_acquisition_links l ON l.automation_channel_id = c.id
-            LEFT JOIN automation_workflow w ON w.id = l.workflow_id
             WHERE m.external_contact_id = :external_userid
-            ORDER BY m.updated_at DESC, m.id DESC
+            ORDER BY m.updated_at DESC, m.id DESC, l.updated_at DESC, l.id DESC
             LIMIT 1
             """,
             {"external_userid": external_userid},

@@ -3,10 +3,12 @@ from __future__ import annotations
 import inspect
 
 from fastapi.testclient import TestClient
+from sqlalchemy import create_engine, text
 
+from aicrm_next.commerce.repo import PostgresCommerceRepository
 from aicrm_next.customer_read_model import sidebar_v2
 from aicrm_next.customer_read_model.dto import CustomerContextRequest
-from aicrm_next.customer_read_model.sidebar_v2 import SidebarCommerceReadModel
+from aicrm_next.customer_read_model.sidebar_v2 import SidebarCommerceReadModel, SidebarV2SqlRepository
 from aicrm_next.main import create_app
 
 
@@ -19,6 +21,87 @@ def _client(monkeypatch) -> TestClient:
 def _assert_next(payload: dict) -> None:
     assert payload["route_owner"] == "ai_crm_next"
     assert payload["fallback_used"] is False
+
+
+def test_sidebar_workflow_title_uses_preserved_channel_link_tables_after_retirement() -> None:
+    engine = create_engine("sqlite:///:memory:", future=True)
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                """
+                CREATE TABLE automation_member (
+                    id INTEGER PRIMARY KEY,
+                    external_contact_id TEXT NOT NULL,
+                    source_channel_id INTEGER,
+                    updated_at TEXT
+                )
+                """
+            )
+        )
+        conn.execute(
+            text(
+                """
+                CREATE TABLE automation_channel (
+                    id INTEGER PRIMARY KEY,
+                    channel_code TEXT,
+                    channel_name TEXT
+                )
+                """
+            )
+        )
+        conn.execute(
+            text(
+                """
+                CREATE TABLE wecom_customer_acquisition_links (
+                    id INTEGER PRIMARY KEY,
+                    automation_channel_id INTEGER,
+                    link_name TEXT,
+                    initial_audience_code TEXT,
+                    updated_at TEXT
+                )
+                """
+            )
+        )
+        conn.execute(
+            text(
+                """
+                INSERT INTO automation_member (id, external_contact_id, source_channel_id, updated_at)
+                VALUES (1, 'wx_ext_retired', 11, '2026-06-25 10:00:00')
+                """
+            )
+        )
+        conn.execute(
+            text(
+                """
+                INSERT INTO automation_channel (id, channel_code, channel_name)
+                VALUES (11, 'channel-11', 'Fallback Channel')
+                """
+            )
+        )
+        conn.execute(
+            text(
+                """
+                INSERT INTO wecom_customer_acquisition_links (
+                    id, automation_channel_id, link_name, initial_audience_code, updated_at
+                )
+                VALUES (21, 11, 'Preserved Link Name', 'audience-21', '2026-06-25 10:01:00')
+                """
+            )
+        )
+
+    assert (
+        SidebarV2SqlRepository(engine=engine).get_workflow_title_for_customer("wx_ext_retired")
+        == "Preserved Link Name"
+    )
+
+
+def test_sidebar_user_visible_read_paths_do_not_join_retired_automation_tables() -> None:
+    sidebar_source = inspect.getsource(SidebarV2SqlRepository.get_workflow_title_for_customer)
+    commerce_source = inspect.getsource(PostgresCommerceRepository.list_lead_channels)
+
+    assert "automation_workflow" not in sidebar_source
+    assert "automation_program" not in sidebar_source
+    assert "automation_program" not in commerce_source
 
 
 def test_sidebar_v2_workbench_and_read_panels_are_next_owned(monkeypatch):
