@@ -4,8 +4,9 @@ from pathlib import Path
 
 from sqlalchemy import text
 
+from aicrm_next.ai_audience_ops.package_spec import parse_markdown_spec, validate_spec
 from aicrm_next.shared.db_session import get_session_factory
-from scripts.ai_audience_apply_package_spec import apply_spec, parse_markdown_spec, validate_spec
+from scripts.ai_audience_apply_package_spec import apply_spec
 
 
 VALID_SPEC = """---

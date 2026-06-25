@@ -303,6 +303,17 @@ class AudiencePackageService:
             "version": _safe_version(result.get("version")),
         }
 
+    def publish_external_package(self, package_id: int, *, version_id: int | None = None) -> dict[str, Any]:
+        result = self._publish_validated(int(package_id), version_id=version_id, activate=False)
+        if not result.get("ok"):
+            return result
+        package = self._repo.get_package_detail(int(package_id)) or result.get("package") or {}
+        return {
+            "ok": True,
+            "package": _admin_package_detail(package),
+            "version": _safe_version(result.get("version")),
+        }
+
     def _available_copy_key(self, base_key: str) -> str:
         candidate = base_key
         suffix = 2
@@ -356,6 +367,9 @@ class AudiencePackageService:
         return {"ok": not validation_errors, "version": version, "validation_errors": sorted(set(validation_errors))}
 
     def publish(self, package_id: int, *, version_id: int | None = None) -> dict[str, Any]:
+        return self._publish_validated(package_id, version_id=version_id, activate=True)
+
+    def _publish_validated(self, package_id: int, *, version_id: int | None = None, activate: bool = True) -> dict[str, Any]:
         package = self._repo.get_package(package_id)
         if not package:
             return {"ok": False, "error": "package_not_found"}
@@ -384,7 +398,7 @@ class AudiencePackageService:
             return {"ok": False, "error": "sql_validation_failed", "validation_errors": sorted(set(errors))}
         self._repo.update_version_validation(int(version["id"]), dependencies=sorted(set(dependencies)), validation_errors=[])
         self._repo.replace_dependencies(package_id, int(version["id"]), sorted(set(dependencies)))
-        published = self._repo.publish_version(package_id, int(version["id"]))
+        published = self._repo.publish_version(package_id, int(version["id"])) if activate else self._repo.publish_version_without_activation(package_id, int(version["id"]))
         return {"ok": True, "package": self._repo.get_package(package_id), "version": published}
 
     def pause(self, package_id: int, *, reason: str = "") -> dict[str, Any]:

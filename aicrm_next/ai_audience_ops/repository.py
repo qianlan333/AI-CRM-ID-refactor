@@ -146,6 +146,12 @@ class AudienceRepository:
     def publish_version(self, package_id: int, version_id: int) -> dict[str, Any] | None:
         raise NotImplementedError
 
+    def publish_version_without_activation(self, package_id: int, version_id: int) -> dict[str, Any] | None:
+        raise NotImplementedError
+
+    def insert_external_spec_audit(self, *, operator: str, action_type: str, package_key: str, before: dict[str, Any], after: dict[str, Any]) -> None:
+        raise NotImplementedError
+
     def get_active_subscription_by_target(
         self,
         package_id: int,
@@ -752,6 +758,62 @@ class SQLAlchemyAudienceRepository(AudienceRepository):
             session.commit()
             return _public_row(dict(row))
 
+    def publish_version_without_activation(self, package_id: int, version_id: int) -> dict[str, Any] | None:
+        with self._session_factory() as session:
+            existing_package = session.execute(
+                text(
+                    """
+                    SELECT status, next_incremental_refresh_at, next_daily_refresh_at
+                    FROM ai_audience_package
+                    WHERE id = :package_id
+                    LIMIT 1
+                    """
+                ),
+                {"package_id": int(package_id)},
+            ).mappings().fetchone()
+            if not existing_package:
+                return None
+            session.execute(
+                text("UPDATE ai_audience_package_version SET status = 'archived' WHERE package_id = :package_id AND id <> :version_id"),
+                {"package_id": int(package_id), "version_id": int(version_id)},
+            )
+            row = session.execute(
+                text(
+                    """
+                    UPDATE ai_audience_package_version
+                    SET status = 'published', published_at = CURRENT_TIMESTAMP
+                    WHERE id = :version_id AND package_id = :package_id
+                    RETURNING *
+                    """
+                ),
+                {"package_id": int(package_id), "version_id": int(version_id)},
+            ).mappings().fetchone()
+            if not row:
+                session.rollback()
+                return None
+            session.execute(
+                text(
+                    """
+                    UPDATE ai_audience_package
+                    SET current_version_id = :version_id,
+                        status = :status,
+                        next_incremental_refresh_at = :next_incremental_refresh_at,
+                        next_daily_refresh_at = :next_daily_refresh_at,
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE id = :package_id
+                    """
+                ),
+                {
+                    "package_id": int(package_id),
+                    "version_id": int(version_id),
+                    "status": _text(existing_package.get("status")) or "paused",
+                    "next_incremental_refresh_at": existing_package.get("next_incremental_refresh_at"),
+                    "next_daily_refresh_at": existing_package.get("next_daily_refresh_at"),
+                },
+            )
+            session.commit()
+            return _public_row(dict(row))
+
     def update_package_status(self, package_id: int, status: str, *, reason: str = "") -> dict[str, Any] | None:
         return self._write_one(
             """
@@ -799,6 +861,28 @@ class SQLAlchemyAudienceRepository(AudienceRepository):
                     },
                 )
             session.commit()
+
+    def insert_external_spec_audit(self, *, operator: str, action_type: str, package_key: str, before: dict[str, Any], after: dict[str, Any]) -> None:
+        self._write_one(
+            """
+            INSERT INTO admin_operation_logs (
+                operator, action_type, target_type, target_id,
+                before_json, after_json, created_at
+            )
+            VALUES (
+                :operator, :action_type, 'ai_audience_external_spec', :target_id,
+                CAST(:before_json AS jsonb), CAST(:after_json AS jsonb), CURRENT_TIMESTAMP
+            )
+            RETURNING id
+            """,
+            {
+                "operator": _text(operator) or "external",
+                "action_type": _text(action_type),
+                "target_id": _text(package_key) or "-",
+                "before_json": _json_dumps(before or {}),
+                "after_json": _json_dumps(after or {}),
+            },
+        )
 
     def execute_readonly_query(self, sql: str, params: dict[str, Any], *, limit: int, timeout_seconds: int) -> list[dict[str, Any]]:
         readonly_url = _text(os.getenv("AICRM_AUDIENCE_READONLY_DATABASE_URL"))
