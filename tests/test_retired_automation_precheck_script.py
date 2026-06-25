@@ -42,13 +42,43 @@ def test_temporal_detection_keeps_text_time_like_columns_out_of_recent_predicate
     ]
 
 
+def test_precheck_derives_safe_recheck_time_from_recent_blocker_max_times():
+    blocker = {
+        "table": "automation_event_v2",
+        "exists": True,
+        "total_count": 69,
+        "recent_window_count": 1,
+        "max_times": {
+            "created_at": "2026-06-23 09:07:39.557454+08",
+            "occurred_at": "2026-06-23 09:07:39.557198+08",
+        },
+    }
+
+    assert precheck.latest_table_time(blocker) == "2026-06-23 09:07:39.557454+08"
+    assert precheck.blocker_summary([blocker]) == [
+        {
+            "table": "automation_event_v2",
+            "recent_window_count": 1,
+            "total_count": 69,
+            "latest_time": "2026-06-23 09:07:39.557454+08",
+        }
+    ]
+    assert precheck.earliest_safe_recheck_at([blocker], window_days=7) == "2026-06-30T09:07:39.557454+08:00"
+
+
 def test_run_precheck_blocks_physical_drop_when_recent_drop_candidate_exists(monkeypatch):
     monkeypatch.setattr(precheck, "DROP_CANDIDATES", ["automation_event_v2", "automation_program"])
     monkeypatch.setattr(precheck, "PRESERVE_SAMPLES", ["automation_channel_contact", "automation_agent_output"])
 
     def fake_inspect_table(_client, table_name, *, window_days):
         if table_name == "automation_event_v2":
-            return {"table": table_name, "exists": True, "recent_window_count": 1}
+            return {
+                "table": table_name,
+                "exists": True,
+                "total_count": 1,
+                "recent_window_count": 1,
+                "max_times": {"created_at": "2026-06-23 09:07:39.557454+08"},
+            }
         return {"table": table_name, "exists": True, "recent_window_count": 0}
 
     monkeypatch.setattr(precheck, "inspect_table", fake_inspect_table)
@@ -56,6 +86,16 @@ def test_run_precheck_blocks_physical_drop_when_recent_drop_candidate_exists(mon
     result = precheck.run_precheck(object(), window_days=7)
 
     assert result["safe_to_drop"] is False
+    assert result["latest_recent_blocker_time"] == "2026-06-23T09:07:39.557454+08:00"
+    assert result["earliest_safe_recheck_at"] == "2026-06-30T09:07:39.557454+08:00"
+    assert result["recent_blocker_summary"] == [
+        {
+            "table": "automation_event_v2",
+            "recent_window_count": 1,
+            "total_count": 1,
+            "latest_time": "2026-06-23 09:07:39.557454+08",
+        }
+    ]
     assert [item["table"] for item in result["recent_blockers"]] == ["automation_event_v2"]
     assert {item["table"] for item in result["preserve_samples"]} == {
         "automation_channel_contact",

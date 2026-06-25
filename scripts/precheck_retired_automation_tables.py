@@ -6,7 +6,7 @@ import json
 import os
 import subprocess
 import sys
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -212,6 +212,63 @@ def max_times(client: PsqlReadOnlyClient, table_name: str, temporal: list[str]) 
     return result
 
 
+def parse_pg_timestamp(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    normalized = value.strip()
+    if not normalized:
+        return None
+    if len(normalized) >= 3 and normalized[-3] in {"+", "-"} and normalized[-2:].isdigit():
+        normalized = f"{normalized}:00"
+    try:
+        return datetime.fromisoformat(normalized)
+    except ValueError:
+        return None
+
+
+def timestamp_sort_key(value: datetime) -> datetime:
+    return value.replace(tzinfo=None)
+
+
+def latest_table_time(item: dict[str, Any]) -> str | None:
+    latest: datetime | None = None
+    latest_text: str | None = None
+    for value in (item.get("max_times") or {}).values():
+        parsed = parse_pg_timestamp(value)
+        if parsed is None:
+            continue
+        if latest is None or timestamp_sort_key(parsed) > timestamp_sort_key(latest):
+            latest = parsed
+            latest_text = value
+    return latest_text
+
+
+def blocker_summary(recent_blockers: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [
+        {
+            "table": item.get("table"),
+            "recent_window_count": item.get("recent_window_count"),
+            "total_count": item.get("total_count"),
+            "latest_time": latest_table_time(item),
+        }
+        for item in recent_blockers
+    ]
+
+
+def earliest_safe_recheck_at(recent_blockers: list[dict[str, Any]], *, window_days: int) -> str | None:
+    latest: datetime | None = None
+    for item in recent_blockers:
+        latest_text = latest_table_time(item)
+        parsed = parse_pg_timestamp(latest_text)
+        if parsed is None:
+            continue
+        if latest is None or timestamp_sort_key(parsed) > timestamp_sort_key(latest):
+            latest = parsed
+    if latest is None:
+        return None
+    return (latest + timedelta(days=int(window_days))).isoformat()
+
+
 def run_precheck(client: PsqlReadOnlyClient, *, window_days: int) -> dict[str, Any]:
     drop_candidates = [
         inspect_table(client, table_name, window_days=window_days)
@@ -229,19 +286,24 @@ def run_precheck(client: PsqlReadOnlyClient, *, window_days: int) -> dict[str, A
         item["table"] for item in drop_candidates
         if not item.get("exists")
     ]
+    safe_to_drop = not recent_blockers
     return {
         "ok": True,
         "generated_at": datetime.now().isoformat(),
         "window_days": window_days,
-        "safe_to_drop": not recent_blockers,
+        "safe_to_drop": safe_to_drop,
         "existing_drop_candidate_count": sum(1 for item in drop_candidates if item.get("exists")),
         "missing_drop_candidates": missing_drop_candidates,
+        "latest_recent_blocker_time": None if safe_to_drop else earliest_safe_recheck_at(recent_blockers, window_days=0),
+        "earliest_safe_recheck_at": None if safe_to_drop else earliest_safe_recheck_at(recent_blockers, window_days=window_days),
+        "recent_blocker_summary": blocker_summary(recent_blockers),
         "recent_blockers": recent_blockers,
         "drop_candidates": drop_candidates,
         "preserve_samples": preserve_samples,
         "notes": [
             "This precheck is read-only and does not create, update, delete, truncate, or drop data.",
             "PR-4 physical cleanup can proceed only when recent_blockers is empty.",
+            "earliest_safe_recheck_at is derived from recent blocker max timestamps plus window_days; rerun precheck before creating a drop migration.",
             "Preserve samples are inspected to catch accidental inclusion of channel/agent tables in cleanup scope.",
         ],
     }
