@@ -4020,6 +4020,17 @@ routes:
   data_source: read_model
   requires_auth: true
   rollback: previous_release
+- path: /admin/automation-conversion/programs/{retired_path:path}
+  methods:
+  - GET
+  route_name: retired_automation_program_page
+  capability_owner: ai_audience_ops
+  runtime_owner: ai_crm_next
+  layer: admin_page
+  external_effects: none
+  data_source: read_model
+  requires_auth: true
+  rollback: previous_release
 - path: /api/admin/ai-audience/packages
   methods:
   - GET
