@@ -402,11 +402,35 @@ def test_admin_ai_audience_detail_page_has_required_sections_without_top_actions
 
     assert response.status_code == 200
     html = response.text
+    assert 'aria-label="人群包基础摘要"' in html
+    assert 'aria-label="人群包配置维度"' in html
+    assert html.count('data-panel="') == 4
+    assert html.count('<section class="ai-panel') == 4
     for expected in (
+        'data-panel="basic"',
+        'data-panel="webhook"',
+        'data-panel="senders"',
+        'data-panel="members"',
+        'id="panel-basic"',
+        'id="panel-webhook"',
+        'id="panel-senders"',
+        'id="panel-members"',
+        'id="saveCurrentDimensionBtn"',
+    ):
+        assert expected in html
+    for expected in (
+        "客户管理后台 / 自动化运营 / 人群包详情",
         "基础配置",
         "Webhook",
         "发送人白名单",
         "成员列表",
+        "当前人数",
+        "最后一次刷新",
+        "刷新方式",
+        "状态",
+        "返回列表",
+        "手动刷新",
+        "保存当前维度",
         "人群包名称",
         "筛选逻辑简述",
         "增量刷新",
@@ -419,7 +443,6 @@ def test_admin_ai_audience_detail_page_has_required_sections_without_top_actions
         "/api/admin/ai-audience/packages/123/members",
         "/api/admin/ai-audience/packages/123/webhooks",
         "/api/admin/ai-audience/packages/123/senders",
-        "OperationMemberPicker.open",
     ):
         assert expected in html
     for forbidden in (
@@ -445,6 +468,21 @@ def test_admin_ai_audience_detail_page_has_required_sections_without_top_actions
         "每 3 分钟增量刷新后，如果有新增用户，则外推。",
         "请求 body 仅为 external_userid 数组，包信息、签名、幂等键走 Header。",
         "用户被多个客服添加时，只在白名单里选；多个命中按优先级取第一个；无命中则跳过。",
+        "名称、筛选逻辑、刷新策略",
+        "接收地址、外推地址",
+        "外发身份与优先级",
+        "当前命中人群明细",
+        "对应接口",
+        "这里保留",
+        "这里不混入",
+        "用于后续外部 Agent",
+        "配置向导",
+        "入口渠道",
+        "分层规则",
+        "入池规则",
+        "运营编排",
+        "检查并发布",
+        "自动化运营方案",
     ):
         assert forbidden not in html
 
