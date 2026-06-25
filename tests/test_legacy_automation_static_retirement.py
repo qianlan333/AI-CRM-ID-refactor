@@ -49,3 +49,12 @@ def test_retired_runtime_v2_routes_are_not_registered() -> None:
     ]:
         response = client.get(path)
         assert response.status_code in {404, 410}
+
+
+def test_retired_runtime_v2_realtest_guard_is_removed_from_broadcast_worker() -> None:
+    source = (PROJECT_ROOT / "aicrm_next" / "background_jobs" / "broadcast_queue_worker.py").read_text(encoding="utf-8")
+
+    assert "RuntimeV2真实链路测试" not in source
+    assert "runtime_v2_realtest_" not in source
+    assert "realtest_sender_not_allowed" not in source
+    assert "realtest_target_not_allowed" not in source
