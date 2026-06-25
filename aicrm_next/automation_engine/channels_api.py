@@ -870,9 +870,6 @@ def reset_wecom_customer_acquisition_link_fixture_state() -> None:
             "link_url": "https://work.weixin.qq.com/ca/next-fixture",
             "customer_channel": "wca_next_fixture",
             "final_url": "https://work.weixin.qq.com/ca/next-fixture?customer_channel=wca_next_fixture",
-            "program_id": None,
-            "workflow_id": None,
-            "initial_audience_code": "pending_questionnaire",
             "status": "active",
             "adapter_mode": "real_blocked",
             "wecom_api_called": False,
@@ -986,9 +983,6 @@ async def wecom_customer_acquisition_links(request: Request) -> JSONResponse:
         "link_url": link_url,
         "customer_channel": customer_channel,
         "final_url": _wecom_final_url(link_url, customer_channel),
-        "program_id": int(body["program_id"]) if _text(body.get("program_id")).isdigit() else None,
-        "workflow_id": int(body["workflow_id"]) if _text(body.get("workflow_id")).isdigit() else None,
-        "initial_audience_code": _text(body.get("initial_audience_code")) or "pending_questionnaire",
         "status": "active",
         "adapter_mode": "real_blocked",
         "wecom_api_called": False,
@@ -1037,7 +1031,7 @@ async def wecom_customer_acquisition_link_detail(request: Request, link_id: str)
         row["status"] = "disabled"
     elif request.method.upper() == "PATCH":
         body = await _wecom_link_payload(request)
-        for key in ("link_name", "name", "description", "initial_audience_code"):
+        for key in ("link_name", "name", "description"):
             if key in body:
                 row[key] = _text(body.get(key))
         row["updated_at"] = datetime.now(timezone.utc).isoformat()
