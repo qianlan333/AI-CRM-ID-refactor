@@ -91,6 +91,20 @@ def test_automation_agent_list_actions_are_horizontal_on_desktop() -> None:
     assert "flex-direction: column" not in body
 
 
+def test_automation_agent_list_table_uses_available_desktop_width() -> None:
+    source = _read(LIST_TEMPLATE)
+    table_css = re.search(r"\.automation-agent-table\s*\{(?P<body>.*?)\}", source, re.S)
+    wrap_css = re.search(r"\.automation-agent-table-wrap\s*\{(?P<body>.*?)\}", source, re.S)
+
+    assert table_css, "desktop table CSS must exist"
+    assert wrap_css, "desktop table wrapper CSS must exist"
+    assert "width: 100%" in table_css.group("body")
+    assert "min-width" not in table_css.group("body")
+    assert "overflow-x: hidden" in wrap_css.group("body")
+    assert ".automation-agent-table .w-plan {\n    width: 46%;" in source
+    assert ".automation-agent-table .w-op {\n    width: 24%;" in source
+
+
 def test_automation_agent_edit_page_contract(next_client, monkeypatch) -> None:
     monkeypatch.setenv("SECRET_KEY", "automation-agent-edit-page-test")
 
