@@ -4,10 +4,6 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
-from aicrm_next.automation_engine.customer_webhooks import (
-    get_customer_webhook_side_effect_plans,
-    reset_customer_webhook_fixture_state,
-)
 from aicrm_next.integration_gateway.questionnaire_adapters import QuestionnaireSubmitSideEffectGateway
 from aicrm_next.main import create_app
 
@@ -15,22 +11,24 @@ from aicrm_next.main import create_app
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def test_singular_activation_webhook_uses_customer_webhook_plan_not_automation_member_write(monkeypatch) -> None:
+def test_singular_activation_webhook_is_retired_without_automation_member_write(monkeypatch) -> None:
     monkeypatch.delenv("AICRM_NEXT_FORCE_PRODUCTION_DATA", raising=False)
-    reset_customer_webhook_fixture_state()
     client = TestClient(create_app(), raise_server_exceptions=False)
 
     response = client.post("/api/customer-automation/activation-webhook", json={"mobile": "13800000000", "source": "legacy-singular"})
 
-    assert response.status_code == 200
+    assert response.status_code == 410
     payload = response.json()
-    assert payload["ok"] is True
-    assert payload["source_status"] == "next_customer_activation_webhook"
-    assert payload["status"] == "planned_local_only"
-    assert payload["customer_automation_applied"] == "local_only"
+    assert payload["ok"] is False
+    assert payload["error"] == "legacy_customer_automation_retired"
+    assert payload["route_owner"] == "ai_crm_next"
     assert payload["real_external_call_executed"] is False
     assert payload["automation_runtime_executed"] is False
-    assert get_customer_webhook_side_effect_plans()
+    assert payload["outbound_webhook_executed"] is False
+
+
+def test_customer_webhook_implementation_module_is_removed() -> None:
+    assert not (ROOT / "aicrm_next/automation_engine/customer_webhooks.py").exists()
 
 
 def test_questionnaire_adapter_noops_retired_automation_member_projection() -> None:

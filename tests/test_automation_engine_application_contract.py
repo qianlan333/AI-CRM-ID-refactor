@@ -50,6 +50,7 @@ def test_retired_task_workflow_sql_repository_modules_are_removed() -> None:
         "aicrm_next.automation_engine.task_group_sqlalchemy_repository",
         "aicrm_next.automation_engine.workflow_sqlalchemy_repository",
         "aicrm_next.automation_engine.workflow_node_sqlalchemy_repository",
+        "aicrm_next.automation_engine.customer_webhooks",
     }
 
     for module_name in retired_modules:

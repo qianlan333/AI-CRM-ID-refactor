@@ -10,7 +10,6 @@ from .admin_auth import reset_admin_auth_fixture_state
 from .ai_audience_ops import register_ai_audience_event_consumers
 from .admin_jobs.repository import reset_admin_jobs_fixture_state
 from .automation_engine.group_ops.repo import reset_group_ops_fixture_state
-from .automation_engine.customer_webhooks import reset_customer_webhook_fixture_state
 from .automation_engine.repo import reset_automation_fixture_state
 from .automation_engine.channels_api import reset_wecom_customer_acquisition_link_fixture_state
 from .commerce.repo import reset_commerce_fixture_state
@@ -54,7 +53,6 @@ def create_app() -> FastAPI:
         reset_questionnaire_fixture_state()
         reset_questionnaire_h5_write_fixture_state()
         reset_automation_fixture_state()
-        reset_customer_webhook_fixture_state()
         reset_group_ops_fixture_state()
         reset_commerce_fixture_state()
         reset_media_library_fixture_state()
