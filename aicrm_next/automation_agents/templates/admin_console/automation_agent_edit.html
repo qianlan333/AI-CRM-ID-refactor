@@ -128,7 +128,7 @@
 
   .automation-agent-url-row {
     display: grid;
-    grid-template-columns: 1fr 46px;
+    grid-template-columns: 1fr auto auto;
     gap: 8px;
     margin-bottom: 18px;
   }
@@ -419,11 +419,12 @@
       <div class="automation-agent-url-row">
         <input class="automation-agent-input automation-agent-code" id="receiveUrl" value="" readonly>
         <button class="automation-agent-copy-btn" type="button" data-copy="#receiveUrl" aria-label="复制接收地址">⧉</button>
+        <button class="automation-agent-btn" id="resetToken" type="button">重置 token</button>
       </div>
 
       <label class="automation-agent-label" for="sendUrl">发送地址 <span class="automation-agent-method">POST</span></label>
       <div class="automation-agent-url-row">
-        <input class="automation-agent-input automation-agent-code" id="sendUrl" value="" readonly>
+        <input class="automation-agent-input automation-agent-code" id="sendUrl" value="">
         <button class="automation-agent-copy-btn" type="button" data-copy="#sendUrl" aria-label="复制发送地址">⧉</button>
       </div>
     </section>
@@ -517,6 +518,7 @@
   (() => {
     const agentApiUrl = {{ automation_agent_api_url | tojson }};
     const fixedContentApiUrl = {{ automation_agent_fixed_content_api_url | tojson }};
+    const resetTokenApiUrl = {{ automation_agent_reset_token_api_url | tojson }};
     const state = {
       agent: null,
       focusPrompt: null,
@@ -536,6 +538,7 @@
       statusBadge: document.getElementById("statusBadge"),
       receiveUrl: document.getElementById("receiveUrl"),
       sendUrl: document.getElementById("sendUrl"),
+      resetToken: document.getElementById("resetToken"),
       rolePrompt: document.getElementById("rolePrompt"),
       taskPrompt: document.getElementById("taskPrompt"),
       deps: document.getElementById("deps"),
@@ -605,7 +608,7 @@
       const raw = String(value || "");
       try {
         const parsed = new URL(raw, window.location.origin);
-        return parsed.pathname;
+        return `${parsed.pathname}${parsed.search}`;
       } catch (_error) {
         return raw;
       }
@@ -658,11 +661,8 @@
       els.statusBadge.className = `automation-agent-pill ${active ? "green" : ""}`;
     };
 
-    const renderUrls = () => {
-      const code = state.agent && state.agent.agent_code ? state.agent.agent_code : "";
-      const packageKey = state.agent && state.agent.bound_package_key ? state.agent.bound_package_key : "";
-      els.receiveUrl.value = `/api/ai/agents/${code}/audience-webhook`;
-      els.sendUrl.value = `/api/ai/audience/packages/${packageKey}/webhook`;
+    const renderReceiveUrl = () => {
+      els.receiveUrl.value = state.agent && state.agent.receive_webhook_url ? pathOnly(state.agent.receive_webhook_url) : "";
     };
 
     const renderDeps = () => {
@@ -757,6 +757,7 @@
     const formPayload = () => ({
       agent_name: els.agentName.value.trim(),
       bound_package_key: state.agent && state.agent.bound_package_key ? state.agent.bound_package_key : "",
+      send_webhook_url: els.sendUrl.value.trim(),
       status: els.agentStatus.value,
       role_prompt: els.rolePrompt.value,
       task_prompt: els.taskPrompt.value,
@@ -783,6 +784,14 @@
       toast("固定素材已保存");
     };
 
+    const resetInboundToken = async () => {
+      if (!window.confirm("确认重置接收地址 token？重置后旧地址将失效。")) return;
+      const payload = await fetchJson(resetTokenApiUrl, { method: "POST" });
+      state.agent = payload.agent;
+      applyAgent(payload.agent);
+      toast("接收 token 已重置");
+    };
+
     const applyAgent = (agent) => {
       state.agent = agent || {};
       els.title.textContent = state.agent.agent_name || "编辑 Agent";
@@ -796,7 +805,8 @@
       state.materialDetails = new Map();
       seedMaterialDetails(state.agent.fixed_content_package_preview && state.agent.fixed_content_package_preview.materials);
       if (state.agent.receive_webhook_url) els.receiveUrl.value = pathOnly(state.agent.receive_webhook_url);
-      if (state.agent.send_webhook_url) els.sendUrl.value = pathOnly(state.agent.send_webhook_url);
+      else renderReceiveUrl();
+      els.sendUrl.value = state.agent.send_webhook_url || "";
       renderStatus();
       renderDeps();
       renderAssets();
@@ -863,6 +873,9 @@
       toast("已载入已发布版本");
     });
     els.agentStatus.addEventListener("change", renderStatus);
+    els.resetToken.addEventListener("click", () => {
+      resetInboundToken().catch((error) => window.alert(error.message || "重置失败"));
+    });
 
     loadAgent().catch((error) => window.alert(error.message || "加载失败"));
   })();

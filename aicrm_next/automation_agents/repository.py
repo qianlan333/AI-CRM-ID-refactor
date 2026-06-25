@@ -124,11 +124,13 @@ class AutomationAgentRepository:
                 agent_code, agent_name, bound_package_key, status,
                 draft_role_prompt, draft_task_prompt, published_role_prompt, published_task_prompt,
                 draft_version, published_version, fixed_content_package_json, inbound_webhook_secret,
+                inbound_webhook_token, send_webhook_url,
                 created_at, updated_at
             ) VALUES (
                 :agent_code, :agent_name, :bound_package_key, :status,
                 :role_prompt, :task_prompt, :role_prompt, :task_prompt,
                 1, 1, CAST(:fixed_content_package_json AS jsonb), :inbound_webhook_secret,
+                :inbound_webhook_token, :send_webhook_url,
                 CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
             )
             RETURNING *
@@ -142,6 +144,8 @@ class AutomationAgentRepository:
                 "task_prompt": _text(payload.get("task_prompt")),
                 "fixed_content_package_json": _json_dumps(payload.get("fixed_content_package") or {}),
                 "inbound_webhook_secret": _text(payload.get("inbound_webhook_secret")) or uuid4().hex,
+                "inbound_webhook_token": _text(payload.get("inbound_webhook_token")) or f"agtok_{uuid4().hex}",
+                "send_webhook_url": _text(payload.get("send_webhook_url")),
             },
         )
         if not row:
@@ -158,6 +162,11 @@ class AutomationAgentRepository:
             "status": _text(payload.get("status")) if "status" in payload else _text(existing.get("status")),
             "role_prompt": _text(payload.get("role_prompt")) if "role_prompt" in payload else _text(existing.get("draft_role_prompt")),
             "task_prompt": _text(payload.get("task_prompt")) if "task_prompt" in payload else _text(existing.get("draft_task_prompt")),
+            "send_webhook_url": (
+                _text(payload.get("send_webhook_url"))
+                if "send_webhook_url" in payload
+                else _text(existing.get("send_webhook_url"))
+            ),
             "fixed_content_package": (
                 payload.get("fixed_content_package")
                 if "fixed_content_package" in payload
@@ -177,6 +186,7 @@ class AutomationAgentRepository:
                 draft_version = draft_version + 1,
                 published_version = published_version + 1,
                 fixed_content_package_json = CAST(:fixed_content_package_json AS jsonb),
+                send_webhook_url = :send_webhook_url,
                 archived_at = CASE WHEN :status = 'archived' THEN COALESCE(archived_at, CURRENT_TIMESTAMP) ELSE archived_at END,
                 updated_at = CURRENT_TIMESTAMP
             WHERE id = :agent_id
@@ -189,8 +199,22 @@ class AutomationAgentRepository:
                 "status": merged["status"] or "active",
                 "role_prompt": merged["role_prompt"],
                 "task_prompt": merged["task_prompt"],
+                "send_webhook_url": merged["send_webhook_url"],
                 "fixed_content_package_json": _json_dumps(merged["fixed_content_package"]),
             },
+        )
+
+    def rotate_inbound_token(self, agent_id: int, token: str) -> dict[str, Any] | None:
+        return self._write_one(
+            """
+            UPDATE automation_agent_runtime_config
+            SET inbound_webhook_token = :token,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = :agent_id
+              AND status <> 'archived'
+            RETURNING *
+            """,
+            {"agent_id": int(agent_id), "token": _text(token)},
         )
 
     def set_status(self, agent_id: int, status: str) -> dict[str, Any] | None:
@@ -362,4 +386,3 @@ class AutomationAgentRepository:
 
 def build_automation_agent_repository() -> AutomationAgentRepository:
     return AutomationAgentRepository()
-

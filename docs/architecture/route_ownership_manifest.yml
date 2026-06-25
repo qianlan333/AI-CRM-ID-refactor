@@ -7023,6 +7023,17 @@ routes:
   data_source: command
   requires_auth: true
   rollback: previous_release
+- path: /api/admin/automation-agents/{agent_id}/reset-token
+  methods:
+  - POST
+  route_name: api.admin_automation_agent_reset_token
+  capability_owner: automation_agents
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: none
+  data_source: command
+  requires_auth: true
+  rollback: previous_release
 - path: /api/admin/automation-agents/{agent_id}
   methods:
   - DELETE

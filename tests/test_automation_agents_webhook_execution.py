@@ -27,7 +27,15 @@ def _insert_package(session, *, package_key: str = "agent_callback_pkg", secret:
     return int(row["id"])
 
 
-def _insert_agent(session, *, agent_code: str = "activation_agent", status: str = "active", package_key: str = "agent_callback_pkg", secret: str = "agent-secret") -> int:
+def _insert_agent(
+    session,
+    *,
+    agent_code: str = "activation_agent",
+    status: str = "active",
+    package_key: str = "agent_callback_pkg",
+    secret: str = "agent-secret",
+    token: str = "agent-token",
+) -> int:
     row = session.execute(
         text(
             """
@@ -35,18 +43,27 @@ def _insert_agent(session, *, agent_code: str = "activation_agent", status: str 
                 agent_code, agent_name, bound_package_key, status,
                 draft_role_prompt, draft_task_prompt, published_role_prompt, published_task_prompt,
                 draft_version, published_version, fixed_content_package_json, inbound_webhook_secret,
+                inbound_webhook_token, send_webhook_url,
                 created_at, updated_at
             )
             VALUES (
                 :agent_code, '激活 Agent', :package_key, :status,
                 '你是助手，参考{{用户标签}}', '输出话术：{{最近20条聊天信息}}', '你是助手，参考{{用户标签}}', '输出话术：{{最近20条聊天信息}}',
                 1, 1, '{"image_library_ids":[12],"miniprogram_library_ids":[],"attachment_library_ids":[],"content_text":""}'::jsonb, :secret,
+                :token, :send_webhook_url,
                 CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
             )
             RETURNING id
             """
         ),
-        {"agent_code": agent_code, "package_key": package_key, "status": status, "secret": secret},
+        {
+            "agent_code": agent_code,
+            "package_key": package_key,
+            "status": status,
+            "secret": secret,
+            "token": token,
+            "send_webhook_url": f"/api/ai/audience/packages/{package_key}/webhook",
+        },
     ).mappings().one()
     return int(row["id"])
 
@@ -69,10 +86,30 @@ def test_agent_webhook_accepts_array_dedupes_and_requires_hmac(next_client, next
     raw = json.dumps(["wm_001", "", "wm_001", "wm_002"], ensure_ascii=False, separators=(",", ":")).encode()
     missing = next_client.post("/api/ai/agents/activation_agent/audience-webhook", content=raw, headers={"Content-Type": "application/json"})
     assert missing.status_code == 401
+    assert missing.json()["error"] == "missing_token"
+
+    wrong_token = next_client.post(
+        "/api/ai/agents/activation_agent/audience-webhook?token=wrong",
+        content=raw,
+        headers={"Content-Type": "application/json", "X-AICRM-Signature": _signature("agent-secret", raw)},
+    )
+    assert wrong_token.status_code == 401
+    assert wrong_token.json()["error"] == "invalid_token"
+
+    missing_signature = next_client.post(
+        "/api/ai/agents/activation_agent/audience-webhook?token=agent-token",
+        content=raw,
+        headers={"Content-Type": "application/json"},
+    )
+    assert missing_signature.status_code == 401
+    assert missing_signature.json()["error"] == "missing_signature"
+
+    missing = next_client.post("/api/ai/agents/activation_agent/audience-webhook?token=agent-token", content=raw, headers={"Content-Type": "application/json"})
+    assert missing.status_code == 401
     assert missing.json()["error"] == "missing_signature"
 
     invalid = next_client.post(
-        "/api/ai/agents/activation_agent/audience-webhook",
+        "/api/ai/agents/activation_agent/audience-webhook?token=agent-token",
         content=raw,
         headers={"Content-Type": "application/json", "X-AICRM-Signature": "bad"},
     )
@@ -80,7 +117,7 @@ def test_agent_webhook_accepts_array_dedupes_and_requires_hmac(next_client, next
     assert invalid.json()["error"] == "invalid_signature"
 
     accepted = next_client.post(
-        "/api/ai/agents/activation_agent/audience-webhook",
+        "/api/ai/agents/activation_agent/audience-webhook?token=agent-token",
         content=raw,
         headers={
             "Content-Type": "application/json",
@@ -98,7 +135,7 @@ def test_agent_webhook_accepts_array_dedupes_and_requires_hmac(next_client, next
     assert _count("automation_agent_webhook_item") == 2
 
     replay = next_client.post(
-        "/api/ai/agents/activation_agent/audience-webhook",
+        "/api/ai/agents/activation_agent/audience-webhook?token=agent-token",
         content=raw,
         headers={"Content-Type": "application/json", "X-AICRM-Signature": _signature("agent-secret", raw), "X-AICRM-Idempotency-Key": "dedupe-key-1"},
     )
@@ -116,7 +153,7 @@ def test_agent_webhook_rejects_inactive_and_large_payload(next_client, next_pg_s
 
     raw = b'{"external_userids":["wm_001"]}'
     paused = next_client.post(
-        "/api/ai/agents/paused_agent/audience-webhook",
+        "/api/ai/agents/paused_agent/audience-webhook?token=agent-token",
         content=raw,
         headers={"Content-Type": "application/json", "X-AICRM-Signature": _signature("agent-secret", raw)},
     )
@@ -126,7 +163,7 @@ def test_agent_webhook_rejects_inactive_and_large_payload(next_client, next_pg_s
     large_payload = {"external_userids": [f"wm_{i:03d}" for i in range(201)]}
     large_raw = json.dumps(large_payload, separators=(",", ":")).encode()
     large = next_client.post(
-        "/api/ai/agents/large_agent/audience-webhook",
+        "/api/ai/agents/large_agent/audience-webhook?token=agent-token",
         content=large_raw,
         headers={"Content-Type": "application/json", "X-AICRM-Signature": _signature("agent-secret", large_raw)},
     )
@@ -151,7 +188,7 @@ def test_worker_fake_mode_generates_package_and_enqueues_send_plan(next_client, 
 
     raw = b'{"external_userids":["wm_001"]}'
     accepted = next_client.post(
-        "/api/ai/agents/activation_agent/audience-webhook",
+        "/api/ai/agents/activation_agent/audience-webhook?token=agent-token",
         content=raw,
         headers={"Content-Type": "application/json", "X-AICRM-Signature": _signature("agent-secret", raw)},
     )
@@ -190,4 +227,3 @@ def test_worker_fake_mode_generates_package_and_enqueues_send_plan(next_client, 
     assert plan_count == 1
     assert message["content_text"] == "你好，这是 Agent 生成的话术"
     assert effect_count == 0
-

@@ -4,6 +4,7 @@ import hashlib
 import hmac
 import os
 from typing import Any
+from urllib.parse import quote, urlparse
 from uuid import uuid4
 
 from pydantic import ValidationError
@@ -26,14 +27,46 @@ def _base_url(request_base_url: str = "") -> str:
     return _text(request_base_url).rstrip("/")
 
 
-def _receive_webhook_url(agent_code: str, request_base_url: str = "") -> str:
+def _new_webhook_token() -> str:
+    return f"agtok_{uuid4().hex}"
+
+
+def _receive_webhook_url(agent_code: str, token: str = "", request_base_url: str = "") -> str:
     path = f"/api/ai/agents/{_text(agent_code)}/audience-webhook"
+    if _text(token):
+        path = f"{path}?token={quote(_text(token), safe='')}"
     return f"{_base_url(request_base_url)}{path}" if _base_url(request_base_url) else path
 
 
-def _send_webhook_url(package_key: str, request_base_url: str = "") -> str:
-    path = f"/api/ai/audience/packages/{_text(package_key)}/webhook"
-    return f"{_base_url(request_base_url)}{path}" if _base_url(request_base_url) else path
+def _default_send_webhook_url(package_key: str) -> str:
+    return f"/api/ai/audience/packages/{_text(package_key)}/webhook"
+
+
+def _send_webhook_package_key(value: str) -> str:
+    raw = _text(value)
+    if not raw:
+        return ""
+    parsed = urlparse(raw)
+    path = parsed.path if parsed.scheme else raw.split("?", 1)[0]
+    prefix = "/api/ai/audience/packages/"
+    suffix = "/webhook"
+    if not path.startswith(prefix) or not path.endswith(suffix):
+        return ""
+    return path[len(prefix) : -len(suffix)].strip("/")
+
+
+def _normalize_send_webhook_url(value: str, *, package_key: str = "") -> str:
+    normalized = _text(value) or _default_send_webhook_url(package_key)
+    if not normalized:
+        raise ContractError("发送地址不能为空")
+    if not _send_webhook_package_key(normalized):
+        raise ContractError("发送地址必须指向 AI Audience package webhook")
+    if normalized.startswith("/"):
+        return normalized
+    parsed = urlparse(normalized)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        raise ContractError("发送地址必须是 / 开头路径或 http(s) URL")
+    return normalized
 
 
 def _normalize_fixed_content(value: Any) -> dict[str, Any]:
@@ -91,8 +124,13 @@ def _agent_payload(row: dict[str, Any], *, request_base_url: str = "", include_d
         )
         item.update(
             {
-                "receive_webhook_url": _receive_webhook_url(item["agent_code"], request_base_url),
-                "send_webhook_url": _send_webhook_url(item["bound_package_key"], request_base_url),
+                "receive_webhook_url": _receive_webhook_url(
+                    item["agent_code"],
+                    _text(row.get("inbound_webhook_token")),
+                    request_base_url,
+                ),
+                "receive_webhook_token_configured": bool(_text(row.get("inbound_webhook_token"))),
+                "send_webhook_url": _text(row.get("send_webhook_url")) or _default_send_webhook_url(item["bound_package_key"]),
                 "draft_role_prompt": _text(row.get("draft_role_prompt")),
                 "draft_task_prompt": _text(row.get("draft_task_prompt")),
                 "published_role_prompt": _text(row.get("published_role_prompt")),
@@ -118,6 +156,10 @@ class AutomationAgentAdminService:
         try:
             request = AutomationAgentCreateRequest.model_validate(payload)
             content_package = _normalize_fixed_content(request.fixed_content_package)
+            send_webhook_url = _normalize_send_webhook_url(
+                request.send_webhook_url or "",
+                package_key=request.bound_package_key,
+            )
         except (ValidationError, ContractError) as exc:
             return {"ok": False, "error": "invalid_agent_payload", "detail": str(exc)}
         required = {
@@ -137,6 +179,8 @@ class AutomationAgentAdminService:
                 **request.model_dump(exclude={"fixed_content_package"}),
                 "fixed_content_package": content_package,
                 "inbound_webhook_secret": uuid4().hex,
+                "inbound_webhook_token": _new_webhook_token(),
+                "send_webhook_url": send_webhook_url,
             }
         )
         detail = self._repo.get_agent(int(row["id"])) or row
@@ -159,6 +203,14 @@ class AutomationAgentAdminService:
                 updates["fixed_content_package"] = _normalize_fixed_content(updates["fixed_content_package"])
             except ContractError as exc:
                 return {"ok": False, "error": "invalid_fixed_content_package", "detail": str(exc)}
+        if "send_webhook_url" in updates:
+            try:
+                updates["send_webhook_url"] = _normalize_send_webhook_url(
+                    updates.get("send_webhook_url") or "",
+                    package_key=updates.get("bound_package_key") or _text((self._repo.get_agent(agent_id) or {}).get("bound_package_key")),
+                )
+            except ContractError as exc:
+                return {"ok": False, "error": "invalid_send_webhook_url", "detail": str(exc)}
         if "status" in updates and _text(updates["status"]) not in ALLOWED_STATUSES:
             return {"ok": False, "error": "invalid_status"}
         row = self._repo.update_agent(agent_id, updates)
@@ -181,6 +233,8 @@ class AutomationAgentAdminService:
                 "task_prompt": _text(source.get("draft_task_prompt")),
                 "fixed_content_package": source.get("fixed_content_package_json") or {},
                 "inbound_webhook_secret": uuid4().hex,
+                "inbound_webhook_token": _new_webhook_token(),
+                "send_webhook_url": _text(source.get("send_webhook_url")) or _default_send_webhook_url(_text(source.get("bound_package_key"))),
             }
         )
         detail = self._repo.get_agent(int(copied["id"])) or copied
@@ -192,6 +246,13 @@ class AutomationAgentAdminService:
             return {"ok": False, "error": "agent_not_found"}
         if status == "archived":
             return {"ok": True, "agent": {"id": int(agent_id), "status": "archived"}}
+        detail = self._repo.get_agent(agent_id) or row
+        return {"ok": True, "agent": _agent_payload(detail, request_base_url=request_base_url, include_detail=True)}
+
+    def reset_inbound_token(self, agent_id: int, *, request_base_url: str = "") -> dict[str, Any]:
+        row = self._repo.rotate_inbound_token(agent_id, _new_webhook_token())
+        if not row:
+            return {"ok": False, "error": "agent_not_found"}
         detail = self._repo.get_agent(agent_id) or row
         return {"ok": True, "agent": _agent_payload(detail, request_base_url=request_base_url, include_detail=True)}
 
@@ -239,12 +300,29 @@ class AutomationAgentWebhookService:
     def __init__(self, repository: AutomationAgentRepository | None = None) -> None:
         self._repo = repository or build_automation_agent_repository()
 
-    def handle(self, agent_code: str, payload: Any, *, raw_body: bytes, headers: dict[str, Any]) -> tuple[dict[str, Any], int]:
+    def handle(
+        self,
+        agent_code: str,
+        payload: Any,
+        *,
+        raw_body: bytes,
+        headers: dict[str, Any],
+        token: str = "",
+    ) -> tuple[dict[str, Any], int]:
         agent = self._repo.get_agent_by_code(agent_code)
         if not agent:
             return {"ok": False, "error": "agent_not_found"}, 404
         if _text(agent.get("status")) != "active":
             return {"ok": False, "error": "agent_not_active"}, 409
+        configured_token = _text(agent.get("inbound_webhook_token"))
+        provided_token = _text(token or headers.get("X-AICRM-Webhook-Token") or headers.get("x-aicrm-webhook-token"))
+        if configured_token or production_environment():
+            if not configured_token and production_environment():
+                return {"ok": False, "error": "webhook_token_not_configured"}, 503
+            if not provided_token:
+                return {"ok": False, "error": "missing_token"}, 401
+            if not hmac.compare_digest(configured_token, provided_token):
+                return {"ok": False, "error": "invalid_token"}, 401
         secret = _text(agent.get("inbound_webhook_secret") or os.getenv("AICRM_AUTOMATION_AGENT_WEBHOOK_SECRET"))
         signature = _text(headers.get("X-AICRM-Signature") or headers.get("x-aicrm-signature"))
         if secret or production_environment():
@@ -286,4 +364,3 @@ class AutomationAgentWebhookService:
             },
             200,
         )
-

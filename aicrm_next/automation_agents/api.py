@@ -32,6 +32,11 @@ async def automation_agent_audience_webhook(agent_code: str, request: Request) -
     except Exception as exc:
         return _json({"ok": False, "error": "invalid_json", "detail": str(exc)}, status_code=400)
     headers = {key: value for key, value in request.headers.items()}
-    result, status_code = AutomationAgentWebhookService().handle(agent_code, payload, raw_body=raw_body, headers=headers)
+    result, status_code = AutomationAgentWebhookService().handle(
+        agent_code,
+        payload,
+        raw_body=raw_body,
+        headers=headers,
+        token=str(request.query_params.get("token") or ""),
+    )
     return _json(result, status_code=status_code)
-
