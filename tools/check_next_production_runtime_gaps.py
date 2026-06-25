@@ -269,12 +269,13 @@ def run_check() -> dict[str, Any]:
     oauth_blockers = _oauth_blockers(routes)
     content_blockers = questionnaire_blockers + automation_blockers
     warnings = questionnaire_warnings + automation_warnings
-    retired_timer_units = [
+    forbidden_retired_timer_units = [
         "aicrm-reply-monitor-run-due.timer",
         "aicrm-reply-monitor-capture.timer",
         "aicrm-automation-jobs-run-due.timer",
     ]
     active_timer_units = [
+        "openclaw-ai-audience-scheduler.timer",
         "aicrm-campaign-run-due.timer",
     ]
     result = {
@@ -289,8 +290,9 @@ def run_check() -> dict[str, Any]:
         "warnings": warnings,
         "questionnaire_production_data_ready": not questionnaire_blockers and not questionnaire_warnings,
         "automation_production_data_ready": not automation_blockers and not automation_warnings,
-        "timers_currently_disabled": retired_timer_units,
-        "retired_timers_currently_disabled": retired_timer_units,
+        "timers_currently_disabled": [],
+        "retired_timers_currently_disabled": [],
+        "forbidden_retired_timer_units": forbidden_retired_timer_units,
         "active_timer_units": active_timer_units,
         "callback_currently_has_5013_fallback": True,
         "fixture_only_modules_present": _static_fixture_modules(),
