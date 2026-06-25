@@ -3,6 +3,7 @@
 {% block head_extra %}
 <style>
   :root {
+    --ai-bg: #f6f8fb;
     --ai-panel: #fff;
     --ai-line: #e7ebf2;
     --ai-line2: #eef2f7;
@@ -10,136 +11,74 @@
     --ai-muted: #667085;
     --ai-muted2: #98a2b3;
     --ai-blue: #2563eb;
-    --ai-blue2: #eff6ff;
+    --ai-blue2: #eaf2ff;
     --ai-danger: #d92d20;
     --ai-danger2: #fff1f3;
     --ai-green: #079455;
     --ai-green2: #ecfdf3;
-    --ai-warn: #b54708;
-    --ai-warn2: #fffaeb;
-    --ai-shadow: 0 12px 32px rgba(16, 24, 40, .07);
+    --ai-shadow: 0 14px 34px rgba(16, 24, 40, .06);
     --ai-r: 16px;
   }
 
-  .ai-layout {
-    display: grid;
-    gap: 18px;
+  .admin-topbar {
+    display: none;
+  }
+
+  .admin-page {
+    background: var(--ai-bg);
+  }
+
+  .ai-page {
+    min-width: 1180px;
+    color: var(--ai-text);
+  }
+
+  .ai-topbar {
+    margin: -24px -28px 22px;
+    padding: 22px 28px;
+    border: 1px solid var(--ai-line);
+    border-radius: 0 0 18px 18px;
+    background: #fff;
+  }
+
+  .ai-crumb {
+    margin-bottom: 4px;
+    color: var(--ai-muted2);
+    font-size: 12px;
+    font-weight: 800;
+  }
+
+  .ai-topbar h1 {
+    margin: 0;
+    font-size: 24px;
+    line-height: 1.2;
   }
 
   .ai-card {
-    background: var(--ai-panel);
     border: 1px solid var(--ai-line);
     border-radius: var(--ai-r);
+    background: var(--ai-panel);
     box-shadow: var(--ai-shadow);
   }
 
-  .ai-section {
-    padding: 20px 22px;
-  }
-
-  .ai-section h3 {
-    margin: 0 0 14px;
-    color: var(--ai-text);
-    font-size: 18px;
-    font-weight: 850;
-  }
-
-  .ai-summary {
+  .ai-summary-card {
     display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 12px;
-    margin-top: 14px;
+    gap: 16px;
+    margin-bottom: 18px;
+    padding: 22px;
   }
 
-  .ai-mini {
-    padding: 16px 18px;
-    border: 1px solid var(--ai-line);
-    border-radius: 14px;
-    background: #fff;
-  }
-
-  .ai-mini .label {
-    margin-bottom: 6px;
-    color: #8a94a6;
-    font-size: 13px;
-    font-weight: 800;
-  }
-
-  .ai-mini .value {
-    overflow-wrap: anywhere;
-    color: var(--ai-text);
-    font-size: 18px;
-    font-weight: 850;
-  }
-
-  .ai-grid2 {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 18px;
-  }
-
-  .ai-field {
-    display: grid;
-    gap: 7px;
-    margin-bottom: 14px;
-  }
-
-  .ai-label {
-    color: #667085;
-    font-size: 13px;
-    font-weight: 800;
-  }
-
-  .ai-input,
-  .ai-select,
-  .ai-textarea {
-    width: 100%;
-    border: 1px solid #d0d5dd;
-    border-radius: 10px;
-    background: #fff;
-    color: #1d2939;
-    font: inherit;
-    outline: none;
-    padding: 10px 12px;
-  }
-
-  .ai-textarea {
-    min-height: 96px;
-    resize: vertical;
-  }
-
-  .ai-inline {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 12px;
-  }
-
-  .ai-codebox {
-    padding: 11px 12px;
-    border: 1px solid #d0d5dd;
-    border-radius: 10px;
-    background: #f8fafc;
-    color: #344054;
-    overflow-wrap: anywhere;
-  }
-
-  .ai-mono {
-    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-    font-size: 12px;
-  }
-
-  .ai-toolbar {
+  .ai-summary-head {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 12px;
-    margin-bottom: 10px;
-    color: #667085;
-    font-weight: 750;
+    gap: 16px;
   }
 
-  .ai-toolbar h3 {
+  .ai-summary-head h2 {
     margin: 0;
+    font-size: 20px;
+    font-weight: 900;
   }
 
   .ai-btns {
@@ -150,19 +89,26 @@
   }
 
   .ai-btn {
-    min-height: 36px;
+    min-height: 38px;
     border: 1px solid #d0d5dd;
     border-radius: 10px;
     background: #fff;
     color: #344054;
     cursor: pointer;
     font: inherit;
-    font-weight: 800;
-    padding: 8px 12px;
+    font-weight: 850;
+    padding: 8px 14px;
+    text-decoration: none;
+    white-space: nowrap;
   }
 
   .ai-btn:hover {
     border-color: #98a2b3;
+  }
+
+  .ai-btn:disabled {
+    cursor: not-allowed;
+    opacity: .58;
   }
 
   .ai-btn.primary {
@@ -183,13 +129,214 @@
     color: var(--ai-danger);
   }
 
+  .ai-summary-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 12px;
+  }
+
+  .ai-mini {
+    display: grid;
+    min-height: 84px;
+    align-content: center;
+    gap: 6px;
+    padding: 16px 18px;
+    border: 1px solid var(--ai-line);
+    border-radius: 14px;
+    background: #fff;
+  }
+
+  .ai-mini .label {
+    color: #8a94a6;
+    font-size: 13px;
+    font-weight: 850;
+  }
+
+  .ai-mini .value {
+    overflow-wrap: anywhere;
+    color: var(--ai-text);
+    font-size: 20px;
+    font-weight: 900;
+  }
+
+  .ai-workspace {
+    display: grid;
+    grid-template-columns: 196px minmax(0, 1fr);
+    align-items: start;
+    gap: 18px;
+  }
+
+  .ai-side-nav {
+    position: sticky;
+    top: 18px;
+    padding: 10px;
+  }
+
+  .ai-side-nav button {
+    display: grid;
+    width: 100%;
+    min-height: 56px;
+    grid-template-columns: 28px minmax(0, 1fr);
+    align-items: center;
+    gap: 10px;
+    border: 0;
+    border-radius: 13px;
+    background: #fff;
+    color: #344054;
+    cursor: pointer;
+    font: inherit;
+    padding: 10px 12px;
+    text-align: left;
+  }
+
+  .ai-side-nav button + button {
+    margin-top: 8px;
+  }
+
+  .ai-side-nav button.active {
+    background: var(--ai-blue2);
+    color: #1456f0;
+  }
+
+  .ai-index {
+    display: grid;
+    width: 26px;
+    height: 26px;
+    place-items: center;
+    border-radius: 999px;
+    background: #eef2f7;
+    color: #667085;
+    font-weight: 900;
+  }
+
+  .ai-side-nav button.active .ai-index {
+    background: var(--ai-blue);
+    color: #fff;
+  }
+
+  .ai-nav-label {
+    font-size: 16px;
+    font-weight: 900;
+  }
+
+  .ai-panel {
+    display: none;
+    min-height: 420px;
+    padding: 24px;
+  }
+
+  .ai-panel.active {
+    display: block;
+  }
+
+  .ai-panel-title-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    margin-bottom: 20px;
+    padding-bottom: 18px;
+    border-bottom: 1px solid var(--ai-line2);
+  }
+
+  .ai-panel-title-row h3 {
+    margin: 0;
+    font-size: 22px;
+    font-weight: 900;
+  }
+
+  .ai-pill {
+    display: inline-flex;
+    min-height: 30px;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid #abefc6;
+    border-radius: 999px;
+    background: var(--ai-green2);
+    color: #067647;
+    font-size: 13px;
+    font-weight: 850;
+    padding: 4px 12px;
+    white-space: nowrap;
+  }
+
+  .ai-pill.gray {
+    border-color: #eaecf0;
+    background: #f2f4f7;
+    color: #475467;
+  }
+
+  .ai-form-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+  }
+
+  .ai-field {
+    display: grid;
+    gap: 8px;
+  }
+
+  .ai-field.full {
+    grid-column: 1 / -1;
+  }
+
+  .ai-label {
+    color: #667085;
+    font-size: 13px;
+    font-weight: 850;
+  }
+
+  .ai-input,
+  .ai-select,
+  .ai-textarea {
+    width: 100%;
+    border: 1px solid #d0d5dd;
+    border-radius: 10px;
+    background: #fff;
+    color: #1d2939;
+    font: inherit;
+    outline: none;
+    padding: 11px 13px;
+  }
+
+  .ai-textarea {
+    min-height: 116px;
+    resize: vertical;
+  }
+
+  .ai-codebox {
+    display: flex;
+    min-height: 52px;
+    align-items: center;
+    overflow-wrap: anywhere;
+    border: 1px solid #d0d5dd;
+    border-radius: 10px;
+    background: #f8fafc;
+    color: #344054;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 12px;
+    padding: 14px;
+  }
+
+  .ai-panel-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 20px;
+    padding-top: 20px;
+    border-top: 1px solid var(--ai-line2);
+  }
+
   .ai-table-wrap {
-    overflow-x: auto;
+    overflow: auto;
+    border: 1px solid var(--ai-line2);
+    border-radius: 14px;
   }
 
   .ai-table {
     width: 100%;
-    min-width: 620px;
+    min-width: 720px;
     border-collapse: separate;
     border-spacing: 0;
   }
@@ -206,43 +353,24 @@
     background: #fafbfc;
     color: #8993a4;
     font-size: 13px;
-    font-weight: 800;
+    font-weight: 850;
   }
 
   .ai-table tr:last-child td {
     border-bottom: 0;
   }
 
-  .ai-pill {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    padding: 5px 10px;
-    border: 1px solid #dbeafe;
-    border-radius: 999px;
-    background: var(--ai-blue2);
-    color: #1d4ed8;
-    font-size: 12px;
-    font-weight: 800;
-    white-space: nowrap;
-  }
-
-  .ai-pill.green {
-    border-color: #abefc6;
-    background: var(--ai-green2);
-    color: #067647;
-  }
-
-  .ai-pill.gray {
-    border-color: #eaecf0;
-    background: #f2f4f7;
-    color: #475467;
-  }
-
   .ai-empty {
-    padding: 32px 12px;
+    padding: 34px 12px;
     color: var(--ai-muted);
+    font-weight: 750;
     text-align: center;
+  }
+
+  .ai-mono {
+    color: var(--ai-muted);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 12px;
   }
 
   .ai-status-line {
@@ -261,30 +389,41 @@
     color: var(--ai-danger);
   }
 
-  .admin-page-summary {
-    display: none;
-  }
-
   @media (max-width: 960px) {
-    .ai-summary,
-    .ai-grid2,
-    .ai-inline {
+    .ai-page {
+      min-width: 0;
+    }
+
+    .ai-summary-grid,
+    .ai-workspace,
+    .ai-form-grid {
       grid-template-columns: 1fr;
     }
 
-    .ai-table th,
-    .ai-table td {
-      padding: 12px;
+    .ai-side-nav {
+      position: static;
     }
   }
 </style>
 {% endblock %}
 
 {% block content %}
-<div class="ai-layout">
-  <section class="ai-card ai-section" aria-label="人群包摘要">
-    <h3 id="packageTitle">加载中</h3>
-    <div class="ai-summary">
+<main class="ai-page">
+  <header class="ai-topbar">
+    <div class="ai-crumb">客户管理后台 / 自动化运营 / 人群包详情</div>
+    <h1>AI 自动化运营</h1>
+  </header>
+
+  <section class="ai-card ai-summary-card" aria-label="人群包基础摘要">
+    <div class="ai-summary-head">
+      <h2 id="packageTitle">加载中</h2>
+      <div class="ai-btns">
+        <a class="ai-btn soft" href="/admin/automation-conversion">返回列表</a>
+        <button class="ai-btn" id="manualRefreshBtn" type="button">手动刷新</button>
+        <button class="ai-btn primary" id="saveCurrentDimensionBtn" type="button">保存当前维度</button>
+      </div>
+    </div>
+    <div class="ai-summary-grid">
       <div class="ai-mini"><div class="label">当前人数</div><div class="value" id="summaryCount">-</div></div>
       <div class="ai-mini"><div class="label">最后一次刷新</div><div class="value" id="summaryRefresh">-</div></div>
       <div class="ai-mini"><div class="label">刷新方式</div><div class="value" id="summaryMode">-</div></div>
@@ -292,104 +431,125 @@
     </div>
   </section>
 
-  <div class="ai-grid2">
-    <section class="ai-card ai-section" aria-label="基础配置">
-      <h3>基础配置</h3>
-      <div class="ai-field">
-        <label class="ai-label" for="packageNameInput">人群包名称</label>
-        <input class="ai-input" id="packageNameInput" value="">
-      </div>
-      <div class="ai-field">
-        <label class="ai-label" for="packageDefinitionInput">筛选逻辑简述</label>
-        <textarea class="ai-textarea" id="packageDefinitionInput"></textarea>
-      </div>
-      <div class="ai-inline">
-        <div class="ai-field">
-          <label class="ai-label" for="incrementalSelect">增量刷新</label>
-          <select class="ai-select" id="incrementalSelect">
-            <option value="off">关闭</option>
-            <option value="incremental_3m">每 3 分钟</option>
-          </select>
+  <section class="ai-workspace">
+    <nav class="ai-card ai-side-nav" aria-label="人群包配置维度">
+      <button class="active" type="button" data-panel="basic"><span class="ai-index">1</span><span class="ai-nav-label">基础配置</span></button>
+      <button type="button" data-panel="webhook"><span class="ai-index">2</span><span class="ai-nav-label">Webhook</span></button>
+      <button type="button" data-panel="senders"><span class="ai-index">3</span><span class="ai-nav-label">发送人白名单</span></button>
+      <button type="button" data-panel="members"><span class="ai-index">4</span><span class="ai-nav-label">成员列表</span></button>
+    </nav>
+
+    <div class="ai-card">
+      <section class="ai-panel active" id="panel-basic">
+        <div class="ai-panel-title-row">
+          <h3>基础配置</h3>
+          <span class="ai-pill">可保存</span>
         </div>
-        <div class="ai-field">
-          <label class="ai-label" for="dailySelect">每日快照</label>
-          <select class="ai-select" id="dailySelect">
-            <option value="off">关闭</option>
-            <option value="daily_0200">每日 2:00</option>
-          </select>
+        <div class="ai-form-grid">
+          <div class="ai-field full">
+            <label class="ai-label" for="packageNameInput">人群包名称</label>
+            <input class="ai-input" id="packageNameInput" value="">
+          </div>
+          <div class="ai-field full">
+            <label class="ai-label" for="packageDefinitionInput">筛选逻辑简述</label>
+            <textarea class="ai-textarea" id="packageDefinitionInput"></textarea>
+          </div>
+          <div class="ai-field">
+            <label class="ai-label" for="incrementalSelect">增量刷新</label>
+            <select class="ai-select" id="incrementalSelect">
+              <option value="off">关闭</option>
+              <option value="incremental_3m">每 3 分钟</option>
+            </select>
+          </div>
+          <div class="ai-field">
+            <label class="ai-label" for="dailySelect">每日快照</label>
+            <select class="ai-select" id="dailySelect">
+              <option value="off">关闭</option>
+              <option value="daily_0200">每日 2:00</option>
+            </select>
+          </div>
         </div>
-      </div>
-      <div class="ai-btns" style="margin-top:10px">
-        <button class="ai-btn primary" id="savePackageBtn" type="button">保存基础配置</button>
-      </div>
-      <div class="ai-status-line" id="packageStatusLine"></div>
-    </section>
+        <div class="ai-panel-actions">
+          <button class="ai-btn primary" id="savePackageBtn" type="button">保存基础配置</button>
+        </div>
+        <div class="ai-status-line" id="packageStatusLine"></div>
+      </section>
 
-    <section class="ai-card ai-section" aria-label="Webhook">
-      <h3>Webhook</h3>
-      <div class="ai-field">
-        <label class="ai-label">接收 Webhook 地址（系统生成）</label>
-        <div class="ai-codebox ai-mono" id="inboundWebhookUrl">加载中</div>
-      </div>
-      <div class="ai-field">
-        <label class="ai-label" for="outboundWebhookInput">外推 Webhook 地址（增量刷新后触发）</label>
-        <input class="ai-input" id="outboundWebhookInput" value="">
-      </div>
-      <div class="ai-btns" style="margin-top:18px">
-        <button class="ai-btn" id="rotateInboundSecretBtn" type="button">重置接收 secret</button>
-        <button class="ai-btn primary" id="saveWebhookBtn" type="button">保存 Webhook</button>
-      </div>
-      <div class="ai-status-line" id="webhookStatusLine"></div>
-    </section>
-  </div>
+      <section class="ai-panel" id="panel-webhook">
+        <div class="ai-panel-title-row">
+          <h3>Webhook</h3>
+          <span class="ai-pill">独立保存</span>
+        </div>
+        <div class="ai-form-grid">
+          <div class="ai-field full">
+            <label class="ai-label">接收 Webhook 地址（系统生成）</label>
+            <div class="ai-codebox" id="inboundWebhookUrl">加载中</div>
+          </div>
+          <div class="ai-field full">
+            <label class="ai-label" for="outboundWebhookInput">外推 Webhook 地址（增量刷新后触发）</label>
+            <input class="ai-input" id="outboundWebhookInput" value="">
+          </div>
+        </div>
+        <div class="ai-panel-actions">
+          <button class="ai-btn" id="rotateInboundSecretBtn" type="button">重置接收 secret</button>
+          <button class="ai-btn primary" id="saveWebhookBtn" type="button">保存 Webhook</button>
+        </div>
+        <div class="ai-status-line" id="webhookStatusLine"></div>
+      </section>
 
-  <div class="ai-grid2">
-    <section class="ai-card ai-section" aria-label="发送人白名单">
-      <div class="ai-toolbar">
-        <h3>发送人白名单</h3>
-        <button class="ai-btn soft" id="addSenderBtn" type="button">添加发送人</button>
-      </div>
-      <div class="ai-table-wrap">
-        <table class="ai-table">
-          <thead>
-            <tr>
-              <th>优先级</th>
-              <th>发送人</th>
-              <th>规则</th>
-              <th>状态</th>
-              <th style="text-align:right">操作</th>
-            </tr>
-          </thead>
-          <tbody id="senderRows">
-            <tr><td class="ai-empty" colspan="5">加载中</td></tr>
-          </tbody>
-        </table>
-      </div>
-      <div class="ai-status-line" id="senderStatusLine"></div>
-    </section>
+      <section class="ai-panel" id="panel-senders">
+        <div class="ai-panel-title-row">
+          <h3>发送人白名单</h3>
+          <button class="ai-btn soft" id="addSenderBtn" type="button">添加发送人</button>
+        </div>
+        <div class="ai-table-wrap">
+          <table class="ai-table">
+            <thead>
+              <tr>
+                <th>优先级</th>
+                <th>发送人</th>
+                <th>规则</th>
+                <th>状态</th>
+                <th style="text-align:right">操作</th>
+              </tr>
+            </thead>
+            <tbody id="senderRows">
+              <tr><td class="ai-empty" colspan="5">加载中</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="ai-panel-actions">
+          <button class="ai-btn primary" id="saveSendersBtn" type="button">保存发送人白名单</button>
+        </div>
+        <div class="ai-status-line" id="senderStatusLine"></div>
+      </section>
 
-    <section class="ai-card ai-section" aria-label="成员列表">
-      <div class="ai-toolbar">
-        <h3>成员列表</h3>
-        <span id="memberTotal">加载中</span>
-      </div>
-      <div class="ai-table-wrap">
-        <table class="ai-table">
-          <thead>
-            <tr>
-              <th>昵称</th>
-              <th>外部联系人 ID</th>
-              <th>进入时间</th>
-            </tr>
-          </thead>
-          <tbody id="memberRows">
-            <tr><td class="ai-empty" colspan="3">加载中</td></tr>
-          </tbody>
-        </table>
-      </div>
-    </section>
-  </div>
-</div>
+      <section class="ai-panel" id="panel-members">
+        <div class="ai-panel-title-row">
+          <h3>成员列表</h3>
+          <div class="ai-btns">
+            <span class="ai-pill" id="memberTotal">加载中</span>
+            <button class="ai-btn soft" id="refreshMembersBtn" type="button">刷新列表</button>
+          </div>
+        </div>
+        <div class="ai-table-wrap">
+          <table class="ai-table">
+            <thead>
+              <tr>
+                <th>昵称</th>
+                <th>外部联系人 ID</th>
+                <th>进入时间</th>
+              </tr>
+            </thead>
+            <tbody id="memberRows">
+              <tr><td class="ai-empty" colspan="3">加载中</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+  </section>
+</main>
 {% endblock %}
 
 {% block scripts_extra %}
@@ -419,13 +579,18 @@
       saveWebhookBtn: document.getElementById("saveWebhookBtn"),
       webhookStatusLine: document.getElementById("webhookStatusLine"),
       addSenderBtn: document.getElementById("addSenderBtn"),
+      saveSendersBtn: document.getElementById("saveSendersBtn"),
       senderRows: document.getElementById("senderRows"),
       senderStatusLine: document.getElementById("senderStatusLine"),
       memberRows: document.getElementById("memberRows"),
-      memberTotal: document.getElementById("memberTotal")
+      memberTotal: document.getElementById("memberTotal"),
+      refreshMembersBtn: document.getElementById("refreshMembersBtn"),
+      manualRefreshBtn: document.getElementById("manualRefreshBtn"),
+      saveCurrentDimensionBtn: document.getElementById("saveCurrentDimensionBtn")
     };
 
     let senderItems = [];
+    let currentPanel = "basic";
 
     const escapeHtml = (value) => String(value ?? "")
       .replaceAll("&", "&amp;")
@@ -568,21 +733,44 @@
     };
 
     const normalizeSenders = (items) => items.map((item, index) => ({
-      sender_userid: item.sender_userid,
-      display_name: item.display_name || item.sender_userid,
+      sender_userid: (item.sender_userid || "").trim(),
+      display_name: (item.display_name || item.sender_userid || "").trim(),
       priority: index + 1,
       status: item.status === "paused" ? "paused" : "active"
     }));
 
     const saveSenders = async (items) => {
+      const normalized = normalizeSenders(items);
+      if (normalized.some((item) => !item.sender_userid)) {
+        throw new Error("请先填写发送人");
+      }
+      const seen = new Set();
+      if (normalized.some((item) => {
+        if (seen.has(item.sender_userid)) return true;
+        seen.add(item.sender_userid);
+        return false;
+      })) {
+        throw new Error("发送人不能重复");
+      }
       setStatus(els.senderStatusLine, "保存中...");
       const payload = await fetchJson(sendersApiUrl, {
         method: "PUT",
-        body: JSON.stringify({ items: normalizeSenders(items) })
+        body: JSON.stringify({ items: normalized })
       });
       senderItems = payload.items || [];
       renderSenders();
       setStatus(els.senderStatusLine, "发送人白名单已保存", "success");
+    };
+
+    const updateSenderFromInputs = () => {
+      els.senderRows.querySelectorAll("[data-sender-field='sender_userid']").forEach((input) => {
+        const index = Number(input.dataset.index);
+        if (!Number.isNaN(index) && senderItems[index]) {
+          const value = input.value.trim();
+          senderItems[index].sender_userid = value;
+          senderItems[index].display_name = value;
+        }
+      });
     };
 
     const renderSenders = () => {
@@ -596,9 +784,13 @@
         return `
           <tr>
             <td>${index + 1}</td>
-            <td><strong>${escapeHtml(item.display_name || item.sender_userid)}</strong></td>
+            <td>
+              ${item.sender_userid ? `<strong>${escapeHtml(item.display_name || item.sender_userid)}</strong>` : `
+                <input class="ai-input" data-sender-field="sender_userid" data-index="${index}" placeholder="请输入发送人 userid">
+              `}
+            </td>
             <td>${escapeHtml(rule)}</td>
-            <td><span class="ai-pill ${active ? "green" : "gray"}">${active ? "启用" : "停用"}</span></td>
+            <td><span class="ai-pill ${active ? "" : "gray"}">${active ? "启用" : "停用"}</span></td>
             <td>
               <div class="ai-btns">
                 <button class="ai-btn" type="button" data-sender-action="up" data-index="${index}" ${index === 0 ? "disabled" : ""}>上移</button>
@@ -626,6 +818,7 @@
             next.splice(index, 1);
           }
           try {
+            updateSenderFromInputs();
             await saveSenders(next);
           } catch (error) {
             setStatus(els.senderStatusLine, error.message || "保存失败", "error");
@@ -640,29 +833,21 @@
       renderSenders();
     };
 
-    const addSender = async () => {
-      if (!window.OperationMemberPicker || typeof window.OperationMemberPicker.open !== "function") {
-        setStatus(els.senderStatusLine, "标准运营成员选择器加载失败，请刷新页面后重试", "error");
+    const addSender = () => {
+      updateSenderFromInputs();
+      if (senderItems.some((item) => !item.sender_userid)) {
+        setStatus(els.senderStatusLine, "请先填写当前发送人", "error");
         return;
       }
-      window.OperationMemberPicker.open({
-        title: "选择运营人员",
-        scope: "common",
-        page_size: 100,
-        disabledUserIds: senderItems.map((item) => item.sender_userid),
-        onSelect: (member) => {
-          const senderUserid = String(member.user_id || "").trim();
-          if (!senderUserid) return;
-          const displayName = window.OperationMemberPicker.memberLabel
-            ? window.OperationMemberPicker.memberLabel(member)
-            : (member.display_name || senderUserid);
-          saveSenders([...senderItems, {
-            sender_userid: senderUserid,
-            display_name: displayName,
-            status: "active"
-          }]).catch((error) => setStatus(els.senderStatusLine, error.message || "保存失败", "error"));
-        }
-      });
+      senderItems = [...senderItems, {
+        sender_userid: "",
+        display_name: "",
+        status: "active"
+      }];
+      renderSenders();
+      const input = els.senderRows.querySelector("[data-sender-field='sender_userid']");
+      if (input) input.focus();
+      setStatus(els.senderStatusLine, "");
     };
 
     const renderMembers = (payload) => {
@@ -686,6 +871,41 @@
       renderMembers(payload);
     };
 
+    const updateCurrentAction = () => {
+      els.saveCurrentDimensionBtn.textContent = currentPanel === "members" ? "刷新列表" : "保存当前维度";
+    };
+
+    const showPanel = (key) => {
+      currentPanel = key;
+      document.querySelectorAll("[data-panel]").forEach((button) => {
+        button.classList.toggle("active", button.dataset.panel === key);
+      });
+      document.querySelectorAll(".ai-panel").forEach((panel) => {
+        panel.classList.toggle("active", panel.id === `panel-${key}`);
+      });
+      updateCurrentAction();
+    };
+
+    const refreshCurrentPanel = async () => {
+      if (currentPanel === "basic") return loadPackage();
+      if (currentPanel === "webhook") return loadWebhook();
+      if (currentPanel === "senders") return loadSenders();
+      return loadMembers();
+    };
+
+    const saveCurrentPanel = async () => {
+      if (currentPanel === "basic") return savePackage();
+      if (currentPanel === "webhook") return saveWebhook();
+      if (currentPanel === "senders") {
+        updateSenderFromInputs();
+        return saveSenders(senderItems);
+      }
+      return loadMembers();
+    };
+
+    document.querySelectorAll("[data-panel]").forEach((button) => {
+      button.addEventListener("click", () => showPanel(button.dataset.panel));
+    });
     els.savePackageBtn.addEventListener("click", () => {
       savePackage().catch((error) => setStatus(els.packageStatusLine, error.message || "保存失败", "error"));
     });
@@ -696,9 +916,30 @@
       rotateWebhookSecret().catch((error) => setStatus(els.webhookStatusLine, error.message || "重置失败", "error"));
     });
     els.addSenderBtn.addEventListener("click", () => {
-      addSender().catch((error) => setStatus(els.senderStatusLine, error.message || "保存失败", "error"));
+      addSender();
+    });
+    els.saveSendersBtn.addEventListener("click", () => {
+      updateSenderFromInputs();
+      saveSenders(senderItems).catch((error) => setStatus(els.senderStatusLine, error.message || "保存失败", "error"));
+    });
+    els.refreshMembersBtn.addEventListener("click", () => {
+      loadMembers().catch(() => {});
+    });
+    els.manualRefreshBtn.addEventListener("click", () => {
+      refreshCurrentPanel().catch((error) => setStatus(els.packageStatusLine, error.message || "加载失败", "error"));
+    });
+    els.saveCurrentDimensionBtn.addEventListener("click", () => {
+      saveCurrentPanel().catch((error) => {
+        const statusEl = currentPanel === "webhook"
+          ? els.webhookStatusLine
+          : currentPanel === "senders"
+            ? els.senderStatusLine
+            : els.packageStatusLine;
+        setStatus(statusEl, error.message || "操作失败", "error");
+      });
     });
 
+    showPanel("basic");
     Promise.all([loadPackage(), loadWebhook(), loadSenders(), loadMembers()]).catch((error) => {
       setStatus(els.packageStatusLine, error.message || "加载失败", "error");
     });
