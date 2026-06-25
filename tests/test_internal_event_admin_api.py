@@ -29,7 +29,6 @@ def _seed_payment_event() -> str:
     for name in [
         "order_projection_consumer",
         "webhook_order_paid_consumer",
-        "automation_payment_consumer",
         "customer_business_summary_consumer",
         "dnd_policy_consumer",
         "ai_assist_notify_consumer",
@@ -122,7 +121,7 @@ def test_internal_event_admin_api_lists_filters_and_redacts_payload(next_client:
     assert body["route_owner"] == "ai_crm_next"
     assert body["total"] == 1
     assert body["items"][0]["event_id"] == event_id
-    assert body["items"][0]["consumer_total"] == 6
+    assert body["items"][0]["consumer_total"] == 5
     assert body["items"][0]["succeeded_count"] == 1
     assert body["items"][0]["failed_count"] == 1
     assert body["items"][0]["skipped_count"] == 1

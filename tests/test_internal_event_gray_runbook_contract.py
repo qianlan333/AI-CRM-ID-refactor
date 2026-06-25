@@ -36,7 +36,6 @@ def test_internal_event_gray_runbook_has_payment_rollout_and_rollback_steps() ->
         '\"dry_run\":true',
         '\"batch_size\":1',
         "order_projection_consumer",
-        "automation_payment_consumer",
         "webhook_order_paid_consumer",
         "/api/admin/external-effects?effect_type=webhook.order_paid.push",
         "AICRM_INTERNAL_EVENTS_PAYMENT_DISABLE_LEGACY_AUTOMATION_DIRECT=1",

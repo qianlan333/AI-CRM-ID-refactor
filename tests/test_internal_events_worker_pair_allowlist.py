@@ -220,10 +220,10 @@ def test_customer_tag_q1_events_are_blocked_when_pair_allowlist_only_contains_pa
                 f"{PAYMENT_SUCCEEDED_EVENT_TYPE}:customer_business_summary_consumer",
                 f"{PAYMENT_SUCCEEDED_EVENT_TYPE}:dnd_policy_consumer",
                 f"{PAYMENT_SUCCEEDED_EVENT_TYPE}:{AI_ASSIST}",
-                f"{PAYMENT_SUCCEEDED_EVENT_TYPE}:automation_payment_consumer",
+                f"{PAYMENT_SUCCEEDED_EVENT_TYPE}:webhook_order_paid_consumer",
             ]
         ),
-        consumers="order_projection_consumer,customer_business_summary_consumer,dnd_policy_consumer,ai_assist_notify_consumer,automation_payment_consumer",
+        consumers="order_projection_consumer,customer_business_summary_consumer,dnd_policy_consumer,ai_assist_notify_consumer,webhook_order_paid_consumer",
     )
     service, repo, registry = _service()
     customer = _emit(service, CUSTOMER_TAGGED_EVENT_TYPE, "customer-q1")

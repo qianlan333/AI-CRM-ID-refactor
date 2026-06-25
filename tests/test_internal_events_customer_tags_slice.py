@@ -226,14 +226,14 @@ def test_payment_worker_allowlist_does_not_pick_customer_tag_consumers(monkeypat
     monkeypatch.setenv("AICRM_INTERNAL_EVENTS_AUTO_EXECUTE", "1")
     monkeypatch.setenv("AICRM_INTERNAL_EVENTS_PAYMENT_ENABLED", "1")
     monkeypatch.setenv("AICRM_INTERNAL_EVENTS_ALLOWED_EVENT_TYPES", "payment.succeeded")
-    monkeypatch.setenv("AICRM_INTERNAL_EVENTS_ALLOWED_CONSUMERS", "order_projection_consumer,automation_payment_consumer")
+    monkeypatch.setenv("AICRM_INTERNAL_EVENTS_ALLOWED_CONSUMERS", "order_projection_consumer,webhook_order_paid_consumer")
     monkeypatch.setenv("AICRM_INTERNAL_EVENTS_AUTO_EXECUTE_MAX_BATCH_SIZE", "1")
     worker = InternalEventWorker()
 
     payment_preview = worker.preview_due(
         batch_size=1,
         event_types=["payment.succeeded"],
-        consumer_names=["order_projection_consumer", "automation_payment_consumer"],
+        consumer_names=["order_projection_consumer", "webhook_order_paid_consumer"],
     )
     customer_preview = worker.preview_due(
         batch_size=1,

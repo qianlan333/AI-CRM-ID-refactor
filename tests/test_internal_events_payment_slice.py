@@ -1,8 +1,5 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
-from decimal import Decimal
-
 from aicrm_next.platform_foundation.external_effects import WEBHOOK_ORDER_PAID_PUSH, ExternalEffectService, reset_external_effect_fixture_state
 from aicrm_next.platform_foundation.internal_events import InternalEventService, reset_internal_event_fixture_state
 from aicrm_next.platform_foundation.internal_events.payment import PAYMENT_SUCCEEDED_EVENT_TYPE
@@ -184,7 +181,6 @@ def test_payment_success_emits_payment_succeeded_and_duplicate_notify_is_idempot
     assert run_total == len(consumer_names)
     assert {
         "ai_assist_notify_consumer",
-        "automation_payment_consumer",
         "customer_business_summary_consumer",
         "dnd_policy_consumer",
         "order_projection_consumer",
@@ -193,7 +189,6 @@ def test_payment_success_emits_payment_succeeded_and_duplicate_notify_is_idempot
     assert consumer_names <= {
         "ai_assist_notify_consumer",
         "ai_audience_source_poke_consumer",
-        "automation_payment_consumer",
         "customer_business_summary_consumer",
         "dnd_policy_consumer",
         "order_projection_consumer",
@@ -232,51 +227,21 @@ def test_webhook_order_paid_consumer_creates_external_effect_job_without_externa
     assert event.event_id
 
 
-def test_automation_payment_consumer_is_retired_and_records_skipped_attempt(monkeypatch) -> None:
+def test_retired_automation_payment_consumer_is_not_registered(monkeypatch) -> None:
     _reset_state()
     _enable_payment_events(monkeypatch)
     _patch_legacy_outbox(monkeypatch)
     _apply_transaction(_PaymentConn(), _transaction())
     event = InternalEventService().list_events({"event_type": PAYMENT_SUCCEEDED_EVENT_TYPE})[0][0]
 
-    result = InternalEventWorker().run_due(batch_size=1, dry_run=False, consumer_names=["automation_payment_consumer"])
     runs, _ = InternalEventService().list_consumer_runs({"event_id": event.event_id, "consumer_name": "automation_payment_consumer"})
+    result = InternalEventWorker().dispatch_one_consumer(event.event_id, "automation_payment_consumer", dry_run=False)
     attempts = InternalEventService().list_attempts(event_id=event.event_id)
 
-    assert result["counts"]["skipped_count"] == 1
-    assert runs[0].status == "skipped"
-    attempt = [attempt for attempt in attempts if attempt.consumer_name == "automation_payment_consumer"][0]
-    assert attempt.status == "skipped"
-    assert attempt.response_summary_json["reason"] == "automation_runtime_v2_retired"
-
-
-def test_automation_payment_consumer_handles_datetime_payload_without_terminal_failure(monkeypatch, next_pg_schema) -> None:
-    _reset_state()
-    _enable_payment_events(monkeypatch)
-    _patch_legacy_outbox(monkeypatch)
-    conn = _PaymentConn()
-    transaction = _transaction()
-    transaction["success_time"] = datetime(2026, 6, 14, 12, 42, 36, tzinfo=timezone.utc)
-    transaction["amount"]["payer_total"] = Decimal("990")
-    transaction["nested"] = {"seen_at": [datetime(2026, 6, 14, 12, 43, 0, tzinfo=timezone.utc)]}
-    _apply_transaction(conn, transaction)
-    event = InternalEventService().list_events({"event_type": PAYMENT_SUCCEEDED_EVENT_TYPE})[0][0]
-
-    result = InternalEventWorker().run_due(batch_size=1, dry_run=False, consumer_names=["automation_payment_consumer"])
-    runs, _ = InternalEventService().list_consumer_runs({"event_id": event.event_id, "consumer_name": "automation_payment_consumer"})
-    attempts = [attempt for attempt in InternalEventService().list_attempts(event_id=event.event_id) if attempt.consumer_name == "automation_payment_consumer"]
-
-    assert result["counts"]["skipped_count"] == 1
-    assert result["counts"]["failed_terminal_count"] == 0
-    assert result["counts"]["failed_retryable_count"] == 0
-    assert runs[0].status == "skipped"
-    assert runs[0].result_summary_json["automation_processed"] is False
-    assert attempts[0].status == "skipped"
-    assert attempts[0].response_summary_json["automation_processed"] is False
-    assert attempts[0].response_summary_json["reason"] == "automation_runtime_v2_retired"
-    assert "handler_exception" not in attempts[0].response_summary_json
-    assert attempts[0].error_code == ""
-    assert attempts[0].error_message == ""
+    assert runs == []
+    assert result["ok"] is False
+    assert result["error"] == "consumer_run_not_found"
+    assert [attempt for attempt in attempts if attempt.consumer_name == "automation_payment_consumer"] == []
 
 
 def test_webhook_order_paid_consumer_skips_when_no_configured_job_or_production_config(monkeypatch) -> None:
@@ -319,14 +284,15 @@ def test_dnd_consumer_is_skipped_with_visible_reason(monkeypatch) -> None:
     assert attempts[0].response_summary_json["reason"] == "dnd_policy_not_configured"
 
 
-def test_retired_automation_consumer_does_not_affect_payment_apply_result(monkeypatch) -> None:
+def test_retired_automation_consumer_absence_does_not_affect_payment_apply_result(monkeypatch) -> None:
     _reset_state()
     _enable_payment_events(monkeypatch)
     _patch_legacy_outbox(monkeypatch)
 
     order = _apply_transaction(_PaymentConn(), _transaction())
-    result = InternalEventWorker().run_due(batch_size=1, dry_run=False, consumer_names=["automation_payment_consumer"])
+    event = InternalEventService().list_events({"event_type": PAYMENT_SUCCEEDED_EVENT_TYPE})[0][0]
+    result = InternalEventWorker().dispatch_one_consumer(event.event_id, "automation_payment_consumer", dry_run=False)
 
     assert order["status"] == "paid"
-    assert result["counts"]["skipped_count"] == 1
-    assert result["items"][0]["attempt"]["response_summary_json"]["reason"] == "automation_runtime_v2_retired"
+    assert result["ok"] is False
+    assert result["error"] == "consumer_run_not_found"

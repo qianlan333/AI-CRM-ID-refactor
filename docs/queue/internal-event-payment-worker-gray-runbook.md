@@ -56,24 +56,24 @@ Expected results:
 
 ## Stage 2
 
-Stage 2 adds automation after Stage 1 is stable:
+Stage 2 adds AI Audience source-poke after Stage 1 is stable:
 
 ```bash
-export AICRM_INTERNAL_EVENTS_ALLOWED_CONSUMERS=order_projection_consumer,customer_business_summary_consumer,dnd_policy_consumer,ai_assist_notify_consumer,automation_payment_consumer
-export AICRM_INTERNAL_EVENTS_ALLOWED_EVENT_CONSUMERS=payment.succeeded:order_projection_consumer,payment.succeeded:customer_business_summary_consumer,payment.succeeded:dnd_policy_consumer,payment.succeeded:ai_assist_notify_consumer,payment.succeeded:automation_payment_consumer
+export AICRM_INTERNAL_EVENTS_ALLOWED_CONSUMERS=order_projection_consumer,customer_business_summary_consumer,dnd_policy_consumer,ai_assist_notify_consumer,ai_audience_source_poke_consumer
+export AICRM_INTERNAL_EVENTS_ALLOWED_EVENT_CONSUMERS=payment.succeeded:order_projection_consumer,payment.succeeded:customer_business_summary_consumer,payment.succeeded:dnd_policy_consumer,payment.succeeded:ai_assist_notify_consumer,payment.succeeded:ai_audience_source_poke_consumer
 ```
 
 Expected result:
 
-- `automation_payment_consumer`: `succeeded`, `automation_processed=true`, or an explicit automation no-op reason such as `membership_unresolved`.
+- `ai_audience_source_poke_consumer`: `succeeded`, and any dependent AI Audience package may have `next_incremental_refresh_at` moved forward.
 
 ## Stage 3
 
 Stage 3 may add the webhook planner only after Stage 2 is stable:
 
 ```bash
-export AICRM_INTERNAL_EVENTS_ALLOWED_CONSUMERS=order_projection_consumer,customer_business_summary_consumer,dnd_policy_consumer,ai_assist_notify_consumer,automation_payment_consumer,webhook_order_paid_consumer
-export AICRM_INTERNAL_EVENTS_ALLOWED_EVENT_CONSUMERS=payment.succeeded:order_projection_consumer,payment.succeeded:customer_business_summary_consumer,payment.succeeded:dnd_policy_consumer,payment.succeeded:ai_assist_notify_consumer,payment.succeeded:automation_payment_consumer,payment.succeeded:webhook_order_paid_consumer
+export AICRM_INTERNAL_EVENTS_ALLOWED_CONSUMERS=order_projection_consumer,customer_business_summary_consumer,dnd_policy_consumer,ai_assist_notify_consumer,ai_audience_source_poke_consumer,webhook_order_paid_consumer
+export AICRM_INTERNAL_EVENTS_ALLOWED_EVENT_CONSUMERS=payment.succeeded:order_projection_consumer,payment.succeeded:customer_business_summary_consumer,payment.succeeded:dnd_policy_consumer,payment.succeeded:ai_assist_notify_consumer,payment.succeeded:ai_audience_source_poke_consumer,payment.succeeded:webhook_order_paid_consumer
 ```
 
 The webhook consumer may create or reuse a `webhook.order_paid.push` `external_effect_job`, but it must not dispatch `external_effect_attempt`. The job must remain `execution_mode=shadow` and `status=planned` or another safe non-executing state.
@@ -214,7 +214,7 @@ Example: keep payment automation enabled while also allowing `questionnaire.subm
 
 ```bash
 export AICRM_INTERNAL_EVENTS_ALLOWED_EVENT_TYPES=payment.succeeded,questionnaire.submitted,customer.tagged,customer.untagged
-export AICRM_INTERNAL_EVENTS_ALLOWED_EVENT_CONSUMERS=payment.succeeded:order_projection_consumer,payment.succeeded:customer_business_summary_consumer,payment.succeeded:dnd_policy_consumer,payment.succeeded:ai_assist_notify_consumer,payment.succeeded:automation_payment_consumer
+export AICRM_INTERNAL_EVENTS_ALLOWED_EVENT_CONSUMERS=payment.succeeded:order_projection_consumer,payment.succeeded:customer_business_summary_consumer,payment.succeeded:dnd_policy_consumer,payment.succeeded:ai_assist_notify_consumer,payment.succeeded:ai_audience_source_poke_consumer
 ```
 
 With that configuration, `customer.tagged:ai_assist_notify_consumer` remains blocked even though `ai_assist_notify_consumer` is allowed for `payment.succeeded`.

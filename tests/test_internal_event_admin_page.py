@@ -18,7 +18,6 @@ def _seed_page_event() -> None:
     for name in [
         "order_projection_consumer",
         "webhook_order_paid_consumer",
-        "automation_payment_consumer",
         "customer_business_summary_consumer",
         "dnd_policy_consumer",
         "ai_assist_notify_consumer",
@@ -63,7 +62,6 @@ def test_internal_event_admin_page_smoke_and_payment_consumer_copy(next_client: 
         "H5 微信支付",
         "订单投影",
         "订单外推规划",
-        "支付自动化",
         "客户摘要消费者",
         "免打扰策略",
         "AI 助手通知",
@@ -81,6 +79,7 @@ def test_internal_event_admin_page_smoke_and_payment_consumer_copy(next_client: 
     ]:
         assert text in response.text
     assert "payload_json" not in response.text
+    assert "支付自动化" not in response.text
     assert "13800001234" not in response.text
     assert "openid" not in response.text.lower()
     assert "unionid" not in response.text.lower()

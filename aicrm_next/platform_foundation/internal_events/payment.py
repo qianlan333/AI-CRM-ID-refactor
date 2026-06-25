@@ -165,20 +165,6 @@ def webhook_order_paid_consumer(event: InternalEvent, run: InternalEventConsumer
     )
 
 
-def automation_payment_consumer(event: InternalEvent, run: InternalEventConsumerRun) -> InternalEventConsumerResult:
-    return InternalEventConsumerResult(
-        status="skipped",
-        request_summary={"event_id": event.event_id},
-        response_summary={
-            "automation_processed": False,
-            "skipped": True,
-            "reason": "automation_runtime_v2_retired",
-            "replacement": "ai_audience_source_poke_consumer",
-        },
-        result_summary={"automation_processed": False, "reason": "automation_runtime_v2_retired"},
-    )
-
-
 def customer_business_summary_consumer(event: InternalEvent, run: InternalEventConsumerRun) -> InternalEventConsumerResult:
     return InternalEventConsumerResult(
         status="skipped",
@@ -211,7 +197,6 @@ def register_payment_succeeded_consumers(registry: InternalEventConsumerRegistry
     for event_type in PAYMENT_SUCCEEDED_EVENT_TYPES:
         registry.register(event_type, "order_projection_consumer", order_projection_consumer, consumer_type="projection")
         registry.register(event_type, "webhook_order_paid_consumer", webhook_order_paid_consumer, consumer_type="external_effect_planner")
-        registry.register(event_type, "automation_payment_consumer", automation_payment_consumer, consumer_type="orchestration")
         registry.register(event_type, "customer_business_summary_consumer", customer_business_summary_consumer, consumer_type="projection")
         registry.register(event_type, "dnd_policy_consumer", dnd_policy_consumer, consumer_type="orchestration")
         registry.register(event_type, "ai_assist_notify_consumer", ai_assist_notify_consumer, consumer_type="orchestration")

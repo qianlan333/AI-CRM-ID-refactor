@@ -72,7 +72,11 @@ def test_legacy_path_marker_does_not_change_legacy_return(monkeypatch) -> None:
     monkeypatch.setenv("AICRM_INTERNAL_EVENTS_LEGACY_PATH_MARKERS_ENABLED", "1")
 
     def legacy_path() -> dict[str, object]:
-        marker = _mark(legacy_path="payment.legacy_direct_automation", replacement_event_type="payment.succeeded", replacement_consumer="automation_payment_consumer")
+        marker = _mark(
+            legacy_path="payment.legacy_direct_automation",
+            replacement_event_type="payment.succeeded",
+            replacement_consumer="ai_audience_source_poke_consumer",
+        )
         assert marker["recorded"] is True
         return {"ok": True, "status": "legacy_result_unchanged"}
 
