@@ -22,7 +22,7 @@ from aicrm_next.ai_audience_ops.event_types import (
     SOURCE_POKE_CONSUMER,
 )
 from aicrm_next.ai_audience_ops.outbound_service import AudienceOutboundService
-from aicrm_next.ai_audience_ops.repository import next_daily_refresh_at
+from aicrm_next.ai_audience_ops.repository import AudienceRepository, next_daily_refresh_at
 from aicrm_next.ai_audience_ops.scheduler import ai_audience_event_consumer_pairs, emit_due_ticks
 from aicrm_next.ai_audience_ops.service import AudiencePackageService
 from aicrm_next.ai_audience_ops.sql_linter import lint_sql
@@ -126,6 +126,63 @@ def test_ai_audience_scheduler_consumer_pairs_cover_source_refresh_and_outbound(
     assert f"{MEMBER_EVENT_PREFIX}entered:{OUTBOUND_EFFECT_CONSUMER}" in pairs
     assert f"{MEMBER_EVENT_PREFIX}updated:{OUTBOUND_EFFECT_CONSUMER}" in pairs
     assert f"{MEMBER_EVENT_PREFIX}exited:{OUTBOUND_EFFECT_CONSUMER}" in pairs
+
+
+@pytest.mark.usefixtures("next_pg_schema")
+def test_acquire_due_packages_uses_one_minute_due_window(next_client, monkeypatch) -> None:
+    monkeypatch.setenv("AICRM_AI_AUDIENCE_API_TOKEN", TOKEN)
+
+    near_resp = next_client.post(
+        "/api/ai/audience/packages",
+        headers=_auth(),
+        json={
+            "package_key": "due_window_near_pkg",
+            "name": "近窗口包",
+            "incremental_sql_text": _valid_incremental_sql(),
+        },
+    )
+    far_resp = next_client.post(
+        "/api/ai/audience/packages",
+        headers=_auth(),
+        json={
+            "package_key": "due_window_far_pkg",
+            "name": "远窗口包",
+            "incremental_sql_text": _valid_incremental_sql(),
+        },
+    )
+    assert near_resp.status_code == 200
+    assert far_resp.status_code == 200
+    near_id = near_resp.json()["package"]["id"]
+    far_id = far_resp.json()["package"]["id"]
+
+    assert next_client.post(f"/api/ai/audience/packages/{near_id}/publish", headers=_auth(), json={}).status_code == 200
+    assert next_client.post(f"/api/ai/audience/packages/{far_id}/publish", headers=_auth(), json={}).status_code == 200
+
+    session_factory = get_session_factory()
+    with session_factory() as session:
+        session.execute(
+            text(
+                """
+                UPDATE ai_audience_package
+                SET next_incremental_refresh_at = CASE
+                    WHEN id = :near_id THEN CURRENT_TIMESTAMP + interval '30 seconds'
+                    WHEN id = :far_id THEN CURRENT_TIMESTAMP + interval '90 seconds'
+                    ELSE next_incremental_refresh_at
+                END,
+                    lease_token = NULL,
+                    lease_expires_at = NULL
+                WHERE id IN (:near_id, :far_id)
+                """
+            ),
+            {"near_id": near_id, "far_id": far_id},
+        )
+        session.commit()
+
+    packages = AudienceRepository().acquire_due_packages("incremental", limit=10)
+    acquired_ids = {int(package["id"]) for package in packages}
+
+    assert near_id in acquired_ids
+    assert far_id not in acquired_ids
 
 
 def test_publish_requires_sql_for_enabled_refresh_modes() -> None:

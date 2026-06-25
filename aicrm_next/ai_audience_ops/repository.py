@@ -698,7 +698,14 @@ class SQLAlchemyAudienceRepository(AudienceRepository):
             {"member_event_id": int(member_event_id), "internal_event_id": _text(internal_event_id)},
         )
 
-    def acquire_due_packages(self, refresh_kind: str, *, limit: int = 20, lease_seconds: int = 300) -> list[dict[str, Any]]:
+    def acquire_due_packages(
+        self,
+        refresh_kind: str,
+        *,
+        limit: int = 20,
+        lease_seconds: int = 300,
+        due_window_seconds: int = 60,
+    ) -> list[dict[str, Any]]:
         if refresh_kind == "daily":
             due_column = "next_daily_refresh_at"
             enabled_column = "daily_enabled"
@@ -715,7 +722,7 @@ class SQLAlchemyAudienceRepository(AudienceRepository):
                   AND {enabled_column} = TRUE
                   AND current_version_id IS NOT NULL
                   AND {due_column} IS NOT NULL
-                  AND {due_column} <= CURRENT_TIMESTAMP
+                  AND {due_column} <= CURRENT_TIMESTAMP + (:due_window_seconds || ' seconds')::interval
                   AND (lease_expires_at IS NULL OR lease_expires_at <= CURRENT_TIMESTAMP)
                 ORDER BY {due_column} ASC, id ASC
                 LIMIT :limit
@@ -729,7 +736,12 @@ class SQLAlchemyAudienceRepository(AudienceRepository):
             WHERE p.id = target.id
             RETURNING p.*
             """,
-            {"limit": max(1, min(int(limit or 20), 200)), "lease_token": lease_token, "lease_seconds": int(lease_seconds or 300)},
+            {
+                "limit": max(1, min(int(limit or 20), 200)),
+                "lease_token": lease_token,
+                "lease_seconds": int(lease_seconds or 300),
+                "due_window_seconds": max(0, min(int(due_window_seconds or 0), 300)),
+            },
         )
 
     def update_refresh_success(
