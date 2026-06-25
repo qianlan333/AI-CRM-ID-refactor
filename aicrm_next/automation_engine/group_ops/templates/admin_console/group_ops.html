@@ -1,67 +1,11 @@
 {% extends "admin_console/base.html" %}
 
+{% set group_ops_asset_version = "group-ops-detail-clean-20260626" %}
+
 {% block head_extra %}
-<link rel="stylesheet" href="/static/group-ops/admin_console/group_ops.css">
+<link rel="stylesheet" href="/static/group-ops/admin_console/group_ops.css?v={{ group_ops_asset_version }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='admin_console/material_picker.css') }}?v=group-ops-create-legacy-20260601">
 <link rel="stylesheet" href="{{ url_for('static', filename='admin_console/send_content_composer.css') }}?v=group-ops-create-legacy-20260601">
-<style>
-  .p1-group-ops-panel { display: grid; gap: 14px; margin-bottom: 16px; }
-  .p1-group-ops-loading { padding: 16px; color: #6b7280; }
-  .p1-group-ops-banner { display: flex; align-items: center; justify-content: space-between; gap: 16px; border: 1px solid #f59e0b; background: #fffbeb; border-radius: 8px; padding: 16px; }
-  .p1-group-ops-banner h2,
-  .p1-group-ops-evidence h2,
-  .p1-closure-card h2,
-  .p1-draft-shell__head h2 { margin: 0 0 6px; font-size: 15px; }
-  .p1-group-ops-banner p,
-  .p1-group-ops-evidence p,
-  .p1-closure-card p,
-  .p1-draft-shell__head p,
-  .p1-draft-shell-card p { margin: 0; color: #5b6472; }
-  .p1-group-ops-evidence { border: 1px solid #e5e7eb; border-radius: 8px; padding: 16px; background: #fff; display: grid; gap: 12px; }
-  .p1-group-ops-evidence__grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin: 0; }
-  .p1-group-ops-evidence__grid div,
-  .p1-closure-fields div { border: 1px solid #e5e7eb; border-radius: 8px; padding: 8px; min-width: 0; }
-  .p1-group-ops-evidence__grid dt,
-  .p1-closure-fields dt { color: #6b7280; font-size: 12px; margin-bottom: 4px; }
-  .p1-group-ops-evidence__grid dd,
-  .p1-closure-fields dd { margin: 0; font-weight: 700; overflow-wrap: anywhere; }
-  .p1-closure-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
-  .p1-closure-card { border: 1px solid #e5e7eb; border-radius: 8px; background: #fff; padding: 16px; display: grid; gap: 12px; }
-  .p1-closure-card--success { border-color: #bbf7d0; }
-  .p1-closure-card--info { border-color: #bfdbfe; }
-  .p1-closure-card--warning { border-color: #fde68a; }
-  .p1-closure-card--danger { border-color: #fecaca; }
-  .p1-closure-card__head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
-  .p1-closure-title-row { display: inline-flex; align-items: center; gap: 8px; min-width: 0; }
-  .p1-closure-pill { display: inline-flex; align-items: center; justify-content: center; min-height: 24px; padding: 3px 9px; border-radius: 999px; font-size: 12px; font-weight: 700; white-space: nowrap; }
-  .p1-closure-pill--success { color: #166534; background: #dcfce7; }
-  .p1-closure-pill--info { color: #1d4ed8; background: #dbeafe; }
-  .p1-closure-pill--warning { color: #92400e; background: #fef3c7; }
-  .p1-closure-pill--danger { color: #991b1b; background: #fee2e2; }
-  .p1-closure-pill--neutral { color: #374151; background: #f3f4f6; }
-  .p1-closure-fields { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin: 0; }
-  .p1-closure-guardrail { background: #f8fafc; border-radius: 8px; padding: 10px; }
-  .p1-drag-handle { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border: 1px solid #e5e7eb; border-radius: 6px; color: #64748b; background: #f8fafc; cursor: not-allowed; user-select: none; flex: 0 0 auto; }
-  .p1-drag-disabled-reason { color: #64748b; font-size: 12px; border-top: 1px solid #e5e7eb; padding-top: 8px; }
-  .p1-draft-shell { display: grid; gap: 12px; }
-  .p1-draft-shell__head { border: 1px solid #e5e7eb; border-radius: 8px; padding: 16px; background: #f8fafc; }
-  .p1-draft-shell__grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
-  .p1-draft-shell-card { border: 1px dashed #cbd5e1; border-radius: 8px; background: #fff; padding: 14px; display: grid; gap: 10px; }
-  .p1-draft-shell-card__head { display: flex; align-items: center; gap: 8px; }
-  .p1-drag-guardrails { display: flex; flex-wrap: wrap; gap: 6px; }
-  .p1-drag-guardrails code { border-radius: 999px; background: #f1f5f9; color: #334155; padding: 3px 8px; font-size: 12px; }
-  .p1-diagnostics-toggle { margin-top: 16px; border: 1px solid #e5e7eb; border-radius: 8px; background: #fff; }
-  .p1-diagnostics-toggle > summary { cursor: pointer; padding: 12px 14px; color: #374151; font-weight: 700; }
-  .p1-diagnostics-toggle > summary span { color: #6b7280; font-weight: 500; margin-left: 8px; }
-  .p1-diagnostics-toggle .p1-group-ops-panel { padding: 0 14px 14px; margin-bottom: 0; }
-  @media (max-width: 960px) {
-    .p1-closure-grid,
-    .p1-group-ops-evidence__grid,
-    .p1-draft-shell__grid,
-    .p1-closure-fields { grid-template-columns: 1fr; }
-    .p1-group-ops-banner { align-items: flex-start; flex-direction: column; }
-  }
-</style>
 {% endblock %}
 
 {% block content %}
@@ -71,61 +15,13 @@
   data-page-mode="{{ group_ops_page_mode }}"
   data-plan-id="{{ group_ops_plan_id }}"
 ></div>
-<details class="p1-diagnostics-toggle" data-p1-diagnostics="group_ops" data-default-collapsed="true">
-  <summary>诊断状态 <span>Group Ops evidence / governance / preview，仅验收或管理员查看</span></summary>
-  <section id="groupOpsP1StatusApp" class="p1-group-ops-panel" aria-label="P1 Group Ops read-only status slice">
-    <div class="group-ops__card p1-group-ops-loading">加载 Group Ops P1 状态...</div>
-  </section>
-</details>
-<script id="groupOpsP1StatusPayload" type="application/json">
-  {
-    "cards": [
-      {
-        "title": "发送链路证据",
-        "rawStatus": "sent",
-        "evidenceStatus": "EVIDENCE_COLLECTED",
-        "derivedStatus": "push_center_sent",
-        "evidenceId": "external_effect_job:97",
-        "summary": "external_effect_job:97 已在 Push Center 显示 sent；retryable=false，operator_action_required=false。",
-        "guardrail": "sent 只表示发送链路 evidence 成立，不代表 governance 完整。",
-        "route": "/api/admin/push-center/jobs/external_effect_job:97/reconciliation"
-      },
-      {
-        "title": "治理证据",
-        "rawStatus": "governance_missing",
-        "evidenceStatus": "EVIDENCE_COLLECTED",
-        "derivedStatus": "governance_residual_risk",
-        "evidenceId": "approval_allowlist_window",
-        "summary": "独立 operator approval、receiver allowlist、gray-window approval 记录仍未 attach。",
-        "guardrail": "必须显示 requires_approval / requires_allowlist / requires_gray_window。",
-        "route": "docs/reports/evidence/group_ops_gray_send_approval_allowlist_window_supplement_20260623.md"
-      },
-      {
-        "title": "最终判定",
-        "rawStatus": "evidence_incomplete",
-        "evidenceStatus": "EVIDENCE_COLLECTED",
-        "derivedStatus": "not_pass_90_plus_candidate",
-        "evidenceId": "business_closure_exception",
-        "summary": "Group Ops 保持 EVIDENCE_COLLECTED，不是 PASS_90_PLUS_CANDIDATE。",
-        "guardrail": "证据不完整不能渲染为 pass-complete。",
-        "route": "docs/reports/business_closure_final_p1_readiness_20260623.md"
-      }
-    ],
-    "evidenceSummary": {
-      "effectJobId": "external_effect_job:97",
-      "pushCenterStatus": "sent",
-      "realExternalCallEvidence": "collected_in_prior_report",
-      "retryable": false,
-      "operatorActionRequired": false,
-      "finalStatus": "EVIDENCE_COLLECTED"
-    }
-  }
-</script>
+{% if group_ops_page_mode == "detail" %}
+<template id="groupOpsDetailPanelLabels">基础配置 绑定群 Webhook 标准编排</template>
+{% endif %}
 {% endblock %}
 
 {% block scripts_extra %}
 <script defer src="{{ url_for('static', filename='admin_console/material_picker.js') }}?v=group-ops-create-legacy-20260601"></script>
 <script defer src="{{ url_for('static', filename='admin_console/send_content_composer.js') }}?v=group-ops-create-legacy-20260601"></script>
-<script defer src="/static/group-ops/admin_console/group_ops.js?v=group-ops-create-legacy-20260601"></script>
-<script type="module" src="{{ url_for('static', filename='admin_console/p1/group_ops/group_ops_overview.js') }}?v=p1-group-ops-ts-status-slice-20260623"></script>
+<script defer src="/static/group-ops/admin_console/group_ops.js?v={{ group_ops_asset_version }}"></script>
 {% endblock %}
