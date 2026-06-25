@@ -717,3 +717,17 @@ def test_admin_config_routes_no_longer_forward_to_legacy_facade() -> None:
     assert "legacy_flask_facade" not in admin_config_source
     assert "forward_to_legacy_flask" not in admin_config_source
     assert "wecom_ability" + "_service" not in admin_config_source
+
+
+def test_marketing_automation_config_page_points_to_ai_audience_not_legacy_programs() -> None:
+    template = (ROOT / "aicrm_next/frontend_compat/templates/admin_console/config_marketing_automation.html").read_text(
+        encoding="utf-8"
+    )
+
+    assert "AI 自动化运营入口" in template
+    assert "进入 AI 自动化运营" in template
+    assert "automation_program_overview_href" not in template
+    assert "自动化转化兼容入口" not in template
+    assert "进入数据概览" not in template
+    assert "按方案维护" not in template
+    assert "任务流与节点" not in template
