@@ -7,14 +7,6 @@ from pydantic import BaseModel, ConfigDict, Field
 from aicrm_next.send_content.dto import SendContentPackage
 
 
-class ActivationWebhookRequest(BaseModel):
-    mobile: str | None = None
-    external_userid: str | None = None
-    activated_at: str | None = None
-    source: str = "activation_webhook"
-    operator: str = "system"
-
-
 class TaskGroupListRequest(BaseModel):
     program_id: int | None = None
     include_archived: bool = False
