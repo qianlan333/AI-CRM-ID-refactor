@@ -70,7 +70,6 @@ HTTP_URL_SETTING_KEYS = {
     "WECOM_API_BASE",
     "DEEPSEEK_BASE_URL",
     "OPENCLAW_WEBHOOK_URL",
-    "LAOHUANG_CHAT_WEBHOOK_URL",
     "QUESTIONNAIRE_SUBMIT_WEBHOOK_URL",
     "WECHAT_PAY_NOTIFY_URL",
     "WECHAT_PAY_API_BASE",
@@ -391,7 +390,6 @@ def _validate_known_setting(key: str, value: str) -> str:
         "WECOM_ARCHIVE_TIMEOUT",
         "DEEPSEEK_TIMEOUT_SECONDS",
         "OPENCLAW_FOCUS_MESSAGE_WEBHOOK_TIMEOUT_SECONDS",
-        "LAOHUANG_CHAT_TIMEOUT_SECONDS",
         "WECHAT_PAY_TIMEOUT_SECONDS",
         "OUTBOUND_WEBHOOK_RETRY_MAX_ATTEMPTS",
         "OUTBOUND_WEBHOOK_RETRY_INTERVAL_SECONDS",
@@ -403,7 +401,6 @@ def _validate_known_setting(key: str, value: str) -> str:
     if key in {
         "OUTBOUND_WEBHOOK_RETRY_ENABLED",
         "DEEPSEEK_ENABLED",
-        "LAOHUANG_CHAT_ENABLED",
         "WECHAT_PAY_ENABLED",
         "QUESTIONNAIRE_EXTERNAL_PUSH_GLOBAL_ENABLED",
         "AICRM_EXTERNAL_EFFECT_WEBHOOK_EXECUTE",
@@ -432,15 +429,10 @@ def _validate_known_setting(key: str, value: str) -> str:
         if hosts & blocked:
             raise ValueError("AICRM_EXTERNAL_EFFECT_ALLOWED_BASE_HOSTS 不允许使用本地、测试或通配域名")
         return normalized
-    if key == "LAOHUANG_CHAT_SEND_CHANNEL":
-        if normalized and normalized != "private_message":
-            raise ValueError("LAOHUANG_CHAT_SEND_CHANNEL 首版只允许 private_message")
-        return normalized or "private_message"
     if key in {
         "WECOM_API_BASE",
         "DEEPSEEK_BASE_URL",
         "OPENCLAW_WEBHOOK_URL",
-        "LAOHUANG_CHAT_WEBHOOK_URL",
         "QUESTIONNAIRE_SUBMIT_WEBHOOK_URL",
         "WECHAT_PAY_NOTIFY_URL",
         "WECHAT_PAY_API_BASE",
