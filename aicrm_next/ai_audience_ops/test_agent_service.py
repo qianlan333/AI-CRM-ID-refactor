@@ -40,7 +40,7 @@ class AudienceTestAgentService:
 
         if not package_key or not member_event_id or not event_type or not external_userid:
             return {"ok": False, "error": "invalid_test_agent_payload", "status_code": 400, "real_external_call_executed": False}
-        if not _allowed("AICRM_AI_AUDIENCE_TEST_AGENT_PACKAGE_KEYS", package_key):
+        if not _package_key_allowed(package_key):
             return {"ok": False, "error": "package_key_not_allowed", "status_code": 403, "real_external_call_executed": False}
         if not _allowed("AICRM_AI_AUDIENCE_TEST_AGENT_ALLOWED_EXTERNAL_USERIDS", external_userid):
             return {"ok": False, "error": "external_userid_not_allowed", "status_code": 403, "real_external_call_executed": False}
@@ -100,7 +100,7 @@ class AudienceTestAgentService:
         if not package_key or not refresh_run_id or len(external_userids) != 1:
             return {"ok": False, "error": "invalid_test_agent_payload", "status_code": 400, "real_external_call_executed": False}
         external_userid = external_userids[0]
-        if not _allowed("AICRM_AI_AUDIENCE_TEST_AGENT_PACKAGE_KEYS", package_key):
+        if not _package_key_allowed(package_key):
             return {"ok": False, "error": "package_key_not_allowed", "status_code": 403, "real_external_call_executed": False}
         if not _allowed("AICRM_AI_AUDIENCE_TEST_AGENT_ALLOWED_EXTERNAL_USERIDS", external_userid):
             return {"ok": False, "error": "external_userid_not_allowed", "status_code": 403, "real_external_call_executed": False}
@@ -170,6 +170,12 @@ def _event_type(payload: dict[str, Any]) -> str:
 def _allowed(setting_name: str, value: str) -> bool:
     allowed = runtime_csv(setting_name)
     return bool(value and value in allowed)
+
+
+def _package_key_allowed(package_key: str) -> bool:
+    if _allowed("AICRM_AI_AUDIENCE_TEST_AGENT_PACKAGE_KEYS", package_key):
+        return True
+    return runtime_bool("AICRM_AI_AUDIENCE_E2E_RUNNER_ENABLED") and package_key.startswith("prod_e2e_")
 
 
 def _external_effect_signature_valid(*, secret: str, payload: Any, signature: str) -> bool:
