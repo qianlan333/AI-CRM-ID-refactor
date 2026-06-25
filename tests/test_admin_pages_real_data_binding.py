@@ -290,7 +290,8 @@ def test_automation_program_pages_are_retired(monkeypatch):
         "/admin/automation-conversion/programs/7/entry-channels",
     ]:
         response = client.get(path, cookies=_admin_cookies())
-        assert response.status_code == 404, path
+        assert response.status_code == 410, path
+        assert "旧自动化运营方案页面已下架，请使用 AI 自动化运营人群包" in response.text
 
 
 def test_automation_program_api_routes_are_retired(monkeypatch):

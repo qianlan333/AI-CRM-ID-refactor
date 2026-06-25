@@ -38,7 +38,7 @@ def _admin_cookies() -> dict[str, str]:
     }
 
 
-def test_automation_project_pages_are_served_by_next_native_bundle(monkeypatch) -> None:
+def test_retired_automation_project_pages_return_gone(monkeypatch) -> None:
     client = _client(monkeypatch)
     urls = [
         "/admin/automation-conversion/programs/1/setup?step=basic",
@@ -50,28 +50,34 @@ def test_automation_project_pages_are_served_by_next_native_bundle(monkeypatch) 
     ]
 
     for url in urls:
-        response = client.get(url)
-        assert response.status_code == 404, url
+        response = client.get(url, cookies=_admin_cookies())
+        assert response.status_code == 410, url
+        assert "旧自动化运营方案页面已下架，请使用 AI 自动化运营人群包" in response.text
 
     list_response = client.get("/admin/automation-conversion", cookies=_admin_cookies())
     assert list_response.status_code == 200
     assert "AI 自动化运营" in list_response.text
-    assert "通过 AI 创建 SQL 人群包；查看当前命中人数、最后一次刷新时间与刷新方式。" in list_response.text
+    assert "人群包列表" in list_response.text
     assert "人群包名称" in list_response.text
     assert "最后一次刷新时间" in list_response.text
     assert "刷新方式" in list_response.text
     assert "方案列表" not in list_response.text
-    assert "编辑" not in list_response.text
     assert "数据概览" not in list_response.text
-    assert "复制" not in list_response.text
-    assert "停用" not in list_response.text
-    assert "归档" not in list_response.text
     assert "/api/admin/ai-audience/packages" in list_response.text
     assert "AICRM_AI_AUDIENCE_API_TOKEN" not in list_response.text
     assert "/api/ai/audience/packages" not in list_response.text
 
     legacy_response = client.get("/admin/automation-conversion/legacy", cookies=_admin_cookies())
     assert legacy_response.status_code == 404
+
+
+def test_retired_automation_project_pages_require_admin_session(monkeypatch) -> None:
+    client = _client(monkeypatch)
+
+    response = client.get("/admin/automation-conversion/programs/1/setup", follow_redirects=False)
+
+    assert response.status_code == 302
+    assert response.headers["location"] == "/login?next=/admin/automation-conversion/programs/1/setup"
 
 
 def test_ai_audience_admin_pages_require_admin_session(monkeypatch) -> None:

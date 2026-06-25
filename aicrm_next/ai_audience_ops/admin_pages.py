@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from fastapi import APIRouter, Request
+from fastapi.responses import PlainTextResponse
 from fastapi.templating import Jinja2Templates
 
 from aicrm_next.admin_auth.guards import admin_page_auth_redirect
@@ -72,5 +73,17 @@ def admin_ai_audience_package_detail_page(request: Request, package_id: int):
         request,
         "admin_console/ai_audience_package_detail.html",
         context,
+        headers=_HEADERS,
+    )
+
+
+@router.get("/admin/automation-conversion/programs/{retired_path:path}")
+def retired_automation_program_page(request: Request, retired_path: str):
+    del retired_path
+    if redirect := admin_page_auth_redirect(request):
+        return redirect
+    return PlainTextResponse(
+        "旧自动化运营方案页面已下架，请使用 AI 自动化运营人群包",
+        status_code=410,
         headers=_HEADERS,
     )
