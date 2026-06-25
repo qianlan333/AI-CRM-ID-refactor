@@ -505,17 +505,6 @@ routes:
   data_source: read_model
   requires_auth: true
   rollback: previous_release
-- path: /admin/business-closure
-  methods:
-  - GET
-  route_name: api.admin_business_closure_page
-  capability_owner: admin_shell
-  runtime_owner: ai_crm_next
-  layer: admin_page
-  external_effects: none
-  data_source: read_model
-  requires_auth: true
-  rollback: previous_release
 - path: /admin/p1/group-ops-workspace
   methods:
   - GET

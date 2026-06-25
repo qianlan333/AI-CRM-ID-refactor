@@ -42,7 +42,8 @@ def test_p1_group_ops_workspace_route_smoke(frontend_client):
     assert "workspace_layout.js" in html
     assert "不会发送、不审批、不写生产" in html
     assert "返回群运营计划" in html
-    assert "查看 P1 诊断状态" in html
+    assert "查看 P1 诊断状态" not in html
+    assert "/admin/business-closure" not in html
     assert "PASS_90_PLUS" not in html
 
 

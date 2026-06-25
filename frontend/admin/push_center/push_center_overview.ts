@@ -44,7 +44,7 @@ export function renderPushCenterOverview(root: HTMLElement, payload: PushCenterO
     <section class="p1-push-banner" data-push-center-slice="readonly" data-real-external-call-executed="false" data-production-write-executed="false">
       <div>
         <h2>P1 Push Center status slice</h2>
-        <p>只读呈现 Business Closure exception 状态；不新增写操作、不绕过 Push Center、不触发真实外呼。</p>
+        <p>只读呈现 P1 exception 状态；不新增写操作、不绕过 Push Center、不触发真实外呼。</p>
       </div>
       <span class="p1-closure-pill p1-closure-pill--warning">P1_READY_WITH_EXCEPTIONS</span>
     </section>

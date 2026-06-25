@@ -17,7 +17,7 @@ export const GROUP_OPS_WORKSPACE_SCENARIOS = [
         derivedStatus: "approval_allowlist_window_missing",
         summary: "独立 operator approval、receiver allowlist、gray-window 记录仍未 attach。",
         guardrail: "必须保留 requires_approval / requires_allowlist / requires_gray_window。",
-        route: "/admin/business-closure"
+        route: "/admin/p1/group-ops-workspace"
     },
     {
         key: "ops_plan_broadcast",
@@ -37,7 +37,7 @@ export const GROUP_OPS_WORKSPACE_SCENARIOS = [
         derivedStatus: "external_config_exception",
         summary: "企微配置仍是 external-config-blocked，不进入可执行队列。",
         guardrail: "需要外部配置批准后才能进入真实授权或 callback 取证。",
-        route: "/admin/business-closure"
+        route: "/admin/channels"
     }
 ];
 export const P1_GROUP_OPS_WORKSPACE_FIXTURE = {
