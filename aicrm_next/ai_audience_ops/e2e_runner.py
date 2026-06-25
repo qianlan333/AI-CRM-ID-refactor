@@ -291,15 +291,15 @@ class AudienceRealE2ERunner:
         resolved = _owner_userids(preview)
         empty = self._package_service.replace_admin_senders(package.package_id, {"items": []})
         empty_preview = self._preview_command(request)
-        skipped = dict(empty_preview.get("skipped_summary") or {})
+        no_allowed_sender_count = _skipped_count(empty_preview.get("skipped_summary"), "no_allowed_sender")
         self._package_service.replace_admin_senders(
             package.package_id,
             {"items": [{"sender_userid": TEST_SENDER_USERID, "display_name": TEST_SENDER_USERID, "priority": 1, "status": "active"}]},
         )
         return {
-            "ok": TEST_SENDER_USERID in resolved and skipped.get("no_allowed_sender", 0) >= 1 and bool(empty.get("ok")),
+            "ok": TEST_SENDER_USERID in resolved and no_allowed_sender_count >= 1 and bool(empty.get("ok")),
             "resolved_sender_userid": TEST_SENDER_USERID if TEST_SENDER_USERID in resolved else "",
-            "no_allowed_sender_skipped": skipped.get("no_allowed_sender", 0),
+            "no_allowed_sender_skipped": no_allowed_sender_count,
             "default_sender_used": False,
         }
 
@@ -654,6 +654,16 @@ def _execute_guard(execute: dict[str, Any]) -> str:
 
 def _owner_userids(preview: dict[str, Any]) -> list[str]:
     return sorted({_text(item.get("owner_userid") or item.get("sender_userid")) for item in preview.get("owner_buckets") or [] if _text(item.get("owner_userid") or item.get("sender_userid"))})
+
+
+def _skipped_count(summary: Any, reason: str) -> int:
+    if isinstance(summary, dict):
+        return int(summary.get(reason) or 0)
+    total = 0
+    for item in list(summary or []):
+        if isinstance(item, dict) and _text(item.get("reason")) == reason:
+            total += int(item.get("count") or 0)
+    return total
 
 
 def _compact_dispatch(result: dict[str, Any]) -> dict[str, Any]:
