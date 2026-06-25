@@ -221,7 +221,7 @@ def webhook_route_contracts() -> tuple[WebhookRouteContract, ...]:
         W("/api/customers/automation/webhook-deliveries/retry-due", ("OPTIONS",), "api_customer_automation_webhook_delivery_retry_due_options", "none", "read_model", "retired customer automation route returns 410 and creates no jobs"),
         W("/api/customers/automation/webhook-deliveries/retry-due", ("POST",), "api_plan_customer_automation_webhook_delivery_retry_due", "none", "command", "retired customer automation route returns 410 and creates no jobs"),
         W("/api/customer-automation/activation-webhook", ("POST",), "activation_webhook", "none", "command", "retired customer automation route returns 410 and creates no jobs"),
-        W("/api/customers/automation/webhook-deliveries", ("GET",), "customer_automation_webhook_deliveries", "none", "read_model", "retired customer automation route returns 410 and creates no jobs"),
+        W("/api/customers/automation/webhook-deliveries", ("GET",), "customer_automation_webhook_deliveries", "none", "static", "retired customer automation route returns 410 and creates no jobs"),
         W("/api/h5/wechat-pay/refund/notify", ("POST",), "wechat_refund_notify", "none", "command", "refund notify records transaction/internal event before outbound effects"),
         W("/api/wechat-pay/notify", ("POST",), "wechat_notify", "none", "command", "WeChat Pay notify records transaction/internal event before outbound effects"),
         W("/api/alipay/notify", ("POST",), "alipay_notify", "none", "command", "Alipay notify records transaction/internal event before outbound effects"),

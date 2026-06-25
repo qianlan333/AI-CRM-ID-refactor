@@ -28,6 +28,10 @@ The retired handlers do not call the retired customer automation commands,
 read models, Runtime V2 membership/task planning, or external effect planning.
 This document proves the route surface does not call the retired customer automation commands.
 external_effect_job 不会被创建.
+The former signup conversion read model has been physically removed; the
+`signup-conversion/batches*` and delivery inventory GET routes are static
+tombstones and must not query `message_batches`, `conversion_dispatch_log`, or
+`outbound_webhook_deliveries`.
 
 Every response must keep the following no-side-effect flags:
 
