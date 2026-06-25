@@ -191,22 +191,28 @@ def test_admin_ai_audience_packages_api_returns_lightweight_read_model(next_clie
         "id": no_run_id,
         "package_key": "admin_no_run",
         "name": "无运行记录人群包",
+        "status": "active",
         "member_count": 0,
         "last_refreshed_at": None,
+        "refresh_mode": "incremental_3m",
         "refresh_mode_label": "每 3 分钟",
     }
     assert by_key["admin_counted"] == {
         "id": counted_id,
         "package_key": "admin_counted",
         "name": "有成员与多次刷新人群包",
+        "status": "active",
         "member_count": 2,
         "last_refreshed_at": "2026-06-24T09:05:12+08:00",
-        "refresh_mode_label": "每 5 分钟",
+        "refresh_mode": "incremental_3m",
+        "refresh_mode_label": "每 3 分钟",
     }
     assert by_key["admin_daily"]["id"] == daily_id
-    assert by_key["admin_daily"]["refresh_mode_label"] == "每日 03:00"
+    assert by_key["admin_daily"]["refresh_mode"] == "daily_0200"
+    assert by_key["admin_daily"]["refresh_mode_label"] == "每日 2:00"
     assert by_key["admin_hybrid"]["id"] == hybrid_id
-    assert by_key["admin_hybrid"]["refresh_mode_label"] == "每 3 分钟 + 每日 03:00"
+    assert by_key["admin_hybrid"]["refresh_mode"] == "incremental_3m_plus_daily_0200"
+    assert by_key["admin_hybrid"]["refresh_mode_label"] == "每 3 分钟 + 每日 2:00"
 
     response_text = json.dumps(payload, ensure_ascii=False)
     for forbidden in (
@@ -223,3 +229,295 @@ def test_admin_ai_audience_packages_api_returns_lightweight_read_model(next_clie
         "归档不展示",
     ):
         assert forbidden not in response_text
+
+
+def test_admin_ai_audience_list_page_matches_management_contract(next_client, monkeypatch) -> None:
+    monkeypatch.setenv("SECRET_KEY", "ai-audience-list-page-test")
+
+    response = next_client.get("/admin/automation-conversion", cookies=_admin_cookies())
+
+    assert response.status_code == 200
+    html = response.text
+    for expected in (
+        "AI 自动化运营",
+        "通过 AI 创建 SQL 人群包；查看当前命中人数、最后一次刷新时间与刷新方式。",
+        "人群包名称",
+        "人数",
+        "最后一次刷新时间",
+        "刷新方式",
+        "操作",
+        "编辑",
+        "复制",
+        "删除",
+        "群发",
+        "/api/admin/ai-audience/packages",
+        "/api/admin/user-ops/batch-send/preview",
+        "/api/admin/user-ops/batch-send/execute",
+        "targetSource: \"ai_audience_package\"",
+        "UserOpsBatchSendModal.open",
+        "user_ops_batch_send_modal.js",
+    ):
+        assert expected in html
+    assert "/api/ai/audience/packages" not in html
+
+
+def test_admin_ai_audience_detail_page_has_required_sections_without_top_actions(next_client, monkeypatch) -> None:
+    monkeypatch.setenv("SECRET_KEY", "ai-audience-detail-page-test")
+
+    response = next_client.get("/admin/automation-conversion/packages/123", cookies=_admin_cookies())
+
+    assert response.status_code == 200
+    html = response.text
+    for expected in (
+        "基础配置",
+        "Webhook",
+        "发送人白名单",
+        "成员列表",
+        "人群包名称",
+        "筛选逻辑简述",
+        "增量刷新",
+        "每 3 分钟",
+        "每日 2:00",
+        "接收 Webhook 地址（系统生成）",
+        "外推 Webhook 地址（增量刷新后触发）",
+        "请求 body 仅为 external_userid 数组，包信息、签名、幂等键走 Header。",
+        "用户被多个客服添加时，只在白名单里选；多个命中按优先级取第一个；无命中则跳过。",
+        "外部联系人 ID",
+        "/api/admin/ai-audience/packages/123",
+        "/api/admin/ai-audience/packages/123/members",
+        "/api/admin/ai-audience/packages/123/webhooks",
+        "/api/admin/ai-audience/packages/123/senders",
+    ):
+        assert expected in html
+    for forbidden in (
+        "返回人群包列表",
+        "一键群发",
+        "每 5 分钟",
+        "每 15 分钟",
+        "每 30 分钟",
+        "cron",
+        "自定义时间",
+        "手机号",
+        "问卷答案",
+        "owner 明细",
+        "推荐发送人",
+        "群发状态",
+        "/api/ai/audience/packages",
+        "inbound_webhook_secret",
+        "signing_secret",
+    ):
+        assert forbidden not in html
+
+
+def test_user_ops_batch_send_modal_static_component_uses_standard_endpoints(next_client) -> None:
+    response = next_client.get("/static/admin_console/user_ops_batch_send_modal.js")
+
+    assert response.status_code == 200
+    script = response.text
+    for expected in (
+        "window.UserOpsBatchSendModal",
+        "/api/admin/user-ops/batch-send/preview",
+        "/api/admin/user-ops/batch-send/execute",
+        "target_source",
+        "target_source_id",
+        "ai_audience_package",
+        "selection_mode: \"all_filtered\"",
+        "images: []",
+        "attachments: []",
+    ):
+        assert expected in script
+    assert "/api/admin/ai-audience/packages/" not in script
+
+
+def test_admin_ai_audience_package_detail_requires_admin_and_redacts_sensitive_fields(next_client, next_pg_schema, monkeypatch) -> None:
+    del next_pg_schema
+    monkeypatch.setenv("SECRET_KEY", "ai-audience-detail-test")
+    session_factory = get_session_factory()
+    with session_factory() as session:
+        package_id = _insert_package(
+            session,
+            package_key="detail_pkg",
+            name="详情人群包",
+            incremental_enabled=True,
+            daily_enabled=True,
+            daily_refresh_time="02:00",
+        )
+        session.execute(
+            text(
+                """
+                UPDATE ai_audience_package
+                SET natural_language_definition = '近 30 天提交问卷且已加微',
+                    inbound_webhook_secret = 'secret-hidden'
+                WHERE id = :package_id
+                """
+            ),
+            {"package_id": package_id},
+        )
+        _insert_member(session, package_id=package_id, identity_value="wm_hidden")
+        session.commit()
+
+    no_cookie = next_client.get(f"/api/admin/ai-audience/packages/{package_id}")
+    assert no_cookie.status_code == 401
+
+    response = next_client.get(f"/api/admin/ai-audience/packages/{package_id}", cookies=_admin_cookies())
+    assert response.status_code == 200
+    package = response.json()["package"]
+    assert package == {
+        "id": package_id,
+        "package_key": "detail_pkg",
+        "name": "详情人群包",
+        "status": "active",
+        "member_count": 1,
+        "last_refreshed_at": None,
+        "refresh_mode": "incremental_3m_plus_daily_0200",
+        "refresh_mode_label": "每 3 分钟 + 每日 2:00",
+        "natural_language_definition": "近 30 天提交问卷且已加微",
+    }
+    response_text = json.dumps(response.json(), ensure_ascii=False)
+    for forbidden in ("sql_text", "inbound_webhook_secret", "signing_secret", "payload_json", "wm_hidden"):
+        assert forbidden not in response_text
+
+
+def test_admin_ai_audience_package_patch_normalizes_refresh_modes(next_client, next_pg_schema, monkeypatch) -> None:
+    del next_pg_schema
+    monkeypatch.setenv("SECRET_KEY", "ai-audience-patch-test")
+    session_factory = get_session_factory()
+    with session_factory() as session:
+        package_id = _insert_package(session, package_key="patch_pkg", name="旧名称", incremental_interval_seconds=900)
+        session.commit()
+
+    invalid = next_client.patch(
+        f"/api/admin/ai-audience/packages/{package_id}",
+        cookies=_admin_cookies(),
+        json={"refresh_mode": "incremental_15m"},
+    )
+    assert invalid.status_code == 400
+    assert invalid.json()["error"] == "invalid_refresh_mode"
+
+    response = next_client.patch(
+        f"/api/admin/ai-audience/packages/{package_id}",
+        cookies=_admin_cookies(),
+        json={
+            "name": "新名称",
+            "natural_language_definition": "新定义",
+            "refresh_mode": "daily_0200",
+        },
+    )
+    assert response.status_code == 200
+    package = response.json()["package"]
+    assert package["name"] == "新名称"
+    assert package["natural_language_definition"] == "新定义"
+    assert package["refresh_mode"] == "daily_0200"
+    assert package["refresh_mode_label"] == "每日 2:00"
+
+    with session_factory() as session:
+        row = session.execute(text("SELECT * FROM ai_audience_package WHERE id = :package_id"), {"package_id": package_id}).mappings().one()
+    assert row["incremental_enabled"] is False
+    assert row["daily_enabled"] is True
+    assert row["incremental_interval_seconds"] == 180
+    assert row["daily_refresh_time"] == "02:00"
+
+
+def test_admin_ai_audience_members_api_returns_active_safe_fields(next_client, next_pg_schema, monkeypatch) -> None:
+    del next_pg_schema
+    monkeypatch.setenv("SECRET_KEY", "ai-audience-members-test")
+    session_factory = get_session_factory()
+    with session_factory() as session:
+        package_id = _insert_package(session, package_key="members_pkg", name="成员人群包")
+        _insert_member(session, package_id=package_id, identity_value="wm_active_named")
+        _insert_member(session, package_id=package_id, identity_value="wm_active_unnamed")
+        _insert_member(session, package_id=package_id, identity_value="wm_exited", status="exited")
+        session.execute(
+            text(
+                """
+                INSERT INTO wecom_external_contact_identity_map (
+                    external_userid, follow_user_userid, name, status, updated_at
+                )
+                VALUES ('wm_active_named', 'HuangYouCan', '浅蓝', 'active', CURRENT_TIMESTAMP)
+                """
+            )
+        )
+        session.commit()
+
+    response = next_client.get(f"/api/admin/ai-audience/packages/{package_id}/members", cookies=_admin_cookies())
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["total"] == 2
+    assert payload["limit"] == 50
+    names = {item["external_userid"]: item["nickname"] for item in payload["items"]}
+    assert names["wm_active_named"] == "浅蓝"
+    assert names["wm_active_unnamed"] == "未命名客户"
+    response_text = json.dumps(payload, ensure_ascii=False)
+    for forbidden in ("payload_json", "mobile", "tags", "questionnaire", "wm_exited", "owner_userid"):
+        assert forbidden not in response_text
+
+
+def test_admin_ai_audience_webhook_api_redacts_and_rotates_secrets(next_client, next_pg_schema, monkeypatch) -> None:
+    del next_pg_schema
+    monkeypatch.setenv("SECRET_KEY", "ai-audience-webhook-test")
+    monkeypatch.setenv("AICRM_PUBLIC_BASE_URL", "https://www.youcangogogo.com")
+    session_factory = get_session_factory()
+    with session_factory() as session:
+        package_id = _insert_package(session, package_key="webhook_pkg", name="Webhook 包")
+        session.commit()
+
+    patch = next_client.patch(
+        f"/api/admin/ai-audience/packages/{package_id}/webhooks",
+        cookies=_admin_cookies(),
+        json={
+            "outbound_enabled": True,
+            "outbound_webhook_url": "https://agent.example.com/audience/entered",
+            "outbound_signing_secret": "outbound-secret",
+        },
+    )
+    assert patch.status_code == 200
+    webhook = patch.json()["webhook"]
+    assert webhook["outbound_enabled"] is True
+    assert webhook["outbound_webhook_url"] == "https://agent.example.com/audience/entered"
+    assert webhook["outbound_secret_configured"] is True
+    assert webhook["inbound_secret_configured"] is True
+    assert webhook["inbound_webhook_url"] == "https://www.youcangogogo.com/api/ai/audience/packages/webhook_pkg/webhook"
+    assert "outbound-secret" not in json.dumps(patch.json(), ensure_ascii=False)
+
+    rotate = next_client.post(
+        f"/api/admin/ai-audience/packages/{package_id}/webhooks/rotate-inbound-secret",
+        cookies=_admin_cookies(),
+    )
+    assert rotate.status_code == 200
+    assert rotate.json()["webhook"]["inbound_secret_configured"] is True
+    assert "audsec_" not in json.dumps(rotate.json(), ensure_ascii=False)
+
+
+def test_admin_ai_audience_sender_whitelist_get_put(next_client, next_pg_schema, monkeypatch) -> None:
+    del next_pg_schema
+    monkeypatch.setenv("SECRET_KEY", "ai-audience-senders-test")
+    session_factory = get_session_factory()
+    with session_factory() as session:
+        package_id = _insert_package(session, package_key="senders_pkg", name="发送人包")
+        session.commit()
+
+    put = next_client.put(
+        f"/api/admin/ai-audience/packages/{package_id}/senders",
+        cookies=_admin_cookies(),
+        json={
+            "items": [
+                {"sender_userid": "HuangYouCan", "display_name": "HuangYouCan", "priority": 2, "status": "active"},
+                {"sender_userid": "QianLan", "display_name": "QianLan", "priority": 1, "status": "active"},
+            ]
+        },
+    )
+    assert put.status_code == 200
+    assert [item["sender_userid"] for item in put.json()["items"]] == ["QianLan", "HuangYouCan"]
+
+    get = next_client.get(f"/api/admin/ai-audience/packages/{package_id}/senders", cookies=_admin_cookies())
+    assert get.status_code == 200
+    assert [item["priority"] for item in get.json()["items"]] == [1, 2]
+
+    invalid = next_client.put(
+        f"/api/admin/ai-audience/packages/{package_id}/senders",
+        cookies=_admin_cookies(),
+        json={"items": [{"sender_userid": "Bad", "status": "deleted"}]},
+    )
+    assert invalid.status_code == 400
+    assert invalid.json()["error"] == "invalid_sender_status"

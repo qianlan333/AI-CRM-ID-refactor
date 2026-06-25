@@ -4020,6 +4020,17 @@ routes:
   data_source: read_model
   requires_auth: true
   rollback: previous_release
+- path: /admin/automation-conversion/packages/{package_id}
+  methods:
+  - GET
+  route_name: api.admin_automation_conversion_package_detail_page
+  capability_owner: ai_audience_ops
+  runtime_owner: ai_crm_next
+  layer: admin_page
+  external_effects: none
+  data_source: read_model
+  requires_auth: true
+  rollback: previous_release
 - path: /api/admin/ai-audience/packages
   methods:
   - GET
@@ -4029,6 +4040,138 @@ routes:
   layer: api
   external_effects: none
   data_source: read_model
+  requires_auth: true
+  rollback: previous_release
+- path: /api/admin/ai-audience/packages/{package_id}
+  methods:
+  - GET
+  route_name: api.admin_ai_audience_package_detail
+  capability_owner: ai_audience_ops
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: none
+  data_source: read_model
+  requires_auth: true
+  rollback: previous_release
+- path: /api/admin/ai-audience/packages/{package_id}
+  methods:
+  - PATCH
+  route_name: api.admin_ai_audience_package_update
+  capability_owner: ai_audience_ops
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: none
+  data_source: command
+  requires_auth: true
+  rollback: previous_release
+- path: /api/admin/ai-audience/packages/{package_id}/copy
+  methods:
+  - POST
+  route_name: api.admin_ai_audience_package_copy
+  capability_owner: ai_audience_ops
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: none
+  data_source: command
+  requires_auth: true
+  rollback: previous_release
+- path: /api/admin/ai-audience/packages/{package_id}/pause
+  methods:
+  - POST
+  route_name: api.admin_ai_audience_package_pause
+  capability_owner: ai_audience_ops
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: none
+  data_source: command
+  requires_auth: true
+  rollback: previous_release
+- path: /api/admin/ai-audience/packages/{package_id}/activate
+  methods:
+  - POST
+  route_name: api.admin_ai_audience_package_activate
+  capability_owner: ai_audience_ops
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: none
+  data_source: command
+  requires_auth: true
+  rollback: previous_release
+- path: /api/admin/ai-audience/packages/{package_id}
+  methods:
+  - DELETE
+  route_name: api.admin_ai_audience_package_delete
+  capability_owner: ai_audience_ops
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: none
+  data_source: command
+  requires_auth: true
+  rollback: previous_release
+- path: /api/admin/ai-audience/packages/{package_id}/members
+  methods:
+  - GET
+  route_name: api.admin_ai_audience_package_members
+  capability_owner: ai_audience_ops
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: none
+  data_source: read_model
+  requires_auth: true
+  rollback: previous_release
+- path: /api/admin/ai-audience/packages/{package_id}/webhooks
+  methods:
+  - GET
+  route_name: api.admin_ai_audience_package_webhooks
+  capability_owner: ai_audience_ops
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: none
+  data_source: read_model
+  requires_auth: true
+  rollback: previous_release
+- path: /api/admin/ai-audience/packages/{package_id}/webhooks
+  methods:
+  - PATCH
+  route_name: api.admin_ai_audience_package_webhooks_update
+  capability_owner: ai_audience_ops
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: none
+  data_source: command
+  requires_auth: true
+  rollback: previous_release
+- path: /api/admin/ai-audience/packages/{package_id}/webhooks/rotate-inbound-secret
+  methods:
+  - POST
+  route_name: api.admin_ai_audience_package_webhooks_rotate_inbound_secret
+  capability_owner: ai_audience_ops
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: none
+  data_source: command
+  requires_auth: true
+  rollback: previous_release
+- path: /api/admin/ai-audience/packages/{package_id}/senders
+  methods:
+  - GET
+  route_name: api.admin_ai_audience_package_senders
+  capability_owner: ai_audience_ops
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: none
+  data_source: read_model
+  requires_auth: true
+  rollback: previous_release
+- path: /api/admin/ai-audience/packages/{package_id}/senders
+  methods:
+  - PUT
+  route_name: api.admin_ai_audience_package_senders_replace
+  capability_owner: ai_audience_ops
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: none
+  data_source: command
   requires_auth: true
   rollback: previous_release
 - path: /admin/channels

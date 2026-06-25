@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 from fastapi.testclient import TestClient
+from sqlalchemy import text
 
 from aicrm_next.main import create_app
 from aicrm_next.ops_enrollment.application import reset_user_ops_fixture_state
+from aicrm_next.shared.db_session import get_session_factory
 
 
 def _client(monkeypatch) -> TestClient:
@@ -79,3 +81,117 @@ def test_user_ops_preview_routes_plan_without_real_external_calls(monkeypatch):
         safety = payload.get("side_effect_safety") or {}
         assert safety.get("side_effect_executed", False) is False
         assert payload.get("fallback_used", False) is False
+
+
+def test_user_ops_batch_send_preview_supports_ai_audience_package_source(next_client, next_pg_schema) -> None:
+    del next_pg_schema
+    session_factory = get_session_factory()
+    with session_factory() as session:
+        package_id = int(
+            session.execute(
+                text(
+                    """
+                    INSERT INTO ai_audience_package (
+                        package_key, name, status, query_mode, identity_policy, created_at, updated_at
+                    )
+                    VALUES ('uo_ai_audience_pkg', 'User Ops AI Audience 包', 'active', 'hybrid', 'external_userid', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                    RETURNING id
+                    """
+                )
+            ).scalar_one()
+        )
+        session.execute(
+            text(
+                """
+                INSERT INTO ai_audience_member_current (
+                    package_id, identity_type, identity_value, status, external_userid, event_source_key, payload_hash
+                )
+                VALUES
+                    (:package_id, 'external_userid', 'wm_priority', 'active', 'wm_priority', 'event:1', 'hash:1'),
+                    (:package_id, 'external_userid', 'wm_skip', 'active', 'wm_skip', 'event:2', 'hash:2')
+                """
+            ),
+            {"package_id": package_id},
+        )
+        session.execute(
+            text(
+                """
+                INSERT INTO wecom_external_contact_follow_users (
+                    external_userid, user_id, relation_status, remark
+                )
+                VALUES
+                    ('wm_priority', 'HuangYouCan', 'active', '优先客户'),
+                    ('wm_priority', 'QianLan', 'active', '优先客户'),
+                    ('wm_skip', 'OtherUser', 'active', '跳过客户')
+                """
+            )
+        )
+        session.execute(
+            text(
+                """
+                INSERT INTO ai_audience_package_sender (
+                    package_id, sender_userid, display_name, priority, status
+                )
+                VALUES
+                    (:package_id, 'HuangYouCan', 'HuangYouCan', 2, 'active'),
+                    (:package_id, 'QianLan', 'QianLan', 1, 'active')
+                """
+            ),
+            {"package_id": package_id},
+        )
+        session.commit()
+
+    response = next_client.post(
+        "/api/admin/user-ops/batch-send/preview",
+        json={
+            "selection_mode": "all_filtered",
+            "target_source": "ai_audience_package",
+            "target_source_id": package_id,
+            "content": "hello",
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["ok"] is True
+    assert payload["selected_count"] == 2
+    assert payload["eligible_count"] == 1
+    assert payload["skipped_by_reason"] == {"no_allowed_sender": 1}
+    assert payload["owner_buckets"] == [
+        {
+            "owner_userid": "QianLan",
+            "owner_display_name": "QianLan",
+            "sender_userid": "QianLan",
+            "target_count": 1,
+            "external_userids": ["wm_priority"],
+        }
+    ]
+
+    not_confirmed = next_client.post(
+        "/api/admin/user-ops/batch-send/execute",
+        json={
+            "selection_mode": "all_filtered",
+            "target_source": "ai_audience_package",
+            "target_source_id": package_id,
+            "content": "hello",
+            "confirm": False,
+        },
+    )
+    assert not_confirmed.status_code == 400
+    assert "confirm=true is required" in not_confirmed.text
+
+    execute = next_client.post(
+        "/api/admin/user-ops/batch-send/execute",
+        json={
+            "selection_mode": "all_filtered",
+            "target_source": "ai_audience_package",
+            "target_source_id": package_id,
+            "content": "hello",
+            "confirm": True,
+        },
+    )
+    assert execute.status_code == 200
+    body = execute.json()
+    assert body["sent_count"] == 1
+    assert body["task_results"][0]["sender_userid"] == "QianLan"
+    assert body["side_effect_safety"]["side_effect_executed"] is False

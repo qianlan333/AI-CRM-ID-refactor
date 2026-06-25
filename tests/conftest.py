@@ -78,6 +78,7 @@ def _resolve_worker_database_url() -> str:
 _TABLES_TO_TRUNCATE = [
     # — ai audience ops
     "ai_audience_inbound_webhook_event",
+    "ai_audience_package_sender",
     "ai_audience_outbound_subscription",
     "ai_audience_member_event",
     "ai_audience_member_current",

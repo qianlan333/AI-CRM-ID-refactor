@@ -21,6 +21,7 @@ SKIPPED_REASON_LABELS = {
     "missing_external_userid": "缺少 external_userid",
     "missing_owner_userid": "缺少负责人",
     "do_not_disturb": "免打扰",
+    "no_allowed_sender": "无可用发送人",
 }
 
 
@@ -154,6 +155,9 @@ def resolve_batch_targets(rows: list[JsonDict], request: BatchSendRequest) -> Js
     skipped_reasons: Counter[str] = Counter()
     final_targets: list[JsonDict] = []
     for item in selected:
+        if _norm(item.get("skip_reason")):
+            skipped_reasons[_norm(item.get("skip_reason"))] += 1
+            continue
         if not item.get("external_userid"):
             skipped_reasons["missing_external_userid"] += 1
             continue

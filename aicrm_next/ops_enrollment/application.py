@@ -13,6 +13,7 @@ from aicrm_next.integration_gateway.user_ops_adapters import (
     build_user_ops_dnd_gateway,
     build_wecom_message_dispatch_adapter,
 )
+from aicrm_next.ai_audience_ops.target_provider import AiAudienceTargetProvider
 from aicrm_next.platform_foundation.audit_ledger import InMemoryAuditLedger
 from aicrm_next.platform_foundation.command_bus import Command, CommandBus, CommandContext, CommandResult
 from aicrm_next.platform_foundation.side_effects import InMemorySideEffectPlanRepository, SideEffectPlan
@@ -101,6 +102,21 @@ def _media_refs_from_batch_request(request: BatchSendRequest) -> list[JsonDict]:
     refs.extend({"kind": "image", "index": index} for index, _ in enumerate(request.images))
     refs.extend({"kind": "attachment", "index": index} for index, _ in enumerate(request.attachments))
     return refs
+
+
+def _is_ai_audience_batch_request(request: BatchSendRequest) -> bool:
+    return str(request.target_source or "").strip() == "ai_audience_package"
+
+
+def _batch_rows_for_request(request: BatchSendRequest, repo: UserOpsRepository | None) -> tuple[list[JsonDict], UserOpsRepository | None]:
+    request.filters = normalize_filters(request.filters)
+    if _is_ai_audience_batch_request(request):
+        package_id = int(request.target_source_id or 0)
+        if package_id <= 0:
+            raise ContractError("target_source_id is required")
+        return AiAudienceTargetProvider().rows_for_package(package_id), repo
+    active_repo = repo or _default_repo()
+    return apply_filters(active_repo.list_rows(), request.filters), active_repo
 
 
 def _user_ops_side_effect_safety() -> JsonDict:
@@ -444,10 +460,9 @@ class PreviewUserOpsBatchSendCommand:
         self._batch_gateway = batch_gateway or build_user_ops_batch_send_gateway()
 
     def execute(self, request: BatchSendRequest) -> JsonDict:
-        repo = self._repo or _default_repo()
+        repo: UserOpsRepository | None = self._repo
         try:
-            request.filters = normalize_filters(request.filters)
-            rows = apply_filters(repo.list_rows(), request.filters)
+            rows, repo = _batch_rows_for_request(request, repo)
             preview = resolve_batch_targets(rows, request)
             gateway_result = self._batch_gateway.build_batch_send_preview(
                 selection_mode=request.selection_mode,
@@ -471,7 +486,7 @@ class PreviewUserOpsBatchSendCommand:
                 },
             }
         finally:
-            if _should_close_repo(self._repo):
+            if repo is not None and _should_close_repo(self._repo):
                 _close_repository(repo)
 
     __call__ = execute

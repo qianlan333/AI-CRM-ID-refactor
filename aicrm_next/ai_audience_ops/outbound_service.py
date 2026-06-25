@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import hashlib
+import hmac
+import json
 from typing import Any
 
 from aicrm_next.platform_foundation.command_bus.models import CommandContext
@@ -22,6 +24,9 @@ class AudienceOutboundService:
         event = self._repo.get_member_event(int(member_event_id))
         if not event:
             return {"ok": False, "error": "member_event_not_found", "real_external_call_executed": False}
+        run_id = int(event.get("run_id") or 0)
+        if run_id > 0 and _text(event.get("event_type")) == "entered":
+            return self.plan_for_run(run_id)
         package = self._repo.get_package(int(event["package_id"]))
         if not package:
             return {"ok": False, "error": "package_not_found", "real_external_call_executed": False}
@@ -84,6 +89,82 @@ class AudienceOutboundService:
             "real_external_call_executed": False,
         }
 
+    def plan_for_run(self, run_id: int) -> dict[str, Any]:
+        entered_events = self._repo.list_member_events_for_run(int(run_id), event_type="entered")
+        if not entered_events:
+            return {"ok": True, "run_id": int(run_id), "planned_count": 0, "external_effect_jobs": [], "real_external_call_executed": False}
+        package_id = int(entered_events[0]["package_id"])
+        package = self._repo.get_package(package_id)
+        if not package:
+            return {"ok": False, "error": "package_not_found", "real_external_call_executed": False}
+        subscriptions = self._repo.list_subscriptions(
+            package_id,
+            active_only=True,
+            trigger_event_type="entered",
+        )
+        external_userids = sorted({_text(event.get("external_userid")) for event in entered_events if _text(event.get("external_userid"))})
+        planned: list[dict[str, Any]] = []
+        seen_targets: set[tuple[str, str, str]] = set()
+        for subscription in subscriptions:
+            if _text(subscription.get("target_type")) != "webhook":
+                continue
+            target_key = (
+                "entered",
+                _text(subscription.get("target_type")),
+                _text(subscription.get("webhook_url")),
+            )
+            if target_key in seen_targets:
+                continue
+            seen_targets.add(target_key)
+            target_hash = hashlib.sha256(f"{target_key[1]}:{target_key[2]}".encode("utf-8")).hexdigest()[:16]
+            idempotency_key = f"ai_audience_outbound_run:{package_id}:{int(run_id)}:entered:{target_hash}"
+            payload = self._run_payload(
+                package=package,
+                run_id=int(run_id),
+                external_userids=external_userids,
+                subscription=subscription,
+                idempotency_key=idempotency_key,
+            )
+            job = self._external_effects.plan_effect(
+                effect_type=WEBHOOK_GENERIC_PUSH,
+                adapter_name="webhook",
+                operation="post",
+                target_type="webhook",
+                target_id=str(subscription["id"]),
+                payload=payload,
+                payload_summary={
+                    "package_key": package.get("package_key"),
+                    "run_id": int(run_id),
+                    "trigger_event_type": "entered",
+                    "external_userid_count": len(external_userids),
+                    "webhook_url_present": bool(subscription.get("webhook_url")),
+                },
+                business_type="ai_audience_package_run",
+                business_id=str(run_id),
+                source_module="ai_audience_ops.outbound_service",
+                source_event_id="",
+                risk_level="medium",
+                requires_approval=bool(subscription.get("requires_approval")),
+                execution_mode=_text(subscription.get("execution_mode")) or "execute",
+                max_attempts=int(subscription.get("max_attempts") or 5),
+                idempotency_key=idempotency_key,
+                status="queued",
+                context=CommandContext(
+                    actor_id="ai_audience_outbound",
+                    actor_type="system",
+                    source_route="ai_audience.refresh_run",
+                    request_id=str(run_id),
+                ),
+            )
+            planned.append(job)
+        return {
+            "ok": True,
+            "run_id": int(run_id),
+            "planned_count": len(planned),
+            "external_effect_jobs": planned,
+            "real_external_call_executed": False,
+        }
+
     def _payload(self, *, package: dict[str, Any], member_event: dict[str, Any], subscription: dict[str, Any]) -> dict[str, Any]:
         member = {
             "identity_type": member_event.get("identity_type"),
@@ -109,3 +190,34 @@ class AudienceOutboundService:
             "headers": headers,
             "body": body,
         }
+
+    def _run_payload(
+        self,
+        *,
+        package: dict[str, Any],
+        run_id: int,
+        external_userids: list[str],
+        subscription: dict[str, Any],
+        idempotency_key: str,
+    ) -> dict[str, Any]:
+        body = list(external_userids)
+        secret = _text(subscription.get("signing_secret"))
+        headers = {
+            "X-AICRM-Package-Key": _text(package.get("package_key")),
+            "X-AICRM-Event-Type": "audience.incremental.entered",
+            "X-AICRM-Refresh-Run-Id": str(int(run_id)),
+            "X-AICRM-Idempotency-Key": idempotency_key,
+        }
+        if secret:
+            headers["X-AICRM-Signature"] = _signature(secret, body)
+        return {
+            "webhook_url": subscription.get("webhook_url"),
+            "signing_secret": secret,
+            "headers": headers,
+            "body": body,
+        }
+
+
+def _signature(secret: str, body: list[str]) -> str:
+    canonical_body = json.dumps(body, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return hmac.new(secret.encode("utf-8"), canonical_body.encode("utf-8"), hashlib.sha256).hexdigest()

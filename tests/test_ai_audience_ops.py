@@ -680,7 +680,9 @@ def test_package_refresh_uses_internal_event_and_external_effect_queue(next_clie
                 INSERT INTO questionnaire_submissions (
                     questionnaire_id, respondent_key, external_userid, staff_id, submitted_at
                 )
-                VALUES (101, 'rk_1', 'wm_ai_audience_001', 'HuangYouCan', CURRENT_TIMESTAMP - interval '1 minute')
+                VALUES
+                    (101, 'rk_1', 'wm_ai_audience_001', 'HuangYouCan', CURRENT_TIMESTAMP - interval '1 minute'),
+                    (101, 'rk_2', 'wm_ai_audience_002', 'HuangYouCan', CURRENT_TIMESTAMP - interval '1 minute')
                 """
             )
         )
@@ -707,7 +709,7 @@ def test_package_refresh_uses_internal_event_and_external_effect_queue(next_clie
     sub_resp = next_client.post(
         f"/api/ai/audience/packages/{package_id}/outbound-subscriptions",
         headers=_auth(),
-        json={"trigger_event_type": "entered", "webhook_url": "https://agent.example.test/audience"},
+        json={"trigger_event_type": "entered", "webhook_url": "https://agent.example.test/audience", "signing_secret": "outbound-secret"},
     )
     assert sub_resp.status_code == 200
 
@@ -719,22 +721,23 @@ def test_package_refresh_uses_internal_event_and_external_effect_queue(next_clie
     assert refresh_resp.status_code == 200
     body = refresh_resp.json()
     assert body["ok"] is True
-    assert body["entered_count"] == 1
-    assert body["member_event_count"] == 1
+    assert body["entered_count"] == 2
+    assert body["member_event_count"] == 2
 
     with session_factory() as session:
-        member_event = session.execute(
+        member_events = session.execute(
             text(
                 """
                 SELECT id, internal_event_id
                 FROM ai_audience_member_event
                 WHERE package_id = :package_id
-                ORDER BY id DESC
-                LIMIT 1
+                ORDER BY id ASC
                 """
             ),
             {"package_id": package_id},
-        ).mappings().one()
+        ).mappings().all()
+    assert len(member_events) == 2
+    member_event = member_events[0]
     assert member_event["internal_event_id"]
 
     worker = InternalEventWorker()
@@ -766,7 +769,14 @@ def test_package_refresh_uses_internal_event_and_external_effect_queue(next_clie
     jobs = effects_resp.json()["external_effect_jobs"]
     assert len(jobs) == 1
     assert jobs[0]["effect_type"] == WEBHOOK_GENERIC_PUSH
-    assert jobs[0]["business_type"] == "ai_audience_member_event"
+    assert jobs[0]["business_type"] == "ai_audience_package_run"
+    assert jobs[0]["payload_json"]["body"] == ["wm_ai_audience_001", "wm_ai_audience_002"]
+    assert jobs[0]["payload_json"]["headers"]["X-AICRM-Package-Key"] == "q101_submitted_added_wecom"
+    assert jobs[0]["payload_json"]["headers"]["X-AICRM-Event-Type"] == "audience.incremental.entered"
+    assert jobs[0]["payload_json"]["headers"]["X-AICRM-Refresh-Run-Id"]
+    assert jobs[0]["payload_json"]["headers"]["X-AICRM-Idempotency-Key"]
+    assert "X-AICRM-Signature" in jobs[0]["payload_json"]["headers"]
+    assert "package_key" not in jobs[0]["payload_json"]["body"]
 
 
 @pytest.mark.usefixtures("next_pg_schema")
