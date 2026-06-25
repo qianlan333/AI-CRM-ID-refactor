@@ -55,6 +55,27 @@ def test_retired_runtime_v2_routes_are_not_registered() -> None:
         assert response.status_code in {404, 410}
 
 
+def test_retired_member_action_and_timer_routes_are_not_registered() -> None:
+    client = TestClient(create_app(), raise_server_exceptions=False)
+
+    for path in [
+        "/api/admin/automation-conversion/member/put-in-pool",
+        "/api/admin/automation-conversion/member/remove-from-pool",
+        "/api/admin/automation-conversion/member/set-focus",
+        "/api/admin/automation-conversion/member/set-normal",
+        "/api/admin/automation-conversion/member/mark-won",
+        "/api/admin/automation-conversion/member/unmark-won",
+        "/api/admin/automation-conversion/member/push-openclaw",
+        "/api/admin/automation-conversion/reply-monitor/run-due",
+        "/api/admin/automation-conversion/reply-monitor/capture",
+        "/api/admin/automation-conversion/jobs/run-due",
+        "/api/admin/automation-conversion/tasks/run-due",
+        "/api/admin/automation-conversion/execution-items/1/send-via-bazhuayu",
+    ]:
+        response = client.post(path, json={})
+        assert response.status_code in {404, 410}, path
+
+
 def test_retired_runtime_v2_realtest_guard_is_removed_from_broadcast_worker() -> None:
     source = (PROJECT_ROOT / "aicrm_next" / "background_jobs" / "broadcast_queue_worker.py").read_text(encoding="utf-8")
 
