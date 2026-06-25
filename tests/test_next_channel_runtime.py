@@ -169,12 +169,12 @@ def test_program_channel_binding_routes_are_removed(monkeypatch):
     page = client.get("/admin/automation-conversion/programs/1/entry-channels")
     assert page.status_code == 404
 
-    available = client.get("/api/admin/channels?available_for_program_id=1")
-    assert available.status_code == 200
-    available_ids = {int(item["id"]) for item in available.json()["channels"]}
-    assert int(qrcode["id"]) in available_ids
-    assert int(candidate["id"]) in available_ids
-    assert int(other_program_channel["id"]) in available_ids
+    listed = client.get("/api/admin/channels")
+    assert listed.status_code == 200
+    listed_ids = {int(item["id"]) for item in listed.json()["channels"]}
+    assert int(qrcode["id"]) in listed_ids
+    assert int(candidate["id"]) in listed_ids
+    assert int(other_program_channel["id"]) in listed_ids
 
     deleted = client.request(
         "DELETE",
@@ -186,7 +186,7 @@ def test_program_channel_binding_routes_are_removed(monkeypatch):
     after_delete = client.get("/api/admin/automation-conversion/programs/1/channel-bindings")
     assert after_delete.status_code == 404
 
-    available_after_delete = client.get("/api/admin/channels?available_for_program_id=1")
-    assert available_after_delete.status_code == 200
-    available_after_delete_ids = {int(item["id"]) for item in available_after_delete.json()["channels"]}
-    assert int(qrcode["id"]) in available_after_delete_ids
+    listed_after_delete = client.get("/api/admin/channels")
+    assert listed_after_delete.status_code == 200
+    listed_after_delete_ids = {int(item["id"]) for item in listed_after_delete.json()["channels"]}
+    assert int(qrcode["id"]) in listed_after_delete_ids
