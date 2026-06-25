@@ -179,33 +179,6 @@
     }
   }
 
-  function statusLabel(value) {
-    return {
-      active: "启用",
-      paused: "暂停",
-      archived: "归档",
-      accepted: "已入池",
-      waiting: "等待审核",
-      converted: "已成交",
-      rejected: "已拒绝",
-      duplicate_active: "重复扫码",
-      manual_review: "人工审核",
-      standalone_channel: "独立渠道",
-    }[value] || value || "-";
-  }
-
-  function stageLabel(value) {
-    return {
-      scan_enter: "扫码进入",
-      order_review: "订单审核",
-      questionnaire_review: "问卷审核",
-      operating: "运营中",
-      conversion_review: "成交判定",
-      converted: "已成交",
-      finished: "结束",
-    }[value] || statusLabel(value);
-  }
-
   function renderImportResult(data) {
     if (!data || typeof data !== "object") return "导入任务已处理";
     const lines = [];
@@ -218,25 +191,6 @@
     if (data.reason) lines.push("处理说明：" + data.reason);
     if (Array.isArray(data.errors) && data.errors.length) lines.push("错误：" + data.errors.join("；"));
     return lines.length ? lines.join("\n") : "导入任务已处理";
-  }
-
-  function renderMemberStageSummary(data) {
-    const summary = (data || {}).summary || {};
-    const members = (data || {}).members || [];
-    const summaryRows = [
-      ["总人数", summary.total],
-      ["订单审核", summary.order_review],
-      ["问卷审核", summary.questionnaire_review],
-      ["运营中", summary.operating],
-      ["已成交", summary.converted],
-      ["已结束", summary.finished],
-      ["已退出", summary.exited],
-    ].map((item) => "<tr><td>" + item[0] + "</td><td>" + (item[1] || 0) + "</td></tr>").join("");
-    const memberRows = members.length
-      ? members.map((item) => "<tr><td>" + (item.display_name || item.name || item.external_contact_id || "-") + "</td><td>" + stageLabel(item.current_stage_code) + "</td><td>" + (item.pool_entered_at || "-") + "</td><td>" + (item.stage_entered_at || "-") + "</td></tr>").join("")
-      : "<tr><td colspan=\"4\">暂无池内用户。</td></tr>";
-    return "<h3>阶段分布</h3><table class=\"admin-table channel-table\"><tbody>" + summaryRows + "</tbody></table>" +
-      "<h3>池内用户</h3><table class=\"admin-table channel-table\"><thead><tr><th>客户</th><th>当前阶段</th><th>入池时间</th><th>阶段进入时间</th></tr></thead><tbody>" + memberRows + "</tbody></table>";
   }
 
   function setupChannelSearch() {
@@ -845,7 +799,7 @@
     const preview = root.querySelector("[data-import-payload-preview]");
     if (!preview) return;
     const update = (dryRun) => {
-      preview.textContent = "导入模式：" + (dryRun === false ? "确认导入" : "只做预估") + "\n入池时间：使用导入时间";
+      preview.textContent = "导入模式：" + (dryRun === false ? "确认导入" : "只做预估") + "\n导入结果：仅写入渠道进入事实，供 AI 人群包查询。";
     };
     update(true);
     root.querySelector("[data-import-channel-id]")?.addEventListener("change", () => update(true));
@@ -882,14 +836,10 @@
     });
     bySelector("[data-open-import-panel]").forEach((button) => {
       button.addEventListener("click", () => {
-        const bindingId = button.dataset.bindingId || button.closest("[data-bound-channel-id]")?.dataset.bindingId || "";
-        const base = (bootstrap.api_urls || {}).member_stage_summary_base || "";
-        const url = base.replace(/\/0($|[/?#])/, "/" + bindingId + "$1");
-        if (!bindingId || !url) return;
-        apiJson(url, { method: "GET" }).then(({ data }) => {
-          const preview = root.querySelector("[data-import-payload-preview]");
-          if (preview) preview.innerHTML = renderMemberStageSummary(data);
-        });
+        const preview = root.querySelector("[data-import-payload-preview]");
+        if (preview) {
+          preview.textContent = "导入模式：只做预估\n导入结果：仅写入渠道进入事实，供 AI 人群包查询。";
+        }
       });
     });
     const drawer = root.querySelector("[data-attempt-drawer]");
