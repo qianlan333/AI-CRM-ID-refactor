@@ -35,7 +35,7 @@ def test_user_ops_ui_page_renders_from_native_shell(monkeypatch) -> None:
 
     assert response.status_code == 200
     assert "客户激活 / 客户列表" in response.text
-    assert "生产客户、问卷、订单和自动化成员统计" in response.text
+    assert "生产客户、问卷、订单和 AI 人群包统计" in response.text
     assert "test_read_model" in response.text
     assert "X-AICRM-Compatibility-Facade" not in response.headers
 
