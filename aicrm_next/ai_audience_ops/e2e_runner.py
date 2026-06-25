@@ -450,15 +450,28 @@ SELECT
   'prod_e2e_payment_' || :run_id AS event_source_key,
   jsonb_build_object('scenario', 'payment', 'run_id', :run_id, 'product_code', :product_code) AS payload_json,
   :test_external_userid AS external_userid,
-  COALESCE(o.paid_at, wc.updated_at, CAST(:refresh_started_at AS timestamptz)) AS event_at
+  CASE
+    WHEN :e2e_force_test_match THEN CAST(:refresh_started_at AS timestamptz)
+    ELSE COALESCE(o.paid_at, wc.updated_at, CAST(:refresh_started_at AS timestamptz))
+  END AS event_at
 FROM audience_read.wecom_contacts_v1 wc
 LEFT JOIN audience_read.orders_v1 o
   ON o.external_userid = wc.external_userid
  AND o.product_code = :product_code
 WHERE wc.external_userid = :test_external_userid
   AND (:e2e_force_test_match OR o.order_id IS NOT NULL)
-  AND COALESCE(o.paid_at, wc.updated_at, CAST(:refresh_started_at AS timestamptz)) >= CAST(:last_watermark_at AS timestamptz) - (:lookback_seconds || ' seconds')::interval
-  AND COALESCE(o.paid_at, wc.updated_at, CAST(:refresh_started_at AS timestamptz)) <= CAST(:refresh_started_at AS timestamptz)
+  AND (
+    CASE
+      WHEN :e2e_force_test_match THEN CAST(:refresh_started_at AS timestamptz)
+      ELSE COALESCE(o.paid_at, wc.updated_at, CAST(:refresh_started_at AS timestamptz))
+    END
+  ) >= CAST(:last_watermark_at AS timestamptz) - (:lookback_seconds || ' seconds')::interval
+  AND (
+    CASE
+      WHEN :e2e_force_test_match THEN CAST(:refresh_started_at AS timestamptz)
+      ELSE COALESCE(o.paid_at, wc.updated_at, CAST(:refresh_started_at AS timestamptz))
+    END
+  ) <= CAST(:refresh_started_at AS timestamptz)
 """.strip()
     if scenario == "channel_entry":
         return """
@@ -468,15 +481,28 @@ SELECT
   'prod_e2e_channel_entry_' || :run_id AS event_source_key,
   jsonb_build_object('scenario', 'channel_entry', 'run_id', :run_id, 'channel_id', :channel_id) AS payload_json,
   :test_external_userid AS external_userid,
-  COALESCE(ce.first_entered_at, wc.updated_at, CAST(:refresh_started_at AS timestamptz)) AS event_at
+  CASE
+    WHEN :e2e_force_test_match THEN CAST(:refresh_started_at AS timestamptz)
+    ELSE COALESCE(ce.first_entered_at, wc.updated_at, CAST(:refresh_started_at AS timestamptz))
+  END AS event_at
 FROM audience_read.wecom_contacts_v1 wc
 LEFT JOIN audience_read.channel_entries_v1 ce
   ON ce.external_userid = wc.external_userid
  AND ce.channel_id = :channel_id
 WHERE wc.external_userid = :test_external_userid
   AND (:e2e_force_test_match OR ce.channel_entry_id IS NOT NULL)
-  AND COALESCE(ce.first_entered_at, wc.updated_at, CAST(:refresh_started_at AS timestamptz)) >= CAST(:last_watermark_at AS timestamptz) - (:lookback_seconds || ' seconds')::interval
-  AND COALESCE(ce.first_entered_at, wc.updated_at, CAST(:refresh_started_at AS timestamptz)) <= CAST(:refresh_started_at AS timestamptz)
+  AND (
+    CASE
+      WHEN :e2e_force_test_match THEN CAST(:refresh_started_at AS timestamptz)
+      ELSE COALESCE(ce.first_entered_at, wc.updated_at, CAST(:refresh_started_at AS timestamptz))
+    END
+  ) >= CAST(:last_watermark_at AS timestamptz) - (:lookback_seconds || ' seconds')::interval
+  AND (
+    CASE
+      WHEN :e2e_force_test_match THEN CAST(:refresh_started_at AS timestamptz)
+      ELSE COALESCE(ce.first_entered_at, wc.updated_at, CAST(:refresh_started_at AS timestamptz))
+    END
+  ) <= CAST(:refresh_started_at AS timestamptz)
 """.strip()
     if scenario == "user_ops_batch_send":
         return """
@@ -498,15 +524,28 @@ SELECT
   'prod_e2e_questionnaire_' || :run_id AS event_source_key,
   jsonb_build_object('scenario', 'questionnaire', 'run_id', :run_id, 'questionnaire_id', :questionnaire_id) AS payload_json,
   :test_external_userid AS external_userid,
-  COALESCE(qs.submitted_at, wc.updated_at, CAST(:refresh_started_at AS timestamptz)) AS event_at
+  CASE
+    WHEN :e2e_force_test_match THEN CAST(:refresh_started_at AS timestamptz)
+    ELSE COALESCE(qs.submitted_at, wc.updated_at, CAST(:refresh_started_at AS timestamptz))
+  END AS event_at
 FROM audience_read.wecom_contacts_v1 wc
 LEFT JOIN audience_read.questionnaire_submissions_v1 qs
   ON qs.external_userid = wc.external_userid
  AND qs.questionnaire_id = :questionnaire_id
 WHERE wc.external_userid = :test_external_userid
   AND (:e2e_force_test_match OR qs.submission_id IS NOT NULL)
-  AND COALESCE(qs.submitted_at, wc.updated_at, CAST(:refresh_started_at AS timestamptz)) >= CAST(:last_watermark_at AS timestamptz) - (:lookback_seconds || ' seconds')::interval
-  AND COALESCE(qs.submitted_at, wc.updated_at, CAST(:refresh_started_at AS timestamptz)) <= CAST(:refresh_started_at AS timestamptz)
+  AND (
+    CASE
+      WHEN :e2e_force_test_match THEN CAST(:refresh_started_at AS timestamptz)
+      ELSE COALESCE(qs.submitted_at, wc.updated_at, CAST(:refresh_started_at AS timestamptz))
+    END
+  ) >= CAST(:last_watermark_at AS timestamptz) - (:lookback_seconds || ' seconds')::interval
+  AND (
+    CASE
+      WHEN :e2e_force_test_match THEN CAST(:refresh_started_at AS timestamptz)
+      ELSE COALESCE(qs.submitted_at, wc.updated_at, CAST(:refresh_started_at AS timestamptz))
+    END
+  ) <= CAST(:refresh_started_at AS timestamptz)
 """.strip()
 
 
