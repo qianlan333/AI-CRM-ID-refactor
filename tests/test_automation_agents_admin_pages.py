@@ -114,11 +114,7 @@ def test_automation_agent_edit_page_contract(next_client, monkeypatch) -> None:
     html = response.text
     for expected in (
         "编辑 Agent",
-        "HTML Demo",
         "Agent 名称",
-        "Agent Code",
-        "绑定计划",
-        "人群包 Key",
         "接收地址",
         "发送地址",
         "/api/ai/agents/",
@@ -137,11 +133,6 @@ def test_automation_agent_edit_page_contract(next_client, monkeypatch) -> None:
         "固定素材",
         "配置固定素材",
         "暂无配置固定素材",
-        "content_package 预览",
-        '"content_text": "由 Agent 动态生成"',
-        "image_library_ids",
-        "miniprogram_library_ids",
-        "attachment_library_ids",
         "material_picker.js",
         "AICRMMaterialPicker.open",
         "/api/admin/automation-agents/123",
@@ -154,6 +145,15 @@ def test_automation_agent_edit_page_contract(next_client, monkeypatch) -> None:
         "填入自动化运营计划",
         "Agent 生成后回推",
         "返回列表",
+        "HTML Demo",
+        "Agent Code",
+        "绑定计划",
+        "人群包 Key",
+        "content_package 预览",
+        'id="packagePreview"',
+        'id="agentCode"',
+        'id="planName"',
+        'id="packageKey"',
     ):
         assert forbidden not in html
 
@@ -185,7 +185,6 @@ def test_automation_agent_material_modal_and_preview_logic() -> None:
         "保存素材",
         "openMaterial",
         'classList.add("show")',
-        "const renderPackage",
         "const renderAssets",
         "state.contentPackage.image_library_ids",
         "state.contentPackage.miniprogram_library_ids",
