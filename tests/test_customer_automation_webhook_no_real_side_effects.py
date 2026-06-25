@@ -66,3 +66,7 @@ def test_customer_webhook_http_handlers_do_not_call_retired_commands_or_read_mod
     ]
     for marker in forbidden:
         assert marker not in combined
+
+
+def test_signup_conversion_read_model_module_is_removed() -> None:
+    assert not (ROOT / "aicrm_next/automation_engine/signup_conversion_read_model.py").exists()

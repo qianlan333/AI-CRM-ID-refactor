@@ -350,10 +350,6 @@ class SqlAlchemyAgentRepository(InMemoryAutomationRepository):
         return agent_projection(
             {
                 "id": row.get("id"),
-                "program_id": row.get("program_id"),
-                "workflow_id": row.get("workflow_id"),
-                "node_id": row.get("node_id"),
-                "task_id": row.get("task_id"),
                 "agent_code": row.get("agent_code"),
                 "agent_name": row.get("agent_name"),
                 "agent_type": row.get("agent_type"),
