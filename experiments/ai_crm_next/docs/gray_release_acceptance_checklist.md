@@ -14,7 +14,6 @@ Run all six parity tools:
 .venv/bin/python tools/compare_user_ops_parity.py --old-fixture-dir tests/fixtures/old_user_ops --next-testclient --output-md /tmp/user_ops_parity_gray.md --output-json /tmp/user_ops_parity_gray.json
 .venv/bin/python tools/compare_customer_read_model_parity.py --old-fixture-dir tests/fixtures/old_customer_read_model --next-testclient --output-md /tmp/customer_parity_gray.md --output-json /tmp/customer_parity_gray.json
 .venv/bin/python tools/compare_questionnaire_parity.py --old-fixture-dir tests/fixtures/old_questionnaire --next-testclient --output-md /tmp/questionnaire_parity_gray.md --output-json /tmp/questionnaire_parity_gray.json
-.venv/bin/python tools/compare_automation_conversion_parity.py --old-fixture-dir tests/fixtures/old_automation_conversion --next-testclient --output-md /tmp/automation_parity_gray.md --output-json /tmp/automation_parity_gray.json
 .venv/bin/python tools/compare_commerce_parity.py --old-fixture-dir tests/fixtures/old_commerce --next-testclient --output-md /tmp/commerce_parity_gray.md --output-json /tmp/commerce_parity_gray.json
 .venv/bin/python tools/compare_media_library_parity.py --old-fixture-dir tests/fixtures/old_media_library --next-testclient --output-md /tmp/media_parity_gray.md --output-json /tmp/media_parity_gray.json
 ```
@@ -28,7 +27,7 @@ Run all six parity tools:
 | Batch 3 Customer Read Model readonly | `tools/customer_read_model_gray_smoke.py --next-testclient` | Customer parity | old-base-url dual required before full gray |
 | Batch 4 User Ops readonly | `tools/user_ops_readonly_gray_smoke.py --next-testclient` | User Ops parity | old-base-url dual required before full gray |
 | Batch 5 Questionnaire readonly | `tools/questionnaire_readonly_gray_smoke.py --next-testclient` | Questionnaire parity | old-base-url dual recommended; accepted legacy drift allowed |
-| Batch 6 Automation readonly | `tools/automation_readonly_gray_smoke.py --next-testclient` | Automation parity | old-base-url dual recommended; accepted legacy alias drift allowed |
+| Batch 6 Automation readonly | retired | retired | old automation_program/runtime-v2 parity and smoke tooling removed; `/admin/automation-conversion` is AI Audience |
 
 ## Frontend Screenshot Route Check
 

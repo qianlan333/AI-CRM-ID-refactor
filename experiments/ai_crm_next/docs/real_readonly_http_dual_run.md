@@ -49,7 +49,6 @@ Parity:
 | User Ops | PASS | `/tmp/user_ops_parity_after_dual_run_fix.md` |
 | Customer Read Model | PASS | `/tmp/customer_read_model_parity_after_dual_run_fix.md` |
 | Questionnaire | PASS | `/tmp/questionnaire_parity_after_dual_run_fix.md` |
-| Automation Conversion | PASS | `/tmp/automation_conversion_parity_after_dual_run_fix.md` |
 | Commerce | PASS | `/tmp/commerce_parity_after_dual_run_fix.md` |
 | Media Library | PASS | `/tmp/media_library_parity_after_dual_run_fix.md` |
 

@@ -139,17 +139,9 @@ The questionnaire slice remains partial:
 
 ## Automation Conversion Parity Comparison
 
-The repeatable first-slice comparison entrypoint is:
-
-```bash
-python tools/compare_automation_conversion_parity.py \
-  --old-fixture-dir tests/fixtures/old_automation_conversion \
-  --next-testclient \
-  --output-md /tmp/automation_conversion_parity_report.md \
-  --output-json /tmp/automation_conversion_parity_report.json
-```
-
-For live dual-run validation, use `--old-base-url` and `--next-base-url` only in an isolated environment. By default the tool avoids unsafe old production writes; activation/override style paths should stay fixture/fake unless explicitly approved.
+Retired. The old Automation Conversion fixture/parity path was removed after
+`/admin/automation-conversion` moved to AI Audience and the old
+automation_program/runtime-v2 route family stopped being a migration target.
 
 The Automation Conversion slice remains partial:
 

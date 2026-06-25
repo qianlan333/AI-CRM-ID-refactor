@@ -85,17 +85,10 @@ This slice remains `partial`: it has not replaced the old Flask questionnaire sy
 
 ## Automation Engine Boundary
 
-`automation_engine` owns the first-stage automation conversion state machine, member pool projections, activation fact contract, fake OpenClaw push contract, and execution-record fixtures.
-
-- API layer parses FastAPI requests and calls application queries/commands only.
-- Application layer orchestrates the in-memory automation repository, `identity_contact.ResolvePersonIdentityQuery`, and Customer Read Model chat-context query for member detail/OpenClaw payload preview.
-- Domain/state-machine layer owns pool derivation and transitions for `new_user`, `unactivated_normal`, `unactivated_priority`, `activated_normal`, `activated_priority`, `silent`, `converted`, and `exited`.
-- Repository layer remains fixture/in-memory in this first slice.
-- Activation webhook is a local contract stub; no external activation service is called.
-- OpenClaw push returns `delivery_status=fake`; no HTTP request is sent.
-- `automation_engine/parity_spec.py` and `tools/compare_automation_conversion_parity.py` lock the first overview/pools/members/detail/activation/execution-records contract.
-
-This slice remains `partial`: it has not replaced the old Flask automation conversion system, has no production PostgreSQL schema, and does not call real WeCom, OpenClaw, or external webhooks.
+The old Automation Conversion state-machine/readonly slice has been retired.
+`/admin/automation-conversion` is now owned by AI Audience, and the old
+automation_program/runtime-v2 fixtures, parity tooling, and gray smoke tooling
+are no longer a migration target.
 
 ## PostgreSQL Integration-Test Boundary
 

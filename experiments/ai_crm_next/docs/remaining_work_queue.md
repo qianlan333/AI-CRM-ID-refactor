@@ -164,11 +164,11 @@ Each task is scoped for a future Codex execution turn. Keep old production servi
 
 ## 8F. Automation Readonly Staging Canary Follow-Up
 
-- objective: Repeat Batch 6 Automation Conversion readonly canary against an actual staging proxy or staging base URL after the simulated canary passed.
-- files likely involved: `docs/batch_6_automation_readonly_canary_execution_report.md`, `docs/batch_6_automation_readonly_canary_signoff.md`, `docs/batch_6_automation_readonly_canary_plan.md`, `docs/batch_6_automation_readonly_canary_runbook.md`, `tools/automation_readonly_gray_smoke.py`, `tools/check_batch_6_automation_canary_readiness.py`.
-- acceptance criteria: default readonly gray smoke passes through staging target; optional old-base-url dual smoke sends only GET and uses documented aliases; fake state-machine writes remain explicit opt-in and Next TestClient only; side-effect safety flags remain false for OpenClaw, WeCom, webhook, activation webhook, workflow runtime, and agent runtime.
-- must not do: modify Nginx production config, execute old Flask write endpoints, run activation webhook, push OpenClaw context, trigger real WeCom dispatch, call external webhooks, or execute workflow/agent runtime.
-- suggested validation command: `.venv/bin/python tools/automation_readonly_gray_smoke.py --next-base-url <staging-next-or-router-url> --output-md /tmp/automation_gray_smoke_real_staging_canary.md --output-json /tmp/automation_gray_smoke_real_staging_canary.json`.
+- status: retired.
+- reason: the old Automation Conversion readonly/parity route family has been
+  superseded by AI Audience. Its fixtures, smoke tooling, readiness checker,
+  and Batch 6 documents were removed rather than carried forward as a staging
+  canary target.
 
 ## 8G. Production Canary Approval Human Review
 

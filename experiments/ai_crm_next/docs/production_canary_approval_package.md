@@ -23,7 +23,6 @@ Current approval status: `pending_human_signoff`.
 | Batch 3 Customer readonly | staging-simulated evidence available | `docs/batch_3_customer_readonly_canary_execution_report.md` |
 | Batch 4 User Ops readonly | staging-simulated evidence available | `docs/batch_4_user_ops_readonly_canary_execution_report.md` |
 | Batch 5 Questionnaire readonly | staging-simulated evidence available | `docs/batch_5_questionnaire_readonly_canary_execution_report.md` |
-| Batch 6 Automation readonly | staging-simulated evidence available | `docs/batch_6_automation_readonly_canary_execution_report.md` |
 
 ## Batch Readiness Table
 

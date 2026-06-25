@@ -506,18 +506,14 @@ Excluded routes:
 
 Entry criteria:
 
-- Batch 0 passes.
-- Automation parity passes.
-- Automation readonly gray smoke passes.
-- Old route alias and accepted legacy drift are recorded.
-- Batch 6 readiness checker passes with side-effect safety all false.
+- Retired. The old Automation Conversion readonly/parity path is no longer a
+  controlled execution batch because automation_program/runtime-v2 has been
+  replaced by AI Audience.
 
 Smoke commands:
 
 ```bash
-.venv/bin/python tools/automation_readonly_gray_smoke.py --next-testclient --output-md /tmp/automation_readonly_gray_smoke.md --output-json /tmp/automation_readonly_gray_smoke.json
-.venv/bin/python tools/automation_readonly_gray_smoke.py --old-base-url http://127.0.0.1:5001 --next-testclient --output-md /tmp/automation_readonly_gray_smoke_dual.md --output-json /tmp/automation_readonly_gray_smoke_dual.json
-.venv/bin/python tools/check_batch_6_automation_canary_readiness.py --automation-smoke-json /tmp/automation_readonly_gray_smoke_batch_6.json --automation-parity-json /tmp/automation_parity_batch_6.json --output-md /tmp/batch_6_automation_canary_readiness.md --output-json /tmp/batch_6_automation_canary_readiness.json
+# No command. Batch 6 old Automation readonly tooling was retired.
 ```
 
 Monitoring signals:
