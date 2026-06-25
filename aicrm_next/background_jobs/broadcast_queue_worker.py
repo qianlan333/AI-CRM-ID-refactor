@@ -283,17 +283,6 @@ def _normalize_private_attachments_for_wecom(attachments: list[dict[str, Any]]) 
     return normalized
 
 
-def _realtest_guard(*, sender_userid: str, targets: list[str], content_text: str) -> tuple[bool, str]:
-    if "【RuntimeV2真实链路测试】" not in content_text and "runtime_v2_realtest_" not in content_text:
-        return True, ""
-    allowed_target = "wmbNXyCwAAXhagLBNjtlFj2jbQevWinQ"
-    if sender_userid not in {"HuangYouCan", "QianLan"}:
-        return False, "realtest_sender_not_allowed"
-    if targets != [allowed_target]:
-        return False, "realtest_target_not_allowed"
-    return True, ""
-
-
 def _dispatch_wecom_private(job: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any]:
     from aicrm_next.integration_gateway.wecom_private_adapter import build_wecom_private_message_adapter
 
@@ -318,9 +307,6 @@ def _dispatch_wecom_private(job: dict[str, Any], payload: dict[str, Any]) -> dic
         return {"ok": False, "error": str(exc), "failure_type": "material_resolve_failed"}
     if not content_text and not attachments:
         return {"ok": False, "error": "content_text_or_attachment_missing", "failure_type": "validation_failed"}
-    ok, reason = _realtest_guard(sender_userid=sender_userid, targets=targets, content_text=content_text)
-    if not ok:
-        return {"ok": False, "error": reason, "failure_type": "validation_failed"}
     request_payload = {
         "job_id": int_value(job.get("id")),
         "source_type": _text(job.get("source_type")),
