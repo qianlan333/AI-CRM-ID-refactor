@@ -9,18 +9,11 @@ import requests
 from fastapi.testclient import TestClient
 
 from aicrm_next.admin_jobs.routes import ensure_admin_action_token
-from aicrm_next.automation_engine.customer_webhooks import (
-    PlanCustomerWebhookDeliveryRetryCommand,
-    PlanCustomerWebhookDeliveryRetryDueCommand,
-    execute_customer_webhook_command,
-)
 from aicrm_next.customer_tags.live_mutation import execute_wecom_tag_mutation, reset_wecom_tag_live_mutation_fixture_state
 from aicrm_next.customer_tags.mutation_commands import PlanWeComTagMarkCommand, PlanWeComTagUnmarkCommand
 from aicrm_next.platform_foundation.command_bus import CommandContext
 from aicrm_next.platform_foundation.external_effects import (
     ExternalEffectService,
-    WEBHOOK_CUSTOMER_AUTOMATION_RETRY,
-    WEBHOOK_CUSTOMER_AUTOMATION_RETRY_DUE,
     WEBHOOK_ORDER_PAID_PUSH,
     WEBHOOK_QUESTIONNAIRE_SUBMISSION_PUSH,
     WECOM_CONTACT_TAG_MARK,
@@ -774,7 +767,6 @@ def test_external_effect_admin_page_is_removed_and_troubleshooting_api_covers_qu
     )
     for effect_type, target_type, target_id, business_type, business_id in [
         (WEBHOOK_ORDER_PAID_PUSH, "wechat_pay_order", "page-order-1", "commerce_order", "page-order-1"),
-        (WEBHOOK_CUSTOMER_AUTOMATION_RETRY, "customer_automation_webhook_delivery", "page-delivery-1", "customer_automation_webhook", "page-delivery-1"),
         (WECOM_CONTACT_TAG_MARK, "external_user", "page-wx-ext-1", "wecom_tag", "page-wx-ext-1"),
     ]:
         service.plan_effect(
@@ -1331,31 +1323,6 @@ def test_payment_paid_keeps_outbox_and_creates_configured_order_paid_job(monkeyp
     assert items[0].payload_json["body"]["event"] == "transaction.paid"
     assert items[0].payload_json["body"]["order"]["out_trade_no"] == "WXP_SHADOW_PAID"
     assert items[0].payload_json["headers"]["X-AICRM-Event"] == "transaction.paid"
-
-
-def test_customer_webhook_retry_and_retry_due_create_shadow_jobs() -> None:
-    reset_external_effect_fixture_state()
-    retry = execute_customer_webhook_command(
-        PlanCustomerWebhookDeliveryRetryCommand(
-            idempotency_key="customer-webhook-retry-shadow",
-            source_route="/api/customers/automation/webhook-deliveries/12/retry",
-            delivery_id=12,
-        )
-    )
-    retry_due = execute_customer_webhook_command(
-        PlanCustomerWebhookDeliveryRetryDueCommand(
-            idempotency_key="customer-webhook-retry-due-shadow",
-            source_route="/api/customers/automation/webhook-deliveries/retry-due",
-            limit=3,
-        )
-    )
-
-    assert retry["outbound_webhook_executed"] is False
-    assert retry["external_effect_job"]["effect_type"] == WEBHOOK_CUSTOMER_AUTOMATION_RETRY
-    assert retry["external_effect_job"]["status"] == "queued"
-    assert retry_due["external_effect_job"]["effect_type"] == WEBHOOK_CUSTOMER_AUTOMATION_RETRY_DUE
-    assert retry_due["external_effect_job"]["execution_mode"] == "execute"
-
 
 def test_wecom_tag_adapter_registry_dispatches_contact_tag_mark_and_unmark(monkeypatch) -> None:
     calls: list[dict] = []

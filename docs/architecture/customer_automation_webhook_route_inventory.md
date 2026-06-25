@@ -1,23 +1,35 @@
 # Customer Automation Webhook Route Inventory
 
-## Caller ↔ API ↔ CommandBus ↔ SideEffectPlan Matrix
+## Retired Route Matrix
 
-| Caller surface | API route | Next handler | CommandBus command | SideEffectPlan / attempt | Response contract |
-| --- | --- | --- | --- | --- | --- |
-| Activation webhook producer | `POST /api/customers/automation/activation-webhook` | `api_customer_automation_activation_webhook` | `ApplyCustomerActivationWebhookCommand` | `adapter_mode=local`, `requires_approval=false`, no outbound webhook attempt | `source_status=next_customer_activation_webhook`, `customer_automation_applied=local_only`, `real_external_call_executed=false`, `outbound_webhook_executed=false` |
-| Admin delivery retry action | `POST /api/customers/automation/webhook-deliveries/{delivery_id}/retry` | `api_plan_customer_automation_webhook_delivery_retry` | `PlanCustomerWebhookDeliveryRetryCommand` | `adapter_mode=real_blocked`, `requires_approval=true`, blocked `ExternalCallAttempt` | `source_status=next_customer_webhook_retry_plan`, `status=planned_blocked`, `retried_count=0`, `outbound_webhook_executed=false` |
-| Timer/manual due retry action | `POST /api/customers/automation/webhook-deliveries/retry-due` | `api_plan_customer_automation_webhook_delivery_retry_due` | `PlanCustomerWebhookDeliveryRetryDueCommand` | `adapter_mode=real_blocked`, `requires_approval=true`, blocked `ExternalCallAttempt` | `source_status=next_customer_webhook_retry_due_plan`, `status=planned_blocked`, `retried_count=0`, `outbound_webhook_executed=false` |
-| Preflight | `OPTIONS /api/customers/automation/activation-webhook` | `api_customer_automation_activation_webhook_options` | none | diagnostics only | `allowed_methods=["POST","OPTIONS"]`, `fallback_used=false` |
-| Preflight | `OPTIONS /api/customers/automation/webhook-deliveries/{delivery_id}/retry` | `api_customer_automation_webhook_delivery_retry_options` | none | diagnostics only | `allowed_methods=["POST","OPTIONS"]`, `fallback_used=false` |
-| Preflight | `OPTIONS /api/customers/automation/webhook-deliveries/retry-due` | `api_customer_automation_webhook_delivery_retry_due_options` | none | diagnostics only | `allowed_methods=["POST","OPTIONS"]`, `fallback_used=false` |
+The legacy customer automation webhook surfaces are retired. They remain
+registered only as explicit tombstone routes so old callers receive a
+deterministic `410 legacy_customer_automation_retired` response instead of a
+silent fallback.
+
+| Caller surface | API route | Next handler | Response |
+| --- | --- | --- | --- |
+| Activation webhook producer | `POST /api/customers/automation/activation-webhook` | `api_customer_automation_activation_webhook` | `410 legacy_customer_automation_retired` |
+| Activation webhook preflight | `OPTIONS /api/customers/automation/activation-webhook` | `api_customer_automation_activation_webhook_options` | `410 legacy_customer_automation_retired` |
+| Delivery retry action | `POST /api/customers/automation/webhook-deliveries/{delivery_id}/retry` | `api_plan_customer_automation_webhook_delivery_retry` | `410 legacy_customer_automation_retired` |
+| Delivery retry preflight | `OPTIONS /api/customers/automation/webhook-deliveries/{delivery_id}/retry` | `api_customer_automation_webhook_delivery_retry_options` | `410 legacy_customer_automation_retired` |
+| Due retry action | `POST /api/customers/automation/webhook-deliveries/retry-due` | `api_plan_customer_automation_webhook_delivery_retry_due` | `410 legacy_customer_automation_retired` |
+| Due retry preflight | `OPTIONS /api/customers/automation/webhook-deliveries/retry-due` | `api_customer_automation_webhook_delivery_retry_due_options` | `410 legacy_customer_automation_retired` |
+| Singular activation webhook | `POST /api/customer-automation/activation-webhook` | `activation_webhook` | `410 legacy_customer_automation_retired` |
+| Signup conversion batches | `GET /api/customers/automation/signup-conversion/batches` | `signup_conversion_batches` | `410 legacy_customer_automation_retired` |
+| Signup conversion batch detail | `GET /api/customers/automation/signup-conversion/batches/{batch_id}` | `signup_conversion_batch` | `410 legacy_customer_automation_retired` |
+| Webhook delivery inventory | `GET /api/customers/automation/webhook-deliveries` | `customer_automation_webhook_deliveries` | `410 legacy_customer_automation_retired` |
 
 ## Deletion Boundary
 
-These plural customer automation webhook write routes are `legacy_fallback_allowed=false` and `deletion_locked`.
+These routes are `legacy_fallback_allowed=false`.
 
-The exact production_compat decorators for the three routes have been removed from `aicrm_next/production_compat/api.py`. The Next replacement does not call the legacy Flask customer automation blueprint and does not import legacy application commands.
+The retired handlers do not call the retired customer automation commands,
+read models, Runtime V2 membership/task planning, or external effect planning.
+This document proves the route surface does not call the retired customer automation commands.
+external_effect_job 不会被创建.
 
-The locked safe-mode response must continue to expose:
+Every response must keep the following no-side-effect flags:
 
 - `route_owner=ai_crm_next`
 - `fallback_used=false`
@@ -25,9 +37,14 @@ The locked safe-mode response must continue to expose:
 - `outbound_webhook_executed=false`
 - `automation_runtime_executed=false`
 - `wecom_send_executed=false`
-- `adapter_mode=local` for activation local projection
-- `adapter_mode=real_blocked` for retry and retry-due delivery plans
 
-## Out Of Scope
+## Current Replacement Paths
 
-`GET /api/customers/automation/webhook-deliveries` remains a separate Next readonly facade. The old singular `POST /api/customer-automation/activation-webhook` remains outside this group and is not used as rollback for the plural customer automation webhook routes.
+- Use `ai_audience_ops` for SQL audience refresh, member events, and outbound
+  planning.
+- Use `platform_foundation.internal_events` and `external_effects` as the
+  shared event and side-effect queues.
+- Use `automation_engine/group_ops` for group operation plans.
+- Keep Agent copywriting/log/output capabilities through the dedicated Agent
+  surfaces; they are not rollback paths for these old customer automation
+  webhook routes.
