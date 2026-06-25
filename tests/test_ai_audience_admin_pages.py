@@ -563,6 +563,42 @@ def test_admin_ai_audience_package_patch_normalizes_refresh_modes(next_client, n
     assert row["daily_refresh_time"] == "02:00"
 
 
+def test_admin_ai_audience_activate_incremental_only_package(next_client, next_pg_schema, monkeypatch) -> None:
+    del next_pg_schema
+    monkeypatch.setenv("SECRET_KEY", "ai-audience-activate-test")
+    session_factory = get_session_factory()
+    with session_factory() as session:
+        package_id = _insert_package(
+            session,
+            package_key="activate_incremental_only",
+            name="仅增量包",
+            status="paused",
+            incremental_enabled=True,
+            daily_enabled=False,
+        )
+        session.commit()
+
+    response = next_client.post(f"/api/admin/ai-audience/packages/{package_id}/activate", cookies=_admin_cookies())
+
+    assert response.status_code == 200
+    package = response.json()["package"]
+    assert package["status"] == "active"
+    with session_factory() as session:
+        row = session.execute(
+            text(
+                """
+                SELECT status, next_incremental_refresh_at, next_daily_refresh_at
+                FROM ai_audience_package
+                WHERE id = :package_id
+                """
+            ),
+            {"package_id": package_id},
+        ).mappings().one()
+    assert row["status"] == "active"
+    assert row["next_incremental_refresh_at"] is not None
+    assert row["next_daily_refresh_at"] is None
+
+
 def test_admin_ai_audience_members_api_returns_active_safe_fields(next_client, next_pg_schema, monkeypatch) -> None:
     del next_pg_schema
     monkeypatch.setenv("SECRET_KEY", "ai-audience-members-test")
