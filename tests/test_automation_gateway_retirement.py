@@ -1,39 +1,27 @@
 from __future__ import annotations
 
-import aicrm_next.integration_gateway.automation_adapters as automation_adapters
-import aicrm_next.integration_gateway.automation_contracts as automation_contracts
+import importlib.util
+
+from aicrm_next.ai_audience_ops import agent_gateway
 
 
-def test_retired_member_workflow_and_openclaw_gateways_are_not_exported() -> None:
-    retired_names = {
-        "AutomationWriteGateway",
-        "build_automation_write_gateway",
-        "OpenClawWebhookAdapter",
-        "build_openclaw_webhook_adapter",
-        "AutomationWorkflowRuntimeAdapter",
-        "build_automation_workflow_runtime_adapter",
-    }
-
-    for name in retired_names:
-        assert not hasattr(automation_adapters, name)
-
-    assert not hasattr(automation_contracts, "AutomationWorkflowRuntimeAdapterContract")
-    assert not hasattr(automation_contracts, "AutomationWriteGatewayContract")
-    assert not hasattr(automation_contracts, "OpenClawWebhookAdapterContract")
+def test_retired_automation_gateway_modules_are_removed() -> None:
+    assert importlib.util.find_spec("aicrm_next.integration_gateway.automation_adapters") is None
+    assert importlib.util.find_spec("aicrm_next.integration_gateway.automation_contracts") is None
 
 
-def test_agent_runtime_gateway_remains_available() -> None:
-    adapter = automation_adapters.build_automation_agent_runtime_adapter()
-
-    result = adapter.generate_agent_output(
-        agent_task_id="agent_task_fixture",
-        member_id="member_fixture",
-        payload_summary={"source": "pytest"},
-        idempotency_key="pytest-agent-output",
+def test_ai_audience_agent_gateway_remains_available(monkeypatch) -> None:
+    monkeypatch.setenv("AICRM_AI_AUDIENCE_AGENT_MODE", "fake")
+    monkeypatch.setenv("AICRM_AI_AUDIENCE_AGENT_FAKE_ALLOWED", "1")
+    result = agent_gateway.generate_agent_reply(
+        agent_code="ai_audience_agent",
+        role_prompt="你是私域运营助手",
+        task_prompt="请生成一句话术",
+        variables={"member": {"external_userid": "wm_test"}},
+        mock_output="你好，这是 AI Audience 话术。",
     )
 
-    assert result["ok"] is True
-    assert result["adapter"] == "AutomationAgentRuntimeAdapter"
-    assert result["operation"] == "generate_agent_output"
-    assert result["result"]["generated"] is True
-    assert result["result"]["real_agent_runtime_executed"] is False
+    assert result.ok is True
+    assert result.mode == "fake"
+    assert result.final_text == "你好，这是 AI Audience 话术。"
+    assert result.external_call_executed is False
