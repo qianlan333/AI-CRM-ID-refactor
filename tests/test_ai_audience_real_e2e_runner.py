@@ -10,6 +10,7 @@ from aicrm_next.ai_audience_ops.e2e_runner import (
     AudienceRealE2ERunner,
     _scenario_spec_markdown,
     _private_job_guard,
+    _skipped_count,
     _webhook_job_guard,
 )
 from aicrm_next.ai_audience_ops.package_spec import parse_markdown_spec_text, validate_spec
@@ -238,3 +239,12 @@ def test_e2e_job_guards_require_array_body_and_exact_private_target() -> None:
         payload_json={"external_userids": [TEST_EXTERNAL_USERID], "owner_userid": "QianLan"},
     )
     assert _private_job_guard(wrong_sender) == "private_sender_not_allowed"
+
+
+def test_e2e_skipped_count_accepts_user_ops_summary_formats() -> None:
+    assert _skipped_count({"no_allowed_sender": 2}, "no_allowed_sender") == 2
+    assert _skipped_count(
+        [{"reason": "do_not_disturb", "count": 1}, {"reason": "no_allowed_sender", "reason_label": "无可用发送人", "count": 3}],
+        "no_allowed_sender",
+    ) == 3
+    assert _skipped_count([], "no_allowed_sender") == 0
