@@ -27,6 +27,7 @@ from aicrm_next.platform_foundation.external_effects import (
     WECOM_MESSAGE_GROUP_SEND,
     WECOM_MESSAGE_PRIVATE_SEND,
     WECOM_WELCOME_MESSAGE_SEND,
+    WECOM_PROFILE_UPDATE,
 )
 
 from .capability_registry import capability_for_section, section_metadata
@@ -82,7 +83,7 @@ def section_for_job(job: Any) -> str:
         return "order"
     if effect_type in {WEBHOOK_CUSTOMER_AUTOMATION_RETRY, WEBHOOK_CUSTOMER_AUTOMATION_RETRY_DUE}:
         return "customer_webhook"
-    if effect_type in {WECOM_CONTACT_TAG_MARK, WECOM_CONTACT_TAG_UNMARK}:
+    if effect_type in {WECOM_CONTACT_TAG_MARK, WECOM_CONTACT_TAG_UNMARK, WECOM_PROFILE_UPDATE}:
         return "tags"
     if effect_type == WECOM_WELCOME_MESSAGE_SEND:
         return "welcome"

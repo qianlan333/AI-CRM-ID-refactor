@@ -36,6 +36,7 @@ from aicrm_next.platform_foundation.command_bus.models import CommandContext
 from aicrm_next.platform_foundation.external_effects import (
     ExternalEffectService,
     WECOM_CONTACT_TAG_MARK,
+    WECOM_PROFILE_UPDATE,
     WECOM_WELCOME_MESSAGE_SEND,
 )
 from aicrm_next.platform_foundation.external_effects.worker import ExternalEffectWorker
@@ -470,6 +471,63 @@ def _apply_tag(command: ProcessChannelEntryCommand, *, channel: dict[str, Any], 
     return result
 
 
+def _ensure_profile_description(command: ProcessChannelEntryCommand, *, channel: dict[str, Any], scene: str) -> dict[str, Any]:
+    channel_id = int(channel.get("id") or 0)
+    external_userid = text(command.external_contact_id)
+    if not external_userid:
+        result = {"attempted": False, "applied": False, "reason": "external_userid_missing"}
+        _log_effect(command, effect_type="profile_description", idempotency_key=f"{extract_corp_id(command.payload_json)}:{channel_id}:profile_description_missing_external", status="skipped", channel_id=channel_id, scene_value=scene, reason=result["reason"], response_json=result)
+        return result
+    key = f"{extract_corp_id(command.payload_json)}:{external_userid}:{command.follow_user_userid}:{channel_id}:profile_description"
+    if effect_status_for_duplicate(repo.get_channel_entry_effect_log("profile_description", key)):
+        return {"attempted": False, "applied": False, "reason": "idempotent_success_exists", "description": external_userid}
+    payload = {
+        "external_userid": external_userid,
+        "follow_user_userid": command.follow_user_userid,
+        "description": external_userid,
+    }
+    if command.dry_run:
+        return {"attempted": False, "applied": False, "reason": "dry_run", "request_payload": payload}
+    try:
+        job = _plan_channel_entry_effect(
+            command,
+            effect_type=WECOM_PROFILE_UPDATE,
+            adapter_name="wecom_profile",
+            operation="update_description",
+            target_type="external_user",
+            target_id=external_userid,
+            business_id=str(channel_id),
+            idempotency_key=key,
+            payload={
+                **payload,
+                "channel_id": channel_id,
+                "scene_value": scene,
+            },
+            payload_summary={
+                "external_userid": external_userid,
+                "follow_user_userid": command.follow_user_userid,
+                "channel_id": channel_id,
+                "scene_value": scene,
+                "description_source": "external_userid",
+            },
+        )
+    except Exception as exc:
+        result = {"attempted": True, "applied": False, "reason": "external_effect_queue_failed", "message": str(exc)}
+        _log_effect(command, effect_type="profile_description", idempotency_key=key, status="failed", channel_id=channel_id, scene_value=scene, reason="external_effect_queue_failed", request_json=payload, response_json=result)
+        return result
+    result = {
+        "attempted": True,
+        "applied": False,
+        "queued": True,
+        "reason": "external_effect_job_queued",
+        "external_effect_job_id": job.get("id"),
+        "real_external_call_executed": False,
+        "description": external_userid,
+    }
+    _log_effect(command, effect_type="profile_description", idempotency_key=key, status="queued", channel_id=channel_id, scene_value=scene, reason="external_effect_job_queued", request_json=payload, response_json=result)
+    return result
+
+
 def process_channel_entry(command: ProcessChannelEntryCommand) -> dict[str, Any]:
     scene = extract_scene(command.payload_json)
     corp_id = extract_corp_id(command.payload_json)
@@ -540,16 +598,18 @@ def process_channel_entry(command: ProcessChannelEntryCommand) -> dict[str, Any]
 
     welcome = _send_welcome(command, channel=channel, scene=scene)
     tag = _apply_tag(command, channel=channel, scene=scene)
+    profile_description = _ensure_profile_description(command, channel=channel, scene=scene)
     return {
         "handled": True,
         "mode": "channel_baseline_only",
         "reason": "channel_entry_baseline_recorded",
         "scene_match": match,
         "channel": channel_payload(channel),
-        "baseline_effects": {"channel_contact": channel_contact, "welcome_message": welcome, "entry_tag": tag},
+        "baseline_effects": {"channel_contact": channel_contact, "welcome_message": welcome, "entry_tag": tag, "profile_description": profile_description},
         "channel_contact": channel_contact,
         "welcome_message": welcome,
         "entry_tag": tag,
+        "profile_description": profile_description,
         "assignment": assignment_result,
         "channel_entry_internal_event": channel_entry_event,
     }

@@ -25,12 +25,13 @@ from aicrm_next.platform_foundation.external_effects import (
     WEBHOOK_QUESTIONNAIRE_SUBMISSION_PUSH,
     WECOM_CONTACT_TAG_MARK,
     WECOM_CONTACT_TAG_UNMARK,
+    WECOM_PROFILE_UPDATE,
     reset_external_effect_fixture_state,
 )
 from aicrm_next.platform_foundation.external_effects.repo import InMemoryExternalEffectRepository, build_external_effect_repository
 from aicrm_next.platform_foundation.external_effects.retry_policy import classify_error_code, retry_delay_seconds
 from aicrm_next.platform_foundation.external_effects.worker import ExternalEffectWorker
-from aicrm_next.platform_foundation.external_effects.adapters import DEFAULT_ADAPTER_REGISTRY, ExternalEffectAdapterRegistry, WebhookAdapter
+from aicrm_next.platform_foundation.external_effects.adapters import DEFAULT_ADAPTER_REGISTRY, ExternalEffectAdapterRegistry, WeComContactTagAdapter, WeComProfileUpdateAdapter, WebhookAdapter
 from aicrm_next.commerce import external_push_admin
 from aicrm_next.public_product import h5_wechat_pay
 from aicrm_next.public_product.h5_wechat_pay import _apply_transaction
@@ -1354,6 +1355,127 @@ def test_customer_webhook_retry_and_retry_due_create_shadow_jobs() -> None:
     assert retry["external_effect_job"]["status"] == "queued"
     assert retry_due["external_effect_job"]["effect_type"] == WEBHOOK_CUSTOMER_AUTOMATION_RETRY_DUE
     assert retry_due["external_effect_job"]["execution_mode"] == "execute"
+
+
+def test_wecom_tag_adapter_registry_dispatches_contact_tag_mark_and_unmark(monkeypatch) -> None:
+    calls: list[dict] = []
+
+    class FakeWeComAdapter:
+        def mark_external_contact_tags(self, **payload):
+            calls.append(payload)
+            return {"errcode": 0}
+
+    monkeypatch.setenv("AICRM_EXTERNAL_EFFECT_WECOM_EXECUTE", "1")
+    monkeypatch.setenv("AICRM_EXTERNAL_EFFECT_ALLOWED_TYPES", f"{WECOM_CONTACT_TAG_MARK},{WECOM_CONTACT_TAG_UNMARK}")
+    repo = InMemoryExternalEffectRepository()
+    mark_job = _service(repo).plan_effect(
+        effect_type=WECOM_CONTACT_TAG_MARK,
+        adapter_name="wecom_tag",
+        operation="mark",
+        target_type="external_user",
+        target_id="wx_ext_tag_dispatch",
+        business_type="channel_entry",
+        business_id="channel-1",
+        payload={
+            "external_userid": "wx_ext_tag_dispatch",
+            "follow_user_userid": "owner-a",
+            "add_tags": ["tag_a"],
+            "remove_tags": [],
+        },
+        context=_sample_context("trace-wecom-tag-dispatch"),
+        idempotency_key="wecom-tag-dispatch",
+    )
+    unmark_job = _service(repo).plan_effect(
+        effect_type=WECOM_CONTACT_TAG_UNMARK,
+        adapter_name="wecom_tag",
+        operation="unmark",
+        target_type="external_user",
+        target_id="wx_ext_tag_dispatch",
+        business_type="wecom_tag",
+        business_id="wx_ext_tag_dispatch",
+        payload={
+            "external_userid": "wx_ext_tag_dispatch",
+            "follow_user_userid": "owner-a",
+            "tag_ids": ["tag_b"],
+        },
+        context=_sample_context("trace-wecom-tag-unmark-dispatch"),
+        idempotency_key="wecom-tag-unmark-dispatch",
+    )
+    registry = ExternalEffectAdapterRegistry()
+    assert isinstance(registry._adapters["wecom_tag"], WeComContactTagAdapter)  # type: ignore[attr-defined]
+    registry._adapters["wecom_tag"] = WeComContactTagAdapter(adapter_factory=lambda: FakeWeComAdapter())  # type: ignore[attr-defined]
+
+    result = ExternalEffectWorker(repo, registry).run_due(
+        batch_size=2,
+        dry_run=False,
+        effect_types=[WECOM_CONTACT_TAG_MARK, WECOM_CONTACT_TAG_UNMARK],
+    )
+
+    assert result["counts"]["succeeded_count"] == 2
+    assert result["items"][0]["job"]["status"] == "succeeded"
+    assert result["real_external_call_executed"] is True
+    assert calls == [
+        {
+            "external_userid": "wx_ext_tag_dispatch",
+            "follow_user_userid": "owner-a",
+            "add_tags": ["tag_a"],
+            "remove_tags": [],
+        },
+        {
+            "external_userid": "wx_ext_tag_dispatch",
+            "follow_user_userid": "owner-a",
+            "add_tags": [],
+            "remove_tags": ["tag_b"],
+        }
+    ]
+    assert mark_job["adapter_name"] == "wecom_tag"
+    assert unmark_job["adapter_name"] == "wecom_tag"
+
+
+def test_wecom_profile_adapter_registry_dispatches_description_update(monkeypatch) -> None:
+    calls: list[dict] = []
+
+    class FakeWeComAdapter:
+        def update_external_contact_remark(self, payload):
+            calls.append(payload)
+            return {"errcode": 0}
+
+    monkeypatch.setenv("AICRM_EXTERNAL_EFFECT_WECOM_EXECUTE", "1")
+    monkeypatch.setenv("AICRM_EXTERNAL_EFFECT_ALLOWED_TYPES", WECOM_PROFILE_UPDATE)
+    repo = InMemoryExternalEffectRepository()
+    job = _service(repo).plan_effect(
+        effect_type=WECOM_PROFILE_UPDATE,
+        adapter_name="wecom_profile",
+        operation="update_description",
+        target_type="external_user",
+        target_id="wx_ext_profile",
+        business_type="channel_entry",
+        business_id="channel-1",
+        payload={
+            "external_userid": "wx_ext_profile",
+            "follow_user_userid": "owner-a",
+            "description": "wx_ext_profile",
+        },
+        context=_sample_context("trace-wecom-profile-dispatch"),
+        idempotency_key="wecom-profile-dispatch",
+    )
+    registry = ExternalEffectAdapterRegistry()
+    assert isinstance(registry._adapters["wecom_profile"], WeComProfileUpdateAdapter)  # type: ignore[attr-defined]
+    registry._adapters["wecom_profile"] = WeComProfileUpdateAdapter(adapter_factory=lambda: FakeWeComAdapter())  # type: ignore[attr-defined]
+
+    result = ExternalEffectWorker(repo, registry).run_due(batch_size=1, dry_run=False, effect_types=[WECOM_PROFILE_UPDATE])
+
+    assert result["counts"]["succeeded_count"] == 1
+    assert result["items"][0]["job"]["status"] == "succeeded"
+    assert result["real_external_call_executed"] is True
+    assert calls == [
+        {
+            "userid": "owner-a",
+            "external_userid": "wx_ext_profile",
+            "description": "wx_ext_profile",
+        }
+    ]
+    assert job["adapter_name"] == "wecom_profile"
 
 
 def test_wecom_tag_mark_and_unmark_create_shadow_jobs() -> None:
