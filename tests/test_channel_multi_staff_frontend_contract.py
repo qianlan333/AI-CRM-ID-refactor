@@ -182,6 +182,19 @@ def test_channel_center_list_retired_program_binding_status_and_long_channel_nam
     assert "apiBindings" not in drawer_js
     assert "initial_audience_code" not in drawer_js
     assert "data-bind-modal" not in drawer_js
+    assert "member_stage_summary_base" not in drawer_js
+    assert "renderMemberStageSummary" not in drawer_js
+    assert "stageLabel" not in drawer_js
+    assert "current_stage_code" not in drawer_js
+    assert "pool_entered_at" not in drawer_js
+    assert "stage_entered_at" not in drawer_js
+    assert "池内用户" not in drawer_js
+    assert "当前阶段" not in drawer_js
+    assert "入池时间" not in drawer_js
+    assert "阶段进入时间" not in drawer_js
+    assert "已入池" not in drawer_js
+    assert "旧运营池" not in drawer_js
+    assert "供 AI 人群包查询" in drawer_js
     assert "is-status ${statusClass(channel.status)}" in js
     assert "is-status-inactive" in css
     assert "#b42318" in css
