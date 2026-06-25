@@ -12,7 +12,7 @@ from aicrm_next.platform_foundation.external_effects import ExternalEffectServic
 from aicrm_next.platform_foundation.internal_events import InternalEventService
 
 from .event_types import DAILY_TICK_EVENT, INCREMENTAL_TICK_EVENT, SOURCE_CHANGED_EVENT
-from .repository import AudienceRepository, build_audience_repository, _text
+from .repository import AudienceRepository, build_audience_repository, default_refresh_started_at, previous_watermark, _text
 from .schemas import PackageCreateRequest, PackageVersionCreateRequest, PreviewRequest
 from .sql_executor import build_execution_plan
 
@@ -279,9 +279,12 @@ class AudiencePackageService:
             if not version:
                 return {"ok": False, "error": "version_not_found"}
             sql_text = _text(version.get("snapshot_sql_text" if sql_kind in {"daily", "snapshot", "snapshot_current"} else "incremental_sql_text"))
-        params = dict((version or {}).get("parameters_json") or {})
-        if isinstance(payload.get("params"), dict):
-            params.update(payload.get("params") or {})
+        params = build_preview_runtime_params(
+            package,
+            version,
+            payload.get("params") if isinstance(payload.get("params"), dict) else None,
+            sql_kind,
+        )
         result = self.preview(int(package_id), PreviewRequest(sql_text=sql_text, sql_kind=sql_kind, params=params, limit=int(payload.get("limit") or 20)))
         return {
             "ok": bool(result.get("ok")),
@@ -549,6 +552,28 @@ def refresh_mode_label(refresh_mode: str) -> str:
         "daily_0200": "每日 2:00",
         "incremental_3m_plus_daily_0200": "每 3 分钟 + 每日 2:00",
     }.get(refresh_mode, "手动")
+
+
+def build_preview_runtime_params(
+    package: dict[str, Any],
+    version: dict[str, Any] | None,
+    payload_params: dict[str, Any] | None,
+    sql_kind: str,
+) -> dict[str, Any]:
+    started_at = default_refresh_started_at()
+    refresh_kind = "daily" if _text(sql_kind) in {"daily", "snapshot", "snapshot_current"} else "incremental"
+    params: dict[str, Any] = dict((version or {}).get("parameters_json") or {})
+    if isinstance(payload_params, dict):
+        params.update(payload_params)
+    params.update(
+        {
+            "package_id": int(package.get("id") or 0),
+            "refresh_started_at": started_at,
+            "last_watermark_at": previous_watermark(package, refresh_kind, started_at=started_at),
+            "lookback_seconds": max(0, int(package.get("lookback_seconds") or 600)),
+        }
+    )
+    return params
 
 
 def inbound_webhook_url(package: dict[str, Any], *, request_base_url: str = "") -> str:
