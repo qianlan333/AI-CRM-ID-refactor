@@ -121,12 +121,11 @@
   }
 
   .automation-agent-table-wrap {
-    overflow-x: auto;
+    overflow-x: hidden;
   }
 
   .automation-agent-table {
     width: 100%;
-    min-width: 1120px;
     border-collapse: collapse;
     table-layout: fixed;
   }
@@ -157,7 +156,7 @@
   }
 
   .automation-agent-table .w-plan {
-    width: 52%;
+    width: 46%;
   }
 
   .automation-agent-table .w-material {
@@ -169,7 +168,7 @@
   }
 
   .automation-agent-table .w-op {
-    width: 18%;
+    width: 24%;
     text-align: right;
   }
 
@@ -227,7 +226,12 @@
   }
 
   @media (max-width: 1100px) {
+    .automation-agent-table-wrap {
+      overflow-x: auto;
+    }
+
     .automation-agent-table {
+      min-width: 1040px;
       table-layout: auto;
     }
 
