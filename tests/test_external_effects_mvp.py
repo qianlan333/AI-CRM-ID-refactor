@@ -344,7 +344,6 @@ def test_business_outbound_entrypoints_do_not_directly_call_external_networks() 
         "aicrm_next/admin_jobs/notification_settings.py",
         "aicrm_next/commerce/admin_transactions.py",
         "aicrm_next/commerce/external_push_admin.py",
-        "aicrm_next/automation_engine/customer_webhooks.py",
         "aicrm_next/customer_tags/live_mutation.py",
         "aicrm_next/automation_engine/group_ops/application.py",
         "aicrm_next/channel_entry/application.py",
