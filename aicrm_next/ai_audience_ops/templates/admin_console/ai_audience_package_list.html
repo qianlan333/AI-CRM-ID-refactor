@@ -1,6 +1,8 @@
 {% extends "admin_console/base.html" %}
 
 {% block head_extra %}
+<link rel="stylesheet" href="{{ url_for('static', filename='admin_console/material_picker.css') }}?v=ai-audience-batch-send-20260625">
+<link rel="stylesheet" href="{{ url_for('static', filename='admin_console/send_content_composer.css') }}?v=ai-audience-batch-send-20260625">
 <style>
   :root {
     --ai-bg: #f6f8fb;
@@ -221,6 +223,8 @@
 {% endblock %}
 
 {% block scripts_extra %}
+<script src="{{ url_for('static', filename='admin_console/material_picker.js') }}?v=ai-audience-batch-send-20260625"></script>
+<script src="{{ url_for('static', filename='admin_console/send_content_composer.js') }}?v=ai-audience-batch-send-20260625"></script>
 <script src="{{ url_for('static', filename='admin_console/user_ops_batch_send_modal.js') }}"></script>
 <script>
   (() => {
