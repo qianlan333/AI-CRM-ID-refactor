@@ -95,6 +95,22 @@ def test_ai_audience_package_spec_invalid_sql_fails(tmp_path) -> None:
     assert "incremental:dependency_not_allowed:public.users" in errors
 
 
+def test_ai_audience_package_spec_allows_system_params_but_requires_business_params(tmp_path) -> None:
+    system_only = VALID_SPEC.replace("  AND qs.submitted_at < :refresh_started_at", "  AND qs.submitted_at < :refresh_started_at\n  AND :lookback_seconds >= 0\n  AND :package_id >= 0")
+    spec = parse_markdown_spec(_write_spec(tmp_path, system_only))
+
+    errors, _warnings = validate_spec(spec)
+
+    assert not any("last_watermark_at" in item or "refresh_started_at" in item or "lookback_seconds" in item or "package_id" in item for item in errors)
+
+    missing_business_param = system_only.replace("parameters:\n  questionnaire_id: 101", "parameters: {}")
+    spec = parse_markdown_spec(_write_spec(tmp_path, missing_business_param, name="missing_business_param.md"))
+
+    errors, _warnings = validate_spec(spec)
+
+    assert "incremental:parameter_not_declared:questionnaire_id" in errors
+
+
 def test_ai_audience_package_spec_dry_run_does_not_write_db(tmp_path, next_pg_schema) -> None:
     del next_pg_schema
     spec = parse_markdown_spec(_write_spec(tmp_path, VALID_SPEC))

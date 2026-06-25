@@ -205,6 +205,34 @@ def test_admin_ai_audience_package_create_version_publish_contract(next_client, 
     assert version.status_code == 200
     assert version.json()["version"]["parameters"] == {"questionnaire_id": 202}
 
+    preview_sql = """
+        SELECT
+          'external_userid' AS identity_type,
+          'wm_preview_' || CAST(:questionnaire_id AS text) AS identity_value,
+          'preview:' || CAST(:package_id AS text) AS event_source_key,
+          jsonb_build_object('questionnaire_id', :questionnaire_id, 'lookback_seconds', :lookback_seconds) AS payload_json,
+          'wm_preview_' || CAST(:questionnaire_id AS text) AS external_userid,
+          :refresh_started_at AS event_at
+        WHERE :questionnaire_id = 102
+          AND :refresh_started_at >= :last_watermark_at
+          AND :lookback_seconds >= 0
+    """
+    preview_version = next_client.post(
+        f"/api/admin/ai-audience/packages/{package_id}/versions",
+        cookies=_admin_cookies(),
+        json={"incremental_sql_text": preview_sql, "parameters": {"questionnaire_id": 101}},
+    )
+    assert preview_version.status_code == 200
+    preview = next_client.post(
+        f"/api/admin/ai-audience/packages/{package_id}/preview",
+        cookies=_admin_cookies(),
+        json={"version_id": preview_version.json()["version"]["id"], "sql_kind": "incremental", "params": {"questionnaire_id": 102}, "limit": 5},
+    )
+    assert preview.status_code == 200
+    assert preview.json()["ok"] is True
+    assert preview.json()["sample_rows"][0]["identity_value"] == "wm_preview_102"
+    assert preview.json()["sample_rows"][0]["payload_json"]["lookback_seconds"] == 600
+
     invalid_preview = next_client.post(
         f"/api/admin/ai-audience/packages/{package_id}/preview",
         cookies=_admin_cookies(),
