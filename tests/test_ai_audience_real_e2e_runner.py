@@ -143,6 +143,51 @@ def test_test_agent_accepts_run_level_external_userid_array(monkeypatch) -> None
     assert result["real_external_call_executed"] is False
 
 
+def test_test_agent_allows_prod_e2e_package_when_runner_enabled(monkeypatch) -> None:
+    outbound_secret = "outbound-secret"
+    inbound_secret = "inbound-secret"
+    package_key = "prod_e2e_questionnaire_added_wecom_auto_send_e2e_test"
+    body = [TEST_EXTERNAL_USERID]
+    signature = hmac.new(
+        outbound_secret.encode("utf-8"),
+        json.dumps(body, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()
+
+    class Repo:
+        def get_package_by_key(self, value):
+            assert value == package_key
+            return {"id": 7, "package_key": package_key, "inbound_webhook_secret": inbound_secret}
+
+        def list_subscriptions(self, package_id, active_only=True, trigger_event_type="entered"):
+            assert package_id == 7
+            return [{"id": 1, "signing_secret": outbound_secret}]
+
+    class Inbound:
+        def handle(self, package, payload, *, raw_body, signature):
+            assert payload["action"]["target_external_userid"] == TEST_EXTERNAL_USERID
+            return {"ok": True, "external_effect_job_id": 99, "record_only": False}
+
+    monkeypatch.setenv("AICRM_AI_AUDIENCE_TEST_AGENT_ENABLED", "true")
+    monkeypatch.setenv("AICRM_AI_AUDIENCE_E2E_RUNNER_ENABLED", "true")
+    monkeypatch.delenv("AICRM_AI_AUDIENCE_TEST_AGENT_PACKAGE_KEYS", raising=False)
+    monkeypatch.setenv("AICRM_AI_AUDIENCE_TEST_AGENT_ALLOWED_EXTERNAL_USERIDS", TEST_EXTERNAL_USERID)
+    monkeypatch.setenv("AICRM_AI_AUDIENCE_TEST_AGENT_SENDER_USERID", TEST_SENDER_USERID)
+
+    result = AudienceTestAgentService(repository=Repo(), inbound_service=Inbound()).handle(
+        body,
+        signature=f"sha256={signature}",
+        headers={
+            "X-AICRM-Package-Key": package_key,
+            "X-AICRM-Event-Type": "audience.incremental.entered",
+            "X-AICRM-Refresh-Run-Id": "123",
+        },
+    )
+
+    assert result["ok"] is True
+    assert result["external_effect_job_id"] == 99
+
+
 def test_test_agent_rejects_non_test_array_member(monkeypatch) -> None:
     package_key = "prod_e2e_questionnaire_added_wecom_auto_send_e2e_test"
     monkeypatch.setenv("AICRM_AI_AUDIENCE_TEST_AGENT_ENABLED", "true")
