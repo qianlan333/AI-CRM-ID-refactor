@@ -657,19 +657,28 @@
     };
 
     const addSender = async () => {
-      const senderUserid = window.prompt("请输入发送人 userid");
-      if (!senderUserid) return;
-      const cleaned = senderUserid.trim();
-      if (!cleaned) return;
-      if (senderItems.some((item) => item.sender_userid === cleaned)) {
-        setStatus(els.senderStatusLine, "该发送人已经在白名单中", "error");
+      if (!window.OperationMemberPicker || typeof window.OperationMemberPicker.open !== "function") {
+        setStatus(els.senderStatusLine, "标准运营成员选择器加载失败，请刷新页面后重试", "error");
         return;
       }
-      await saveSenders([...senderItems, {
-        sender_userid: cleaned,
-        display_name: cleaned,
-        status: "active"
-      }]);
+      window.OperationMemberPicker.open({
+        title: "选择运营人员",
+        scope: "common",
+        page_size: 100,
+        disabledUserIds: senderItems.map((item) => item.sender_userid),
+        onSelect: (member) => {
+          const senderUserid = String(member.user_id || "").trim();
+          if (!senderUserid) return;
+          const displayName = window.OperationMemberPicker.memberLabel
+            ? window.OperationMemberPicker.memberLabel(member)
+            : (member.display_name || senderUserid);
+          saveSenders([...senderItems, {
+            sender_userid: senderUserid,
+            display_name: displayName,
+            status: "active"
+          }]).catch((error) => setStatus(els.senderStatusLine, error.message || "保存失败", "error"));
+        }
+      });
     };
 
     const renderMembers = (payload) => {
