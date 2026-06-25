@@ -446,7 +446,7 @@ def test_ai_audience_test_agent_webhook_guards_and_plans_private_message(next_cl
     monkeypatch.setenv("AICRM_AI_AUDIENCE_TEST_AGENT_PACKAGE_KEYS", "test_agent_pkg")
     monkeypatch.setenv("AICRM_AI_AUDIENCE_TEST_AGENT_ALLOWED_EXTERNAL_USERIDS", "wm_test_agent")
     monkeypatch.setenv("AICRM_AI_AUDIENCE_TEST_AGENT_SENDER_USERID", "HuangYouCan")
-    monkeypatch.setenv("AICRM_AI_AUDIENCE_INBOUND_ACTION_EXECUTE", "1")
+    monkeypatch.delenv("AICRM_AI_AUDIENCE_INBOUND_ACTION_EXECUTE", raising=False)
     inbound_secret = "inbound-secret"
     outbound_secret = "outbound-secret"
 
@@ -472,6 +472,18 @@ def test_ai_audience_test_agent_webhook_guards_and_plans_private_message(next_cl
         },
     )
     assert sub_resp.status_code == 200
+    session_factory = get_session_factory()
+    with session_factory() as session:
+        session.execute(
+            text(
+                """
+                INSERT INTO app_settings (key, value, updated_at)
+                VALUES ('AICRM_AI_AUDIENCE_INBOUND_ACTION_EXECUTE', 'true', CURRENT_TIMESTAMP)
+                ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP
+                """
+            )
+        )
+        session.commit()
 
     payload = {
         "event_type": "audience.member.entered",

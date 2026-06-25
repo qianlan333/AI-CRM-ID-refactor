@@ -7,6 +7,7 @@ from typing import Any
 
 from aicrm_next.platform_foundation.command_bus.models import CommandContext
 from aicrm_next.platform_foundation.external_effects import ExternalEffectService, WECOM_MESSAGE_PRIVATE_SEND
+from aicrm_next.shared.runtime_settings import runtime_bool
 
 from .repository import AudienceRepository, build_audience_repository, _json_dumps, _text
 
@@ -61,7 +62,7 @@ class AudienceInboundWebhookService:
         return f"ai_audience_inbound:{package['id']}:{hashlib.sha256(_json_dumps(payload).encode('utf-8')).hexdigest()}"
 
     def _maybe_plan_action(self, package: dict[str, Any], payload: dict[str, Any]) -> int | None:
-        if _text(os.getenv("AICRM_AI_AUDIENCE_INBOUND_ACTION_EXECUTE")).lower() not in {"1", "true", "yes", "on"}:
+        if not runtime_bool("AICRM_AI_AUDIENCE_INBOUND_ACTION_EXECUTE"):
             return None
         action = payload.get("action") if isinstance(payload.get("action"), dict) else {}
         if _text(action.get("type")) != "send_private_message":
