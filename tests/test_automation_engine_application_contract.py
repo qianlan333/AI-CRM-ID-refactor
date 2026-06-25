@@ -83,6 +83,21 @@ def test_retired_automation_member_write_dtos_and_repo_methods_are_not_exported(
         "OverrideFollowupTypeRequest",
         "AutomationActionRequest",
         "PushOpenClawContextRequest",
+        "TaskGroupListRequest",
+        "TaskGroupCreateRequest",
+        "WorkflowListRequest",
+        "WorkflowCreateRequest",
+        "WorkflowNodeListRequest",
+        "WorkflowNodeCreateRequest",
+        "WorkflowNodeUpdateRequest",
+        "TaskListRequest",
+        "TaskCreateRequest",
+        "TaskUpdateRequest",
+        "SendStrategyUpdateRequest",
+        "UnifiedSendContentUpdateRequest",
+        "ProfileSegmentSendContentUpdateRequest",
+        "BehaviorSegmentSendContentUpdateRequest",
+        "AgentMaterialsUpdateRequest",
     ):
         assert not hasattr(automation_dto, name)
 
