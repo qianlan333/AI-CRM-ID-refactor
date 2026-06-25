@@ -1,0 +1,195 @@
+from __future__ import annotations
+
+import re
+from pathlib import Path
+from time import time
+
+from aicrm_next.admin_auth.service import SESSION_COOKIE, sign_session
+
+
+ROOT = Path(__file__).resolve().parents[1]
+TEMPLATE_DIR = ROOT / "aicrm_next" / "automation_agents" / "templates" / "admin_console"
+LIST_TEMPLATE = TEMPLATE_DIR / "automation_agent_list.html"
+EDIT_TEMPLATE = TEMPLATE_DIR / "automation_agent_edit.html"
+
+
+def _admin_cookies() -> dict[str, str]:
+    return {
+        SESSION_COOKIE: sign_session(
+            {
+                "auth_source": "break_glass",
+                "login_type": "break_glass",
+                "username": "admin",
+                "display_name": "admin",
+                "roles": ["super_admin"],
+                "iat": int(time()),
+            }
+        )
+    }
+
+
+def _read(path: Path) -> str:
+    return path.read_text(encoding="utf-8")
+
+
+def test_automation_agent_admin_pages_require_admin_session(next_client, monkeypatch) -> None:
+    monkeypatch.setenv("SECRET_KEY", "automation-agent-page-auth-test")
+
+    list_response = next_client.get("/admin/automation-agents", follow_redirects=False)
+    edit_response = next_client.get("/admin/automation-agents/1/edit", follow_redirects=False)
+
+    assert list_response.status_code == 302
+    assert list_response.headers["location"] == "/login?next=/admin/automation-agents"
+    assert edit_response.status_code == 302
+    assert edit_response.headers["location"] == "/login?next=/admin/automation-agents/1/edit"
+
+
+def test_automation_agent_list_page_contract(next_client, monkeypatch) -> None:
+    monkeypatch.setenv("SECRET_KEY", "automation-agent-list-page-test")
+
+    response = next_client.get("/admin/automation-agents", cookies=_admin_cookies())
+
+    assert response.status_code == 200
+    html = response.text
+    for expected in (
+        "Agent 列表",
+        "新增 Agent",
+        "绑定自动化运营计划",
+        "固定素材",
+        "状态",
+        "操作",
+        "编辑",
+        "复制",
+        "停止",
+        "启用",
+        "删除",
+        "/api/admin/automation-agents",
+        "data-agent-action-row",
+    ):
+        assert expected in html
+    for forbidden in (
+        "接收格式",
+        "接收/发送地址",
+        "字段依赖",
+        "external_userid 数组",
+        "Agent Webhook",
+    ):
+        assert forbidden not in html
+
+
+def test_automation_agent_list_actions_are_horizontal_on_desktop() -> None:
+    source = _read(LIST_TEMPLATE)
+    op_row_css = re.search(r"\.automation-agent-op-row\s*\{(?P<body>.*?)\}", source, re.S)
+
+    assert op_row_css, "operation row CSS must exist"
+    body = op_row_css.group("body")
+    assert "display: inline-flex" in body
+    assert "flex-direction: row" in body
+    assert "justify-content: flex-end" in body
+    assert "gap: 10px" in body
+    assert "white-space: nowrap" in body
+    assert "flex-direction: column" not in body
+
+
+def test_automation_agent_edit_page_contract(next_client, monkeypatch) -> None:
+    monkeypatch.setenv("SECRET_KEY", "automation-agent-edit-page-test")
+
+    response = next_client.get("/admin/automation-agents/123/edit", cookies=_admin_cookies())
+
+    assert response.status_code == 200
+    html = response.text
+    for expected in (
+        "编辑 Agent",
+        "HTML Demo",
+        "Agent 名称",
+        "Agent Code",
+        "绑定计划",
+        "人群包 Key",
+        "接收地址",
+        "发送地址",
+        "/api/ai/agents/",
+        "/audience-webhook",
+        "/api/ai/audience/packages/",
+        "role_prompt",
+        "task_prompt",
+        "插入 {{问卷信息}}",
+        "插入 {{最近20条聊天信息}}",
+        "插入 {{用户标签}}",
+        "插入 {{激活信息}}",
+        "当前字段依赖自动识别",
+        "保存草稿",
+        "发布",
+        "载入已发布版本",
+        "固定素材",
+        "配置固定素材",
+        "暂无配置固定素材",
+        "content_package 预览",
+        '"content_text": "由 Agent 动态生成"',
+        "image_library_ids",
+        "miniprogram_library_ids",
+        "attachment_library_ids",
+        "material_picker.js",
+        "AICRMMaterialPicker.open",
+        "/api/admin/automation-agents/123",
+        "/api/admin/automation-agents/123/fixed-content",
+    ):
+        assert expected in html
+    for forbidden in (
+        "当前页面是二级配置页",
+        "一对一绑定",
+        "填入自动化运营计划",
+        "Agent 生成后回推",
+        "返回列表",
+    ):
+        assert forbidden not in html
+
+
+def test_automation_agent_edit_bottom_bar_only_has_save_button() -> None:
+    source = _read(EDIT_TEMPLATE)
+    match = re.search(r'<div class="automation-agent-card automation-agent-save-bar">(?P<body>.*?)</div>', source, re.S)
+
+    assert match, "bottom save bar must exist"
+    body = match.group("body")
+    assert body.count("<button") == 1
+    assert ">保存<" in body
+    assert "返回列表" not in body
+
+
+def test_automation_agent_material_modal_and_preview_logic() -> None:
+    source = _read(EDIT_TEMPLATE)
+
+    for expected in (
+        'id="materialModal"',
+        "配置固定素材",
+        "data-add-asset=\"image\"",
+        "data-add-asset=\"miniprogram\"",
+        "data-add-asset=\"attachment\"",
+        "+图片",
+        "+小程序",
+        "+附件",
+        "已选素材列表",
+        "保存素材",
+        "openMaterial",
+        'classList.add("show")',
+        "const renderPackage",
+        "const renderAssets",
+        "state.contentPackage.image_library_ids",
+        "state.contentPackage.miniprogram_library_ids",
+        "state.contentPackage.attachment_library_ids",
+        "fixedContentApiUrl",
+        "method: \"PUT\"",
+    ):
+        assert expected in source
+
+
+def test_automation_agent_prompt_tokens_and_dependency_detection() -> None:
+    source = _read(EDIT_TEMPLATE)
+
+    for token in ("{{问卷信息}}", "{{最近20条聊天信息}}", "{{用户标签}}", "{{激活信息}}"):
+        assert source.count(token) >= 3
+    assert "state.focusPrompt" in source
+    assert "selectionStart" in source
+    assert "selectionEnd" in source
+    assert 'const text = `${els.rolePrompt.value}\\n${els.taskPrompt.value}`;' in source
+    assert ".filter(([token]) => text.includes(token))" in source
+    assert "renderDeps()" in source

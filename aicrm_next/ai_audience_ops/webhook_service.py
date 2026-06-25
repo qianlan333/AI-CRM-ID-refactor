@@ -7,6 +7,7 @@ from typing import Any
 
 from aicrm_next.platform_foundation.command_bus.models import CommandContext
 from aicrm_next.platform_foundation.external_effects import ExternalEffectService, WECOM_MESSAGE_PRIVATE_SEND
+from aicrm_next.send_content.application import normalize_send_content_package
 from aicrm_next.shared.runtime_settings import runtime_bool
 
 from .repository import AudienceRepository, build_audience_repository, _json_dumps, _text
@@ -30,6 +31,7 @@ class AudienceInboundWebhookService:
             return {"ok": False, "error": "invalid_signature"}
         normalized = dict(payload or {})
         normalized["idempotency_key"] = self._idempotency_key(package, normalized)
+        automation_send_plan = self._maybe_enqueue_automation_send_plan(package, normalized)
         external_effect_job_id = self._maybe_plan_action(package, normalized)
         recorded = self._repo.record_inbound_webhook(
             int(package["id"]),
@@ -40,8 +42,9 @@ class AudienceInboundWebhookService:
         return {
             "ok": True,
             "recorded": recorded,
+            "automation_send_plan": automation_send_plan,
             "external_effect_job_id": external_effect_job_id,
-            "record_only": external_effect_job_id is None,
+            "record_only": external_effect_job_id is None and automation_send_plan is None,
             "real_external_call_executed": False,
         }
 
@@ -102,6 +105,31 @@ class AudienceInboundWebhookService:
             context=CommandContext(actor_id="ai_audience_agent", actor_type="external_agent", source_route="ai_audience.inbound_webhook"),
         )
         return int(job.get("id") or 0) or None
+
+    def _maybe_enqueue_automation_send_plan(self, package: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any] | None:
+        action = payload.get("action") if isinstance(payload.get("action"), dict) else {}
+        if _text(action.get("type")) != "enqueue_automation_send_plan":
+            return None
+        message = payload.get("message") if isinstance(payload.get("message"), dict) else {}
+        content_package = message.get("content_package") if isinstance(message.get("content_package"), dict) else {}
+        if not content_package:
+            content_package = {"content_text": _text(message.get("text"))}
+        normalized_package = normalize_send_content_package(content_package, text_enabled=True, require_body=True)
+        target = _text(action.get("target_external_userid"))
+        sender = _text(action.get("sender_userid"))
+        external_event_id = _text(payload.get("external_event_id"))
+        if not external_event_id or not target or not sender:
+            return {"status": "skipped", "reason": "missing_required_action_fields"}
+        from aicrm_next.cloud_orchestrator.repository import build_cloud_plan_repository
+
+        return build_cloud_plan_repository().create_or_reuse_agent_send_plan(
+            external_event_id=external_event_id,
+            package_key=_text(package.get("package_key")),
+            external_userid=target,
+            owner_userid=sender,
+            content_package=normalized_package,
+            operator="automation_agent",
+        )
 
 
 def _test_scope(package: dict[str, Any]) -> dict[str, Any]:

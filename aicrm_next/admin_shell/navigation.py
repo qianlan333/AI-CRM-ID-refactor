@@ -53,6 +53,7 @@ ADMIN_ROUTE_REGISTRY: dict[str, AdminRoute] = {
     "api.admin_radar_links": AdminRoute("api.admin_radar_links", "/admin/radar-links"),
     "api.admin_radar_link_new": AdminRoute("api.admin_radar_link_new", "/admin/radar-links/new"),
     "api.admin_automation_conversion": AdminRoute("api.admin_automation_conversion", "/admin/automation-conversion"),
+    "api.admin_automation_agents_page": AdminRoute("api.admin_automation_agents_page", "/admin/automation-agents"),
     "api.admin_group_ops_ui": AdminRoute("api.admin_group_ops_ui", "/admin/automation-conversion/group-ops/ui"),
     "api.admin_group_ops_groups_ui": AdminRoute(
         "api.admin_group_ops_groups_ui",
@@ -160,6 +161,7 @@ ADMIN_NAV_GROUPS: list[dict[str, Any]] = [
             {"key": "jobs", "label": "同步任务配置 / 同步任务", "endpoint": "api.admin_jobs"},
             {"key": "push_center", "label": "推送中心", "endpoint": "api.admin_push_center_page"},
             {"key": "internal_events", "label": "事件中心", "endpoint": "api.admin_internal_events_page"},
+            {"key": "automation_agents", "label": "Agent", "endpoint": "api.admin_automation_agents_page"},
             {"key": "owner_migration", "label": "负责人迁移", "endpoint": "api.admin_owner_migration_page"},
             {"key": "config", "label": "配置", "endpoint": "api.admin_config"},
             {"key": "api_docs", "label": "API 文档", "endpoint": "api.admin_api_docs"},
