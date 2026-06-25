@@ -41,3 +41,36 @@ def admin_ai_audience_automation(request: Request):
         context,
         headers=_HEADERS,
     )
+
+
+@router.get(
+    "/admin/automation-conversion/packages/{package_id}",
+    name="api.admin_automation_conversion_package_detail_page",
+)
+def admin_ai_audience_package_detail_page(request: Request, package_id: int):
+    if redirect := admin_page_auth_redirect(request):
+        return redirect
+    context = shell_context(
+        request=request,
+        page_title="AI 自动化运营",
+        page_summary="通过 AI 创建 SQL 人群包；查看当前命中人数、最后一次刷新时间与刷新方式。",
+        active_endpoint="api.admin_automation_conversion",
+    )
+    context.update(
+        {
+            "package_id": package_id,
+            "ai_audience_package_api_url": f"/api/admin/ai-audience/packages/{package_id}",
+            "ai_audience_package_members_api_url": f"/api/admin/ai-audience/packages/{package_id}/members",
+            "ai_audience_package_webhooks_api_url": f"/api/admin/ai-audience/packages/{package_id}/webhooks",
+            "ai_audience_package_webhooks_rotate_api_url": (
+                f"/api/admin/ai-audience/packages/{package_id}/webhooks/rotate-inbound-secret"
+            ),
+            "ai_audience_package_senders_api_url": f"/api/admin/ai-audience/packages/{package_id}/senders",
+        }
+    )
+    return templates.TemplateResponse(
+        request,
+        "admin_console/ai_audience_package_detail.html",
+        context,
+        headers=_HEADERS,
+    )

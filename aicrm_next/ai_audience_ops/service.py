@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import os
+import secrets
 from datetime import datetime, timezone
 from typing import Any
+from urllib.parse import quote
 from zoneinfo import ZoneInfo
 
 from aicrm_next.platform_foundation.command_bus.models import CommandContext
@@ -39,6 +42,158 @@ class AudiencePackageService:
 
     def list_admin_packages(self, *, limit: int = 200) -> dict[str, Any]:
         return self.list_admin_package_summaries(limit=limit)
+
+    def get_admin_package_detail(self, package_id: int) -> dict[str, Any]:
+        row = self._repo.get_package_detail(int(package_id))
+        if not row:
+            return {"ok": False, "error": "package_not_found"}
+        return {"ok": True, "package": _admin_package_detail(row)}
+
+    def update_admin_package(self, package_id: int, payload: dict[str, Any]) -> dict[str, Any]:
+        current = self._repo.get_package(int(package_id))
+        if not current:
+            return {"ok": False, "error": "package_not_found"}
+        refresh_mode = _text(payload.get("refresh_mode"))
+        refresh_config = refresh_mode_config(refresh_mode)
+        if refresh_config is None:
+            return {"ok": False, "error": "invalid_refresh_mode"}
+        update_payload = {
+            "name": _text(payload.get("name")) or _text(current.get("name")),
+            "natural_language_definition": _text(payload.get("natural_language_definition"))
+            if "natural_language_definition" in payload
+            else _text(current.get("natural_language_definition")),
+            "timezone": _text(current.get("timezone")) or "Asia/Shanghai",
+            **refresh_config,
+        }
+        updated = self._repo.update_package_config(int(package_id), update_payload)
+        return {"ok": bool(updated), "package": _admin_package_detail(self._repo.get_package_detail(int(package_id)) or updated or {}), "error": "" if updated else "package_not_found"}
+
+    def copy_admin_package(self, package_id: int) -> dict[str, Any]:
+        source = self._repo.get_package(int(package_id))
+        if not source:
+            return {"ok": False, "error": "package_not_found"}
+        base_key = f"{_text(source.get('package_key'))}_copy_{int(package_id)}"
+        package_key = self._available_copy_key(base_key)
+        copied = self._repo.copy_package(int(package_id), package_key=package_key, name=f"{_text(source.get('name')) or _text(source.get('package_key'))}副本")
+        return {"ok": bool(copied), "package": _admin_package_detail(self._repo.get_package_detail(int((copied or {}).get("id") or 0)) or copied or {}), "error": "" if copied else "package_not_found"}
+
+    def pause_admin_package(self, package_id: int) -> dict[str, Any]:
+        package = self._repo.update_package_status(int(package_id), "paused", reason="admin_paused")
+        return {"ok": bool(package), "package": _admin_package_detail(self._repo.get_package_detail(int(package_id)) or package or {}), "error": "" if package else "package_not_found"}
+
+    def activate_admin_package(self, package_id: int) -> dict[str, Any]:
+        package = self._repo.activate_package(int(package_id))
+        return {"ok": bool(package), "package": _admin_package_detail(self._repo.get_package_detail(int(package_id)) or package or {}), "error": "" if package else "package_not_found"}
+
+    def archive_admin_package(self, package_id: int) -> dict[str, Any]:
+        package = self._repo.update_package_status(int(package_id), "archived", reason="admin_archived")
+        return {"ok": bool(package), "package": _admin_package_detail(self._repo.get_package_detail(int(package_id)) or package or {}), "error": "" if package else "package_not_found"}
+
+    def list_admin_members(self, package_id: int, *, limit: int = 50, offset: int = 0) -> dict[str, Any]:
+        if not self._repo.get_package(int(package_id)):
+            return {"ok": False, "error": "package_not_found", "items": [], "total": 0, "limit": limit, "offset": offset}
+        rows, total = self._repo.list_admin_members(int(package_id), limit=limit, offset=offset)
+        items = [
+            {
+                "nickname": _text(row.get("nickname")) or "未命名客户",
+                "external_userid": _text(row.get("external_userid")),
+                "entered_at": _admin_datetime(row.get("entered_at")),
+            }
+            for row in rows
+        ]
+        return {"ok": True, "items": items, "total": total, "limit": max(1, min(int(limit or 50), 200)), "offset": max(0, int(offset or 0))}
+
+    def get_admin_webhook(self, package_id: int, *, request_base_url: str = "") -> dict[str, Any]:
+        package = self._repo.get_package(int(package_id))
+        if not package:
+            return {"ok": False, "error": "package_not_found"}
+        subscriptions = self._repo.list_subscriptions(int(package_id), active_only=False, trigger_event_type="entered")
+        subscription = _first_webhook_subscription(subscriptions)
+        return {
+            "ok": True,
+            "webhook": {
+                "inbound_webhook_url": inbound_webhook_url(package, request_base_url=request_base_url),
+                "inbound_secret_configured": bool(_text(package.get("inbound_webhook_secret"))),
+                "outbound_enabled": bool(subscription and _text(subscription.get("status")) == "active"),
+                "outbound_webhook_url": _text((subscription or {}).get("webhook_url")),
+                "outbound_secret_configured": bool(_text((subscription or {}).get("signing_secret"))),
+                "last_outbound_at": "",
+                "last_inbound_at": "",
+            },
+        }
+
+    def update_admin_webhook(self, package_id: int, payload: dict[str, Any]) -> dict[str, Any]:
+        package = self._repo.get_package(int(package_id))
+        if not package:
+            return {"ok": False, "error": "package_not_found"}
+        webhook_url = _text(payload.get("outbound_webhook_url"))
+        enabled = bool(payload.get("outbound_enabled"))
+        signing_secret = _text(payload.get("outbound_signing_secret"))
+        existing = _first_webhook_subscription(self._repo.list_subscriptions(int(package_id), active_only=False, trigger_event_type="entered"))
+        if existing:
+            update_payload = {"status": "active" if enabled else "paused", "webhook_url": webhook_url}
+            if "outbound_signing_secret" in payload:
+                update_payload["signing_secret"] = signing_secret
+            self._repo.update_subscription(int(existing["id"]), update_payload)
+        elif enabled or webhook_url or signing_secret:
+            self._repo.create_subscription(
+                int(package_id),
+                {
+                    "trigger_event_type": "entered",
+                    "dispatch_mode": "per_run",
+                    "target_type": "webhook",
+                    "webhook_url": webhook_url,
+                    "signing_secret": signing_secret,
+                    "execution_mode": "execute",
+                },
+            )
+        return self.get_admin_webhook(int(package_id))
+
+    def rotate_admin_inbound_secret(self, package_id: int, *, request_base_url: str = "") -> dict[str, Any]:
+        package = self._repo.rotate_inbound_secret(int(package_id), "audsec_" + secrets.token_urlsafe(32))
+        if not package:
+            return {"ok": False, "error": "package_not_found"}
+        return self.get_admin_webhook(int(package_id), request_base_url=request_base_url)
+
+    def list_admin_senders(self, package_id: int) -> dict[str, Any]:
+        if not self._repo.get_package(int(package_id)):
+            return {"ok": False, "error": "package_not_found", "items": []}
+        return {"ok": True, "items": [_sender_item(row) for row in self._repo.list_senders(int(package_id))]}
+
+    def replace_admin_senders(self, package_id: int, payload: dict[str, Any]) -> dict[str, Any]:
+        if not self._repo.get_package(int(package_id)):
+            return {"ok": False, "error": "package_not_found", "items": []}
+        items = payload.get("items") if isinstance(payload.get("items"), list) else []
+        normalized: list[dict[str, Any]] = []
+        seen: set[str] = set()
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            sender_userid = _text(item.get("sender_userid"))
+            if not sender_userid or sender_userid in seen:
+                continue
+            status = _text(item.get("status")) or "active"
+            if status not in {"active", "paused"}:
+                return {"ok": False, "error": "invalid_sender_status"}
+            seen.add(sender_userid)
+            normalized.append(
+                {
+                    "sender_userid": sender_userid,
+                    "display_name": _text(item.get("display_name")) or sender_userid,
+                    "priority": int(item.get("priority") or 100),
+                    "status": status,
+                }
+            )
+        rows = self._repo.replace_senders(int(package_id), normalized)
+        return {"ok": True, "items": [_sender_item(row) for row in rows]}
+
+    def _available_copy_key(self, base_key: str) -> str:
+        candidate = base_key
+        suffix = 2
+        while self._repo.get_package_by_key(candidate):
+            candidate = f"{base_key}_{suffix}"
+            suffix += 1
+        return candidate
 
     def create_package(self, request: PackageCreateRequest) -> dict[str, Any]:
         payload = request.model_dump()
@@ -189,6 +344,9 @@ class AudiencePackageService:
         member_event_ids = {str(item.get("id")) for item in member_events}
         jobs, total = ExternalEffectService().list_jobs({"business_type": "ai_audience_member_event"}, limit=200)
         items = [job.to_dict() for job in jobs if str(job.business_id) in member_event_ids]
+        run_ids = {str(item.get("run_id")) for item in member_events if item.get("run_id")}
+        run_jobs, run_total = ExternalEffectService().list_jobs({"business_type": "ai_audience_package_run"}, limit=200)
+        items.extend(job.to_dict() for job in run_jobs if str(job.business_id) in run_ids)
         return {"ok": True, "total_scanned": total, "external_effect_jobs": items}
 
     def health(self) -> dict[str, Any]:
@@ -206,27 +364,80 @@ def _tick_bucket(tick_type: str) -> str:
 
 
 def _admin_package_item(row: dict[str, Any]) -> dict[str, Any]:
+    refresh_mode = refresh_mode_from_row(row)
     return {
         "id": int(row.get("id") or 0),
         "package_key": _text(row.get("package_key")),
         "name": _text(row.get("name")) or _text(row.get("package_key")) or "未命名人群包",
+        "status": _text(row.get("status")) or "draft",
         "member_count": int(row.get("member_count") or 0),
         "last_refreshed_at": _admin_datetime(row.get("last_refreshed_at")) if row.get("last_refreshed_at") else None,
-        "refresh_mode_label": _refresh_mode_label(row),
+        "refresh_mode": refresh_mode,
+        "refresh_mode_label": refresh_mode_label(refresh_mode),
     }
 
 
-def _refresh_mode_label(row: dict[str, Any]) -> str:
-    labels: list[str] = []
-    if bool(row.get("incremental_enabled")):
-        seconds = max(1, int(row.get("incremental_interval_seconds") or 180))
-        if seconds >= 60 and seconds % 60 == 0:
-            labels.append(f"每 {max(1, seconds // 60)} 分钟")
-        else:
-            labels.append(f"每 {seconds} 秒")
-    if bool(row.get("daily_enabled")):
-        labels.append(f"每日 {_text(row.get('daily_refresh_time')) or '02:00'}")
-    return " + ".join(labels) if labels else "手动"
+def _admin_package_detail(row: dict[str, Any]) -> dict[str, Any]:
+    item = _admin_package_item(row)
+    item["natural_language_definition"] = _text(row.get("natural_language_definition"))
+    return item
+
+
+def refresh_mode_config(refresh_mode: str) -> dict[str, Any] | None:
+    if refresh_mode == "manual":
+        return {"incremental_enabled": False, "incremental_interval_seconds": 180, "daily_enabled": False, "daily_refresh_time": "02:00"}
+    if refresh_mode == "incremental_3m":
+        return {"incremental_enabled": True, "incremental_interval_seconds": 180, "daily_enabled": False, "daily_refresh_time": "02:00"}
+    if refresh_mode == "daily_0200":
+        return {"incremental_enabled": False, "incremental_interval_seconds": 180, "daily_enabled": True, "daily_refresh_time": "02:00"}
+    if refresh_mode == "incremental_3m_plus_daily_0200":
+        return {"incremental_enabled": True, "incremental_interval_seconds": 180, "daily_enabled": True, "daily_refresh_time": "02:00"}
+    return None
+
+
+def refresh_mode_from_row(row: dict[str, Any]) -> str:
+    incremental = bool(row.get("incremental_enabled"))
+    daily = bool(row.get("daily_enabled"))
+    if incremental and daily:
+        return "incremental_3m_plus_daily_0200"
+    if incremental:
+        return "incremental_3m"
+    if daily:
+        return "daily_0200"
+    return "manual"
+
+
+def refresh_mode_label(refresh_mode: str) -> str:
+    return {
+        "manual": "手动",
+        "incremental_3m": "每 3 分钟",
+        "daily_0200": "每日 2:00",
+        "incremental_3m_plus_daily_0200": "每 3 分钟 + 每日 2:00",
+    }.get(refresh_mode, "手动")
+
+
+def inbound_webhook_url(package: dict[str, Any], *, request_base_url: str = "") -> str:
+    base_url = _text(os.getenv("AICRM_PUBLIC_BASE_URL")) or _text(request_base_url) or "https://www.youcangogogo.com"
+    base_url = base_url.rstrip("/")
+    package_key = quote(_text(package.get("package_key")), safe="")
+    return f"{base_url}/api/ai/audience/packages/{package_key}/webhook"
+
+
+def _first_webhook_subscription(subscriptions: list[dict[str, Any]]) -> dict[str, Any] | None:
+    for item in sorted(subscriptions, key=lambda row: int(row.get("id") or 0)):
+        if _text(item.get("target_type")) == "webhook":
+            return item
+    return None
+
+
+def _sender_item(row: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "id": int(row.get("id") or 0),
+        "sender_userid": _text(row.get("sender_userid")),
+        "display_name": _text(row.get("display_name")),
+        "priority": int(row.get("priority") or 100),
+        "status": _text(row.get("status")) or "active",
+    }
 
 
 def _admin_datetime(value: Any) -> str:

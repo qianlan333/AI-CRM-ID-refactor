@@ -95,6 +95,33 @@ class AudienceRepository:
     def list_package_summaries(self, *, limit: int = 200) -> list[dict[str, Any]]:
         raise NotImplementedError
 
+    def get_package_detail(self, package_id: int) -> dict[str, Any] | None:
+        raise NotImplementedError
+
+    def update_package_config(self, package_id: int, payload: dict[str, Any]) -> dict[str, Any] | None:
+        raise NotImplementedError
+
+    def copy_package(self, package_id: int, *, package_key: str, name: str) -> dict[str, Any] | None:
+        raise NotImplementedError
+
+    def activate_package(self, package_id: int) -> dict[str, Any] | None:
+        raise NotImplementedError
+
+    def list_admin_members(self, package_id: int, *, limit: int = 50, offset: int = 0) -> tuple[list[dict[str, Any]], int]:
+        raise NotImplementedError
+
+    def rotate_inbound_secret(self, package_id: int, secret: str) -> dict[str, Any] | None:
+        raise NotImplementedError
+
+    def list_senders(self, package_id: int) -> list[dict[str, Any]]:
+        raise NotImplementedError
+
+    def replace_senders(self, package_id: int, items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        raise NotImplementedError
+
+    def list_ai_audience_batch_rows(self, package_id: int) -> list[dict[str, Any]]:
+        raise NotImplementedError
+
     def create_package(self, payload: dict[str, Any]) -> dict[str, Any]:
         raise NotImplementedError
 
@@ -193,6 +220,18 @@ class SQLAlchemyAudienceRepository(AudienceRepository):
         )
         return {_text(row.get("column_name")) for row in rows}
 
+    def _table_exists(self, table: str, *, schema: str = "public") -> bool:
+        row = self._one(
+            """
+            SELECT 1 AS exists_flag
+            FROM information_schema.tables
+            WHERE table_schema = :schema AND table_name = :table
+            LIMIT 1
+            """,
+            {"schema": schema, "table": table},
+        )
+        return bool(row)
+
     def _insert_available(self, table: str, values: dict[str, Any]) -> dict[str, Any]:
         columns = [key for key in values if key in self._table_columns(table)]
         if not columns:
@@ -253,6 +292,7 @@ class SQLAlchemyAudienceRepository(AudienceRepository):
                 p.id,
                 p.package_key,
                 p.name,
+                p.status,
                 COALESCE(mc.member_count, 0) AS member_count,
                 lr.refresh_finished_at AS last_refreshed_at,
                 p.incremental_enabled,
@@ -269,6 +309,248 @@ class SQLAlchemyAudienceRepository(AudienceRepository):
             LIMIT :limit
             """,
             {"limit": max(1, min(int(limit or 200), 200))},
+        )
+
+    def get_package_detail(self, package_id: int) -> dict[str, Any] | None:
+        return self._one(
+            """
+            WITH member_counts AS (
+                SELECT package_id, COUNT(*) FILTER (WHERE status = 'active') AS member_count
+                FROM ai_audience_member_current
+                WHERE package_id = :package_id
+                GROUP BY package_id
+            ),
+            latest_runs AS (
+                SELECT DISTINCT ON (package_id)
+                    package_id,
+                    refresh_finished_at,
+                    refresh_started_at
+                FROM ai_audience_package_run
+                WHERE package_id = :package_id
+                ORDER BY package_id, refresh_finished_at DESC NULLS LAST, id DESC
+            )
+            SELECT
+                p.id,
+                p.package_key,
+                p.name,
+                p.status,
+                COALESCE(mc.member_count, 0) AS member_count,
+                lr.refresh_finished_at AS last_refreshed_at,
+                p.incremental_enabled,
+                p.incremental_interval_seconds,
+                p.daily_enabled,
+                p.daily_refresh_time,
+                p.natural_language_definition,
+                p.timezone
+            FROM ai_audience_package p
+            LEFT JOIN member_counts mc ON mc.package_id = p.id
+            LEFT JOIN latest_runs lr ON lr.package_id = p.id
+            WHERE p.id = :package_id
+            LIMIT 1
+            """,
+            {"package_id": int(package_id)},
+        )
+
+    def update_package_config(self, package_id: int, payload: dict[str, Any]) -> dict[str, Any] | None:
+        return self._write_one(
+            """
+            UPDATE ai_audience_package
+            SET name = :name,
+                natural_language_definition = :natural_language_definition,
+                incremental_enabled = :incremental_enabled,
+                incremental_interval_seconds = :incremental_interval_seconds,
+                daily_enabled = :daily_enabled,
+                daily_refresh_time = :daily_refresh_time,
+                next_incremental_refresh_at = CASE
+                    WHEN :incremental_enabled THEN COALESCE(next_incremental_refresh_at, CURRENT_TIMESTAMP)
+                    ELSE NULL
+                END,
+                next_daily_refresh_at = CASE
+                    WHEN :daily_enabled THEN COALESCE(next_daily_refresh_at, :next_daily_refresh_at)
+                    ELSE NULL
+                END,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = :package_id
+            RETURNING *
+            """,
+            {
+                "package_id": int(package_id),
+                "name": _text(payload.get("name")),
+                "natural_language_definition": _text(payload.get("natural_language_definition")),
+                "incremental_enabled": bool(payload.get("incremental_enabled")),
+                "incremental_interval_seconds": int(payload.get("incremental_interval_seconds") or 180),
+                "daily_enabled": bool(payload.get("daily_enabled")),
+                "daily_refresh_time": _text(payload.get("daily_refresh_time")) or "02:00",
+                "next_daily_refresh_at": next_daily_refresh_at(
+                    _text(payload.get("daily_refresh_time")) or "02:00",
+                    _text(payload.get("timezone")) or "Asia/Shanghai",
+                ),
+            },
+        )
+
+    def copy_package(self, package_id: int, *, package_key: str, name: str) -> dict[str, Any] | None:
+        with self._session_factory() as session:
+            source = session.execute(text("SELECT * FROM ai_audience_package WHERE id = :package_id LIMIT 1"), {"package_id": int(package_id)}).mappings().fetchone()
+            if not source:
+                return None
+            row = session.execute(
+                text(
+                    """
+                    INSERT INTO ai_audience_package (
+                        package_key, name, natural_language_definition, status, query_mode, identity_policy,
+                        incremental_enabled, daily_enabled, incremental_interval_seconds, daily_refresh_time,
+                        timezone, lookback_seconds, inbound_webhook_secret,
+                        next_incremental_refresh_at, next_daily_refresh_at, created_at, updated_at
+                    )
+                    VALUES (
+                        :package_key, :name, :natural_language_definition, 'draft', :query_mode, :identity_policy,
+                        :incremental_enabled, :daily_enabled, :incremental_interval_seconds, :daily_refresh_time,
+                        :timezone, :lookback_seconds, :inbound_webhook_secret,
+                        NULL, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+                    )
+                    RETURNING *
+                    """
+                ),
+                {
+                    "package_key": _text(package_key),
+                    "name": _text(name),
+                    "natural_language_definition": _text(source.get("natural_language_definition")),
+                    "query_mode": _text(source.get("query_mode")) or "hybrid",
+                    "identity_policy": _text(source.get("identity_policy")) or "external_userid",
+                    "incremental_enabled": bool(source.get("incremental_enabled")),
+                    "daily_enabled": bool(source.get("daily_enabled")),
+                    "incremental_interval_seconds": int(source.get("incremental_interval_seconds") or 180),
+                    "daily_refresh_time": _text(source.get("daily_refresh_time")) or "02:00",
+                    "timezone": _text(source.get("timezone")) or "Asia/Shanghai",
+                    "lookback_seconds": int(source.get("lookback_seconds") or 600),
+                    "inbound_webhook_secret": _text(source.get("inbound_webhook_secret")),
+                },
+            ).mappings().one()
+            new_package_id = int(row["id"])
+            version = session.execute(
+                text(
+                    """
+                    SELECT *
+                    FROM ai_audience_package_version
+                    WHERE id = :version_id
+                    LIMIT 1
+                    """
+                ),
+                {"version_id": int(source.get("current_version_id") or 0)},
+            ).mappings().fetchone()
+            if version:
+                new_version = session.execute(
+                    text(
+                        """
+                        INSERT INTO ai_audience_package_version (
+                            package_id, version_number, status, incremental_sql_text, snapshot_sql_text,
+                            ai_prompt, ai_rationale, natural_language_explanation, dependencies_json,
+                            explain_json, sample_rows_json, validation_errors_json, created_at
+                        )
+                        VALUES (
+                            :package_id, 1, 'draft', :incremental_sql_text, :snapshot_sql_text,
+                            :ai_prompt, :ai_rationale, :natural_language_explanation, CAST(:dependencies_json AS jsonb),
+                            CAST(:explain_json AS jsonb), CAST(:sample_rows_json AS jsonb), CAST(:validation_errors_json AS jsonb),
+                            CURRENT_TIMESTAMP
+                        )
+                        RETURNING *
+                        """
+                    ),
+                    {
+                        "package_id": new_package_id,
+                        "incremental_sql_text": _text(version.get("incremental_sql_text")),
+                        "snapshot_sql_text": _text(version.get("snapshot_sql_text")),
+                        "ai_prompt": _text(version.get("ai_prompt")),
+                        "ai_rationale": _text(version.get("ai_rationale")),
+                        "natural_language_explanation": _text(version.get("natural_language_explanation")),
+                        "dependencies_json": _json_dumps(version.get("dependencies_json") or []),
+                        "explain_json": _json_dumps(version.get("explain_json") or {}),
+                        "sample_rows_json": _json_dumps(version.get("sample_rows_json") or []),
+                        "validation_errors_json": _json_dumps(version.get("validation_errors_json") or []),
+                    },
+                ).mappings().one()
+                session.execute(
+                    text("UPDATE ai_audience_package SET current_version_id = :version_id WHERE id = :package_id"),
+                    {"version_id": int(new_version["id"]), "package_id": new_package_id},
+                )
+                session.execute(
+                    text(
+                        """
+                        INSERT INTO ai_audience_package_dependency (
+                            package_id, version_id, source_type, source_key, view_name, created_at
+                        )
+                        SELECT
+                            :new_package_id, :new_version_id, source_type, source_key, view_name, CURRENT_TIMESTAMP
+                        FROM ai_audience_package_dependency
+                        WHERE package_id = :package_id
+                          AND version_id = :source_version_id
+                        ON CONFLICT DO NOTHING
+                        """
+                    ),
+                    {
+                        "new_package_id": new_package_id,
+                        "new_version_id": int(new_version["id"]),
+                        "package_id": int(package_id),
+                        "source_version_id": int(version["id"]),
+                    },
+                )
+            session.execute(
+                text(
+                    """
+                    INSERT INTO ai_audience_outbound_subscription (
+                        package_id, status, trigger_event_type, dispatch_mode, target_type, webhook_url,
+                        signing_secret, headers_json, payload_template_json, execution_mode,
+                        requires_approval, max_attempts, created_at, updated_at
+                    )
+                    SELECT
+                        :new_package_id, status, trigger_event_type, dispatch_mode, target_type, webhook_url,
+                        signing_secret, headers_json, payload_template_json, execution_mode,
+                        requires_approval, max_attempts, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+                    FROM ai_audience_outbound_subscription
+                    WHERE package_id = :package_id
+                    """
+                ),
+                {"new_package_id": new_package_id, "package_id": int(package_id)},
+            )
+            if self._table_exists("ai_audience_package_sender"):
+                session.execute(
+                    text(
+                        """
+                        INSERT INTO ai_audience_package_sender (
+                            package_id, sender_userid, display_name, priority, status, created_at, updated_at
+                        )
+                        SELECT
+                            :new_package_id, sender_userid, display_name, priority, status,
+                            CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+                        FROM ai_audience_package_sender
+                        WHERE package_id = :package_id
+                        """
+                    ),
+                    {"new_package_id": new_package_id, "package_id": int(package_id)},
+                )
+            session.commit()
+            copied = session.execute(text("SELECT * FROM ai_audience_package WHERE id = :package_id"), {"package_id": new_package_id}).mappings().one()
+            return _public_row(dict(copied))
+
+    def activate_package(self, package_id: int) -> dict[str, Any] | None:
+        current = self.get_package(package_id)
+        if not current:
+            return None
+        next_daily = None
+        if bool(current.get("daily_enabled")):
+            next_daily = next_daily_refresh_at(_text(current.get("daily_refresh_time")) or "02:00", _text(current.get("timezone")) or "Asia/Shanghai")
+        return self._write_one(
+            """
+            UPDATE ai_audience_package
+            SET status = 'active',
+                next_incremental_refresh_at = CASE WHEN incremental_enabled THEN CURRENT_TIMESTAMP ELSE NULL END,
+                next_daily_refresh_at = CASE WHEN daily_enabled THEN :next_daily_refresh_at ELSE NULL END,
+                paused_reason = '',
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = :package_id
+            RETURNING *
+            """,
+            {"package_id": int(package_id), "next_daily_refresh_at": next_daily},
         )
 
     def create_package(self, payload: dict[str, Any]) -> dict[str, Any]:
@@ -860,6 +1142,193 @@ class SQLAlchemyAudienceRepository(AudienceRepository):
             LIMIT :limit
             """,
             {"package_id": int(package_id), "limit": max(1, min(int(limit or 100), 500))},
+        )
+
+    def list_member_events_for_run(self, run_id: int, *, event_type: str = "entered") -> list[dict[str, Any]]:
+        return self._all(
+            """
+            SELECT *
+            FROM ai_audience_member_event
+            WHERE run_id = :run_id
+              AND event_type = :event_type
+              AND COALESCE(external_userid, '') <> ''
+            ORDER BY id ASC
+            """,
+            {"run_id": int(run_id), "event_type": _text(event_type) or "entered"},
+        )
+
+    def list_admin_members(self, package_id: int, *, limit: int = 50, offset: int = 0) -> tuple[list[dict[str, Any]], int]:
+        bounded_limit = max(1, min(int(limit or 50), 200))
+        bounded_offset = max(0, int(offset or 0))
+        rows = self._all(
+            """
+            WITH active_members AS (
+                SELECT *
+                FROM ai_audience_member_current
+                WHERE package_id = :package_id
+                  AND status = 'active'
+            ),
+            contact_names AS (
+                SELECT DISTINCT ON (external_userid)
+                    external_userid,
+                    customer_name
+                FROM audience_read.wecom_contacts_v1
+                WHERE COALESCE(external_userid, '') <> ''
+                ORDER BY external_userid, updated_at DESC NULLS LAST
+            )
+            SELECT
+                m.id,
+                COALESCE(NULLIF(c.customer_name, ''), '未命名客户') AS nickname,
+                m.external_userid,
+                m.first_entered_at AS entered_at,
+                COUNT(*) OVER () AS total_count
+            FROM active_members m
+            LEFT JOIN contact_names c ON c.external_userid = m.external_userid
+            ORDER BY m.first_entered_at DESC, m.id DESC
+            LIMIT :limit OFFSET :offset
+            """,
+            {"package_id": int(package_id), "limit": bounded_limit, "offset": bounded_offset},
+        )
+        total = int(rows[0].get("total_count") or 0) if rows else 0
+        return rows, total
+
+    def rotate_inbound_secret(self, package_id: int, secret: str) -> dict[str, Any] | None:
+        return self._write_one(
+            """
+            UPDATE ai_audience_package
+            SET inbound_webhook_secret = :secret,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = :package_id
+            RETURNING *
+            """,
+            {"package_id": int(package_id), "secret": _text(secret)},
+        )
+
+    def list_senders(self, package_id: int) -> list[dict[str, Any]]:
+        return self._all(
+            """
+            SELECT id, package_id, sender_userid, display_name, priority, status, created_at, updated_at
+            FROM ai_audience_package_sender
+            WHERE package_id = :package_id
+            ORDER BY priority ASC, id ASC
+            """,
+            {"package_id": int(package_id)},
+        )
+
+    def replace_senders(self, package_id: int, items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        with self._session_factory() as session:
+            session.execute(text("DELETE FROM ai_audience_package_sender WHERE package_id = :package_id"), {"package_id": int(package_id)})
+            for item in items:
+                session.execute(
+                    text(
+                        """
+                        INSERT INTO ai_audience_package_sender (
+                            package_id, sender_userid, display_name, priority, status, created_at, updated_at
+                        )
+                        VALUES (
+                            :package_id, :sender_userid, :display_name, :priority, :status,
+                            CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+                        )
+                        ON CONFLICT (package_id, sender_userid) DO UPDATE SET
+                            display_name = EXCLUDED.display_name,
+                            priority = EXCLUDED.priority,
+                            status = EXCLUDED.status,
+                            updated_at = CURRENT_TIMESTAMP
+                        """
+                    ),
+                    {
+                        "package_id": int(package_id),
+                        "sender_userid": _text(item.get("sender_userid")),
+                        "display_name": _text(item.get("display_name")),
+                        "priority": int(item.get("priority") or 100),
+                        "status": _text(item.get("status")) or "active",
+                    },
+                )
+            session.commit()
+        return self.list_senders(package_id)
+
+    def list_ai_audience_batch_rows(self, package_id: int) -> list[dict[str, Any]]:
+        relation_parts: list[str] = []
+        if self._table_exists("wecom_external_contact_follow_users"):
+            relation_parts.append(
+                """
+                SELECT
+                    external_userid,
+                    user_id AS owner_userid,
+                    COALESCE(NULLIF(remark, ''), '') AS customer_name
+                FROM wecom_external_contact_follow_users
+                WHERE COALESCE(external_userid, '') <> ''
+                  AND COALESCE(user_id, '') <> ''
+                  AND COALESCE(relation_status, 'active') = 'active'
+                """
+            )
+        if self._table_exists("wecom_external_contact_identity_map"):
+            relation_parts.append(
+                """
+                SELECT
+                    external_userid,
+                    follow_user_userid AS owner_userid,
+                    COALESCE(NULLIF(name, ''), '') AS customer_name
+                FROM wecom_external_contact_identity_map
+                WHERE COALESCE(external_userid, '') <> ''
+                  AND COALESCE(follow_user_userid, '') <> ''
+                  AND COALESCE(status, 'active') = 'active'
+                """
+            )
+        if not relation_parts:
+            relation_parts.append("SELECT ''::text AS external_userid, ''::text AS owner_userid, ''::text AS customer_name WHERE FALSE")
+        relation_sql = "\nUNION ALL\n".join(relation_parts)
+        return self._all(
+            f"""
+            WITH active_members AS (
+                SELECT id, external_userid, first_entered_at
+                FROM ai_audience_member_current
+                WHERE package_id = :package_id
+                  AND status = 'active'
+            ),
+            relations AS (
+                {relation_sql}
+            ),
+            whitelist AS (
+                SELECT id, sender_userid, display_name, priority
+                FROM ai_audience_package_sender
+                WHERE package_id = :package_id
+                  AND status = 'active'
+            ),
+            resolved AS (
+                SELECT DISTINCT ON (m.id)
+                    m.id,
+                    m.external_userid,
+                    COALESCE(NULLIF(r.customer_name, ''), '未命名客户') AS customer_name,
+                    w.sender_userid AS owner_userid,
+                    COALESCE(NULLIF(w.display_name, ''), w.sender_userid) AS owner_display_name,
+                    ''::text AS skip_reason,
+                    w.priority,
+                    w.id AS sender_row_id
+                FROM active_members m
+                JOIN relations r ON r.external_userid = m.external_userid
+                JOIN whitelist w ON w.sender_userid = r.owner_userid
+                ORDER BY m.id, w.priority ASC, w.id ASC
+            )
+            SELECT
+                m.id,
+                m.external_userid,
+                COALESCE(r.customer_name, '未命名客户') AS customer_name,
+                COALESCE(r.owner_userid, '') AS owner_userid,
+                COALESCE(r.owner_display_name, '') AS owner_display_name,
+                CASE WHEN r.owner_userid IS NULL THEN 'no_allowed_sender' ELSE '' END AS skip_reason,
+                ''::text AS mobile,
+                FALSE AS do_not_disturb,
+                TRUE AS is_added_wecom,
+                FALSE AS is_mobile_bound,
+                ''::text AS activation_bucket,
+                ''::text AS class_term_no,
+                '[]'::jsonb AS tags
+            FROM active_members m
+            LEFT JOIN resolved r ON r.id = m.id
+            ORDER BY m.id ASC
+            """,
+            {"package_id": int(package_id)},
         )
 
     def get_member_event(self, member_event_id: int) -> dict[str, Any] | None:

@@ -31,6 +31,8 @@ class BatchSendRequest(BaseModel):
     include_do_not_disturb: bool = False
     confirm: bool = False
     operator: str = "fixture-admin"
+    target_source: str = ""
+    target_source_id: int | None = None
 
 
 class DoNotDisturbRequest(BaseModel):
