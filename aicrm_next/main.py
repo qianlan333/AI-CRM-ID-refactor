@@ -91,6 +91,7 @@ def create_app() -> FastAPI:
     async def write_route_owner_headers(request, call_next):
         response = await call_next(request)
         response.headers.setdefault("X-AICRM-Route-Owner", "ai_crm_next")
+        response.headers.setdefault("X-AICRM-Fallback-Used", "false")
         response.headers.setdefault("X-AICRM-App", "ai_crm_next")
         response.headers.setdefault("X-AICRM-Release-SHA", current_release_sha())
         return response
