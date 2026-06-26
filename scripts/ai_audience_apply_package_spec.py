@@ -107,7 +107,7 @@ def _apply_direct(spec: PackageSpec, report: dict[str, Any], *, package_key: str
         return {**report, "ok": False, "validation_errors": version.get("validation_errors", [])}
 
     _apply_webhook_and_senders(service, int(report["package_id"]), spec)
-    preview = service.preview_admin_package(int(report["package_id"]), {"version_id": version_id, "sql_kind": "incremental", "limit": 5})
+    preview = service.preview_admin_package(int(report["package_id"]), {"version_id": version_id, "sql_kind": _preview_sql_kind(spec), "limit": 5})
     report["preview_ok"] = bool(preview.get("ok"))
     if publish:
         published = service.publish_admin_package(int(report["package_id"]), {"version_id": version_id or None})
@@ -161,7 +161,7 @@ def _apply_via_admin_api(
         "POST",
         f"{base}/api/admin/ai-audience/packages/{report['package_id']}/preview",
         cookie=admin_session_cookie,
-        payload={"version_id": version_id, "sql_kind": "incremental", "limit": 5},
+        payload={"version_id": version_id, "sql_kind": _preview_sql_kind(spec), "limit": 5},
     )
     report["preview_ok"] = bool(preview.get("ok"))
     if publish:
@@ -225,6 +225,10 @@ def _final_package_key(spec: PackageSpec, package_key_prefix: str) -> str:
     if package_key_prefix and not spec.package_key.startswith(package_key_prefix):
         return f"{package_key_prefix}{spec.package_key}"
     return spec.package_key
+
+
+def _preview_sql_kind(spec: PackageSpec) -> str:
+    return "incremental" if str(spec.incremental_sql or "").strip() else "snapshot"
 
 
 def _apply_webhook_and_senders(service: AudiencePackageService, package_id: int, spec: PackageSpec) -> None:
