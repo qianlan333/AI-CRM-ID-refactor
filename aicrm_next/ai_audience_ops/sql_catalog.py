@@ -91,6 +91,28 @@ SCHEMA_CATALOG: list[dict[str, Any]] = [
         "recommended_filters": ["channel_id", "scene_value", "last_entered_at"],
         "example_sql": "SELECT 'external_userid' AS identity_type, external_userid AS identity_value, 'channel_entry:' || channel_entry_id AS event_source_key, payload_json FROM audience_read.channel_entries_v1 WHERE last_entered_at >= :last_watermark_at",
     },
+    {
+        "name": "audience_read.group_chat_members_v1",
+        "description": "企微客户群外部联系人成员视图，来自已缓存的 group_chats 详情 payload。",
+        "columns": [
+            {"name": "chat_id", "type": "text"},
+            {"name": "group_name", "type": "text"},
+            {"name": "owner_userid", "type": "text"},
+            {"name": "external_userid", "type": "text"},
+            {"name": "unionid", "type": "text"},
+            {"name": "customer_name", "type": "text"},
+            {"name": "group_nickname", "type": "text"},
+            {"name": "invitor_userid", "type": "text"},
+            {"name": "member_type", "type": "integer"},
+            {"name": "join_scene", "type": "integer"},
+            {"name": "joined_at", "type": "timestamptz"},
+            {"name": "updated_at", "type": "timestamptz"},
+            {"name": "payload_json", "type": "jsonb"},
+        ],
+        "required_filters": [],
+        "recommended_filters": ["chat_id", "joined_at", "updated_at"],
+        "example_sql": "SELECT 'external_userid' AS identity_type, external_userid AS identity_value, 'group_chat_member:' || chat_id || ':' || external_userid AS event_source_key, payload_json, external_userid, owner_userid, joined_at AS event_at FROM audience_read.group_chat_members_v1 WHERE chat_id = :chat_id",
+    },
 ]
 
 
