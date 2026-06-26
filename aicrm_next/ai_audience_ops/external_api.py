@@ -57,11 +57,6 @@ def external_ai_audience_spec_publish(request: Request, payload: dict[str, Any] 
         return auth
     repo = build_audience_repository()
     package_key = _text(payload.get("package_key"))
-    prefix_error = _package_key_policy_error(package_key)
-    if prefix_error:
-        result = {"ok": False, "error": prefix_error, "package_key": package_key, "published": False}
-        _audit(repo, operator=_operator(payload), action_type="external_spec_publish_rejected", package_key=package_key, before=_audit_before(payload), after=result)
-        return _response(result, status_code=403)
     if not _allow_publish():
         result = {"ok": False, "error": "publish_not_allowed", "package_key": package_key, "published": False}
         _audit(repo, operator=_operator(payload), action_type="external_spec_publish_rejected", package_key=package_key, before=_audit_before(payload), after=result)
@@ -93,11 +88,6 @@ def external_ai_audience_package_archive(package_key: str, request: Request, pay
         return auth
     repo = build_audience_repository()
     package_key = _text(package_key)
-    prefix_error = _package_key_policy_error(package_key)
-    if prefix_error:
-        result = {"ok": False, "error": prefix_error, "package_key": package_key, "archived": False}
-        _audit(repo, operator=_operator(payload), action_type="external_spec_archive_rejected", package_key=package_key, before=_audit_before(payload), after=result)
-        return _response(result, status_code=403)
     package = repo.get_package_by_key(package_key)
     if not package:
         result = {"ok": False, "error": "package_not_found", "package_key": package_key, "archived": False}
@@ -137,9 +127,6 @@ def _dry_run(payload: dict[str, Any], *, repo) -> dict[str, Any]:
     spec = parse_markdown_spec_text(_text(payload.get("spec_markdown")), path="<external>")
     errors, warnings = validate_spec(spec)
     package_key = _resolve_package_key(spec.package_key, _text(payload.get("package_key_prefix")))
-    prefix_error = _package_key_policy_error(package_key, requested_prefix=_text(payload.get("package_key_prefix")))
-    if prefix_error:
-        errors.append(prefix_error)
     dependencies = sorted(set(_dependencies_from_spec(spec)))
     return {
         "ok": not errors,
@@ -184,7 +171,7 @@ def _apply(payload: dict[str, Any], dry: dict[str, Any], *, repo, publish: bool)
     if not version.get("ok"):
         return {**dry, "ok": False, "package_id": package_id, "version_id": version_id or None, "validation_errors": version.get("validation_errors", [])}
     _apply_webhook_and_senders(service, package_id, spec)
-    preview = service.preview_admin_package(package_id, {"version_id": version_id, "sql_kind": "incremental", "limit": 5})
+    preview = service.preview_admin_package(package_id, {"version_id": version_id, "sql_kind": _preview_sql_kind(spec), "limit": 5})
     response = {
         **dry,
         "ok": True,
@@ -233,6 +220,10 @@ def _dependencies_from_spec(spec) -> list[str]:
     return dependencies
 
 
+def _preview_sql_kind(spec) -> str:
+    return "incremental" if _text(getattr(spec, "incremental_sql", "")) else "snapshot"
+
+
 def _resolve_package_key(package_key: str, package_key_prefix: str) -> str:
     package_key = _text(package_key)
     package_key_prefix = _text(package_key_prefix)
@@ -241,30 +232,8 @@ def _resolve_package_key(package_key: str, package_key_prefix: str) -> str:
     return package_key
 
 
-def _package_key_policy_error(package_key: str, *, requested_prefix: str = "") -> str:
-    package_key = _text(package_key)
-    requested_prefix = _text(requested_prefix)
-    allowed = _allowed_prefixes()
-    if requested_prefix and requested_prefix not in allowed:
-        return "package_key_prefix_not_allowed"
-    if not any(package_key.startswith(prefix) for prefix in allowed):
-        return "package_key_prefix_not_allowed"
-    if not _allow_non_verify_prefix() and not package_key.startswith("prod_verify_"):
-        return "non_verify_prefix_not_allowed"
-    return ""
-
-
-def _allowed_prefixes() -> list[str]:
-    raw = _text(os.getenv("AICRM_AI_AUDIENCE_SPEC_ALLOWED_PREFIXES")) or "prod_verify_"
-    return [item.strip() for item in raw.split(",") if item.strip()]
-
-
 def _allow_publish() -> bool:
     return _text(os.getenv("AICRM_AI_AUDIENCE_SPEC_ALLOW_PUBLISH")).lower() in {"1", "true", "yes"}
-
-
-def _allow_non_verify_prefix() -> bool:
-    return _text(os.getenv("AICRM_AI_AUDIENCE_SPEC_ALLOW_NON_VERIFY_PREFIX")).lower() in {"1", "true", "yes"}
 
 
 def _operator(payload: dict[str, Any]) -> str:

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+from pathlib import Path
 
 from sqlalchemy import text
 
@@ -19,9 +20,7 @@ def _headers(token: str = TOKEN) -> dict[str, str]:
 
 def _ready_env(monkeypatch) -> None:
     monkeypatch.setenv("AICRM_AI_AUDIENCE_SPEC_API_TOKEN", TOKEN)
-    monkeypatch.setenv("AICRM_AI_AUDIENCE_SPEC_ALLOWED_PREFIXES", "prod_verify_")
     monkeypatch.setenv("AICRM_AI_AUDIENCE_SPEC_ALLOW_PUBLISH", "false")
-    monkeypatch.setenv("AICRM_AI_AUDIENCE_SPEC_ALLOW_NON_VERIFY_PREFIX", "false")
     if os.getenv("DATABASE_URL"):
         monkeypatch.setenv("AICRM_AUDIENCE_READONLY_DATABASE_URL", os.environ["DATABASE_URL"])
 
@@ -71,7 +70,7 @@ def test_external_spec_dry_run_validates_without_creating_package(next_client, n
     assert audit_count == 1
 
 
-def test_external_spec_dry_run_blocks_invalid_sql_and_prefix(next_client, next_pg_schema, monkeypatch) -> None:
+def test_external_spec_dry_run_blocks_invalid_sql_and_allows_any_requested_prefix(next_client, next_pg_schema, monkeypatch) -> None:
     del next_pg_schema
     _ready_env(monkeypatch)
     invalid_refresh = _spec().replace("refresh_mode: incremental_3m", "refresh_mode: incremental_5m")
@@ -95,13 +94,59 @@ def test_external_spec_dry_run_blocks_invalid_sql_and_prefix(next_client, next_p
         assert response.status_code == 400
         assert expected in response.json()["validation_errors"]
 
-    bad_prefix = next_client.post(
+    official_prefix = next_client.post(
         "/api/external/ai-audience/spec/dry-run",
         headers=_headers(),
         json={"spec_markdown": _spec(), "package_key_prefix": "official_"},
     )
-    assert bad_prefix.status_code == 400
-    assert "package_key_prefix_not_allowed" in bad_prefix.json()["validation_errors"]
+    assert official_prefix.status_code == 200
+    assert official_prefix.json()["ok"] is True
+    assert official_prefix.json()["package_key"] == "official_spec_q101"
+    assert official_prefix.json()["validation_errors"] == []
+
+
+def test_external_spec_apply_creates_official_package_key_with_valid_token(next_client, next_pg_schema, monkeypatch) -> None:
+    del next_pg_schema
+    _ready_env(monkeypatch)
+
+    response = next_client.post(
+        "/api/external/ai-audience/spec/apply",
+        headers=_headers(),
+        json={"spec_markdown": _spec("group_chat_members_manual"), "operator": "codex", "publish": False},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["ok"] is True
+    assert payload["package_key"] == "group_chat_members_manual"
+    assert payload["created"] is True
+    assert payload["preview_ok"] is True
+    with get_session_factory()() as session:
+        package = session.execute(
+            text("SELECT status, current_version_id FROM ai_audience_package WHERE package_key = 'group_chat_members_manual'")
+        ).mappings().one()
+    assert package["status"] == "paused"
+    assert package["current_version_id"] is None
+
+
+def test_external_spec_apply_previews_group_chat_snapshot_package(next_client, next_pg_schema, monkeypatch) -> None:
+    del next_pg_schema
+    _ready_env(monkeypatch)
+    markdown = Path("docs/ai_audience/examples/group_chat_members_manual.md").read_text(encoding="utf-8")
+
+    response = next_client.post(
+        "/api/external/ai-audience/spec/apply",
+        headers=_headers(),
+        json={"spec_markdown": markdown, "operator": "codex", "publish": False},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["ok"] is True
+    assert payload["package_key"] == "group_chat_members_manual"
+    assert payload["created"] is True
+    assert payload["preview_ok"] is True
+    assert "audience_read.group_chat_members_v1" in payload["dependencies"]
 
 
 def test_external_spec_apply_creates_package_version_and_no_side_effects(next_client, next_pg_schema, monkeypatch) -> None:
@@ -168,25 +213,17 @@ def test_external_spec_publish_gate_and_no_activate(next_client, next_pg_schema,
     assert package["current_version_id"] == applied["version_id"]
 
 
-def test_external_spec_archive_allows_only_configured_prefix(next_client, next_pg_schema, monkeypatch) -> None:
+def test_external_spec_archive_allows_official_package_key_with_valid_token(next_client, next_pg_schema, monkeypatch) -> None:
     del next_pg_schema
     _ready_env(monkeypatch)
     applied = next_client.post(
         "/api/external/ai-audience/spec/apply",
         headers=_headers(),
-        json={"spec_markdown": _spec("archive_spec"), "package_key_prefix": "prod_verify_", "operator": "codex"},
+        json={"spec_markdown": _spec("official_archive_spec"), "operator": "codex"},
     ).json()
 
-    denied = next_client.post(
-        "/api/external/ai-audience/packages/official_archive_spec/archive",
-        headers=_headers(),
-        json={"operator": "codex"},
-    )
-    assert denied.status_code == 403
-    assert denied.json()["error"] in {"package_key_prefix_not_allowed", "non_verify_prefix_not_allowed"}
-
     archived = next_client.post(
-        "/api/external/ai-audience/packages/prod_verify_archive_spec/archive",
+        "/api/external/ai-audience/packages/official_archive_spec/archive",
         headers=_headers(),
         json={"operator": "codex"},
     )
