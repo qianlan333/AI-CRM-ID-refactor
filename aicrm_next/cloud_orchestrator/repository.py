@@ -348,27 +348,6 @@ class PostgresCloudPlanRepository:
         if any(_text(row.get("review_status")) == "rejected" for row in campaigns):
             raise ValueError("plan is rejected")
         campaign_ids = [int(row["id"]) for row in campaigns]
-        conflict = conn.execute(
-            """
-            SELECT COUNT(*) AS conflict_count,
-                   STRING_AGG(DISTINCT cm.external_contact_id || '->' || other_c.campaign_code, ', ') AS examples
-            FROM campaign_members cm
-            JOIN campaign_members other_cm
-              ON other_cm.external_contact_id = cm.external_contact_id
-             AND other_cm.campaign_id <> cm.campaign_id
-             AND other_cm.status IN ('pending', 'running')
-            JOIN campaigns other_c
-              ON other_c.id = other_cm.campaign_id
-             AND other_c.run_status = 'active'
-            WHERE cm.campaign_id = ANY(%s)
-              AND other_cm.campaign_id <> ALL(%s)
-              AND cm.status = 'pending'
-              AND COALESCE(cm.external_contact_id, '') <> ''
-            """,
-            (campaign_ids, campaign_ids),
-        ).fetchone()
-        if int((conflict or {}).get("conflict_count") or 0):
-            raise ValueError(f"campaign has active member conflicts: {_text((conflict or {}).get('examples'))[:300]}")
         conn.execute(
             """
             UPDATE campaigns
