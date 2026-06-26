@@ -25,6 +25,7 @@ from aicrm_next.ai_audience_ops.outbound_service import AudienceOutboundService
 from aicrm_next.ai_audience_ops.repository import AudienceRepository, next_daily_refresh_at
 from aicrm_next.ai_audience_ops.scheduler import ai_audience_event_consumer_pairs, emit_due_ticks
 from aicrm_next.ai_audience_ops.service import AudiencePackageService
+from aicrm_next.ai_audience_ops.sql_catalog import ALLOWED_VIEWS, schema_catalog_payload
 from aicrm_next.ai_audience_ops.sql_linter import lint_sql
 from aicrm_next.ai_audience_ops.test_agent_service import AudienceTestAgentService, TEST_AGENT_MESSAGE_TEXT
 from aicrm_next.platform_foundation.external_effects import ExternalEffectService, WEBHOOK_GENERIC_PUSH, WECOM_MESSAGE_PRIVATE_SEND
@@ -85,6 +86,29 @@ def test_sql_linter_blocks_dangerous_and_non_catalog_sql() -> None:
         "SELECT 'external_userid' AS identity_type, external_userid AS identity_value, external_userid AS event_source_key, '{}'::jsonb AS payload_json FROM public.users"
     )
     assert "dependency_not_allowed:public.users" in result.errors
+
+
+def test_sql_linter_allows_group_chat_members_catalog_view() -> None:
+    sql = """
+        SELECT
+            'external_userid' AS identity_type,
+            external_userid AS identity_value,
+            'group_chat_member:' || chat_id || ':' || external_userid AS event_source_key,
+            payload_json,
+            external_userid,
+            owner_userid,
+            joined_at AS event_at
+        FROM audience_read.group_chat_members_v1
+        WHERE chat_id = :chat_id
+    """
+
+    result = lint_sql(sql)
+
+    assert result.ok is True
+    assert result.errors == []
+    assert "audience_read.group_chat_members_v1" in result.dependencies
+    assert "audience_read.group_chat_members_v1" in ALLOWED_VIEWS
+    assert any(item["name"] == "audience_read.group_chat_members_v1" for item in schema_catalog_payload()["views"])
 
 
 def test_next_daily_refresh_uses_package_timezone_and_time() -> None:

@@ -66,6 +66,18 @@ def test_ai_audience_package_spec_parse_valid_example() -> None:
     assert warnings == []
 
 
+def test_ai_audience_package_spec_parse_group_chat_members_manual_example() -> None:
+    spec = parse_markdown_spec("docs/ai_audience/examples/group_chat_members_manual.md")
+
+    errors, warnings = validate_spec(spec)
+
+    assert spec.package_key == "group_chat_members_manual"
+    assert spec.frontmatter["refresh_mode"] == "manual"
+    assert "audience_read.group_chat_members_v1" in spec.snapshot_sql
+    assert errors == []
+    assert warnings == []
+
+
 def test_ai_audience_package_spec_invalid_refresh_mode_fails(tmp_path) -> None:
     spec = parse_markdown_spec(_write_spec(tmp_path, VALID_SPEC.replace("refresh_mode: incremental_3m", "refresh_mode: incremental_5m")))
 
