@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import json
+import os
 import time
 import uuid
 from dataclasses import dataclass
@@ -37,6 +38,28 @@ class WeChatPayClientConfig:
     platform_serial_no: str = ""
     api_base: str = "https://api.mch.weixin.qq.com"
     timeout_seconds: int = 10
+
+
+def _int_value(value: Any, default: int = 10) -> int:
+    try:
+        return int(value or default)
+    except (TypeError, ValueError):
+        return default
+
+
+def wechat_pay_client_config_from_env() -> WeChatPayClientConfig:
+    app_id = _normalized_text(os.getenv("WECHAT_PAY_APP_ID") or os.getenv("WECHAT_MP_APP_ID"))
+    return WeChatPayClientConfig(
+        app_id=app_id,
+        mch_id=_normalized_text(os.getenv("WECHAT_PAY_MCH_ID")),
+        api_v3_key=_normalized_text(os.getenv("WECHAT_PAY_API_V3_KEY")),
+        private_key_path=_normalized_text(os.getenv("WECHAT_PAY_PRIVATE_KEY_PATH")),
+        merchant_serial_no=_normalized_text(os.getenv("WECHAT_PAY_CERT_SERIAL_NO")),
+        platform_public_key_path=_normalized_text(os.getenv("WECHAT_PAY_PLATFORM_PUBLIC_KEY_PATH")),
+        platform_serial_no=_normalized_text(os.getenv("WECHAT_PAY_PLATFORM_CERT_SERIAL_NO")),
+        api_base=_normalized_text(os.getenv("WECHAT_PAY_API_BASE")) or "https://api.mch.weixin.qq.com",
+        timeout_seconds=_int_value(os.getenv("WECHAT_PAY_TIMEOUT_SECONDS"), 10),
+    )
 
 
 def _default_http_request(*args: Any, **kwargs: Any) -> Any:
