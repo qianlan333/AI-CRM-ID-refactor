@@ -25,7 +25,7 @@ def test_channel_form_contains_multi_staff_assignment_without_demo_forbidden_sur
     css = _read(CHANNEL_CSS)
     combined = html + "\n" + js + "\n" + css
 
-    assert "企微客服分配" in html
+    assert "客服分配" in html
     assert "按比例分配" in html
     assert "满额切换" in html
     assert "平均比例" not in combined
@@ -39,6 +39,25 @@ def test_channel_form_contains_multi_staff_assignment_without_demo_forbidden_sur
     assert "客服人数统计" not in combined
     assert "24h 扫码统计" not in combined
     assert "当前策略统计" not in combined
+    for forbidden in [
+        "仅对普通二维码生效；保存后重新生成二维码时会透传为企微 skip_verify。",
+        "一个渠道最多添加 5 个客服。",
+        "沿用项目内标准发送内容组件。",
+        "该类型没有二维码下载动作，使用链接分享。",
+        "填写原始链接和渠道参数后预览最终分享链接",
+        "对应接口",
+        "这里保留",
+        "这里不混入",
+        "external-config-blocked",
+        "fail-closed",
+        "企微诊断状态",
+        "P1 WeCom",
+        "Auth start",
+        "Auth callback",
+        "External contact callback",
+        "Admin event visibility",
+    ]:
+        assert forbidden not in combined
 
 
 def test_assignment_strategy_radios_are_before_titles_and_only_two_modes() -> None:
@@ -65,27 +84,35 @@ def test_channel_form_uses_demo_shell_dom_and_prefixed_css() -> None:
 
     for class_name in [
         "channel-form-v3",
-        "breadcrumbs",
-        "page-head",
+        "topbar",
+        "summary-card",
+        "summary-grid",
+        "workspace",
+        "side-nav",
+        "channel-panel-card",
+        "panel",
+        "type-grid",
+        "type-card",
         "card",
-        "card-head",
-        "card-body",
-        "section",
-        "section-head",
-        "field-grid",
+        "form-grid",
         "strategy-grid",
         "strategy-card",
-        "strategy-title",
         "assignee-panel",
-        "assignee-toolbar",
-        "assignee-list",
-        "validation",
+        "assignee-head",
+        "assignee-table",
+        "assignee-footer",
         "summary-box",
         "summary-row",
     ]:
         assert class_name in html or class_name in js
 
     for selector in [
+        ".channel-form-v3 .summary-card",
+        ".channel-form-v3 .summary-grid",
+        ".channel-form-v3 .workspace",
+        ".channel-form-v3 .side-nav button.active",
+        ".channel-form-v3 .panel.active",
+        ".channel-form-v3 .type-card.active",
         ".channel-form-v3 .card",
         ".channel-form-v3 .strategy-card",
         ".channel-form-v3 .assignee-panel",
@@ -108,24 +135,58 @@ def test_channel_form_hides_shell_header_and_busts_static_cache() -> None:
     base = _read(CHANNEL_BASE)
 
     assert '"show_page_header": False' in pages
-    assert "channel_admission_pages.css?v=channel-multi-staff-demo-shell-20260612" in html
-    assert "channel_admission_pages.js?v=channel-multi-staff-demo-shell-20260612" in html
+    assert "channel_admission_pages.css?v=channel-detail-clean-demo-v2-20260626" in html
+    assert "channel_admission_pages.js?v=channel-detail-clean-demo-v2-20260626" in html
     assert "operation_member_picker.js') }}?v=channel-multi-staff-picker-20260612" in base
 
 
-def test_channel_type_visibility_and_payload_fields_follow_demo_contract() -> None:
+def test_channel_detail_clean_demo_v2_panel_and_type_contract() -> None:
     html = _read(CHANNEL_FORM)
     js = _read(CHANNEL_JS)
 
+    basic_panel = re.search(r'data-channel-panel-content="basic"(.*?)</section>', html, re.S)
+    carrier_panel = re.search(r'data-channel-panel-content="carrier"(.*?)data-channel-panel-content="assignee"', html, re.S)
+    assert basic_panel
+    assert carrier_panel
+    assert 'data-channel-panel="basic"' in html
+    assert 'data-channel-panel="carrier"' in html
+    assert 'data-channel-panel="assignee"' in html
+    assert 'data-channel-panel="welcome"' in html
+    assert 'data-channel-panel="tag"' in html
+    assert 'class="panel active" data-channel-panel-content="basic"' in html
+    assert 'state = {\n    activeChannelPanel: "basic"' in js
+    assert 'data-channel-panel-content' in js
+    assert "setActiveChannelPanel" in js
+
+    assert "渠道名称" in basic_panel.group(1)
+    assert "渠道编码" in basic_panel.group(1)
+    assert "状态" in basic_panel.group(1)
+    assert "渠道类型" not in basic_panel.group(1)
+    assert "扫码添加成员时自动通过好友申请" not in basic_panel.group(1)
+    assert "客服分配" not in basic_panel.group(1)
+    assert "欢迎语素材" not in basic_panel.group(1)
+    assert "入渠标签" not in basic_panel.group(1)
+
     assert "普通二维码" in html
     assert "渠道获客链接" in html
+    assert "基础配置" in html
+    assert "渠道载体" in html
+    assert html.index("基础配置") < html.index("渠道载体") < html.index('name="channel_type"')
+    assert "type-card" in carrier_panel.group(1)
+    assert 'data-channel-type-card="qrcode"' in carrier_panel.group(1)
+    assert 'data-channel-type-card="wecom_customer_acquisition"' in carrier_panel.group(1)
+    assert 'value="qrcode" {% if not is_link %}checked{% endif %}' in carrier_panel.group(1)
+    assert "扫码添加成员时自动通过好友申请" in carrier_panel.group(1)
     assert "<span>渠道参数</span>" in html
     assert "<span>原始链接</span>" in html
     assert "<span>最终分享链接</span>" in html
+    assert "复制链接" in carrier_panel.group(1)
+    assert "分享链接" in carrier_panel.group(1)
     assert "[data-link-field], [data-link-section]" in js
     assert "node.hidden = !isLink" in js
     assert "[data-qrcode-field], [data-qrcode-section]" in js
     assert "node.hidden = isLink" in js
+    assert "[data-channel-type-card]" in js
     assert "auto_accept_friend:" in js
     assert "payload.customer_channel" in js
     assert "link_url:" in js
@@ -262,6 +323,8 @@ def test_standard_welcome_tag_components_and_hidden_payload_inputs_are_kept() ->
     assert "summary-box" in html
     assert "summary-row" in html
     assert "data-welcome-material-summary" in html
+    assert "配置欢迎语和素材" in html
+    assert "选择标签" in html
     assert 'name="welcome_message"' in html
     assert 'name="welcome_image_library_ids"' in html
     assert 'name="welcome_miniprogram_library_ids"' in html

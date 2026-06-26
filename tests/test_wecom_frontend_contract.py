@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import json
-import re
 from pathlib import Path
 
 from fastapi.testclient import TestClient
@@ -23,54 +21,20 @@ def _client(monkeypatch) -> TestClient:
     return TestClient(create_app(), raise_server_exceptions=False)
 
 
-def _wecom_payload_from_html(html: str) -> dict:
-    match = re.search(
-        r'<script id="weComP1StatusPayload" type="application/json">\s*(.*?)\s*</script>',
-        html,
-        re.S,
-    )
-    assert match, html
-    return json.loads(match.group(1))
-
-
-def test_channels_page_renders_wecom_p1_external_config_status(monkeypatch) -> None:
+def test_channels_page_does_not_render_wecom_p1_diagnostics(monkeypatch) -> None:
     response = _client(monkeypatch).get("/admin/channels")
     html = response.text
-    payload = _wecom_payload_from_html(html)
 
     assert response.status_code == 200
     assert response.headers["X-AICRM-Route-Owner"] == "ai_crm_next"
-    assert "weComP1StatusApp" in html
-    assert "weComP1StatusPayload" in html
-    assert "wecom_overview.js" in html
     assert "渠道总数" in html
     assert "渠道码列表" in html
     assert "新建渠道" in html
-    assert "企微授权配置未完成，日常渠道配置不受阻塞。" in html
-    assert 'data-p1-diagnostics="wecom"' in html
-    assert 'data-default-collapsed="true"' in html
-    assert html.index("渠道总数") < html.index("weComP1StatusApp")
-    assert html.index("渠道码列表") < html.index("weComP1StatusApp")
-    assert html.index("新建渠道") < html.index("weComP1StatusApp")
-    assert payload["evidenceSummary"]["authStartStatus"] == "controlled_external_call_blocked_503"
-    assert payload["evidenceSummary"]["authCallbackStatus"] == "controlled_external_call_blocked_503"
-    assert payload["evidenceSummary"]["contactCallbackStatus"] == "fail_closed_400_missing_signature"
-    assert payload["evidenceSummary"]["eventsStatus"] == "fail_closed_400_missing_signature"
-    assert payload["evidenceSummary"]["callbackLinkedEvent"] == "not_found"
-    assert payload["evidenceSummary"]["validCallbackSignature"] == "missing"
-    assert payload["evidenceSummary"]["authRecord"] == "not_found"
-    assert payload["evidenceSummary"]["permissionScope"] == "not_found"
-    assert payload["evidenceSummary"]["realExternalCallExecuted"] is False
-    assert payload["evidenceSummary"]["finalStatus"] == "BLOCKED_CONFIG_NOT_APPROVED"
-    cards = payload["cards"]
-    assert any(item["rawStatus"] == "external_config_blocked" for item in cards)
-    assert any(item["rawStatus"] == "callback_fail_closed" for item in cards)
-    assert any(item["rawStatus"] == "evidence_incomplete" for item in cards)
-    serialized = json.dumps(payload, ensure_ascii=False)
-    assert "已授权完成" not in serialized
-    assert "callback_success" not in serialized
-    assert "signature_verified" not in serialized
-    assert "PASS_90_PLUS_CANDIDATE" not in serialized
+    assert "weComP1StatusApp" not in html
+    assert "weComP1StatusPayload" not in html
+    assert "wecom_overview.js" not in html
+    assert 'data-p1-diagnostics="wecom"' not in html
+    assert "企微授权配置未完成，日常渠道配置不受阻塞。" not in html
 
 
 def test_wecom_p1_slice_reuses_shared_status_and_interaction_contract() -> None:
@@ -132,13 +96,13 @@ def test_wecom_p1_rendered_fixture_does_not_expose_sensitive_strings(monkeypatch
         assert forbidden not in html
 
 
-def test_channel_template_mounts_wecom_p1_slice_without_replacing_channel_center() -> None:
+def test_channel_template_keeps_channel_center_without_wecom_p1_diagnostics() -> None:
     template = CHANNEL_TEMPLATE.read_text(encoding="utf-8")
 
-    assert "weComP1StatusApp" in template
-    assert "weComP1StatusPayload" in template
-    assert 'data-p1-diagnostics="wecom"' in template
-    assert "企微授权配置未完成，日常渠道配置不受阻塞。" in template
-    assert "admin_console/p1/wecom/wecom_overview.js" in template
+    assert "weComP1StatusApp" not in template
+    assert "weComP1StatusPayload" not in template
+    assert 'data-p1-diagnostics="wecom"' not in template
+    assert "企微授权配置未完成，日常渠道配置不受阻塞。" not in template
+    assert "admin_console/p1/wecom/wecom_overview.js" not in template
     assert 'data-channel-admission-page="channel-center"' in template
     assert "channel_code_center_next.js" in template

@@ -128,6 +128,19 @@ def _assignment_strategy(value: Any) -> str:
     return strategy if strategy in {"ratio", "cap_switch"} else "ratio"
 
 
+def _validate_assignment_contract(payload: dict[str, Any], data: dict[str, Any]) -> None:
+    if "assignment_strategy" in payload:
+        strategy = _text(payload.get("assignment_strategy"))
+        if strategy and strategy not in {"ratio", "cap_switch"}:
+            raise ValueError("invalid_assignment_strategy")
+    if "assignees" not in payload:
+        return
+    channel_entry_repo.normalize_channel_assignees(
+        payload.get("assignees") or [],
+        strategy=_assignment_strategy(data.get("assignment_strategy")),
+    )
+
+
 def _serialize_assignment_event(row: dict[str, Any]) -> dict[str, Any]:
     return {
         "id": int(row.get("id") or 0),
@@ -662,6 +675,12 @@ def _coerce_channel_payload(payload: dict[str, Any], *, existing: dict[str, Any]
         separator = "&" if "?" in link_url else "?"
         final_url = f"{link_url}{separator}customer_channel={customer_channel}"
     assignment_config_value = _payload_value(payload, existing, "assignment_config_json", partial=partial)
+    auto_accept_friend = False
+    if carrier_type != "link":
+        auto_accept_friend = _bool(
+            _payload_value(payload, existing, "auto_accept_friend", partial=partial),
+            default=_bool(existing.get("auto_accept_friend")),
+        )
     return {
         "channel_type": channel_type,
         "carrier_type": carrier_type,
@@ -678,7 +697,7 @@ def _coerce_channel_payload(payload: dict[str, Any], *, existing: dict[str, Any]
         "welcome_image_library_ids": _json_list(_payload_value(payload, existing, "welcome_image_library_ids", partial=partial)),
         "welcome_miniprogram_library_ids": _json_list(_payload_value(payload, existing, "welcome_miniprogram_library_ids", partial=partial)),
         "welcome_attachment_library_ids": _json_list(_payload_value(payload, existing, "welcome_attachment_library_ids", partial=partial)),
-        "auto_accept_friend": _bool(_payload_value(payload, existing, "auto_accept_friend", partial=partial), default=_bool(existing.get("auto_accept_friend"))),
+        "auto_accept_friend": auto_accept_friend,
         "entry_tag_id": _text(_payload_value(payload, existing, "entry_tag_id", partial=partial)),
         "entry_tag_name": _text(_payload_value(payload, existing, "entry_tag_name", partial=partial)),
         "entry_tag_group_name": _text(_payload_value(payload, existing, "entry_tag_group_name", partial=partial)),
@@ -693,6 +712,7 @@ def _save_fixture_channel(payload: dict[str, Any], channel_id: int | None = None
     global _NEXT_ID, _FIXTURE_ASSIGNMENT_EVENTS
     existing = _FIXTURE_CHANNELS.get(int(channel_id or 0), {}) if channel_id else {}
     data = _coerce_channel_payload(payload, existing=existing, partial=bool(channel_id))
+    _validate_assignment_contract(payload, data)
     if channel_id is None:
         channel_id = _NEXT_ID
         _NEXT_ID += 1
@@ -717,6 +737,7 @@ def _save_postgres_channel(payload: dict[str, Any], channel_id: int | None = Non
     if channel_id and not existing:
         raise LookupError("channel_not_found")
     data = _coerce_channel_payload(payload, existing=existing, partial=bool(channel_id))
+    _validate_assignment_contract(payload, data)
     conn = _connect()
     if conn is None:
         return _save_fixture_channel(payload, channel_id)
