@@ -128,7 +128,7 @@
 
   .automation-agent-url-row {
     display: grid;
-    grid-template-columns: 1fr 46px;
+    grid-template-columns: 1fr auto auto;
     gap: 8px;
     margin-bottom: 18px;
   }
@@ -217,12 +217,6 @@
     color: var(--agent-blue);
   }
 
-  .automation-agent-pill.orange {
-    border: 1px solid #fed7aa;
-    background: #fff7ed;
-    color: #d97706;
-  }
-
   .automation-agent-prompt-buttons,
   .automation-agent-toolbar,
   .automation-agent-deps {
@@ -267,19 +261,6 @@
     margin-bottom: 8px;
     color: #94a3b8;
     font-size: 26px;
-  }
-
-  .automation-agent-code-panel {
-    min-height: 134px;
-    overflow: auto;
-    border-radius: 16px;
-    background: #0f172a;
-    color: #dbeafe;
-    font-family: var(--agent-mono);
-    font-size: 13px;
-    line-height: 1.6;
-    padding: 18px 20px;
-    white-space: pre-wrap;
   }
 
   .automation-agent-save-bar {
@@ -412,7 +393,6 @@
       <div class="automation-agent-crumb">客户管理后台 / 配置及后台 / Agent / 编辑</div>
       <h1 class="automation-agent-title" id="editTitle">编辑 Agent</h1>
     </div>
-    <span class="automation-agent-pill orange">HTML Demo</span>
   </div>
 
   <div class="automation-agent-grid">
@@ -424,12 +404,6 @@
       <div class="automation-agent-form-grid">
         <label class="automation-agent-label" for="agentName">Agent 名称</label>
         <input class="automation-agent-input" id="agentName" value="">
-        <label class="automation-agent-label" for="agentCode">Agent Code</label>
-        <input class="automation-agent-input automation-agent-code" id="agentCode" value="">
-        <label class="automation-agent-label" for="planName">绑定计划</label>
-        <input class="automation-agent-input" id="planName" value="">
-        <label class="automation-agent-label" for="packageKey">人群包 Key</label>
-        <input class="automation-agent-input automation-agent-code" id="packageKey" value="">
         <label class="automation-agent-label" for="agentStatus">状态</label>
         <select class="automation-agent-select" id="agentStatus">
           <option value="active">启用中</option>
@@ -445,11 +419,12 @@
       <div class="automation-agent-url-row">
         <input class="automation-agent-input automation-agent-code" id="receiveUrl" value="" readonly>
         <button class="automation-agent-copy-btn" type="button" data-copy="#receiveUrl" aria-label="复制接收地址">⧉</button>
+        <button class="automation-agent-btn" id="resetToken" type="button">重置 token</button>
       </div>
 
       <label class="automation-agent-label" for="sendUrl">发送地址 <span class="automation-agent-method">POST</span></label>
       <div class="automation-agent-url-row">
-        <input class="automation-agent-input automation-agent-code" id="sendUrl" value="" readonly>
+        <input class="automation-agent-input automation-agent-code" id="sendUrl" value="">
         <button class="automation-agent-copy-btn" type="button" data-copy="#sendUrl" aria-label="复制发送地址">⧉</button>
       </div>
     </section>
@@ -497,16 +472,6 @@
         </div>
         <div id="materialList" class="automation-agent-hidden"></div>
       </section>
-
-      <section class="automation-agent-card automation-agent-section" style="margin-top:16px" aria-label="content_package 预览">
-        <h2 class="automation-agent-subtitle" style="margin-bottom:12px">content_package 预览</h2>
-        <pre class="automation-agent-code-panel" id="packagePreview">{
-  "content_text": "由 Agent 动态生成",
-  "image_library_ids": [],
-  "miniprogram_library_ids": [],
-  "attachment_library_ids": []
-}</pre>
-      </section>
     </div>
   </div>
 
@@ -553,6 +518,7 @@
   (() => {
     const agentApiUrl = {{ automation_agent_api_url | tojson }};
     const fixedContentApiUrl = {{ automation_agent_fixed_content_api_url | tojson }};
+    const resetTokenApiUrl = {{ automation_agent_reset_token_api_url | tojson }};
     const state = {
       agent: null,
       focusPrompt: null,
@@ -568,13 +534,11 @@
     const els = {
       title: document.getElementById("editTitle"),
       agentName: document.getElementById("agentName"),
-      agentCode: document.getElementById("agentCode"),
-      planName: document.getElementById("planName"),
-      packageKey: document.getElementById("packageKey"),
       agentStatus: document.getElementById("agentStatus"),
       statusBadge: document.getElementById("statusBadge"),
       receiveUrl: document.getElementById("receiveUrl"),
       sendUrl: document.getElementById("sendUrl"),
+      resetToken: document.getElementById("resetToken"),
       rolePrompt: document.getElementById("rolePrompt"),
       taskPrompt: document.getElementById("taskPrompt"),
       deps: document.getElementById("deps"),
@@ -582,7 +546,6 @@
       publishedVersion: document.getElementById("publishedVersion"),
       materialEmpty: document.getElementById("materialEmpty"),
       materialList: document.getElementById("materialList"),
-      packagePreview: document.getElementById("packagePreview"),
       materialModal: document.getElementById("materialModal"),
       assetCount: document.getElementById("assetCount"),
       selectedAssets: document.getElementById("selectedAssets"),
@@ -645,7 +608,7 @@
       const raw = String(value || "");
       try {
         const parsed = new URL(raw, window.location.origin);
-        return parsed.pathname;
+        return `${parsed.pathname}${parsed.search}`;
       } catch (_error) {
         return raw;
       }
@@ -698,11 +661,8 @@
       els.statusBadge.className = `automation-agent-pill ${active ? "green" : ""}`;
     };
 
-    const renderUrls = () => {
-      const code = els.agentCode.value.trim();
-      const packageKey = els.packageKey.value.trim();
-      els.receiveUrl.value = `/api/ai/agents/${code}/audience-webhook`;
-      els.sendUrl.value = `/api/ai/audience/packages/${packageKey}/webhook`;
+    const renderReceiveUrl = () => {
+      els.receiveUrl.value = state.agent && state.agent.receive_webhook_url ? pathOnly(state.agent.receive_webhook_url) : "";
     };
 
     const renderDeps = () => {
@@ -714,15 +674,6 @@
         ["{{激活信息}}", "激活信息"],
       ].filter(([token]) => text.includes(token)).map(([, label]) => `<span class="automation-agent-pill blue">${label}</span>`);
       els.deps.innerHTML = deps.length ? deps.join("") : '<span class="automation-agent-pill">暂无</span>';
-    };
-
-    const renderPackage = () => {
-      els.packagePreview.textContent = JSON.stringify({
-        content_text: "由 Agent 动态生成",
-        image_library_ids: state.contentPackage.image_library_ids,
-        miniprogram_library_ids: state.contentPackage.miniprogram_library_ids,
-        attachment_library_ids: state.contentPackage.attachment_library_ids,
-      }, null, 2);
     };
 
     const renderAssets = () => {
@@ -760,7 +711,6 @@
           </div>
         `).join("");
       }
-      renderPackage();
     };
 
     const addMaterial = (item) => {
@@ -806,7 +756,8 @@
 
     const formPayload = () => ({
       agent_name: els.agentName.value.trim(),
-      bound_package_key: els.packageKey.value.trim(),
+      bound_package_key: state.agent && state.agent.bound_package_key ? state.agent.bound_package_key : "",
+      send_webhook_url: els.sendUrl.value.trim(),
       status: els.agentStatus.value,
       role_prompt: els.rolePrompt.value,
       task_prompt: els.taskPrompt.value,
@@ -833,13 +784,18 @@
       toast("固定素材已保存");
     };
 
+    const resetInboundToken = async () => {
+      if (!window.confirm("确认重置接收地址 token？重置后旧地址将失效。")) return;
+      const payload = await fetchJson(resetTokenApiUrl, { method: "POST" });
+      state.agent = payload.agent;
+      applyAgent(payload.agent);
+      toast("接收 token 已重置");
+    };
+
     const applyAgent = (agent) => {
       state.agent = agent || {};
       els.title.textContent = state.agent.agent_name || "编辑 Agent";
       els.agentName.value = state.agent.agent_name || "";
-      els.agentCode.value = state.agent.agent_code || "";
-      els.planName.value = state.agent.bound_package_name || "";
-      els.packageKey.value = state.agent.bound_package_key || "";
       els.agentStatus.value = state.agent.status === "paused" ? "paused" : "active";
       els.rolePrompt.value = state.agent.draft_role_prompt || state.agent.published_role_prompt || "";
       els.taskPrompt.value = state.agent.draft_task_prompt || state.agent.published_task_prompt || "";
@@ -849,7 +805,8 @@
       state.materialDetails = new Map();
       seedMaterialDetails(state.agent.fixed_content_package_preview && state.agent.fixed_content_package_preview.materials);
       if (state.agent.receive_webhook_url) els.receiveUrl.value = pathOnly(state.agent.receive_webhook_url);
-      if (state.agent.send_webhook_url) els.sendUrl.value = pathOnly(state.agent.send_webhook_url);
+      else renderReceiveUrl();
+      els.sendUrl.value = state.agent.send_webhook_url || "";
       renderStatus();
       renderDeps();
       renderAssets();
@@ -916,8 +873,9 @@
       toast("已载入已发布版本");
     });
     els.agentStatus.addEventListener("change", renderStatus);
-    els.agentCode.addEventListener("input", renderUrls);
-    els.packageKey.addEventListener("input", renderUrls);
+    els.resetToken.addEventListener("click", () => {
+      resetInboundToken().catch((error) => window.alert(error.message || "重置失败"));
+    });
 
     loadAgent().catch((error) => window.alert(error.message || "加载失败"));
   })();

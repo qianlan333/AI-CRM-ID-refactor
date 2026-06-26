@@ -14,6 +14,7 @@ class AutomationAgentCreateRequest(BaseModel):
     role_prompt: str
     task_prompt: str
     status: str = "active"
+    send_webhook_url: str | None = None
     fixed_content_package: SendContentPackage = Field(default_factory=SendContentPackage)
 
 
@@ -23,9 +24,9 @@ class AutomationAgentUpdateRequest(BaseModel):
     status: str | None = None
     role_prompt: str | None = None
     task_prompt: str | None = None
+    send_webhook_url: str | None = None
     fixed_content_package: SendContentPackage | dict[str, Any] | None = None
 
 
 class FixedContentRequest(BaseModel):
     content_package: SendContentPackage = Field(default_factory=SendContentPackage)
-

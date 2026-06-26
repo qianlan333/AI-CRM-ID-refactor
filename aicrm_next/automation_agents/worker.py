@@ -4,6 +4,7 @@ import hashlib
 import hmac
 import json
 from typing import Any
+from urllib.parse import unquote, urlparse
 
 from aicrm_next.ai_audience_ops.agent_gateway import generate_agent_reply
 from aicrm_next.ai_audience_ops.webhook_service import AudienceInboundWebhookService
@@ -11,6 +12,20 @@ from aicrm_next.send_content.application import normalize_send_content_package
 
 from .context_builder import build_agent_context, referenced_context_keys, render_chinese_placeholders
 from .repository import AutomationAgentRepository, build_automation_agent_repository, _text
+
+
+def _package_key_from_send_webhook_url(value: str) -> str:
+    raw = _text(value)
+    if not raw:
+        return ""
+    parsed = urlparse(raw)
+    path = parsed.path if parsed.scheme else raw.split("?", 1)[0]
+    prefix = "/api/ai/audience/packages/"
+    suffix = "/webhook"
+    if not path.startswith(prefix) or not path.endswith(suffix):
+        return ""
+    package_key = path[len(prefix) : -len(suffix)]
+    return unquote(package_key.strip("/"))
 
 
 class AutomationAgentWorker:
@@ -85,12 +100,33 @@ class AutomationAgentWorker:
                 "sender_userid": owner_userid,
             },
         }
-        package = self._repo.get_package_by_key(_text(agent.get("bound_package_key"))) or {}
+        configured_send_url = _text(agent.get("send_webhook_url"))
+        callback_package_key = _package_key_from_send_webhook_url(configured_send_url)
+        if configured_send_url and not callback_package_key:
+            return self._fail(
+                item_id,
+                "unsupported_send_webhook_url",
+                "send_webhook_url must target an AI Audience package webhook path",
+                context=context,
+                owner_userid=owner_userid,
+                prompt_preview=f"{rendered_role}\n\n{rendered_task}"[:1000],
+            )
+        callback_package_key = callback_package_key or _text(agent.get("bound_package_key"))
+        if not callback_package_key:
+            return self._fail(
+                item_id,
+                "send_webhook_url_missing",
+                "send_webhook_url is required",
+                context=context,
+                owner_userid=owner_userid,
+                prompt_preview=f"{rendered_role}\n\n{rendered_task}"[:1000],
+            )
+        package = self._repo.get_package_by_key(callback_package_key) or {}
         secret = _text(package.get("inbound_webhook_secret"))
         raw = json.dumps(callback_payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
         signature = hmac.new(secret.encode("utf-8"), raw, hashlib.sha256).hexdigest() if secret else ""
         callback = AudienceInboundWebhookService().handle(
-            _text(agent.get("bound_package_key")),
+            callback_package_key,
             callback_payload,
             raw_body=raw,
             signature=signature,
@@ -138,4 +174,3 @@ class AutomationAgentWorker:
             },
         )
         return {"ok": False, "error": error_code, "detail": error_message, "item_id": item_id}
-
