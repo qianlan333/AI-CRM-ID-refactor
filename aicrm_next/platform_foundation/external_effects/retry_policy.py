@@ -20,6 +20,7 @@ BLOCKED_ERROR_CODES = {
     "plan_only",
     "effect_type_not_allowed",
     "unsupported_effect_type",
+    "payment_execution_disabled",
     "push_capability_disabled",
     "push_capability_readonly",
 }

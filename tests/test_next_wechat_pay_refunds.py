@@ -4,6 +4,7 @@ import sys
 import types
 
 from aicrm_next.commerce import admin_transactions
+from aicrm_next.commerce import admin_transaction_detail
 from aicrm_next.commerce import api as commerce_api
 
 
@@ -146,6 +147,20 @@ def test_next_postgres_refund_does_not_call_wechat_pay_when_client_would_reject(
     assert "refund_request_queued" in sql_text
     assert "'refund_failed'" not in sql_text
     assert connections[0].commits == 1
+
+
+def test_wechat_refund_processing_amount_excludes_terminal_external_effect_jobs():
+    list_select = admin_transactions._postgres_order_select()
+    detail_select = admin_transaction_detail._postgres_order_select("wechat")
+
+    for sql in (list_select, detail_select):
+        assert "FROM external_effect_job j" in sql
+        assert "j.target_type = 'wechat_pay_refund'" in sql
+        assert "failed_terminal" in sql
+        assert "blocked" in sql
+        assert "cancelled" in sql
+        assert "expired" in sql
+        assert "LOWER(COALESCE(r.status" in sql
 
 
 def _install_fetching_fake_psycopg(monkeypatch, refund_row: dict):

@@ -11,6 +11,7 @@ from aicrm_next.shared.text_encoding import repair_utf8_mojibake
 
 from .application import GetTransactionQuery, ListTransactionsQuery
 from .product_code_aliases import canonical_product_code, canonical_product_name, product_code_filter_values
+from .refund_status import active_wechat_refund_sql
 from .repo import connect_commerce_db
 from .wechat_shop_service import fixture_wechat_shop_order, fixture_wechat_shop_orders
 
@@ -336,14 +337,14 @@ def _postgres_filter_clause(provider: str, filters: dict[str, Any], params: list
             where.append("(COALESCE(o.refunded_amount_total, 0) > 0 OR COALESCE(o.on_aftersale_order_count, 0) > 0 OR o.returned_recorded IS TRUE)")
         elif provider == "wechat":
             where.append(
-                """(
+                f"""(
                     COALESCE(o.refunded_amount_total, 0) > 0
                     OR COALESCE(o.refund_status, '') IN ('requested', 'processing', 'refund_processing', 'partial_refunded', 'full_refunded')
                     OR EXISTS (
                         SELECT 1
                         FROM wechat_pay_refunds r
                         WHERE r.order_id = o.id
-                          AND r.status NOT IN ('failed', 'closed', 'CLOSED', 'ABNORMAL', 'SUCCESS')
+                          AND {active_wechat_refund_sql("r")}
                     )
                 )"""
             )
@@ -354,14 +355,14 @@ def _postgres_filter_clause(provider: str, filters: dict[str, Any], params: list
             where.append("(COALESCE(o.refunded_amount_total, 0) = 0 AND COALESCE(o.on_aftersale_order_count, 0) = 0 AND COALESCE(o.returned_recorded, FALSE) IS FALSE)")
         elif provider == "wechat":
             where.append(
-                """(
+                f"""(
                     COALESCE(o.refunded_amount_total, 0) = 0
                     AND COALESCE(o.refund_status, '') NOT IN ('requested', 'processing', 'refund_processing', 'partial_refunded', 'full_refunded')
                     AND NOT EXISTS (
                         SELECT 1
                         FROM wechat_pay_refunds r
                         WHERE r.order_id = o.id
-                          AND r.status NOT IN ('failed', 'closed', 'CLOSED', 'ABNORMAL', 'SUCCESS')
+                          AND {active_wechat_refund_sql("r")}
                     )
                 )"""
             )
@@ -424,7 +425,7 @@ def _postgres_order_select(provider: str) -> str:
                   AND r.status NOT IN ('failed', 'closed', 'CLOSED', 'SUCCESS')
             ) AS active_refund_amount_total
         """
-    return """
+    return f"""
         o.id, o.out_trade_no, o.transaction_id, o.payer_name_snapshot, o.mobile_snapshot, o.userid_snapshot,
         o.external_userid, o.unionid, o.respondent_key, o.product_name, o.product_code, o.amount_total, o.currency,
         o.status, o.trade_state, o.notify_payload_json, o.refunded_amount_total, o.refund_status, o.paid_at,
@@ -433,7 +434,7 @@ def _postgres_order_select(provider: str) -> str:
             SELECT COALESCE(SUM(r.refund_amount_total), 0)
             FROM wechat_pay_refunds r
             WHERE r.order_id = o.id
-              AND r.status NOT IN ('failed', 'closed', 'CLOSED', 'ABNORMAL', 'SUCCESS')
+              AND {active_wechat_refund_sql("r")}
         ) AS active_refund_amount_total
     """
 

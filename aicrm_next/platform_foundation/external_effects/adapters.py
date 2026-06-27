@@ -13,6 +13,7 @@ from .models import (
     AI_ASSIST_CAMPAIGN_MESSAGE_LOOPBACK,
     GROUP_OPS_MESSAGE_LOOPBACK,
     GROUP_OPS_WEBHOOK_ACTION_LOOPBACK,
+    PAYMENT_WECHAT_REFUND_REQUEST,
     WEBHOOK_ORDER_PAID_PUSH,
     WEBHOOK_QUESTIONNAIRE_SUBMISSION_PUSH,
     WEBHOOK_GENERIC_PUSH,
@@ -69,6 +70,14 @@ def wecom_execution_settings() -> dict[str, Any]:
         "allowed_owner_userids": sorted(_csv_env("AICRM_EXTERNAL_EFFECT_ALLOWED_OWNER_USERIDS")),
         "allowed_group_chat_ids": sorted(_csv_env("AICRM_EXTERNAL_EFFECT_ALLOWED_GROUP_CHAT_IDS")),
         "supported_types": [WECOM_MESSAGE_PRIVATE_SEND, WECOM_MESSAGE_GROUP_SEND, WECOM_WELCOME_MESSAGE_SEND],
+    }
+
+
+def payment_execution_settings() -> dict[str, Any]:
+    return {
+        "enabled": _enabled("AICRM_EXTERNAL_EFFECT_PAYMENT_EXECUTE"),
+        "allowed_types": sorted(_csv_env("AICRM_EXTERNAL_EFFECT_ALLOWED_TYPES")),
+        "supported_types": [PAYMENT_WECHAT_REFUND_REQUEST],
     }
 
 
@@ -943,11 +952,221 @@ class WeComProfileUpdateAdapter:
         )
 
 
+class WeChatPaymentAdapter:
+    def __init__(self, client_factory=None, refund_result_sync=None, refund_failure_sync=None) -> None:
+        self._client_factory = client_factory
+        self._refund_result_sync = refund_result_sync
+        self._refund_failure_sync = refund_failure_sync
+
+    def dispatch(self, job: ExternalEffectJob) -> ExternalEffectDispatchResult:
+        payload = dict(job.payload_json or {})
+        request_payload = dict(payload.get("request_payload") or {})
+        request_summary = self._request_summary(job, payload, request_payload)
+        out_refund_no = str(request_payload.get("out_refund_no") or payload.get("out_refund_no") or job.target_id or "").strip()
+        gate_error = self._execution_gate_error(job, payload, request_payload)
+        if gate_error:
+            sync_result = self._mark_refund_failed(
+                out_refund_no,
+                error_code=gate_error,
+                error_message="WeChat payment refund execution is blocked by external effect gates.",
+                response_payload={"blocked": True, "execution_gate": gate_error, "real_external_call_executed": False},
+            )
+            return ExternalEffectDispatchResult(
+                status="failed_terminal",
+                adapter_mode=job.execution_mode or "execute",
+                request_summary=request_summary,
+                response_summary={
+                    "blocked": True,
+                    "execution_gate": gate_error,
+                    "real_external_call_executed": False,
+                    "wechat_refund_executed": False,
+                    "refund_failure_synced": bool(sync_result.get("ok")),
+                },
+                error_code=gate_error,
+                error_message="WeChat payment refund execution is blocked by external effect gates.",
+                real_external_call_executed=False,
+            )
+
+        try:
+            provider_payload = self._build_client().create_refund(request_payload)
+        except Exception as exc:
+            return self._failure_result(exc, request_summary=request_summary, out_refund_no=out_refund_no)
+
+        refund_payload = {
+            **dict(provider_payload or {}),
+            "out_trade_no": str(payload.get("out_trade_no") or request_payload.get("out_trade_no") or ""),
+            "transaction_id": str(payload.get("transaction_id") or request_payload.get("transaction_id") or ""),
+            "out_refund_no": str((provider_payload or {}).get("out_refund_no") or out_refund_no),
+            "refund_status": str((provider_payload or {}).get("status") or (provider_payload or {}).get("refund_status") or "PROCESSING"),
+            "amount": dict(request_payload.get("amount") or {}),
+        }
+        try:
+            sync_result = self._apply_refund_result(refund_payload)
+        except Exception as exc:
+            return ExternalEffectDispatchResult(
+                status="failed_retryable",
+                adapter_mode="execute",
+                request_summary=request_summary,
+                response_summary={
+                    "real_external_call_executed": True,
+                    "wechat_refund_executed": True,
+                    "refund_result_sync_failed": True,
+                    "provider_status": str(refund_payload.get("refund_status") or ""),
+                    "refund_id_present": bool(str(refund_payload.get("refund_id") or "").strip()),
+                },
+                error_code="network_error",
+                error_message=f"wechat refund created but local result sync failed: {str(exc)[:400]}",
+                real_external_call_executed=True,
+            )
+
+        return ExternalEffectDispatchResult(
+            status="succeeded",
+            adapter_mode="execute",
+            request_summary=request_summary,
+            response_summary={
+                "real_external_call_executed": True,
+                "wechat_refund_executed": True,
+                "refund_result_synced": True,
+                "provider_status": str(refund_payload.get("refund_status") or ""),
+                "refund_id_present": bool(str(refund_payload.get("refund_id") or "").strip()),
+                "order_refund_status": str(sync_result.get("order_refund_status") or "") if isinstance(sync_result, dict) else "",
+            },
+            real_external_call_executed=True,
+        )
+
+    def _request_summary(self, job: ExternalEffectJob, payload: dict[str, Any], request_payload: dict[str, Any]) -> dict[str, Any]:
+        amount = request_payload.get("amount") if isinstance(request_payload.get("amount"), dict) else {}
+        return {
+            "effect_type": job.effect_type,
+            "operation": job.operation,
+            "target_type": job.target_type,
+            "target_id": job.target_id,
+            "out_trade_no": str(payload.get("out_trade_no") or request_payload.get("out_trade_no") or ""),
+            "out_refund_no": str(request_payload.get("out_refund_no") or payload.get("out_refund_no") or ""),
+            "transaction_id_present": bool(str(payload.get("transaction_id") or request_payload.get("transaction_id") or "").strip()),
+            "refund_amount_total": self._int_value(amount.get("refund")),
+            "order_amount_total": self._int_value(amount.get("total")),
+            "notify_url_present": bool(str(request_payload.get("notify_url") or "").strip()),
+        }
+
+    def _int_value(self, value: Any) -> int:
+        try:
+            return int(value or 0)
+        except (TypeError, ValueError):
+            return 0
+
+    def _execution_gate_error(self, job: ExternalEffectJob, payload: dict[str, Any], request_payload: dict[str, Any]) -> str:
+        if job.execution_mode in {"disabled", "shadow", "plan_only", "execute_dryrun"}:
+            return "shadow_only"
+        if job.effect_type != PAYMENT_WECHAT_REFUND_REQUEST or job.operation != "refund_request":
+            return "unsupported_effect_type"
+        if not _enabled("AICRM_EXTERNAL_EFFECT_PAYMENT_EXECUTE"):
+            return "payment_execution_disabled"
+        allowed_types = _csv_env("AICRM_EXTERNAL_EFFECT_ALLOWED_TYPES")
+        if job.effect_type not in allowed_types:
+            return "effect_type_not_allowed"
+        out_refund_no = str(request_payload.get("out_refund_no") or payload.get("out_refund_no") or "").strip()
+        if not out_refund_no or out_refund_no != str(job.target_id or "").strip():
+            return "target_mismatch"
+        if not str(request_payload.get("transaction_id") or payload.get("transaction_id") or "").strip():
+            return "transaction_id_missing"
+        amount = request_payload.get("amount") if isinstance(request_payload.get("amount"), dict) else {}
+        try:
+            refund_amount = int(amount.get("refund") or 0)
+            order_amount = int(amount.get("total") or 0)
+        except (TypeError, ValueError):
+            return "payload_invalid"
+        if refund_amount <= 0 or order_amount <= 0 or refund_amount > order_amount:
+            return "payload_invalid"
+        return ""
+
+    def _build_client(self):
+        if self._client_factory is not None:
+            return self._client_factory()
+        from aicrm_next.integration_gateway.wechat_pay_client import WeChatPayClient, wechat_pay_client_config_from_env
+
+        return WeChatPayClient(wechat_pay_client_config_from_env())
+
+    def _apply_refund_result(self, refund_payload: dict[str, Any]) -> dict[str, Any]:
+        if self._refund_result_sync is not None:
+            return dict(self._refund_result_sync(refund_payload) or {})
+        from aicrm_next.commerce.admin_transactions import apply_wechat_refund_result
+
+        return dict(apply_wechat_refund_result(refund_payload) or {})
+
+    def _mark_refund_failed(self, out_refund_no: str, *, error_code: str, error_message: str, response_payload: dict[str, Any]) -> dict[str, Any]:
+        if not out_refund_no:
+            return {"ok": False, "reason": "out_refund_no_missing"}
+        try:
+            if self._refund_failure_sync is not None:
+                return dict(
+                    self._refund_failure_sync(
+                        out_refund_no,
+                        error_code=error_code,
+                        error_message=error_message,
+                        response_payload=response_payload,
+                    )
+                    or {}
+                )
+            from aicrm_next.commerce.admin_transactions import mark_wechat_refund_request_failed
+
+            return dict(
+                mark_wechat_refund_request_failed(
+                    out_refund_no,
+                    error_code=error_code,
+                    error_message=error_message,
+                    response_payload=response_payload,
+                )
+                or {}
+            )
+        except Exception as exc:
+            return {"ok": False, "reason": "refund_failure_sync_failed", "error": str(exc)[:200]}
+
+    def _failure_result(self, exc: Exception, *, request_summary: dict[str, Any], out_refund_no: str) -> ExternalEffectDispatchResult:
+        status_code = getattr(exc, "status_code", None)
+        provider_payload = dict(getattr(exc, "payload", {}) or {})
+        error_message = str(exc)[:500]
+        if status_code is None and ("required" in error_message or "failed to load WeChat Pay" in error_message):
+            error_code = "config_missing"
+            real_external_call_executed = False
+        else:
+            error_code = http_error_code(status_code)
+            real_external_call_executed = True
+        retryable = error_code in {"network_error", "timeout", "http_408", "http_429", "http_5xx"}
+        sync_result: dict[str, Any] = {}
+        if not retryable:
+            sync_result = self._mark_refund_failed(
+                out_refund_no,
+                error_code=error_code,
+                error_message=error_message,
+                response_payload={
+                    "provider_payload": provider_payload,
+                    "real_external_call_executed": real_external_call_executed,
+                },
+            )
+        return ExternalEffectDispatchResult(
+            status="failed_retryable" if retryable else "failed_terminal",
+            adapter_mode="execute",
+            request_summary=request_summary,
+            response_summary={
+                "status_code": status_code,
+                "provider_payload_present": bool(provider_payload),
+                "real_external_call_executed": real_external_call_executed,
+                "wechat_refund_executed": False,
+                "refund_failure_synced": bool(sync_result.get("ok")) if sync_result else False,
+            },
+            error_code=error_code,
+            error_message=error_message,
+            real_external_call_executed=real_external_call_executed,
+        )
+
+
 class ExternalEffectAdapterRegistry:
     def __init__(self) -> None:
         self._adapters: dict[str, ExternalEffectAdapter] = {
             "outbound_webhook": WebhookAdapter(),
             "webhook": WebhookAdapter(),
+            "wechat_payment": WeChatPaymentAdapter(),
             "wecom_private_message": WeComPrivateMessageAdapter(),
             "wecom_group_message": WeComGroupMessageExternalEffectAdapter(),
             "wecom_welcome_message": WeComWelcomeMessageAdapter(),

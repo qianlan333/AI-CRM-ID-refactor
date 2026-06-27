@@ -17,7 +17,8 @@ from aicrm_next.shared.text_encoding import repair_utf8_mojibake
 from .repo import build_commerce_repository, connect_commerce_db
 from .application import GetTransactionQuery, ListProductsQuery, ListTransactionsQuery
 from .product_code_aliases import canonical_product_code, product_code_filter_values
-from aicrm_next.integration_gateway.wechat_pay_client import WeChatPayClient, WeChatPayClientConfig
+from .refund_status import active_wechat_refund_sql
+from aicrm_next.integration_gateway.wechat_pay_client import WeChatPayClient, WeChatPayClientConfig, wechat_pay_client_config_from_env
 
 ADMIN_TZ = ZoneInfo("Asia/Shanghai")
 ALLOWED_LIMITS = {20, 50, 100}
@@ -119,23 +120,72 @@ def _out_refund_no() -> str:
 
 
 def _wechat_pay_client_config() -> WeChatPayClientConfig:
-    app_id = str(os.getenv("WECHAT_PAY_APP_ID") or os.getenv("WECHAT_MP_APP_ID") or "").strip()
-    return WeChatPayClientConfig(
-        app_id=app_id,
-        mch_id=str(os.getenv("WECHAT_PAY_MCH_ID") or "").strip(),
-        api_v3_key=str(os.getenv("WECHAT_PAY_API_V3_KEY") or "").strip(),
-        private_key_path=str(os.getenv("WECHAT_PAY_PRIVATE_KEY_PATH") or "").strip(),
-        merchant_serial_no=str(os.getenv("WECHAT_PAY_CERT_SERIAL_NO") or "").strip(),
-        platform_public_key_path=str(os.getenv("WECHAT_PAY_PLATFORM_PUBLIC_KEY_PATH") or "").strip(),
-        platform_serial_no=str(os.getenv("WECHAT_PAY_PLATFORM_CERT_SERIAL_NO") or "").strip(),
-        api_base=str(os.getenv("WECHAT_PAY_API_BASE") or "https://api.mch.weixin.qq.com").strip()
-        or "https://api.mch.weixin.qq.com",
-        timeout_seconds=_int_value(os.getenv("WECHAT_PAY_TIMEOUT_SECONDS") or 10),
-    )
+    return wechat_pay_client_config_from_env()
 
 
 def _create_wechat_pay_refund_client() -> WeChatPayClient:
     return WeChatPayClient(_wechat_pay_client_config())
+
+
+def mark_wechat_refund_request_failed(
+    out_refund_no: str,
+    *,
+    error_code: str = "",
+    error_message: str = "",
+    response_payload: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    if database_mode() != "postgres":
+        return {"ok": False, "reason": "postgres_required"}
+    refund_no = str(out_refund_no or "").strip()
+    if not refund_no:
+        return {"ok": False, "reason": "out_refund_no_required"}
+    try:
+        import psycopg
+        from psycopg.rows import dict_row
+        from psycopg.types.json import Jsonb
+    except ModuleNotFoundError as exc:
+        raise RuntimeError("psycopg is required for production refund failure sync") from exc
+
+    payload = {
+        "error_code": str(error_code or "").strip(),
+        "error_message": str(error_message or "").strip()[:500],
+        **dict(response_payload or {}),
+    }
+    with connect_commerce_db(_database_url()) as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE wechat_pay_refunds
+                SET status = 'failed',
+                    response_payload_json = %s,
+                    error_message = %s,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE out_refund_no = %s
+                RETURNING out_trade_no, transaction_id
+                """,
+                (Jsonb(payload), str(error_message or "").strip()[:500], refund_no),
+            )
+            row = cur.fetchone()
+            if not row:
+                conn.commit()
+                return {"ok": False, "reason": "refund_record_not_found"}
+            cur.execute(
+                """
+                INSERT INTO wechat_pay_order_events (
+                    out_trade_no, event_type, transaction_id, trade_state,
+                    payload_json, headers_json, created_at
+                )
+                VALUES (%s, 'refund_failed', %s, '', %s, %s, CURRENT_TIMESTAMP)
+                """,
+                (
+                    str(row.get("out_trade_no") or ""),
+                    str(row.get("transaction_id") or ""),
+                    Jsonb({"out_refund_no": refund_no, **payload, "provider_refund_executed": bool(payload.get("real_external_call_executed"))}),
+                    Jsonb({}),
+                ),
+            )
+        conn.commit()
+    return {"ok": True, "out_refund_no": refund_no}
 
 
 def _normalize_refund_provider_status(payload: dict[str, Any]) -> str:
@@ -267,7 +317,7 @@ def _int_value(value: Any) -> int:
 
 
 def _postgres_order_select() -> str:
-    return """
+    return f"""
         id, out_trade_no, transaction_id, payer_name_snapshot, mobile_snapshot, userid_snapshot,
         external_userid, unionid, respondent_key, product_name, product_code, amount_total, currency,
         status, trade_state, refund_status, refunded_amount_total, created_at,
@@ -275,7 +325,7 @@ def _postgres_order_select() -> str:
             SELECT COALESCE(SUM(r.refund_amount_total), 0)
             FROM wechat_pay_refunds r
             WHERE r.order_id = wechat_pay_orders.id
-              AND r.status NOT IN ('failed', 'closed', 'CLOSED', 'ABNORMAL', 'SUCCESS')
+              AND {active_wechat_refund_sql("r")}
         ) AS active_refund_amount_total
     """
 
@@ -317,11 +367,11 @@ def _postgres_orders(filters: dict[str, str], *, limit: int, offset: int) -> dic
         where.append("COALESCE(status, '') NOT IN ('paid', 'failed') AND COALESCE(trade_state, '') <> 'SUCCESS'")
     elif filters.get("status") == "refund_processing":
         where.append(
-            """
+            f"""
             EXISTS (
                 SELECT 1 FROM wechat_pay_refunds r
                 WHERE r.order_id = wechat_pay_orders.id
-                  AND r.status NOT IN ('failed', 'closed', 'CLOSED', 'ABNORMAL', 'SUCCESS')
+                  AND {active_wechat_refund_sql("r")}
             )
             """
         )
