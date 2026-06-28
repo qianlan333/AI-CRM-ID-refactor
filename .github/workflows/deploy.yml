@@ -79,6 +79,12 @@ jobs:
             sudo systemctl daemon-reload
             sudo systemctl enable openclaw-wecom-callback-ingress.service
             sudo systemctl restart openclaw-wecom-callback-ingress.service
+            for _ in $(seq 1 20); do
+              if curl -sSf http://127.0.0.1:5002/health; then
+                break
+              fi
+              sleep 0.5
+            done
             curl -sSf http://127.0.0.1:5002/health
             sudo systemctl enable openclaw-wecom-callback-inbox-worker.timer
             sudo systemctl restart openclaw-wecom-callback-inbox-worker.timer

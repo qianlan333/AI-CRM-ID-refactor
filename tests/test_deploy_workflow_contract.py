@@ -226,7 +226,8 @@ def test_production_deploy_installs_callback_ingress_and_worker_isolated_runtime
     daemon_reload_index = workflow.index("sudo systemctl daemon-reload")
     enable_ingress_index = workflow.index("sudo systemctl enable openclaw-wecom-callback-ingress.service")
     restart_ingress_index = workflow.index("sudo systemctl restart openclaw-wecom-callback-ingress.service")
-    ingress_health_index = workflow.index("curl -sSf http://127.0.0.1:5002/health")
+    ingress_poll_index = workflow.index("for _ in $(seq 1 20); do", restart_ingress_index)
+    ingress_health_index = workflow.index("curl -sSf http://127.0.0.1:5002/health", ingress_poll_index)
     enable_worker_index = workflow.index("sudo systemctl enable openclaw-wecom-callback-inbox-worker.timer")
     restart_worker_index = workflow.index("sudo systemctl restart openclaw-wecom-callback-inbox-worker.timer")
     ingress_status_index = workflow.index("sudo systemctl status openclaw-wecom-callback-ingress.service --no-pager")
@@ -236,7 +237,7 @@ def test_production_deploy_installs_callback_ingress_and_worker_isolated_runtime
 
     assert stop_worker_timer_index < stop_worker_service_index < alembic_upgrade_index
     assert health_index < copy_ingress_index < copy_worker_service_index < copy_worker_timer_index < daemon_reload_index
-    assert daemon_reload_index < enable_ingress_index < restart_ingress_index < ingress_health_index
+    assert daemon_reload_index < enable_ingress_index < restart_ingress_index < ingress_poll_index < ingress_health_index
     assert ingress_health_index < enable_worker_index < restart_worker_index < ingress_status_index < worker_status_index < smoke_index < smoke_evidence_index
     assert "python scripts/ops/check_wecom_callback_deploy_smoke.py | tee /tmp/wecom-callback-deploy-smoke.json" in workflow
     assert "nginx-wecom-callback-ingress.conf.example /etc" not in workflow
