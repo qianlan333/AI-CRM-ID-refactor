@@ -4262,6 +4262,50 @@ routes:
   data_source: command
   requires_auth: true
   rollback: previous_release
+- path: /api/external/ai-audience/simple/preview
+  methods:
+  - POST
+  route_name: api.external_ai_audience_simple_preview
+  capability_owner: ai_audience_ops
+  runtime_owner: ai_crm_next
+  layer: integration
+  external_effects: none
+  data_source: command
+  requires_auth: true
+  rollback: previous_release
+- path: /api/external/ai-audience/simple/apply
+  methods:
+  - POST
+  route_name: api.external_ai_audience_simple_apply
+  capability_owner: ai_audience_ops
+  runtime_owner: ai_crm_next
+  layer: integration
+  external_effects: none
+  data_source: command
+  requires_auth: true
+  rollback: previous_release
+- path: /api/external/ai-audience/simple/{package_key}/activate
+  methods:
+  - POST
+  route_name: api.external_ai_audience_simple_activate
+  capability_owner: ai_audience_ops
+  runtime_owner: ai_crm_next
+  layer: integration
+  external_effects: none
+  data_source: command
+  requires_auth: true
+  rollback: previous_release
+- path: /api/external/ai-audience/simple/{package_key}/archive
+  methods:
+  - POST
+  route_name: api.external_ai_audience_simple_archive
+  capability_owner: ai_audience_ops
+  runtime_owner: ai_crm_next
+  layer: integration
+  external_effects: none
+  data_source: command
+  requires_auth: true
+  rollback: previous_release
 - path: /api/external/ai-audience/e2e/run
   methods:
   - POST

@@ -33,6 +33,8 @@ class PackageVersionCreateRequest(BaseModel):
     incremental_sql_text: str = ""
     snapshot_sql_text: str = ""
     sql_text: str = ""
+    simple_sql_text: str = ""
+    simple_compiled_sql_text: str = ""
     parameters: dict[str, Any] = Field(default_factory=dict)
     ai_prompt: str = ""
     ai_rationale: str = ""
@@ -95,3 +97,29 @@ class InboundWebhookRequest(BaseModel):
     status: str = ""
     message: dict[str, Any] = Field(default_factory=dict)
     action: dict[str, Any] = Field(default_factory=dict)
+
+
+class SimpleSenderRequest(BaseModel):
+    sender_userid: str
+    display_name: str = ""
+    priority: int = Field(default=100, ge=1, le=10000)
+    status: str = "active"
+
+
+class SimpleSqlPreviewRequest(BaseModel):
+    package_key: str = ""
+    sql: str
+    parameters: dict[str, Any] = Field(default_factory=dict)
+    limit: int = Field(default=20, ge=1, le=200)
+
+
+class SimpleSqlApplyRequest(BaseModel):
+    package_key: str
+    name: str
+    natural_language_definition: str = ""
+    refresh_mode: str = "manual"
+    sql: str
+    parameters: dict[str, Any] = Field(default_factory=dict)
+    senders: list[SimpleSenderRequest] = Field(default_factory=list)
+    outbound_webhook_url: str = ""
+    operator: str = ""

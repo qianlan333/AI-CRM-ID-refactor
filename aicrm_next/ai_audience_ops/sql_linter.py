@@ -110,9 +110,12 @@ def validate_sql(sql: str) -> None:
 def extract_dependencies(sql: str) -> list[str]:
     dependencies: set[str] = set()
     stripped = _strip_comments(normalize_sql(sql))
+    cte_names = _extract_cte_names(stripped)
     for match in TABLE_REF_RE.finditer(stripped):
         ref = match.group(1).strip().strip('"').lower()
         if ref.startswith("("):
+            continue
+        if ref in cte_names:
             continue
         dependencies.add(ref)
     return sorted(dependencies)
@@ -125,3 +128,13 @@ def extract_params(sql: str) -> list[str]:
 def _strip_comments(sql: str) -> str:
     without_block = re.sub(r"/\*.*?\*/", " ", sql, flags=re.DOTALL)
     return re.sub(r"--.*?$", " ", without_block, flags=re.MULTILINE)
+
+
+def _extract_cte_names(sql: str) -> set[str]:
+    lowered = sql.lower()
+    if not re.match(r"^\s*with\s", lowered):
+        return set()
+    return {
+        match.group(1).lower()
+        for match in re.finditer(r"(?:\bwith|,)\s+([a-zA-Z_][\w$]*)\s+as\s*\(", lowered)
+    }
