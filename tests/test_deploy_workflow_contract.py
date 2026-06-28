@@ -71,6 +71,9 @@ def test_production_deploy_runs_alembic_upgrade_before_service_restart():
     stop_broadcast_service_index = workflow.index("sudo systemctl stop openclaw-broadcast-queue-worker.service || true")
     alembic_upgrade_index = workflow.index("python3 -m alembic upgrade head")
     stop_canonical_web_index = workflow.index("sudo systemctl stop aicrm-web.service || true")
+    stop_compatible_web_index = workflow.index("sudo systemctl stop openclaw-wecom-postgres.service || true")
+    stale_listener_index = workflow.index('if sudo fuser -s 5001/tcp; then')
+    force_kill_index = workflow.index("sudo fuser -KILL 5001/tcp || true")
     restart_index = workflow.index("sudo systemctl restart openclaw-wecom-postgres.service")
     alembic_table = "alembic_" + "version"
 
@@ -81,6 +84,9 @@ def test_production_deploy_runs_alembic_upgrade_before_service_restart():
         < stop_broadcast_service_index
         < alembic_upgrade_index
         < stop_canonical_web_index
+        < stop_compatible_web_index
+        < stale_listener_index
+        < force_kill_index
         < restart_index
     )
     assert "python3 app.py init-db" not in workflow

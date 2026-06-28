@@ -57,6 +57,19 @@ jobs:
             # Production currently uses the openclaw-* compatible 5001 web unit.
             # Stop the canonical alias if it exists so both units cannot bind 5001.
             sudo systemctl stop aicrm-web.service || true
+            sudo systemctl stop openclaw-wecom-postgres.service || true
+            if sudo fuser -s 5001/tcp; then
+              echo "5001 is still occupied before web restart; terminating stale listener"
+              sudo ss -ltnp 'sport = :5001' || true
+              sudo fuser -TERM 5001/tcp || true
+              sleep 2
+            fi
+            if sudo fuser -s 5001/tcp; then
+              echo "5001 listener survived TERM; force killing stale listener"
+              sudo ss -ltnp 'sport = :5001' || true
+              sudo fuser -KILL 5001/tcp || true
+              sleep 1
+            fi
             sudo systemctl restart openclaw-wecom-postgres.service
             release_ready=0
             for _ in $(seq 1 60); do
