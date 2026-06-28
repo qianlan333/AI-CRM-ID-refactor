@@ -55,15 +55,22 @@ jobs:
             sudo systemctl stop openclaw-ai-audience-scheduler.service || true
             python3 -m alembic upgrade head
             sudo systemctl restart openclaw-wecom-postgres.service
-            for _ in $(seq 1 20); do
-              if curl -sSf http://127.0.0.1:5001/health; then
+            release_ready=0
+            for _ in $(seq 1 60); do
+              if curl -sSf -D /tmp/aicrm_health_headers.txt http://127.0.0.1:5001/health -o /tmp/aicrm_health.json \
+                && grep -i "x-aicrm-release-sha: $after_sha" /tmp/aicrm_health_headers.txt; then
+                release_ready=1
                 break
               fi
-              sleep 0.5
+              actual_release_sha="$(awk 'tolower($1) == "x-aicrm-release-sha:" {print $2}' /tmp/aicrm_health_headers.txt 2>/dev/null | tr -d '\r' | tail -n 1 || true)"
+              echo "waiting for 5001 release sha: expected=$after_sha actual=${actual_release_sha:-missing}"
+              sleep 1
             done
-            curl -sSf http://127.0.0.1:5001/health
-            curl -sSf -D /tmp/aicrm_health_headers.txt http://127.0.0.1:5001/health -o /tmp/aicrm_health.json
-            grep -i "x-aicrm-release-sha: $after_sha" /tmp/aicrm_health_headers.txt
+            if [ "$release_ready" != "1" ]; then
+              sudo systemctl status openclaw-wecom-postgres.service --no-pager || true
+              sudo journalctl -u openclaw-wecom-postgres.service -n 80 --no-pager || true
+              exit 1
+            fi
             cat /tmp/aicrm_health.json
             sudo cp deploy/openclaw-external-push-worker.service /etc/systemd/system/
             sudo cp deploy/openclaw-external-push-worker.timer /etc/systemd/system/

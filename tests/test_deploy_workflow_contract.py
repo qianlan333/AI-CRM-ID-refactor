@@ -56,8 +56,9 @@ def test_production_deploy_refreshes_release_marker_before_restart_and_checks_he
     restart_index = workflow.index("sudo systemctl restart openclaw-wecom-postgres.service")
     header_curl_index = workflow.index("curl -sSf -D /tmp/aicrm_health_headers.txt http://127.0.0.1:5001/health")
     header_grep_index = workflow.index('grep -i "x-aicrm-release-sha: $after_sha" /tmp/aicrm_health_headers.txt')
+    ready_guard_index = workflow.index('if [ "$release_ready" != "1" ]; then')
 
-    assert after_sha_index < marker_index < restart_index < header_curl_index < header_grep_index
+    assert after_sha_index < marker_index < restart_index < header_curl_index < header_grep_index < ready_guard_index
 
 
 def test_production_deploy_runs_alembic_upgrade_before_service_restart():
@@ -85,17 +86,19 @@ def test_production_deploy_polls_health_after_restart_instead_of_fixed_sleep():
     workflow = (ROOT / ".github" / "workflows" / "deploy.yml").read_text(encoding="utf-8")
 
     restart_index = workflow.index("sudo systemctl restart openclaw-wecom-postgres.service")
-    poll_index = workflow.index("for _ in $(seq 1 20); do")
-    health_index = workflow.index("curl -sSf http://127.0.0.1:5001/health")
+    poll_index = workflow.index("for _ in $(seq 1 60); do")
+    health_index = workflow.index("curl -sSf -D /tmp/aicrm_health_headers.txt http://127.0.0.1:5001/health")
+    header_index = workflow.index('grep -i "x-aicrm-release-sha: $after_sha" /tmp/aicrm_health_headers.txt')
+    status_index = workflow.index("sudo systemctl status openclaw-wecom-postgres.service --no-pager || true")
 
-    assert restart_index < poll_index < health_index
+    assert restart_index < poll_index < health_index < header_index < status_index
     assert "sleep 3" not in workflow
 
 
 def test_production_deploy_installs_and_runs_external_push_worker_timer():
     workflow = (ROOT / ".github" / "workflows" / "deploy.yml").read_text(encoding="utf-8")
 
-    health_index = workflow.index("curl -sSf http://127.0.0.1:5001/health", workflow.index("for _ in $(seq 1 20); do"))
+    health_index = workflow.index("curl -sSf -D /tmp/aicrm_health_headers.txt http://127.0.0.1:5001/health", workflow.index("for _ in $(seq 1 60); do"))
     copy_service_index = workflow.index("sudo cp deploy/openclaw-external-push-worker.service /etc/systemd/system/")
     copy_timer_index = workflow.index("sudo cp deploy/openclaw-external-push-worker.timer /etc/systemd/system/")
     daemon_reload_index = workflow.index("sudo systemctl daemon-reload")
@@ -113,7 +116,7 @@ def test_production_deploy_installs_external_effect_queue_worker_timer_without_m
     stop_timer_index = workflow.index("sudo systemctl stop openclaw-external-effect-worker.timer || true")
     stop_service_index = workflow.index("sudo systemctl stop openclaw-external-effect-worker.service || true")
     alembic_upgrade_index = workflow.index("python3 -m alembic upgrade head")
-    health_index = workflow.index("curl -sSf http://127.0.0.1:5001/health", workflow.index("for _ in $(seq 1 20); do"))
+    health_index = workflow.index("curl -sSf -D /tmp/aicrm_health_headers.txt http://127.0.0.1:5001/health", workflow.index("for _ in $(seq 1 60); do"))
     copy_service_index = workflow.index("sudo cp deploy/openclaw-external-effect-worker.service /etc/systemd/system/")
     copy_timer_index = workflow.index("sudo cp deploy/openclaw-external-effect-worker.timer /etc/systemd/system/")
     daemon_reload_index = workflow.index("sudo systemctl daemon-reload")
@@ -130,7 +133,7 @@ def test_production_deploy_installs_external_effect_queue_worker_timer_without_m
 def test_production_deploy_installs_and_runs_broadcast_queue_worker_timer():
     workflow = (ROOT / ".github" / "workflows" / "deploy.yml").read_text(encoding="utf-8")
 
-    health_index = workflow.index("curl -sSf http://127.0.0.1:5001/health", workflow.index("for _ in $(seq 1 20); do"))
+    health_index = workflow.index("curl -sSf -D /tmp/aicrm_health_headers.txt http://127.0.0.1:5001/health", workflow.index("for _ in $(seq 1 60); do"))
     copy_service_index = workflow.index("sudo cp deploy/openclaw-broadcast-queue-worker.service /etc/systemd/system/")
     copy_timer_index = workflow.index("sudo cp deploy/openclaw-broadcast-queue-worker.timer /etc/systemd/system/")
     daemon_reload_index = workflow.index("sudo systemctl daemon-reload")
@@ -149,7 +152,7 @@ def test_production_deploy_installs_and_runs_broadcast_queue_worker_timer():
 def test_production_deploy_installs_and_runs_internal_event_worker_timer():
     workflow = (ROOT / ".github" / "workflows" / "deploy.yml").read_text(encoding="utf-8")
 
-    health_index = workflow.index("curl -sSf http://127.0.0.1:5001/health", workflow.index("for _ in $(seq 1 20); do"))
+    health_index = workflow.index("curl -sSf -D /tmp/aicrm_health_headers.txt http://127.0.0.1:5001/health", workflow.index("for _ in $(seq 1 60); do"))
     copy_service_index = workflow.index("sudo cp deploy/openclaw-internal-event-worker.service /etc/systemd/system/")
     copy_timer_index = workflow.index("sudo cp deploy/openclaw-internal-event-worker.timer /etc/systemd/system/")
     daemon_reload_index = workflow.index("sudo systemctl daemon-reload")
@@ -219,7 +222,7 @@ def test_production_deploy_installs_callback_ingress_and_worker_isolated_runtime
     stop_worker_timer_index = workflow.index("sudo systemctl stop openclaw-wecom-callback-inbox-worker.timer || true")
     stop_worker_service_index = workflow.index("sudo systemctl stop openclaw-wecom-callback-inbox-worker.service || true")
     alembic_upgrade_index = workflow.index("python3 -m alembic upgrade head")
-    health_index = workflow.index("curl -sSf http://127.0.0.1:5001/health", workflow.index("for _ in $(seq 1 20); do"))
+    health_index = workflow.index("curl -sSf -D /tmp/aicrm_health_headers.txt http://127.0.0.1:5001/health", workflow.index("for _ in $(seq 1 60); do"))
     copy_ingress_index = workflow.index("sudo cp deploy/openclaw-wecom-callback-ingress.service /etc/systemd/system/")
     copy_worker_service_index = workflow.index("sudo cp deploy/openclaw-wecom-callback-inbox-worker.service /etc/systemd/system/")
     copy_worker_timer_index = workflow.index("sudo cp deploy/openclaw-wecom-callback-inbox-worker.timer /etc/systemd/system/")
