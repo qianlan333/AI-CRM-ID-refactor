@@ -12,8 +12,8 @@ from typing import Any
 from urllib.parse import urlencode
 
 from aicrm_next.admin_auth.service import (
-    SESSION_COOKIE,
-    SESSION_MAX_AGE_SECONDS,
+    SESSION_COOKIE as SESSION_COOKIE,
+    SESSION_MAX_AGE_SECONDS as SESSION_MAX_AGE_SECONDS,
     normalize_text,
     route_headers,
     safe_next_path,
