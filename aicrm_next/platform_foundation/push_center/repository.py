@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from .projection import PushCenterProjectionService, external_userid_for_job, owner_userid_for_job
+from .projection import PushCenterProjectionService
 
 
 def _text(value: Any) -> str:

@@ -24,7 +24,6 @@ def _translate_sql(sql: str) -> str:
 
 class PostgresCursor:
     def __init__(self, conn: Any) -> None:
-        import psycopg
         from psycopg.rows import dict_row
 
         base_factory = dict_row

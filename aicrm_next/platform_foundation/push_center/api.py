@@ -21,7 +21,6 @@ from .view_model import (
     build_jobs_payload,
     build_sections_payload,
     build_stats_payload,
-    push_center_filters,
 )
 
 router = APIRouter()

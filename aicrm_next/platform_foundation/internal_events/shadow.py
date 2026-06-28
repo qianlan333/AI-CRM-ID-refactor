@@ -19,7 +19,7 @@ from .config import (
 from .consumer_registry import DEFAULT_INTERNAL_EVENT_CONSUMER_REGISTRY, InternalEventConsumerRegistry
 from .legacy_path_markers import mark_legacy_path_invoked
 from .models import InternalEvent, InternalEventConsumerResult, InternalEventConsumerRun
-from .customer_identity import CUSTOMER_PHONE_BOUND_EVENT_TYPE, register_customer_identity_event_consumers
+from .customer_identity import register_customer_identity_event_consumers
 from .questionnaire import register_questionnaire_event_consumers
 from .service import InternalEventService
 
