@@ -22,6 +22,7 @@ Legacy Flask startup compatibility 已关闭；旧 Flask 代码仅作为非 star
 - 本地开发统一基于当前 Git clone，从最新 `main` 开功能分支。
 - 仓库只保留源码、脚本、测试和文档，不再把发布包、导出物、临时备份和本机专属路径一起带进主仓。
 - 生产 Nginx/systemd 切换仍需单独人工审批；本仓库入口切换不代表生产流量已经切换。
+- WeCom External Effect 真实执行仅按 PR #1505 批准边界处理；Payment / OAuth / OpenClaw / MCP / Webhook 等其他真实外呼仍需单独审批。
 
 ## 建议先读
 
@@ -82,16 +83,13 @@ python3 -m venv .venv
 .venv/bin/python -m pytest -q
 ```
 
-## 生产环境快照
+## 生产运维口径
 
-- 外网入口：`https://www.youcangogogo.com`
-- systemd 服务：`openclaw-wecom-postgres.service`
-- Nginx 上游：`http://127.0.0.1:5001`
-- 生产代码目录：`/home/ubuntu/极简 crm`
-- 环境变量文件：`/home/ubuntu/.openclaw-wecom-pg.env`
-- 生产虚拟环境：`/home/ubuntu/venvs/openclaw/bin/activate`
+主仓只保留生产发布、验收和审批边界，不记录具体 host、SSH alias、本地
+identity、生产路径、白名单命令或 cookbook。需要生产诊断时，使用当前私有 ops
+handoff 或由具备权限的人工提供一次性任务口径。
 
-更完整的发布与验收口径见：
+发布与验收口径见：
 
 - [docs/deploy_runbook.md](docs/deploy_runbook.md)
 
