@@ -73,7 +73,8 @@ def test_production_deploy_runs_alembic_upgrade_before_service_restart():
     stop_canonical_web_index = workflow.index("sudo systemctl stop aicrm-web.service || true")
     stop_compatible_web_index = workflow.index("sudo systemctl stop openclaw-wecom-postgres.service || true")
     stale_listener_index = workflow.index('if sudo fuser -s 5001/tcp; then')
-    force_kill_index = workflow.index("sudo fuser -KILL 5001/tcp || true")
+    term_kill_index = workflow.index("sudo fuser -k -TERM 5001/tcp || true")
+    force_kill_index = workflow.index("sudo fuser -k -KILL 5001/tcp || true")
     wait_for_free_index = workflow.index('echo "waiting for stale 5001 listener to exit"')
     reset_failed_index = workflow.index("sudo systemctl reset-failed openclaw-wecom-postgres.service || true")
     start_index = workflow.index("if ! sudo systemctl start openclaw-wecom-postgres.service; then")
@@ -88,11 +89,14 @@ def test_production_deploy_runs_alembic_upgrade_before_service_restart():
         < stop_canonical_web_index
         < stop_compatible_web_index
         < stale_listener_index
+        < term_kill_index
         < force_kill_index
         < wait_for_free_index
         < reset_failed_index
         < start_index
     )
+    assert "sudo fuser -TERM 5001/tcp" not in workflow
+    assert "sudo fuser -KILL 5001/tcp" not in workflow
     assert "python3 app.py init-db" not in workflow
     assert "python app.py init-db" not in workflow
     assert "alembic stamp head" not in workflow
