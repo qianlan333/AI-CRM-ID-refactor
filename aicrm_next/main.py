@@ -6,35 +6,13 @@ from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from .admin_auth import reset_admin_auth_fixture_state
 from .ai_audience_ops import register_ai_audience_event_consumers
-from .admin_jobs.repository import reset_admin_jobs_fixture_state
-from .automation_engine.group_ops.repo import reset_group_ops_fixture_state
-from .automation_engine.repo import reset_automation_fixture_state
-from .automation_engine.channels_api import reset_wecom_customer_acquisition_link_fixture_state
-from .commerce.repo import reset_commerce_fixture_state
-from .cloud_orchestrator.campaigns_read import reset_campaign_read_fixture_state
-from .cloud_orchestrator.campaigns_write import reset_campaign_write_fixture_state
-from .cloud_orchestrator.repository import reset_cloud_plan_fixture_state
-from .customer_tags.admin_write import reset_wecom_tag_write_fixture_state
-from .customer_tags.live_mutation import reset_wecom_tag_live_mutation_fixture_state
-from .hxc_dashboard.repo import reset_hxc_dashboard_fixture_state
-from .hxc_dashboard.safe_mode import reset_hxc_safe_mode_fixture_state
-from .integration_gateway.wecom_jssdk_adapter import reset_sidebar_jssdk_attempts
-from .media_library.repo import reset_media_library_fixture_state
-from .ops_enrollment.application import reset_user_ops_fixture_state
-from .platform_foundation.external_effects import reset_external_effect_fixture_state
-from .platform_foundation.legacy_cleanup import reset_legacy_cleanup_fixture_state
-from .platform_foundation.internal_events import register_payment_succeeded_consumers, register_shadow_event_consumers, reset_internal_event_fixture_state
-from .radar_links.repo import reset_radar_links_fixture_state
-from .sidebar_write import reset_sidebar_write_fixture_state
+from . import fixture_reset_registry
+from .platform_foundation.internal_events import register_payment_succeeded_consumers, register_shadow_event_consumers
 from .router_registry import register_routers
 from .shared.repository_provider import RepositoryProviderError
 from .shared.release import current_release_sha
 from .shared.runtime import fixture_mode
-from .questionnaire.repo import reset_questionnaire_fixture_state
-from .questionnaire.admin_write import reset_questionnaire_admin_write_fixture_state
-from .questionnaire.h5_write import reset_questionnaire_h5_write_fixture_state
 
 _FRONTEND_COMPAT_DIR = Path(__file__).resolve().parent / "frontend_compat"
 _GROUP_OPS_DIR = Path(__file__).resolve().parent / "automation_engine" / "group_ops"
@@ -49,30 +27,7 @@ def create_app() -> FastAPI:
     register_ai_audience_event_consumers()
 
     if fixture_mode():
-        reset_user_ops_fixture_state()
-        reset_questionnaire_fixture_state()
-        reset_questionnaire_h5_write_fixture_state()
-        reset_automation_fixture_state()
-        reset_group_ops_fixture_state()
-        reset_commerce_fixture_state()
-        reset_media_library_fixture_state()
-        reset_admin_jobs_fixture_state()
-        reset_hxc_dashboard_fixture_state()
-        reset_hxc_safe_mode_fixture_state()
-        reset_radar_links_fixture_state()
-        reset_cloud_plan_fixture_state()
-        reset_campaign_read_fixture_state()
-        reset_campaign_write_fixture_state()
-        reset_sidebar_write_fixture_state()
-        reset_wecom_customer_acquisition_link_fixture_state()
-        reset_admin_auth_fixture_state()
-        reset_questionnaire_admin_write_fixture_state()
-        reset_wecom_tag_write_fixture_state()
-        reset_wecom_tag_live_mutation_fixture_state()
-        reset_sidebar_jssdk_attempts()
-        reset_external_effect_fixture_state()
-        reset_legacy_cleanup_fixture_state()
-        reset_internal_event_fixture_state()
+        fixture_reset_registry.reset_fixture_state()
 
     @app.exception_handler(RepositoryProviderError)
     async def repository_provider_error_handler(request, exc):
