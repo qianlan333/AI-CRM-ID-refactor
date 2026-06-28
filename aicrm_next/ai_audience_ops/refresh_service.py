@@ -19,6 +19,9 @@ from .repository import (
 from .sql_executor import build_execution_plan
 
 
+AI_AUDIENCE_REFRESH_QUERY_TIMEOUT_SECONDS = 120
+
+
 class AudienceRefreshService:
     def __init__(
         self,
@@ -116,7 +119,12 @@ class AudienceRefreshService:
 
         run = self._repo.create_run(int(package["id"]), int(version["id"]), run_type=refresh_kind, started_at=started_at, last_watermark_at=watermark)
         try:
-            raw_rows = self._repo.execute_readonly_query(plan.sql, plan.params, limit=plan.limit, timeout_seconds=30)
+            raw_rows = self._repo.execute_readonly_query(
+                plan.sql,
+                plan.params,
+                limit=plan.limit,
+                timeout_seconds=AI_AUDIENCE_REFRESH_QUERY_TIMEOUT_SECONDS,
+            )
             normalized_rows = [normalize_audience_row(row) for row in raw_rows]
             diff = self._apply_diff(package, run, normalized_rows, refresh_kind=refresh_kind, occurred_at=started_at)
             completed = self._repo.complete_run(

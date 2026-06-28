@@ -61,7 +61,7 @@ SELECT
   'simple:' || :package_key || ':' || external_userid AS event_source_key,
   '{{}}'::jsonb AS payload_json,
   external_userid,
-  :refresh_started_at::timestamptz AS event_at
+  CAST(:refresh_started_at AS timestamptz) AS event_at
 FROM simple_audience
 WHERE external_userid IS NOT NULL
 """.strip()
