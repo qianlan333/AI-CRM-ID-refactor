@@ -267,7 +267,7 @@ def test_group_ops_legacy_bundle_external_effect_creates_wecom_group_job(group_o
     assert jobs[0].payload_json["chat_ids"] == ["wrOgAAA001"]
 
 
-def test_wecom_group_external_effect_adapter_gates_and_success_path(group_ops_api_client, monkeypatch):
+def test_wecom_group_external_effect_adapter_defaults_to_success_path(group_ops_api_client, monkeypatch):
     monkeypatch.setenv("AICRM_GROUP_OPS_OUTBOUND_MODE", "external_effect")
     monkeypatch.setenv("AICRM_GROUP_OPS_EXTERNAL_EFFECT_SEND_MODE", "wecom_group")
     monkeypatch.setenv("AICRM_EXTERNAL_EFFECT_ALLOWED_TYPES", WECOM_MESSAGE_GROUP_SEND)
@@ -288,12 +288,11 @@ def test_wecom_group_external_effect_adapter_gates_and_success_path(group_ops_ap
     disabled = ExternalEffectWorker().run_due(batch_size=1, dry_run=False, effect_types=[WECOM_MESSAGE_GROUP_SEND], test_only=False)
     disabled_updated = ExternalEffectService().get(disabled_job.id if disabled_job else 0)
 
-    assert disabled["counts"]["failed_count"] == 1
-    assert disabled["real_external_call_executed"] is False
+    assert disabled["counts"]["succeeded_count"] == 1
+    assert disabled["real_external_call_executed"] is True
     assert disabled_updated is not None
-    assert disabled_updated.status == "failed_terminal"
-    assert disabled_updated.last_error_code == "execution_disabled"
-    assert wecom_calls == []
+    assert disabled_updated.status == "succeeded"
+    assert len(wecom_calls) == 1
 
     monkeypatch.setenv("AICRM_EXTERNAL_EFFECT_WECOM_EXECUTE", "1")
     response = group_ops_api_client.post(
@@ -317,9 +316,9 @@ def test_wecom_group_external_effect_adapter_gates_and_success_path(group_ops_ap
     assert executed["real_external_call_executed"] is True
     assert updated is not None
     assert updated.status == "succeeded"
-    assert len(wecom_calls) == 1
-    assert wecom_calls[0]["payload"]["sender"] == "owner_001"
-    assert wecom_calls[0]["payload"]["chat_ids"] == ["wrOgAAA001"]
+    assert len(wecom_calls) == 2
+    assert wecom_calls[1]["payload"]["sender"] == "owner_001"
+    assert wecom_calls[1]["payload"]["chat_ids"] == ["wrOgAAA001"]
     assert executed["items"][0]["attempt"]["response_summary_json"]["wecom_send_executed"] is True
 
 
@@ -390,11 +389,12 @@ def test_wecom_group_external_effect_requires_batch_size_one(group_ops_api_clien
     assert result["real_external_call_executed"] is False
 
 
-def test_wecom_group_external_effect_blocks_allowlist_and_mention_all(group_ops_api_client, monkeypatch):
+def test_wecom_group_external_effect_ignores_allowlist_and_mention_all_gates(group_ops_api_client, monkeypatch):
     monkeypatch.setenv("AICRM_EXTERNAL_EFFECT_WECOM_EXECUTE", "1")
     monkeypatch.setenv("AICRM_EXTERNAL_EFFECT_ALLOWED_TYPES", WECOM_MESSAGE_GROUP_SEND)
     monkeypatch.setenv("AICRM_EXTERNAL_EFFECT_ALLOWED_GROUP_OPS_WEBHOOK_KEYS", "other-webhook")
     monkeypatch.setenv("AICRM_EXTERNAL_EFFECT_ALLOWED_OWNER_USERIDS", "owner_001")
+    wecom_calls = _install_fake_wecom_group_message_adapter(monkeypatch)
     service = ExternalEffectService()
     job = service.plan_effect(
         effect_type=WECOM_MESSAGE_GROUP_SEND,
@@ -416,13 +416,14 @@ def test_wecom_group_external_effect_blocks_allowlist_and_mention_all(group_ops_
         status="queued",
         idempotency_key="group-ops-wecom-not-allowed",
     )
-    blocked = ExternalEffectWorker().run_due(batch_size=1, dry_run=False, effect_types=[WECOM_MESSAGE_GROUP_SEND], test_only=False)
-    blocked_job = ExternalEffectService().get(job["id"])
+    executed = ExternalEffectWorker().run_due(batch_size=1, dry_run=False, effect_types=[WECOM_MESSAGE_GROUP_SEND], test_only=False)
+    executed_job = ExternalEffectService().get(job["id"])
 
-    assert blocked["counts"]["failed_count"] == 1
-    assert blocked["real_external_call_executed"] is False
-    assert blocked_job is not None
-    assert blocked_job.last_error_code == "group_ops_webhook_key_not_allowed"
+    assert executed["counts"]["succeeded_count"] == 1
+    assert executed["real_external_call_executed"] is True
+    assert executed_job is not None
+    assert executed_job.status == "succeeded"
+    assert len(wecom_calls) == 1
 
     monkeypatch.setenv("AICRM_EXTERNAL_EFFECT_ALLOWED_GROUP_OPS_WEBHOOK_KEYS", "daily-lesson-8f3a")
     service.plan_effect(
@@ -445,9 +446,10 @@ def test_wecom_group_external_effect_blocks_allowlist_and_mention_all(group_ops_
         status="queued",
         idempotency_key="group-ops-wecom-mention-all",
     )
-    mention_blocked = ExternalEffectWorker().run_due(batch_size=1, dry_run=False, effect_types=[WECOM_MESSAGE_GROUP_SEND], test_only=False)
-    assert mention_blocked["counts"]["failed_count"] == 1
-    assert mention_blocked["items"][0]["attempt"]["error_code"] == "mention_all_blocked"
+    mention_executed = ExternalEffectWorker().run_due(batch_size=1, dry_run=False, effect_types=[WECOM_MESSAGE_GROUP_SEND], test_only=False)
+    assert mention_executed["counts"]["succeeded_count"] == 1
+    assert mention_executed["real_external_call_executed"] is True
+    assert len(wecom_calls) == 2
 
 
 def test_group_ops_loopback_2xx_succeeds_with_receipt(group_ops_api_client, monkeypatch):
