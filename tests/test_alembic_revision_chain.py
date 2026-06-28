@@ -182,7 +182,17 @@ def test_alembic_commands_can_walk_revision_graph() -> None:
         if args == ("heads",):
             heads = [line for line in result.stdout.splitlines() if "(head)" in line]
             assert len(heads) == 1
-            assert "0056_ai_audience_group_chat_members_view" in heads[0]
+            assert "0058_merge_webhook_inbox_and_huangyoucan_audience" in heads[0]
+
+
+def test_deployed_webhook_inbox_revision_is_merged_into_current_head() -> None:
+    revisions = _migration_revisions()
+
+    assert revisions["0054_webhook_inbox"]["down_revision"] is None
+    assert set(revisions["0058_merge_webhook_inbox_and_huangyoucan_audience"]["down_revision"]) == {
+        "0054_webhook_inbox",
+        "0057_huangyoucan_unregistered_ai_audience",
+    }
 
 
 def test_legacy_webhook_retirement_migration_does_not_delete_history_data() -> None:
