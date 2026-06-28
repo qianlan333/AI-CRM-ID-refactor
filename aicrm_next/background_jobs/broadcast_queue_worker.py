@@ -6,6 +6,8 @@ import json
 from datetime import datetime, timedelta, timezone
 from typing import Any, Protocol
 
+from aicrm_next.shared.runtime_settings import runtime_setting
+
 from .db import connect, has_database_url, int_value, json_list, utcnow
 
 
@@ -222,9 +224,92 @@ def _extract_private_text(payload: dict[str, Any]) -> str:
     )
 
 
+def _configured_wecom_sender(fallback: str = "") -> str:
+    raw = runtime_setting("AICRM_EXTERNAL_EFFECT_ALLOWED_OWNER_USERIDS", "")
+    candidates = [
+        item.strip()
+        for item in raw.replace("\n", ",").replace(" ", ",").split(",")
+        if item.strip()
+    ]
+    return candidates[0] if candidates else _text(fallback)
+
+
 def _extract_private_sender(payload: dict[str, Any]) -> str:
     campaign = payload.get("campaign") if isinstance(payload.get("campaign"), dict) else {}
-    return _text(payload.get("sender_userid") or payload.get("owner_userid") or campaign.get("owner_userid"))
+    fallback = _text(payload.get("sender_userid") or payload.get("owner_userid") or campaign.get("owner_userid"))
+    return _configured_wecom_sender(fallback)
+
+
+def _load_cloud_plan_recipient_message(payload: dict[str, Any]) -> dict[str, Any]:
+    if _text(payload.get("message_mode")) != "recipient_messages":
+        return {}
+    plan_id = _text(payload.get("plan_id"))
+    recipient_id = int_value(payload.get("recipient_id"))
+    external_userid = _text(payload.get("external_userid"))
+    if not plan_id or not recipient_id:
+        return {}
+    with connect() as conn:
+        row = conn.execute(
+            """
+            SELECT id, recipient_id, external_userid, content_text, content_payload_json, attachments_json
+            FROM cloud_broadcast_plan_recipient_messages
+            WHERE plan_id = %s
+              AND recipient_id = %s
+              AND (%s = '' OR external_userid = %s)
+              AND status IN ('queued', 'pending')
+            ORDER BY sequence_index ASC, id ASC
+            LIMIT 1
+            """,
+            (plan_id, recipient_id, external_userid, external_userid),
+        ).fetchone()
+    if not row:
+        return {}
+    return {
+        "cloud_plan_message_id": int_value(row.get("id")),
+        "content_text": _text(row.get("content_text")),
+        "content_payload_json": _json_dict(row.get("content_payload_json")),
+        "attachments": _json_list(row.get("attachments_json")),
+    }
+
+
+def _with_cloud_plan_recipient_message(payload: dict[str, Any]) -> dict[str, Any]:
+    message = _load_cloud_plan_recipient_message(payload)
+    if not message:
+        return payload
+    hydrated = dict(payload)
+    if message.get("content_text"):
+        hydrated["content_text"] = message.get("content_text")
+    if message.get("content_payload_json"):
+        hydrated["content_payload_json"] = message.get("content_payload_json")
+    if message.get("attachments"):
+        hydrated["attachments"] = message.get("attachments")
+    if message.get("cloud_plan_message_id"):
+        hydrated["cloud_plan_message_id"] = message.get("cloud_plan_message_id")
+    return hydrated
+
+
+def _mark_cloud_plan_recipient_message_sent(payload: dict[str, Any], *, outbound_task_id: int | None) -> None:
+    message_id = int_value(payload.get("cloud_plan_message_id"))
+    recipient_id = int_value(payload.get("recipient_id"))
+    if not message_id or not recipient_id:
+        return
+    with connect() as conn:
+        conn.execute(
+            """
+            UPDATE cloud_broadcast_plan_recipient_messages
+            SET status = 'sent', sent_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+            WHERE id = %s
+            """,
+            (message_id,),
+        )
+        conn.execute(
+            """
+            UPDATE cloud_broadcast_plan_recipients
+            SET send_status = 'sent', updated_at = CURRENT_TIMESTAMP
+            WHERE id = %s
+            """,
+            (recipient_id,),
+        )
 
 
 def _merge_content_package(target: dict[str, Any], source: Any) -> None:
@@ -286,6 +371,7 @@ def _normalize_private_attachments_for_wecom(attachments: list[dict[str, Any]]) 
 def _dispatch_wecom_private(job: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any]:
     from aicrm_next.integration_gateway.wecom_private_adapter import build_wecom_private_message_adapter
 
+    payload = _with_cloud_plan_recipient_message(payload)
     targets = _extract_private_targets(job, payload)
     target_count = int_value(job.get("target_count"))
     sender_userid = _extract_private_sender(payload)
@@ -305,6 +391,9 @@ def _dispatch_wecom_private(job: dict[str, Any], payload: dict[str, Any]) -> dic
         attachments = _normalize_private_attachments_for_wecom(attachments)
     except Exception as exc:
         return {"ok": False, "error": str(exc), "failure_type": "material_resolve_failed"}
+    direct_attachments = _json_list(payload.get("attachments")) or _json_list(payload.get("attachments_json"))
+    if direct_attachments:
+        attachments = direct_attachments + attachments
     if not content_text and not attachments:
         return {"ok": False, "error": "content_text_or_attachment_missing", "failure_type": "validation_failed"}
     request_payload = {
@@ -346,6 +435,7 @@ def _dispatch_wecom_private(job: dict[str, Any], payload: dict[str, Any]) -> dic
         }
     if not outbound_task_id:
         return {"ok": False, "error": "outbound_task_record_missing", "failure_type": "handler_error"}
+    _mark_cloud_plan_recipient_message_sent(payload, outbound_task_id=outbound_task_id)
     return {
         "ok": True,
         "sent_count": len(targets),
