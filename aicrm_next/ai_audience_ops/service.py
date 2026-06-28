@@ -609,6 +609,7 @@ def build_preview_runtime_params(
         params.update(payload_params)
     params.update(
         {
+            "package_key": _text(package.get("package_key")),
             "package_id": int(package.get("id") or 0),
             "refresh_started_at": started_at,
             "last_watermark_at": previous_watermark(package, refresh_kind, started_at=started_at),

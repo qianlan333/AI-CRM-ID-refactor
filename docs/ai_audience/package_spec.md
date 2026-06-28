@@ -1,4 +1,20 @@
-# Markdown Package Spec
+# AI Audience Markdown Package Spec
+
+Markdown spec 是高级运行时输入，不是业务包代码提交格式。普通业务人群包不得通过 PR 新增；PR 只用于新增底层 `audience_read.*` view、平台能力或安全边界。Codex 可以临时生成 Markdown spec 并通过 External API dry-run/apply/publish，但不需要把每个业务包的 `.md` 文件提交到 repo。仓库里的 examples 只是模板。
+
+普通“只按 external_userid 圈人”的包优先使用 Simple SQL API：
+
+- `POST /api/external/ai-audience/simple/preview`
+- `POST /api/external/ai-audience/simple/apply`
+- `POST /api/external/ai-audience/simple/{package_key}/activate`
+- `POST /api/external/ai-audience/simple/{package_key}/archive`
+
+复杂包才使用 Markdown spec API：
+
+- `POST /api/external/ai-audience/spec/dry-run`
+- `POST /api/external/ai-audience/spec/apply`
+- `POST /api/external/ai-audience/spec/publish`
+- `POST /api/external/ai-audience/packages/{package_key}/archive`
 
 Spec 使用 YAML frontmatter 描述包配置，用 Markdown SQL block 描述版本 SQL。
 
@@ -76,7 +92,7 @@ WHERE qs.questionnaire_id = :questionnaire_id
 
 ## 应用脚本
 
-Dry-run 是默认行为：
+脚本只是调用运行时 API 或后台 Admin API 的辅助工具，不是让业务包进入 repo 的要求。Dry-run 是默认行为：
 
 ```bash
 python scripts/ai_audience_apply_package_spec.py docs/ai_audience/examples/questionnaire_submitted_added_wecom.md --dry-run
@@ -97,4 +113,36 @@ python scripts/ai_audience_apply_package_spec.py docs/ai_audience/examples/quest
   --admin-session-cookie-from-env \
   --apply \
   --confirm-production
+```
+
+## Simple SQL 对照
+
+Simple SQL 请求只提交业务 SQL，平台自动编译成内部标准 SQL：
+
+```sql
+WITH simple_audience AS (
+  <user_sql>
+)
+SELECT
+  'external_userid' AS identity_type,
+  external_userid AS identity_value,
+  'simple:' || :package_key || ':' || external_userid AS event_source_key,
+  '{}'::jsonb AS payload_json,
+  external_userid,
+  :refresh_started_at::timestamptz AS event_at
+FROM simple_audience
+WHERE external_userid IS NOT NULL
+```
+
+Simple SQL 只允许 `every_3m`、`daily_0200`、`manual`。业务参数必须声明；`package_key`、`package_id`、`refresh_started_at`、`last_watermark_at`、`lookback_seconds` 由系统注入。
+
+示例：“HuangYouCan 企微未注册人群”应使用通用 view 表达，不再写专用迁移或 seed 代码：
+
+```sql
+SELECT DISTINCT wc.external_userid
+FROM audience_read.wecom_contacts_v1 wc
+LEFT JOIN audience_read.registration_status_v1 r
+  ON r.external_userid = wc.external_userid
+WHERE wc.owner_userid = :owner_userid
+  AND COALESCE(r.is_registered, false) = false
 ```

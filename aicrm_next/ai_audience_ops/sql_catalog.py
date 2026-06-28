@@ -88,6 +88,21 @@ SCHEMA_CATALOG: list[dict[str, Any]] = [
         "example_sql": "SELECT 'external_userid' AS identity_type, wc.external_userid AS identity_value, 'huangyoucan_unregistered:' || wc.external_userid AS event_source_key, wc.payload_json FROM audience_read.wecom_contacts_v1 wc LEFT JOIN audience_read.huangyoucan_registered_identities_v1 h ON h.identity_type = 'unionid' AND h.identity_value = wc.unionid WHERE h.identity_value IS NULL",
     },
     {
+        "name": "audience_read.registration_status_v1",
+        "description": "通用注册状态视图，用于按 external_userid/person/mobile_hash 判断是否已注册；业务人群包应优先使用该视图表达未注册、预注册等圈选逻辑。",
+        "columns": [
+            {"name": "external_userid", "type": "text"},
+            {"name": "person_id", "type": "bigint"},
+            {"name": "mobile_hash", "type": "text"},
+            {"name": "is_registered", "type": "boolean"},
+            {"name": "registered_at", "type": "timestamptz"},
+            {"name": "source", "type": "text"},
+        ],
+        "required_filters": [],
+        "recommended_filters": ["external_userid", "mobile_hash", "is_registered"],
+        "example_sql": "SELECT DISTINCT wc.external_userid FROM audience_read.wecom_contacts_v1 wc LEFT JOIN audience_read.registration_status_v1 r ON r.external_userid = wc.external_userid WHERE wc.owner_userid = :owner_userid AND COALESCE(r.is_registered, false) = false",
+    },
+    {
         "name": "audience_read.channel_entries_v1",
         "description": "渠道进入事实视图，来自现有 channel contact / callback facts。",
         "columns": [

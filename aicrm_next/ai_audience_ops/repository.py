@@ -450,11 +450,13 @@ class SQLAlchemyAudienceRepository(AudienceRepository):
                         """
                         INSERT INTO ai_audience_package_version (
                             package_id, version_number, status, incremental_sql_text, snapshot_sql_text,
+                            simple_sql_text, simple_compiled_sql_text,
                             ai_prompt, ai_rationale, natural_language_explanation, parameters_json, dependencies_json,
                             explain_json, sample_rows_json, validation_errors_json, created_at
                         )
                         VALUES (
                             :package_id, 1, 'draft', :incremental_sql_text, :snapshot_sql_text,
+                            :simple_sql_text, :simple_compiled_sql_text,
                             :ai_prompt, :ai_rationale, :natural_language_explanation, CAST(:parameters_json AS jsonb), CAST(:dependencies_json AS jsonb),
                             CAST(:explain_json AS jsonb), CAST(:sample_rows_json AS jsonb), CAST(:validation_errors_json AS jsonb),
                             CURRENT_TIMESTAMP
@@ -466,6 +468,8 @@ class SQLAlchemyAudienceRepository(AudienceRepository):
                         "package_id": new_package_id,
                         "incremental_sql_text": _text(version.get("incremental_sql_text")),
                         "snapshot_sql_text": _text(version.get("snapshot_sql_text")),
+                        "simple_sql_text": _text(version.get("simple_sql_text")),
+                        "simple_compiled_sql_text": _text(version.get("simple_compiled_sql_text")),
                         "ai_prompt": _text(version.get("ai_prompt")),
                         "ai_rationale": _text(version.get("ai_rationale")),
                         "natural_language_explanation": _text(version.get("natural_language_explanation")),
@@ -620,6 +624,7 @@ class SQLAlchemyAudienceRepository(AudienceRepository):
             """
             INSERT INTO ai_audience_package_version (
                 package_id, version_number, status, incremental_sql_text, snapshot_sql_text,
+                simple_sql_text, simple_compiled_sql_text,
                 ai_prompt, ai_rationale, natural_language_explanation, parameters_json, dependencies_json,
                 explain_json, sample_rows_json, validation_errors_json, created_at
             )
@@ -629,6 +634,8 @@ class SQLAlchemyAudienceRepository(AudienceRepository):
                 'draft',
                 :incremental_sql_text,
                 :snapshot_sql_text,
+                :simple_sql_text,
+                :simple_compiled_sql_text,
                 :ai_prompt,
                 :ai_rationale,
                 :natural_language_explanation,
@@ -646,6 +653,8 @@ class SQLAlchemyAudienceRepository(AudienceRepository):
                 "package_id": int(package_id),
                 "incremental_sql_text": _text(payload.get("incremental_sql_text")),
                 "snapshot_sql_text": _text(payload.get("snapshot_sql_text")),
+                "simple_sql_text": _text(payload.get("simple_sql_text")),
+                "simple_compiled_sql_text": _text(payload.get("simple_compiled_sql_text")),
                 "ai_prompt": _text(payload.get("ai_prompt")),
                 "ai_rationale": _text(payload.get("ai_rationale")),
                 "natural_language_explanation": _text(payload.get("natural_language_explanation")),
