@@ -31,27 +31,29 @@ def _insert_agent(
     session,
     *,
     agent_code: str = "activation_agent",
+    automation_type: str = "agent",
     status: str = "active",
     package_key: str = "agent_callback_pkg",
     secret: str = "agent-secret",
     token: str = "agent-token",
     role_prompt: str = "你是助手，参考{{用户标签}}",
     task_prompt: str = "输出话术：{{最近20条聊天信息}}",
+    fixed_content_package: str = '{"image_library_ids":[12],"miniprogram_library_ids":[],"attachment_library_ids":[],"content_text":""}',
 ) -> int:
     row = session.execute(
         text(
             """
             INSERT INTO automation_agent_runtime_config (
-                agent_code, agent_name, bound_package_key, status,
+                agent_code, agent_name, automation_type, bound_package_key, status,
                 draft_role_prompt, draft_task_prompt, published_role_prompt, published_task_prompt,
                 draft_version, published_version, fixed_content_package_json, inbound_webhook_secret,
                 inbound_webhook_token, send_webhook_url,
                 created_at, updated_at
             )
             VALUES (
-                :agent_code, '激活 Agent', :package_key, :status,
+                :agent_code, '激活 Agent', :automation_type, :package_key, :status,
                 :role_prompt, :task_prompt, :role_prompt, :task_prompt,
-                1, 1, '{"image_library_ids":[12],"miniprogram_library_ids":[],"attachment_library_ids":[],"content_text":""}'::jsonb, :secret,
+                1, 1, CAST(:fixed_content_package AS jsonb), :secret,
                 :token, :send_webhook_url,
                 CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
             )
@@ -60,12 +62,14 @@ def _insert_agent(
         ),
         {
             "agent_code": agent_code,
+            "automation_type": automation_type,
             "package_key": package_key,
             "status": status,
             "secret": secret,
             "token": token,
             "role_prompt": role_prompt,
             "task_prompt": task_prompt,
+            "fixed_content_package": fixed_content_package,
             "send_webhook_url": f"/api/ai/audience/packages/{package_key}/webhook",
         },
     ).mappings().one()
@@ -292,6 +296,100 @@ def test_worker_fake_mode_generates_package_and_enqueues_send_plan(next_client, 
     assert item["content_package_json"]["image_library_ids"] == [12]
     assert plan_count == 1
     assert message["content_text"] == "你好，这是 Agent 生成的话术"
+    assert effect_count == 0
+
+
+def test_worker_fixed_script_uses_configured_text_without_agent_generation(next_client, next_pg_schema, monkeypatch) -> None:
+    with get_session_factory()() as session:
+        _insert_package(session, secret="callback-secret")
+        _insert_agent(
+            session,
+            agent_code="fixed_script_agent",
+            automation_type="fixed_script",
+            fixed_content_package='{"image_library_ids":[12],"miniprogram_library_ids":[],"attachment_library_ids":[],"content_text":"你好，这是固定话术"}',
+        )
+        session.commit()
+
+    raw = b'{"external_userids":["wm_001"]}'
+    accepted = next_client.post(
+        "/api/ai/agents/fixed_script_agent/audience-webhook?token=agent-token",
+        content=raw,
+        headers={"Content-Type": "application/json", "X-AICRM-Signature": _signature("agent-secret", raw)},
+    )
+    batch_id = accepted.json()["batch_id"]
+
+    from aicrm_next.automation_agents import worker as worker_module
+
+    seen_keys = {}
+
+    def fake_context(external_userid, referenced_keys, **kwargs):
+        seen_keys["keys"] = set(referenced_keys)
+        return {
+            "owner_userid": "owner_001",
+            "customer": {"external_userid": external_userid, "owner_userid": "owner_001"},
+            "blocks": {},
+            "referenced_context_keys": sorted(referenced_keys),
+        }
+
+    def fail_generation(*args, **kwargs):
+        raise AssertionError("fixed_script must not call generate_agent_reply")
+
+    monkeypatch.setattr(worker_module, "build_agent_context", fake_context)
+    monkeypatch.setattr(worker_module, "generate_agent_reply", fail_generation)
+
+    result = AutomationAgentWorker().run_batch(batch_id)
+
+    assert result["status"] == "succeeded"
+    assert seen_keys["keys"] == set()
+    with get_session_factory()() as session:
+        item = session.execute(text("SELECT * FROM automation_agent_webhook_item")).mappings().one()
+        message = session.execute(text("SELECT * FROM cloud_broadcast_plan_recipient_messages")).mappings().one()
+        effect_count = int(session.execute(text("SELECT COUNT(*) FROM external_effect_job WHERE effect_type = 'WECOM_MESSAGE_PRIVATE_SEND'")).scalar() or 0)
+    assert item["status"] == "callback_succeeded"
+    assert item["raw_agent_output"] == "你好，这是固定话术"
+    assert item["content_package_json"]["content_text"] == "你好，这是固定话术"
+    assert item["content_package_json"]["image_library_ids"] == [12]
+    assert message["content_text"] == "你好，这是固定话术"
+    assert effect_count == 0
+
+
+def test_worker_fixed_script_fails_when_content_text_missing(next_client, next_pg_schema, monkeypatch) -> None:
+    with get_session_factory()() as session:
+        _insert_package(session, secret="callback-secret")
+        _insert_agent(session, agent_code="empty_fixed_script", automation_type="fixed_script")
+        session.commit()
+
+    raw = b'{"external_userids":["wm_001"]}'
+    accepted = next_client.post(
+        "/api/ai/agents/empty_fixed_script/audience-webhook?token=agent-token",
+        content=raw,
+        headers={"Content-Type": "application/json", "X-AICRM-Signature": _signature("agent-secret", raw)},
+    )
+    batch_id = accepted.json()["batch_id"]
+
+    from aicrm_next.automation_agents import worker as worker_module
+
+    monkeypatch.setattr(
+        worker_module,
+        "build_agent_context",
+        lambda external_userid, referenced_keys, **kwargs: {"owner_userid": "owner_001", "blocks": {}, "referenced_context_keys": sorted(referenced_keys)},
+    )
+    monkeypatch.setattr(
+        worker_module,
+        "generate_agent_reply",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("fixed_script must not call generate_agent_reply")),
+    )
+
+    result = AutomationAgentWorker().run_batch(batch_id)
+
+    assert result["status"] == "failed"
+    with get_session_factory()() as session:
+        item = session.execute(text("SELECT * FROM automation_agent_webhook_item")).mappings().one()
+        plan_count = int(session.execute(text("SELECT COUNT(*) FROM cloud_broadcast_plans")).scalar() or 0)
+        effect_count = int(session.execute(text("SELECT COUNT(*) FROM external_effect_job WHERE effect_type = 'WECOM_MESSAGE_PRIVATE_SEND'")).scalar() or 0)
+    assert item["status"] == "failed"
+    assert item["error_code"] == "fixed_content_missing"
+    assert plan_count == 0
     assert effect_count == 0
 
 

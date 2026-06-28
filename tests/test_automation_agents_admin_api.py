@@ -47,12 +47,15 @@ def test_admin_automation_agent_crud_copy_pause_archive_contract(next_client, ne
     assert "/api/ai/agents/questionnaire_activation_agent/audience-webhook?token=agtok_" in agent["receive_webhook_url"]
     assert agent["receive_webhook_token_configured"] is True
     assert agent["send_webhook_url"].endswith("/api/ai/audience/packages/prod_channel_9p9_questionnaire_activation_hyc/webhook")
+    assert agent["automation_type"] == "agent"
+    assert agent["automation_type_label"] == "agent"
     assert agent["fixed_material_summary"] == {"image_count": 0, "miniprogram_count": 0, "attachment_count": 0}
 
     listed = next_client.get("/api/admin/automation-agents", cookies=_admin_cookies())
     assert listed.status_code == 200
     item = listed.json()["items"][0]
     assert item["agent_code"] == "questionnaire_activation_agent"
+    assert item["automation_type"] == "agent"
     assert "receive_format" not in item
     assert "receive_send_address" not in item
 
@@ -142,6 +145,41 @@ def test_fixed_content_normalizes_and_rejects_non_pdf_attachment(next_client, ne
     )
     assert non_pdf.status_code == 400
     assert non_pdf.json()["error"] == "invalid_fixed_content_package"
+
+
+def test_fixed_script_preserves_content_text(next_client, next_pg_schema, monkeypatch) -> None:
+    monkeypatch.setenv("SECRET_KEY", "automation-agent-fixed-script-test")
+    created = next_client.post(
+        "/api/admin/automation-agents",
+        json=_create_payload(
+            agent_name="固定问卷话术",
+            agent_code="fixed_script_agent",
+            automation_type="fixed_script",
+            role_prompt="",
+            task_prompt="",
+            fixed_content_package={"content_text": "固定发送的话术", "image_library_ids": [12]},
+        ),
+        cookies=_admin_cookies(),
+    )
+    assert created.status_code == 200
+    agent = created.json()["agent"]
+    assert agent["automation_type"] == "fixed_script"
+    assert agent["automation_type_label"] == "固定话术"
+    assert agent["fixed_content_package"]["content_text"] == "固定发送的话术"
+
+    agent_id = agent["id"]
+    saved = next_client.put(
+        f"/api/admin/automation-agents/{agent_id}/fixed-content",
+        json={"content_package": {"content_text": "更新后的固定话术", "image_library_ids": [12, "12"]}},
+        cookies=_admin_cookies(),
+    )
+    assert saved.status_code == 200
+    assert saved.json()["agent"]["fixed_content_package"]["content_text"] == "更新后的固定话术"
+    assert saved.json()["agent"]["fixed_content_package"]["image_library_ids"] == [12]
+
+    copied = next_client.post(f"/api/admin/automation-agents/{agent_id}/copy", cookies=_admin_cookies())
+    assert copied.status_code == 200
+    assert copied.json()["agent"]["automation_type"] == "fixed_script"
 
 
 def test_admin_automation_agent_rows_are_soft_deleted(next_client, next_pg_schema, monkeypatch) -> None:

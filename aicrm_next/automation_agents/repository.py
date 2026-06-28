@@ -258,13 +258,13 @@ class AutomationAgentRepository:
         row = self._write_one(
             """
             INSERT INTO automation_agent_runtime_config (
-                agent_code, agent_name, bound_package_key, status,
+                agent_code, agent_name, automation_type, bound_package_key, status,
                 draft_role_prompt, draft_task_prompt, published_role_prompt, published_task_prompt,
                 draft_version, published_version, fixed_content_package_json, inbound_webhook_secret,
                 inbound_webhook_token, send_webhook_url,
                 created_at, updated_at
             ) VALUES (
-                :agent_code, :agent_name, :bound_package_key, :status,
+                :agent_code, :agent_name, :automation_type, :bound_package_key, :status,
                 :role_prompt, :task_prompt, :role_prompt, :task_prompt,
                 1, 1, CAST(:fixed_content_package_json AS jsonb), :inbound_webhook_secret,
                 :inbound_webhook_token, :send_webhook_url,
@@ -275,6 +275,7 @@ class AutomationAgentRepository:
             {
                 "agent_code": _text(payload.get("agent_code")),
                 "agent_name": _text(payload.get("agent_name")),
+                "automation_type": _text(payload.get("automation_type")) or "agent",
                 "bound_package_key": _text(payload.get("bound_package_key")),
                 "status": _text(payload.get("status")) or "active",
                 "role_prompt": _text(payload.get("role_prompt")),
@@ -295,6 +296,7 @@ class AutomationAgentRepository:
             return None
         merged = {
             "agent_name": _text(payload.get("agent_name")) if "agent_name" in payload else _text(existing.get("agent_name")),
+            "automation_type": _text(payload.get("automation_type")) if "automation_type" in payload else _text(existing.get("automation_type") or "agent"),
             "bound_package_key": _text(payload.get("bound_package_key")) if "bound_package_key" in payload else _text(existing.get("bound_package_key")),
             "status": _text(payload.get("status")) if "status" in payload else _text(existing.get("status")),
             "role_prompt": _text(payload.get("role_prompt")) if "role_prompt" in payload else _text(existing.get("draft_role_prompt")),
@@ -314,6 +316,7 @@ class AutomationAgentRepository:
             """
             UPDATE automation_agent_runtime_config
             SET agent_name = :agent_name,
+                automation_type = :automation_type,
                 bound_package_key = :bound_package_key,
                 status = :status,
                 draft_role_prompt = :role_prompt,
@@ -332,6 +335,7 @@ class AutomationAgentRepository:
             {
                 "agent_id": int(agent_id),
                 "agent_name": merged["agent_name"],
+                "automation_type": merged["automation_type"] or "agent",
                 "bound_package_key": merged["bound_package_key"],
                 "status": merged["status"] or "active",
                 "role_prompt": merged["role_prompt"],
