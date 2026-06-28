@@ -7,6 +7,7 @@ from typing import Any
 from uuid import uuid4
 
 from sqlalchemy import text
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from aicrm_next.shared.db_session import get_session_factory
@@ -30,6 +31,13 @@ def _json_obj(value: Any) -> dict[str, Any]:
             return {}
         return dict(parsed) if isinstance(parsed, dict) else {}
     return {}
+
+
+def _safe_int(value: Any) -> int:
+    try:
+        return int(value or 0)
+    except (TypeError, ValueError):
+        return 0
 
 
 def _public_row(row: dict[str, Any] | None) -> dict[str, Any] | None:
@@ -116,6 +124,135 @@ class AutomationAgentRepository:
             "SELECT * FROM ai_audience_package WHERE package_key = :package_key LIMIT 1",
             {"package_key": _text(package_key)},
         )
+
+    def get_bound_audience_context_for_item(self, *, batch_id: str, agent_code: str, external_userid: str) -> dict[str, Any]:
+        batch_id = _text(batch_id)
+        agent_code = _text(agent_code)
+        external_userid = _text(external_userid)
+        if not batch_id or not external_userid:
+            return {}
+        try:
+            with self._session_factory() as session:
+                batch_row = session.execute(
+                    text(
+                        """
+                        SELECT *
+                        FROM automation_agent_webhook_batch
+                        WHERE batch_id = :batch_id
+                          AND (:agent_code = '' OR agent_code = :agent_code)
+                        LIMIT 1
+                        """
+                    ),
+                    {"batch_id": batch_id, "agent_code": agent_code},
+                ).mappings().fetchone()
+                if not batch_row:
+                    return {}
+                batch = _public_row(dict(batch_row)) or {}
+                package_key = _text(batch.get("bound_package_key"))
+                run_id = _text(batch.get("refresh_run_id"))
+                source_event_type = _text(batch.get("source_event_type"))
+                event_type = source_event_type.rsplit(".", 1)[-1] if source_event_type else ""
+                event_row = None
+                if package_key:
+                    event_row = session.execute(
+                        text(
+                            """
+                            SELECT e.*, p.package_key, p.name AS package_name
+                            FROM ai_audience_package p
+                            JOIN ai_audience_member_event e ON e.package_id = p.id
+                            WHERE p.package_key = :package_key
+                              AND e.external_userid = :external_userid
+                              AND (:event_type = '' OR e.event_type = :event_type)
+                            ORDER BY
+                              CASE WHEN :run_id <> '' AND e.run_id::text = :run_id THEN 0 ELSE 1 END,
+                              e.occurred_at DESC,
+                              e.id DESC
+                            LIMIT 1
+                            """
+                        ),
+                        {
+                            "package_key": package_key,
+                            "external_userid": external_userid,
+                            "event_type": event_type,
+                            "run_id": run_id,
+                        },
+                    ).mappings().fetchone()
+                current_row = None
+                if package_key:
+                    current_row = session.execute(
+                        text(
+                            """
+                            SELECT c.*, p.package_key, p.name AS package_name
+                            FROM ai_audience_package p
+                            JOIN ai_audience_member_current c ON c.package_id = p.id
+                            WHERE p.package_key = :package_key
+                              AND c.external_userid = :external_userid
+                            ORDER BY c.updated_at DESC, c.id DESC
+                            LIMIT 1
+                            """
+                        ),
+                        {"package_key": package_key, "external_userid": external_userid},
+                    ).mappings().fetchone()
+                return {
+                    "batch": batch,
+                    "member_event": _public_row(dict(event_row)) if event_row else {},
+                    "member_current": _public_row(dict(current_row)) if current_row else {},
+                }
+        except SQLAlchemyError:
+            return {}
+
+    def list_questionnaire_submission_answers(
+        self,
+        *,
+        submission_id: int | str = 0,
+        questionnaire_id: int | str = 0,
+        external_userid: str = "",
+        limit: int = 100,
+    ) -> list[dict[str, Any]]:
+        safe_submission_id = _safe_int(submission_id)
+        safe_questionnaire_id = _safe_int(questionnaire_id)
+        safe_limit = max(1, min(int(limit or 100), 200))
+        external_userid = _text(external_userid)
+        if safe_submission_id <= 0 and safe_questionnaire_id <= 0 and not external_userid:
+            return []
+        try:
+            return self._all(
+                """
+                SELECT
+                    s.id AS submission_id,
+                    s.questionnaire_id,
+                    COALESCE(NULLIF(q.title, ''), NULLIF(q.name, ''), q.slug, '未命名问卷') AS questionnaire_title,
+                    s.submitted_at,
+                    a.question_id,
+                    COALESCE(NULLIF(qq.title, ''), NULLIF(a.question_title_snapshot, ''), '未命名问题') AS question,
+                    COALESCE(NULLIF(a.question_type, ''), qq.type, '') AS question_type,
+                    a.selected_option_texts_snapshot,
+                    a.text_value,
+                    a.score_contribution,
+                    a.selected_option_tags_snapshot
+                FROM questionnaire_submissions s
+                LEFT JOIN questionnaires q ON q.id = s.questionnaire_id
+                LEFT JOIN questionnaire_submission_answers a ON a.submission_id = s.id
+                LEFT JOIN questionnaire_questions qq ON qq.id = a.question_id
+                WHERE (:submission_id <= 0 OR s.id = :submission_id)
+                  AND (:questionnaire_id <= 0 OR s.questionnaire_id = :questionnaire_id)
+                  AND (
+                    :external_userid = ''
+                    OR COALESCE(s.external_userid, '') = ''
+                    OR s.external_userid = :external_userid
+                  )
+                ORDER BY s.submitted_at DESC NULLS LAST, s.id DESC, a.id ASC
+                LIMIT :limit
+                """,
+                {
+                    "submission_id": safe_submission_id,
+                    "questionnaire_id": safe_questionnaire_id,
+                    "external_userid": external_userid,
+                    "limit": safe_limit,
+                },
+            )
+        except (SQLAlchemyError, ValueError):
+            return []
 
     def create_agent(self, payload: dict[str, Any]) -> dict[str, Any]:
         row = self._write_one(
