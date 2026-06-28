@@ -77,7 +77,7 @@ def _count(table: str) -> int:
         return int(session.execute(text(f"SELECT COUNT(*) FROM {table}")).scalar() or 0)
 
 
-def test_agent_webhook_accepts_array_dedupes_and_requires_hmac(next_client, next_pg_schema) -> None:
+def test_agent_webhook_accepts_url_token_and_optional_hmac(next_client, next_pg_schema) -> None:
     with get_session_factory()() as session:
         _insert_package(session)
         _insert_agent(session)
@@ -96,17 +96,13 @@ def test_agent_webhook_accepts_array_dedupes_and_requires_hmac(next_client, next
     assert wrong_token.status_code == 401
     assert wrong_token.json()["error"] == "invalid_token"
 
-    missing_signature = next_client.post(
+    token_only = next_client.post(
         "/api/ai/agents/activation_agent/audience-webhook?token=agent-token",
         content=raw,
-        headers={"Content-Type": "application/json"},
+        headers={"Content-Type": "application/json", "X-AICRM-Idempotency-Key": "token-only-key"},
     )
-    assert missing_signature.status_code == 401
-    assert missing_signature.json()["error"] == "missing_signature"
-
-    missing = next_client.post("/api/ai/agents/activation_agent/audience-webhook?token=agent-token", content=raw, headers={"Content-Type": "application/json"})
-    assert missing.status_code == 401
-    assert missing.json()["error"] == "missing_signature"
+    assert token_only.status_code == 200
+    assert token_only.json()["accepted_count"] == 2
 
     invalid = next_client.post(
         "/api/ai/agents/activation_agent/audience-webhook?token=agent-token",
@@ -131,8 +127,8 @@ def test_agent_webhook_accepts_array_dedupes_and_requires_hmac(next_client, next
     assert accepted.json()["received_count"] == 4
     assert accepted.json()["deduped_count"] == 2
     assert accepted.json()["accepted_count"] == 2
-    assert _count("automation_agent_webhook_batch") == 1
-    assert _count("automation_agent_webhook_item") == 2
+    assert _count("automation_agent_webhook_batch") == 2
+    assert _count("automation_agent_webhook_item") == 4
 
     replay = next_client.post(
         "/api/ai/agents/activation_agent/audience-webhook?token=agent-token",
@@ -140,8 +136,8 @@ def test_agent_webhook_accepts_array_dedupes_and_requires_hmac(next_client, next
         headers={"Content-Type": "application/json", "X-AICRM-Signature": _signature("agent-secret", raw), "X-AICRM-Idempotency-Key": "dedupe-key-1"},
     )
     assert replay.status_code == 200
-    assert _count("automation_agent_webhook_batch") == 1
-    assert _count("automation_agent_webhook_item") == 2
+    assert _count("automation_agent_webhook_batch") == 2
+    assert _count("automation_agent_webhook_item") == 4
 
 
 def test_agent_webhook_rejects_inactive_and_large_payload(next_client, next_pg_schema) -> None:

@@ -8,6 +8,8 @@ from typing import Any
 from urllib import request
 from urllib.error import HTTPError, URLError
 
+from aicrm_next.shared.runtime_settings import runtime_setting
+
 from .repository import _text
 
 
@@ -31,7 +33,7 @@ def _truthy(value: str | None) -> bool:
 
 
 def _agent_mode() -> str:
-    return _text(os.getenv("AICRM_AI_AUDIENCE_AGENT_MODE") or os.getenv("AICRM_RUNTIME_V2_AGENT_MODE")).lower() or "disabled"
+    return _text(_setting("AICRM_AI_AUDIENCE_AGENT_MODE") or _setting("AICRM_RUNTIME_V2_AGENT_MODE")).lower() or "disabled"
 
 
 def _fake_allowed() -> bool:
@@ -52,23 +54,27 @@ def _chat_completion_url(base_url: str) -> str:
 
 
 def _api_key() -> str:
-    return _text(os.getenv("AICRM_AI_AUDIENCE_AGENT_API_KEY") or os.getenv("AICRM_RUNTIME_V2_AGENT_API_KEY") or os.getenv("DEEPSEEK_API_KEY"))
+    return _text(_setting("AICRM_AI_AUDIENCE_AGENT_API_KEY") or _setting("AICRM_RUNTIME_V2_AGENT_API_KEY") or _setting("DEEPSEEK_API_KEY"))
 
 
 def _base_url() -> str:
-    return _text(os.getenv("AICRM_AI_AUDIENCE_AGENT_BASE_URL") or os.getenv("AICRM_RUNTIME_V2_AGENT_BASE_URL") or os.getenv("DEEPSEEK_BASE_URL") or "https://api.deepseek.com")
+    return _text(_setting("AICRM_AI_AUDIENCE_AGENT_BASE_URL") or _setting("AICRM_RUNTIME_V2_AGENT_BASE_URL") or _setting("DEEPSEEK_BASE_URL") or "https://api.deepseek.com")
 
 
 def _model() -> str:
-    return _text(os.getenv("AICRM_AI_AUDIENCE_AGENT_MODEL") or os.getenv("AICRM_RUNTIME_V2_AGENT_MODEL") or os.getenv("DEEPSEEK_EXECUTION_MODEL") or "deepseek-chat")
+    return _text(_setting("AICRM_AI_AUDIENCE_AGENT_MODEL") or _setting("AICRM_RUNTIME_V2_AGENT_MODEL") or _setting("DEEPSEEK_EXECUTION_MODEL") or "deepseek-chat")
 
 
 def _timeout() -> float:
-    raw = _text(os.getenv("AICRM_AI_AUDIENCE_AGENT_TIMEOUT_SECONDS") or os.getenv("AICRM_RUNTIME_V2_AGENT_TIMEOUT_SECONDS") or os.getenv("DEEPSEEK_TIMEOUT_SECONDS") or "30")
+    raw = _text(_setting("AICRM_AI_AUDIENCE_AGENT_TIMEOUT_SECONDS") or _setting("AICRM_RUNTIME_V2_AGENT_TIMEOUT_SECONDS") or _setting("DEEPSEEK_TIMEOUT_SECONDS") or "30")
     try:
         return max(1.0, float(raw))
     except ValueError:
         return 30.0
+
+
+def _setting(key: str) -> str:
+    return _text(runtime_setting(key, os.getenv(key, "")))
 
 
 def generate_agent_reply(
