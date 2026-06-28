@@ -13,7 +13,6 @@ from aicrm_next.platform_foundation.external_effects.jobs import (
 )
 from aicrm_next.platform_foundation.push_center.capability_registry import (
     PushCapability,
-    capability_for_section,
     get_push_capability,
     visible_push_capabilities,
 )
