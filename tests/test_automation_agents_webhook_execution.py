@@ -35,6 +35,8 @@ def _insert_agent(
     package_key: str = "agent_callback_pkg",
     secret: str = "agent-secret",
     token: str = "agent-token",
+    role_prompt: str = "你是助手，参考{{用户标签}}",
+    task_prompt: str = "输出话术：{{最近20条聊天信息}}",
 ) -> int:
     row = session.execute(
         text(
@@ -48,7 +50,7 @@ def _insert_agent(
             )
             VALUES (
                 :agent_code, '激活 Agent', :package_key, :status,
-                '你是助手，参考{{用户标签}}', '输出话术：{{最近20条聊天信息}}', '你是助手，参考{{用户标签}}', '输出话术：{{最近20条聊天信息}}',
+                :role_prompt, :task_prompt, :role_prompt, :task_prompt,
                 1, 1, '{"image_library_ids":[12],"miniprogram_library_ids":[],"attachment_library_ids":[],"content_text":""}'::jsonb, :secret,
                 :token, :send_webhook_url,
                 CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
@@ -62,6 +64,8 @@ def _insert_agent(
             "status": status,
             "secret": secret,
             "token": token,
+            "role_prompt": role_prompt,
+            "task_prompt": task_prompt,
             "send_webhook_url": f"/api/ai/audience/packages/{package_key}/webhook",
         },
     ).mappings().one()
@@ -172,6 +176,72 @@ def test_prompt_context_key_detection_uses_chinese_placeholders() -> None:
     assert referenced_context_keys("无占位", "只看{{最近20条聊天信息}}") == {"recent_messages"}
 
 
+def test_context_builder_hydrates_questionnaire_from_bound_audience_payload(monkeypatch) -> None:
+    from aicrm_next.automation_agents import context_builder
+
+    class FakeBoundRepository:
+        def get_bound_audience_context_for_item(self, **kwargs):
+            return {
+                "member_event": {
+                    "id": 88,
+                    "owner_userid": "HuangYouCan",
+                    "payload_json": {"submission_id": 1420, "questionnaire_id": 37},
+                }
+            }
+
+        def list_questionnaire_submission_answers(self, **kwargs):
+            assert kwargs["submission_id"] == 1420
+            assert kwargs["questionnaire_id"] == 37
+            return [
+                {
+                    "submission_id": 1420,
+                    "questionnaire_id": 37,
+                    "questionnaire_title": "填写问卷激活黄小璨AI",
+                    "question_id": 604,
+                    "question": "请输入手机号",
+                    "question_type": "mobile",
+                    "text_value": "17640055576",
+                    "selected_option_texts_snapshot": [],
+                },
+                {
+                    "submission_id": 1420,
+                    "questionnaire_id": 37,
+                    "questionnaire_title": "填写问卷激活黄小璨AI",
+                    "question_id": 607,
+                    "question": "你目前在「一人公司」这条路上的状态是？",
+                    "question_type": "single_choice",
+                    "text_value": "",
+                    "selected_option_texts_snapshot": ["有主业，副业探索中，方向还不清晰"],
+                },
+            ]
+
+    monkeypatch.setattr(
+        context_builder,
+        "GetCustomerContextQuery",
+        lambda *args, **kwargs: (lambda request: {"customer": {"external_userid": request.external_userid}, "recent_messages": []}),
+    )
+    monkeypatch.setattr(
+        context_builder,
+        "get_customer_business_profile",
+        lambda external_userid, limit=20: {"business_profile": {"questionnaire_answers": [], "tags": []}},
+    )
+
+    context = context_builder.build_agent_context(
+        "wm_questionnaire_001",
+        {"questionnaire"},
+        agent_code="activation_agent",
+        batch_id="batch_001",
+        repository=FakeBoundRepository(),
+    )
+
+    block = context["blocks"]["问卷信息"]
+    assert "有主业，副业探索中，方向还不清晰" in block
+    assert "已填写（已脱敏）" in block
+    assert "17640055576" not in block
+    assert context["bound_audience_context"]["questionnaire_answer_count"] == 2
+    assert context["bound_audience_context"]["member_event_id"] == 88
+
+
 def test_worker_fake_mode_generates_package_and_enqueues_send_plan(next_client, next_pg_schema, monkeypatch) -> None:
     monkeypatch.setenv("AICRM_AI_AUDIENCE_AGENT_MODE", "fake")
     monkeypatch.setenv("AICRM_AI_AUDIENCE_AGENT_FAKE_ALLOWED", "1")
@@ -194,7 +264,7 @@ def test_worker_fake_mode_generates_package_and_enqueues_send_plan(next_client, 
 
     seen_keys = {}
 
-    def fake_context(external_userid, referenced_keys):
+    def fake_context(external_userid, referenced_keys, **kwargs):
         seen_keys["keys"] = set(referenced_keys)
         return {
             "owner_userid": "owner_001",
@@ -223,3 +293,128 @@ def test_worker_fake_mode_generates_package_and_enqueues_send_plan(next_client, 
     assert plan_count == 1
     assert message["content_text"] == "你好，这是 Agent 生成的话术"
     assert effect_count == 0
+
+
+def test_worker_hydrates_questionnaire_prompt_from_bound_audience_submission(next_client, next_pg_schema, monkeypatch) -> None:
+    monkeypatch.setenv("AICRM_AI_AUDIENCE_AGENT_MODE", "fake")
+    monkeypatch.setenv("AICRM_AI_AUDIENCE_AGENT_FAKE_ALLOWED", "1")
+    monkeypatch.setenv("AICRM_AI_AUDIENCE_AGENT_FAKE_OUTPUT", "收到问卷啦～\n\n已根据问卷生成。")
+
+    external_userid = "wm_questionnaire_001"
+    with get_session_factory()() as session:
+        package_id = _insert_package(session, package_key="bound_questionnaire_pkg", secret="callback-secret")
+        _insert_agent(
+            session,
+            package_key="bound_questionnaire_pkg",
+            role_prompt="你是问卷跟进 Agent。",
+            task_prompt="请根据{{问卷信息}}生成话术。",
+        )
+        session.execute(
+            text(
+                """
+                INSERT INTO questionnaires (id, slug, name, title)
+                VALUES (37, 'activate-ai', 'activate-ai', '填写问卷激活黄小璨AI')
+                """
+            )
+        )
+        session.execute(
+            text(
+                """
+                INSERT INTO questionnaire_questions (id, questionnaire_id, type, title, sort_order)
+                VALUES
+                    (604, 37, 'mobile', '请输入手机号', 1),
+                    (607, 37, 'single_choice', '你目前在「一人公司」这条路上的状态是？', 2),
+                    (608, 37, 'single_choice', '目前在AI上的实际使用情况？', 3),
+                    (609, 37, 'single_choice', '做「一人公司」业务上，你目前最大的卡点是？', 4)
+                """
+            )
+        )
+        session.execute(
+            text(
+                """
+                INSERT INTO questionnaire_submissions (
+                    id, questionnaire_id, respondent_key, external_userid, follow_user_userid,
+                    total_score, submitted_at
+                ) VALUES (
+                    1420, 37, 'respondent_001', :external_userid, 'HuangYouCan',
+                    0, CURRENT_TIMESTAMP
+                )
+                """
+            ),
+            {"external_userid": external_userid},
+        )
+        session.execute(
+            text(
+                """
+                INSERT INTO questionnaire_submission_answers (
+                    submission_id, question_id, question_type, question_title_snapshot,
+                    selected_option_texts_snapshot, text_value
+                ) VALUES
+                    (1420, 604, 'mobile', '请输入手机号', '[]'::jsonb, '17640055576'),
+                    (1420, 607, 'single_choice', '你目前在「一人公司」这条路上的状态是？', '["有主业，副业探索中，方向还不清晰"]'::jsonb, ''),
+                    (1420, 608, 'single_choice', '目前在AI上的实际使用情况？', '["基本不用，想了解能怎么用"]'::jsonb, ''),
+                    (1420, 609, 'single_choice', '做「一人公司」业务上，你目前最大的卡点是？', '["不知道做什么方向，定位还不知道"]'::jsonb, '')
+                """
+            )
+        )
+        run_id = int(
+            session.execute(
+                text(
+                    """
+                    INSERT INTO ai_audience_package_run (
+                        package_id, run_type, status, returned_count, entered_count, member_event_count
+                    ) VALUES (
+                        :package_id, 'incremental', 'succeeded', 1, 1, 1
+                    )
+                    RETURNING id
+                    """
+                ),
+                {"package_id": package_id},
+            ).scalar()
+        )
+        session.execute(
+            text(
+                """
+                INSERT INTO ai_audience_member_event (
+                    package_id, run_id, event_type, identity_type, identity_value,
+                    external_userid, owner_userid, event_source_key, payload_hash,
+                    payload_json, idempotency_key
+                ) VALUES (
+                    :package_id, :run_id, 'entered', 'external_userid', :external_userid,
+                    :external_userid, 'HuangYouCan', 'questionnaire_submission:1420', 'hash-1420',
+                    '{"submission_id":1420,"questionnaire_id":37,"owner_userid":"HuangYouCan"}'::jsonb,
+                    'audience-event-1420'
+                )
+                """
+            ),
+            {"package_id": package_id, "run_id": run_id, "external_userid": external_userid},
+        )
+        session.commit()
+
+    raw = json.dumps([external_userid], ensure_ascii=False, separators=(",", ":")).encode()
+    accepted = next_client.post(
+        "/api/ai/agents/activation_agent/audience-webhook?token=agent-token",
+        content=raw,
+        headers={
+            "Content-Type": "application/json",
+            "X-AICRM-Signature": _signature("agent-secret", raw),
+            "X-AICRM-Event-Type": "audience.incremental.entered",
+            "X-AICRM-Refresh-Run-Id": str(run_id),
+            "X-AICRM-Idempotency-Key": "bound-questionnaire-run",
+        },
+    )
+    assert accepted.status_code == 200
+
+    result = AutomationAgentWorker().run_batch(accepted.json()["batch_id"])
+
+    assert result["status"] == "succeeded"
+    with get_session_factory()() as session:
+        item = session.execute(text("SELECT * FROM automation_agent_webhook_item")).mappings().one()
+    prompt = item["prompt_preview"]
+    assert "有主业，副业探索中，方向还不清晰" in prompt
+    assert "基本不用，想了解能怎么用" in prompt
+    assert "不知道做什么方向，定位还不知道" in prompt
+    assert "已填写（已脱敏）" in prompt
+    assert "17640055576" not in prompt
+    assert item["context_snapshot_json"]["bound_audience_context"]["questionnaire_answer_count"] == 4
+    assert item["context_snapshot_json"]["bound_audience_context"]["member_event_id"]

@@ -613,6 +613,37 @@ def _bootstrap_next_test_baseline_schema(url: str) -> None:
         )
         """,
         """
+        CREATE TABLE IF NOT EXISTS questionnaire_questions (
+            id BIGSERIAL PRIMARY KEY,
+            questionnaire_id BIGINT NOT NULL DEFAULT 0,
+            type TEXT NOT NULL DEFAULT '',
+            title TEXT NOT NULL DEFAULT '',
+            required BOOLEAN NOT NULL DEFAULT FALSE,
+            sort_order INTEGER NOT NULL DEFAULT 0,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            placeholder_text TEXT NOT NULL DEFAULT '',
+            assessment_dimension_key TEXT NOT NULL DEFAULT '',
+            sidebar_profile_field TEXT NOT NULL DEFAULT ''
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS questionnaire_submission_answers (
+            id BIGSERIAL PRIMARY KEY,
+            submission_id BIGINT NOT NULL DEFAULT 0,
+            question_id BIGINT NOT NULL DEFAULT 0,
+            question_type TEXT NOT NULL DEFAULT '',
+            question_title_snapshot TEXT NOT NULL DEFAULT '',
+            selected_option_ids JSONB NOT NULL DEFAULT '[]'::jsonb,
+            selected_option_texts_snapshot JSONB NOT NULL DEFAULT '[]'::jsonb,
+            selected_option_scores_snapshot JSONB NOT NULL DEFAULT '[]'::jsonb,
+            selected_option_tags_snapshot JSONB NOT NULL DEFAULT '[]'::jsonb,
+            text_value TEXT NOT NULL DEFAULT '',
+            score_contribution DOUBLE PRECISION NOT NULL DEFAULT 0,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """,
+        """
         CREATE TABLE IF NOT EXISTS wechat_pay_products (
             id BIGSERIAL PRIMARY KEY,
             product_code TEXT NOT NULL UNIQUE,

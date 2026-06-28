@@ -60,7 +60,14 @@ class AutomationAgentWorker:
         task_prompt = _text(agent.get("published_task_prompt"))
         keys = referenced_context_keys(role_prompt, task_prompt)
         try:
-            context = build_agent_context(external_userid, keys)
+            context = build_agent_context(
+                external_userid,
+                keys,
+                agent_code=_text(item.get("agent_code")),
+                batch_id=_text(item.get("batch_id")),
+                external_event_id=_text(item.get("external_event_id")),
+                repository=self._repo,
+            )
         except Exception as exc:
             return self._fail(item_id, "context_build_failed", str(exc))
         owner_userid = _text(context.get("owner_userid"))
