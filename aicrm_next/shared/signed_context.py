@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-import os
 from datetime import datetime, timezone
 from typing import Any
 from urllib.parse import quote
 
 from itsdangerous import BadSignature, URLSafeSerializer
+
+from aicrm_next.shared.runtime import runtime_setting
 
 SIDEBAR_PRODUCT_CONTEXT_SOURCE = "sidebar_product_link"
 SIDEBAR_PRODUCT_CONTEXT_RESOLVED_SOURCE = "signed_sidebar_product_link"
@@ -18,16 +19,7 @@ def _text(value: Any) -> str:
 
 
 def _setting(name: str, default: str = "") -> str:
-    try:
-        from flask import current_app
-
-        if current_app:
-            value = current_app.config.get(name)
-            if value not in (None, ""):
-                return _text(value)
-    except RuntimeError:
-        pass
-    return _text(os.getenv(name, default))
+    return _text(runtime_setting(name, default))
 
 
 def _secret() -> str:

@@ -6,8 +6,6 @@ from contextvars import ContextVar
 from datetime import datetime, timezone
 from typing import Any
 
-from flask import current_app, g, has_app_context
-
 from aicrm_next.shared.db_session import connect_raw_postgres
 from aicrm_next.shared.runtime import raw_database_url
 
@@ -118,10 +116,6 @@ class PostgresConnection:
 
 
 def _database_url() -> str:
-    if has_app_context():
-        configured = str(current_app.config.get("DATABASE_URL", "") or "").strip()
-        if configured:
-            return configured
     return raw_database_url()
 
 
@@ -133,10 +127,6 @@ def _connect() -> PostgresConnection:
 
 
 def get_db() -> PostgresConnection:
-    if has_app_context():
-        if "next_db" not in g:
-            g.next_db = _connect()
-        return g.next_db
     scoped = _scoped_db.get()
     if scoped is not None:
         return scoped
@@ -145,9 +135,6 @@ def get_db() -> PostgresConnection:
 
 @contextmanager
 def db_session() -> Iterator[PostgresConnection]:
-    if has_app_context():
-        yield get_db()
-        return
     existing = _scoped_db.get()
     if existing is not None:
         yield existing

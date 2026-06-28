@@ -16,6 +16,10 @@ def raw_database_url() -> str:
     return str(os.getenv("DATABASE_URL", "") or "").strip()
 
 
+def runtime_setting(name: str, default: str = "") -> str:
+    return str(os.getenv(name, default) or "").strip()
+
+
 def database_mode() -> str:
     url = raw_database_url()
     if url.startswith(("postgresql://", "postgres://", "postgresql+psycopg://")):
