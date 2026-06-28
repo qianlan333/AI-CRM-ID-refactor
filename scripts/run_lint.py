@@ -14,10 +14,12 @@ PYTHON_TARGETS = [
     "scripts/run_lint.py",
     "scripts/run_typecheck.py",
     "scripts/script_runtime.py",
+    "tools",
 ]
 SCAN_ROOTS = [
     ROOT / "tests",
     ROOT / "scripts",
+    ROOT / "tools",
 ]
 TEXT_SUFFIXES = {".py", ".js", ".html", ".css", ".md", ".sql", ".toml"}
 SKIP_DIR_NAMES = {".git", ".venv310", "__pycache__", ".pytest_cache", "node_modules"}
