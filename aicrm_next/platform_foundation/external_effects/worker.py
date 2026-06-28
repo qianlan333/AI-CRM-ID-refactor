@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from typing import Any
 from uuid import uuid4
 
@@ -11,6 +12,8 @@ from .adapters import DEFAULT_ADAPTER_REGISTRY, ExternalEffectAdapterRegistry
 from .models import WECOM_MESSAGE_GROUP_SEND, ExternalEffectJob
 from .repo import ExternalEffectRepository, build_external_effect_repository
 from .retry_policy import next_retry_at, status_for_failure
+
+LOGGER = logging.getLogger(__name__)
 
 
 def _enabled(name: str) -> bool:
@@ -178,7 +181,61 @@ class ExternalEffectWorker:
                 "attempt": attempt.to_dict(),
                 "real_external_call_executed": False,
             }
-        dispatch_result = self._adapters.get(job.adapter_name).dispatch(job)
+        try:
+            dispatch_result = self._adapters.get(job.adapter_name).dispatch(job)
+        except Exception as exc:
+            LOGGER.exception(
+                "external effect adapter dispatch raised",
+                extra={
+                    "external_effect_job_id": int(job.id or 0),
+                    "effect_type": job.effect_type,
+                    "adapter_name": job.adapter_name,
+                },
+            )
+            error_code = "adapter_exception"
+            error_message = str(exc)[:500]
+            attempt = self._repo.record_attempt(
+                job=job,
+                status="failed_retryable",
+                adapter_mode=job.execution_mode or "execute",
+                request_summary={
+                    "effect_type": job.effect_type,
+                    "adapter_name": job.adapter_name,
+                    "operation": job.operation,
+                    "adapter_exception": True,
+                },
+                response_summary={
+                    "adapter_exception": True,
+                    "real_external_call_executed": False,
+                },
+                error_code=error_code,
+                error_message=error_message,
+            )
+            if status_for_failure(
+                error_code=error_code,
+                attempt_count=int(job.attempt_count or 0) + 1,
+                max_attempts=int(job.max_attempts or 5),
+            ) == "failed_retryable":
+                updated = self._repo.mark_failed_retryable(
+                    job.id,
+                    attempt_id=attempt.attempt_id,
+                    error_code=error_code,
+                    error_message=error_message,
+                    next_retry_at=next_retry_at(job.attempt_count),
+                )
+            else:
+                updated = self._repo.mark_failed_terminal(
+                    job.id,
+                    attempt_id=attempt.attempt_id,
+                    error_code=error_code,
+                    error_message=error_message,
+                )
+            return {
+                "ok": False,
+                "job": updated.to_dict() if updated else job.to_dict(),
+                "attempt": attempt.to_dict(),
+                "real_external_call_executed": False,
+            }
         attempt = self._repo.record_attempt(
             job=job,
             status=dispatch_result.status,

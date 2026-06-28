@@ -213,6 +213,99 @@ def test_internal_event_worker_systemd_units_are_deployable():
     assert "Unit=openclaw-internal-event-worker.service" in timer
 
 
+def test_production_deploy_installs_callback_ingress_and_worker_isolated_runtime():
+    workflow = (ROOT / ".github" / "workflows" / "deploy.yml").read_text(encoding="utf-8")
+
+    stop_worker_timer_index = workflow.index("sudo systemctl stop openclaw-wecom-callback-inbox-worker.timer || true")
+    stop_worker_service_index = workflow.index("sudo systemctl stop openclaw-wecom-callback-inbox-worker.service || true")
+    alembic_upgrade_index = workflow.index("python3 -m alembic upgrade head")
+    health_index = workflow.index("curl -sSf http://127.0.0.1:5001/health", workflow.index("for _ in $(seq 1 20); do"))
+    copy_ingress_index = workflow.index("sudo cp deploy/openclaw-wecom-callback-ingress.service /etc/systemd/system/")
+    copy_worker_service_index = workflow.index("sudo cp deploy/openclaw-wecom-callback-inbox-worker.service /etc/systemd/system/")
+    copy_worker_timer_index = workflow.index("sudo cp deploy/openclaw-wecom-callback-inbox-worker.timer /etc/systemd/system/")
+    daemon_reload_index = workflow.index("sudo systemctl daemon-reload")
+    enable_ingress_index = workflow.index("sudo systemctl enable openclaw-wecom-callback-ingress.service")
+    restart_ingress_index = workflow.index("sudo systemctl restart openclaw-wecom-callback-ingress.service")
+    ingress_health_index = workflow.index("curl -sSf http://127.0.0.1:5002/health")
+    enable_worker_index = workflow.index("sudo systemctl enable openclaw-wecom-callback-inbox-worker.timer")
+    restart_worker_index = workflow.index("sudo systemctl restart openclaw-wecom-callback-inbox-worker.timer")
+    ingress_status_index = workflow.index("sudo systemctl status openclaw-wecom-callback-ingress.service --no-pager")
+    worker_status_index = workflow.index("sudo systemctl status openclaw-wecom-callback-inbox-worker.timer --no-pager")
+    smoke_index = workflow.index("python scripts/ops/check_wecom_callback_deploy_smoke.py")
+    smoke_evidence_index = workflow.index("tee /tmp/wecom-callback-deploy-smoke.json")
+
+    assert stop_worker_timer_index < stop_worker_service_index < alembic_upgrade_index
+    assert health_index < copy_ingress_index < copy_worker_service_index < copy_worker_timer_index < daemon_reload_index
+    assert daemon_reload_index < enable_ingress_index < restart_ingress_index < ingress_health_index
+    assert ingress_health_index < enable_worker_index < restart_worker_index < ingress_status_index < worker_status_index < smoke_index < smoke_evidence_index
+    assert "python scripts/ops/check_wecom_callback_deploy_smoke.py | tee /tmp/wecom-callback-deploy-smoke.json" in workflow
+    assert "nginx-wecom-callback-ingress.conf.example /etc" not in workflow
+
+
+def test_wecom_callback_ingress_systemd_unit_is_deployable():
+    service = (ROOT / "deploy" / "openclaw-wecom-callback-ingress.service").read_text(encoding="utf-8")
+
+    assert "After=network.target openclaw-wecom-postgres.service" in service
+    assert "Requires=openclaw-wecom-postgres.service" in service
+    assert "EnvironmentFile=/home/ubuntu/.openclaw-wecom-pg.env" in service
+    assert "Environment=WECOM_CALLBACK_INGRESS_HOST=127.0.0.1" in service
+    assert "Environment=WECOM_CALLBACK_INGRESS_PORT=5002" in service
+    assert "Environment=APP_PORT=5002" not in service
+    assert "WorkingDirectory=/home/ubuntu/极简 crm" in service
+    assert "python scripts/run_wecom_callback_ingress.py" in service
+    assert "Restart=always" in service
+    assert "wecom_ability_service" not in service
+    assert "legacy_flask_app" not in service
+    assert "run-legacy" not in service
+
+
+def test_wecom_callback_inbox_worker_systemd_units_are_deployable():
+    service = (ROOT / "deploy" / "openclaw-wecom-callback-inbox-worker.service").read_text(encoding="utf-8")
+    timer = (ROOT / "deploy" / "openclaw-wecom-callback-inbox-worker.timer").read_text(encoding="utf-8")
+
+    assert "After=network.target openclaw-wecom-postgres.service" in service
+    assert "Requires=openclaw-wecom-postgres.service" in service
+    assert "EnvironmentFile=/home/ubuntu/.openclaw-wecom-pg.env" in service
+    assert "Environment=AICRM_WECOM_CALLBACK_INBOX_WORKER_EXECUTE=1" in service
+    assert "Environment=AICRM_WECOM_CALLBACK_INBOX_WORKER_BATCH_SIZE=20" in service
+    assert "Environment=AICRM_WECOM_CALLBACK_INBOX_WORKER_MAX_EXECUTE_BATCH_SIZE=20" in service
+    assert "WorkingDirectory=/home/ubuntu/极简 crm" in service
+    assert "python scripts/run_wecom_callback_inbox_worker.py --execute --limit ${AICRM_WECOM_CALLBACK_INBOX_WORKER_BATCH_SIZE:-20}" in service
+    assert "wecom_ability_service" not in service
+    assert "legacy_flask_app" not in service
+    assert "run-legacy" not in service
+    assert "OnUnitActiveSec=60s" in timer
+    assert "Unit=openclaw-wecom-callback-inbox-worker.service" in timer
+
+
+def test_aicrm_canonical_runtime_isolation_systemd_units_are_deployable():
+    web = (ROOT / "deploy" / "aicrm-web.service").read_text(encoding="utf-8")
+    ingress = (ROOT / "deploy" / "aicrm-wecom-ingress.service").read_text(encoding="utf-8")
+    callback_worker = (ROOT / "deploy" / "aicrm-wecom-callback-worker.service").read_text(encoding="utf-8")
+    internal_worker = (ROOT / "deploy" / "aicrm-internal-event-worker.service").read_text(encoding="utf-8")
+    external_worker = (ROOT / "deploy" / "aicrm-external-effect-worker.service").read_text(encoding="utf-8")
+
+    for service in (web, ingress, callback_worker, internal_worker, external_worker):
+        assert "After=network.target openclaw-wecom-postgres.service" in service
+        assert "Requires=openclaw-wecom-postgres.service" in service
+        assert "EnvironmentFile=/home/ubuntu/.openclaw-wecom-pg.env" in service
+        assert "WorkingDirectory=/home/ubuntu/极简 crm" in service
+        assert "wecom_ability_service" not in service
+        assert "legacy_flask_app" not in service
+        assert "run-legacy" not in service
+
+    assert "Environment=APP_PORT=5001" in web
+    assert "python app.py run" in web
+    assert "Environment=APP_PORT=5002" in ingress
+    assert "python scripts/run_wecom_callback_ingress.py" in ingress
+    assert "Environment=AICRM_WECOM_CALLBACK_INBOX_WORKER_BATCH_SIZE=20" in callback_worker
+    assert "Environment=AICRM_WECOM_CALLBACK_INBOX_WORKER_MAX_EXECUTE_BATCH_SIZE=20" in callback_worker
+    assert "python scripts/run_wecom_callback_inbox_worker.py --limit ${AICRM_WECOM_CALLBACK_INBOX_WORKER_BATCH_SIZE:-20}" in callback_worker
+    assert "--execute" not in callback_worker
+    assert "python scripts/run_internal_event_worker.py --execute" in internal_worker
+    assert "python scripts/run_external_effect_queue_worker.py --execute" in external_worker
+
+
 def test_wechat_shop_order_sync_systemd_units_are_deployable():
     workflow = (ROOT / ".github" / "workflows" / "deploy.yml").read_text(encoding="utf-8")
     service = (ROOT / "deploy" / "aicrm-wechat-shop-order-sync.service").read_text(encoding="utf-8")

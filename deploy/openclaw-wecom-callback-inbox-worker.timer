@@ -1,0 +1,11 @@
+[Unit]
+Description=Run OpenClaw WeCom Callback Inbox Worker every minute
+
+[Timer]
+OnBootSec=30s
+OnUnitActiveSec=60s
+AccuracySec=10s
+Unit=openclaw-wecom-callback-inbox-worker.service
+
+[Install]
+WantedBy=timers.target

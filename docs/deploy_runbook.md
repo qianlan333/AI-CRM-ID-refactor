@@ -43,6 +43,80 @@ git switch -c <feature-branch>
 - 存在长期运行的 `5000` 冷备实例
 - 服务器上存在多份并行有效的发布目录
 
+## WeCom Callback Runtime Isolation
+
+6 月 27 日 callback storm 后，目标架构把普通 Web 流量和企微回调流量拆成两个
+runtime：
+
+- `aicrm-web.service`：普通后台、sidebar、常规 API，监听 `127.0.0.1:5001`
+- `aicrm-wecom-ingress.service`：企微 callback fast ACK ingress，监听 `127.0.0.1:5002`
+- `aicrm-wecom-callback-worker.service`：消费 `webhook_inbox` 里的企微回调
+- `aicrm-internal-event-worker.service`：消费 internal event backlog
+- `aicrm-external-effect-worker.service`：消费 external effect jobs
+
+仓库中同时保留当前生产兼容命名的 `openclaw-*` unit。不要在同一台生产机器上同时
+enable 两套同职责 unit；切换到 canonical `aicrm-*` 命名需要单独审批，并先停掉对应
+`openclaw-*` 兼容 unit/timer。
+
+当前 GitHub deploy workflow 仍使用生产兼容命名安装并启动：
+
+- `openclaw-wecom-postgres.service` 作为 5001 Web runtime
+- `openclaw-wecom-callback-ingress.service` 作为 5002 callback ingress
+- `openclaw-wecom-callback-inbox-worker.timer` 作为 callback worker dry-run 调度器
+
+Callback worker unit 默认只预览 due rows，不会自动消费事故积压。需要小批量真实处理时，
+先确认 dry-run 输出，再显式执行：
+
+```bash
+python scripts/run_wecom_callback_inbox_worker.py --limit 20
+AICRM_WECOM_CALLBACK_INBOX_WORKER_EXECUTE=1 \
+  python scripts/run_wecom_callback_inbox_worker.py --execute --limit 20
+```
+
+部署流程在启动 5002 callback ingress 和 callback worker timer 后会运行：
+
+```bash
+python scripts/ops/check_wecom_callback_deploy_smoke.py \
+  | tee /tmp/wecom-callback-deploy-smoke.json
+```
+
+这个 smoke check 证明本机 `127.0.0.1:5001`、`127.0.0.1:5002` 可达，
+`127.0.0.1:5002` 上的 `/wecom/external-contact/callback` 与
+`/api/wecom/events` 都会用 app-level 4xx 拒绝无效 callback POST，并且
+`/admin/webhook-inbox`、`/api/admin/webhook-inbox/metrics`、
+`/api/admin/webhook-inbox/items`、`/api/admin/wecom/callback/reconciliation`
+已经部署到 5001。JSON 产物会保存在
+`/tmp/wecom-callback-deploy-smoke.json`，最终 readiness 必须通过
+`--deploy-smoke-evidence-file` 消费它。它不证明公网 nginx 已从 quick ACK
+切到 5002，也不替代压测、rollback drill、public-state 或最终 readiness 证据。
+`--web-base-url` 和 `--ingress-base-url` 必须是不同地址；如果两者都传同一个
+公网 URL，checker 会失败，因为这不能证明 5001/5002 已经隔离。
+
+nginx 模板：
+
+- `deploy/nginx-wecom-callback-ingress.conf.example`
+
+该模板展示最终拓扑：
+
+- `/` -> `aicrm_web` -> `127.0.0.1:5001`
+- `/wecom/external-contact/callback` -> `aicrm_wecom_ingress` -> `127.0.0.1:5002`
+- `/api/wecom/events` -> `aicrm_wecom_ingress` -> `127.0.0.1:5002`
+
+不要直接覆盖生产 nginx server block；必须人工合并模板、执行 `nginx -t`，再运行：
+
+```bash
+cd /home/ubuntu/极简 crm
+source /home/ubuntu/venvs/openclaw/bin/activate
+set -a && source /home/ubuntu/.openclaw-wecom-pg.env && set +a
+python scripts/ops/check_wecom_callback_ingress_cutover.py
+python scripts/ops/check_wecom_callback_permanent_fix_readiness.py \
+  --deploy-smoke-evidence-file /tmp/wecom-callback-deploy-smoke.json
+```
+
+`check_wecom_callback_permanent_fix_readiness.py` 没有压力测试、same-sample
+ingestion/processing、worker isolation、downstream/internal-event isolation、rollback
+证据时，必须保持 `ready_for_production_completion=false`。
+
 ## 常用只读检查
 
 ```bash

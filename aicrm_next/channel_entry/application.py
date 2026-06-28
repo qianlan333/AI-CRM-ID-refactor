@@ -5,7 +5,6 @@ import logging
 import os
 import re
 import secrets
-from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 from aicrm_next.shared.release import current_release_sha
@@ -39,16 +38,11 @@ from aicrm_next.platform_foundation.external_effects import (
     WECOM_PROFILE_UPDATE,
     WECOM_WELCOME_MESSAGE_SEND,
 )
-from aicrm_next.platform_foundation.external_effects.worker import ExternalEffectWorker
 from aicrm_next.platform_foundation.internal_events import InternalEventService
-from aicrm_next.shared.runtime_settings import runtime_bool, runtime_csv
+from aicrm_next.platform_foundation.external_effects.realtime import wake_external_effect_job
 
 CUSTOMER_NAME_PLACEHOLDER_RE = re.compile(r"\{\{\s*客户名\s*\}\}")
 LOGGER = logging.getLogger(__name__)
-_WELCOME_EFFECT_EXECUTOR = ThreadPoolExecutor(
-    max_workers=2,
-    thread_name_prefix="channel-entry-welcome-effect",
-)
 
 
 def callback_config() -> dict[str, str]:
@@ -192,31 +186,12 @@ def _plan_channel_entry_effect(
     )
 
 
-def _welcome_realtime_wakeup_enabled() -> bool:
-    return runtime_bool("AICRM_EXTERNAL_EFFECT_WECOM_EXECUTE") and WECOM_WELCOME_MESSAGE_SEND in runtime_csv(
-        "AICRM_EXTERNAL_EFFECT_ALLOWED_TYPES"
+def _wake_channel_entry_external_effect_job(job_id: Any, *, effect_type: str, reason: str) -> bool:
+    return wake_external_effect_job(
+        job_id,
+        reason=reason,
+        effect_type=effect_type,
     )
-
-
-def _dispatch_welcome_external_effect_job(job_id: int) -> None:
-    try:
-        ExternalEffectWorker(locked_by="channel-entry-welcome-realtime").dispatch_one(int(job_id))
-    except Exception:
-        LOGGER.exception(
-            "channel entry welcome external effect realtime dispatch failed",
-            extra={"external_effect_job_id": int(job_id or 0)},
-        )
-
-
-def _wake_welcome_external_effect_job(job_id: Any) -> bool:
-    try:
-        normalized_job_id = int(job_id or 0)
-    except (TypeError, ValueError):
-        normalized_job_id = 0
-    if normalized_job_id <= 0 or not _welcome_realtime_wakeup_enabled():
-        return False
-    _WELCOME_EFFECT_EXECUTOR.submit(_dispatch_welcome_external_effect_job, normalized_job_id)
-    return True
 
 
 def _emit_channel_entry_internal_event(
@@ -409,7 +384,11 @@ def _send_welcome(command: ProcessChannelEntryCommand, *, channel: dict[str, Any
         "reason": "external_effect_job_queued",
         "welcome_code": welcome_code,
         "external_effect_job_id": job.get("id"),
-        "immediate_dispatch_scheduled": _wake_welcome_external_effect_job(job.get("id")),
+        "immediate_dispatch_scheduled": _wake_channel_entry_external_effect_job(
+            job.get("id"),
+            effect_type=WECOM_WELCOME_MESSAGE_SEND,
+            reason="channel_entry_welcome_message",
+        ),
         "real_external_call_executed": False,
         "attachments": attachments,
     }
@@ -465,6 +444,11 @@ def _apply_tag(command: ProcessChannelEntryCommand, *, channel: dict[str, Any], 
         "reason": "external_effect_job_queued",
         "entry_tag_id": tag_id,
         "external_effect_job_id": job.get("id"),
+        "immediate_dispatch_scheduled": _wake_channel_entry_external_effect_job(
+            job.get("id"),
+            effect_type=WECOM_CONTACT_TAG_MARK,
+            reason="channel_entry_tag_mark",
+        ),
         "real_external_call_executed": False,
     }
     _log_effect(command, effect_type="entry_tag", idempotency_key=key, status="queued", channel_id=channel_id, scene_value=scene, reason="external_effect_job_queued", request_json=payload, response_json=result)
@@ -521,6 +505,11 @@ def _ensure_profile_description(command: ProcessChannelEntryCommand, *, channel:
         "queued": True,
         "reason": "external_effect_job_queued",
         "external_effect_job_id": job.get("id"),
+        "immediate_dispatch_scheduled": _wake_channel_entry_external_effect_job(
+            job.get("id"),
+            effect_type=WECOM_PROFILE_UPDATE,
+            reason="channel_entry_profile_update",
+        ),
         "real_external_call_executed": False,
         "description": external_userid,
     }
@@ -630,9 +619,10 @@ def process_wecom_external_contact_event(command: ProcessWeComExternalContactEve
     )
     result = {"handled": False, "event_log": logged}
     try:
-        identity_sync = sync_external_contact_identity_for_event(event, corp_id=command.corp_id)
-        result["identity_sync"] = identity_sync
-        if text(event.get("Event")) == "change_external_contact" and text(event.get("ChangeType")) in ENTRY_CHANGE_TYPES:
+        is_entry_event = text(event.get("Event")) == "change_external_contact" and text(event.get("ChangeType")) in ENTRY_CHANGE_TYPES
+        if is_entry_event:
+            identity_sync = sync_external_contact_identity_for_event(event, corp_id=command.corp_id)
+            result["identity_sync"] = identity_sync
             if text(identity_sync.get("status")) != "success":
                 reason = text(identity_sync.get("reason")) or text(identity_sync.get("status")) or "identity_sync_failed"
                 raise RuntimeError(f"identity_sync_failed:{reason}")
@@ -649,6 +639,7 @@ def process_wecom_external_contact_event(command: ProcessWeComExternalContactEve
             repo.mark_event_status(int(logged["id"]), "success")
             result.update({"handled": bool(entry.get("handled")), "entry_result": entry})
         else:
+            result["identity_sync"] = {"status": "skipped", "reason": "non_entry_change_type"}
             repo.mark_event_status(int(logged["id"]), "success")
     except Exception as exc:
         repo.mark_event_status(int(logged["id"]), "failed", str(exc))

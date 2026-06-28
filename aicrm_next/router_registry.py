@@ -51,6 +51,7 @@ from .platform_foundation.external_effects.api import router as external_effects
 from .platform_foundation.internal_events.api import router as internal_events_router
 from .platform_foundation.legacy_cleanup.api import router as legacy_cleanup_router
 from .platform_foundation.push_center.api import router as push_center_router
+from .platform_foundation.webhook_inbox.api import router as webhook_inbox_router
 from .public_product.api import router as public_product_router
 from .questionnaire.admin_pages import router as questionnaire_admin_pages_router
 from .questionnaire.api import router as questionnaire_router
@@ -74,6 +75,7 @@ ROUTER_SPECS: tuple[RouterSpec, ...] = (
     RouterSpec("platform_foundation", "legacy_cleanup", legacy_cleanup_router, "legacy cleanup read/command APIs"),
     RouterSpec("platform_foundation", "internal_events", internal_events_router, "internal event center APIs"),
     RouterSpec("platform_foundation", "push_center", push_center_router, "push center APIs"),
+    RouterSpec("platform_foundation", "webhook_inbox", webhook_inbox_router, "webhook inbox metrics and operations APIs"),
     RouterSpec("admin_auth", "admin_auth", admin_auth_router, "admin auth APIs"),
     RouterSpec("admin_shell", "admin_shell", admin_shell_router, "admin shell pages"),
     RouterSpec("admin_config", "admin_config", admin_config_router, "admin config pages and APIs"),

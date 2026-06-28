@@ -45,6 +45,8 @@ jobs:
             sudo systemctl stop openclaw-internal-event-worker.service || true
             sudo systemctl stop openclaw-external-effect-worker.timer || true
             sudo systemctl stop openclaw-external-effect-worker.service || true
+            sudo systemctl stop openclaw-wecom-callback-inbox-worker.timer || true
+            sudo systemctl stop openclaw-wecom-callback-inbox-worker.service || true
             sudo systemctl stop openclaw-ai-audience-scheduler.timer || true
             sudo systemctl stop openclaw-ai-audience-scheduler.service || true
             python3 -m alembic upgrade head
@@ -69,9 +71,20 @@ jobs:
             sudo cp deploy/openclaw-internal-event-worker.timer /etc/systemd/system/
             sudo cp deploy/openclaw-external-effect-worker.service /etc/systemd/system/
             sudo cp deploy/openclaw-external-effect-worker.timer /etc/systemd/system/
+            sudo cp deploy/openclaw-wecom-callback-ingress.service /etc/systemd/system/
+            sudo cp deploy/openclaw-wecom-callback-inbox-worker.service /etc/systemd/system/
+            sudo cp deploy/openclaw-wecom-callback-inbox-worker.timer /etc/systemd/system/
             sudo cp deploy/openclaw-ai-audience-scheduler.service /etc/systemd/system/
             sudo cp deploy/openclaw-ai-audience-scheduler.timer /etc/systemd/system/
             sudo systemctl daemon-reload
+            sudo systemctl enable openclaw-wecom-callback-ingress.service
+            sudo systemctl restart openclaw-wecom-callback-ingress.service
+            curl -sSf http://127.0.0.1:5002/health
+            sudo systemctl enable openclaw-wecom-callback-inbox-worker.timer
+            sudo systemctl restart openclaw-wecom-callback-inbox-worker.timer
+            sudo systemctl status openclaw-wecom-callback-ingress.service --no-pager
+            sudo systemctl status openclaw-wecom-callback-inbox-worker.timer --no-pager
+            python scripts/ops/check_wecom_callback_deploy_smoke.py | tee /tmp/wecom-callback-deploy-smoke.json
             sudo systemctl enable openclaw-external-push-worker.timer
             sudo systemctl restart openclaw-external-push-worker.timer
             sudo systemctl start openclaw-external-push-worker.service

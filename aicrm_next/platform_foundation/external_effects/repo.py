@@ -417,7 +417,10 @@ class SQLAlchemyExternalEffectRepository(ExternalEffectRepository):
             f"""
             SELECT
                 COUNT(*) FILTER (
-                    WHERE status IN ('queued', 'failed_retryable')
+                    WHERE (
+                            status IN ('queued', 'failed_retryable')
+                         OR (status = 'dispatching' AND locked_at <= CURRENT_TIMESTAMP - INTERVAL '5 minutes')
+                    )
                       AND scheduled_at <= CURRENT_TIMESTAMP
                       AND (next_retry_at IS NULL OR next_retry_at <= CURRENT_TIMESTAMP)
                       AND (locked_at IS NULL OR locked_at <= CURRENT_TIMESTAMP - INTERVAL '5 minutes')
@@ -463,7 +466,10 @@ class SQLAlchemyExternalEffectRepository(ExternalEffectRepository):
             f"""
             SELECT *
             FROM external_effect_job
-            WHERE status IN ('queued', 'failed_retryable')
+            WHERE (
+                    status IN ('queued', 'failed_retryable')
+                 OR (status = 'dispatching' AND locked_at <= CURRENT_TIMESTAMP - INTERVAL '5 minutes')
+            )
               AND scheduled_at <= CURRENT_TIMESTAMP
               AND (next_retry_at IS NULL OR next_retry_at <= CURRENT_TIMESTAMP)
               AND (locked_at IS NULL OR locked_at <= CURRENT_TIMESTAMP - INTERVAL '5 minutes')
@@ -487,7 +493,10 @@ class SQLAlchemyExternalEffectRepository(ExternalEffectRepository):
             WITH due AS (
                 SELECT id
                 FROM external_effect_job
-                WHERE status IN ('queued', 'failed_retryable')
+                WHERE (
+                        status IN ('queued', 'failed_retryable')
+                     OR (status = 'dispatching' AND locked_at <= CURRENT_TIMESTAMP - INTERVAL '5 minutes')
+                )
                   AND scheduled_at <= CURRENT_TIMESTAMP
                   AND (next_retry_at IS NULL OR next_retry_at <= CURRENT_TIMESTAMP)
                   AND (locked_at IS NULL OR locked_at <= CURRENT_TIMESTAMP - INTERVAL '5 minutes')
@@ -498,7 +507,8 @@ class SQLAlchemyExternalEffectRepository(ExternalEffectRepository):
                 FOR UPDATE SKIP LOCKED
             )
             UPDATE external_effect_job j
-            SET locked_at = CURRENT_TIMESTAMP,
+            SET status = CASE WHEN j.status = 'dispatching' THEN 'queued' ELSE j.status END,
+                locked_at = CURRENT_TIMESTAMP,
                 locked_by = :locked_by,
                 updated_at = CURRENT_TIMESTAMP
             FROM due
@@ -882,7 +892,10 @@ class InMemoryExternalEffectRepository(ExternalEffectRepository):
         due_rows = [
             row
             for row in rows
-            if row.get("status") in {"queued", "failed_retryable"}
+            if (
+                row.get("status") in {"queued", "failed_retryable"}
+                or (row.get("status") == "dispatching" and row.get("locked_at") and self._dt(row.get("locked_at")) <= now - timedelta(minutes=5))
+            )
             and self._dt(row.get("scheduled_at")) <= now
             and (not row.get("next_retry_at") or self._dt(row.get("next_retry_at")) <= now)
             and (not row.get("locked_at") or self._dt(row.get("locked_at")) <= now - timedelta(minutes=5))
@@ -904,7 +917,10 @@ class InMemoryExternalEffectRepository(ExternalEffectRepository):
         rows = [
             row
             for row in self._jobs
-            if row.get("status") in {"queued", "failed_retryable"}
+            if (
+                row.get("status") in {"queued", "failed_retryable"}
+                or (row.get("status") == "dispatching" and row.get("locked_at") and self._dt(row.get("locked_at")) <= now - timedelta(minutes=5))
+            )
             and (not type_set or row.get("effect_type") in type_set)
             and (not test_only or (row.get("payload_json") or {}).get("execution_scope") == "test_loopback")
             and self._dt(row.get("scheduled_at")) <= now
@@ -920,6 +936,8 @@ class InMemoryExternalEffectRepository(ExternalEffectRepository):
         for job in jobs:
             row = self._find(job.id)
             if row:
+                if row.get("status") == "dispatching":
+                    row["status"] = "queued"
                 row["locked_at"] = now
                 row["locked_by"] = _text(locked_by)
                 row["updated_at"] = now

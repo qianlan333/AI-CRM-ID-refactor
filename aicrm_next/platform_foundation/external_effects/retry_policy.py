@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-RETRYABLE_ERROR_CODES = {"timeout", "network_error", "rate_limited", "http_408", "http_429", "http_5xx"}
+RETRYABLE_ERROR_CODES = {"timeout", "network_error", "rate_limited", "http_408", "http_429", "http_5xx", "adapter_exception"}
 TERMINAL_ERROR_CODES = {
     "http_400",
     "http_401",

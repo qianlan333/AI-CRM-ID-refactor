@@ -30,6 +30,13 @@ def _patch_repo(monkeypatch, *, channel_status="active", bindings=None):
 
 def test_active_channel_baseline_emits_only_channel_entry_without_program_admission(monkeypatch):
     calls, previous = _patch_repo(monkeypatch, bindings=[{"id": 20, "program_id": 30, "program_status": "active"}])
+    wakeups: list[tuple[int, str, str]] = []
+
+    def fake_wake(job_id, *, reason, effect_type):
+        wakeups.append((int(job_id or 0), reason, effect_type))
+        return False
+
+    monkeypatch.setattr("aicrm_next.channel_entry.application.wake_external_effect_job", fake_wake)
     try:
         result = process_channel_entry(ProcessChannelEntryCommand(external_contact_id="wm-a", payload_json={"State": "scene-a", "WelcomeCode": "wc"}, send_welcome_message=True))
     finally:
@@ -43,6 +50,15 @@ def test_active_channel_baseline_emits_only_channel_entry_without_program_admiss
     assert result["entry_tag"]["queued"] is True
     assert result["profile_description"]["queued"] is True
     assert result["profile_description"]["description"] == "wm-a"
+    assert result["welcome_message"]["immediate_dispatch_scheduled"] is False
+    assert result["entry_tag"]["immediate_dispatch_scheduled"] is False
+    assert result["profile_description"]["immediate_dispatch_scheduled"] is False
+    assert [item[1:] for item in wakeups] == [
+        ("channel_entry_welcome_message", "wecom.welcome_message.send"),
+        ("channel_entry_tag_mark", "wecom.contact.tag.mark"),
+        ("channel_entry_profile_update", "wecom.profile.update"),
+    ]
+    assert all(job_id > 0 for job_id, _, _ in wakeups)
     assert "program_member_written" not in result
     assert "admission_results" not in result
     assert "member" not in calls

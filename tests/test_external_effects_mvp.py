@@ -738,6 +738,36 @@ def test_external_effect_diagnostics_metrics_execution_mode_and_allowed_types(ne
     assert enabled_body["allowed_effect_types"] == [WEBHOOK_ORDER_PAID_PUSH]
 
 
+def test_external_effect_due_queue_reclaims_stale_dispatching_jobs() -> None:
+    repo = InMemoryExternalEffectRepository()
+    service = _service(repo)
+    job = _queued_webhook_job(service, idempotency_key="stale-dispatching-reclaim")
+    repo.mark_dispatching(job["id"], locked_by="worker-that-crashed")
+    row = repo._find(job["id"])  # type: ignore[attr-defined]
+    assert row is not None
+    row["locked_at"] = (datetime.now(timezone.utc) - timedelta(minutes=6)).isoformat()
+
+    metrics = repo.queue_metrics()
+    due = repo.list_due_jobs(limit=10)
+    acquired = repo.acquire_due_jobs(limit=10, locked_by="replacement-worker")
+    updated = repo.get_job(job["id"])
+
+    assert metrics["eligible_due_count"] == 1
+    assert [item.id for item in due] == [job["id"]]
+    assert [item.id for item in acquired] == [job["id"]]
+    assert updated is not None
+    assert updated.status == "queued"
+    assert updated.locked_by == "replacement-worker"
+    assert updated.locked_at
+
+
+def test_external_effect_sql_due_queue_reclaims_stale_dispatching_jobs() -> None:
+    source = (Path(__file__).resolve().parents[1] / "aicrm_next/platform_foundation/external_effects/repo.py").read_text(encoding="utf-8")
+
+    assert "status = 'dispatching' AND locked_at <= CURRENT_TIMESTAMP - INTERVAL '5 minutes'" in source
+    assert "SET status = CASE WHEN j.status = 'dispatching' THEN 'queued' ELSE j.status END" in source
+
+
 def test_external_effect_admin_page_is_removed_and_troubleshooting_api_covers_queue_debug(next_client: TestClient) -> None:
     service = ExternalEffectService()
     job = service.plan_effect(
