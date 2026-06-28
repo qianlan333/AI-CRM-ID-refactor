@@ -141,6 +141,30 @@ def test_ai_audience_scheduler_emits_incremental_every_run_and_daily_only_in_2am
     assert not_due["daily_tick_due"] is False
 
 
+def test_ai_audience_scheduler_emits_daily_for_launch_refresh_due_outside_2am_window() -> None:
+    class Service:
+        def emit_tick(self, tick_type):
+            return {"ok": True, "tick_type": tick_type}
+
+        def has_launch_refresh_due(self, refresh_kind):
+            return refresh_kind == "daily"
+
+    outside_window = datetime(2026, 6, 24, 1, 30, tzinfo=ZoneInfo("Asia/Shanghai"))
+
+    from aicrm_next.ai_audience_ops import scheduler as scheduler_module
+
+    original = scheduler_module.AudiencePackageService
+    scheduler_module.AudiencePackageService = lambda: Service()
+    try:
+        due = emit_due_ticks(now=outside_window, daily_refresh_time="02:00", daily_window_minutes=60)
+    finally:
+        scheduler_module.AudiencePackageService = original
+
+    assert [item["tick_type"] for item in due["items"]] == ["incremental", "daily"]
+    assert due["daily_tick_due"] is True
+    assert due["daily_tick_window_due"] is False
+
+
 def test_ai_audience_scheduler_consumer_pairs_cover_source_refresh_and_outbound() -> None:
     pairs = ai_audience_event_consumer_pairs()
 
@@ -402,6 +426,133 @@ def test_daily_snapshot_publish_latest_version_can_exit_member(next_client, monk
     assert package_row["current_version_id"] == v2_id
     assert {int(row["id"]): row["status"] for row in version_rows} == {v1_id: "archived", v2_id: "published"}
     assert member_row["status"] == "exited"
+
+
+@pytest.mark.usefixtures("next_pg_schema")
+def test_publish_auto_refreshes_package_on_first_launch(next_client, monkeypatch) -> None:
+    database_url = os.environ["DATABASE_URL"]
+    monkeypatch.setenv("AICRM_AI_AUDIENCE_API_TOKEN", TOKEN)
+    monkeypatch.setenv("AICRM_AUDIENCE_READONLY_DATABASE_URL", database_url)
+
+    session_factory = get_session_factory()
+    with session_factory() as session:
+        session.execute(
+            text(
+                """
+                INSERT INTO questionnaire_submissions (
+                    questionnaire_id, respondent_key, external_userid, staff_id, submitted_at
+                )
+                VALUES (202, 'launch_rk_1', 'wm_launch_refresh_001', 'HuangYouCan', CURRENT_TIMESTAMP - interval '1 minute')
+                """
+            )
+        )
+        session.commit()
+
+    create_resp = next_client.post(
+        "/api/ai/audience/packages",
+        headers=_auth(),
+        json={
+            "package_key": "launch_auto_refresh_pkg",
+            "name": "上线首刷测试",
+            "query_mode": "incremental_event",
+            "parameters": {"questionnaire_id": 202},
+            "incremental_sql_text": _valid_incremental_sql(),
+        },
+    )
+    assert create_resp.status_code == 200
+    package_id = create_resp.json()["package"]["id"]
+
+    publish_resp = next_client.post(f"/api/ai/audience/packages/{package_id}/publish", headers=_auth(), json={})
+    assert publish_resp.status_code == 200
+    body = publish_resp.json()
+    assert body["ok"] is True
+    assert body["launch_refresh"]["ok"] is True
+    assert body["launch_refresh"]["trigger"] == "package_launch"
+    assert body["launch_refresh"]["run_type"] == "incremental"
+    assert body["launch_refresh"]["entered_count"] == 1
+    assert body["launch_refresh"]["real_external_call_executed"] is False
+
+    with session_factory() as session:
+        member_row = session.execute(
+            text(
+                """
+                SELECT status
+                FROM ai_audience_member_current
+                WHERE package_id = :package_id AND external_userid = 'wm_launch_refresh_001'
+                """
+            ),
+            {"package_id": package_id},
+        ).mappings().one()
+        run_rows = session.execute(
+            text(
+                """
+                SELECT run_type, status
+                FROM ai_audience_package_run
+                WHERE package_id = :package_id
+                ORDER BY id
+                """
+            ),
+            {"package_id": package_id},
+        ).mappings().all()
+    assert member_row["status"] == "active"
+    assert [(row["run_type"], row["status"]) for row in run_rows] == [("incremental", "succeeded")]
+
+
+@pytest.mark.usefixtures("next_pg_schema")
+def test_publish_does_not_repeat_launch_refresh_for_active_package(next_client, monkeypatch) -> None:
+    database_url = os.environ["DATABASE_URL"]
+    monkeypatch.setenv("AICRM_AI_AUDIENCE_API_TOKEN", TOKEN)
+    monkeypatch.setenv("AICRM_AUDIENCE_READONLY_DATABASE_URL", database_url)
+
+    session_factory = get_session_factory()
+    with session_factory() as session:
+        session.execute(
+            text(
+                """
+                INSERT INTO questionnaire_submissions (
+                    questionnaire_id, respondent_key, external_userid, staff_id, submitted_at
+                )
+                VALUES (203, 'launch_rk_2', 'wm_launch_refresh_002', 'HuangYouCan', CURRENT_TIMESTAMP - interval '1 minute')
+                """
+            )
+        )
+        session.commit()
+
+    create_resp = next_client.post(
+        "/api/ai/audience/packages",
+        headers=_auth(),
+        json={
+            "package_key": "launch_auto_refresh_once_pkg",
+            "name": "上线只首刷一次测试",
+            "query_mode": "incremental_event",
+            "parameters": {"questionnaire_id": 203},
+            "incremental_sql_text": _valid_incremental_sql(),
+        },
+    )
+    assert create_resp.status_code == 200
+    package_id = create_resp.json()["package"]["id"]
+
+    publish_resp = next_client.post(f"/api/ai/audience/packages/{package_id}/publish", headers=_auth(), json={})
+    assert publish_resp.status_code == 200
+    assert publish_resp.json()["launch_refresh"]["ok"] is True
+
+    version_resp = next_client.post(
+        f"/api/ai/audience/packages/{package_id}/versions",
+        headers=_auth(),
+        json={"incremental_sql_text": _valid_incremental_sql() + "\n-- v2 active package\n", "parameters": {"questionnaire_id": 203}},
+    )
+    assert version_resp.status_code == 200
+
+    republish_resp = next_client.post(f"/api/ai/audience/packages/{package_id}/publish", headers=_auth(), json={})
+    assert republish_resp.status_code == 200
+    assert "launch_refresh" not in republish_resp.json()
+
+    with session_factory() as session:
+        run_count = session.execute(
+            text("SELECT COUNT(*) FROM ai_audience_package_run WHERE package_id = :package_id"),
+            {"package_id": package_id},
+        ).scalar_one()
+    assert run_count == 1
 
 
 def test_ai_audience_test_agent_webhook_disabled(next_client, monkeypatch) -> None:

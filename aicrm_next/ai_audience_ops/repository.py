@@ -1096,9 +1096,11 @@ class SQLAlchemyAudienceRepository(AudienceRepository):
         if refresh_kind == "daily":
             due_column = "next_daily_refresh_at"
             enabled_column = "daily_enabled"
+            watermark_column = "last_daily_refreshed_at"
         else:
             due_column = "next_incremental_refresh_at"
             enabled_column = "incremental_enabled"
+            watermark_column = "last_incremental_watermark_at"
         lease_token = "aud_" + uuid4().hex
         return self._write_all(
             f"""
@@ -1108,10 +1110,17 @@ class SQLAlchemyAudienceRepository(AudienceRepository):
                 WHERE status = 'active'
                   AND {enabled_column} = TRUE
                   AND current_version_id IS NOT NULL
-                  AND {due_column} IS NOT NULL
-                  AND {due_column} <= CURRENT_TIMESTAMP + (:due_window_seconds || ' seconds')::interval
+                  AND (
+                    {watermark_column} IS NULL
+                    OR (
+                        {due_column} IS NOT NULL
+                        AND {due_column} <= CURRENT_TIMESTAMP + (:due_window_seconds || ' seconds')::interval
+                    )
+                  )
                   AND (lease_expires_at IS NULL OR lease_expires_at <= CURRENT_TIMESTAMP)
-                ORDER BY {due_column} ASC, id ASC
+                ORDER BY COALESCE({watermark_column}, TIMESTAMPTZ '1970-01-01') ASC,
+                         COALESCE({due_column}, CURRENT_TIMESTAMP) ASC,
+                         id ASC
                 LIMIT :limit
                 FOR UPDATE SKIP LOCKED
             )
@@ -1130,6 +1139,28 @@ class SQLAlchemyAudienceRepository(AudienceRepository):
                 "due_window_seconds": max(0, min(int(due_window_seconds or 0), 300)),
             },
         )
+
+    def has_launch_refresh_due(self, refresh_kind: str) -> bool:
+        if refresh_kind == "daily":
+            enabled_column = "daily_enabled"
+            watermark_column = "last_daily_refreshed_at"
+        else:
+            enabled_column = "incremental_enabled"
+            watermark_column = "last_incremental_watermark_at"
+        row = self._one(
+            f"""
+            SELECT 1 AS due
+            FROM ai_audience_package
+            WHERE status = 'active'
+              AND {enabled_column} = TRUE
+              AND current_version_id IS NOT NULL
+              AND {watermark_column} IS NULL
+              AND (lease_expires_at IS NULL OR lease_expires_at <= CURRENT_TIMESTAMP)
+            LIMIT 1
+            """,
+            {},
+        )
+        return bool(row)
 
     def update_refresh_success(
         self,

@@ -36,17 +36,22 @@ def emit_due_ticks(
     items: list[dict[str, Any]] = []
     if include_incremental:
         items.append({"tick_type": "incremental", "result": service.emit_tick("incremental")})
-    daily_due = _daily_tick_window_open(
-        now=now,
-        daily_refresh_time=daily_refresh_time,
-        daily_window_minutes=daily_window_minutes,
-    )
+    window_daily_due = False
+    daily_due = False
+    if include_daily:
+        window_daily_due = _daily_tick_window_open(
+            now=now,
+            daily_refresh_time=daily_refresh_time,
+            daily_window_minutes=daily_window_minutes,
+        )
+        daily_due = window_daily_due or _launch_daily_refresh_due(service)
     if include_daily and daily_due:
         items.append({"tick_type": "daily", "result": service.emit_tick("daily")})
     return {
         "ok": True,
         "items": items,
         "daily_tick_due": daily_due,
+        "daily_tick_window_due": window_daily_due,
         "daily_refresh_time": daily_refresh_time,
         "daily_window_minutes": max(1, int(daily_window_minutes or DEFAULT_DAILY_TICK_WINDOW_MINUTES)),
         "real_external_call_executed": False,
@@ -117,6 +122,16 @@ def _source_poke_event_types() -> list[str]:
         "external_form.submitted",
         *PAYMENT_SUCCEEDED_EVENT_TYPES,
     ]
+
+
+def _launch_daily_refresh_due(service: Any) -> bool:
+    checker = getattr(service, "has_launch_refresh_due", None)
+    if not callable(checker):
+        return False
+    try:
+        return bool(checker("daily"))
+    except Exception:
+        return False
 
 
 def _daily_tick_window_open(

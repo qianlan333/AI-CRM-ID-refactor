@@ -146,8 +146,19 @@ class AudiencePackageService:
         return {"ok": bool(package), "package": _admin_package_detail(self._repo.get_package_detail(int(package_id)) or package or {}), "error": "" if package else "package_not_found"}
 
     def activate_admin_package(self, package_id: int) -> dict[str, Any]:
+        previous = self._repo.get_package(int(package_id))
         package = self._repo.activate_package(int(package_id))
-        return {"ok": bool(package), "package": _admin_package_detail(self._repo.get_package_detail(int(package_id)) or package or {}), "error": "" if package else "package_not_found"}
+        if not package:
+            return {"ok": False, "package": _admin_package_detail({}), "error": "package_not_found"}
+        launch_refresh = None
+        if _text((previous or {}).get("status")) != "active":
+            launch_refresh = self._refresh_package_on_launch(int(package_id))
+        return {
+            "ok": True,
+            "package": _admin_package_detail(self._repo.get_package_detail(int(package_id)) or package or {}),
+            "launch_refresh": launch_refresh,
+            "error": "",
+        }
 
     def archive_admin_package(self, package_id: int) -> dict[str, Any]:
         package = self._repo.update_package_status(int(package_id), "archived", reason="admin_archived")
@@ -304,6 +315,7 @@ class AudiencePackageService:
             "ok": True,
             "package": _admin_package_detail(package),
             "version": _safe_version(result.get("version")),
+            "launch_refresh": result.get("launch_refresh"),
         }
 
     def publish_external_package(self, package_id: int, *, version_id: int | None = None) -> dict[str, Any]:
@@ -399,10 +411,37 @@ class AudiencePackageService:
         if errors:
             self._repo.update_version_validation(int(version["id"]), dependencies=sorted(set(dependencies)), validation_errors=sorted(set(errors)))
             return {"ok": False, "error": "sql_validation_failed", "validation_errors": sorted(set(errors))}
+        was_active = _text(package.get("status")) == "active"
+        had_current_version = int(package.get("current_version_id") or 0) > 0
         self._repo.update_version_validation(int(version["id"]), dependencies=sorted(set(dependencies)), validation_errors=[])
         self._repo.replace_dependencies(package_id, int(version["id"]), sorted(set(dependencies)))
         published = self._repo.publish_version(package_id, int(version["id"])) if activate else self._repo.publish_version_without_activation(package_id, int(version["id"]))
-        return {"ok": True, "package": self._repo.get_package(package_id), "version": published}
+        result = {"ok": True, "package": self._repo.get_package(package_id), "version": published}
+        if activate and (not was_active or not had_current_version):
+            result["launch_refresh"] = self._refresh_package_on_launch(package_id)
+        return result
+
+    def _refresh_package_on_launch(self, package_id: int) -> dict[str, Any]:
+        from .refresh_service import AudienceRefreshService
+
+        package = self._repo.get_package(int(package_id))
+        if not package:
+            return {"ok": False, "skipped": True, "reason": "package_not_found", "real_external_call_executed": False}
+        version = self._repo.get_current_version(int(package_id))
+        if not version:
+            return {"ok": False, "skipped": True, "reason": "current_version_not_found", "real_external_call_executed": False}
+        run_type = "daily" if _text(version.get("snapshot_sql_text")) else "incremental"
+        result = AudienceRefreshService(repository=self._repo, internal_events=self._events).refresh_package(
+            int(package_id),
+            run_type=run_type,
+            package=package,
+        )
+        return {
+            "trigger": "package_launch",
+            "run_type": run_type,
+            **result,
+            "real_external_call_executed": False,
+        }
 
     def pause(self, package_id: int, *, reason: str = "") -> dict[str, Any]:
         package = self._repo.update_package_status(package_id, "paused", reason=reason)
@@ -448,6 +487,9 @@ class AudiencePackageService:
             context=CommandContext(actor_id=actor_id, actor_type="system", source_route=f"ai_audience.ticks.{tick_type}"),
         )
         return {"ok": True, **result}
+
+    def has_launch_refresh_due(self, refresh_kind: str = "daily") -> bool:
+        return self._repo.has_launch_refresh_due("daily" if refresh_kind == "daily" else "incremental")
 
     def emit_source_changed(self, payload: dict[str, Any]) -> dict[str, Any]:
         source_type = _text(payload.get("source_type"))
