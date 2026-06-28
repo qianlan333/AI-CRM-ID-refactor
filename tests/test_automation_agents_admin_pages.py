@@ -54,7 +54,7 @@ def test_automation_agent_list_page_contract(next_client, monkeypatch) -> None:
     for expected in (
         "Agent 列表",
         "新增 Agent",
-        "绑定自动化运营计划",
+        "Agent 名称",
         "固定素材",
         "状态",
         "操作",
@@ -65,9 +65,15 @@ def test_automation_agent_list_page_contract(next_client, monkeypatch) -> None:
         "删除",
         "/api/admin/automation-agents",
         "data-agent-action-row",
+        "agent_name",
+        "agent_code",
+        "请根据{{问卷信息}}",
+        "收到问卷啦～",
+        "这几个问题开始聊",
     ):
         assert expected in html
     for forbidden in (
+        "绑定自动化运营计划",
         "接收格式",
         "接收/发送地址",
         "字段依赖",

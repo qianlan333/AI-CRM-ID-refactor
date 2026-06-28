@@ -262,7 +262,7 @@
       <table class="automation-agent-table">
         <thead>
           <tr>
-            <th class="w-plan">绑定自动化运营计划</th>
+            <th class="w-plan">Agent 名称</th>
             <th class="w-material">固定素材</th>
             <th class="w-status">状态</th>
             <th class="w-op">操作</th>
@@ -344,14 +344,14 @@
         return;
       }
       rowsEl.innerHTML = items.map((item, index) => {
-        const planName = item.bound_package_name || item.bound_package_key || "未绑定计划";
-        const packageKey = item.bound_package_key || "-";
+        const agentName = item.agent_name || item.agent_code || "未命名 Agent";
+        const agentCode = item.agent_code || "-";
         const isActive = item.status === "active";
         return `
           <tr>
             <td class="w-plan">
-              <div class="automation-agent-plan-title">${escapeHtml(planName)}</div>
-              <div class="automation-agent-plan-key">${escapeHtml(packageKey)}</div>
+              <div class="automation-agent-plan-title">${escapeHtml(agentName)}</div>
+              <div class="automation-agent-plan-key">${escapeHtml(agentCode)}</div>
             </td>
             <td class="w-material"><span class="automation-agent-pill">${escapeHtml(materialText(item.fixed_material_summary))}</span></td>
             <td class="w-status">${statusPill(item.status)}</td>
@@ -425,7 +425,27 @@
             agent_code: `new_agent_${suffix}`,
             bound_package_key: "new_package_key",
             role_prompt: "你是一个克制、自然、面向私域转化的跟进 Agent。",
-            task_prompt: "请生成一条适合顾问直接发送的跟进话术。",
+            task_prompt: `请根据{{ '{{问卷信息}}' }}，生成一条适合在用户填完问卷后直接发送的跟进话术。
+
+输出要求：
+1. 只输出最终话术，不要解释过程，不要输出 JSON。
+2. 话术必须保留下面的整体结构和自然语气：
+
+收到问卷啦～
+
+现在已经可以开始体验了，我也会把你拉进群，后续日课更新会在群里同步。
+
+结合你刚才填的情况，我建议你可以先从这几个问题开始聊：
+- [根据问卷信息推荐的具体问题 1]
+- [根据问卷信息推荐的具体问题 2]
+- [根据问卷信息推荐的具体问题 3]
+
+你先从最真实、最具体的一个问题开始聊，体验通常会更好。
+
+3. “这几个问题开始聊”后面必须输出 3 个问题，用短横线列表。
+4. 这 3 个问题要根据问卷信息明细推荐，优先覆盖用户最明确的痛点、目标、卡点、身份阶段或业务场景。
+5. 每个问题都要像用户可以直接拿来问 AI 的真实问题，具体、口语化、可行动。
+6. 不要编造问卷里没有依据的具体行业、身份或金额信息；信息不足时，用更通用但仍然可开始对话的问题。`,
             status: "active",
             fixed_content_package: {
               content_text: "",
