@@ -53,12 +53,12 @@ def test_production_deploy_refreshes_release_marker_before_restart_and_checks_he
 
     after_sha_index = workflow.index('after_sha="$(git rev-parse HEAD)"')
     marker_index = workflow.index('printf \'%s\\n\' "$after_sha" > .release-sha')
-    restart_index = workflow.index("sudo systemctl restart openclaw-wecom-postgres.service")
+    start_index = workflow.index("if ! sudo systemctl start openclaw-wecom-postgres.service; then")
     header_curl_index = workflow.index("curl -sSf -D /tmp/aicrm_health_headers.txt http://127.0.0.1:5001/health")
     header_grep_index = workflow.index('grep -i "x-aicrm-release-sha: $after_sha" /tmp/aicrm_health_headers.txt')
     ready_guard_index = workflow.index('if [ "$release_ready" != "1" ]; then')
 
-    assert after_sha_index < marker_index < restart_index < header_curl_index < header_grep_index < ready_guard_index
+    assert after_sha_index < marker_index < start_index < header_curl_index < header_grep_index < ready_guard_index
 
 
 def test_production_deploy_runs_alembic_upgrade_before_service_restart():
@@ -74,7 +74,9 @@ def test_production_deploy_runs_alembic_upgrade_before_service_restart():
     stop_compatible_web_index = workflow.index("sudo systemctl stop openclaw-wecom-postgres.service || true")
     stale_listener_index = workflow.index('if sudo fuser -s 5001/tcp; then')
     force_kill_index = workflow.index("sudo fuser -KILL 5001/tcp || true")
-    restart_index = workflow.index("sudo systemctl restart openclaw-wecom-postgres.service")
+    wait_for_free_index = workflow.index('echo "waiting for stale 5001 listener to exit"')
+    reset_failed_index = workflow.index("sudo systemctl reset-failed openclaw-wecom-postgres.service || true")
+    start_index = workflow.index("if ! sudo systemctl start openclaw-wecom-postgres.service; then")
     alembic_table = "alembic_" + "version"
 
     assert env_source_index < database_url_guard_index < alembic_upgrade_index
@@ -87,7 +89,9 @@ def test_production_deploy_runs_alembic_upgrade_before_service_restart():
         < stop_compatible_web_index
         < stale_listener_index
         < force_kill_index
-        < restart_index
+        < wait_for_free_index
+        < reset_failed_index
+        < start_index
     )
     assert "python3 app.py init-db" not in workflow
     assert "python app.py init-db" not in workflow
@@ -99,13 +103,14 @@ def test_production_deploy_runs_alembic_upgrade_before_service_restart():
 def test_production_deploy_polls_health_after_restart_instead_of_fixed_sleep():
     workflow = (ROOT / ".github" / "workflows" / "deploy.yml").read_text(encoding="utf-8")
 
-    restart_index = workflow.index("sudo systemctl restart openclaw-wecom-postgres.service")
-    poll_index = workflow.index("for _ in $(seq 1 60); do")
-    health_index = workflow.index("curl -sSf -D /tmp/aicrm_health_headers.txt http://127.0.0.1:5001/health")
-    header_index = workflow.index('grep -i "x-aicrm-release-sha: $after_sha" /tmp/aicrm_health_headers.txt')
-    status_index = workflow.index("sudo systemctl status openclaw-wecom-postgres.service --no-pager || true")
+    start_index = workflow.index("if ! sudo systemctl start openclaw-wecom-postgres.service; then")
+    poll_index = workflow.index("for _ in $(seq 1 60); do", start_index)
+    health_index = workflow.index("curl -sSf -D /tmp/aicrm_health_headers.txt http://127.0.0.1:5001/health", poll_index)
+    header_index = workflow.index('grep -i "x-aicrm-release-sha: $after_sha" /tmp/aicrm_health_headers.txt', health_index)
+    ready_guard_index = workflow.index('if [ "$release_ready" != "1" ]; then', header_index)
+    status_index = workflow.index("sudo systemctl status openclaw-wecom-postgres.service --no-pager || true", ready_guard_index)
 
-    assert restart_index < poll_index < health_index < header_index < status_index
+    assert start_index < poll_index < health_index < header_index < status_index
     assert "sleep 3" not in workflow
 
 
