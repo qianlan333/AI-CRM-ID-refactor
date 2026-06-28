@@ -210,7 +210,7 @@ def _create_huangyoucan_registered_identities_view() -> None:
 
 
 def _seed_huangyoucan_unregistered_package() -> None:
-    snapshot_sql = HUANGYOUCAN_UNREGISTERED_SNAPSHOT_SQL.strip().replace("'", "''")
+    snapshot_sql = _snapshot_sql_literal()
     op.execute(
         f"""
         WITH package_upsert AS (
@@ -324,3 +324,7 @@ def _seed_huangyoucan_unregistered_package() -> None:
         ON CONFLICT DO NOTHING
         """
     )
+
+
+def _snapshot_sql_literal() -> str:
+    return HUANGYOUCAN_UNREGISTERED_SNAPSHOT_SQL.strip().replace("'", "''").replace(":owner_userid", r"\:owner_userid")

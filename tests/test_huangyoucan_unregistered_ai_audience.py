@@ -29,6 +29,12 @@ def test_huangyoucan_unregistered_snapshot_sql_is_catalog_allowed() -> None:
     ]
 
 
+def test_huangyoucan_seed_sql_literal_escapes_runtime_parameter_for_alembic() -> None:
+    statement = text(f"SELECT '{MIGRATION._snapshot_sql_literal()}'")
+
+    assert "owner_userid" not in statement._bindparams
+
+
 @pytest.mark.usefixtures("next_pg_schema")
 def test_huangyoucan_unregistered_package_refresh_filters_registered_identities(next_client, monkeypatch) -> None:
     database_url = os.environ["DATABASE_URL"]
