@@ -101,7 +101,7 @@ def _create_huangxiaocan_member_usage_view() -> None:
                            CASE WHEN COALESCE(mobile, '') <> '' THEN md5(mobile) ELSE '' END::text AS mobile_hash,
                            ''::text AS unionid,
                            true::boolean AS has_real_usage,
-                           COALESCE(last_msg_at, refreshed_at)::timestamptz AS used_at,
+                           COALESCE(last_msg_at::timestamptz, refreshed_at::timestamptz) AS used_at,
                            'user_ops_hxc_dashboard_snapshot'::text AS source
                     FROM public.user_ops_hxc_dashboard_snapshot
                     WHERE COALESCE(conv_chat, 0) > 0
@@ -219,7 +219,7 @@ def _create_huangxiaocan_member_usage_view() -> None:
                            CASE WHEN COALESCE(phone, '') <> '' THEN md5(phone) ELSE '' END::text AS mobile_hash,
                            ''::text AS unionid,
                            true::boolean AS has_real_usage,
-                           COALESCE(finished_at, updated_at, created_at, CURRENT_TIMESTAMP)::timestamptz AS used_at,
+                           COALESCE(finished_at::timestamptz, updated_at::timestamptz, created_at::timestamptz, CURRENT_TIMESTAMP) AS used_at,
                            'automation_laohuang_chat_job'::text AS source
                     FROM public.automation_laohuang_chat_job
                     WHERE COALESCE(status, '') IN ('accepted', 'send_success', 'callback_success')
@@ -253,7 +253,7 @@ def _create_huangxiaocan_member_usage_view() -> None:
                            CASE WHEN COALESCE(mobile, '') <> '' THEN md5(mobile) ELSE '' END::text AS mobile_hash,
                            ''::text AS unionid,
                            true::boolean AS has_real_usage,
-                           COALESCE(updated_at, created_at, CURRENT_TIMESTAMP)::timestamptz AS used_at,
+                           COALESCE(updated_at::timestamptz, created_at::timestamptz, CURRENT_TIMESTAMP) AS used_at,
                            'user_ops_huangxiaocan_activation_source'::text AS source
                     FROM public.user_ops_huangxiaocan_activation_source
                     WHERE COALESCE(is_active, true)
@@ -288,7 +288,7 @@ def _create_huangxiaocan_member_usage_view() -> None:
                            CASE WHEN COALESCE(mobile, '') <> '' THEN md5(mobile) ELSE '' END::text AS mobile_hash,
                            ''::text AS unionid,
                            true::boolean AS has_real_usage,
-                           COALESCE(updated_at, created_at, CURRENT_TIMESTAMP)::timestamptz AS used_at,
+                           COALESCE(updated_at::timestamptz, created_at::timestamptz, CURRENT_TIMESTAMP) AS used_at,
                            'user_ops_activation_status_source'::text AS source
                     FROM public.user_ops_activation_status_source
                     WHERE COALESCE(is_active, true)

@@ -5,6 +5,8 @@
 ## 约束
 
 - 测试 package 使用 `prod_verify_` 前缀。
+- 正式运行时业务 package 使用 `audience_` 前缀；部署脚本会确保生产 env 的
+  `AICRM_AI_AUDIENCE_SPEC_ALLOWED_PREFIXES` 同时包含 `prod_verify_` 和 `audience_`。
 - 测试 external_userid 只允许 `wmbNXyCwAAXhagLBNjtlFj2jbQevWinQ`。
 - 如执行真实私信，sender 只允许 `HuangYouCan`。
 - 不输出 DSN、token、secret。
