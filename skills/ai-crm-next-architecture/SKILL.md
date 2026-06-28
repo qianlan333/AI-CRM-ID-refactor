@@ -10,7 +10,6 @@ behavior in the AI-CRM repository.
 
 The canonical rules live in:
 
-- `docs/development/codex_architecture_operating_memory.md`
 - `docs/development/ai_crm_next_architecture_skill.md`
 
 Treat those documents as the source of truth. This repo-local `SKILL.md` exists
@@ -22,8 +21,9 @@ repository.
 
 Before every AI-CRM development task, read and follow these files:
 
-1. `docs/development/codex_architecture_operating_memory.md`
-2. `docs/development/ai_crm_next_architecture_skill.md`
+1. `docs/development/ai_crm_next_architecture_skill.md`
+2. `docs/skills/frontend-development-skill.md` when the task touches frontend,
+   page, component, UI, or admin-console feature work.
 
 Do not start code, docs, route, checker, test, production_compat, runtime, or
 business-route changes until this preflight has been completed.
@@ -51,9 +51,12 @@ business-route changes until this preflight has been completed.
   historical paths and must not be reintroduced.
 - MCP/OpenClaw work must enter through the
   `aicrm_next.integration_gateway` adapter boundary.
-- Real WeCom, Payment, OAuth, OpenClaw, MCP external calls, and timers stay
-  blocked unless a task explicitly approves them with allowlist, audit,
-  idempotency, rollback, and approval language.
+- WeCom External Effect execution is approved only within the current PR #1505
+  boundary: supported WeCom effect types, required target/sender/content
+  structure, audit/idempotency, and rollback language. Payment, OAuth,
+  OpenClaw, MCP, timers, and any other real external calls stay blocked unless
+  a task explicitly approves them with allowlist, audit, idempotency, rollback,
+  and approval language.
 
 ## Layering Rules
 

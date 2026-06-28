@@ -6,24 +6,37 @@ import re
 import subprocess
 import sys
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterable
 
 
 ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_MARKDOWN_PATTERNS = (
+REPORT_VERSION = "1"
+SKIP_DIR_NAMES = {
+    ".git",
+    ".mypy_cache",
+    ".pytest_cache",
+    ".ruff_cache",
+    ".venv",
+    ".venv310",
+    ".venv311",
+    ".venv311-codex",
+    "__pycache__",
+    "node_modules",
+}
+ARTIFACT_DIRS = ("artifacts", ".codex_artifacts", "tmp", "outputs", "dist", "exports")
+ENTRY_DOC_PATHS = {
     "AGENTS.md",
     "CLAUDE.md",
     "README.md",
-    "docs/development/*.md",
-    "skills/**/*.md",
-)
-ARTIFACT_DIRS = ("artifacts", "outputs", "exports", "dist")
+    "docs/development/codex_task_template.md",
+    "docs/development/ai_crm_next_architecture_skill.md",
+}
 AICRM_MARKERS = (
     ("console", "console."),
-    ("debug", "debug"),
-    ("debug", "DEBUG"),
     ("debug", "debugger"),
+    ("debug", "DEBUG"),
     ("print", "print("),
     ("todo", "TODO"),
     ("fixme", "FIXME"),
@@ -33,31 +46,41 @@ AICRM_MARKERS = (
     ("legacy", "forward_to_legacy_flask"),
 )
 TEXT_EXTENSIONS = {".css", ".html", ".js", ".json", ".md", ".py", ".ts", ".txt", ".yaml", ".yml"}
-LINK_RE = re.compile(r"!?\[[^\]]*]\(([^)\s]+)(?:\s+\"[^\"]*\")?\)")
+LINK_RE = re.compile(r"(?P<image>!)?\[[^\]]*]\((?P<target>[^)\s]+)(?:\s+\"[^\"]*\")?\)")
 FULL_LINK_RE = re.compile(r"!?\[[^\]]*]\([^)]+\)")
 PATH_RE = re.compile(
     r"(?<![\w:.])(?:\.{0,2}/)?(?:[A-Za-z0-9_.-]+/)+[A-Za-z0-9_.-]+\."
     r"(?:css|html|json|js|md|py|sh|toml|txt|ya?ml)(?![A-Za-z0-9_.-])"
+)
+SENSITIVE_ENTRY_PATTERNS = (
+    "crm-prod",
+    "www.youcangogogo.com",
+    "scripts/prod.sh",
+    "/home/ubuntu/",
+    "claude_crm_debug",
+    "claude-debug.sh",
+    "forced-command",
 )
 
 
 @dataclass(frozen=True)
 class RepoFinding:
     category: str
+    severity: str
     path: str
     line: int | None
-    detail: str
-    severity: str = "info"
-    next_action: str = ""
+    message: str
+    evidence: str
 
-    def as_dict(self) -> dict[str, object]:
+    def as_issue(self, issue_id: str) -> dict[str, object]:
         return {
+            "id": issue_id,
             "category": self.category,
+            "severity": self.severity,
             "path": self.path,
             "line": self.line,
-            "detail": self.detail,
-            "severity": self.severity,
-            "next_action": self.next_action,
+            "message": self.message,
+            "evidence": self.evidence,
         }
 
 
@@ -65,60 +88,80 @@ class RepoFinding:
 class HygieneReport:
     root: str
     scanned_markdown_files: list[str]
-    findings: list[RepoFinding]
+    issues: list[RepoFinding]
+    generated_at: str
+
+    @property
+    def summary(self) -> dict[str, object]:
+        by_category: dict[str, int] = {}
+        by_severity: dict[str, int] = {}
+        for issue in self.issues:
+            by_category[issue.category] = by_category.get(issue.category, 0) + 1
+            by_severity[issue.severity] = by_severity.get(issue.severity, 0) + 1
+        return {
+            "issue_count": len(self.issues),
+            "markdown_files_scanned": len(self.scanned_markdown_files),
+            "issues_by_category": dict(sorted(by_category.items())),
+            "issues_by_severity": dict(sorted(by_severity.items())),
+        }
 
     def as_dict(self) -> dict[str, object]:
         return {
+            "version": REPORT_VERSION,
             "root": self.root,
-            "scanned_markdown_files": self.scanned_markdown_files,
-            "finding_count": len(self.findings),
-            "findings": [finding.as_dict() for finding in self.findings],
+            "generated_at": self.generated_at,
+            "summary": self.summary,
+            "issues": [issue.as_issue(f"HYG-{index:04d}") for index, issue in enumerate(self.issues, start=1)],
         }
 
 
-def audit_repository(root: Path = ROOT) -> HygieneReport:
+def audit_repository(root: Path = ROOT, *, generated_at: str | None = None) -> HygieneReport:
     root = root.resolve()
     markdown_files = _iter_markdown_files(root)
-    findings: list[RepoFinding] = []
-    findings.extend(_audit_markdown_references(root, markdown_files))
-    findings.extend(_audit_tracked_artifacts(root))
-    findings.extend(_audit_agent_entry_docs(root, markdown_files))
-    findings.extend(_audit_aicrm_markers(root))
+    issues: list[RepoFinding] = []
+    issues.extend(_audit_markdown_references(root, markdown_files))
+    issues.extend(_audit_tracked_artifacts(root))
+    issues.extend(_audit_agent_entry_docs(root, markdown_files))
+    issues.extend(_audit_aicrm_markers(root))
     return HygieneReport(
         root=".",
         scanned_markdown_files=[_display_path(path, root) for path in markdown_files],
-        findings=sorted(findings, key=lambda finding: (finding.category, finding.path, finding.line or 0, finding.detail)),
+        issues=sorted(issues, key=lambda issue: (issue.category, issue.path, issue.line or 0, issue.message, issue.evidence)),
+        generated_at=generated_at or datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
     )
 
 
 def render_human_summary(report: HygieneReport) -> str:
-    counts: dict[str, int] = {}
-    for finding in report.findings:
-        counts[finding.category] = counts.get(finding.category, 0) + 1
+    payload = report.as_dict()
+    summary = payload["summary"]
     lines = [
         "# Repo Hygiene Audit",
         "",
-        f"- Root: `{report.root}`",
-        f"- Markdown files scanned: {len(report.scanned_markdown_files)}",
-        f"- Findings: {len(report.findings)}",
+        f"- Version: `{payload['version']}`",
+        f"- Root: `{payload['root']}`",
+        f"- Generated at: `{payload['generated_at']}`",
+        f"- Markdown files scanned: {summary['markdown_files_scanned']}",
+        f"- Issues: {summary['issue_count']}",
         "",
-        "## Finding Summary",
+        "## Issue Summary",
         "",
     ]
-    if counts:
-        for category, count in sorted(counts.items()):
+    issues_by_category = summary["issues_by_category"]
+    if issues_by_category:
+        for category, count in issues_by_category.items():
             lines.append(f"- `{category}`: {count}")
     else:
-        lines.append("- No findings.")
-    lines.extend(["", "## Findings", ""])
-    if report.findings:
-        for finding in report.findings:
-            location = finding.path if finding.line is None else f"{finding.path}:{finding.line}"
-            lines.append(f"- **{finding.category}** `{location}` - {finding.detail}")
-            if finding.next_action:
-                lines.append(f"  - Next: {finding.next_action}")
+        lines.append("- No issues.")
+    lines.extend(["", "## Issues", ""])
+    issues = payload["issues"]
+    if issues:
+        for issue in issues:
+            location = issue["path"] if issue["line"] is None else f"{issue['path']}:{issue['line']}"
+            lines.append(f"- **{issue['id']}** `{issue['category']}` `{issue['severity']}` `{location}` - {issue['message']}")
+            if issue["evidence"]:
+                lines.append(f"  - Evidence: {issue['evidence']}")
     else:
-        lines.append("No findings.")
+        lines.append("No issues.")
     lines.extend(
         [
             "",
@@ -135,48 +178,50 @@ def render_human_summary(report: HygieneReport) -> str:
 def write_report_files(
     report: HygieneReport,
     *,
-    markdown_output: Path,
-    json_output: Path,
+    summary_output: Path | None = None,
+    json_output: Path | None = None,
 ) -> None:
-    markdown_output.parent.mkdir(parents=True, exist_ok=True)
-    json_output.parent.mkdir(parents=True, exist_ok=True)
-    markdown_output.write_text(render_human_summary(report), encoding="utf-8")
-    json_output.write_text(json.dumps(report.as_dict(), ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    if summary_output is not None:
+        summary_output.parent.mkdir(parents=True, exist_ok=True)
+        summary_output.write_text(render_human_summary(report), encoding="utf-8")
+    if json_output is not None:
+        json_output.parent.mkdir(parents=True, exist_ok=True)
+        json_output.write_text(json.dumps(report.as_dict(), ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Audit repository hygiene without changing runtime behavior.")
     parser.add_argument("--root", default=str(ROOT), help="Repository root to scan.")
-    parser.add_argument("--markdown-output", default="docs/cleanup/repo_hygiene_report.md")
-    parser.add_argument("--json-output", default="docs/cleanup/repo_hygiene_report.json")
-    parser.add_argument("--no-write", action="store_true", help="Print the human summary without writing report files.")
+    parser.add_argument("--json-output", help="Optional path for the JSON report.")
+    parser.add_argument("--summary-output", help="Optional path for the human-readable Markdown summary.")
+    parser.add_argument("--markdown-output", help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
 
     root = Path(args.root).resolve()
     report = audit_repository(root)
-    if not args.no_write:
-        write_report_files(
-            report,
-            markdown_output=root / args.markdown_output,
-            json_output=root / args.json_output,
-        )
+    summary_output = args.summary_output or args.markdown_output
+    write_report_files(
+        report,
+        summary_output=(root / summary_output) if summary_output else None,
+        json_output=(root / args.json_output) if args.json_output else None,
+    )
     print(render_human_summary(report))
     print(json.dumps(report.as_dict(), ensure_ascii=False, indent=2))
     return 0
 
 
 def _iter_markdown_files(root: Path) -> list[Path]:
-    files: set[Path] = set()
-    for pattern in DEFAULT_MARKDOWN_PATTERNS:
-        files.update(path for path in root.glob(pattern) if path.is_file())
-    return sorted(files)
+    tracked = _git_ls_files(root, ["*.md"])
+    if tracked:
+        return sorted(root / path for path in tracked if (root / path).is_file() and not _has_skipped_part(Path(path)))
+    return sorted(path for path in root.rglob("*.md") if path.is_file() and not _has_skipped_part(path.relative_to(root)))
 
 
 def _audit_markdown_references(root: Path, markdown_files: list[Path]) -> list[RepoFinding]:
-    findings: list[RepoFinding] = []
+    issues: list[RepoFinding] = []
     seen: set[tuple[str, int, str]] = set()
     for path in markdown_files:
-        for line_number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+        for line_number, line in enumerate(_read_text(path).splitlines(), start=1):
             for candidate in _extract_internal_path_candidates(line):
                 normalized = _normalize_reference(candidate)
                 if not normalized or _reference_exists(root, path, normalized):
@@ -185,17 +230,17 @@ def _audit_markdown_references(root: Path, markdown_files: list[Path]) -> list[R
                 if key in seen:
                     continue
                 seen.add(key)
-                findings.append(
+                issues.append(
                     RepoFinding(
                         category="missing_markdown_reference",
+                        severity="warn",
                         path=key[0],
                         line=line_number,
-                        detail=f"`{normalized}` does not resolve from the source file or repository root.",
-                        severity="warn",
-                        next_action="Remove the stale reference or restore a canonical pointer file.",
+                        message="Markdown references a repo-local path that does not exist.",
+                        evidence=normalized,
                     )
                 )
-    return findings
+    return issues
 
 
 def _audit_tracked_artifacts(root: Path) -> list[RepoFinding]:
@@ -205,16 +250,16 @@ def _audit_tracked_artifacts(root: Path) -> list[RepoFinding]:
             _display_path(path, root)
             for directory in ARTIFACT_DIRS
             for path in sorted((root / directory).rglob("*"))
-            if path.is_file()
+            if path.is_file() and not _has_skipped_part(path.relative_to(root))
         ]
     return [
         RepoFinding(
             category="tracked_artifact_candidate",
+            severity="review",
             path=path,
             line=None,
-            detail="File lives under a generated-output style directory.",
-            severity="review",
-            next_action="Classify as durable evidence under docs/reports/evidence/ or generated output ignored by git.",
+            message="File lives under a generated-output or temporary artifact directory.",
+            evidence="Classify as durable evidence under docs/reports/evidence/ or generated output ignored by git.",
         )
         for path in tracked
     ]
@@ -224,76 +269,92 @@ def _audit_agent_entry_docs(root: Path, markdown_files: list[Path]) -> list[Repo
     entry_files = [
         path
         for path in markdown_files
-        if path.name in {"AGENTS.md", "CLAUDE.md", "README.md", "SKILL.md"} or "skills" in path.parts
+        if _display_path(path, root) in ENTRY_DOC_PATHS or path.name == "SKILL.md" or "skills" in path.parts
     ]
-    findings: list[RepoFinding] = []
+    issues: list[RepoFinding] = []
     if len(entry_files) > 1:
-        entry_display = ", ".join(_display_path(path, root) for path in entry_files)
-        findings.append(
+        issues.append(
             RepoFinding(
                 category="agent_entry_overlap",
+                severity="review",
                 path="agent-entry-docs",
                 line=None,
-                detail=f"Multiple agent-facing entry documents exist and should share the same canonical preflight wording: {entry_display}.",
-                severity="review",
-                next_action="Keep AGENTS.md and docs/development/ai_crm_next_architecture_skill.md as the canonical starting point.",
+                message="Multiple agent-facing entry documents exist and should share canonical preflight wording.",
+                evidence=", ".join(_display_path(path, root) for path in entry_files),
             )
         )
     for finding in _audit_markdown_references(root, entry_files):
-        findings.append(
+        issues.append(
             RepoFinding(
                 category="agent_entry_missing_reference",
+                severity=finding.severity,
                 path=finding.path,
                 line=finding.line,
-                detail=finding.detail,
-                severity=finding.severity,
-                next_action="Align agent entry docs before broader cleanup PRs.",
+                message=finding.message,
+                evidence=finding.evidence,
             )
         )
-    claude = root / "CLAUDE.md"
-    if claude.exists():
-        content = claude.read_text(encoding="utf-8")
-        if "crm-prod" in content or "www.youcangogogo.com" in content:
-            findings.append(
-                RepoFinding(
-                    category="agent_entry_ops_detail",
-                    path="CLAUDE.md",
-                    line=None,
-                    detail="Agent entry doc includes production connection details.",
-                    severity="review",
-                    next_action="Consider replacing with a safe stub and moving operational details to private ops docs.",
+    for path in entry_files:
+        rel = _display_path(path, root)
+        for line_number, line in enumerate(_read_text(path).splitlines(), start=1):
+            matched = [pattern for pattern in SENSITIVE_ENTRY_PATTERNS if pattern in line]
+            if matched:
+                issues.append(
+                    RepoFinding(
+                        category="agent_entry_ops_detail",
+                        severity="review",
+                        path=rel,
+                        line=line_number,
+                        message="Agent-facing entry doc includes concrete production connection or local ops detail.",
+                        evidence=", ".join(matched),
+                    )
                 )
-            )
-    return findings
+            if "real external adapter 仍 blocked / fake / staging-disabled" in line:
+                issues.append(
+                    RepoFinding(
+                        category="agent_entry_external_effect_drift",
+                        severity="warn",
+                        path=rel,
+                        line=line_number,
+                        message="Agent-facing entry doc contains stale blanket external-effect wording.",
+                        evidence="Align WeCom External Effect wording with PR #1505 while keeping other real calls blocked.",
+                    )
+                )
+    return issues
 
 
 def _audit_aicrm_markers(root: Path) -> list[RepoFinding]:
     base = root / "aicrm_next"
     if not base.exists():
         return []
-    findings: list[RepoFinding] = []
+    issues: list[RepoFinding] = []
     for path in sorted(base.rglob("*")):
-        if not path.is_file() or path.suffix not in TEXT_EXTENSIONS or "__pycache__" in path.parts:
+        if not path.is_file() or path.suffix not in TEXT_EXTENSIONS or _has_skipped_part(path.relative_to(root)):
             continue
         rel = _display_path(path, root)
-        for line_number, line in enumerate(path.read_text(encoding="utf-8", errors="ignore").splitlines(), start=1):
+        for line_number, line in enumerate(_read_text(path).splitlines(), start=1):
             for marker_type, marker in AICRM_MARKERS:
                 if marker in line:
-                    findings.append(
+                    issues.append(
                         RepoFinding(
                             category=f"aicrm_next_{marker_type}_marker",
+                            severity="review",
                             path=rel,
                             line=line_number,
-                            detail=f"`{marker}` appears in `aicrm_next/`.",
-                            severity="review",
-                            next_action="Review marker before turning hygiene checks into enforcement.",
+                            message=f"`{marker}` appears in `aicrm_next/`.",
+                            evidence="Review marker before turning hygiene checks into enforcement.",
                         )
                     )
-    return findings
+    return issues
 
 
 def _extract_internal_path_candidates(line: str) -> list[str]:
-    candidates = [match.group(1) for match in LINK_RE.finditer(line)]
+    candidates: list[str] = []
+    for match in LINK_RE.finditer(line):
+        target = match.group("target")
+        if match.group("image") and _is_external_link(target):
+            continue
+        candidates.append(target)
     masked_line = FULL_LINK_RE.sub("", line)
     if not _contains_external_absolute_path(masked_line):
         candidates.extend(match.group(0) for match in PATH_RE.finditer(masked_line))
@@ -304,16 +365,18 @@ def _normalize_reference(candidate: str) -> str | None:
     value = candidate.strip().strip("`'\"").rstrip(".,;:")
     if not value or value.startswith("#"):
         return None
-    if "://" in value or value.startswith(("mailto:", "app://")):
+    if _is_external_link(value) or value.startswith("app://"):
         return None
     if value.startswith((".claude/", "github.com/")):
         return None
     value = value.split("#", 1)[0].split("?", 1)[0]
     if _is_external_absolute_reference(value):
         return None
-    if not value:
-        return None
-    return value
+    return value or None
+
+
+def _is_external_link(value: str) -> bool:
+    return "://" in value or value.startswith("mailto:")
 
 
 def _contains_external_absolute_path(line: str) -> bool:
@@ -336,10 +399,10 @@ def _reference_exists(root: Path, source: Path, reference: str) -> bool:
     return any(candidate.exists() for candidate in candidates)
 
 
-def _git_ls_files(root: Path, directories: Iterable[str]) -> list[str]:
+def _git_ls_files(root: Path, patterns: Iterable[str]) -> list[str]:
     try:
         result = subprocess.run(
-            ["git", "ls-files", "--", *directories],
+            ["git", "ls-files", "--", *patterns],
             cwd=root,
             check=False,
             capture_output=True,
@@ -350,6 +413,14 @@ def _git_ls_files(root: Path, directories: Iterable[str]) -> list[str]:
     if result.returncode != 0:
         return []
     return sorted(line.strip() for line in result.stdout.splitlines() if line.strip())
+
+
+def _has_skipped_part(path: Path) -> bool:
+    return any(part in SKIP_DIR_NAMES for part in path.parts)
+
+
+def _read_text(path: Path) -> str:
+    return path.read_text(encoding="utf-8", errors="ignore")
 
 
 def _display_path(path: Path, root: Path) -> str:

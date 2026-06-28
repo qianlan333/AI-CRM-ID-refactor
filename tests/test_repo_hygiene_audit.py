@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from tools.audit_repo_hygiene import audit_repository, render_human_summary, write_report_files
+from tools.audit_repo_hygiene import audit_repository, main, render_human_summary, write_report_files
 
 
 def _write(path: Path, content: str = "") -> None:
@@ -11,8 +11,8 @@ def _write(path: Path, content: str = "") -> None:
     path.write_text(content, encoding="utf-8")
 
 
-def _findings_by_category(report, category: str):
-    return [finding for finding in report.findings if finding.category == category]
+def _issues_by_category(report, category: str):
+    return [issue for issue in report.issues if issue.category == category]
 
 
 def test_audit_reports_missing_markdown_references_from_agent_docs(tmp_path) -> None:
@@ -23,12 +23,15 @@ def test_audit_reports_missing_markdown_references_from_agent_docs(tmp_path) -> 
         "Read `docs/development/codex_architecture_operating_memory.md` first.\n",
     )
 
-    report = audit_repository(tmp_path)
+    report = audit_repository(tmp_path, generated_at="2026-06-28T00:00:00Z")
 
-    missing = _findings_by_category(report, "missing_markdown_reference")
+    missing = _issues_by_category(report, "missing_markdown_reference")
     assert len(missing) == 1
     assert missing[0].path == "skills/ai-crm-next-architecture/SKILL.md"
-    assert "codex_architecture_operating_memory.md" in missing[0].detail
+    assert "codex_architecture_operating_memory.md" in missing[0].evidence
+    payload = report.as_dict()
+    assert set(payload) == {"version", "root", "generated_at", "summary", "issues"}
+    assert set(payload["issues"][0]) == {"id", "category", "severity", "path", "line", "message", "evidence"}
 
 
 def test_audit_resolves_relative_and_repo_root_markdown_references(tmp_path) -> None:
@@ -38,18 +41,48 @@ def test_audit_resolves_relative_and_repo_root_markdown_references(tmp_path) -> 
 
     report = audit_repository(tmp_path)
 
-    assert _findings_by_category(report, "missing_markdown_reference") == []
+    assert _issues_by_category(report, "missing_markdown_reference") == []
+
+
+def test_audit_ignores_external_links_and_anchor_only_links(tmp_path) -> None:
+    _write(
+        tmp_path / "README.md",
+        "External [site](https://example.com/doc.md), image ![x](https://example.com/a.png), anchor [a](#section), mail [m](mailto:x@y.com).\n",
+    )
+
+    report = audit_repository(tmp_path)
+
+    assert _issues_by_category(report, "missing_markdown_reference") == []
 
 
 def test_audit_reports_artifact_directory_candidates_without_git(tmp_path) -> None:
     _write(tmp_path / "AGENTS.md", "# Entry\n")
     _write(tmp_path / "artifacts/internal_event_coverage_audit.json", "{}\n")
+    _write(tmp_path / ".codex_artifacts/screenshot.png", "not really an image\n")
 
     report = audit_repository(tmp_path)
 
-    artifacts = _findings_by_category(report, "tracked_artifact_candidate")
-    assert len(artifacts) == 1
-    assert artifacts[0].path == "artifacts/internal_event_coverage_audit.json"
+    artifacts = _issues_by_category(report, "tracked_artifact_candidate")
+    assert {issue.path for issue in artifacts} == {
+        ".codex_artifacts/screenshot.png",
+        "artifacts/internal_event_coverage_audit.json",
+    }
+
+
+def test_audit_reports_agent_entry_drift_and_ops_details(tmp_path) -> None:
+    _write(tmp_path / "AGENTS.md", "# Entry\n")
+    _write(tmp_path / "CLAUDE.md", "Use scripts/prod.sh and crm-prod.\n")
+    _write(
+        tmp_path / "docs/development/ai_crm_next_architecture_skill.md",
+        "real external adapter 仍 blocked / fake / staging-disabled\n",
+    )
+
+    report = audit_repository(tmp_path)
+
+    categories = {issue.category for issue in report.issues}
+    assert "agent_entry_overlap" in categories
+    assert "agent_entry_ops_detail" in categories
+    assert "agent_entry_external_effect_drift" in categories
 
 
 def test_audit_reports_aicrm_next_debug_and_legacy_markers(tmp_path) -> None:
@@ -61,7 +94,7 @@ def test_audit_reports_aicrm_next_debug_and_legacy_markers(tmp_path) -> None:
 
     report = audit_repository(tmp_path)
 
-    categories = {finding.category for finding in report.findings}
+    categories = {issue.category for issue in report.issues}
     assert "aicrm_next_print_marker" in categories
     assert "aicrm_next_todo_marker" in categories
     assert "aicrm_next_legacy_marker" in categories
@@ -69,13 +102,31 @@ def test_audit_reports_aicrm_next_debug_and_legacy_markers(tmp_path) -> None:
 
 def test_write_report_files_outputs_markdown_and_json(tmp_path) -> None:
     _write(tmp_path / "AGENTS.md", "# Entry\n")
-    report = audit_repository(tmp_path)
+    report = audit_repository(tmp_path, generated_at="2026-06-28T00:00:00Z")
 
-    markdown_output = tmp_path / "docs/cleanup/repo_hygiene_report.md"
+    summary_output = tmp_path / "docs/cleanup/repo_hygiene_report.md"
     json_output = tmp_path / "docs/cleanup/repo_hygiene_report.json"
-    write_report_files(report, markdown_output=markdown_output, json_output=json_output)
+    write_report_files(report, summary_output=summary_output, json_output=json_output)
 
-    assert "# Repo Hygiene Audit" in markdown_output.read_text(encoding="utf-8")
+    assert "# Repo Hygiene Audit" in summary_output.read_text(encoding="utf-8")
     payload = json.loads(json_output.read_text(encoding="utf-8"))
+    assert payload["version"] == "1"
     assert payload["root"] == "."
-    assert "Findings" in render_human_summary(report)
+    assert "summary" in payload
+    assert "issues" in payload
+    assert "Issues" in render_human_summary(report)
+
+
+def test_cli_outputs_json_and_keeps_success_exit_with_findings(tmp_path, capsys) -> None:
+    _write(tmp_path / "AGENTS.md", "Read `missing/file.md`.\n")
+    json_output = tmp_path / "out/report.json"
+    summary_output = tmp_path / "out/report.md"
+
+    assert main(["--root", str(tmp_path), "--json-output", str(json_output), "--summary-output", str(summary_output)]) == 0
+
+    stdout = capsys.readouterr().out
+    assert "# Repo Hygiene Audit" in stdout
+    assert '"version": "1"' in stdout
+    payload = json.loads(json_output.read_text(encoding="utf-8"))
+    assert payload["summary"]["issue_count"] >= 1
+    assert summary_output.exists()

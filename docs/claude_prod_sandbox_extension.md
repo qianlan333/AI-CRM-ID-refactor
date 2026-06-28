@@ -1,32 +1,19 @@
-# Claude Production Sandbox Extension
+# Production Diagnostic Sandbox Notes
 
-This document records the server-side forced-command additions expected by
-`scripts/prod.sh`. The forced command remains allowlisted: do not add a generic
-shell, arbitrary Python runner, or write-capable bridge here.
+This repo does not publish concrete production connection details, dispatcher
+paths, host aliases, or command cookbooks. Keep those in the private ops handoff
+for the current environment.
 
-## P1 Group Ops Workspace Bridge Diagnostic
+Any production diagnostic extension must keep this contract:
 
-Add this case to the production `~/claude-debug.sh` dispatcher:
-
-```bash
-diagnose-p1-bridge)
-  cd "/home/ubuntu/极简 crm" || exit 1
-  exec .venv/bin/python scripts/diagnose_p1_group_ops_workspace_bridge_acceptance.py
-  ;;
-```
-
-Contract:
-
-- dry-run / read-only only
+- read-only / dry-run by default
 - no shell passthrough
 - no arbitrary script argument
-- no external effect execution
-- no Push Center execution worker
-- no WeCom / webhook / message send
+- no write-capable bridge
+- no external effect execution unless separately approved
 - no production migration
-- no token, secret, raw receiver, raw external_userid, phone, raw target list, raw message body, or raw callback body output
+- no token, secret, raw receiver, raw external user id, phone, raw target list,
+  raw message body, or raw callback body output
 
-The diagnostic may report `SKIPPED_WRITE_VALIDATION_SAFE_MODE` or
-`EXTERNAL_EFFECT_JOB_READ_SKIPPED_PERMISSION_LIMITED` when production credentials
-intentionally prevent safe aggregate reads. Those statuses are observability
-signals, not execution success claims.
+Diagnostic statuses such as skipped write validation or permission-limited reads
+are observability signals, not execution success claims.

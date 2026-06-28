@@ -1,7 +1,7 @@
 # AI-CRM Next Architecture Skill v1
 
 后续所有 Codex 开发任务必须先引用并遵循本文件。本文件是 AI-CRM Next
-架构开发 skill，不授权生产切换、真实外呼、legacy 删除或 deploy/systemd/nginx
+架构开发 skill，不授权生产切换、未批准真实外呼、legacy 删除或 deploy/systemd/nginx
 配置修改。
 
 ## A. 当前架构状态
@@ -12,7 +12,10 @@
 - `wecom_ability_service/` 保留为 legacy fallback。
 - `openclaw_service/` 和 `legacy_flask/openclaw_legacy/` 已物理删除，不得重新引入。
 - MCP/OpenClaw 后续只允许通过 `aicrm_next.integration_gateway` adapter boundary 承接。
-- real external adapter 仍 blocked / fake / staging-disabled，不能未经审批打开真实外呼。
+- WeCom External Effect 真实执行已按 PR #1505 批准范围默认开启：仅限支持的
+  WeCom effect_type、明确 target/sender/content 结构、审计、幂等和回滚口径。
+  Payment / OAuth / OpenClaw / MCP / Webhook 以及其他真实外呼仍 blocked，不能
+  未经审批打开。
 
 ## B. 开发分层
 
@@ -30,7 +33,8 @@
 - 禁止新增 `openclaw_service` import 或路径。
 - 禁止把 fixture/local_contract/demo 数据伪装成 production 数据。
 - 禁止未经 route ownership manifest 修改 production_compat catch-all。
-- 禁止启用真实 WeCom / Payment / OAuth / OpenClaw / MCP 外呼。
+- 禁止启用未经批准的真实外呼。WeCom External Effect 只能在 PR #1505 批准
+  范围内执行；Payment / OAuth / OpenClaw / MCP / Webhook 仍需单独审批。
 - 禁止修改 nginx/systemd/deploy production 配置，除非任务明确要求且有审批口径。
 - 禁止把 checker 本地结果写成 production canary evidence。
 
