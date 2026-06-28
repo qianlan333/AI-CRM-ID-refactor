@@ -61,13 +61,13 @@ jobs:
             if sudo fuser -s 5001/tcp; then
               echo "5001 is still occupied before web restart; terminating stale listener"
               sudo ss -ltnp 'sport = :5001' || true
-              sudo fuser -TERM 5001/tcp || true
+              sudo fuser -k -TERM 5001/tcp || true
               sleep 2
             fi
             if sudo fuser -s 5001/tcp; then
               echo "5001 listener survived TERM; force killing stale listener"
               sudo ss -ltnp 'sport = :5001' || true
-              sudo fuser -KILL 5001/tcp || true
+              sudo fuser -k -KILL 5001/tcp || true
             fi
             for _ in $(seq 1 10); do
               if ! sudo fuser -s 5001/tcp; then
