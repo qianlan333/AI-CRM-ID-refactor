@@ -275,6 +275,7 @@ def test_ai_assist_campaign_run_due_wecom_private_mode_creates_queued_external_e
 def test_wecom_private_external_effect_default_executes_without_wecom_gate(monkeypatch) -> None:
     _reset_fixture_state()
     monkeypatch.setenv("AI_ASSIST_EXTERNAL_EFFECT_SEND_MODE", "wecom_private")
+    monkeypatch.setenv("AICRM_EXTERNAL_EFFECT_ALLOWED_OWNER_USERIDS", "HuangYouCan")
     calls: list[dict] = []
 
     class _Adapter:
@@ -305,6 +306,7 @@ def test_wecom_private_external_effect_default_executes_without_wecom_gate(monke
     assert result["counts"]["succeeded_count"] == 1
     assert result["real_external_call_executed"] is True
     assert len(calls) == 1
+    assert calls[0]["payload"]["sender"] == "HuangYouCan"
     assert updated is not None
     assert updated.status == "succeeded"
     assert attempts[0].status == "succeeded"

@@ -53,6 +53,16 @@ def _csv_env(name: str) -> set[str]:
     return runtime_csv(name)
 
 
+def _configured_wecom_sender(fallback: str = "") -> str:
+    raw = runtime_setting("AICRM_EXTERNAL_EFFECT_ALLOWED_OWNER_USERIDS", "")
+    candidates = [
+        item.strip()
+        for item in raw.replace("\n", ",").replace(" ", ",").split(",")
+        if item.strip()
+    ]
+    return candidates[0] if candidates else str(fallback or "").strip()
+
+
 def webhook_execution_settings() -> dict[str, Any]:
     return {
         "enabled": _enabled("AICRM_EXTERNAL_EFFECT_WEBHOOK_EXECUTE"),
@@ -247,14 +257,17 @@ class WeComPrivateMessageAdapter:
         payload = dict(job.payload_json or {})
         external_userids = [str(item or "").strip() for item in list(payload.get("external_userids") or []) if str(item or "").strip()]
         owner_userid = str(payload.get("owner_userid") or payload.get("sender") or "").strip()
+        sender_userid = _configured_wecom_sender(owner_userid)
         content_text = str(payload.get("content_text") or "").strip()
-        gate_error = self._execution_gate_error(job=job, payload=payload, external_userids=external_userids, owner_userid=owner_userid)
+        gate_error = self._execution_gate_error(job=job, payload=payload, external_userids=external_userids, owner_userid=sender_userid)
         request_summary = {
             "effect_type": job.effect_type,
             "operation": job.operation,
             "target_type": job.target_type,
             "target_id": job.target_id,
             "owner_userid": owner_userid,
+            "sender_userid": sender_userid,
+            "sender_binding_applied": bool(sender_userid and sender_userid != owner_userid),
             "external_userid_count": len(external_userids),
             "content_text_length": len(content_text),
             "attachment_count": len(payload.get("attachments") or []) if isinstance(payload.get("attachments"), list) else 0,
@@ -270,7 +283,7 @@ class WeComPrivateMessageAdapter:
                 real_external_call_executed=False,
             )
         adapter_payload: dict[str, Any] = {
-            "sender": owner_userid,
+            "sender": sender_userid,
             "external_userids": external_userids,
         }
         if content_text:
@@ -451,7 +464,7 @@ class WeComGroupMessageExternalEffectAdapter:
             return "shadow_only"
         if job.effect_type != WECOM_MESSAGE_GROUP_SEND:
             return "unsupported_effect_type"
-        owner = str(payload.get("owner_userid") or payload.get("sender") or "").strip()
+        owner = _configured_wecom_sender(str(payload.get("owner_userid") or payload.get("sender") or "").strip())
         if not owner:
             return "owner_userid_missing"
         chat_ids = self._chat_ids(payload)
@@ -472,7 +485,9 @@ class WeComGroupMessageExternalEffectAdapter:
     def _wecom_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
         content_payload = dict(payload.get("content_payload") or {})
         result = dict(content_payload)
-        result["sender"] = str(payload.get("owner_userid") or payload.get("sender") or content_payload.get("sender") or "").strip()
+        result["sender"] = _configured_wecom_sender(
+            str(payload.get("owner_userid") or payload.get("sender") or content_payload.get("sender") or "").strip()
+        )
         result["chat_ids"] = self._chat_ids(payload)
         return result
 
