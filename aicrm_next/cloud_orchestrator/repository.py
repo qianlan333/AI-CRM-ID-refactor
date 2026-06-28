@@ -1317,7 +1317,7 @@ class PostgresCloudPlanRepository:
                     ) VALUES (
                         %s, %s, %s, %s, %s, %s, %s,
                         %s::jsonb, 'agent_generated_single', 1, 1,
-                        %s::jsonb, 'draft', 'reviewing', 'draft', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+                        %s::jsonb, 'draft', 'approved', 'draft', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
                     )
                     ON CONFLICT (plan_id) DO NOTHING
                     """,
@@ -1346,7 +1346,7 @@ class PostgresCloudPlanRepository:
                     plan_id, external_userid, owner_userid, display_name, planned_message_count,
                     approval_status, send_status, created_at, updated_at
                 ) VALUES (
-                    %s, %s, %s, %s, 1, 'pending', 'pending', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+                    %s, %s, %s, %s, 1, 'approved', 'pending', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
                 )
                 ON CONFLICT (plan_id, external_userid) DO UPDATE SET
                     owner_userid = EXCLUDED.owner_userid,
@@ -2069,7 +2069,7 @@ class InMemoryCloudPlanRepository:
                     "intent": f"Agent generated send plan {normalized_external_userid}",
                     "owner_userid": normalized_owner,
                     "candidate_count": 1,
-                    "review_status": "reviewing",
+                    "review_status": "approved",
                     "run_status": "draft",
                     "status": "draft",
                     "selection_json": {
@@ -2098,7 +2098,7 @@ class InMemoryCloudPlanRepository:
                 "owner_userid": normalized_owner,
                 "display_name": normalized_external_userid,
                 "planned_message_count": 1,
-                "approval_status": "pending",
+                "approval_status": "approved",
                 "send_status": "pending",
                 "updated_at": _now(),
             }

@@ -325,14 +325,14 @@ class AutomationAgentWebhookService:
                 return {"ok": False, "error": "invalid_token"}, 401
         secret = _text(agent.get("inbound_webhook_secret") or os.getenv("AICRM_AUTOMATION_AGENT_WEBHOOK_SECRET"))
         signature = _text(headers.get("X-AICRM-Signature") or headers.get("x-aicrm-signature"))
-        if secret or production_environment():
+        if signature:
             if not secret and production_environment():
                 return {"ok": False, "error": "webhook_secret_not_configured"}, 503
-            if not signature:
-                return {"ok": False, "error": "missing_signature"}, 401
             expected = hmac.new(secret.encode("utf-8"), raw_body, hashlib.sha256).hexdigest()
             if not hmac.compare_digest(_strip_sha256(signature), expected):
                 return {"ok": False, "error": "invalid_signature"}, 401
+        elif not configured_token and (secret or production_environment()):
+            return {"ok": False, "error": "missing_signature"}, 401
         external_userids, received_count = parse_external_userids(payload)
         if len(external_userids) > MAX_WEBHOOK_USERS:
             return {"ok": False, "error": "too_many_external_userids", "limit": MAX_WEBHOOK_USERS}, 400
