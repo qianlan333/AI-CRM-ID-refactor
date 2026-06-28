@@ -54,6 +54,9 @@ jobs:
             sudo systemctl stop openclaw-ai-audience-scheduler.timer || true
             sudo systemctl stop openclaw-ai-audience-scheduler.service || true
             python3 -m alembic upgrade head
+            # Production currently uses the openclaw-* compatible 5001 web unit.
+            # Stop the canonical alias if it exists so both units cannot bind 5001.
+            sudo systemctl stop aicrm-web.service || true
             sudo systemctl restart openclaw-wecom-postgres.service
             release_ready=0
             for _ in $(seq 1 60); do

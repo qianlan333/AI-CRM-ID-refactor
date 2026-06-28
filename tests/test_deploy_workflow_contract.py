@@ -70,11 +70,19 @@ def test_production_deploy_runs_alembic_upgrade_before_service_restart():
     stop_broadcast_timer_index = workflow.index("sudo systemctl stop openclaw-broadcast-queue-worker.timer || true")
     stop_broadcast_service_index = workflow.index("sudo systemctl stop openclaw-broadcast-queue-worker.service || true")
     alembic_upgrade_index = workflow.index("python3 -m alembic upgrade head")
+    stop_canonical_web_index = workflow.index("sudo systemctl stop aicrm-web.service || true")
     restart_index = workflow.index("sudo systemctl restart openclaw-wecom-postgres.service")
     alembic_table = "alembic_" + "version"
 
     assert env_source_index < database_url_guard_index < alembic_upgrade_index
-    assert pip_install_index < stop_broadcast_timer_index < stop_broadcast_service_index < alembic_upgrade_index < restart_index
+    assert (
+        pip_install_index
+        < stop_broadcast_timer_index
+        < stop_broadcast_service_index
+        < alembic_upgrade_index
+        < stop_canonical_web_index
+        < restart_index
+    )
     assert "python3 app.py init-db" not in workflow
     assert "python app.py init-db" not in workflow
     assert "alembic stamp head" not in workflow
