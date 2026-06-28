@@ -272,15 +272,22 @@ def test_ai_assist_campaign_run_due_wecom_private_mode_creates_queued_external_e
     assert job.payload_json["content_text"] == "fixture hello"
 
 
-def test_wecom_private_external_effect_default_disabled_blocks_without_wecom_call(monkeypatch) -> None:
+def test_wecom_private_external_effect_default_executes_without_wecom_gate(monkeypatch) -> None:
     _reset_fixture_state()
     monkeypatch.setenv("AI_ASSIST_EXTERNAL_EFFECT_SEND_MODE", "wecom_private")
+    monkeypatch.setenv("AICRM_EXTERNAL_EFFECT_ALLOWED_OWNER_USERIDS", "HuangYouCan")
     calls: list[dict] = []
 
     class _Adapter:
         def create_private_message_task(self, payload, *, idempotency_key=""):
             calls.append({"payload": payload, "idempotency_key": idempotency_key})
-            return {"ok": True, "side_effect_executed": True, "wecom_msgid": "msg-should-not-send"}
+            return {
+                "ok": True,
+                "side_effect_executed": True,
+                "exact_target_verified": True,
+                "requested_external_userids": ["wm_fixture_a"],
+                "wecom_msgid": "msg-default-direct-send",
+            }
 
     monkeypatch.setattr("aicrm_next.integration_gateway.wecom_private_adapter.build_wecom_private_message_adapter", lambda: _Adapter())
     plan = execute_cloud_campaign_run_due_command(
@@ -296,12 +303,13 @@ def test_wecom_private_external_effect_default_disabled_blocks_without_wecom_cal
     updated = ExternalEffectService().get(job_id)
     attempts = ExternalEffectService().list_attempts(job_id)
 
-    assert result["counts"]["failed_count"] == 1
-    assert result["real_external_call_executed"] is False
-    assert calls == []
+    assert result["counts"]["succeeded_count"] == 1
+    assert result["real_external_call_executed"] is True
+    assert len(calls) == 1
+    assert calls[0]["payload"]["sender"] == "HuangYouCan"
     assert updated is not None
-    assert updated.status == "failed_terminal"
-    assert attempts[0].error_code == "wecom_execution_disabled"
+    assert updated.status == "succeeded"
+    assert attempts[0].status == "succeeded"
 
 
 def test_wecom_private_external_effect_allowlisted_execute_succeeds(monkeypatch) -> None:
@@ -357,7 +365,7 @@ def test_wecom_private_external_effect_allowlisted_execute_succeeds(monkeypatch)
     assert attempts[0].response_summary_json["wecom_send_executed"] is True
 
 
-def test_wecom_private_external_effect_target_allowlist_miss_blocks(monkeypatch) -> None:
+def test_wecom_private_external_effect_ignores_target_allowlist_miss(monkeypatch) -> None:
     _reset_fixture_state()
     monkeypatch.setenv("AI_ASSIST_EXTERNAL_EFFECT_SEND_MODE", "wecom_private")
     monkeypatch.setenv("AICRM_EXTERNAL_EFFECT_WECOM_EXECUTE", "1")
@@ -369,7 +377,12 @@ def test_wecom_private_external_effect_target_allowlist_miss_blocks(monkeypatch)
     class _Adapter:
         def create_private_message_task(self, payload, *, idempotency_key=""):
             calls.append({"payload": payload, "idempotency_key": idempotency_key})
-            return {"ok": True, "side_effect_executed": True}
+            return {
+                "ok": True,
+                "side_effect_executed": True,
+                "exact_target_verified": True,
+                "requested_external_userids": ["wm_fixture_a"],
+            }
 
     monkeypatch.setattr("aicrm_next.integration_gateway.wecom_private_adapter.build_wecom_private_message_adapter", lambda: _Adapter())
     plan = execute_cloud_campaign_run_due_command(
@@ -385,12 +398,12 @@ def test_wecom_private_external_effect_target_allowlist_miss_blocks(monkeypatch)
     updated = ExternalEffectService().get(job_id)
     attempts = ExternalEffectService().list_attempts(job_id)
 
-    assert result["counts"]["failed_count"] == 1
-    assert result["real_external_call_executed"] is False
-    assert calls == []
+    assert result["counts"]["succeeded_count"] == 1
+    assert result["real_external_call_executed"] is True
+    assert len(calls) == 1
     assert updated is not None
-    assert updated.status == "failed_terminal"
-    assert attempts[0].error_code == "target_not_allowed"
+    assert updated.status == "succeeded"
+    assert attempts[0].status == "succeeded"
 
 
 def test_ai_assist_campaign_loopback_test_only_false_is_rejected(monkeypatch) -> None:

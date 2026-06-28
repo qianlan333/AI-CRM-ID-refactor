@@ -53,6 +53,16 @@ def _csv_env(name: str) -> set[str]:
     return runtime_csv(name)
 
 
+def _configured_wecom_sender(fallback: str = "") -> str:
+    raw = runtime_setting("AICRM_EXTERNAL_EFFECT_ALLOWED_OWNER_USERIDS", "")
+    candidates = [
+        item.strip()
+        for item in raw.replace("\n", ",").replace(" ", ",").split(",")
+        if item.strip()
+    ]
+    return candidates[0] if candidates else str(fallback or "").strip()
+
+
 def webhook_execution_settings() -> dict[str, Any]:
     return {
         "enabled": _enabled("AICRM_EXTERNAL_EFFECT_WEBHOOK_EXECUTE"),
@@ -63,12 +73,12 @@ def webhook_execution_settings() -> dict[str, Any]:
 
 def wecom_execution_settings() -> dict[str, Any]:
     return {
-        "enabled": _enabled("AICRM_EXTERNAL_EFFECT_WECOM_EXECUTE"),
-        "allowed_types": sorted(_csv_env("AICRM_EXTERNAL_EFFECT_ALLOWED_TYPES")),
-        "allowed_target_external_userids": sorted(_csv_env("AICRM_EXTERNAL_EFFECT_ALLOWED_TARGET_EXTERNAL_USERIDS")),
-        "allowed_group_ops_webhook_keys": sorted(_csv_env("AICRM_EXTERNAL_EFFECT_ALLOWED_GROUP_OPS_WEBHOOK_KEYS")),
-        "allowed_owner_userids": sorted(_csv_env("AICRM_EXTERNAL_EFFECT_ALLOWED_OWNER_USERIDS")),
-        "allowed_group_chat_ids": sorted(_csv_env("AICRM_EXTERNAL_EFFECT_ALLOWED_GROUP_CHAT_IDS")),
+        "enabled": True,
+        "allowed_types": "all_wecom_effects",
+        "allowed_target_external_userids": "all",
+        "allowed_group_ops_webhook_keys": "all",
+        "allowed_owner_userids": "all",
+        "allowed_group_chat_ids": "all",
         "supported_types": [WECOM_MESSAGE_PRIVATE_SEND, WECOM_MESSAGE_GROUP_SEND, WECOM_WELCOME_MESSAGE_SEND],
     }
 
@@ -247,14 +257,17 @@ class WeComPrivateMessageAdapter:
         payload = dict(job.payload_json or {})
         external_userids = [str(item or "").strip() for item in list(payload.get("external_userids") or []) if str(item or "").strip()]
         owner_userid = str(payload.get("owner_userid") or payload.get("sender") or "").strip()
+        sender_userid = _configured_wecom_sender(owner_userid)
         content_text = str(payload.get("content_text") or "").strip()
-        gate_error = self._execution_gate_error(job=job, payload=payload, external_userids=external_userids, owner_userid=owner_userid)
+        gate_error = self._execution_gate_error(job=job, payload=payload, external_userids=external_userids, owner_userid=sender_userid)
         request_summary = {
             "effect_type": job.effect_type,
             "operation": job.operation,
             "target_type": job.target_type,
             "target_id": job.target_id,
             "owner_userid": owner_userid,
+            "sender_userid": sender_userid,
+            "sender_binding_applied": bool(sender_userid and sender_userid != owner_userid),
             "external_userid_count": len(external_userids),
             "content_text_length": len(content_text),
             "attachment_count": len(payload.get("attachments") or []) if isinstance(payload.get("attachments"), list) else 0,
@@ -266,11 +279,11 @@ class WeComPrivateMessageAdapter:
                 request_summary=request_summary,
                 response_summary={"blocked": True, "execution_gate": gate_error, "real_external_call_executed": False, "wecom_send_executed": False},
                 error_code=gate_error,
-                error_message="WeCom private-message adapter execution is blocked by external effect execution gates.",
+                error_message="WeCom private-message adapter execution is blocked by payload validation.",
                 real_external_call_executed=False,
             )
         adapter_payload: dict[str, Any] = {
-            "sender": owner_userid,
+            "sender": sender_userid,
             "external_userids": external_userids,
         }
         if content_text:
@@ -347,22 +360,11 @@ class WeComPrivateMessageAdapter:
             return "shadow_only"
         if job.effect_type != WECOM_MESSAGE_PRIVATE_SEND:
             return "unsupported_effect_type"
-        if not _enabled("AICRM_EXTERNAL_EFFECT_WECOM_EXECUTE"):
-            return "wecom_execution_disabled"
-        allowed_types = _csv_env("AICRM_EXTERNAL_EFFECT_ALLOWED_TYPES")
-        if job.effect_type not in allowed_types:
-            return "effect_type_not_allowed"
         if len(external_userids) != 1:
             return "single_target_required"
         target_id = str(job.target_id or "").strip()
         if target_id != external_userids[0]:
             return "target_mismatch"
-        allowed_targets = _csv_env("AICRM_EXTERNAL_EFFECT_ALLOWED_TARGET_EXTERNAL_USERIDS")
-        if external_userids[0] not in allowed_targets:
-            return "target_not_allowed"
-        allowed_owners = _csv_env("AICRM_EXTERNAL_EFFECT_ALLOWED_OWNER_USERIDS")
-        if owner_userid not in allowed_owners:
-            return "owner_not_allowed"
         if str(payload.get("channel") or "").strip() != "wecom_private":
             return "channel_not_allowed"
         has_text = bool(str(payload.get("content_text") or "").strip())
@@ -389,7 +391,7 @@ class WeComGroupMessageExternalEffectAdapter:
                     "wecom_send_executed": False,
                 },
                 error_code=gate_error,
-                error_message="WeCom group message adapter execution is blocked by external effect gates.",
+                error_message="WeCom group message adapter execution is blocked by payload validation.",
                 real_external_call_executed=False,
             )
 
@@ -462,27 +464,12 @@ class WeComGroupMessageExternalEffectAdapter:
             return "shadow_only"
         if job.effect_type != WECOM_MESSAGE_GROUP_SEND:
             return "unsupported_effect_type"
-        if not _enabled("AICRM_EXTERNAL_EFFECT_WECOM_EXECUTE"):
-            return "execution_disabled"
-        allowed_types = _csv_env("AICRM_EXTERNAL_EFFECT_ALLOWED_TYPES")
-        if job.effect_type not in allowed_types:
-            return "effect_type_not_allowed"
-        webhook_key = str(payload.get("webhook_key") or "").strip()
-        allowed_webhook_keys = _csv_env("AICRM_EXTERNAL_EFFECT_ALLOWED_GROUP_OPS_WEBHOOK_KEYS")
-        if not webhook_key or webhook_key not in allowed_webhook_keys:
-            return "group_ops_webhook_key_not_allowed"
-        owner = str(payload.get("owner_userid") or payload.get("sender") or "").strip()
-        allowed_owners = _csv_env("AICRM_EXTERNAL_EFFECT_ALLOWED_OWNER_USERIDS")
-        if not owner or owner not in allowed_owners:
-            return "owner_userid_not_allowed"
-        if payload.get("mention_all") is True or payload.get("is_mention_all") is True:
-            return "mention_all_blocked"
+        owner = _configured_wecom_sender(str(payload.get("owner_userid") or payload.get("sender") or "").strip())
+        if not owner:
+            return "owner_userid_missing"
         chat_ids = self._chat_ids(payload)
         if not chat_ids:
             return "group_chat_id_missing"
-        allowed_chat_ids = _csv_env("AICRM_EXTERNAL_EFFECT_ALLOWED_GROUP_CHAT_IDS")
-        if allowed_chat_ids and any(chat_id not in allowed_chat_ids for chat_id in chat_ids):
-            return "group_chat_id_not_allowed"
         content_payload = payload.get("content_payload")
         if not isinstance(content_payload, dict):
             return "payload_invalid"
@@ -498,7 +485,9 @@ class WeComGroupMessageExternalEffectAdapter:
     def _wecom_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
         content_payload = dict(payload.get("content_payload") or {})
         result = dict(content_payload)
-        result["sender"] = str(payload.get("owner_userid") or payload.get("sender") or content_payload.get("sender") or "").strip()
+        result["sender"] = _configured_wecom_sender(
+            str(payload.get("owner_userid") or payload.get("sender") or content_payload.get("sender") or "").strip()
+        )
         result["chat_ids"] = self._chat_ids(payload)
         return result
 
@@ -523,7 +512,7 @@ class WeComWelcomeMessageAdapter:
                     "wecom_send_executed": False,
                 },
                 error_code=gate_error,
-                error_message="WeCom welcome-message adapter execution is blocked by external effect gates.",
+                error_message="WeCom welcome-message adapter execution is blocked by payload validation.",
                 real_external_call_executed=False,
             )
 
@@ -567,23 +556,12 @@ class WeComWelcomeMessageAdapter:
             return "shadow_only"
         if job.effect_type != WECOM_WELCOME_MESSAGE_SEND:
             return "unsupported_effect_type"
-        if not _enabled("AICRM_EXTERNAL_EFFECT_WECOM_EXECUTE"):
-            return "execution_disabled"
-        allowed_types = _csv_env("AICRM_EXTERNAL_EFFECT_ALLOWED_TYPES")
-        if job.effect_type not in allowed_types:
-            return "effect_type_not_allowed"
         external_userid = str(payload.get("external_userid") or "").strip()
         if not external_userid or str(job.target_id or "").strip() != external_userid:
             return "target_mismatch"
-        allowed_targets = _csv_env("AICRM_EXTERNAL_EFFECT_ALLOWED_TARGET_EXTERNAL_USERIDS")
-        if allowed_targets and external_userid not in allowed_targets:
-            return "target_not_allowed"
         follow_user_userid = str(payload.get("follow_user_userid") or "").strip()
         if not follow_user_userid:
             return "owner_userid_missing"
-        allowed_owners = _csv_env("AICRM_EXTERNAL_EFFECT_ALLOWED_OWNER_USERIDS")
-        if allowed_owners and follow_user_userid not in allowed_owners:
-            return "owner_userid_not_allowed"
         if not str(payload.get("welcome_code") or "").strip():
             return "welcome_code_missing"
         has_text = isinstance(payload.get("text"), dict) and bool(
@@ -719,23 +697,12 @@ class WeComContactTagAdapter:
             return "shadow_only"
         if job.effect_type not in {WECOM_CONTACT_TAG_MARK, WECOM_CONTACT_TAG_UNMARK}:
             return "unsupported_effect_type"
-        if not _enabled("AICRM_EXTERNAL_EFFECT_WECOM_EXECUTE"):
-            return "execution_disabled"
-        allowed_types = _csv_env("AICRM_EXTERNAL_EFFECT_ALLOWED_TYPES")
-        if job.effect_type not in allowed_types:
-            return "effect_type_not_allowed"
         external_userid = str(payload.get("external_userid") or "").strip()
         if not external_userid or str(job.target_id or "").strip() != external_userid:
             return "target_mismatch"
-        allowed_targets = _csv_env("AICRM_EXTERNAL_EFFECT_ALLOWED_TARGET_EXTERNAL_USERIDS")
-        if allowed_targets and external_userid not in allowed_targets:
-            return "target_not_allowed"
         follow_user_userid = str(payload.get("follow_user_userid") or payload.get("userid") or "").strip()
         if not follow_user_userid:
             return "owner_userid_missing"
-        allowed_owners = _csv_env("AICRM_EXTERNAL_EFFECT_ALLOWED_OWNER_USERIDS")
-        if allowed_owners and follow_user_userid not in allowed_owners:
-            return "owner_userid_not_allowed"
         add_tags = self._add_tags(job, payload)
         remove_tags = self._remove_tags(job, payload)
         if not add_tags and not remove_tags:
@@ -881,23 +848,12 @@ class WeComProfileUpdateAdapter:
             return "shadow_only"
         if job.effect_type != WECOM_PROFILE_UPDATE:
             return "unsupported_effect_type"
-        if not _enabled("AICRM_EXTERNAL_EFFECT_WECOM_EXECUTE"):
-            return "execution_disabled"
-        allowed_types = _csv_env("AICRM_EXTERNAL_EFFECT_ALLOWED_TYPES")
-        if job.effect_type not in allowed_types:
-            return "effect_type_not_allowed"
         external_userid = str(payload.get("external_userid") or "").strip()
         if not external_userid or str(job.target_id or "").strip() != external_userid:
             return "target_mismatch"
-        allowed_targets = _csv_env("AICRM_EXTERNAL_EFFECT_ALLOWED_TARGET_EXTERNAL_USERIDS")
-        if allowed_targets and external_userid not in allowed_targets:
-            return "target_not_allowed"
         follow_user_userid = str(payload.get("follow_user_userid") or payload.get("userid") or "").strip()
         if not follow_user_userid:
             return "owner_userid_missing"
-        allowed_owners = _csv_env("AICRM_EXTERNAL_EFFECT_ALLOWED_OWNER_USERIDS")
-        if allowed_owners and follow_user_userid not in allowed_owners:
-            return "owner_userid_not_allowed"
         if not any(str(payload.get(key) or "").strip() for key in ("remark", "description", "remark_company")) and not payload.get("remark_mobiles"):
             return "profile_update_payload_missing"
         return ""

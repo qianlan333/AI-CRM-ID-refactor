@@ -83,6 +83,48 @@ def test_wecom_private_job_is_dispatched_and_marked_sent(monkeypatch) -> None:
     assert adapter.payload["external_userids"] == ["wm_test"]
 
 
+def test_cloud_plan_recipient_message_uses_bound_sender_and_hydrates_text(monkeypatch) -> None:
+    adapter = Adapter({"ok": True, "wecom_msgid": "msg-cloud", "result": {"msgid": "msg-cloud"}})
+    marked: dict[str, Any] = {}
+    monkeypatch.setattr("aicrm_next.integration_gateway.wecom_private_adapter.build_wecom_private_message_adapter", lambda: adapter)
+    monkeypatch.setattr(worker, "_record_outbound_task", lambda **kwargs: 901)
+    monkeypatch.setattr(worker, "runtime_setting", lambda key, default="": "HuangYouCan" if key == "AICRM_EXTERNAL_EFFECT_ALLOWED_OWNER_USERIDS" else default)
+    monkeypatch.setattr(
+        worker,
+        "_load_cloud_plan_recipient_message",
+        lambda payload: {"cloud_plan_message_id": 77, "content_text": "agent generated hello", "content_payload_json": {}, "attachments": []},
+    )
+    monkeypatch.setattr(worker, "_mark_cloud_plan_recipient_message_sent", lambda payload, outbound_task_id=None: marked.update({"payload": payload, "outbound_task_id": outbound_task_id}))
+    repo = FakeRepo(
+        [
+            _job(
+                source_type="cloud_plan",
+                source_table="cloud_broadcast_plan_recipients",
+                source_id="agent_plan:2",
+                idempotency_key="cloud_plan_recipient:agent_plan:2",
+                channel="wecom_private",
+                content_type="cloud_plan",
+                payload={
+                    "plan_id": "agent_plan",
+                    "recipient_id": 2,
+                    "external_userid": "wm_test",
+                    "message_mode": "recipient_messages",
+                    "owner_userid": "WangWei",
+                    "rendered_content": {},
+                },
+            )
+        ]
+    )
+
+    summary = run_broadcast_queue_worker(repo=repo, dispatcher=SafeSkippedBroadcastDispatcher(), now=datetime(2026, 6, 1, tzinfo=timezone.utc))
+
+    assert summary["sent_ok"] == 1
+    assert adapter.payload["sender"] == "HuangYouCan"
+    assert adapter.payload["text"] == {"content": "agent generated hello"}
+    assert marked["payload"]["cloud_plan_message_id"] == 77
+    assert marked["outbound_task_id"] == 901
+
+
 def test_wecom_private_adapter_canonicalizes_miniprogram_attachment(monkeypatch) -> None:
     from aicrm_next.integration_gateway.wecom_private_adapter import WeComPrivateMessageAdapter
 
