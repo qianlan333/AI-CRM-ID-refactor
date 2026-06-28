@@ -52,9 +52,11 @@ def test_automation_agent_list_page_contract(next_client, monkeypatch) -> None:
     assert response.status_code == 200
     html = response.text
     for expected in (
-        "Agent 列表",
+        "自动化话术",
         "新增 Agent",
-        "Agent 名称",
+        "新增固定话术",
+        "自动化名称",
+        "自动化类类型",
         "固定素材",
         "状态",
         "操作",
@@ -65,6 +67,9 @@ def test_automation_agent_list_page_contract(next_client, monkeypatch) -> None:
         "删除",
         "/api/admin/automation-agents",
         "data-agent-action-row",
+        "automation-agent-list-actions",
+        "automation_type",
+        "fixed_script",
         "agent_name",
         "agent_code",
         "请根据{{问卷信息}}",
@@ -79,6 +84,8 @@ def test_automation_agent_list_page_contract(next_client, monkeypatch) -> None:
         "字段依赖",
         "external_userid 数组",
         "Agent Webhook",
+        "共 0 个",
+        "共 ${items.length} 个",
     ):
         assert forbidden not in html
 
@@ -86,8 +93,10 @@ def test_automation_agent_list_page_contract(next_client, monkeypatch) -> None:
 def test_automation_agent_list_actions_are_horizontal_on_desktop() -> None:
     source = _read(LIST_TEMPLATE)
     op_row_css = re.search(r"\.automation-agent-op-row\s*\{(?P<body>.*?)\}", source, re.S)
+    create_row_css = re.search(r"\.automation-agent-list-actions\s*\{(?P<body>.*?)\}", source, re.S)
 
     assert op_row_css, "operation row CSS must exist"
+    assert create_row_css, "create action row CSS must exist"
     body = op_row_css.group("body")
     assert "display: inline-flex" in body
     assert "flex-direction: row" in body
@@ -95,6 +104,10 @@ def test_automation_agent_list_actions_are_horizontal_on_desktop() -> None:
     assert "gap: 10px" in body
     assert "white-space: nowrap" in body
     assert "flex-direction: column" not in body
+    create_body = create_row_css.group("body")
+    assert "display: flex" in create_body
+    assert "justify-content: flex-end" in create_body
+    assert "gap: 10px" in create_body
 
 
 def test_automation_agent_list_table_uses_available_desktop_width() -> None:
@@ -107,8 +120,9 @@ def test_automation_agent_list_table_uses_available_desktop_width() -> None:
     assert "width: 100%" in table_css.group("body")
     assert "min-width" not in table_css.group("body")
     assert "overflow-x: hidden" in wrap_css.group("body")
-    assert ".automation-agent-table .w-plan {\n    width: 46%;" in source
-    assert ".automation-agent-table .w-op {\n    width: 24%;" in source
+    assert ".automation-agent-table .w-plan {\n    width: 36%;" in source
+    assert ".automation-agent-table .w-type {\n    width: 14%;" in source
+    assert ".automation-agent-table .w-op {\n    width: 20%;" in source
 
 
 def test_automation_agent_edit_page_contract(next_client, monkeypatch) -> None:
@@ -121,6 +135,8 @@ def test_automation_agent_edit_page_contract(next_client, monkeypatch) -> None:
     for expected in (
         "编辑 Agent",
         "Agent 名称",
+        "自动化类类型",
+        "fixed_script",
         "接收地址",
         "发送地址",
         "重置 token",
@@ -132,6 +148,9 @@ def test_automation_agent_edit_page_contract(next_client, monkeypatch) -> None:
         "插入 {{用户标签}}",
         "插入 {{激活信息}}",
         "当前字段依赖自动识别",
+        "话术正文",
+        "fixedScriptText",
+        "renderMode",
         "保存草稿",
         "发布",
         "载入已发布版本",

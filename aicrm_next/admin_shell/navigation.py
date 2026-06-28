@@ -163,7 +163,7 @@ ADMIN_NAV_GROUPS: list[dict[str, Any]] = [
             {"key": "push_center", "label": "推送中心", "endpoint": "api.admin_push_center_page"},
             {"key": "internal_events", "label": "事件中心", "endpoint": "api.admin_internal_events_page"},
             {"key": "webhook_inbox", "label": "Webhook Inbox", "endpoint": "api.admin_webhook_inbox_page"},
-            {"key": "automation_agents", "label": "Agent", "endpoint": "api.admin_automation_agents_page"},
+            {"key": "automation_agents", "label": "自动化话术", "endpoint": "api.admin_automation_agents_page"},
             {"key": "owner_migration", "label": "负责人迁移", "endpoint": "api.admin_owner_migration_page"},
             {"key": "config", "label": "配置", "endpoint": "api.admin_config"},
             {"key": "api_docs", "label": "API 文档", "endpoint": "api.admin_api_docs"},

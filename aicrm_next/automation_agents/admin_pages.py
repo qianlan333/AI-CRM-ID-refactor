@@ -27,7 +27,7 @@ def admin_automation_agents_page(request: Request):
         return redirect
     context = shell_context(
         request=request,
-        page_title="Agent 列表",
+        page_title="自动化话术",
         page_summary="",
         active_endpoint="api.admin_automation_agents_page",
     )
@@ -51,7 +51,7 @@ def admin_automation_agent_edit_page(request: Request, agent_id: int):
         return redirect
     context = shell_context(
         request=request,
-        page_title="编辑 Agent",
+        page_title="编辑自动化话术",
         page_summary="",
         active_endpoint="api.admin_automation_agents_page",
     )

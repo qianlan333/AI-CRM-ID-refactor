@@ -404,6 +404,11 @@
       <div class="automation-agent-form-grid">
         <label class="automation-agent-label" for="agentName">Agent 名称</label>
         <input class="automation-agent-input" id="agentName" value="">
+        <label class="automation-agent-label" for="automationType">自动化类类型</label>
+        <select class="automation-agent-select" id="automationType">
+          <option value="agent">agent</option>
+          <option value="fixed_script">固定话术</option>
+        </select>
         <label class="automation-agent-label" for="agentStatus">状态</label>
         <select class="automation-agent-select" id="agentStatus">
           <option value="active">启用中</option>
@@ -429,7 +434,7 @@
       </div>
     </section>
 
-    <section class="automation-agent-card automation-agent-section" aria-label="Prompt 配置">
+    <section class="automation-agent-card automation-agent-section" id="promptSection" aria-label="Prompt 配置">
       <div class="automation-agent-section-head"><h2 class="automation-agent-subtitle">Prompt 配置</h2></div>
       <label class="automation-agent-label" for="rolePrompt">角色提示词 role_prompt</label>
       <textarea class="automation-agent-textarea" id="rolePrompt"></textarea>
@@ -456,6 +461,12 @@
         <button class="automation-agent-btn sm" id="publishAgent" type="button">发布</button>
         <button class="automation-agent-btn sm" id="loadPublished" type="button">载入已发布版本</button>
       </div>
+    </section>
+
+    <section class="automation-agent-card automation-agent-section automation-agent-hidden" id="fixedScriptSection" aria-label="固定话术">
+      <div class="automation-agent-section-head"><h2 class="automation-agent-subtitle">固定话术</h2></div>
+      <label class="automation-agent-label" for="fixedScriptText">话术正文</label>
+      <textarea class="automation-agent-textarea" id="fixedScriptText" placeholder="填写固定发送给用户的话术"></textarea>
     </section>
 
     <div>
@@ -499,7 +510,7 @@
       </div>
       <div class="automation-agent-preview-card">
         <h2 class="automation-agent-subtitle" style="font-size:16px;margin-bottom:14px">发送任务预览</h2>
-        <div class="automation-agent-material-empty" style="height:180px">AI 文本由 Agent 动态生成</div>
+        <div class="automation-agent-material-empty" id="modalTextPreview" style="height:180px">AI 文本由 Agent 动态生成</div>
       </div>
     </div>
     <div class="automation-agent-modal-foot">
@@ -534,6 +545,7 @@
     const els = {
       title: document.getElementById("editTitle"),
       agentName: document.getElementById("agentName"),
+      automationType: document.getElementById("automationType"),
       agentStatus: document.getElementById("agentStatus"),
       statusBadge: document.getElementById("statusBadge"),
       receiveUrl: document.getElementById("receiveUrl"),
@@ -541,6 +553,9 @@
       resetToken: document.getElementById("resetToken"),
       rolePrompt: document.getElementById("rolePrompt"),
       taskPrompt: document.getElementById("taskPrompt"),
+      fixedScriptText: document.getElementById("fixedScriptText"),
+      promptSection: document.getElementById("promptSection"),
+      fixedScriptSection: document.getElementById("fixedScriptSection"),
       deps: document.getElementById("deps"),
       draftVersion: document.getElementById("draftVersion"),
       publishedVersion: document.getElementById("publishedVersion"),
@@ -549,6 +564,7 @@
       materialModal: document.getElementById("materialModal"),
       assetCount: document.getElementById("assetCount"),
       selectedAssets: document.getElementById("selectedAssets"),
+      modalTextPreview: document.getElementById("modalTextPreview"),
       toast: document.getElementById("agentToast"),
     };
 
@@ -572,7 +588,7 @@
     const normalizePackage = (value) => {
       const source = value && typeof value === "object" ? value : {};
       return {
-        content_text: "",
+        content_text: String(source.content_text || ""),
         image_library_ids: normalizeIds(source.image_library_ids),
         miniprogram_library_ids: normalizeIds(source.miniprogram_library_ids),
         attachment_library_ids: normalizeIds(source.attachment_library_ids),
@@ -614,7 +630,13 @@
       }
     };
 
-    const contentPackage = () => normalizePackage(state.contentPackage);
+    const isFixedScript = () => els.automationType.value === "fixed_script";
+
+    const contentPackage = () => {
+      const normalized = normalizePackage(state.contentPackage);
+      normalized.content_text = isFixedScript() ? els.fixedScriptText.value.trim() : "";
+      return normalized;
+    };
 
     const materialCounts = () => ({
       image: state.contentPackage.image_library_ids.length,
@@ -663,6 +685,13 @@
 
     const renderReceiveUrl = () => {
       els.receiveUrl.value = state.agent && state.agent.receive_webhook_url ? pathOnly(state.agent.receive_webhook_url) : "";
+    };
+
+    const renderMode = () => {
+      const fixedScript = isFixedScript();
+      els.promptSection.classList.toggle("automation-agent-hidden", fixedScript);
+      els.fixedScriptSection.classList.toggle("automation-agent-hidden", !fixedScript);
+      els.modalTextPreview.textContent = fixedScript ? (els.fixedScriptText.value.trim() || "未填写固定话术") : "AI 文本由 Agent 动态生成";
     };
 
     const renderDeps = () => {
@@ -756,6 +785,7 @@
 
     const formPayload = () => ({
       agent_name: els.agentName.value.trim(),
+      automation_type: els.automationType.value,
       bound_package_key: state.agent && state.agent.bound_package_key ? state.agent.bound_package_key : "",
       send_webhook_url: els.sendUrl.value.trim(),
       status: els.agentStatus.value,
@@ -796,18 +826,21 @@
       state.agent = agent || {};
       els.title.textContent = state.agent.agent_name || "编辑 Agent";
       els.agentName.value = state.agent.agent_name || "";
+      els.automationType.value = state.agent.automation_type === "fixed_script" ? "fixed_script" : "agent";
       els.agentStatus.value = state.agent.status === "paused" ? "paused" : "active";
       els.rolePrompt.value = state.agent.draft_role_prompt || state.agent.published_role_prompt || "";
       els.taskPrompt.value = state.agent.draft_task_prompt || state.agent.published_task_prompt || "";
       els.draftVersion.textContent = `草稿版本：v${Number(state.agent.draft_version || 0)}`;
       els.publishedVersion.textContent = `已发布版本：v${Number(state.agent.published_version || 0)}`;
       state.contentPackage = normalizePackage(state.agent.fixed_content_package || {});
+      els.fixedScriptText.value = state.contentPackage.content_text || "";
       state.materialDetails = new Map();
       seedMaterialDetails(state.agent.fixed_content_package_preview && state.agent.fixed_content_package_preview.materials);
       if (state.agent.receive_webhook_url) els.receiveUrl.value = pathOnly(state.agent.receive_webhook_url);
       else renderReceiveUrl();
       els.sendUrl.value = state.agent.send_webhook_url || "";
       renderStatus();
+      renderMode();
       renderDeps();
       renderAssets();
     };
@@ -872,6 +905,8 @@
       renderDeps();
       toast("已载入已发布版本");
     });
+    els.automationType.addEventListener("change", renderMode);
+    els.fixedScriptText.addEventListener("input", renderMode);
     els.agentStatus.addEventListener("change", renderStatus);
     els.resetToken.addEventListener("click", () => {
       resetInboundToken().catch((error) => window.alert(error.message || "重置失败"));

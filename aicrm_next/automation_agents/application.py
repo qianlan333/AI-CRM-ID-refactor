@@ -20,6 +20,7 @@ from .repository import AutomationAgentRepository, build_automation_agent_reposi
 
 
 ALLOWED_STATUSES = {"active", "paused", "archived"}
+ALLOWED_AUTOMATION_TYPES = {"agent", "fixed_script"}
 MAX_WEBHOOK_USERS = 200
 
 
@@ -69,14 +70,27 @@ def _normalize_send_webhook_url(value: str, *, package_key: str = "") -> str:
     return normalized
 
 
-def _normalize_fixed_content(value: Any) -> dict[str, Any]:
+def _automation_type(value: Any) -> str:
+    normalized = _text(value) or "agent"
+    return normalized if normalized in ALLOWED_AUTOMATION_TYPES else ""
+
+
+def _automation_type_label(value: Any) -> str:
+    return "固定话术" if _automation_type(value) == "fixed_script" else "agent"
+
+
+def _normalize_fixed_content(value: Any, *, automation_type: str = "agent") -> dict[str, Any]:
     if isinstance(value, SendContentPackage):
         raw = value
     elif isinstance(value, dict):
         raw = SendContentPackage.model_validate(value)
     else:
         raw = SendContentPackage()
-    normalized = normalize_send_content_package(raw, text_enabled=False, require_body=False)
+    normalized = normalize_send_content_package(
+        raw,
+        text_enabled=_automation_type(automation_type) == "fixed_script",
+        require_body=False,
+    )
     attachment_ids = list(normalized.get("attachment_library_ids") or [])
     if attachment_ids:
         repo = build_send_content_repository()
@@ -104,8 +118,11 @@ def _summary(content_package: dict[str, Any]) -> dict[str, int]:
 
 def _agent_payload(row: dict[str, Any], *, request_base_url: str = "", include_detail: bool = False) -> dict[str, Any]:
     content_package = row.get("fixed_content_package_json") if isinstance(row.get("fixed_content_package_json"), dict) else {}
+    automation_type = _automation_type(row.get("automation_type")) or "agent"
     item = {
         "id": int(row.get("id") or 0),
+        "automation_type": automation_type,
+        "automation_type_label": _automation_type_label(automation_type),
         "agent_code": _text(row.get("agent_code")),
         "agent_name": _text(row.get("agent_name")),
         "bound_package_key": _text(row.get("bound_package_key")),
@@ -118,7 +135,7 @@ def _agent_payload(row: dict[str, Any], *, request_base_url: str = "", include_d
         preview = PreviewSendContentPackageQuery()(
             SendContentPreviewRequest(
                 content_package=SendContentPackage.model_validate(content_package),
-                text_enabled=False,
+                text_enabled=automation_type == "fixed_script",
                 require_body=False,
             )
         )
@@ -155,7 +172,10 @@ class AutomationAgentAdminService:
     def create_agent(self, payload: dict[str, Any], *, request_base_url: str = "") -> dict[str, Any]:
         try:
             request = AutomationAgentCreateRequest.model_validate(payload)
-            content_package = _normalize_fixed_content(request.fixed_content_package)
+            automation_type = _automation_type(request.automation_type)
+            if not automation_type:
+                return {"ok": False, "error": "invalid_automation_type"}
+            content_package = _normalize_fixed_content(request.fixed_content_package, automation_type=automation_type)
             send_webhook_url = _normalize_send_webhook_url(
                 request.send_webhook_url or "",
                 package_key=request.bound_package_key,
@@ -166,9 +186,9 @@ class AutomationAgentAdminService:
             "agent_name": request.agent_name,
             "agent_code": request.agent_code,
             "bound_package_key": request.bound_package_key,
-            "role_prompt": request.role_prompt,
-            "task_prompt": request.task_prompt,
         }
+        if automation_type == "agent":
+            required.update({"role_prompt": request.role_prompt, "task_prompt": request.task_prompt})
         missing = [key for key, value in required.items() if not _text(value)]
         if missing:
             return {"ok": False, "error": "required_field_missing", "fields": missing}
@@ -177,6 +197,7 @@ class AutomationAgentAdminService:
         row = self._repo.create_agent(
             {
                 **request.model_dump(exclude={"fixed_content_package"}),
+                "automation_type": automation_type,
                 "fixed_content_package": content_package,
                 "inbound_webhook_secret": uuid4().hex,
                 "inbound_webhook_token": _new_webhook_token(),
@@ -198,10 +219,19 @@ class AutomationAgentAdminService:
         except ValidationError as exc:
             return {"ok": False, "error": "invalid_agent_payload", "detail": str(exc)}
         updates = request.model_dump(exclude_unset=True)
+        existing = self._repo.get_agent(agent_id)
+        if not existing:
+            return {"ok": False, "error": "agent_not_found"}
+        automation_type = _automation_type(updates.get("automation_type", existing.get("automation_type")))
+        if not automation_type:
+            return {"ok": False, "error": "invalid_automation_type"}
         if "fixed_content_package" in updates:
             try:
-                updates["fixed_content_package"] = _normalize_fixed_content(updates["fixed_content_package"])
-            except ContractError as exc:
+                updates["fixed_content_package"] = _normalize_fixed_content(
+                    updates["fixed_content_package"],
+                    automation_type=automation_type,
+                )
+            except (ValidationError, ContractError) as exc:
                 return {"ok": False, "error": "invalid_fixed_content_package", "detail": str(exc)}
         if "send_webhook_url" in updates:
             try:
@@ -227,6 +257,7 @@ class AutomationAgentAdminService:
             {
                 "agent_code": self._repo.next_copy_code(_text(source.get("agent_code"))),
                 "agent_name": f"{_text(source.get('agent_name'))} 副本".strip(),
+                "automation_type": _automation_type(source.get("automation_type")) or "agent",
                 "bound_package_key": _text(source.get("bound_package_key")),
                 "status": _text(source.get("status")) or "active",
                 "role_prompt": _text(source.get("draft_role_prompt")),
@@ -257,8 +288,14 @@ class AutomationAgentAdminService:
         return {"ok": True, "agent": _agent_payload(detail, request_base_url=request_base_url, include_detail=True)}
 
     def save_fixed_content(self, agent_id: int, content_package: Any, *, request_base_url: str = "") -> dict[str, Any]:
+        existing = self._repo.get_agent(agent_id)
+        if not existing:
+            return {"ok": False, "error": "agent_not_found"}
         try:
-            normalized = _normalize_fixed_content(content_package)
+            normalized = _normalize_fixed_content(
+                content_package,
+                automation_type=_automation_type(existing.get("automation_type")) or "agent",
+            )
         except (ValidationError, ContractError) as exc:
             return {"ok": False, "error": "invalid_fixed_content_package", "detail": str(exc)}
         row = self._repo.update_agent(agent_id, {"fixed_content_package": normalized})

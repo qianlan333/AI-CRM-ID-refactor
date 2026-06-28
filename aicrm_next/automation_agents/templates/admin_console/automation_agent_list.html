@@ -50,6 +50,14 @@
     gap: 16px;
   }
 
+  .automation-agent-list-actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 10px;
+    margin-left: auto;
+  }
+
   .automation-agent-title {
     margin: 0;
     font-size: 30px;
@@ -156,7 +164,11 @@
   }
 
   .automation-agent-table .w-plan {
-    width: 46%;
+    width: 36%;
+  }
+
+  .automation-agent-table .w-type {
+    width: 14%;
   }
 
   .automation-agent-table .w-material {
@@ -168,7 +180,7 @@
   }
 
   .automation-agent-table .w-op {
-    width: 24%;
+    width: 20%;
     text-align: right;
   }
 
@@ -250,30 +262,33 @@
 
 {% block content %}
 <main class="automation-agent-page" data-automation-agent-list-page>
-  <section class="automation-agent-card" aria-label="Agent 列表">
+  <section class="automation-agent-card" aria-label="自动化话术">
     <div class="automation-agent-list-top">
       <div class="automation-agent-list-top__left">
-        <h1 class="automation-agent-title">Agent 列表</h1>
-        <button class="automation-agent-btn primary" id="createAgent" type="button">新增 Agent</button>
+        <h1 class="automation-agent-title">自动化话术</h1>
       </div>
-      <span class="automation-agent-pill" id="agentCount">共 0 个</span>
+      <div class="automation-agent-list-actions">
+        <button class="automation-agent-btn primary" id="createAgent" type="button">新增 Agent</button>
+        <button class="automation-agent-btn" id="createFixedScript" type="button">新增固定话术</button>
+      </div>
     </div>
     <div class="automation-agent-table-wrap">
       <table class="automation-agent-table">
         <thead>
           <tr>
-            <th class="w-plan">Agent 名称</th>
+            <th class="w-plan">自动化名称</th>
+            <th class="w-type">自动化类类型</th>
             <th class="w-material">固定素材</th>
             <th class="w-status">状态</th>
             <th class="w-op">操作</th>
           </tr>
         </thead>
         <tbody id="agentTableBody">
-          <tr><td class="automation-agent-empty" colspan="4">加载中</td></tr>
+          <tr><td class="automation-agent-empty" colspan="5">加载中</td></tr>
         </tbody>
       </table>
     </div>
-    <div class="automation-agent-empty" id="emptyRow">暂无 Agent，请点击“新增 Agent”。</div>
+    <div class="automation-agent-empty" id="emptyRow">暂无自动化话术。</div>
   </section>
 </main>
 <div class="automation-agent-toast" id="agentToast">已保存</div>
@@ -284,9 +299,9 @@
   (() => {
     const apiUrl = {{ automation_agents_api_url | tojson }};
     const rowsEl = document.getElementById("agentTableBody");
-    const countEl = document.getElementById("agentCount");
     const emptyEl = document.getElementById("emptyRow");
     const createBtn = document.getElementById("createAgent");
+    const createFixedBtn = document.getElementById("createFixedScript");
     const toastEl = document.getElementById("agentToast");
     let items = [];
 
@@ -334,10 +349,14 @@
       return '<span class="automation-agent-pill">已停止</span>';
     };
 
+    const automationTypeLabel = (item) => {
+      if (item.automation_type === "fixed_script") return "固定话术";
+      return item.automation_type_label || "agent";
+    };
+
     const editPath = (id) => `/admin/automation-agents/${encodeURIComponent(id)}/edit`;
 
     const render = () => {
-      countEl.textContent = `共 ${items.length} 个`;
       emptyEl.style.display = items.length ? "none" : "block";
       if (!items.length) {
         rowsEl.innerHTML = "";
@@ -353,6 +372,7 @@
               <div class="automation-agent-plan-title">${escapeHtml(agentName)}</div>
               <div class="automation-agent-plan-key">${escapeHtml(agentCode)}</div>
             </td>
+            <td class="w-type"><span class="automation-agent-pill">${escapeHtml(automationTypeLabel(item))}</span></td>
             <td class="w-material"><span class="automation-agent-pill">${escapeHtml(materialText(item.fixed_material_summary))}</span></td>
             <td class="w-status">${statusPill(item.status)}</td>
             <td class="w-op">
@@ -369,14 +389,13 @@
     };
 
     const loadAgents = async () => {
-      rowsEl.innerHTML = '<tr><td class="automation-agent-empty" colspan="4" style="display:table-cell">加载中</td></tr>';
+      rowsEl.innerHTML = '<tr><td class="automation-agent-empty" colspan="5" style="display:table-cell">加载中</td></tr>';
       try {
         const payload = await fetchJson(`${apiUrl}?_=${Date.now()}`);
         items = Array.isArray(payload.items) ? payload.items : [];
         render();
       } catch (_error) {
-        countEl.textContent = "加载失败";
-        rowsEl.innerHTML = '<tr><td class="automation-agent-empty" colspan="4" style="display:table-cell">加载失败，请稍后重试</td></tr>';
+        rowsEl.innerHTML = '<tr><td class="automation-agent-empty" colspan="5" style="display:table-cell">加载失败，请稍后重试</td></tr>';
       }
     };
 
@@ -414,18 +433,21 @@
       }
     });
 
-    createBtn.addEventListener("click", async () => {
+    const createAutomation = async (type) => {
       const suffix = String(Date.now());
+      const fixedScript = type === "fixed_script";
       createBtn.disabled = true;
+      createFixedBtn.disabled = true;
       try {
         const payload = await fetchJson(apiUrl, {
           method: "POST",
           body: {
-            agent_name: "新建 Agent",
-            agent_code: `new_agent_${suffix}`,
+            agent_name: fixedScript ? "新建固定话术" : "新建 Agent",
+            agent_code: fixedScript ? `fixed_script_${suffix}` : `new_agent_${suffix}`,
+            automation_type: fixedScript ? "fixed_script" : "agent",
             bound_package_key: "new_package_key",
-            role_prompt: "你是一个克制、自然、面向私域转化的跟进 Agent。",
-            task_prompt: `请根据{{ '{{问卷信息}}' }}，生成一条适合在用户填完问卷后直接发送的跟进话术。
+            role_prompt: fixedScript ? "" : "你是一个克制、自然、面向私域转化的跟进 Agent。",
+            task_prompt: fixedScript ? "" : `请根据{{ '{{问卷信息}}' }}，生成一条适合在用户填完问卷后直接发送的跟进话术。
 
 输出要求：
 1. 只输出最终话术，不要解释过程，不要输出 JSON。
@@ -460,8 +482,12 @@
         window.alert(error.message || "创建失败");
       } finally {
         createBtn.disabled = false;
+        createFixedBtn.disabled = false;
       }
-    });
+    };
+
+    createBtn.addEventListener("click", () => createAutomation("agent"));
+    createFixedBtn.addEventListener("click", () => createAutomation("fixed_script"));
 
     loadAgents();
   })();
