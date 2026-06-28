@@ -24,7 +24,7 @@ Readonly gray preparation does not require real submit, real OAuth, real WeCom t
 The local old Flask test database can be seeded with:
 
 ```bash
-.venv/bin/python tools/seed_old_flask_questionnaire_sample.py \
+.venv/bin/python experiments/ai_crm_next/tools/seed_old_flask_questionnaire_sample.py \
   --database-url "$OLD_FLASK_TEST_DATABASE_URL" \
   --apply
 ```
@@ -40,7 +40,7 @@ Safety rules:
 
 2026-05-20 local evidence:
 
-- `tools/seed_old_flask_questionnaire_sample.py --apply` wrote masked sample data to local `aicrm_old_flask_test`.
+- `experiments/ai_crm_next/tools/seed_old_flask_questionnaire_sample.py --apply` wrote masked sample data to local `aicrm_old_flask_test`.
 - Old readonly API checks returned sample data for admin list, admin detail, export, latest-submit-debug, and public page.
 - Old `/api/h5/questionnaires/{slug}` returned the legacy WeChat-browser gate (`403 please_open_in_wechat`); the gray smoke report records this as legacy drift when Next satisfies the public read API contract.
 - Old Flask exposes result rendering as `/s/{slug}/result/{result_token}`. It does not expose Next's JSON result API path `/api/h5/questionnaires/{slug}/result/{submission_id}`; the gray smoke report records this as legacy drift when Next satisfies the result API contract.

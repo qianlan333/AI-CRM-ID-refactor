@@ -35,10 +35,10 @@ Exit criteria:
 Current evidence:
 
 - 2026-05-20 14:34 CST: local PostgreSQL test database `aicrm_next_test` on `127.0.0.1:5432` passed safety guard validation.
-- `scripts/run_postgres_integration_tests.sh` passed with `3 passed, 166 deselected`.
+- `experiments/ai_crm_next/scripts/run_postgres_integration_tests.sh` passed with `3 passed, 166 deselected`.
 - `.venv/bin/python -m pytest -q -m postgres_integration` passed with `3 passed, 166 deselected`.
 - Alembic `upgrade head` / `downgrade base`, User Ops SQL repo integration, and Customer Read Model SQL repo integration all executed on the real local test database.
-- Phase 1 local test database evidence is available in `docs/real_postgres_integration_run.md`. This is not production PostgreSQL evidence and does not change any module to `production_ready`.
+- Phase 1 local test database evidence is available in `experiments/ai_crm_next/docs/real_postgres_integration_run.md`. This is not production PostgreSQL evidence and does not change any module to `production_ready`.
 
 ## Phase 2: Readonly Dual-Run
 
@@ -58,11 +58,11 @@ Do not run old production writes during this phase.
 
 Tooling:
 
-- `tools/readonly_http_dual_run.py` is the preferred first dual-run harness for Customer Read Model and User Ops.
+- `experiments/ai_crm_next/tools/readonly_http_dual_run.py` is the preferred first dual-run harness for Customer Read Model and User Ops.
 - The tool sends only `GET` requests to old Flask and refuses old-service write methods.
 - Current tooling status: executed against local old Flask on 2026-05-20; the latest report passed with one User Ops overview legacy drift warning and customer sample-dependent routes covered by masked local test data.
-- Strategy doc: `docs/readonly_http_dual_run_strategy.md`.
-- Latest evidence: `docs/real_readonly_http_dual_run.md`.
+- Strategy doc: `experiments/ai_crm_next/docs/readonly_http_dual_run_strategy.md`.
+- Latest evidence: `experiments/ai_crm_next/docs/real_readonly_http_dual_run.md`.
 
 Exit criteria:
 
@@ -72,14 +72,14 @@ Exit criteria:
 
 Frontend smoke evidence:
 
-- `docs/frontend_route_manifest.md` lists the 14 current admin/public routes.
-- `docs/frontend_screenshot_baseline.md` records the latest TestClient smoke result.
+- `experiments/ai_crm_next/docs/frontend_route_manifest.md` lists the 14 current admin/public routes.
+- `experiments/ai_crm_next/docs/frontend_screenshot_baseline.md` records the latest TestClient smoke result.
 - Current status: route smoke passed with HTML snapshots and PNG screenshots generated through Playwright/Chromium.
-- Media Library gray-release preparation evidence is available in `docs/media_library_gray_release_plan.md`, `docs/media_library_route_cutover_manifest.md`, and `tools/media_library_gray_smoke.py`. Default smoke is read-only; fake writes are Next TestClient only and do not switch production traffic.
-- Product Management gray-release preparation evidence is available in `docs/product_management_gray_release_plan.md`, `docs/product_management_route_cutover_manifest.md`, and `tools/product_management_gray_smoke.py`. Default smoke is read-only; fake product writes are explicit opt-in and Next TestClient only. Checkout/payment routes are documented as no-production and excluded from gray smoke.
-- Customer Read Model readonly gray-release preparation evidence is available in `docs/customer_read_model_gray_release_plan.md`, `docs/customer_read_model_route_cutover_manifest.md`, `docs/customer_read_model_sample_data_checklist.md`, `tools/seed_old_flask_customer_sample.py`, and `tools/customer_read_model_gray_smoke.py`. Default smoke is GET-only; optional old-base-url dual mode also sends only GET. The latest local masked sample run covered detail/timeline/recent messages with `skipped=0`.
-- User Ops readonly gray-release preparation evidence is available in `docs/user_ops_readonly_gray_release_plan.md`, `docs/user_ops_readonly_route_cutover_manifest.md`, `docs/user_ops_readonly_sample_and_drift_checklist.md`, and `tools/user_ops_readonly_gray_smoke.py`. Default smoke is GET-only; optional old-base-url dual mode also sends only GET. DND, batch-send preview/execute, deferred jobs, internal writes, and real WeCom dispatch are excluded.
-- Questionnaire readonly gray-release preparation evidence is available in `docs/questionnaire_readonly_gray_release_plan.md`, `docs/questionnaire_readonly_route_cutover_manifest.md`, `docs/questionnaire_readonly_sample_and_fake_checklist.md`, `tools/seed_old_flask_questionnaire_sample.py`, and `tools/questionnaire_readonly_gray_smoke.py`. Default smoke is GET-only; fake submit is explicit opt-in and Next TestClient only. The latest local masked sample run passed with `blockers=0`; old WeChat-gate/public-result route differences are recorded as legacy drift. Real OAuth, WeCom tag mutation, external webhook push/retry, and admin writes are excluded.
+- Media Library gray-release preparation evidence is available in `experiments/ai_crm_next/docs/media_library_gray_release_plan.md`, `experiments/ai_crm_next/docs/media_library_route_cutover_manifest.md`, and `experiments/ai_crm_next/tools/media_library_gray_smoke.py`. Default smoke is read-only; fake writes are Next TestClient only and do not switch production traffic.
+- Product Management gray-release preparation evidence is available in `experiments/ai_crm_next/docs/product_management_gray_release_plan.md`, `experiments/ai_crm_next/docs/product_management_route_cutover_manifest.md`, and `experiments/ai_crm_next/tools/product_management_gray_smoke.py`. Default smoke is read-only; fake product writes are explicit opt-in and Next TestClient only. Checkout/payment routes are documented as no-production and excluded from gray smoke.
+- Customer Read Model readonly gray-release preparation evidence is available in `experiments/ai_crm_next/docs/customer_read_model_gray_release_plan.md`, `experiments/ai_crm_next/docs/customer_read_model_route_cutover_manifest.md`, `experiments/ai_crm_next/docs/customer_read_model_sample_data_checklist.md`, `experiments/ai_crm_next/tools/seed_old_flask_customer_sample.py`, and `experiments/ai_crm_next/tools/customer_read_model_gray_smoke.py`. Default smoke is GET-only; optional old-base-url dual mode also sends only GET. The latest local masked sample run covered detail/timeline/recent messages with `skipped=0`.
+- User Ops readonly gray-release preparation evidence is available in `experiments/ai_crm_next/docs/user_ops_readonly_gray_release_plan.md`, `experiments/ai_crm_next/docs/user_ops_readonly_route_cutover_manifest.md`, `experiments/ai_crm_next/docs/user_ops_readonly_sample_and_drift_checklist.md`, and `experiments/ai_crm_next/tools/user_ops_readonly_gray_smoke.py`. Default smoke is GET-only; optional old-base-url dual mode also sends only GET. DND, batch-send preview/execute, deferred jobs, internal writes, and real WeCom dispatch are excluded.
+- Questionnaire readonly gray-release preparation evidence is available in `experiments/ai_crm_next/docs/questionnaire_readonly_gray_release_plan.md`, `experiments/ai_crm_next/docs/questionnaire_readonly_route_cutover_manifest.md`, `experiments/ai_crm_next/docs/questionnaire_readonly_sample_and_fake_checklist.md`, `experiments/ai_crm_next/tools/seed_old_flask_questionnaire_sample.py`, and `experiments/ai_crm_next/tools/questionnaire_readonly_gray_smoke.py`. Default smoke is GET-only; fake submit is explicit opt-in and Next TestClient only. The latest local masked sample run passed with `blockers=0`; old WeChat-gate/public-result route differences are recorded as legacy drift. Real OAuth, WeCom tag mutation, external webhook push/retry, and admin writes are excluded.
 - Automation readonly gray-release preparation is retired. `/admin/automation-conversion`
   now belongs to AI Audience, and the old automation_program/runtime-v2
   smoke/parity artifacts were removed instead of carried forward.
@@ -129,37 +129,37 @@ Rules:
 - Keep route-level feature switches.
 - Keep module rollback independent.
 - Disable fake mode only after real provider tests pass.
-- User Ops readonly promotion requires `tools/user_ops_readonly_gray_smoke.py` to pass, with old-service writes disabled and only accepted legacy drift recorded.
-- Questionnaire readonly promotion requires `tools/questionnaire_readonly_gray_smoke.py` to pass, with old-service writes disabled, fake submit disabled by default, and real OAuth/WeCom/webhook calls disabled.
+- User Ops readonly promotion requires `experiments/ai_crm_next/tools/user_ops_readonly_gray_smoke.py` to pass, with old-service writes disabled and only accepted legacy drift recorded.
+- Questionnaire readonly promotion requires `experiments/ai_crm_next/tools/questionnaire_readonly_gray_smoke.py` to pass, with old-service writes disabled, fake submit disabled by default, and real OAuth/WeCom/webhook calls disabled.
 - Automation readonly promotion is retired; validate the AI Audience page and API instead.
 
 Controlled execution materials:
 
-- `docs/route_level_gray_release_batches.md` defines Batch 0-6 and the included/excluded routes.
-- `docs/route_level_gray_release_runbook.md` defines preflight, execution, smoke, rollback, and forbidden actions.
-- `docs/route_level_proxy_template.md` provides pseudo-only route flag and proxy examples. It must not be applied directly.
-- `docs/gray_release_signoff_template.md` records operator signoff, adapter modes, rollback owner, and Go/No-Go decision.
-- `docs/gray_release_acceptance_checklist.md` lists the required commands and safety checks.
-- `tools/generate_gray_release_report.py` aggregates smoke/parity JSON into a markdown/json signoff report without making requests or changing systems.
+- `experiments/ai_crm_next/docs/route_level_gray_release_batches.md` defines Batch 0-6 and the included/excluded routes.
+- `experiments/ai_crm_next/docs/route_level_gray_release_runbook.md` defines preflight, execution, smoke, rollback, and forbidden actions.
+- `experiments/ai_crm_next/docs/route_level_proxy_template.md` provides pseudo-only route flag and proxy examples. It must not be applied directly.
+- `experiments/ai_crm_next/docs/gray_release_signoff_template.md` records operator signoff, adapter modes, rollback owner, and Go/No-Go decision.
+- `experiments/ai_crm_next/docs/gray_release_acceptance_checklist.md` lists the required commands and safety checks.
+- `experiments/ai_crm_next/tools/generate_gray_release_report.py` aggregates smoke/parity JSON into a markdown/json signoff report without making requests or changing systems.
 
 Current controlled-execution status: ready for runbook acceptance. Production route cutover has not been executed, no production Nginx/deployment file has been changed, no production PostgreSQL is connected, and all external adapters remain fake/disabled unless separately approved.
 
 Batch 1 local rehearsal evidence:
 
-- `docs/gray_rehearsal_batch_1_media_readonly.md`
-- `docs/gray_rehearsal_batch_1_route_flags.md`
-- `tools/run_gray_rehearsal_batch.py`
+- `experiments/ai_crm_next/docs/gray_rehearsal_batch_1_media_readonly.md`
+- `experiments/ai_crm_next/docs/gray_rehearsal_batch_1_route_flags.md`
+- `experiments/ai_crm_next/tools/run_gray_rehearsal_batch.py`
 - `/tmp/gray_rehearsal_batch_1_media_readonly.json`
 
 The rehearsal passed in Next TestClient mode and did not modify production proxy configuration, switch real traffic, execute old-system writes, upload to cloud storage, or call WeCom media APIs.
 
 Staging-simulated canary evidence:
 
-- Batch 1 Media readonly: `docs/batch_1_media_readonly_canary_execution_report.md` and `docs/batch_1_media_readonly_canary_signoff.md`.
-- Batch 2 Product readonly: `docs/batch_2_product_readonly_canary_execution_report.md` and `docs/batch_2_product_readonly_canary_signoff.md`.
-- Batch 3 Customer readonly: `docs/batch_3_customer_readonly_canary_execution_report.md` and `docs/batch_3_customer_readonly_canary_signoff.md`.
-- Batch 4 User Ops readonly: `docs/batch_4_user_ops_readonly_canary_execution_report.md` and `docs/batch_4_user_ops_readonly_canary_signoff.md`.
-- Batch 5 Questionnaire readonly: `docs/batch_5_questionnaire_readonly_canary_execution_report.md` and `docs/batch_5_questionnaire_readonly_canary_signoff.md`.
+- Batch 1 Media readonly: `experiments/ai_crm_next/docs/batch_1_media_readonly_canary_execution_report.md` and `experiments/ai_crm_next/docs/batch_1_media_readonly_canary_signoff.md`.
+- Batch 2 Product readonly: `experiments/ai_crm_next/docs/batch_2_product_readonly_canary_execution_report.md` and `experiments/ai_crm_next/docs/batch_2_product_readonly_canary_signoff.md`.
+- Batch 3 Customer readonly: `experiments/ai_crm_next/docs/batch_3_customer_readonly_canary_execution_report.md` and `experiments/ai_crm_next/docs/batch_3_customer_readonly_canary_signoff.md`.
+- Batch 4 User Ops readonly: `experiments/ai_crm_next/docs/batch_4_user_ops_readonly_canary_execution_report.md` and `experiments/ai_crm_next/docs/batch_4_user_ops_readonly_canary_signoff.md`.
+- Batch 5 Questionnaire readonly: `experiments/ai_crm_next/docs/batch_5_questionnaire_readonly_canary_execution_report.md` and `experiments/ai_crm_next/docs/batch_5_questionnaire_readonly_canary_signoff.md`.
 - Batch 6 Automation readonly: retired with the old automation_program/runtime-v2
   migration artifacts.
 
@@ -167,19 +167,19 @@ All six records are staging-simulated or local rehearsal evidence only. They do 
 
 Production canary approval package:
 
-- `docs/production_canary_approval_package.md`
-- `docs/production_canary_change_request_template.md`
-- `docs/production_canary_observability_plan.md`
-- `docs/production_canary_rollback_runbook.md`
-- `tools/check_production_canary_approval_package.py`
+- `experiments/ai_crm_next/docs/production_canary_approval_package.md`
+- `experiments/ai_crm_next/docs/production_canary_change_request_template.md`
+- `experiments/ai_crm_next/docs/production_canary_observability_plan.md`
+- `experiments/ai_crm_next/docs/production_canary_rollback_runbook.md`
+- `experiments/ai_crm_next/tools/check_production_canary_approval_package.py`
 
 Current approval-package status: `ready_for_human_review` / `pending_human_signoff`. This package can support a human-reviewed readonly production canary request, starting with Batch 1 Media readonly, but it does not execute or authorize a route change by itself.
 
 Batch 1 Media production canary human signoff packet:
 
-- `docs/batch_1_media_readonly_production_canary_signoff_packet.md`
-- `docs/batch_1_media_readonly_production_execution_checklist.md`
-- `tools/check_batch_1_media_production_signoff_readiness.py`
+- `experiments/ai_crm_next/docs/batch_1_media_readonly_production_canary_signoff_packet.md`
+- `experiments/ai_crm_next/docs/batch_1_media_readonly_production_execution_checklist.md`
+- `experiments/ai_crm_next/tools/check_batch_1_media_production_signoff_readiness.py`
 
 Current Batch 1 production signoff status: `pending_human_signoff`. These materials organize target routes, evidence, proposed route flags, stop conditions, rollback steps, and final decision fields for human review only. They do not modify production configuration, enable production route flags, switch traffic, upload to cloud storage, call WeCom media, or authorize Media write routes.
 

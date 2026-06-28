@@ -14,14 +14,14 @@ This strategy keeps the slice honest: Customer Read Model is `partial`, PostgreS
 - `GET /api/customers/{external_userid}/timeline`
 - `GET /api/messages/{external_userid}/recent`
 
-The required fields are defined in the root source package at `../../aicrm_next/customer_read_model/parity_spec.py`.
+The required fields are defined in the root source package at `aicrm_next/customer_read_model/parity_spec.py`.
 
 ## Fixture Mode
 
 Fixture mode compares anonymized old response samples with AI-CRM Next TestClient responses:
 
 ```bash
-python tools/compare_customer_read_model_parity.py \
+python experiments/ai_crm_next/tools/compare_customer_read_model_parity.py \
   --old-fixture-dir tests/fixtures/old_customer_read_model \
   --next-testclient \
   --output-md /tmp/customer_read_model_parity_report.md \
@@ -35,7 +35,7 @@ Fixtures must use obvious mask values such as `mobile_masked_001`, `external_use
 HTTP mode is for later old Flask / AI-CRM Next dual-run checks:
 
 ```bash
-python tools/compare_customer_read_model_parity.py \
+python experiments/ai_crm_next/tools/compare_customer_read_model_parity.py \
   --old-base-url http://127.0.0.1:5001 \
   --next-base-url http://127.0.0.1:8000 \
   --output-md /tmp/customer_read_model_parity_report.md \

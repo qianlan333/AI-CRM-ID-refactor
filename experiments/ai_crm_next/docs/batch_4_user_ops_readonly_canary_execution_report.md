@@ -71,8 +71,8 @@ These flags were not written to production config and were not committed as a re
 | User Ops parity | `/tmp/user_ops_parity_batch_4.json` | PASS |
 | readonly dual-run | `/tmp/readonly_dual_run_batch_4_user_ops.json` | PASS with accepted legacy drift |
 | readiness checker | `/tmp/batch_4_user_ops_canary_readiness.json` | `canary_plan_ready` / `GO_TO_STAGING_CANARY_SIGNOFF` |
-| screenshot baseline | `artifacts/frontend_screenshots/route_status.json` | `/admin/user-ops/ui` present and passing |
-| real PostgreSQL integration | `docs/real_postgres_integration_run.md` | evidence available |
+| screenshot baseline | `historical removed reference (route_status.json)` | `/admin/user-ops/ui` present and passing |
+| real PostgreSQL integration | `experiments/ai_crm_next/docs/real_postgres_integration_run.md` | evidence available |
 
 ## Canary Smoke Result
 
@@ -86,7 +86,7 @@ AICRM_NEXT_USER_OPS_BATCH_SEND=false \
 AICRM_NEXT_USER_OPS_DEFERRED_JOBS=false \
 AICRM_NEXT_EXTERNAL_WECOM_DISPATCH=false \
 AICRM_NEXT_EXTERNAL_WECOM_MEDIA=false \
-.venv/bin/python tools/user_ops_readonly_gray_smoke.py \
+.venv/bin/python experiments/ai_crm_next/tools/user_ops_readonly_gray_smoke.py \
   --old-base-url http://127.0.0.1:5001 \
   --next-testclient \
   --output-md /tmp/user_ops_readonly_gray_smoke_batch_4.md \
@@ -100,7 +100,7 @@ Result: PASS with accepted legacy drift.
 Command:
 
 ```bash
-.venv/bin/python tools/readonly_http_dual_run.py \
+.venv/bin/python experiments/ai_crm_next/tools/readonly_http_dual_run.py \
   --old-base-url http://127.0.0.1:5001 \
   --next-testclient \
   --scope customer,user_ops \

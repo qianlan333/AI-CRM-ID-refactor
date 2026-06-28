@@ -53,11 +53,11 @@ This plan prepares a staging or production-like canary for Batch 5 Questionnaire
 | --- | --- |
 | ordinary pytest pass | `.venv/bin/python -m pytest -q` |
 | six parity pass | all `tools/compare_*_parity.py` reports |
-| Questionnaire parity pass | `tools/compare_questionnaire_parity.py` |
-| Questionnaire readonly gray smoke pass | `tools/questionnaire_readonly_gray_smoke.py --old-base-url ... --next-testclient` |
+| Questionnaire parity pass | `experiments/ai_crm_next/tools/compare_questionnaire_parity.py` |
+| Questionnaire readonly gray smoke pass | `experiments/ai_crm_next/tools/questionnaire_readonly_gray_smoke.py --old-base-url ... --next-testclient` |
 | Questionnaire readonly dual mode pass | dual smoke has only accepted legacy drift |
-| real PostgreSQL integration evidence available | `docs/real_postgres_integration_run.md` |
-| PNG screenshot baseline pass | `artifacts/frontend_screenshots/route_status.json` includes Questionnaire admin/public routes |
+| real PostgreSQL integration evidence available | `experiments/ai_crm_next/docs/real_postgres_integration_run.md` |
+| PNG screenshot baseline pass | `historical removed reference (route_status.json)` includes Questionnaire admin/public routes |
 | no old production entrypoint dirty | `git status --short --untracked-files=all` review |
 | no production config modified | deploy/production config status scan and side-effect report |
 | accepted legacy drift documented | old non-WeChat `403 please_open_in_wechat`; old result route differs from Next JSON route |
@@ -91,7 +91,7 @@ This plan prepares a staging or production-like canary for Batch 5 Questionnaire
 ## Readiness Command
 
 ```bash
-.venv/bin/python tools/check_batch_5_questionnaire_canary_readiness.py \
+.venv/bin/python experiments/ai_crm_next/tools/check_batch_5_questionnaire_canary_readiness.py \
   --questionnaire-smoke-json /tmp/questionnaire_readonly_gray_smoke_batch_5.json \
   --questionnaire-parity-json /tmp/questionnaire_parity_batch_5.json \
   --output-md /tmp/batch_5_questionnaire_canary_readiness.md \

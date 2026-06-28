@@ -5,7 +5,7 @@ Scope: Legacy Exit group 20 locks Cloud campaign run-due and preview timers to N
 Route precedence:
 
 - `aicrm_next.cloud_orchestrator.api` registers exact POST/OPTIONS routes, and production_compat is no longer registered by `aicrm_next.main`.
-- `aicrm_next/production_compat/api.py` has been removed; no production_compat runtime route or fallback remains for `/api/admin/cloud-orchestrator/campaigns/run-due` or `/api/admin/cloud-orchestrator/campaigns/run-due/preview`.
+- `historical retired production_compat module` has been removed; no production_compat runtime route or fallback remains for `/api/admin/cloud-orchestrator/campaigns/run-due` or `/api/admin/cloud-orchestrator/campaigns/run-due/preview`.
 - Legacy automation conversion timer fallback routes are retired and no longer part of cloud orchestrator run-due scope.
 
 ## Caller ↔ API ↔ CommandBus ↔ SideEffectPlan Matrix
@@ -18,7 +18,7 @@ Route precedence:
 | diagnostics caller | curl / route resolution checker | Confirm owner and allowed methods | `/api/admin/cloud-orchestrator/campaigns/run-due` | OPTIONS | `api_cloud_campaign_run_due_options` | none | No runtime | diagnostic SideEffectPlan contract only | locked Next route | OPTIONS run-due 200 |
 | diagnostics caller | curl / route resolution checker | Confirm owner and allowed methods | `/api/admin/cloud-orchestrator/campaigns/run-due/preview` | OPTIONS | `api_cloud_campaign_run_due_preview_options` | none | No runtime | diagnostic SideEffectPlan contract only | locked Next route | OPTIONS preview 200 |
 | legacy Flask scheduler | `wecom_ability_service.domains.campaigns.scheduler.process_due_campaign_members` | Historical actual execution | production_compat rollback deleted | n/a | none | none | Not imported, not called, not forwarded | none | removed; guarded by strict no-new-legacy check | source search |
-| production_compat rollback | `aicrm_next/production_compat/api.py` | Historical forward to legacy Flask | deleted for Cloud run-due/preview | n/a | none | none | Not available for this route family | none | removed; automation timer fallback retained | route precedence |
+| production_compat rollback | `historical retired production_compat module` | Historical forward to legacy Flask | deleted for Cloud run-due/preview | n/a | none | none | Not available for this route family | none | removed; automation timer fallback retained | route precedence |
 
 ## API Contracts
 

@@ -73,8 +73,8 @@ These flags were not written to production config and were not committed as a re
 | Questionnaire readonly gray smoke | `/tmp/questionnaire_readonly_gray_smoke_batch_5.json` | PASS with accepted legacy drift |
 | Questionnaire parity | `/tmp/questionnaire_parity_batch_5.json` | PASS |
 | readiness checker | `/tmp/batch_5_questionnaire_canary_readiness.json` | `canary_plan_ready` / `GO_TO_STAGING_CANARY_SIGNOFF` |
-| screenshot baseline | `artifacts/frontend_screenshots/route_status.json` | Questionnaire admin/public routes present and passing |
-| real PostgreSQL integration | `docs/real_postgres_integration_run.md` | evidence available |
+| screenshot baseline | `historical removed reference (route_status.json)` | Questionnaire admin/public routes present and passing |
+| real PostgreSQL integration | `experiments/ai_crm_next/docs/real_postgres_integration_run.md` | evidence available |
 
 ## Canary Smoke Result
 
@@ -87,7 +87,7 @@ AICRM_NEXT_QUESTIONNAIRE_SUBMIT=false \
 AICRM_NEXT_QUESTIONNAIRE_OAUTH=false \
 AICRM_NEXT_EXTERNAL_WECOM_TAG=false \
 AICRM_NEXT_EXTERNAL_WEBHOOK=false \
-.venv/bin/python tools/questionnaire_readonly_gray_smoke.py \
+.venv/bin/python experiments/ai_crm_next/tools/questionnaire_readonly_gray_smoke.py \
   --old-base-url http://127.0.0.1:5001 \
   --next-testclient \
   --output-md /tmp/questionnaire_readonly_gray_smoke_batch_5.md \

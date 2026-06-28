@@ -16,7 +16,7 @@ Non-goals: no real WeCom sends, no real JSSDK signing, no real material send, no
 | `/api/sidebar/marketing-status/unmark-enrolled` | POST | `aicrm_next.sidebar_write` | `aicrm_next.sidebar_write` | marketing enrollment marker | marketing status projection | medium | `UnmarkEnrolledCommand` | none | Next CommandBus locked; legacy production_compat rollback removed | deletion_locked | `tests/test_sidebar_write_commands.py` |
 | `/api/sidebar/v2/profile` | PUT | `aicrm_next.sidebar_write` | `aicrm_next.sidebar_write` | profile update | customer profile projection | high | `UpdateSidebarProfileCommand` | `wecom.profile.update` real_blocked | Next CommandBus locked; legacy production_compat rollback removed | deletion_locked | `tests/test_sidebar_write_no_real_side_effects.py` |
 | `/api/sidebar/v2/materials/send` | POST | `aicrm_next.sidebar_write` | `aicrm_next.sidebar_write` | external side effect plan | material send request | high | `PlanMaterialSendCommand` | `wecom.material.send` real_blocked | blocked/plan only; no real send; legacy production_compat rollback removed | deletion_locked | `tests/test_sidebar_write_no_real_side_effects.py` |
-| `/api/sidebar/jssdk-config` | GET | production_compat / blocked readonly route | later adapter group | JSSDK real signature | WeCom JSSDK signature | high | none | none in this group | out of scope | not deleted in this group | `tests/test_sidebar_write_registry_lifecycle.py` |
+| `/api/sidebar/jssdk-config` | GET | production_compat / blocked readonly route | later adapter group | JSSDK real signature | WeCom JSSDK signature | high | none | none in this group | out of scope | not deleted in this group | `historical removed reference (test_sidebar_write_registry_lifecycle.py)` |
 
 CommandBus contract:
 

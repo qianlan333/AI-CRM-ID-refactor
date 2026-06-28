@@ -1,6 +1,6 @@
 # Batch 2 Product Management Readonly Canary Signoff Draft
 
-This signoff draft is based on `docs/gray_release_signoff_template.md`. It records staging-simulated evidence only and does not approve production rollout.
+This signoff draft is based on `experiments/ai_crm_next/docs/gray_release_signoff_template.md`. It records staging-simulated evidence only and does not approve production rollout.
 
 | field | value |
 | --- | --- |
@@ -17,7 +17,7 @@ This signoff draft is based on `docs/gray_release_signoff_template.md`. It recor
 | smoke result | `/tmp/product_management_gray_smoke_batch_2.json` |
 | parity result | `/tmp/commerce_parity_batch_2_product.json` |
 | readiness result | `/tmp/batch_2_product_canary_readiness.json` |
-| screenshot baseline link | `artifacts/frontend_screenshots/route_status.json` |
+| screenshot baseline link | `historical removed reference (route_status.json)` |
 | rollback owner | old Flask |
 | rollback instruction | `AICRM_NEXT_ROUTE_PRODUCT_READONLY=false` |
 | rollback status | dry-run only; no real route changed |

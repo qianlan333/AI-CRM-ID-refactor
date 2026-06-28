@@ -1,6 +1,6 @@
 # Batch 1 Media Library Readonly Canary Signoff Draft
 
-This signoff draft is based on `docs/gray_release_signoff_template.md`. It records staging-simulated evidence only and does not approve production rollout.
+This signoff draft is based on `experiments/ai_crm_next/docs/gray_release_signoff_template.md`. It records staging-simulated evidence only and does not approve production rollout.
 
 | field | value |
 | --- | --- |
@@ -19,7 +19,7 @@ This signoff draft is based on `docs/gray_release_signoff_template.md`. It recor
 | parity result | PASS: `/tmp/media_parity_after_canary_execute.json` |
 | readiness result | `canary_plan_ready`: `/tmp/batch_1_media_canary_readiness_before_execute.json` |
 | aggregate report | GO: `/tmp/gray_release_media_readonly_staging_simulated_canary_report.json` |
-| screenshot baseline link | `artifacts/frontend_screenshots/route_status.json` |
+| screenshot baseline link | `historical removed reference (route_status.json)` |
 | rollback owner | old Flask |
 | rollback instruction | `AICRM_NEXT_ROUTE_MEDIA_READONLY=false` |
 | rollback status | dry-run only; no real route changed |

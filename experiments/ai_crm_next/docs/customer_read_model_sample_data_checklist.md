@@ -65,7 +65,7 @@ Missing sample data blocks full readonly gray evidence for detail/timeline/recen
 Seed tool:
 
 ```bash
-.venv/bin/python tools/seed_old_flask_customer_sample.py \
+.venv/bin/python experiments/ai_crm_next/tools/seed_old_flask_customer_sample.py \
   --database-url 'postgresql://aicrm_old_flask_test:***@127.0.0.1:5432/aicrm_old_flask_test' \
   --apply
 ```

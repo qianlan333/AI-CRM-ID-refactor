@@ -55,7 +55,7 @@ Parity:
 ## Readonly Dual-Run Command
 
 ```bash
-.venv/bin/python tools/readonly_http_dual_run.py \
+.venv/bin/python experiments/ai_crm_next/tools/readonly_http_dual_run.py \
   --old-base-url http://127.0.0.1:5001 \
   --next-testclient \
   --scope customer,user_ops \
@@ -132,10 +132,10 @@ Proceed to route-level frontend smoke / screenshot baseline. Keep old Flask onli
 
 Customer Read Model readonly gray-release preparation now has dedicated planning and tooling in:
 
-- `docs/customer_read_model_gray_release_plan.md`
-- `docs/customer_read_model_route_cutover_manifest.md`
-- `docs/customer_read_model_sample_data_checklist.md`
-- `tools/customer_read_model_gray_smoke.py`
+- `experiments/ai_crm_next/docs/customer_read_model_gray_release_plan.md`
+- `experiments/ai_crm_next/docs/customer_read_model_route_cutover_manifest.md`
+- `experiments/ai_crm_next/docs/customer_read_model_sample_data_checklist.md`
+- `experiments/ai_crm_next/tools/customer_read_model_gray_smoke.py`
 
 The known sample-data gap remains: the previous local old Flask test database did not provide a representative `external_userid`, so customer detail, timeline, and recent-message dual-run endpoints must remain skipped/pending until safe masked sample data exists. This is not production-ready evidence and does not enable production route cutover.
 
@@ -143,7 +143,7 @@ The known sample-data gap remains: the previous local old Flask test database di
 
 Run timestamp: `2026-05-20 16:48 CST`
 
-Local old Flask test database `aicrm_old_flask_test` was seeded with masked sample data through `tools/seed_old_flask_customer_sample.py`. The tool uses a localhost/test-database safety guard, redacts passwords, defaults to dry-run, and requires `--apply` before writing.
+Local old Flask test database `aicrm_old_flask_test` was seeded with masked sample data through `experiments/ai_crm_next/tools/seed_old_flask_customer_sample.py`. The tool uses a localhost/test-database safety guard, redacts passwords, defaults to dry-run, and requires `--apply` before writing.
 
 Old admin page access check:
 
@@ -162,7 +162,7 @@ Old API sample verification:
 
 Customer gray smoke dual report:
 
-- Command: `tools/customer_read_model_gray_smoke.py --old-base-url http://127.0.0.1:5001 --next-testclient`
+- Command: `experiments/ai_crm_next/tools/customer_read_model_gray_smoke.py --old-base-url http://127.0.0.1:5001 --next-testclient`
 - Report markdown: `/tmp/customer_read_model_gray_smoke_dual_after_sample.md`
 - Report JSON: `/tmp/customer_read_model_gray_smoke_dual_after_sample.json`
 - Result: `PASS`
@@ -177,7 +177,7 @@ Customer gray smoke dual report:
 
 Readonly HTTP dual-run report:
 
-- Command: `tools/readonly_http_dual_run.py --old-base-url http://127.0.0.1:5001 --next-testclient --scope customer,user_ops`
+- Command: `experiments/ai_crm_next/tools/readonly_http_dual_run.py --old-base-url http://127.0.0.1:5001 --next-testclient --scope customer,user_ops`
 - Report markdown: `/tmp/aicrm_next_readonly_dual_run_after_customer_sample.md`
 - Report JSON: `/tmp/aicrm_next_readonly_dual_run_after_customer_sample.json`
 - Result: `PASS`
@@ -195,10 +195,10 @@ Conclusion: the customer detail, timeline, and recent-message routes now have lo
 
 User Ops readonly gray-release preparation now has dedicated planning and tooling in:
 
-- `docs/user_ops_readonly_gray_release_plan.md`
-- `docs/user_ops_readonly_route_cutover_manifest.md`
-- `docs/user_ops_readonly_sample_and_drift_checklist.md`
-- `tools/user_ops_readonly_gray_smoke.py`
+- `experiments/ai_crm_next/docs/user_ops_readonly_gray_release_plan.md`
+- `experiments/ai_crm_next/docs/user_ops_readonly_route_cutover_manifest.md`
+- `experiments/ai_crm_next/docs/user_ops_readonly_sample_and_drift_checklist.md`
+- `experiments/ai_crm_next/tools/user_ops_readonly_gray_smoke.py`
 
 The accepted legacy drift remains: old `/api/admin/user-ops/overview` may miss `激活待录入`, while Next must satisfy the current 8-card product contract. DND, batch-send preview/execute, deferred jobs, internal User Ops routes, real WeCom dispatch, and media upload remain outside readonly dual-run and gray preparation.
 

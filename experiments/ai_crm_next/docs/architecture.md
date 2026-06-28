@@ -52,7 +52,7 @@ The old backend accumulated broad facade modules because HTTP, integration, read
 
 - Default runtime: `InMemoryUserOpsRepository`, so the experiment still starts without a database.
 - PostgreSQL-ready implementation: `SqlAlchemyUserOpsRepository`, using SQLAlchemy table definitions registered on `Base.metadata`.
-- Migration: `migrations/versions/0001_user_ops_postgresql_ready.py` creates User Ops pool, do-not-disturb, and send-record tables.
+- Migration: `experiments/ai_crm_next/migrations/versions/0001_user_ops_postgresql_ready.py` creates User Ops pool, do-not-disturb, and send-record tables.
 - Switch point: `build_user_ops_repository` reads `USER_OPS_REPO_BACKEND=memory|sqlalchemy`.
 
 The API layer does not import SQLAlchemy models or sessions. It calls application queries/commands only. Execute still uses the fake `integration_gateway` dispatch adapter; no real Enterprise WeChat send is triggered in this slice.
@@ -63,9 +63,9 @@ The API layer does not import SQLAlchemy models or sessions. It calls applicatio
 
 - Default runtime: `InMemoryCustomerReadModelRepository`, so the copied customer center frontend and MCP tools still start without a database.
 - PostgreSQL-ready implementation: `SqlAlchemyCustomerReadModelRepository`, using SQLAlchemy table definitions registered on `Base.metadata`.
-- Migration: `migrations/versions/0002_customer_read_model_postgresql_ready.py` creates customer list index, detail snapshot, timeline event, and recent-message tables.
+- Migration: `experiments/ai_crm_next/migrations/versions/0002_customer_read_model_postgresql_ready.py` creates customer list index, detail snapshot, timeline event, and recent-message tables.
 - Switch point: `build_customer_read_model_repository` reads `CUSTOMER_READ_MODEL_REPO_BACKEND=memory|sqlalchemy`.
-- Parity guard: `customer_read_model/parity_spec.py` and `tools/compare_customer_read_model_parity.py` lock the old OpenClaw-compatible read contract.
+- Parity guard: `aicrm_next/customer_read_model/parity_spec.py` and `experiments/ai_crm_next/tools/compare_customer_read_model_parity.py` lock the old OpenClaw-compatible read contract.
 
 The API layer does not import SQLAlchemy models or sessions. MCP calls Customer Read Model application queries through `integration_gateway`; it does not access repositories directly. This slice remains `partial`: it has not connected to production PostgreSQL and has not replaced the old Flask Customer Center.
 
@@ -79,7 +79,7 @@ The API layer does not import SQLAlchemy models or sessions. MCP calls Customer 
 - Submit does not write Customer Read Model and does not mutate User Ops directly. It now emits the automation questionnaire result through `automation_engine.ApplyQuestionnaireResultCommand`, keeping the cross-context handoff at the application boundary.
 - OAuth uses `FakeWechatOAuthAdapter`; it never calls WeChat.
 - Selected `tag_codes` are stored as strings; no real WeCom tagging/contact API or external webhook is called.
-- `questionnaire/parity_spec.py` and `tools/compare_questionnaire_parity.py` lock the first admin/public/submit/preflight contract.
+- `aicrm_next/questionnaire/parity_spec.py` and `experiments/ai_crm_next/tools/compare_questionnaire_parity.py` lock the first admin/public/submit/preflight contract.
 
 This slice remains `partial`: it has not replaced the old Flask questionnaire system and has no production PostgreSQL schema yet.
 
@@ -94,7 +94,7 @@ are no longer a migration target.
 
 PostgreSQL integration tests are intentionally outside the ordinary test path. They are marked `postgres_integration` and skip unless `AICRM_NEXT_TEST_DATABASE_URL` is set.
 
-`shared/postgres_test_guard.py` refuses unsafe database URLs:
+`aicrm_next/shared/postgres_test_guard.py` refuses unsafe database URLs:
 
 - empty URLs;
 - non-PostgreSQL URLs;
@@ -112,7 +112,7 @@ The runner script prints only a redacted URL. These tests validate Alembic migra
 - `payment_adapters.py` is fixture-only and never calls WeChat Pay or Alipay.
 - Repository layer remains in-memory/fixture in this slice.
 - Notify creates or updates local payment records only; it does not emit real webhooks, WeCom actions, or automation side effects.
-- `commerce/parity_spec.py` and `tools/compare_commerce_parity.py` lock product/checkout/transaction shape.
+- `aicrm_next/commerce/parity_spec.py` and `experiments/ai_crm_next/tools/compare_commerce_parity.py` lock product/checkout/transaction shape.
 
 This slice remains `partial`, not a production payment implementation.
 
@@ -124,6 +124,6 @@ This slice remains `partial`, not a production payment implementation.
 - Repository layer stores fixture data only.
 - from-url/from-base64 image import returns fake imported records; it does not fetch remote content or upload to cloud storage.
 - Mini-program thumbnail references are plain ids in this slice; no WeCom media upload or resolver is called.
-- `media_library/parity_spec.py` and `tools/compare_media_library_parity.py` lock image/attachment/miniprogram list shapes.
+- `aicrm_next/media_library/parity_spec.py` and `experiments/ai_crm_next/tools/compare_media_library_parity.py` lock image/attachment/miniprogram list shapes.
 
 This slice remains `partial`, not a production material-storage implementation.

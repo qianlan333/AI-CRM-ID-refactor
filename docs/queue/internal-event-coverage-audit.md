@@ -106,10 +106,10 @@ families.
 
 1. Direct `requests.post` / HTTP calls not through `external_effect_job`:
    - Found 7 direct HTTP call sites, all in adapter/client layers:
-     `channel_entry/wecom_adapter.py`, `commerce/wechat_pay_client.py`,
-     `commerce/wechat_shop_client.py`,
-     `integration_gateway/wecom_customer_group_client.py`, and
-     `integration_gateway/wecom_media_upload_client.py`.
+     `aicrm_next/channel_entry/wecom_adapter.py`, `aicrm_next/commerce/wechat_pay_client.py`,
+     `aicrm_next/commerce/wechat_shop_client.py`,
+     `aicrm_next/integration_gateway/wecom_customer_group_client.py`, and
+     `aicrm_next/integration_gateway/wecom_media_upload_client.py`.
    - No scattered webhook `requests.post` was found in business write paths.
    - Risk remains P1 for payment/refund and WeCom clients if callers bypass
      External Effects or explicit guards.

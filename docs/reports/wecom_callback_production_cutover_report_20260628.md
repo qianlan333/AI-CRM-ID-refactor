@@ -72,7 +72,7 @@
    - Deploy smoke：`/tmp/wecom-callback-deploy-smoke-after-source-fix.json`，结果 `ok=true`
    - 公网状态：`/tmp/wecom-callback-public-state-after-source-fix.json`，结果 `ok=true`
    - Readiness：`/tmp/wecom-callback-readiness-after-source-fix.json`，`ready_for_production_cutover=true`、`ready_for_production_completion=false`
-7. 目标覆盖检查：`tmp/wecom_callback_cutover/objective-coverage-after-source-fix.json`
+7. 目标覆盖检查：`temporary evidence output (objective-coverage-after-source-fix.json)`
    - `local_contract_ready=true`
    - `production_completion_ready=false`
    - 结论：当前满足“生产 cutover 可运行与页面恢复”，不满足目标文件定义的“永久修复最终完成”
@@ -92,7 +92,7 @@
    - `/tmp/wecom-callback-final-completion-20260628T032420Z/wecom-callback-readiness-final.json`
    - `ok=true`、`ready_for_production_cutover=true`、`ready_for_production_completion=true`、`warnings=[]`
 12. 最终目标覆盖：
-   - `tmp/wecom_callback_cutover/final_completion_20260628T032420Z/objective-coverage-final.json`
+   - `temporary evidence output (objective-coverage-final.json)`
    - `ok=true`、`local_contract_ready=true`、`production_completion_ready=true`
 13. nginx `sites-enabled` 历史备份 include 风险清理：
    - 已将 5 个 `.bak-*` 普通文件从 `/etc/nginx/sites-enabled` 移动到 `/etc/nginx/backups/codex-sites-enabled-bak-risk-20260628T113730/`

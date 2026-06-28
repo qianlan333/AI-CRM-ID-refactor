@@ -62,7 +62,7 @@ These flags were not written to production config and were not committed as a re
 | prior Batch 1 rehearsal | `/tmp/gray_rehearsal_batch_1_media_readonly_audit.json` | `GO` |
 | Media parity input | `/tmp/media_parity_after_canary_plan.json` | PASS |
 | Media smoke input | `/tmp/media_gray_smoke_after_canary_plan.json` | PASS |
-| screenshot baseline | `artifacts/frontend_screenshots/route_status.json` | Media pages present and passing |
+| screenshot baseline | `historical removed reference (route_status.json)` | Media pages present and passing |
 
 ## Canary Smoke Result
 
@@ -73,7 +73,7 @@ AICRM_NEXT_ROUTE_MEDIA_READONLY=true \
 AICRM_NEXT_ROUTE_MEDIA_WRITES=false \
 AICRM_NEXT_EXTERNAL_CLOUD_STORAGE=false \
 AICRM_NEXT_EXTERNAL_WECOM_MEDIA=false \
-.venv/bin/python tools/media_library_gray_smoke.py \
+.venv/bin/python experiments/ai_crm_next/tools/media_library_gray_smoke.py \
   --next-testclient \
   --output-md /tmp/media_gray_smoke_staging_simulated_canary.md \
   --output-json /tmp/media_gray_smoke_staging_simulated_canary.json
@@ -95,7 +95,7 @@ Result: PASS.
 Command:
 
 ```bash
-.venv/bin/python tools/compare_media_library_parity.py \
+.venv/bin/python experiments/ai_crm_next/tools/compare_media_library_parity.py \
   --old-fixture-dir tests/fixtures/old_media_library \
   --next-testclient \
   --output-md /tmp/media_parity_after_canary_execute.md \

@@ -22,16 +22,16 @@ Run all six parity tools:
 
 | batch | required smoke | required parity | dual-run |
 | --- | --- | --- | --- |
-| Batch 1 Media Library readonly | `tools/media_library_gray_smoke.py --next-testclient` | Media parity | not required |
-| Batch 2 Product Management readonly | `tools/product_management_gray_smoke.py --next-testclient` | Commerce parity | not required |
-| Batch 3 Customer Read Model readonly | `tools/customer_read_model_gray_smoke.py --next-testclient` | Customer parity | old-base-url dual required before full gray |
-| Batch 4 User Ops readonly | `tools/user_ops_readonly_gray_smoke.py --next-testclient` | User Ops parity | old-base-url dual required before full gray |
-| Batch 5 Questionnaire readonly | `tools/questionnaire_readonly_gray_smoke.py --next-testclient` | Questionnaire parity | old-base-url dual recommended; accepted legacy drift allowed |
+| Batch 1 Media Library readonly | `experiments/ai_crm_next/tools/media_library_gray_smoke.py --next-testclient` | Media parity | not required |
+| Batch 2 Product Management readonly | `experiments/ai_crm_next/tools/product_management_gray_smoke.py --next-testclient` | Commerce parity | not required |
+| Batch 3 Customer Read Model readonly | `experiments/ai_crm_next/tools/customer_read_model_gray_smoke.py --next-testclient` | Customer parity | old-base-url dual required before full gray |
+| Batch 4 User Ops readonly | `experiments/ai_crm_next/tools/user_ops_readonly_gray_smoke.py --next-testclient` | User Ops parity | old-base-url dual required before full gray |
+| Batch 5 Questionnaire readonly | `experiments/ai_crm_next/tools/questionnaire_readonly_gray_smoke.py --next-testclient` | Questionnaire parity | old-base-url dual recommended; accepted legacy drift allowed |
 | Batch 6 Automation readonly | retired | retired | old automation_program/runtime-v2 parity and smoke tooling removed; `/admin/automation-conversion` is AI Audience |
 
 ## Frontend Screenshot Route Check
 
-Confirm `docs/frontend_screenshot_baseline.md` includes the selected batch page routes and the latest route status remains `200`.
+Confirm `experiments/ai_crm_next/docs/frontend_screenshot_baseline.md` includes the selected batch page routes and the latest route status remains `200`.
 
 ## Safety Checks
 
@@ -51,7 +51,7 @@ Confirm `docs/frontend_screenshot_baseline.md` includes the selected batch page 
 Before any production-like route flag change, run:
 
 ```bash
-.venv/bin/python tools/run_gray_rehearsal_batch.py \
+.venv/bin/python experiments/ai_crm_next/tools/run_gray_rehearsal_batch.py \
   --batch media_readonly \
   --next-testclient \
   --output-md /tmp/gray_rehearsal_batch_1_media_readonly.md \
@@ -72,7 +72,7 @@ Required result:
 Before a staging or production-like canary signoff, run:
 
 ```bash
-.venv/bin/python tools/check_batch_1_media_canary_readiness.py \
+.venv/bin/python experiments/ai_crm_next/tools/check_batch_1_media_canary_readiness.py \
   --media-smoke-json /tmp/media_gray_smoke_after_canary_plan.json \
   --media-parity-json /tmp/media_parity_after_canary_plan.json \
   --batch-rehearsal-json /tmp/gray_rehearsal_batch_1_media_readonly_audit.json \

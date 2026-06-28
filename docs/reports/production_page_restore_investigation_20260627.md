@@ -57,8 +57,8 @@ Public probes:
 | `GET /health` | HTTP 200, about 0.20s |
 | `GET /sidebar/bind-mobile` | HTTP 200, about 0.10s |
 | `GET /admin/automation-conversion` | HTTP 302, about 0.09s; expected unauthenticated redirect |
-| `GET /static/sidebar_workbench/sidebar_workbench.js` | HTTP 200 |
-| `GET /static/sidebar_workbench/sidebar_workbench.css` | HTTP 200 |
+| `GET aicrm_next/frontend_compat/static/sidebar_workbench/sidebar_workbench.js` | HTTP 200 |
+| `GET aicrm_next/frontend_compat/static/sidebar_workbench/sidebar_workbench.css` | HTTP 200 |
 
 Follow-up public probes at 2026-06-27 16:38 CST:
 

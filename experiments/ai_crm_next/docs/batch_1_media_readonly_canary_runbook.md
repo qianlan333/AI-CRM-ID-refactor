@@ -15,7 +15,7 @@ This runbook is for staging or production-like canary preparation. It is not a p
 3. Run six parity tools.
 4. Run Media parity.
    ```bash
-   .venv/bin/python tools/compare_media_library_parity.py \
+   .venv/bin/python experiments/ai_crm_next/tools/compare_media_library_parity.py \
      --old-fixture-dir tests/fixtures/old_media_library \
      --next-testclient \
      --output-md /tmp/media_parity_after_canary_plan.md \
@@ -23,17 +23,17 @@ This runbook is for staging or production-like canary preparation. It is not a p
    ```
 5. Run Media gray smoke.
    ```bash
-   .venv/bin/python tools/media_library_gray_smoke.py \
+   .venv/bin/python experiments/ai_crm_next/tools/media_library_gray_smoke.py \
      --next-testclient \
      --output-md /tmp/media_gray_smoke_after_canary_plan.md \
      --output-json /tmp/media_gray_smoke_after_canary_plan.json
    ```
 6. Confirm screenshot baseline.
-   - `docs/frontend_screenshot_baseline.md`
-   - `artifacts/frontend_screenshots/route_status.json`
+   - `experiments/ai_crm_next/docs/frontend_screenshot_baseline.md`
+   - `historical removed reference (route_status.json)`
 7. Confirm Batch 1 rehearsal report.
    - `/tmp/gray_rehearsal_batch_1_media_readonly_audit.json`
-   - `docs/gray_rehearsal_batch_1_media_readonly.md`
+   - `experiments/ai_crm_next/docs/gray_rehearsal_batch_1_media_readonly.md`
 8. Confirm dry-run route flags.
    - `AICRM_NEXT_ROUTE_MEDIA_READONLY=true`
    - `AICRM_NEXT_ROUTE_MEDIA_WRITES=false`
@@ -51,7 +51,7 @@ This runbook is for staging or production-like canary preparation. It is not a p
 7. Confirm screenshot baseline route status.
 8. Generate readiness report.
    ```bash
-   .venv/bin/python tools/check_batch_1_media_canary_readiness.py \
+   .venv/bin/python experiments/ai_crm_next/tools/check_batch_1_media_canary_readiness.py \
      --media-smoke-json /tmp/media_gray_smoke_after_canary_plan.json \
      --media-parity-json /tmp/media_parity_after_canary_plan.json \
      --batch-rehearsal-json /tmp/gray_rehearsal_batch_1_media_readonly_audit.json \

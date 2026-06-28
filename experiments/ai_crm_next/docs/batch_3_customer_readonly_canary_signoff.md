@@ -1,6 +1,6 @@
 # Batch 3 Customer Read Model Readonly Canary Signoff Draft
 
-This signoff draft is based on `docs/gray_release_signoff_template.md`. It records staging-simulated evidence only and does not approve production rollout.
+This signoff draft is based on `experiments/ai_crm_next/docs/gray_release_signoff_template.md`. It records staging-simulated evidence only and does not approve production rollout.
 
 | field | value |
 | --- | --- |
@@ -18,7 +18,7 @@ This signoff draft is based on `docs/gray_release_signoff_template.md`. It recor
 | parity result | `/tmp/customer_parity_batch_3.json` |
 | readonly dual-run result | `/tmp/readonly_dual_run_batch_3_customer.json` |
 | readiness result | `/tmp/batch_3_customer_canary_readiness.json` |
-| screenshot baseline link | `artifacts/frontend_screenshots/route_status.json` |
+| screenshot baseline link | `historical removed reference (route_status.json)` |
 | sample external_userid | `external_user_masked_001` |
 | rollback owner | old Flask |
 | rollback instruction | `AICRM_NEXT_ROUTE_CUSTOMER_READONLY=false` |

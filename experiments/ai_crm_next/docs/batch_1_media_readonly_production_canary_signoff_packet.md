@@ -43,15 +43,15 @@ Excluded routes and operations:
 
 | evidence | path / status |
 | --- | --- |
-| production canary approval package | `docs/production_canary_approval_package.md` |
-| Batch 1 canary plan | `docs/batch_1_media_readonly_canary_plan.md` |
-| Batch 1 canary execution report | `docs/batch_1_media_readonly_canary_execution_report.md` |
-| Batch 1 staging-simulated signoff draft | `docs/batch_1_media_readonly_canary_signoff.md` |
+| production canary approval package | `experiments/ai_crm_next/docs/production_canary_approval_package.md` |
+| Batch 1 canary plan | `experiments/ai_crm_next/docs/batch_1_media_readonly_canary_plan.md` |
+| Batch 1 canary execution report | `experiments/ai_crm_next/docs/batch_1_media_readonly_canary_execution_report.md` |
+| Batch 1 staging-simulated signoff draft | `experiments/ai_crm_next/docs/batch_1_media_readonly_canary_signoff.md` |
 | media parity report | `/tmp/media_parity_after_canary_execute.json` |
 | media gray smoke report | `/tmp/media_gray_smoke_staging_simulated_canary.json` |
 | production approval checker report | `/tmp/production_canary_approval_media_readonly_audit.json` |
-| frontend screenshot baseline | `docs/frontend_screenshot_baseline.md`, `artifacts/frontend_screenshots/route_status.json` |
-| real PostgreSQL integration evidence | `docs/real_postgres_integration_run.md` |
+| frontend screenshot baseline | `experiments/ai_crm_next/docs/frontend_screenshot_baseline.md`, `historical removed reference (route_status.json)` |
+| real PostgreSQL integration evidence | `experiments/ai_crm_next/docs/real_postgres_integration_run.md` |
 
 ## D. Entry Criteria
 

@@ -21,12 +21,12 @@ Or:
 
 ```bash
 AICRM_NEXT_TEST_DATABASE_URL=postgresql+psycopg://user:pass@127.0.0.1:5432/aicrm_next_test \
-  scripts/run_postgres_integration_tests.sh
+  experiments/ai_crm_next/scripts/run_postgres_integration_tests.sh
 ```
 
 ## Safety Guard
 
-The root source package file `../../aicrm_next/shared/postgres_test_guard.py` validates `AICRM_NEXT_TEST_DATABASE_URL` before integration tests run.
+The root source package file `aicrm_next/shared/postgres_test_guard.py` validates `AICRM_NEXT_TEST_DATABASE_URL` before integration tests run.
 
 Rules:
 

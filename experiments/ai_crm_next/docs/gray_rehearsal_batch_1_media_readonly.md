@@ -12,7 +12,7 @@ This document records a local/test route-level gray rehearsal. It is not a produ
 | timestamp | 2026-05-20 18:50:47 CST |
 | old service target | not used in this Next TestClient rehearsal |
 | next target | AI-CRM Next TestClient |
-| signoff template | `docs/gray_release_signoff_template.md` |
+| signoff template | `experiments/ai_crm_next/docs/gray_release_signoff_template.md` |
 | rehearsal markdown report | `/tmp/gray_rehearsal_batch_1_media_readonly.md` |
 | rehearsal json report | `/tmp/gray_rehearsal_batch_1_media_readonly.json` |
 
@@ -54,18 +54,18 @@ Excluded routes:
 
 | check | result | notes |
 | --- | --- | --- |
-| route-level runbook available | PASS | `docs/route_level_gray_release_runbook.md` |
-| proxy template pseudo-only | PASS | `docs/route_level_proxy_template.md` |
-| signoff template available | PASS | `docs/gray_release_signoff_template.md` |
-| acceptance checklist available | PASS | `docs/gray_release_acceptance_checklist.md` |
-| frontend screenshot baseline | PASS | `artifacts/frontend_screenshots/route_status.json`, 14 routes passed, 14 PNG screenshots generated |
+| route-level runbook available | PASS | `experiments/ai_crm_next/docs/route_level_gray_release_runbook.md` |
+| proxy template pseudo-only | PASS | `experiments/ai_crm_next/docs/route_level_proxy_template.md` |
+| signoff template available | PASS | `experiments/ai_crm_next/docs/gray_release_signoff_template.md` |
+| acceptance checklist available | PASS | `experiments/ai_crm_next/docs/gray_release_acceptance_checklist.md` |
+| frontend screenshot baseline | PASS | `historical removed reference (route_status.json)`, 14 routes passed, 14 PNG screenshots generated |
 
 ## Smoke Results
 
 Command:
 
 ```bash
-.venv/bin/python tools/run_gray_rehearsal_batch.py \
+.venv/bin/python experiments/ai_crm_next/tools/run_gray_rehearsal_batch.py \
   --batch media_readonly \
   --next-testclient \
   --output-md /tmp/gray_rehearsal_batch_1_media_readonly.md \
@@ -88,7 +88,7 @@ Result: PASS / `recommendation=GO`.
 Media parity was executed by the rehearsal tool with:
 
 ```bash
-.venv/bin/python tools/compare_media_library_parity.py \
+.venv/bin/python experiments/ai_crm_next/tools/compare_media_library_parity.py \
   --old-fixture-dir tests/fixtures/old_media_library \
   --next-testclient \
   --output-md /tmp/gray_rehearsal_batch_1_media_readonly.media_parity.md \
@@ -99,8 +99,8 @@ Result: PASS.
 
 ## Screenshot Baseline Reference
 
-- `docs/frontend_screenshot_baseline.md`
-- `artifacts/frontend_screenshots/route_status.json`
+- `experiments/ai_crm_next/docs/frontend_screenshot_baseline.md`
+- `historical removed reference (route_status.json)`
 - required Media routes: `/admin/image-library`, `/admin/attachment-library`, `/admin/miniprogram-library`
 - missing required routes: none
 - failed required routes: none

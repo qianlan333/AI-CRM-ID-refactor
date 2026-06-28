@@ -15,7 +15,7 @@ This runbook is for staging or production-like canary preparation/execution. It 
 3. Run six parity tools.
 4. Run Customer parity.
    ```bash
-   .venv/bin/python tools/compare_customer_read_model_parity.py \
+   .venv/bin/python experiments/ai_crm_next/tools/compare_customer_read_model_parity.py \
      --old-fixture-dir tests/fixtures/old_customer_read_model \
      --next-testclient \
      --output-md /tmp/customer_parity_batch_3.md \
@@ -23,7 +23,7 @@ This runbook is for staging or production-like canary preparation/execution. It 
    ```
 5. Run Customer gray smoke in dual mode.
    ```bash
-   .venv/bin/python tools/customer_read_model_gray_smoke.py \
+   .venv/bin/python experiments/ai_crm_next/tools/customer_read_model_gray_smoke.py \
      --old-base-url http://127.0.0.1:5001 \
      --next-testclient \
      --output-md /tmp/customer_gray_smoke_batch_3.md \
@@ -31,7 +31,7 @@ This runbook is for staging or production-like canary preparation/execution. It 
    ```
 6. Run full readonly dual-run with customer sample coverage.
    ```bash
-   .venv/bin/python tools/readonly_http_dual_run.py \
+   .venv/bin/python experiments/ai_crm_next/tools/readonly_http_dual_run.py \
      --old-base-url http://127.0.0.1:5001 \
      --next-testclient \
      --scope customer,user_ops \
@@ -39,7 +39,7 @@ This runbook is for staging or production-like canary preparation/execution. It 
      --output-json /tmp/readonly_dual_run_batch_3_customer.json
    ```
 7. Confirm screenshot baseline includes `/admin/customers`.
-8. Confirm real PostgreSQL integration evidence exists in `docs/real_postgres_integration_run.md`.
+8. Confirm real PostgreSQL integration evidence exists in `experiments/ai_crm_next/docs/real_postgres_integration_run.md`.
 9. Confirm route flags dry-run:
    - `AICRM_NEXT_ROUTE_CUSTOMER_READONLY=true`
    - `AICRM_NEXT_ROUTE_CUSTOMER_WRITES=false`

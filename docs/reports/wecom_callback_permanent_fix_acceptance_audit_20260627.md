@@ -152,7 +152,7 @@ is locally complete enough to run inside an approved production window.
 | Phase 2 | Callback HTTP route only verifies/decrypts/enqueues/ACKs | `aicrm_next/channel_entry/api.py`, `tests/test_wecom_callback_inbox.py` | Locally complete |
 | Phase 3 | WeCom callback worker with retry/dead-letter and targeted dispatch | `aicrm_next/channel_entry/inbox.py`, `scripts/run_wecom_callback_inbox_worker.py`, worker service/timer, `dispatch_one(inbox_id)` tests | Locally complete |
 | Phase 4 | Business handling emits internal events outside HTTP path | Existing `process_channel_entry` emits `channel_entry.entered`; worker invokes it after claim | Locally complete for channel-entry flow |
-| Phase 5 | Real outbound effects remain in `external_effect_job`; realtime wakeup is gated | `external_effects/realtime.py`, channel-entry welcome/tag/profile wakeups, adapter-exception retry handling, stale dispatching reclaim, realtime tests | Locally complete; production gates still disabled unless explicitly enabled |
+| Phase 5 | Real outbound effects remain in `external_effect_job`; realtime wakeup is gated | `aicrm_next/platform_foundation/external_effects/realtime.py`, channel-entry welcome/tag/profile wakeups, adapter-exception retry handling, stale dispatching reclaim, realtime tests | Locally complete; production gates still disabled unless explicitly enabled |
 | Phase 6 | Callback runtime isolated from admin/sidebar runtime with route-specific backpressure | 5002 ingress app, systemd asset, deploy workflow install/start checks, nginx template, cutover checker, ingress runtime tests | Assets ready; production cutover not complete |
 | Phase 7 | Admin metrics, replay, dead-letter/detail, processing chain | `/admin/webhook-inbox`, `GET /api/admin/webhook-inbox/{id}`, `POST /api/admin/webhook-inbox/{id}/dispatch`, processing-chain tests | Locally complete |
 
@@ -539,7 +539,7 @@ cd /home/ubuntu/极简 crm
 source /home/ubuntu/venvs/openclaw/bin/activate
 set -a && source /home/ubuntu/.openclaw-wecom-pg.env && set +a
 python scripts/ops/check_wecom_callback_objective_coverage.py \
-  --readiness-file /path/to/wecom-callback-readiness.json
+  --readiness-file example output path (wecom-callback-readiness.json)
 ```
 
 Expected after full production completion: `local_contract_ready=true`,

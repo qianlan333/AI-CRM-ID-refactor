@@ -65,7 +65,7 @@ These flags were not written to production config and were not committed as a re
 | Product gray smoke | `/tmp/product_management_gray_smoke_batch_2.json` | PASS |
 | Commerce parity | `/tmp/commerce_parity_batch_2_product.json` | PASS |
 | readiness checker | `/tmp/batch_2_product_canary_readiness.json` | `canary_plan_ready` / `GO_TO_STAGING_CANARY_SIGNOFF` |
-| screenshot baseline | `artifacts/frontend_screenshots/route_status.json` | Product admin and public page present and passing |
+| screenshot baseline | `historical removed reference (route_status.json)` | Product admin and public page present and passing |
 
 ## Canary Smoke Result
 
@@ -77,7 +77,7 @@ AICRM_NEXT_ROUTE_PRODUCT_WRITES=false \
 AICRM_NEXT_ROUTE_CHECKOUT=false \
 AICRM_NEXT_EXTERNAL_WECHAT_PAY=false \
 AICRM_NEXT_EXTERNAL_ALIPAY=false \
-.venv/bin/python tools/product_management_gray_smoke.py \
+.venv/bin/python experiments/ai_crm_next/tools/product_management_gray_smoke.py \
   --next-testclient \
   --output-md /tmp/product_management_gray_smoke_batch_2.md \
   --output-json /tmp/product_management_gray_smoke_batch_2.json
@@ -90,7 +90,7 @@ Result: PASS.
 Command:
 
 ```bash
-.venv/bin/python tools/compare_commerce_parity.py \
+.venv/bin/python experiments/ai_crm_next/tools/compare_commerce_parity.py \
   --old-fixture-dir tests/fixtures/old_commerce \
   --next-testclient \
   --output-md /tmp/commerce_parity_batch_2_product.md \

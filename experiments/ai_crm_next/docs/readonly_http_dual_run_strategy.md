@@ -14,7 +14,7 @@ Fixture parity proves contract shape against captured examples. Readonly HTTP du
 ## Tool
 
 ```bash
-.venv/bin/python tools/readonly_http_dual_run.py \
+.venv/bin/python experiments/ai_crm_next/tools/readonly_http_dual_run.py \
   --old-base-url http://127.0.0.1:5001 \
   --next-testclient \
   --scope customer,user_ops \
@@ -135,4 +135,4 @@ Do not commit full old-service responses into the repository. Reports should be 
 
 ## Current Status
 
-Readonly HTTP dual-run tooling is ready for Customer Read Model and User Ops. The first real local old Flask run is archived in `docs/real_readonly_http_dual_run.md`; old-only missing `激活待录入` is classified as legacy drift, not a Next blocker. Old unreachable and Next missing required contract fields remain blockers.
+Readonly HTTP dual-run tooling is ready for Customer Read Model and User Ops. The first real local old Flask run is archived in `experiments/ai_crm_next/docs/real_readonly_http_dual_run.md`; old-only missing `激活待录入` is classified as legacy drift, not a Next blocker. Old unreachable and Next missing required contract fields remain blockers.

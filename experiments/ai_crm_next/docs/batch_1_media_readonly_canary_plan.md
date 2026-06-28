@@ -50,10 +50,10 @@ Excluded routes:
 | --- | --- |
 | ordinary pytest pass | `.venv/bin/python -m pytest -q` |
 | six parity pass | all `tools/compare_*_parity.py` reports |
-| Media parity pass | `tools/compare_media_library_parity.py` |
-| Media gray smoke pass | `tools/media_library_gray_smoke.py --next-testclient` |
-| PNG screenshot baseline pass | `artifacts/frontend_screenshots/route_status.json` |
-| Batch 1 rehearsal report GO | `tools/run_gray_rehearsal_batch.py --batch media_readonly` |
+| Media parity pass | `experiments/ai_crm_next/tools/compare_media_library_parity.py` |
+| Media gray smoke pass | `experiments/ai_crm_next/tools/media_library_gray_smoke.py --next-testclient` |
+| PNG screenshot baseline pass | `historical removed reference (route_status.json)` |
+| Batch 1 rehearsal report GO | `experiments/ai_crm_next/tools/run_gray_rehearsal_batch.py --batch media_readonly` |
 | no old production entrypoint dirty | `git status --short --untracked-files=all` review |
 | no production config modified | status scan and side-effect report |
 
@@ -80,7 +80,7 @@ Excluded routes:
 ## Readiness Command
 
 ```bash
-.venv/bin/python tools/check_batch_1_media_canary_readiness.py \
+.venv/bin/python experiments/ai_crm_next/tools/check_batch_1_media_canary_readiness.py \
   --media-smoke-json /tmp/media_gray_smoke_after_canary_plan.json \
   --media-parity-json /tmp/media_parity_after_canary_plan.json \
   --batch-rehearsal-json /tmp/gray_rehearsal_batch_1_media_readonly_audit.json \

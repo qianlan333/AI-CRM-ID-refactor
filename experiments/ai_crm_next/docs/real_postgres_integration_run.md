@@ -32,7 +32,7 @@ Runner command:
 
 ```bash
 AICRM_NEXT_TEST_DATABASE_URL=postgresql+psycopg://aicrm_next_test:***@127.0.0.1:5432/aicrm_next_test \
-  scripts/run_postgres_integration_tests.sh
+  experiments/ai_crm_next/scripts/run_postgres_integration_tests.sh
 ```
 
 Runner result:

@@ -68,15 +68,15 @@ These flags were not written to production config and were not committed as a re
 | Customer parity | `/tmp/customer_parity_batch_3.json` | PASS |
 | readonly dual-run | `/tmp/readonly_dual_run_batch_3_customer.json` | PASS |
 | readiness checker | `/tmp/batch_3_customer_canary_readiness.json` | `canary_plan_ready` / `GO_TO_STAGING_CANARY_SIGNOFF` |
-| screenshot baseline | `artifacts/frontend_screenshots/route_status.json` | `/admin/customers` present and passing |
-| real PostgreSQL evidence | `docs/real_postgres_integration_run.md` | available |
+| screenshot baseline | `historical removed reference (route_status.json)` | `/admin/customers` present and passing |
+| real PostgreSQL evidence | `experiments/ai_crm_next/docs/real_postgres_integration_run.md` | available |
 
 ## Customer Gray Smoke Result
 
 Command:
 
 ```bash
-.venv/bin/python tools/customer_read_model_gray_smoke.py \
+.venv/bin/python experiments/ai_crm_next/tools/customer_read_model_gray_smoke.py \
   --old-base-url http://127.0.0.1:5001 \
   --next-testclient \
   --output-md /tmp/customer_gray_smoke_batch_3.md \
@@ -100,7 +100,7 @@ Result: PASS.
 Command:
 
 ```bash
-.venv/bin/python tools/readonly_http_dual_run.py \
+.venv/bin/python experiments/ai_crm_next/tools/readonly_http_dual_run.py \
   --old-base-url http://127.0.0.1:5001 \
   --next-testclient \
   --scope customer,user_ops \

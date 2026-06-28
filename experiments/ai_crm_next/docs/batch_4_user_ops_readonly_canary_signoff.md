@@ -1,6 +1,6 @@
 # Batch 4 User Ops Readonly Canary Signoff Draft
 
-This signoff draft is based on `docs/gray_release_signoff_template.md`. It records staging-simulated evidence only and does not approve production rollout.
+This signoff draft is based on `experiments/ai_crm_next/docs/gray_release_signoff_template.md`. It records staging-simulated evidence only and does not approve production rollout.
 
 | field | value |
 | --- | --- |
@@ -19,7 +19,7 @@ This signoff draft is based on `docs/gray_release_signoff_template.md`. It recor
 | readonly dual-run result | `/tmp/readonly_dual_run_batch_4_user_ops.json` |
 | readiness result | `/tmp/batch_4_user_ops_canary_readiness.json` |
 | legacy drift accepted | old overview missing `激活待录入`; Next satisfies current 8-card contract |
-| screenshot baseline link | `artifacts/frontend_screenshots/route_status.json` |
+| screenshot baseline link | `historical removed reference (route_status.json)` |
 | rollback owner | old Flask |
 | rollback instruction | `AICRM_NEXT_ROUTE_USER_OPS_READONLY=false` |
 | rollback status | dry-run only; no real route changed |

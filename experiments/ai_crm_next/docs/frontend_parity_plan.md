@@ -15,14 +15,14 @@ This slice copies the legacy frontend baseline into:
 
 Copied sources:
 
-- `wecom_ability_service/templates/admin_console/base.html`
-- `wecom_ability_service/templates/admin_console/customers.html`
-- `wecom_ability_service/templates/admin_console/customer_detail.html`
-- `wecom_ability_service/templates/admin_user_ops.html`
-- `wecom_ability_service/templates/admin_questionnaires.html`
-- `wecom_ability_service/templates/questionnaire_h5_page.html`
-- `wecom_ability_service/templates/questionnaire_h5_submitted.html`
-- `wecom_ability_service/templates/questionnaire_h5_result.html`
+- `historical retired wecom_ability_service reference (base.html)`
+- `aicrm_next/frontend_compat/templates/admin_console/customers.html`
+- `aicrm_next/frontend_compat/templates/admin_console/customer_detail.html`
+- `aicrm_next/frontend_compat/templates/admin_user_ops.html`
+- `aicrm_next/questionnaire/templates/admin_questionnaires.html`
+- `aicrm_next/frontend_compat/templates/questionnaire_h5_page.html`
+- `aicrm_next/frontend_compat/templates/questionnaire_h5_submitted.html`
+- `aicrm_next/frontend_compat/templates/questionnaire_h5_result.html`
 - `wecom_ability_service/templates/admin_console/*`
 - `wecom_ability_service/static/admin_console/*`
 
@@ -52,7 +52,7 @@ The copied files are the baseline. Any future edits must be limited to compatibi
 - Preserve old path names whenever the frontend calls JSON APIs.
 - Preserve old response envelopes and core field names.
 - Add FastAPI adapters when new application DTOs differ from legacy JSON.
-- Keep frontend shell compatibility in `frontend_compat/legacy_routes.py` while copied templates are being wired one page at a time.
+- Keep frontend shell compatibility in `historical removed reference (legacy_routes.py)` while copied templates are being wired one page at a time.
 - Do not import old Flask services or old backend packages.
 
 Current legacy route support:
@@ -105,7 +105,7 @@ Current Questionnaire adapter support:
 
 Questionnaire status:
 
-- The admin questionnaire page uses the copied legacy `admin_console/questionnaires.html` template with a minimal `questionnaire_payload` context adapter.
+- The admin questionnaire page uses the copied legacy `aicrm_next/questionnaire/templates/admin_console/questionnaires.html` template with a minimal `questionnaire_payload` context adapter.
 - The legacy root editor template and public H5 templates are copied into `frontend_compat/templates/` for parity baseline.
 - The backend adapter is `partial`: it supports fixture-backed admin list/detail/create/update/enable/disable/delete/export/debug contracts, public H5 get/submit/result contracts, and fake OAuth start/callback contracts.
 - Real WeChat OAuth, real WeCom tagging/contact calls, external webhook push, and production database persistence are not connected.
@@ -139,9 +139,9 @@ Current first-slice support:
 
 Parity status:
 
-- WeChat transaction page uses the copied `admin_console/wechat_pay_transactions.html` template with a minimal context adapter.
-- Image library uses the copied `admin_console/image_library.html` template and static dependencies.
-- Mini-program library uses the copied `admin_console/miniprogram_library.html` template and static dependencies.
+- WeChat transaction page uses the copied `aicrm_next/frontend_compat/templates/admin_console/wechat_pay_transactions.html` template with a minimal context adapter.
+- Image library uses the copied `aicrm_next/frontend_compat/templates/admin_console/image_library.html` template and static dependencies.
+- Mini-program library uses the copied `aicrm_next/frontend_compat/templates/admin_console/miniprogram_library.html` template and static dependencies.
 - Product management, Alipay transactions, and attachment library currently use the copied admin shell partial adapter until exact old templates are available.
 
 No commerce or media page may be redesigned in this migration. The new backend must keep supporting old labels, filters, table density, and action entry points through compatible APIs.
@@ -150,10 +150,10 @@ No commerce or media page may be redesigned in this migration. The new backend m
 
 Current evidence:
 
-- Route manifest: `docs/frontend_route_manifest.md`
-- Baseline report: `docs/frontend_screenshot_baseline.md`
-- Tool: `tools/capture_frontend_screenshots.py`
-- Smoke test: `tests/test_frontend_route_smoke.py`
+- Route manifest: `experiments/ai_crm_next/docs/frontend_route_manifest.md`
+- Baseline report: `experiments/ai_crm_next/docs/frontend_screenshot_baseline.md`
+- Tool: `experiments/ai_crm_next/tools/capture_frontend_screenshots.py`
+- Smoke test: `experiments/ai_crm_next/tests/test_frontend_route_smoke.py`
 
 Latest local result:
 

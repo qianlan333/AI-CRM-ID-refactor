@@ -51,11 +51,11 @@ This plan prepares a staging or production-like canary for Batch 4 User Ops read
 | --- | --- |
 | ordinary pytest pass | `.venv/bin/python -m pytest -q` |
 | six parity pass | all `tools/compare_*_parity.py` reports |
-| User Ops parity pass | `tools/compare_user_ops_parity.py` |
-| User Ops readonly gray smoke pass | `tools/user_ops_readonly_gray_smoke.py --old-base-url ... --next-testclient` |
-| User Ops readonly dual mode pass | `tools/readonly_http_dual_run.py --scope customer,user_ops` with only accepted legacy drift |
-| real PostgreSQL integration evidence available | `docs/real_postgres_integration_run.md` |
-| PNG screenshot baseline pass | `artifacts/frontend_screenshots/route_status.json` includes `/admin/user-ops/ui` |
+| User Ops parity pass | `experiments/ai_crm_next/tools/compare_user_ops_parity.py` |
+| User Ops readonly gray smoke pass | `experiments/ai_crm_next/tools/user_ops_readonly_gray_smoke.py --old-base-url ... --next-testclient` |
+| User Ops readonly dual mode pass | `experiments/ai_crm_next/tools/readonly_http_dual_run.py --scope customer,user_ops` with only accepted legacy drift |
+| real PostgreSQL integration evidence available | `experiments/ai_crm_next/docs/real_postgres_integration_run.md` |
+| PNG screenshot baseline pass | `historical removed reference (route_status.json)` includes `/admin/user-ops/ui` |
 | no old production entrypoint dirty | `git status --short --untracked-files=all` review |
 | no production config modified | deploy/production config status scan and side-effect report |
 | accepted legacy drift documented | old missing `激活待录入`; Next satisfies current 8-card contract |
@@ -90,7 +90,7 @@ This plan prepares a staging or production-like canary for Batch 4 User Ops read
 ## Readiness Command
 
 ```bash
-.venv/bin/python tools/check_batch_4_user_ops_canary_readiness.py \
+.venv/bin/python experiments/ai_crm_next/tools/check_batch_4_user_ops_canary_readiness.py \
   --user-ops-smoke-json /tmp/user_ops_readonly_gray_smoke_batch_4.json \
   --user-ops-parity-json /tmp/user_ops_parity_batch_4.json \
   --readonly-dual-json /tmp/readonly_dual_run_batch_4_user_ops.json \

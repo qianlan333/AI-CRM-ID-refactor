@@ -9,7 +9,7 @@ Route-level frontend smoke and screenshot baseline verifies that AI-CRM Next sti
 ## Command
 
 ```bash
-.venv/bin/python tools/capture_frontend_screenshots.py \
+.venv/bin/python experiments/ai_crm_next/tools/capture_frontend_screenshots.py \
   --output-dir artifacts/frontend_screenshots \
   --mode testclient \
   --output-md /tmp/aicrm_next_frontend_route_screenshot_baseline.md \
@@ -20,8 +20,8 @@ Generated reports:
 
 - Markdown report: `/tmp/aicrm_next_frontend_route_screenshot_baseline.md`
 - JSON report: `/tmp/aicrm_next_frontend_route_screenshot_baseline.json`
-- Route manifest artifact: `artifacts/frontend_screenshots/manifest.json`
-- Route status artifact: `artifacts/frontend_screenshots/route_status.json`
+- Route manifest artifact: `historical removed reference (manifest.json)`
+- Route status artifact: `historical removed reference (route_status.json)`
 - HTML snapshots: `artifacts/frontend_screenshots/html/*.html`
 - PNG screenshots: `artifacts/frontend_screenshots/png/*.png`
 

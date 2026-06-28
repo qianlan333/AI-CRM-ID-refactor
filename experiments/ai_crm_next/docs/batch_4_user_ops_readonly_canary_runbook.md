@@ -15,7 +15,7 @@ This runbook is for staging or production-like canary preparation/execution. It 
 3. Run six parity tools.
 4. Run User Ops parity.
    ```bash
-   .venv/bin/python tools/compare_user_ops_parity.py \
+   .venv/bin/python experiments/ai_crm_next/tools/compare_user_ops_parity.py \
      --old-fixture-dir tests/fixtures/old_user_ops \
      --next-testclient \
      --output-md /tmp/user_ops_parity_batch_4.md \
@@ -23,7 +23,7 @@ This runbook is for staging or production-like canary preparation/execution. It 
    ```
 5. Run User Ops readonly gray smoke.
    ```bash
-   .venv/bin/python tools/user_ops_readonly_gray_smoke.py \
+   .venv/bin/python experiments/ai_crm_next/tools/user_ops_readonly_gray_smoke.py \
      --old-base-url http://127.0.0.1:5001 \
      --next-testclient \
      --output-md /tmp/user_ops_readonly_gray_smoke_batch_4.md \
@@ -31,7 +31,7 @@ This runbook is for staging or production-like canary preparation/execution. It 
    ```
 6. Run readonly dual-run if old Flask is available.
    ```bash
-   .venv/bin/python tools/readonly_http_dual_run.py \
+   .venv/bin/python experiments/ai_crm_next/tools/readonly_http_dual_run.py \
      --old-base-url http://127.0.0.1:5001 \
      --next-testclient \
      --scope customer,user_ops \

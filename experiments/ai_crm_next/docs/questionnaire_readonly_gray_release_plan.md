@@ -52,9 +52,9 @@ This plan prepares Questionnaire admin/public readonly routes for a future route
 | condition | required evidence |
 | --- | --- |
 | Ordinary pytest pass | `.venv/bin/python -m pytest -q` |
-| Questionnaire parity pass | `tools/compare_questionnaire_parity.py --next-testclient` |
-| Frontend smoke pass | `tests/test_frontend_route_smoke.py` and screenshot baseline |
-| Screenshot baseline pass | `docs/frontend_screenshot_baseline.md` and `artifacts/frontend_screenshots/` |
+| Questionnaire parity pass | `experiments/ai_crm_next/tools/compare_questionnaire_parity.py --next-testclient` |
+| Frontend smoke pass | `experiments/ai_crm_next/tests/test_frontend_route_smoke.py` and screenshot baseline |
+| Screenshot baseline pass | `experiments/ai_crm_next/docs/frontend_screenshot_baseline.md` and `artifacts/frontend_screenshots/` |
 | No old backend imports | boundary scan over `experiments/ai_crm_next` |
 | No old write endpoints | gray smoke side-effect safety flags remain false |
 | No real OAuth / WeCom / webhook calls | fake/disabled adapters only |
@@ -62,7 +62,7 @@ This plan prepares Questionnaire admin/public readonly routes for a future route
 
 ## Local Dual-Run Evidence
 
-2026-05-20 local old Flask evidence uses the masked sample created by `tools/seed_old_flask_questionnaire_sample.py` in `aicrm_old_flask_test`.
+2026-05-20 local old Flask evidence uses the masked sample created by `experiments/ai_crm_next/tools/seed_old_flask_questionnaire_sample.py` in `aicrm_old_flask_test`.
 
 Verified old readonly routes:
 

@@ -49,9 +49,9 @@ This plan prepares a staging or production-like canary for Batch 2 Product Manag
 | --- | --- |
 | ordinary pytest pass | `.venv/bin/python -m pytest -q` |
 | six parity pass | all `tools/compare_*_parity.py` reports |
-| Commerce parity pass | `tools/compare_commerce_parity.py` |
-| Product gray smoke pass | `tools/product_management_gray_smoke.py --next-testclient` |
-| PNG screenshot baseline pass | `artifacts/frontend_screenshots/route_status.json` includes product admin and public product routes |
+| Commerce parity pass | `experiments/ai_crm_next/tools/compare_commerce_parity.py` |
+| Product gray smoke pass | `experiments/ai_crm_next/tools/product_management_gray_smoke.py --next-testclient` |
+| PNG screenshot baseline pass | `historical removed reference (route_status.json)` includes product admin and public product routes |
 | Batch 1 rehearsal complete | Batch 1 Media readonly local/simulated evidence exists |
 | no old production entrypoint dirty | `git status --short --untracked-files=all` review |
 | no production config modified | deploy/production config status scan and side-effect report |
@@ -81,7 +81,7 @@ This plan prepares a staging or production-like canary for Batch 2 Product Manag
 ## Readiness Command
 
 ```bash
-.venv/bin/python tools/check_batch_2_product_canary_readiness.py \
+.venv/bin/python experiments/ai_crm_next/tools/check_batch_2_product_canary_readiness.py \
   --product-smoke-json /tmp/product_management_gray_smoke_batch_2.json \
   --commerce-parity-json /tmp/commerce_parity_batch_2_product.json \
   --output-md /tmp/batch_2_product_canary_readiness.md \

@@ -26,7 +26,7 @@ Smoke commands:
 
 ```bash
 .venv/bin/python -m pytest -q
-.venv/bin/python tools/capture_frontend_screenshots.py --output-dir artifacts/frontend_screenshots --mode testclient
+.venv/bin/python experiments/ai_crm_next/tools/capture_frontend_screenshots.py --output-dir artifacts/frontend_screenshots --mode testclient
 .venv/bin/python tools/readonly_http_dual_run.py --old-base-url http://127.0.0.1:5001 --next-testclient --scope customer,user_ops --output-md /tmp/aicrm_next_readonly_dual_run.md --output-json /tmp/aicrm_next_readonly_dual_run.json
 ```
 
@@ -118,8 +118,8 @@ Signoff required:
 
 Latest local rehearsal:
 
-- `docs/gray_rehearsal_batch_1_media_readonly.md`
-- `docs/gray_rehearsal_batch_1_route_flags.md`
+- `experiments/ai_crm_next/docs/gray_rehearsal_batch_1_media_readonly.md`
+- `experiments/ai_crm_next/docs/gray_rehearsal_batch_1_route_flags.md`
 - `/tmp/gray_rehearsal_batch_1_media_readonly.json`
 - status: PASS / local dry-run only
 - production config modified: false
@@ -129,19 +129,19 @@ Latest local rehearsal:
 
 Staging canary plan:
 
-- `docs/staging_canary_topology.md`
-- `docs/batch_1_media_readonly_canary_plan.md`
-- `docs/batch_1_media_readonly_canary_runbook.md`
-- `docs/batch_1_media_readonly_proxy_pseudo_config.md`
-- `tools/check_batch_1_media_canary_readiness.py`
+- `experiments/ai_crm_next/docs/staging_canary_topology.md`
+- `experiments/ai_crm_next/docs/batch_1_media_readonly_canary_plan.md`
+- `experiments/ai_crm_next/docs/batch_1_media_readonly_canary_runbook.md`
+- `experiments/ai_crm_next/docs/batch_1_media_readonly_proxy_pseudo_config.md`
+- `experiments/ai_crm_next/tools/check_batch_1_media_canary_readiness.py`
 - status: canary_plan_ready after the readiness checker passes
 - production traffic not cut
 - real cloud storage and WeCom media remain disabled
 
 Latest staging-simulated canary execution:
 
-- `docs/batch_1_media_readonly_canary_execution_report.md`
-- `docs/batch_1_media_readonly_canary_signoff.md`
+- `experiments/ai_crm_next/docs/batch_1_media_readonly_canary_execution_report.md`
+- `experiments/ai_crm_next/docs/batch_1_media_readonly_canary_signoff.md`
 - `/tmp/media_gray_smoke_staging_simulated_canary.json`
 - `/tmp/media_parity_after_canary_execute.json`
 - `/tmp/gray_release_media_readonly_staging_simulated_canary_report.json`
@@ -212,8 +212,8 @@ Signoff required:
 
 Latest staging-simulated canary execution:
 
-- `docs/batch_2_product_readonly_canary_execution_report.md`
-- `docs/batch_2_product_readonly_canary_signoff.md`
+- `experiments/ai_crm_next/docs/batch_2_product_readonly_canary_execution_report.md`
+- `experiments/ai_crm_next/docs/batch_2_product_readonly_canary_signoff.md`
 - `/tmp/product_management_gray_smoke_batch_2.json`
 - `/tmp/commerce_parity_batch_2_product.json`
 - `/tmp/batch_2_product_canary_readiness.json`
@@ -292,8 +292,8 @@ Signoff required:
 
 Latest staging-simulated canary execution:
 
-- `docs/batch_3_customer_readonly_canary_execution_report.md`
-- `docs/batch_3_customer_readonly_canary_signoff.md`
+- `experiments/ai_crm_next/docs/batch_3_customer_readonly_canary_execution_report.md`
+- `experiments/ai_crm_next/docs/batch_3_customer_readonly_canary_signoff.md`
 - `/tmp/customer_gray_smoke_batch_3.json`
 - `/tmp/customer_parity_batch_3.json`
 - `/tmp/readonly_dual_run_batch_3_customer.json`
@@ -378,13 +378,13 @@ Signoff required:
 Current Batch 4 simulated evidence:
 
 - docs:
-  - `docs/batch_4_user_ops_readonly_canary_plan.md`
-  - `docs/batch_4_user_ops_readonly_route_flags.md`
-  - `docs/batch_4_user_ops_readonly_canary_runbook.md`
-  - `docs/batch_4_user_ops_readonly_proxy_pseudo_config.md`
-  - `docs/batch_4_user_ops_readonly_canary_execution_report.md`
-  - `docs/batch_4_user_ops_readonly_canary_signoff.md`
-- readiness checker: `tools/check_batch_4_user_ops_canary_readiness.py`
+  - `experiments/ai_crm_next/docs/batch_4_user_ops_readonly_canary_plan.md`
+  - `experiments/ai_crm_next/docs/batch_4_user_ops_readonly_route_flags.md`
+  - `experiments/ai_crm_next/docs/batch_4_user_ops_readonly_canary_runbook.md`
+  - `experiments/ai_crm_next/docs/batch_4_user_ops_readonly_proxy_pseudo_config.md`
+  - `experiments/ai_crm_next/docs/batch_4_user_ops_readonly_canary_execution_report.md`
+  - `experiments/ai_crm_next/docs/batch_4_user_ops_readonly_canary_signoff.md`
+- readiness checker: `experiments/ai_crm_next/tools/check_batch_4_user_ops_canary_readiness.py`
 - mode: `staging_simulated_canary`
 - readiness: `canary_plan_ready`
 - production config modified: false
@@ -464,13 +464,13 @@ Signoff required:
 Current Batch 5 simulated evidence:
 
 - docs:
-  - `docs/batch_5_questionnaire_readonly_canary_plan.md`
-  - `docs/batch_5_questionnaire_readonly_route_flags.md`
-  - `docs/batch_5_questionnaire_readonly_canary_runbook.md`
-  - `docs/batch_5_questionnaire_readonly_proxy_pseudo_config.md`
-  - `docs/batch_5_questionnaire_readonly_canary_execution_report.md`
-  - `docs/batch_5_questionnaire_readonly_canary_signoff.md`
-- readiness checker: `tools/check_batch_5_questionnaire_canary_readiness.py`
+  - `experiments/ai_crm_next/docs/batch_5_questionnaire_readonly_canary_plan.md`
+  - `experiments/ai_crm_next/docs/batch_5_questionnaire_readonly_route_flags.md`
+  - `experiments/ai_crm_next/docs/batch_5_questionnaire_readonly_canary_runbook.md`
+  - `experiments/ai_crm_next/docs/batch_5_questionnaire_readonly_proxy_pseudo_config.md`
+  - `experiments/ai_crm_next/docs/batch_5_questionnaire_readonly_canary_execution_report.md`
+  - `experiments/ai_crm_next/docs/batch_5_questionnaire_readonly_canary_signoff.md`
+- readiness checker: `experiments/ai_crm_next/tools/check_batch_5_questionnaire_canary_readiness.py`
 - mode: `staging_simulated_canary`
 - readiness: `canary_plan_ready`
 - production config modified: false

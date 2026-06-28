@@ -53,11 +53,11 @@ This plan prepares a staging or production-like canary for Batch 3 Customer Read
 | --- | --- |
 | ordinary pytest pass | `.venv/bin/python -m pytest -q` |
 | six parity pass | all `tools/compare_*_parity.py` reports |
-| Customer parity pass | `tools/compare_customer_read_model_parity.py` |
-| Customer gray smoke pass | `tools/customer_read_model_gray_smoke.py --old-base-url ... --next-testclient` |
-| Customer full readonly dual-run pass | `tools/readonly_http_dual_run.py --scope customer,user_ops` with customer sample-dependent routes executed |
-| real PostgreSQL integration evidence available | `docs/real_postgres_integration_run.md` |
-| PNG screenshot baseline pass | `artifacts/frontend_screenshots/route_status.json` includes `/admin/customers` |
+| Customer parity pass | `experiments/ai_crm_next/tools/compare_customer_read_model_parity.py` |
+| Customer gray smoke pass | `experiments/ai_crm_next/tools/customer_read_model_gray_smoke.py --old-base-url ... --next-testclient` |
+| Customer full readonly dual-run pass | `experiments/ai_crm_next/tools/readonly_http_dual_run.py --scope customer,user_ops` with customer sample-dependent routes executed |
+| real PostgreSQL integration evidence available | `experiments/ai_crm_next/docs/real_postgres_integration_run.md` |
+| PNG screenshot baseline pass | `historical removed reference (route_status.json)` includes `/admin/customers` |
 | no old production entrypoint dirty | `git status --short --untracked-files=all` review |
 | no production config modified | deploy/production config status scan and side-effect report |
 | masked customer sample available | old test data includes `external_user_masked_001` or equivalent safe sample |
@@ -88,7 +88,7 @@ This plan prepares a staging or production-like canary for Batch 3 Customer Read
 ## Readiness Command
 
 ```bash
-.venv/bin/python tools/check_batch_3_customer_canary_readiness.py \
+.venv/bin/python experiments/ai_crm_next/tools/check_batch_3_customer_canary_readiness.py \
   --customer-smoke-json /tmp/customer_gray_smoke_batch_3.json \
   --customer-parity-json /tmp/customer_parity_batch_3.json \
   --readonly-dual-json /tmp/readonly_dual_run_batch_3_customer.json \

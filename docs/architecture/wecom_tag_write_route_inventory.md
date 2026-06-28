@@ -38,7 +38,7 @@ Lifecycle for exact write routes is `delete_status=deletion_locked` and `replace
 
 `aicrm_next/customer_tags/api.py` exposes `write_router` and registers exact write routes before `production compatibility router` in `aicrm_next/main.py`.
 
-`aicrm_next/production_compat/api.py` no longer registers WeCom tag read/write/sync exact or family fallback routes.
+`historical retired production_compat module` no longer registers WeCom tag read/write/sync exact or family fallback routes.
 
 `aicrm_next/customer_tags/commands.py` defines the write command shapes. `aicrm_next/customer_tags/admin_write.py` owns CommandBus dispatch, validation, idempotency, audit recording, production blocking, and response shape. `aicrm_next/customer_tags/write_repo.py` owns `WeComTagWriteRepository`, the local projection write fixture repository.
 

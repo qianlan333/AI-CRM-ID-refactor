@@ -15,7 +15,7 @@ This runbook is for staging or production-like canary preparation/execution. It 
 3. Run six parity tools.
 4. Run Questionnaire parity.
    ```bash
-   .venv/bin/python tools/compare_questionnaire_parity.py \
+   .venv/bin/python experiments/ai_crm_next/tools/compare_questionnaire_parity.py \
      --old-fixture-dir tests/fixtures/old_questionnaire \
      --next-testclient \
      --output-md /tmp/questionnaire_parity_batch_5.md \
@@ -23,7 +23,7 @@ This runbook is for staging or production-like canary preparation/execution. It 
    ```
 5. Run Questionnaire readonly gray smoke.
    ```bash
-   .venv/bin/python tools/questionnaire_readonly_gray_smoke.py \
+   .venv/bin/python experiments/ai_crm_next/tools/questionnaire_readonly_gray_smoke.py \
      --old-base-url http://127.0.0.1:5001 \
      --next-testclient \
      --output-md /tmp/questionnaire_readonly_gray_smoke_batch_5.md \

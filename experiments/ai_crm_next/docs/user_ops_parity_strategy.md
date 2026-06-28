@@ -13,11 +13,11 @@ This is a contract comparison mechanism, not a new User Ops feature.
 Use this when old Flask and AI-CRM Next are both running:
 
 ```bash
-python tools/compare_user_ops_parity.py \
+python experiments/ai_crm_next/tools/compare_user_ops_parity.py \
   --old-base-url http://127.0.0.1:5001 \
   --next-base-url http://127.0.0.1:8000 \
-  --output-md docs/user_ops_parity_report.md \
-  --output-json docs/user_ops_parity_report.json
+  --output-md historical removed reference (user_ops_parity_report.md) \
+  --output-json historical removed reference (user_ops_parity_report.json)
 ```
 
 The tool only sends HTTP requests. It must not import the old Flask app or old backend packages.
@@ -27,7 +27,7 @@ The tool only sends HTTP requests. It must not import the old Flask app or old b
 Use this when the old service is not running:
 
 ```bash
-python tools/compare_user_ops_parity.py \
+python experiments/ai_crm_next/tools/compare_user_ops_parity.py \
   --old-fixture-dir tests/fixtures/old_user_ops \
   --next-testclient \
   --output-md /tmp/user_ops_parity_report.md \
@@ -80,7 +80,7 @@ By default the compare tool excludes write endpoints such as DND and batch-send 
 
 ```bash
 .venv/bin/python -m pytest -q
-.venv/bin/python tools/compare_user_ops_parity.py \
+.venv/bin/python experiments/ai_crm_next/tools/compare_user_ops_parity.py \
   --old-fixture-dir tests/fixtures/old_user_ops \
   --next-testclient \
   --output-md /tmp/user_ops_parity_report.md \

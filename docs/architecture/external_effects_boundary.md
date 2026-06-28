@@ -15,7 +15,7 @@ Direct HTTP client usage is allowed only in:
 
 - `aicrm_next/platform_foundation/external_effects/**`
 - `aicrm_next/integration_gateway/**`
-- `aicrm_next/shared/http_client.py`, if present
+- `historical removed reference (http_client.py)`, if present
 - `tests/**`, `tools/**`, and `scripts/**`
 
 Business context files such as `api.py`, `application.py`, `service.py`,

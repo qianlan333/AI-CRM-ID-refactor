@@ -238,7 +238,7 @@ cd /home/ubuntu/极简 crm
 source /home/ubuntu/venvs/openclaw/bin/activate
 set -a && source /home/ubuntu/.openclaw-wecom-pg.env && set +a
 python scripts/ops/check_wecom_callback_ingestion_evidence.py \
-  --pressure-evidence-file /path/to/wecom-callback-pressure.json \
+  --pressure-evidence-file example output path (wecom-callback-pressure.json) \
   | tee /tmp/wecom-callback-ingestion.json
 
 python scripts/run_wecom_callback_inbox_worker.py --limit 20
@@ -246,7 +246,7 @@ AICRM_WECOM_CALLBACK_INBOX_WORKER_EXECUTE=1 \
   python scripts/run_wecom_callback_inbox_worker.py --execute --limit 20
 
 python scripts/ops/check_wecom_callback_processing_evidence.py \
-  --pressure-evidence-file /path/to/wecom-callback-pressure.json \
+  --pressure-evidence-file example output path (wecom-callback-pressure.json) \
   | tee /tmp/wecom-callback-processing.json
 
 python scripts/ops/check_wecom_callback_public_state.py \
@@ -261,15 +261,15 @@ cd /home/ubuntu/极简 crm
 source /home/ubuntu/venvs/openclaw/bin/activate
 set -a && source /home/ubuntu/.openclaw-wecom-pg.env && set +a
 python scripts/ops/check_wecom_callback_permanent_fix_readiness.py \
-  --pressure-evidence-file /path/to/wecom-callback-pressure.json \
-  --ingestion-evidence-file /path/to/wecom-callback-ingestion.json \
-  --processing-evidence-file /path/to/wecom-callback-processing.json \
-  --worker-isolation-evidence-file /path/to/wecom-callback-worker-isolation.json \
-  --downstream-worker-isolation-evidence-file /path/to/wecom-callback-downstream-worker-isolation.json \
-  --internal-event-worker-isolation-evidence-file /path/to/wecom-callback-internal-event-worker-isolation.json \
-  --rollback-evidence-file /path/to/wecom-callback-rollback.json \
-  --public-state-evidence-file /path/to/wecom-callback-public-state.json \
-  --deploy-smoke-evidence-file /path/to/wecom-callback-deploy-smoke.json
+  --pressure-evidence-file example output path (wecom-callback-pressure.json) \
+  --ingestion-evidence-file example output path (wecom-callback-ingestion.json) \
+  --processing-evidence-file example output path (wecom-callback-processing.json) \
+  --worker-isolation-evidence-file example output path (wecom-callback-worker-isolation.json) \
+  --downstream-worker-isolation-evidence-file example output path (wecom-callback-downstream-worker-isolation.json) \
+  --internal-event-worker-isolation-evidence-file example output path (wecom-callback-internal-event-worker-isolation.json) \
+  --rollback-evidence-file example output path (wecom-callback-rollback.json) \
+  --public-state-evidence-file example output path (wecom-callback-public-state.json) \
+  --deploy-smoke-evidence-file example output path (wecom-callback-deploy-smoke.json)
 ```
 
 Production completion requires the pressure evidence, same-sample
@@ -358,7 +358,7 @@ cd /home/ubuntu/极简 crm
 source /home/ubuntu/venvs/openclaw/bin/activate
 set -a && source /home/ubuntu/.openclaw-wecom-pg.env && set +a
 python scripts/ops/check_wecom_callback_objective_coverage.py \
-  --readiness-file /path/to/wecom-callback-readiness.json
+  --readiness-file example output path (wecom-callback-readiness.json)
 ```
 
 This command keeps local contract coverage separate from production completion
