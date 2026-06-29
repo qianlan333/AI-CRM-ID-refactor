@@ -218,10 +218,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--json-output", help="Optional path for the JSON report.")
     parser.add_argument("--summary-output", help="Optional path for the human-readable Markdown summary.")
     parser.add_argument("--markdown-output", help=argparse.SUPPRESS)
+    parser.add_argument("--generated-at", help="Override generated_at for reproducible reports.")
     args = parser.parse_args(argv)
 
     root = Path(args.root).resolve()
-    report = audit_repository(root)
+    report = audit_repository(root, generated_at=args.generated_at)
     summary_output = args.summary_output or args.markdown_output
     write_report_files(
         report,
