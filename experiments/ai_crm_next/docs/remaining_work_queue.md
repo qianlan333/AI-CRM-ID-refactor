@@ -16,7 +16,7 @@ Each task is scoped for a future Codex execution turn. Keep old production servi
 - files likely involved: `experiments/ai_crm_next/tools/readonly_http_dual_run.py`, `experiments/ai_crm_next/docs/readonly_http_dual_run_strategy.md`, `experiments/ai_crm_next/docs/customer_read_model_parity_strategy.md`.
 - acceptance criteria: readonly parity report has no blockers; accepted differences documented.
 - must not do: run write endpoints or import old Flask app.
-- suggested validation command: `.venv/bin/python tools/readonly_http_dual_run.py --old-base-url http://127.0.0.1:5001 --next-testclient --scope customer --output-md /tmp/customer_dual.md --output-json /tmp/customer_dual.json`.
+- suggested validation command: `.venv/bin/python experiments/ai_crm_next/tools/readonly_http_dual_run.py --old-base-url http://127.0.0.1:5001 --next-testclient --scope customer --output-md /tmp/customer_dual.md --output-json /tmp/customer_dual.json`.
 
 ## 3. User Ops Readonly HTTP Dual-Run Against Old Flask
 
@@ -24,7 +24,7 @@ Each task is scoped for a future Codex execution turn. Keep old production servi
 - files likely involved: `experiments/ai_crm_next/tools/readonly_http_dual_run.py`, `experiments/ai_crm_next/docs/readonly_http_dual_run_strategy.md`, `experiments/ai_crm_next/docs/user_ops_parity_strategy.md`.
 - acceptance criteria: readonly report passes; write endpoints remain disabled unless isolated.
 - must not do: execute real batch send or DND against old production.
-- suggested validation command: `.venv/bin/python tools/readonly_http_dual_run.py --old-base-url http://127.0.0.1:5001 --next-testclient --scope user_ops --output-md /tmp/user_ops_dual.md --output-json /tmp/user_ops_dual.json`.
+- suggested validation command: `.venv/bin/python experiments/ai_crm_next/tools/readonly_http_dual_run.py --old-base-url http://127.0.0.1:5001 --next-testclient --scope user_ops --output-md /tmp/user_ops_dual.md --output-json /tmp/user_ops_dual.json`.
 
 ## 4. Questionnaire Real OAuth Security Contract
 
@@ -232,7 +232,7 @@ Each task is scoped for a future Codex execution turn. Keep old production servi
 - files likely involved: `experiments/ai_crm_next/tools/capture_frontend_screenshots.py`, `experiments/ai_crm_next/docs/frontend_route_manifest.md`, `experiments/ai_crm_next/docs/frontend_screenshot_baseline.md`, `docs/archive/experiments_ai_crm_next/docs/production_replacement_route.md`, future `scripts/`.
 - acceptance criteria: health, admin routes, API read routes, and frontend adapters checked in one command; current 14-route Playwright PNG baseline remains reproducible and is extended to deployment HTTP mode.
 - must not do: change business behavior.
-- suggested validation command: `.venv/bin/python tools/capture_frontend_screenshots.py --output-dir artifacts/frontend_screenshots --mode testclient --output-md /tmp/aicrm_next_frontend_route_screenshot_baseline.md --output-json /tmp/aicrm_next_frontend_route_screenshot_baseline.json`.
+- suggested validation command: `.venv/bin/python experiments/ai_crm_next/tools/capture_frontend_screenshots.py --output-dir artifacts/frontend_screenshots --mode testclient --output-md /tmp/aicrm_next_frontend_route_screenshot_baseline.md --output-json /tmp/aicrm_next_frontend_route_screenshot_baseline.json`.
 
 ## 13. Data Migration / Backfill Design
 
