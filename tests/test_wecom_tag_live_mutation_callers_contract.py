@@ -4,7 +4,9 @@ from fastapi.testclient import TestClient
 
 from aicrm_next.customer_tags.live_mutation import execute_wecom_tag_mutation, reset_wecom_tag_live_mutation_fixture_state
 from aicrm_next.customer_tags.mutation_commands import PlanCustomerTagAssignmentCommand
+from aicrm_next.identity_contact.dto import IdentityResolution
 from aicrm_next.main import create_app
+from aicrm_next.questionnaire import h5_write
 
 
 def _client(monkeypatch) -> TestClient:
@@ -55,6 +57,64 @@ def test_questionnaire_submit_tag_side_effect_uses_next_plan(monkeypatch) -> Non
     assert tag_plan["wecom_api_called"] is False
     assert tag_plan["side_effect_plan"]["adapter_mode"] == "real_blocked"
     assert tag_plan["side_effect_plan"]["requires_approval"] is True
+
+
+def test_questionnaire_submit_binds_payload_mobile_when_resolved_identity_has_no_mobile(monkeypatch) -> None:
+    mobile_bind_calls: list[dict] = []
+
+    class FakeResolvePersonIdentityQuery:
+        def __call__(self, request):
+            return IdentityResolution(
+                person_id="person-questionnaire-mobile",
+                external_userid=request.external_userid,
+                mobile="",
+                binding_status="bound",
+                follow_user_userid="owner-questionnaire",
+                matched_by="external_userid",
+            )
+
+    class FakeBindMobileToExternalContactCommand:
+        def __call__(self, request):
+            mobile_bind_calls.append(
+                {
+                    "external_userid": request.external_userid,
+                    "mobile": request.mobile,
+                    "owner_userid": request.owner_userid,
+                    "bind_by_userid": request.bind_by_userid,
+                }
+            )
+            return {
+                "ok": True,
+                "external_userid": request.external_userid,
+                "mobile": request.mobile,
+                "owner_userid": request.owner_userid,
+                "person_id": "person-questionnaire-mobile",
+                "binding_status": "bound",
+            }
+
+    monkeypatch.setattr(h5_write, "ResolvePersonIdentityQuery", FakeResolvePersonIdentityQuery)
+    monkeypatch.setattr(h5_write, "BindMobileToExternalContactCommand", FakeBindMobileToExternalContactCommand)
+    client = _client(monkeypatch)
+
+    response = client.post(
+        "/api/h5/questionnaires/hxc-activation-v1/submit",
+        json={
+            "answers": {"q_activation": "activated", "q_interest": ["ai_tools"]},
+            "identity": {"external_userid": "wx_questionnaire_mobile", "mobile": "13800138000"},
+        },
+        headers={"Idempotency-Key": "questionnaire-mobile-binding"},
+    )
+
+    assert response.status_code == 200
+    assert mobile_bind_calls == [
+        {
+            "external_userid": "wx_questionnaire_mobile",
+            "mobile": "13800138000",
+            "owner_userid": "owner-questionnaire",
+            "bind_by_userid": "questionnaire_h5_submit",
+        }
+    ]
+    assert response.json()["side_effects"]["mobile_binding"]["binding_status"] == "bound"
 
 
 def test_customer_tag_assignment_command_is_plan_only() -> None:
