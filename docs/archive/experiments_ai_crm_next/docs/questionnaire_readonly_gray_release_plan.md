@@ -52,7 +52,7 @@ This plan prepares Questionnaire admin/public readonly routes for a future route
 | condition | required evidence |
 | --- | --- |
 | Ordinary pytest pass | `.venv/bin/python -m pytest -q` |
-| Questionnaire parity pass | `experiments/ai_crm_next/tools/compare_questionnaire_parity.py --next-testclient` |
+| Questionnaire parity pass | `retired experiment wrapper; see docs/archive/experiments_ai_crm_next/retired_tools.md --next-testclient` |
 | Frontend smoke pass | `experiments/ai_crm_next/tests/test_frontend_route_smoke.py` and screenshot baseline |
 | Screenshot baseline pass | `experiments/ai_crm_next/docs/frontend_screenshot_baseline.md` and `artifacts/frontend_screenshots/` |
 | No old backend imports | boundary scan over `experiments/ai_crm_next` |

@@ -53,8 +53,8 @@ This plan prepares a staging or production-like canary for Batch 5 Questionnaire
 | --- | --- |
 | ordinary pytest pass | `.venv/bin/python -m pytest -q` |
 | six parity pass | all `tools/compare_*_parity.py` reports |
-| Questionnaire parity pass | `experiments/ai_crm_next/tools/compare_questionnaire_parity.py` |
-| Questionnaire readonly gray smoke pass | `experiments/ai_crm_next/tools/questionnaire_readonly_gray_smoke.py --old-base-url ... --next-testclient` |
+| Questionnaire parity pass | `retired experiment wrapper; see docs/archive/experiments_ai_crm_next/retired_tools.md` |
+| Questionnaire readonly gray smoke pass | `retired experiment wrapper; see docs/archive/experiments_ai_crm_next/retired_tools.md --old-base-url ... --next-testclient` |
 | Questionnaire readonly dual mode pass | dual smoke has only accepted legacy drift |
 | real PostgreSQL integration evidence available | `experiments/ai_crm_next/docs/real_postgres_integration_run.md` |
 | PNG screenshot baseline pass | `historical removed reference (route_status.json)` includes Questionnaire admin/public routes |

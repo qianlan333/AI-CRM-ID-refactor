@@ -44,7 +44,7 @@ Routes in scope:
 | condition | required evidence |
 | --- | --- |
 | ordinary pytest pass | `.venv/bin/python -m pytest -q` |
-| media parity pass | `experiments/ai_crm_next/tools/compare_media_library_parity.py --old-fixture-dir ... --next-testclient` |
+| media parity pass | `retired experiment wrapper; see docs/archive/experiments_ai_crm_next/retired_tools.md --old-fixture-dir ... --next-testclient` |
 | frontend smoke pass | `experiments/ai_crm_next/tests/test_frontend_route_smoke.py` and screenshot baseline |
 | screenshot baseline pass | 14-route baseline includes image, attachment, and miniprogram pages |
 | no old backend imports | architecture boundary scan/tests |

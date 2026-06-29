@@ -15,7 +15,7 @@ This runbook is for staging or production-like canary preparation. It is not a p
 3. Run six parity tools.
 4. Run Media parity.
    ```bash
-   .venv/bin/python experiments/ai_crm_next/tools/compare_media_library_parity.py \
+   .venv/bin/python retired experiment wrapper; see docs/archive/experiments_ai_crm_next/retired_tools.md \
      --old-fixture-dir tests/fixtures/old_media_library \
      --next-testclient \
      --output-md /tmp/media_parity_after_canary_plan.md \
@@ -23,7 +23,7 @@ This runbook is for staging or production-like canary preparation. It is not a p
    ```
 5. Run Media gray smoke.
    ```bash
-   .venv/bin/python experiments/ai_crm_next/tools/media_library_gray_smoke.py \
+   .venv/bin/python retired experiment wrapper; see docs/archive/experiments_ai_crm_next/retired_tools.md \
      --next-testclient \
      --output-md /tmp/media_gray_smoke_after_canary_plan.md \
      --output-json /tmp/media_gray_smoke_after_canary_plan.json

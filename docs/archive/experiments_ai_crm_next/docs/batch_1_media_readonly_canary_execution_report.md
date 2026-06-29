@@ -73,7 +73,7 @@ AICRM_NEXT_ROUTE_MEDIA_READONLY=true \
 AICRM_NEXT_ROUTE_MEDIA_WRITES=false \
 AICRM_NEXT_EXTERNAL_CLOUD_STORAGE=false \
 AICRM_NEXT_EXTERNAL_WECOM_MEDIA=false \
-.venv/bin/python experiments/ai_crm_next/tools/media_library_gray_smoke.py \
+.venv/bin/python retired experiment wrapper; see docs/archive/experiments_ai_crm_next/retired_tools.md \
   --next-testclient \
   --output-md /tmp/media_gray_smoke_staging_simulated_canary.md \
   --output-json /tmp/media_gray_smoke_staging_simulated_canary.json
@@ -95,7 +95,7 @@ Result: PASS.
 Command:
 
 ```bash
-.venv/bin/python experiments/ai_crm_next/tools/compare_media_library_parity.py \
+.venv/bin/python retired experiment wrapper; see docs/archive/experiments_ai_crm_next/retired_tools.md \
   --old-fixture-dir tests/fixtures/old_media_library \
   --next-testclient \
   --output-md /tmp/media_parity_after_canary_execute.md \

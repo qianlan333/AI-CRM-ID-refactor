@@ -86,8 +86,8 @@ Entry criteria:
 Smoke commands:
 
 ```bash
-.venv/bin/python tools/media_library_gray_smoke.py --next-testclient --output-md /tmp/media_library_gray_smoke.md --output-json /tmp/media_library_gray_smoke.json
-.venv/bin/python tools/compare_media_library_parity.py --old-fixture-dir tests/fixtures/old_media_library --next-testclient --output-md /tmp/media_parity.md --output-json /tmp/media_parity.json
+.venv/bin/python retired experiment wrapper; see docs/archive/experiments_ai_crm_next/retired_tools.md --next-testclient --output-md /tmp/media_library_gray_smoke.md --output-json /tmp/media_library_gray_smoke.json
+.venv/bin/python retired experiment wrapper; see docs/archive/experiments_ai_crm_next/retired_tools.md --old-fixture-dir tests/fixtures/old_media_library --next-testclient --output-md /tmp/media_parity.md --output-json /tmp/media_parity.json
 ```
 
 Monitoring signals:
@@ -181,8 +181,8 @@ Entry criteria:
 Smoke commands:
 
 ```bash
-.venv/bin/python tools/product_management_gray_smoke.py --next-testclient --output-md /tmp/product_management_gray_smoke.md --output-json /tmp/product_management_gray_smoke.json
-.venv/bin/python tools/compare_commerce_parity.py --old-fixture-dir tests/fixtures/old_commerce --next-testclient --output-md /tmp/commerce_parity.md --output-json /tmp/commerce_parity.json
+.venv/bin/python retired experiment wrapper; see docs/archive/experiments_ai_crm_next/retired_tools.md --next-testclient --output-md /tmp/product_management_gray_smoke.md --output-json /tmp/product_management_gray_smoke.json
+.venv/bin/python retired experiment wrapper; see docs/archive/experiments_ai_crm_next/retired_tools.md --old-fixture-dir tests/fixtures/old_commerce --next-testclient --output-md /tmp/commerce_parity.md --output-json /tmp/commerce_parity.json
 ```
 
 Monitoring signals:
@@ -261,8 +261,8 @@ Entry criteria:
 Smoke commands:
 
 ```bash
-.venv/bin/python tools/customer_read_model_gray_smoke.py --next-testclient --output-md /tmp/customer_read_model_gray_smoke.md --output-json /tmp/customer_read_model_gray_smoke.json
-.venv/bin/python tools/customer_read_model_gray_smoke.py --old-base-url http://127.0.0.1:5001 --next-testclient --output-md /tmp/customer_read_model_gray_smoke_dual.md --output-json /tmp/customer_read_model_gray_smoke_dual.json
+.venv/bin/python retired experiment wrapper; see docs/archive/experiments_ai_crm_next/retired_tools.md --next-testclient --output-md /tmp/customer_read_model_gray_smoke.md --output-json /tmp/customer_read_model_gray_smoke.json
+.venv/bin/python retired experiment wrapper; see docs/archive/experiments_ai_crm_next/retired_tools.md --old-base-url http://127.0.0.1:5001 --next-testclient --output-md /tmp/customer_read_model_gray_smoke_dual.md --output-json /tmp/customer_read_model_gray_smoke_dual.json
 ```
 
 Monitoring signals:
@@ -344,8 +344,8 @@ Entry criteria:
 Smoke commands:
 
 ```bash
-.venv/bin/python tools/user_ops_readonly_gray_smoke.py --next-testclient --output-md /tmp/user_ops_readonly_gray_smoke.md --output-json /tmp/user_ops_readonly_gray_smoke.json
-.venv/bin/python tools/user_ops_readonly_gray_smoke.py --old-base-url http://127.0.0.1:5001 --next-testclient --output-md /tmp/user_ops_readonly_gray_smoke_dual.md --output-json /tmp/user_ops_readonly_gray_smoke_dual.json
+.venv/bin/python retired experiment wrapper; see docs/archive/experiments_ai_crm_next/retired_tools.md --next-testclient --output-md /tmp/user_ops_readonly_gray_smoke.md --output-json /tmp/user_ops_readonly_gray_smoke.json
+.venv/bin/python retired experiment wrapper; see docs/archive/experiments_ai_crm_next/retired_tools.md --old-base-url http://127.0.0.1:5001 --next-testclient --output-md /tmp/user_ops_readonly_gray_smoke_dual.md --output-json /tmp/user_ops_readonly_gray_smoke_dual.json
 .venv/bin/python tools/check_batch_4_user_ops_canary_readiness.py --user-ops-smoke-json /tmp/user_ops_readonly_gray_smoke_batch_4.json --user-ops-parity-json /tmp/user_ops_parity_batch_4.json --readonly-dual-json /tmp/readonly_dual_run_batch_4_user_ops.json --output-md /tmp/batch_4_user_ops_canary_readiness.md --output-json /tmp/batch_4_user_ops_canary_readiness.json
 ```
 
@@ -430,8 +430,8 @@ Entry criteria:
 Smoke commands:
 
 ```bash
-.venv/bin/python tools/questionnaire_readonly_gray_smoke.py --next-testclient --output-md /tmp/questionnaire_readonly_gray_smoke.md --output-json /tmp/questionnaire_readonly_gray_smoke.json
-.venv/bin/python tools/questionnaire_readonly_gray_smoke.py --old-base-url http://127.0.0.1:5001 --next-testclient --output-md /tmp/questionnaire_readonly_gray_smoke_dual.md --output-json /tmp/questionnaire_readonly_gray_smoke_dual.json
+.venv/bin/python retired experiment wrapper; see docs/archive/experiments_ai_crm_next/retired_tools.md --next-testclient --output-md /tmp/questionnaire_readonly_gray_smoke.md --output-json /tmp/questionnaire_readonly_gray_smoke.json
+.venv/bin/python retired experiment wrapper; see docs/archive/experiments_ai_crm_next/retired_tools.md --old-base-url http://127.0.0.1:5001 --next-testclient --output-md /tmp/questionnaire_readonly_gray_smoke_dual.md --output-json /tmp/questionnaire_readonly_gray_smoke_dual.json
 .venv/bin/python tools/check_batch_5_questionnaire_canary_readiness.py --questionnaire-smoke-json /tmp/questionnaire_readonly_gray_smoke_batch_5.json --questionnaire-parity-json /tmp/questionnaire_parity_batch_5.json --output-md /tmp/batch_5_questionnaire_canary_readiness.md --output-json /tmp/batch_5_questionnaire_canary_readiness.json
 ```
 

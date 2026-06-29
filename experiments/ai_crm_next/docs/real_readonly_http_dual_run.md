@@ -135,7 +135,7 @@ Customer Read Model readonly gray-release preparation now has dedicated planning
 - `docs/archive/experiments_ai_crm_next/docs/customer_read_model_gray_release_plan.md`
 - `experiments/ai_crm_next/docs/customer_read_model_route_cutover_manifest.md`
 - `experiments/ai_crm_next/docs/customer_read_model_sample_data_checklist.md`
-- `experiments/ai_crm_next/tools/customer_read_model_gray_smoke.py`
+- `retired experiment wrapper; see docs/archive/experiments_ai_crm_next/retired_tools.md`
 
 The known sample-data gap remains: the previous local old Flask test database did not provide a representative `external_userid`, so customer detail, timeline, and recent-message dual-run endpoints must remain skipped/pending until safe masked sample data exists. This is not production-ready evidence and does not enable production route cutover.
 
@@ -162,7 +162,7 @@ Old API sample verification:
 
 Customer gray smoke dual report:
 
-- Command: `experiments/ai_crm_next/tools/customer_read_model_gray_smoke.py --old-base-url http://127.0.0.1:5001 --next-testclient`
+- Command: `retired experiment wrapper; see docs/archive/experiments_ai_crm_next/retired_tools.md --old-base-url http://127.0.0.1:5001 --next-testclient`
 - Report markdown: `/tmp/customer_read_model_gray_smoke_dual_after_sample.md`
 - Report JSON: `/tmp/customer_read_model_gray_smoke_dual_after_sample.json`
 - Result: `PASS`
@@ -198,7 +198,7 @@ User Ops readonly gray-release preparation now has dedicated planning and toolin
 - `docs/archive/experiments_ai_crm_next/docs/user_ops_readonly_gray_release_plan.md`
 - `experiments/ai_crm_next/docs/user_ops_readonly_route_cutover_manifest.md`
 - `experiments/ai_crm_next/docs/user_ops_readonly_sample_and_drift_checklist.md`
-- `experiments/ai_crm_next/tools/user_ops_readonly_gray_smoke.py`
+- `retired experiment wrapper; see docs/archive/experiments_ai_crm_next/retired_tools.md`
 
 The accepted legacy drift remains: old `/api/admin/user-ops/overview` may miss `激活待录入`, while Next must satisfy the current 8-card product contract. DND, batch-send preview/execute, deferred jobs, internal User Ops routes, real WeCom dispatch, and media upload remain outside readonly dual-run and gray preparation.
 

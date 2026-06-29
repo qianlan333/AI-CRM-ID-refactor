@@ -87,7 +87,7 @@ AICRM_NEXT_QUESTIONNAIRE_SUBMIT=false \
 AICRM_NEXT_QUESTIONNAIRE_OAUTH=false \
 AICRM_NEXT_EXTERNAL_WECOM_TAG=false \
 AICRM_NEXT_EXTERNAL_WEBHOOK=false \
-.venv/bin/python experiments/ai_crm_next/tools/questionnaire_readonly_gray_smoke.py \
+.venv/bin/python retired experiment wrapper; see docs/archive/experiments_ai_crm_next/retired_tools.md \
   --old-base-url http://127.0.0.1:5001 \
   --next-testclient \
   --output-md /tmp/questionnaire_readonly_gray_smoke_batch_5.md \

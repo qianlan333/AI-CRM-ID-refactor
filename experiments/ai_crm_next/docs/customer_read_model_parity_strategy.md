@@ -21,7 +21,7 @@ The required fields are defined in the root source package at `aicrm_next/custom
 Fixture mode compares anonymized old response samples with AI-CRM Next TestClient responses:
 
 ```bash
-python experiments/ai_crm_next/tools/compare_customer_read_model_parity.py \
+python retired experiment wrapper; see docs/archive/experiments_ai_crm_next/retired_tools.md \
   --old-fixture-dir tests/fixtures/old_customer_read_model \
   --next-testclient \
   --output-md /tmp/customer_read_model_parity_report.md \
@@ -35,7 +35,7 @@ Fixtures must use obvious mask values such as `mobile_masked_001`, `external_use
 HTTP mode is for later old Flask / AI-CRM Next dual-run checks:
 
 ```bash
-python experiments/ai_crm_next/tools/compare_customer_read_model_parity.py \
+python retired experiment wrapper; see docs/archive/experiments_ai_crm_next/retired_tools.md \
   --old-base-url http://127.0.0.1:5001 \
   --next-base-url http://127.0.0.1:8000 \
   --output-md /tmp/customer_read_model_parity_report.md \

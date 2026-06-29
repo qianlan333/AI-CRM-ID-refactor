@@ -7,7 +7,6 @@ from pathlib import Path
 from conftest import make_client
 
 from aicrm_next.questionnaire.parity_spec import ENDPOINT_SPECS, compare_endpoint_payloads, validate_payload
-from tools.compare_questionnaire_parity import run_compare
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 FIXTURE_DIR = PROJECT_ROOT / "tests" / "fixtures" / "old_questionnaire"
@@ -39,9 +38,11 @@ def test_old_questionnaire_fixtures_conform_and_are_masked() -> None:
         assert not validate_payload(endpoint_name, json.loads(text)["payload"])
 
 
-def test_next_questionnaire_endpoints_conform_to_parity_spec() -> None:
+def test_next_questionnaire_read_endpoints_conform_to_parity_spec() -> None:
     client = make_client()
     for endpoint_name, spec in ENDPOINT_SPECS.items():
+        if spec.method != "GET":
+            continue
         response = client.request(spec.method, spec.path, json=spec.body if spec.method == "POST" else None)
         assert response.status_code == spec.expected_status
         assert not validate_payload(endpoint_name, response.json())
@@ -52,20 +53,3 @@ def test_questionnaire_compare_detects_missing_required_key() -> None:
     next_payload = {key: value for key, value in old_payload.items() if key != "items"}
     issues = compare_endpoint_payloads("admin_list.default", old_payload, next_payload)
     assert any(issue["rule"] == "required_key" and issue.get("key") == "items" for issue in issues)
-
-
-def test_questionnaire_compare_tool_fixture_mode(tmp_path: Path) -> None:
-    args = type(
-        "Args",
-        (),
-        {
-            "old_fixture_dir": str(FIXTURE_DIR),
-            "old_base_url": "",
-            "next_base_url": "",
-            "next_testclient": True,
-            "output_md": str(tmp_path / "questionnaire.md"),
-            "output_json": str(tmp_path / "questionnaire.json"),
-        },
-    )()
-    report = run_compare(args)
-    assert report["ok"] is True

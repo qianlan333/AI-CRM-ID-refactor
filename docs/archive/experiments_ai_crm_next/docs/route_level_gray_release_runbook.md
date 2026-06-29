@@ -72,7 +72,7 @@ The report must show:
 For a local rehearsal before any route change, use:
 
 ```bash
-.venv/bin/python experiments/ai_crm_next/tools/run_gray_rehearsal_batch.py \
+.venv/bin/python retired experiment tool wrapper; see docs/archive/experiments_ai_crm_next/retired_tools.md \
   --batch media_readonly \
   --next-testclient \
   --output-md /tmp/gray_rehearsal_batch_1_media_readonly.md \
