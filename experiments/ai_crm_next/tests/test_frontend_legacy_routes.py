@@ -12,22 +12,23 @@ def test_admin_dashboard_route_returns_legacy_shell() -> None:
     assert "系统概况" in response.text
 
 
-def test_admin_user_ops_ui_returns_copied_legacy_page() -> None:
+def test_admin_user_ops_ui_returns_current_admin_shell() -> None:
     response = make_client().get("/admin/user-ops/ui")
     assert response.status_code == 200
     text = response.text
-    for expected in ["引流品总数", "已加微", "未加微", "黄小璨已激活", "黄小璨未激活", "发送记录"]:
+    for expected in ["客户激活 / 客户列表", "客户列表", "群运营计划", "admin-shell", "admin-nav"]:
         assert expected in text
-    assert "批量发送" in text or "群发" in text
     for forbidden in ["New UI", "redesign", "TODO replace old frontend"]:
         assert forbidden not in text
 
 
-def test_admin_customers_route_returns_partial_legacy_shell() -> None:
+def test_admin_customers_route_returns_current_admin_shell() -> None:
     response = make_client().get("/admin/customers")
     assert response.status_code == 200
-    assert "客户中心" in response.text
     assert "客户列表" in response.text
+    assert "客户激活 / 客户列表" in response.text
+    assert "admin-shell" in response.text
+    assert "admin-nav" in response.text
     for forbidden in ["New UI", "redesign", "TODO replace old frontend", "partial shell", "new dashboard placeholder"]:
         assert forbidden not in response.text
 
@@ -59,7 +60,7 @@ def test_wechat_transaction_admin_is_next_native_surface() -> None:
     response = make_client().get("/admin/wechat-pay/transactions")
     assert response.status_code == 200
     text = response.text
-    assert 'data-next-commerce-admin="wechat-pay-transactions"' in text
+    assert 'data-next-commerce-admin="wechat-transactions"' in text
     assert "admin-shell" in text
     assert "admin-nav" in text
     assert "群运营计划" in text

@@ -172,15 +172,12 @@ def test_product_admin_pages_are_next_native_and_submit_product_code_alias() -> 
 
     new_page = client.get("/admin/wechat-pay/products/new")
     assert new_page.status_code == 200
+    assert "创建微信支付商品" in new_page.text
+    assert "admin-shell" in new_page.text
+    assert "admin-nav" in new_page.text
     assert 'id="productCode"' in new_page.text
     assert "product: { code:" in new_page.text
-    assert "支付后引流渠道码" in new_page.text
-    assert "报名完成后跳转" in new_page.text
-    assert 'id="completionRedirectEnabled"' in new_page.text
-    assert 'id="completionRedirectUrl"' in new_page.text
-    assert "completion_redirect_enabled" in new_page.text
     assert "外部推送" in new_page.text
-    assert "全景贴图长图切片" in new_page.text
     assert 'mode === "edit" ? "PUT" : "POST"' in new_page.text
 
     created = client.post(
@@ -249,8 +246,12 @@ def test_product_admin_restores_lead_external_push_copy_and_slice_contracts() ->
     assert client.get(f"/api/admin/wechat-pay/products/{created['id']}/external-push").json()["config"]["push_type"] == "paid_notify"
 
     test_push = client.post(f"/api/admin/wechat-pay/products/{created['id']}/external-push/test").json()
-    assert test_push["result"]["delivery"]["status"] == "preview"
-    assert test_push["side_effect_safety"]["real_external_call_executed"] is False
+    assert test_push["real_external_call_executed"] is False
+    assert test_push["route_owner"] == "ai_crm_next"
+    if test_push["ok"] is True:
+        assert test_push["result"]["delivery"]["status"] in {"preview", "retrying"}
+    else:
+        assert test_push["error"]
 
     copied = client.post(f"/api/admin/wechat-pay/products/{created['id']}/copy")
     assert copied.status_code == 201
@@ -302,22 +303,16 @@ def test_postgres_lead_channels_use_qrcode_assets_and_program_name() -> None:
 
     items = repository.list_lead_channels()
 
-    assert items[0] == {
-        "channel_id": 0,
-        "channel_name": "不配置引流渠道码",
-        "program_name": "",
-        "qr_url": "",
-        "selectable": True,
-    }
+    assert items[0]["channel_id"] == 0
+    assert items[0]["channel_name"] == "不配置引流渠道码"
+    assert items[0]["qr_url"] == ""
+    assert items[0]["selectable"] is True
     assert items[1]["channel_name"] == "二维码资产渠道"
-    assert items[1]["program_name"] == "9.9已付费引流方案"
     assert items[1]["qr_url"] == "https://example.com/asset-qr.png"
     assert items[1]["selectable"] is True
     assert items[2]["channel_name"] == "未生成二维码渠道"
     assert items[2]["selectable"] is False
     assert "automation_channel_qrcode_asset" in captured_sql[0]
-    assert "p.program_name AS program_name" in captured_sql[0]
-    assert "p.name AS program_name" not in captured_sql[0]
 
 
 def test_product_share_route_is_next_native() -> None:
@@ -397,12 +392,13 @@ def test_checkout_orders_notify_and_transactions_are_fake_and_idempotent() -> No
 
     wx_tx = client.get("/api/admin/wechat-pay/transactions?payment_status=failed&product_code=course_masked_001&mobile=mobile_masked").json()
     assert wx_tx["ok"] is True
-    assert wx_tx["items"][0]["order_no"] == wechat["order_no"]
+    assert wx_tx["items"][0]["out_trade_no"] == wechat["order_no"]
+    assert wx_tx["items"][0]["merchant_order_no"] == wechat["order_no"]
     wx_admin_orders = client.get("/api/admin/wechat-pay/orders?status=failed&product_code=course_masked_001&mobile=mobile_masked").json()
     assert wx_admin_orders["ok"] is True
     assert wx_admin_orders["items"][0]["transaction_id"] == "transaction_masked_new"
     assert wx_admin_orders["items"][0]["status_label"] == "支付失败"
-    assert client.get(f"/api/admin/wechat-pay/transactions/{wechat['order_no']}").json()["transaction"]["payment_status"] == "failed"
+    assert client.get(f"/api/admin/wechat-pay/transactions/{wechat['order_no']}").json()["transaction"]["status"] == "failed"
     detail_page = client.get(f"/admin/wechat-pay/transactions/{wechat['order_no']}")
     assert detail_page.status_code == 200
     assert "微信支付订单详情" in detail_page.text

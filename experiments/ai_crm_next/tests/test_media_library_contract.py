@@ -216,7 +216,11 @@ def test_miniprogram_library_accepts_pagepath_aliases_and_test_resolve() -> None
     assert resolved["thumb_media_id"]
 
     deleted = client.delete(f"/api/admin/miniprogram-library/{created['id']}").json()
-    assert deleted == {"ok": True, "deleted": True, "hard_deleted": True, "id": str(created["id"])}
+    assert deleted["ok"] is True
+    assert deleted["deleted"] is True
+    assert deleted["hard_deleted"] is True
+    assert deleted["id"] == str(created["id"])
+    assert deleted["real_external_call_executed"] is False
 
 
 def test_miniprogram_library_accepts_page_path_and_rejects_missing_thumb_json() -> None:
@@ -280,4 +284,8 @@ def test_attachment_library_upload_list_detail_update_and_delete() -> None:
     assert updated["enabled"] is False
 
     deleted = client.delete(f"/api/admin/attachment-library/{created['id']}").json()
-    assert deleted == {"ok": True, "deleted": True, "hard_deleted": True, "id": str(created["id"])}
+    assert deleted["ok"] is True
+    assert deleted["deleted"] is True
+    assert deleted["hard_deleted"] is True
+    assert deleted["id"] == str(created["id"])
+    assert deleted["real_external_call_executed"] is False
