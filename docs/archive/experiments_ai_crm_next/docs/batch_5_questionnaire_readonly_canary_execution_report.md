@@ -74,7 +74,7 @@ These flags were not written to production config and were not committed as a re
 | Questionnaire parity | `/tmp/questionnaire_parity_batch_5.json` | PASS |
 | readiness checker | `/tmp/batch_5_questionnaire_canary_readiness.json` | `canary_plan_ready` / `GO_TO_STAGING_CANARY_SIGNOFF` |
 | screenshot baseline | `historical removed reference (route_status.json)` | Questionnaire admin/public routes present and passing |
-| real PostgreSQL integration | `experiments/ai_crm_next/docs/real_postgres_integration_run.md` | evidence available |
+| real PostgreSQL integration | `docs/archive/experiments_ai_crm_next/docs/real_postgres_integration_run.md` | evidence available |
 
 ## Canary Smoke Result
 

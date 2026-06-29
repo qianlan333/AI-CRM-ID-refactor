@@ -55,7 +55,7 @@ Excluded routes:
 | check | result | notes |
 | --- | --- | --- |
 | route-level runbook available | PASS | `docs/archive/experiments_ai_crm_next/docs/route_level_gray_release_runbook.md` |
-| proxy template pseudo-only | PASS | `experiments/ai_crm_next/docs/route_level_proxy_template.md` |
+| proxy template pseudo-only | PASS | `docs/archive/experiments_ai_crm_next/docs/route_level_proxy_template.md` |
 | signoff template available | PASS | `docs/archive/experiments_ai_crm_next/docs/gray_release_signoff_template.md` |
 | acceptance checklist available | PASS | `docs/archive/experiments_ai_crm_next/docs/gray_release_acceptance_checklist.md` |
 | frontend screenshot baseline | PASS | `historical removed reference (route_status.json)`, 14 routes passed, 14 PNG screenshots generated |

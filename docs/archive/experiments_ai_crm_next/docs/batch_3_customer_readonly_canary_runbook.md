@@ -31,7 +31,7 @@ This runbook is for staging or production-like canary preparation/execution. It 
      --output-json /tmp/readonly_dual_run_batch_3_customer.json
    ```
 7. Confirm screenshot baseline includes `/admin/customers`.
-8. Confirm real PostgreSQL integration evidence exists in `experiments/ai_crm_next/docs/real_postgres_integration_run.md`.
+8. Confirm real PostgreSQL integration evidence exists in `docs/archive/experiments_ai_crm_next/docs/real_postgres_integration_run.md`.
 9. Confirm route flags dry-run:
    - `AICRM_NEXT_ROUTE_CUSTOMER_READONLY=true`
    - `AICRM_NEXT_ROUTE_CUSTOMER_WRITES=false`

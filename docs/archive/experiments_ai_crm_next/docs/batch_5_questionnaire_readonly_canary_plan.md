@@ -56,7 +56,7 @@ This plan prepares a staging or production-like canary for Batch 5 Questionnaire
 | Questionnaire parity pass | `retired experiment wrapper; see docs/archive/experiments_ai_crm_next/retired_tools.md` |
 | Questionnaire readonly gray smoke pass | `retired experiment wrapper; see docs/archive/experiments_ai_crm_next/retired_tools.md --old-base-url ... --next-testclient` |
 | Questionnaire readonly dual mode pass | dual smoke has only accepted legacy drift |
-| real PostgreSQL integration evidence available | `experiments/ai_crm_next/docs/real_postgres_integration_run.md` |
+| real PostgreSQL integration evidence available | `docs/archive/experiments_ai_crm_next/docs/real_postgres_integration_run.md` |
 | PNG screenshot baseline pass | `historical removed reference (route_status.json)` includes Questionnaire admin/public routes |
 | no old production entrypoint dirty | `git status --short --untracked-files=all` review |
 | no production config modified | deploy/production config status scan and side-effect report |

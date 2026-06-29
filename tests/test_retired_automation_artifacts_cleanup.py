@@ -72,5 +72,24 @@ def test_retired_experiment_local_evidence_helpers_are_removed() -> None:
         assert not path.exists(), str(path.relative_to(ROOT))
 
 
+def test_historical_experiment_planning_docs_are_archived() -> None:
+    archived_docs = [
+        "customer_read_model_sample_data_checklist.md",
+        "feature_parity_matrix.md",
+        "final_gap_analysis.md",
+        "migration_strategy.md",
+        "module_status_matrix.md",
+        "questionnaire_readonly_sample_and_fake_checklist.md",
+        "readonly_http_dual_run_strategy.md",
+        "real_postgres_integration_run.md",
+        "route_level_proxy_template.md",
+    ]
+    for filename in archived_docs:
+        active_path = ROOT / "experiments" / "ai_crm_next" / "docs" / filename
+        archive_path = ROOT / "docs" / "archive" / "experiments_ai_crm_next" / "docs" / filename
+        assert not active_path.exists(), str(active_path.relative_to(ROOT))
+        assert archive_path.exists(), str(archive_path.relative_to(ROOT))
+
+
 def test_retired_automation_conversion_split_blueprint_is_removed() -> None:
     assert not (ROOT / "docs" / "refactor" / "automation-conversion-split-blueprint.md").exists()

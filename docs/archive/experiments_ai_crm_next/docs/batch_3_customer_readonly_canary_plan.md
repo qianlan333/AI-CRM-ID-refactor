@@ -56,7 +56,7 @@ This plan prepares a staging or production-like canary for Batch 3 Customer Read
 | Customer parity pass | `retired experiment wrapper; see docs/archive/experiments_ai_crm_next/retired_tools.md` |
 | Customer gray smoke pass | `retired experiment wrapper; see docs/archive/experiments_ai_crm_next/retired_tools.md --old-base-url ... --next-testclient` |
 | Customer full readonly dual-run pass | `retired readonly HTTP dual-run helper; see docs/archive/experiments_ai_crm_next/retired_tools.md --scope customer,user_ops` with customer sample-dependent routes executed |
-| real PostgreSQL integration evidence available | `experiments/ai_crm_next/docs/real_postgres_integration_run.md` |
+| real PostgreSQL integration evidence available | `docs/archive/experiments_ai_crm_next/docs/real_postgres_integration_run.md` |
 | PNG screenshot baseline pass | `historical removed reference (route_status.json)` includes `/admin/customers` |
 | no old production entrypoint dirty | `git status --short --untracked-files=all` review |
 | no production config modified | deploy/production config status scan and side-effect report |

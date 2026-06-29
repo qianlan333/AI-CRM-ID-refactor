@@ -70,7 +70,7 @@ Unauthenticated old `/admin/user-ops/ui` may redirect to login. That is page-lay
 | User Ops parity pass | `retired experiment wrapper; see docs/archive/experiments_ai_crm_next/retired_tools.md --next-testclient` |
 | Frontend smoke pass | `retired frontend route smoke test; see docs/archive/experiments_ai_crm_next/retired_tools.md` and screenshot baseline |
 | Screenshot baseline pass | `docs/archive/experiments_ai_crm_next/docs/frontend_screenshot_baseline.md` and `artifacts/frontend_screenshots/` |
-| Real PostgreSQL integration pass | `experiments/ai_crm_next/docs/real_postgres_integration_run.md` |
+| Real PostgreSQL integration pass | `docs/archive/experiments_ai_crm_next/docs/real_postgres_integration_run.md` |
 | Readonly dual-run pass or accepted drift only | `docs/archive/experiments_ai_crm_next/docs/real_readonly_http_dual_run.md` |
 | No old backend imports | boundary scan over `experiments/ai_crm_next` |
 | No old write endpoints | gray smoke side-effect safety flags remain false |

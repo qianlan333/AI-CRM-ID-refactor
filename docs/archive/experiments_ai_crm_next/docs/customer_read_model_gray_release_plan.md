@@ -54,7 +54,7 @@ Summary status: readonly gray release preparation only; not `production_ready`.
 | customer parity pass | `retired experiment wrapper; see docs/archive/experiments_ai_crm_next/retired_tools.md --old-fixture-dir ... --next-testclient` |
 | frontend smoke pass | route-level frontend smoke and screenshot baseline |
 | screenshot baseline pass | `/admin/customers` has HTML snapshot and PNG screenshot |
-| real PostgreSQL integration pass | local test PostgreSQL evidence in `experiments/ai_crm_next/docs/real_postgres_integration_run.md` |
+| real PostgreSQL integration pass | local test PostgreSQL evidence in `docs/archive/experiments_ai_crm_next/docs/real_postgres_integration_run.md` |
 | readonly dual-run pass or accepted legacy drift only | `retired readonly HTTP dual-run helper; see docs/archive/experiments_ai_crm_next/retired_tools.md` or customer gray smoke dual report |
 | sample external_userid coverage available | old test service list returns at least one safe sample external_userid |
 | no old backend imports | architecture boundary scan/tests |

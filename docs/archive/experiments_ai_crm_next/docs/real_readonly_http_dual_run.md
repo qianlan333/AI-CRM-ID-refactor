@@ -134,7 +134,7 @@ Customer Read Model readonly gray-release preparation now has dedicated planning
 
 - `docs/archive/experiments_ai_crm_next/docs/customer_read_model_gray_release_plan.md`
 - `experiments/ai_crm_next/docs/customer_read_model_route_cutover_manifest.md`
-- `experiments/ai_crm_next/docs/customer_read_model_sample_data_checklist.md`
+- `docs/archive/experiments_ai_crm_next/docs/customer_read_model_sample_data_checklist.md`
 - `retired experiment wrapper; see docs/archive/experiments_ai_crm_next/retired_tools.md`
 
 The known sample-data gap remains: the previous local old Flask test database did not provide a representative `external_userid`, so customer detail, timeline, and recent-message dual-run endpoints must remain skipped/pending until safe masked sample data exists. This is not production-ready evidence and does not enable production route cutover.
