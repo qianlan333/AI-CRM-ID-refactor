@@ -20,10 +20,8 @@ ensure_repo_root_on_path()
 
 
 DEFAULT_NGINX_CONFIG = "/etc/nginx/sites-enabled/youcangogogo.conf"
-DEFAULT_PROBE_URLS = (
-    "https://www.youcangogogo.com/wecom/external-contact/callback?codex_quick_ack_probe=1",
-    "https://www.youcangogogo.com/api/wecom/events?codex_quick_ack_probe=1",
-)
+PROBE_URL_ENV = "AICRM_CALLBACK_QUICK_ACK_PROBE_URL"
+PROBE_URLS_ENV = "AICRM_CALLBACK_QUICK_ACK_PROBE_URLS"
 CALLBACK_ROUTES = ("/wecom/external-contact/callback", "/api/wecom/events")
 QUICK_ACK_RETURN_RE = re.compile(r"\breturn\s+200\s+[\"']?success[\"']?\s*;", re.IGNORECASE)
 
@@ -190,6 +188,14 @@ def _probe_callback_posts(urls: list[str], timeout_seconds: float) -> dict[str, 
     }
 
 
+def _env_probe_urls() -> list[str]:
+    raw_urls = _text(os.getenv(PROBE_URLS_ENV))
+    if raw_urls:
+        return [_text(item) for item in raw_urls.split(",") if _text(item)]
+    single_url = _text(os.getenv(PROBE_URL_ENV))
+    return [single_url] if single_url else []
+
+
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Check whether emergency nginx quick ACK is still suppressing WeCom callback business processing.")
     parser.add_argument("--nginx-config", default=os.getenv("AICRM_NGINX_CONFIG", DEFAULT_NGINX_CONFIG))
@@ -199,7 +205,7 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--probe-url",
         action="append",
         default=None,
-        help="Callback POST probe URL. Repeat to check both callback routes. Defaults to both production callback URLs.",
+        help=f"Callback POST probe URL. Repeat to check both callback routes. If omitted, uses {PROBE_URLS_ENV} or {PROBE_URL_ENV}.",
     )
     parser.add_argument("--probe-timeout", type=float, default=3.0)
     parser.add_argument("--skip-probe", action="store_true", default=False)
@@ -211,8 +217,7 @@ def run(argv: list[str] | None = None) -> dict[str, Any]:
     env_file_loaded = _load_env_file(str(args.env_file))
     nginx_state = _detect_quick_ack(str(args.nginx_config))
     db_state = _recent_callback_events(int(args.minutes))
-    env_probe_url = _text(os.getenv("AICRM_CALLBACK_QUICK_ACK_PROBE_URL"))
-    probe_urls = [str(item) for item in (args.probe_url or ([env_probe_url] if env_probe_url else list(DEFAULT_PROBE_URLS))) if _text(item)]
+    probe_urls = [str(item) for item in (args.probe_url if args.probe_url is not None else _env_probe_urls()) if _text(item)]
     probe_state = (
         {
             "callback_post_checked": False,
@@ -225,7 +230,20 @@ def run(argv: list[str] | None = None) -> dict[str, Any]:
             "probes": [],
         }
         if args.skip_probe
-        else _probe_callback_posts(probe_urls, float(args.probe_timeout))
+        else (
+            _probe_callback_posts(probe_urls, float(args.probe_timeout))
+            if probe_urls
+            else {
+                "callback_post_checked": False,
+                "callback_post_nginx_200": None,
+                "callback_post_nginx_200_all": None,
+                "callback_post_nginx_200_any": None,
+                "status_code": None,
+                "body": "",
+                "error": f"probe url required; pass --probe-url or set {PROBE_URLS_ENV}/{PROBE_URL_ENV}",
+                "probes": [],
+            }
+        )
     )
     emergency_enabled = bool(nginx_state["emergency_quick_ack_enabled"])
     recent_events = db_state.get("recent_app_callback_events")

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from pathlib import Path
 import sys
 from typing import Any
@@ -19,7 +20,7 @@ except ModuleNotFoundError:  # pragma: no cover - direct script execution
 ensure_repo_root_on_path()
 
 
-DEFAULT_BASE_URL = "https://www.youcangogogo.com"
+BASE_URL_ENV = "AICRM_CALLBACK_PUBLIC_BASE_URL"
 DEFAULT_INVALID_CALLBACK_PATH = "/wecom/external-contact/callback?msg_signature=invalid&timestamp=1&nonce=public-state-probe"
 DEFAULT_INVALID_CALLBACK_PATHS = (
     DEFAULT_INVALID_CALLBACK_PATH,
@@ -136,7 +137,7 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Public HTTP-only state check for the WeCom callback storm mitigation and permanent-fix deployment signals."
     )
-    parser.add_argument("--base-url", default=DEFAULT_BASE_URL)
+    parser.add_argument("--base-url", default="")
     parser.add_argument("--probe-timeout", type=float, default=3.0)
     parser.add_argument(
         "--invalid-callback-path",
@@ -149,9 +150,25 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 def run(argv: list[str] | None = None) -> dict[str, Any]:
     args = _parse_args(argv)
-    base_url = str(args.base_url).rstrip("/")
+    base_url = str(args.base_url or "").strip() or str(os.getenv(BASE_URL_ENV, "")).strip()
+    base_url = base_url.rstrip("/")
     timeout = float(args.probe_timeout)
     invalid_callback_paths = tuple(str(path) for path in (args.invalid_callback_path or DEFAULT_INVALID_CALLBACK_PATHS))
+    if not base_url:
+        return {
+            "ok": False,
+            "base_url": "",
+            "error": "base_url_required",
+            "warnings": [f"pass --base-url or set {BASE_URL_ENV}; this script no longer defaults to production"],
+            "probes": {},
+            "callback_route_signals": [],
+            "user_facing_available": False,
+            "admin_webhook_inbox_deployed": False,
+            "admin_webhook_inbox_detail_route_deployed": False,
+            "invalid_callback_plain_success": False,
+            "app_level_callback_signal": False,
+            "permanent_fix_public_signals_ready": False,
+        }
 
     probes = {
         "health": _probe(_url(base_url, "/health"), timeout_seconds=timeout),

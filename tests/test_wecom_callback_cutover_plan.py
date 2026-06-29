@@ -142,7 +142,7 @@ def test_wecom_callback_cutover_plan_covers_install_cutover_pressure_and_rollbac
     )
     assert any("check_wecom_callback_processing_evidence.py" in item for item in commands["pressure_probe"])
     assert any("tee /tmp/wecom-callback-processing.json" in item for item in commands["pressure_probe"])
-    assert any("check_wecom_callback_public_state.py" in item for item in commands["pressure_probe"])
+    assert any("check_wecom_callback_public_state.py --base-url http://127.0.0.1:5001" in item for item in commands["pressure_probe"])
     assert any("tee /tmp/wecom-callback-public-state.json" in item for item in commands["pressure_probe"])
     assert any("check_wecom_callback_deploy_smoke.py" in item for item in commands["pressure_probe"])
     assert any("tee /tmp/wecom-callback-deploy-smoke.json" in item for item in commands["pressure_probe"])
@@ -175,7 +175,7 @@ def test_wecom_callback_cutover_plan_covers_install_cutover_pressure_and_rollbac
         "check_wecom_callback_ingress_cutover.py --nginx-config /etc/nginx/app.conf" in item
         for item in commands["reapply_cutover_after_rollback"]
     )
-    assert any("check_wecom_callback_public_state.py" in item for item in commands["reapply_cutover_after_rollback"])
+    assert any("check_wecom_callback_public_state.py --base-url http://127.0.0.1:5001" in item for item in commands["reapply_cutover_after_rollback"])
     assert any("tee /tmp/wecom-callback-public-state.json" in item for item in commands["reapply_cutover_after_rollback"])
     assert any("check_wecom_callback_deploy_smoke.py" in item for item in commands["reapply_cutover_after_rollback"])
     assert any("tee /tmp/wecom-callback-deploy-smoke.json" in item for item in commands["reapply_cutover_after_rollback"])

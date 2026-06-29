@@ -162,7 +162,7 @@ def build_plan(args: argparse.Namespace) -> dict[str, Any]:
         "python scripts/ops/check_wecom_callback_processing_evidence.py "
         "--pressure-evidence-file /tmp/wecom-callback-pressure.json "
         "| tee /tmp/wecom-callback-processing.json",
-        "python scripts/ops/check_wecom_callback_public_state.py "
+        f"python scripts/ops/check_wecom_callback_public_state.py --base-url {web_base_url} "
         "| tee /tmp/wecom-callback-public-state.json",
         "set -o pipefail; "
         f"python scripts/ops/check_wecom_callback_deploy_smoke.py --web-base-url {web_base_url} --ingress-base-url {ingress_base_url} "
@@ -253,7 +253,7 @@ def build_plan(args: argparse.Namespace) -> dict[str, Any]:
         "sudo nginx -t",
         "sudo systemctl reload nginx",
         f"python scripts/ops/check_wecom_callback_ingress_cutover.py --nginx-config {nginx_config}",
-        "python scripts/ops/check_wecom_callback_public_state.py "
+        f"python scripts/ops/check_wecom_callback_public_state.py --base-url {web_base_url} "
         "| tee /tmp/wecom-callback-public-state.json",
         "set -o pipefail; "
         f"python scripts/ops/check_wecom_callback_deploy_smoke.py --web-base-url {web_base_url} --ingress-base-url {ingress_base_url} "
