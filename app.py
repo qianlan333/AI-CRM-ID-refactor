@@ -3,12 +3,28 @@ from __future__ import annotations
 import argparse
 import os
 import sys
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
 
 
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = "5001"
 NEXT_APP_IMPORT = "aicrm_next.main:app"
+REMOVED_LEGACY_COMMANDS: tuple[tuple[str, str, tuple[str, ...]], ...] = (
+    ("run-legacy", "Removed legacy Flask startup command.", ()),
+    ("init-db-legacy", "Removed legacy Flask database init command.", ()),
+    ("init-db", "Removed legacy Flask database init command.", ()),
+    (
+        "delete-questionnaire-submissions-legacy",
+        "Legacy fallback helper for deleting questionnaire submissions by slug.",
+        ("slug",),
+    ),
+    (
+        "delete-questionnaire-submissions",
+        "Deprecated alias for delete-questionnaire-submissions-legacy.",
+        ("slug",),
+    ),
+)
+REMOVED_LEGACY_COMMAND_NAMES = frozenset(command for command, _, _ in REMOVED_LEGACY_COMMANDS)
 
 
 def _host() -> str:
@@ -49,15 +65,26 @@ def print_next_health() -> None:
     )
 
 
+def _iter_route_rows(routes: Sequence[object], prefix: str = "") -> Iterator[tuple[str, tuple[str, ...]]]:
+    for route in routes:
+        included_router = getattr(route, "original_router", None)
+        if included_router is not None:
+            include_context = getattr(route, "include_context", None)
+            include_prefix = str(getattr(include_context, "prefix", "") or "")
+            yield from _iter_route_rows(getattr(included_router, "routes", ()) or (), prefix=f"{prefix}{include_prefix}")
+            continue
+        path = getattr(route, "path", "")
+        if path:
+            methods = tuple(sorted(getattr(route, "methods", []) or ()))
+            yield f"{prefix}{path}", methods
+
+
 def print_next_routes() -> None:
     from aicrm_next.main import app
 
     try:
-        for route in sorted(app.routes, key=lambda item: getattr(item, "path", "")):
-            path = getattr(route, "path", "")
-            methods = sorted(getattr(route, "methods", []) or [])
-            if path:
-                print(f"{','.join(methods) or '-'} {path}")
+        for path, methods in sorted(_iter_route_rows(app.routes), key=lambda item: item[0]):
+            print(f"{','.join(methods) or '-'} {path}")
     except BrokenPipeError:
         try:
             sys.stdout.close()
@@ -107,19 +134,10 @@ def build_parser() -> argparse.ArgumentParser:
     targets_subparsers = targets.add_subparsers(dest="p0_1_targets_command")
     targets_validate = targets_subparsers.add_parser("validate", help="Validate the P0-1 production test target manifest.")
     targets_validate.add_argument("manifest", nargs="?", default="docs/queue/p0-1-production-test-targets.yaml")
-    subparsers.add_parser("run-legacy", help="Removed legacy Flask startup command.")
-    subparsers.add_parser("init-db-legacy", help="Removed legacy Flask database init command.")
-    subparsers.add_parser("init-db", help="Removed legacy Flask database init command.")
-    legacy_delete = subparsers.add_parser(
-        "delete-questionnaire-submissions-legacy",
-        help="Legacy fallback helper for deleting questionnaire submissions by slug.",
-    )
-    legacy_delete.add_argument("slug")
-    legacy_delete_alias = subparsers.add_parser(
-        "delete-questionnaire-submissions",
-        help="Deprecated alias for delete-questionnaire-submissions-legacy.",
-    )
-    legacy_delete_alias.add_argument("slug")
+    for removed_command, help_text, positional_args in REMOVED_LEGACY_COMMANDS:
+        removed_parser = subparsers.add_parser(removed_command, help=help_text)
+        for arg in positional_args:
+            removed_parser.add_argument(arg)
     return parser
 
 
@@ -192,13 +210,7 @@ def main(argv: Sequence[str] | None = None) -> None:
             raise SystemExit(validate_targets_main([getattr(args, "manifest", "docs/queue/p0-1-production-test-targets.yaml")]))
         parser.print_help()
         return
-    if command == "run-legacy":
-        removed_legacy_command(command)
-        return
-    if command in {"init-db", "init-db-legacy"}:
-        removed_legacy_command(command)
-        return
-    if command in {"delete-questionnaire-submissions", "delete-questionnaire-submissions-legacy"}:
+    if command in REMOVED_LEGACY_COMMAND_NAMES:
         removed_legacy_command(command)
         return
 
