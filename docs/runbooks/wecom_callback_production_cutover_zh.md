@@ -167,7 +167,7 @@ python scripts/ops/check_wecom_callback_ingestion_evidence.py --pressure-evidenc
 python scripts/run_wecom_callback_inbox_worker.py --limit 20
 AICRM_WECOM_CALLBACK_INBOX_WORKER_EXECUTE=1 python scripts/run_wecom_callback_inbox_worker.py --execute --limit 20
 python scripts/ops/check_wecom_callback_processing_evidence.py --pressure-evidence-file /tmp/wecom-callback-pressure.json | tee /tmp/wecom-callback-processing.json
-python scripts/ops/check_wecom_callback_public_state.py | tee /tmp/wecom-callback-public-state.json
+python scripts/ops/check_wecom_callback_public_state.py --base-url http://127.0.0.1:5001 | tee /tmp/wecom-callback-public-state.json
 set -o pipefail; python scripts/ops/check_wecom_callback_deploy_smoke.py --web-base-url http://127.0.0.1:5001 --ingress-base-url http://127.0.0.1:5002 | tee /tmp/wecom-callback-deploy-smoke.json
 ```
 

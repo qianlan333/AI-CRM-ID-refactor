@@ -18,7 +18,9 @@ If host login is unavailable, run the public HTTP-only check from a local
 checkout first:
 
 ```bash
-.venv/bin/python scripts/ops/check_wecom_callback_public_state.py
+export AICRM_CALLBACK_PUBLIC_BASE_URL="https://<public-host>"
+.venv/bin/python scripts/ops/check_wecom_callback_public_state.py \
+  --base-url "$AICRM_CALLBACK_PUBLIC_BASE_URL"
 ```
 
 Emergency quick-ACK shape:
@@ -46,7 +48,7 @@ Run on the production host:
 cd /home/ubuntu/极简 crm
 source /home/ubuntu/venvs/openclaw/bin/activate
 set -a && source /home/ubuntu/.openclaw-wecom-pg.env && set +a
-python scripts/ops/check_callback_quick_ack_state.py
+python scripts/ops/check_callback_quick_ack_state.py --skip-probe
 ```
 
 Expected emergency-mode shape:
@@ -250,6 +252,7 @@ python scripts/ops/check_wecom_callback_processing_evidence.py \
   | tee /tmp/wecom-callback-processing.json
 
 python scripts/ops/check_wecom_callback_public_state.py \
+  --base-url http://127.0.0.1:5001 \
   | tee /tmp/wecom-callback-public-state.json
 
 python scripts/ops/check_wecom_callback_deploy_smoke.py \
@@ -414,7 +417,7 @@ Then re-run:
 cd /home/ubuntu/极简 crm
 source /home/ubuntu/venvs/openclaw/bin/activate
 set -a && source /home/ubuntu/.openclaw-wecom-pg.env && set +a
-python scripts/ops/check_callback_quick_ack_state.py
+python scripts/ops/check_callback_quick_ack_state.py --skip-probe
 ```
 
 ## Permanent Direction

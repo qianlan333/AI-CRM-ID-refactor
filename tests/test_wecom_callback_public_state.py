@@ -36,6 +36,35 @@ def _fake_urlopen(mapping: dict[str, tuple[int, str]]):
     return fake
 
 
+def test_public_state_requires_explicit_base_url(monkeypatch) -> None:
+    monkeypatch.delenv("AICRM_CALLBACK_PUBLIC_BASE_URL", raising=False)
+    monkeypatch.setattr(public_state, "urlopen", lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("should not probe")))
+
+    payload = public_state.run([])
+
+    assert payload["ok"] is False
+    assert payload["error"] == "base_url_required"
+    assert "no longer defaults to production" in " ".join(payload["warnings"])
+    assert payload["probes"] == {}
+
+
+def test_public_state_accepts_base_url_from_env(monkeypatch) -> None:
+    monkeypatch.setenv("AICRM_CALLBACK_PUBLIC_BASE_URL", "https://example.test")
+    seen_urls: list[str] = []
+
+    def fake_urlopen(request, timeout=3.0):
+        seen_urls.append(request.full_url)
+        raise HTTPError(request.full_url, 400, "error", hdrs=None, fp=_Response(400, "invalid callback"))
+
+    monkeypatch.setattr(public_state, "urlopen", fake_urlopen)
+
+    payload = public_state.run(["--probe-timeout", "0.1"])
+
+    assert payload["base_url"] == "https://example.test"
+    assert seen_urls
+    assert all(url.startswith("https://example.test/") for url in seen_urls)
+
+
 def test_public_state_reports_current_emergency_quick_ack_shape(monkeypatch) -> None:
     monkeypatch.setattr(
         public_state,

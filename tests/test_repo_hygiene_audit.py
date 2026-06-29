@@ -188,3 +188,28 @@ def test_cli_outputs_json_and_keeps_success_exit_with_findings(tmp_path, capsys)
     payload = json.loads(json_output.read_text(encoding="utf-8"))
     assert payload["summary"]["issue_count"] >= 1
     assert summary_output.exists()
+
+
+def test_cli_accepts_generated_at_for_reproducible_reports(tmp_path) -> None:
+    _write(tmp_path / "AGENTS.md", "# Entry\n")
+    json_output = tmp_path / "out/report.json"
+    summary_output = tmp_path / "out/report.md"
+
+    assert (
+        main(
+            [
+                "--root",
+                str(tmp_path),
+                "--json-output",
+                str(json_output),
+                "--summary-output",
+                str(summary_output),
+                "--generated-at",
+                "2026-06-29T00:00:00Z",
+            ]
+        )
+        == 0
+    )
+
+    assert json.loads(json_output.read_text(encoding="utf-8"))["generated_at"] == "2026-06-29T00:00:00Z"
+    assert "Generated at: `2026-06-29T00:00:00Z`" in summary_output.read_text(encoding="utf-8")

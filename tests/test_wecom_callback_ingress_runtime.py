@@ -171,7 +171,7 @@ def test_callback_quick_ack_state_reports_route_level_quick_ack(monkeypatch, tmp
     assert payload["callback_route_details"]["/api/wecom/events"]["emergency_quick_ack_enabled"] is True
 
 
-def test_callback_quick_ack_state_probes_both_default_callback_urls(monkeypatch, tmp_path) -> None:
+def test_callback_quick_ack_state_requires_explicit_probe_urls(monkeypatch, tmp_path) -> None:
     config = tmp_path / "nginx.conf"
     config.write_text(
         """
@@ -181,6 +181,39 @@ def test_callback_quick_ack_state_probes_both_default_callback_urls(monkeypatch,
         encoding="utf-8",
     )
     monkeypatch.delenv("AICRM_CALLBACK_QUICK_ACK_PROBE_URL", raising=False)
+    monkeypatch.delenv("AICRM_CALLBACK_QUICK_ACK_PROBE_URLS", raising=False)
+    monkeypatch.setattr(
+        quick_ack_state,
+        "_recent_callback_events",
+        lambda minutes: {"database_checked": True, "recent_app_callback_events": 0, "error": ""},
+    )
+    monkeypatch.setattr(
+        quick_ack_state,
+        "_probe_callback_post",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("should not probe without explicit URL")),
+    )
+
+    payload = quick_ack_state.run(["--nginx-config", str(config)])
+
+    assert payload["callback_post_checked"] is False
+    assert payload["callback_post_probe_urls"] == []
+    assert "probe url required" in payload["callback_post_error"]
+
+
+def test_callback_quick_ack_state_probes_env_callback_urls(monkeypatch, tmp_path) -> None:
+    config = tmp_path / "nginx.conf"
+    config.write_text(
+        """
+        location = /wecom/external-contact/callback { return 200 "success"; }
+        location = /api/wecom/events { return 200 "success"; }
+        """,
+        encoding="utf-8",
+    )
+    monkeypatch.delenv("AICRM_CALLBACK_QUICK_ACK_PROBE_URL", raising=False)
+    monkeypatch.setenv(
+        "AICRM_CALLBACK_QUICK_ACK_PROBE_URLS",
+        "https://example.test/wecom/external-contact/callback?codex_quick_ack_probe=1,https://example.test/api/wecom/events?codex_quick_ack_probe=1",
+    )
     monkeypatch.setattr(
         quick_ack_state,
         "_recent_callback_events",
