@@ -6,6 +6,23 @@ The default runtime package has been promoted to root `aicrm_next/`. Keep this e
 
 The product goal is strict parity with the current AI-CRM product capability and frontend experience. The backend is a new FastAPI modular monolith; the old Flask backend is reference material only and is not imported at runtime.
 
+## Retention Rule
+
+Keep this workspace only for files that still do at least one of the following:
+
+- protect the root duplicate-source guard for `experiments/ai_crm_next/src/aicrm_next`;
+- provide experiment-local parity, fixture, migration, or regression coverage;
+- preserve reference docs that explain migration decisions still cited by tests or root docs;
+- keep historical evidence reachable through `docs/archive/experiments_ai_crm_next/`.
+
+New canary, gray-release, production signoff, execution report, screenshot, or generated evidence files should not be added here. Add durable evidence under the appropriate `docs/archive/` or `docs/reports/` location, and refresh `docs/cleanup/experiments_ai_crm_next_inventory.md` with:
+
+```bash
+python3 tools/report_experiments_inventory.py \
+  --summary-output docs/cleanup/experiments_ai_crm_next_inventory.md \
+  --json-output docs/cleanup/experiments_ai_crm_next_inventory.json
+```
+
 ## Principles
 
 - Frontend parity is mandatory. Current templates, navigation, interactions, tables, filters, drawers, modals, button placement, visual style, and information density are the baseline.
