@@ -40,10 +40,26 @@ def test_route_inventory_consolidation_report_classifies_inventory_files(tmp_pat
 
     records = {record["path"]: record for record in report["inventories"]}
     assert records["docs/architecture/health_route_inventory.md"]["classification"] == "mostly_manifest_derivable"
+    assert records["docs/architecture/health_route_inventory.md"]["manifest_derivable_routes"] == [
+        {
+            "path": "/health",
+            "methods": [],
+            "route_name": "",
+            "capability_owner": "",
+            "runtime_owner": "",
+            "layer": "",
+            "external_effects": "",
+            "data_source": "",
+            "requires_auth": False,
+            "rollback": "",
+        }
+    ]
     assert records["docs/architecture/items_route_inventory.md"]["classification"] == "retain_closeout_evidence"
+    assert records["docs/architecture/items_route_inventory.md"]["manifest_derivable_routes"] == []
     assert records["docs/architecture/narrative_route_inventory.md"]["classification"] == "needs_manual_review"
     assert report["summary"]["manifest_route_count"] == 2
     assert report["summary"]["inventory_file_count"] == 3
+    assert report["summary"]["manifest_derivable_route_count"] == 1
 
 
 def test_route_inventory_consolidation_report_writes_markdown_and_json(tmp_path) -> None:
@@ -59,7 +75,9 @@ def test_route_inventory_consolidation_report_writes_markdown_and_json(tmp_path)
     payload = json.loads(json_output.read_text(encoding="utf-8"))
     assert "Route Inventory Consolidation Inventory" in summary
     assert "health_route_inventory.md" in summary
+    assert "Manifest-Generated Rows" in summary
     assert payload["summary"]["inventory_file_count"] == 1
+    assert payload["summary"]["manifest_derivable_route_count"] == 1
     assert "mostly_manifest_derivable" in render_markdown(report)
 
 
@@ -75,9 +93,11 @@ def test_route_inventory_consolidation_cli_returns_zero_and_outputs_files(tmp_pa
             "docs/cleanup/report.md",
             "--json-output",
             "docs/cleanup/report.json",
+            "--generated-at",
+            "2026-06-29T00:00:00Z",
         ]
     )
 
     assert status == 0
-    assert (tmp_path / "docs/cleanup/report.md").exists()
-    assert (tmp_path / "docs/cleanup/report.json").exists()
+    assert "Generated: 2026-06-29T00:00:00Z" in (tmp_path / "docs/cleanup/report.md").read_text(encoding="utf-8")
+    assert json.loads((tmp_path / "docs/cleanup/report.json").read_text(encoding="utf-8"))["generated_at"] == "2026-06-29T00:00:00Z"
