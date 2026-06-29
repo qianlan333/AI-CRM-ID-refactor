@@ -23,6 +23,17 @@ Retired wrappers:
 - `run_gray_rehearsal_batch.py`
 - `user_ops_readonly_gray_smoke.py`
 
+Retired readiness and review helpers:
+
+- `check_batch_1_media_canary_readiness.py`
+- `check_batch_1_media_production_signoff_readiness.py`
+- `check_batch_2_product_canary_readiness.py`
+- `check_batch_3_customer_canary_readiness.py`
+- `check_batch_4_user_ops_canary_readiness.py`
+- `check_batch_5_questionnaire_canary_readiness.py`
+- `check_production_canary_approval_package.py`
+- `generate_gray_release_report.py`
+
 Retired tests:
 
 - `test_customer_read_model_gray_smoke.py`
@@ -31,6 +42,18 @@ Retired tests:
 - `test_questionnaire_readonly_gray_smoke.py`
 - `test_gray_rehearsal_batch.py`
 - `test_user_ops_readonly_gray_smoke.py`
+- `test_batch_1_media_canary_readiness.py`
+- `test_batch_1_media_production_signoff_readiness.py`
+- `test_batch_2_product_canary_readiness.py`
+- `test_batch_3_customer_canary_readiness.py`
+- `test_batch_4_user_ops_canary_readiness.py`
+- `test_batch_5_questionnaire_canary_readiness.py`
+- `test_gray_release_runbook.py`
+- `test_production_canary_approval_package.py`
 
 Active experiment coverage remains in the parity specs, fixture masking tests,
-contract tests, readiness document tests, and architecture gates.
+contract tests, route/header tests, PostgreSQL readiness tests, and architecture
+gates. Historical canary, gray-release, signoff, and production-canary evidence
+remains archived under `docs/archive/experiments_ai_crm_next/docs/`; the retired
+helpers above should not be used as current runbooks or production approval
+checks.

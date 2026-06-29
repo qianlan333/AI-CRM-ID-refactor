@@ -90,12 +90,7 @@ This plan prepares a staging or production-like canary for Batch 4 User Ops read
 ## Readiness Command
 
 ```bash
-.venv/bin/python experiments/ai_crm_next/tools/check_batch_4_user_ops_canary_readiness.py \
-  --user-ops-smoke-json /tmp/user_ops_readonly_gray_smoke_batch_4.json \
-  --user-ops-parity-json /tmp/user_ops_parity_batch_4.json \
-  --readonly-dual-json /tmp/readonly_dual_run_batch_4_user_ops.json \
-  --output-md /tmp/batch_4_user_ops_canary_readiness.md \
-  --output-json /tmp/batch_4_user_ops_canary_readiness.json
+# Historical command retired; see docs/archive/experiments_ai_crm_next/retired_tools.md
 ```
 
 ## Conclusion

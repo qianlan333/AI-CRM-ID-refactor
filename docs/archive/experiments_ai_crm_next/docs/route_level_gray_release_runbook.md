@@ -46,7 +46,7 @@ This runbook is for controlled route-level gray execution planning. It is not a 
 6. Apply the approved route flag or proxy rule in the approved environment only.
 7. Run the selected batch smoke command immediately.
 8. Observe logs and route status.
-9. Generate a gray release report with `experiments/ai_crm_next/tools/generate_gray_release_report.py`.
+9. Generate a gray release report with `retired gray-release report helper; see docs/archive/experiments_ai_crm_next/retired_tools.md`.
 10. Record human signoff and Go/No-Go decision.
 
 ## Smoke After Route Change
@@ -54,12 +54,7 @@ This runbook is for controlled route-level gray execution planning. It is not a 
 Run the selected batch smoke command from `docs/archive/experiments_ai_crm_next/docs/route_level_gray_release_batches.md`. Then run:
 
 ```bash
-.venv/bin/python experiments/ai_crm_next/tools/generate_gray_release_report.py \
-  --batch <batch_name> \
-  --input-json /tmp/<selected_gray_smoke>.json \
-  --parity-json /tmp/<selected_parity>.json \
-  --output-md /tmp/gray_release_<batch_name>_report.md \
-  --output-json /tmp/gray_release_<batch_name>_report.json
+# Historical command retired; see docs/archive/experiments_ai_crm_next/retired_tools.md
 ```
 
 The report must show:
@@ -72,11 +67,7 @@ The report must show:
 For a local rehearsal before any route change, use:
 
 ```bash
-.venv/bin/python retired experiment tool wrapper; see docs/archive/experiments_ai_crm_next/retired_tools.md \
-  --batch media_readonly \
-  --next-testclient \
-  --output-md /tmp/gray_rehearsal_batch_1_media_readonly.md \
-  --output-json /tmp/gray_rehearsal_batch_1_media_readonly.json
+# Historical command retired; see docs/archive/experiments_ai_crm_next/retired_tools.md
 ```
 
 This command does not modify proxy configuration and does not switch traffic.
@@ -84,12 +75,7 @@ This command does not modify proxy configuration and does not switch traffic.
 For Batch 1 staging canary readiness, use existing Media smoke, Media parity, and Batch 1 rehearsal JSON:
 
 ```bash
-.venv/bin/python experiments/ai_crm_next/tools/check_batch_1_media_canary_readiness.py \
-  --media-smoke-json /tmp/media_gray_smoke_after_canary_plan.json \
-  --media-parity-json /tmp/media_parity_after_canary_plan.json \
-  --batch-rehearsal-json /tmp/gray_rehearsal_batch_1_media_readonly_audit.json \
-  --output-md /tmp/batch_1_media_canary_readiness.md \
-  --output-json /tmp/batch_1_media_canary_readiness.json
+# Historical command retired; see docs/archive/experiments_ai_crm_next/retired_tools.md
 ```
 
 This checker only reads existing reports and the screenshot route status. It does not modify proxy configuration, switch traffic, or call external providers.

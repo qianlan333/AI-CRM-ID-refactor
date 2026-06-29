@@ -88,12 +88,7 @@ This plan prepares a staging or production-like canary for Batch 3 Customer Read
 ## Readiness Command
 
 ```bash
-.venv/bin/python experiments/ai_crm_next/tools/check_batch_3_customer_canary_readiness.py \
-  --customer-smoke-json /tmp/customer_gray_smoke_batch_3.json \
-  --customer-parity-json /tmp/customer_parity_batch_3.json \
-  --readonly-dual-json /tmp/readonly_dual_run_batch_3_customer.json \
-  --output-md /tmp/batch_3_customer_canary_readiness.md \
-  --output-json /tmp/batch_3_customer_canary_readiness.json
+# Historical command retired; see docs/archive/experiments_ai_crm_next/retired_tools.md
 ```
 
 ## Conclusion

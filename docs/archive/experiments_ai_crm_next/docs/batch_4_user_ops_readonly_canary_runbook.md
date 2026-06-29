@@ -15,19 +15,11 @@ This runbook is for staging or production-like canary preparation/execution. It 
 3. Run six parity tools.
 4. Run User Ops parity.
    ```bash
-   .venv/bin/python retired experiment wrapper; see docs/archive/experiments_ai_crm_next/retired_tools.md \
-     --old-fixture-dir tests/fixtures/old_user_ops \
-     --next-testclient \
-     --output-md /tmp/user_ops_parity_batch_4.md \
-     --output-json /tmp/user_ops_parity_batch_4.json
+   # Historical command retired; see docs/archive/experiments_ai_crm_next/retired_tools.md
    ```
 5. Run User Ops readonly gray smoke.
    ```bash
-   .venv/bin/python retired experiment wrapper; see docs/archive/experiments_ai_crm_next/retired_tools.md \
-     --old-base-url http://127.0.0.1:5001 \
-     --next-testclient \
-     --output-md /tmp/user_ops_readonly_gray_smoke_batch_4.md \
-     --output-json /tmp/user_ops_readonly_gray_smoke_batch_4.json
+   # Historical command retired; see docs/archive/experiments_ai_crm_next/retired_tools.md
    ```
 6. Run readonly dual-run if old Flask is available.
    ```bash

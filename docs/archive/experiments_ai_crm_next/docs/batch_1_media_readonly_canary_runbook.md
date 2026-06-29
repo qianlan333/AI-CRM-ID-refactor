@@ -15,18 +15,11 @@ This runbook is for staging or production-like canary preparation. It is not a p
 3. Run six parity tools.
 4. Run Media parity.
    ```bash
-   .venv/bin/python retired experiment wrapper; see docs/archive/experiments_ai_crm_next/retired_tools.md \
-     --old-fixture-dir tests/fixtures/old_media_library \
-     --next-testclient \
-     --output-md /tmp/media_parity_after_canary_plan.md \
-     --output-json /tmp/media_parity_after_canary_plan.json
+   # Historical command retired; see docs/archive/experiments_ai_crm_next/retired_tools.md
    ```
 5. Run Media gray smoke.
    ```bash
-   .venv/bin/python retired experiment wrapper; see docs/archive/experiments_ai_crm_next/retired_tools.md \
-     --next-testclient \
-     --output-md /tmp/media_gray_smoke_after_canary_plan.md \
-     --output-json /tmp/media_gray_smoke_after_canary_plan.json
+   # Historical command retired; see docs/archive/experiments_ai_crm_next/retired_tools.md
    ```
 6. Confirm screenshot baseline.
    - `experiments/ai_crm_next/docs/frontend_screenshot_baseline.md`
@@ -51,12 +44,7 @@ This runbook is for staging or production-like canary preparation. It is not a p
 7. Confirm screenshot baseline route status.
 8. Generate readiness report.
    ```bash
-   .venv/bin/python experiments/ai_crm_next/tools/check_batch_1_media_canary_readiness.py \
-     --media-smoke-json /tmp/media_gray_smoke_after_canary_plan.json \
-     --media-parity-json /tmp/media_parity_after_canary_plan.json \
-     --batch-rehearsal-json /tmp/gray_rehearsal_batch_1_media_readonly_audit.json \
-     --output-md /tmp/batch_1_media_canary_readiness.md \
-     --output-json /tmp/batch_1_media_canary_readiness.json
+   # Historical command retired; see docs/archive/experiments_ai_crm_next/retired_tools.md
    ```
 9. Generate gray release report if a selected smoke/parity pair needs aggregation.
 

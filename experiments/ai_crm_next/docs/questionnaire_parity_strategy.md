@@ -20,23 +20,15 @@ First-slice parity covers:
 
 Fixture mode:
 
-```bash
-python retired experiment wrapper; see docs/archive/experiments_ai_crm_next/retired_tools.md \
-  --old-fixture-dir tests/fixtures/old_questionnaire \
-  --next-testclient \
-  --output-md /tmp/questionnaire_parity_report.md \
-  --output-json /tmp/questionnaire_parity_report.json
-```
+Historical fixture wrapper command retired. See
+`docs/archive/experiments_ai_crm_next/retired_tools.md` for the archived tool
+index.
 
 HTTP mode is reserved for isolated dual-run environments:
 
-```bash
-python retired experiment wrapper; see docs/archive/experiments_ai_crm_next/retired_tools.md \
-  --old-base-url http://127.0.0.1:5001 \
-  --next-base-url http://127.0.0.1:8000 \
-  --output-md /tmp/questionnaire_parity_report.md \
-  --output-json /tmp/questionnaire_parity_report.json
-```
+Historical HTTP wrapper command retired. See
+`docs/archive/experiments_ai_crm_next/retired_tools.md` for the archived tool
+index.
 
 Do not point HTTP mode at old production submit endpoints. Submit comparison must use fixtures or an isolated fake dataset.
 

@@ -91,11 +91,7 @@ This plan prepares a staging or production-like canary for Batch 5 Questionnaire
 ## Readiness Command
 
 ```bash
-.venv/bin/python experiments/ai_crm_next/tools/check_batch_5_questionnaire_canary_readiness.py \
-  --questionnaire-smoke-json /tmp/questionnaire_readonly_gray_smoke_batch_5.json \
-  --questionnaire-parity-json /tmp/questionnaire_parity_batch_5.json \
-  --output-md /tmp/batch_5_questionnaire_canary_readiness.md \
-  --output-json /tmp/batch_5_questionnaire_canary_readiness.json
+# Historical command retired; see docs/archive/experiments_ai_crm_next/retired_tools.md
 ```
 
 ## Conclusion

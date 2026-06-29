@@ -48,15 +48,9 @@ Frontend screenshots should verify that navigation, tables, filters, drawers, mo
 
 ## User Ops Parity Comparison
 
-The repeatable comparison entrypoint is:
-
-```bash
-python retired experiment wrapper; see docs/archive/experiments_ai_crm_next/retired_tools.md \
-  --old-fixture-dir tests/fixtures/old_user_ops \
-  --next-testclient \
-  --output-md /tmp/user_ops_parity_report.md \
-  --output-json /tmp/user_ops_parity_report.json
-```
+The historical comparison wrapper is retired. See
+`docs/archive/experiments_ai_crm_next/retired_tools.md` for the archived tool
+index.
 
 For live dual-run validation, replace `--old-fixture-dir` and `--next-testclient` with `--old-base-url` and `--next-base-url`. The default command avoids write endpoints; execute/DND style checks require an explicitly isolated environment and `--include-write-endpoints`.
 
@@ -72,15 +66,9 @@ This does not mean User Ops is production-complete. The SQL repository is tested
 
 ## Customer Read Model Parity Comparison
 
-The repeatable comparison entrypoint is:
-
-```bash
-python retired experiment wrapper; see docs/archive/experiments_ai_crm_next/retired_tools.md \
-  --old-fixture-dir tests/fixtures/old_customer_read_model \
-  --next-testclient \
-  --output-md /tmp/customer_read_model_parity_report.md \
-  --output-json /tmp/customer_read_model_parity_report.json
-```
+The historical comparison wrapper is retired. See
+`docs/archive/experiments_ai_crm_next/retired_tools.md` for the archived tool
+index.
 
 For live dual-run validation, replace `--old-fixture-dir` and `--next-testclient` with `--old-base-url` and `--next-base-url`. The compared endpoints are read-only: `/api/customers`, `/api/customers/{external_userid}`, `/api/customers/{external_userid}/timeline`, and `/api/messages/{external_userid}/recent`.
 
@@ -116,15 +104,9 @@ These tests validate migration upgrade/downgrade and SQL repository behavior onl
 
 ## Questionnaire Parity Comparison
 
-The repeatable first-slice comparison entrypoint is:
-
-```bash
-python retired experiment wrapper; see docs/archive/experiments_ai_crm_next/retired_tools.md \
-  --old-fixture-dir tests/fixtures/old_questionnaire \
-  --next-testclient \
-  --output-md /tmp/questionnaire_parity_report.md \
-  --output-json /tmp/questionnaire_parity_report.json
-```
+The historical first-slice comparison wrapper is retired. See
+`docs/archive/experiments_ai_crm_next/retired_tools.md` for the archived tool
+index.
 
 For live dual-run validation, replace fixtures with `--old-base-url` and `--next-base-url` only in an isolated environment. The default fixture mode includes a safe fake submit payload; do not run real submit against old production.
 
@@ -154,21 +136,10 @@ The Automation Conversion slice remains partial:
 
 ## Commerce / Media Migration Slice
 
-Commerce and media-library migration now has first-slice parity tooling:
-
-```bash
-python retired experiment wrapper; see docs/archive/experiments_ai_crm_next/retired_tools.md \
-  --old-fixture-dir tests/fixtures/old_commerce \
-  --next-testclient \
-  --output-md /tmp/commerce_parity_report.md \
-  --output-json /tmp/commerce_parity_report.json
-
-python retired experiment wrapper; see docs/archive/experiments_ai_crm_next/retired_tools.md \
-  --old-fixture-dir tests/fixtures/old_media_library \
-  --next-testclient \
-  --output-md /tmp/media_library_parity_report.md \
-  --output-json /tmp/media_library_parity_report.json
-```
+Commerce and media-library migration kept historical first-slice parity tooling
+as archived evidence. See
+`docs/archive/experiments_ai_crm_next/retired_tools.md` for the retired wrapper
+index.
 
 This does not replace old payment or material systems. The slice remains partial:
 

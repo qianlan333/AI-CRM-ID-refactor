@@ -11,11 +11,11 @@ This checklist must be completed for every route-level gray batch. It does not a
 Run all six parity tools:
 
 ```bash
-.venv/bin/python retired experiment wrapper; see docs/archive/experiments_ai_crm_next/retired_tools.md --old-fixture-dir tests/fixtures/old_user_ops --next-testclient --output-md /tmp/user_ops_parity_gray.md --output-json /tmp/user_ops_parity_gray.json
-.venv/bin/python retired experiment wrapper; see docs/archive/experiments_ai_crm_next/retired_tools.md --old-fixture-dir tests/fixtures/old_customer_read_model --next-testclient --output-md /tmp/customer_parity_gray.md --output-json /tmp/customer_parity_gray.json
-.venv/bin/python retired experiment wrapper; see docs/archive/experiments_ai_crm_next/retired_tools.md --old-fixture-dir tests/fixtures/old_questionnaire --next-testclient --output-md /tmp/questionnaire_parity_gray.md --output-json /tmp/questionnaire_parity_gray.json
-.venv/bin/python retired experiment wrapper; see docs/archive/experiments_ai_crm_next/retired_tools.md --old-fixture-dir tests/fixtures/old_commerce --next-testclient --output-md /tmp/commerce_parity_gray.md --output-json /tmp/commerce_parity_gray.json
-.venv/bin/python retired experiment wrapper; see docs/archive/experiments_ai_crm_next/retired_tools.md --old-fixture-dir tests/fixtures/old_media_library --next-testclient --output-md /tmp/media_parity_gray.md --output-json /tmp/media_parity_gray.json
+# Historical command retired; see docs/archive/experiments_ai_crm_next/retired_tools.md
+# Historical command retired; see docs/archive/experiments_ai_crm_next/retired_tools.md
+# Historical command retired; see docs/archive/experiments_ai_crm_next/retired_tools.md
+# Historical command retired; see docs/archive/experiments_ai_crm_next/retired_tools.md
+# Historical command retired; see docs/archive/experiments_ai_crm_next/retired_tools.md
 ```
 
 ## Batch Commands
@@ -51,11 +51,7 @@ Confirm `experiments/ai_crm_next/docs/frontend_screenshot_baseline.md` includes 
 Before any production-like route flag change, run:
 
 ```bash
-.venv/bin/python retired experiment tool wrapper; see docs/archive/experiments_ai_crm_next/retired_tools.md \
-  --batch media_readonly \
-  --next-testclient \
-  --output-md /tmp/gray_rehearsal_batch_1_media_readonly.md \
-  --output-json /tmp/gray_rehearsal_batch_1_media_readonly.json
+# Historical command retired; see docs/archive/experiments_ai_crm_next/retired_tools.md
 ```
 
 Required result:
@@ -72,12 +68,7 @@ Required result:
 Before a staging or production-like canary signoff, run:
 
 ```bash
-.venv/bin/python experiments/ai_crm_next/tools/check_batch_1_media_canary_readiness.py \
-  --media-smoke-json /tmp/media_gray_smoke_after_canary_plan.json \
-  --media-parity-json /tmp/media_parity_after_canary_plan.json \
-  --batch-rehearsal-json /tmp/gray_rehearsal_batch_1_media_readonly_audit.json \
-  --output-md /tmp/batch_1_media_canary_readiness.md \
-  --output-json /tmp/batch_1_media_canary_readiness.json
+# Historical command retired; see docs/archive/experiments_ai_crm_next/retired_tools.md
 ```
 
 Required result:

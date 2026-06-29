@@ -57,8 +57,8 @@ Excluded:
 Validation:
 
 ```bash
-.venv/bin/python retired experiment wrapper; see docs/archive/experiments_ai_crm_next/retired_tools.md --next-testclient --output-md /tmp/media_fast_smoke.md --output-json /tmp/media_fast_smoke.json
-.venv/bin/python retired experiment wrapper; see docs/archive/experiments_ai_crm_next/retired_tools.md --old-fixture-dir tests/fixtures/old_media_library --next-testclient --output-md /tmp/media_fast_parity.md --output-json /tmp/media_fast_parity.json
+# Historical command retired; see docs/archive/experiments_ai_crm_next/retired_tools.md
+# Historical command retired; see docs/archive/experiments_ai_crm_next/retired_tools.md
 ```
 
 Rollback:
@@ -89,8 +89,8 @@ Excluded:
 Validation:
 
 ```bash
-.venv/bin/python retired experiment wrapper; see docs/archive/experiments_ai_crm_next/retired_tools.md --next-testclient --output-md /tmp/product_fast_smoke.md --output-json /tmp/product_fast_smoke.json
-.venv/bin/python retired experiment wrapper; see docs/archive/experiments_ai_crm_next/retired_tools.md --old-fixture-dir tests/fixtures/old_commerce --next-testclient --output-md /tmp/commerce_fast_parity.md --output-json /tmp/commerce_fast_parity.json
+# Historical command retired; see docs/archive/experiments_ai_crm_next/retired_tools.md
+# Historical command retired; see docs/archive/experiments_ai_crm_next/retired_tools.md
 ```
 
 Rollback:
@@ -121,8 +121,8 @@ Excluded:
 Validation:
 
 ```bash
-.venv/bin/python retired experiment wrapper; see docs/archive/experiments_ai_crm_next/retired_tools.md --next-testclient --output-md /tmp/customer_fast_smoke.md --output-json /tmp/customer_fast_smoke.json
-.venv/bin/python retired experiment wrapper; see docs/archive/experiments_ai_crm_next/retired_tools.md --old-fixture-dir tests/fixtures/old_customer_read_model --next-testclient --output-md /tmp/customer_fast_parity.md --output-json /tmp/customer_fast_parity.json
+# Historical command retired; see docs/archive/experiments_ai_crm_next/retired_tools.md
+# Historical command retired; see docs/archive/experiments_ai_crm_next/retired_tools.md
 ```
 
 Rollback:
@@ -153,8 +153,8 @@ Excluded:
 Validation:
 
 ```bash
-.venv/bin/python retired experiment wrapper; see docs/archive/experiments_ai_crm_next/retired_tools.md --next-testclient --output-md /tmp/user_ops_fast_smoke.md --output-json /tmp/user_ops_fast_smoke.json
-.venv/bin/python retired experiment wrapper; see docs/archive/experiments_ai_crm_next/retired_tools.md --old-fixture-dir tests/fixtures/old_user_ops --next-testclient --output-md /tmp/user_ops_fast_parity.md --output-json /tmp/user_ops_fast_parity.json
+# Historical command retired; see docs/archive/experiments_ai_crm_next/retired_tools.md
+# Historical command retired; see docs/archive/experiments_ai_crm_next/retired_tools.md
 ```
 
 Rollback:
@@ -190,8 +190,8 @@ Excluded:
 Validation:
 
 ```bash
-.venv/bin/python retired experiment wrapper; see docs/archive/experiments_ai_crm_next/retired_tools.md --next-testclient --output-md /tmp/questionnaire_fast_smoke.md --output-json /tmp/questionnaire_fast_smoke.json
-.venv/bin/python retired experiment wrapper; see docs/archive/experiments_ai_crm_next/retired_tools.md --old-fixture-dir tests/fixtures/old_questionnaire --next-testclient --output-md /tmp/questionnaire_fast_parity.md --output-json /tmp/questionnaire_fast_parity.json
+# Historical command retired; see docs/archive/experiments_ai_crm_next/retired_tools.md
+# Historical command retired; see docs/archive/experiments_ai_crm_next/retired_tools.md
 ```
 
 Rollback:

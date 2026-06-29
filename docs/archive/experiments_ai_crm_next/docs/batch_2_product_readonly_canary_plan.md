@@ -81,11 +81,7 @@ This plan prepares a staging or production-like canary for Batch 2 Product Manag
 ## Readiness Command
 
 ```bash
-.venv/bin/python experiments/ai_crm_next/tools/check_batch_2_product_canary_readiness.py \
-  --product-smoke-json /tmp/product_management_gray_smoke_batch_2.json \
-  --commerce-parity-json /tmp/commerce_parity_batch_2_product.json \
-  --output-md /tmp/batch_2_product_canary_readiness.md \
-  --output-json /tmp/batch_2_product_canary_readiness.json
+# Historical command retired; see docs/archive/experiments_ai_crm_next/retired_tools.md
 ```
 
 ## Conclusion

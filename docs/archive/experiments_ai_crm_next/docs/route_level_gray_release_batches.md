@@ -27,7 +27,7 @@ Smoke commands:
 ```bash
 .venv/bin/python -m pytest -q
 .venv/bin/python experiments/ai_crm_next/tools/capture_frontend_screenshots.py --output-dir artifacts/frontend_screenshots --mode testclient
-.venv/bin/python tools/readonly_http_dual_run.py --old-base-url http://127.0.0.1:5001 --next-testclient --scope customer,user_ops --output-md /tmp/aicrm_next_readonly_dual_run.md --output-json /tmp/aicrm_next_readonly_dual_run.json
+.venv/bin/python experiments/ai_crm_next/tools/readonly_http_dual_run.py --old-base-url http://127.0.0.1:5001 --next-testclient --scope customer,user_ops --output-md /tmp/aicrm_next_readonly_dual_run.md --output-json /tmp/aicrm_next_readonly_dual_run.json
 ```
 
 Monitoring signals:
@@ -86,8 +86,8 @@ Entry criteria:
 Smoke commands:
 
 ```bash
-.venv/bin/python retired experiment wrapper; see docs/archive/experiments_ai_crm_next/retired_tools.md --next-testclient --output-md /tmp/media_library_gray_smoke.md --output-json /tmp/media_library_gray_smoke.json
-.venv/bin/python retired experiment wrapper; see docs/archive/experiments_ai_crm_next/retired_tools.md --old-fixture-dir tests/fixtures/old_media_library --next-testclient --output-md /tmp/media_parity.md --output-json /tmp/media_parity.json
+# Historical command retired; see docs/archive/experiments_ai_crm_next/retired_tools.md
+# Historical command retired; see docs/archive/experiments_ai_crm_next/retired_tools.md
 ```
 
 Monitoring signals:
@@ -133,7 +133,7 @@ Staging canary plan:
 - `docs/archive/experiments_ai_crm_next/docs/batch_1_media_readonly_canary_plan.md`
 - `docs/archive/experiments_ai_crm_next/docs/batch_1_media_readonly_canary_runbook.md`
 - `docs/archive/experiments_ai_crm_next/docs/batch_1_media_readonly_proxy_pseudo_config.md`
-- `experiments/ai_crm_next/tools/check_batch_1_media_canary_readiness.py`
+- `retired Batch 1 media canary readiness helper; see docs/archive/experiments_ai_crm_next/retired_tools.md`
 - status: canary_plan_ready after the readiness checker passes
 - production traffic not cut
 - real cloud storage and WeCom media remain disabled
@@ -181,8 +181,8 @@ Entry criteria:
 Smoke commands:
 
 ```bash
-.venv/bin/python retired experiment wrapper; see docs/archive/experiments_ai_crm_next/retired_tools.md --next-testclient --output-md /tmp/product_management_gray_smoke.md --output-json /tmp/product_management_gray_smoke.json
-.venv/bin/python retired experiment wrapper; see docs/archive/experiments_ai_crm_next/retired_tools.md --old-fixture-dir tests/fixtures/old_commerce --next-testclient --output-md /tmp/commerce_parity.md --output-json /tmp/commerce_parity.json
+# Historical command retired; see docs/archive/experiments_ai_crm_next/retired_tools.md
+# Historical command retired; see docs/archive/experiments_ai_crm_next/retired_tools.md
 ```
 
 Monitoring signals:
@@ -261,8 +261,8 @@ Entry criteria:
 Smoke commands:
 
 ```bash
-.venv/bin/python retired experiment wrapper; see docs/archive/experiments_ai_crm_next/retired_tools.md --next-testclient --output-md /tmp/customer_read_model_gray_smoke.md --output-json /tmp/customer_read_model_gray_smoke.json
-.venv/bin/python retired experiment wrapper; see docs/archive/experiments_ai_crm_next/retired_tools.md --old-base-url http://127.0.0.1:5001 --next-testclient --output-md /tmp/customer_read_model_gray_smoke_dual.md --output-json /tmp/customer_read_model_gray_smoke_dual.json
+# Historical command retired; see docs/archive/experiments_ai_crm_next/retired_tools.md
+# Historical command retired; see docs/archive/experiments_ai_crm_next/retired_tools.md
 ```
 
 Monitoring signals:
@@ -344,9 +344,9 @@ Entry criteria:
 Smoke commands:
 
 ```bash
-.venv/bin/python retired experiment wrapper; see docs/archive/experiments_ai_crm_next/retired_tools.md --next-testclient --output-md /tmp/user_ops_readonly_gray_smoke.md --output-json /tmp/user_ops_readonly_gray_smoke.json
-.venv/bin/python retired experiment wrapper; see docs/archive/experiments_ai_crm_next/retired_tools.md --old-base-url http://127.0.0.1:5001 --next-testclient --output-md /tmp/user_ops_readonly_gray_smoke_dual.md --output-json /tmp/user_ops_readonly_gray_smoke_dual.json
-.venv/bin/python tools/check_batch_4_user_ops_canary_readiness.py --user-ops-smoke-json /tmp/user_ops_readonly_gray_smoke_batch_4.json --user-ops-parity-json /tmp/user_ops_parity_batch_4.json --readonly-dual-json /tmp/readonly_dual_run_batch_4_user_ops.json --output-md /tmp/batch_4_user_ops_canary_readiness.md --output-json /tmp/batch_4_user_ops_canary_readiness.json
+# Historical command retired; see docs/archive/experiments_ai_crm_next/retired_tools.md
+# Historical command retired; see docs/archive/experiments_ai_crm_next/retired_tools.md
+# Historical command retired; see docs/archive/experiments_ai_crm_next/retired_tools.md
 ```
 
 Monitoring signals:
@@ -384,7 +384,7 @@ Current Batch 4 simulated evidence:
   - `docs/archive/experiments_ai_crm_next/docs/batch_4_user_ops_readonly_proxy_pseudo_config.md`
   - `docs/archive/experiments_ai_crm_next/docs/batch_4_user_ops_readonly_canary_execution_report.md`
   - `docs/archive/experiments_ai_crm_next/docs/batch_4_user_ops_readonly_canary_signoff.md`
-- readiness checker: `experiments/ai_crm_next/tools/check_batch_4_user_ops_canary_readiness.py`
+- readiness checker: `retired Batch 4 user ops canary readiness helper; see docs/archive/experiments_ai_crm_next/retired_tools.md`
 - mode: `staging_simulated_canary`
 - readiness: `canary_plan_ready`
 - production config modified: false
@@ -430,9 +430,9 @@ Entry criteria:
 Smoke commands:
 
 ```bash
-.venv/bin/python retired experiment wrapper; see docs/archive/experiments_ai_crm_next/retired_tools.md --next-testclient --output-md /tmp/questionnaire_readonly_gray_smoke.md --output-json /tmp/questionnaire_readonly_gray_smoke.json
-.venv/bin/python retired experiment wrapper; see docs/archive/experiments_ai_crm_next/retired_tools.md --old-base-url http://127.0.0.1:5001 --next-testclient --output-md /tmp/questionnaire_readonly_gray_smoke_dual.md --output-json /tmp/questionnaire_readonly_gray_smoke_dual.json
-.venv/bin/python tools/check_batch_5_questionnaire_canary_readiness.py --questionnaire-smoke-json /tmp/questionnaire_readonly_gray_smoke_batch_5.json --questionnaire-parity-json /tmp/questionnaire_parity_batch_5.json --output-md /tmp/batch_5_questionnaire_canary_readiness.md --output-json /tmp/batch_5_questionnaire_canary_readiness.json
+# Historical command retired; see docs/archive/experiments_ai_crm_next/retired_tools.md
+# Historical command retired; see docs/archive/experiments_ai_crm_next/retired_tools.md
+# Historical command retired; see docs/archive/experiments_ai_crm_next/retired_tools.md
 ```
 
 Monitoring signals:
@@ -470,7 +470,7 @@ Current Batch 5 simulated evidence:
   - `docs/archive/experiments_ai_crm_next/docs/batch_5_questionnaire_readonly_proxy_pseudo_config.md`
   - `docs/archive/experiments_ai_crm_next/docs/batch_5_questionnaire_readonly_canary_execution_report.md`
   - `docs/archive/experiments_ai_crm_next/docs/batch_5_questionnaire_readonly_canary_signoff.md`
-- readiness checker: `experiments/ai_crm_next/tools/check_batch_5_questionnaire_canary_readiness.py`
+- readiness checker: `retired Batch 5 questionnaire canary readiness helper; see docs/archive/experiments_ai_crm_next/retired_tools.md`
 - mode: `staging_simulated_canary`
 - readiness: `canary_plan_ready`
 - production config modified: false
