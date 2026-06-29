@@ -21,6 +21,7 @@ def test_route_inventory_consolidation_report_classifies_inventory_files(tmp_pat
                 "routes": [
                     {"path": "/health"},
                     {"path": "/api/items"},
+                    {"path": "/api/items/{item_id:int}"},
                 ]
             },
             sort_keys=False,
@@ -28,11 +29,11 @@ def test_route_inventory_consolidation_report_classifies_inventory_files(tmp_pat
     )
     _write(
         tmp_path / "docs/architecture/health_route_inventory.md",
-        "| route | test |\n| --- | --- |\n| `/health` | `tests/test_health.py` |\n",
+        "| route | test |\n| --- | --- |\n| `GET /health?probe=1` | `tests/test_health.py` |\n",
     )
     _write(
         tmp_path / "docs/architecture/items_route_inventory.md",
-        "| route | note |\n| --- | --- |\n| `/api/items` | exact |\n| `/api/items/*` | family closeout |\n",
+        "| route | note |\n| --- | --- |\n| `GET /api/items/{item_id}` | method-prefixed exact |\n| `/api/items/*` | family closeout |\n",
     )
     _write(tmp_path / "docs/architecture/narrative_route_inventory.md", "Narrative closeout evidence only.\n")
     _write(
@@ -64,7 +65,7 @@ def test_route_inventory_consolidation_report_classifies_inventory_files(tmp_pat
     assert records["docs/architecture/items_route_inventory.md"]["classification"] == "retain_closeout_evidence"
     assert records["docs/architecture/items_route_inventory.md"]["manifest_derivable_routes"] == []
     assert records["docs/architecture/narrative_route_inventory.md"]["classification"] == "needs_manual_review"
-    assert report["summary"]["manifest_route_count"] == 2
+    assert report["summary"]["manifest_route_count"] == 3
     assert report["summary"]["inventory_file_count"] == 4
     assert report["summary"]["active_inventory_file_count"] == 3
     assert report["summary"]["archived_inventory_file_count"] == 1

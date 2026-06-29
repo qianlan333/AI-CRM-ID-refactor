@@ -43,7 +43,7 @@ Scope: Legacy Exit group 12 moves WeCom tag and tag-group read surfaces to a Nex
 
 - Exact tag create/update/delete and tag-group create/update/delete were locked to Next CommandBus in group 13 and no longer have production_compat rollback; the read inventory does not create/update/delete tags or groups.
 - Exact sync is now a Next-native catalog refresh: it may execute real WeCom sync for `externalcontact/get_corp_tag_list`, then upserts only `wecom_corp_tag_groups` and `wecom_corp_tags`; it does not mutate customer or questionnaire tags.
-- Fake-stub writes remain outside the read closeout. Live mark/unmark, customer assignment, and questionnaire tag mutation are covered by `docs/architecture/wecom_tag_live_mutation_route_inventory.md` as group 14 plan-only CommandBus boundaries.
+- Fake-stub writes remain outside the read closeout. Live mark/unmark, customer assignment, and questionnaire tag mutation are covered by `docs/archive/route_inventory/wecom_tag_live_mutation_route_inventory.md` as group 14 plan-only CommandBus boundaries.
 - Manifest wildcard families `/api/admin/wecom/tags*` and `/api/admin/wecom/tag-groups*` now document Next auxiliary/out-of-scope subpaths rather than production_compat fallback.
 
 ## E. External Side Effects Out Of Scope

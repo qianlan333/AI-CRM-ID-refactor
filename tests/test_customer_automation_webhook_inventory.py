@@ -4,7 +4,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-INVENTORY = ROOT / "docs/architecture/customer_automation_webhook_route_inventory.md"
+INVENTORY = ROOT / "docs/archive/route_inventory/customer_automation_webhook_route_inventory.md"
 
 
 def test_customer_webhook_inventory_contains_required_matrix_and_boundaries():

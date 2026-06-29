@@ -16,8 +16,10 @@ INVENTORY_DIR = ROOT / "docs" / "architecture"
 ARCHIVED_INVENTORY_DIR = ROOT / "docs" / "archive" / "route_inventory"
 REPORT_VERSION = "1"
 
-ROUTE_REF_RE = re.compile(r"`(/[^`\s|]+)`")
+HTTP_METHOD_PREFIX = r"(?:(?:GET|POST|PUT|PATCH|DELETE|OPTIONS|HEAD)\s+)?"
+ROUTE_REF_RE = re.compile(rf"`{HTTP_METHOD_PREFIX}(?P<path>/[^`\s|]+)`")
 TEST_REF_RE = re.compile(r"tests/[^`) ,|]+")
+FASTAPI_PARAM_CONVERTER_RE = re.compile(r"\{([^}:]+):[^}]+}")
 
 
 @dataclass(frozen=True)
@@ -49,11 +51,17 @@ class RouteInventoryRecord:
 def build_report(root: Path = ROOT, *, generated_at: str | None = None) -> dict[str, object]:
     root = root.resolve()
     manifest_routes = _manifest_routes(root / "docs" / "architecture" / "route_ownership_manifest.yml")
-    manifest_paths = set(manifest_routes)
+    manifest_paths = {_canonical_route_path(path) for path in manifest_routes}
+    manifest_routes_by_canonical_path = {_canonical_route_path(path): route for path, route in manifest_routes.items()}
     active_paths = sorted((root / "docs" / "architecture").glob("*route_inventory.md"))
     archived_paths = sorted((root / "docs" / "archive" / "route_inventory").glob("*route_inventory.md"))
     records = [
-        _inventory_record(path, root=root, manifest_routes=manifest_routes, manifest_paths=manifest_paths)
+        _inventory_record(
+            path,
+            root=root,
+            manifest_routes=manifest_routes_by_canonical_path,
+            manifest_paths=manifest_paths,
+        )
         for path in [*active_paths, *archived_paths]
     ]
     derivable_route_count = sum(len(record.manifest_derivable_routes) for record in records if record.classification == "mostly_manifest_derivable")
@@ -233,12 +241,12 @@ def _manifest_routes(path: Path) -> dict[str, dict[str, object]]:
 
 def _inventory_record(path: Path, *, root: Path, manifest_routes: dict[str, dict[str, object]], manifest_paths: set[str]) -> RouteInventoryRecord:
     text = path.read_text(encoding="utf-8")
-    route_refs = sorted(set(ROUTE_REF_RE.findall(text)))
-    exact_matches = [route for route in route_refs if route in manifest_paths]
+    route_refs = sorted(set(_normalize_route_ref(match.group("path")) for match in ROUTE_REF_RE.finditer(text)))
+    exact_matches = [route for route in route_refs if _canonical_route_path(route) in manifest_paths]
     wildcard_refs = [route for route in route_refs if "*" in route or "{path:path}" in route or route.endswith("*")]
     test_refs = sorted(set(TEST_REF_RE.findall(text)))
     classification, reason = _classify(route_refs=route_refs, exact_matches=exact_matches, wildcard_refs=wildcard_refs, test_refs=test_refs)
-    manifest_derivable_routes = [manifest_routes[route] for route in exact_matches] if classification == "mostly_manifest_derivable" else []
+    manifest_derivable_routes = [manifest_routes[_canonical_route_path(route)] for route in exact_matches] if classification == "mostly_manifest_derivable" else []
     return RouteInventoryRecord(
         path=str(path.relative_to(root)),
         location="archived" if "docs/archive/route_inventory" in str(path.relative_to(root)) else "active",
@@ -260,6 +268,14 @@ def _classify(*, route_refs: list[str], exact_matches: list[str], wildcard_refs:
     if test_refs:
         return "mostly_manifest_derivable", "Exact routes match manifest; preserve linked test evidence until a generated table proves parity."
     return "mostly_manifest_derivable", "Exact routes match manifest and can be compared with generated route rows."
+
+
+def _canonical_route_path(path: str) -> str:
+    return FASTAPI_PARAM_CONVERTER_RE.sub(r"{\1}", path)
+
+
+def _normalize_route_ref(path: str) -> str:
+    return path.split("#", 1)[0].split("?", 1)[0]
 
 
 if __name__ == "__main__":

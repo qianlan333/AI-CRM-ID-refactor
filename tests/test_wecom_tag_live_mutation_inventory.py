@@ -4,7 +4,7 @@ from pathlib import Path
 
 
 def test_live_mutation_inventory_covers_callers_and_plan_matrix() -> None:
-    inventory = Path("docs/architecture/wecom_tag_live_mutation_route_inventory.md").read_text(encoding="utf-8")
+    inventory = Path("docs/archive/route_inventory/wecom_tag_live_mutation_route_inventory.md").read_text(encoding="utf-8")
 
     for marker in [
         "Caller ↔ API ↔ CommandBus ↔ SideEffectPlan Matrix",
