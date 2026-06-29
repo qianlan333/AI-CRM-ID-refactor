@@ -276,7 +276,7 @@ def run_rehearsal(args: argparse.Namespace) -> Json:
         },
         "side_effect_safety": safety,
         "rollback_dry_run": _rollback_dry_run(batch),
-        "signoff_reference": "docs/gray_release_signoff_template.md",
+        "signoff_reference": "docs/archive/experiments_ai_crm_next/docs/gray_release_signoff_template.md",
         "blockers": blockers,
         "warnings": warnings,
         "skipped": skipped,

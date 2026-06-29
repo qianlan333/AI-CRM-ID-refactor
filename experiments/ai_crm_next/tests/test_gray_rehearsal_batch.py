@@ -102,7 +102,7 @@ def test_report_includes_route_flags_and_signoff_reference(tmp_path: Path, monke
     assert report["ok"] is True
     assert report["route_flags"]["AICRM_NEXT_ROUTE_MEDIA_READONLY"] is True
     assert report["route_flags"]["AICRM_NEXT_ROUTE_MEDIA_WRITES"] is False
-    assert report["signoff_reference"] == "docs/gray_release_signoff_template.md"
+    assert report["signoff_reference"] == "docs/archive/experiments_ai_crm_next/docs/gray_release_signoff_template.md"
 
 
 def test_no_production_config_modified() -> None:

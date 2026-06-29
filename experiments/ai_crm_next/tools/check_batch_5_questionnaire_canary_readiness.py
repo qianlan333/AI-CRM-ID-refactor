@@ -8,6 +8,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from tools.doc_paths import experiment_doc_path
+
 Json = dict[str, Any]
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -360,7 +362,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--route-flags-doc",
-        default=str(PROJECT_ROOT / "docs" / "batch_5_questionnaire_readonly_route_flags.md"),
+        default=str(experiment_doc_path("batch_5_questionnaire_readonly_route_flags.md")),
         help="Batch 5 route flags dry-run document.",
     )
     parser.add_argument("--output-md", required=True)

@@ -1,6 +1,6 @@
 # Batch 4 User Ops Readonly Canary Signoff Draft
 
-This signoff draft is based on `experiments/ai_crm_next/docs/gray_release_signoff_template.md`. It records staging-simulated evidence only and does not approve production rollout.
+This signoff draft is based on `docs/archive/experiments_ai_crm_next/docs/gray_release_signoff_template.md`. It records staging-simulated evidence only and does not approve production rollout.
 
 | field | value |
 | --- | --- |

@@ -5,7 +5,7 @@ This runbook is for controlled route-level gray execution planning. It is not a 
 ## Preflight
 
 1. Confirm scope.
-   - Select exactly one batch from `experiments/ai_crm_next/docs/route_level_gray_release_batches.md`.
+   - Select exactly one batch from `docs/archive/experiments_ai_crm_next/docs/route_level_gray_release_batches.md`.
    - Confirm included and excluded routes.
    - Confirm the current old route owner and Next route owner from the relevant route cutover manifest.
 2. Check the worktree.
@@ -42,7 +42,7 @@ This runbook is for controlled route-level gray execution planning. It is not a 
 2. Open the selected module route cutover manifest.
 3. Confirm no excluded routes are enabled.
 4. Prepare route flag or proxy rule from `experiments/ai_crm_next/docs/route_level_proxy_template.md`.
-5. Record operator, timestamp, git commit, old service version, Next service version, database target, and external adapter mode in `experiments/ai_crm_next/docs/gray_release_signoff_template.md`.
+5. Record operator, timestamp, git commit, old service version, Next service version, database target, and external adapter mode in `docs/archive/experiments_ai_crm_next/docs/gray_release_signoff_template.md`.
 6. Apply the approved route flag or proxy rule in the approved environment only.
 7. Run the selected batch smoke command immediately.
 8. Observe logs and route status.
@@ -51,7 +51,7 @@ This runbook is for controlled route-level gray execution planning. It is not a 
 
 ## Smoke After Route Change
 
-Run the selected batch smoke command from `experiments/ai_crm_next/docs/route_level_gray_release_batches.md`. Then run:
+Run the selected batch smoke command from `docs/archive/experiments_ai_crm_next/docs/route_level_gray_release_batches.md`. Then run:
 
 ```bash
 .venv/bin/python experiments/ai_crm_next/tools/generate_gray_release_report.py \

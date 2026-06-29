@@ -5,14 +5,16 @@ Generated: 2026-06-29
 ## Scope
 
 `experiments/ai_crm_next` is a frozen evidence workspace. The live runtime package
-is root `aicrm_next/`; this inventory does not delete or move experiment files.
+is root `aicrm_next/`; this inventory distinguishes active experiment reference
+files from historical archive evidence.
 
-This pass only classifies files for later cleanup:
+This pass keeps active references in place and records the historical evidence
+archive move:
 
 - keep while referenced by root docs, scripts, tests, or CI;
 - keep as experiment-local regression tooling while the frozen workspace remains;
-- archive historical canary, gray-release, rehearsal, signoff, and execution
-  evidence under `docs/archive/experiments_ai_crm_next/` in a later PR;
+- historical canary, gray-release, rehearsal, signoff, and execution evidence is
+  archived under `docs/archive/experiments_ai_crm_next/docs/`;
 - do not introduce `experiments/ai_crm_next/src/aicrm_next`.
 
 ## Top-Level Counts
@@ -22,11 +24,12 @@ This pass only classifies files for later cleanup:
 | root experiment config (`README.md`, `.gitignore`, `pyproject.toml`, `alembic.ini`) | 4 | active reference |
 | `migrations/**/*.py` | 3 | experiment-local Alembic scaffold and PostgreSQL readiness migrations |
 | `scripts/` | 1 | experiment-local test helper |
-| `tools/` | 24 | experiment-local regression / evidence tooling |
+| `tools/` | 25 | experiment-local regression / evidence tooling plus archive doc path helper |
 | `tests/` Python tests, excluding fixtures | 42 | experiment-local active regression coverage |
 | `tests/fixtures/**/*.json` | 25 | parity fixture data used by experiment-local tests |
-| `docs/` | 81 | mixed: reference docs plus archive candidates |
-| all tracked files under `experiments/ai_crm_next` | 182 | evidence workspace total |
+| `docs/` | 28 | active experiment reference docs |
+| `docs/archive/experiments_ai_crm_next/docs/` | 53 | archived historical canary / gray / signoff evidence |
+| tracked files under `experiments/ai_crm_next` | 130 | frozen evidence workspace total after archive move |
 
 ## Root References
 
@@ -102,45 +105,42 @@ Keep as long as the frozen workspace remains discoverable:
 These are still useful for reconstructing migration decisions and parity
 criteria, even though they are not live runtime instructions.
 
-## Archive Candidates
+## Archived Historical Evidence
 
-These are historical evidence/report families. They should be moved in a later
-PR to `docs/archive/experiments_ai_crm_next/` after checking any linked tests are
-updated or intentionally retired:
+The following historical evidence/report families now live under
+`docs/archive/experiments_ai_crm_next/docs/` with original filenames preserved:
 
-- `experiments/ai_crm_next/docs/batch_*_canary_*`
-- `experiments/ai_crm_next/docs/batch_*_proxy_pseudo_config.md`
-- `experiments/ai_crm_next/docs/batch_*_route_flags.md`
-- `experiments/ai_crm_next/docs/gray_rehearsal_*`
-- `experiments/ai_crm_next/docs/gray_release_*`
-- `experiments/ai_crm_next/docs/*_gray_release_plan.md`
-- `experiments/ai_crm_next/docs/*_canary_*`
-- `experiments/ai_crm_next/docs/production_canary_*`
-- `experiments/ai_crm_next/docs/route_level_gray_release_*`
-- `experiments/ai_crm_next/docs/*_execution_report.md`
-- `experiments/ai_crm_next/docs/*_signoff*.md`
-- `experiments/ai_crm_next/docs/production_replacement_route.md`
-- `experiments/ai_crm_next/docs/risk_register.md`
-- `experiments/ai_crm_next/docs/staging_canary_topology.md`
-- `experiments/ai_crm_next/docs/go_no_go_checklist.md`
-- `experiments/ai_crm_next/docs/fast_readonly_human_test_tasks.md`
-- `experiments/ai_crm_next/docs/fast_readonly_replacement_execution_plan.md`
+- `batch_*_canary_*`
+- `batch_*_proxy_pseudo_config.md`
+- `batch_*_route_flags.md`
+- `gray_rehearsal_*`
+- `gray_release_*`
+- `*_gray_release_plan.md`
+- `*_canary_*`
+- `production_canary_*`
+- `route_level_gray_release_*`
+- `*_execution_report.md`
+- `*_signoff*.md`
+- `production_replacement_route.md`
+- `risk_register.md`
+- `staging_canary_topology.md`
+- `go_no_go_checklist.md`
+- `fast_readonly_human_test_tasks.md`
+- `fast_readonly_replacement_execution_plan.md`
 
 Do not delete these directly. Most are audit/evidence records, not generated
-scratch files. Several experiment-local tests assert safety wording in docs such
-as frontend parity, fast readonly replacement, gray release, production canary
-approval, and route-level runbook files; archive movement must update or retire
-those tests in the same PR.
+scratch files. Experiment-local tests use
+`experiments/ai_crm_next/tools/doc_paths.py` so archived docs remain readable
+while the frozen workspace exists.
 
 ## Cleanup Order Recommendation
 
 1. Keep root duplicate-source guard and README pointer.
 2. Decide whether experiment-local readiness/canary tests are still expected to
-   run anywhere. If not, archive their paired docs and tools together.
-3. Move historical evidence docs to `docs/archive/experiments_ai_crm_next/`.
-4. Update `experiments/ai_crm_next/README.md` with a retention rule: keep only
+   run anywhere. If not, archive or retire their paired tools together.
+3. Update `experiments/ai_crm_next/README.md` with a retention rule: keep only
    parity/reference docs and tests that still protect root `aicrm_next/`.
-5. Only after inventory-backed archive movement, consider deleting generated
+4. Only after inventory-backed archive movement, consider deleting generated
    screenshots or regenerated reports that are not referenced by tests/docs.
 
 ## Non-Goals
@@ -149,4 +149,4 @@ those tests in the same PR.
 - No deploy/nginx/systemd changes.
 - No external calls.
 - No production data access.
-- No deletion of `experiments/ai_crm_next` files in this batch.
+- No deletion of evidence records; historical docs were moved to archive.

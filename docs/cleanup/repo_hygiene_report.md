@@ -2,8 +2,8 @@
 
 - Version: `1`
 - Root: `.`
-- Generated at: `2026-06-29T02:36:38Z`
-- Markdown files scanned: 234
+- Generated at: `2026-06-29T02:50:26Z`
+- Markdown files scanned: 181
 - Issues: 0
 
 ## Issue Summary
