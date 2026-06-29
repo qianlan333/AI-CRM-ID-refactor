@@ -1,10 +1,11 @@
 {
   "version": "1",
   "root": ".",
-  "generated_at": "2026-06-29T02:36:17Z",
+  "generated_at": "2026-06-29T03:30:00Z",
   "summary": {
     "manifest_route_count": 550,
     "inventory_file_count": 24,
+    "manifest_derivable_route_count": 30,
     "classifications": {
       "retain_closeout_evidence": 17,
       "mostly_manifest_derivable": 5,
@@ -19,7 +20,8 @@
       "wildcard_or_family_count": 3,
       "test_reference_count": 0,
       "classification": "retain_closeout_evidence",
-      "reason": "Contains wildcard/family refs or route refs not exactly covered by the manifest."
+      "reason": "Contains wildcard/family refs or route refs not exactly covered by the manifest.",
+      "manifest_derivable_routes": []
     },
     {
       "path": "docs/architecture/auth_wecom_route_inventory.md",
@@ -28,7 +30,8 @@
       "wildcard_or_family_count": 2,
       "test_reference_count": 7,
       "classification": "retain_closeout_evidence",
-      "reason": "Contains wildcard/family refs or route refs not exactly covered by the manifest."
+      "reason": "Contains wildcard/family refs or route refs not exactly covered by the manifest.",
+      "manifest_derivable_routes": []
     },
     {
       "path": "docs/architecture/checkout_orders_route_inventory.md",
@@ -37,7 +40,8 @@
       "wildcard_or_family_count": 8,
       "test_reference_count": 0,
       "classification": "retain_closeout_evidence",
-      "reason": "Contains wildcard/family refs or route refs not exactly covered by the manifest."
+      "reason": "Contains wildcard/family refs or route refs not exactly covered by the manifest.",
+      "manifest_derivable_routes": []
     },
     {
       "path": "docs/architecture/cloud_orchestrator_campaign_write_route_inventory.md",
@@ -46,7 +50,8 @@
       "wildcard_or_family_count": 1,
       "test_reference_count": 0,
       "classification": "retain_closeout_evidence",
-      "reason": "Contains wildcard/family refs or route refs not exactly covered by the manifest."
+      "reason": "Contains wildcard/family refs or route refs not exactly covered by the manifest.",
+      "manifest_derivable_routes": []
     },
     {
       "path": "docs/architecture/cloud_orchestrator_campaigns_route_inventory.md",
@@ -55,7 +60,8 @@
       "wildcard_or_family_count": 3,
       "test_reference_count": 0,
       "classification": "retain_closeout_evidence",
-      "reason": "Contains wildcard/family refs or route refs not exactly covered by the manifest."
+      "reason": "Contains wildcard/family refs or route refs not exactly covered by the manifest.",
+      "manifest_derivable_routes": []
     },
     {
       "path": "docs/architecture/cloud_orchestrator_media_upload_route_inventory.md",
@@ -64,7 +70,65 @@
       "wildcard_or_family_count": 0,
       "test_reference_count": 3,
       "classification": "mostly_manifest_derivable",
-      "reason": "Exact routes match manifest; preserve linked test evidence until a generated table proves parity."
+      "reason": "Exact routes match manifest; preserve linked test evidence until a generated table proves parity.",
+      "manifest_derivable_routes": [
+        {
+          "path": "/admin/cloud-orchestrator/campaigns",
+          "methods": [
+            "GET"
+          ],
+          "route_name": "api.admin_cloud_orchestrator_campaigns_workspace",
+          "capability_owner": "cloud_orchestrator",
+          "runtime_owner": "ai_crm_next",
+          "layer": "admin_page",
+          "external_effects": "none",
+          "data_source": "read_model",
+          "requires_auth": true,
+          "rollback": "previous_release"
+        },
+        {
+          "path": "/admin/cloud-orchestrator/plans",
+          "methods": [
+            "GET"
+          ],
+          "route_name": "api.admin_cloud_orchestrator_plans_workspace",
+          "capability_owner": "cloud_orchestrator",
+          "runtime_owner": "ai_crm_next",
+          "layer": "admin_page",
+          "external_effects": "none",
+          "data_source": "read_model",
+          "requires_auth": true,
+          "rollback": "previous_release"
+        },
+        {
+          "path": "/admin/cloud-orchestrator/plans/{plan_id}",
+          "methods": [
+            "GET"
+          ],
+          "route_name": "api.admin_cloud_orchestrator_plan_detail",
+          "capability_owner": "cloud_orchestrator",
+          "runtime_owner": "ai_crm_next",
+          "layer": "admin_page",
+          "external_effects": "none",
+          "data_source": "read_model",
+          "requires_auth": true,
+          "rollback": "previous_release"
+        },
+        {
+          "path": "/api/admin/cloud-orchestrator/media/upload",
+          "methods": [
+            "POST"
+          ],
+          "route_name": "api_cloud_orchestrator_media_upload",
+          "capability_owner": "cloud_orchestrator",
+          "runtime_owner": "ai_crm_next",
+          "layer": "api",
+          "external_effects": "none",
+          "data_source": "command",
+          "requires_auth": true,
+          "rollback": "previous_release"
+        }
+      ]
     },
     {
       "path": "docs/architecture/cloud_orchestrator_run_due_route_inventory.md",
@@ -73,7 +137,37 @@
       "wildcard_or_family_count": 0,
       "test_reference_count": 1,
       "classification": "mostly_manifest_derivable",
-      "reason": "Exact routes match manifest; preserve linked test evidence until a generated table proves parity."
+      "reason": "Exact routes match manifest; preserve linked test evidence until a generated table proves parity.",
+      "manifest_derivable_routes": [
+        {
+          "path": "/api/admin/cloud-orchestrator/campaigns/run-due",
+          "methods": [
+            "POST"
+          ],
+          "route_name": "api_plan_cloud_campaign_run_due",
+          "capability_owner": "cloud_orchestrator",
+          "runtime_owner": "ai_crm_next",
+          "layer": "api",
+          "external_effects": "none",
+          "data_source": "command",
+          "requires_auth": true,
+          "rollback": "previous_release"
+        },
+        {
+          "path": "/api/admin/cloud-orchestrator/campaigns/run-due/preview",
+          "methods": [
+            "POST"
+          ],
+          "route_name": "api_preview_cloud_campaign_run_due",
+          "capability_owner": "cloud_orchestrator",
+          "runtime_owner": "ai_crm_next",
+          "layer": "api",
+          "external_effects": "none",
+          "data_source": "command",
+          "requires_auth": true,
+          "rollback": "previous_release"
+        }
+      ]
     },
     {
       "path": "docs/architecture/customer_automation_webhook_route_inventory.md",
@@ -82,7 +176,8 @@
       "wildcard_or_family_count": 0,
       "test_reference_count": 0,
       "classification": "needs_manual_review",
-      "reason": "No route-like backtick paths were extracted."
+      "reason": "No route-like backtick paths were extracted.",
+      "manifest_derivable_routes": []
     },
     {
       "path": "docs/architecture/hxc_dashboard_route_inventory.md",
@@ -91,7 +186,8 @@
       "wildcard_or_family_count": 1,
       "test_reference_count": 0,
       "classification": "retain_closeout_evidence",
-      "reason": "Contains wildcard/family refs or route refs not exactly covered by the manifest."
+      "reason": "Contains wildcard/family refs or route refs not exactly covered by the manifest.",
+      "manifest_derivable_routes": []
     },
     {
       "path": "docs/architecture/media_library_route_inventory.md",
@@ -100,7 +196,8 @@
       "wildcard_or_family_count": 4,
       "test_reference_count": 12,
       "classification": "retain_closeout_evidence",
-      "reason": "Contains wildcard/family refs or route refs not exactly covered by the manifest."
+      "reason": "Contains wildcard/family refs or route refs not exactly covered by the manifest.",
+      "manifest_derivable_routes": []
     },
     {
       "path": "docs/architecture/messages_route_inventory.md",
@@ -109,7 +206,8 @@
       "wildcard_or_family_count": 1,
       "test_reference_count": 4,
       "classification": "retain_closeout_evidence",
-      "reason": "Contains wildcard/family refs or route refs not exactly covered by the manifest."
+      "reason": "Contains wildcard/family refs or route refs not exactly covered by the manifest.",
+      "manifest_derivable_routes": []
     },
     {
       "path": "docs/architecture/provider_payment_notify_route_inventory.md",
@@ -118,7 +216,8 @@
       "wildcard_or_family_count": 6,
       "test_reference_count": 0,
       "classification": "retain_closeout_evidence",
-      "reason": "Contains wildcard/family refs or route refs not exactly covered by the manifest."
+      "reason": "Contains wildcard/family refs or route refs not exactly covered by the manifest.",
+      "manifest_derivable_routes": []
     },
     {
       "path": "docs/architecture/public_product_pay_route_inventory.md",
@@ -127,7 +226,8 @@
       "wildcard_or_family_count": 11,
       "test_reference_count": 0,
       "classification": "retain_closeout_evidence",
-      "reason": "Contains wildcard/family refs or route refs not exactly covered by the manifest."
+      "reason": "Contains wildcard/family refs or route refs not exactly covered by the manifest.",
+      "manifest_derivable_routes": []
     },
     {
       "path": "docs/architecture/questionnaire_admin_read_route_inventory.md",
@@ -136,7 +236,8 @@
       "wildcard_or_family_count": 2,
       "test_reference_count": 3,
       "classification": "retain_closeout_evidence",
-      "reason": "Contains wildcard/family refs or route refs not exactly covered by the manifest."
+      "reason": "Contains wildcard/family refs or route refs not exactly covered by the manifest.",
+      "manifest_derivable_routes": []
     },
     {
       "path": "docs/architecture/questionnaire_admin_write_route_inventory.md",
@@ -145,7 +246,8 @@
       "wildcard_or_family_count": 2,
       "test_reference_count": 0,
       "classification": "retain_closeout_evidence",
-      "reason": "Contains wildcard/family refs or route refs not exactly covered by the manifest."
+      "reason": "Contains wildcard/family refs or route refs not exactly covered by the manifest.",
+      "manifest_derivable_routes": []
     },
     {
       "path": "docs/architecture/questionnaire_h5_submit_route_inventory.md",
@@ -154,7 +256,8 @@
       "wildcard_or_family_count": 1,
       "test_reference_count": 5,
       "classification": "retain_closeout_evidence",
-      "reason": "Contains wildcard/family refs or route refs not exactly covered by the manifest."
+      "reason": "Contains wildcard/family refs or route refs not exactly covered by the manifest.",
+      "manifest_derivable_routes": []
     },
     {
       "path": "docs/architecture/questionnaire_oauth_route_inventory.md",
@@ -163,7 +266,8 @@
       "wildcard_or_family_count": 3,
       "test_reference_count": 6,
       "classification": "retain_closeout_evidence",
-      "reason": "Contains wildcard/family refs or route refs not exactly covered by the manifest."
+      "reason": "Contains wildcard/family refs or route refs not exactly covered by the manifest.",
+      "manifest_derivable_routes": []
     },
     {
       "path": "docs/architecture/sidebar_jssdk_route_inventory.md",
@@ -172,7 +276,37 @@
       "wildcard_or_family_count": 0,
       "test_reference_count": 0,
       "classification": "mostly_manifest_derivable",
-      "reason": "Exact routes match manifest and can be compared with generated route rows."
+      "reason": "Exact routes match manifest and can be compared with generated route rows.",
+      "manifest_derivable_routes": [
+        {
+          "path": "/api/sidebar/jssdk-config",
+          "methods": [
+            "GET"
+          ],
+          "route_name": "sidebar_jssdk_config",
+          "capability_owner": "identity_contact",
+          "runtime_owner": "ai_crm_next",
+          "layer": "api",
+          "external_effects": "none",
+          "data_source": "read_model",
+          "requires_auth": false,
+          "rollback": "previous_release"
+        },
+        {
+          "path": "/sidebar/bind-mobile",
+          "methods": [
+            "GET"
+          ],
+          "route_name": "api.sidebar_bind_mobile_page",
+          "capability_owner": "identity_contact",
+          "runtime_owner": "ai_crm_next",
+          "layer": "integration",
+          "external_effects": "none",
+          "data_source": "read_model",
+          "requires_auth": false,
+          "rollback": "previous_release"
+        }
+      ]
     },
     {
       "path": "docs/architecture/sidebar_readonly_route_inventory.md",
@@ -181,7 +315,8 @@
       "wildcard_or_family_count": 2,
       "test_reference_count": 1,
       "classification": "retain_closeout_evidence",
-      "reason": "Contains wildcard/family refs or route refs not exactly covered by the manifest."
+      "reason": "Contains wildcard/family refs or route refs not exactly covered by the manifest.",
+      "manifest_derivable_routes": []
     },
     {
       "path": "docs/architecture/sidebar_write_route_inventory.md",
@@ -190,7 +325,135 @@
       "wildcard_or_family_count": 0,
       "test_reference_count": 2,
       "classification": "mostly_manifest_derivable",
-      "reason": "Exact routes match manifest; preserve linked test evidence until a generated table proves parity."
+      "reason": "Exact routes match manifest; preserve linked test evidence until a generated table proves parity.",
+      "manifest_derivable_routes": [
+        {
+          "path": "/api/sidebar/bind-mobile",
+          "methods": [
+            "POST"
+          ],
+          "route_name": "bind_mobile",
+          "capability_owner": "sidebar_write",
+          "runtime_owner": "ai_crm_next",
+          "layer": "api",
+          "external_effects": "none",
+          "data_source": "command",
+          "requires_auth": false,
+          "rollback": "previous_release"
+        },
+        {
+          "path": "/api/sidebar/jssdk-config",
+          "methods": [
+            "GET"
+          ],
+          "route_name": "sidebar_jssdk_config",
+          "capability_owner": "identity_contact",
+          "runtime_owner": "ai_crm_next",
+          "layer": "api",
+          "external_effects": "none",
+          "data_source": "read_model",
+          "requires_auth": false,
+          "rollback": "previous_release"
+        },
+        {
+          "path": "/api/sidebar/lead-pool/upsert-class-term",
+          "methods": [
+            "POST"
+          ],
+          "route_name": "upsert_lead_pool_class_term",
+          "capability_owner": "sidebar_write",
+          "runtime_owner": "ai_crm_next",
+          "layer": "api",
+          "external_effects": "none",
+          "data_source": "command",
+          "requires_auth": false,
+          "rollback": "previous_release"
+        },
+        {
+          "path": "/api/sidebar/marketing-status/mark-enrolled",
+          "methods": [
+            "POST"
+          ],
+          "route_name": "mark_enrolled",
+          "capability_owner": "sidebar_write",
+          "runtime_owner": "ai_crm_next",
+          "layer": "api",
+          "external_effects": "none",
+          "data_source": "command",
+          "requires_auth": false,
+          "rollback": "previous_release"
+        },
+        {
+          "path": "/api/sidebar/marketing-status/set-followup-segment",
+          "methods": [
+            "POST"
+          ],
+          "route_name": "set_followup_segment",
+          "capability_owner": "sidebar_write",
+          "runtime_owner": "ai_crm_next",
+          "layer": "api",
+          "external_effects": "none",
+          "data_source": "command",
+          "requires_auth": false,
+          "rollback": "previous_release"
+        },
+        {
+          "path": "/api/sidebar/marketing-status/unmark-enrolled",
+          "methods": [
+            "POST"
+          ],
+          "route_name": "unmark_enrolled",
+          "capability_owner": "sidebar_write",
+          "runtime_owner": "ai_crm_next",
+          "layer": "api",
+          "external_effects": "none",
+          "data_source": "command",
+          "requires_auth": false,
+          "rollback": "previous_release"
+        },
+        {
+          "path": "/api/sidebar/signup-tags/mark",
+          "methods": [
+            "POST"
+          ],
+          "route_name": "mark_signup_tag",
+          "capability_owner": "sidebar_write",
+          "runtime_owner": "ai_crm_next",
+          "layer": "api",
+          "external_effects": "none",
+          "data_source": "command",
+          "requires_auth": false,
+          "rollback": "previous_release"
+        },
+        {
+          "path": "/api/sidebar/v2/materials/send",
+          "methods": [
+            "POST"
+          ],
+          "route_name": "plan_material_send",
+          "capability_owner": "sidebar_write",
+          "runtime_owner": "ai_crm_next",
+          "layer": "api",
+          "external_effects": "none",
+          "data_source": "command",
+          "requires_auth": false,
+          "rollback": "previous_release"
+        },
+        {
+          "path": "/api/sidebar/v2/profile",
+          "methods": [
+            "PUT"
+          ],
+          "route_name": "update_sidebar_v2_profile",
+          "capability_owner": "sidebar_write",
+          "runtime_owner": "ai_crm_next",
+          "layer": "api",
+          "external_effects": "none",
+          "data_source": "command",
+          "requires_auth": false,
+          "rollback": "previous_release"
+        }
+      ]
     },
     {
       "path": "docs/architecture/user_ops_route_inventory.md",
@@ -199,7 +462,191 @@
       "wildcard_or_family_count": 0,
       "test_reference_count": 6,
       "classification": "mostly_manifest_derivable",
-      "reason": "Exact routes match manifest; preserve linked test evidence until a generated table proves parity."
+      "reason": "Exact routes match manifest; preserve linked test evidence until a generated table proves parity.",
+      "manifest_derivable_routes": [
+        {
+          "path": "/admin/user-ops",
+          "methods": [
+            "GET"
+          ],
+          "route_name": "api.admin_user_ops",
+          "capability_owner": "ops_enrollment",
+          "runtime_owner": "ai_crm_next",
+          "layer": "admin_page",
+          "external_effects": "none",
+          "data_source": "read_model",
+          "requires_auth": true,
+          "rollback": "previous_release"
+        },
+        {
+          "path": "/admin/user-ops/ui",
+          "methods": [
+            "GET"
+          ],
+          "route_name": "api.admin_user_ops_ui",
+          "capability_owner": "ops_enrollment",
+          "runtime_owner": "ai_crm_next",
+          "layer": "admin_page",
+          "external_effects": "none",
+          "data_source": "read_model",
+          "requires_auth": true,
+          "rollback": "previous_release"
+        },
+        {
+          "path": "/api/admin/user-ops/batch-send/execute",
+          "methods": [
+            "POST"
+          ],
+          "route_name": "user_ops_batch_send_execute",
+          "capability_owner": "ops_enrollment",
+          "runtime_owner": "ai_crm_next",
+          "layer": "api",
+          "external_effects": "none",
+          "data_source": "command",
+          "requires_auth": true,
+          "rollback": "previous_release"
+        },
+        {
+          "path": "/api/admin/user-ops/broadcast/preview",
+          "methods": [
+            "POST"
+          ],
+          "route_name": "user_ops_broadcast_preview",
+          "capability_owner": "ops_enrollment",
+          "runtime_owner": "ai_crm_next",
+          "layer": "api",
+          "external_effects": "none",
+          "data_source": "command",
+          "requires_auth": true,
+          "rollback": "previous_release"
+        },
+        {
+          "path": "/api/admin/user-ops/cards",
+          "methods": [
+            "GET"
+          ],
+          "route_name": "user_ops_cards",
+          "capability_owner": "ops_enrollment",
+          "runtime_owner": "ai_crm_next",
+          "layer": "api",
+          "external_effects": "none",
+          "data_source": "read_model",
+          "requires_auth": true,
+          "rollback": "previous_release"
+        },
+        {
+          "path": "/api/admin/user-ops/customers",
+          "methods": [
+            "GET"
+          ],
+          "route_name": "user_ops_customers",
+          "capability_owner": "ops_enrollment",
+          "runtime_owner": "ai_crm_next",
+          "layer": "api",
+          "external_effects": "none",
+          "data_source": "read_model",
+          "requires_auth": true,
+          "rollback": "previous_release"
+        },
+        {
+          "path": "/api/admin/user-ops/customers/{external_userid}",
+          "methods": [
+            "GET"
+          ],
+          "route_name": "user_ops_customer_detail",
+          "capability_owner": "ops_enrollment",
+          "runtime_owner": "ai_crm_next",
+          "layer": "api",
+          "external_effects": "none",
+          "data_source": "read_model",
+          "requires_auth": true,
+          "rollback": "previous_release"
+        },
+        {
+          "path": "/api/admin/user-ops/customers/{external_userid}/timeline",
+          "methods": [
+            "GET"
+          ],
+          "route_name": "user_ops_customer_timeline",
+          "capability_owner": "ops_enrollment",
+          "runtime_owner": "ai_crm_next",
+          "layer": "api",
+          "external_effects": "none",
+          "data_source": "read_model",
+          "requires_auth": true,
+          "rollback": "previous_release"
+        },
+        {
+          "path": "/api/admin/user-ops/export",
+          "methods": [
+            "GET"
+          ],
+          "route_name": "user_ops_export_stub",
+          "capability_owner": "ops_enrollment",
+          "runtime_owner": "ai_crm_next",
+          "layer": "api",
+          "external_effects": "none",
+          "data_source": "read_model",
+          "requires_auth": true,
+          "rollback": "previous_release"
+        },
+        {
+          "path": "/api/admin/user-ops/export/preview",
+          "methods": [
+            "POST"
+          ],
+          "route_name": "user_ops_export_preview",
+          "capability_owner": "ops_enrollment",
+          "runtime_owner": "ai_crm_next",
+          "layer": "api",
+          "external_effects": "none",
+          "data_source": "command",
+          "requires_auth": true,
+          "rollback": "previous_release"
+        },
+        {
+          "path": "/api/admin/user-ops/filters",
+          "methods": [
+            "GET"
+          ],
+          "route_name": "user_ops_filters",
+          "capability_owner": "ops_enrollment",
+          "runtime_owner": "ai_crm_next",
+          "layer": "api",
+          "external_effects": "none",
+          "data_source": "read_model",
+          "requires_auth": true,
+          "rollback": "previous_release"
+        },
+        {
+          "path": "/api/admin/user-ops/overview",
+          "methods": [
+            "GET"
+          ],
+          "route_name": "user_ops_overview",
+          "capability_owner": "ops_enrollment",
+          "runtime_owner": "ai_crm_next",
+          "layer": "api",
+          "external_effects": "none",
+          "data_source": "read_model",
+          "requires_auth": true,
+          "rollback": "previous_release"
+        },
+        {
+          "path": "/api/admin/user-ops/send-records",
+          "methods": [
+            "GET"
+          ],
+          "route_name": "user_ops_send_records",
+          "capability_owner": "ops_enrollment",
+          "runtime_owner": "ai_crm_next",
+          "layer": "api",
+          "external_effects": "none",
+          "data_source": "read_model",
+          "requires_auth": true,
+          "rollback": "previous_release"
+        }
+      ]
     },
     {
       "path": "docs/architecture/wecom_tag_live_mutation_route_inventory.md",
@@ -208,7 +655,8 @@
       "wildcard_or_family_count": 0,
       "test_reference_count": 4,
       "classification": "needs_manual_review",
-      "reason": "No route-like backtick paths were extracted."
+      "reason": "No route-like backtick paths were extracted.",
+      "manifest_derivable_routes": []
     },
     {
       "path": "docs/architecture/wecom_tag_read_route_inventory.md",
@@ -217,7 +665,8 @@
       "wildcard_or_family_count": 2,
       "test_reference_count": 6,
       "classification": "retain_closeout_evidence",
-      "reason": "Contains wildcard/family refs or route refs not exactly covered by the manifest."
+      "reason": "Contains wildcard/family refs or route refs not exactly covered by the manifest.",
+      "manifest_derivable_routes": []
     },
     {
       "path": "docs/architecture/wecom_tag_write_route_inventory.md",
@@ -226,7 +675,8 @@
       "wildcard_or_family_count": 4,
       "test_reference_count": 0,
       "classification": "retain_closeout_evidence",
-      "reason": "Contains wildcard/family refs or route refs not exactly covered by the manifest."
+      "reason": "Contains wildcard/family refs or route refs not exactly covered by the manifest.",
+      "manifest_derivable_routes": []
     }
   ]
 }

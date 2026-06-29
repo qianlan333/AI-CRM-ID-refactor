@@ -1,6 +1,6 @@
 # Route Inventory Consolidation Inventory
 
-Generated: 2026-06-29T02:36:17Z
+Generated: 2026-06-29T03:30:00Z
 
 This report is generated from `docs/architecture/route_ownership_manifest.yml`
 and `docs/architecture/*route_inventory.md` by
@@ -16,6 +16,7 @@ or deprecate any route inventory file.
 
 The manifest currently covers 550 FastAPI routes.
 The hand-written inventory set currently contains 24 `*_route_inventory.md` files.
+30 exact route rows can currently be regenerated from the manifest for `mostly_manifest_derivable` inventories.
 
 ## Classification Summary
 
@@ -63,6 +64,45 @@ The hand-written inventory set currently contains 24 `*_route_inventory.md` file
 | --- | ---: | ---: | ---: | ---: | --- |
 | `docs/architecture/customer_automation_webhook_route_inventory.md` | 0 | 0 | 0 | 0 | No route-like backtick paths were extracted. |
 | `docs/architecture/wecom_tag_live_mutation_route_inventory.md` | 0 | 0 | 0 | 4 | No route-like backtick paths were extracted. |
+
+## Manifest-Generated Rows
+
+These rows are derived from `route_ownership_manifest.yml` for inventories
+classified as `mostly_manifest_derivable`. They are intended as parity
+evidence before any hand-written route table is archived.
+
+| Inventory | Route | Methods | Route name | Capability owner | External effects | Data source | Auth |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `docs/architecture/cloud_orchestrator_media_upload_route_inventory.md` | `/admin/cloud-orchestrator/campaigns` | `GET` | `api.admin_cloud_orchestrator_campaigns_workspace` | `cloud_orchestrator` | `none` | `read_model` | `true` |
+| `docs/architecture/cloud_orchestrator_media_upload_route_inventory.md` | `/admin/cloud-orchestrator/plans` | `GET` | `api.admin_cloud_orchestrator_plans_workspace` | `cloud_orchestrator` | `none` | `read_model` | `true` |
+| `docs/architecture/cloud_orchestrator_media_upload_route_inventory.md` | `/admin/cloud-orchestrator/plans/{plan_id}` | `GET` | `api.admin_cloud_orchestrator_plan_detail` | `cloud_orchestrator` | `none` | `read_model` | `true` |
+| `docs/architecture/cloud_orchestrator_media_upload_route_inventory.md` | `/api/admin/cloud-orchestrator/media/upload` | `POST` | `api_cloud_orchestrator_media_upload` | `cloud_orchestrator` | `none` | `command` | `true` |
+| `docs/architecture/cloud_orchestrator_run_due_route_inventory.md` | `/api/admin/cloud-orchestrator/campaigns/run-due` | `POST` | `api_plan_cloud_campaign_run_due` | `cloud_orchestrator` | `none` | `command` | `true` |
+| `docs/architecture/cloud_orchestrator_run_due_route_inventory.md` | `/api/admin/cloud-orchestrator/campaigns/run-due/preview` | `POST` | `api_preview_cloud_campaign_run_due` | `cloud_orchestrator` | `none` | `command` | `true` |
+| `docs/architecture/sidebar_jssdk_route_inventory.md` | `/api/sidebar/jssdk-config` | `GET` | `sidebar_jssdk_config` | `identity_contact` | `none` | `read_model` | `false` |
+| `docs/architecture/sidebar_jssdk_route_inventory.md` | `/sidebar/bind-mobile` | `GET` | `api.sidebar_bind_mobile_page` | `identity_contact` | `none` | `read_model` | `false` |
+| `docs/architecture/sidebar_write_route_inventory.md` | `/api/sidebar/bind-mobile` | `POST` | `bind_mobile` | `sidebar_write` | `none` | `command` | `false` |
+| `docs/architecture/sidebar_write_route_inventory.md` | `/api/sidebar/jssdk-config` | `GET` | `sidebar_jssdk_config` | `identity_contact` | `none` | `read_model` | `false` |
+| `docs/architecture/sidebar_write_route_inventory.md` | `/api/sidebar/lead-pool/upsert-class-term` | `POST` | `upsert_lead_pool_class_term` | `sidebar_write` | `none` | `command` | `false` |
+| `docs/architecture/sidebar_write_route_inventory.md` | `/api/sidebar/marketing-status/mark-enrolled` | `POST` | `mark_enrolled` | `sidebar_write` | `none` | `command` | `false` |
+| `docs/architecture/sidebar_write_route_inventory.md` | `/api/sidebar/marketing-status/set-followup-segment` | `POST` | `set_followup_segment` | `sidebar_write` | `none` | `command` | `false` |
+| `docs/architecture/sidebar_write_route_inventory.md` | `/api/sidebar/marketing-status/unmark-enrolled` | `POST` | `unmark_enrolled` | `sidebar_write` | `none` | `command` | `false` |
+| `docs/architecture/sidebar_write_route_inventory.md` | `/api/sidebar/signup-tags/mark` | `POST` | `mark_signup_tag` | `sidebar_write` | `none` | `command` | `false` |
+| `docs/architecture/sidebar_write_route_inventory.md` | `/api/sidebar/v2/materials/send` | `POST` | `plan_material_send` | `sidebar_write` | `none` | `command` | `false` |
+| `docs/architecture/sidebar_write_route_inventory.md` | `/api/sidebar/v2/profile` | `PUT` | `update_sidebar_v2_profile` | `sidebar_write` | `none` | `command` | `false` |
+| `docs/architecture/user_ops_route_inventory.md` | `/admin/user-ops` | `GET` | `api.admin_user_ops` | `ops_enrollment` | `none` | `read_model` | `true` |
+| `docs/architecture/user_ops_route_inventory.md` | `/admin/user-ops/ui` | `GET` | `api.admin_user_ops_ui` | `ops_enrollment` | `none` | `read_model` | `true` |
+| `docs/architecture/user_ops_route_inventory.md` | `/api/admin/user-ops/batch-send/execute` | `POST` | `user_ops_batch_send_execute` | `ops_enrollment` | `none` | `command` | `true` |
+| `docs/architecture/user_ops_route_inventory.md` | `/api/admin/user-ops/broadcast/preview` | `POST` | `user_ops_broadcast_preview` | `ops_enrollment` | `none` | `command` | `true` |
+| `docs/architecture/user_ops_route_inventory.md` | `/api/admin/user-ops/cards` | `GET` | `user_ops_cards` | `ops_enrollment` | `none` | `read_model` | `true` |
+| `docs/architecture/user_ops_route_inventory.md` | `/api/admin/user-ops/customers` | `GET` | `user_ops_customers` | `ops_enrollment` | `none` | `read_model` | `true` |
+| `docs/architecture/user_ops_route_inventory.md` | `/api/admin/user-ops/customers/{external_userid}` | `GET` | `user_ops_customer_detail` | `ops_enrollment` | `none` | `read_model` | `true` |
+| `docs/architecture/user_ops_route_inventory.md` | `/api/admin/user-ops/customers/{external_userid}/timeline` | `GET` | `user_ops_customer_timeline` | `ops_enrollment` | `none` | `read_model` | `true` |
+| `docs/architecture/user_ops_route_inventory.md` | `/api/admin/user-ops/export` | `GET` | `user_ops_export_stub` | `ops_enrollment` | `none` | `read_model` | `true` |
+| `docs/architecture/user_ops_route_inventory.md` | `/api/admin/user-ops/export/preview` | `POST` | `user_ops_export_preview` | `ops_enrollment` | `none` | `command` | `true` |
+| `docs/architecture/user_ops_route_inventory.md` | `/api/admin/user-ops/filters` | `GET` | `user_ops_filters` | `ops_enrollment` | `none` | `read_model` | `true` |
+| `docs/architecture/user_ops_route_inventory.md` | `/api/admin/user-ops/overview` | `GET` | `user_ops_overview` | `ops_enrollment` | `none` | `read_model` | `true` |
+| `docs/architecture/user_ops_route_inventory.md` | `/api/admin/user-ops/send-records` | `GET` | `user_ops_send_records` | `ops_enrollment` | `none` | `read_model` | `true` |
 
 ## Recommended Order
 
