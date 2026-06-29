@@ -24,12 +24,13 @@ archive move:
 | root experiment config (`README.md`, `.gitignore`, `pyproject.toml`, `alembic.ini`) | 4 | active reference |
 | `migrations/**/*.py` | 3 | experiment-local Alembic scaffold and PostgreSQL readiness migrations |
 | `scripts/` | 1 | experiment-local test helper |
-| `tools/` | 25 | experiment-local regression / evidence tooling plus archive doc path helper |
-| `tests/` Python tests, excluding fixtures | 42 | experiment-local active regression coverage |
+| `tools/` | 13 | experiment-local readiness / evidence tooling plus archive doc path helper |
+| `tests/` Python tests, excluding fixtures | 37 | experiment-local active regression coverage |
 | `tests/fixtures/**/*.json` | 25 | parity fixture data used by experiment-local tests |
 | `docs/` | 28 | active experiment reference docs |
 | `docs/archive/experiments_ai_crm_next/docs/` | 53 | archived historical canary / gray / signoff evidence |
-| tracked files under `experiments/ai_crm_next` | 130 | frozen evidence workspace total after archive move |
+| `docs/archive/experiments_ai_crm_next/retired_tools.md` | 1 | retired experiment wrapper record |
+| tracked files under `experiments/ai_crm_next` | 112 | frozen evidence workspace total after wrapper retirement |
 
 ## Root References
 
@@ -55,10 +56,9 @@ Keep while the experiment workspace remains frozen:
 - SQL / fixture regression tests: `test_*_sql_repo.py`,
   `test_seed_old_flask_*_sample.py`, `test_postgres_test_guard.py`.
 - Parity fixture data: `experiments/ai_crm_next/tests/fixtures/**`.
-- Gray / canary readiness tests that validate evidence docs:
+- Canary readiness tests that validate evidence docs:
   `test_batch_*_canary_readiness.py`,
   `test_batch_1_media_production_signoff_readiness.py`,
-  `test_gray_rehearsal_batch.py`,
   `test_gray_release_runbook.py`,
   `test_production_canary_approval_package.py`.
 - Frontend parity tests that document frozen route expectations:
@@ -73,13 +73,15 @@ Keep while their paired tests or docs remain:
 - Readiness checkers: `check_batch_*_canary_readiness.py`,
   `check_batch_1_media_production_signoff_readiness.py`,
   `check_production_canary_approval_package.py`.
-- Parity comparators: `compare_*_parity.py`.
-- Gray / dual-run helpers: `*_gray_smoke.py`, `readonly_http_dual_run.py`,
-  `run_gray_rehearsal_batch.py`, `generate_gray_release_report.py`.
+- Historical parity comparator wrappers and gray smoke wrappers were retired
+  because their root `tools/` implementations no longer exist. See
+  `docs/archive/experiments_ai_crm_next/retired_tools.md`.
+- Dual-run and report helpers: `readonly_http_dual_run.py`,
+  `generate_gray_release_report.py`.
 - Fixture/screenshot helpers: `seed_old_flask_*_sample.py`,
   `capture_frontend_screenshots.py`.
-- `_root_tool_wrapper.py` remains useful as long as experiment tools import the
-  root `aicrm_next/` package.
+- No experiment-local tool should import `_root_tool_wrapper.py`; root-tool
+  wrappers are retired.
 
 ## Reference Docs To Keep For Now
 
@@ -138,9 +140,11 @@ while the frozen workspace exists.
 1. Keep root duplicate-source guard and README pointer.
 2. Decide whether experiment-local readiness/canary tests are still expected to
    run anywhere. If not, archive or retire their paired tools together.
-3. Update `experiments/ai_crm_next/README.md` with a retention rule: keep only
+3. Continue retiring stale historical commands from active reference docs when
+   their implementation no longer exists.
+4. Update `experiments/ai_crm_next/README.md` with a retention rule: keep only
    parity/reference docs and tests that still protect root `aicrm_next/`.
-4. Only after inventory-backed archive movement, consider deleting generated
+5. Only after inventory-backed archive movement, consider deleting generated
    screenshots or regenerated reports that are not referenced by tests/docs.
 
 ## Non-Goals

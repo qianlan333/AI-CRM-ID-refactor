@@ -77,7 +77,7 @@ AICRM_NEXT_ROUTE_PRODUCT_WRITES=false \
 AICRM_NEXT_ROUTE_CHECKOUT=false \
 AICRM_NEXT_EXTERNAL_WECHAT_PAY=false \
 AICRM_NEXT_EXTERNAL_ALIPAY=false \
-.venv/bin/python experiments/ai_crm_next/tools/product_management_gray_smoke.py \
+.venv/bin/python retired experiment wrapper; see docs/archive/experiments_ai_crm_next/retired_tools.md \
   --next-testclient \
   --output-md /tmp/product_management_gray_smoke_batch_2.md \
   --output-json /tmp/product_management_gray_smoke_batch_2.json
@@ -90,7 +90,7 @@ Result: PASS.
 Command:
 
 ```bash
-.venv/bin/python experiments/ai_crm_next/tools/compare_commerce_parity.py \
+.venv/bin/python retired experiment wrapper; see docs/archive/experiments_ai_crm_next/retired_tools.md \
   --old-fixture-dir tests/fixtures/old_commerce \
   --next-testclient \
   --output-md /tmp/commerce_parity_batch_2_product.md \

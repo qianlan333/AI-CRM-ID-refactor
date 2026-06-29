@@ -50,10 +50,10 @@ Excluded routes:
 | --- | --- |
 | ordinary pytest pass | `.venv/bin/python -m pytest -q` |
 | six parity pass | all `tools/compare_*_parity.py` reports |
-| Media parity pass | `experiments/ai_crm_next/tools/compare_media_library_parity.py` |
-| Media gray smoke pass | `experiments/ai_crm_next/tools/media_library_gray_smoke.py --next-testclient` |
+| Media parity pass | `retired experiment wrapper; see docs/archive/experiments_ai_crm_next/retired_tools.md` |
+| Media gray smoke pass | `retired experiment wrapper; see docs/archive/experiments_ai_crm_next/retired_tools.md --next-testclient` |
 | PNG screenshot baseline pass | `historical removed reference (route_status.json)` |
-| Batch 1 rehearsal report GO | `experiments/ai_crm_next/tools/run_gray_rehearsal_batch.py --batch media_readonly` |
+| Batch 1 rehearsal report GO | `retired experiment tool wrapper; see docs/archive/experiments_ai_crm_next/retired_tools.md --batch media_readonly` |
 | no old production entrypoint dirty | `git status --short --untracked-files=all` review |
 | no production config modified | status scan and side-effect report |
 

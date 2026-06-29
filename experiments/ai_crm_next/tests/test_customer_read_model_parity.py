@@ -2,8 +2,6 @@ from __future__ import annotations
 
 import json
 import re
-import subprocess
-import sys
 from pathlib import Path
 
 from conftest import make_client
@@ -60,28 +58,6 @@ def test_customer_comparison_detects_type_family_mismatch() -> None:
     issues = compare_type_family({"ok": True, "items": []}, {"ok": "true", "items": {}})
     assert any(issue["rule"] == "type_family" and issue["location"] == "$.ok" for issue in issues)
     assert any(issue["rule"] == "type_family" and issue["location"] == "$.items" for issue in issues)
-
-
-def test_customer_compare_tool_runs_against_fixture_mode(tmp_path: Path) -> None:
-    output_md = tmp_path / "customer_read_model_parity_report.md"
-    output_json = tmp_path / "customer_read_model_parity_report.json"
-    command = [
-        sys.executable,
-        str(PROJECT_ROOT / "tools" / "compare_customer_read_model_parity.py"),
-        "--old-fixture-dir",
-        str(OLD_FIXTURE_DIR),
-        "--next-testclient",
-        "--output-md",
-        str(output_md),
-        "--output-json",
-        str(output_json),
-    ]
-    completed = subprocess.run(command, cwd=PROJECT_ROOT, text=True, capture_output=True, check=False)
-    assert completed.returncode == 0, completed.stderr + completed.stdout
-    report = json.loads(output_json.read_text(encoding="utf-8"))
-    assert report["ok"] is True
-    assert output_md.exists()
-    assert "Customer Read Model Parity Report" in output_md.read_text(encoding="utf-8")
 
 
 def test_old_customer_read_model_fixtures_use_masked_values() -> None:

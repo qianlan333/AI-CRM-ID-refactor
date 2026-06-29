@@ -51,7 +51,7 @@ Summary status: readonly gray release preparation only; not `production_ready`.
 | condition | required evidence |
 | --- | --- |
 | ordinary pytest pass | `.venv/bin/python -m pytest -q` |
-| customer parity pass | `experiments/ai_crm_next/tools/compare_customer_read_model_parity.py --old-fixture-dir ... --next-testclient` |
+| customer parity pass | `retired experiment wrapper; see docs/archive/experiments_ai_crm_next/retired_tools.md --old-fixture-dir ... --next-testclient` |
 | frontend smoke pass | route-level frontend smoke and screenshot baseline |
 | screenshot baseline pass | `/admin/customers` has HTML snapshot and PNG screenshot |
 | real PostgreSQL integration pass | local test PostgreSQL evidence in `experiments/ai_crm_next/docs/real_postgres_integration_run.md` |

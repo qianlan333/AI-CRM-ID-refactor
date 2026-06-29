@@ -53,8 +53,8 @@ This plan prepares a staging or production-like canary for Batch 3 Customer Read
 | --- | --- |
 | ordinary pytest pass | `.venv/bin/python -m pytest -q` |
 | six parity pass | all `tools/compare_*_parity.py` reports |
-| Customer parity pass | `experiments/ai_crm_next/tools/compare_customer_read_model_parity.py` |
-| Customer gray smoke pass | `experiments/ai_crm_next/tools/customer_read_model_gray_smoke.py --old-base-url ... --next-testclient` |
+| Customer parity pass | `retired experiment wrapper; see docs/archive/experiments_ai_crm_next/retired_tools.md` |
+| Customer gray smoke pass | `retired experiment wrapper; see docs/archive/experiments_ai_crm_next/retired_tools.md --old-base-url ... --next-testclient` |
 | Customer full readonly dual-run pass | `experiments/ai_crm_next/tools/readonly_http_dual_run.py --scope customer,user_ops` with customer sample-dependent routes executed |
 | real PostgreSQL integration evidence available | `experiments/ai_crm_next/docs/real_postgres_integration_run.md` |
 | PNG screenshot baseline pass | `historical removed reference (route_status.json)` includes `/admin/customers` |

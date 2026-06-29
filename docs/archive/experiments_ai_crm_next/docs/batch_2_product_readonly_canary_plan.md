@@ -49,8 +49,8 @@ This plan prepares a staging or production-like canary for Batch 2 Product Manag
 | --- | --- |
 | ordinary pytest pass | `.venv/bin/python -m pytest -q` |
 | six parity pass | all `tools/compare_*_parity.py` reports |
-| Commerce parity pass | `experiments/ai_crm_next/tools/compare_commerce_parity.py` |
-| Product gray smoke pass | `experiments/ai_crm_next/tools/product_management_gray_smoke.py --next-testclient` |
+| Commerce parity pass | `retired experiment wrapper; see docs/archive/experiments_ai_crm_next/retired_tools.md` |
+| Product gray smoke pass | `retired experiment wrapper; see docs/archive/experiments_ai_crm_next/retired_tools.md --next-testclient` |
 | PNG screenshot baseline pass | `historical removed reference (route_status.json)` includes product admin and public product routes |
 | Batch 1 rehearsal complete | Batch 1 Media readonly local/simulated evidence exists |
 | no old production entrypoint dirty | `git status --short --untracked-files=all` review |

@@ -67,7 +67,7 @@ Unauthenticated old `/admin/user-ops/ui` may redirect to login. That is page-lay
 | condition | required evidence |
 | --- | --- |
 | Ordinary pytest pass | `.venv/bin/python -m pytest -q` |
-| User Ops parity pass | `experiments/ai_crm_next/tools/compare_user_ops_parity.py --next-testclient` |
+| User Ops parity pass | `retired experiment wrapper; see docs/archive/experiments_ai_crm_next/retired_tools.md --next-testclient` |
 | Frontend smoke pass | `experiments/ai_crm_next/tests/test_frontend_route_smoke.py` and screenshot baseline |
 | Screenshot baseline pass | `experiments/ai_crm_next/docs/frontend_screenshot_baseline.md` and `artifacts/frontend_screenshots/` |
 | Real PostgreSQL integration pass | `experiments/ai_crm_next/docs/real_postgres_integration_run.md` |

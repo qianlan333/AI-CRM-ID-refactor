@@ -21,7 +21,7 @@ First-slice parity covers:
 Fixture mode:
 
 ```bash
-python experiments/ai_crm_next/tools/compare_questionnaire_parity.py \
+python retired experiment wrapper; see docs/archive/experiments_ai_crm_next/retired_tools.md \
   --old-fixture-dir tests/fixtures/old_questionnaire \
   --next-testclient \
   --output-md /tmp/questionnaire_parity_report.md \
@@ -31,7 +31,7 @@ python experiments/ai_crm_next/tools/compare_questionnaire_parity.py \
 HTTP mode is reserved for isolated dual-run environments:
 
 ```bash
-python experiments/ai_crm_next/tools/compare_questionnaire_parity.py \
+python retired experiment wrapper; see docs/archive/experiments_ai_crm_next/retired_tools.md \
   --old-base-url http://127.0.0.1:5001 \
   --next-base-url http://127.0.0.1:8000 \
   --output-md /tmp/questionnaire_parity_report.md \

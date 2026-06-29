@@ -11,22 +11,22 @@ This checklist must be completed for every route-level gray batch. It does not a
 Run all six parity tools:
 
 ```bash
-.venv/bin/python tools/compare_user_ops_parity.py --old-fixture-dir tests/fixtures/old_user_ops --next-testclient --output-md /tmp/user_ops_parity_gray.md --output-json /tmp/user_ops_parity_gray.json
-.venv/bin/python tools/compare_customer_read_model_parity.py --old-fixture-dir tests/fixtures/old_customer_read_model --next-testclient --output-md /tmp/customer_parity_gray.md --output-json /tmp/customer_parity_gray.json
-.venv/bin/python tools/compare_questionnaire_parity.py --old-fixture-dir tests/fixtures/old_questionnaire --next-testclient --output-md /tmp/questionnaire_parity_gray.md --output-json /tmp/questionnaire_parity_gray.json
-.venv/bin/python tools/compare_commerce_parity.py --old-fixture-dir tests/fixtures/old_commerce --next-testclient --output-md /tmp/commerce_parity_gray.md --output-json /tmp/commerce_parity_gray.json
-.venv/bin/python tools/compare_media_library_parity.py --old-fixture-dir tests/fixtures/old_media_library --next-testclient --output-md /tmp/media_parity_gray.md --output-json /tmp/media_parity_gray.json
+.venv/bin/python retired experiment wrapper; see docs/archive/experiments_ai_crm_next/retired_tools.md --old-fixture-dir tests/fixtures/old_user_ops --next-testclient --output-md /tmp/user_ops_parity_gray.md --output-json /tmp/user_ops_parity_gray.json
+.venv/bin/python retired experiment wrapper; see docs/archive/experiments_ai_crm_next/retired_tools.md --old-fixture-dir tests/fixtures/old_customer_read_model --next-testclient --output-md /tmp/customer_parity_gray.md --output-json /tmp/customer_parity_gray.json
+.venv/bin/python retired experiment wrapper; see docs/archive/experiments_ai_crm_next/retired_tools.md --old-fixture-dir tests/fixtures/old_questionnaire --next-testclient --output-md /tmp/questionnaire_parity_gray.md --output-json /tmp/questionnaire_parity_gray.json
+.venv/bin/python retired experiment wrapper; see docs/archive/experiments_ai_crm_next/retired_tools.md --old-fixture-dir tests/fixtures/old_commerce --next-testclient --output-md /tmp/commerce_parity_gray.md --output-json /tmp/commerce_parity_gray.json
+.venv/bin/python retired experiment wrapper; see docs/archive/experiments_ai_crm_next/retired_tools.md --old-fixture-dir tests/fixtures/old_media_library --next-testclient --output-md /tmp/media_parity_gray.md --output-json /tmp/media_parity_gray.json
 ```
 
 ## Batch Commands
 
 | batch | required smoke | required parity | dual-run |
 | --- | --- | --- | --- |
-| Batch 1 Media Library readonly | `experiments/ai_crm_next/tools/media_library_gray_smoke.py --next-testclient` | Media parity | not required |
-| Batch 2 Product Management readonly | `experiments/ai_crm_next/tools/product_management_gray_smoke.py --next-testclient` | Commerce parity | not required |
-| Batch 3 Customer Read Model readonly | `experiments/ai_crm_next/tools/customer_read_model_gray_smoke.py --next-testclient` | Customer parity | old-base-url dual required before full gray |
-| Batch 4 User Ops readonly | `experiments/ai_crm_next/tools/user_ops_readonly_gray_smoke.py --next-testclient` | User Ops parity | old-base-url dual required before full gray |
-| Batch 5 Questionnaire readonly | `experiments/ai_crm_next/tools/questionnaire_readonly_gray_smoke.py --next-testclient` | Questionnaire parity | old-base-url dual recommended; accepted legacy drift allowed |
+| Batch 1 Media Library readonly | `retired experiment wrapper; see docs/archive/experiments_ai_crm_next/retired_tools.md --next-testclient` | Media parity | not required |
+| Batch 2 Product Management readonly | `retired experiment wrapper; see docs/archive/experiments_ai_crm_next/retired_tools.md --next-testclient` | Commerce parity | not required |
+| Batch 3 Customer Read Model readonly | `retired experiment wrapper; see docs/archive/experiments_ai_crm_next/retired_tools.md --next-testclient` | Customer parity | old-base-url dual required before full gray |
+| Batch 4 User Ops readonly | `retired experiment wrapper; see docs/archive/experiments_ai_crm_next/retired_tools.md --next-testclient` | User Ops parity | old-base-url dual required before full gray |
+| Batch 5 Questionnaire readonly | `retired experiment wrapper; see docs/archive/experiments_ai_crm_next/retired_tools.md --next-testclient` | Questionnaire parity | old-base-url dual recommended; accepted legacy drift allowed |
 | Batch 6 Automation readonly | retired | retired | old automation_program/runtime-v2 parity and smoke tooling removed; `/admin/automation-conversion` is AI Audience |
 
 ## Frontend Screenshot Route Check
@@ -51,7 +51,7 @@ Confirm `experiments/ai_crm_next/docs/frontend_screenshot_baseline.md` includes 
 Before any production-like route flag change, run:
 
 ```bash
-.venv/bin/python experiments/ai_crm_next/tools/run_gray_rehearsal_batch.py \
+.venv/bin/python retired experiment tool wrapper; see docs/archive/experiments_ai_crm_next/retired_tools.md \
   --batch media_readonly \
   --next-testclient \
   --output-md /tmp/gray_rehearsal_batch_1_media_readonly.md \

@@ -76,7 +76,7 @@ These flags were not written to production config and were not committed as a re
 Command:
 
 ```bash
-.venv/bin/python experiments/ai_crm_next/tools/customer_read_model_gray_smoke.py \
+.venv/bin/python retired experiment wrapper; see docs/archive/experiments_ai_crm_next/retired_tools.md \
   --old-base-url http://127.0.0.1:5001 \
   --next-testclient \
   --output-md /tmp/customer_gray_smoke_batch_3.md \
