@@ -1,7 +1,7 @@
 # experiments/ai_crm_next Archive
 
-This archive stores historical evidence documents moved out of the frozen
-`experiments/ai_crm_next/docs/` workspace.
+This archive stores historical evidence moved out of the retired
+`experiments/ai_crm_next/` workspace.
 
 Archived files remain repository-tracked audit evidence. They are not live
 runtime instructions, production approval, deploy configuration, or rollback
@@ -11,3 +11,8 @@ and the canonical architecture guidance in
 
 The `docs/` subdirectory preserves original filenames so old canary, gray
 release, signoff, and execution records remain easy to locate.
+
+The `workspace/` subdirectory preserves the final experiment-local tests,
+fixtures, migrations, helper scripts, and packaging files as an audit snapshot.
+It is not a live test entrypoint and should not be used as an alternate runtime
+source.

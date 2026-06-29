@@ -45,6 +45,7 @@ def test_experiments_inventory_report_classifies_files_and_root_references(tmp_p
         "tools": 2,
     }
     records = {record["path"]: record for record in report["experiment_files"]}
+    assert records["experiments/ai_crm_next/README.md"]["classification"] == "retired_stub"
     assert records["experiments/ai_crm_next/tools/check_canary_readiness.py"]["classification"] == "active_readiness_checker"
     assert records["experiments/ai_crm_next/tools/doc_paths.py"]["classification"] == "active_archive_path_helper"
     assert records["experiments/ai_crm_next/tests/fixtures/sample.json"]["classification"] == "active_fixture_data"
@@ -96,7 +97,7 @@ def test_experiments_inventory_report_writes_markdown_and_json(tmp_path) -> None
     assert "experiments/ai_crm_next/README.md" in summary
     assert payload["version"] == "1"
     assert payload["summary"]["experiment_tracked_file_count"] == 1
-    assert "active_reference" in render_markdown(report)
+    assert "retired_stub" in render_markdown(report)
 
 
 def test_experiments_inventory_cli_returns_zero_and_outputs_files(tmp_path) -> None:

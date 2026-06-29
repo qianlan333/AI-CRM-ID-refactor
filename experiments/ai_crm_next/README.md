@@ -1,74 +1,12 @@
-# AI-CRM Next Experiment
+# AI-CRM Next Experiment Stub
 
-`experiments/ai_crm_next` is the frozen evidence workspace for the AI-CRM Next rewrite.
+`experiments/ai_crm_next` is no longer an active test or runtime workspace.
 
-The default runtime package has been promoted to root `aicrm_next/`. Keep this experiment directory for parity fixtures, active reference docs, and regression tooling while the frozen workspace remains useful. Historical canary, gray-release, signoff, and execution evidence has moved to `docs/archive/experiments_ai_crm_next/docs/`. Do not add a second source package under `experiments/ai_crm_next/src/aicrm_next`; tests and tools import the root package.
+The live runtime package is root `aicrm_next/`. Historical experiment docs,
+tests, fixtures, migrations, and helper scripts are retained under
+`docs/archive/experiments_ai_crm_next/` for audit and migration evidence.
 
-The product goal is strict parity with the current AI-CRM product capability and frontend experience. The backend is a new FastAPI modular monolith; the old Flask backend is reference material only and is not imported at runtime.
-
-## Retention Rule
-
-Keep this workspace only for files that still do at least one of the following:
-
-- protect the root duplicate-source guard for `experiments/ai_crm_next/src/aicrm_next`;
-- provide experiment-local parity, fixture, migration, or regression coverage;
-- preserve reference docs that explain migration decisions still cited by tests or root docs;
-- keep historical evidence reachable through `docs/archive/experiments_ai_crm_next/`.
-
-New canary, gray-release, production signoff, execution report, screenshot, or generated evidence files should not be added here. Add durable evidence under the appropriate `docs/archive/` or `docs/reports/` location, and refresh `docs/cleanup/experiments_ai_crm_next_inventory.md` with:
-
-```bash
-python3 tools/report_experiments_inventory.py \
-  --summary-output docs/cleanup/experiments_ai_crm_next_inventory.md \
-  --json-output docs/cleanup/experiments_ai_crm_next_inventory.json
-```
-
-## Principles
-
-- Frontend parity is mandatory. Current templates, navigation, interactions, tables, filters, drawers, modals, button placement, visual style, and information density are the baseline.
-- Backend architecture is rewritten around explicit bounded contexts and application use cases.
-- This package must not import `wecom_ability_service.*` or `openclaw_service.*`.
-- First slice is contract-ready for customer read model, MCP, identity resolution, and User Ops stubs.
-
-## Run Tests
-
-```bash
-.venv/bin/python -m pytest -q
-```
-
-If the local virtualenv does not exist yet, create it and install the test dependencies:
-
-```bash
-python3 -m venv .venv
-.venv/bin/python -m pip install -e '.[test]'
-.venv/bin/python -m pytest -q
-```
-
-If the virtualenv is already activated, `python -m pytest -q` is equivalent.
-
-## Implemented First Slice
-
-- `GET /health`
-- `GET /api/system/health`
-- `GET /api/customers`
-- `GET /api/customers/{external_userid}`
-- `GET /api/customers/{external_userid}/timeline`
-- `GET /api/admin/user-ops/overview`
-- `GET /api/admin/user-ops/list`
-- `POST /api/admin/user-ops/batch-send/preview`
-- `POST /api/admin/user-ops/batch-send/execute`
-- `GET /api/admin/user-ops/send-records`
-- `GET /mcp`
-- `POST /mcp`
-
-## Bounded Contexts
-
-- `platform_foundation`
-- `integration_gateway`
-- `identity_contact`
-- `customer_read_model`
-- `ops_enrollment`
-- `questionnaire`
-- `automation_engine`
-- `ai_assist`
-- `frontend_compat`
+Do not add source code, fixtures, generated reports, or a second
+`src/aicrm_next` package here. The root duplicate-source guard still watches
+this directory so retired experiment code cannot become an alternate runtime
+entrypoint again.

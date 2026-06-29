@@ -1,41 +1,24 @@
 {
   "version": "1",
   "root": ".",
-  "generated_at": "2026-06-29T07:25:00Z",
+  "generated_at": "2026-06-29T08:20:00Z",
   "summary": {
-    "experiment_tracked_file_count": 64,
-    "archived_experiment_file_count": 79,
-    "root_reference_count": 8,
+    "experiment_tracked_file_count": 1,
+    "archived_experiment_file_count": 142,
+    "root_reference_count": 7,
     "areas": {
-      "docs": 4,
-      "migrations": 4,
-      "root_config": 4,
-      "scripts": 1,
-      "test_fixtures": 25,
-      "tests": 25,
-      "tools": 1
+      "root_config": 1
     },
     "classifications": {
-      "active_archive_path_helper": 1,
-      "active_experiment_helper": 1,
-      "active_experiment_scaffold": 4,
-      "active_fixture_data": 25,
-      "active_reference": 4,
-      "active_reference_doc": 4,
-      "active_regression_test": 25
+      "retired_stub": 1
     },
     "archived_areas": {
-      "docs": 77,
-      "root_archive_doc": 2
+      "docs": 81,
+      "root_archive_doc": 2,
+      "workspace": 59
     }
   },
   "root_references": [
-    {
-      "path": "README.md",
-      "line": 80,
-      "classification": "active_doc_pointer",
-      "evidence": "cd experiments/ai_crm_next"
-    },
     {
       "path": "scripts/check_no_duplicate_next_source.sh",
       "line": 5,
@@ -81,392 +64,16 @@
   ],
   "experiment_files": [
     {
-      "path": "experiments/ai_crm_next/.gitignore",
-      "area": "root_config",
-      "classification": "active_reference",
-      "reason": "Experiment entry/config file."
-    },
-    {
       "path": "experiments/ai_crm_next/README.md",
       "area": "root_config",
-      "classification": "active_reference",
-      "reason": "Experiment entry/config file."
-    },
-    {
-      "path": "experiments/ai_crm_next/alembic.ini",
-      "area": "root_config",
-      "classification": "active_reference",
-      "reason": "Experiment entry/config file."
-    },
-    {
-      "path": "experiments/ai_crm_next/docs/api_contracts.md",
-      "area": "docs",
-      "classification": "active_reference_doc",
-      "reason": "Reference material kept while the frozen workspace remains discoverable."
-    },
-    {
-      "path": "experiments/ai_crm_next/docs/architecture.md",
-      "area": "docs",
-      "classification": "active_reference_doc",
-      "reason": "Reference material kept while the frozen workspace remains discoverable."
-    },
-    {
-      "path": "experiments/ai_crm_next/docs/frontend_parity_plan.md",
-      "area": "docs",
-      "classification": "active_reference_doc",
-      "reason": "Reference material kept while the frozen workspace remains discoverable."
-    },
-    {
-      "path": "experiments/ai_crm_next/docs/postgres_integration_testing.md",
-      "area": "docs",
-      "classification": "active_reference_doc",
-      "reason": "Reference material kept while the frozen workspace remains discoverable."
-    },
-    {
-      "path": "experiments/ai_crm_next/migrations/env.py",
-      "area": "migrations",
-      "classification": "active_experiment_scaffold",
-      "reason": "Experiment-local migration scaffold/readiness coverage."
-    },
-    {
-      "path": "experiments/ai_crm_next/migrations/versions/.gitkeep",
-      "area": "migrations",
-      "classification": "active_experiment_scaffold",
-      "reason": "Experiment-local migration scaffold/readiness coverage."
-    },
-    {
-      "path": "experiments/ai_crm_next/migrations/versions/0001_user_ops_postgresql_ready.py",
-      "area": "migrations",
-      "classification": "active_experiment_scaffold",
-      "reason": "Experiment-local migration scaffold/readiness coverage."
-    },
-    {
-      "path": "experiments/ai_crm_next/migrations/versions/0002_customer_read_model_postgresql_ready.py",
-      "area": "migrations",
-      "classification": "active_experiment_scaffold",
-      "reason": "Experiment-local migration scaffold/readiness coverage."
-    },
-    {
-      "path": "experiments/ai_crm_next/pyproject.toml",
-      "area": "root_config",
-      "classification": "active_reference",
-      "reason": "Experiment entry/config file."
-    },
-    {
-      "path": "experiments/ai_crm_next/scripts/run_postgres_integration_tests.sh",
-      "area": "scripts",
-      "classification": "active_experiment_helper",
-      "reason": "Experiment-local helper script."
-    },
-    {
-      "path": "experiments/ai_crm_next/tests/conftest.py",
-      "area": "tests",
-      "classification": "active_regression_test",
-      "reason": "Experiment-local regression or evidence-readiness test."
-    },
-    {
-      "path": "experiments/ai_crm_next/tests/fixtures/old_commerce/alipay_transactions.default.json",
-      "area": "test_fixtures",
-      "classification": "active_fixture_data",
-      "reason": "Parity fixture data used by experiment-local tests."
-    },
-    {
-      "path": "experiments/ai_crm_next/tests/fixtures/old_commerce/checkout_alipay.default.json",
-      "area": "test_fixtures",
-      "classification": "active_fixture_data",
-      "reason": "Parity fixture data used by experiment-local tests."
-    },
-    {
-      "path": "experiments/ai_crm_next/tests/fixtures/old_commerce/checkout_wechat.default.json",
-      "area": "test_fixtures",
-      "classification": "active_fixture_data",
-      "reason": "Parity fixture data used by experiment-local tests."
-    },
-    {
-      "path": "experiments/ai_crm_next/tests/fixtures/old_commerce/product_detail.default.json",
-      "area": "test_fixtures",
-      "classification": "active_fixture_data",
-      "reason": "Parity fixture data used by experiment-local tests."
-    },
-    {
-      "path": "experiments/ai_crm_next/tests/fixtures/old_commerce/products.default.json",
-      "area": "test_fixtures",
-      "classification": "active_fixture_data",
-      "reason": "Parity fixture data used by experiment-local tests."
-    },
-    {
-      "path": "experiments/ai_crm_next/tests/fixtures/old_commerce/wechat_transactions.default.json",
-      "area": "test_fixtures",
-      "classification": "active_fixture_data",
-      "reason": "Parity fixture data used by experiment-local tests."
-    },
-    {
-      "path": "experiments/ai_crm_next/tests/fixtures/old_customer_read_model/customer_detail.default.json",
-      "area": "test_fixtures",
-      "classification": "active_fixture_data",
-      "reason": "Parity fixture data used by experiment-local tests."
-    },
-    {
-      "path": "experiments/ai_crm_next/tests/fixtures/old_customer_read_model/customer_timeline.default.json",
-      "area": "test_fixtures",
-      "classification": "active_fixture_data",
-      "reason": "Parity fixture data used by experiment-local tests."
-    },
-    {
-      "path": "experiments/ai_crm_next/tests/fixtures/old_customer_read_model/customers.default.json",
-      "area": "test_fixtures",
-      "classification": "active_fixture_data",
-      "reason": "Parity fixture data used by experiment-local tests."
-    },
-    {
-      "path": "experiments/ai_crm_next/tests/fixtures/old_customer_read_model/customers.owner_filter.json",
-      "area": "test_fixtures",
-      "classification": "active_fixture_data",
-      "reason": "Parity fixture data used by experiment-local tests."
-    },
-    {
-      "path": "experiments/ai_crm_next/tests/fixtures/old_customer_read_model/recent_messages.default.json",
-      "area": "test_fixtures",
-      "classification": "active_fixture_data",
-      "reason": "Parity fixture data used by experiment-local tests."
-    },
-    {
-      "path": "experiments/ai_crm_next/tests/fixtures/old_media_library/attachment_library.default.json",
-      "area": "test_fixtures",
-      "classification": "active_fixture_data",
-      "reason": "Parity fixture data used by experiment-local tests."
-    },
-    {
-      "path": "experiments/ai_crm_next/tests/fixtures/old_media_library/image_library.default.json",
-      "area": "test_fixtures",
-      "classification": "active_fixture_data",
-      "reason": "Parity fixture data used by experiment-local tests."
-    },
-    {
-      "path": "experiments/ai_crm_next/tests/fixtures/old_media_library/miniprogram_library.default.json",
-      "area": "test_fixtures",
-      "classification": "active_fixture_data",
-      "reason": "Parity fixture data used by experiment-local tests."
-    },
-    {
-      "path": "experiments/ai_crm_next/tests/fixtures/old_questionnaire/admin_detail.default.json",
-      "area": "test_fixtures",
-      "classification": "active_fixture_data",
-      "reason": "Parity fixture data used by experiment-local tests."
-    },
-    {
-      "path": "experiments/ai_crm_next/tests/fixtures/old_questionnaire/admin_list.default.json",
-      "area": "test_fixtures",
-      "classification": "active_fixture_data",
-      "reason": "Parity fixture data used by experiment-local tests."
-    },
-    {
-      "path": "experiments/ai_crm_next/tests/fixtures/old_questionnaire/admin_preflight.default.json",
-      "area": "test_fixtures",
-      "classification": "active_fixture_data",
-      "reason": "Parity fixture data used by experiment-local tests."
-    },
-    {
-      "path": "experiments/ai_crm_next/tests/fixtures/old_questionnaire/public_get.default.json",
-      "area": "test_fixtures",
-      "classification": "active_fixture_data",
-      "reason": "Parity fixture data used by experiment-local tests."
-    },
-    {
-      "path": "experiments/ai_crm_next/tests/fixtures/old_questionnaire/submit.default.json",
-      "area": "test_fixtures",
-      "classification": "active_fixture_data",
-      "reason": "Parity fixture data used by experiment-local tests."
-    },
-    {
-      "path": "experiments/ai_crm_next/tests/fixtures/old_user_ops/list.default.json",
-      "area": "test_fixtures",
-      "classification": "active_fixture_data",
-      "reason": "Parity fixture data used by experiment-local tests."
-    },
-    {
-      "path": "experiments/ai_crm_next/tests/fixtures/old_user_ops/list.not_added.json",
-      "area": "test_fixtures",
-      "classification": "active_fixture_data",
-      "reason": "Parity fixture data used by experiment-local tests."
-    },
-    {
-      "path": "experiments/ai_crm_next/tests/fixtures/old_user_ops/list.wecom_added.json",
-      "area": "test_fixtures",
-      "classification": "active_fixture_data",
-      "reason": "Parity fixture data used by experiment-local tests."
-    },
-    {
-      "path": "experiments/ai_crm_next/tests/fixtures/old_user_ops/overview.default.json",
-      "area": "test_fixtures",
-      "classification": "active_fixture_data",
-      "reason": "Parity fixture data used by experiment-local tests."
-    },
-    {
-      "path": "experiments/ai_crm_next/tests/fixtures/old_user_ops/preview.default.json",
-      "area": "test_fixtures",
-      "classification": "active_fixture_data",
-      "reason": "Parity fixture data used by experiment-local tests."
-    },
-    {
-      "path": "experiments/ai_crm_next/tests/fixtures/old_user_ops/send_records.default.json",
-      "area": "test_fixtures",
-      "classification": "active_fixture_data",
-      "reason": "Parity fixture data used by experiment-local tests."
-    },
-    {
-      "path": "experiments/ai_crm_next/tests/integration/test_customer_read_model_postgres_repo.py",
-      "area": "tests",
-      "classification": "active_regression_test",
-      "reason": "Experiment-local regression or evidence-readiness test."
-    },
-    {
-      "path": "experiments/ai_crm_next/tests/integration/test_postgres_migrations.py",
-      "area": "tests",
-      "classification": "active_regression_test",
-      "reason": "Experiment-local regression or evidence-readiness test."
-    },
-    {
-      "path": "experiments/ai_crm_next/tests/integration/test_user_ops_postgres_repo.py",
-      "area": "tests",
-      "classification": "active_regression_test",
-      "reason": "Experiment-local regression or evidence-readiness test."
-    },
-    {
-      "path": "experiments/ai_crm_next/tests/test_alembic_scaffold.py",
-      "area": "tests",
-      "classification": "active_regression_test",
-      "reason": "Experiment-local regression or evidence-readiness test."
-    },
-    {
-      "path": "experiments/ai_crm_next/tests/test_architecture_boundaries.py",
-      "area": "tests",
-      "classification": "active_regression_test",
-      "reason": "Experiment-local regression or evidence-readiness test."
-    },
-    {
-      "path": "experiments/ai_crm_next/tests/test_commerce_contract.py",
-      "area": "tests",
-      "classification": "active_regression_test",
-      "reason": "Experiment-local regression or evidence-readiness test."
-    },
-    {
-      "path": "experiments/ai_crm_next/tests/test_commerce_media_parity.py",
-      "area": "tests",
-      "classification": "active_regression_test",
-      "reason": "Experiment-local regression or evidence-readiness test."
-    },
-    {
-      "path": "experiments/ai_crm_next/tests/test_customer_read_model_contract.py",
-      "area": "tests",
-      "classification": "active_regression_test",
-      "reason": "Experiment-local regression or evidence-readiness test."
-    },
-    {
-      "path": "experiments/ai_crm_next/tests/test_customer_read_model_parity.py",
-      "area": "tests",
-      "classification": "active_regression_test",
-      "reason": "Experiment-local regression or evidence-readiness test."
-    },
-    {
-      "path": "experiments/ai_crm_next/tests/test_customer_read_model_sql_repo.py",
-      "area": "tests",
-      "classification": "active_regression_test",
-      "reason": "Experiment-local regression or evidence-readiness test."
-    },
-    {
-      "path": "experiments/ai_crm_next/tests/test_fast_readonly_replacement_docs.py",
-      "area": "tests",
-      "classification": "active_regression_test",
-      "reason": "Experiment-local regression or evidence-readiness test."
-    },
-    {
-      "path": "experiments/ai_crm_next/tests/test_frontend_legacy_routes.py",
-      "area": "tests",
-      "classification": "active_regression_test",
-      "reason": "Experiment-local regression or evidence-readiness test."
-    },
-    {
-      "path": "experiments/ai_crm_next/tests/test_frontend_parity_plan.py",
-      "area": "tests",
-      "classification": "active_regression_test",
-      "reason": "Experiment-local regression or evidence-readiness test."
-    },
-    {
-      "path": "experiments/ai_crm_next/tests/test_health.py",
-      "area": "tests",
-      "classification": "active_regression_test",
-      "reason": "Experiment-local regression or evidence-readiness test."
-    },
-    {
-      "path": "experiments/ai_crm_next/tests/test_identity_resolution.py",
-      "area": "tests",
-      "classification": "active_regression_test",
-      "reason": "Experiment-local regression or evidence-readiness test."
-    },
-    {
-      "path": "experiments/ai_crm_next/tests/test_mcp_contract.py",
-      "area": "tests",
-      "classification": "active_regression_test",
-      "reason": "Experiment-local regression or evidence-readiness test."
-    },
-    {
-      "path": "experiments/ai_crm_next/tests/test_media_library_contract.py",
-      "area": "tests",
-      "classification": "active_regression_test",
-      "reason": "Experiment-local regression or evidence-readiness test."
-    },
-    {
-      "path": "experiments/ai_crm_next/tests/test_postgres_test_guard.py",
-      "area": "tests",
-      "classification": "active_regression_test",
-      "reason": "Experiment-local regression or evidence-readiness test."
-    },
-    {
-      "path": "experiments/ai_crm_next/tests/test_questionnaire_contract.py",
-      "area": "tests",
-      "classification": "active_regression_test",
-      "reason": "Experiment-local regression or evidence-readiness test."
-    },
-    {
-      "path": "experiments/ai_crm_next/tests/test_questionnaire_parity.py",
-      "area": "tests",
-      "classification": "active_regression_test",
-      "reason": "Experiment-local regression or evidence-readiness test."
-    },
-    {
-      "path": "experiments/ai_crm_next/tests/test_route_owner_headers.py",
-      "area": "tests",
-      "classification": "active_regression_test",
-      "reason": "Experiment-local regression or evidence-readiness test."
-    },
-    {
-      "path": "experiments/ai_crm_next/tests/test_user_ops_contract.py",
-      "area": "tests",
-      "classification": "active_regression_test",
-      "reason": "Experiment-local regression or evidence-readiness test."
-    },
-    {
-      "path": "experiments/ai_crm_next/tests/test_user_ops_parity.py",
-      "area": "tests",
-      "classification": "active_regression_test",
-      "reason": "Experiment-local regression or evidence-readiness test."
-    },
-    {
-      "path": "experiments/ai_crm_next/tests/test_user_ops_sql_repo.py",
-      "area": "tests",
-      "classification": "active_regression_test",
-      "reason": "Experiment-local regression or evidence-readiness test."
-    },
-    {
-      "path": "experiments/ai_crm_next/tools/doc_paths.py",
-      "area": "tools",
-      "classification": "active_archive_path_helper",
-      "reason": "Keeps experiment-local tests pointed at archived evidence docs."
+      "classification": "retired_stub",
+      "reason": "Retired experiment entry stub."
     }
   ],
   "archived_files": [
     "docs/archive/experiments_ai_crm_next/README.md",
+    "docs/archive/experiments_ai_crm_next/docs/api_contracts.md",
+    "docs/archive/experiments_ai_crm_next/docs/architecture.md",
     "docs/archive/experiments_ai_crm_next/docs/batch_1_media_readonly_canary_execution_report.md",
     "docs/archive/experiments_ai_crm_next/docs/batch_1_media_readonly_canary_plan.md",
     "docs/archive/experiments_ai_crm_next/docs/batch_1_media_readonly_canary_runbook.md",
@@ -508,6 +115,7 @@
     "docs/archive/experiments_ai_crm_next/docs/fast_readonly_replacement_execution_plan.md",
     "docs/archive/experiments_ai_crm_next/docs/feature_parity_matrix.md",
     "docs/archive/experiments_ai_crm_next/docs/final_gap_analysis.md",
+    "docs/archive/experiments_ai_crm_next/docs/frontend_parity_plan.md",
     "docs/archive/experiments_ai_crm_next/docs/frontend_route_manifest.md",
     "docs/archive/experiments_ai_crm_next/docs/frontend_screenshot_baseline.md",
     "docs/archive/experiments_ai_crm_next/docs/go_no_go_checklist.md",
@@ -520,6 +128,7 @@
     "docs/archive/experiments_ai_crm_next/docs/media_library_route_cutover_manifest.md",
     "docs/archive/experiments_ai_crm_next/docs/migration_strategy.md",
     "docs/archive/experiments_ai_crm_next/docs/module_status_matrix.md",
+    "docs/archive/experiments_ai_crm_next/docs/postgres_integration_testing.md",
     "docs/archive/experiments_ai_crm_next/docs/product_management_gray_release_plan.md",
     "docs/archive/experiments_ai_crm_next/docs/product_management_route_cutover_manifest.md",
     "docs/archive/experiments_ai_crm_next/docs/production_canary_approval_package.md",
@@ -544,6 +153,65 @@
     "docs/archive/experiments_ai_crm_next/docs/user_ops_readonly_gray_release_plan.md",
     "docs/archive/experiments_ai_crm_next/docs/user_ops_readonly_route_cutover_manifest.md",
     "docs/archive/experiments_ai_crm_next/docs/user_ops_readonly_sample_and_drift_checklist.md",
-    "docs/archive/experiments_ai_crm_next/retired_tools.md"
+    "docs/archive/experiments_ai_crm_next/retired_tools.md",
+    "docs/archive/experiments_ai_crm_next/workspace/.gitignore",
+    "docs/archive/experiments_ai_crm_next/workspace/alembic.ini",
+    "docs/archive/experiments_ai_crm_next/workspace/migrations/env.py",
+    "docs/archive/experiments_ai_crm_next/workspace/migrations/versions/.gitkeep",
+    "docs/archive/experiments_ai_crm_next/workspace/migrations/versions/0001_user_ops_postgresql_ready.py",
+    "docs/archive/experiments_ai_crm_next/workspace/migrations/versions/0002_customer_read_model_postgresql_ready.py",
+    "docs/archive/experiments_ai_crm_next/workspace/pyproject.toml",
+    "docs/archive/experiments_ai_crm_next/workspace/scripts/run_postgres_integration_tests.sh",
+    "docs/archive/experiments_ai_crm_next/workspace/tests/conftest.py",
+    "docs/archive/experiments_ai_crm_next/workspace/tests/fixtures/old_commerce/alipay_transactions.default.json",
+    "docs/archive/experiments_ai_crm_next/workspace/tests/fixtures/old_commerce/checkout_alipay.default.json",
+    "docs/archive/experiments_ai_crm_next/workspace/tests/fixtures/old_commerce/checkout_wechat.default.json",
+    "docs/archive/experiments_ai_crm_next/workspace/tests/fixtures/old_commerce/product_detail.default.json",
+    "docs/archive/experiments_ai_crm_next/workspace/tests/fixtures/old_commerce/products.default.json",
+    "docs/archive/experiments_ai_crm_next/workspace/tests/fixtures/old_commerce/wechat_transactions.default.json",
+    "docs/archive/experiments_ai_crm_next/workspace/tests/fixtures/old_customer_read_model/customer_detail.default.json",
+    "docs/archive/experiments_ai_crm_next/workspace/tests/fixtures/old_customer_read_model/customer_timeline.default.json",
+    "docs/archive/experiments_ai_crm_next/workspace/tests/fixtures/old_customer_read_model/customers.default.json",
+    "docs/archive/experiments_ai_crm_next/workspace/tests/fixtures/old_customer_read_model/customers.owner_filter.json",
+    "docs/archive/experiments_ai_crm_next/workspace/tests/fixtures/old_customer_read_model/recent_messages.default.json",
+    "docs/archive/experiments_ai_crm_next/workspace/tests/fixtures/old_media_library/attachment_library.default.json",
+    "docs/archive/experiments_ai_crm_next/workspace/tests/fixtures/old_media_library/image_library.default.json",
+    "docs/archive/experiments_ai_crm_next/workspace/tests/fixtures/old_media_library/miniprogram_library.default.json",
+    "docs/archive/experiments_ai_crm_next/workspace/tests/fixtures/old_questionnaire/admin_detail.default.json",
+    "docs/archive/experiments_ai_crm_next/workspace/tests/fixtures/old_questionnaire/admin_list.default.json",
+    "docs/archive/experiments_ai_crm_next/workspace/tests/fixtures/old_questionnaire/admin_preflight.default.json",
+    "docs/archive/experiments_ai_crm_next/workspace/tests/fixtures/old_questionnaire/public_get.default.json",
+    "docs/archive/experiments_ai_crm_next/workspace/tests/fixtures/old_questionnaire/submit.default.json",
+    "docs/archive/experiments_ai_crm_next/workspace/tests/fixtures/old_user_ops/list.default.json",
+    "docs/archive/experiments_ai_crm_next/workspace/tests/fixtures/old_user_ops/list.not_added.json",
+    "docs/archive/experiments_ai_crm_next/workspace/tests/fixtures/old_user_ops/list.wecom_added.json",
+    "docs/archive/experiments_ai_crm_next/workspace/tests/fixtures/old_user_ops/overview.default.json",
+    "docs/archive/experiments_ai_crm_next/workspace/tests/fixtures/old_user_ops/preview.default.json",
+    "docs/archive/experiments_ai_crm_next/workspace/tests/fixtures/old_user_ops/send_records.default.json",
+    "docs/archive/experiments_ai_crm_next/workspace/tests/integration/test_customer_read_model_postgres_repo.py",
+    "docs/archive/experiments_ai_crm_next/workspace/tests/integration/test_postgres_migrations.py",
+    "docs/archive/experiments_ai_crm_next/workspace/tests/integration/test_user_ops_postgres_repo.py",
+    "docs/archive/experiments_ai_crm_next/workspace/tests/test_alembic_scaffold.py",
+    "docs/archive/experiments_ai_crm_next/workspace/tests/test_architecture_boundaries.py",
+    "docs/archive/experiments_ai_crm_next/workspace/tests/test_commerce_contract.py",
+    "docs/archive/experiments_ai_crm_next/workspace/tests/test_commerce_media_parity.py",
+    "docs/archive/experiments_ai_crm_next/workspace/tests/test_customer_read_model_contract.py",
+    "docs/archive/experiments_ai_crm_next/workspace/tests/test_customer_read_model_parity.py",
+    "docs/archive/experiments_ai_crm_next/workspace/tests/test_customer_read_model_sql_repo.py",
+    "docs/archive/experiments_ai_crm_next/workspace/tests/test_fast_readonly_replacement_docs.py",
+    "docs/archive/experiments_ai_crm_next/workspace/tests/test_frontend_legacy_routes.py",
+    "docs/archive/experiments_ai_crm_next/workspace/tests/test_frontend_parity_plan.py",
+    "docs/archive/experiments_ai_crm_next/workspace/tests/test_health.py",
+    "docs/archive/experiments_ai_crm_next/workspace/tests/test_identity_resolution.py",
+    "docs/archive/experiments_ai_crm_next/workspace/tests/test_mcp_contract.py",
+    "docs/archive/experiments_ai_crm_next/workspace/tests/test_media_library_contract.py",
+    "docs/archive/experiments_ai_crm_next/workspace/tests/test_postgres_test_guard.py",
+    "docs/archive/experiments_ai_crm_next/workspace/tests/test_questionnaire_contract.py",
+    "docs/archive/experiments_ai_crm_next/workspace/tests/test_questionnaire_parity.py",
+    "docs/archive/experiments_ai_crm_next/workspace/tests/test_route_owner_headers.py",
+    "docs/archive/experiments_ai_crm_next/workspace/tests/test_user_ops_contract.py",
+    "docs/archive/experiments_ai_crm_next/workspace/tests/test_user_ops_parity.py",
+    "docs/archive/experiments_ai_crm_next/workspace/tests/test_user_ops_sql_repo.py",
+    "docs/archive/experiments_ai_crm_next/workspace/tools/doc_paths.py"
   ]
 }

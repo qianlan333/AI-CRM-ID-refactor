@@ -52,7 +52,7 @@ The old backend accumulated broad facade modules because HTTP, integration, read
 
 - Default runtime: `InMemoryUserOpsRepository`, so the experiment still starts without a database.
 - PostgreSQL-ready implementation: `SqlAlchemyUserOpsRepository`, using SQLAlchemy table definitions registered on `Base.metadata`.
-- Migration: `experiments/ai_crm_next/migrations/versions/0001_user_ops_postgresql_ready.py` creates User Ops pool, do-not-disturb, and send-record tables.
+- Migration: `docs/archive/experiments_ai_crm_next/workspace/migrations/versions/0001_user_ops_postgresql_ready.py` creates User Ops pool, do-not-disturb, and send-record tables.
 - Switch point: `build_user_ops_repository` reads `USER_OPS_REPO_BACKEND=memory|sqlalchemy`.
 
 The API layer does not import SQLAlchemy models or sessions. It calls application queries/commands only. Execute still uses the fake `integration_gateway` dispatch adapter; no real Enterprise WeChat send is triggered in this slice.
@@ -63,7 +63,7 @@ The API layer does not import SQLAlchemy models or sessions. It calls applicatio
 
 - Default runtime: `InMemoryCustomerReadModelRepository`, so the copied customer center frontend and MCP tools still start without a database.
 - PostgreSQL-ready implementation: `SqlAlchemyCustomerReadModelRepository`, using SQLAlchemy table definitions registered on `Base.metadata`.
-- Migration: `experiments/ai_crm_next/migrations/versions/0002_customer_read_model_postgresql_ready.py` creates customer list index, detail snapshot, timeline event, and recent-message tables.
+- Migration: `docs/archive/experiments_ai_crm_next/workspace/migrations/versions/0002_customer_read_model_postgresql_ready.py` creates customer list index, detail snapshot, timeline event, and recent-message tables.
 - Switch point: `build_customer_read_model_repository` reads `CUSTOMER_READ_MODEL_REPO_BACKEND=memory|sqlalchemy`.
 - Parity guard: `aicrm_next/customer_read_model/parity_spec.py` and `retired experiment wrapper; see docs/archive/experiments_ai_crm_next/retired_tools.md` lock the old OpenClaw-compatible read contract.
 

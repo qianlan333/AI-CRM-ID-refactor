@@ -113,5 +113,36 @@ def test_historical_experiment_route_and_parity_docs_are_archived() -> None:
         assert archive_path.exists(), str(archive_path.relative_to(ROOT))
 
 
+def test_experiment_workspace_snapshot_is_archived() -> None:
+    active_root = ROOT / "experiments" / "ai_crm_next"
+    archive_root = ROOT / "docs" / "archive" / "experiments_ai_crm_next"
+    archived_docs = [
+        "api_contracts.md",
+        "architecture.md",
+        "frontend_parity_plan.md",
+        "postgres_integration_testing.md",
+    ]
+    archived_workspace_entries = [
+        ".gitignore",
+        "alembic.ini",
+        "pyproject.toml",
+        "migrations/env.py",
+        "scripts/run_postgres_integration_tests.sh",
+        "tools/doc_paths.py",
+        "tests/test_commerce_contract.py",
+        "tests/fixtures/old_user_ops/overview.default.json",
+    ]
+
+    assert (active_root / "README.md").exists()
+    for child in ("docs", "tests", "tools", "scripts", "migrations"):
+        assert not any((active_root / child).rglob("*")), str((active_root / child).relative_to(ROOT))
+    assert not (active_root / "pyproject.toml").exists()
+    assert not (active_root / "alembic.ini").exists()
+    for filename in archived_docs:
+        assert (archive_root / "docs" / filename).exists(), filename
+    for filename in archived_workspace_entries:
+        assert (archive_root / "workspace" / filename).exists(), filename
+
+
 def test_retired_automation_conversion_split_blueprint_is_removed() -> None:
     assert not (ROOT / "docs" / "refactor" / "automation-conversion-split-blueprint.md").exists()

@@ -98,7 +98,7 @@ Use this checklist before any production route cutover from old Flask to AI-CRM 
 
 - 2026-05-20 14:34 CST: local PostgreSQL test database `aicrm_next_test` on `127.0.0.1:5432` passed safety guard validation with a redacted URL.
 - 2026-05-20 14:34 CST: ordinary pytest passed with `166 passed, 3 skipped`.
-- 2026-05-20 14:34 CST: `experiments/ai_crm_next/scripts/run_postgres_integration_tests.sh` passed with `3 passed, 166 deselected`.
+- 2026-05-20 14:34 CST: `docs/archive/experiments_ai_crm_next/workspace/scripts/run_postgres_integration_tests.sh` passed with `3 passed, 166 deselected`.
 - 2026-05-20 14:34 CST: `.venv/bin/python -m pytest -q -m postgres_integration` passed with `3 passed, 166 deselected`.
 - 2026-05-20 14:34 CST: six fixture parity CLIs passed.
 - Real PostgreSQL integration Phase 1 evidence is available for the local test database only. This is still not production PostgreSQL evidence and does not make any module `production_ready`.

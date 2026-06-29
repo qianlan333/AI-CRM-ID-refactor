@@ -35,7 +35,7 @@ Exit criteria:
 Current evidence:
 
 - 2026-05-20 14:34 CST: local PostgreSQL test database `aicrm_next_test` on `127.0.0.1:5432` passed safety guard validation.
-- `experiments/ai_crm_next/scripts/run_postgres_integration_tests.sh` passed with `3 passed, 166 deselected`.
+- `docs/archive/experiments_ai_crm_next/workspace/scripts/run_postgres_integration_tests.sh` passed with `3 passed, 166 deselected`.
 - `.venv/bin/python -m pytest -q -m postgres_integration` passed with `3 passed, 166 deselected`.
 - Alembic `upgrade head` / `downgrade base`, User Ops SQL repo integration, and Customer Read Model SQL repo integration all executed on the real local test database.
 - Phase 1 local test database evidence is available in `docs/archive/experiments_ai_crm_next/docs/real_postgres_integration_run.md`. This is not production PostgreSQL evidence and does not change any module to `production_ready`.

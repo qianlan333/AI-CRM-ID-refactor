@@ -10,7 +10,7 @@ Each task is scoped for a future Codex execution turn. Keep old production servi
 ## 1. Run Real PostgreSQL Integration Tests
 
 - objective: Prove Alembic and SQL repos against a real local/test PostgreSQL database.
-- files likely involved: `experiments/ai_crm_next/docs/postgres_integration_testing.md`, `experiments/ai_crm_next/scripts/run_postgres_integration_tests.sh`, `tests/integration/*`.
+- files likely involved: `docs/archive/experiments_ai_crm_next/docs/postgres_integration_testing.md`, `docs/archive/experiments_ai_crm_next/workspace/scripts/run_postgres_integration_tests.sh`, `tests/integration/*`.
 - acceptance criteria: `AICRM_NEXT_TEST_DATABASE_URL=... pytest -q -m postgres_integration` passes; report records DB host/name without password.
 - must not do: connect production DB or weaken safety guard.
 - suggested validation command: `AICRM_NEXT_TEST_DATABASE_URL=postgresql+psycopg://... .venv/bin/python -m pytest -q -m postgres_integration`.
@@ -34,10 +34,10 @@ Each task is scoped for a future Codex execution turn. Keep old production servi
 ## 4. Questionnaire Real OAuth Security Contract
 
 - objective: Replace fake OAuth contract with a real adapter specification and test harness.
-- files likely involved: `aicrm_next/questionnaire/oauth.py`, `aicrm_next/questionnaire/api.py`, `experiments/ai_crm_next/tests/test_questionnaire_contract.py`.
+- files likely involved: `aicrm_next/questionnaire/oauth.py`, `aicrm_next/questionnaire/api.py`, `docs/archive/experiments_ai_crm_next/workspace/tests/test_questionnaire_contract.py`.
 - acceptance criteria: state validation, callback errors, replay prevention, and masked logs are tested.
 - must not do: enable production OAuth without sandbox verification.
-- suggested validation command: `.venv/bin/python -m pytest experiments/ai_crm_next/tests/test_questionnaire_contract.py -q`.
+- suggested validation command: `.venv/bin/python -m pytest docs/archive/experiments_ai_crm_next/workspace/tests/test_questionnaire_contract.py -q`.
 
 ## 5. Questionnaire PostgreSQL-Ready Repo
 
@@ -45,31 +45,31 @@ Each task is scoped for a future Codex execution turn. Keep old production servi
 - files likely involved: `aicrm_next/questionnaire/repo.py`, `migrations/versions/*`, `tests/test_questionnaire_*`.
 - acceptance criteria: In-memory and SQL repo shape parity; migration tests exist.
 - must not do: migrate production questionnaire data in this task.
-- suggested validation command: `.venv/bin/python -m pytest experiments/ai_crm_next/tests/test_questionnaire_contract.py -q`.
+- suggested validation command: `.venv/bin/python -m pytest docs/archive/experiments_ai_crm_next/workspace/tests/test_questionnaire_contract.py -q`.
 
 ## 6. Commerce Real WeChat Pay Adapter Contract
 
 - objective: Define signed WeChat Pay provider adapter behind fake-safe port.
-- files likely involved: `aicrm_next/commerce/payment_adapters.py`, `aicrm_next/commerce/application.py`, `experiments/ai_crm_next/tests/test_commerce_contract.py`.
+- files likely involved: `aicrm_next/commerce/payment_adapters.py`, `aicrm_next/commerce/application.py`, `docs/archive/experiments_ai_crm_next/workspace/tests/test_commerce_contract.py`.
 - acceptance criteria: signing, notify verification, idempotency, and failure modes tested with sandbox/fakes.
 - must not do: call real production WeChat Pay.
-- suggested validation command: `.venv/bin/python -m pytest experiments/ai_crm_next/tests/test_commerce_contract.py -q`.
+- suggested validation command: `.venv/bin/python -m pytest docs/archive/experiments_ai_crm_next/workspace/tests/test_commerce_contract.py -q`.
 
 ## 7. Commerce Real Alipay Adapter Contract
 
 - objective: Define signed Alipay provider adapter behind fake-safe port.
-- files likely involved: `aicrm_next/commerce/payment_adapters.py`, `aicrm_next/commerce/api.py`, `experiments/ai_crm_next/tests/test_commerce_contract.py`.
+- files likely involved: `aicrm_next/commerce/payment_adapters.py`, `aicrm_next/commerce/api.py`, `docs/archive/experiments_ai_crm_next/workspace/tests/test_commerce_contract.py`.
 - acceptance criteria: signed WAP checkout, notify verification, return handling, idempotency tests.
 - must not do: mix Alipay logic into WeChat Pay provider implementation.
-- suggested validation command: `.venv/bin/python -m pytest experiments/ai_crm_next/tests/test_commerce_contract.py -q`.
+- suggested validation command: `.venv/bin/python -m pytest docs/archive/experiments_ai_crm_next/workspace/tests/test_commerce_contract.py -q`.
 
 ## 8. Media Library Storage Adapter
 
 - objective: Add storage port and test implementation for image/attachment/miniprogram assets.
-- files likely involved: `aicrm_next/media_library/application.py`, `aicrm_next/media_library/repo.py`, `experiments/ai_crm_next/tests/test_media_library_contract.py`.
+- files likely involved: `aicrm_next/media_library/application.py`, `aicrm_next/media_library/repo.py`, `docs/archive/experiments_ai_crm_next/workspace/tests/test_media_library_contract.py`.
 - acceptance criteria: storage abstraction tests, file size/type checks, no real cloud default; `retired experiment wrapper; see docs/archive/experiments_ai_crm_next/retired_tools.md` remains read-only by default and fake writes stay Next-only.
 - must not do: upload to production cloud storage.
-- suggested validation command: `.venv/bin/python -m pytest experiments/ai_crm_next/tests/test_media_library_contract.py -q`.
+- suggested validation command: `.venv/bin/python -m pytest docs/archive/experiments_ai_crm_next/workspace/tests/test_media_library_contract.py -q`.
 
 ## 8A. Media Library Gray-Release Dry Run
 
@@ -213,7 +213,7 @@ Each task is scoped for a future Codex execution turn. Keep old production servi
 - files likely involved: `aicrm_next/integration_gateway/ports.py`, `aicrm_next/integration_gateway/fake_adapters.py`, `media_library/*`.
 - acceptance criteria: fake adapter remains default; real adapter has config gating and audit.
 - must not do: upload media to real WeCom by default.
-- suggested validation command: `.venv/bin/python -m pytest experiments/ai_crm_next/tests/test_media_library_contract.py tests/test_architecture_boundaries.py -q`.
+- suggested validation command: `.venv/bin/python -m pytest docs/archive/experiments_ai_crm_next/workspace/tests/test_media_library_contract.py tests/test_architecture_boundaries.py -q`.
 
 ## 10. OpenClaw Real Webhook Adapter
 

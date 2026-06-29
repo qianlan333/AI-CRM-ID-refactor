@@ -74,14 +74,10 @@ python3 -m venv .venv
 .venv/bin/python -m pytest -q
 ```
 
-AI-CRM Next experiment 目录仍保留独立测试环境，用于验证实验 docs/tools/tests 从 root `aicrm_next/` 导入：
-
-```bash
-cd experiments/ai_crm_next
-python3 -m venv .venv
-.venv/bin/python -m pip install -e '.[test]'
-.venv/bin/python -m pytest -q
-```
+AI-CRM Next experiment workspace 已退休为 archive snapshot。历史实验
+docs/tools/tests/fixtures/migrations 保留在
+`docs/archive/experiments_ai_crm_next/`，不再作为独立测试入口。root
+`aicrm_next/` 是唯一 live runtime source。
 
 ## 生产运维口径
 
