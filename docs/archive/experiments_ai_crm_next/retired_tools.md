@@ -34,6 +34,13 @@ Retired readiness and review helpers:
 - `check_production_canary_approval_package.py`
 - `generate_gray_release_report.py`
 
+Retired local evidence helpers:
+
+- `capture_frontend_screenshots.py`
+- `readonly_http_dual_run.py`
+- `seed_old_flask_customer_sample.py`
+- `seed_old_flask_questionnaire_sample.py`
+
 Retired tests:
 
 - `test_customer_read_model_gray_smoke.py`
@@ -50,10 +57,14 @@ Retired tests:
 - `test_batch_5_questionnaire_canary_readiness.py`
 - `test_gray_release_runbook.py`
 - `test_production_canary_approval_package.py`
+- `test_frontend_route_smoke.py`
+- `test_readonly_http_dual_run.py`
+- `test_seed_old_flask_customer_sample.py`
+- `test_seed_old_flask_questionnaire_sample.py`
 
 Active experiment coverage remains in the parity specs, fixture masking tests,
 contract tests, route/header tests, PostgreSQL readiness tests, and architecture
-gates. Historical canary, gray-release, signoff, and production-canary evidence
-remains archived under `docs/archive/experiments_ai_crm_next/docs/`; the retired
-helpers above should not be used as current runbooks or production approval
-checks.
+gates. Historical canary, gray-release, signoff, screenshot, seed, and dual-run
+evidence remains archived under `docs/archive/experiments_ai_crm_next/docs/`;
+the retired helpers above should not be used as current runbooks or production
+approval checks.

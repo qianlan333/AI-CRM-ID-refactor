@@ -1,31 +1,31 @@
 {
   "version": "1",
   "root": ".",
-  "generated_at": "2026-06-29T05:35:00Z",
+  "generated_at": "2026-06-29T06:20:00Z",
   "summary": {
-    "experiment_tracked_file_count": 95,
-    "archived_experiment_file_count": 56,
+    "experiment_tracked_file_count": 85,
+    "archived_experiment_file_count": 58,
     "root_reference_count": 8,
     "areas": {
-      "docs": 27,
+      "docs": 25,
       "migrations": 4,
       "root_config": 4,
       "scripts": 1,
       "test_fixtures": 25,
-      "tests": 29,
-      "tools": 5
+      "tests": 25,
+      "tools": 1
     },
     "classifications": {
       "active_archive_path_helper": 1,
-      "active_experiment_helper": 5,
+      "active_experiment_helper": 1,
       "active_experiment_scaffold": 4,
       "active_fixture_data": 25,
       "active_reference": 4,
-      "active_reference_doc": 27,
-      "active_regression_test": 29
+      "active_reference_doc": 25,
+      "active_regression_test": 25
     },
     "archived_areas": {
-      "docs": 54,
+      "docs": 56,
       "root_archive_doc": 2
     }
   },
@@ -159,12 +159,6 @@
       "reason": "Reference material kept while the frozen workspace remains discoverable."
     },
     {
-      "path": "experiments/ai_crm_next/docs/frontend_screenshot_baseline.md",
-      "area": "docs",
-      "classification": "active_reference_doc",
-      "reason": "Reference material kept while the frozen workspace remains discoverable."
-    },
-    {
       "path": "experiments/ai_crm_next/docs/media_library_parity_strategy.md",
       "area": "docs",
       "classification": "active_reference_doc",
@@ -226,12 +220,6 @@
     },
     {
       "path": "experiments/ai_crm_next/docs/real_postgres_integration_run.md",
-      "area": "docs",
-      "classification": "active_reference_doc",
-      "reason": "Reference material kept while the frozen workspace remains discoverable."
-    },
-    {
-      "path": "experiments/ai_crm_next/docs/real_readonly_http_dual_run.md",
       "area": "docs",
       "classification": "active_reference_doc",
       "reason": "Reference material kept while the frozen workspace remains discoverable."
@@ -531,12 +519,6 @@
       "reason": "Experiment-local regression or evidence-readiness test."
     },
     {
-      "path": "experiments/ai_crm_next/tests/test_frontend_route_smoke.py",
-      "area": "tests",
-      "classification": "active_regression_test",
-      "reason": "Experiment-local regression or evidence-readiness test."
-    },
-    {
       "path": "experiments/ai_crm_next/tests/test_health.py",
       "area": "tests",
       "classification": "active_regression_test",
@@ -579,25 +561,7 @@
       "reason": "Experiment-local regression or evidence-readiness test."
     },
     {
-      "path": "experiments/ai_crm_next/tests/test_readonly_http_dual_run.py",
-      "area": "tests",
-      "classification": "active_regression_test",
-      "reason": "Experiment-local regression or evidence-readiness test."
-    },
-    {
       "path": "experiments/ai_crm_next/tests/test_route_owner_headers.py",
-      "area": "tests",
-      "classification": "active_regression_test",
-      "reason": "Experiment-local regression or evidence-readiness test."
-    },
-    {
-      "path": "experiments/ai_crm_next/tests/test_seed_old_flask_customer_sample.py",
-      "area": "tests",
-      "classification": "active_regression_test",
-      "reason": "Experiment-local regression or evidence-readiness test."
-    },
-    {
-      "path": "experiments/ai_crm_next/tests/test_seed_old_flask_questionnaire_sample.py",
       "area": "tests",
       "classification": "active_regression_test",
       "reason": "Experiment-local regression or evidence-readiness test."
@@ -621,34 +585,10 @@
       "reason": "Experiment-local regression or evidence-readiness test."
     },
     {
-      "path": "experiments/ai_crm_next/tools/capture_frontend_screenshots.py",
-      "area": "tools",
-      "classification": "active_experiment_helper",
-      "reason": "Experiment-local parity/evidence helper."
-    },
-    {
       "path": "experiments/ai_crm_next/tools/doc_paths.py",
       "area": "tools",
       "classification": "active_archive_path_helper",
       "reason": "Keeps experiment-local tests pointed at archived evidence docs."
-    },
-    {
-      "path": "experiments/ai_crm_next/tools/readonly_http_dual_run.py",
-      "area": "tools",
-      "classification": "active_experiment_helper",
-      "reason": "Experiment-local parity/evidence helper."
-    },
-    {
-      "path": "experiments/ai_crm_next/tools/seed_old_flask_customer_sample.py",
-      "area": "tools",
-      "classification": "active_experiment_helper",
-      "reason": "Experiment-local parity/evidence helper."
-    },
-    {
-      "path": "experiments/ai_crm_next/tools/seed_old_flask_questionnaire_sample.py",
-      "area": "tools",
-      "classification": "active_experiment_helper",
-      "reason": "Experiment-local parity/evidence helper."
     }
   ],
   "archived_files": [
@@ -688,6 +628,7 @@
     "docs/archive/experiments_ai_crm_next/docs/customer_read_model_gray_release_plan.md",
     "docs/archive/experiments_ai_crm_next/docs/fast_readonly_human_test_tasks.md",
     "docs/archive/experiments_ai_crm_next/docs/fast_readonly_replacement_execution_plan.md",
+    "docs/archive/experiments_ai_crm_next/docs/frontend_screenshot_baseline.md",
     "docs/archive/experiments_ai_crm_next/docs/go_no_go_checklist.md",
     "docs/archive/experiments_ai_crm_next/docs/gray_rehearsal_batch_1_media_readonly.md",
     "docs/archive/experiments_ai_crm_next/docs/gray_rehearsal_batch_1_route_flags.md",
@@ -701,6 +642,7 @@
     "docs/archive/experiments_ai_crm_next/docs/production_canary_rollback_runbook.md",
     "docs/archive/experiments_ai_crm_next/docs/production_replacement_route.md",
     "docs/archive/experiments_ai_crm_next/docs/questionnaire_readonly_gray_release_plan.md",
+    "docs/archive/experiments_ai_crm_next/docs/real_readonly_http_dual_run.md",
     "docs/archive/experiments_ai_crm_next/docs/remaining_work_queue.md",
     "docs/archive/experiments_ai_crm_next/docs/risk_register.md",
     "docs/archive/experiments_ai_crm_next/docs/route_level_gray_release_batches.md",

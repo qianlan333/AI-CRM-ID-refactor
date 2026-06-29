@@ -53,7 +53,7 @@ This plan prepares a staging or production-like canary for Batch 4 User Ops read
 | six parity pass | all `tools/compare_*_parity.py` reports |
 | User Ops parity pass | `retired experiment wrapper; see docs/archive/experiments_ai_crm_next/retired_tools.md` |
 | User Ops readonly gray smoke pass | `retired experiment wrapper; see docs/archive/experiments_ai_crm_next/retired_tools.md --old-base-url ... --next-testclient` |
-| User Ops readonly dual mode pass | `experiments/ai_crm_next/tools/readonly_http_dual_run.py --scope customer,user_ops` with only accepted legacy drift |
+| User Ops readonly dual mode pass | `retired readonly HTTP dual-run helper; see docs/archive/experiments_ai_crm_next/retired_tools.md --scope customer,user_ops` with only accepted legacy drift |
 | real PostgreSQL integration evidence available | `experiments/ai_crm_next/docs/real_postgres_integration_run.md` |
 | PNG screenshot baseline pass | `historical removed reference (route_status.json)` includes `/admin/user-ops/ui` |
 | no old production entrypoint dirty | `git status --short --untracked-files=all` review |

@@ -18,18 +18,18 @@ Each task is scoped for a future Codex execution turn. Keep old production servi
 ## 2. Customer Readonly HTTP Dual-Run Against Old Flask
 
 - objective: Compare old Flask and AI-CRM Next customer read APIs over HTTP.
-- files likely involved: `experiments/ai_crm_next/tools/readonly_http_dual_run.py`, `experiments/ai_crm_next/docs/readonly_http_dual_run_strategy.md`, `experiments/ai_crm_next/docs/customer_read_model_parity_strategy.md`.
+- files likely involved: `retired readonly HTTP dual-run helper; see docs/archive/experiments_ai_crm_next/retired_tools.md`, `experiments/ai_crm_next/docs/readonly_http_dual_run_strategy.md`, `experiments/ai_crm_next/docs/customer_read_model_parity_strategy.md`.
 - acceptance criteria: readonly parity report has no blockers; accepted differences documented.
 - must not do: run write endpoints or import old Flask app.
-- suggested validation command: `.venv/bin/python experiments/ai_crm_next/tools/readonly_http_dual_run.py --old-base-url http://127.0.0.1:5001 --next-testclient --scope customer --output-md /tmp/customer_dual.md --output-json /tmp/customer_dual.json`.
+- suggested validation command: `.venv/bin/python retired readonly HTTP dual-run helper; see docs/archive/experiments_ai_crm_next/retired_tools.md --old-base-url http://127.0.0.1:5001 --next-testclient --scope customer --output-md /tmp/customer_dual.md --output-json /tmp/customer_dual.json`.
 
 ## 3. User Ops Readonly HTTP Dual-Run Against Old Flask
 
 - objective: Compare User Ops overview/list/send-record read shapes over HTTP.
-- files likely involved: `experiments/ai_crm_next/tools/readonly_http_dual_run.py`, `experiments/ai_crm_next/docs/readonly_http_dual_run_strategy.md`, `experiments/ai_crm_next/docs/user_ops_parity_strategy.md`.
+- files likely involved: `retired readonly HTTP dual-run helper; see docs/archive/experiments_ai_crm_next/retired_tools.md`, `experiments/ai_crm_next/docs/readonly_http_dual_run_strategy.md`, `experiments/ai_crm_next/docs/user_ops_parity_strategy.md`.
 - acceptance criteria: readonly report passes; write endpoints remain disabled unless isolated.
 - must not do: execute real batch send or DND against old production.
-- suggested validation command: `.venv/bin/python experiments/ai_crm_next/tools/readonly_http_dual_run.py --old-base-url http://127.0.0.1:5001 --next-testclient --scope user_ops --output-md /tmp/user_ops_dual.md --output-json /tmp/user_ops_dual.json`.
+- suggested validation command: `.venv/bin/python retired readonly HTTP dual-run helper; see docs/archive/experiments_ai_crm_next/retired_tools.md --old-base-url http://127.0.0.1:5001 --next-testclient --scope user_ops --output-md /tmp/user_ops_dual.md --output-json /tmp/user_ops_dual.json`.
 
 ## 4. Questionnaire Real OAuth Security Contract
 
@@ -130,7 +130,7 @@ Each task is scoped for a future Codex execution turn. Keep old production servi
 ## 8K. Batch 3 Customer Readonly Real Staging Proxy Canary
 
 - objective: Repeat Batch 3 Customer Read Model readonly canary against an actual staging proxy or staging base URL after the simulated canary passed.
-- files likely involved: `docs/archive/experiments_ai_crm_next/docs/batch_3_customer_readonly_canary_execution_report.md`, `docs/archive/experiments_ai_crm_next/docs/batch_3_customer_readonly_canary_signoff.md`, `docs/archive/experiments_ai_crm_next/docs/batch_3_customer_readonly_canary_plan.md`, `docs/archive/experiments_ai_crm_next/docs/batch_3_customer_readonly_canary_runbook.md`, `retired experiment wrapper; see docs/archive/experiments_ai_crm_next/retired_tools.md`, `experiments/ai_crm_next/tools/readonly_http_dual_run.py`, `retired Batch 3 customer canary readiness helper; see docs/archive/experiments_ai_crm_next/retired_tools.md`.
+- files likely involved: `docs/archive/experiments_ai_crm_next/docs/batch_3_customer_readonly_canary_execution_report.md`, `docs/archive/experiments_ai_crm_next/docs/batch_3_customer_readonly_canary_signoff.md`, `docs/archive/experiments_ai_crm_next/docs/batch_3_customer_readonly_canary_plan.md`, `docs/archive/experiments_ai_crm_next/docs/batch_3_customer_readonly_canary_runbook.md`, `retired experiment wrapper; see docs/archive/experiments_ai_crm_next/retired_tools.md`, `retired readonly HTTP dual-run helper; see docs/archive/experiments_ai_crm_next/retired_tools.md`, `retired Batch 3 customer canary readiness helper; see docs/archive/experiments_ai_crm_next/retired_tools.md`.
 - acceptance criteria: staging proxy/base URL routes only readonly Customer GETs to the intended owner; Customer smoke passes; Customer parity remains PASS; readonly dual-run sample-dependent routes execute; rollback to old Flask is verified in staging; side-effect safety remains false for production config changes, real traffic cutover, old writes, WeCom sync, archive sync, tag refresh, and OpenClaw.
 - must not do: modify production Nginx/deploy config, enable customer writes, execute old-system writes, connect production PostgreSQL, trigger WeCom/archive/tag refresh/OpenClaw, or use real customer PII.
 - suggested validation command: retired; see `docs/archive/experiments_ai_crm_next/retired_tools.md`.
@@ -146,7 +146,7 @@ Each task is scoped for a future Codex execution turn. Keep old production servi
 ## 8L. Batch 4 User Ops Readonly Real Staging Proxy Canary
 
 - objective: Repeat Batch 4 User Ops readonly canary against an actual staging proxy or staging base URL after the simulated canary passed.
-- files likely involved: `docs/archive/experiments_ai_crm_next/docs/batch_4_user_ops_readonly_canary_execution_report.md`, `docs/archive/experiments_ai_crm_next/docs/batch_4_user_ops_readonly_canary_signoff.md`, `docs/archive/experiments_ai_crm_next/docs/batch_4_user_ops_readonly_canary_plan.md`, `docs/archive/experiments_ai_crm_next/docs/batch_4_user_ops_readonly_canary_runbook.md`, `retired experiment wrapper; see docs/archive/experiments_ai_crm_next/retired_tools.md`, `experiments/ai_crm_next/tools/readonly_http_dual_run.py`, `retired Batch 4 user ops canary readiness helper; see docs/archive/experiments_ai_crm_next/retired_tools.md`.
+- files likely involved: `docs/archive/experiments_ai_crm_next/docs/batch_4_user_ops_readonly_canary_execution_report.md`, `docs/archive/experiments_ai_crm_next/docs/batch_4_user_ops_readonly_canary_signoff.md`, `docs/archive/experiments_ai_crm_next/docs/batch_4_user_ops_readonly_canary_plan.md`, `docs/archive/experiments_ai_crm_next/docs/batch_4_user_ops_readonly_canary_runbook.md`, `retired experiment wrapper; see docs/archive/experiments_ai_crm_next/retired_tools.md`, `retired readonly HTTP dual-run helper; see docs/archive/experiments_ai_crm_next/retired_tools.md`, `retired Batch 4 user ops canary readiness helper; see docs/archive/experiments_ai_crm_next/retired_tools.md`.
 - acceptance criteria: staging proxy/base URL routes only readonly User Ops GETs to the intended owner; User Ops smoke passes; User Ops parity remains PASS; readonly dual-run has only accepted `激活待录入` legacy drift; rollback to old Flask is verified in staging; side-effect safety remains false for production config changes, real traffic cutover, old writes, DND, batch-send, deferred jobs, WeCom dispatch, and media upload.
 - must not do: modify production Nginx/deploy config, enable User Ops writes, execute DND/batch-send/deferred jobs/internal routes, execute old-system writes, or trigger real WeCom dispatch/media upload.
 - suggested validation command: retired; see `docs/archive/experiments_ai_crm_next/retired_tools.md`.
@@ -234,10 +234,10 @@ Each task is scoped for a future Codex execution turn. Keep old production servi
 ## 12. Production Deployment Smoke Harness
 
 - objective: Create repeatable route-level smoke commands for AI-CRM Next deployment.
-- files likely involved: `experiments/ai_crm_next/tools/capture_frontend_screenshots.py`, `experiments/ai_crm_next/docs/frontend_route_manifest.md`, `experiments/ai_crm_next/docs/frontend_screenshot_baseline.md`, `docs/archive/experiments_ai_crm_next/docs/production_replacement_route.md`, future `scripts/`.
+- files likely involved: `retired frontend screenshot helper; see docs/archive/experiments_ai_crm_next/retired_tools.md`, `experiments/ai_crm_next/docs/frontend_route_manifest.md`, `docs/archive/experiments_ai_crm_next/docs/frontend_screenshot_baseline.md`, `docs/archive/experiments_ai_crm_next/docs/production_replacement_route.md`, future `scripts/`.
 - acceptance criteria: health, admin routes, API read routes, and frontend adapters checked in one command; current 14-route Playwright PNG baseline remains reproducible and is extended to deployment HTTP mode.
 - must not do: change business behavior.
-- suggested validation command: `.venv/bin/python experiments/ai_crm_next/tools/capture_frontend_screenshots.py --output-dir artifacts/frontend_screenshots --mode testclient --output-md /tmp/aicrm_next_frontend_route_screenshot_baseline.md --output-json /tmp/aicrm_next_frontend_route_screenshot_baseline.json`.
+- suggested validation command: `.venv/bin/python retired frontend screenshot helper; see docs/archive/experiments_ai_crm_next/retired_tools.md --output-dir artifacts/frontend_screenshots --mode testclient --output-md /tmp/aicrm_next_frontend_route_screenshot_baseline.md --output-json /tmp/aicrm_next_frontend_route_screenshot_baseline.json`.
 
 ## 13. Data Migration / Backfill Design
 

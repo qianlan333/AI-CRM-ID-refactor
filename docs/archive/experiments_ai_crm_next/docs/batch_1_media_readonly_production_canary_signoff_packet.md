@@ -50,7 +50,7 @@ Excluded routes and operations:
 | media parity report | `/tmp/media_parity_after_canary_execute.json` |
 | media gray smoke report | `/tmp/media_gray_smoke_staging_simulated_canary.json` |
 | production approval checker report | `/tmp/production_canary_approval_media_readonly_audit.json` |
-| frontend screenshot baseline | `experiments/ai_crm_next/docs/frontend_screenshot_baseline.md`, `historical removed reference (route_status.json)` |
+| frontend screenshot baseline | `docs/archive/experiments_ai_crm_next/docs/frontend_screenshot_baseline.md`, `historical removed reference (route_status.json)` |
 | real PostgreSQL integration evidence | `experiments/ai_crm_next/docs/real_postgres_integration_run.md` |
 
 ## D. Entry Criteria

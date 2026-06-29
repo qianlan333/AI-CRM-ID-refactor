@@ -13,20 +13,8 @@ Fixture parity proves contract shape against captured examples. Readonly HTTP du
 
 ## Tool
 
-```bash
-.venv/bin/python experiments/ai_crm_next/tools/readonly_http_dual_run.py \
-  --old-base-url http://127.0.0.1:5001 \
-  --next-testclient \
-  --scope customer,user_ops \
-  --output-md /tmp/aicrm_next_readonly_dual_run.md \
-  --output-json /tmp/aicrm_next_readonly_dual_run.json
-```
-
-For a running AI-CRM Next HTTP service, replace `--next-testclient` with:
-
-```bash
---next-base-url http://127.0.0.1:8000
-```
+The historical readonly HTTP dual-run helper is retired; see
+`docs/archive/experiments_ai_crm_next/retired_tools.md`.
 
 If the old Flask service is unreachable, the report must show `old_unreachable`; it must not be interpreted as PASS.
 
@@ -34,8 +22,8 @@ If the old Flask service is unreachable, the report must show `old_unreachable`;
 
 | scope | status | endpoints |
 | --- | --- | --- |
-| `customer` | tooling_ready | Customer list, list filters, detail, timeline, recent messages |
-| `user_ops` | tooling_ready | User Ops overview, readonly list filters, send-record list |
+| `customer` | historical_evidence_only | Customer list, list filters, detail, timeline, recent messages |
+| `user_ops` | historical_evidence_only | User Ops overview, readonly list filters, send-record list |
 
 ## Allowed Old-Service Endpoints
 
@@ -135,4 +123,9 @@ Do not commit full old-service responses into the repository. Reports should be 
 
 ## Current Status
 
-Readonly HTTP dual-run tooling is ready for Customer Read Model and User Ops. The first real local old Flask run is archived in `experiments/ai_crm_next/docs/real_readonly_http_dual_run.md`; old-only missing `激活待录入` is classified as legacy drift, not a Next blocker. Old unreachable and Next missing required contract fields remain blockers.
+Readonly HTTP dual-run evidence is retained as historical evidence only. The
+first real local old Flask run is archived in
+`docs/archive/experiments_ai_crm_next/docs/real_readonly_http_dual_run.md`;
+old-only missing `激活待录入` is classified as legacy drift, not a Next blocker.
+Old unreachable and Next missing required contract fields remain blockers for
+any future replacement harness.

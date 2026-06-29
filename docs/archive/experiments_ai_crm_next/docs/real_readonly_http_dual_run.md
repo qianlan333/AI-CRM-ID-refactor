@@ -55,7 +55,7 @@ Parity:
 ## Readonly Dual-Run Command
 
 ```bash
-.venv/bin/python experiments/ai_crm_next/tools/readonly_http_dual_run.py \
+.venv/bin/python retired readonly HTTP dual-run helper; see docs/archive/experiments_ai_crm_next/retired_tools.md \
   --old-base-url http://127.0.0.1:5001 \
   --next-testclient \
   --scope customer,user_ops \
@@ -143,7 +143,7 @@ The known sample-data gap remains: the previous local old Flask test database di
 
 Run timestamp: `2026-05-20 16:48 CST`
 
-Local old Flask test database `aicrm_old_flask_test` was seeded with masked sample data through `experiments/ai_crm_next/tools/seed_old_flask_customer_sample.py`. The tool uses a localhost/test-database safety guard, redacts passwords, defaults to dry-run, and requires `--apply` before writing.
+Local old Flask test database `aicrm_old_flask_test` was seeded with masked sample data through `retired customer sample seed helper; see docs/archive/experiments_ai_crm_next/retired_tools.md`. The tool uses a localhost/test-database safety guard, redacts passwords, defaults to dry-run, and requires `--apply` before writing.
 
 Old admin page access check:
 
@@ -177,7 +177,7 @@ Customer gray smoke dual report:
 
 Readonly HTTP dual-run report:
 
-- Command: `experiments/ai_crm_next/tools/readonly_http_dual_run.py --old-base-url http://127.0.0.1:5001 --next-testclient --scope customer,user_ops`
+- Command: `retired readonly HTTP dual-run helper; see docs/archive/experiments_ai_crm_next/retired_tools.md --old-base-url http://127.0.0.1:5001 --next-testclient --scope customer,user_ops`
 - Report markdown: `/tmp/aicrm_next_readonly_dual_run_after_customer_sample.md`
 - Report JSON: `/tmp/aicrm_next_readonly_dual_run_after_customer_sample.json`
 - Result: `PASS`

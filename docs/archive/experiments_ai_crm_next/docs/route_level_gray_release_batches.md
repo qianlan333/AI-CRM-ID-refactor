@@ -26,8 +26,8 @@ Smoke commands:
 
 ```bash
 .venv/bin/python -m pytest -q
-.venv/bin/python experiments/ai_crm_next/tools/capture_frontend_screenshots.py --output-dir artifacts/frontend_screenshots --mode testclient
-.venv/bin/python experiments/ai_crm_next/tools/readonly_http_dual_run.py --old-base-url http://127.0.0.1:5001 --next-testclient --scope customer,user_ops --output-md /tmp/aicrm_next_readonly_dual_run.md --output-json /tmp/aicrm_next_readonly_dual_run.json
+.venv/bin/python retired frontend screenshot helper; see docs/archive/experiments_ai_crm_next/retired_tools.md --output-dir artifacts/frontend_screenshots --mode testclient
+.venv/bin/python retired readonly HTTP dual-run helper; see docs/archive/experiments_ai_crm_next/retired_tools.md --old-base-url http://127.0.0.1:5001 --next-testclient --scope customer,user_ops --output-md /tmp/aicrm_next_readonly_dual_run.md --output-json /tmp/aicrm_next_readonly_dual_run.json
 ```
 
 Monitoring signals:

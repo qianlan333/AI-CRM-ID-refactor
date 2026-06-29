@@ -57,5 +57,20 @@ def test_experiment_remaining_work_queue_is_archived() -> None:
     assert (ROOT / "docs" / "archive" / "experiments_ai_crm_next" / "docs" / "remaining_work_queue.md").exists()
 
 
+def test_retired_experiment_local_evidence_helpers_are_removed() -> None:
+    retired_paths = [
+        ROOT / "experiments" / "ai_crm_next" / "tools" / "capture_frontend_screenshots.py",
+        ROOT / "experiments" / "ai_crm_next" / "tools" / "readonly_http_dual_run.py",
+        ROOT / "experiments" / "ai_crm_next" / "tools" / "seed_old_flask_customer_sample.py",
+        ROOT / "experiments" / "ai_crm_next" / "tools" / "seed_old_flask_questionnaire_sample.py",
+        ROOT / "experiments" / "ai_crm_next" / "tests" / "test_frontend_route_smoke.py",
+        ROOT / "experiments" / "ai_crm_next" / "tests" / "test_readonly_http_dual_run.py",
+        ROOT / "experiments" / "ai_crm_next" / "tests" / "test_seed_old_flask_customer_sample.py",
+        ROOT / "experiments" / "ai_crm_next" / "tests" / "test_seed_old_flask_questionnaire_sample.py",
+    ]
+    for path in retired_paths:
+        assert not path.exists(), str(path.relative_to(ROOT))
+
+
 def test_retired_automation_conversion_split_blueprint_is_removed() -> None:
     assert not (ROOT / "docs" / "refactor" / "automation-conversion-split-blueprint.md").exists()

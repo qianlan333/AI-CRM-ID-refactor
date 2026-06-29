@@ -96,7 +96,7 @@ Result: PASS.
 Command:
 
 ```bash
-.venv/bin/python experiments/ai_crm_next/tools/readonly_http_dual_run.py \
+.venv/bin/python retired readonly HTTP dual-run helper; see docs/archive/experiments_ai_crm_next/retired_tools.md \
   --old-base-url http://127.0.0.1:5001 \
   --next-testclient \
   --scope customer,user_ops \

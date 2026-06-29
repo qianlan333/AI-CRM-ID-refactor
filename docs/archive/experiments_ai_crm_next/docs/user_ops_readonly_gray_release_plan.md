@@ -68,10 +68,10 @@ Unauthenticated old `/admin/user-ops/ui` may redirect to login. That is page-lay
 | --- | --- |
 | Ordinary pytest pass | `.venv/bin/python -m pytest -q` |
 | User Ops parity pass | `retired experiment wrapper; see docs/archive/experiments_ai_crm_next/retired_tools.md --next-testclient` |
-| Frontend smoke pass | `experiments/ai_crm_next/tests/test_frontend_route_smoke.py` and screenshot baseline |
-| Screenshot baseline pass | `experiments/ai_crm_next/docs/frontend_screenshot_baseline.md` and `artifacts/frontend_screenshots/` |
+| Frontend smoke pass | `retired frontend route smoke test; see docs/archive/experiments_ai_crm_next/retired_tools.md` and screenshot baseline |
+| Screenshot baseline pass | `docs/archive/experiments_ai_crm_next/docs/frontend_screenshot_baseline.md` and `artifacts/frontend_screenshots/` |
 | Real PostgreSQL integration pass | `experiments/ai_crm_next/docs/real_postgres_integration_run.md` |
-| Readonly dual-run pass or accepted drift only | `experiments/ai_crm_next/docs/real_readonly_http_dual_run.md` |
+| Readonly dual-run pass or accepted drift only | `docs/archive/experiments_ai_crm_next/docs/real_readonly_http_dual_run.md` |
 | No old backend imports | boundary scan over `experiments/ai_crm_next` |
 | No old write endpoints | gray smoke side-effect safety flags remain false |
 | No real WeCom calls | fake/disabled adapters only |

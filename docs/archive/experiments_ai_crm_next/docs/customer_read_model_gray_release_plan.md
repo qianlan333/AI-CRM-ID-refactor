@@ -55,7 +55,7 @@ Summary status: readonly gray release preparation only; not `production_ready`.
 | frontend smoke pass | route-level frontend smoke and screenshot baseline |
 | screenshot baseline pass | `/admin/customers` has HTML snapshot and PNG screenshot |
 | real PostgreSQL integration pass | local test PostgreSQL evidence in `experiments/ai_crm_next/docs/real_postgres_integration_run.md` |
-| readonly dual-run pass or accepted legacy drift only | `experiments/ai_crm_next/tools/readonly_http_dual_run.py` or customer gray smoke dual report |
+| readonly dual-run pass or accepted legacy drift only | `retired readonly HTTP dual-run helper; see docs/archive/experiments_ai_crm_next/retired_tools.md` or customer gray smoke dual report |
 | sample external_userid coverage available | old test service list returns at least one safe sample external_userid |
 | no old backend imports | architecture boundary scan/tests |
 | no production external calls | WeCom/OpenClaw/archive/tag refresh adapters remain fake or absent |
@@ -99,7 +99,7 @@ Run Customer Read Model gray smoke in Next-only readonly mode. When a safe old F
 
 ## 2026-05-20 Masked Sample Evidence
 
-- Seed tool: `experiments/ai_crm_next/tools/seed_old_flask_customer_sample.py`.
+- Seed tool: `retired customer sample seed helper; see docs/archive/experiments_ai_crm_next/retired_tools.md`.
 - Seed target: local `aicrm_old_flask_test` only.
 - Seed sample: `external_user_masked_001`, `customer_masked_001`, `mobile_masked_001`, `owner_masked_001`, `tag_masked_001`, `msg_masked_001`.
 - Old API verification passed for list, detail, timeline, and recent messages.
