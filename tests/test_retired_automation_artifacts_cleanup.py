@@ -52,5 +52,10 @@ def test_retired_experiment_canary_readiness_tools_are_removed() -> None:
         assert not path.exists(), str(path.relative_to(ROOT))
 
 
+def test_experiment_remaining_work_queue_is_archived() -> None:
+    assert not (ROOT / "experiments" / "ai_crm_next" / "docs" / "remaining_work_queue.md").exists()
+    assert (ROOT / "docs" / "archive" / "experiments_ai_crm_next" / "docs" / "remaining_work_queue.md").exists()
+
+
 def test_retired_automation_conversion_split_blueprint_is_removed() -> None:
     assert not (ROOT / "docs" / "refactor" / "automation-conversion-split-blueprint.md").exists()

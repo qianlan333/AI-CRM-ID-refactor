@@ -1,13 +1,13 @@
 {
   "version": "1",
   "root": ".",
-  "generated_at": "2026-06-29T04:45:00Z",
+  "generated_at": "2026-06-29T05:35:00Z",
   "summary": {
-    "experiment_tracked_file_count": 96,
-    "archived_experiment_file_count": 55,
+    "experiment_tracked_file_count": 95,
+    "archived_experiment_file_count": 56,
     "root_reference_count": 8,
     "areas": {
-      "docs": 28,
+      "docs": 27,
       "migrations": 4,
       "root_config": 4,
       "scripts": 1,
@@ -21,11 +21,11 @@
       "active_experiment_scaffold": 4,
       "active_fixture_data": 25,
       "active_reference": 4,
-      "active_reference_doc": 28,
+      "active_reference_doc": 27,
       "active_regression_test": 29
     },
     "archived_areas": {
-      "docs": 53,
+      "docs": 54,
       "root_archive_doc": 2
     }
   },
@@ -232,12 +232,6 @@
     },
     {
       "path": "experiments/ai_crm_next/docs/real_readonly_http_dual_run.md",
-      "area": "docs",
-      "classification": "active_reference_doc",
-      "reason": "Reference material kept while the frozen workspace remains discoverable."
-    },
-    {
-      "path": "experiments/ai_crm_next/docs/remaining_work_queue.md",
       "area": "docs",
       "classification": "active_reference_doc",
       "reason": "Reference material kept while the frozen workspace remains discoverable."
@@ -707,6 +701,7 @@
     "docs/archive/experiments_ai_crm_next/docs/production_canary_rollback_runbook.md",
     "docs/archive/experiments_ai_crm_next/docs/production_replacement_route.md",
     "docs/archive/experiments_ai_crm_next/docs/questionnaire_readonly_gray_release_plan.md",
+    "docs/archive/experiments_ai_crm_next/docs/remaining_work_queue.md",
     "docs/archive/experiments_ai_crm_next/docs/risk_register.md",
     "docs/archive/experiments_ai_crm_next/docs/route_level_gray_release_batches.md",
     "docs/archive/experiments_ai_crm_next/docs/route_level_gray_release_runbook.md",

@@ -20,13 +20,9 @@ The required fields are defined in the root source package at `aicrm_next/custom
 
 Fixture mode compares anonymized old response samples with AI-CRM Next TestClient responses:
 
-```bash
-python retired experiment wrapper; see docs/archive/experiments_ai_crm_next/retired_tools.md \
-  --old-fixture-dir tests/fixtures/old_customer_read_model \
-  --next-testclient \
-  --output-md /tmp/customer_read_model_parity_report.md \
-  --output-json /tmp/customer_read_model_parity_report.json
-```
+Historical fixture wrapper command retired. See
+`docs/archive/experiments_ai_crm_next/retired_tools.md` for the archived tool
+index.
 
 Fixtures must use obvious mask values such as `mobile_masked_001`, `external_user_masked_001`, and `customer_masked_001`. They must not contain real phone numbers, real `external_userid`, or real customer names.
 
@@ -34,13 +30,9 @@ Fixtures must use obvious mask values such as `mobile_masked_001`, `external_use
 
 HTTP mode is for later old Flask / AI-CRM Next dual-run checks:
 
-```bash
-python retired experiment wrapper; see docs/archive/experiments_ai_crm_next/retired_tools.md \
-  --old-base-url http://127.0.0.1:5001 \
-  --next-base-url http://127.0.0.1:8000 \
-  --output-md /tmp/customer_read_model_parity_report.md \
-  --output-json /tmp/customer_read_model_parity_report.json
-```
+Historical HTTP wrapper command retired. See
+`docs/archive/experiments_ai_crm_next/retired_tools.md` for the archived tool
+index.
 
 The tool only issues read requests. It must not import the old Flask app or any `wecom_ability_service.*` package.
 

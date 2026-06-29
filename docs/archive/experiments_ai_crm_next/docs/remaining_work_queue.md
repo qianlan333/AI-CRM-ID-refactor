@@ -1,5 +1,10 @@
 # AI-CRM Next Remaining Work Queue
 
+Archived note: this queue is historical evidence from the frozen
+`experiments/ai_crm_next` workspace. It is no longer an active execution queue.
+Use `docs/cleanup/ai_crm_cleanup_batch_status.md` and the live root
+`aicrm_next/` package for current cleanup direction.
+
 Each task is scoped for a future Codex execution turn. Keep old production services untouched unless the task explicitly reaches a controlled verification phase.
 
 ## 1. Run Real PostgreSQL Integration Tests
