@@ -74,4 +74,4 @@ def test_public_h5_read_source_has_no_legacy_public_identity_helpers() -> None:
 
 
 def test_production_compat_no_longer_registers_h5_submit_or_diagnostics_exact_routes() -> None:
-    assert not (Path("aicrm_next/production_compat") / "api.py").exists()
+    assert not Path("aicrm_next/production_compat").exists()

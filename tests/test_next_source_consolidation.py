@@ -92,3 +92,7 @@ def test_shell_guard_blocks_duplicate_next_source_return() -> None:
 
 def test_root_next_does_not_import_d7_external_fallbacks() -> None:
     assert _python_import_offenders(REPO_ROOT / "aicrm_next") == []
+
+
+def test_retired_production_compat_package_does_not_return() -> None:
+    assert not (REPO_ROOT / "aicrm_next" / "production_compat").exists()

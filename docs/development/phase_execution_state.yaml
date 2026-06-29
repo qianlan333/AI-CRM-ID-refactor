@@ -51,7 +51,7 @@ remaining_runtime_fallback_tracks:
 protected_runtime_boundaries:
   - app.py
   - aicrm_next/main.py
-  - aicrm_next/production_compat/api.py high-risk and retained fallback entries only
+  - aicrm_next/production_compat/ deleted package must not return
   - deleted legacy package must not return
   - migrations/deploy/nginx/systemd
   - payment/OAuth/WeCom callback/public submit/product/checkout/order/image upload/runtime/outbound paths

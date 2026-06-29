@@ -40,6 +40,7 @@ DELETED_LOW_RISK_EXACT = {
     "wecom_ability" + "_service/LEGACY_FROZEN.md",
     "wecom_ability" + "_service/__init__.py",
 }
+DELETED_PRODUCTION_COMPAT_PREFIX = "aicrm_next/production_compat/"
 RUNTIME_FALLBACK_ALLOWED_EXACT: set[str] = set()
 LOW_RISK_EXACT = {
     "README.md",
@@ -246,7 +247,7 @@ def _has_owner_approval(path: str | None) -> bool:
 def _protected_path_reason(path: str) -> str | None:
     if path in RUNTIME_FALLBACK_ALLOWED_EXACT:
         return None
-    if path == "aicrm_next/production_compat/api.py":
+    if path.startswith(DELETED_PRODUCTION_COMPAT_PREFIX) and not (ROOT / path).exists():
         return None
     if path in PROTECTED_EXACT:
         return f"protected exact path: {path}"

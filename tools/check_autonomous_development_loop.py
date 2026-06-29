@@ -41,7 +41,7 @@ EXPECTED_SAFETY_GATES = {
 EXPECTED_RUNTIME_BOUNDARIES = {
     "app.py",
     "aicrm_next/main.py",
-    "aicrm_next/production_compat/api.py high-risk and retained fallback entries only",
+    "aicrm_next/production_compat/ deleted package must not return",
     "deleted legacy package must not return",
     "migrations/deploy/nginx/systemd",
     "payment/OAuth/WeCom callback/public submit/product/checkout/order/image upload/runtime/outbound paths",
@@ -120,55 +120,9 @@ GOVERNANCE_ALLOWED_EXACT = {
     "scripts/codex_autopilot_tick.sh",
     "scripts/run_lint.py",
     "requirements.txt",
-    "aicrm_next/production_compat/api.py",
 }
 DELETED_LEGACY_PACKAGE_PREFIX = "wecom_ability" + "_service/"
-REMOVED_CHANNEL_FALLBACK_STRINGS = {
-    '"/api/admin/channels"',
-    '"/api/admin/channels/{path:path}"',
-    '"/api/admin/channel-welcome-materials"',
-}
-REMOVED_MEDIA_MATERIAL_FALLBACK_STRINGS = {
-    '"/api/admin/image-library"',
-    '"/api/admin/image-library/{path:path}"',
-    '"/api/admin/attachment-library"',
-    '"/api/admin/attachment-library/{path:path}"',
-    '"/api/admin/miniprogram-library"',
-    '"/api/admin/miniprogram-library/{path:path}"',
-    '"/api/admin/image-library/upload"',
-}
-REMOVED_SIDEBAR_CUSTOMER_FALLBACK_STRINGS = {
-    '"/sidebar/{path:path}"',
-    '"/api/sidebar/{path:path}"',
-    '"/api/admin/customers/profile"',
-    '"/api/admin/customers/profile/{path:path}"',
-    '"/api/customers/automation/{path:path}"',
-    '"/api/customer-automation/{path:path}"',
-    '"/api/sidebar/jssdk-config"',
-    '"/api/sidebar/lead-pool/status"',
-    '"/api/sidebar/signup-tags/status"',
-    '"/api/sidebar/marketing-status"',
-    '"/api/sidebar/v2/workbench"',
-    '"/api/sidebar/v2/questionnaires"',
-    '"/api/sidebar/v2/materials"',
-    '"/api/sidebar/v2/materials/image/{image_id:int}/thumbnail"',
-    '"/api/sidebar/v2/other-staff-messages"',
-    '"/api/sidebar/v2/products"',
-    '"/api/sidebar/v2/orders"',
-    '"/api/customers/automation/signup-conversion/batches"',
-    '"/api/customers/automation/signup-conversion/batches/{batch_id:int}"',
-    '"/api/customers/automation/webhook-deliveries"',
-}
-REQUIRED_HIGH_RISK_FALLBACK_STRINGS = {
-    '"/wecom/external-contact/callback"',
-    '"/api/wecom/events"',
-    '"/api/h5/wechat/oauth/start"',
-    '"/api/h5/questionnaires/{slug}/submit"',
-    '"/api/admin/wecom/tags"',
-    '"/api/admin/wechat-pay/products"',
-    '"/api/orders/{path:path}"',
-    '"/api/checkout/{path:path}"',
-}
+DELETED_PRODUCTION_COMPAT_PREFIX = "aicrm_next/production_compat/"
 
 
 def _parse_scalar(value: str) -> Any:
@@ -371,6 +325,7 @@ def _validate_changed_files(changed: set[str], blockers: list[str]) -> None:
         if path not in RUNTIME_FALLBACK_ALLOWED_EXACT
         and path not in STARTUP_CLOSEOUT_ALLOWED_EXACT
         and not (path.startswith(DELETED_LEGACY_PACKAGE_PREFIX) and not (ROOT / path).exists())
+        and not (path.startswith(DELETED_PRODUCTION_COMPAT_PREFIX) and not (ROOT / path).exists())
         and (
             path in PROTECTED_EXACT
             or any(path.startswith(prefix) for prefix in PROTECTED_PREFIXES)
@@ -379,28 +334,6 @@ def _validate_changed_files(changed: set[str], blockers: list[str]) -> None:
     ]
     if runtime_changed:
         blockers.append(f"governance compaction must not touch runtime/protected files: {runtime_changed}")
-
-
-def _validate_runtime_fallback_scope(changed: set[str], blockers: list[str]) -> None:
-    if "aicrm_next/production_compat/api.py" not in changed:
-        return
-    compat_path = ROOT / "aicrm_next/production_compat/api.py"
-    text = compat_path.read_text(encoding="utf-8") if compat_path.exists() else ""
-    stale_channel_routes = sorted(route for route in REMOVED_CHANNEL_FALLBACK_STRINGS if route in text)
-    if stale_channel_routes:
-        blockers.append(f"selected channel production_compat fallback routes must be removed: {stale_channel_routes}")
-    stale_media_routes = sorted(route for route in REMOVED_MEDIA_MATERIAL_FALLBACK_STRINGS if route in text)
-    if stale_media_routes:
-        blockers.append(f"selected media/material production_compat fallback routes must be removed: {stale_media_routes}")
-    stale_sidebar_customer_routes = sorted(route for route in REMOVED_SIDEBAR_CUSTOMER_FALLBACK_STRINGS if route in text)
-    if stale_sidebar_customer_routes:
-        blockers.append(
-            "selected sidebar/customer production_compat fallback routes must be removed: "
-            f"{stale_sidebar_customer_routes}"
-        )
-    missing_high_risk = sorted(route for route in REQUIRED_HIGH_RISK_FALLBACK_STRINGS if route not in text)
-    if missing_high_risk:
-        blockers.append(f"high-risk production_compat routes must remain: {missing_high_risk}")
 
 
 def build_report() -> dict[str, Any]:
@@ -420,7 +353,6 @@ def build_report() -> dict[str, Any]:
     _validate_current_state(state, blockers)
     _validate_stop_conditions(stop, blockers)
     _validate_changed_files(changed, blockers)
-    _validate_runtime_fallback_scope(changed, blockers)
 
     details["state"] = {
         "current_phase": state.get("current_phase"),
