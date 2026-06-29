@@ -18,6 +18,7 @@ changes, production access, or external calls.
 | Batch 4 Flask retirement | done | `tests/test_shared_flask_config_retirement.py`, `tests/test_wechat_oauth_client.py` | Keep `from flask`, `import flask`, and `current_app` out of runtime code. |
 | Batch 5 fixture reset registry | done | `aicrm_next/fixture_reset_registry.py`, `tests/test_fixture_reset_registry.py` | Preserve reset order and keep router registration behavior unchanged. |
 | Deprecated CLI noise | done | `app.py`, `tests/test_startup_entrypoint_next_only.py` | Keep removed-command errors table-driven until the CLI contract is formally deleted. |
+| Active legacy path reference guard | done | `tools/audit_repo_hygiene.py`, `tests/test_repo_hygiene_audit.py`, `skills/image-library-curator/README.md`, `docs/queue/broadcast-jobs.md`, `docs/user_ops_v2.md` | Keep active docs from pointing contributors at retired `wecom_ability_service/`, `openclaw_service/`, or legacy OpenClaw source paths. |
 | Tracked artifact policy | clean | `python3 tools/audit_repo_hygiene.py` reports zero issues and no tracked `artifacts/`, `.codex_artifacts/`, `tmp/`, `outputs/`, `dist/`, or `exports/` files are present. | Keep generated evidence under `docs/reports/`, `docs/archive/`, or `docs/cleanup/` only when intentionally reviewable. |
 
 ## Verified Boundaries
@@ -47,5 +48,6 @@ python3 tools/report_route_inventory_consolidation.py \
 Do not reintroduce an active `experiments/ai_crm_next` test/runtime workspace.
 The next safe batches are archive-retention cleanup only: review whether
 generated or duplicate evidence under `docs/archive/experiments_ai_crm_next/`
-can be consolidated, and continue route-inventory consolidation only for files
-that the generated report proves are manifest-derivable.
+can be consolidated, continue route-inventory consolidation only for files that
+the generated report proves are manifest-derivable, and keep active docs free of
+retired live-source pointers.

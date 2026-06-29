@@ -83,6 +83,47 @@ STALE_LEGACY_FALLBACK_PATTERNS = (
     "production compatibility facade",
     "生产兼容 facade",
 )
+ACTIVE_LEGACY_REFERENCE_PATTERNS = (
+    (
+        re.compile(r"https://github\.com/qianlan333/AI-CRM/blob/main/wecom_ability_service/"),
+        "GitHub source link points at retired wecom_ability_service path.",
+    ),
+    (
+        re.compile(r"`wecom_ability_service\.[^`]+`"),
+        "Dotted implementation path points at retired wecom_ability_service module.",
+    ),
+    (
+        re.compile(r"`wecom_ability_service/[^`]+`"),
+        "File implementation path points at retired wecom_ability_service directory.",
+    ),
+    (
+        re.compile(r"`openclaw_service/[^`]+`"),
+        "File implementation path points at deleted openclaw_service directory.",
+    ),
+    (
+        re.compile(r"`legacy_flask/openclaw_legacy/[^`]+`"),
+        "File implementation path points at deleted legacy OpenClaw directory.",
+    ),
+)
+ACTIVE_LEGACY_REFERENCE_ALLOWED_CONTEXT = (
+    "Do not",
+    "do not",
+    "must not",
+    "not current",
+    "no longer",
+    "not a current",
+    "historical",
+    "retired",
+    "removed",
+    "deleted",
+    "closeout",
+    "不得",
+    "禁止",
+    "已不在",
+    "不是当前",
+    "已物理删除",
+    "不在当前",
+)
 
 
 @dataclass(frozen=True)
@@ -145,6 +186,7 @@ def audit_repository(root: Path = ROOT, *, generated_at: str | None = None) -> H
     issues.extend(_audit_tracked_artifacts(root))
     issues.extend(_audit_agent_entry_docs(root, markdown_files))
     issues.extend(_audit_production_ops_stubs(root))
+    issues.extend(_audit_active_legacy_references(root, markdown_files))
     issues.extend(_audit_aicrm_markers(root))
     return HygieneReport(
         root=".",
@@ -192,6 +234,7 @@ def render_human_summary(report: HygieneReport) -> str:
             "",
             "- Fix stale agent-entry references before changing runtime code.",
             "- Decide whether tracked artifact directories are evidence or generated output.",
+            "- Replace active docs that still point contributors at retired legacy source paths.",
             "- Review debug/TODO/legacy markers in `aicrm_next/` before expanding lint gates.",
         ]
     )
@@ -381,6 +424,30 @@ def _audit_production_ops_stubs(root: Path) -> list[RepoFinding]:
                         evidence=", ".join(matched),
                     )
                 )
+    return issues
+
+
+def _audit_active_legacy_references(root: Path, markdown_files: list[Path]) -> list[RepoFinding]:
+    issues: list[RepoFinding] = []
+    for path in markdown_files:
+        rel = _display_path(path, root)
+        if rel.startswith("docs/archive/"):
+            continue
+        for line_number, line in enumerate(_read_text(path).splitlines(), start=1):
+            if any(token in line for token in ACTIVE_LEGACY_REFERENCE_ALLOWED_CONTEXT):
+                continue
+            for pattern, evidence in ACTIVE_LEGACY_REFERENCE_PATTERNS:
+                if pattern.search(line):
+                    issues.append(
+                        RepoFinding(
+                            category="active_legacy_path_reference",
+                            severity="warn",
+                            path=rel,
+                            line=line_number,
+                            message="Active documentation points readers at a retired legacy source path.",
+                            evidence=evidence,
+                        )
+                    )
     return issues
 
 

@@ -113,6 +113,43 @@ def test_audit_reports_production_ops_entry_details(tmp_path) -> None:
     assert findings[0].path == "scripts/prod.sh"
 
 
+def test_audit_reports_active_legacy_source_path_references(tmp_path) -> None:
+    _write(tmp_path / "AGENTS.md", "# Entry\n")
+    _write(
+        tmp_path / "docs/queue/broadcast-jobs.md",
+        "Register a handler in `wecom_ability_service.domains.broadcast_jobs.handlers`.\n",
+    )
+    _write(
+        tmp_path / "skills/image-library-curator/README.md",
+        "[mcp_tools.py](https://github.com/qianlan333/AI-CRM/blob/main/wecom_ability_service/domains/image_library/mcp_tools.py)\n",
+    )
+    _write(
+        tmp_path / "docs/archive/old.md",
+        "Historical link: `wecom_ability_service/domains/old.py`.\n",
+    )
+
+    report = audit_repository(tmp_path)
+
+    findings = _issues_by_category(report, "active_legacy_path_reference")
+    assert [finding.path for finding in findings] == [
+        "docs/queue/broadcast-jobs.md",
+        "skills/image-library-curator/README.md",
+    ]
+
+
+def test_audit_allows_retired_legacy_boundary_text(tmp_path) -> None:
+    _write(tmp_path / "AGENTS.md", "# Entry\n")
+    _write(
+        tmp_path / "docs/development/ai_crm_next_architecture_skill.md",
+        "`wecom_ability_service/domains/foo.py` is retired and must not be restored.\n"
+        "不得恢复 `openclaw_service/foo.py`。\n",
+    )
+
+    report = audit_repository(tmp_path)
+
+    assert _issues_by_category(report, "active_legacy_path_reference") == []
+
+
 def test_audit_allows_production_ops_safe_stub(tmp_path) -> None:
     _write(tmp_path / "AGENTS.md", "# Entry\n")
     _write(
