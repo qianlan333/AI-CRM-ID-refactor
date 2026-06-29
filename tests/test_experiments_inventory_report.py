@@ -55,6 +55,31 @@ def test_experiments_inventory_report_classifies_files_and_root_references(tmp_p
     }
 
 
+def test_experiments_inventory_report_ignores_its_own_fixtures(tmp_path) -> None:
+    _write(tmp_path / "README.md", "Run `cd experiments/ai_crm_next` for frozen evidence tests.\n")
+    _write(
+        tmp_path / "tools/report_experiments_inventory.py",
+        'EXPERIMENT_PREFIX = "experiments/ai_crm_next/"\n',
+    )
+    _write(
+        tmp_path / "tests/test_experiments_inventory_report.py",
+        '_write(tmp_path / "experiments/ai_crm_next/README.md", "# Frozen\\n")\n',
+    )
+    _write(tmp_path / "experiments/ai_crm_next/README.md", "# Frozen\n")
+
+    report = build_report(tmp_path, generated_at="2026-06-29T00:00:00Z")
+
+    assert report["summary"]["root_reference_count"] == 1
+    assert report["root_references"] == [
+        {
+            "path": "README.md",
+            "line": 1,
+            "classification": "active_doc_pointer",
+            "evidence": "Run `cd experiments/ai_crm_next` for frozen evidence tests.",
+        }
+    ]
+
+
 def test_experiments_inventory_report_writes_markdown_and_json(tmp_path) -> None:
     _write(tmp_path / "experiments/ai_crm_next/README.md", "# Frozen\n")
     _write(tmp_path / "docs/archive/experiments_ai_crm_next/retired_tools.md", "# Retired\n")

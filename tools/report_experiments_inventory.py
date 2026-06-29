@@ -13,6 +13,10 @@ REPORT_VERSION = "1"
 EXPERIMENT_PREFIX = "experiments/ai_crm_next/"
 ARCHIVE_PREFIX = "docs/archive/experiments_ai_crm_next/"
 REFERENCE_SCAN_EXTENSIONS = {".md", ".py", ".sh", ".toml", ".yaml", ".yml"}
+SELF_REFERENCE_PATHS = {
+    "tests/test_experiments_inventory_report.py",
+    "tools/report_experiments_inventory.py",
+}
 
 
 @dataclass(frozen=True)
@@ -120,7 +124,7 @@ def render_markdown(report: dict[str, object]) -> str:
         "root_config": "active experiment entry/config",
         "migrations": "experiment-local Alembic scaffold and PostgreSQL readiness migrations",
         "scripts": "experiment-local helper scripts",
-        "tools": "experiment-local readiness / evidence tooling",
+        "tools": "experiment-local helper / evidence tooling",
         "tests": "experiment-local active regression coverage",
         "test_fixtures": "parity fixture data used by experiment-local tests",
         "docs": "active experiment reference docs",
@@ -298,7 +302,7 @@ def _root_references(root: Path, tracked: list[str]) -> list[RootReference]:
     references: list[RootReference] = []
     for path in tracked:
         candidate = Path(path)
-        if path.startswith((EXPERIMENT_PREFIX, ARCHIVE_PREFIX, "docs/cleanup/")):
+        if path in SELF_REFERENCE_PATHS or path.startswith((EXPERIMENT_PREFIX, ARCHIVE_PREFIX, "docs/cleanup/")):
             continue
         if candidate.suffix not in REFERENCE_SCAN_EXTENSIONS:
             continue

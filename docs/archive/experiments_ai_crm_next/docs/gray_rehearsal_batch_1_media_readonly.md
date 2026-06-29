@@ -65,11 +65,7 @@ Excluded routes:
 Command:
 
 ```bash
-.venv/bin/python retired experiment tool wrapper; see docs/archive/experiments_ai_crm_next/retired_tools.md \
-  --batch media_readonly \
-  --next-testclient \
-  --output-md /tmp/gray_rehearsal_batch_1_media_readonly.md \
-  --output-json /tmp/gray_rehearsal_batch_1_media_readonly.json
+# Historical command retired; see docs/archive/experiments_ai_crm_next/retired_tools.md
 ```
 
 Result: PASS / `recommendation=GO`.
@@ -88,11 +84,7 @@ Result: PASS / `recommendation=GO`.
 Media parity was executed by the rehearsal tool with:
 
 ```bash
-.venv/bin/python retired experiment wrapper; see docs/archive/experiments_ai_crm_next/retired_tools.md \
-  --old-fixture-dir tests/fixtures/old_media_library \
-  --next-testclient \
-  --output-md /tmp/gray_rehearsal_batch_1_media_readonly.media_parity.md \
-  --output-json /tmp/gray_rehearsal_batch_1_media_readonly.media_parity.json
+# Historical command retired; see docs/archive/experiments_ai_crm_next/retired_tools.md
 ```
 
 Result: PASS.

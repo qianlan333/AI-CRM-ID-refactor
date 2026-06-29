@@ -80,11 +80,7 @@ By default the compare tool excludes write endpoints such as DND and batch-send 
 
 ```bash
 .venv/bin/python -m pytest -q
-.venv/bin/python retired experiment wrapper; see docs/archive/experiments_ai_crm_next/retired_tools.md \
-  --old-fixture-dir tests/fixtures/old_user_ops \
-  --next-testclient \
-  --output-md /tmp/user_ops_parity_report.md \
-  --output-json /tmp/user_ops_parity_report.json
+# Historical command retired; see docs/archive/experiments_ai_crm_next/retired_tools.md
 ```
 
 ## Current Status

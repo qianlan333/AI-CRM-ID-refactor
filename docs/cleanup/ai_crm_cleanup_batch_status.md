@@ -14,7 +14,7 @@ changes, production access, or external calls.
 | Batch 0 repo hygiene audit | done | `tools/audit_repo_hygiene.py`, `tests/test_repo_hygiene_audit.py`, `docs/cleanup/repo_hygiene_report.md`, `docs/cleanup/repo_hygiene_report.json` | Keep report-only; do not promote findings to CI fail without explicit approval. |
 | Batch 1 agent entry docs and safety wording | done | `AGENTS.md`, `CLAUDE.md`, `README.md`, `docs/development/ai_crm_next_architecture_skill.md`, `skills/ai-crm-next-architecture/SKILL.md` | Keep production connection details outside the public repo entry docs. |
 | Batch 2 lint and hygiene guard expansion | done | `scripts/run_lint.py`, `docs/cleanup/route_inventory_consolidation_inventory.md`, `docs/cleanup/route_inventory_consolidation_inventory.json`, `tools/report_route_inventory_consolidation.py` | Continue with report-backed cleanup, not full Ruff style expansion. |
-| Batch 3 experiment workspace inventory | in progress | `tools/report_experiments_inventory.py`, `tests/test_experiments_inventory_report.py`, `docs/cleanup/experiments_ai_crm_next_inventory.md`, `docs/cleanup/experiments_ai_crm_next_inventory.json` | Use the generated inventory before retiring experiment-local readiness tests/tools. |
+| Batch 3 experiment workspace inventory | progressed | `tools/report_experiments_inventory.py`, `tests/test_experiments_inventory_report.py`, `docs/cleanup/experiments_ai_crm_next_inventory.md`, `docs/cleanup/experiments_ai_crm_next_inventory.json`, `docs/archive/experiments_ai_crm_next/retired_tools.md` | Canary/readiness helpers and paired tests are retired; use the generated inventory before retiring any remaining experiment-local parity tools. |
 | Batch 4 Flask retirement | done | `tests/test_shared_flask_config_retirement.py`, `tests/test_wechat_oauth_client.py` | Keep `from flask`, `import flask`, and `current_app` out of runtime code. |
 | Batch 5 fixture reset registry | done | `aicrm_next/fixture_reset_registry.py`, `tests/test_fixture_reset_registry.py` | Preserve reset order and keep router registration behavior unchanged. |
 | Deprecated CLI noise | done | `app.py`, `tests/test_startup_entrypoint_next_only.py` | Keep removed-command errors table-driven until the CLI contract is formally deleted. |
@@ -45,6 +45,8 @@ python3 tools/report_route_inventory_consolidation.py \
 ## Recommended Next Batch
 
 Do not delete `experiments/ai_crm_next` wholesale. The next safe batch is to use
-the generated experiment inventory to decide whether readiness/canary tests are
-still expected to run. If not, retire paired tests, tools, and archived evidence
-references together in one reviewable PR.
+the generated experiment inventory to evaluate the remaining experiment-local
+helpers: `capture_frontend_screenshots.py`, `readonly_http_dual_run.py`,
+`seed_old_flask_customer_sample.py`, and
+`seed_old_flask_questionnaire_sample.py`. Retire each helper only with its paired
+tests or keep it with an explicit current owner.

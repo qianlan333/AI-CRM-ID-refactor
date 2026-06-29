@@ -140,7 +140,7 @@ Controlled execution materials:
 - `experiments/ai_crm_next/docs/route_level_proxy_template.md` provides pseudo-only route flag and proxy examples. It must not be applied directly.
 - `docs/archive/experiments_ai_crm_next/docs/gray_release_signoff_template.md` records operator signoff, adapter modes, rollback owner, and Go/No-Go decision.
 - `docs/archive/experiments_ai_crm_next/docs/gray_release_acceptance_checklist.md` lists the required commands and safety checks.
-- `experiments/ai_crm_next/tools/generate_gray_release_report.py` aggregates smoke/parity JSON into a markdown/json signoff report without making requests or changing systems.
+- `retired gray-release report helper; see docs/archive/experiments_ai_crm_next/retired_tools.md` aggregates smoke/parity JSON into a markdown/json signoff report without making requests or changing systems.
 
 Current controlled-execution status: ready for runbook acceptance. Production route cutover has not been executed, no production Nginx/deployment file has been changed, no production PostgreSQL is connected, and all external adapters remain fake/disabled unless separately approved.
 
@@ -171,7 +171,7 @@ Production canary approval package:
 - `docs/archive/experiments_ai_crm_next/docs/production_canary_change_request_template.md`
 - `docs/archive/experiments_ai_crm_next/docs/production_canary_observability_plan.md`
 - `docs/archive/experiments_ai_crm_next/docs/production_canary_rollback_runbook.md`
-- `experiments/ai_crm_next/tools/check_production_canary_approval_package.py`
+- `retired production canary approval helper; see docs/archive/experiments_ai_crm_next/retired_tools.md`
 
 Current approval-package status: `ready_for_human_review` / `pending_human_signoff`. This package can support a human-reviewed readonly production canary request, starting with Batch 1 Media readonly, but it does not execute or authorize a route change by itself.
 
@@ -179,7 +179,7 @@ Batch 1 Media production canary human signoff packet:
 
 - `docs/archive/experiments_ai_crm_next/docs/batch_1_media_readonly_production_canary_signoff_packet.md`
 - `docs/archive/experiments_ai_crm_next/docs/batch_1_media_readonly_production_execution_checklist.md`
-- `experiments/ai_crm_next/tools/check_batch_1_media_production_signoff_readiness.py`
+- `retired Batch 1 media production signoff helper; see docs/archive/experiments_ai_crm_next/retired_tools.md`
 
 Current Batch 1 production signoff status: `pending_human_signoff`. These materials organize target routes, evidence, proposed route flags, stop conditions, rollback steps, and final decision fields for human review only. They do not modify production configuration, enable production route flags, switch traffic, upload to cloud storage, call WeCom media, or authorize Media write routes.
 

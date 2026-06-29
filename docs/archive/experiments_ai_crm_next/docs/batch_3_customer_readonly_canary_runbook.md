@@ -15,19 +15,11 @@ This runbook is for staging or production-like canary preparation/execution. It 
 3. Run six parity tools.
 4. Run Customer parity.
    ```bash
-   .venv/bin/python retired experiment wrapper; see docs/archive/experiments_ai_crm_next/retired_tools.md \
-     --old-fixture-dir tests/fixtures/old_customer_read_model \
-     --next-testclient \
-     --output-md /tmp/customer_parity_batch_3.md \
-     --output-json /tmp/customer_parity_batch_3.json
+   # Historical command retired; see docs/archive/experiments_ai_crm_next/retired_tools.md
    ```
 5. Run Customer gray smoke in dual mode.
    ```bash
-   .venv/bin/python retired experiment wrapper; see docs/archive/experiments_ai_crm_next/retired_tools.md \
-     --old-base-url http://127.0.0.1:5001 \
-     --next-testclient \
-     --output-md /tmp/customer_gray_smoke_batch_3.md \
-     --output-json /tmp/customer_gray_smoke_batch_3.json
+   # Historical command retired; see docs/archive/experiments_ai_crm_next/retired_tools.md
    ```
 6. Run full readonly dual-run with customer sample coverage.
    ```bash

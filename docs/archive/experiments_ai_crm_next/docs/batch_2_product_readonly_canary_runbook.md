@@ -15,18 +15,11 @@ This runbook is for staging or production-like canary preparation/execution. It 
 3. Run six parity tools.
 4. Run Commerce parity.
    ```bash
-.venv/bin/python retired experiment wrapper; see docs/archive/experiments_ai_crm_next/retired_tools.md \
-     --old-fixture-dir tests/fixtures/old_commerce \
-     --next-testclient \
-     --output-md /tmp/commerce_parity_batch_2_product.md \
-     --output-json /tmp/commerce_parity_batch_2_product.json
+# Historical command retired; see docs/archive/experiments_ai_crm_next/retired_tools.md
    ```
 5. Run Product gray smoke.
    ```bash
-   .venv/bin/python retired experiment wrapper; see docs/archive/experiments_ai_crm_next/retired_tools.md \
-     --next-testclient \
-     --output-md /tmp/product_management_gray_smoke_batch_2.md \
-     --output-json /tmp/product_management_gray_smoke_batch_2.json
+   # Historical command retired; see docs/archive/experiments_ai_crm_next/retired_tools.md
    ```
 6. Confirm screenshot baseline includes:
    - `/admin/wechat-pay/products`
