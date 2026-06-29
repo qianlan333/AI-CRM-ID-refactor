@@ -60,3 +60,8 @@ def test_postgres_connection_has_no_flask_imports() -> None:
     assert "current_app" not in source
     assert "has_app_context" not in source
     assert "from flask" not in source
+
+
+def test_runtime_requirements_do_not_depend_on_flask() -> None:
+    requirements = Path("requirements.txt").read_text(encoding="utf-8").lower()
+    assert "\nflask" not in f"\n{requirements}"
