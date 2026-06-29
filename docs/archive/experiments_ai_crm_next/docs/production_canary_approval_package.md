@@ -14,7 +14,7 @@ Current approval status: `pending_human_signoff`.
 | --- | --- | --- |
 | ordinary pytest | PASS | latest local run: `361 passed, 3 skipped` |
 | five active parity reports | PASS | User Ops, Customer Read Model, Questionnaire, Commerce, Media |
-| real PostgreSQL integration | PASS for local test DB | `experiments/ai_crm_next/docs/real_postgres_integration_run.md` |
+| real PostgreSQL integration | PASS for local test DB | `docs/archive/experiments_ai_crm_next/docs/real_postgres_integration_run.md` |
 | frontend PNG screenshot baseline | PASS | `docs/archive/experiments_ai_crm_next/docs/frontend_screenshot_baseline.md`, `historical removed reference (route_status.json)` |
 | readonly HTTP dual-run | PASS with documented legacy drift | `docs/archive/experiments_ai_crm_next/docs/real_readonly_http_dual_run.md` |
 | Batch 1 Media readonly | staging-simulated evidence available | `docs/archive/experiments_ai_crm_next/docs/batch_1_media_readonly_canary_execution_report.md` |
@@ -40,7 +40,7 @@ Current approval status: `pending_human_signoff`.
 | --- | --- | --- | --- | --- | --- |
 | User Ops | old Flask overview lacks `激活待录入` | Next satisfies the current 8-card contract; old gap is legacy behavior | Operators may see a card count difference during comparison | Monitor Next overview card integrity and keep old drift documented in signoff | Batch 4 smoke/readiness reports; `experiments/ai_crm_next/docs/user_ops_readonly_sample_and_drift_checklist.md` |
 | Customer | old `/admin/customers` can redirect to login | Page-layer admin auth redirect is not an API read-model blocker; Next page stays 200 | Canary page checks may see old 302 during rollback verification | Treat old page redirect as expected legacy auth behavior; API routes remain the primary dual evidence | Batch 3 smoke/readiness reports; `docs/archive/experiments_ai_crm_next/docs/customer_read_model_gray_release_plan.md` |
-| Questionnaire | old non-WeChat public API can return `403 please_open_in_wechat`; old result route differs from Next JSON result route | Next satisfies the readonly API/page contract; old public behavior is environment/route-shape drift | Public route comparison may show old-side 403/404 in non-WeChat canary checks | Use route-specific expected status, validate Next JSON result contract, do not enable submit/OAuth | Batch 5 smoke/readiness reports; `experiments/ai_crm_next/docs/questionnaire_readonly_sample_and_fake_checklist.md` |
+| Questionnaire | old non-WeChat public API can return `403 please_open_in_wechat`; old result route differs from Next JSON result route | Next satisfies the readonly API/page contract; old public behavior is environment/route-shape drift | Public route comparison may show old-side 403/404 in non-WeChat canary checks | Use route-specific expected status, validate Next JSON result contract, do not enable submit/OAuth | Batch 5 smoke/readiness reports; `docs/archive/experiments_ai_crm_next/docs/questionnaire_readonly_sample_and_fake_checklist.md` |
 | Automation | old automation program readonly is retired | `/admin/automation-conversion` is now an AI Audience page, and old program/member/action Runtime V2 routes are not canary targets | Attempting to route old automation readonly would revive retired behavior | Keep old automation readonly docs/tools/tests deleted; validate AI Audience through the main application contracts | Main app AI Audience admin/API tests |
 
 ## Current No-Go Items

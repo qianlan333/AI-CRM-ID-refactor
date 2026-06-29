@@ -69,7 +69,7 @@ These flags were not written to production config and were not committed as a re
 | readonly dual-run | `/tmp/readonly_dual_run_batch_3_customer.json` | PASS |
 | readiness checker | `/tmp/batch_3_customer_canary_readiness.json` | `canary_plan_ready` / `GO_TO_STAGING_CANARY_SIGNOFF` |
 | screenshot baseline | `historical removed reference (route_status.json)` | `/admin/customers` present and passing |
-| real PostgreSQL evidence | `experiments/ai_crm_next/docs/real_postgres_integration_run.md` | available |
+| real PostgreSQL evidence | `docs/archive/experiments_ai_crm_next/docs/real_postgres_integration_run.md` | available |
 
 ## Customer Gray Smoke Result
 

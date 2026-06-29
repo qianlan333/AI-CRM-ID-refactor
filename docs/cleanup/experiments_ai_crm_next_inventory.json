@@ -1,13 +1,13 @@
 {
   "version": "1",
   "root": ".",
-  "generated_at": "2026-06-29T06:20:00Z",
+  "generated_at": "2026-06-29T07:05:00Z",
   "summary": {
-    "experiment_tracked_file_count": 85,
-    "archived_experiment_file_count": 58,
+    "experiment_tracked_file_count": 76,
+    "archived_experiment_file_count": 67,
     "root_reference_count": 8,
     "areas": {
-      "docs": 25,
+      "docs": 16,
       "migrations": 4,
       "root_config": 4,
       "scripts": 1,
@@ -21,11 +21,11 @@
       "active_experiment_scaffold": 4,
       "active_fixture_data": 25,
       "active_reference": 4,
-      "active_reference_doc": 25,
+      "active_reference_doc": 16,
       "active_regression_test": 25
     },
     "archived_areas": {
-      "docs": 56,
+      "docs": 65,
       "root_archive_doc": 2
     }
   },
@@ -129,24 +129,6 @@
       "reason": "Reference material kept while the frozen workspace remains discoverable."
     },
     {
-      "path": "experiments/ai_crm_next/docs/customer_read_model_sample_data_checklist.md",
-      "area": "docs",
-      "classification": "active_reference_doc",
-      "reason": "Reference material kept while the frozen workspace remains discoverable."
-    },
-    {
-      "path": "experiments/ai_crm_next/docs/feature_parity_matrix.md",
-      "area": "docs",
-      "classification": "active_reference_doc",
-      "reason": "Reference material kept while the frozen workspace remains discoverable."
-    },
-    {
-      "path": "experiments/ai_crm_next/docs/final_gap_analysis.md",
-      "area": "docs",
-      "classification": "active_reference_doc",
-      "reason": "Reference material kept while the frozen workspace remains discoverable."
-    },
-    {
       "path": "experiments/ai_crm_next/docs/frontend_parity_plan.md",
       "area": "docs",
       "classification": "active_reference_doc",
@@ -171,18 +153,6 @@
       "reason": "Reference material kept while the frozen workspace remains discoverable."
     },
     {
-      "path": "experiments/ai_crm_next/docs/migration_strategy.md",
-      "area": "docs",
-      "classification": "active_reference_doc",
-      "reason": "Reference material kept while the frozen workspace remains discoverable."
-    },
-    {
-      "path": "experiments/ai_crm_next/docs/module_status_matrix.md",
-      "area": "docs",
-      "classification": "active_reference_doc",
-      "reason": "Reference material kept while the frozen workspace remains discoverable."
-    },
-    {
       "path": "experiments/ai_crm_next/docs/postgres_integration_testing.md",
       "area": "docs",
       "classification": "active_reference_doc",
@@ -202,30 +172,6 @@
     },
     {
       "path": "experiments/ai_crm_next/docs/questionnaire_readonly_route_cutover_manifest.md",
-      "area": "docs",
-      "classification": "active_reference_doc",
-      "reason": "Reference material kept while the frozen workspace remains discoverable."
-    },
-    {
-      "path": "experiments/ai_crm_next/docs/questionnaire_readonly_sample_and_fake_checklist.md",
-      "area": "docs",
-      "classification": "active_reference_doc",
-      "reason": "Reference material kept while the frozen workspace remains discoverable."
-    },
-    {
-      "path": "experiments/ai_crm_next/docs/readonly_http_dual_run_strategy.md",
-      "area": "docs",
-      "classification": "active_reference_doc",
-      "reason": "Reference material kept while the frozen workspace remains discoverable."
-    },
-    {
-      "path": "experiments/ai_crm_next/docs/real_postgres_integration_run.md",
-      "area": "docs",
-      "classification": "active_reference_doc",
-      "reason": "Reference material kept while the frozen workspace remains discoverable."
-    },
-    {
-      "path": "experiments/ai_crm_next/docs/route_level_proxy_template.md",
       "area": "docs",
       "classification": "active_reference_doc",
       "reason": "Reference material kept while the frozen workspace remains discoverable."
@@ -626,8 +572,11 @@
     "docs/archive/experiments_ai_crm_next/docs/batch_5_questionnaire_readonly_proxy_pseudo_config.md",
     "docs/archive/experiments_ai_crm_next/docs/batch_5_questionnaire_readonly_route_flags.md",
     "docs/archive/experiments_ai_crm_next/docs/customer_read_model_gray_release_plan.md",
+    "docs/archive/experiments_ai_crm_next/docs/customer_read_model_sample_data_checklist.md",
     "docs/archive/experiments_ai_crm_next/docs/fast_readonly_human_test_tasks.md",
     "docs/archive/experiments_ai_crm_next/docs/fast_readonly_replacement_execution_plan.md",
+    "docs/archive/experiments_ai_crm_next/docs/feature_parity_matrix.md",
+    "docs/archive/experiments_ai_crm_next/docs/final_gap_analysis.md",
     "docs/archive/experiments_ai_crm_next/docs/frontend_screenshot_baseline.md",
     "docs/archive/experiments_ai_crm_next/docs/go_no_go_checklist.md",
     "docs/archive/experiments_ai_crm_next/docs/gray_rehearsal_batch_1_media_readonly.md",
@@ -635,6 +584,8 @@
     "docs/archive/experiments_ai_crm_next/docs/gray_release_acceptance_checklist.md",
     "docs/archive/experiments_ai_crm_next/docs/gray_release_signoff_template.md",
     "docs/archive/experiments_ai_crm_next/docs/media_library_gray_release_plan.md",
+    "docs/archive/experiments_ai_crm_next/docs/migration_strategy.md",
+    "docs/archive/experiments_ai_crm_next/docs/module_status_matrix.md",
     "docs/archive/experiments_ai_crm_next/docs/product_management_gray_release_plan.md",
     "docs/archive/experiments_ai_crm_next/docs/production_canary_approval_package.md",
     "docs/archive/experiments_ai_crm_next/docs/production_canary_change_request_template.md",
@@ -642,11 +593,15 @@
     "docs/archive/experiments_ai_crm_next/docs/production_canary_rollback_runbook.md",
     "docs/archive/experiments_ai_crm_next/docs/production_replacement_route.md",
     "docs/archive/experiments_ai_crm_next/docs/questionnaire_readonly_gray_release_plan.md",
+    "docs/archive/experiments_ai_crm_next/docs/questionnaire_readonly_sample_and_fake_checklist.md",
+    "docs/archive/experiments_ai_crm_next/docs/readonly_http_dual_run_strategy.md",
+    "docs/archive/experiments_ai_crm_next/docs/real_postgres_integration_run.md",
     "docs/archive/experiments_ai_crm_next/docs/real_readonly_http_dual_run.md",
     "docs/archive/experiments_ai_crm_next/docs/remaining_work_queue.md",
     "docs/archive/experiments_ai_crm_next/docs/risk_register.md",
     "docs/archive/experiments_ai_crm_next/docs/route_level_gray_release_batches.md",
     "docs/archive/experiments_ai_crm_next/docs/route_level_gray_release_runbook.md",
+    "docs/archive/experiments_ai_crm_next/docs/route_level_proxy_template.md",
     "docs/archive/experiments_ai_crm_next/docs/staging_canary_topology.md",
     "docs/archive/experiments_ai_crm_next/docs/user_ops_readonly_gray_release_plan.md",
     "docs/archive/experiments_ai_crm_next/retired_tools.md"
