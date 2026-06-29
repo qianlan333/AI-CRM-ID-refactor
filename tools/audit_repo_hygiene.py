@@ -75,6 +75,14 @@ PRODUCTION_OPS_DETAIL_PATTERNS = (
     "forced-command",
     "claude-debug.sh",
 )
+STALE_LEGACY_FALLBACK_PATTERNS = (
+    "legacy Flask 只作为显式 fallback",
+    "Legacy Flask is only an explicit fallback",
+    "wecom_ability_service/` 保留为 legacy fallback",
+    "wecom_ability_service/` is retained as legacy fallback",
+    "production compatibility facade",
+    "生产兼容 facade",
+)
 
 
 @dataclass(frozen=True)
@@ -336,6 +344,18 @@ def _audit_agent_entry_docs(root: Path, markdown_files: list[Path]) -> list[Repo
                         line=line_number,
                         message="Agent-facing entry doc contains stale blanket external-effect wording.",
                         evidence="Align WeCom External Effect wording with PR #1505 while keeping other real calls blocked.",
+                    )
+                )
+            stale_legacy = [pattern for pattern in STALE_LEGACY_FALLBACK_PATTERNS if pattern in line]
+            if stale_legacy:
+                issues.append(
+                    RepoFinding(
+                        category="agent_entry_legacy_fallback_drift",
+                        severity="warn",
+                        path=rel,
+                        line=line_number,
+                        message="Agent-facing entry doc describes retired legacy fallback as a current runtime boundary.",
+                        evidence=", ".join(stale_legacy),
                     )
                 )
     return issues

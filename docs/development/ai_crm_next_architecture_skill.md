@@ -8,8 +8,10 @@
 
 - 默认 runtime 是 AI-CRM Next FastAPI modular monolith。
 - `app.py run` 默认启动 `aicrm_next.main:app`。
-- legacy Flask 只作为显式 fallback 和生产兼容 facade。
-- `wecom_ability_service/` 保留为 legacy fallback。
+- legacy Flask runtime / `production_compat` fallback 已退场；不得描述为当前
+  production owner、rollback、hotfix 或 compatibility facade。
+- `wecom_ability_service/` 已不在当前 live source tree；只允许作为历史参考名词
+  出现在归档/closeout 证据中，不得重新引入或作为 fallback 依赖。
 - `openclaw_service/` 和 `legacy_flask/openclaw_legacy/` 已物理删除，不得重新引入。
 - MCP/OpenClaw 后续只允许通过 `aicrm_next.integration_gateway` adapter boundary 承接。
 - WeCom External Effect 真实执行已按 PR #1505 批准范围默认开启：仅限支持的
