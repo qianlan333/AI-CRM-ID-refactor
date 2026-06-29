@@ -91,7 +91,7 @@ Result: PASS.
 
 ## Screenshot Baseline Reference
 
-- `experiments/ai_crm_next/docs/frontend_screenshot_baseline.md`
+- `docs/archive/experiments_ai_crm_next/docs/frontend_screenshot_baseline.md`
 - `historical removed reference (route_status.json)`
 - required Media routes: `/admin/image-library`, `/admin/attachment-library`, `/admin/miniprogram-library`
 - missing required routes: none

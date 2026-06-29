@@ -34,7 +34,7 @@ Excluded:
 | ordinary pytest | PASS, latest validation `387 passed, 3 skipped` | local command output |
 | Media parity | PASS | `/tmp/media_parity_after_human_signoff_submission.json` |
 | Media gray smoke | PASS | `/tmp/media_gray_smoke_staging_simulated_canary.json` |
-| screenshot baseline | PASS | `experiments/ai_crm_next/docs/frontend_screenshot_baseline.md`, `historical removed reference (route_status.json)` |
+| screenshot baseline | PASS | `docs/archive/experiments_ai_crm_next/docs/frontend_screenshot_baseline.md`, `historical removed reference (route_status.json)` |
 | Batch 1 rehearsal | PASS / GO | `docs/archive/experiments_ai_crm_next/docs/gray_rehearsal_batch_1_media_readonly.md` |
 | staging/simulated canary | PASS / GO | `docs/archive/experiments_ai_crm_next/docs/batch_1_media_readonly_canary_execution_report.md` |
 | approval readiness checker | PASS / `pending_human_signoff` | `/tmp/production_canary_approval_media_readonly_audit.json` |

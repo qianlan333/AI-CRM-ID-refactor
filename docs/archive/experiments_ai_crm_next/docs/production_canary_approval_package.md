@@ -15,8 +15,8 @@ Current approval status: `pending_human_signoff`.
 | ordinary pytest | PASS | latest local run: `361 passed, 3 skipped` |
 | five active parity reports | PASS | User Ops, Customer Read Model, Questionnaire, Commerce, Media |
 | real PostgreSQL integration | PASS for local test DB | `experiments/ai_crm_next/docs/real_postgres_integration_run.md` |
-| frontend PNG screenshot baseline | PASS | `experiments/ai_crm_next/docs/frontend_screenshot_baseline.md`, `historical removed reference (route_status.json)` |
-| readonly HTTP dual-run | PASS with documented legacy drift | `experiments/ai_crm_next/docs/real_readonly_http_dual_run.md` |
+| frontend PNG screenshot baseline | PASS | `docs/archive/experiments_ai_crm_next/docs/frontend_screenshot_baseline.md`, `historical removed reference (route_status.json)` |
+| readonly HTTP dual-run | PASS with documented legacy drift | `docs/archive/experiments_ai_crm_next/docs/real_readonly_http_dual_run.md` |
 | Batch 1 Media readonly | staging-simulated evidence available | `docs/archive/experiments_ai_crm_next/docs/batch_1_media_readonly_canary_execution_report.md` |
 | Batch 1 Media production signoff packet | pending human signoff | `docs/archive/experiments_ai_crm_next/docs/batch_1_media_readonly_production_canary_signoff_packet.md` |
 | Batch 2 Product readonly | staging-simulated evidence available | `docs/archive/experiments_ai_crm_next/docs/batch_2_product_readonly_canary_execution_report.md` |

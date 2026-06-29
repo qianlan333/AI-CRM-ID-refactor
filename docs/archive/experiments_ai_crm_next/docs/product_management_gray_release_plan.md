@@ -52,7 +52,7 @@ Summary status: production replacement: not ready.
 | --- | --- |
 | ordinary pytest pass | `.venv/bin/python -m pytest -q` |
 | commerce parity pass | `retired experiment wrapper; see docs/archive/experiments_ai_crm_next/retired_tools.md --old-fixture-dir ... --next-testclient` |
-| frontend smoke pass | `experiments/ai_crm_next/tests/test_frontend_route_smoke.py` and screenshot baseline |
+| frontend smoke pass | `retired frontend route smoke test; see docs/archive/experiments_ai_crm_next/retired_tools.md` and screenshot baseline |
 | screenshot baseline pass | 14-route baseline includes product admin and public product routes |
 | no old backend imports | architecture boundary scan/tests |
 | no production external calls | fake payment adapters remain active; no provider credentials used |

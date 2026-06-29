@@ -22,7 +22,7 @@ This runbook is for staging or production-like canary preparation. It is not a p
    # Historical command retired; see docs/archive/experiments_ai_crm_next/retired_tools.md
    ```
 6. Confirm screenshot baseline.
-   - `experiments/ai_crm_next/docs/frontend_screenshot_baseline.md`
+   - `docs/archive/experiments_ai_crm_next/docs/frontend_screenshot_baseline.md`
    - `historical removed reference (route_status.json)`
 7. Confirm Batch 1 rehearsal report.
    - `/tmp/gray_rehearsal_batch_1_media_readonly_audit.json`

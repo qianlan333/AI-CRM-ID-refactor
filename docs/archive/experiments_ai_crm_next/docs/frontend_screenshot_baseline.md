@@ -9,7 +9,7 @@ Route-level frontend smoke and screenshot baseline verifies that AI-CRM Next sti
 ## Command
 
 ```bash
-.venv/bin/python experiments/ai_crm_next/tools/capture_frontend_screenshots.py \
+.venv/bin/python retired frontend screenshot helper; see docs/archive/experiments_ai_crm_next/retired_tools.md \
   --output-dir artifacts/frontend_screenshots \
   --mode testclient \
   --output-md /tmp/aicrm_next_frontend_route_screenshot_baseline.md \

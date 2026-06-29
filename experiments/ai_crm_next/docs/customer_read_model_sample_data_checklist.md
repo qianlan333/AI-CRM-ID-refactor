@@ -62,13 +62,8 @@ Missing sample data blocks full readonly gray evidence for detail/timeline/recen
 
 2026-05-20 local run prepared a masked sample in the old Flask test database only.
 
-Seed tool:
-
-```bash
-.venv/bin/python experiments/ai_crm_next/tools/seed_old_flask_customer_sample.py \
-  --database-url 'postgresql://aicrm_old_flask_test:***@127.0.0.1:5432/aicrm_old_flask_test' \
-  --apply
-```
+The historical customer sample seed helper is retired; see
+`docs/archive/experiments_ai_crm_next/retired_tools.md`.
 
 Safety guard:
 

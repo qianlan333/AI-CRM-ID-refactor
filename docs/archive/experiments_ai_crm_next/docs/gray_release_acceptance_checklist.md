@@ -31,7 +31,7 @@ Run all six parity tools:
 
 ## Frontend Screenshot Route Check
 
-Confirm `experiments/ai_crm_next/docs/frontend_screenshot_baseline.md` includes the selected batch page routes and the latest route status remains `200`.
+Confirm `docs/archive/experiments_ai_crm_next/docs/frontend_screenshot_baseline.md` includes the selected batch page routes and the latest route status remains `200`.
 
 ## Safety Checks
 
