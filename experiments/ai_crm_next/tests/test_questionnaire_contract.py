@@ -3,14 +3,16 @@ from __future__ import annotations
 from conftest import make_client
 
 
-def test_admin_questionnaires_frontend_routes_return_legacy_template() -> None:
+def test_admin_questionnaires_frontend_routes_return_current_admin_shell() -> None:
     client = make_client()
     for path in ("/admin/questionnaires", "/admin/questionnaires/ui"):
         response = client.get(path)
         html = response.text
         assert response.status_code == 200
         assert "问卷管理" in html
-        assert "微信授权" in html
+        assert "admin-shell" in html
+        assert "admin-nav" in html
+        assert "群运营计划" in html
         for bad in ("New UI", "redesign", "TODO replace old frontend", "experimental replacement UI"):
             assert bad not in html
 
@@ -62,11 +64,17 @@ def test_admin_questionnaire_create_update_disable_enable_delete_export_debug() 
     assert disabled["questionnaire"]["enabled"] is False
     enabled = client.post(f"/api/admin/questionnaires/{questionnaire_id}/enable").json()
     assert enabled["questionnaire"]["enabled"] is True
-    export = client.get(f"/api/admin/questionnaires/{questionnaire_id}/export").json()
-    assert export["ok"] is True
-    assert export["export"]["format"] == "json"
+    export = client.get(f"/api/admin/questionnaires/{questionnaire_id}/export")
+    assert export.status_code == 200
+    assert "text/csv" in export.headers["content-type"]
+    assert "submission_id" in export.text
+    assert "Created?" in export.text
     debug = client.get(f"/api/admin/questionnaires/{questionnaire_id}/latest-submit-debug").json()
     assert debug["ok"] is True
+    enabled_delete = client.delete(f"/api/admin/questionnaires/{questionnaire_id}").json()
+    assert enabled_delete["ok"] is False
+    assert "disabled before deletion" in enabled_delete["error"]
+    client.post(f"/api/admin/questionnaires/{questionnaire_id}/disable", json={"is_disabled": True})
     deleted = client.delete(f"/api/admin/questionnaires/{questionnaire_id}").json()
     assert deleted["ok"] is True
 
@@ -102,10 +110,12 @@ def test_public_questionnaire_get_submit_result_and_errors() -> None:
     assert submitted.status_code == 200
     payload = submitted.json()
     assert payload["ok"] is True
-    assert payload["person_id"] == "person_001"
+    assert payload["person_id"] == "fixture_person_8000"
     assert payload["external_userid"] == "wx_ext_001"
     assert payload["score"] == 10
     assert "tag_hxc_activated" in payload["final_tags"]
+    assert payload["real_external_call_executed"] is False
+    assert payload["external_push"]["real_external_call_executed"] is False
 
     result = client.get(f"/api/h5/questionnaires/hxc-activation-v1/result/{payload['submission_id']}").json()
     assert result["ok"] is True
@@ -129,20 +139,18 @@ def test_wechat_oauth_fake_contract() -> None:
         "/api/h5/wechat/oauth/start?slug=hxc-activation-v1&openid=openid_fake&unionid=unionid_fake&external_userid=external_fake"
     ).json()
     assert start["ok"] is True
-    assert start["source_status"] == "fake"
+    assert start["source_status"] == "next_oauth_adapter"
+    assert start["adapter_mode"] == "fake"
+    assert start["real_external_call_executed"] is False
     assert "redirect_url" in start
 
-    callback = client.get(
-        "/api/h5/wechat/oauth/callback?state=hxc-activation-v1&openid=openid_fake&unionid=unionid_fake&external_userid=external_fake"
-    ).json()
-    assert callback == {
-        "ok": True,
-        "openid": "openid_fake",
-        "unionid": "unionid_fake",
-        "external_userid": "external_fake",
-        "redirect_url": "/s/hxc-activation-v1",
-        "state": "hxc-activation-v1",
-        "source_status": "fake",
-    }
+    callback = client.get(start["callback_url"]).json()
+    assert callback["ok"] is True
+    assert callback["redirect_url"] == "/s/hxc-activation-v1"
+    assert callback["slug"] == "hxc-activation-v1"
+    assert callback["source_status"] == "next_oauth_adapter"
+    assert callback["adapter_mode"] == "fake"
+    assert callback["real_external_call_executed"] is False
     missing_state = client.get("/api/h5/wechat/oauth/callback").json()
-    assert missing_state["source_status"] == "missing_config"
+    assert missing_state["source_status"] == "state_error"
+    assert missing_state["error"] == "state_missing"

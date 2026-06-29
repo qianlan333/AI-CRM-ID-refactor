@@ -696,7 +696,11 @@ class SqlAlchemyCustomerReadModelRepository:
             stmt = stmt.where(table.owner_userid == owner_userid)
         tag = str(filters.get("tag") or "").strip()
         if tag:
-            stmt = stmt.where(cast(table.tags_json, Text).like(f"%{tag}%"))
+            escaped_tag = json.dumps(tag, ensure_ascii=True)[1:-1]
+            tag_patterns = [f"%{tag}%"]
+            if escaped_tag != tag:
+                tag_patterns.append(f"%{escaped_tag}%")
+            stmt = stmt.where(or_(*(cast(table.tags_json, Text).like(pattern) for pattern in tag_patterns)))
         status = str(filters.get("status") or "").strip()
         if status:
             stmt = stmt.where(
