@@ -35,12 +35,12 @@ Excluded:
 | Media parity | PASS | `/tmp/media_parity_after_human_signoff_submission.json` |
 | Media gray smoke | PASS | `/tmp/media_gray_smoke_staging_simulated_canary.json` |
 | screenshot baseline | PASS | `experiments/ai_crm_next/docs/frontend_screenshot_baseline.md`, `historical removed reference (route_status.json)` |
-| Batch 1 rehearsal | PASS / GO | `experiments/ai_crm_next/docs/gray_rehearsal_batch_1_media_readonly.md` |
-| staging/simulated canary | PASS / GO | `experiments/ai_crm_next/docs/batch_1_media_readonly_canary_execution_report.md` |
+| Batch 1 rehearsal | PASS / GO | `docs/archive/experiments_ai_crm_next/docs/gray_rehearsal_batch_1_media_readonly.md` |
+| staging/simulated canary | PASS / GO | `docs/archive/experiments_ai_crm_next/docs/batch_1_media_readonly_canary_execution_report.md` |
 | approval readiness checker | PASS / `pending_human_signoff` | `/tmp/production_canary_approval_media_readonly_audit.json` |
 | signoff packet readiness checker | PASS / `pending_human_signoff` | `/tmp/batch_1_media_production_signoff_readiness_final.json` |
-| human signoff packet | prepared, pending | `experiments/ai_crm_next/docs/batch_1_media_readonly_production_canary_signoff_packet.md` |
-| production execution checklist | prepared, manual only | `experiments/ai_crm_next/docs/batch_1_media_readonly_production_execution_checklist.md` |
+| human signoff packet | prepared, pending | `docs/archive/experiments_ai_crm_next/docs/batch_1_media_readonly_production_canary_signoff_packet.md` |
+| production execution checklist | prepared, manual only | `docs/archive/experiments_ai_crm_next/docs/batch_1_media_readonly_production_execution_checklist.md` |
 
 ## D. Safety Status
 
@@ -74,7 +74,7 @@ Human operators, not Codex, should:
 1. Choose the approved execution window.
 2. Confirm the rollback owner is online.
 3. Set the approved readonly route flag through the approved production change workflow.
-4. Execute `experiments/ai_crm_next/docs/batch_1_media_readonly_production_execution_checklist.md`.
+4. Execute `docs/archive/experiments_ai_crm_next/docs/batch_1_media_readonly_production_execution_checklist.md`.
 5. Observe route status, latency, logs, and side-effect safety.
 6. Keep rollback ready with `AICRM_NEXT_ROUTE_MEDIA_READONLY=false`.
 7. Record canary result and attach smoke, logs, and operator observations.

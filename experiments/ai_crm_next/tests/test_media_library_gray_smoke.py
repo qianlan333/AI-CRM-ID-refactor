@@ -4,6 +4,7 @@ from argparse import Namespace
 from pathlib import Path
 
 from tools import media_library_gray_smoke as gray_smoke
+from tools.doc_paths import read_experiment_doc
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
@@ -103,7 +104,7 @@ def test_route_cutover_manifest_includes_all_media_routes() -> None:
 
 
 def test_gray_release_plan_does_not_mark_production_ready() -> None:
-    text = (PROJECT_ROOT / "docs" / "media_library_gray_release_plan.md").read_text(encoding="utf-8")
+    text = read_experiment_doc("media_library_gray_release_plan.md")
     assert "production_ready |" not in text
     assert "status: production_ready" not in text
     assert "not ready" in text

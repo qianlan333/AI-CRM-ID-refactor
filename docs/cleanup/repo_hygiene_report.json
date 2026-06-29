@@ -1,10 +1,10 @@
 {
   "version": "1",
   "root": ".",
-  "generated_at": "2026-06-29T02:36:38Z",
+  "generated_at": "2026-06-29T02:50:26Z",
   "summary": {
     "issue_count": 0,
-    "markdown_files_scanned": 234,
+    "markdown_files_scanned": 181,
     "issues_by_category": {},
     "issues_by_severity": {}
   },

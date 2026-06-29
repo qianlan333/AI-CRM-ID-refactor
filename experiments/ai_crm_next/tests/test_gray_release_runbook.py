@@ -4,12 +4,13 @@ import json
 from pathlib import Path
 
 from tools import generate_gray_release_report
+from tools.doc_paths import read_experiment_doc
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 
 def _read_doc(name: str) -> str:
-    return (PROJECT_ROOT / "docs" / name).read_text(encoding="utf-8")
+    return read_experiment_doc(name)
 
 
 def _included_section(text: str, heading: str) -> str:

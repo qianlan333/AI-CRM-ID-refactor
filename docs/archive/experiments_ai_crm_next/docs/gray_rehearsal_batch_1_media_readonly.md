@@ -12,7 +12,7 @@ This document records a local/test route-level gray rehearsal. It is not a produ
 | timestamp | 2026-05-20 18:50:47 CST |
 | old service target | not used in this Next TestClient rehearsal |
 | next target | AI-CRM Next TestClient |
-| signoff template | `experiments/ai_crm_next/docs/gray_release_signoff_template.md` |
+| signoff template | `docs/archive/experiments_ai_crm_next/docs/gray_release_signoff_template.md` |
 | rehearsal markdown report | `/tmp/gray_rehearsal_batch_1_media_readonly.md` |
 | rehearsal json report | `/tmp/gray_rehearsal_batch_1_media_readonly.json` |
 
@@ -54,10 +54,10 @@ Excluded routes:
 
 | check | result | notes |
 | --- | --- | --- |
-| route-level runbook available | PASS | `experiments/ai_crm_next/docs/route_level_gray_release_runbook.md` |
+| route-level runbook available | PASS | `docs/archive/experiments_ai_crm_next/docs/route_level_gray_release_runbook.md` |
 | proxy template pseudo-only | PASS | `experiments/ai_crm_next/docs/route_level_proxy_template.md` |
-| signoff template available | PASS | `experiments/ai_crm_next/docs/gray_release_signoff_template.md` |
-| acceptance checklist available | PASS | `experiments/ai_crm_next/docs/gray_release_acceptance_checklist.md` |
+| signoff template available | PASS | `docs/archive/experiments_ai_crm_next/docs/gray_release_signoff_template.md` |
+| acceptance checklist available | PASS | `docs/archive/experiments_ai_crm_next/docs/gray_release_acceptance_checklist.md` |
 | frontend screenshot baseline | PASS | `historical removed reference (route_status.json)`, 14 routes passed, 14 PNG screenshots generated |
 
 ## Smoke Results

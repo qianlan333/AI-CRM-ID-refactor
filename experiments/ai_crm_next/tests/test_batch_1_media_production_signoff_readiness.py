@@ -5,12 +5,13 @@ from argparse import Namespace
 from pathlib import Path
 
 from tools import check_batch_1_media_production_signoff_readiness as checker
+from tools.doc_paths import experiment_doc_path, read_experiment_doc
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 
 def _read_doc(name: str) -> str:
-    return (PROJECT_ROOT / "docs" / name).read_text(encoding="utf-8")
+    return read_experiment_doc(name)
 
 
 def _write_json(path: Path, payload: dict) -> None:
@@ -129,7 +130,7 @@ AICRM_NEXT_EXTERNAL_WECOM_MEDIA=false
 
 
 def test_signoff_packet_exists() -> None:
-    assert (PROJECT_ROOT / "docs" / "batch_1_media_readonly_production_canary_signoff_packet.md").exists()
+    assert experiment_doc_path("batch_1_media_readonly_production_canary_signoff_packet.md").exists()
 
 
 def test_signoff_packet_includes_target_routes() -> None:

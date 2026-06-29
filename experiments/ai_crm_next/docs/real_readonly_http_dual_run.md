@@ -132,7 +132,7 @@ Proceed to route-level frontend smoke / screenshot baseline. Keep old Flask onli
 
 Customer Read Model readonly gray-release preparation now has dedicated planning and tooling in:
 
-- `experiments/ai_crm_next/docs/customer_read_model_gray_release_plan.md`
+- `docs/archive/experiments_ai_crm_next/docs/customer_read_model_gray_release_plan.md`
 - `experiments/ai_crm_next/docs/customer_read_model_route_cutover_manifest.md`
 - `experiments/ai_crm_next/docs/customer_read_model_sample_data_checklist.md`
 - `experiments/ai_crm_next/tools/customer_read_model_gray_smoke.py`
@@ -195,7 +195,7 @@ Conclusion: the customer detail, timeline, and recent-message routes now have lo
 
 User Ops readonly gray-release preparation now has dedicated planning and tooling in:
 
-- `experiments/ai_crm_next/docs/user_ops_readonly_gray_release_plan.md`
+- `docs/archive/experiments_ai_crm_next/docs/user_ops_readonly_gray_release_plan.md`
 - `experiments/ai_crm_next/docs/user_ops_readonly_route_cutover_manifest.md`
 - `experiments/ai_crm_next/docs/user_ops_readonly_sample_and_drift_checklist.md`
 - `experiments/ai_crm_next/tools/user_ops_readonly_gray_smoke.py`

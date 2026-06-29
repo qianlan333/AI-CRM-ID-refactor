@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from tools import questionnaire_readonly_gray_smoke as gray_smoke
+from tools.doc_paths import read_experiment_doc
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
@@ -202,7 +203,7 @@ def test_route_cutover_manifest_includes_readonly_and_write_external_routes() ->
 
 
 def test_gray_release_plan_does_not_mark_production_ready() -> None:
-    text = (PROJECT_ROOT / "docs" / "questionnaire_readonly_gray_release_plan.md").read_text(encoding="utf-8")
+    text = read_experiment_doc("questionnaire_readonly_gray_release_plan.md")
     assert "status: production_ready" not in text
     assert "production_ready |" not in text
     assert "not ready" in text

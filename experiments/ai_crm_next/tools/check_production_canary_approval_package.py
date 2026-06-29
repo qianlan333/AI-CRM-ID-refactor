@@ -8,6 +8,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from tools.doc_paths import experiment_doc_path
+
 Json = dict[str, Any]
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -15,27 +17,27 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 KNOWN_BATCHES: dict[str, Json] = {
     "media_readonly": {
         "readonly": True,
-        "signoff": "docs/batch_1_media_readonly_canary_signoff.md",
+        "signoff": "docs/archive/experiments_ai_crm_next/docs/batch_1_media_readonly_canary_signoff.md",
         "rollback_flag": "AICRM_NEXT_ROUTE_MEDIA_READONLY=false",
     },
     "product_readonly": {
         "readonly": True,
-        "signoff": "docs/batch_2_product_readonly_canary_signoff.md",
+        "signoff": "docs/archive/experiments_ai_crm_next/docs/batch_2_product_readonly_canary_signoff.md",
         "rollback_flag": "AICRM_NEXT_ROUTE_PRODUCT_READONLY=false",
     },
     "customer_readonly": {
         "readonly": True,
-        "signoff": "docs/batch_3_customer_readonly_canary_signoff.md",
+        "signoff": "docs/archive/experiments_ai_crm_next/docs/batch_3_customer_readonly_canary_signoff.md",
         "rollback_flag": "AICRM_NEXT_ROUTE_CUSTOMER_READONLY=false",
     },
     "user_ops_readonly": {
         "readonly": True,
-        "signoff": "docs/batch_4_user_ops_readonly_canary_signoff.md",
+        "signoff": "docs/archive/experiments_ai_crm_next/docs/batch_4_user_ops_readonly_canary_signoff.md",
         "rollback_flag": "AICRM_NEXT_ROUTE_USER_OPS_READONLY=false",
     },
     "questionnaire_readonly": {
         "readonly": True,
-        "signoff": "docs/batch_5_questionnaire_readonly_canary_signoff.md",
+        "signoff": "docs/archive/experiments_ai_crm_next/docs/batch_5_questionnaire_readonly_canary_signoff.md",
         "rollback_flag": "AICRM_NEXT_ROUTE_QUESTIONNAIRE_READONLY=false",
     },
 }
@@ -186,7 +188,7 @@ def build_report(args: argparse.Namespace) -> Json:
         blockers.append({"reason": "rollback_instruction_missing", "result": rollback})
 
     signoff_name = str(batch_meta.get("signoff") or "")
-    signoff_path = PROJECT_ROOT / signoff_name if signoff_name else None
+    signoff_path = experiment_doc_path(signoff_name) if signoff_name else None
     signoff = _signoff_check(signoff_path)
     if not signoff["ok"]:
         blockers.append({"reason": "signoff_template_not_ready", "result": signoff})

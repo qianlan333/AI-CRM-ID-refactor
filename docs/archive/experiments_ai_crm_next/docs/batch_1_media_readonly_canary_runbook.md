@@ -33,7 +33,7 @@ This runbook is for staging or production-like canary preparation. It is not a p
    - `historical removed reference (route_status.json)`
 7. Confirm Batch 1 rehearsal report.
    - `/tmp/gray_rehearsal_batch_1_media_readonly_audit.json`
-   - `experiments/ai_crm_next/docs/gray_rehearsal_batch_1_media_readonly.md`
+   - `docs/archive/experiments_ai_crm_next/docs/gray_rehearsal_batch_1_media_readonly.md`
 8. Confirm dry-run route flags.
    - `AICRM_NEXT_ROUTE_MEDIA_READONLY=true`
    - `AICRM_NEXT_ROUTE_MEDIA_WRITES=false`

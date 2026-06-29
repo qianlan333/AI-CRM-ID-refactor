@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from tools import customer_read_model_gray_smoke as gray_smoke
+from tools.doc_paths import read_experiment_doc
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
@@ -242,7 +243,7 @@ def test_route_cutover_manifest_includes_all_customer_routes() -> None:
 
 
 def test_gray_release_plan_does_not_mark_production_ready() -> None:
-    text = (PROJECT_ROOT / "docs" / "customer_read_model_gray_release_plan.md").read_text(encoding="utf-8")
+    text = read_experiment_doc("customer_read_model_gray_release_plan.md")
     assert "production_ready |" not in text
     assert "status: production_ready" not in text
     assert "readonly gray release preparation only" in text
