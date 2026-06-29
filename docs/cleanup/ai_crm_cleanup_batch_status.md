@@ -13,7 +13,7 @@ changes, production access, or external calls.
 |---|---|---|---|
 | Batch 0 repo hygiene audit | done | `tools/audit_repo_hygiene.py`, `tests/test_repo_hygiene_audit.py`, `docs/cleanup/repo_hygiene_report.md`, `docs/cleanup/repo_hygiene_report.json` | Keep report-only; do not promote findings to CI fail without explicit approval. |
 | Batch 1 agent entry docs and safety wording | done | `AGENTS.md`, `CLAUDE.md`, `README.md`, `docs/development/ai_crm_next_architecture_skill.md`, `skills/ai-crm-next-architecture/SKILL.md` | Keep production connection details outside the public repo entry docs. |
-| Batch 2 lint and hygiene guard expansion | done | `scripts/run_lint.py`, `docs/cleanup/route_inventory_consolidation_inventory.md`, `docs/cleanup/route_inventory_consolidation_inventory.json`, `tools/report_route_inventory_consolidation.py` | Continue with report-backed cleanup, not full Ruff style expansion. |
+| Batch 2 lint and hygiene guard expansion | done | `scripts/run_lint.py`, `docs/cleanup/route_inventory_consolidation_inventory.md`, `docs/cleanup/route_inventory_consolidation_inventory.json`, `tools/report_route_inventory_consolidation.py`, `docs/archive/route_inventory/` | Continue with report-backed cleanup; the first 5 manifest-derivable route inventories are archived while tests still validate their closeout evidence. |
 | Batch 3 experiment workspace inventory | done | `tools/report_experiments_inventory.py`, `tests/test_experiments_inventory_report.py`, `docs/cleanup/experiments_ai_crm_next_inventory.md`, `docs/cleanup/experiments_ai_crm_next_inventory.json`, `tests/test_retired_automation_artifacts_cleanup.py`, `docs/archive/experiments_ai_crm_next/retired_tools.md`, `docs/archive/experiments_ai_crm_next/docs/remaining_work_queue.md`, `docs/archive/experiments_ai_crm_next/docs/frontend_screenshot_baseline.md`, `docs/archive/experiments_ai_crm_next/docs/real_readonly_http_dual_run.md`, `docs/archive/experiments_ai_crm_next/docs/module_status_matrix.md`, `docs/archive/experiments_ai_crm_next/docs/frontend_route_manifest.md`, `docs/archive/experiments_ai_crm_next/docs/customer_read_model_route_cutover_manifest.md`, `docs/archive/experiments_ai_crm_next/workspace/` | Canary/readiness helpers, local evidence helpers, paired tests, historical planning/status docs, route/parity strategy docs, and the final experiment-local workspace scaffold are archived; active `experiments/ai_crm_next` is now a README stub watched by the duplicate-source guard. |
 | Batch 4 Flask retirement | done | `tests/test_shared_flask_config_retirement.py`, `tests/test_wechat_oauth_client.py` | Keep `from flask`, `import flask`, and `current_app` out of runtime code. |
 | Batch 5 fixture reset registry | done | `aicrm_next/fixture_reset_registry.py`, `tests/test_fixture_reset_registry.py` | Preserve reset order and keep router registration behavior unchanged. |
@@ -45,6 +45,7 @@ python3 tools/report_route_inventory_consolidation.py \
 ## Recommended Next Batch
 
 Do not reintroduce an active `experiments/ai_crm_next` test/runtime workspace.
-The next safe batch is archive-retention cleanup only: review whether generated
-or duplicate evidence under `docs/archive/experiments_ai_crm_next/` can be
-consolidated, while keeping the README stub and duplicate-source guard in place.
+The next safe batches are archive-retention cleanup only: review whether
+generated or duplicate evidence under `docs/archive/experiments_ai_crm_next/`
+can be consolidated, and continue route-inventory consolidation only for files
+that the generated report proves are manifest-derivable.

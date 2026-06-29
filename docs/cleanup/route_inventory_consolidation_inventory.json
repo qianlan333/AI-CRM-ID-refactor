@@ -1,20 +1,23 @@
 {
   "version": "1",
   "root": ".",
-  "generated_at": "2026-06-29T03:30:00Z",
+  "generated_at": "2026-06-29T08:55:00Z",
   "summary": {
     "manifest_route_count": 550,
     "inventory_file_count": 24,
+    "active_inventory_file_count": 19,
+    "archived_inventory_file_count": 5,
     "manifest_derivable_route_count": 30,
     "classifications": {
       "retain_closeout_evidence": 17,
-      "mostly_manifest_derivable": 5,
-      "needs_manual_review": 2
+      "needs_manual_review": 2,
+      "mostly_manifest_derivable": 5
     }
   },
   "inventories": [
     {
       "path": "docs/architecture/admin_auth_login_route_inventory.md",
+      "location": "active",
       "extracted_route_count": 8,
       "exact_manifest_match_count": 5,
       "wildcard_or_family_count": 3,
@@ -25,6 +28,7 @@
     },
     {
       "path": "docs/architecture/auth_wecom_route_inventory.md",
+      "location": "active",
       "extracted_route_count": 9,
       "exact_manifest_match_count": 7,
       "wildcard_or_family_count": 2,
@@ -35,6 +39,7 @@
     },
     {
       "path": "docs/architecture/checkout_orders_route_inventory.md",
+      "location": "active",
       "extracted_route_count": 21,
       "exact_manifest_match_count": 8,
       "wildcard_or_family_count": 8,
@@ -45,6 +50,7 @@
     },
     {
       "path": "docs/architecture/cloud_orchestrator_campaign_write_route_inventory.md",
+      "location": "active",
       "extracted_route_count": 18,
       "exact_manifest_match_count": 11,
       "wildcard_or_family_count": 1,
@@ -55,6 +61,7 @@
     },
     {
       "path": "docs/architecture/cloud_orchestrator_campaigns_route_inventory.md",
+      "location": "active",
       "extracted_route_count": 16,
       "exact_manifest_match_count": 12,
       "wildcard_or_family_count": 3,
@@ -64,7 +71,162 @@
       "manifest_derivable_routes": []
     },
     {
-      "path": "docs/architecture/cloud_orchestrator_media_upload_route_inventory.md",
+      "path": "docs/architecture/customer_automation_webhook_route_inventory.md",
+      "location": "active",
+      "extracted_route_count": 0,
+      "exact_manifest_match_count": 0,
+      "wildcard_or_family_count": 0,
+      "test_reference_count": 0,
+      "classification": "needs_manual_review",
+      "reason": "No route-like backtick paths were extracted.",
+      "manifest_derivable_routes": []
+    },
+    {
+      "path": "docs/architecture/hxc_dashboard_route_inventory.md",
+      "location": "active",
+      "extracted_route_count": 13,
+      "exact_manifest_match_count": 10,
+      "wildcard_or_family_count": 1,
+      "test_reference_count": 0,
+      "classification": "retain_closeout_evidence",
+      "reason": "Contains wildcard/family refs or route refs not exactly covered by the manifest.",
+      "manifest_derivable_routes": []
+    },
+    {
+      "path": "docs/architecture/media_library_route_inventory.md",
+      "location": "active",
+      "extracted_route_count": 31,
+      "exact_manifest_match_count": 21,
+      "wildcard_or_family_count": 4,
+      "test_reference_count": 12,
+      "classification": "retain_closeout_evidence",
+      "reason": "Contains wildcard/family refs or route refs not exactly covered by the manifest.",
+      "manifest_derivable_routes": []
+    },
+    {
+      "path": "docs/architecture/messages_route_inventory.md",
+      "location": "active",
+      "extracted_route_count": 12,
+      "exact_manifest_match_count": 10,
+      "wildcard_or_family_count": 1,
+      "test_reference_count": 4,
+      "classification": "retain_closeout_evidence",
+      "reason": "Contains wildcard/family refs or route refs not exactly covered by the manifest.",
+      "manifest_derivable_routes": []
+    },
+    {
+      "path": "docs/architecture/provider_payment_notify_route_inventory.md",
+      "location": "active",
+      "extracted_route_count": 15,
+      "exact_manifest_match_count": 5,
+      "wildcard_or_family_count": 6,
+      "test_reference_count": 0,
+      "classification": "retain_closeout_evidence",
+      "reason": "Contains wildcard/family refs or route refs not exactly covered by the manifest.",
+      "manifest_derivable_routes": []
+    },
+    {
+      "path": "docs/architecture/public_product_pay_route_inventory.md",
+      "location": "active",
+      "extracted_route_count": 19,
+      "exact_manifest_match_count": 0,
+      "wildcard_or_family_count": 11,
+      "test_reference_count": 0,
+      "classification": "retain_closeout_evidence",
+      "reason": "Contains wildcard/family refs or route refs not exactly covered by the manifest.",
+      "manifest_derivable_routes": []
+    },
+    {
+      "path": "docs/architecture/questionnaire_admin_read_route_inventory.md",
+      "location": "active",
+      "extracted_route_count": 17,
+      "exact_manifest_match_count": 14,
+      "wildcard_or_family_count": 2,
+      "test_reference_count": 3,
+      "classification": "retain_closeout_evidence",
+      "reason": "Contains wildcard/family refs or route refs not exactly covered by the manifest.",
+      "manifest_derivable_routes": []
+    },
+    {
+      "path": "docs/architecture/questionnaire_admin_write_route_inventory.md",
+      "location": "active",
+      "extracted_route_count": 10,
+      "exact_manifest_match_count": 8,
+      "wildcard_or_family_count": 2,
+      "test_reference_count": 0,
+      "classification": "retain_closeout_evidence",
+      "reason": "Contains wildcard/family refs or route refs not exactly covered by the manifest.",
+      "manifest_derivable_routes": []
+    },
+    {
+      "path": "docs/architecture/questionnaire_h5_submit_route_inventory.md",
+      "location": "active",
+      "extracted_route_count": 5,
+      "exact_manifest_match_count": 4,
+      "wildcard_or_family_count": 1,
+      "test_reference_count": 5,
+      "classification": "retain_closeout_evidence",
+      "reason": "Contains wildcard/family refs or route refs not exactly covered by the manifest.",
+      "manifest_derivable_routes": []
+    },
+    {
+      "path": "docs/architecture/questionnaire_oauth_route_inventory.md",
+      "location": "active",
+      "extracted_route_count": 7,
+      "exact_manifest_match_count": 3,
+      "wildcard_or_family_count": 3,
+      "test_reference_count": 6,
+      "classification": "retain_closeout_evidence",
+      "reason": "Contains wildcard/family refs or route refs not exactly covered by the manifest.",
+      "manifest_derivable_routes": []
+    },
+    {
+      "path": "docs/architecture/sidebar_readonly_route_inventory.md",
+      "location": "active",
+      "extracted_route_count": 16,
+      "exact_manifest_match_count": 14,
+      "wildcard_or_family_count": 2,
+      "test_reference_count": 1,
+      "classification": "retain_closeout_evidence",
+      "reason": "Contains wildcard/family refs or route refs not exactly covered by the manifest.",
+      "manifest_derivable_routes": []
+    },
+    {
+      "path": "docs/architecture/wecom_tag_live_mutation_route_inventory.md",
+      "location": "active",
+      "extracted_route_count": 0,
+      "exact_manifest_match_count": 0,
+      "wildcard_or_family_count": 0,
+      "test_reference_count": 4,
+      "classification": "needs_manual_review",
+      "reason": "No route-like backtick paths were extracted.",
+      "manifest_derivable_routes": []
+    },
+    {
+      "path": "docs/architecture/wecom_tag_read_route_inventory.md",
+      "location": "active",
+      "extracted_route_count": 18,
+      "exact_manifest_match_count": 10,
+      "wildcard_or_family_count": 2,
+      "test_reference_count": 6,
+      "classification": "retain_closeout_evidence",
+      "reason": "Contains wildcard/family refs or route refs not exactly covered by the manifest.",
+      "manifest_derivable_routes": []
+    },
+    {
+      "path": "docs/architecture/wecom_tag_write_route_inventory.md",
+      "location": "active",
+      "extracted_route_count": 12,
+      "exact_manifest_match_count": 7,
+      "wildcard_or_family_count": 4,
+      "test_reference_count": 0,
+      "classification": "retain_closeout_evidence",
+      "reason": "Contains wildcard/family refs or route refs not exactly covered by the manifest.",
+      "manifest_derivable_routes": []
+    },
+    {
+      "path": "docs/archive/route_inventory/cloud_orchestrator_media_upload_route_inventory.md",
+      "location": "archived",
       "extracted_route_count": 4,
       "exact_manifest_match_count": 4,
       "wildcard_or_family_count": 0,
@@ -131,7 +293,8 @@
       ]
     },
     {
-      "path": "docs/architecture/cloud_orchestrator_run_due_route_inventory.md",
+      "path": "docs/archive/route_inventory/cloud_orchestrator_run_due_route_inventory.md",
+      "location": "archived",
       "extracted_route_count": 2,
       "exact_manifest_match_count": 2,
       "wildcard_or_family_count": 0,
@@ -170,107 +333,8 @@
       ]
     },
     {
-      "path": "docs/architecture/customer_automation_webhook_route_inventory.md",
-      "extracted_route_count": 0,
-      "exact_manifest_match_count": 0,
-      "wildcard_or_family_count": 0,
-      "test_reference_count": 0,
-      "classification": "needs_manual_review",
-      "reason": "No route-like backtick paths were extracted.",
-      "manifest_derivable_routes": []
-    },
-    {
-      "path": "docs/architecture/hxc_dashboard_route_inventory.md",
-      "extracted_route_count": 13,
-      "exact_manifest_match_count": 10,
-      "wildcard_or_family_count": 1,
-      "test_reference_count": 0,
-      "classification": "retain_closeout_evidence",
-      "reason": "Contains wildcard/family refs or route refs not exactly covered by the manifest.",
-      "manifest_derivable_routes": []
-    },
-    {
-      "path": "docs/architecture/media_library_route_inventory.md",
-      "extracted_route_count": 31,
-      "exact_manifest_match_count": 21,
-      "wildcard_or_family_count": 4,
-      "test_reference_count": 12,
-      "classification": "retain_closeout_evidence",
-      "reason": "Contains wildcard/family refs or route refs not exactly covered by the manifest.",
-      "manifest_derivable_routes": []
-    },
-    {
-      "path": "docs/architecture/messages_route_inventory.md",
-      "extracted_route_count": 12,
-      "exact_manifest_match_count": 10,
-      "wildcard_or_family_count": 1,
-      "test_reference_count": 4,
-      "classification": "retain_closeout_evidence",
-      "reason": "Contains wildcard/family refs or route refs not exactly covered by the manifest.",
-      "manifest_derivable_routes": []
-    },
-    {
-      "path": "docs/architecture/provider_payment_notify_route_inventory.md",
-      "extracted_route_count": 15,
-      "exact_manifest_match_count": 5,
-      "wildcard_or_family_count": 6,
-      "test_reference_count": 0,
-      "classification": "retain_closeout_evidence",
-      "reason": "Contains wildcard/family refs or route refs not exactly covered by the manifest.",
-      "manifest_derivable_routes": []
-    },
-    {
-      "path": "docs/architecture/public_product_pay_route_inventory.md",
-      "extracted_route_count": 19,
-      "exact_manifest_match_count": 0,
-      "wildcard_or_family_count": 11,
-      "test_reference_count": 0,
-      "classification": "retain_closeout_evidence",
-      "reason": "Contains wildcard/family refs or route refs not exactly covered by the manifest.",
-      "manifest_derivable_routes": []
-    },
-    {
-      "path": "docs/architecture/questionnaire_admin_read_route_inventory.md",
-      "extracted_route_count": 17,
-      "exact_manifest_match_count": 14,
-      "wildcard_or_family_count": 2,
-      "test_reference_count": 3,
-      "classification": "retain_closeout_evidence",
-      "reason": "Contains wildcard/family refs or route refs not exactly covered by the manifest.",
-      "manifest_derivable_routes": []
-    },
-    {
-      "path": "docs/architecture/questionnaire_admin_write_route_inventory.md",
-      "extracted_route_count": 10,
-      "exact_manifest_match_count": 8,
-      "wildcard_or_family_count": 2,
-      "test_reference_count": 0,
-      "classification": "retain_closeout_evidence",
-      "reason": "Contains wildcard/family refs or route refs not exactly covered by the manifest.",
-      "manifest_derivable_routes": []
-    },
-    {
-      "path": "docs/architecture/questionnaire_h5_submit_route_inventory.md",
-      "extracted_route_count": 5,
-      "exact_manifest_match_count": 4,
-      "wildcard_or_family_count": 1,
-      "test_reference_count": 5,
-      "classification": "retain_closeout_evidence",
-      "reason": "Contains wildcard/family refs or route refs not exactly covered by the manifest.",
-      "manifest_derivable_routes": []
-    },
-    {
-      "path": "docs/architecture/questionnaire_oauth_route_inventory.md",
-      "extracted_route_count": 7,
-      "exact_manifest_match_count": 3,
-      "wildcard_or_family_count": 3,
-      "test_reference_count": 6,
-      "classification": "retain_closeout_evidence",
-      "reason": "Contains wildcard/family refs or route refs not exactly covered by the manifest.",
-      "manifest_derivable_routes": []
-    },
-    {
-      "path": "docs/architecture/sidebar_jssdk_route_inventory.md",
+      "path": "docs/archive/route_inventory/sidebar_jssdk_route_inventory.md",
+      "location": "archived",
       "extracted_route_count": 2,
       "exact_manifest_match_count": 2,
       "wildcard_or_family_count": 0,
@@ -309,17 +373,8 @@
       ]
     },
     {
-      "path": "docs/architecture/sidebar_readonly_route_inventory.md",
-      "extracted_route_count": 16,
-      "exact_manifest_match_count": 14,
-      "wildcard_or_family_count": 2,
-      "test_reference_count": 1,
-      "classification": "retain_closeout_evidence",
-      "reason": "Contains wildcard/family refs or route refs not exactly covered by the manifest.",
-      "manifest_derivable_routes": []
-    },
-    {
-      "path": "docs/architecture/sidebar_write_route_inventory.md",
+      "path": "docs/archive/route_inventory/sidebar_write_route_inventory.md",
+      "location": "archived",
       "extracted_route_count": 9,
       "exact_manifest_match_count": 9,
       "wildcard_or_family_count": 0,
@@ -456,7 +511,8 @@
       ]
     },
     {
-      "path": "docs/architecture/user_ops_route_inventory.md",
+      "path": "docs/archive/route_inventory/user_ops_route_inventory.md",
+      "location": "archived",
       "extracted_route_count": 13,
       "exact_manifest_match_count": 13,
       "wildcard_or_family_count": 0,
@@ -647,36 +703,6 @@
           "rollback": "previous_release"
         }
       ]
-    },
-    {
-      "path": "docs/architecture/wecom_tag_live_mutation_route_inventory.md",
-      "extracted_route_count": 0,
-      "exact_manifest_match_count": 0,
-      "wildcard_or_family_count": 0,
-      "test_reference_count": 4,
-      "classification": "needs_manual_review",
-      "reason": "No route-like backtick paths were extracted.",
-      "manifest_derivable_routes": []
-    },
-    {
-      "path": "docs/architecture/wecom_tag_read_route_inventory.md",
-      "extracted_route_count": 18,
-      "exact_manifest_match_count": 10,
-      "wildcard_or_family_count": 2,
-      "test_reference_count": 6,
-      "classification": "retain_closeout_evidence",
-      "reason": "Contains wildcard/family refs or route refs not exactly covered by the manifest.",
-      "manifest_derivable_routes": []
-    },
-    {
-      "path": "docs/architecture/wecom_tag_write_route_inventory.md",
-      "extracted_route_count": 12,
-      "exact_manifest_match_count": 7,
-      "wildcard_or_family_count": 4,
-      "test_reference_count": 0,
-      "classification": "retain_closeout_evidence",
-      "reason": "Contains wildcard/family refs or route refs not exactly covered by the manifest.",
-      "manifest_derivable_routes": []
     }
   ]
 }

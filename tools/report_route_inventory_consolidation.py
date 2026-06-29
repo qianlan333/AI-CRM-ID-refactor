@@ -13,6 +13,7 @@ import yaml
 ROOT = Path(__file__).resolve().parents[1]
 MANIFEST_PATH = ROOT / "docs" / "architecture" / "route_ownership_manifest.yml"
 INVENTORY_DIR = ROOT / "docs" / "architecture"
+ARCHIVED_INVENTORY_DIR = ROOT / "docs" / "archive" / "route_inventory"
 REPORT_VERSION = "1"
 
 ROUTE_REF_RE = re.compile(r"`(/[^`\s|]+)`")
@@ -22,6 +23,7 @@ TEST_REF_RE = re.compile(r"tests/[^`) ,|]+")
 @dataclass(frozen=True)
 class RouteInventoryRecord:
     path: str
+    location: str
     extracted_route_count: int
     exact_manifest_match_count: int
     wildcard_or_family_count: int
@@ -33,6 +35,7 @@ class RouteInventoryRecord:
     def as_dict(self) -> dict[str, object]:
         return {
             "path": self.path,
+            "location": self.location,
             "extracted_route_count": self.extracted_route_count,
             "exact_manifest_match_count": self.exact_manifest_match_count,
             "wildcard_or_family_count": self.wildcard_or_family_count,
@@ -47,14 +50,18 @@ def build_report(root: Path = ROOT, *, generated_at: str | None = None) -> dict[
     root = root.resolve()
     manifest_routes = _manifest_routes(root / "docs" / "architecture" / "route_ownership_manifest.yml")
     manifest_paths = set(manifest_routes)
+    active_paths = sorted((root / "docs" / "architecture").glob("*route_inventory.md"))
+    archived_paths = sorted((root / "docs" / "archive" / "route_inventory").glob("*route_inventory.md"))
     records = [
         _inventory_record(path, root=root, manifest_routes=manifest_routes, manifest_paths=manifest_paths)
-        for path in sorted((root / "docs" / "architecture").glob("*route_inventory.md"))
+        for path in [*active_paths, *archived_paths]
     ]
     derivable_route_count = sum(len(record.manifest_derivable_routes) for record in records if record.classification == "mostly_manifest_derivable")
     summary: dict[str, Any] = {
         "manifest_route_count": len(manifest_paths),
         "inventory_file_count": len(records),
+        "active_inventory_file_count": len(active_paths),
+        "archived_inventory_file_count": len(archived_paths),
         "manifest_derivable_route_count": derivable_route_count,
         "classifications": {},
     }
@@ -77,10 +84,11 @@ def render_markdown(report: dict[str, object]) -> str:
         "",
         f"Generated: {report['generated_at']}",
         "",
-        "This report is generated from `docs/architecture/route_ownership_manifest.yml`",
-        "and `docs/architecture/*route_inventory.md` by",
+        "This report is generated from `docs/architecture/route_ownership_manifest.yml`,",
+        "`docs/architecture/*route_inventory.md`, and",
+        "`docs/archive/route_inventory/*route_inventory.md` by",
         "`tools/report_route_inventory_consolidation.py`. It does not delete, move,",
-        "or deprecate any route inventory file.",
+        "or deprecate any route inventory file by itself.",
         "",
         "## Current Sources",
         "",
@@ -90,7 +98,9 @@ def render_markdown(report: dict[str, object]) -> str:
         "- Manifest regression test: `tests/test_route_ownership_manifest.py`",
         "",
         f"The manifest currently covers {summary['manifest_route_count']} FastAPI routes.",
-        f"The hand-written inventory set currently contains {summary['inventory_file_count']} `*_route_inventory.md` files.",
+        f"The active hand-written inventory set currently contains {summary['active_inventory_file_count']} `*_route_inventory.md` files.",
+        f"The archived manifest-derivable inventory set currently contains {summary['archived_inventory_file_count']} `*_route_inventory.md` files.",
+        f"The total inventory evidence set currently contains {summary['inventory_file_count']} `*_route_inventory.md` files.",
         f"{summary['manifest_derivable_route_count']} exact route rows can currently be regenerated from the manifest for `mostly_manifest_derivable` inventories.",
         "",
         "## Classification Summary",
@@ -103,11 +113,12 @@ def render_markdown(report: dict[str, object]) -> str:
         subset = [record for record in records if record["classification"] == classification]
         if not subset:
             continue
-        lines.extend([f"### {classification}", "", "| Inventory | Routes | Exact manifest matches | Wildcard/family refs | Test refs | Reason |", "| --- | ---: | ---: | ---: | ---: | --- |"])
+        lines.extend([f"### {classification}", "", "| Inventory | Location | Routes | Exact manifest matches | Wildcard/family refs | Test refs | Reason |", "| --- | --- | ---: | ---: | ---: | ---: | --- |"])
         for record in subset:
             lines.append(
-                "| `{path}` | {routes} | {exact} | {wildcard} | {tests} | {reason} |".format(
+                "| `{path}` | `{location}` | {routes} | {exact} | {wildcard} | {tests} | {reason} |".format(
                     path=record["path"],
+                    location=record["location"],
                     routes=record["extracted_route_count"],
                     exact=record["exact_manifest_match_count"],
                     wildcard=record["wildcard_or_family_count"],
@@ -151,15 +162,15 @@ def render_markdown(report: dict[str, object]) -> str:
             "",
             "1. Keep all existing route inventory tests in place.",
             "2. Use this report to compare generated route/method/owner rows against the",
-            "   hand-written route inventory files.",
-            "3. Archive only rows proven redundant; keep closeout evidence sections under",
-            "   `docs/reports/evidence/` or a future `docs/archive/route_inventory/`.",
-            "4. Only after a second PR proves parity, replace hand-written route tables with",
-            "   generated output.",
+            "   active and archived hand-written route inventory files.",
+            "3. Keep closeout evidence sections archived under `docs/archive/route_inventory/`",
+            "   once exact route rows are proven redundant with manifest-generated rows.",
+            "4. Do not remove route inventory tests until their assertions are either",
+            "   generated from the manifest or intentionally retained as archive evidence.",
             "",
             "## Non-Goals",
             "",
-            "- Do not delete route inventory docs in this batch.",
+            "- Do not delete route inventory evidence in this batch.",
             "- Do not delete `tests/test_*_route_inventory.py`.",
             "- Do not change route ownership manifest semantics.",
             "- Do not change FastAPI router registration or route behavior.",
@@ -230,6 +241,7 @@ def _inventory_record(path: Path, *, root: Path, manifest_routes: dict[str, dict
     manifest_derivable_routes = [manifest_routes[route] for route in exact_matches] if classification == "mostly_manifest_derivable" else []
     return RouteInventoryRecord(
         path=str(path.relative_to(root)),
+        location="archived" if "docs/archive/route_inventory" in str(path.relative_to(root)) else "active",
         extracted_route_count=len(route_refs),
         exact_manifest_match_count=len(exact_matches),
         wildcard_or_family_count=len(wildcard_refs),

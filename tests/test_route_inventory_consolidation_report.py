@@ -35,11 +35,16 @@ def test_route_inventory_consolidation_report_classifies_inventory_files(tmp_pat
         "| route | note |\n| --- | --- |\n| `/api/items` | exact |\n| `/api/items/*` | family closeout |\n",
     )
     _write(tmp_path / "docs/architecture/narrative_route_inventory.md", "Narrative closeout evidence only.\n")
+    _write(
+        tmp_path / "docs/archive/route_inventory/archived_route_inventory.md",
+        "| route |\n| --- |\n| `/health` |\n",
+    )
 
     report = build_report(tmp_path, generated_at="2026-06-29T00:00:00Z")
 
     records = {record["path"]: record for record in report["inventories"]}
     assert records["docs/architecture/health_route_inventory.md"]["classification"] == "mostly_manifest_derivable"
+    assert records["docs/architecture/health_route_inventory.md"]["location"] == "active"
     assert records["docs/architecture/health_route_inventory.md"]["manifest_derivable_routes"] == [
         {
             "path": "/health",
@@ -54,12 +59,16 @@ def test_route_inventory_consolidation_report_classifies_inventory_files(tmp_pat
             "rollback": "",
         }
     ]
+    assert records["docs/archive/route_inventory/archived_route_inventory.md"]["classification"] == "mostly_manifest_derivable"
+    assert records["docs/archive/route_inventory/archived_route_inventory.md"]["location"] == "archived"
     assert records["docs/architecture/items_route_inventory.md"]["classification"] == "retain_closeout_evidence"
     assert records["docs/architecture/items_route_inventory.md"]["manifest_derivable_routes"] == []
     assert records["docs/architecture/narrative_route_inventory.md"]["classification"] == "needs_manual_review"
     assert report["summary"]["manifest_route_count"] == 2
-    assert report["summary"]["inventory_file_count"] == 3
-    assert report["summary"]["manifest_derivable_route_count"] == 1
+    assert report["summary"]["inventory_file_count"] == 4
+    assert report["summary"]["active_inventory_file_count"] == 3
+    assert report["summary"]["archived_inventory_file_count"] == 1
+    assert report["summary"]["manifest_derivable_route_count"] == 2
 
 
 def test_route_inventory_consolidation_report_writes_markdown_and_json(tmp_path) -> None:
