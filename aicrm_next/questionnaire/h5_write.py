@@ -14,7 +14,7 @@ from aicrm_next.platform_foundation.internal_events.shadow import emit_questionn
 from aicrm_next.platform_foundation.command_bus.models import utcnow_iso
 from aicrm_next.platform_foundation.side_effects import InMemorySideEffectPlanRepository, SideEffectPlan
 from aicrm_next.shared.errors import ContractError, NotFoundError
-from aicrm_next.shared.repository_provider import RepositoryProviderError, blocked_production_payload
+from aicrm_next.shared.repository_provider import RepositoryProviderError
 from aicrm_next.shared.runtime import production_data_ready
 
 from .domain import normalize_questionnaire, score_and_tags, validate_required_answers

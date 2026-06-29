@@ -621,12 +621,12 @@ def _handle_export_download(command: Command) -> dict[str, Any]:
 
 def _mask_submission(row: dict[str, Any], fields: list[str]) -> dict[str, Any]:
     payload: dict[str, Any] = {}
-    for field in fields:
-        value = row.get(field)
-        if field in {"mobile", "external_userid", "openid", "unionid", "respondent_key"} and value:
-            payload[field] = "masked"
+    for field_name in fields:
+        value = row.get(field_name)
+        if field_name in {"mobile", "external_userid", "openid", "unionid", "respondent_key"} and value:
+            payload[field_name] = "masked"
         else:
-            payload[field] = value
+            payload[field_name] = value
     return payload
 
 
@@ -637,12 +637,12 @@ def _export_rows(
     requested_fields: list[str],
 ) -> tuple[list[str], list[dict[str, Any]]]:
     question_headers = _export_question_headers(questionnaire, submissions)
-    requested = [field for field in requested_fields if field and field not in {"matched_by", "answers"}]
+    requested = [field_name for field_name in requested_fields if field_name and field_name not in {"matched_by", "answers"}]
     base_fields = requested or list(_EXPORT_BASE_FIELDS)
-    for field in _EXPORT_BASE_FIELDS:
-        if field not in base_fields and field == "unionid":
+    for field_name in _EXPORT_BASE_FIELDS:
+        if field_name not in base_fields and field_name == "unionid":
             insert_at = base_fields.index("mobile") if "mobile" in base_fields else len(base_fields)
-            base_fields.insert(insert_at, field)
+            base_fields.insert(insert_at, field_name)
     fields = [*base_fields, *[header for _, header in question_headers]]
     rows: list[dict[str, Any]] = []
     for submission in submissions:

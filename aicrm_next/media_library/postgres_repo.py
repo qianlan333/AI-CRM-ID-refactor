@@ -7,7 +7,7 @@ from typing import Any
 
 from aicrm_next.shared.errors import ContractError, NotFoundError
 
-from .repo import MediaLibraryRepository, connect_media_library_db, normalize_tags
+from .repo import connect_media_library_db, normalize_tags
 from .variants import (
     THUMBNAIL_SIZE_TO_VARIANT,
     add_image_variant_urls,

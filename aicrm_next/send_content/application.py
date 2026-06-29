@@ -3,9 +3,9 @@ from __future__ import annotations
 from typing import Any
 
 from aicrm_next.shared.errors import ContractError
-from aicrm_next.shared.repository_provider import RepositoryProviderError, blocked_production_payload
+from aicrm_next.shared.repository_provider import blocked_production_payload
 
-from .dto import MaterialPickerListRequest, SendContentPackage, SendContentPreviewRequest, SendContentValidateRequest
+from .dto import MaterialPickerListRequest, SendContentPackage, SendContentPreviewRequest
 from .repo import SendContentRepository, build_send_content_repository
 
 

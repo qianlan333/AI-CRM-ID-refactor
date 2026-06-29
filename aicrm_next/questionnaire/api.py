@@ -54,7 +54,6 @@ from .application import (
     ListQuestionnaireSubmissionsQuery,
     ListQuestionnairesQuery,
     StartWechatOAuthQuery,
-    build_questionnaire_share_payload,
 )
 from .dto import OAuthCallbackRequest, OAuthStartRequest
 from .oauth import COOKIE_NAME, questionnaire_oauth_state_context

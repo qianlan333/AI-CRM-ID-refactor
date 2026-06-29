@@ -10,7 +10,7 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
 from aicrm_next.shared.db_session import get_engine
-from aicrm_next.shared.errors import ContractError, NotFoundError
+from aicrm_next.shared.errors import ContractError
 from aicrm_next.shared.repository_provider import RepositoryProviderError
 
 

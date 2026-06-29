@@ -131,9 +131,7 @@ def product_not_found_payload(path: Any) -> dict[str, Any]:
 
 def render_product_page(product: dict[str, Any], *, context_token: str = "", context_status: str = "") -> str:
     title = escape(str(product.get("title") or "商品详情"))
-    description = escape(str(product.get("description") or ""))
     cta = escape(str(product.get("buy_button_text") or product.get("cta_text") or "立即报名"))
-    product_code = escape(str(product.get("product_code") or ""))
     checkout_url = escape(_append_query(f"/pay/{product.get('product_code') or ''}", "ctx", context_token) if context_token else f"/pay/{product.get('product_code') or ''}", quote=True)
     media = _render_detail_media(product)
     return f"""<!doctype html>

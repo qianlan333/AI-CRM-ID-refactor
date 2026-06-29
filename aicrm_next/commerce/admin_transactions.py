@@ -6,6 +6,7 @@ import json
 import os
 import secrets
 from datetime import datetime, timedelta
+from importlib.util import find_spec
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -81,6 +82,15 @@ def _database_url() -> str:
     return str(os.getenv("DATABASE_URL", "") or "").strip()
 
 
+def _psycopg_available() -> bool:
+    return find_spec("psycopg") is not None
+
+
+def _require_psycopg(message: str) -> None:
+    if not _psycopg_available():
+        raise RuntimeError(message)
+
+
 def _format_time(value: Any) -> str:
     if isinstance(value, datetime):
         source = value
@@ -140,8 +150,6 @@ def mark_wechat_refund_request_failed(
     if not refund_no:
         return {"ok": False, "reason": "out_refund_no_required"}
     try:
-        import psycopg
-        from psycopg.rows import dict_row
         from psycopg.types.json import Jsonb
     except ModuleNotFoundError as exc:
         raise RuntimeError("psycopg is required for production refund failure sync") from exc
@@ -331,11 +339,7 @@ def _postgres_order_select() -> str:
 
 
 def _postgres_orders(filters: dict[str, str], *, limit: int, offset: int) -> dict[str, Any]:
-    try:
-        import psycopg
-        from psycopg.rows import dict_row
-    except ModuleNotFoundError as exc:
-        raise RuntimeError("psycopg is required for production transaction admin") from exc
+    _require_psycopg("psycopg is required for production transaction admin")
 
     where = ["1 = 1"]
     params: list[Any] = []
@@ -424,11 +428,7 @@ def get_wechat_admin_order(order_id: str) -> dict[str, Any] | None:
     if not identifier:
         return None
     if database_mode() == "postgres":
-        try:
-            import psycopg
-            from psycopg.rows import dict_row
-        except ModuleNotFoundError as exc:
-            raise RuntimeError("psycopg is required for production transaction admin") from exc
+        _require_psycopg("psycopg is required for production transaction admin")
         with connect_commerce_db(_database_url()) as conn:
             with conn.cursor() as cur:
                 cur.execute(
@@ -490,8 +490,6 @@ def create_wechat_refund_request(order_id: str, payload: dict[str, Any]) -> dict
         request_payload["notify_url"] = refund_notify_url
     if database_mode() == "postgres":
         try:
-            import psycopg
-            from psycopg.rows import dict_row
             from psycopg.types.json import Jsonb
         except ModuleNotFoundError as exc:
             raise RuntimeError("psycopg is required for production transaction admin") from exc
@@ -607,8 +605,6 @@ def apply_wechat_refund_result(refund_payload: dict[str, Any], *, raw_event: dic
         raise ValueError("out_refund_no or refund_id is required")
     status = _normalize_refund_provider_status(refund_payload)
     try:
-        import psycopg
-        from psycopg.rows import dict_row
         from psycopg.types.json import Jsonb
     except ModuleNotFoundError as exc:
         raise RuntimeError("psycopg is required for production transaction admin") from exc
@@ -723,10 +719,7 @@ def handle_wechat_refund_notify(body: str, headers: dict[str, Any]) -> dict[str,
 
 def list_wechat_product_options() -> list[dict[str, str]]:
     if database_mode() == "postgres":
-        try:
-            import psycopg
-            from psycopg.rows import dict_row
-        except ModuleNotFoundError:
+        if not _psycopg_available():
             return []
         with connect_commerce_db(_database_url()) as conn:
             with conn.cursor() as cur:
