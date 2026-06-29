@@ -26,24 +26,27 @@ SKIP_DIR_NAMES = {
     "node_modules",
 }
 ARTIFACT_DIRS = ("artifacts", ".codex_artifacts", "tmp", "outputs", "dist", "exports")
+GENERATED_MARKDOWN_REPORTS = {"docs/cleanup/repo_hygiene_report.md"}
 ENTRY_DOC_PATHS = {
     "AGENTS.md",
     "CLAUDE.md",
     "README.md",
     "docs/development/codex_task_template.md",
     "docs/development/ai_crm_next_architecture_skill.md",
+    "skills/ai-crm-next-architecture/SKILL.md",
 }
+CANONICAL_ARCHITECTURE_PREFLIGHT = "docs/development/ai_crm_next_architecture_skill.md"
 AICRM_MARKERS = (
-    ("console", "console."),
-    ("debug", "debugger"),
-    ("debug", "DEBUG"),
-    ("print", "print("),
-    ("todo", "TODO"),
-    ("fixme", "FIXME"),
-    ("legacy", "legacy_flask"),
-    ("legacy", "openclaw_service"),
-    ("legacy", "production_compat"),
-    ("legacy", "forward_to_legacy_flask"),
+    ("console", re.compile(r"(?<![\w.-])console\.(?:assert|debug|dir|error|group|groupEnd|info|log|table|time|timeEnd|trace|warn)\s*\(")),
+    ("debug", re.compile(r"(?<![\w.-])debugger\b")),
+    ("debug", re.compile(r"\bDEBUG\b")),
+    ("print", re.compile(r"(?<![\w.])print\s*\(")),
+    ("todo", re.compile(r"\bTODO\b")),
+    ("fixme", re.compile(r"\bFIXME\b")),
+    ("legacy", re.compile(r"\blegacy_flask\b")),
+    ("legacy", re.compile(r"\bopenclaw_service\b")),
+    ("legacy", re.compile(r"\bproduction_compat\b")),
+    ("legacy", re.compile(r"\bforward_to_legacy_flask\b")),
 )
 TEXT_EXTENSIONS = {".css", ".html", ".js", ".json", ".md", ".py", ".ts", ".txt", ".yaml", ".yml"}
 LINK_RE = re.compile(r"(?P<image>!)?\[[^\]]*]\((?P<target>[^)\s]+)(?:\s+\"[^\"]*\")?\)")
@@ -221,6 +224,8 @@ def _audit_markdown_references(root: Path, markdown_files: list[Path]) -> list[R
     issues: list[RepoFinding] = []
     seen: set[tuple[str, int, str]] = set()
     for path in markdown_files:
+        if _display_path(path, root) in GENERATED_MARKDOWN_REPORTS:
+            continue
         for line_number, line in enumerate(_read_text(path).splitlines(), start=1):
             for candidate in _extract_internal_path_candidates(line):
                 normalized = _normalize_reference(candidate)
@@ -269,20 +274,9 @@ def _audit_agent_entry_docs(root: Path, markdown_files: list[Path]) -> list[Repo
     entry_files = [
         path
         for path in markdown_files
-        if _display_path(path, root) in ENTRY_DOC_PATHS or path.name == "SKILL.md" or "skills" in path.parts
+        if _display_path(path, root) in ENTRY_DOC_PATHS or (path.name == "SKILL.md" and "skills" in path.parts)
     ]
     issues: list[RepoFinding] = []
-    if len(entry_files) > 1:
-        issues.append(
-            RepoFinding(
-                category="agent_entry_overlap",
-                severity="review",
-                path="agent-entry-docs",
-                line=None,
-                message="Multiple agent-facing entry documents exist and should share canonical preflight wording.",
-                evidence=", ".join(_display_path(path, root) for path in entry_files),
-            )
-        )
     for finding in _audit_markdown_references(root, entry_files):
         issues.append(
             RepoFinding(
@@ -296,7 +290,19 @@ def _audit_agent_entry_docs(root: Path, markdown_files: list[Path]) -> list[Repo
         )
     for path in entry_files:
         rel = _display_path(path, root)
-        for line_number, line in enumerate(_read_text(path).splitlines(), start=1):
+        text = _read_text(path)
+        if rel in ENTRY_DOC_PATHS and rel != CANONICAL_ARCHITECTURE_PREFLIGHT and CANONICAL_ARCHITECTURE_PREFLIGHT not in text:
+            issues.append(
+                RepoFinding(
+                    category="agent_entry_missing_canonical_preflight",
+                    severity="review",
+                    path=rel,
+                    line=None,
+                    message="Agent-facing entry doc does not point to the canonical AI-CRM architecture preflight.",
+                    evidence=CANONICAL_ARCHITECTURE_PREFLIGHT,
+                )
+            )
+        for line_number, line in enumerate(text.splitlines(), start=1):
             matched = [pattern for pattern in SENSITIVE_ENTRY_PATTERNS if pattern in line]
             if matched:
                 issues.append(
@@ -334,14 +340,14 @@ def _audit_aicrm_markers(root: Path) -> list[RepoFinding]:
         rel = _display_path(path, root)
         for line_number, line in enumerate(_read_text(path).splitlines(), start=1):
             for marker_type, marker in AICRM_MARKERS:
-                if marker in line:
+                if marker.search(line):
                     issues.append(
                         RepoFinding(
                             category=f"aicrm_next_{marker_type}_marker",
                             severity="review",
                             path=rel,
                             line=line_number,
-                            message=f"`{marker}` appears in `aicrm_next/`.",
+                            message=f"`{marker.pattern}` appears in `aicrm_next/`.",
                             evidence="Review marker before turning hygiene checks into enforcement.",
                         )
                     )

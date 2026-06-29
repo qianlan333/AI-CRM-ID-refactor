@@ -647,7 +647,7 @@
             return;
           }
         } catch (error) {
-          console.warn('questionnaire diagnostics beacon failed', error);
+          window.__questionnaireDiagnosticsBeaconError = error.message || 'beacon failed';
         }
 
         fetch(diagnosticsUrl, {

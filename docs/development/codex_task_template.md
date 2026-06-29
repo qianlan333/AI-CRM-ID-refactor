@@ -20,7 +20,7 @@
 ## Required Boundaries
 
 - Do not change runtime behavior unless the task explicitly asks for it.
-- Do not change production_compat route behavior without route ownership manifest updates.
+- Do not restore `production_compat` or describe it as a live rollback/fallback owner.
 - 不要新增 Next 兼容层或兼容 shim，必须完全基于 AI-CRM Next 架构实现需求。
 - Do not restore `openclaw_service/` or `legacy_flask/openclaw_legacy/`.
 - Do not restore the deleted legacy package.

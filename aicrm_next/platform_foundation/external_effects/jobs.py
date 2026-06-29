@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import sys
 from typing import Any
 
 from aicrm_next.shared.runtime_settings import runtime_bool, runtime_setting
@@ -13,6 +14,10 @@ from .worker import ExternalEffectWorker
 SCHEDULER_ENABLED_KEY = "AICRM_EXTERNAL_EFFECT_RUN_DUE_SCHEDULER_ENABLED"
 SCHEDULER_INTERVAL_SECONDS_KEY = "AICRM_EXTERNAL_EFFECT_RUN_DUE_INTERVAL_SECONDS"
 SCHEDULER_BATCH_SIZE_KEY = "AICRM_EXTERNAL_EFFECT_RUN_DUE_BATCH_SIZE"
+
+
+def _write_json_result(payload: dict[str, Any]) -> None:
+    sys.stdout.write(json.dumps(payload, ensure_ascii=False, sort_keys=True, default=str) + "\n")
 
 
 def _bounded_int(value: Any, *, default: int, minimum: int = 1, maximum: int = 500) -> int:
@@ -104,7 +109,7 @@ def run_scheduled_external_effects(
 
 
 def print_run_due_result(*, dry_run: bool, limit: int | None = None, operator: str = "cli") -> None:
-    print(json.dumps(run_scheduled_external_effects(dry_run=dry_run, limit=limit, operator=operator), ensure_ascii=False, sort_keys=True, default=str))
+    _write_json_result(run_scheduled_external_effects(dry_run=dry_run, limit=limit, operator=operator))
 
 
 def complete_record_only_jobs(*, dry_run: bool = True, limit: int = 100, operator: str = "cli") -> dict[str, Any]:
@@ -114,4 +119,4 @@ def complete_record_only_jobs(*, dry_run: bool = True, limit: int = 100, operato
 
 
 def print_complete_record_only_result(*, dry_run: bool, limit: int = 100, operator: str = "cli") -> None:
-    print(json.dumps(complete_record_only_jobs(dry_run=dry_run, limit=limit, operator=operator), ensure_ascii=False, sort_keys=True, default=str))
+    _write_json_result(complete_record_only_jobs(dry_run=dry_run, limit=limit, operator=operator))

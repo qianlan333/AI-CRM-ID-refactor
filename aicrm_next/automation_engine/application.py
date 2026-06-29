@@ -44,7 +44,7 @@ def _agent_production_unavailable_payload(detail: str | None = None) -> dict[str
     payload = blocked_production_payload(
         capability_owner="aicrm_next.automation_engine",
         detail=detail
-        or "agent production repository is not enabled; legacy production_compat fallback remains the production owner.",
+        or "agent production repository is not enabled; production repository handoff remains blocked until explicitly enabled.",
     )
     payload.update(
         {
@@ -61,7 +61,7 @@ def _agent_output_production_unavailable_payload(detail: str | None = None) -> d
     payload = blocked_production_payload(
         capability_owner="aicrm_next.automation_engine",
         detail=detail
-        or "agent output production repository is not enabled; legacy production_compat fallback remains the production owner.",
+        or "agent output production repository is not enabled; production repository handoff remains blocked until explicitly enabled.",
     )
     payload.update(
         {
@@ -78,7 +78,7 @@ def _agent_run_production_unavailable_payload(detail: str | None = None) -> dict
     payload = blocked_production_payload(
         capability_owner="aicrm_next.automation_engine",
         detail=detail
-        or "agent run production repository is not enabled; legacy production_compat fallback remains the production owner.",
+        or "agent run production repository is not enabled; production repository handoff remains blocked until explicitly enabled.",
     )
     payload.update(
         {
