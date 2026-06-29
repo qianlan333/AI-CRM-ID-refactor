@@ -86,7 +86,8 @@ def test_audit_reports_agent_entry_drift_and_ops_details(tmp_path) -> None:
     _write(tmp_path / "CLAUDE.md", "Use scripts/prod.sh and crm-prod.\n")
     _write(
         tmp_path / "docs/development/ai_crm_next_architecture_skill.md",
-        "real external adapter 仍 blocked / fake / staging-disabled\n",
+        "real external adapter 仍 blocked / fake / staging-disabled\n"
+        "legacy Flask 只作为显式 fallback 和生产兼容 facade。\n",
     )
 
     report = audit_repository(tmp_path)
@@ -95,6 +96,7 @@ def test_audit_reports_agent_entry_drift_and_ops_details(tmp_path) -> None:
     assert "agent_entry_missing_canonical_preflight" in categories
     assert "agent_entry_ops_detail" in categories
     assert "agent_entry_external_effect_drift" in categories
+    assert "agent_entry_legacy_fallback_drift" in categories
 
 
 def test_audit_reports_production_ops_entry_details(tmp_path) -> None:

@@ -99,13 +99,9 @@ handoff 或由具备权限的人工提供一次性任务口径。
   - Next-only 应用入口，`run` 启动 AI-CRM Next，`health` / `routes` 输出 Next 诊断信息
 - `aicrm_next/`
   - 当前默认 FastAPI modular monolith
-- `wecom_ability_service/`
-  - non-startup legacy maintenance/reference code
-  - `http/` 负责路由与控制器
-  - `domains/` 负责业务能力
-  - Media/Product/Customer/User Ops/Questionnaire readonly legacy route owners 已按 D1-D5 分批退场，混合依赖包仅作 fallback/reference
-  - `templates/admin_console/` 和 `static/admin_console/` 负责后台页面
 - D9.6 已删除的历史路径
+  - `wecom_ability_service/` 已不在当前 live source tree；旧 Flask/production
+    compatibility fallback 不再是生产 owner 或 rollback/hotfix 边界
   - `openclaw_service/` 和 `legacy_flask/openclaw_legacy/` 不是当前 live source directory，不得重新引入
   - MCP / OpenClaw 当前架构入口是 `aicrm_next.integration_gateway`
 - `docs/`

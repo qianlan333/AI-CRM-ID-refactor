@@ -32,8 +32,8 @@ business-route changes until this preflight has been completed.
 
 1. Which capability owner owns the task?
 2. Which routes are affected?
-3. Are those routes owned by Next, frontend_compat, production_compat, a legacy
-   facade, or blocked?
+3. Are those routes owned by Next, frontend_compat, retired/deleted historical
+   surfaces, or blocked?
 4. Does the task touch production data?
 5. Is there fixture/local_contract/demo data risk?
 6. Does the task require real external calls?
@@ -45,8 +45,12 @@ business-route changes until this preflight has been completed.
 
 - Default runtime is AI-CRM Next FastAPI modular monolith.
 - `app.py run` starts `aicrm_next.main:app`.
-- Legacy Flask is only an explicit fallback and production compatibility facade.
-- `wecom_ability_service/` is retained as legacy fallback.
+- Legacy Flask runtime and `production_compat` fallback are retired; do not
+  describe them as current production owners, rollback paths, hotfix paths, or
+  compatibility facades.
+- `wecom_ability_service/` is no longer part of the live source tree. It may be
+  named only as historical closeout evidence and must not be reintroduced as a
+  fallback dependency.
 - `openclaw_service/` and `legacy_flask/openclaw_legacy/` are deleted
   historical paths and must not be reintroduced.
 - MCP/OpenClaw work must enter through the
