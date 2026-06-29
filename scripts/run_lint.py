@@ -11,13 +11,11 @@ except ModuleNotFoundError:  # pragma: no cover - direct script execution
 
 ROOT = REPO_ROOT
 PYTHON_TARGETS = [
+    "aicrm_next",
     "scripts/run_lint.py",
     "scripts/run_typecheck.py",
     "scripts/script_runtime.py",
     "tools",
-]
-REPORT_ONLY_PYTHON_TARGETS = [
-    "aicrm_next",
 ]
 SCAN_ROOTS = [
     ROOT / "tests",
@@ -70,25 +68,6 @@ def _run_ruff() -> int:
     return subprocess.run(command, cwd=ROOT).returncode
 
 
-def _run_ruff_report_only() -> int:
-    ruff_path = ROOT / ".venv310" / "bin" / "ruff"
-    command = [
-        str(ruff_path if ruff_path.exists() else "ruff"),
-        "check",
-        "--config",
-        str(ROOT / "pyproject.toml"),
-        *REPORT_ONLY_PYTHON_TARGETS,
-    ]
-    result = subprocess.run(command, cwd=ROOT, capture_output=True, text=True)
-    if result.returncode:
-        print("report-only ruff findings for aicrm_next/ (non-blocking)")
-        if result.stdout:
-            print(result.stdout, end="")
-        if result.stderr:
-            print(result.stderr, end="", file=sys.stderr)
-    return result.returncode
-
-
 def _print_report_only_text_issues(issues: list[str]) -> None:
     if not issues:
         return
@@ -106,7 +85,6 @@ def main() -> int:
         return 1
     ruff_status = _run_ruff()
     _print_report_only_text_issues(_custom_text_checks(REPORT_ONLY_SCAN_ROOTS))
-    _run_ruff_report_only()
     return ruff_status
 
 

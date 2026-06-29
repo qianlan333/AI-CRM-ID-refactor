@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from .wecom_tag_adapter import FakeStubWeComTagAdapter, build_fake_stub_wecom_tag_adapter
+from .wecom_tag_adapter import build_fake_stub_wecom_tag_adapter
 from .wecom_tag_contract import WeComTagAdapterContract
 
 

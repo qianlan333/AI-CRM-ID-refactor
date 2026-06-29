@@ -72,7 +72,6 @@
     try {
       fn();
     } catch (error) {
-      console.error(`[channel_admission_pages] ${name} init failed`, error);
       root.dataset[`init${name}Error`] = error.message || "init failed";
     }
   }

@@ -3,7 +3,11 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any
 
-from .repository import connect, database_url, has_database_url
+from .repository import (
+    connect as connect,
+    database_url as database_url,
+    has_database_url as has_database_url,
+)
 
 
 def utcnow() -> datetime:

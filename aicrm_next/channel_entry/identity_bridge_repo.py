@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import re
-from datetime import datetime
 from typing import Any, Protocol
 
 from aicrm_next.shared.postgres_connection import get_db

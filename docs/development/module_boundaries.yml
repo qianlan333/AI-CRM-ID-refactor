@@ -13,21 +13,6 @@ forbidden_legacy_markers:
   - production_compat
 
 legacy_allowlist:
-  - path: aicrm_next/automation_engine/application.py
-    rule: forbidden_legacy_marker
-    marker: production_compat
-    owner: automation_engine
-    reason: Historical production-unavailable messages document retired fallback ownership.
-    matches:
-      - or "profile segment template production repository is not enabled; legacy production_compat fallback remains the production owner.",
-      - or "action template production repository is not enabled; legacy production_compat fallback remains the production owner.",
-      - or "task group production repository is not enabled; legacy production_compat fallback remains the production owner.",
-      - or "workflow production repository is not enabled; legacy production_compat fallback remains the production owner.",
-      - or "workflow node production repository is not enabled; legacy production_compat fallback remains the production owner.",
-      - or "task production repository is not enabled; legacy production_compat fallback remains the production owner.",
-      - or "agent production repository is not enabled; legacy production_compat fallback remains the production owner.",
-      - or "agent output production repository is not enabled; legacy production_compat fallback remains the production owner.",
-      - or "agent run production repository is not enabled; legacy production_compat fallback remains the production owner.",
   - path: aicrm_next/customer_tags/wecom_tag_live_adapter.py
     rule: forbidden_legacy_marker
     marker: production_compat

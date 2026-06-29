@@ -44,6 +44,18 @@ def test_audit_resolves_relative_and_repo_root_markdown_references(tmp_path) -> 
     assert _issues_by_category(report, "missing_markdown_reference") == []
 
 
+def test_audit_ignores_generated_hygiene_report_markdown_references(tmp_path) -> None:
+    _write(tmp_path / "AGENTS.md", "# Entry\n")
+    _write(
+        tmp_path / "docs/cleanup/repo_hygiene_report.md",
+        "- stale generated evidence: artifacts/internal_event_coverage_audit.json\n",
+    )
+
+    report = audit_repository(tmp_path)
+
+    assert _issues_by_category(report, "missing_markdown_reference") == []
+
+
 def test_audit_ignores_external_links_and_anchor_only_links(tmp_path) -> None:
     _write(
         tmp_path / "README.md",
@@ -80,7 +92,7 @@ def test_audit_reports_agent_entry_drift_and_ops_details(tmp_path) -> None:
     report = audit_repository(tmp_path)
 
     categories = {issue.category for issue in report.issues}
-    assert "agent_entry_overlap" in categories
+    assert "agent_entry_missing_canonical_preflight" in categories
     assert "agent_entry_ops_detail" in categories
     assert "agent_entry_external_effect_drift" in categories
 
@@ -98,6 +110,24 @@ def test_audit_reports_aicrm_next_debug_and_legacy_markers(tmp_path) -> None:
     assert "aicrm_next_print_marker" in categories
     assert "aicrm_next_todo_marker" in categories
     assert "aicrm_next_legacy_marker" in categories
+
+
+def test_audit_ignores_console_paths_and_fingerprint_names(tmp_path) -> None:
+    _write(tmp_path / "AGENTS.md", "# Entry\n")
+    _write(
+        tmp_path / "aicrm_next/example/template.html",
+        "<script src=\"admin_console/admin_console.js\"></script>\n",
+    )
+    _write(
+        tmp_path / "aicrm_next/example/service.py",
+        "def _content_fingerprint(content):\n    return {'content': content}\n",
+    )
+
+    report = audit_repository(tmp_path)
+
+    categories = {issue.category for issue in report.issues}
+    assert "aicrm_next_console_marker" not in categories
+    assert "aicrm_next_print_marker" not in categories
 
 
 def test_write_report_files_outputs_markdown_and_json(tmp_path) -> None:

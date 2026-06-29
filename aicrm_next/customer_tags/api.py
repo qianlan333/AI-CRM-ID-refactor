@@ -20,7 +20,6 @@ from .commands import (
     CreateWeComTagGroupCommand,
     DeleteWeComTagCommand,
     DeleteWeComTagGroupCommand,
-    SyncWeComTagCatalogCommand,
     UpdateWeComTagCommand,
     UpdateWeComTagGroupCommand,
     WeComTagWriteCommand,

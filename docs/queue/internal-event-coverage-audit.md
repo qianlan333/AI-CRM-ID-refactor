@@ -13,7 +13,7 @@ payment query, refund, or worker allowlist expansion.
 Static scan command:
 
 ```bash
-.venv/bin/python scripts/audit_internal_event_coverage.py > artifacts/internal_event_coverage_audit.json
+.venv/bin/python scripts/audit_internal_event_coverage.py > docs/reports/evidence/internal_event_coverage_audit.json
 ```
 
 Scan roots:

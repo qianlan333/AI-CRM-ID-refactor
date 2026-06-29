@@ -100,7 +100,7 @@ def test_internal_event_audit_artifacts_do_not_reference_removed_runtime_modules
         "aicrm_next/automation_engine/workspace_runtime.py",
         "aicrm_next/automation_engine/member_actions.py",
     ]
-    audit_artifact = (PROJECT_ROOT / "artifacts" / "internal_event_coverage_audit.json").read_text(encoding="utf-8")
+    audit_artifact = (PROJECT_ROOT / "docs" / "reports" / "evidence" / "internal_event_coverage_audit.json").read_text(encoding="utf-8")
     audit_docs = (PROJECT_ROOT / "docs" / "queue" / "internal-event-coverage-audit.md").read_text(encoding="utf-8")
 
     for marker in removed_markers:

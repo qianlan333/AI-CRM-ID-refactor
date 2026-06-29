@@ -64,14 +64,14 @@ def reconcile_customer_read_model(
     for external_userid in sorted(source_ids & target_ids):
         source = source_by_id[external_userid]
         target = target_by_id[external_userid]
-        for field in ("customer_name", "owner_userid", "mobile", "binding_status"):
-            source_value = source.get(field)
-            target_value = target.get(field)
+        for field_name in ("customer_name", "owner_userid", "mobile", "binding_status"):
+            source_value = source.get(field_name)
+            target_value = target.get(field_name)
             if source_value != target_value:
                 field_diffs.append(
                     {
                         "external_userid": mask_sample(external_userid),
-                        "field": field,
+                        "field": field_name,
                         "source": mask_sample(source_value),
                         "target": mask_sample(target_value),
                     }

@@ -8,6 +8,12 @@
 该 Skill 优先级高于一般开发习惯；如果未读取该 Skill，不应开始前端实现。后续任何前端任务的最终回复必须输出
 `Frontend Skill Checklist`。
 
+## 架构开发第一入口
+
+所有 AI-CRM 开发任务都必须先阅读并遵守
+[docs/development/ai_crm_next_architecture_skill.md](docs/development/ai_crm_next_architecture_skill.md)。
+这是 AI-CRM Next 架构、生产安全、legacy freeze、外呼审批和 PR 输出格式的 canonical preflight。
+
 ## 生产诊断入口
 
 主仓入口不记录具体生产 host、SSH alias、identity、本机权限配置、白名单命令、

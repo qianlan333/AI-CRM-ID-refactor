@@ -86,7 +86,6 @@
     const item = document.createElement("pre");
     item.textContent = line;
     debugWrap.appendChild(item);
-    console.log(line);
   }
 
   function customerContextQuery() {
