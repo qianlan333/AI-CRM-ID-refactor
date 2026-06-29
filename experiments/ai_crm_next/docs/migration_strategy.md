@@ -51,7 +51,7 @@ Frontend screenshots should verify that navigation, tables, filters, drawers, mo
 The repeatable comparison entrypoint is:
 
 ```bash
-python experiments/ai_crm_next/tools/compare_user_ops_parity.py \
+python retired experiment wrapper; see docs/archive/experiments_ai_crm_next/retired_tools.md \
   --old-fixture-dir tests/fixtures/old_user_ops \
   --next-testclient \
   --output-md /tmp/user_ops_parity_report.md \
@@ -75,7 +75,7 @@ This does not mean User Ops is production-complete. The SQL repository is tested
 The repeatable comparison entrypoint is:
 
 ```bash
-python experiments/ai_crm_next/tools/compare_customer_read_model_parity.py \
+python retired experiment wrapper; see docs/archive/experiments_ai_crm_next/retired_tools.md \
   --old-fixture-dir tests/fixtures/old_customer_read_model \
   --next-testclient \
   --output-md /tmp/customer_read_model_parity_report.md \
@@ -119,7 +119,7 @@ These tests validate migration upgrade/downgrade and SQL repository behavior onl
 The repeatable first-slice comparison entrypoint is:
 
 ```bash
-python experiments/ai_crm_next/tools/compare_questionnaire_parity.py \
+python retired experiment wrapper; see docs/archive/experiments_ai_crm_next/retired_tools.md \
   --old-fixture-dir tests/fixtures/old_questionnaire \
   --next-testclient \
   --output-md /tmp/questionnaire_parity_report.md \
@@ -157,13 +157,13 @@ The Automation Conversion slice remains partial:
 Commerce and media-library migration now has first-slice parity tooling:
 
 ```bash
-python experiments/ai_crm_next/tools/compare_commerce_parity.py \
+python retired experiment wrapper; see docs/archive/experiments_ai_crm_next/retired_tools.md \
   --old-fixture-dir tests/fixtures/old_commerce \
   --next-testclient \
   --output-md /tmp/commerce_parity_report.md \
   --output-json /tmp/commerce_parity_report.json
 
-python experiments/ai_crm_next/tools/compare_media_library_parity.py \
+python retired experiment wrapper; see docs/archive/experiments_ai_crm_next/retired_tools.md \
   --old-fixture-dir tests/fixtures/old_media_library \
   --next-testclient \
   --output-md /tmp/media_library_parity_report.md \

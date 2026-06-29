@@ -1,12 +1,10 @@
 from __future__ import annotations
 
-from pathlib import Path
-
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
+from tools.doc_paths import read_experiment_doc
 
 
 def _read_doc(name: str) -> str:
-    return (PROJECT_ROOT / "docs" / name).read_text(encoding="utf-8")
+    return read_experiment_doc(name)
 
 
 def test_fast_execution_plan_lists_all_batches() -> None:

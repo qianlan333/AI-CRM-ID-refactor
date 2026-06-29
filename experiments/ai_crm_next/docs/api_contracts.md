@@ -28,7 +28,7 @@ Persistence and parity status:
 - Default runtime: `InMemoryCustomerReadModelRepository`.
 - PostgreSQL-ready storage: `SqlAlchemyCustomerReadModelRepository` with `customer_list_index_next`, `customer_detail_snapshot_next`, `customer_timeline_event_next`, and `customer_recent_message_next`.
 - Switching point: `CUSTOMER_READ_MODEL_REPO_BACKEND=memory|sqlalchemy` through `build_customer_read_model_repository`.
-- Parity comparison: `experiments/ai_crm_next/tools/compare_customer_read_model_parity.py` compares anonymized old fixtures or old Flask HTTP responses against AI-CRM Next.
+- Parity comparison: `retired experiment wrapper; see docs/archive/experiments_ai_crm_next/retired_tools.md` compares anonymized old fixtures or old Flask HTTP responses against AI-CRM Next.
 - PostgreSQL integration tests: explicit `postgres_integration` tests can validate Alembic upgrade/downgrade and SQL repositories against a guarded local test database.
 - Status remains `partial`; this is not a fully implemented production Customer Center backend.
 
@@ -161,7 +161,7 @@ Persistence status:
 - Default runtime: `InMemoryUserOpsRepository`.
 - PostgreSQL-ready storage: `SqlAlchemyUserOpsRepository` with `user_ops_pool_current_next`, `user_ops_do_not_disturb_next`, and `user_ops_send_records_next`.
 - Switching point: `USER_OPS_REPO_BACKEND=memory|sqlalchemy` through `build_user_ops_repository`.
-- Parity comparison: `experiments/ai_crm_next/tools/compare_user_ops_parity.py` can compare old Flask HTTP responses or anonymized old fixtures against AI-CRM Next.
+- Parity comparison: `retired experiment wrapper; see docs/archive/experiments_ai_crm_next/retired_tools.md` can compare old Flask HTTP responses or anonymized old fixtures against AI-CRM Next.
 - PostgreSQL integration tests: explicit `postgres_integration` tests can validate Alembic upgrade/downgrade and SQL repositories against a guarded local test database.
 - Status remains `partial`; this is not a fully implemented production User Ops backend.
 
@@ -319,7 +319,7 @@ The adapter is fake/stubbed. Callback returns:
 
 - Spec: `aicrm_next/questionnaire/parity_spec.py`
 - Fixtures: `tests/fixtures/old_questionnaire/`
-- Tool: `experiments/ai_crm_next/tools/compare_questionnaire_parity.py`
+- Tool: `retired experiment wrapper; see docs/archive/experiments_ai_crm_next/retired_tools.md`
 
 The default comparison uses anonymized fixtures and a fixture-safe submit payload. Do not run real submit against old production.
 
@@ -591,7 +591,7 @@ Mini-program item fields: `id`, `title`, `appid`, `page_path`, `thumb_image_id`,
 
 - Spec: `aicrm_next/commerce/parity_spec.py`, `aicrm_next/media_library/parity_spec.py`
 - Fixtures: `tests/fixtures/old_commerce/`, `tests/fixtures/old_media_library/`
-- Tools: `experiments/ai_crm_next/tools/compare_commerce_parity.py`, `experiments/ai_crm_next/tools/compare_media_library_parity.py`
+- Tools: `retired experiment wrapper; see docs/archive/experiments_ai_crm_next/retired_tools.md`, `retired experiment wrapper; see docs/archive/experiments_ai_crm_next/retired_tools.md`
 - Commerce `--old-base-url` mode defaults to read-only endpoints and skips checkout writes with `old_write_endpoint_disabled`.
 - Checkout parity is exercised with old fixtures and AI-CRM Next fake checkout; it must not POST checkout against old production by default.
 
