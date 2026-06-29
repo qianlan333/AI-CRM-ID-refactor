@@ -64,6 +64,17 @@ SENSITIVE_ENTRY_PATTERNS = (
     "claude-debug.sh",
     "forced-command",
 )
+PRODUCTION_OPS_STUB_PATHS = ("scripts/prod.sh",)
+PRODUCTION_OPS_DETAIL_PATTERNS = (
+    "crm-prod",
+    "SSH_HOST",
+    "exec ssh",
+    "psql-stdin",
+    "prod.sh psql",
+    "diagnose-p1-bridge",
+    "forced-command",
+    "claude-debug.sh",
+)
 
 
 @dataclass(frozen=True)
@@ -125,6 +136,7 @@ def audit_repository(root: Path = ROOT, *, generated_at: str | None = None) -> H
     issues.extend(_audit_markdown_references(root, markdown_files))
     issues.extend(_audit_tracked_artifacts(root))
     issues.extend(_audit_agent_entry_docs(root, markdown_files))
+    issues.extend(_audit_production_ops_stubs(root))
     issues.extend(_audit_aicrm_markers(root))
     return HygieneReport(
         root=".",
@@ -324,6 +336,28 @@ def _audit_agent_entry_docs(root: Path, markdown_files: list[Path]) -> list[Repo
                         line=line_number,
                         message="Agent-facing entry doc contains stale blanket external-effect wording.",
                         evidence="Align WeCom External Effect wording with PR #1505 while keeping other real calls blocked.",
+                    )
+                )
+    return issues
+
+
+def _audit_production_ops_stubs(root: Path) -> list[RepoFinding]:
+    issues: list[RepoFinding] = []
+    for rel in PRODUCTION_OPS_STUB_PATHS:
+        path = root / rel
+        if not path.is_file():
+            continue
+        for line_number, line in enumerate(_read_text(path).splitlines(), start=1):
+            matched = [pattern for pattern in PRODUCTION_OPS_DETAIL_PATTERNS if pattern in line]
+            if matched:
+                issues.append(
+                    RepoFinding(
+                        category="production_ops_stub_detail",
+                        severity="review",
+                        path=rel,
+                        line=line_number,
+                        message="Production ops entry exposes concrete connection, dispatcher, or command detail.",
+                        evidence=", ".join(matched),
                     )
                 )
     return issues
