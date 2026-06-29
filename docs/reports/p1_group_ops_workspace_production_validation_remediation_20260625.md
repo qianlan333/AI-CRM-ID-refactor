@@ -56,26 +56,14 @@ restart, then checks `/health` response headers after restart:
 
 This avoids hard-coding #1416 or any specific commit.
 
-## Forced-command Diagnostic Subcommand
+## Private Ops Diagnostic Boundary
 
-The local production sandbox wrapper now includes:
-
-```bash
-scripts/prod.sh diagnose-p1-bridge
-```
-
-It forwards only the allowlisted subcommand `diagnose-p1-bridge`; it does not
-open a generic shell or accept arbitrary script arguments.
-
-Server-side forced-command extension is documented in
-`docs/claude_prod_sandbox_extension.md`:
-
-```bash
-diagnose-p1-bridge)
-  cd "/home/ubuntu/极简 crm" || exit 1
-  exec .venv/bin/python scripts/diagnose_p1_group_ops_workspace_bridge_acceptance.py
-  ;;
-```
+Production connection details and command cookbooks are not published in the
+main repo. Any production diagnostic wrapper must live in the private ops
+handoff for the current environment and must not expose host aliases, SSH
+dispatchers, arbitrary SQL bridges, shell passthrough, tokens, secrets, raw
+receiver data, raw external user ids, phone numbers, target lists, message
+bodies, or callback bodies.
 
 Expected diagnostic output includes:
 
@@ -150,7 +138,7 @@ Added/updated contract coverage:
 - release sha falls back to current git `HEAD` before stale env
 - `/health` header uses the centralized release helper
 - deploy workflow writes `.release-sha` and verifies the health release header
-- `scripts/prod.sh diagnose-p1-bridge` exists and does not permit arbitrary shell
+- `scripts/prod.sh` is a safe stub and does not publish production connection details
 - bridge diagnostic reports dry-run / no-execution flags
 - permission-limited `external_effect_job` aggregate reads return
   `EXTERNAL_EFFECT_JOB_READ_SKIPPED_PERMISSION_LIMITED`
@@ -179,11 +167,7 @@ bash scripts/ci/run_architecture_gates.sh
 git diff --check
 ```
 
-After deploy and server-side forced-command extension:
-
-```bash
-scripts/prod.sh diagnose-p1-bridge
-```
+After deploy, run the production diagnostic from the private ops handoff only.
 
 ## Production Re-validation Steps
 
@@ -195,7 +179,7 @@ After merge/deploy:
 4. Confirm `/admin/p1/group-ops-workspace` is reachable under normal admin auth.
 5. Confirm legacy Group Ops route remains unaffected.
 6. Confirm draft/governance/bridge APIs fail closed without cookies.
-7. Run `scripts/prod.sh diagnose-p1-bridge`.
+7. Run the private ops diagnostic for the P1 bridge.
 8. Run business closure acceptance and confirm `can_claim_pass_90_plus=false`.
 9. Collect aggregate no-execution evidence or record explicit permission-limited
    safe fallback.
@@ -223,7 +207,7 @@ Re-run production validation after this PR is merged and deployed.
 Expected pass conditions:
 
 - release header matches production git `HEAD`
-- forced-command diagnostic runs
+- private ops diagnostic runs without exposing command details in this repo
 - no-execution flags remain false
 - business closure still reports `can_claim_pass_90_plus=false`
 - no new execution jobs are observed or any permission-limited gaps are explicitly

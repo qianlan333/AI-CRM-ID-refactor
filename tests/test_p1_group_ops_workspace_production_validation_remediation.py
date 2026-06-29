@@ -52,14 +52,30 @@ def test_health_release_header_uses_release_helper(monkeypatch, tmp_path) -> Non
     reset_release_sha_cache()
 
 
-def test_prod_sh_has_p1_bridge_diagnostic_without_arbitrary_shell() -> None:
+def test_prod_sh_is_safe_stub_without_production_connection_details() -> None:
     source = (ROOT / "scripts/prod.sh").read_text(encoding="utf-8")
 
-    assert "diagnose-p1-bridge)" in source
-    assert 'exec ssh "$HOST" diagnose-p1-bridge' in source
-    assert "用法: prod.sh diagnose-p1-bridge" in source
-    assert 'exec ssh "$HOST" "$@"' not in source
-    assert "bash" not in source[source.index("diagnose-p1-bridge)") : source.index(";;", source.index("diagnose-p1-bridge)"))]
+    assert "Production diagnostics are intentionally not exposed" in source
+    assert "private ops handoff" in source
+    assert "exec ssh" not in source
+    assert "crm-prod" not in source
+    assert "SSH_HOST" not in source
+    assert "psql" not in source.lower()
+    assert "diagnose-p1-bridge" not in source
+
+
+def test_prod_sh_exits_before_any_remote_operation() -> None:
+    result = subprocess.run(
+        ["bash", str(ROOT / "scripts/prod.sh"), "health"],
+        cwd=ROOT,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 2
+    assert "private ops handoff" in result.stderr
+    assert result.stdout == ""
 
 
 def test_bridge_diagnostic_reports_dry_run_and_permission_limited_aggregate(monkeypatch) -> None:
@@ -106,7 +122,7 @@ def test_production_validation_remediation_report_contract() -> None:
     for expected in [
         "release sha mismatch",
         ".release-sha",
-        "diagnose-p1-bridge",
+        "private ops handoff",
         "SKIPPED_WRITE_VALIDATION_SAFE_MODE",
         "EXTERNAL_EFFECT_JOB_READ_SKIPPED_PERMISSION_LIMITED",
         "dry_run_read_only=true",

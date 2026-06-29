@@ -428,11 +428,9 @@ payment.succeeded:ai_assist_notify_consumer
 payment.succeeded:automation_payment_consumer
 ```
 
-Failed-terminal and stale-lock SQL:
-
-```bash
-./scripts/prod.sh psql "SELECT count(*) FILTER (WHERE status='failed_terminal') AS failed_terminal, count(*) FILTER (WHERE locked_at < now() - interval '15 minutes' AND status='running') AS stale_lock FROM internal_event_consumer_run;"
-```
+Failed-terminal and stale-lock check: run the equivalent read-only aggregate in
+the private ops environment. Do not publish production SQL bridge commands in
+this repo.
 
 External Effect attempt delta:
 
@@ -447,11 +445,8 @@ Expected:
 - `allowed_effect_types=[]`
 - no unexpected `external_effect_attempt` increase during Internal Event checks
 
-Selected event counts:
-
-```bash
-./scripts/prod.sh psql "SELECT event_type, count(*) AS event_count FROM internal_event WHERE event_type IN ('payment.succeeded','questionnaire.submitted','customer.tagged','customer.untagged','customer.phone_bound','ai_campaign.created','ai_campaign.approved','ai_campaign.started','ops_plan.approved','broadcast_task.created','owner_migration.executed') GROUP BY event_type ORDER BY event_type;"
-```
+Selected event counts: collect the equivalent read-only aggregate from the
+private ops environment, limited to the approved event types listed above.
 
 Optional run-due preview with internal token:
 
