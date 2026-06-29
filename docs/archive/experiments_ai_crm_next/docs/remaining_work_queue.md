@@ -18,7 +18,7 @@ Each task is scoped for a future Codex execution turn. Keep old production servi
 ## 2. Customer Readonly HTTP Dual-Run Against Old Flask
 
 - objective: Compare old Flask and AI-CRM Next customer read APIs over HTTP.
-- files likely involved: `retired readonly HTTP dual-run helper; see docs/archive/experiments_ai_crm_next/retired_tools.md`, `docs/archive/experiments_ai_crm_next/docs/readonly_http_dual_run_strategy.md`, `experiments/ai_crm_next/docs/customer_read_model_parity_strategy.md`.
+- files likely involved: `retired readonly HTTP dual-run helper; see docs/archive/experiments_ai_crm_next/retired_tools.md`, `docs/archive/experiments_ai_crm_next/docs/readonly_http_dual_run_strategy.md`, `docs/archive/experiments_ai_crm_next/docs/customer_read_model_parity_strategy.md`.
 - acceptance criteria: readonly parity report has no blockers; accepted differences documented.
 - must not do: run write endpoints or import old Flask app.
 - suggested validation command: `.venv/bin/python retired readonly HTTP dual-run helper; see docs/archive/experiments_ai_crm_next/retired_tools.md --old-base-url http://127.0.0.1:5001 --next-testclient --scope customer --output-md /tmp/customer_dual.md --output-json /tmp/customer_dual.json`.
@@ -26,7 +26,7 @@ Each task is scoped for a future Codex execution turn. Keep old production servi
 ## 3. User Ops Readonly HTTP Dual-Run Against Old Flask
 
 - objective: Compare User Ops overview/list/send-record read shapes over HTTP.
-- files likely involved: `retired readonly HTTP dual-run helper; see docs/archive/experiments_ai_crm_next/retired_tools.md`, `docs/archive/experiments_ai_crm_next/docs/readonly_http_dual_run_strategy.md`, `experiments/ai_crm_next/docs/user_ops_parity_strategy.md`.
+- files likely involved: `retired readonly HTTP dual-run helper; see docs/archive/experiments_ai_crm_next/retired_tools.md`, `docs/archive/experiments_ai_crm_next/docs/readonly_http_dual_run_strategy.md`, `docs/archive/experiments_ai_crm_next/docs/user_ops_parity_strategy.md`.
 - acceptance criteria: readonly report passes; write endpoints remain disabled unless isolated.
 - must not do: execute real batch send or DND against old production.
 - suggested validation command: `.venv/bin/python retired readonly HTTP dual-run helper; see docs/archive/experiments_ai_crm_next/retired_tools.md --old-base-url http://127.0.0.1:5001 --next-testclient --scope user_ops --output-md /tmp/user_ops_dual.md --output-json /tmp/user_ops_dual.json`.
@@ -74,7 +74,7 @@ Each task is scoped for a future Codex execution turn. Keep old production servi
 ## 8A. Media Library Gray-Release Dry Run
 
 - objective: Use the prepared route cutover manifest and gray smoke reports to rehearse Media Library route-level gray release without switching production traffic.
-- files likely involved: `docs/archive/experiments_ai_crm_next/docs/gray_rehearsal_batch_1_media_readonly.md`, `docs/archive/experiments_ai_crm_next/docs/gray_rehearsal_batch_1_route_flags.md`, `docs/archive/experiments_ai_crm_next/docs/route_level_gray_release_batches.md`, `docs/archive/experiments_ai_crm_next/docs/route_level_gray_release_runbook.md`, `docs/archive/experiments_ai_crm_next/docs/gray_release_acceptance_checklist.md`, `docs/archive/experiments_ai_crm_next/docs/media_library_gray_release_plan.md`, `experiments/ai_crm_next/docs/media_library_route_cutover_manifest.md`, `retired experiment tool wrapper; see docs/archive/experiments_ai_crm_next/retired_tools.md`, `retired experiment wrapper; see docs/archive/experiments_ai_crm_next/retired_tools.md`, `retired gray-release report helper; see docs/archive/experiments_ai_crm_next/retired_tools.md`, future deployment smoke scripts.
+- files likely involved: `docs/archive/experiments_ai_crm_next/docs/gray_rehearsal_batch_1_media_readonly.md`, `docs/archive/experiments_ai_crm_next/docs/gray_rehearsal_batch_1_route_flags.md`, `docs/archive/experiments_ai_crm_next/docs/route_level_gray_release_batches.md`, `docs/archive/experiments_ai_crm_next/docs/route_level_gray_release_runbook.md`, `docs/archive/experiments_ai_crm_next/docs/gray_release_acceptance_checklist.md`, `docs/archive/experiments_ai_crm_next/docs/media_library_gray_release_plan.md`, `docs/archive/experiments_ai_crm_next/docs/media_library_route_cutover_manifest.md`, `retired experiment tool wrapper; see docs/archive/experiments_ai_crm_next/retired_tools.md`, `retired experiment wrapper; see docs/archive/experiments_ai_crm_next/retired_tools.md`, `retired gray-release report helper; see docs/archive/experiments_ai_crm_next/retired_tools.md`, future deployment smoke scripts.
 - acceptance criteria: default read-only gray smoke passes; Batch 1 rehearsal report returns `recommendation=GO`; rollback route remains old Flask; no real cloud or WeCom media upload happens.
 - must not do: modify Nginx production config or execute old Flask write endpoints.
 - suggested validation command: retired; see `docs/archive/experiments_ai_crm_next/retired_tools.md`.
@@ -106,7 +106,7 @@ Each task is scoped for a future Codex execution turn. Keep old production servi
 ## 8B. Product Management Gray-Release Dry Run
 
 - objective: Use the prepared product route cutover manifest and gray smoke reports to rehearse Product Management route-level gray release without switching production traffic.
-- files likely involved: `docs/archive/experiments_ai_crm_next/docs/product_management_gray_release_plan.md`, `experiments/ai_crm_next/docs/product_management_route_cutover_manifest.md`, `retired experiment wrapper; see docs/archive/experiments_ai_crm_next/retired_tools.md`, future deployment smoke scripts.
+- files likely involved: `docs/archive/experiments_ai_crm_next/docs/product_management_gray_release_plan.md`, `docs/archive/experiments_ai_crm_next/docs/product_management_route_cutover_manifest.md`, `retired experiment wrapper; see docs/archive/experiments_ai_crm_next/retired_tools.md`, future deployment smoke scripts.
 - acceptance criteria: default read-only product gray smoke passes; optional fake-write smoke passes against Next TestClient only; checkout/payment routes remain out of scope; rollback route remains old Flask.
 - must not do: modify Nginx production config, execute old Flask write endpoints, run checkout/payment, or call real WeChat Pay/Alipay.
 - suggested validation command: retired; see `docs/archive/experiments_ai_crm_next/retired_tools.md`.
@@ -122,7 +122,7 @@ Each task is scoped for a future Codex execution turn. Keep old production servi
 ## 8C. Customer Read Model Readonly Gray-Release Dry Run
 
 - objective: Use the prepared customer route cutover manifest, sample checklist, and gray smoke reports to rehearse Customer Read Model readonly route-level gray release without switching production traffic.
-- files likely involved: `docs/archive/experiments_ai_crm_next/docs/customer_read_model_gray_release_plan.md`, `experiments/ai_crm_next/docs/customer_read_model_route_cutover_manifest.md`, `docs/archive/experiments_ai_crm_next/docs/customer_read_model_sample_data_checklist.md`, `retired experiment wrapper; see docs/archive/experiments_ai_crm_next/retired_tools.md`, future deployment smoke scripts.
+- files likely involved: `docs/archive/experiments_ai_crm_next/docs/customer_read_model_gray_release_plan.md`, `docs/archive/experiments_ai_crm_next/docs/customer_read_model_route_cutover_manifest.md`, `docs/archive/experiments_ai_crm_next/docs/customer_read_model_sample_data_checklist.md`, `retired experiment wrapper; see docs/archive/experiments_ai_crm_next/retired_tools.md`, future deployment smoke scripts.
 - acceptance criteria: default Next-only readonly gray smoke passes; optional old-base-url dual smoke sends only GET; skipped detail/timeline/recent-message routes have explicit no-sample reasons; rollback route remains old Flask.
 - must not do: modify Nginx production config, execute old Flask write endpoints, trigger WeCom/archive/tag refresh/OpenClaw, or claim full gray readiness without sample external_userid coverage.
 - suggested validation command: retired; see `docs/archive/experiments_ai_crm_next/retired_tools.md`.
@@ -138,7 +138,7 @@ Each task is scoped for a future Codex execution turn. Keep old production servi
 ## 8D. User Ops Readonly Gray-Release Dry Run
 
 - objective: Use the prepared User Ops route cutover manifest, sample/drift checklist, and gray smoke reports to rehearse User Ops readonly route-level gray release without switching production traffic.
-- files likely involved: `docs/archive/experiments_ai_crm_next/docs/user_ops_readonly_gray_release_plan.md`, `experiments/ai_crm_next/docs/user_ops_readonly_route_cutover_manifest.md`, `experiments/ai_crm_next/docs/user_ops_readonly_sample_and_drift_checklist.md`, `docs/archive/experiments_ai_crm_next/docs/batch_4_user_ops_readonly_canary_plan.md`, `retired experiment wrapper; see docs/archive/experiments_ai_crm_next/retired_tools.md`, `retired Batch 4 user ops canary readiness helper; see docs/archive/experiments_ai_crm_next/retired_tools.md`.
+- files likely involved: `docs/archive/experiments_ai_crm_next/docs/user_ops_readonly_gray_release_plan.md`, `docs/archive/experiments_ai_crm_next/docs/user_ops_readonly_route_cutover_manifest.md`, `docs/archive/experiments_ai_crm_next/docs/user_ops_readonly_sample_and_drift_checklist.md`, `docs/archive/experiments_ai_crm_next/docs/batch_4_user_ops_readonly_canary_plan.md`, `retired experiment wrapper; see docs/archive/experiments_ai_crm_next/retired_tools.md`, `retired Batch 4 user ops canary readiness helper; see docs/archive/experiments_ai_crm_next/retired_tools.md`.
 - acceptance criteria: default Next-only readonly gray smoke passes; optional old-base-url dual smoke sends only GET; old missing `激活待录入` is warning/legacy drift when Next has the card; side-effect safety flags remain false; Batch 4 simulated canary evidence and signoff draft are archived.
 - must not do: modify Nginx production config, execute old Flask write endpoints, run DND/batch-send/deferred jobs/internal routes, or trigger real WeCom dispatch/media upload.
 - suggested validation command: retired; see `docs/archive/experiments_ai_crm_next/retired_tools.md`.
@@ -154,7 +154,7 @@ Each task is scoped for a future Codex execution turn. Keep old production servi
 ## 8E. Questionnaire Readonly Gray-Release Dry Run
 
 - objective: Use the prepared Questionnaire route cutover manifest, sample/fake checklist, and gray smoke reports to rehearse Questionnaire admin/public readonly route-level gray release without switching production traffic.
-- files likely involved: `docs/archive/experiments_ai_crm_next/docs/questionnaire_readonly_gray_release_plan.md`, `experiments/ai_crm_next/docs/questionnaire_readonly_route_cutover_manifest.md`, `docs/archive/experiments_ai_crm_next/docs/questionnaire_readonly_sample_and_fake_checklist.md`, `docs/archive/experiments_ai_crm_next/docs/batch_5_questionnaire_readonly_canary_plan.md`, `retired experiment wrapper; see docs/archive/experiments_ai_crm_next/retired_tools.md`, `retired Batch 5 questionnaire canary readiness helper; see docs/archive/experiments_ai_crm_next/retired_tools.md`.
+- files likely involved: `docs/archive/experiments_ai_crm_next/docs/questionnaire_readonly_gray_release_plan.md`, `docs/archive/experiments_ai_crm_next/docs/questionnaire_readonly_route_cutover_manifest.md`, `docs/archive/experiments_ai_crm_next/docs/questionnaire_readonly_sample_and_fake_checklist.md`, `docs/archive/experiments_ai_crm_next/docs/batch_5_questionnaire_readonly_canary_plan.md`, `retired experiment wrapper; see docs/archive/experiments_ai_crm_next/retired_tools.md`, `retired Batch 5 questionnaire canary readiness helper; see docs/archive/experiments_ai_crm_next/retired_tools.md`.
 - acceptance criteria: default Next-only readonly gray smoke passes; optional old-base-url dual smoke sends only GET; fake submit is explicit opt-in and Next TestClient only; old WeChat gate/result route drift remains accepted only when Next satisfies the contract; side-effect safety flags remain false; Batch 5 simulated canary evidence and signoff draft are archived.
 - must not do: modify Nginx production config, execute old Flask submit/admin write/OAuth callback/external push routes, trigger real OAuth, mutate WeCom tags, or send external webhook pushes.
 - suggested validation command: retired; see `docs/archive/experiments_ai_crm_next/retired_tools.md`.
@@ -234,7 +234,7 @@ Each task is scoped for a future Codex execution turn. Keep old production servi
 ## 12. Production Deployment Smoke Harness
 
 - objective: Create repeatable route-level smoke commands for AI-CRM Next deployment.
-- files likely involved: `retired frontend screenshot helper; see docs/archive/experiments_ai_crm_next/retired_tools.md`, `experiments/ai_crm_next/docs/frontend_route_manifest.md`, `docs/archive/experiments_ai_crm_next/docs/frontend_screenshot_baseline.md`, `docs/archive/experiments_ai_crm_next/docs/production_replacement_route.md`, future `scripts/`.
+- files likely involved: `retired frontend screenshot helper; see docs/archive/experiments_ai_crm_next/retired_tools.md`, `docs/archive/experiments_ai_crm_next/docs/frontend_route_manifest.md`, `docs/archive/experiments_ai_crm_next/docs/frontend_screenshot_baseline.md`, `docs/archive/experiments_ai_crm_next/docs/production_replacement_route.md`, future `scripts/`.
 - acceptance criteria: health, admin routes, API read routes, and frontend adapters checked in one command; current 14-route Playwright PNG baseline remains reproducible and is extended to deployment HTTP mode.
 - must not do: change business behavior.
 - suggested validation command: `.venv/bin/python retired frontend screenshot helper; see docs/archive/experiments_ai_crm_next/retired_tools.md --output-dir artifacts/frontend_screenshots --mode testclient --output-md /tmp/aicrm_next_frontend_route_screenshot_baseline.md --output-json /tmp/aicrm_next_frontend_route_screenshot_baseline.json`.

@@ -150,7 +150,7 @@ No commerce or media page may be redesigned in this migration. The new backend m
 
 Current evidence:
 
-- Route manifest: `experiments/ai_crm_next/docs/frontend_route_manifest.md`
+- Route manifest: `docs/archive/experiments_ai_crm_next/docs/frontend_route_manifest.md`
 - Baseline report: `docs/archive/experiments_ai_crm_next/docs/frontend_screenshot_baseline.md`
 - Tool and smoke test: retired; see `docs/archive/experiments_ai_crm_next/retired_tools.md`.
 

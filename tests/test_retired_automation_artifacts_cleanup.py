@@ -91,5 +91,27 @@ def test_historical_experiment_planning_docs_are_archived() -> None:
         assert archive_path.exists(), str(archive_path.relative_to(ROOT))
 
 
+def test_historical_experiment_route_and_parity_docs_are_archived() -> None:
+    archived_docs = [
+        "commerce_parity_strategy.md",
+        "customer_read_model_parity_strategy.md",
+        "customer_read_model_route_cutover_manifest.md",
+        "frontend_route_manifest.md",
+        "media_library_parity_strategy.md",
+        "media_library_route_cutover_manifest.md",
+        "product_management_route_cutover_manifest.md",
+        "questionnaire_parity_strategy.md",
+        "questionnaire_readonly_route_cutover_manifest.md",
+        "user_ops_parity_strategy.md",
+        "user_ops_readonly_route_cutover_manifest.md",
+        "user_ops_readonly_sample_and_drift_checklist.md",
+    ]
+    for filename in archived_docs:
+        active_path = ROOT / "experiments" / "ai_crm_next" / "docs" / filename
+        archive_path = ROOT / "docs" / "archive" / "experiments_ai_crm_next" / "docs" / filename
+        assert not active_path.exists(), str(active_path.relative_to(ROOT))
+        assert archive_path.exists(), str(archive_path.relative_to(ROOT))
+
+
 def test_retired_automation_conversion_split_blueprint_is_removed() -> None:
     assert not (ROOT / "docs" / "refactor" / "automation-conversion-split-blueprint.md").exists()

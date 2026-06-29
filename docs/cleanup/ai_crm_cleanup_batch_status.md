@@ -14,7 +14,7 @@ changes, production access, or external calls.
 | Batch 0 repo hygiene audit | done | `tools/audit_repo_hygiene.py`, `tests/test_repo_hygiene_audit.py`, `docs/cleanup/repo_hygiene_report.md`, `docs/cleanup/repo_hygiene_report.json` | Keep report-only; do not promote findings to CI fail without explicit approval. |
 | Batch 1 agent entry docs and safety wording | done | `AGENTS.md`, `CLAUDE.md`, `README.md`, `docs/development/ai_crm_next_architecture_skill.md`, `skills/ai-crm-next-architecture/SKILL.md` | Keep production connection details outside the public repo entry docs. |
 | Batch 2 lint and hygiene guard expansion | done | `scripts/run_lint.py`, `docs/cleanup/route_inventory_consolidation_inventory.md`, `docs/cleanup/route_inventory_consolidation_inventory.json`, `tools/report_route_inventory_consolidation.py` | Continue with report-backed cleanup, not full Ruff style expansion. |
-| Batch 3 experiment workspace inventory | progressed | `tools/report_experiments_inventory.py`, `tests/test_experiments_inventory_report.py`, `docs/cleanup/experiments_ai_crm_next_inventory.md`, `docs/cleanup/experiments_ai_crm_next_inventory.json`, `docs/archive/experiments_ai_crm_next/retired_tools.md`, `docs/archive/experiments_ai_crm_next/docs/remaining_work_queue.md`, `docs/archive/experiments_ai_crm_next/docs/frontend_screenshot_baseline.md`, `docs/archive/experiments_ai_crm_next/docs/real_readonly_http_dual_run.md`, `docs/archive/experiments_ai_crm_next/docs/module_status_matrix.md` | Canary/readiness helpers, local evidence helpers, paired tests, and historical planning/status docs are retired or archived; use the generated inventory before changing the remaining experiment scaffold/tests/fixtures. |
+| Batch 3 experiment workspace inventory | progressed | `tools/report_experiments_inventory.py`, `tests/test_experiments_inventory_report.py`, `docs/cleanup/experiments_ai_crm_next_inventory.md`, `docs/cleanup/experiments_ai_crm_next_inventory.json`, `tests/test_retired_automation_artifacts_cleanup.py`, `docs/archive/experiments_ai_crm_next/retired_tools.md`, `docs/archive/experiments_ai_crm_next/docs/remaining_work_queue.md`, `docs/archive/experiments_ai_crm_next/docs/frontend_screenshot_baseline.md`, `docs/archive/experiments_ai_crm_next/docs/real_readonly_http_dual_run.md`, `docs/archive/experiments_ai_crm_next/docs/module_status_matrix.md`, `docs/archive/experiments_ai_crm_next/docs/frontend_route_manifest.md`, `docs/archive/experiments_ai_crm_next/docs/customer_read_model_route_cutover_manifest.md`, `docs/archive/experiments_ai_crm_next/docs/user_ops_readonly_route_cutover_manifest.md` | Canary/readiness helpers, local evidence helpers, paired tests, historical planning/status docs, and route/parity strategy docs are retired or archived; active experiment docs are reduced to the small reference set shown in the generated inventory. |
 | Batch 4 Flask retirement | done | `tests/test_shared_flask_config_retirement.py`, `tests/test_wechat_oauth_client.py` | Keep `from flask`, `import flask`, and `current_app` out of runtime code. |
 | Batch 5 fixture reset registry | done | `aicrm_next/fixture_reset_registry.py`, `tests/test_fixture_reset_registry.py` | Preserve reset order and keep router registration behavior unchanged. |
 | Deprecated CLI noise | done | `app.py`, `tests/test_startup_entrypoint_next_only.py` | Keep removed-command errors table-driven until the CLI contract is formally deleted. |
@@ -45,8 +45,10 @@ python3 tools/report_route_inventory_consolidation.py \
 ## Recommended Next Batch
 
 Do not delete `experiments/ai_crm_next` wholesale. The next safe batch is to use
-the generated experiment inventory to evaluate remaining active experiment docs,
-fixtures, migrations, `experiments/ai_crm_next/scripts/run_postgres_integration_tests.sh`,
-and the single active path helper `experiments/ai_crm_next/tools/doc_paths.py`.
-Keep active strategy documents free of executable commands for retired helpers;
-historical commands belong in `docs/archive/experiments_ai_crm_next/`.
+the generated experiment inventory to evaluate the remaining experiment-local
+tests, parity fixtures, migrations,
+`experiments/ai_crm_next/scripts/run_postgres_integration_tests.sh`, and the
+single active path helper `experiments/ai_crm_next/tools/doc_paths.py`. Keep
+active reference docs limited to files still read by tests or needed as the
+experiment entrypoint; historical commands belong in
+`docs/archive/experiments_ai_crm_next/`.

@@ -133,7 +133,7 @@ Proceed to route-level frontend smoke / screenshot baseline. Keep old Flask onli
 Customer Read Model readonly gray-release preparation now has dedicated planning and tooling in:
 
 - `docs/archive/experiments_ai_crm_next/docs/customer_read_model_gray_release_plan.md`
-- `experiments/ai_crm_next/docs/customer_read_model_route_cutover_manifest.md`
+- `docs/archive/experiments_ai_crm_next/docs/customer_read_model_route_cutover_manifest.md`
 - `docs/archive/experiments_ai_crm_next/docs/customer_read_model_sample_data_checklist.md`
 - `retired experiment wrapper; see docs/archive/experiments_ai_crm_next/retired_tools.md`
 
@@ -196,8 +196,8 @@ Conclusion: the customer detail, timeline, and recent-message routes now have lo
 User Ops readonly gray-release preparation now has dedicated planning and tooling in:
 
 - `docs/archive/experiments_ai_crm_next/docs/user_ops_readonly_gray_release_plan.md`
-- `experiments/ai_crm_next/docs/user_ops_readonly_route_cutover_manifest.md`
-- `experiments/ai_crm_next/docs/user_ops_readonly_sample_and_drift_checklist.md`
+- `docs/archive/experiments_ai_crm_next/docs/user_ops_readonly_route_cutover_manifest.md`
+- `docs/archive/experiments_ai_crm_next/docs/user_ops_readonly_sample_and_drift_checklist.md`
 - `retired experiment wrapper; see docs/archive/experiments_ai_crm_next/retired_tools.md`
 
 The accepted legacy drift remains: old `/api/admin/user-ops/overview` may miss `激活待录入`, while Next must satisfy the current 8-card product contract. DND, batch-send preview/execute, deferred jobs, internal User Ops routes, real WeCom dispatch, and media upload remain outside readonly dual-run and gray preparation.
