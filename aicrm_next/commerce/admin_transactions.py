@@ -17,6 +17,7 @@ from aicrm_next.shared.text_encoding import repair_utf8_mojibake
 
 from .repo import build_commerce_repository, connect_commerce_db
 from .application import GetTransactionQuery, ListProductsQuery, ListTransactionsQuery
+from .order_expiration import close_expired_wechat_pay_orders
 from .product_code_aliases import canonical_product_code, product_code_filter_values
 from .refund_status import active_wechat_refund_sql
 from aicrm_next.integration_gateway.wechat_pay_client import WeChatPayClient, WeChatPayClientConfig, wechat_pay_client_config_from_env
@@ -368,7 +369,7 @@ def _postgres_orders(filters: dict[str, str], *, limit: int, offset: int) -> dic
     if filters.get("status") == "paid":
         where.append("(status = 'paid' OR trade_state = 'SUCCESS')")
     elif filters.get("status") == "pending":
-        where.append("COALESCE(status, '') NOT IN ('paid', 'failed') AND COALESCE(trade_state, '') <> 'SUCCESS'")
+        where.append("COALESCE(status, '') NOT IN ('paid', 'failed', 'closed') AND COALESCE(trade_state, '') <> 'SUCCESS'")
     elif filters.get("status") == "refund_processing":
         where.append(
             f"""
@@ -396,6 +397,8 @@ def _postgres_orders(filters: dict[str, str], *, limit: int, offset: int) -> dic
     """
     count_query = f"SELECT count(*) AS total FROM wechat_pay_orders WHERE {clause}"
     with connect_commerce_db(_database_url()) as conn:
+        close_expired_wechat_pay_orders(conn=conn)
+        conn.commit()
         with conn.cursor() as cur:
             cur.execute(count_query, tuple(params))
             total = int((cur.fetchone() or {}).get("total") or 0)
@@ -430,6 +433,8 @@ def get_wechat_admin_order(order_id: str) -> dict[str, Any] | None:
     if database_mode() == "postgres":
         _require_psycopg("psycopg is required for production transaction admin")
         with connect_commerce_db(_database_url()) as conn:
+            close_expired_wechat_pay_orders(conn=conn, out_trade_no=identifier, limit=1)
+            conn.commit()
             with conn.cursor() as cur:
                 cur.execute(
                     f"""

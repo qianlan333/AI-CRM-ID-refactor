@@ -10,6 +10,7 @@ from aicrm_next.shared.runtime import database_mode
 from aicrm_next.shared.text_encoding import repair_utf8_mojibake
 
 from .application import GetTransactionQuery, ListTransactionsQuery
+from .order_expiration import close_expired_wechat_pay_orders
 from .product_code_aliases import canonical_product_code, canonical_product_name, product_code_filter_values
 from .refund_status import active_wechat_refund_sql
 from .repo import connect_commerce_db
@@ -472,6 +473,9 @@ def _postgres_list(provider: str, filters: dict[str, Any], *, limit: int, offset
     table = _postgres_table(provider)
     select = _postgres_order_select(provider)
     with _connect() as conn:
+        if provider == "wechat":
+            close_expired_wechat_pay_orders(conn=conn)
+            conn.commit()
         total = int((conn.execute(f"SELECT count(*) AS total FROM {table} o WHERE {clause}", tuple(params)).fetchone() or {}).get("total") or 0)
         rows = conn.execute(
             f"""
@@ -499,6 +503,9 @@ def _postgres_get(provider: str, identifier: str) -> dict[str, Any] | None:
     transaction_column = "trade_no" if provider == "alipay" else "transaction_id"
     order_column = "order_id" if provider == "wechat_shop" else "out_trade_no"
     with _connect() as conn:
+        if provider == "wechat":
+            close_expired_wechat_pay_orders(conn=conn, out_trade_no=_text(identifier), limit=1)
+            conn.commit()
         row = conn.execute(
             f"""
             SELECT {select}
