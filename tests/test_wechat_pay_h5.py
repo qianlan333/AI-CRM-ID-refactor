@@ -11,6 +11,7 @@ from cryptography.hazmat.primitives.asymmetric import padding, rsa
 from cryptography.x509.oid import NameOID
 
 from aicrm_next.admin_config.settings import mask_value
+from aicrm_next.commerce.order_expiration import close_expired_wechat_pay_orders
 from aicrm_next.commerce.repo import reset_commerce_fixture_state
 from aicrm_next.commerce.wechat_pay_client import WeChatPayClient, WeChatPayClientConfig
 
@@ -238,6 +239,120 @@ def test_next_wechat_checkout_and_notify_keep_h5_payment_contract(next_client):
     assert notify_payload["payment_notify_executed"] == "local_only"
     assert notify_payload["real_payment_notify_executed"] is False
     assert notify_payload["provider_signature_verified"] is False
+
+
+def test_h5_wechat_pay_order_expiry_defaults_to_two_hours() -> None:
+    from aicrm_next.public_product import h5_wechat_pay
+
+    now = datetime.now(timezone.utc)
+    expires_at = datetime.fromisoformat(h5_wechat_pay._expires_at().replace("Z", "+00:00"))
+
+    assert timedelta(minutes=119) <= expires_at - now <= timedelta(minutes=121)
+
+
+def test_close_expired_wechat_pay_orders_only_targets_unpaid_pending_orders() -> None:
+    class Cursor:
+        def __init__(self, rows):
+            self.rows = rows
+
+        def fetchall(self):
+            return self.rows
+
+    class FakeConn:
+        def __init__(self):
+            self.query = ""
+            self.params = ()
+
+        def execute(self, query, params=()):
+            self.query = query
+            self.params = params
+            return Cursor(
+                [
+                    {
+                        "id": 1,
+                        "out_trade_no": "WXP_EXPIRED",
+                        "status": "closed",
+                        "trade_state": "CLOSED",
+                        "created_at": "2026-06-30T18:00:00Z",
+                        "updated_at": "2026-06-30T20:01:00Z",
+                    }
+                ]
+            )
+
+    conn = FakeConn()
+    result = close_expired_wechat_pay_orders(
+        conn=conn,
+        now=datetime(2026, 6, 30, 22, 0, 0, tzinfo=timezone.utc),
+        ttl_hours=2,
+        limit=20,
+    )
+
+    assert result["closed_count"] == 1
+    assert result["real_external_call_executed"] is False
+    assert "COALESCE(status, '') IN ('created', 'paying', 'pending', '')" in conn.query
+    assert "COALESCE(trade_state, '') <> 'SUCCESS'" in conn.query
+    assert "paid_at IS NULL" in conn.query
+    assert "FOR UPDATE SKIP LOCKED" in conn.query
+    assert conn.params[0] == datetime(2026, 6, 30, 20, 0, 0, tzinfo=timezone.utc)
+
+
+def test_h5_order_status_closes_expired_pending_order_before_return(monkeypatch) -> None:
+    from aicrm_next.public_product import h5_wechat_pay
+
+    calls: list[dict] = []
+
+    class Cursor:
+        def __init__(self, row):
+            self.row = row
+
+        def fetchone(self):
+            return self.row
+
+    class FakeConn:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def commit(self):
+            calls.append({"commit": True})
+
+        def execute(self, query, params=()):
+            if "SELECT * FROM wechat_pay_orders" in query:
+                return Cursor(
+                    {
+                        "id": 1,
+                        "out_trade_no": "WXP_EXPIRED",
+                        "product_code": "course_masked_001",
+                        "product_name": "课程商品样例",
+                        "amount_total": 9900,
+                        "currency": "CNY",
+                        "status": "closed",
+                        "trade_state": "CLOSED",
+                        "refund_status": "",
+                        "refunded_amount_total": 0,
+                        "created_at": "2026-06-30T18:00:00Z",
+                    }
+                )
+            if "SELECT lead_channel_id, lead_program_id" in query:
+                return Cursor({"lead_channel_id": None, "lead_program_id": None})
+            return Cursor(None)
+
+    def fake_close(*, conn, out_trade_no="", limit=200, **kwargs):
+        calls.append({"out_trade_no": out_trade_no, "limit": limit})
+        return {"ok": True, "closed_count": 1}
+
+    monkeypatch.setattr(h5_wechat_pay, "production_data_ready", lambda: True)
+    monkeypatch.setattr(h5_wechat_pay, "_connect", lambda: FakeConn())
+    monkeypatch.setattr(h5_wechat_pay, "close_expired_wechat_pay_orders", fake_close)
+
+    response = h5_wechat_pay.order_status_response("WXP_EXPIRED", type("Request", (), {"query_params": {}})())
+    payload = response.body.decode("utf-8")
+
+    assert calls[0] == {"out_trade_no": "WXP_EXPIRED", "limit": 1}
+    assert any(call.get("commit") for call in calls)
+    assert '"status":"closed"' in payload
 
 
 def test_legacy_h5_wechat_pay_paths_are_retired_under_next(next_client):

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import base64
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 import hashlib
 import hmac
 import json
@@ -18,6 +18,7 @@ from aicrm_next.commerce.domain import completion_redirect_projection, safe_comp
 from aicrm_next.commerce.external_push_admin import plan_order_paid_external_push_effect
 from aicrm_next.navigation_target import completion_action_for_target, completion_target_projection
 from aicrm_next.commerce.external_push_outbox import enqueue_transaction_paid_outbox
+from aicrm_next.commerce.order_expiration import close_expired_wechat_pay_orders, pending_order_expires_at_text
 from aicrm_next.commerce.product_code_aliases import product_code_filter_values
 from aicrm_next.integration_gateway.wechat_pay_client import WeChatPayClient, WeChatPayClientConfig, WeChatPayClientError
 from aicrm_next.integration_gateway.wechat_oauth_client import WeChatOAuthClientError, build_wechat_oauth_client
@@ -319,7 +320,7 @@ def _out_trade_no() -> str:
 
 
 def _expires_at() -> str:
-    return (datetime.now(timezone.utc) + timedelta(minutes=30)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return pending_order_expires_at_text()
 
 
 def _safe_success_url(value: Any) -> str:
@@ -868,9 +869,11 @@ def order_status_response(out_trade_no: str, request: Request) -> JSONResponse:
         return JSONResponse({"ok": False, "error": "production_database_required"}, status_code=503, headers=route_headers())
     trade_no = _normalized_text(out_trade_no)
     with _connect() as conn:
+        close_expired_wechat_pay_orders(conn=conn, out_trade_no=trade_no, limit=1)
         order = conn.execute("SELECT * FROM wechat_pay_orders WHERE out_trade_no = %s LIMIT 1", (trade_no,)).fetchone()
         if not order:
             return JSONResponse({"ok": False, "error": "order_not_found"}, status_code=404, headers=route_headers())
+        conn.commit()
         if _normalized_text(request.query_params.get("refresh")).lower() in {"1", "true", "yes", "on"}:
             try:
                 transaction = WeChatPayClient(_client_config()).query_order_by_out_trade_no(trade_no)
