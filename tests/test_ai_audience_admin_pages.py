@@ -438,11 +438,18 @@ def test_admin_ai_audience_detail_page_has_required_sections_without_top_actions
         "每日 2:00",
         "接收 Webhook 地址（系统生成）",
         "外推 Webhook 地址（增量刷新后触发）",
+        "OperationMemberPicker.open",
+        "选择发送人",
+        "已选择发送人，请保存白名单",
+        "发送人白名单最多 5 个",
+        'scope: "ai_audience"',
+        "更换",
         "外部联系人 ID",
         "/api/admin/ai-audience/packages/123",
         "/api/admin/ai-audience/packages/123/members",
         "/api/admin/ai-audience/packages/123/webhooks",
         "/api/admin/ai-audience/packages/123/senders",
+        "operation_member_picker.js",
     ):
         assert expected in html
     for forbidden in (
@@ -462,6 +469,9 @@ def test_admin_ai_audience_detail_page_has_required_sections_without_top_actions
         "inbound_webhook_secret",
         "signing_secret",
         "window.prompt",
+        "请输入发送人 userid",
+        "请先填写当前发送人",
+        'data-sender-field="sender_userid"',
         "通过 AI 创建 SQL 人群包；查看当前命中人数、最后一次刷新时间与刷新方式。",
         "固定逻辑：不提供 5/15/30 分钟。",
         "外部 Agent 生成内容后回调；地址不可编辑，可重置 secret。",

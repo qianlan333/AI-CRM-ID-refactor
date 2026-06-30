@@ -373,6 +373,17 @@
     font-size: 12px;
   }
 
+  .ai-sender-person {
+    display: grid;
+    gap: 4px;
+    min-width: 220px;
+  }
+
+  .ai-sender-person strong {
+    color: var(--ai-text);
+    font-weight: 900;
+  }
+
   .ai-status-line {
     min-height: 20px;
     margin-top: 8px;
@@ -762,16 +773,77 @@
       setStatus(els.senderStatusLine, "发送人白名单已保存", "success");
     };
 
-    const updateSenderFromInputs = () => {
-      els.senderRows.querySelectorAll("[data-sender-field='sender_userid']").forEach((input) => {
-        const index = Number(input.dataset.index);
-        if (!Number.isNaN(index) && senderItems[index]) {
-          const value = input.value.trim();
-          senderItems[index].sender_userid = value;
-          senderItems[index].display_name = value;
+    const senderMemberFromItem = (item) => ({
+      user_id: (item.sender_userid || "").trim(),
+      display_name: (item.display_name || item.sender_userid || "").trim()
+    });
+
+    const appendSelectedSenders = (members) => {
+      const seen = new Set(senderItems.map((item) => (item.sender_userid || "").trim()).filter(Boolean));
+      const nextItems = [...senderItems];
+      members.forEach((member) => {
+        const userId = (member.user_id || member.staff_id || "").trim();
+        if (!userId || seen.has(userId)) return;
+        seen.add(userId);
+        nextItems.push({
+          sender_userid: userId,
+          display_name: (member.display_name || userId).trim(),
+          status: "active"
+        });
+      });
+      senderItems = nextItems;
+      renderSenders();
+      setStatus(els.senderStatusLine, "已选择发送人，请保存白名单", "success");
+    };
+
+    const openSenderPicker = (index = null) => {
+      if (!window.OperationMemberPicker || typeof window.OperationMemberPicker.open !== "function") {
+        setStatus(els.senderStatusLine, "运营人员选择器加载失败，请刷新页面后重试", "error");
+        return;
+      }
+      const disabledUserIds = senderItems
+        .map((item, itemIndex) => (itemIndex === index ? "" : item.sender_userid || "").trim())
+        .filter(Boolean);
+      if (index === null) {
+        if (disabledUserIds.length >= 5) {
+          setStatus(els.senderStatusLine, "发送人白名单最多 5 个", "error");
+          return;
+        }
+        const remaining = Math.max(1, 5 - disabledUserIds.length);
+        window.OperationMemberPicker.open({
+          title: "选择发送人",
+          scope: "ai_audience",
+          pageSize: 100,
+          multiple: true,
+          max: remaining,
+          disabledUserIds,
+          onSelect: appendSelectedSenders
+        });
+        return;
+      }
+      const current = senderItems[index] || {};
+      window.OperationMemberPicker.open({
+        title: "选择发送人",
+        scope: "ai_audience",
+        pageSize: 100,
+        selectedMember: senderMemberFromItem(current),
+        disabledUserIds,
+        onSelect: (member) => {
+          const userId = (member.user_id || member.staff_id || "").trim();
+          if (!userId) return;
+          senderItems[index] = {
+            ...current,
+            sender_userid: userId,
+            display_name: (member.display_name || userId).trim(),
+            status: current.status === "paused" ? "paused" : "active"
+          };
+          renderSenders();
+          setStatus(els.senderStatusLine, "已选择发送人，请保存白名单", "success");
         }
       });
     };
+
+    const updateSenderFromInputs = () => {};
 
     const renderSenders = () => {
       if (!senderItems.length) {
@@ -785,14 +857,16 @@
           <tr>
             <td>${index + 1}</td>
             <td>
-              ${item.sender_userid ? `<strong>${escapeHtml(item.display_name || item.sender_userid)}</strong>` : `
-                <input class="ai-input" data-sender-field="sender_userid" data-index="${index}" placeholder="请输入发送人 userid">
-              `}
+              <div class="ai-sender-person">
+                <strong>${escapeHtml(item.display_name || item.sender_userid || "未选择发送人")}</strong>
+                <span class="ai-mono">${escapeHtml(item.sender_userid || "请点击选择")}</span>
+              </div>
             </td>
             <td>${escapeHtml(rule)}</td>
             <td><span class="ai-pill ${active ? "" : "gray"}">${active ? "启用" : "停用"}</span></td>
             <td>
               <div class="ai-btns">
+                <button class="ai-btn soft" type="button" data-sender-action="choose" data-index="${index}">更换</button>
                 <button class="ai-btn" type="button" data-sender-action="up" data-index="${index}" ${index === 0 ? "disabled" : ""}>上移</button>
                 <button class="ai-btn" type="button" data-sender-action="down" data-index="${index}" ${index === senderItems.length - 1 ? "disabled" : ""}>下移</button>
                 <button class="ai-btn" type="button" data-sender-action="toggle" data-index="${index}">${active ? "停用" : "启用"}</button>
@@ -807,6 +881,10 @@
         button.addEventListener("click", async () => {
           const index = Number(button.dataset.index);
           const action = button.dataset.senderAction;
+          if (action === "choose") {
+            openSenderPicker(index);
+            return;
+          }
           const next = senderItems.map((item) => ({ ...item }));
           if (action === "up" && index > 0) {
             [next[index - 1], next[index]] = [next[index], next[index - 1]];
@@ -835,19 +913,7 @@
 
     const addSender = () => {
       updateSenderFromInputs();
-      if (senderItems.some((item) => !item.sender_userid)) {
-        setStatus(els.senderStatusLine, "请先填写当前发送人", "error");
-        return;
-      }
-      senderItems = [...senderItems, {
-        sender_userid: "",
-        display_name: "",
-        status: "active"
-      }];
-      renderSenders();
-      const input = els.senderRows.querySelector("[data-sender-field='sender_userid']");
-      if (input) input.focus();
-      setStatus(els.senderStatusLine, "");
+      openSenderPicker();
     };
 
     const renderMembers = (payload) => {
