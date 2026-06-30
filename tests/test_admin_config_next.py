@@ -8,6 +8,7 @@ from sqlalchemy import create_engine, text
 
 from aicrm_next.main import create_app
 from aicrm_next.platform_foundation.external_effects.adapters import webhook_execution_settings, wecom_execution_settings
+from aicrm_next.platform_foundation.external_effects.realtime import realtime_wakeup_state
 from aicrm_next.platform_foundation.external_effects.test_receiver import (
     test_execution_only_enabled as external_effect_test_execution_only_enabled,
     test_receiver_enabled as external_effect_test_receiver_enabled,
@@ -523,7 +524,25 @@ def test_webhooks_push_category_controls_external_effect_runtime(monkeypatch, tm
     assert execution["enabled"] is True
     assert execution["allowed_types"] == ["webhook.questionnaire_submission.push"]
     wecom_execution = wecom_execution_settings()
-    assert wecom_execution["enabled"] is False
+    assert wecom_execution["enabled"] is True
+    assert saved.json()["derived_gates"]["wecom_execute"] is False
+    assert _scalar(database_url, "SELECT value FROM app_settings WHERE key = 'AICRM_EXTERNAL_EFFECT_WECOM_EXECUTE'") == "false"
+
+    welcome_saved = client.patch(
+        "/api/admin/config/push-capabilities/welcome_message",
+        headers={"X-Admin-Action-Token": token},
+        json={"enabled": True, "operator": "webhook-runtime-test"},
+    )
+
+    assert welcome_saved.status_code == 200
+    assert welcome_saved.json()["capability"]["enabled"] is True
+    assert "wecom.welcome_message.send" in welcome_saved.json()["derived_gates"]["allowed_effect_types"]
+    assert "wecom.message.private.send" in welcome_saved.json()["derived_gates"]["allowed_effect_types"]
+    assert welcome_saved.json()["derived_gates"]["realtime_enabled"] is True
+    assert welcome_saved.json()["derived_gates"]["realtime_allowed_types"] == ["wecom.welcome_message.send"]
+    assert _scalar(database_url, "SELECT value FROM app_settings WHERE key = 'AICRM_EXTERNAL_EFFECT_REALTIME_ENABLED'") == "true"
+    assert _scalar(database_url, "SELECT value FROM app_settings WHERE key = 'AICRM_EXTERNAL_EFFECT_REALTIME_ALLOWED_TYPES'") == "wecom.welcome_message.send"
+    assert realtime_wakeup_state()["channel_entry_missing_types"] == ["wecom.contact.tag.mark", "wecom.profile.update"]
 
     rejected = client.put(
         "/api/admin/config/categories/webhooks_push/settings",

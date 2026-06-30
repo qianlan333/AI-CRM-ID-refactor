@@ -8,6 +8,7 @@ from typing import Any
 from aicrm_next.shared.runtime_settings import runtime_bool, runtime_csv, runtime_setting
 
 from .adapters import ExternalEffectAdapterRegistry
+from .models import WECOM_CONTACT_TAG_MARK, WECOM_PROFILE_UPDATE, WECOM_WELCOME_MESSAGE_SEND
 from .repo import ExternalEffectRepository
 from .worker import ExternalEffectWorker
 
@@ -15,6 +16,14 @@ LOGGER = logging.getLogger(__name__)
 _EXECUTOR = ThreadPoolExecutor(max_workers=8, thread_name_prefix="external-effect-realtime")
 _ACTIVE_LOCK = threading.Lock()
 _ACTIVE_COUNT = 0
+REALTIME_ENABLED_KEY = "AICRM_EXTERNAL_EFFECT_REALTIME_ENABLED"
+REALTIME_ALLOWED_TYPES_KEY = "AICRM_EXTERNAL_EFFECT_REALTIME_ALLOWED_TYPES"
+REALTIME_MAX_CONCURRENCY_KEY = "AICRM_EXTERNAL_EFFECT_REALTIME_MAX_CONCURRENCY"
+CHANNEL_ENTRY_REALTIME_EFFECT_TYPES = (
+    WECOM_WELCOME_MESSAGE_SEND,
+    WECOM_CONTACT_TAG_MARK,
+    WECOM_PROFILE_UPDATE,
+)
 
 
 def _text(value: Any) -> str:
@@ -23,7 +32,7 @@ def _text(value: Any) -> str:
 
 def _max_concurrency() -> int:
     try:
-        value = int(runtime_setting("AICRM_EXTERNAL_EFFECT_REALTIME_MAX_CONCURRENCY", "2") or "2")
+        value = int(runtime_setting(REALTIME_MAX_CONCURRENCY_KEY, "2") or "2")
     except Exception:
         value = 2
     return max(1, min(value, 16))
@@ -44,11 +53,28 @@ def realtime_wakeup_allowed(effect_type: str) -> bool:
     normalized = _text(effect_type)
     if not normalized:
         return False
-    if not runtime_bool("AICRM_EXTERNAL_EFFECT_REALTIME_ENABLED"):
+    if not runtime_bool(REALTIME_ENABLED_KEY):
         return False
-    if normalized not in runtime_csv("AICRM_EXTERNAL_EFFECT_REALTIME_ALLOWED_TYPES"):
+    if normalized not in runtime_csv(REALTIME_ALLOWED_TYPES_KEY):
         return False
     return _execution_gate_enabled_for_type(normalized)
+
+
+def realtime_wakeup_state() -> dict[str, Any]:
+    enabled = runtime_bool(REALTIME_ENABLED_KEY)
+    allowed_types = sorted(runtime_csv(REALTIME_ALLOWED_TYPES_KEY))
+    channel_entry_required = list(CHANNEL_ENTRY_REALTIME_EFFECT_TYPES)
+    missing_channel_entry_types = [effect_type for effect_type in channel_entry_required if effect_type not in allowed_types]
+    return {
+        "enabled": enabled,
+        "status": "enabled" if enabled else "disabled",
+        "allowed_types": allowed_types,
+        "max_concurrency": _max_concurrency(),
+        "channel_entry_required_types": channel_entry_required,
+        "channel_entry_missing_types": missing_channel_entry_types,
+        "channel_entry_ready": enabled and not missing_channel_entry_types,
+        "description": "渠道码欢迎语必须命中 realtime，否则 welcome_code 可能超过 20 秒窗口。",
+    }
 
 
 def _try_acquire_slot() -> bool:

@@ -11,6 +11,13 @@ from aicrm_next.platform_foundation.external_effects.jobs import (
     SCHEDULER_ENABLED_KEY,
     SCHEDULER_INTERVAL_SECONDS_KEY,
 )
+from aicrm_next.platform_foundation.external_effects.models import WECOM_MESSAGE_PRIVATE_SEND
+from aicrm_next.platform_foundation.external_effects.realtime import (
+    CHANNEL_ENTRY_REALTIME_EFFECT_TYPES,
+    REALTIME_ALLOWED_TYPES_KEY,
+    REALTIME_ENABLED_KEY,
+    REALTIME_MAX_CONCURRENCY_KEY,
+)
 from aicrm_next.platform_foundation.push_center.capability_registry import (
     PushCapability,
     get_push_capability,
@@ -185,6 +192,31 @@ EXTRA_SETTING_DEFINITIONS: dict[str, dict[str, Any]] = {
         "type": "string",
         "description": "逗号分隔；禁止 *。问卷外推填写 webhook.questionnaire_submission.push。",
     },
+    REALTIME_ENABLED_KEY: {
+        "key": REALTIME_ENABLED_KEY,
+        "label": "统一队列实时唤醒",
+        "mode": "editable",
+        "input_type": "text",
+        "type": "boolean",
+        "description": "开启后命中实时 allowlist 的 external_effect_job 会在入队后立即异步执行；渠道码欢迎语必须开启。",
+    },
+    REALTIME_ALLOWED_TYPES_KEY: {
+        "key": REALTIME_ALLOWED_TYPES_KEY,
+        "label": "实时唤醒外部动作类型",
+        "mode": "editable",
+        "input_type": "text",
+        "type": "string",
+        "description": "逗号分隔；建议渠道码开启 wecom.welcome_message.send,wecom.contact.tag.mark,wecom.profile.update。",
+    },
+    REALTIME_MAX_CONCURRENCY_KEY: {
+        "key": REALTIME_MAX_CONCURRENCY_KEY,
+        "label": "实时唤醒并发上限",
+        "mode": "editable",
+        "input_type": "number",
+        "type": "integer",
+        "description": "单进程实时唤醒最多同时执行多少个外部动作；建议 2。",
+        "min": 1,
+    },
     "AICRM_EXTERNAL_EFFECT_ALLOWED_BASE_HOSTS": {
         "key": "AICRM_EXTERNAL_EFFECT_ALLOWED_BASE_HOSTS",
         "label": "允许生成 loopback URL 的域名",
@@ -224,6 +256,38 @@ EXTRA_SETTING_DEFINITIONS: dict[str, dict[str, Any]] = {
         "input_type": "textarea",
         "type": "string",
         "description": "逗号或换行分隔；为空时由 adapter 的单群和 webhook key 约束兜底。",
+    },
+    "AICRM_WECOM_PRIVATE_ADAPTER_MODE": {
+        "key": "AICRM_WECOM_PRIVATE_ADAPTER_MODE",
+        "label": "企微私信群发 Adapter 模式",
+        "mode": "editable",
+        "input_type": "text",
+        "type": "string",
+        "description": "disabled / fake / staging / production；渠道码欢迎语兜底使用该 adapter。",
+    },
+    "AICRM_ENABLE_REAL_WECOM_PRIVATE_MESSAGE": {
+        "key": "AICRM_ENABLE_REAL_WECOM_PRIVATE_MESSAGE",
+        "label": "允许真实企微私信群发",
+        "mode": "editable",
+        "input_type": "text",
+        "type": "boolean",
+        "description": "开启后 wecom.message.private.send 可调用企微 add_msg_template 单客户目标。",
+    },
+    "AICRM_WECOM_GROUP_ADAPTER_MODE": {
+        "key": "AICRM_WECOM_GROUP_ADAPTER_MODE",
+        "label": "企微客户群 Adapter 模式",
+        "mode": "editable",
+        "input_type": "text",
+        "type": "string",
+        "description": "disabled / fake / staging / production；群运营群消息使用。",
+    },
+    "AICRM_ENABLE_REAL_WECOM_GROUP_MESSAGE": {
+        "key": "AICRM_ENABLE_REAL_WECOM_GROUP_MESSAGE",
+        "label": "允许真实企微客户群群发",
+        "mode": "editable",
+        "input_type": "text",
+        "type": "boolean",
+        "description": "开启后 wecom.message.group.send 可调用企微 add_msg_template 群目标。",
     },
     "AICRM_EXTERNAL_EFFECT_WEBHOOK_TIMEOUT_SECONDS": {
         "key": "AICRM_EXTERNAL_EFFECT_WEBHOOK_TIMEOUT_SECONDS",
@@ -404,12 +468,15 @@ def _validate_known_setting(key: str, value: str) -> str:
         "QUESTIONNAIRE_EXTERNAL_PUSH_GLOBAL_ENABLED",
         "AICRM_EXTERNAL_EFFECT_WEBHOOK_EXECUTE",
         "AICRM_EXTERNAL_EFFECT_WECOM_EXECUTE",
+        REALTIME_ENABLED_KEY,
         "AICRM_EXTERNAL_EFFECT_TEST_RECEIVER_ENABLED",
         "AICRM_EXTERNAL_EFFECT_TEST_EXECUTION_ONLY",
         "AICRM_EXTERNAL_EFFECT_PAYMENT_EXECUTE",
         "AICRM_EXTERNAL_EFFECT_FEISHU_EXECUTE",
         "AICRM_EXTERNAL_EFFECT_OPENCLAW_EXECUTE",
         "AICRM_EXTERNAL_EFFECT_MEDIA_UPLOAD_EXECUTE",
+        "AICRM_ENABLE_REAL_WECOM_PRIVATE_MESSAGE",
+        "AICRM_ENABLE_REAL_WECOM_GROUP_MESSAGE",
         "ADMIN_BREAK_GLASS_LOGIN_ENABLED",
     }:
         return "true" if normalized.lower() in {"1", "true", "yes", "y", "on"} else "false"
@@ -418,10 +485,15 @@ def _validate_known_setting(key: str, value: str) -> str:
         if normalized and normalized not in allowed_modes:
             raise ValueError("AICRM_QUESTIONNAIRE_EXTERNAL_PUSH_MODE 只允许 legacy / shadow / queue")
         return normalized or "queue"
-    if key == "AICRM_EXTERNAL_EFFECT_ALLOWED_TYPES":
+    if key in {"AICRM_EXTERNAL_EFFECT_ALLOWED_TYPES", REALTIME_ALLOWED_TYPES_KEY}:
         if "*" in {item.strip() for item in normalized.replace("\n", " ").replace(",", " ").split() if item.strip()}:
-            raise ValueError("AICRM_EXTERNAL_EFFECT_ALLOWED_TYPES 不允许使用 *")
+            raise ValueError(f"{key} 不允许使用 *")
         return normalized
+    if key in {"AICRM_WECOM_PRIVATE_ADAPTER_MODE", "AICRM_WECOM_GROUP_ADAPTER_MODE"}:
+        allowed_modes = {"disabled", "fake", "staging", "production"}
+        if normalized and normalized not in allowed_modes:
+            raise ValueError(f"{key} 只允许 disabled / fake / staging / production")
+        return normalized or "disabled"
     if key == "AICRM_EXTERNAL_EFFECT_ALLOWED_BASE_HOSTS":
         blocked = {"*", "localhost", "127.0.0.1", "::1", "testserver"}
         hosts = {item.strip().lower().split(":", 1)[0] for item in normalized.replace("\n", ",").split(",") if item.strip()}
@@ -687,12 +759,20 @@ def _effect_type_union_for_enabled_capabilities(read_service: "AdminConfigReadSe
             if effect_type not in seen:
                 seen.add(effect_type)
                 effect_types.append(effect_type)
+        if capability.key == "welcome_message" and WECOM_MESSAGE_PRIVATE_SEND not in seen:
+            seen.add(WECOM_MESSAGE_PRIVATE_SEND)
+            effect_types.append(WECOM_MESSAGE_PRIVATE_SEND)
     return effect_types
 
 
 def _derived_gate_payload(effect_types: list[str], capabilities: list[PushCapability]) -> dict[str, Any]:
     enabled_keys = {capability.key for capability in capabilities}
     effect_type_set = set(effect_types)
+    channel_entry_realtime_types = [
+        effect_type
+        for effect_type in CHANNEL_ENTRY_REALTIME_EFFECT_TYPES
+        if effect_type in effect_type_set
+    ]
     webhook_execute = any(
         capability.key in enabled_keys
         and capability.supports_real_execution
@@ -714,6 +794,8 @@ def _derived_gate_payload(effect_types: list[str], capabilities: list[PushCapabi
         "openclaw_execute": openclaw_execute,
         "media_upload_execute": media_upload_execute,
         "test_receiver_enabled": test_receiver_enabled,
+        "realtime_enabled": bool(channel_entry_realtime_types),
+        "realtime_allowed_types": channel_entry_realtime_types,
     }
 
 
@@ -1485,6 +1567,18 @@ class AdminConfigWriteCommand:
         self._upsert_setting_with_audit(
             key="AICRM_EXTERNAL_EFFECT_WECOM_EXECUTE",
             value=_normalize_boolean_text(gates["wecom_execute"]),
+            operator=operator,
+            target_type=TARGET_PUSH_CAPABILITY,
+        )
+        self._upsert_setting_with_audit(
+            key=REALTIME_ENABLED_KEY,
+            value=_normalize_boolean_text(gates["realtime_enabled"]),
+            operator=operator,
+            target_type=TARGET_PUSH_CAPABILITY,
+        )
+        self._upsert_setting_with_audit(
+            key=REALTIME_ALLOWED_TYPES_KEY,
+            value=",".join(gates["realtime_allowed_types"]),
             operator=operator,
             target_type=TARGET_PUSH_CAPABILITY,
         )

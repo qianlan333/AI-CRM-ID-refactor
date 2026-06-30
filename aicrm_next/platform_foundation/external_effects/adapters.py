@@ -271,6 +271,8 @@ class WeComPrivateMessageAdapter:
             "external_userid_count": len(external_userids),
             "content_text_length": len(content_text),
             "attachment_count": len(payload.get("attachments") or []) if isinstance(payload.get("attachments"), list) else 0,
+            "business_type": job.business_type,
+            "source": str(payload.get("source") or ""),
         }
         if gate_error:
             return ExternalEffectDispatchResult(
