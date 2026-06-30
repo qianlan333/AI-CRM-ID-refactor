@@ -135,7 +135,7 @@ def test_cloud_plan_recipient_approval_shadow_emits_broadcast_task_created(monke
     runs, run_total = InternalEventService().list_consumer_runs({"event_id": events[0].event_id})
 
     assert result["ok"] is True
-    assert result["status"] == "approved"
+    assert result["status"] == "already_approved"
     assert result["internal_event_status"] == "emitted"
     assert result["internal_event_id"] == events[0].event_id
     assert total == 1

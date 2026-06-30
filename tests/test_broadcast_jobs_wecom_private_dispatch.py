@@ -4,8 +4,11 @@ import json
 from datetime import datetime, timezone
 from typing import Any
 
+from sqlalchemy import text
+
 import aicrm_next.background_jobs.broadcast_queue_worker as worker
-from aicrm_next.background_jobs.broadcast_queue_worker import SafeSkippedBroadcastDispatcher, run_broadcast_queue_worker
+from aicrm_next.background_jobs.broadcast_queue_worker import PostgresBroadcastQueueRepository, SafeSkippedBroadcastDispatcher, run_broadcast_queue_worker
+from aicrm_next.shared.db_session import get_session_factory
 
 
 class FakeRepo:
@@ -123,6 +126,106 @@ def test_cloud_plan_recipient_message_uses_bound_sender_and_hydrates_text(monkey
     assert adapter.payload["text"] == {"content": "agent generated hello"}
     assert marked["payload"]["cloud_plan_message_id"] == 77
     assert marked["outbound_task_id"] == 901
+
+
+def test_cloud_plan_failure_marks_recipient_and_message_failed(next_pg_schema) -> None:
+    del next_pg_schema
+    plan_id = "plan_failure_sync_1"
+    with get_session_factory()() as session:
+        session.execute(
+            text(
+                """
+                INSERT INTO cloud_broadcast_plans (plan_id, trace_id, session_id, operator, intent)
+                VALUES (:plan_id, :plan_id, 'test-session', 'tester', 'failure sync')
+                """
+            ),
+            {"plan_id": plan_id},
+        )
+        recipient = session.execute(
+            text(
+                """
+                INSERT INTO cloud_broadcast_plan_recipients (
+                    plan_id, external_userid, owner_userid, display_name,
+                    planned_message_count, approval_status, send_status
+                )
+                VALUES (
+                    :plan_id, 'wm_failed', 'HuangYouCan', '失败客户',
+                    1, 'approved', 'queued'
+                )
+                RETURNING id
+                """
+            ),
+            {"plan_id": plan_id},
+        ).mappings().one()
+        recipient_id = int(recipient["id"])
+        session.execute(
+            text(
+                """
+                INSERT INTO cloud_broadcast_plan_recipient_messages (
+                    plan_id, recipient_id, external_userid, content_text, status
+                )
+                VALUES (:plan_id, :recipient_id, 'wm_failed', 'hello', 'queued')
+                """
+            ),
+            {"plan_id": plan_id, "recipient_id": recipient_id},
+        )
+        job = session.execute(
+            text(
+                """
+                INSERT INTO broadcast_jobs (
+                    source_type, source_id, source_table, status,
+                    business_domain, idempotency_key, channel, target_kind,
+                    target_external_userids, target_count, content_type, content_payload
+                )
+                VALUES (
+                    'cloud_plan', :source_id, 'cloud_broadcast_plan_recipients', 'claimed',
+                    'ai_assistant', :idempotency_key, 'wecom_private', 'external_userid',
+                    '["wm_failed"]'::jsonb, 1, 'cloud_plan', CAST(:payload AS jsonb)
+                )
+                RETURNING id
+                """
+            ),
+            {
+                "source_id": f"{plan_id}:{recipient_id}",
+                "idempotency_key": f"cloud_plan_recipient:{plan_id}:{recipient_id}",
+                "payload": json.dumps(
+                    {
+                        "plan_id": plan_id,
+                        "recipient_id": recipient_id,
+                        "external_userid": "wm_failed",
+                        "message_mode": "recipient_messages",
+                    },
+                    ensure_ascii=False,
+                ),
+            },
+        ).mappings().one()
+        job_id = int(job["id"])
+        session.execute(
+            text("UPDATE cloud_broadcast_plan_recipients SET broadcast_job_id = :job_id WHERE id = :recipient_id"),
+            {"job_id": job_id, "recipient_id": recipient_id},
+        )
+        session.commit()
+
+    PostgresBroadcastQueueRepository().mark_failed(job_id, error="not external contact", failure_type="wecom_api_error")
+
+    with get_session_factory()() as session:
+        job_row = session.execute(text("SELECT status, failure_type, last_error FROM broadcast_jobs WHERE id = :job_id"), {"job_id": job_id}).mappings().one()
+        recipient_row = session.execute(
+            text("SELECT send_status, last_error FROM cloud_broadcast_plan_recipients WHERE id = :recipient_id"),
+            {"recipient_id": recipient_id},
+        ).mappings().one()
+        message_row = session.execute(
+            text("SELECT status, last_error FROM cloud_broadcast_plan_recipient_messages WHERE recipient_id = :recipient_id"),
+            {"recipient_id": recipient_id},
+        ).mappings().one()
+
+    assert job_row["status"] == "failed"
+    assert job_row["failure_type"] == "wecom_api_error"
+    assert "not external contact" in job_row["last_error"]
+    assert recipient_row["send_status"] == "failed"
+    assert "not external contact" in recipient_row["last_error"]
+    assert message_row["status"] == "failed"
+    assert "not external contact" in message_row["last_error"]
 
 
 def test_wecom_private_adapter_canonicalizes_miniprogram_attachment(monkeypatch) -> None:

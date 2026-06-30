@@ -106,6 +106,7 @@ class ApproveCloudPlanCommand:
         if not plan:
             raise CloudPlanNotFoundError("plan not found")
         stats = self._repo.plan_stats(plan_id)
+        broadcast_enqueue = self._repo.create_or_reuse_recipient_broadcast_jobs(plan_id, operator=operator)
         internal_event = safe_emit(
             "ops_plan.approved",
             emit_ops_plan_approved_shadow_event,
@@ -120,6 +121,7 @@ class ApproveCloudPlanCommand:
             "ok": True,
             "plan": plan,
             "stats": stats,
+            "broadcast_enqueue": broadcast_enqueue,
             **_internal_event_response(internal_event),
         }
 
@@ -146,7 +148,7 @@ class ApproveCloudPlanRecipientCommand:
     def execute(self, plan_id: str, recipient_id: int, *, operator: str) -> dict[str, Any]:
         result = self._repo.approve_recipient(plan_id, recipient_id, operator=operator)
         internal_event = {"status": ""}
-        if result.get("status") == "approved" and result.get("job_id"):
+        if result.get("status") in {"approved", "already_approved"} and result.get("job_id"):
             recipient = result.get("recipient") if isinstance(result.get("recipient"), dict) else {}
             internal_event = safe_emit(
                 "broadcast_task.created",

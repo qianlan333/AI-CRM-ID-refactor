@@ -87,6 +87,7 @@ class PostgresBroadcastQueueRepository:
             )
 
     def mark_failed(self, job_id: int, *, error: str, failure_type: str = "handler_error") -> None:
+        error_text = str(error or "")[:1000]
         with connect() as conn:
             conn.execute(
                 """
@@ -97,7 +98,39 @@ class PostgresBroadcastQueueRepository:
                     updated_at = CURRENT_TIMESTAMP
                 WHERE id = %s
                 """,
-                (failure_type, str(error or "")[:1000], int(job_id)),
+                (failure_type, error_text, int(job_id)),
+            )
+            conn.execute(
+                """
+                UPDATE cloud_broadcast_plan_recipients r
+                SET send_status = 'failed',
+                    last_error = %s,
+                    updated_at = CURRENT_TIMESTAMP
+                FROM broadcast_jobs j
+                WHERE j.id = %s
+                  AND j.source_type = 'cloud_plan'
+                  AND j.source_table = 'cloud_broadcast_plan_recipients'
+                  AND r.broadcast_job_id = j.id
+                  AND r.send_status IN ('pending', 'queued', 'sending')
+                """,
+                (error_text, int(job_id)),
+            )
+            conn.execute(
+                """
+                UPDATE cloud_broadcast_plan_recipient_messages m
+                SET status = 'failed',
+                    last_error = %s,
+                    updated_at = CURRENT_TIMESTAMP
+                FROM cloud_broadcast_plan_recipients r
+                JOIN broadcast_jobs j ON j.id = r.broadcast_job_id
+                WHERE j.id = %s
+                  AND j.source_type = 'cloud_plan'
+                  AND j.source_table = 'cloud_broadcast_plan_recipients'
+                  AND m.plan_id = r.plan_id
+                  AND m.recipient_id = r.id
+                  AND m.status IN ('pending', 'queued')
+                """,
+                (error_text, int(job_id)),
             )
 
 

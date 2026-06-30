@@ -226,7 +226,8 @@ def test_ops_plan_consumers_are_noop_or_skipped_without_external_work(monkeypatc
     assert audit["consumer_run"]["status"] == "succeeded"
     assert audit["attempt"]["response_summary_json"]["audit_projection"] == "ops_plan_approved_recorded"
     assert planner["consumer_run"]["status"] == "succeeded"
-    assert planner["attempt"]["response_summary_json"]["planner_result"] == "planner_created_broadcast_job"
+    assert planner["attempt"]["response_summary_json"]["planner_result"] == "planner_reused_broadcast_job"
+    assert planner["attempt"]["response_summary_json"]["broadcast_job_count"] == 2
     assert planner["attempt"]["response_summary_json"]["real_external_call_executed"] is False
     assert job_total == 0
 

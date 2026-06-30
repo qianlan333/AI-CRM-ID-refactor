@@ -91,6 +91,14 @@ class CloudPlanRepository(Protocol):
         source_event_id: str = "",
         idempotency_key: str = "",
     ) -> dict[str, Any]: ...
+    def create_or_reuse_recipient_broadcast_jobs(
+        self,
+        plan_id: str,
+        *,
+        operator: str,
+        source_event_id: str = "",
+        idempotency_key: str = "",
+    ) -> dict[str, Any]: ...
     def create_or_reuse_agent_send_plan(
         self,
         *,
@@ -1140,7 +1148,7 @@ class PostgresCloudPlanRepository:
             conn.commit()
         return self.get_plan(plan_id)
 
-    def create_or_reuse_plan_broadcast_job(
+    def create_or_reuse_recipient_broadcast_jobs(
         self,
         plan_id: str,
         *,
@@ -1151,8 +1159,15 @@ class PostgresCloudPlanRepository:
         normalized_plan_id = _text(plan_id)
         if not normalized_plan_id:
             return {"status": "skipped", "reason": "missing_plan_id"}
-        job_id = 0
-        job_status = "created"
+        job_ids: list[int] = []
+        created_count = 0
+        reused_count = 0
+        target_count = 0
+        planner_idempotency_key = _plan_broadcast_idempotency_key(
+            normalized_plan_id,
+            source_event_id=source_event_id,
+            idempotency_key=idempotency_key,
+        )
         with self._connect() as conn:
             plan = conn.execute("SELECT * FROM cloud_broadcast_plans WHERE plan_id = %s FOR UPDATE", (normalized_plan_id,)).fetchone()
             if not plan:
@@ -1172,114 +1187,161 @@ class PostgresCloudPlanRepository:
                   AND COALESCE(approval_status, 'pending') <> 'rejected'
                   AND COALESCE(send_status, 'pending') NOT IN ('cancelled', 'sent')
                   AND COALESCE(external_userid, '') <> ''
+                  AND EXISTS (
+                    SELECT 1
+                    FROM cloud_broadcast_plan_recipient_messages m
+                    WHERE m.plan_id = cloud_broadcast_plan_recipients.plan_id
+                      AND m.recipient_id = cloud_broadcast_plan_recipients.id
+                      AND COALESCE(m.status, 'pending') <> 'cancelled'
+                  )
                 ORDER BY id ASC
                 """,
                 (normalized_plan_id,),
             ).fetchall()
-            targets = [_text(row.get("external_userid")) for row in recipients if _text(row.get("external_userid"))]
-            if not targets:
+            if not recipients:
                 return {"status": "skipped", "reason": "missing_audience"}
-            message_count = conn.execute(
-                """
-                SELECT COUNT(*)::int AS count
-                FROM cloud_broadcast_plan_recipient_messages
-                WHERE plan_id = %s
-                  AND COALESCE(status, 'pending') <> 'cancelled'
-                """,
-                (normalized_plan_id,),
-            ).fetchone()
-            if int((message_count or {}).get("count") or 0) <= 0:
-                return {"status": "skipped", "reason": "missing_send_content"}
-            planner_idempotency_key = _plan_broadcast_idempotency_key(
-                normalized_plan_id,
-                source_event_id=source_event_id,
-                idempotency_key=idempotency_key,
-            )
-            existing = conn.execute(
-                "SELECT id FROM broadcast_jobs WHERE idempotency_key = %s ORDER BY id DESC LIMIT 1",
-                (planner_idempotency_key,),
-            ).fetchone()
-            if existing:
-                job_id = int(existing["id"])
-                job_status = "reused"
-            else:
-                owner = _text(plan_dict.get("owner_userid")) or _text((dict(recipients[0]) if recipients else {}).get("owner_userid"))
-                content_payload = _plan_broadcast_content_payload(
-                    plan_id=normalized_plan_id,
-                    owner_userid=owner,
-                    target_count=len(targets),
-                    source_event_id=source_event_id,
-                )
-                metadata = {
-                    "planner_consumer": "broadcast_task_planner_consumer",
-                    "source_event_id": _text(source_event_id),
-                    "duplicate_policy": "reuse_idempotency_key",
-                }
-                inserted = conn.execute(
-                    """
-                    INSERT INTO broadcast_jobs (
-                        source_type, source_id, source_table, scheduled_for, priority, batch_key,
-                        business_domain, idempotency_key, channel, target_kind, retry_policy_json, metadata_json,
-                        status, requires_approval, target_external_userids, target_count, target_summary,
-                        content_type, content_payload, content_summary, trace_id, created_by
-                    ) VALUES (
-                        'cloud_plan', %s, 'cloud_broadcast_plans', CURRENT_TIMESTAMP, 100, %s,
-                        'group_ops_plan', %s, 'wecom_private', 'external_userid', '{}'::jsonb, %s::jsonb,
-                        'queued', FALSE, %s::jsonb, %s, %s,
-                        'cloud_plan', %s::jsonb, %s, %s, %s
-                    )
-                    ON CONFLICT (idempotency_key) WHERE idempotency_key IS NOT NULL AND idempotency_key <> ''
-                    DO NOTHING
-                    RETURNING id
-                    """,
-                    (
-                        normalized_plan_id,
-                        f"ops_plan:{normalized_plan_id}",
-                        planner_idempotency_key,
-                        _json_dump(metadata),
-                        _json_dump(targets),
-                        len(targets),
-                        f"{len(targets)} recipients",
-                        _json_dump(content_payload),
-                        _plan_broadcast_summary(plan_dict, target_count=len(targets)),
-                        _text(plan_dict.get("trace_id")) or normalized_plan_id,
-                        _text(operator) or "internal_event_worker",
-                    ),
+            target_count = len(recipients)
+            for recipient_row in recipients:
+                recipient = dict(recipient_row)
+                recipient_id = int(recipient["id"])
+                recipient_idempotency_key = f"cloud_plan_recipient:{normalized_plan_id}:{recipient_id}"
+                existing = conn.execute(
+                    "SELECT id FROM broadcast_jobs WHERE idempotency_key = %s ORDER BY id DESC LIMIT 1",
+                    (recipient_idempotency_key,),
                 ).fetchone()
-                if inserted:
-                    job_id = int(inserted["id"])
+                job_id = int(existing["id"]) if existing else 0
+                if job_id:
+                    reused_count += 1
                 else:
-                    existing = conn.execute(
-                        "SELECT id FROM broadcast_jobs WHERE idempotency_key = %s ORDER BY id DESC LIMIT 1",
-                        (planner_idempotency_key,),
+                    metadata = {
+                        "planner_consumer": "broadcast_task_planner_consumer",
+                        "source_event_id": _text(source_event_id),
+                        "plan_idempotency_key": planner_idempotency_key,
+                        "duplicate_policy": "reuse_recipient_idempotency_key",
+                    }
+                    inserted = conn.execute(
+                        """
+                        INSERT INTO broadcast_jobs (
+                            source_type, source_id, source_table, scheduled_for, priority, batch_key,
+                            business_domain, idempotency_key, channel, target_kind, retry_policy_json, metadata_json,
+                            status, requires_approval, target_external_userids, target_count, target_summary,
+                            content_type, content_payload, content_summary, trace_id, created_by
+                        ) VALUES (
+                            'cloud_plan', %s, 'cloud_broadcast_plan_recipients', CURRENT_TIMESTAMP, 100, %s,
+                            'ai_assistant', %s, 'wecom_private', 'external_userid', '{}'::jsonb, %s::jsonb,
+                            'queued', FALSE, %s::jsonb, 1, %s,
+                            'cloud_plan', %s::jsonb, %s, %s, %s
+                        )
+                        ON CONFLICT (idempotency_key) WHERE idempotency_key IS NOT NULL AND idempotency_key <> ''
+                        DO NOTHING
+                        RETURNING id
+                        """,
+                        (
+                            f"{normalized_plan_id}:{recipient_id}",
+                            f"cloud_plan_recipient:{normalized_plan_id}",
+                            recipient_idempotency_key,
+                            _json_dump(metadata),
+                            _json_dump([_text(recipient.get("external_userid"))]),
+                            _text(recipient.get("display_name")) or _text(recipient.get("external_userid")),
+                            _json_dump(
+                                {
+                                    "plan_id": normalized_plan_id,
+                                    "recipient_id": recipient_id,
+                                    "external_userid": _text(recipient.get("external_userid")),
+                                    "message_mode": "recipient_messages",
+                                }
+                            ),
+                            f"{_text(plan_dict.get('display_name')) or _text(plan_dict.get('intent')) or normalized_plan_id} · {_text(recipient.get('display_name')) or _text(recipient.get('external_userid'))}",
+                            _text(plan_dict.get("trace_id")) or normalized_plan_id,
+                            _text(operator) or "internal_event_worker",
+                        ),
                     ).fetchone()
-                    job_id = int(existing["id"]) if existing else 0
-                    job_status = "reused" if job_id else "created"
-                self._audit(
-                    conn,
-                    operator=operator,
-                    action_type="ops_plan_broadcast_job_plan",
-                    target_type="broadcast_job",
-                    target_id=str(job_id or ""),
-                    before={},
-                    after={
-                        "plan_id": normalized_plan_id,
-                        "broadcast_job_id": job_id,
-                        "target_count": len(targets),
-                        "idempotency_key": planner_idempotency_key,
-                    },
-                )
+                    if inserted:
+                        job_id = int(inserted["id"])
+                        created_count += 1
+                    else:
+                        existing = conn.execute(
+                            "SELECT id FROM broadcast_jobs WHERE idempotency_key = %s ORDER BY id DESC LIMIT 1",
+                            (recipient_idempotency_key,),
+                        ).fetchone()
+                        job_id = int(existing["id"]) if existing else 0
+                        if job_id:
+                            reused_count += 1
+                if job_id:
+                    job_ids.append(job_id)
+                    conn.execute(
+                        """
+                        UPDATE cloud_broadcast_plan_recipients
+                        SET approval_status = 'approved',
+                            send_status = CASE WHEN send_status = 'pending' THEN 'queued' ELSE send_status END,
+                            approved_by = CASE WHEN COALESCE(approved_by, '') = '' THEN %s ELSE approved_by END,
+                            approved_at = COALESCE(approved_at, CURRENT_TIMESTAMP),
+                            broadcast_job_id = COALESCE(broadcast_job_id, %s),
+                            updated_at = CURRENT_TIMESTAMP
+                        WHERE id = %s
+                        """,
+                        (_text(operator) or "internal_event_worker", job_id, recipient_id),
+                    )
+                    conn.execute(
+                        """
+                        UPDATE cloud_broadcast_plan_recipient_messages
+                        SET status = CASE WHEN status = 'pending' THEN 'queued' ELSE status END,
+                            updated_at = CURRENT_TIMESTAMP
+                        WHERE plan_id = %s
+                          AND recipient_id = %s
+                        """,
+                        (normalized_plan_id, recipient_id),
+                    )
+            if not job_ids:
+                return {"status": "skipped", "reason": "missing_send_content"}
+            self._audit(
+                conn,
+                operator=operator,
+                action_type="ops_plan_recipient_broadcast_jobs_plan",
+                target_type="cloud_broadcast_plan",
+                target_id=normalized_plan_id,
+                before={},
+                after={
+                    "plan_id": normalized_plan_id,
+                    "broadcast_job_id": job_ids[0],
+                    "broadcast_job_count": len(set(job_ids)),
+                    "created_count": created_count,
+                    "reused_count": reused_count,
+                    "target_count": target_count,
+                    "idempotency_key": planner_idempotency_key,
+                },
+            )
             conn.commit()
+        job_status = "created" if created_count else "reused"
+        first_job_id = job_ids[0] if job_ids else 0
         return {
             "status": job_status,
-            "broadcast_job_id": job_id,
+            "broadcast_job_id": first_job_id,
+            "broadcast_job_count": len(set(job_ids)),
+            "created_count": created_count,
+            "reused_count": reused_count,
             "idempotency_key": planner_idempotency_key,
-            "target_count": len(targets),
+            "target_count": target_count,
             "source_id": normalized_plan_id,
             "trace_id": normalized_plan_id,
             "downstream_status": "broadcast_job_queued",
-            "push_center_job_id": f"broadcast_job:{job_id}" if job_id else "",
+            "push_center_job_id": f"broadcast_job:{first_job_id}" if first_job_id else "",
         }
+
+    def create_or_reuse_plan_broadcast_job(
+        self,
+        plan_id: str,
+        *,
+        operator: str,
+        source_event_id: str = "",
+        idempotency_key: str = "",
+    ) -> dict[str, Any]:
+        return self.create_or_reuse_recipient_broadcast_jobs(
+            plan_id,
+            operator=operator,
+            source_event_id=source_event_id,
+            idempotency_key=idempotency_key,
+        )
 
     def create_or_reuse_agent_send_plan(
         self,
@@ -1928,7 +1990,7 @@ class InMemoryCloudPlanRepository:
                 return self.get_plan(plan_id)
         return None
 
-    def create_or_reuse_plan_broadcast_job(
+    def create_or_reuse_recipient_broadcast_jobs(
         self,
         plan_id: str,
         *,
@@ -1953,91 +2015,131 @@ class InMemoryCloudPlanRepository:
             and item.get("approval_status") != "rejected"
             and item.get("send_status") not in {"cancelled", "sent"}
             and _text(item.get("external_userid"))
+            and any(
+                message.get("plan_id") == normalized_plan_id
+                and int(message.get("recipient_id") or 0) == int(item.get("id") or 0)
+                and message.get("status") != "cancelled"
+                for message in self.messages
+            )
         ]
-        targets = [_text(item.get("external_userid")) for item in recipients]
-        if not targets:
+        if not recipients:
             return {"status": "skipped", "reason": "missing_audience"}
-        messages = [
-            item
-            for item in self.messages
-            if item.get("plan_id") == normalized_plan_id and item.get("status") != "cancelled"
-        ]
-        if not messages:
-            return {"status": "skipped", "reason": "missing_send_content"}
         planner_idempotency_key = _plan_broadcast_idempotency_key(
             normalized_plan_id,
             source_event_id=source_event_id,
             idempotency_key=idempotency_key,
         )
-        existing = next((item for item in self.broadcast_jobs if item.get("idempotency_key") == planner_idempotency_key), None)
-        if existing:
-            return {
-                "status": "reused",
-                "broadcast_job_id": int(existing["id"]),
-                "idempotency_key": planner_idempotency_key,
-                "target_count": int(existing.get("target_count") or len(targets)),
-                "source_id": normalized_plan_id,
-                "trace_id": _text(existing.get("trace_id")) or normalized_plan_id,
-                "downstream_status": "broadcast_job_queued",
-                "push_center_job_id": f"broadcast_job:{int(existing['id'])}",
-            }
-        job_id = len(self.broadcast_jobs) + 1
-        content_payload = _plan_broadcast_content_payload(
-            plan_id=normalized_plan_id,
-            owner_userid=_text(plan.get("owner_userid")),
-            target_count=len(targets),
-            source_event_id=source_event_id,
-        )
-        self.broadcast_jobs.append(
-            {
-                "id": job_id,
-                "source_type": "cloud_plan",
-                "source_table": "cloud_broadcast_plans",
-                "source_id": normalized_plan_id,
-                "scheduled_for": _now(),
-                "priority": 100,
-                "batch_key": f"ops_plan:{normalized_plan_id}",
-                "business_domain": "group_ops_plan",
-                "idempotency_key": planner_idempotency_key,
-                "channel": "wecom_private",
-                "target_kind": "external_userid",
-                "status": "queued",
-                "requires_approval": False,
-                "target_external_userids": list(targets),
-                "target_count": len(targets),
-                "target_summary": f"{len(targets)} recipients",
-                "content_type": "cloud_plan",
-                "content_payload": content_payload,
-                "content_summary": _plan_broadcast_summary(plan, target_count=len(targets)),
-                "trace_id": normalized_plan_id,
-                "created_by": _text(operator) or "internal_event_worker",
-                "created_at": _now(),
-                "updated_at": _now(),
-                "metadata_json": {
-                    "planner_consumer": "broadcast_task_planner_consumer",
-                    "source_event_id": _text(source_event_id),
-                    "duplicate_policy": "reuse_idempotency_key",
-                },
-            }
-        )
+        job_ids: list[int] = []
+        created_count = 0
+        reused_count = 0
+        for recipient in recipients:
+            recipient_id = int(recipient["id"])
+            existing = next(
+                (
+                    item
+                    for item in self.broadcast_jobs
+                    if item.get("idempotency_key") == f"cloud_plan_recipient:{normalized_plan_id}:{recipient_id}"
+                ),
+                None,
+            )
+            if existing:
+                job_id = int(existing["id"])
+                reused_count += 1
+            else:
+                job_id = len(self.broadcast_jobs) + 1
+                self.broadcast_jobs.append(
+                    {
+                        "id": job_id,
+                        "source_type": "cloud_plan",
+                        "source_table": "cloud_broadcast_plan_recipients",
+                        "source_id": f"{normalized_plan_id}:{recipient_id}",
+                        "scheduled_for": _now(),
+                        "priority": 100,
+                        "batch_key": f"cloud_plan_recipient:{normalized_plan_id}",
+                        "business_domain": "ai_assistant",
+                        "idempotency_key": f"cloud_plan_recipient:{normalized_plan_id}:{recipient_id}",
+                        "channel": "wecom_private",
+                        "target_kind": "external_userid",
+                        "status": "queued",
+                        "requires_approval": False,
+                        "target_external_userids": [_text(recipient["external_userid"])],
+                        "target_count": 1,
+                        "target_summary": _text(recipient.get("display_name")) or _text(recipient["external_userid"]),
+                        "content_type": "cloud_plan",
+                        "content_payload": {
+                            "plan_id": normalized_plan_id,
+                            "recipient_id": recipient_id,
+                            "external_userid": _text(recipient["external_userid"]),
+                            "message_mode": "recipient_messages",
+                        },
+                        "content_summary": f"{_text(plan.get('display_name')) or _text(plan.get('intent')) or normalized_plan_id} · {_text(recipient.get('display_name')) or _text(recipient['external_userid'])}",
+                        "trace_id": normalized_plan_id,
+                        "created_by": _text(operator) or "internal_event_worker",
+                        "created_at": _now(),
+                        "updated_at": _now(),
+                        "metadata_json": {
+                            "planner_consumer": "broadcast_task_planner_consumer",
+                            "source_event_id": _text(source_event_id),
+                            "plan_idempotency_key": planner_idempotency_key,
+                            "duplicate_policy": "reuse_recipient_idempotency_key",
+                        },
+                    }
+                )
+                created_count += 1
+            job_ids.append(job_id)
+            recipient.update(
+                {
+                    "approval_status": "approved",
+                    "send_status": "queued" if recipient.get("send_status") == "pending" else recipient.get("send_status"),
+                    "approved_by": recipient.get("approved_by") or operator,
+                    "approved_at": recipient.get("approved_at") or _now(),
+                    "broadcast_job_id": recipient.get("broadcast_job_id") or job_id,
+                    "updated_at": _now(),
+                }
+            )
+            for message in self.messages:
+                if message.get("plan_id") == normalized_plan_id and int(message.get("recipient_id") or 0) == recipient_id and message.get("status") == "pending":
+                    message["status"] = "queued"
         self.audits.append(
             {
-                "action_type": "ops_plan_broadcast_job_plan",
-                "target_id": str(job_id),
+                "action_type": "ops_plan_recipient_broadcast_jobs_plan",
+                "target_id": normalized_plan_id,
                 "operator": operator,
                 "plan_id": normalized_plan_id,
+                "broadcast_job_count": len(set(job_ids)),
+                "created_count": created_count,
+                "reused_count": reused_count,
             }
         )
+        first_job_id = job_ids[0] if job_ids else 0
         return {
-            "status": "created",
-            "broadcast_job_id": job_id,
+            "status": "created" if created_count else "reused",
+            "broadcast_job_id": first_job_id,
+            "broadcast_job_count": len(set(job_ids)),
+            "created_count": created_count,
+            "reused_count": reused_count,
             "idempotency_key": planner_idempotency_key,
-            "target_count": len(targets),
+            "target_count": len(recipients),
             "source_id": normalized_plan_id,
             "trace_id": normalized_plan_id,
             "downstream_status": "broadcast_job_queued",
-            "push_center_job_id": f"broadcast_job:{job_id}",
+            "push_center_job_id": f"broadcast_job:{first_job_id}" if first_job_id else "",
         }
+
+    def create_or_reuse_plan_broadcast_job(
+        self,
+        plan_id: str,
+        *,
+        operator: str,
+        source_event_id: str = "",
+        idempotency_key: str = "",
+    ) -> dict[str, Any]:
+        return self.create_or_reuse_recipient_broadcast_jobs(
+            plan_id,
+            operator=operator,
+            source_event_id=source_event_id,
+            idempotency_key=idempotency_key,
+        )
 
     def create_or_reuse_agent_send_plan(
         self,
