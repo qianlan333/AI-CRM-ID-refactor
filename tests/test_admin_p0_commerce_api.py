@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 
 from aicrm_next.admin_config.api_docs_view_model import build_api_docs_view_model
 from aicrm_next.commerce.admin_exports import reset_export_jobs_for_tests
+from aicrm_next.commerce.admin_unified_orders import list_orders
 from aicrm_next.commerce.repo import reset_commerce_fixture_state
 from aicrm_next.customer_read_model import admin_business_profile, api as customer_api
 from aicrm_next.main import create_app
@@ -77,6 +78,61 @@ def test_unified_orders_list_detail_and_items(monkeypatch) -> None:
     assert items["total"] == 1
     assert items["items"][0]["quantity"] == 1
     assert items["items"][0]["order_no"] == "order_masked_001"
+
+
+def test_unified_orders_paginate_by_created_at_not_paid_at(monkeypatch) -> None:
+    rows_by_provider = {
+        "wechat": [
+            {
+                "order_no": "wx-newer-001",
+                "provider": "wechat",
+                "created_at": "2026-06-26 21:41:21",
+                "paid_at": "2026-06-26 21:41:21",
+                "amount_total": 99900,
+                "status": "paid",
+            },
+            {
+                "order_no": "wx-newer-002",
+                "provider": "wechat",
+                "created_at": "2026-06-26 20:39:28",
+                "paid_at": "2026-06-26 20:39:28",
+                "amount_total": 99900,
+                "status": "paid",
+            },
+        ],
+        "alipay": [],
+        "wechat_shop": [
+            {
+                "order_no": "shop-old-created-late-paid",
+                "provider": "wechat_shop",
+                "created_at": "2026-06-18 23:07:46",
+                "paid_at": "2026-06-30 02:32:35",
+                "amount_total": 990,
+                "status": "paid",
+            }
+        ],
+    }
+
+    def fake_execute(self, filters, *, limit=50, offset=0):
+        rows = rows_by_provider[self.provider]
+        return {
+            "ok": True,
+            "items": rows[offset : offset + limit],
+            "total": len(rows),
+            "limit": limit,
+            "offset": offset,
+        }
+
+    monkeypatch.setattr(
+        "aicrm_next.commerce.admin_unified_orders.CommerceAdminTransactionListReadModel.execute",
+        fake_execute,
+    )
+
+    first_page = list_orders(provider="all", limit=2, offset=0)
+    second_page = list_orders(provider="all", limit=2, offset=2)
+
+    assert [item["order_no"] for item in first_page["items"]] == ["wx-newer-001", "wx-newer-002"]
+    assert [item["order_no"] for item in second_page["items"]] == ["shop-old-created-late-paid"]
 
 
 def test_payments_and_refunds(monkeypatch) -> None:
