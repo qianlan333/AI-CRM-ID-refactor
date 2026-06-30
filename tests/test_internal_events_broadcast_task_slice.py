@@ -93,7 +93,7 @@ def test_broadcast_task_flag_off_does_not_emit(monkeypatch) -> None:
     result = _approve_recipient()
     events, total = InternalEventService().list_events({"event_type": BROADCAST_TASK_CREATED_EVENT_TYPE})
 
-    assert result["status"] == "approved"
+    assert result["status"] == "already_approved"
     assert result["internal_event_status"] == "skipped"
     assert result["internal_event_reason"] == "broadcast_task_internal_events_disabled"
     assert result["internal_event_id"] == ""
@@ -135,12 +135,13 @@ def test_broadcast_task_created_emits_once_with_expected_safe_schema_and_consume
     runs, run_total = _runs(event.event_id)
     broadcast_payload = event.payload_json["broadcast_task"]
 
-    assert result["status"] == "approved"
+    assert result["status"] == "already_approved"
     assert result["internal_event_status"] == "emitted"
     assert result["internal_event_id"] == event.event_id
     assert result["internal_event_consumer_run_count"] == 4
     assert duplicate["status"] == "already_approved"
-    assert duplicate["internal_event_status"] == ""
+    assert duplicate["internal_event_status"] == "emitted"
+    assert duplicate["internal_event_id"] == event.event_id
     assert trace_total == 1
     assert trace_events[0].event_id == event.event_id
     assert original_trace_total == 1

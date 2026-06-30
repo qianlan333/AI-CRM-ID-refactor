@@ -3,7 +3,8 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any
 
-from aicrm_next.background_jobs.broadcast_queue_worker import run_broadcast_queue_worker
+import aicrm_next.background_jobs.broadcast_queue_worker as worker
+from aicrm_next.background_jobs.broadcast_queue_worker import PostgresBroadcastQueueRepository, run_broadcast_queue_worker
 
 
 class FakeRepo:
@@ -60,6 +61,32 @@ def test_worker_marks_failed_when_dispatch_fails() -> None:
     assert summary["sent_ok"] == 0
     assert summary["sent_failed"] == 1
     assert "401" in repo.failed[0]["error"]
+
+
+def test_postgres_mark_failed_syncs_cloud_plan_recipient_state(monkeypatch) -> None:
+    calls: list[dict[str, Any]] = []
+
+    class FakeConnection:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def execute(self, sql: str, params: tuple[Any, ...]) -> None:
+            calls.append({"sql": sql, "params": params})
+
+    monkeypatch.setattr(worker, "connect", lambda: FakeConnection())
+
+    PostgresBroadcastQueueRepository().mark_failed(42, error="not external contact", failure_type="wecom_api_error")
+
+    assert len(calls) == 3
+    assert "UPDATE broadcast_jobs" in calls[0]["sql"]
+    assert calls[0]["params"] == ("wecom_api_error", "not external contact", 42)
+    assert "UPDATE cloud_broadcast_plan_recipients" in calls[1]["sql"]
+    assert calls[1]["params"] == ("not external contact", 42)
+    assert "UPDATE cloud_broadcast_plan_recipient_messages" in calls[2]["sql"]
+    assert calls[2]["params"] == ("not external contact", 42)
 
 
 def test_worker_no_due_jobs_returns_empty_summary() -> None:
