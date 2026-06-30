@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 import hashlib
-import os
 from typing import Any, Callable
 
 from aicrm_next.automation_engine.group_ops.message_content import normalize_miniprogram_attachment_payload
+from aicrm_next.shared.runtime_settings import runtime_bool, runtime_setting
 
 from .audit import record_audit_event
 from .wecom_customer_group_client import WeComCustomerGroupClient, WeComCustomerGroupClientError
@@ -14,12 +14,12 @@ Json = dict[str, Any]
 
 
 def _mode() -> str:
-    value = str(os.getenv("AICRM_WECOM_PRIVATE_ADAPTER_MODE") or os.getenv("AICRM_WECOM_GROUP_ADAPTER_MODE") or "").strip().lower()
+    value = str(runtime_setting("AICRM_WECOM_PRIVATE_ADAPTER_MODE") or runtime_setting("AICRM_WECOM_GROUP_ADAPTER_MODE") or "").strip().lower()
     return value if value in {"disabled", "fake", "staging", "production"} else "disabled"
 
 
 def _enabled(name: str) -> bool:
-    return str(os.getenv(name, "") or "").strip().lower() in {"1", "true", "yes", "on"}
+    return runtime_bool(name)
 
 
 def _hash_payload(payload: dict[str, Any]) -> str:

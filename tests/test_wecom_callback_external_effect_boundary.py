@@ -86,8 +86,10 @@ def test_external_effect_realtime_wakeup_stays_behind_runtime_gates() -> None:
     source = REALTIME.read_text(encoding="utf-8")
     application_source = APPLICATION.read_text(encoding="utf-8")
 
-    assert 'runtime_bool("AICRM_EXTERNAL_EFFECT_REALTIME_ENABLED")' in source
-    assert 'runtime_csv("AICRM_EXTERNAL_EFFECT_REALTIME_ALLOWED_TYPES")' in source
+    assert "REALTIME_ENABLED_KEY" in source
+    assert "REALTIME_ALLOWED_TYPES_KEY" in source
+    assert "runtime_bool(REALTIME_ENABLED_KEY)" in source
+    assert "runtime_csv(REALTIME_ALLOWED_TYPES_KEY)" in source
     assert 'runtime_csv("AICRM_EXTERNAL_EFFECT_ALLOWED_TYPES")' in source
     assert 'runtime_bool("AICRM_EXTERNAL_EFFECT_WECOM_EXECUTE")' in source
     assert "ExternalEffectWorker(" in source

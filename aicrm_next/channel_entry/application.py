@@ -35,6 +35,7 @@ from aicrm_next.platform_foundation.command_bus.models import CommandContext
 from aicrm_next.platform_foundation.external_effects import (
     ExternalEffectService,
     WECOM_CONTACT_TAG_MARK,
+    WECOM_MESSAGE_PRIVATE_SEND,
     WECOM_PROFILE_UPDATE,
     WECOM_WELCOME_MESSAGE_SEND,
 )
@@ -159,6 +160,7 @@ def _plan_channel_entry_effect(
     idempotency_key: str,
     payload: dict[str, Any],
     payload_summary: dict[str, Any],
+    business_type: str = "channel_entry",
 ) -> dict[str, Any]:
     return ExternalEffectService().plan_effect(
         effect_type=effect_type,
@@ -166,7 +168,7 @@ def _plan_channel_entry_effect(
         operation=operation,
         target_type=target_type,
         target_id=target_id,
-        business_type="channel_entry",
+        business_type=business_type,
         business_id=business_id,
         source_module="channel_entry.application",
         source_event_id=str(command.event_log_id or ""),
@@ -192,6 +194,60 @@ def _wake_channel_entry_external_effect_job(job_id: Any, *, effect_type: str, re
         reason=reason,
         effect_type=effect_type,
     )
+
+
+def _plan_welcome_fallback_message(
+    command: ProcessChannelEntryCommand,
+    *,
+    channel_id: int,
+    scene: str,
+    idempotency_key: str,
+    text_content: str,
+    attachments: list[dict[str, Any]],
+    welcome_effect_job_id: Any,
+) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "channel": "wecom_private",
+        "owner_userid": command.follow_user_userid,
+        "external_userids": [command.external_contact_id],
+        "source": "channel_entry_welcome_fallback",
+        "fallback_reason": "welcome_realtime_not_scheduled",
+        "source_welcome_effect_job_id": int(welcome_effect_job_id or 0),
+        "channel_id": channel_id,
+        "scene_value": scene,
+    }
+    if text_content:
+        payload["content_text"] = text_content
+    if attachments:
+        payload["attachments"] = attachments
+    job = _plan_channel_entry_effect(
+        command,
+        effect_type=WECOM_MESSAGE_PRIVATE_SEND,
+        adapter_name="wecom_private_message",
+        operation="send",
+        target_type="external_user",
+        target_id=command.external_contact_id,
+        business_type="channel_entry_welcome_fallback",
+        business_id=str(channel_id),
+        idempotency_key=f"{idempotency_key}:fallback_private_message",
+        payload=payload,
+        payload_summary={
+            "external_userid": command.external_contact_id,
+            "owner_userid": command.follow_user_userid,
+            "channel_id": channel_id,
+            "scene_value": scene,
+            "text_present": bool(text_content),
+            "attachment_count": len(attachments),
+            "source_welcome_effect_job_id": int(welcome_effect_job_id or 0),
+        },
+    )
+    return {
+        "queued": True,
+        "reason": "welcome_realtime_not_scheduled_fallback_private_message_queued",
+        "external_effect_job_id": job.get("id"),
+        "effect_type": WECOM_MESSAGE_PRIVATE_SEND,
+        "adapter_name": "wecom_private_message",
+    }
 
 
 def _emit_channel_entry_internal_event(
@@ -377,6 +433,32 @@ def _send_welcome(command: ProcessChannelEntryCommand, *, channel: dict[str, Any
         result = {"attempted": True, "sent": False, "reason": "external_effect_queue_failed", "welcome_code": welcome_code, "message": str(exc)}
         _log_effect(command, effect_type="welcome_message", idempotency_key=key, status="failed", channel_id=channel_id, scene_value=scene, reason="external_effect_queue_failed", request_json=payload, response_json=result)
         return result
+    immediate_dispatch_scheduled = _wake_channel_entry_external_effect_job(
+        job.get("id"),
+        effect_type=WECOM_WELCOME_MESSAGE_SEND,
+        reason="channel_entry_welcome_message",
+    )
+    fallback_message: dict[str, Any] = {}
+    cancelled_welcome_job: dict[str, Any] | None = None
+    if not immediate_dispatch_scheduled:
+        try:
+            fallback_message = _plan_welcome_fallback_message(
+                command,
+                channel_id=channel_id,
+                scene=scene,
+                idempotency_key=key,
+                text_content=text_content,
+                attachments=attachments,
+                welcome_effect_job_id=job.get("id"),
+            )
+            cancelled = ExternalEffectService().cancel(int(job.get("id") or 0))
+            cancelled_welcome_job = cancelled.to_dict() if hasattr(cancelled, "to_dict") else (dict(cancelled) if isinstance(cancelled, dict) else None)
+        except Exception as exc:
+            fallback_message = {
+                "queued": False,
+                "reason": "welcome_fallback_queue_failed",
+                "message": str(exc),
+            }
     result = {
         "attempted": True,
         "sent": False,
@@ -384,11 +466,9 @@ def _send_welcome(command: ProcessChannelEntryCommand, *, channel: dict[str, Any
         "reason": "external_effect_job_queued",
         "welcome_code": welcome_code,
         "external_effect_job_id": job.get("id"),
-        "immediate_dispatch_scheduled": _wake_channel_entry_external_effect_job(
-            job.get("id"),
-            effect_type=WECOM_WELCOME_MESSAGE_SEND,
-            reason="channel_entry_welcome_message",
-        ),
+        "immediate_dispatch_scheduled": immediate_dispatch_scheduled,
+        "fallback_message": fallback_message,
+        "welcome_effect_cancelled_for_fallback": bool(cancelled_welcome_job),
         "real_external_call_executed": False,
         "attachments": attachments,
     }

@@ -3,6 +3,12 @@ from __future__ import annotations
 from aicrm_next.channel_entry.application import process_channel_entry
 from aicrm_next.channel_entry.schemas import ProcessChannelEntryCommand
 from aicrm_next.channel_entry.wecom_adapter import get_wecom_adapter, set_wecom_adapter
+from aicrm_next.platform_foundation.external_effects import (
+    ExternalEffectService,
+    WECOM_MESSAGE_PRIVATE_SEND,
+    WECOM_WELCOME_MESSAGE_SEND,
+    reset_external_effect_fixture_state,
+)
 
 
 def _patch_repo(monkeypatch, *, channel_status="active", bindings=None):
@@ -29,6 +35,7 @@ def _patch_repo(monkeypatch, *, channel_status="active", bindings=None):
 
 
 def test_active_channel_baseline_emits_only_channel_entry_without_program_admission(monkeypatch):
+    reset_external_effect_fixture_state()
     calls, previous = _patch_repo(monkeypatch, bindings=[{"id": 20, "program_id": 30, "program_status": "active"}])
     wakeups: list[tuple[int, str, str]] = []
 
@@ -51,6 +58,9 @@ def test_active_channel_baseline_emits_only_channel_entry_without_program_admiss
     assert result["profile_description"]["queued"] is True
     assert result["profile_description"]["description"] == "wm-a"
     assert result["welcome_message"]["immediate_dispatch_scheduled"] is False
+    assert result["welcome_message"]["welcome_effect_cancelled_for_fallback"] is True
+    assert result["welcome_message"]["fallback_message"]["queued"] is True
+    assert result["welcome_message"]["fallback_message"]["effect_type"] == WECOM_MESSAGE_PRIVATE_SEND
     assert result["entry_tag"]["immediate_dispatch_scheduled"] is False
     assert result["profile_description"]["immediate_dispatch_scheduled"] is False
     assert [item[1:] for item in wakeups] == [
@@ -63,6 +73,20 @@ def test_active_channel_baseline_emits_only_channel_entry_without_program_admiss
     assert "admission_results" not in result
     assert "member" not in calls
     assert "legacy_member" not in calls
+
+    welcome_jobs, _ = ExternalEffectService().list_jobs(
+        {"effect_type": WECOM_WELCOME_MESSAGE_SEND, "target_id": "wm-a"},
+        limit=10,
+    )
+    fallback_jobs, _ = ExternalEffectService().list_jobs(
+        {"effect_type": WECOM_MESSAGE_PRIVATE_SEND, "target_id": "wm-a"},
+        limit=10,
+    )
+    assert welcome_jobs[0].status == "cancelled"
+    assert fallback_jobs[0].business_type == "channel_entry_welcome_fallback"
+    assert fallback_jobs[0].payload_json["channel"] == "wecom_private"
+    assert fallback_jobs[0].payload_json["external_userids"] == ["wm-a"]
+    assert fallback_jobs[0].payload_json["content_text"] == "hello"
 
 
 def test_archived_program_state_is_not_part_of_channel_baseline(monkeypatch):

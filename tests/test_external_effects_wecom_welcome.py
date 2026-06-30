@@ -3,6 +3,7 @@ from __future__ import annotations
 from aicrm_next.platform_foundation.command_bus import CommandContext
 from aicrm_next.platform_foundation.external_effects import (
     ExternalEffectService,
+    WECOM_MESSAGE_PRIVATE_SEND,
     WECOM_WELCOME_MESSAGE_SEND,
     reset_external_effect_fixture_state,
 )
@@ -78,13 +79,11 @@ def test_wecom_welcome_adapter_is_registered_and_advertised() -> None:
     assert WECOM_WELCOME_MESSAGE_SEND in wecom_execution_settings()["supported_types"]
 
 
-def test_wecom_welcome_default_gates_block_real_send(monkeypatch) -> None:
+def test_wecom_welcome_disabled_execution_mode_blocks_real_send(monkeypatch) -> None:
     reset_external_effect_fixture_state()
-    monkeypatch.setattr("aicrm_next.platform_foundation.external_effects.adapters._enabled", lambda name: False)
-    monkeypatch.setattr("aicrm_next.platform_foundation.external_effects.adapters._csv_env", lambda name: set())
     monkeypatch.setattr("aicrm_next.platform_foundation.external_effects.worker._capability_gate_error", lambda job: "")
     repo = build_external_effect_repository()
-    _plan_welcome_job(repo=repo)
+    _plan_welcome_job(repo=repo, execution_mode="disabled")
     fake = _FakeWelcomeAdapter()
 
     result = ExternalEffectWorker(
@@ -93,7 +92,7 @@ def test_wecom_welcome_default_gates_block_real_send(monkeypatch) -> None:
     ).run_due(batch_size=1, dry_run=False, effect_types=[WECOM_WELCOME_MESSAGE_SEND])
 
     assert result["counts"]["failed_count"] == 1
-    assert result["items"][0]["attempt"]["error_code"] == "execution_disabled"
+    assert result["items"][0]["attempt"]["error_code"] == "shadow_only"
     assert result["real_external_call_executed"] is False
     assert fake.payloads == []
 
@@ -118,3 +117,55 @@ def test_wecom_welcome_executes_through_external_effect_worker(monkeypatch) -> N
     assert fake.payloads == [{"welcome_code": "welcome-code", "text": {"content": "欢迎加入"}}]
     assert result["attempt"]["request_summary_json"]["welcome_code_present"] is True
     assert "welcome-code" not in str(result["attempt"]["request_summary_json"])
+
+
+def test_channel_entry_welcome_fallback_private_message_preserves_exact_target(monkeypatch) -> None:
+    reset_external_effect_fixture_state()
+    calls: list[dict] = []
+
+    class _FakePrivateAdapter:
+        def create_private_message_task(self, payload: dict, *, idempotency_key: str = "") -> dict:
+            calls.append({"payload": dict(payload), "idempotency_key": idempotency_key})
+            return {
+                "ok": True,
+                "mode": "fake",
+                "side_effect_executed": False,
+                "exact_target_verified": True,
+                "requested_external_userids": list(payload.get("external_userids") or []),
+                "wecom_msgid": "fake_msgid",
+            }
+
+    monkeypatch.setattr("aicrm_next.platform_foundation.external_effects.worker._capability_gate_error", lambda job: "")
+    monkeypatch.setattr("aicrm_next.integration_gateway.wecom_private_adapter.build_wecom_private_message_adapter", lambda: _FakePrivateAdapter())
+    repo = build_external_effect_repository()
+    job = ExternalEffectService(repo).plan_effect(
+        effect_type=WECOM_MESSAGE_PRIVATE_SEND,
+        adapter_name="wecom_private_message",
+        operation="send",
+        target_type="external_user",
+        target_id="wm_dynamic_new_contact",
+        business_type="channel_entry_welcome_fallback",
+        business_id="channel-1",
+        source_module="channel_entry.application",
+        source_event_id="evt-1",
+        idempotency_key="welcome-fallback-private",
+        payload={
+            "channel": "wecom_private",
+            "source": "channel_entry_welcome_fallback",
+            "owner_userid": "HuangYouCan",
+            "external_userids": ["wm_dynamic_new_contact"],
+            "content_text": "欢迎加入",
+        },
+        payload_summary={"text_present": True},
+        context=_context("trace-welcome-fallback"),
+        status="queued",
+        execution_mode="execute",
+    )
+
+    result = ExternalEffectWorker(repo).dispatch_one(job["id"])
+
+    assert result["job"]["status"] == "succeeded"
+    assert result["attempt"]["status"] == "succeeded"
+    assert result["attempt"]["request_summary_json"]["business_type"] == "channel_entry_welcome_fallback"
+    assert result["attempt"]["request_summary_json"]["source"] == "channel_entry_welcome_fallback"
+    assert calls[0]["payload"]["external_userids"] == ["wm_dynamic_new_contact"]

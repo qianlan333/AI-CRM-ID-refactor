@@ -57,6 +57,15 @@ def _json_obj(value: Any) -> dict[str, Any]:
     return {}
 
 
+def _is_missing_projection_table(exc: SQLAlchemyError) -> bool:
+    message = str(exc).lower()
+    return (
+        "no such table: broadcast_jobs" in message
+        or "no such table: outbound_tasks" in message
+        or "undefinedtable" in message and ("broadcast_jobs" in message or "outbound_tasks" in message)
+    )
+
+
 def _scrub_nested(value: Any) -> Any:
     if isinstance(value, dict):
         result: dict[str, Any] = {}
@@ -349,7 +358,9 @@ class BroadcastJobAdapter:
             with self._session_factory() as session:
                 rows = session.execute(statement, params).mappings().fetchall()
                 return [dict(row) for row in rows]
-        except SQLAlchemyError:
+        except SQLAlchemyError as exc:
+            if _is_missing_projection_table(exc):
+                return []
             if production_environment():
                 raise
             return []

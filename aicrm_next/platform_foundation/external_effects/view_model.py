@@ -6,6 +6,7 @@ from typing import Any
 from .adapters import webhook_execution_settings
 from .jobs import external_effect_scheduler_state
 from .models import ExternalEffectAttempt, ExternalEffectJob, ExternalEffectTestReceipt
+from .realtime import realtime_wakeup_state
 from .service import ExternalEffectService
 from .test_receiver import test_execution_only_enabled, test_receiver_enabled
 
@@ -322,6 +323,7 @@ def build_external_effect_diagnostics_payload(
         "current_base_url_detected": current_base_url,
         **receipt_metrics,
         "webhook_execution": execution["webhook_execution"],
+        "realtime_wakeup": realtime_wakeup_state(),
         "scheduler": external_effect_scheduler_state(),
         "execution_default": "dry_run",
         "adapter_execution_default": "blocked",

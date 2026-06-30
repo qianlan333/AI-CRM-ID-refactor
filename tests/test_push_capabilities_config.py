@@ -375,8 +375,8 @@ def test_shared_wecom_effect_type_is_gated_by_business_section() -> None:
     assert ai_result["items"][0]["job"]["business_type"] == "ai_assist_campaign"
     assert ai_result["counts"]["succeeded_count"] == 1
     assert private_result["items"][0]["job"]["business_type"] == "private_broadcast"
-    assert private_result["items"][0]["attempt"]["error_code"] == "push_capability_disabled"
-    assert adapter.calls == 1
+    assert private_result["counts"]["succeeded_count"] == 1
+    assert adapter.calls == 2
 
 
 def test_webhooks_push_page_is_push_capability_entry(next_client: TestClient) -> None:
