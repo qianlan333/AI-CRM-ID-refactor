@@ -27,7 +27,7 @@ from .application import (
     cancel_broadcast_job,
     execute_jobs_action,
 )
-from .domain import normalized_bool, normalized_text
+from .domain import normalized_bool, normalized_int, normalized_text
 from .notification_settings import (
     FEISHU_WEBHOOK_ERROR,
     FeishuWebhookValidationError,
@@ -37,6 +37,7 @@ from .notification_settings import (
     validate_feishu_webhook,
 )
 from aicrm_next.admin_shell import admin_path_for, shell_context
+from aicrm_next.commerce.order_identity_repair import repair_missing_order_identities
 from aicrm_next.platform_foundation.legacy_cleanup.service import LegacyWebhookCleanupService
 
 router = APIRouter()
@@ -381,6 +382,20 @@ async def api_admin_broadcast_jobs_feishu_hourly_report_run(request: Request):
         return JSONResponse({"ok": False, "error": token_error}, status_code=401)
     result = send_broadcast_job_hourly_feishu_report()
     return _jsonable({"ok": result.get("status") == "sent", **result})
+
+
+@router.post("/api/admin/jobs/order-identity-repair/run")
+async def api_admin_jobs_order_identity_repair_run(request: Request):
+    payload = await _request_payload(request)
+    token_error = await _cron_or_action_token_error(request, payload)
+    if token_error:
+        return JSONResponse({"ok": False, "error": token_error}, status_code=401)
+    result = repair_missing_order_identities(
+        limit=normalized_int(payload.get("limit"), default=100, minimum=1, maximum=1000),
+        max_attempts=normalized_int(payload.get("max_attempts"), default=3, minimum=1, maximum=10),
+        dry_run=normalized_bool(payload.get("dry_run")),
+    )
+    return _jsonable(result)
 
 
 @router.post("/api/admin/broadcast-jobs/{job_id}/approve")
