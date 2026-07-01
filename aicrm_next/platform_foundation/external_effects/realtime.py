@@ -19,11 +19,13 @@ _ACTIVE_COUNT = 0
 REALTIME_ENABLED_KEY = "AICRM_EXTERNAL_EFFECT_REALTIME_ENABLED"
 REALTIME_ALLOWED_TYPES_KEY = "AICRM_EXTERNAL_EFFECT_REALTIME_ALLOWED_TYPES"
 REALTIME_MAX_CONCURRENCY_KEY = "AICRM_EXTERNAL_EFFECT_REALTIME_MAX_CONCURRENCY"
+WELCOME_MESSAGE_CAPABILITY_ENABLED_KEY = "AICRM_PUSH_CAPABILITY_WELCOME_MESSAGE_ENABLED"
 CHANNEL_ENTRY_REALTIME_EFFECT_TYPES = (
     WECOM_WELCOME_MESSAGE_SEND,
     WECOM_CONTACT_TAG_MARK,
     WECOM_PROFILE_UPDATE,
 )
+_MISSING_SETTING = "__aicrm_runtime_setting_missing__"
 
 
 def _text(value: Any) -> str:
@@ -49,26 +51,63 @@ def _execution_gate_enabled_for_type(effect_type: str) -> bool:
     return True
 
 
+def _setting_is_defined(key: str) -> bool:
+    return runtime_setting(key, _MISSING_SETTING) != _MISSING_SETTING
+
+
+def _welcome_message_capability_enabled() -> bool:
+    return runtime_bool(WELCOME_MESSAGE_CAPABILITY_ENABLED_KEY)
+
+
+def _effective_realtime_enabled() -> tuple[bool, str]:
+    if _setting_is_defined(REALTIME_ENABLED_KEY):
+        return runtime_bool(REALTIME_ENABLED_KEY), "explicit"
+    if _welcome_message_capability_enabled():
+        return True, "welcome_message_capability"
+    return False, "default"
+
+
+def _effective_realtime_allowed_types() -> tuple[set[str], str]:
+    if _setting_is_defined(REALTIME_ALLOWED_TYPES_KEY):
+        return runtime_csv(REALTIME_ALLOWED_TYPES_KEY), "explicit"
+    if not _welcome_message_capability_enabled():
+        return set(), "default"
+    return (
+        {
+            effect_type
+            for effect_type in CHANNEL_ENTRY_REALTIME_EFFECT_TYPES
+            if _execution_gate_enabled_for_type(effect_type)
+        },
+        "welcome_message_capability",
+    )
+
+
 def realtime_wakeup_allowed(effect_type: str) -> bool:
     normalized = _text(effect_type)
     if not normalized:
         return False
-    if not runtime_bool(REALTIME_ENABLED_KEY):
+    enabled, _enabled_source = _effective_realtime_enabled()
+    if not enabled:
         return False
-    if normalized not in runtime_csv(REALTIME_ALLOWED_TYPES_KEY):
+    allowed_types, _allowed_types_source = _effective_realtime_allowed_types()
+    if normalized not in allowed_types:
         return False
     return _execution_gate_enabled_for_type(normalized)
 
 
 def realtime_wakeup_state() -> dict[str, Any]:
-    enabled = runtime_bool(REALTIME_ENABLED_KEY)
-    allowed_types = sorted(runtime_csv(REALTIME_ALLOWED_TYPES_KEY))
+    enabled, enabled_source = _effective_realtime_enabled()
+    allowed_type_set, allowed_types_source = _effective_realtime_allowed_types()
+    allowed_types = sorted(allowed_type_set)
     channel_entry_required = list(CHANNEL_ENTRY_REALTIME_EFFECT_TYPES)
     missing_channel_entry_types = [effect_type for effect_type in channel_entry_required if effect_type not in allowed_types]
     return {
         "enabled": enabled,
         "status": "enabled" if enabled else "disabled",
+        "enabled_source": enabled_source,
         "allowed_types": allowed_types,
+        "allowed_types_source": allowed_types_source,
+        "derived_from_welcome_message_capability": enabled_source == "welcome_message_capability" or allowed_types_source == "welcome_message_capability",
         "max_concurrency": _max_concurrency(),
         "channel_entry_required_types": channel_entry_required,
         "channel_entry_missing_types": missing_channel_entry_types,

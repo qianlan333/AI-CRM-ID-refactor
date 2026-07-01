@@ -1,9 +1,14 @@
 from __future__ import annotations
 
 from aicrm_next.platform_foundation.command_bus import CommandContext
-from aicrm_next.platform_foundation.external_effects import ExternalEffectService, WECOM_WELCOME_MESSAGE_SEND
+from aicrm_next.platform_foundation.external_effects import (
+    ExternalEffectService,
+    WECOM_CONTACT_TAG_MARK,
+    WECOM_PROFILE_UPDATE,
+    WECOM_WELCOME_MESSAGE_SEND,
+)
 from aicrm_next.platform_foundation.external_effects.adapters import ExternalEffectAdapterRegistry, WeComWelcomeMessageAdapter
-from aicrm_next.platform_foundation.external_effects.realtime import wake_external_effect_job
+from aicrm_next.platform_foundation.external_effects.realtime import realtime_wakeup_state, wake_external_effect_job
 from aicrm_next.platform_foundation.external_effects.repo import InMemoryExternalEffectRepository
 
 
@@ -67,6 +72,87 @@ def test_realtime_wakeup_is_disabled_by_default() -> None:
     assert scheduled is False
     assert repo.get_job(job["id"]).status == "queued"  # type: ignore[union-attr]
     assert repo.list_attempts(job["id"]) == []
+
+
+def test_missing_realtime_config_derives_wakeup_from_welcome_capability(monkeypatch) -> None:
+    repo = InMemoryExternalEffectRepository()
+    job = _plan_welcome(repo, key="welcome-realtime-derived")
+    fake = _FakeWelcomeAdapter()
+    monkeypatch.setenv("AICRM_PUSH_CAPABILITY_WELCOME_MESSAGE_ENABLED", "1")
+    monkeypatch.setenv(
+        "AICRM_EXTERNAL_EFFECT_ALLOWED_TYPES",
+        ",".join([WECOM_WELCOME_MESSAGE_SEND, WECOM_CONTACT_TAG_MARK, WECOM_PROFILE_UPDATE]),
+    )
+    monkeypatch.setenv("AICRM_EXTERNAL_EFFECT_WECOM_EXECUTE", "1")
+    monkeypatch.delenv("AICRM_EXTERNAL_EFFECT_REALTIME_ENABLED", raising=False)
+    monkeypatch.delenv("AICRM_EXTERNAL_EFFECT_REALTIME_ALLOWED_TYPES", raising=False)
+    monkeypatch.setattr("aicrm_next.platform_foundation.external_effects.worker._capability_gate_error", lambda job: "")
+
+    scheduled = wake_external_effect_job(
+        job["id"],
+        reason="pytest",
+        effect_type=WECOM_WELCOME_MESSAGE_SEND,
+        repository=repo,
+        adapter_registry=_registry(WeComWelcomeMessageAdapter(adapter_factory=lambda: fake)),
+        run_inline=True,
+    )
+
+    updated = repo.get_job(job["id"])
+    state = realtime_wakeup_state()
+    assert scheduled is True
+    assert updated is not None
+    assert updated.status == "succeeded"
+    assert state["enabled"] is True
+    assert state["enabled_source"] == "welcome_message_capability"
+    assert state["allowed_types_source"] == "welcome_message_capability"
+    assert WECOM_WELCOME_MESSAGE_SEND in state["allowed_types"]
+    assert state["derived_from_welcome_message_capability"] is True
+
+
+def test_explicit_realtime_disabled_overrides_welcome_capability(monkeypatch) -> None:
+    repo = InMemoryExternalEffectRepository()
+    job = _plan_welcome(repo, key="welcome-realtime-explicit-disabled")
+    monkeypatch.setenv("AICRM_PUSH_CAPABILITY_WELCOME_MESSAGE_ENABLED", "1")
+    monkeypatch.setenv("AICRM_EXTERNAL_EFFECT_REALTIME_ENABLED", "false")
+    monkeypatch.setenv("AICRM_EXTERNAL_EFFECT_REALTIME_ALLOWED_TYPES", WECOM_WELCOME_MESSAGE_SEND)
+    monkeypatch.setenv("AICRM_EXTERNAL_EFFECT_ALLOWED_TYPES", WECOM_WELCOME_MESSAGE_SEND)
+    monkeypatch.setenv("AICRM_EXTERNAL_EFFECT_WECOM_EXECUTE", "1")
+
+    scheduled = wake_external_effect_job(
+        job["id"],
+        reason="pytest",
+        effect_type=WECOM_WELCOME_MESSAGE_SEND,
+        repository=repo,
+        run_inline=True,
+    )
+
+    assert scheduled is False
+    assert repo.get_job(job["id"]).status == "queued"  # type: ignore[union-attr]
+    assert realtime_wakeup_state()["enabled_source"] == "explicit"
+
+
+def test_derived_realtime_wakeup_still_requires_execution_gate(monkeypatch) -> None:
+    repo = InMemoryExternalEffectRepository()
+    job = _plan_welcome(repo, key="welcome-realtime-derived-gate")
+    monkeypatch.setenv("AICRM_PUSH_CAPABILITY_WELCOME_MESSAGE_ENABLED", "1")
+    monkeypatch.setenv("AICRM_EXTERNAL_EFFECT_ALLOWED_TYPES", WECOM_WELCOME_MESSAGE_SEND)
+    monkeypatch.delenv("AICRM_EXTERNAL_EFFECT_WECOM_EXECUTE", raising=False)
+    monkeypatch.delenv("AICRM_EXTERNAL_EFFECT_REALTIME_ENABLED", raising=False)
+    monkeypatch.delenv("AICRM_EXTERNAL_EFFECT_REALTIME_ALLOWED_TYPES", raising=False)
+
+    scheduled = wake_external_effect_job(
+        job["id"],
+        reason="pytest",
+        effect_type=WECOM_WELCOME_MESSAGE_SEND,
+        repository=repo,
+        run_inline=True,
+    )
+
+    state = realtime_wakeup_state()
+    assert scheduled is False
+    assert repo.get_job(job["id"]).status == "queued"  # type: ignore[union-attr]
+    assert state["enabled"] is True
+    assert state["allowed_types"] == []
 
 
 def test_realtime_wakeup_requires_realtime_allowlist(monkeypatch) -> None:
