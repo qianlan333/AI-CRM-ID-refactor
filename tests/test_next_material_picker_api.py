@@ -133,3 +133,28 @@ def test_material_picker_unknown_type_returns_400_json(client) -> None:
     assert response.headers["content-type"].startswith("application/json")
     assert response.headers["X-AICRM-Route-Owner"] == "ai_crm_next"
     assert response.json()["ok"] is False
+
+
+def test_material_assets_read_model_unifies_library_sources(client) -> None:
+    response = client.get("/api/admin/material-assets?limit=10")
+
+    assert response.status_code == 200
+    assert response.headers["X-AICRM-Route-Owner"] == "ai_crm_next"
+    body = response.json()
+    assert body["ok"] is True
+    assert body["read_model"] == "material_assets"
+    assets = body["assets"]
+    assert {item["asset_type"] for item in assets} == {"image", "miniprogram", "attachment"}
+    assert {item["source_table"] for item in assets} == {"image_library", "miniprogram_library", "attachment_library"}
+    assert all(item["material_asset_id"] == f"{item['asset_type']}:{item['source_id']}" for item in assets)
+    assert all("data_base64" not in item for item in assets)
+
+
+def test_material_assets_can_filter_to_one_source_type(client) -> None:
+    response = client.get("/api/admin/material-assets?type=miniprogram")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["type"] == "miniprogram"
+    assert body["assets"]
+    assert {item["asset_type"] for item in body["assets"]} == {"miniprogram"}

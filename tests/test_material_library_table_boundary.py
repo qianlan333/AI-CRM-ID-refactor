@@ -51,6 +51,7 @@ def test_material_boundary_docs_name_shared_id_contracts() -> None:
         "miniprogram_library_ids",
         "attachment_library_ids",
         "PostgresSendContentRepository",
+        "material_assets",
         "real external storage",
     ):
         assert phrase in boundary
