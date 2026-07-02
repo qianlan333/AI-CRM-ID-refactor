@@ -24,6 +24,7 @@ Business modules may store these IDs in their own JSON payloads, but they should
 The short-term unified read model is the Next-native `material_assets` projection exposed at `/api/admin/material-assets`.
 It returns `asset_type`, `material_asset_id`, `source_table`, and `source_id` over the existing `image_library`, `miniprogram_library`, and `attachment_library` tables.
 Material usage lineage is exposed as the read-only `material_asset_usage` projection at `/api/admin/material-assets/{material_asset_id}/usage`, scanning business consumer payloads without moving material rows.
+Material validation is exposed as `/api/admin/material-assets/validate`; it checks material existence, enabled state, channel compatibility, metadata completeness, and payload safety without writing to business tables.
 This keeps campaign steps, group-ops plan nodes, channel welcome messages, HXC broadcast drafts, and sidebar material views from inventing separate material stores.
 
 The current boundary is intentionally conservative:

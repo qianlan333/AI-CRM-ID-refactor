@@ -296,6 +296,86 @@ def test_material_asset_usage_rejects_invalid_asset_id(client) -> None:
     assert "material_asset_id" in response.json()["error"]
 
 
+def test_material_assets_validate_accepts_complete_send_content_package(client) -> None:
+    response = client.post(
+        "/api/admin/material-assets/validate",
+        json={
+            "content_package": {
+                "image_library_ids": [12],
+                "miniprogram_library_ids": [34],
+                "attachment_library_ids": [56],
+            }
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["ok"] is True
+    assert body["read_model"] == "material_asset_validation"
+    assert body["valid"] is True
+    assert body["issues"] == []
+    assert {item["material_asset_id"] for item in body["materials"]} == {"image:12", "miniprogram:34", "attachment:56"}
+    assert all("data_base64" not in str(item) for item in body["materials"])
+
+
+def test_material_assets_validate_reports_missing_material(client) -> None:
+    response = client.post(
+        "/api/admin/material-assets/validate",
+        json={"content_package": {"image_library_ids": [999]}},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["valid"] is False
+    assert body["issues"][0]["code"] == "material_missing"
+    assert body["issues"][0]["material_asset_id"] == "image:999"
+
+
+def test_material_assets_validate_checks_channel_compatibility(client) -> None:
+    response = client.post(
+        "/api/admin/material-assets/validate",
+        json={
+            "channel": "wechat_pay_product_page",
+            "content_package": {"attachment_library_ids": [56]},
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["valid"] is False
+    assert {issue["code"] for issue in body["issues"]} == {"material_channel_incompatible"}
+
+
+def test_material_assets_validate_detects_incomplete_metadata_and_payload_leak(client, monkeypatch) -> None:
+    import aicrm_next.send_content.application as app_module
+
+    monkeypatch.setattr(app_module, "build_send_content_repository", lambda: _InvalidValidationRepository())
+    response = client.post(
+        "/api/admin/material-assets/validate",
+        json={
+            "content_package": {
+                "image_library_ids": [12],
+                "miniprogram_library_ids": [34],
+            }
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["valid"] is False
+    assert {"material_payload_leak", "material_metadata_incomplete"} <= {issue["code"] for issue in body["issues"]}
+
+
+def test_material_assets_validate_rejects_unknown_channel(client) -> None:
+    response = client.post(
+        "/api/admin/material-assets/validate",
+        json={"channel": "unknown", "content_package": {"image_library_ids": [12]}},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["ok"] is False
+
+
 class _LargeMaterialAssetsRepository:
     source_status = "test_large_material_assets"
 
@@ -322,6 +402,42 @@ class _LargeMaterialAssetsRepository:
     def get_materials_by_ids(self, material_type: str, ids: list[int]) -> list[dict]:
         by_id = {int(item["library_id"]): item for item in self._data[material_type]}
         return [by_id[item_id] for item_id in ids if item_id in by_id]
+
+    def list_material_asset_usage(self, material_type: str, source_id: int, *, limit: int = 100, offset: int = 0) -> dict:
+        return {"items": [], "total": 0, "limit": limit, "offset": offset}
+
+
+class _InvalidValidationRepository:
+    source_status = "test_invalid_validation"
+
+    def list_materials(self, material_type: str, *, q: str = "", enabled_only: bool = True, limit: int = 50, offset: int = 0) -> dict:
+        del material_type, q, enabled_only, limit, offset
+        return {"items": [], "total": 0, "limit": 0, "offset": 0}
+
+    def get_materials_by_ids(self, material_type: str, ids: list[int]) -> list[dict]:
+        rows = {
+            "image": [
+                {
+                    **_picker_item("image", 12),
+                    "data_base64": "should-not-leak",
+                    "metadata": {"mime_type": "image/png"},
+                }
+            ],
+            "miniprogram": [
+                {
+                    **_picker_item("miniprogram", 34),
+                    "thumbnail_url": "",
+                    "metadata": {},
+                }
+            ],
+            "attachment": [],
+        }[material_type]
+        by_id = {int(item["library_id"]): item for item in rows}
+        return [by_id[item_id] for item_id in ids if item_id in by_id]
+
+    def list_material_asset_usage(self, material_type: str, source_id: int, *, limit: int = 100, offset: int = 0) -> dict:
+        del material_type, source_id
+        return {"items": [], "total": 0, "limit": limit, "offset": offset}
 
 
 def _picker_item(material_type: str, item_id: int) -> dict:
