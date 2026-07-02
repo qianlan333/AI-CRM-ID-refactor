@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 
@@ -285,6 +286,45 @@ def test_user_ops_tables_are_unionid_only_business_models() -> None:
         assert "external_userid VARCHAR" not in source
         assert "mobile VARCHAR" not in source
         assert "is_mobile_bound BOOLEAN" not in source
+
+
+def test_user_ops_legacy_runtime_tables_are_retired() -> None:
+    identity_contact_source = _read("aicrm_next/identity_contact/repo.py")
+    external_campaign_source = _read("aicrm_next/ai_assist/external_campaigns.py")
+    external_campaign_repo_source = _read("aicrm_next/ai_assist/external_campaigns_repo.py")
+    admin_jobs_source = _read("aicrm_next/admin_jobs/repository.py")
+    owner_migration_source = _read("aicrm_next/owner_migration/repo.py")
+    manifest_source = _read("docs/architecture/data_table_lifecycle_manifest.yml")
+
+    runtime_sources = {
+        "identity_contact": identity_contact_source,
+        "external_campaign": external_campaign_source,
+        "external_campaign_repo": external_campaign_repo_source,
+        "admin_jobs": admin_jobs_source,
+        "owner_migration": owner_migration_source,
+    }
+    forbidden_sql_patterns = [
+        r"\bFROM\s+user_ops_lead_pool_current\b",
+        r"\bINSERT\s+INTO\s+user_ops_lead_pool_current\b",
+        r"\bUPDATE\s+user_ops_lead_pool_current\b",
+        r"\bDELETE\s+FROM\s+user_ops_lead_pool_current\b",
+        r"\bINSERT\s+INTO\s+user_ops_lead_pool_history\b",
+        r"\bFROM\s+user_ops_pool_current\b",
+        r"\bFROM\s+user_ops_send_records\b",
+        r"\bFROM\s+user_ops_deferred_jobs\b",
+        r"\bUPDATE\s+user_ops_deferred_jobs\b",
+    ]
+    for name, source in runtime_sources.items():
+        for pattern in forbidden_sql_patterns:
+            assert re.search(pattern, source) is None, f"{name} still matches {pattern}"
+
+    assert "UPDATE crm_user_identity" in identity_contact_source
+    assert "INSERT INTO crm_user_identity_resolution_queue" in identity_contact_source
+    assert "JOIN user_ops_pool_current_next pool ON pool.unionid = identity.unionid" in external_campaign_source
+    assert "JOIN user_ops_pool_current_next pool ON pool.unionid = identity.unionid" in external_campaign_repo_source
+    assert "return _status_counts([])" in admin_jobs_source
+    assert "user_ops_lead_pool_current:\n    domain: user_ops\n    lifecycle: retired" in manifest_source
+    assert "user_ops_deferred_jobs:\n    domain: user_ops\n    lifecycle: retired" in manifest_source
 
 
 def test_customer_read_model_tables_are_unionid_only() -> None:

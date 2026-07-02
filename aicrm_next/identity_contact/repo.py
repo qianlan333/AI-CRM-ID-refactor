@@ -273,7 +273,7 @@ class PostgresIdentityBindingRepository:
                 contact = self._fetch_contact_profile(cur, external_userid=external_userid)
                 resolved_owner = owner_userid or _text(contact.get("owner_userid")) if contact else owner_userid
                 resolved_name = customer_name or _text(contact.get("customer_name")) if contact else customer_name
-                self._merge_lead_pool(
+                self._record_mobile_identity_binding(
                     cur,
                     external_userid=external_userid,
                     mobile=mobile,
@@ -354,7 +354,7 @@ class PostgresIdentityBindingRepository:
             (external_userid,),
         ).fetchone()
 
-    def _merge_lead_pool(
+    def _record_mobile_identity_binding(
         self,
         cur,
         *,
@@ -365,108 +365,84 @@ class PostgresIdentityBindingRepository:
         customer_name: str,
         operator: str,
     ) -> None:
-        rows = list(
-            cur.execute(
-                """
-                SELECT *
-                FROM user_ops_lead_pool_current
-                WHERE mobile = %s OR external_userid = %s
-                ORDER BY
-                    CASE WHEN mobile = %s THEN 0 ELSE 1 END,
-                    updated_at DESC,
-                    id DESC
-                """,
-                (mobile, external_userid, mobile),
-            ).fetchall()
-        )
-        if not rows:
-            cur.execute(
-                """
-                INSERT INTO user_ops_lead_pool_current (
-                    mobile, external_userid, customer_name, owner_userid, is_wecom_added, is_mobile_bound,
-                    huangxiaocan_activation_state, class_term_no, class_term_label,
-                    first_entry_source, last_entry_source, created_at, updated_at
-                )
-                VALUES (%s, %s, %s, %s, TRUE, TRUE, 'unknown', NULL, '', 'mobile_bind', 'mobile_bind', NOW(), NOW())
-                """,
-                (mobile, external_userid, customer_name, owner_userid),
-            )
-            self._write_lead_pool_history(
-                cur,
-                mobile=mobile,
-                external_userid=external_userid,
-                action_type="mobile_bind_insert",
-                before=None,
-                after={"external_userid": external_userid, "mobile": mobile},
-                operator=operator,
-            )
-            return
-
-        target = dict(rows[0])
-        before = dict(target)
-        cur.execute(
+        updated = cur.execute(
             """
-            UPDATE user_ops_lead_pool_current
-            SET external_userid = %s,
-                mobile = %s,
-                owner_userid = COALESCE(NULLIF(%s, ''), owner_userid),
+            UPDATE crm_user_identity
+            SET mobile = %s,
+                mobile_normalized = %s,
+                mobile_verified = TRUE,
+                mobile_source = 'mobile_bind',
+                primary_owner_userid = COALESCE(NULLIF(%s, ''), primary_owner_userid),
                 customer_name = COALESCE(NULLIF(%s, ''), customer_name),
-                is_wecom_added = TRUE,
-                is_mobile_bound = TRUE,
-                last_entry_source = 'mobile_bind',
+                legacy_person_id = COALESCE(NULLIF(%s, ''), legacy_person_id),
+                profile_json = profile_json || %s::jsonb,
                 updated_at = NOW()
-            WHERE id = %s
-            """,
-            (external_userid, mobile, owner_userid, customer_name, target["id"]),
-        )
-        duplicate_ids = [int(row["id"]) for row in rows[1:] if row.get("id") is not None]
-        if duplicate_ids:
-            cur.execute("DELETE FROM user_ops_lead_pool_current WHERE id = ANY(%s)", (duplicate_ids,))
-        after = {
-            **target,
-            "external_userid": external_userid,
-            "mobile": mobile,
-            "owner_userid": owner_userid or target.get("owner_userid"),
-            "customer_name": customer_name or target.get("customer_name"),
-            "merged_duplicate_ids": duplicate_ids,
-        }
-        self._write_lead_pool_history(
-            cur,
-            mobile=mobile,
-            external_userid=external_userid,
-            action_type="mobile_bind_merge" if duplicate_ids else "mobile_bind_update",
-            before=before,
-            after=after,
-            operator=operator,
-        )
-
-    def _write_lead_pool_history(
-        self,
-        cur,
-        *,
-        mobile: str,
-        external_userid: str,
-        action_type: str,
-        before: dict[str, Any] | None,
-        after: dict[str, Any],
-        operator: str,
-    ) -> None:
-        cur.execute(
-            """
-            INSERT INTO user_ops_lead_pool_history (
-                mobile, external_userid, action_type, source_type, operator,
-                before_json, after_json, remark, created_at
-            )
-            VALUES (%s, %s, %s, 'mobile_bind', %s, %s::jsonb, %s::jsonb, %s, NOW())
+            WHERE primary_external_userid = %s
+               OR jsonb_exists(external_userids_json, %s)
+            RETURNING unionid
             """,
             (
                 mobile,
+                mobile,
+                owner_userid,
+                customer_name,
+                str(person_id),
+                json.dumps(
+                    {"mobile_bind": {"external_userid": external_userid, "operator": operator}},
+                    ensure_ascii=False,
+                    default=_json_default,
+                ),
                 external_userid,
-                action_type,
-                operator,
-                json.dumps(before or {}, ensure_ascii=False, default=_json_default),
-                json.dumps(after, ensure_ascii=False, default=_json_default),
-                f"bind mobile external_userid={external_userid}",
+                external_userid,
+            ),
+        ).fetchone()
+        if updated:
+            return
+
+        cur.execute(
+            """
+            INSERT INTO crm_user_identity_resolution_queue (
+                source_type, source_key, source_table, source_id,
+                external_userid, mobile, payload_json, raw_payload_json,
+                reason, status, last_seen_at, updated_at
+            )
+            VALUES (
+                'identity_contact_mobile_bind', %s, 'external_contact_bindings', %s,
+                %s, %s, %s::jsonb, %s::jsonb,
+                'pending_unionid_for_mobile_bind', 'pending', NOW(), NOW()
+            )
+            ON CONFLICT (source_type, source_key)
+            WHERE status = 'pending' AND source_type <> '' AND source_key <> ''
+            DO UPDATE SET
+                external_userid = COALESCE(NULLIF(EXCLUDED.external_userid, ''), crm_user_identity_resolution_queue.external_userid),
+                mobile = COALESCE(NULLIF(EXCLUDED.mobile, ''), crm_user_identity_resolution_queue.mobile),
+                payload_json = crm_user_identity_resolution_queue.payload_json || EXCLUDED.payload_json,
+                raw_payload_json = crm_user_identity_resolution_queue.raw_payload_json || EXCLUDED.raw_payload_json,
+                reason = EXCLUDED.reason,
+                last_seen_at = NOW(),
+                updated_at = NOW()
+            """,
+            (
+                external_userid,
+                external_userid,
+                external_userid,
+                mobile,
+                json.dumps(
+                    {
+                        "external_userid": external_userid,
+                        "mobile": mobile,
+                        "person_id": str(person_id),
+                        "owner_userid": owner_userid,
+                        "customer_name": customer_name,
+                    },
+                    ensure_ascii=False,
+                    default=_json_default,
+                ),
+                json.dumps(
+                    {"operator": operator, "source": "identity_contact_mobile_bind"},
+                    ensure_ascii=False,
+                    default=_json_default,
+                ),
             ),
         )
 

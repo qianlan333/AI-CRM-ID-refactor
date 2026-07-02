@@ -231,37 +231,11 @@ class PostgresAdminJobsRepository:
         )
 
     def list_deferred_jobs(self, *, status: str = "", owner_userid: str = "", external_userid: str = "", limit: int = 20) -> list[dict[str, Any]]:
-        clauses: list[str] = []
-        params: list[Any] = []
-        if status:
-            clauses.append("status = %s")
-            params.append(status)
-        if owner_userid:
-            clauses.append("owner_userid = %s")
-            params.append(owner_userid)
-        if external_userid:
-            clauses.append("external_userid = %s")
-            params.append(external_userid)
-        where = " WHERE " + " AND ".join(clauses) if clauses else ""
-        params.append(limit)
-        rows = self._rows(
-            """
-            SELECT id, job_type, external_userid, owner_userid, run_after, status,
-                   attempt_count, payload_json, result_json, created_at, updated_at
-            FROM user_ops_deferred_jobs
-            """ + where + " ORDER BY run_after ASC, id ASC LIMIT %s",
-            tuple(params),
-        )
-        for row in rows:
-            row["payload_json"] = _json_load(row.get("payload_json"), default={})
-            row["result_json"] = _json_load(row.get("result_json"), default={})
-        return rows
+        del status, owner_userid, external_userid, limit
+        return []
 
     def deferred_job_counts(self) -> dict[str, int]:
-        row = self._one("SELECT status, COUNT(*) AS cnt FROM user_ops_deferred_jobs GROUP BY status")
-        rows = self._rows("SELECT status, COUNT(*) AS cnt FROM user_ops_deferred_jobs GROUP BY status")
-        del row
-        return _status_counts(rows)
+        return _status_counts([])
 
     def webhook_counts(self) -> dict[str, int]:
         row = self._one(
