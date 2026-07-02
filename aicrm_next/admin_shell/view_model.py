@@ -37,6 +37,12 @@ class AdminShellApiClient:
                 "description": "查看 schema drift、队列积压和事实归属检查。",
                 "href": admin_path_for("api.admin_data_health_page"),
             },
+            {
+                "label": "投递排障",
+                "value": "lineage",
+                "description": "按 unionid、trace 或任务 ID 查询投递链路。",
+                "href": admin_path_for("api.admin_delivery_lineage_page"),
+            },
         ]
 
     def shell_context_payload(self) -> dict[str, Any]:
