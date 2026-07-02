@@ -2,11 +2,18 @@ from __future__ import annotations
 
 from fastapi.testclient import TestClient
 
-from aicrm_next.growth_orchestration.application import list_growth_members, list_growth_programs
-from aicrm_next.growth_orchestration.dto import GrowthMember, GrowthProgram
+from aicrm_next.growth_orchestration.application import (
+    list_growth_members,
+    list_growth_programs,
+    list_growth_tasks,
+    list_growth_touchpoints,
+)
+from aicrm_next.growth_orchestration.dto import GrowthMember, GrowthProgram, GrowthTask, GrowthTouchpoint
 from aicrm_next.growth_orchestration.repository import (
     GROWTH_MEMBERS_SQL,
     GROWTH_PROGRAMS_SQL,
+    GROWTH_TASKS_SQL,
+    GROWTH_TOUCHPOINTS_SQL,
     InMemoryGrowthProgramRepository,
 )
 from aicrm_next.main import create_app
@@ -31,6 +38,14 @@ def test_growth_orchestration_programs_api_returns_empty_without_database(monkey
     members = client.get("/api/admin/growth-orchestration/members")
     assert members.status_code == 200
     assert members.json() == {"ok": True, "items": [], "limit": 50, "offset": 0}
+
+    tasks = client.get("/api/admin/growth-orchestration/tasks")
+    assert tasks.status_code == 200
+    assert tasks.json() == {"ok": True, "items": [], "limit": 50, "offset": 0}
+
+    touchpoints = client.get("/api/admin/growth-orchestration/touchpoints")
+    assert touchpoints.status_code == 200
+    assert touchpoints.json() == {"ok": True, "items": [], "limit": 50, "offset": 0}
 
 
 def test_growth_orchestration_programs_application_lists_all_active_program_types() -> None:
@@ -144,6 +159,68 @@ def test_growth_orchestration_members_application_is_unionid_only() -> None:
     }
 
 
+def test_growth_orchestration_tasks_and_touchpoints_use_active_execution_sources() -> None:
+    repo = InMemoryGrowthProgramRepository(
+        items=[],
+        tasks=[
+            GrowthTask(
+                task_key="broadcast_job:1",
+                program_key="campaign:c-1",
+                task_type="text",
+                status="queued",
+                owner_userid="owner-1",
+                target_count=3,
+                trace_id="trace-1",
+                source_table="broadcast_jobs",
+                source_id="1",
+            ),
+            GrowthTask(
+                task_key="external_effect_job:2",
+                program_key="campaign:c-1",
+                task_type="send_private_message",
+                status="planned",
+                target_unionid="union-1",
+                target_count=1,
+                trace_id="trace-2",
+                source_table="external_effect_job",
+                source_id="2",
+            ),
+            GrowthTask(
+                task_key="outbound_task:3",
+                program_key="outbound_trace:trace-3",
+                task_type="broadcast_job/wecom_private",
+                status="created",
+                trace_id="trace-3",
+                source_table="outbound_tasks",
+                source_id="3",
+            ),
+        ],
+        touchpoints=[
+            GrowthTouchpoint(
+                touchpoint_key="external_effect_job:2",
+                program_key="campaign:c-1",
+                unionid="union-1",
+                touchpoint_type="send_private_message",
+                status="succeeded",
+                trace_id="trace-2",
+                source_table="external_effect_job",
+                source_id="2",
+            )
+        ],
+    )
+
+    tasks = list_growth_tasks(repo=repo)
+    touchpoints = list_growth_touchpoints(repo=repo)
+
+    assert {item["source_table"] for item in tasks["items"]} == {
+        "broadcast_jobs",
+        "external_effect_job",
+        "outbound_tasks",
+    }
+    assert touchpoints["items"][0]["unionid"] == "union-1"
+    assert touchpoints["items"][0]["source_table"] == "external_effect_job"
+
+
 def test_growth_orchestration_program_sql_uses_only_active_unionid_safe_sources() -> None:
     assert "automation_workflow" not in GROWTH_PROGRAMS_SQL
     assert "automation_program" not in GROWTH_PROGRAMS_SQL
@@ -156,3 +233,12 @@ def test_growth_orchestration_program_sql_uses_only_active_unionid_safe_sources(
     assert "external_userid" not in GROWTH_MEMBERS_SQL
     assert "automation_group_ops_plan_member" not in GROWTH_MEMBERS_SQL
     assert "automation_membership_v2" not in GROWTH_MEMBERS_SQL
+    assert "automation_task_plan_v2" not in GROWTH_TASKS_SQL
+    assert "automation_task_plan_v2" not in GROWTH_TOUCHPOINTS_SQL
+    assert "automation_membership_v2" not in GROWTH_TASKS_SQL
+    assert "automation_membership_v2" not in GROWTH_TOUCHPOINTS_SQL
+    assert "external_userid" not in GROWTH_TASKS_SQL
+    assert "external_userid" not in GROWTH_TOUCHPOINTS_SQL
+    assert "broadcast_jobs" in GROWTH_TASKS_SQL
+    assert "external_effect_job" in GROWTH_TASKS_SQL
+    assert "outbound_tasks" in GROWTH_TASKS_SQL

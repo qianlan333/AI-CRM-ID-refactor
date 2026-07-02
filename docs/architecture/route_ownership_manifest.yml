@@ -6902,6 +6902,28 @@ routes:
   data_source: read_model
   requires_auth: true
   rollback: previous_release
+- path: /api/admin/growth-orchestration/tasks
+  methods:
+  - GET
+  route_name: api_growth_orchestration_tasks
+  capability_owner: growth_orchestration
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: none
+  data_source: read_model
+  requires_auth: true
+  rollback: previous_release
+- path: /api/admin/growth-orchestration/touchpoints
+  methods:
+  - GET
+  route_name: api_growth_orchestration_touchpoints
+  capability_owner: growth_orchestration
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: none
+  data_source: read_model
+  requires_auth: true
+  rollback: previous_release
 - path: /admin/jobs
   methods:
   - GET
