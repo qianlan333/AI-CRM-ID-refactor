@@ -57,6 +57,9 @@ IDENTITY_BOUNDARY_TABLE_PREFIXES = (
     "external_contact_bindings",
     "wecom_external_contact_",
 )
+_UNQUOTED_SQL_IDENTIFIER = r"[a-zA-Z_][a-zA-Z0-9_]*"
+_QUOTED_SQL_IDENTIFIER = r'"[^"]+"'
+_SQL_IDENTIFIER_PATTERN = rf"(?:{_QUOTED_SQL_IDENTIFIER}|{_UNQUOTED_SQL_IDENTIFIER})"
 
 
 @dataclass(frozen=True)
@@ -110,7 +113,8 @@ def check_sql_static_guard(root: Path = ROOT, manifest_path: Path = DEFAULT_MANI
         normalized = _normalize_sql(literal.value)
         if not _looks_like_sql(normalized):
             continue
-        if not _is_migration(literal.path, root=root):
+        is_pre_guard_migration = _is_pre_guard_migration(literal.path, root=root, baseline_prefix=baseline_prefix)
+        if not is_pre_guard_migration:
             violations.extend(_retired_table_violations(literal, normalized, retired_tables))
             violations.extend(_legacy_identity_column_violations(literal, normalized))
         violations.extend(
@@ -167,7 +171,26 @@ def _string_value(node: ast.AST) -> str | None:
 
 
 def _normalize_sql(value: str) -> str:
-    return re.sub(r"\s+", " ", value.strip())
+    return re.sub(r"\s+", " ", _strip_leading_sql_comments(value).strip())
+
+
+def _strip_leading_sql_comments(value: str) -> str:
+    remaining = value.lstrip()
+    while remaining:
+        if remaining.startswith("--"):
+            newline = remaining.find("\n")
+            if newline == -1:
+                return ""
+            remaining = remaining[newline + 1 :].lstrip()
+            continue
+        if remaining.startswith("/*"):
+            end = remaining.find("*/", 2)
+            if end == -1:
+                return ""
+            remaining = remaining[end + 2 :].lstrip()
+            continue
+        break
+    return remaining
 
 
 def _looks_like_sql(value: str) -> bool:
@@ -234,37 +257,52 @@ def _legacy_identity_column_violations(literal: SqlLiteral, normalized: str) -> 
 
 
 def _references_table(sql_text: str, table: str) -> bool:
-    table_pattern = re.escape(table)
+    table_pattern = _table_identifier_pattern(table)
     return bool(
         re.search(
-            rf"\b(from|join|into|update|table|truncate)\s+(?:if\s+(?:not\s+)?exists\s+)?{table_pattern}\b",
+            rf"\b(from|join|into|update|table|truncate)\s+(?:if\s+(?:not\s+)?exists\s+)?{table_pattern}(?![a-zA-Z0-9_])",
             sql_text,
             flags=re.IGNORECASE,
         )
     )
 
 
+def _table_identifier_pattern(table: str) -> str:
+    quoted_table = re.escape(f'"{table}"')
+    unquoted_table = re.escape(table)
+    identifier = rf"(?:{quoted_table}|{unquoted_table})"
+    schema_identifier = rf"(?:{_QUOTED_SQL_IDENTIFIER}|{_UNQUOTED_SQL_IDENTIFIER})"
+    return rf"(?:(?:{schema_identifier})\s*\.\s*)?{identifier}"
+
+
+def _unquote_identifier(identifier: str) -> str:
+    stripped = identifier.strip()
+    if stripped.startswith('"') and stripped.endswith('"'):
+        return stripped[1:-1]
+    return stripped
+
+
 def _created_tables(sql_text: str) -> set[str]:
     return {
-        match.group(1)
+        _unquote_identifier(match.group("table"))
         for match in re.finditer(
-            r"\bcreate\s+table\s+(?:if\s+not\s+exists\s+)?([a-zA-Z_][a-zA-Z0-9_]*)",
+            rf"\bcreate\s+table\s+(?:if\s+not\s+exists\s+)?(?P<table>{_SQL_IDENTIFIER_PATTERN})",
             sql_text,
             flags=re.IGNORECASE,
         )
-        if _is_real_table_name(match.group(1))
+        if _is_real_table_name(_unquote_identifier(match.group("table")))
     }
 
 
 def _altered_tables(sql_text: str) -> set[str]:
     return {
-        match.group(1)
+        _unquote_identifier(match.group("table"))
         for match in re.finditer(
-            r"\balter\s+table\s+([a-zA-Z_][a-zA-Z0-9_]*)",
+            rf"\balter\s+table\s+(?P<table>{_SQL_IDENTIFIER_PATTERN})",
             sql_text,
             flags=re.IGNORECASE,
         )
-        if _is_real_table_name(match.group(1))
+        if _is_real_table_name(_unquote_identifier(match.group("table")))
     }
 
 

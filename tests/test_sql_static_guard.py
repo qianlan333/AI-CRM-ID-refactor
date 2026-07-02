@@ -72,6 +72,77 @@ CREATE TABLE IF NOT EXISTS business_contacts (
     assert any("external_userid" in violation.detail for violation in violations)
 
 
+def test_migration_create_external_userid_after_0073_fails(tmp_path: Path) -> None:
+    manifest = _write_manifest(
+        tmp_path,
+        baseline_prefix="0073",
+        extra_table="""
+  business_contacts:
+    domain: tests
+    lifecycle: canonical
+    write_owner: tests
+    replacement: none
+    drop_candidate: false
+""",
+    )
+    _write(
+        tmp_path / "migrations" / "versions" / "0074_business_contacts.py",
+        '''
+SQL = """
+CREATE TABLE IF NOT EXISTS business_contacts (
+    id TEXT PRIMARY KEY,
+    external_userid TEXT NOT NULL
+)
+"""
+''',
+    )
+
+    violations = check_sql_static_guard(root=tmp_path, manifest_path=manifest)
+
+    assert [violation.rule for violation in violations] == ["legacy_identity_column_in_business_sql"]
+    assert "external_userid" in violations[0].detail
+
+
+def test_runtime_public_retired_table_reference_fails(tmp_path: Path) -> None:
+    manifest = _write_manifest(tmp_path)
+    _write(
+        tmp_path / "aicrm_next" / "demo" / "repo.py",
+        '''
+SQL = """
+SELECT id FROM public.retired_table WHERE id = 1
+"""
+QUOTED_SQL = """
+SELECT id FROM "public"."retired_table" WHERE id = 2
+"""
+''',
+    )
+
+    violations = check_sql_static_guard(root=tmp_path, manifest_path=manifest)
+
+    assert [violation.rule for violation in violations] == [
+        "retired_table_sql_reference",
+        "retired_table_sql_reference",
+    ]
+
+
+def test_commented_sql_then_retired_table_reference_fails(tmp_path: Path) -> None:
+    manifest = _write_manifest(tmp_path)
+    _write(
+        tmp_path / "aicrm_next" / "demo" / "repo.py",
+        '''
+SQL = """
+-- explain the query before the statement
+/* and keep a block comment before SQL */
+SELECT id FROM retired_table WHERE id = 1
+"""
+''',
+    )
+
+    violations = check_sql_static_guard(root=tmp_path, manifest_path=manifest)
+
+    assert [violation.rule for violation in violations] == ["retired_table_sql_reference"]
+
+
 def test_sql_static_guard_allows_identity_boundary_legacy_columns(tmp_path: Path) -> None:
     manifest = _write_manifest(
         tmp_path,
@@ -99,14 +170,14 @@ CREATE TABLE IF NOT EXISTS crm_user_identity_custom (
     assert check_sql_static_guard(root=tmp_path, manifest_path=manifest) == []
 
 
-def _write_manifest(tmp_path: Path, *, extra_table: str = "") -> Path:
+def _write_manifest(tmp_path: Path, *, baseline_prefix: str = "0000", extra_table: str = "") -> Path:
     manifest = tmp_path / "docs" / "architecture" / "data_table_lifecycle_manifest.yml"
     _write(
         manifest,
         f"""
 version: 1
 migration_guard:
-  migration_file_prefix_after: "0000"
+  migration_file_prefix_after: "{baseline_prefix}"
 tables:
   retired_table:
     domain: tests
