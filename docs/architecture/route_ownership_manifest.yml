@@ -6792,6 +6792,17 @@ routes:
   data_source: read_model
   requires_auth: true
   rollback: previous_release
+- path: /api/admin/material-assets/{material_asset_id}/usage
+  methods:
+  - GET
+  route_name: get_material_asset_usage
+  capability_owner: send_content
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: none
+  data_source: read_model
+  requires_auth: true
+  rollback: previous_release
 - path: /api/admin/data-health/summary
   methods:
   - GET

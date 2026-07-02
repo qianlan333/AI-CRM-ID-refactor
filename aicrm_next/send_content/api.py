@@ -10,6 +10,7 @@ from aicrm_next.shared.errors import ContractError
 from aicrm_next.shared.repository_provider import RepositoryProviderError
 
 from .application import (
+    GetMaterialAssetUsageQuery,
     ListMaterialAssetsQuery,
     ListMaterialPickerItemsQuery,
     NormalizeSendContentPackageCommand,
@@ -106,6 +107,28 @@ def list_material_assets(
         return _json_result(send_content_production_unavailable_payload(str(exc)))
     except Exception as exc:
         return _error(f"读取统一素材资产失败：{exc}", status_code=500)
+
+
+@router.get("/api/admin/material-assets/{material_asset_id}/usage")
+def get_material_asset_usage(
+    material_asset_id: str,
+    limit: int = 100,
+    offset: int = 0,
+) -> JSONResponse:
+    try:
+        return _json_result(
+            GetMaterialAssetUsageQuery()(
+                material_asset_id,
+                limit=max(1, min(int(limit or 100), 100)),
+                offset=max(0, int(offset or 0)),
+            )
+        )
+    except ContractError as exc:
+        return _error(str(exc), status_code=400)
+    except RepositoryProviderError as exc:
+        return _json_result(send_content_production_unavailable_payload(str(exc)))
+    except Exception as exc:
+        return _error(f"读取素材使用关系失败：{exc}", status_code=500)
 
 
 def _json_result(payload: dict) -> JSONResponse:

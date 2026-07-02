@@ -321,6 +321,54 @@ class ListMaterialAssetsQuery:
     __call__ = execute
 
 
+class GetMaterialAssetUsageQuery:
+    def __init__(self, repo: SendContentRepository | None = None) -> None:
+        self._repo = repo
+
+    def execute(self, material_asset_id: str, *, limit: int = 100, offset: int = 0) -> dict[str, Any]:
+        material_type, source_id = _parse_material_asset_id(material_asset_id)
+        limit = max(1, min(int(limit or 100), 100))
+        offset = max(0, int(offset or 0))
+        repo = self._repo_or_build()
+        result = repo.list_material_asset_usage(material_type, source_id, limit=limit, offset=offset)
+        items = list(result.get("items") or [])
+        return {
+            "ok": True,
+            "read_model": "material_asset_usage",
+            "material_asset_id": f"{material_type}:{source_id}",
+            "asset_type": material_type,
+            "source_id": source_id,
+            "usage": items,
+            "items": items,
+            "total": int(result.get("total") or len(items)),
+            "limit": limit,
+            "offset": offset,
+            "has_more": offset + len(items) < int(result.get("total") or len(items)),
+        }
+
+    def _repo_or_build(self) -> SendContentRepository:
+        if self._repo is None:
+            self._repo = build_send_content_repository()
+        return self._repo
+
+    __call__ = execute
+
+
+def _parse_material_asset_id(material_asset_id: str) -> tuple[str, int]:
+    raw = str(material_asset_id or "").strip()
+    material_type, separator, source_id_text = raw.partition(":")
+    material_type = material_type.strip().lower()
+    if not separator or material_type not in _MATERIAL_ASSET_TYPES:
+        raise ContractError("material_asset_id 必须形如 image:12、miniprogram:34 或 attachment:56")
+    try:
+        source_id = int(source_id_text)
+    except ValueError as exc:
+        raise ContractError("material_asset_id 的 source_id 必须是正整数") from exc
+    if source_id <= 0:
+        raise ContractError("material_asset_id 的 source_id 必须是正整数")
+    return material_type, source_id
+
+
 def _encode_material_assets_cursor(payload: dict[str, Any]) -> str:
     body = {
         "v": _MATERIAL_ASSET_CURSOR_VERSION,
