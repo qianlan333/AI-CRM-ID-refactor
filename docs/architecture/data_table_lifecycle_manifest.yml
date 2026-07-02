@@ -1,0 +1,217 @@
+version: 1
+
+migration_guard:
+  # PR #10 starts table lifecycle governance after the unionid identity closeout.
+  # Future migrations after this baseline must register every newly created table here.
+  new_table_registration_after: "0073_drop_hxc_snapshot_external_userid"
+  migration_file_prefix_after: "0073"
+
+tables:
+  automation_member:
+    domain: automation
+    lifecycle: retired
+    write_owner: ""
+    read_owners: []
+    replacement: automation_membership_v2, ai_audience_member_current, crm_user_identity
+    drop_candidate: false
+    drop_after: "0070_retire_automation_member_table"
+    runtime_entrypoints: []
+    migration_source: "0001 baseline, removed by 0070_retire_automation_member_table"
+    guard_tests:
+      - tests/test_unionid_identity_refactor_schema.py::test_retired_automation_member_table_is_physically_removed
+      - tests/test_data_table_lifecycle_guard.py
+    test_fixture_policy: legacy_baseline_stub_dropped_by_migration
+    notes: Retired physical table. Test bootstrap may create a legacy stub so later migrations can drop it.
+
+  automation_execution_trace:
+    domain: automation
+    lifecycle: retired
+    write_owner: ""
+    read_owners: []
+    replacement: external_effect_job, external_effect_attempt, internal_event_consumer_attempt
+    drop_candidate: false
+    drop_after: "0071_retire_conversion_trace_tables"
+    runtime_entrypoints: []
+    migration_source: "0002_perf_indexes_and_trace, removed by 0071_retire_conversion_trace_tables"
+    guard_tests:
+      - tests/test_data_table_lifecycle_guard.py
+    notes: Retired conversion workflow trace table; current runtime must not read or write it.
+
+  conversion_dispatch_log:
+    domain: automation
+    lifecycle: retired
+    write_owner: ""
+    read_owners: []
+    replacement: external_effect_job, domain_event_outbox, outbound_event_outbox
+    drop_candidate: false
+    drop_after: "0071_retire_conversion_trace_tables"
+    runtime_entrypoints: []
+    migration_source: "0001 baseline, removed by 0071_retire_conversion_trace_tables"
+    guard_tests:
+      - tests/test_data_table_lifecycle_guard.py
+    test_fixture_policy: legacy_baseline_stub_dropped_by_migration
+    notes: Retired conversion dispatch table. Test bootstrap may create a legacy stub so 0071 proves the drop path.
+
+  user_ops_lead_pool_current:
+    domain: user_ops
+    lifecycle: legacy_boundary
+    write_owner: aicrm_next.identity_contact.repo
+    read_owners:
+      - aicrm_next.owner_migration.repo
+      - user_ops HXC snapshot migration source
+    replacement: user_ops_pool_current_next, crm_user_identity
+    drop_candidate: true
+    drop_after: "after owner migration and mobile binding writes move to unionid-native tables"
+    runtime_entrypoints:
+      - mobile binding lead-pool repair
+      - owner migration preview/apply
+    migration_source: pre-Alembic baseline
+    guard_tests:
+      - tests/test_data_table_lifecycle_guard.py
+    notes: Still has runtime SQL references; PR #11 should migrate or retire these callers first.
+
+  user_ops_lead_pool_history:
+    domain: user_ops
+    lifecycle: legacy_boundary
+    write_owner: aicrm_next.identity_contact.repo
+    read_owners: []
+    replacement: user_ops_pool_history_next or audit/event table to be selected in PR #11
+    drop_candidate: true
+    drop_after: "after mobile binding history writes move to the selected replacement"
+    runtime_entrypoints:
+      - mobile binding lead-pool repair history
+    migration_source: pre-Alembic baseline
+    guard_tests:
+      - tests/test_data_table_lifecycle_guard.py
+    notes: Coupled to user_ops_lead_pool_current history writes.
+
+  user_ops_pool_current:
+    domain: user_ops
+    lifecycle: legacy_boundary
+    write_owner: legacy user ops import/runtime
+    read_owners:
+      - aicrm_next.ai_assist.external_campaigns_repo
+      - external campaign runbook
+    replacement: user_ops_pool_current_next, ai_audience_member_current
+    drop_candidate: true
+    drop_after: "after external campaign target lookup moves to user_ops_pool_current_next or AI Audience"
+    runtime_entrypoints:
+      - external campaign target lookup
+    migration_source: pre-Alembic baseline
+    guard_tests:
+      - tests/test_data_table_lifecycle_guard.py
+    notes: Runtime target lookup still depends on this table.
+
+  user_ops_pool_history:
+    domain: user_ops
+    lifecycle: legacy_boundary
+    write_owner: legacy user ops import/runtime
+    read_owners: []
+    replacement: user_ops_pool_current_next history/audit table to be selected in PR #11
+    drop_candidate: true
+    drop_after: "after history retention requirement is confirmed"
+    runtime_entrypoints: []
+    migration_source: pre-Alembic baseline
+    guard_tests:
+      - tests/test_data_table_lifecycle_guard.py
+    notes: No current Next runtime owner found in PR #10 audit; keep as candidate until history retention is settled.
+
+  user_ops_send_records:
+    domain: user_ops
+    lifecycle: legacy_boundary
+    write_owner: legacy user ops send runtime
+    read_owners:
+      - admin_read_model table counter
+    replacement: user_ops_send_records_next
+    drop_candidate: true
+    drop_after: "after admin read/counter paths move to user_ops_send_records_next"
+    runtime_entrypoints:
+      - admin read model table count
+    migration_source: pre-Alembic baseline
+    guard_tests:
+      - tests/test_data_table_lifecycle_guard.py
+    notes: Candidate for PR #11 once read/counter compatibility is replaced.
+
+  user_ops_deferred_jobs:
+    domain: user_ops
+    lifecycle: queue
+    write_owner: legacy user ops deferred job runtime
+    read_owners:
+      - aicrm_next.admin_jobs.repository
+      - aicrm_next.owner_migration.repo
+    replacement: external_effect_job or user_ops deferred gateway to be selected in PR #11
+    drop_candidate: true
+    drop_after: "after deferred job gateway is explicitly replaced"
+    runtime_entrypoints:
+      - admin jobs deferred job list/count
+      - owner migration pending job check
+    migration_source: pre-Alembic baseline
+    guard_tests:
+      - tests/test_data_table_lifecycle_guard.py
+    notes: Active queue-like surface; do not drop before replacement is wired.
+
+  message_batches:
+    domain: messaging
+    lifecycle: read_model
+    write_owner: legacy message batch collector
+    read_owners:
+      - aicrm_next.admin_jobs.repository
+    replacement: broadcast_jobs, broadcast_job_events, outbound_tasks
+    drop_candidate: true
+    drop_after: "after admin jobs message batch UI reads broadcast_jobs/outbound_tasks"
+    runtime_entrypoints:
+      - /api/admin/jobs/message-batches
+    migration_source: pre-Alembic baseline
+    guard_tests:
+      - tests/test_data_table_lifecycle_guard.py
+    notes: Still read and acknowledged by admin jobs; PR #12 should decide view compatibility versus physical removal.
+
+  message_batch_items:
+    domain: messaging
+    lifecycle: read_model
+    write_owner: legacy message batch collector
+    read_owners:
+      - aicrm_next.admin_jobs.repository
+    replacement: broadcast_job_events, outbound_tasks, archived_messages
+    drop_candidate: true
+    drop_after: "after message batch detail reads a unified broadcast/outbound read model"
+    runtime_entrypoints:
+      - /api/admin/jobs/message-batches
+    migration_source: pre-Alembic baseline
+    guard_tests:
+      - tests/test_data_table_lifecycle_guard.py
+    notes: Detail rows are joined to archived_messages by admin jobs.
+
+  marketing_automation_question_rules:
+    domain: admin_config
+    lifecycle: config
+    write_owner: aicrm_next.admin_config.repository
+    read_owners:
+      - aicrm_next.admin_config.repository
+      - aicrm_next.admin_config.application
+    replacement: automation workflow config or questionnaire rule package to be selected in PR #14
+    drop_candidate: true
+    drop_after: "after marketing automation config is reconciled with automation_program/workflow"
+    runtime_entrypoints:
+      - admin config marketing automation settings
+    migration_source: pre-Alembic baseline
+    guard_tests:
+      - tests/test_data_table_lifecycle_guard.py
+    notes: Still actively read/written by admin config code.
+
+  marketing_automation_configs:
+    domain: admin_config
+    lifecycle: config
+    write_owner: aicrm_next.admin_config.repository
+    read_owners:
+      - aicrm_next.admin_config.repository
+      - aicrm_next.admin_config.application
+    replacement: automation_program, automation_workflow, or package config to be selected in PR #14
+    drop_candidate: true
+    drop_after: "after marketing automation config is reconciled with automation_program/workflow"
+    runtime_entrypoints:
+      - admin config marketing automation settings
+    migration_source: pre-Alembic baseline
+    guard_tests:
+      - tests/test_data_table_lifecycle_guard.py
+    notes: Still actively read/written by admin config code.

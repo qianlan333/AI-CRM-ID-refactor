@@ -15,3 +15,4 @@ fi
 "$PYTHON" tools/check_external_effects_boundary.py
 "$PYTHON" tools/check_db_access_boundary.py
 "$PYTHON" tools/check_background_job_contract.py
+"$PYTHON" tools/check_data_table_lifecycle.py
