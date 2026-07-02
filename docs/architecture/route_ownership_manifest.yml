@@ -6770,6 +6770,39 @@ routes:
   data_source: read_model
   requires_auth: true
   rollback: previous_release
+- path: /api/admin/data-health/summary
+  methods:
+  - GET
+  route_name: api_data_health_summary
+  capability_owner: data_health
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: none
+  data_source: read_model
+  requires_auth: true
+  rollback: previous_release
+- path: /api/admin/data-health/checks
+  methods:
+  - GET
+  route_name: api_data_health_checks
+  capability_owner: data_health
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: none
+  data_source: read_model
+  requires_auth: true
+  rollback: previous_release
+- path: /api/admin/data-health/checks/{check_id}
+  methods:
+  - GET
+  route_name: api_data_health_check_detail
+  capability_owner: data_health
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: none
+  data_source: read_model
+  requires_auth: true
+  rollback: previous_release
 - path: /admin/jobs
   methods:
   - GET
