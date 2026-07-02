@@ -54,101 +54,93 @@ tables:
 
   user_ops_lead_pool_current:
     domain: user_ops
-    lifecycle: legacy_boundary
-    write_owner: aicrm_next.identity_contact.repo
-    read_owners:
-      - aicrm_next.owner_migration.repo
-      - user_ops HXC snapshot migration source
+    lifecycle: retired
+    write_owner: ""
+    read_owners: []
     replacement: user_ops_pool_current_next, crm_user_identity
-    drop_candidate: true
-    drop_after: "after owner migration and mobile binding writes move to unionid-native tables"
-    runtime_entrypoints:
-      - mobile binding lead-pool repair
-      - owner migration preview/apply
-    migration_source: pre-Alembic baseline
-    guard_tests:
-      - tests/test_data_table_lifecycle_guard.py
-    notes: Still has runtime SQL references; PR #11 should migrate or retire these callers first.
-
-  user_ops_lead_pool_history:
-    domain: user_ops
-    lifecycle: legacy_boundary
-    write_owner: aicrm_next.identity_contact.repo
-    read_owners: []
-    replacement: user_ops_pool_history_next or audit/event table to be selected in PR #11
-    drop_candidate: true
-    drop_after: "after mobile binding history writes move to the selected replacement"
-    runtime_entrypoints:
-      - mobile binding lead-pool repair history
-    migration_source: pre-Alembic baseline
-    guard_tests:
-      - tests/test_data_table_lifecycle_guard.py
-    notes: Coupled to user_ops_lead_pool_current history writes.
-
-  user_ops_pool_current:
-    domain: user_ops
-    lifecycle: legacy_boundary
-    write_owner: legacy user ops import/runtime
-    read_owners:
-      - aicrm_next.ai_assist.external_campaigns_repo
-      - external campaign runbook
-    replacement: user_ops_pool_current_next, ai_audience_member_current
-    drop_candidate: true
-    drop_after: "after external campaign target lookup moves to user_ops_pool_current_next or AI Audience"
-    runtime_entrypoints:
-      - external campaign target lookup
-    migration_source: pre-Alembic baseline
-    guard_tests:
-      - tests/test_data_table_lifecycle_guard.py
-    notes: Runtime target lookup still depends on this table.
-
-  user_ops_pool_history:
-    domain: user_ops
-    lifecycle: legacy_boundary
-    write_owner: legacy user ops import/runtime
-    read_owners: []
-    replacement: user_ops_pool_current_next history/audit table to be selected in PR #11
-    drop_candidate: true
-    drop_after: "after history retention requirement is confirmed"
+    drop_candidate: false
+    drop_after: PR #11 runtime cleanup
     runtime_entrypoints: []
     migration_source: pre-Alembic baseline
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
-    notes: No current Next runtime owner found in PR #10 audit; keep as candidate until history retention is settled.
+    test_fixture_policy: legacy_truncate_compat_absent_ok
+    notes: Retired from fresh schema; mobile binding now updates crm_user_identity or resolution queue.
+
+  user_ops_lead_pool_history:
+    domain: user_ops
+    lifecycle: retired
+    write_owner: ""
+    read_owners: []
+    replacement: crm_user_identity_resolution_queue, future user_ops audit/event table
+    drop_candidate: false
+    drop_after: PR #11 runtime cleanup
+    runtime_entrypoints: []
+    migration_source: pre-Alembic baseline
+    guard_tests:
+      - tests/test_data_table_lifecycle_guard.py
+    test_fixture_policy: legacy_truncate_compat_absent_ok
+    notes: Retired from fresh schema; mobile binding history is represented in identity payload metadata.
+
+  user_ops_pool_current:
+    domain: user_ops
+    lifecycle: retired
+    write_owner: ""
+    read_owners: []
+    replacement: user_ops_pool_current_next, ai_audience_member_current
+    drop_candidate: false
+    drop_after: PR #11 runtime cleanup
+    runtime_entrypoints: []
+    migration_source: pre-Alembic baseline
+    guard_tests:
+      - tests/test_data_table_lifecycle_guard.py
+    test_fixture_policy: legacy_truncate_compat_absent_ok
+    notes: Retired from fresh schema; external campaign target lookup now joins user_ops_pool_current_next through crm_user_identity.
+
+  user_ops_pool_history:
+    domain: user_ops
+    lifecycle: retired
+    write_owner: ""
+    read_owners: []
+    replacement: user_ops_pool_current_next, future user_ops audit/event table
+    drop_candidate: false
+    drop_after: PR #11 runtime cleanup
+    runtime_entrypoints: []
+    migration_source: pre-Alembic baseline
+    guard_tests:
+      - tests/test_data_table_lifecycle_guard.py
+    test_fixture_policy: legacy_truncate_compat_absent_ok
+    notes: Retired from fresh schema; no Next runtime SQL owner remains.
 
   user_ops_send_records:
     domain: user_ops
-    lifecycle: legacy_boundary
-    write_owner: legacy user ops send runtime
-    read_owners:
-      - admin_read_model table counter
+    lifecycle: retired
+    write_owner: ""
+    read_owners: []
     replacement: user_ops_send_records_next
-    drop_candidate: true
-    drop_after: "after admin read/counter paths move to user_ops_send_records_next"
-    runtime_entrypoints:
-      - admin read model table count
+    drop_candidate: false
+    drop_after: PR #11 runtime cleanup
+    runtime_entrypoints: []
     migration_source: pre-Alembic baseline
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
-    notes: Candidate for PR #11 once read/counter compatibility is replaced.
+    test_fixture_policy: legacy_truncate_compat_absent_ok
+    notes: Retired from fresh schema; tests and runtime use user_ops_send_records_next.
 
   user_ops_deferred_jobs:
     domain: user_ops
-    lifecycle: queue
-    write_owner: legacy user ops deferred job runtime
-    read_owners:
-      - aicrm_next.admin_jobs.repository
-      - aicrm_next.owner_migration.repo
+    lifecycle: retired
+    write_owner: ""
+    read_owners: []
     replacement: external_effect_job or user_ops deferred gateway to be selected in PR #11
-    drop_candidate: true
-    drop_after: "after deferred job gateway is explicitly replaced"
-    runtime_entrypoints:
-      - admin jobs deferred job list/count
-      - owner migration pending job check
+    drop_candidate: false
+    drop_after: PR #11 runtime cleanup
+    runtime_entrypoints: []
     migration_source: pre-Alembic baseline
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
-    notes: Active queue-like surface; do not drop before replacement is wired.
+    test_fixture_policy: legacy_truncate_compat_absent_ok
+    notes: Retired from fresh schema; admin jobs now returns an empty retired surface until a new deferred gateway is selected.
 
   message_batches:
     domain: messaging

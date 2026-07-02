@@ -19,10 +19,12 @@ _TOKEN_KEYS = ("AICRM_EXTERNAL_CAMPAIGN_TOKEN", "AUTOMATION_INTERNAL_API_TOKEN")
 _ONE_RECIPIENT_SEGMENT_SQL = """
 SELECT member_id, external_contact_id
 FROM (
-    SELECT (900000000000 + 2147483648 + hashtext(external_userid)::bigint) AS member_id,
-           external_userid AS external_contact_id
-    FROM user_ops_pool_current
-    WHERE external_userid = %(external_userid)s
+    SELECT (900000000000 + 2147483648 + hashtext(identity.unionid)::bigint) AS member_id,
+           identity.primary_external_userid AS external_contact_id
+    FROM crm_user_identity identity
+    JOIN user_ops_pool_current_next pool ON pool.unionid = identity.unionid
+    WHERE identity.primary_external_userid = %(external_userid)s
+       OR jsonb_exists(identity.external_userids_json, %(external_userid)s)
 ) matched
 ORDER BY member_id DESC
 LIMIT 1

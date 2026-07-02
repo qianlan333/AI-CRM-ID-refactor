@@ -159,12 +159,19 @@ class PostgresExternalCampaignRepository:
     def fetch_user_ops_pool_current_row(self, external_userid: str) -> JsonDict:
         row = self.db.execute(
             """
-            SELECT *
-            FROM user_ops_pool_current
-            WHERE external_userid = ?
+            SELECT
+                pool.*,
+                identity.primary_external_userid AS external_userid,
+                COALESCE(NULLIF(pool.owner_userid, ''), identity.primary_owner_userid) AS owner_userid,
+                COALESCE(NULLIF(pool.customer_name_snapshot, ''), identity.customer_name) AS customer_name
+            FROM crm_user_identity identity
+            JOIN user_ops_pool_current_next pool ON pool.unionid = identity.unionid
+            WHERE identity.primary_external_userid = ?
+               OR jsonb_exists(identity.external_userids_json, ?)
+            ORDER BY pool.updated_at DESC, pool.id DESC
             LIMIT 1
             """,
-            (_text(external_userid),),
+            (_text(external_userid), _text(external_userid)),
         ).fetchone()
         return _row_to_dict(row)
 

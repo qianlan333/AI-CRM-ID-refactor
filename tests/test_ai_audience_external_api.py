@@ -187,7 +187,7 @@ def test_external_spec_apply_creates_package_version_and_no_side_effects(next_cl
         package = session.execute(text("SELECT status, current_version_id FROM ai_audience_package WHERE id = :id"), {"id": payload["package_id"]}).mappings().one()
         version = session.execute(text("SELECT parameters_json FROM ai_audience_package_version WHERE id = :id"), {"id": payload["version_id"]}).mappings().one()
         effects = session.execute(text("SELECT COUNT(*) FROM external_effect_job")).scalar_one()
-        sends = session.execute(text("SELECT COUNT(*) FROM user_ops_send_records")).scalar_one()
+        sends = session.execute(text("SELECT COUNT(*) FROM user_ops_send_records_next")).scalar_one()
     assert package["status"] == "paused"
     assert package["current_version_id"] is None
     assert version["parameters_json"] == {"questionnaire_id": 101}
