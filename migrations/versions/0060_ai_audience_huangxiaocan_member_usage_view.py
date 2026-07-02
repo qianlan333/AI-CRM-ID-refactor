@@ -58,6 +58,7 @@ def _create_huangxiaocan_member_usage_view() -> None:
             membership_parts text[] := ARRAY[]::text[];
             registration_parts text[] := ARRAY[]::text[];
             usage_parts text[] := ARRAY[]::text[];
+            hxc_snapshot_external_expr text := '''''::text';
             hxc_snapshot_unionid_expr text := '''''::text';
             membership_sql text;
             registration_sql text;
@@ -70,12 +71,18 @@ def _create_huangxiaocan_member_usage_view() -> None:
             IF to_regclass('public.user_ops_hxc_dashboard_snapshot') IS NOT NULL THEN
                 IF EXISTS (
                     SELECT 1 FROM information_schema.columns
+                    WHERE table_schema = 'public' AND table_name = 'user_ops_hxc_dashboard_snapshot' AND column_name = 'external_userid'
+                ) THEN
+                    hxc_snapshot_external_expr := 'COALESCE(s.external_userid, '''')::text';
+                END IF;
+                IF EXISTS (
+                    SELECT 1 FROM information_schema.columns
                     WHERE table_schema = 'public' AND table_name = 'user_ops_hxc_dashboard_snapshot' AND column_name = 'unionid'
                 ) THEN
                     hxc_snapshot_unionid_expr := 'COALESCE(s.unionid, '''')::text';
                 END IF;
                 membership_parts := array_append(membership_parts, format($sql$
-                    SELECT COALESCE(s.external_userid, '')::text AS external_userid,
+                    SELECT %s AS external_userid,
                            CASE WHEN COALESCE(s.mobile, '') <> '' THEN md5(s.mobile) ELSE '' END::text AS mobile_hash,
                            %s AS unionid,
                            (
@@ -89,12 +96,12 @@ def _create_huangxiaocan_member_usage_view() -> None:
                            COALESCE(s.membership_status, '')::text AS membership_status,
                            'user_ops_hxc_dashboard_snapshot'::text AS source
                     FROM public.user_ops_hxc_dashboard_snapshot s
-                    WHERE COALESCE(s.external_userid, '') <> ''
+                    WHERE COALESCE(%s, '') <> ''
                        OR COALESCE(s.mobile, '') <> ''
                        OR COALESCE(%s, '') <> ''
-                $sql$, hxc_snapshot_unionid_expr, hxc_snapshot_unionid_expr));
+                $sql$, hxc_snapshot_external_expr, hxc_snapshot_unionid_expr, hxc_snapshot_external_expr, hxc_snapshot_unionid_expr));
                 registration_parts := array_append(registration_parts, format($sql$
-                    SELECT COALESCE(s.external_userid, '')::text AS external_userid,
+                    SELECT %s AS external_userid,
                            CASE WHEN COALESCE(s.mobile, '') <> '' THEN md5(s.mobile) ELSE '' END::text AS mobile_hash,
                            %s AS unionid,
                            (COALESCE(s.hxc_user_hit, false) OR s.hxc_registered_at IS NOT NULL)::boolean AS is_registered,
@@ -103,9 +110,9 @@ def _create_huangxiaocan_member_usage_view() -> None:
                     FROM public.user_ops_hxc_dashboard_snapshot s
                     WHERE COALESCE(s.hxc_user_hit, false)
                        OR s.hxc_registered_at IS NOT NULL
-                $sql$, hxc_snapshot_unionid_expr));
+                $sql$, hxc_snapshot_external_expr, hxc_snapshot_unionid_expr));
                 usage_parts := array_append(usage_parts, format($sql$
-                    SELECT COALESCE(s.external_userid, '')::text AS external_userid,
+                    SELECT %s AS external_userid,
                            CASE WHEN COALESCE(s.mobile, '') <> '' THEN md5(s.mobile) ELSE '' END::text AS mobile_hash,
                            %s AS unionid,
                            true::boolean AS has_real_usage,
@@ -119,7 +126,7 @@ def _create_huangxiaocan_member_usage_view() -> None:
                        OR COALESCE(s.msg_ai, 0) > 0
                        OR COALESCE(s.consult_completed, 0) > 0
                        OR s.last_msg_at IS NOT NULL
-                $sql$, hxc_snapshot_unionid_expr));
+                $sql$, hxc_snapshot_external_expr, hxc_snapshot_unionid_expr));
             END IF;
 
             IF to_regclass('public.new_version_user_subscriptions') IS NOT NULL

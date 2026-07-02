@@ -86,26 +86,26 @@ def test_huangxiaocan_member_usage_view_marks_registered_members_without_usage()
             text(
                 """
                 INSERT INTO user_ops_hxc_dashboard_snapshot (
-                    mobile, phone_match_key, external_userid, owner_userid,
+                    mobile, phone_match_key, unionid, owner_userid,
                     hxc_member_hit, hxc_user_hit, funnel_state, hxc_registered_at,
                     membership_type, membership_status, membership_end_at,
                     conv_chat, msg_user, msg_ai, last_msg_at, refreshed_at
                 )
                 VALUES
                     (
-                        '13900000001', '13900000001', 'wm_hxc_member_unused', 'HuangYouCan',
+                        '13900000001', '13900000001', 'union_hxc_member_unused', 'HuangYouCan',
                         true, true, 'member_no_usage', CURRENT_TIMESTAMP - interval '3 days',
                         'premium', 'active', CURRENT_TIMESTAMP + interval '30 days',
                         0, 0, 0, NULL, CURRENT_TIMESTAMP
                     ),
                     (
-                        '13900000002', '13900000002', 'wm_hxc_member_used', 'HuangYouCan',
+                        '13900000002', '13900000002', 'union_hxc_member_used', 'HuangYouCan',
                         true, true, 'member_used', CURRENT_TIMESTAMP - interval '3 days',
                         'premium', 'active', CURRENT_TIMESTAMP + interval '30 days',
                         1, 1, 2, CURRENT_TIMESTAMP - interval '1 day', CURRENT_TIMESTAMP
                     ),
                     (
-                        '13900000003', '13900000003', 'wm_hxc_not_member', 'HuangYouCan',
+                        '13900000003', '13900000003', 'union_hxc_not_member', 'HuangYouCan',
                         false, true, 'registered_no_member', CURRENT_TIMESTAMP - interval '3 days',
                         '', '', NULL,
                         0, 0, 0, NULL, CURRENT_TIMESTAMP

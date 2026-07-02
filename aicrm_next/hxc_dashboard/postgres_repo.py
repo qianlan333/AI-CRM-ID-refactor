@@ -44,7 +44,7 @@ class PostgresHxcDashboardBroadcastRepository(HxcDashboardBroadcastRepository):
             WITH snapshot_identity AS (
                 SELECT
                     COALESCE(NULLIF(s.unionid, ''), identity.unionid, '') AS unionid,
-                    COALESCE(NULLIF(s.external_userid, ''), identity.primary_external_userid, '') AS external_userid,
+                    COALESCE(identity.primary_external_userid, '') AS resolved_external_userid,
                     s.owner_userid,
                     s.funnel_state,
                     s.phone_match_key,
@@ -52,14 +52,6 @@ class PostgresHxcDashboardBroadcastRepository(HxcDashboardBroadcastRepository):
                 FROM user_ops_hxc_dashboard_snapshot s
                 LEFT JOIN crm_user_identity identity
                   ON identity.unionid = s.unionid
-                  OR (
-                      COALESCE(s.unionid, '') = ''
-                      AND COALESCE(s.external_userid, '') <> ''
-                      AND (
-                          identity.primary_external_userid = s.external_userid
-                          OR jsonb_exists(identity.external_userids_json, s.external_userid)
-                      )
-                  )
                   OR (
                       COALESCE(s.unionid, '') = ''
                       AND COALESCE(s.mobile, '') <> ''
@@ -74,7 +66,7 @@ class PostgresHxcDashboardBroadcastRepository(HxcDashboardBroadcastRepository):
                         cur.execute(
                             projection
                             + """
-                            SELECT unionid, external_userid, owner_userid, funnel_state,
+                            SELECT unionid, resolved_external_userid AS external_userid, owner_userid, funnel_state,
                                    EXISTS (
                                        SELECT 1
                                        FROM user_ops_do_not_disturb_next dnd
@@ -84,16 +76,24 @@ class PostgresHxcDashboardBroadcastRepository(HxcDashboardBroadcastRepository):
                                    ) AS do_not_disturb
                             FROM snapshot_identity s
                             WHERE s.unionid = ANY(%s)
-                               OR s.external_userid = ANY(%s)
+                               OR s.resolved_external_userid = ANY(%s)
                                OR s.phone_match_key = ANY(%s)
+                               OR EXISTS (
+                                   SELECT 1
+                                   FROM crm_user_identity selected_identity
+                                   JOIN unnest(%s::text[]) selected(value)
+                                     ON selected_identity.primary_external_userid = selected.value
+                                     OR jsonb_exists(selected_identity.external_userids_json, selected.value)
+                                   WHERE selected_identity.unionid = s.unionid
+                               )
                             """,
-                            (selected, selected, selected),
+                            (selected, selected, selected, selected),
                         )
                     else:
                         cur.execute(
                             projection
                             + """
-                            SELECT unionid, external_userid, owner_userid, funnel_state,
+                            SELECT unionid, resolved_external_userid AS external_userid, owner_userid, funnel_state,
                                    EXISTS (
                                        SELECT 1
                                        FROM user_ops_do_not_disturb_next dnd

@@ -27,7 +27,6 @@ ALLOWED_FINAL_LEGACY_IDENTITY_COLUMNS = {
     "crm_user_identity_resolution_queue.openid",
     "external_contact_bindings.external_userid",
     "external_contact_bindings.person_id",
-    "user_ops_hxc_dashboard_snapshot.external_userid",
     "wecom_external_contact_follow_users.external_userid",
     "wecom_external_contact_identity_map.external_userid",
     "wecom_external_contact_identity_map.openid",
@@ -65,4 +64,4 @@ def test_final_schema_legacy_identity_columns_are_only_approved_boundaries() -> 
         for column_ref in actual
         if not column_ref.startswith(BOUNDARY_PREFIXES)
     }
-    assert non_boundary == {"user_ops_hxc_dashboard_snapshot.external_userid"}
+    assert non_boundary == set()

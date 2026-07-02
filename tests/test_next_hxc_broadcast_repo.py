@@ -55,13 +55,13 @@ def test_postgres_preview_resolves_hxc_snapshot_unionids_and_dnd() -> None:
             text(
                 """
                 INSERT INTO user_ops_hxc_dashboard_snapshot (
-                    mobile, phone_match_key, unionid, external_userid, owner_userid,
+                    mobile, phone_match_key, unionid, owner_userid,
                     hxc_member_hit, hxc_user_hit, funnel_state, refreshed_at
                 )
                 VALUES
-                    ('13900001001', '13900001001', 'union_hxc_ready', '', 'QianLan', true, true, 'member', CURRENT_TIMESTAMP),
-                    ('13900001002', '13900001002', '', 'wm_hxc_dnd', 'QianLan', true, true, 'member', CURRENT_TIMESTAMP),
-                    ('13900001003', '13900001003', '', '', 'QianLan', true, true, 'member', CURRENT_TIMESTAMP)
+                    ('13900001001', '13900001001', 'union_hxc_ready', 'QianLan', true, true, 'member', CURRENT_TIMESTAMP),
+                    ('13900001002', '13900001002', '', 'QianLan', true, true, 'member', CURRENT_TIMESTAMP),
+                    ('13900001003', '13900001003', '', 'QianLan', true, true, 'member', CURRENT_TIMESTAMP)
                 """
             )
         )
