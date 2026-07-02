@@ -51,8 +51,14 @@ def _has_column(table: str, column: str) -> bool:
     return bool(row)
 
 
+def _has_table(table: str) -> bool:
+    bind = op.get_bind()
+    row = bind.execute(text("SELECT to_regclass(:table_name)"), {"table_name": f"public.{table}"}).first()
+    return bool(row and row[0])
+
+
 def _add_column(table: str, column_def: str, column_name: str) -> None:
-    if not _has_column(table, column_name):
+    if _has_table(table) and not _has_column(table, column_name):
         op.execute(f"ALTER TABLE {table} ADD COLUMN {column_def}")
 
 

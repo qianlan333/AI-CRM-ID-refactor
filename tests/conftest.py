@@ -94,8 +94,6 @@ _TABLES_TO_TRUNCATE = [
     "automation_stage_entry_v2",
     "automation_membership_v2",
     "automation_event_v2",
-    "automation_workflow_execution_item",
-    "automation_workflow_execution",
     "automation_member_audience_entry",
     "automation_program_member_stage_history",
     "automation_program_admission_attempt",
@@ -109,10 +107,8 @@ _TABLES_TO_TRUNCATE = [
     "automation_workflow_node_transition",
     "automation_workflow_node",
     "automation_workflow_goal",
-    "automation_operation_task",
     "automation_operation_templates",
     "automation_workflow",
-    "automation_event",
     "automation_member",
     "wecom_customer_acquisition_links",
     "automation_program_config_block",
@@ -508,11 +504,6 @@ def _bootstrap_next_test_baseline_schema(url: str) -> None:
         )
         """,
         """
-        CREATE TABLE IF NOT EXISTS automation_workflow_execution_item (
-            id BIGSERIAL PRIMARY KEY
-        )
-        """,
-        """
         CREATE TABLE IF NOT EXISTS automation_sop_template (
             id BIGSERIAL PRIMARY KEY
         )
@@ -807,30 +798,6 @@ def _bootstrap_next_test_baseline_schema(url: str) -> None:
             payload_json JSONB NOT NULL DEFAULT '{}'::jsonb,
             headers_json JSONB NOT NULL DEFAULT '{}'::jsonb,
             created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
-        )
-        """,
-        """
-        CREATE TABLE IF NOT EXISTS automation_operation_task (
-            id BIGSERIAL PRIMARY KEY,
-            program_id BIGINT NOT NULL DEFAULT 0,
-            task_name TEXT NOT NULL DEFAULT '',
-            status TEXT NOT NULL DEFAULT '',
-            trigger_type TEXT NOT NULL DEFAULT '',
-            send_time TEXT NOT NULL DEFAULT '',
-            timezone TEXT NOT NULL DEFAULT 'Asia/Shanghai',
-            target_audience_code TEXT NOT NULL DEFAULT '',
-            target_stage_code TEXT NOT NULL DEFAULT '',
-            audience_day_offset INTEGER NOT NULL DEFAULT 0,
-            behavior_filter TEXT NOT NULL DEFAULT '',
-            content_mode TEXT NOT NULL DEFAULT 'unified',
-            unified_content_json JSONB NOT NULL DEFAULT '{}'::jsonb,
-            segment_contents_json JSONB NOT NULL DEFAULT '[]'::jsonb,
-            agent_config_json JSONB NOT NULL DEFAULT '{}'::jsonb,
-            created_by TEXT NOT NULL DEFAULT '',
-            updated_by TEXT NOT NULL DEFAULT '',
-            published_at TIMESTAMPTZ,
-            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
         )
         """,
     ]
