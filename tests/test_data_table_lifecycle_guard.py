@@ -39,6 +39,49 @@ EVENT_EFFECT_TABLES = {
     "external_effect_job",
     "external_effect_attempt",
 }
+CAMPAIGN_AUTOMATION_BOUNDARY_TABLES = {
+    "segments",
+    "segment_member_snapshots",
+    "campaigns",
+    "campaign_segments",
+    "campaign_steps",
+    "campaign_members",
+    "automation_group_ops_plans",
+    "automation_group_ops_plan_groups",
+    "automation_group_ops_plan_nodes",
+    "automation_group_ops_webhook_events",
+    "automation_group_ops_plan_scope",
+    "automation_group_ops_plan_member",
+    "automation_group_ops_plan_segmentation",
+    "automation_group_ops_trigger_event",
+    "automation_group_ops_execution_log",
+    "audience_rule",
+    "audience_rule_version",
+    "audience_rule_result",
+}
+LEGACY_AUTOMATION_PROGRAM_TABLES = {
+    "automation_workflow_execution_item",
+    "automation_workflow_execution",
+    "automation_workflow_node_content_variant",
+    "automation_workflow_node_content",
+    "automation_workflow_node_transition",
+    "automation_workflow_node",
+    "automation_workflow_goal",
+    "automation_workflow",
+    "automation_task_plan_v2",
+    "automation_stage_entry_v2",
+    "automation_membership_v2",
+    "automation_event_v2",
+    "automation_member_audience_entry",
+    "automation_program_member_stage_history",
+    "automation_program_member",
+    "automation_program_admission_attempt",
+    "automation_program_channel_binding",
+    "automation_program_config_block",
+    "automation_operation_task",
+    "automation_event",
+    "automation_program",
+}
 
 OWNED_LIFECYCLES = {"canonical", "read_model", "event", "queue", "config"}
 
@@ -97,7 +140,13 @@ def _migration_prefix(path: Path) -> int | None:
 
 def test_lifecycle_manifest_registers_pr10_scope() -> None:
     tables = _table_entries()
-    missing = (INITIAL_PR10_TABLES | EVENT_EFFECT_TABLES) - set(tables)
+    required_tables = (
+        INITIAL_PR10_TABLES
+        | EVENT_EFFECT_TABLES
+        | CAMPAIGN_AUTOMATION_BOUNDARY_TABLES
+        | LEGACY_AUTOMATION_PROGRAM_TABLES
+    )
+    missing = required_tables - set(tables)
     assert missing == set()
 
     for table_name, entry in tables.items():

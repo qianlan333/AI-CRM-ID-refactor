@@ -37,6 +37,49 @@ EVENT_EFFECT_TABLES = {
     "external_effect_job",
     "external_effect_attempt",
 }
+CAMPAIGN_AUTOMATION_BOUNDARY_TABLES = {
+    "segments",
+    "segment_member_snapshots",
+    "campaigns",
+    "campaign_segments",
+    "campaign_steps",
+    "campaign_members",
+    "automation_group_ops_plans",
+    "automation_group_ops_plan_groups",
+    "automation_group_ops_plan_nodes",
+    "automation_group_ops_webhook_events",
+    "automation_group_ops_plan_scope",
+    "automation_group_ops_plan_member",
+    "automation_group_ops_plan_segmentation",
+    "automation_group_ops_trigger_event",
+    "automation_group_ops_execution_log",
+    "audience_rule",
+    "audience_rule_version",
+    "audience_rule_result",
+}
+LEGACY_AUTOMATION_PROGRAM_TABLES = {
+    "automation_workflow_execution_item",
+    "automation_workflow_execution",
+    "automation_workflow_node_content_variant",
+    "automation_workflow_node_content",
+    "automation_workflow_node_transition",
+    "automation_workflow_node",
+    "automation_workflow_goal",
+    "automation_workflow",
+    "automation_task_plan_v2",
+    "automation_stage_entry_v2",
+    "automation_membership_v2",
+    "automation_event_v2",
+    "automation_member_audience_entry",
+    "automation_program_member_stage_history",
+    "automation_program_member",
+    "automation_program_admission_attempt",
+    "automation_program_channel_binding",
+    "automation_program_config_block",
+    "automation_operation_task",
+    "automation_event",
+    "automation_program",
+}
 OWNED_LIFECYCLES = {"canonical", "read_model", "event", "queue", "config"}
 
 
@@ -63,7 +106,13 @@ def check_data_table_lifecycle(root: Path = ROOT, manifest_path: Path = DEFAULT_
     tables = manifest["tables"]
     violations: list[str] = []
 
-    missing_initial = sorted((INITIAL_PR10_TABLES | EVENT_EFFECT_TABLES) - set(tables))
+    required_tables = (
+        INITIAL_PR10_TABLES
+        | EVENT_EFFECT_TABLES
+        | CAMPAIGN_AUTOMATION_BOUNDARY_TABLES
+        | LEGACY_AUTOMATION_PROGRAM_TABLES
+    )
+    missing_initial = sorted(required_tables - set(tables))
     if missing_initial:
         violations.append(f"missing PR #10 lifecycle table registrations: {missing_initial}")
 

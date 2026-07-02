@@ -206,6 +206,650 @@ tables:
       - tests/test_data_table_lifecycle_guard.py
     notes: Still actively read/written by admin config code.
 
+  segments:
+    domain: campaign
+    lifecycle: canonical
+    write_owner: aicrm_next.ai_assist.external_campaigns_repo
+    read_owners:
+      - aicrm_next.ai_assist.external_campaigns_repo
+      - aicrm_next.cloud_orchestrator.repository
+    replacement: ai_audience_package or future audience rule read model after campaign convergence
+    drop_candidate: true
+    drop_after: "after campaign segment sourcing is reconciled with ai_audience and group-ops audience rules"
+    runtime_entrypoints:
+      - AI Assist external campaign segment creation
+      - cloud-orchestrator campaign audience reads
+    migration_source: 0005_segments_and_campaigns
+    guard_tests:
+      - tests/test_data_table_lifecycle_guard.py
+      - tests/test_campaign_automation_table_boundary.py
+    notes: Active segment registry used by campaign creation; not a delete target in PR #14.
+
+  segment_member_snapshots:
+    domain: campaign
+    lifecycle: read_model
+    write_owner: campaign segment refresh/runtime
+    read_owners:
+      - cloud-orchestrator campaign diagnostics
+    replacement: ai_audience_member_current or future audience-rule result projection
+    drop_candidate: true
+    drop_after: "after segment snapshots are replaced by ai_audience or audience_rule_result"
+    runtime_entrypoints:
+      - segment refresh/materialization
+    migration_source: 0005_segments_and_campaigns
+    guard_tests:
+      - tests/test_data_table_lifecycle_guard.py
+      - tests/test_campaign_automation_table_boundary.py
+    notes: Campaign read model candidate; keep registered until a concrete replacement owns counts and samples.
+
+  campaigns:
+    domain: campaign
+    lifecycle: canonical
+    write_owner: aicrm_next.cloud_orchestrator.repository
+    read_owners:
+      - aicrm_next.cloud_orchestrator.campaigns_read
+      - aicrm_next.cloud_orchestrator.repository
+      - aicrm_next.ai_assist.external_campaigns_repo
+    replacement: external_effect_job, broadcast_jobs, or future campaign command model after convergence
+    drop_candidate: false
+    drop_after: ""
+    runtime_entrypoints:
+      - cloud-orchestrator campaign admin
+      - AI Assist external campaign creation/status
+      - campaign run-due
+    migration_source: 0005_segments_and_campaigns
+    guard_tests:
+      - tests/test_data_table_lifecycle_guard.py
+      - tests/test_campaign_automation_table_boundary.py
+    notes: Active campaign business state; side effects should converge separately through broadcast/external-effect ledgers.
+
+  campaign_segments:
+    domain: campaign
+    lifecycle: canonical
+    write_owner: aicrm_next.ai_assist.external_campaigns_repo
+    read_owners:
+      - aicrm_next.cloud_orchestrator.repository
+      - aicrm_next.cloud_orchestrator.campaigns_read
+    replacement: future campaign command model after segment assignment convergence
+    drop_candidate: false
+    drop_after: ""
+    runtime_entrypoints:
+      - campaign segment assignment
+      - campaign overview/admin reads
+    migration_source: 0005_segments_and_campaigns
+    guard_tests:
+      - tests/test_data_table_lifecycle_guard.py
+      - tests/test_campaign_automation_table_boundary.py
+    notes: Active join table between campaigns and audience segments.
+
+  campaign_steps:
+    domain: campaign
+    lifecycle: canonical
+    write_owner: aicrm_next.ai_assist.external_campaigns_repo
+    read_owners:
+      - aicrm_next.cloud_orchestrator.repository
+      - aicrm_next.cloud_orchestrator.campaigns_read
+    replacement: future campaign command model plus broadcast_jobs scheduling projection
+    drop_candidate: false
+    drop_after: ""
+    runtime_entrypoints:
+      - campaign step authoring
+      - campaign run-due scheduling
+      - campaign admin reads
+    migration_source: 0005_segments_and_campaigns
+    guard_tests:
+      - tests/test_data_table_lifecycle_guard.py
+      - tests/test_campaign_automation_table_boundary.py
+    notes: Active campaign step definition table; external sends still belong to broadcast/external-effect records.
+
+  campaign_members:
+    domain: campaign
+    lifecycle: queue
+    write_owner: aicrm_next.cloud_orchestrator.repository
+    read_owners:
+      - aicrm_next.cloud_orchestrator.campaigns_read
+      - aicrm_next.cloud_orchestrator.repository
+      - aicrm_next.ai_assist.external_campaigns_repo
+    replacement: broadcast_jobs, outbound_tasks, external_effect_job after run-due convergence
+    drop_candidate: false
+    drop_after: ""
+    runtime_entrypoints:
+      - campaign member allocation
+      - campaign run-due
+      - campaign member admin reads
+    migration_source: 0005_segments_and_campaigns
+    guard_tests:
+      - tests/test_data_table_lifecycle_guard.py
+      - tests/test_campaign_automation_table_boundary.py
+    notes: Active campaign member state and due queue; broadcast/external-effect tables should own send attempts, not campaign membership.
+
+  automation_group_ops_plans:
+    domain: automation_group_ops
+    lifecycle: canonical
+    write_owner: aicrm_next.automation_engine.group_ops.postgres_repo
+    read_owners:
+      - aicrm_next.automation_engine.group_ops.postgres_repo
+      - aicrm_next.admin_jobs.application
+      - broadcast jobs projection
+    replacement: none; canonical group-ops plan model
+    drop_candidate: false
+    drop_after: ""
+    runtime_entrypoints:
+      - group-ops plan admin
+      - group-ops webhook/runtime
+      - broadcast job source linkage
+    migration_source: 0015_group_ops_plans
+    guard_tests:
+      - tests/test_data_table_lifecycle_guard.py
+      - tests/test_campaign_automation_table_boundary.py
+    notes: Canonical automation group operations plan table.
+
+  automation_group_ops_plan_groups:
+    domain: automation_group_ops
+    lifecycle: canonical
+    write_owner: aicrm_next.automation_engine.group_ops.postgres_repo
+    read_owners:
+      - aicrm_next.automation_engine.group_ops.postgres_repo
+    replacement: none; canonical group binding model
+    drop_candidate: false
+    drop_after: ""
+    runtime_entrypoints:
+      - group-ops plan group binding
+    migration_source: 0015_group_ops_plans
+    guard_tests:
+      - tests/test_data_table_lifecycle_guard.py
+      - tests/test_campaign_automation_table_boundary.py
+    notes: Active binding between group-ops plans and WeCom group chats.
+
+  automation_group_ops_plan_nodes:
+    domain: automation_group_ops
+    lifecycle: canonical
+    write_owner: aicrm_next.automation_engine.group_ops.postgres_repo
+    read_owners:
+      - aicrm_next.automation_engine.group_ops.postgres_repo
+    replacement: none; canonical group-ops content/action node model
+    drop_candidate: false
+    drop_after: ""
+    runtime_entrypoints:
+      - group-ops node authoring
+      - group-ops scheduler
+    migration_source: 0015_group_ops_plans
+    guard_tests:
+      - tests/test_data_table_lifecycle_guard.py
+      - tests/test_campaign_automation_table_boundary.py
+    notes: Active group-ops content/action node table.
+
+  automation_group_ops_webhook_events:
+    domain: automation_group_ops
+    lifecycle: event
+    write_owner: aicrm_next.automation_engine.group_ops.postgres_repo
+    read_owners:
+      - aicrm_next.automation_engine.group_ops.postgres_repo
+    replacement: internal_event or external_effect_job after webhook event convergence
+    drop_candidate: false
+    drop_after: ""
+    runtime_entrypoints:
+      - group-ops webhook intake
+      - group-ops webhook diagnostics
+    migration_source: 0015_group_ops_plans
+    guard_tests:
+      - tests/test_data_table_lifecycle_guard.py
+      - tests/test_campaign_automation_table_boundary.py
+    notes: Active group-ops webhook event ledger; do not delete until represented by internal_event/external_effect.
+
+  automation_group_ops_plan_scope:
+    domain: automation_group_ops
+    lifecycle: canonical
+    write_owner: aicrm_next.automation_engine.group_ops.postgres_repo
+    read_owners:
+      - aicrm_next.automation_engine.group_ops.postgres_repo
+    replacement: none; canonical group-ops scope model
+    drop_candidate: false
+    drop_after: ""
+    runtime_entrypoints:
+      - group-ops plan scope management
+    migration_source: 0023_group_ops_webhook_rules
+    guard_tests:
+      - tests/test_data_table_lifecycle_guard.py
+    notes: Active scope binding table for group-ops plans.
+
+  automation_group_ops_plan_member:
+    domain: automation_group_ops
+    lifecycle: canonical
+    write_owner: aicrm_next.automation_engine.group_ops.postgres_repo
+    read_owners:
+      - aicrm_next.automation_engine.group_ops.postgres_repo
+    replacement: audience_rule_result or future group-ops member projection after member model convergence
+    drop_candidate: false
+    drop_after: ""
+    runtime_entrypoints:
+      - group-ops member import/refresh
+      - group-ops member admin reads
+    migration_source: 0023_group_ops_webhook_rules
+    guard_tests:
+      - tests/test_data_table_lifecycle_guard.py
+      - tests/test_campaign_automation_table_boundary.py
+    notes: Active group-ops plan member table.
+
+  audience_rule:
+    domain: automation_group_ops
+    lifecycle: config
+    write_owner: aicrm_next.automation_engine.group_ops.postgres_repo
+    read_owners:
+      - aicrm_next.automation_engine.group_ops.postgres_repo
+    replacement: none; canonical audience rule catalog for group-ops
+    drop_candidate: false
+    drop_after: ""
+    runtime_entrypoints:
+      - group-ops audience rule admin
+    migration_source: 0023_group_ops_webhook_rules
+    guard_tests:
+      - tests/test_data_table_lifecycle_guard.py
+    notes: Active group-ops audience rule catalog.
+
+  audience_rule_version:
+    domain: automation_group_ops
+    lifecycle: config
+    write_owner: aicrm_next.automation_engine.group_ops.postgres_repo
+    read_owners:
+      - aicrm_next.automation_engine.group_ops.postgres_repo
+    replacement: none; canonical audience rule version catalog for group-ops
+    drop_candidate: false
+    drop_after: ""
+    runtime_entrypoints:
+      - group-ops audience rule versioning
+    migration_source: 0023_group_ops_webhook_rules
+    guard_tests:
+      - tests/test_data_table_lifecycle_guard.py
+    notes: Active versioned rule definition table.
+
+  audience_rule_result:
+    domain: automation_group_ops
+    lifecycle: read_model
+    write_owner: aicrm_next.automation_engine.group_ops.postgres_repo
+    read_owners:
+      - aicrm_next.automation_engine.group_ops.postgres_repo
+    replacement: none; canonical group-ops audience result read model
+    drop_candidate: false
+    drop_after: ""
+    runtime_entrypoints:
+      - group-ops audience refresh
+      - group-ops segmentation reads
+    migration_source: 0023_group_ops_webhook_rules
+    guard_tests:
+      - tests/test_data_table_lifecycle_guard.py
+    notes: Active computed audience result table for group-ops.
+
+  automation_group_ops_plan_segmentation:
+    domain: automation_group_ops
+    lifecycle: config
+    write_owner: aicrm_next.automation_engine.group_ops.postgres_repo
+    read_owners:
+      - aicrm_next.automation_engine.group_ops.postgres_repo
+    replacement: none; canonical group-ops segmentation config
+    drop_candidate: false
+    drop_after: ""
+    runtime_entrypoints:
+      - group-ops plan segmentation
+    migration_source: 0023_group_ops_webhook_rules
+    guard_tests:
+      - tests/test_data_table_lifecycle_guard.py
+    notes: Active segmentation config for group-ops plans.
+
+  automation_group_ops_trigger_event:
+    domain: automation_group_ops
+    lifecycle: event
+    write_owner: aicrm_next.automation_engine.group_ops.postgres_repo
+    read_owners:
+      - aicrm_next.automation_engine.group_ops.postgres_repo
+    replacement: internal_event after trigger-event convergence
+    drop_candidate: false
+    drop_after: ""
+    runtime_entrypoints:
+      - group-ops trigger intake
+      - group-ops execution routing
+    migration_source: 0023_group_ops_webhook_rules
+    guard_tests:
+      - tests/test_data_table_lifecycle_guard.py
+      - tests/test_campaign_automation_table_boundary.py
+    notes: Active trigger event ledger for group-ops.
+
+  automation_group_ops_execution_log:
+    domain: automation_group_ops
+    lifecycle: audit
+    write_owner: aicrm_next.automation_engine.group_ops.postgres_repo
+    read_owners:
+      - aicrm_next.automation_engine.group_ops.postgres_repo
+    replacement: external_effect_attempt after execution-attempt convergence
+    drop_candidate: false
+    drop_after: ""
+    runtime_entrypoints:
+      - group-ops execution audit
+    migration_source: 0023_group_ops_webhook_rules
+    guard_tests:
+      - tests/test_data_table_lifecycle_guard.py
+      - tests/test_campaign_automation_table_boundary.py
+    notes: Active group-ops execution audit table.
+
+  automation_workflow_execution_item:
+    domain: automation_legacy
+    lifecycle: retired
+    write_owner: ""
+    read_owners: []
+    replacement: external_effect_attempt, internal_event_consumer_attempt
+    drop_candidate: false
+    drop_after: "0053_retire_legacy_automation_tables"
+    runtime_entrypoints: []
+    migration_source: pre-Alembic baseline, removed by 0053_retire_legacy_automation_tables
+    test_fixture_policy: legacy_baseline_stub_dropped_by_0053
+    guard_tests:
+      - tests/test_data_table_lifecycle_guard.py
+    notes: Retired legacy workflow execution item table.
+
+  automation_workflow_execution:
+    domain: automation_legacy
+    lifecycle: retired
+    write_owner: ""
+    read_owners: []
+    replacement: external_effect_job, internal_event_consumer_run
+    drop_candidate: false
+    drop_after: "0053_retire_legacy_automation_tables"
+    runtime_entrypoints: []
+    migration_source: pre-Alembic baseline, removed by 0053_retire_legacy_automation_tables
+    test_fixture_policy: legacy_baseline_stub_dropped_by_0053
+    guard_tests:
+      - tests/test_data_table_lifecycle_guard.py
+      - tests/test_campaign_automation_table_boundary.py
+    notes: Retired legacy workflow execution table.
+
+  automation_workflow_node_content_variant:
+    domain: automation_legacy
+    lifecycle: retired
+    write_owner: ""
+    read_owners: []
+    replacement: campaign_steps or automation_group_ops_plan_nodes
+    drop_candidate: false
+    drop_after: "0053_retire_legacy_automation_tables"
+    runtime_entrypoints: []
+    migration_source: pre-Alembic baseline, removed by 0053_retire_legacy_automation_tables
+    test_fixture_policy: legacy_baseline_stub_dropped_by_0053
+    guard_tests:
+      - tests/test_data_table_lifecycle_guard.py
+    notes: Retired legacy workflow content variant table.
+
+  automation_workflow_node_content:
+    domain: automation_legacy
+    lifecycle: retired
+    write_owner: ""
+    read_owners: []
+    replacement: campaign_steps or automation_group_ops_plan_nodes
+    drop_candidate: false
+    drop_after: "0053_retire_legacy_automation_tables"
+    runtime_entrypoints: []
+    migration_source: pre-Alembic baseline, removed by 0053_retire_legacy_automation_tables
+    test_fixture_policy: legacy_baseline_stub_dropped_by_0053
+    guard_tests:
+      - tests/test_data_table_lifecycle_guard.py
+    notes: Retired legacy workflow content table.
+
+  automation_workflow_node_transition:
+    domain: automation_legacy
+    lifecycle: retired
+    write_owner: ""
+    read_owners: []
+    replacement: campaign_steps or group-ops trigger/event routing
+    drop_candidate: false
+    drop_after: "0053_retire_legacy_automation_tables"
+    runtime_entrypoints: []
+    migration_source: pre-Alembic baseline, removed by 0053_retire_legacy_automation_tables
+    test_fixture_policy: legacy_baseline_stub_dropped_by_0053
+    guard_tests:
+      - tests/test_data_table_lifecycle_guard.py
+    notes: Retired legacy workflow transition table.
+
+  automation_workflow_node:
+    domain: automation_legacy
+    lifecycle: retired
+    write_owner: ""
+    read_owners: []
+    replacement: campaign_steps or automation_group_ops_plan_nodes
+    drop_candidate: false
+    drop_after: "0053_retire_legacy_automation_tables"
+    runtime_entrypoints: []
+    migration_source: pre-Alembic baseline, removed by 0053_retire_legacy_automation_tables
+    test_fixture_policy: legacy_baseline_stub_dropped_by_0053
+    guard_tests:
+      - tests/test_data_table_lifecycle_guard.py
+    notes: Retired legacy workflow node table.
+
+  automation_workflow_goal:
+    domain: automation_legacy
+    lifecycle: retired
+    write_owner: ""
+    read_owners: []
+    replacement: campaign stats or group-ops governance metrics
+    drop_candidate: false
+    drop_after: "0053_retire_legacy_automation_tables"
+    runtime_entrypoints: []
+    migration_source: pre-Alembic baseline, removed by 0053_retire_legacy_automation_tables
+    test_fixture_policy: legacy_baseline_stub_dropped_by_0053
+    guard_tests:
+      - tests/test_data_table_lifecycle_guard.py
+    notes: Retired legacy workflow goal table.
+
+  automation_workflow:
+    domain: automation_legacy
+    lifecycle: retired
+    write_owner: ""
+    read_owners: []
+    replacement: campaigns or automation_group_ops_plans depending on business surface
+    drop_candidate: false
+    drop_after: "0053_retire_legacy_automation_tables"
+    runtime_entrypoints: []
+    migration_source: pre-Alembic baseline, removed by 0053_retire_legacy_automation_tables
+    test_fixture_policy: legacy_baseline_stub_dropped_by_0053
+    guard_tests:
+      - tests/test_data_table_lifecycle_guard.py
+      - tests/test_campaign_automation_table_boundary.py
+    notes: Retired legacy workflow table; no Next runtime should reintroduce SQL access.
+
+  automation_task_plan_v2:
+    domain: automation_legacy
+    lifecycle: retired
+    write_owner: ""
+    read_owners: []
+    replacement: automation_group_ops_plans, broadcast_jobs, external_effect_job
+    drop_candidate: false
+    drop_after: "0053_retire_legacy_automation_tables"
+    runtime_entrypoints: []
+    migration_source: pre-Alembic baseline, removed by 0053_retire_legacy_automation_tables
+    test_fixture_policy: legacy_baseline_stub_dropped_by_0053
+    guard_tests:
+      - tests/test_data_table_lifecycle_guard.py
+    notes: Retired legacy task plan table.
+
+  automation_stage_entry_v2:
+    domain: automation_legacy
+    lifecycle: retired
+    write_owner: ""
+    read_owners: []
+    replacement: campaign_members or automation_group_ops_plan_member
+    drop_candidate: false
+    drop_after: "0053_retire_legacy_automation_tables"
+    runtime_entrypoints: []
+    migration_source: pre-Alembic baseline, removed by 0053_retire_legacy_automation_tables
+    test_fixture_policy: legacy_baseline_stub_dropped_by_0053
+    guard_tests:
+      - tests/test_data_table_lifecycle_guard.py
+    notes: Retired legacy stage entry table.
+
+  automation_membership_v2:
+    domain: automation_legacy
+    lifecycle: retired
+    write_owner: ""
+    read_owners: []
+    replacement: ai_audience_member_current, campaign_members, automation_group_ops_plan_member
+    drop_candidate: false
+    drop_after: "0053_retire_legacy_automation_tables"
+    runtime_entrypoints: []
+    migration_source: pre-Alembic baseline, removed by 0053_retire_legacy_automation_tables
+    test_fixture_policy: legacy_baseline_stub_dropped_by_0053
+    guard_tests:
+      - tests/test_data_table_lifecycle_guard.py
+    notes: Retired legacy membership table.
+
+  automation_event_v2:
+    domain: automation_legacy
+    lifecycle: retired
+    write_owner: ""
+    read_owners: []
+    replacement: internal_event, automation_group_ops_trigger_event
+    drop_candidate: false
+    drop_after: "0053_retire_legacy_automation_tables"
+    runtime_entrypoints: []
+    migration_source: pre-Alembic baseline, removed by 0053_retire_legacy_automation_tables
+    test_fixture_policy: legacy_baseline_stub_dropped_by_0053
+    guard_tests:
+      - tests/test_data_table_lifecycle_guard.py
+    notes: Retired legacy event table.
+
+  automation_member_audience_entry:
+    domain: automation_legacy
+    lifecycle: retired
+    write_owner: ""
+    read_owners: []
+    replacement: ai_audience_member_current, audience_rule_result
+    drop_candidate: false
+    drop_after: "0053_retire_legacy_automation_tables"
+    runtime_entrypoints: []
+    migration_source: pre-Alembic baseline, removed by 0053_retire_legacy_automation_tables
+    test_fixture_policy: legacy_baseline_stub_dropped_by_0053
+    guard_tests:
+      - tests/test_data_table_lifecycle_guard.py
+    notes: Retired legacy audience membership table.
+
+  automation_program_member_stage_history:
+    domain: automation_legacy
+    lifecycle: retired
+    write_owner: ""
+    read_owners: []
+    replacement: internal_event_consumer_attempt or group-ops execution audit
+    drop_candidate: false
+    drop_after: "0053_retire_legacy_automation_tables"
+    runtime_entrypoints: []
+    migration_source: pre-Alembic baseline, removed by 0053_retire_legacy_automation_tables
+    test_fixture_policy: legacy_baseline_stub_dropped_by_0053
+    guard_tests:
+      - tests/test_data_table_lifecycle_guard.py
+    notes: Retired legacy program member stage history table.
+
+  automation_program_member:
+    domain: automation_legacy
+    lifecycle: retired
+    write_owner: ""
+    read_owners: []
+    replacement: campaign_members or automation_group_ops_plan_member
+    drop_candidate: false
+    drop_after: "0053_retire_legacy_automation_tables"
+    runtime_entrypoints: []
+    migration_source: pre-Alembic baseline, removed by 0053_retire_legacy_automation_tables
+    test_fixture_policy: legacy_baseline_stub_dropped_by_0053
+    guard_tests:
+      - tests/test_data_table_lifecycle_guard.py
+      - tests/test_campaign_automation_table_boundary.py
+    notes: Retired legacy program member table.
+
+  automation_program_admission_attempt:
+    domain: automation_legacy
+    lifecycle: retired
+    write_owner: ""
+    read_owners: []
+    replacement: internal_event_consumer_attempt or group-ops trigger event audit
+    drop_candidate: false
+    drop_after: "0053_retire_legacy_automation_tables"
+    runtime_entrypoints: []
+    migration_source: pre-Alembic baseline, removed by 0053_retire_legacy_automation_tables
+    test_fixture_policy: legacy_baseline_stub_dropped_by_0053
+    guard_tests:
+      - tests/test_data_table_lifecycle_guard.py
+    notes: Retired legacy admission attempt table.
+
+  automation_program_channel_binding:
+    domain: automation_legacy
+    lifecycle: retired
+    write_owner: ""
+    read_owners: []
+    replacement: automation_group_ops_plan_groups, automation_channel_assignee
+    drop_candidate: false
+    drop_after: "0053_retire_legacy_automation_tables"
+    runtime_entrypoints: []
+    migration_source: pre-Alembic baseline, removed by 0053_retire_legacy_automation_tables
+    test_fixture_policy: legacy_baseline_stub_dropped_by_0053
+    guard_tests:
+      - tests/test_data_table_lifecycle_guard.py
+    notes: Retired legacy program channel binding table.
+
+  automation_program_config_block:
+    domain: automation_legacy
+    lifecycle: retired
+    write_owner: ""
+    read_owners: []
+    replacement: automation_group_ops_plan_segmentation, marketing_automation_configs
+    drop_candidate: false
+    drop_after: "0053_retire_legacy_automation_tables"
+    runtime_entrypoints: []
+    migration_source: pre-Alembic baseline, removed by 0053_retire_legacy_automation_tables
+    test_fixture_policy: legacy_baseline_stub_dropped_by_0053
+    guard_tests:
+      - tests/test_data_table_lifecycle_guard.py
+    notes: Retired legacy config block table.
+
+  automation_operation_task:
+    domain: automation_legacy
+    lifecycle: retired
+    write_owner: ""
+    read_owners: []
+    replacement: broadcast_jobs, external_effect_job
+    drop_candidate: false
+    drop_after: "0053_retire_legacy_automation_tables"
+    runtime_entrypoints: []
+    migration_source: pre-Alembic baseline, removed by 0053_retire_legacy_automation_tables
+    test_fixture_policy: legacy_baseline_stub_dropped_by_0053
+    guard_tests:
+      - tests/test_data_table_lifecycle_guard.py
+    notes: Retired legacy operation task table.
+
+  automation_event:
+    domain: automation_legacy
+    lifecycle: retired
+    write_owner: ""
+    read_owners: []
+    replacement: internal_event, automation_group_ops_trigger_event
+    drop_candidate: false
+    drop_after: "0053_retire_legacy_automation_tables"
+    runtime_entrypoints: []
+    migration_source: pre-Alembic baseline, removed by 0053_retire_legacy_automation_tables
+    test_fixture_policy: legacy_baseline_stub_dropped_by_0053
+    guard_tests:
+      - tests/test_data_table_lifecycle_guard.py
+    notes: Retired legacy automation event table.
+
+  automation_program:
+    domain: automation_legacy
+    lifecycle: retired
+    write_owner: ""
+    read_owners: []
+    replacement: campaigns or automation_group_ops_plans depending on business surface
+    drop_candidate: false
+    drop_after: "0053_retire_legacy_automation_tables"
+    runtime_entrypoints: []
+    migration_source: pre-Alembic baseline, removed by 0053_retire_legacy_automation_tables
+    test_fixture_policy: legacy_baseline_stub_dropped_by_0053
+    guard_tests:
+      - tests/test_data_table_lifecycle_guard.py
+      - tests/test_campaign_automation_table_boundary.py
+    notes: Retired legacy automation program table; keep new work on campaign/group-ops boundaries.
+
   domain_event_outbox:
     domain: commerce_events
     lifecycle: event
