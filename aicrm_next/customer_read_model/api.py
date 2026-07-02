@@ -16,6 +16,7 @@ from . import application as customer_application
 from .application import (
     GetAdminCustomerProfileQuery,
     GetAdminCustomerProfileTagsQuery,
+    GetCustomer360ProfileQuery,
     GetCustomerContextQuery,
     GetCustomerDetailQuery,
     GetCustomerTimelineQuery,
@@ -794,6 +795,14 @@ def get_admin_customer_profile(
         mobile=mobile,
         user_id=user_id,
     )
+    status_code = int(result.pop("status_code", 200) or 200)
+    return JSONResponse(jsonable_encoder(result), status_code=status_code)
+
+
+@router.get("/api/admin/customer-360/{unionid}")
+def get_admin_customer_360_profile(unionid: str, db: Session = Depends(get_db)) -> JSONResponse:
+    customer_repo, live_source_repo = _request_scoped_customer_repositories(db)
+    result = GetCustomer360ProfileQuery(GetCustomerContextQuery(customer_repo, live_source_repo=live_source_repo))(unionid)
     status_code = int(result.pop("status_code", 200) or 200)
     return JSONResponse(jsonable_encoder(result), status_code=status_code)
 
