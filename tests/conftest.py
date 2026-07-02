@@ -219,18 +219,12 @@ _TABLES_TO_TRUNCATE = [
     "class_user_status_current",
     "class_user_status_history",
     # — user_ops
-    "user_ops_lead_pool_history",
-    "user_ops_lead_pool_current",
-    "user_ops_pool_history",
-    "user_ops_pool_current",
     "user_ops_huangxiaocan_activation_source",
     "user_ops_activation_status_source",
     "signup_tag_rules",
     "marketing_automation_question_rules",
     "marketing_automation_configs",
     "class_term_tag_mapping",
-    "user_ops_send_records",
-    "user_ops_deferred_jobs",
     # — 激活漏斗看板 (alembic 0010-0011)
     "user_ops_hxc_send_config",
     "user_ops_hxc_dashboard_snapshot",
