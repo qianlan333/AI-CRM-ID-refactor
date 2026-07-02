@@ -146,8 +146,16 @@ class ListMaterialAssetsQuery:
         repo = self._repo_or_build()
         is_all = normalized_type == "all"
         material_types = ["image", "miniprogram", "attachment"] if normalized_type == "all" else [normalized_type]
-        repo_limit = offset + limit if is_all else limit
-        repo_offset = 0 if is_all else offset
+        if is_all:
+            return self._execute_all_types(
+                repo=repo,
+                material_types=material_types,
+                q=q,
+                enabled_only=enabled_only,
+                limit=limit,
+                offset=offset,
+                normalized_type=normalized_type,
+            )
 
         assets: list[dict[str, Any]] = []
         total = 0
@@ -156,18 +164,71 @@ class ListMaterialAssetsQuery:
                 material_type,
                 q=q,
                 enabled_only=enabled_only,
-                limit=repo_limit,
-                offset=repo_offset,
+                limit=limit,
+                offset=offset,
             )
             total += int(result.get("total") or 0)
             assets.extend(_material_asset_item(material_type, item) for item in result.get("items") or [])
-        visible_assets = assets[offset : offset + limit] if is_all else assets[:limit]
 
         return {
             "ok": True,
             "read_model": "material_assets",
             "type": normalized_type,
-            "assets": visible_assets,
+            "assets": assets[:limit],
+            "total": total,
+            "limit": limit,
+            "offset": offset,
+        }
+
+    def _execute_all_types(
+        self,
+        *,
+        repo: SendContentRepository,
+        material_types: list[str],
+        q: str,
+        enabled_only: bool,
+        limit: int,
+        offset: int,
+        normalized_type: str,
+    ) -> dict[str, Any]:
+        remaining_offset = offset
+        remaining_limit = limit
+        assets: list[dict[str, Any]] = []
+        total = 0
+
+        for material_type in material_types:
+            probe = repo.list_materials(
+                material_type,
+                q=q,
+                enabled_only=enabled_only,
+                limit=1,
+                offset=0,
+            )
+            source_total = int(probe.get("total") or 0)
+            total += source_total
+            if remaining_limit <= 0:
+                continue
+            if remaining_offset >= source_total:
+                remaining_offset -= source_total
+                continue
+
+            page = repo.list_materials(
+                material_type,
+                q=q,
+                enabled_only=enabled_only,
+                limit=remaining_limit,
+                offset=remaining_offset,
+            )
+            page_items = list(page.get("items") or [])
+            assets.extend(_material_asset_item(material_type, item) for item in page_items)
+            remaining_limit -= len(page_items)
+            remaining_offset = 0
+
+        return {
+            "ok": True,
+            "read_model": "material_assets",
+            "type": normalized_type,
+            "assets": assets,
             "total": total,
             "limit": limit,
             "offset": offset,

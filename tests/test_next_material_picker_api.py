@@ -182,3 +182,60 @@ def test_material_assets_all_type_fetches_enough_rows_before_unified_slice(clien
     assert body["limit"] == 1
     assert [item["material_asset_id"] for item in body["assets"]] == ["attachment:56"]
     assert body["total"] == 4
+
+
+def test_material_assets_all_type_deep_offset_stays_inside_large_source(client, monkeypatch) -> None:
+    import aicrm_next.send_content.application as app_module
+
+    repo = _LargeMaterialAssetsRepository()
+    monkeypatch.setattr(app_module, "build_send_content_repository", lambda: repo)
+
+    response = client.get("/api/admin/material-assets?type=all&offset=100&limit=1")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["type"] == "all"
+    assert body["offset"] == 100
+    assert body["limit"] == 1
+    assert [item["material_asset_id"] for item in body["assets"]] == ["image:101"]
+    assert body["total"] == 103
+
+
+class _LargeMaterialAssetsRepository:
+    source_status = "test_large_material_assets"
+
+    def __init__(self) -> None:
+        self._data = {
+            "image": [_picker_item("image", item_id) for item_id in range(1, 102)],
+            "miniprogram": [_picker_item("miniprogram", 201)],
+            "attachment": [_picker_item("attachment", 301)],
+        }
+
+    def list_materials(
+        self,
+        material_type: str,
+        *,
+        q: str = "",
+        enabled_only: bool = True,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> dict:
+        del q, enabled_only
+        rows = list(self._data[material_type])
+        return {"items": rows[offset : offset + limit], "total": len(rows), "limit": limit, "offset": offset}
+
+    def get_materials_by_ids(self, material_type: str, ids: list[int]) -> list[dict]:
+        by_id = {int(item["library_id"]): item for item in self._data[material_type]}
+        return [by_id[item_id] for item_id in ids if item_id in by_id]
+
+
+def _picker_item(material_type: str, item_id: int) -> dict:
+    return {
+        "type": material_type,
+        "library_id": item_id,
+        "title": f"{material_type}-{item_id}",
+        "subtitle": "",
+        "thumbnail_url": "",
+        "enabled": True,
+        "metadata": {},
+    }
