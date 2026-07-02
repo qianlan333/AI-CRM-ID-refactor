@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from .dto import DeliveryLineageDetail, DeliveryLineageItem, DeliveryLineageList
+from .dto import DeliveryLineageDailyMetrics, DeliveryLineageDetail, DeliveryLineageList
 from .repository import DeliveryLineageRepository, build_delivery_lineage_repository
 
 
@@ -51,6 +51,16 @@ def list_delivery_lineage_by_trace(
     safe_offset = max(0, int(offset or 0))
     items = repository.list_by_trace(str(trace_id or "").strip(), limit=safe_limit, offset=safe_offset)
     return DeliveryLineageList(items=items, limit=safe_limit, offset=safe_offset).model_dump()
+
+
+def delivery_lineage_daily_metrics(
+    *,
+    repo: DeliveryLineageRepository | None = None,
+    days: int = 7,
+) -> dict:
+    repository = repo or build_delivery_lineage_repository()
+    safe_days = max(1, min(int(days or 7), 31))
+    return DeliveryLineageDailyMetrics(items=repository.daily_metrics(days=safe_days), days=safe_days).model_dump()
 
 
 def _safe_limit(limit: int) -> int:

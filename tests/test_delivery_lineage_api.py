@@ -3,12 +3,13 @@ from __future__ import annotations
 from fastapi.testclient import TestClient
 
 from aicrm_next.delivery_lineage.application import (
+    delivery_lineage_daily_metrics,
     get_delivery_lineage,
     list_delivery_lineage,
     list_delivery_lineage_by_trace,
     list_delivery_lineage_by_unionid,
 )
-from aicrm_next.delivery_lineage.dto import DeliveryLineageItem
+from aicrm_next.delivery_lineage.dto import DeliveryLineageDailyMetric, DeliveryLineageItem
 from aicrm_next.delivery_lineage.repository import InMemoryDeliveryLineageRepository
 from aicrm_next.main import create_app
 
@@ -23,7 +24,7 @@ def _client(monkeypatch) -> TestClient:
 
 def _repo() -> InMemoryDeliveryLineageRepository:
     return InMemoryDeliveryLineageRepository(
-        [
+        items=[
             DeliveryLineageItem(
                 lineage_id="external_effect:9",
                 source_type="group_ops",
@@ -46,7 +47,12 @@ def _repo() -> InMemoryDeliveryLineageRepository:
                 broadcast_event_count=3,
                 trace_id="trace-2",
             ),
-        ]
+        ],
+        metrics=[
+            DeliveryLineageDailyMetric(metric="failed_delivery_daily", day="2026-07-02", value=2),
+            DeliveryLineageDailyMetric(metric="blocked_delivery_daily", day="2026-07-02", value=1),
+            DeliveryLineageDailyMetric(metric="retryable_effect_daily", day="2026-07-02", value=3),
+        ],
     )
 
 
@@ -61,6 +67,10 @@ def test_delivery_lineage_api_returns_empty_without_database(monkeypatch) -> Non
     missing = client.get("/api/admin/delivery-lineage/external_effect:missing")
     assert missing.status_code == 404
     assert missing.json()["error_code"] == "delivery_lineage_not_found"
+
+    metrics = client.get("/api/admin/delivery-lineage/metrics/daily")
+    assert metrics.status_code == 200
+    assert metrics.json()["items"] == []
 
 
 def test_delivery_lineage_application_filters_safe_public_fields() -> None:
@@ -82,3 +92,14 @@ def test_delivery_lineage_application_filters_safe_public_fields() -> None:
     rendered = str(listing) + str(detail)
     for forbidden in ("payload_json", "raw_payload", "request_summary_json", "response_summary_json"):
         assert forbidden not in rendered
+
+
+def test_delivery_lineage_daily_metrics_expose_dashboard_names() -> None:
+    payload = delivery_lineage_daily_metrics(repo=_repo())
+
+    assert payload["days"] == 7
+    assert {
+        "failed_delivery_daily",
+        "blocked_delivery_daily",
+        "retryable_effect_daily",
+    } == {item["metric"] for item in payload["items"]}
