@@ -1220,12 +1220,12 @@ class PostgresCloudPlanRepository:
                 return {"status": "skipped", "reason": "unsupported_plan_type", "review_status": review_status}
             recipients = conn.execute(
                 """
-                SELECT id, external_userid, display_name, owner_userid
+                SELECT id, unionid, display_name, owner_userid
                 FROM cloud_broadcast_plan_recipients
                 WHERE plan_id = %s
                   AND COALESCE(approval_status, 'pending') <> 'rejected'
                   AND COALESCE(send_status, 'pending') NOT IN ('cancelled', 'sent')
-                  AND COALESCE(external_userid, '') <> ''
+                  AND COALESCE(unionid, '') <> ''
                   AND EXISTS (
                     SELECT 1
                     FROM cloud_broadcast_plan_recipient_messages m

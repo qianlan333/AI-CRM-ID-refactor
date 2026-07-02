@@ -726,6 +726,7 @@ def list_assignment_stats_24h(channel_id: int) -> list[dict[str, Any]]:
 
 
 def _serialize_assignment_event(row: dict[str, Any]) -> dict[str, Any]:
+    source_payload = row.get("source_payload_json") if isinstance(row.get("source_payload_json"), dict) else {}
     return {
         "id": int(row.get("id") or 0),
         "channel_id": int(row.get("channel_id") or 0),
@@ -733,7 +734,8 @@ def _serialize_assignment_event(row: dict[str, Any]) -> dict[str, Any]:
         "strategy": text(row.get("strategy")),
         "reason": text(row.get("reason")),
         "status": text(row.get("status")) or "assigned",
-        "external_contact_id": text(row.get("external_contact_id")),
+        "unionid": text(row.get("unionid")),
+        "external_contact_id": text(source_payload.get("external_contact_id")),
         "wecom_user_id": text(row.get("wecom_user_id")),
         "assigned_at": row.get("assigned_at").isoformat() if isinstance(row.get("assigned_at"), datetime) else text(row.get("assigned_at")),
     }
@@ -745,16 +747,21 @@ def insert_assignment_event(
     assignee_staff_id: str,
     strategy: str,
     reason: str,
+    unionid: str = "",
     external_contact_id: str = "",
     wecom_user_id: str = "",
     source_payload_json: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     with _connect() as conn, conn.cursor() as cur:
+        resolved_unionid = text(unionid) or _resolve_unionid_by_external_userid(cur, external_contact_id)
+        source_payload = dict(source_payload_json or {})
+        if external_contact_id:
+            source_payload.setdefault("external_contact_id", text(external_contact_id))
         cur.execute(
             """
             INSERT INTO automation_channel_assignment_event (
                 channel_id, assignee_staff_id, strategy, reason, status,
-                external_contact_id, wecom_user_id, source_payload_json,
+                unionid, wecom_user_id, source_payload_json,
                 assigned_at, created_at, updated_at
             )
             VALUES (%s, %s, %s, %s, 'assigned', %s, %s, %s, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
@@ -765,9 +772,9 @@ def insert_assignment_event(
                 text(assignee_staff_id),
                 text(strategy),
                 text(reason),
-                text(external_contact_id),
+                resolved_unionid,
                 text(wecom_user_id),
-                _json(source_payload_json or {}),
+                _json(source_payload),
             ),
         )
         row = cur.fetchone()
@@ -866,6 +873,7 @@ def choose_channel_assignee(
             assignee_staff_id=selected["staff_id"],
             strategy=strategy,
             reason=reason,
+            unionid=text((source_payload or {}).get("unionid")),
             external_contact_id=external_contact_id,
             wecom_user_id=wecom_user_id,
             source_payload_json=source_payload or {},

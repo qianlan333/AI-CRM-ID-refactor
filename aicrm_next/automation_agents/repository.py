@@ -528,7 +528,7 @@ class AutomationAgentRepository:
                         ) VALUES (
                             :batch_id, :agent_code, :unionid, :external_event_id, 'queued', CURRENT_TIMESTAMP
                         )
-                        ON CONFLICT (batch_id, unionid) DO UPDATE SET updated_at = CURRENT_TIMESTAMP
+                        ON CONFLICT (batch_id, unionid) WHERE unionid <> '' DO UPDATE SET updated_at = CURRENT_TIMESTAMP
                         RETURNING *
                         """
                     ),

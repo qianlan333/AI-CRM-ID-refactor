@@ -32,11 +32,40 @@ def _recipient_external_userid(input_data: dict[str, Any]) -> str:
     )
 
 
+def _recipient_unionid(input_data: dict[str, Any]) -> str:
+    recipient = input_data.get("recipient") if isinstance(input_data.get("recipient"), dict) else {}
+    return clean_text(recipient.get("unionid") or recipient.get("unionId") or input_data.get("unionid") or input_data.get("unionId"))
+
+
+def _resolve_unionid_by_external_userid(external_userid: str) -> str:
+    external_userid = clean_text(external_userid)
+    if not external_userid:
+        return ""
+    try:
+        db = get_db()
+        row = db.execute(
+            """
+            SELECT unionid
+            FROM crm_user_identity
+            WHERE primary_external_userid = ?
+               OR jsonb_exists(external_userids_json, ?)
+            ORDER BY CASE WHEN primary_external_userid = ? THEN 0 ELSE 1 END,
+                     updated_at DESC
+            LIMIT 1
+            """,
+            (external_userid, external_userid, external_userid),
+        ).fetchone()
+    except Exception:
+        return ""
+    return clean_text((row or {}).get("unionid"))
+
+
 def _recipient_snapshot(input_data: dict[str, Any]) -> dict[str, str]:
     recipient = input_data.get("recipient") if isinstance(input_data.get("recipient"), dict) else {}
     return {
         "user_id": clean_text(recipient.get("userId") or recipient.get("user_id")),
         "external_user_id": _recipient_external_userid(input_data),
+        "unionid": _recipient_unionid(input_data),
         "wechat_user_id": clean_text(recipient.get("wechatUserId") or recipient.get("wechat_user_id")),
         "group_id": clean_text(recipient.get("groupId") or recipient.get("group_id")),
     }
@@ -67,6 +96,7 @@ class GroupOpsActionCommand:
     plan_id: int
     trigger_event_id: str
     external_userid: str
+    unionid: str
     sender: str
     created_by: str
     content: str
@@ -104,7 +134,7 @@ class NextOutboundMessageQueueGateway:
         payload = {
             "channel": "wecom_private",
             "sender": command.sender,
-            "external_userid": [command.external_userid],
+            "unionids": [command.unionid] if command.unionid else [],
             "text": {"content": command.content} if command.content else {},
             "action": command.action,
             "recipient": command.recipient,
@@ -139,6 +169,8 @@ class NextOutboundMessageQueueGateway:
         return dict(row) if row else None
 
     def _insert_broadcast_job(self, *, command: GroupOpsActionCommand, source_id: str, payload: dict[str, Any]) -> int:
+        if not command.unionid:
+            raise ContractError("unionid is required for group ops broadcast job")
         db = get_db()
         row = db.execute(
             """
@@ -146,14 +178,14 @@ class NextOutboundMessageQueueGateway:
                 source_type, source_id, source_table, scheduled_for, priority, batch_key,
                 business_domain, idempotency_key, channel, target_kind, retry_policy_json, metadata_json,
                 status, requires_approval,
-                target_external_userids, target_count, target_summary,
+                target_unionids_json, target_count, target_summary,
                 content_type, content_payload, content_summary,
                 trace_id, created_by
             ) VALUES (
                 'workflow', ?, 'automation_group_ops_plans', ?, 100, '',
-                'group_ops', ?, 'wecom_private', 'external_userid', '{}'::jsonb, CAST(? AS jsonb),
+                'group_ops', ?, 'wecom_private', 'unionid', '{}'::jsonb, CAST(? AS jsonb),
                 'queued', FALSE,
-                CAST(? AS jsonb), 1, '1 external contact',
+                CAST(? AS jsonb), 1, '1 unionid',
                 'private_message', CAST(? AS jsonb), ?,
                 ?, ?
             )
@@ -165,7 +197,7 @@ class NextOutboundMessageQueueGateway:
                 _now_iso(),
                 command.idempotency_key,
                 _json_dumps({"recipient": command.recipient, "action_type": command.action["action_type"]}),
-                _json_dumps([command.external_userid]),
+                _json_dumps([command.unionid]),
                 _json_dumps(payload),
                 command.content[:500],
                 command.idempotency_key,
@@ -344,20 +376,25 @@ class GroupOpsActionDispatcher:
         external_userid = _recipient_external_userid(input_data)
         if not external_userid and action["action_type"] in {"enqueue", "publish_task", "send_message"}:
             raise ContractError(f"external_user_id is required for {action['action_type']}")
+        unionid = _recipient_unionid(input_data) or _resolve_unionid_by_external_userid(external_userid)
         content = clean_text(action.get("content"))
         if action["action_type"] == "send_message" and not content:
             raise ContractError("content is required for send_message")
         sender = _operator(input_data)
         if action["action_type"] == "send_message" and not sender:
             raise ContractError("operatorMemberId or operatorAccount is required for send_message")
+        recipient = _recipient_snapshot(input_data)
+        if unionid:
+            recipient["unionid"] = unionid
         return GroupOpsActionCommand(
             plan_id=int(input_data.get("planId") or input_data.get("plan_id") or 0),
             trigger_event_id=clean_text(input_data.get("triggerEventId") or input_data.get("trigger_event_id")),
             external_userid=external_userid,
+            unionid=unionid,
             sender=sender,
             created_by=_created_by(input_data),
             content=content,
             action=dict(action),
-            recipient=_recipient_snapshot(input_data),
+            recipient=recipient,
             idempotency_key=_action_idempotency_key(input_data, action),
         )

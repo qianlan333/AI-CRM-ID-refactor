@@ -454,9 +454,19 @@ def _bootstrap_next_test_baseline_schema(url: str) -> None:
         )
         """,
         """
-        CREATE UNIQUE INDEX IF NOT EXISTS uq_automation_channel_contact_external
-        ON automation_channel_contact(channel_id, external_contact_id)
-        WHERE external_contact_id <> ''
+        DO $$
+        BEGIN
+            IF EXISTS (
+                SELECT 1
+                FROM information_schema.columns
+                WHERE table_name = 'automation_channel_contact'
+                  AND column_name = 'external_contact_id'
+            ) THEN
+                CREATE UNIQUE INDEX IF NOT EXISTS uq_automation_channel_contact_external
+                ON automation_channel_contact(channel_id, external_contact_id)
+                WHERE external_contact_id <> '';
+            END IF;
+        END $$;
         """,
         """
         CREATE TABLE IF NOT EXISTS automation_ai_push_log (
