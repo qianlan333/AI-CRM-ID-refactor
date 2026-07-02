@@ -32,6 +32,7 @@ DROP_CANDIDATES = [
     "automation_program_channel_binding",
     "automation_member_audience_entry",
     "automation_operation_task",
+    "automation_member",
     "automation_workflow",
     "automation_workflow_goal",
     "automation_workflow_node",
