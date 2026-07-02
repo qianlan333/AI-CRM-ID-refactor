@@ -12,6 +12,20 @@ from .repo import SendContentRepository, build_send_content_repository
 
 _MATERIAL_ASSET_TYPES = ("image", "miniprogram", "attachment")
 _MATERIAL_ASSET_CURSOR_VERSION = 1
+_MATERIAL_FIELD_BY_TYPE = {
+    "image": "image_library_ids",
+    "miniprogram": "miniprogram_library_ids",
+    "attachment": "attachment_library_ids",
+}
+_MATERIAL_CHANNEL_COMPATIBILITY = {
+    "send_content": set(_MATERIAL_ASSET_TYPES),
+    "wecom_private": set(_MATERIAL_ASSET_TYPES),
+    "channel_welcome": set(_MATERIAL_ASSET_TYPES),
+    "group_ops": set(_MATERIAL_ASSET_TYPES),
+    "cloud_plan": set(_MATERIAL_ASSET_TYPES),
+    "radar_link": {"image", "attachment"},
+    "wechat_pay_product_page": {"image"},
+}
 
 
 def normalize_send_content_package(
@@ -352,6 +366,128 @@ class GetMaterialAssetUsageQuery:
         return self._repo
 
     __call__ = execute
+
+
+class ValidateMaterialAssetsQuery:
+    def __init__(self, repo: SendContentRepository | None = None) -> None:
+        self._repo = repo
+
+    def execute(
+        self,
+        content_package: SendContentPackage | dict[str, Any] | None,
+        *,
+        channel: str = "send_content",
+        text_enabled: bool = True,
+        require_body: bool = False,
+    ) -> dict[str, Any]:
+        normalized_channel = str(channel or "send_content").strip().lower()
+        if normalized_channel not in _MATERIAL_CHANNEL_COMPATIBILITY:
+            raise ContractError("素材校验 channel 不支持")
+        normalized_package = normalize_send_content_package(
+            content_package,
+            text_enabled=text_enabled,
+            require_body=require_body,
+        )
+        repo = self._repo_or_build()
+        issues: list[dict[str, Any]] = []
+        materials: list[dict[str, Any]] = []
+        for material_type, field_name in _MATERIAL_FIELD_BY_TYPE.items():
+            requested_ids = list(normalized_package.get(field_name) or [])
+            if not requested_ids:
+                continue
+            rows = repo.get_materials_by_ids(material_type, requested_ids)
+            by_id = {int(row.get("library_id") or 0): row for row in rows}
+            for source_id in requested_ids:
+                row = by_id.get(int(source_id))
+                asset_id = f"{material_type}:{int(source_id)}"
+                if row is None:
+                    issues.append(_material_validation_issue(asset_id, "material_missing", "素材不存在", field_name))
+                    continue
+                material = _material_asset_item(material_type, row)
+                materials.append(material)
+                issues.extend(_validate_material_asset(material, channel=normalized_channel, field_name=field_name))
+        blocking_issues = [issue for issue in issues if issue.get("severity") == "error"]
+        return {
+            "ok": True,
+            "read_model": "material_asset_validation",
+            "valid": not blocking_issues,
+            "channel": normalized_channel,
+            "content_package": normalized_package,
+            "materials": materials,
+            "issues": issues,
+            "issue_count": len(issues),
+        }
+
+    def _repo_or_build(self) -> SendContentRepository:
+        if self._repo is None:
+            self._repo = build_send_content_repository()
+        return self._repo
+
+    __call__ = execute
+
+
+def _validate_material_asset(material: dict[str, Any], *, channel: str, field_name: str) -> list[dict[str, Any]]:
+    issues: list[dict[str, Any]] = []
+    asset_id = str(material.get("material_asset_id") or "")
+    material_type = str(material.get("asset_type") or "")
+    if material_type not in _MATERIAL_CHANNEL_COMPATIBILITY[channel]:
+        issues.append(_material_validation_issue(asset_id, "material_channel_incompatible", "素材类型与发送渠道不兼容", field_name))
+    if not bool(material.get("enabled", True)):
+        issues.append(_material_validation_issue(asset_id, "material_disabled", "素材已停用", field_name))
+    metadata = material.get("metadata") if isinstance(material.get("metadata"), dict) else {}
+    if _contains_payload_leak(material):
+        issues.append(_material_validation_issue(asset_id, "material_payload_leak", "素材响应包含 base64 或 data_url 原始载荷", field_name))
+    missing = _missing_metadata_fields(material_type, material, metadata)
+    for field in missing:
+        issues.append(_material_validation_issue(asset_id, "material_metadata_incomplete", f"素材元数据缺失：{field}", field_name))
+    return issues
+
+
+def _missing_metadata_fields(material_type: str, material: dict[str, Any], metadata: dict[str, Any]) -> list[str]:
+    if material_type == "image":
+        missing = []
+        if not str(metadata.get("mime_type") or "").strip():
+            missing.append("mime_type")
+        if not (str(material.get("thumbnail_url") or "").strip() or str(metadata.get("file_name") or "").strip()):
+            missing.append("thumbnail_url")
+        return missing
+    if material_type == "miniprogram":
+        missing = [field for field in ("appid", "pagepath") if not str(metadata.get(field) or "").strip()]
+        if not (
+            str(metadata.get("thumb_media_id") or "").strip()
+            or str(metadata.get("thumb_image_id") or "").strip()
+            or str(material.get("thumbnail_url") or "").strip()
+        ):
+            missing.append("thumb")
+        return missing
+    if material_type == "attachment":
+        missing = [field for field in ("file_name", "mime_type") if not str(metadata.get(field) or "").strip()]
+        if int(metadata.get("file_size") or 0) <= 0:
+            missing.append("file_size")
+        return missing
+    return ["asset_type"]
+
+
+def _contains_payload_leak(value: Any) -> bool:
+    if isinstance(value, dict):
+        for key, item in value.items():
+            if str(key).lower() in {"data_base64", "data_url", "base64"}:
+                return True
+            if _contains_payload_leak(item):
+                return True
+    if isinstance(value, list):
+        return any(_contains_payload_leak(item) for item in value)
+    return False
+
+
+def _material_validation_issue(material_asset_id: str, code: str, message: str, field_path: str) -> dict[str, Any]:
+    return {
+        "severity": "error",
+        "code": code,
+        "message": message,
+        "material_asset_id": material_asset_id,
+        "field_path": field_path,
+    }
 
 
 def _parse_material_asset_id(material_asset_id: str) -> tuple[str, int]:

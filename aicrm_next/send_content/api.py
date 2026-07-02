@@ -15,9 +15,10 @@ from .application import (
     ListMaterialPickerItemsQuery,
     NormalizeSendContentPackageCommand,
     PreviewSendContentPackageQuery,
+    ValidateMaterialAssetsQuery,
     send_content_production_unavailable_payload,
 )
-from .dto import MaterialPickerListRequest, SendContentPreviewRequest, SendContentValidateRequest
+from .dto import MaterialAssetsValidateRequest, MaterialPickerListRequest, SendContentPreviewRequest, SendContentValidateRequest
 
 
 router = APIRouter()
@@ -129,6 +130,28 @@ def get_material_asset_usage(
         return _json_result(send_content_production_unavailable_payload(str(exc)))
     except Exception as exc:
         return _error(f"读取素材使用关系失败：{exc}", status_code=500)
+
+
+@router.post("/api/admin/material-assets/validate")
+def validate_material_assets(payload: dict[str, Any]) -> JSONResponse:
+    try:
+        request = MaterialAssetsValidateRequest.model_validate(payload)
+        return _json_result(
+            ValidateMaterialAssetsQuery()(
+                request.content_package,
+                channel=request.channel,
+                text_enabled=request.text_enabled,
+                require_body=request.require_body,
+            )
+        )
+    except ValidationError:
+        return _error("请求参数格式不正确", status_code=400)
+    except ContractError as exc:
+        return _error(str(exc), status_code=400)
+    except RepositoryProviderError as exc:
+        return _json_result(send_content_production_unavailable_payload(str(exc)))
+    except Exception as exc:
+        return _error(f"校验素材失败：{exc}", status_code=500)
 
 
 def _json_result(payload: dict) -> JSONResponse:

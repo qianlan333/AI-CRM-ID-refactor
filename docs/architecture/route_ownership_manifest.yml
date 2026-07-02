@@ -6803,6 +6803,17 @@ routes:
   data_source: read_model
   requires_auth: true
   rollback: previous_release
+- path: /api/admin/material-assets/validate
+  methods:
+  - POST
+  route_name: validate_material_assets
+  capability_owner: send_content
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: none
+  data_source: read_model
+  requires_auth: true
+  rollback: previous_release
 - path: /api/admin/data-health/summary
   methods:
   - GET
