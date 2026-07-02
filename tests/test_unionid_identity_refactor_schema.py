@@ -343,6 +343,23 @@ def test_retired_automation_member_table_is_physically_removed() -> None:
     assert "FROM automation_member" not in sidebar_source
 
 
+def test_retired_conversion_trace_tables_are_physically_removed() -> None:
+    source = _read("migrations/versions/0071_retire_conversion_trace_tables.py")
+    runtime_sources = "\n".join(
+        path.read_text(encoding="utf-8")
+        for root in [ROOT / "aicrm_next", ROOT / "scripts"]
+        for path in root.rglob("*.py")
+        if path.name != "precheck_retired_automation_tables.py"
+    )
+
+    assert '"automation_execution_trace"' in source
+    assert '"conversion_dispatch_log"' in source
+    assert "DROP INDEX IF EXISTS {index_name}" in source
+    assert "DROP TABLE IF EXISTS {table_name}" in source
+    assert "automation_execution_trace" not in runtime_sources
+    assert "conversion_dispatch_log" not in runtime_sources
+
+
 def test_alipay_orders_are_unionid_only_customer_identity() -> None:
     source = _read("migrations/versions/0014_alipay_pay.py")
     cleanup_source = _read("migrations/versions/0063_unionid_business_table_foundation.py")

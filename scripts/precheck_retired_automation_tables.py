@@ -33,6 +33,8 @@ DROP_CANDIDATES = [
     "automation_member_audience_entry",
     "automation_operation_task",
     "automation_member",
+    "automation_execution_trace",
+    "conversion_dispatch_log",
     "automation_workflow",
     "automation_workflow_goal",
     "automation_workflow_node",
