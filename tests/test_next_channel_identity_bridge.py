@@ -128,11 +128,17 @@ def test_next_external_contact_callback_syncs_identity_and_binds_orphan_mobile(a
             db = get_db()
             identity = db.execute(
                 """
-                SELECT external_userid, unionid, openid, follow_user_userid, name, status
-                FROM wecom_external_contact_identity_map
-                WHERE corp_id = ? AND external_userid = ?
+                SELECT unionid,
+                       primary_external_userid,
+                       primary_openid,
+                       primary_owner_userid,
+                       customer_name AS name,
+                       mobile,
+                       identity_status AS status
+                FROM crm_user_identity
+                WHERE unionid = ?
                 """,
-                ("ww-bridge", "wm_bridge_001"),
+                ("union_bridge_001",),
             ).fetchone()
             binding = db.execute(
                 """
@@ -156,11 +162,12 @@ def test_next_external_contact_callback_syncs_identity_and_binds_orphan_mobile(a
         assert result["identity_sync"]["unionid_present"] is True
         assert result["identity_sync"]["mobile_binding"]["status"] == "bound"
         assert dict(identity) == {
-            "external_userid": "wm_bridge_001",
             "unionid": "union_bridge_001",
-            "openid": "openid_bridge_001",
-            "follow_user_userid": "owner_bridge",
+            "primary_external_userid": "wm_bridge_001",
+            "primary_openid": "openid_bridge_001",
+            "primary_owner_userid": "owner_bridge",
             "name": "桥接客户",
+            "mobile": "18565883798",
             "status": "active",
         }
         assert dict(binding) == {
@@ -222,6 +229,48 @@ def test_next_external_contact_callback_marks_failed_when_identity_sync_fails(mo
             "error_message": "identity_sync_failed:wecom_api_error",
         }
     ]
+
+
+def test_next_external_contact_callback_skips_business_entry_when_identity_pending(monkeypatch):
+    status_updates = []
+    monkeypatch.setattr(
+        "aicrm_next.channel_entry.application.repo.log_external_contact_event",
+        lambda **kwargs: {"id": 654, **kwargs},
+    )
+    monkeypatch.setattr(
+        "aicrm_next.channel_entry.application.sync_external_contact_identity_for_event",
+        lambda event, corp_id: {"status": "pending_identity", "reason": "missing_unionid"},
+    )
+    monkeypatch.setattr(
+        "aicrm_next.channel_entry.application.repo.mark_event_status",
+        lambda event_id, status, error_message="": status_updates.append(
+            {"event_id": event_id, "status": status, "error_message": error_message}
+        ),
+    )
+    monkeypatch.setattr(
+        "aicrm_next.channel_entry.application.process_channel_entry",
+        lambda command: pytest.fail("process_channel_entry should not run while identity is pending"),
+    )
+
+    result = process_wecom_external_contact_event(
+        ProcessWeComExternalContactEventCommand(
+            corp_id="ww-bridge",
+            event_data={
+                "Event": "change_external_contact",
+                "ChangeType": "add_external_contact",
+                "ExternalUserID": "wm_bridge_pending",
+                "UserID": "owner_bridge",
+                "CreateTime": "1780640002",
+            },
+            payload_xml="<xml/>",
+            route="/wecom/external-contact/callback",
+        )
+    )
+
+    assert result["handled"] is False
+    assert result["reason"] == "missing_unionid"
+    assert result["entry_result"] == {"handled": False, "reason": "identity_pending_unionid"}
+    assert status_updates == [{"event_id": 654, "status": "success", "error_message": ""}]
 
 
 def test_sidebar_identity_refresh_binds_missing_identity_on_access(app, next_pg_schema):

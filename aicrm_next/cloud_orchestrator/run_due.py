@@ -199,6 +199,7 @@ def _due_candidates(batch_size: int) -> tuple[list[dict[str, Any]], dict[str, An
                     "owner_userid": campaign.get("owner_userid"),
                     "campaign_trace_id": campaign.get("trace_id"),
                     "member_id": member.get("member_id"),
+                    "unionid": member.get("unionid"),
                     "external_contact_id": member.get("external_contact_id"),
                     "member_status": member.get("status"),
                     "current_step_index": member.get("current_step_index"),
@@ -239,6 +240,9 @@ def _receiver_response_status(command: Command) -> int:
 
 
 def _candidate_target_id(candidate: dict[str, Any]) -> tuple[str, str]:
+    unionid = str(candidate.get("unionid") or "").strip()
+    if unionid:
+        return unionid, "unionid"
     member_id = str(candidate.get("member_id") or "").strip()
     if member_id:
         return member_id, "member_id"
@@ -312,6 +316,7 @@ def _wecom_private_payload_for_candidate(
     candidate: dict[str, Any],
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     campaign_code = str(candidate.get("campaign_code") or "").strip()
+    unionid = str(candidate.get("unionid") or "").strip()
     external_userid = str(candidate.get("external_contact_id") or "").strip()
     step = candidate.get("next_step") if isinstance(candidate.get("next_step"), dict) else {}
     step_index = int(candidate.get("next_step_index") or step.get("step_index") or 0)
@@ -319,13 +324,15 @@ def _wecom_private_payload_for_candidate(
     content_text = str(step.get("content_text") or content_payload.get("content_text") or "").strip()
     idempotency_key = (
         f"{command.idempotency_key or command.command_id}:external-effect:"
-        f"{WECOM_MESSAGE_PRIVATE_SEND}:{campaign_code}:{external_userid}:{step_index}"
+        f"{WECOM_MESSAGE_PRIVATE_SEND}:{campaign_code}:{unionid}:{step_index}"
     )
     attachments = content_payload.get("attachments") if isinstance(content_payload.get("attachments"), list) else []
     payload = {
         "channel": "wecom_private",
         "owner_userid": str(candidate.get("owner_userid") or "").strip(),
         "sender": str(candidate.get("owner_userid") or "").strip(),
+        "target_unionid": unionid,
+        "unionid": unionid,
         "external_userids": [external_userid],
         "content_text": content_text,
         "attachments": attachments,
@@ -338,8 +345,8 @@ def _wecom_private_payload_for_candidate(
     payload_summary = {
         "campaign_code": campaign_code,
         "campaign_id": candidate.get("campaign_id"),
-        "target_type": "external_user",
-        "target_id": external_userid,
+        "target_type": "unionid",
+        "target_id": unionid,
         "owner_userid": str(candidate.get("owner_userid") or "").strip(),
         "member_id": candidate.get("member_id"),
         "step_index": step_index,
@@ -369,8 +376,7 @@ def _plan_external_effect_jobs(*, command: Command, candidates: list[dict[str, A
                 continue
             effect_type = WECOM_MESSAGE_PRIVATE_SEND
             adapter_name = "wecom_private_message"
-            target_type = "external_user"
-            target_id = external_userid
+            target_type = "unionid"
             payload, meta = _wecom_private_payload_for_candidate(command=command, candidate=candidate)
             execution_mode = "execute"
             status = "queued"

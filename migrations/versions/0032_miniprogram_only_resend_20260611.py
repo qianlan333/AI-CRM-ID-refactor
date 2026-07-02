@@ -40,7 +40,7 @@ def upgrade() -> None:
                 cs.content_payload_json,
                 cm.id AS old_member_row_id,
                 cm.member_id,
-                cm.external_contact_id,
+                cm.unionid,
                 seg.sql_query,
                 seg.sql_params_json,
                 seg.cached_sample_json
@@ -70,7 +70,7 @@ def upgrade() -> None:
             )
             SELECT
                 'seg_ext_mini_only_' || m.old_campaign_id::text,
-                '小程序补发 · ' || COALESCE(NULLIF(m.display_name, ''), m.external_contact_id),
+                '小程序补发 · ' || COALESCE(NULLIF(m.display_name, ''), m.unionid),
                 'Attachment-only miniprogram resend copied from ' || m.old_campaign_code,
                 'external_campaign',
                 m.sql_query,
@@ -102,7 +102,7 @@ def upgrade() -> None:
             )
             SELECT
                 'camp_ext_mini_only_' || m.old_campaign_id::text,
-                COALESCE(NULLIF(m.display_name, ''), m.external_contact_id),
+                COALESCE(NULLIF(m.display_name, ''), m.unionid),
                 '只补发原批次遗漏的小程序卡片，不重复发送文本话术',
                 'campaign_start_date',
                 k.anchor_date,
@@ -116,9 +116,9 @@ def upgrade() -> None:
                     'source', 'codex_miniprogram_only_resend',
                     'group_code', k.group_code,
                     'group_label', k.group_label,
-                    'external_userid', m.external_contact_id,
+                    'unionid', m.unionid,
                     'owner_userid', m.owner_userid,
-                    'idempotency_key', k.group_code || ':' || m.external_contact_id,
+                    'idempotency_key', k.group_code || ':' || m.unionid,
                     'original_group_code', k.old_group_code,
                     'original_campaign_id', m.old_campaign_id,
                     'original_campaign_code', m.old_campaign_code,
@@ -131,7 +131,7 @@ def upgrade() -> None:
             ON CONFLICT (campaign_code) DO NOTHING
             RETURNING id, campaign_code
         ), new_campaigns AS (
-            SELECT c.id, c.campaign_code, m.old_campaign_id, m.external_contact_id, m.member_id, m.content_payload_json
+            SELECT c.id, c.campaign_code, m.old_campaign_id, m.unionid, m.member_id, m.content_payload_json
             FROM mini_old m
             JOIN campaigns c ON c.campaign_code = 'camp_ext_mini_only_' || m.old_campaign_id::text
         ), new_segments AS (
@@ -140,7 +140,7 @@ def upgrade() -> None:
             JOIN segments s ON s.segment_code = 'seg_ext_mini_only_' || m.old_campaign_id::text
         ), insert_campaign_segments AS (
             INSERT INTO campaign_segments (campaign_id, segment_id, segment_code, priority, label)
-            SELECT nc.id, ns.id, ns.segment_code, 100, nc.external_contact_id
+            SELECT nc.id, ns.id, ns.segment_code, 100, nc.unionid
             FROM new_campaigns nc
             JOIN new_segments ns ON ns.old_campaign_id = nc.old_campaign_id
             ON CONFLICT (campaign_id, segment_id) DO NOTHING
@@ -176,7 +176,7 @@ def upgrade() -> None:
             RETURNING id
         ), insert_members AS (
             INSERT INTO campaign_members (
-                campaign_id, campaign_segment_id, segment_id, member_id, external_contact_id,
+                campaign_id, campaign_segment_id, segment_id, member_id, unionid,
                 anchor_date, current_step_index, status, trace_id, updated_at
             )
             SELECT
@@ -184,7 +184,7 @@ def upgrade() -> None:
                 ncs.id,
                 ncs.segment_id,
                 nc.member_id,
-                nc.external_contact_id,
+                nc.unionid,
                 k.anchor_date,
                 -1,
                 'pending',

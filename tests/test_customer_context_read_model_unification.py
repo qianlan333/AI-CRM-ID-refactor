@@ -159,4 +159,4 @@ def test_admin_customer_detail_page_uses_context_backed_profile_route():
     assert response.status_code == 200
     assert response.headers.get("location", "") == ""
     assert "客户档案" in response.text
-    assert "/api/admin/customers/profile/tags?external_userid=wx_ext_001" in response.text
+    assert "/api/admin/customers/profile/tags?unionid=union_customer_001" in response.text

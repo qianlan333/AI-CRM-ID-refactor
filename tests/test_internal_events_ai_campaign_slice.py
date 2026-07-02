@@ -191,7 +191,7 @@ def test_ai_campaign_consumers_are_noop_or_skipped_without_external_work(monkeyp
     assert ai_assist["consumer_run"]["status"] == "skipped"
     assert ai_assist["attempt"]["response_summary_json"]["reason"] == "ai_campaign_ai_assist_notify_not_configured"
     assert planner["consumer_run"]["status"] == "skipped"
-    assert planner["attempt"]["response_summary_json"]["reason"] == "broadcast_task_planner_not_configured"
+    assert planner["attempt"]["response_summary_json"]["reason"] == "missing_plan_id"
     assert audit["consumer_run"]["status"] == "succeeded"
     assert audit["attempt"]["response_summary_json"]["reason"] == "audit_projection_shadow_only"
     assert job_total == 0

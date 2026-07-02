@@ -54,7 +54,7 @@ def _default_pool_rows() -> list[JsonDict]:
     return [
         {
             "id": 1,
-            "person_id": "person_001",
+            "unionid": "union_ops_001",
             "mobile": "13800138000",
             "external_userid": "wx_ext_001",
             "customer_name": "张小蓝",
@@ -72,7 +72,7 @@ def _default_pool_rows() -> list[JsonDict]:
         },
         {
             "id": 2,
-            "person_id": "person_002",
+            "unionid": "union_ops_002",
             "mobile": "",
             "external_userid": "wx_ext_002",
             "customer_name": "李未绑",
@@ -90,7 +90,7 @@ def _default_pool_rows() -> list[JsonDict]:
         },
         {
             "id": 3,
-            "person_id": "person_003",
+            "unionid": "union_ops_003",
             "mobile": "13900139000",
             "external_userid": "",
             "customer_name": "王缺外部联系人",
@@ -108,7 +108,7 @@ def _default_pool_rows() -> list[JsonDict]:
         },
         {
             "id": 4,
-            "person_id": "person_004",
+            "unionid": "union_ops_004",
             "mobile": "13700137000",
             "external_userid": "wx_ext_004",
             "customer_name": "陈缺负责人",
@@ -139,12 +139,16 @@ def _manual_reason(reason_code: str, reason_text: str) -> JsonDict:
 
 def _project_row(row: JsonDict) -> JsonDict:
     projected = deepcopy(row)
+    unionid = str(projected.get("unionid") or "").strip()
     external_userid = str(projected.get("external_userid") or "").strip()
     mobile = str(projected.get("mobile") or "").strip()
+    customer_name = str(projected.get("customer_name") or projected.get("customer_name_snapshot") or "").strip()
     activation_bucket = str(projected.get("activation_bucket") or "pending_input").strip() or "pending_input"
     reasons = list(projected.pop("auto_dnd_reasons", [])) + list(projected.pop("manual_dnd_reasons", []))
     projected.update(
         {
+            "unionid": unionid,
+            "customer_name": customer_name,
             "mobile": mobile,
             "external_userid": external_userid,
             "is_added_wecom": bool(external_userid),
@@ -156,8 +160,8 @@ def _project_row(row: JsonDict) -> JsonDict:
             "huangxiaocan_activation_state_label": ACTIVATION_LABELS.get(activation_bucket, activation_bucket),
             "do_not_disturb": bool(reasons),
             "do_not_disturb_reasons": reasons,
-            "can_open_customer_detail": bool(external_userid),
-            "can_batch_send": bool(external_userid),
+            "can_open_customer_detail": bool(unionid),
+            "can_batch_send": bool(unionid),
             "tags": list(projected.get("tags") or []),
         }
     )
@@ -169,13 +173,12 @@ class UserOpsRepository(Protocol):
 
     def list_rows(self) -> list[JsonDict]: ...
 
-    def find_row(self, *, external_userid: str = "", mobile: str = "") -> JsonDict | None: ...
+    def find_row(self, *, unionid: str = "") -> JsonDict | None: ...
 
     def set_do_not_disturb(
         self,
         *,
-        external_userid: str = "",
-        mobile: str = "",
+        unionid: str = "",
         reason_code: str,
         reason_text: str,
         is_active: bool,
@@ -205,25 +208,22 @@ class InMemoryUserOpsRepository:
 
     list_pool = list_rows
 
-    def find_row(self, *, external_userid: str = "", mobile: str = "") -> JsonDict | None:
+    def find_row(self, *, unionid: str = "") -> JsonDict | None:
         for row in self._rows:
-            if external_userid and row.get("external_userid") == external_userid:
-                return row
-            if mobile and row.get("mobile") == mobile:
+            if unionid and row.get("unionid") == unionid:
                 return row
         return None
 
     def set_do_not_disturb(
         self,
         *,
-        external_userid: str = "",
-        mobile: str = "",
+        unionid: str = "",
         reason_code: str,
         reason_text: str,
         is_active: bool,
         operator: str = "fixture-admin",
     ) -> JsonDict | None:
-        row = self.find_row(external_userid=external_userid, mobile=mobile)
+        row = self.find_row(unionid=unionid)
         if row is None:
             return None
 
@@ -263,6 +263,7 @@ class InMemoryUserOpsRepository:
                     "selected_count": 1,
                     "eligible_count": 1,
                     "sent_count": 1,
+                    "target_unionids": ["union_ops_001"],
                     "skipped_count": 0,
                     "skipped_reasons": {},
                     "include_do_not_disturb": False,
@@ -312,10 +313,8 @@ class SqlAlchemyUserOpsRepository:
             self._session.execute(
                 insert(user_ops_pool_current_next).values(
                     id=row["id"],
-                    person_id=row.get("person_id") or f"person_{int(row['id']):03d}",
-                    mobile=row.get("mobile") or "",
-                    external_userid=row.get("external_userid") or "",
-                    customer_name=row.get("customer_name") or "",
+                    unionid=row.get("unionid") or "",
+                    customer_name_snapshot=row.get("customer_name") or row.get("customer_name_snapshot") or "",
                     owner_userid=row.get("owner_userid") or "",
                     owner_display_name=row.get("owner_display_name") or "",
                     class_term_no=row.get("class_term_no") or "",
@@ -326,7 +325,6 @@ class SqlAlchemyUserOpsRepository:
                         str(row.get("activation_bucket") or "pending_input"),
                         str(row.get("activation_bucket") or "pending_input"),
                     ),
-                    is_mobile_bound=bool(row.get("mobile")),
                     auto_do_not_disturb_reasons_json=list(row.get("auto_dnd_reasons") or []),
                     created_at=created_at,
                     updated_at=updated_at,
@@ -341,28 +339,24 @@ class SqlAlchemyUserOpsRepository:
 
     list_pool = list_rows
 
-    def find_row(self, *, external_userid: str = "", mobile: str = "") -> JsonDict | None:
+    def find_row(self, *, unionid: str = "") -> JsonDict | None:
         stmt = select(user_ops_pool_current_next)
-        if external_userid:
-            stmt = stmt.where(user_ops_pool_current_next.c.external_userid == external_userid)
-        elif mobile:
-            stmt = stmt.where(user_ops_pool_current_next.c.mobile == mobile)
-        else:
+        if not unionid:
             return None
+        stmt = stmt.where(user_ops_pool_current_next.c.unionid == unionid)
         row = self._session.execute(stmt.limit(1)).mappings().first()
         return self._row_to_dict(row) if row else None
 
     def set_do_not_disturb(
         self,
         *,
-        external_userid: str = "",
-        mobile: str = "",
+        unionid: str = "",
         reason_code: str,
         reason_text: str,
         is_active: bool,
         operator: str = "fixture-admin",
     ) -> JsonDict | None:
-        target = self.find_row(external_userid=external_userid, mobile=mobile)
+        target = self.find_row(unionid=unionid)
         if target is None:
             return None
 
@@ -370,8 +364,7 @@ class SqlAlchemyUserOpsRepository:
         match = self._dnd_match_stmt(target, reason_code=reason_code)
         existing = self._session.execute(match.limit(1)).mappings().first()
         values = {
-            "external_userid": target.get("external_userid") or "",
-            "mobile": target.get("mobile") or "",
+            "unionid": target.get("unionid") or "",
             "source_type": "manual",
             "reason_code": reason_code,
             "reason_text": reason_text,
@@ -419,6 +412,7 @@ class SqlAlchemyUserOpsRepository:
                 skipped_count=int(payload.get("skipped_count") or 0),
                 skipped_reasons_json=dict(payload.get("skipped_reasons") or payload.get("skipped_by_reason") or {}),
                 include_do_not_disturb=bool(payload.get("include_do_not_disturb")),
+                target_unionids_json=list(payload.get("target_unionids") or []),
                 content_preview=str(payload.get("content_preview") or ""),
                 image_count=int(payload.get("image_count") or 0),
                 sender_userids_json=list(payload.get("sender_userids") or []),
@@ -450,10 +444,7 @@ class SqlAlchemyUserOpsRepository:
             user_ops_do_not_disturb_next.c.source_type == "manual",
             user_ops_do_not_disturb_next.c.reason_code == reason_code,
         )
-        if target.get("external_userid"):
-            stmt = stmt.where(user_ops_do_not_disturb_next.c.external_userid == target["external_userid"])
-        else:
-            stmt = stmt.where(user_ops_do_not_disturb_next.c.mobile == target.get("mobile", ""))
+        stmt = stmt.where(user_ops_do_not_disturb_next.c.unionid == target["unionid"])
         return stmt
 
     def _fetch_pool_row_by_id(self, row_id: int):
@@ -467,6 +458,8 @@ class SqlAlchemyUserOpsRepository:
         data["updated_at"] = _iso(data.get("updated_at"))
         data["auto_dnd_reasons"] = list(data.pop("auto_do_not_disturb_reasons_json") or [])
         data["manual_dnd_reasons"] = self._manual_reasons_for_row(data)
+        data["unionid"] = data.get("unionid") or ""
+        data["customer_name"] = data.get("customer_name") or data.get("customer_name_snapshot") or ""
         data["mobile"] = data.get("mobile") or ""
         data["external_userid"] = data.get("external_userid") or ""
         data["owner_userid"] = data.get("owner_userid") or ""
@@ -478,14 +471,10 @@ class SqlAlchemyUserOpsRepository:
             user_ops_do_not_disturb_next.c.source_type == "manual",
             user_ops_do_not_disturb_next.c.is_active.is_(True),
         )
-        external_userid = str(row.get("external_userid") or "")
-        mobile = str(row.get("mobile") or "")
-        if external_userid:
-            stmt = stmt.where(user_ops_do_not_disturb_next.c.external_userid == external_userid)
-        elif mobile:
-            stmt = stmt.where(user_ops_do_not_disturb_next.c.mobile == mobile)
-        else:
+        unionid = str(row.get("unionid") or "")
+        if not unionid:
             return []
+        stmt = stmt.where(user_ops_do_not_disturb_next.c.unionid == unionid)
         reasons = []
         for item in self._session.execute(stmt.order_by(user_ops_do_not_disturb_next.c.id.asc())).mappings():
             reasons.append(_manual_reason(str(item["reason_code"]), str(item["reason_text"])))
@@ -500,6 +489,7 @@ class SqlAlchemyUserOpsRepository:
             "selected_count": data["selected_count"],
             "eligible_count": data["eligible_count"],
             "sent_count": data["sent_count"],
+            "target_unionids": data.get("target_unionids_json") or [],
             "skipped_count": data["skipped_count"],
             "skipped_reasons": data.get("skipped_reasons_json") or {},
             "include_do_not_disturb": data["include_do_not_disturb"],

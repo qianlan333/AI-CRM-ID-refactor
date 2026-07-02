@@ -63,6 +63,18 @@ def _configured_wecom_sender(fallback: str = "") -> str:
     return candidates[0] if candidates else str(fallback or "").strip()
 
 
+def _target_unionid(payload: dict[str, Any]) -> str:
+    return str(payload.get("target_unionid") or payload.get("unionid") or "").strip()
+
+
+def _wecom_target_mismatch(job: ExternalEffectJob, payload: dict[str, Any], external_userid: str) -> bool:
+    target_unionid = _target_unionid(payload)
+    target_id = str(job.target_id or "").strip()
+    if target_unionid:
+        return target_id != target_unionid
+    return not external_userid or target_id != external_userid
+
+
 def webhook_execution_settings() -> dict[str, Any]:
     return {
         "enabled": _enabled("AICRM_EXTERNAL_EFFECT_WEBHOOK_EXECUTE"),
@@ -268,6 +280,7 @@ class WeComPrivateMessageAdapter:
             "owner_userid": owner_userid,
             "sender_userid": sender_userid,
             "sender_binding_applied": bool(sender_userid and sender_userid != owner_userid),
+            "target_unionid": _target_unionid(payload),
             "external_userid_count": len(external_userids),
             "content_text_length": len(content_text),
             "attachment_count": len(payload.get("attachments") or []) if isinstance(payload.get("attachments"), list) else 0,
@@ -364,8 +377,7 @@ class WeComPrivateMessageAdapter:
             return "unsupported_effect_type"
         if len(external_userids) != 1:
             return "single_target_required"
-        target_id = str(job.target_id or "").strip()
-        if target_id != external_userids[0]:
+        if _wecom_target_mismatch(job, payload, external_userids[0]):
             return "target_mismatch"
         if str(payload.get("channel") or "").strip() != "wecom_private":
             return "channel_not_allowed"
@@ -546,6 +558,7 @@ class WeComWelcomeMessageAdapter:
             "operation": job.operation,
             "target_type": job.target_type,
             "target_id": job.target_id,
+            "target_unionid": _target_unionid(payload),
             "external_userid": str(payload.get("external_userid") or ""),
             "follow_user_userid": str(payload.get("follow_user_userid") or ""),
             "welcome_code_present": bool(str(payload.get("welcome_code") or "").strip()),
@@ -559,7 +572,7 @@ class WeComWelcomeMessageAdapter:
         if job.effect_type != WECOM_WELCOME_MESSAGE_SEND:
             return "unsupported_effect_type"
         external_userid = str(payload.get("external_userid") or "").strip()
-        if not external_userid or str(job.target_id or "").strip() != external_userid:
+        if _wecom_target_mismatch(job, payload, external_userid):
             return "target_mismatch"
         follow_user_userid = str(payload.get("follow_user_userid") or "").strip()
         if not follow_user_userid:
@@ -688,6 +701,7 @@ class WeComContactTagAdapter:
             "operation": job.operation,
             "target_type": job.target_type,
             "target_id": job.target_id,
+            "target_unionid": _target_unionid(payload),
             "external_userid": str(payload.get("external_userid") or ""),
             "follow_user_userid": str(payload.get("follow_user_userid") or payload.get("userid") or ""),
             "add_tag_count": len(add_tags),
@@ -700,7 +714,7 @@ class WeComContactTagAdapter:
         if job.effect_type not in {WECOM_CONTACT_TAG_MARK, WECOM_CONTACT_TAG_UNMARK}:
             return "unsupported_effect_type"
         external_userid = str(payload.get("external_userid") or "").strip()
-        if not external_userid or str(job.target_id or "").strip() != external_userid:
+        if _wecom_target_mismatch(job, payload, external_userid):
             return "target_mismatch"
         follow_user_userid = str(payload.get("follow_user_userid") or payload.get("userid") or "").strip()
         if not follow_user_userid:
@@ -839,6 +853,7 @@ class WeComProfileUpdateAdapter:
             "operation": job.operation,
             "target_type": job.target_type,
             "target_id": job.target_id,
+            "target_unionid": _target_unionid(payload),
             "external_userid": str(payload.get("external_userid") or ""),
             "follow_user_userid": str(payload.get("follow_user_userid") or payload.get("userid") or ""),
             "remark_present": bool(str(payload.get("remark") or "").strip()),
@@ -851,7 +866,7 @@ class WeComProfileUpdateAdapter:
         if job.effect_type != WECOM_PROFILE_UPDATE:
             return "unsupported_effect_type"
         external_userid = str(payload.get("external_userid") or "").strip()
-        if not external_userid or str(job.target_id or "").strip() != external_userid:
+        if _wecom_target_mismatch(job, payload, external_userid):
             return "target_mismatch"
         follow_user_userid = str(payload.get("follow_user_userid") or payload.get("userid") or "").strip()
         if not follow_user_userid:

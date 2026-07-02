@@ -52,7 +52,7 @@ def ai_assistant_payload(repo: AdminReadRepository) -> dict[str, Any]:
     )
     runs = repo.rows(
         """
-        SELECT id, run_id, agent_code, status, external_contact_id, created_at, updated_at
+        SELECT id, run_id, agent_code, status, unionid, created_at, updated_at
         FROM automation_agent_run
         ORDER BY created_at DESC, id DESC
         LIMIT 10
@@ -88,7 +88,7 @@ def ai_assistant_payload(repo: AdminReadRepository) -> dict[str, Any]:
             "cards": cards,
             "sections": [
                 {"title": "Agent 配置", "headers": ["agent_code", "名称", "场景", "启用", "更新时间"], "rows": [[r.get("agent_code") or r.get("id"), r.get("display_name") or r.get("name"), r.get("scenario_code") or "-", r.get("enabled", r.get("status")), r.get("updated_at")] for r in configs]},
-                {"title": "最近运行", "headers": ["run_id", "agent_code", "状态", "客户", "时间"], "rows": [[r.get("run_id") or r.get("id"), r.get("agent_code"), r.get("status"), r.get("external_contact_id"), r.get("created_at")] for r in runs]},
+                {"title": "最近运行", "headers": ["run_id", "agent_code", "状态", "客户", "时间"], "rows": [[r.get("run_id") or r.get("id"), r.get("agent_code"), r.get("status"), r.get("unionid"), r.get("created_at")] for r in runs]},
                 {"title": "最近输出", "headers": ["output_id", "run_id", "agent_code", "状态", "时间"], "rows": [[r.get("output_id") or r.get("id"), r.get("run_id"), r.get("agent_code"), r.get("applied_status"), r.get("created_at")] for r in outputs]},
                 {"title": "LLM 调用", "headers": ["agent_code", "模型", "状态", "延迟", "时间"], "rows": [[r.get("agent_code"), r.get("model_name"), r.get("status"), r.get("latency_ms"), r.get("created_at")] for r in calls]},
             ],

@@ -162,18 +162,19 @@ def resolve_external_contact_customer_name(external_userid: str, *, corp_id: str
     with _connect() as conn, conn.cursor() as cur:
         cur.execute(
             """
-            SELECT COALESCE(name, '') AS customer_name
-            FROM wecom_external_contact_identity_map
-            WHERE external_userid = %s
-              AND COALESCE(name, '') <> ''
-              AND (%s = '' OR corp_id = %s)
-            ORDER BY CASE WHEN corp_id = %s THEN 0 ELSE 1 END,
+            SELECT COALESCE(NULLIF(customer_name, ''), NULLIF(remark, ''), '') AS customer_name
+            FROM crm_user_identity
+            WHERE (
+                primary_external_userid = %s
+                OR jsonb_exists(external_userids_json, %s)
+            )
+              AND COALESCE(NULLIF(customer_name, ''), NULLIF(remark, ''), '') <> ''
+            ORDER BY CASE WHEN primary_external_userid = %s THEN 0 ELSE 1 END,
                      last_seen_at DESC NULLS LAST,
-                     updated_at DESC NULLS LAST,
-                     id DESC
+                     updated_at DESC NULLS LAST
             LIMIT 1
             """,
-            (external, text(corp_id), text(corp_id), text(corp_id)),
+            (external, external, external),
         )
         row = cur.fetchone()
     return text((row or {}).get("customer_name"))
@@ -902,16 +903,21 @@ def update_channel_qrcode(*, channel_id: int, scene_value: str, qr_url: str, con
         return dict(row) if row else {}
 
 
-def upsert_channel_contact(*, channel_id: int, external_contact_id: str, owner_staff_id: str, source_payload: dict[str, Any]) -> dict[str, Any]:
+def upsert_channel_contact(*, channel_id: int, unionid: str = "", external_contact_id: str, owner_staff_id: str, source_payload: dict[str, Any]) -> dict[str, Any]:
+    sanitized_payload = {
+        key: value
+        for key, value in dict(source_payload or {}).items()
+        if key not in {"external_contact_id", "ExternalUserID", "external_userid"}
+    }
     with _connect() as conn, conn.cursor() as cur:
         cur.execute(
             """
             INSERT INTO automation_channel_contact (
-                channel_id, external_contact_id, owner_staff_id, source_payload_json,
+                channel_id, unionid, owner_staff_id, source_payload_json,
                 first_channel_entered_at, last_channel_entered_at, enter_count, created_at, updated_at
             )
             VALUES (%s, %s, %s, %s, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-            ON CONFLICT (channel_id, external_contact_id) WHERE external_contact_id <> ''
+            ON CONFLICT (channel_id, unionid) WHERE unionid <> ''
             DO UPDATE SET owner_staff_id = EXCLUDED.owner_staff_id,
                 source_payload_json = EXCLUDED.source_payload_json,
                 last_channel_entered_at = CURRENT_TIMESTAMP,
@@ -919,7 +925,7 @@ def upsert_channel_contact(*, channel_id: int, external_contact_id: str, owner_s
                 updated_at = CURRENT_TIMESTAMP
             RETURNING *
             """,
-            (int(channel_id), text(external_contact_id), text(owner_staff_id), _json(source_payload)),
+            (int(channel_id), text(unionid), text(owner_staff_id), _json(sanitized_payload)),
         )
         row = cur.fetchone()
         conn.commit()
@@ -1094,17 +1100,113 @@ def save_tag_snapshot(owner_staff_id: str, external_contact_id: str, tag_ids: li
     if not tag_ids:
         return
     with _connect() as conn, conn.cursor() as cur:
+        unionid = _resolve_unionid_by_external_userid(cur, external_contact_id)
+        if not unionid:
+            _enqueue_tag_identity_resolution(cur, owner_staff_id=owner_staff_id, external_contact_id=external_contact_id, tag_ids=tag_ids, tag_names=tag_names)
+            conn.commit()
+            return
         for tag_id in tag_ids:
             cur.execute(
                 """
-                INSERT INTO contact_tags (external_userid, userid, tag_id, tag_name, created_at)
-                VALUES (%s, %s, %s, %s, CURRENT_TIMESTAMP)
-                ON CONFLICT (external_userid, userid, tag_id) DO UPDATE
-                SET tag_name = EXCLUDED.tag_name
+                UPDATE contact_tags
+                SET tag_name = %s,
+                    created_at = CURRENT_TIMESTAMP
+                WHERE unionid = %s
+                  AND userid = %s
+                  AND tag_id = %s
                 """,
-                (text(external_contact_id), text(owner_staff_id), text(tag_id), text(tag_names.get(tag_id))),
+                (text(tag_names.get(tag_id)), unionid, text(owner_staff_id), text(tag_id)),
+            )
+            if cur.rowcount:
+                continue
+            cur.execute(
+                """
+                INSERT INTO contact_tags (unionid, userid, tag_id, tag_name, created_at)
+                VALUES (%s, %s, %s, %s, CURRENT_TIMESTAMP)
+                """,
+                (unionid, text(owner_staff_id), text(tag_id), text(tag_names.get(tag_id))),
             )
         conn.commit()
+
+
+def _resolve_unionid_by_external_userid(cur, external_userid: str) -> str:
+    normalized = text(external_userid)
+    if not normalized:
+        return ""
+    cur.execute(
+        """
+        SELECT unionid
+        FROM crm_user_identity
+        WHERE primary_external_userid = %s
+           OR jsonb_exists(external_userids_json, %s)
+        ORDER BY CASE WHEN primary_external_userid = %s THEN 0 ELSE 1 END,
+                 updated_at DESC
+        LIMIT 1
+        """,
+        (normalized, normalized, normalized),
+    )
+    row = cur.fetchone()
+    return text((row or {}).get("unionid"))
+
+
+def _enqueue_tag_identity_resolution(
+    cur,
+    *,
+    owner_staff_id: str,
+    external_contact_id: str,
+    tag_ids: list[str],
+    tag_names: dict[str, str],
+) -> None:
+    external_userid = text(external_contact_id)
+    if not external_userid:
+        return
+    source_key = f"{external_userid}:{text(owner_staff_id)}:contact_tags"
+    cur.execute(
+        """
+        INSERT INTO crm_user_identity_resolution_queue (
+            source_type,
+            source_key,
+            external_userid,
+            payload_json,
+            reason,
+            status,
+            first_seen_at,
+            last_seen_at,
+            created_at,
+            updated_at
+        ) VALUES (
+            'contact_tags',
+            %s,
+            %s,
+            %s,
+            'missing_unionid',
+            'pending',
+            NOW(),
+            NOW(),
+            NOW(),
+            NOW()
+        )
+        ON CONFLICT (source_type, source_key) WHERE status = 'pending' AND source_type <> '' AND source_key <> ''
+        DO UPDATE SET
+            external_userid = COALESCE(NULLIF(EXCLUDED.external_userid, ''), crm_user_identity_resolution_queue.external_userid),
+            payload_json = crm_user_identity_resolution_queue.payload_json || EXCLUDED.payload_json,
+            reason = EXCLUDED.reason,
+            last_seen_at = NOW(),
+            updated_at = NOW()
+        """,
+        (
+            source_key,
+            external_userid,
+            _json(
+                {
+                    "owner_staff_id": text(owner_staff_id),
+                    "external_contact_id": external_userid,
+                    "tag_ids": [text(tag_id) for tag_id in tag_ids],
+                    "tag_names": {text(key): text(value) for key, value in tag_names.items()},
+                }
+            ),
+        ),
+    )
 
 
 def decode_payload_json(value: Any) -> dict[str, Any]:

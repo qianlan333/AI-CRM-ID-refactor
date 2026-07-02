@@ -128,6 +128,15 @@
             <input type="checkbox" name="auto_accept_friend" value="1" {% if channel.auto_accept_friend %}checked{% endif %}>
             <span>扫码添加成员时自动通过好友申请</span>
           </label>
+          <p class="hint">保存后重新生成二维码时会透传为企微 skip_verify。</p>
+          {% if payload.is_edit and channel.historical_scene_values %}
+          <div class="summary-box">
+            <div class="summary-row">
+              <strong>历史回调 State</strong>
+              <span>{{ channel.historical_scene_values | join(", ") }}</span>
+            </div>
+          </div>
+          {% endif %}
           {% if payload.is_edit %}
           <div class="carrier-actions">
             {% if channel.qr_download_url %}

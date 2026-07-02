@@ -19,6 +19,7 @@ class AiAudienceTargetProvider:
 def _standard_row(row: dict[str, Any]) -> JsonDict:
     return {
         "id": int(row.get("id") or 0),
+        "unionid": _text(row.get("unionid")),
         "external_userid": _text(row.get("external_userid")),
         "customer_name": _text(row.get("customer_name")) or "未命名客户",
         "owner_userid": _text(row.get("owner_userid")),

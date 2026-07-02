@@ -582,6 +582,66 @@ def _bootstrap_next_test_baseline_schema(url: str) -> None:
         )
         """,
         """
+        CREATE TABLE IF NOT EXISTS crm_user_identity (
+            unionid TEXT PRIMARY KEY,
+            primary_external_userid TEXT NOT NULL DEFAULT '',
+            external_userids_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+            primary_openid TEXT NOT NULL DEFAULT '',
+            openids_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+            mobile TEXT NOT NULL DEFAULT '',
+            mobile_normalized TEXT NOT NULL DEFAULT '',
+            mobile_verified BOOLEAN NOT NULL DEFAULT FALSE,
+            mobile_source TEXT NOT NULL DEFAULT '',
+            customer_name TEXT NOT NULL DEFAULT '',
+            remark TEXT NOT NULL DEFAULT '',
+            description TEXT NOT NULL DEFAULT '',
+            avatar TEXT NOT NULL DEFAULT '',
+            gender INTEGER,
+            profile_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+            primary_owner_userid TEXT NOT NULL DEFAULT '',
+            follow_users_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+            legacy_person_id TEXT NOT NULL DEFAULT '',
+            legacy_identity_map_ids_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+            legacy_sources_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+            identity_status TEXT NOT NULL DEFAULT 'active',
+            unionid_resolved_at TIMESTAMPTZ,
+            first_seen_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            last_seen_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            last_polled_at TIMESTAMPTZ,
+            next_poll_at TIMESTAMPTZ,
+            poll_attempt_count INTEGER NOT NULL DEFAULT 0,
+            last_poll_error TEXT NOT NULL DEFAULT '',
+            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS crm_user_identity_resolution_queue (
+            id BIGSERIAL PRIMARY KEY,
+            source_type TEXT NOT NULL DEFAULT '',
+            source_key TEXT NOT NULL DEFAULT '',
+            corp_id TEXT NOT NULL DEFAULT '',
+            external_userid TEXT NOT NULL DEFAULT '',
+            openid TEXT NOT NULL DEFAULT '',
+            mobile TEXT NOT NULL DEFAULT '',
+            payload_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+            reason TEXT NOT NULL DEFAULT '',
+            status TEXT NOT NULL DEFAULT 'pending',
+            attempts INTEGER NOT NULL DEFAULT 0,
+            last_error TEXT NOT NULL DEFAULT '',
+            next_attempt_at TIMESTAMPTZ,
+            first_seen_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            last_seen_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """,
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS ux_crm_user_identity_resolution_queue_pending_source
+        ON crm_user_identity_resolution_queue (source_type, source_key)
+        WHERE status = 'pending' AND source_type <> '' AND source_key <> ''
+        """,
+        """
         CREATE TABLE IF NOT EXISTS questionnaires (
             id BIGSERIAL PRIMARY KEY,
             slug TEXT NOT NULL DEFAULT '',

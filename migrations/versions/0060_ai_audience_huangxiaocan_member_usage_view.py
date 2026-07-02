@@ -176,7 +176,34 @@ def _create_huangxiaocan_member_usage_view() -> None:
                 $sql$);
             END IF;
 
-            IF to_regclass('public.customer_recent_message_next') IS NOT NULL THEN
+            IF to_regclass('public.customer_recent_message_next') IS NOT NULL
+               AND EXISTS (
+                   SELECT 1 FROM information_schema.columns
+                   WHERE table_schema = 'public' AND table_name = 'customer_recent_message_next' AND column_name = 'unionid'
+               )
+               AND EXISTS (
+                   SELECT 1 FROM information_schema.columns
+                   WHERE table_schema = 'public' AND table_name = 'customer_recent_message_next' AND column_name = 'send_time'
+               ) THEN
+                usage_parts := array_append(usage_parts, $sql$
+                    SELECT ''::text AS external_userid,
+                           ''::text AS mobile_hash,
+                           COALESCE(unionid, '')::text AS unionid,
+                           true::boolean AS has_real_usage,
+                           send_time::timestamptz AS used_at,
+                           'customer_recent_message_next'::text AS source
+                    FROM public.customer_recent_message_next
+                    WHERE COALESCE(unionid, '') <> ''
+                $sql$);
+            ELSIF to_regclass('public.customer_recent_message_next') IS NOT NULL
+               AND EXISTS (
+                   SELECT 1 FROM information_schema.columns
+                   WHERE table_schema = 'public' AND table_name = 'customer_recent_message_next' AND column_name = 'external_userid'
+               )
+               AND EXISTS (
+                   SELECT 1 FROM information_schema.columns
+                   WHERE table_schema = 'public' AND table_name = 'customer_recent_message_next' AND column_name = 'send_time'
+               ) THEN
                 usage_parts := array_append(usage_parts, $sql$
                     SELECT COALESCE(external_userid, '')::text AS external_userid,
                            ''::text AS mobile_hash,

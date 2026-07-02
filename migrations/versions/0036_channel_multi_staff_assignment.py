@@ -72,7 +72,7 @@ def upgrade() -> None:
             strategy TEXT NOT NULL,
             reason TEXT NOT NULL DEFAULT '',
             status TEXT NOT NULL DEFAULT 'assigned',
-            external_contact_id TEXT NOT NULL DEFAULT '',
+            unionid TEXT NOT NULL DEFAULT '',
             wecom_user_id TEXT NOT NULL DEFAULT '',
             source_payload_json JSONB NOT NULL DEFAULT '{}'::jsonb,
             assigned_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -90,14 +90,14 @@ def upgrade() -> None:
     )
     op.execute(
         """
-        CREATE INDEX IF NOT EXISTS idx_channel_assignment_external
-        ON automation_channel_assignment_event(channel_id, external_contact_id)
+        CREATE INDEX IF NOT EXISTS idx_channel_assignment_unionid
+        ON automation_channel_assignment_event(channel_id, unionid)
         """
     )
 
 
 def downgrade() -> None:
-    op.execute("DROP INDEX IF EXISTS idx_channel_assignment_external")
+    op.execute("DROP INDEX IF EXISTS idx_channel_assignment_unionid")
     op.execute("DROP INDEX IF EXISTS idx_channel_assignment_24h")
     op.execute("DROP TABLE IF EXISTS automation_channel_assignment_event")
     op.execute("DROP INDEX IF EXISTS idx_channel_assignee_active")

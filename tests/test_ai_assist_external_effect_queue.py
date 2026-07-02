@@ -265,9 +265,10 @@ def test_ai_assist_campaign_run_due_wecom_private_mode_creates_queued_external_e
     assert job.status == "queued"
     assert job.execution_mode == "execute"
     assert job.adapter_name == "wecom_private_message"
-    assert job.target_type == "external_user"
-    assert job.target_id == "wm_fixture_a"
+    assert job.target_type == "unionid"
+    assert job.target_id == "union_fixture_a"
     assert job.payload_json["owner_userid"] == "owner_fixture"
+    assert job.payload_json["target_unionid"] == "union_fixture_a"
     assert job.payload_json["external_userids"] == ["wm_fixture_a"]
     assert job.payload_json["content_text"] == "fixture hello"
 

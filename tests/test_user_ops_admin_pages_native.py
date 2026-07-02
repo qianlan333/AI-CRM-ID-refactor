@@ -118,7 +118,7 @@ def test_user_ops_write_like_routes_remain_no_real_side_effect() -> None:
 
     dnd = client.post(
         "/api/admin/user-ops/do-not-disturb",
-        json={"external_userid": "wx_ext_001", "reason_code": "manual_set", "reason_text": "运营设置"},
+        json={"unionid": "union_ops_001", "reason_code": "manual_set", "reason_text": "运营设置"},
     )
     assert dnd.status_code == 200
     dnd_body = dnd.json()

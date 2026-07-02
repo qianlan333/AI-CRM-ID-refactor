@@ -18,7 +18,7 @@ CARD_DEFINITIONS = [
 ]
 
 SKIPPED_REASON_LABELS = {
-    "missing_external_userid": "缺少 external_userid",
+    "missing_unionid": "缺少 unionid",
     "missing_owner_userid": "缺少负责人",
     "do_not_disturb": "免打扰",
     "no_allowed_sender": "无可用发送人",
@@ -74,7 +74,7 @@ def apply_filters(rows: list[JsonDict], filters: UserOpsFilters) -> list[JsonDic
             for item in filtered
             if any(
                 keyword in str(item.get(field) or "")
-                for field in ["mobile", "external_userid", "customer_name", "owner_userid", "owner_display_name"]
+                for field in ["unionid", "mobile", "external_userid", "customer_name", "owner_userid", "owner_display_name"]
             )
         ]
     return filtered
@@ -123,11 +123,12 @@ def _selected_rows(rows: list[JsonDict], request: BatchSendRequest) -> list[Json
 def _target_payload(item: JsonDict) -> JsonDict:
     return {
         "id": item["id"],
-        "external_userid": item["external_userid"],
+        "unionid": item["unionid"],
+        "external_userid": item.get("external_userid") or "",
         "owner_userid": item["owner_userid"],
         "owner_display_name": item.get("owner_display_name") or "",
         "customer_name": item["customer_name"],
-        "mobile": item["mobile"],
+        "mobile": item.get("mobile") or "",
     }
 
 
@@ -142,11 +143,14 @@ def group_targets_by_owner(final_targets: list[JsonDict]) -> list[JsonDict]:
                 "owner_display_name": target.get("owner_display_name") or owner_userid,
                 "sender_userid": owner_userid,
                 "target_count": 0,
+                "target_unionids": [],
                 "external_userids": [],
             },
         )
         bucket["target_count"] += 1
-        bucket["external_userids"].append(target["external_userid"])
+        bucket["target_unionids"].append(target["unionid"])
+        if target.get("external_userid"):
+            bucket["external_userids"].append(target["external_userid"])
     return [buckets[key] for key in sorted(buckets)]
 
 
@@ -158,8 +162,8 @@ def resolve_batch_targets(rows: list[JsonDict], request: BatchSendRequest) -> Js
         if _norm(item.get("skip_reason")):
             skipped_reasons[_norm(item.get("skip_reason"))] += 1
             continue
-        if not item.get("external_userid"):
-            skipped_reasons["missing_external_userid"] += 1
+        if not item.get("unionid"):
+            skipped_reasons["missing_unionid"] += 1
             continue
         if not item.get("owner_userid"):
             skipped_reasons["missing_owner_userid"] += 1
@@ -185,6 +189,7 @@ def resolve_batch_targets(rows: list[JsonDict], request: BatchSendRequest) -> Js
         "skip_summary": _skipped_summary(skipped_reasons),
         "include_do_not_disturb": request.include_do_not_disturb,
         "owner_buckets": owner_buckets,
+        "target_unionids": [target["unionid"] for target in final_targets],
         "sender_buckets": [
             {"sender_userid": sender_userid, "target_count": count}
             for sender_userid, count in sorted(sender_counts.items())

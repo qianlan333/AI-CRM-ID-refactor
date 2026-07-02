@@ -154,6 +154,30 @@ PROVIDERS = {
     "wechat_shop": _ProviderConfig("wechat_shop", "微信小店", "小店订单号", "/admin/wechat-shop/transactions", "/api/admin/orders?provider=wechat_shop"),
 }
 
+WECHAT_SHOP_BUYER_MOBILE_SQL = (
+    "COALESCE("
+    "o.raw_order_json #>> '{order,order_detail,delivery_info,address_info,virtual_order_tel_number}', "
+    "o.raw_order_json #>> '{order,order_detail,delivery_info,address_info,purchaser_tel_number}', "
+    "o.raw_order_json #>> '{order,order_detail,delivery_info,address_info,tel_number}', "
+    "o.raw_order_json #>> '{order_detail,delivery_info,address_info,virtual_order_tel_number}', "
+    "o.raw_order_json #>> '{order_detail,delivery_info,address_info,purchaser_tel_number}', "
+    "o.raw_order_json #>> '{order_detail,delivery_info,address_info,tel_number}', "
+    "''"
+    ")"
+)
+
+WECHAT_SHOP_OPENID_SQL = (
+    "COALESCE("
+    "o.raw_order_json #>> '{order,openid}', "
+    "o.raw_order_json #>> '{order,order_detail,openid}', "
+    "o.raw_order_json #>> '{order,order_detail,pay_info,openid}', "
+    "o.raw_order_json #>> '{openid}', "
+    "o.raw_order_json #>> '{order_detail,openid}', "
+    "o.raw_order_json #>> '{order_detail,pay_info,openid}', "
+    "''"
+    ")"
+)
+
 
 def provider_config(provider: str) -> _ProviderConfig:
     key = _text(provider) or "wechat"
@@ -273,7 +297,7 @@ def _postgres_filter_clause(provider: str, filters: dict[str, Any], params: list
     mobile = _text(filters.get("mobile") or filters.get("mobile_snapshot"))
     if mobile:
         if provider == "wechat_shop":
-            where.append("COALESCE(o.buyer_mobile, '') ILIKE %s")
+            where.append(f"{WECHAT_SHOP_BUYER_MOBILE_SQL} ILIKE %s")
             params.append(f"%{mobile}%")
         else:
             where.append(f"COALESCE({table_alias}.mobile_snapshot, '') ILIKE %s")
@@ -288,7 +312,7 @@ def _postgres_filter_clause(provider: str, filters: dict[str, Any], params: list
     identity = _text(filters.get("identity") or filters.get("external_userid"))
     if identity:
         if provider == "wechat_shop":
-            where.append("(COALESCE(o.openid, '') ILIKE %s OR COALESCE(o.unionid, '') ILIKE %s)")
+            where.append(f"({WECHAT_SHOP_OPENID_SQL} ILIKE %s OR COALESCE(o.unionid, '') ILIKE %s)")
             needle = f"%{identity}%"
             params.extend([needle, needle])
         elif provider == "alipay":
@@ -415,7 +439,10 @@ def _postgres_order_select(provider: str) -> str:
     if provider == "wechat_shop":
         return """
             o.id, o.order_id, o.order_id AS out_trade_no, o.transaction_id, o.product_name, o.product_code,
-            o.amount_total, o.currency, o.buyer_mobile, o.openid, o.unionid, o.business_status, o.status_code,
+            o.amount_total, o.currency,
+            {buyer_mobile_sql} AS buyer_mobile,
+            {openid_sql} AS openid,
+            o.unionid, o.business_status, o.status_code,
             o.deal_recorded, o.returned_recorded, o.raw_order_json AS notify_payload_json,
             o.refunded_amount_total, '' AS refund_status, o.on_aftersale_order_count,
             o.paid_at, o.created_at, o.updated_at,
@@ -425,7 +452,7 @@ def _postgres_order_select(provider: str) -> str:
                 WHERE r.order_id = o.order_id
                   AND r.status NOT IN ('failed', 'closed', 'CLOSED', 'SUCCESS')
             ) AS active_refund_amount_total
-        """
+        """.format(buyer_mobile_sql=WECHAT_SHOP_BUYER_MOBILE_SQL, openid_sql=WECHAT_SHOP_OPENID_SQL)
     return f"""
         o.id, o.out_trade_no, o.transaction_id, o.payer_name_snapshot, o.mobile_snapshot, o.userid_snapshot,
         o.external_userid, o.unionid, o.respondent_key, o.product_name, o.product_code, o.amount_total, o.currency,

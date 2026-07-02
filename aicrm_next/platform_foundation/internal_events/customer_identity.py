@@ -63,6 +63,12 @@ def _stable_identity_key(*, person_id: str, external_userid: str, mobile_hash: s
     return f"mobile:{mobile_hash}"
 
 
+def _stable_customer_key(*, unionid: str, person_id: str, external_userid: str, mobile_hash: str) -> str:
+    if unionid:
+        return f"unionid:{unionid}"
+    return _stable_identity_key(person_id=person_id, external_userid=external_userid, mobile_hash=mobile_hash)
+
+
 def _subject_id(*, external_userid: str, mobile_masked: str, mobile_hash: str) -> str:
     if external_userid:
         return _redact_external_userid(external_userid)
@@ -181,6 +187,7 @@ def emit_customer_phone_bound_event(
         return {"status": "skipped", "reason": "customer_phone_binding_not_successful"}
 
     external_userid = _text(result.get("external_userid") or request.external_userid)
+    unionid = _text(result.get("unionid"))
     mobile = _text(result.get("mobile") or request.mobile)
     person_id = _text(result.get("person_id"))
     mobile_hash = _mobile_hash(mobile)
@@ -189,7 +196,8 @@ def emit_customer_phone_bound_event(
         return {"status": "skipped", "reason": "mobile_missing"}
 
     register_customer_identity_event_consumers()
-    stable_identity_key = _stable_identity_key(
+    stable_identity_key = _stable_customer_key(
+        unionid=unionid,
         person_id=person_id,
         external_userid=external_userid,
         mobile_hash=mobile_hash,
@@ -204,9 +212,9 @@ def emit_customer_phone_bound_event(
         event_type=CUSTOMER_PHONE_BOUND_EVENT_TYPE,
         event_version=1,
         aggregate_type="customer",
-        aggregate_id=person_id or external_userid or f"mobile:{mobile_hash}",
-        subject_type="customer",
-        subject_id=_subject_id(external_userid=external_userid, mobile_masked=mobile_masked, mobile_hash=mobile_hash),
+        aggregate_id=unionid or person_id or external_userid or f"mobile:{mobile_hash}",
+        subject_type="unionid" if unionid else "customer",
+        subject_id=unionid or _subject_id(external_userid=external_userid, mobile_masked=mobile_masked, mobile_hash=mobile_hash),
         idempotency_key=f"customer.phone_bound:{stable_identity_key}:{mobile_hash}",
         source_module=source_module,
         source_command_id=trace_id,
@@ -220,6 +228,7 @@ def emit_customer_phone_bound_event(
         ),
         payload={
             "binding": {
+                "unionid": unionid,
                 "person_id": person_id,
                 "external_userid": external_userid,
                 "mobile": mobile,
@@ -240,6 +249,7 @@ def emit_customer_phone_bound_event(
             },
         },
         payload_summary={
+            "unionid_present": bool(unionid),
             "person_id_present": bool(person_id),
             "external_userid_present": bool(external_userid),
             "mobile_masked": mobile_masked,

@@ -138,53 +138,72 @@ class PostgresIdentityRepository:
             ("external_userid", _text(query.external_userid)),
             ("unionid", _text(query.unionid)),
             ("openid", _text(query.openid)),
+            ("mobile", _text(query.mobile)),
         ]
         with self._connect() as conn:
             for field, value in lookups:
                 if not value:
                     continue
+                if field == "unionid":
+                    where_sql = "unionid = %s"
+                    params: tuple[Any, ...] = (value,)
+                elif field == "external_userid":
+                    where_sql = "primary_external_userid = %s OR jsonb_exists(external_userids_json, %s)"
+                    params = (value, value)
+                elif field == "openid":
+                    where_sql = "primary_openid = %s OR jsonb_exists(openids_json, %s)"
+                    params = (value, value)
+                else:
+                    where_sql = "mobile = %s"
+                    params = (value,)
                 row = conn.execute(
                     f"""
-                    SELECT id AS identity_map_id,
-                           external_userid,
-                           unionid,
-                           openid,
-                           follow_user_userid,
-                           follow_user_userid AS owner_userid,
+                    SELECT unionid,
+                           primary_external_userid AS external_userid,
+                           primary_openid AS openid,
+                           primary_follow_user_userid AS follow_user_userid,
+                           primary_follow_user_userid AS owner_userid,
+                           mobile,
                            status
-                    FROM wecom_external_contact_identity_map
-                    WHERE {field} = %s
-                    ORDER BY updated_at DESC, id DESC
+                    FROM crm_user_identity
+                    WHERE {where_sql}
+                    ORDER BY updated_at DESC
                     LIMIT 1
                     """,
-                    (value,),
+                    params,
                 ).fetchone()
                 if row:
-                    return self._from_identity_map(row, matched_by=field, mobile=_text(query.mobile))
-            mobile = _text(query.mobile)
-            if mobile:
-                row = conn.execute(
-                    """
-                    SELECT b.person_id,
-                           b.external_userid,
-                           p.mobile,
-                           b.last_owner_userid AS owner_userid,
-                           im.id AS identity_map_id,
-                           im.unionid,
-                           im.openid,
-                           im.follow_user_userid
-                    FROM people p
-                    JOIN external_contact_bindings b ON b.person_id = p.id
-                    LEFT JOIN wecom_external_contact_identity_map im ON im.external_userid = b.external_userid
-                    WHERE p.mobile = %s
-                    ORDER BY b.updated_at DESC NULLS LAST, b.external_userid DESC
-                    LIMIT 1
-                    """,
-                    (mobile,),
-                ).fetchone()
-                if row:
-                    return self._from_identity_map(row, matched_by="mobile", mobile=mobile)
+                    return self._from_user_identity(row, matched_by=field)
         return None
+
+    def _from_user_identity(self, row, *, matched_by: str) -> IdentityResolution:
+        external_userid = _text(row.get("external_userid"))
+        unionid = _text(row.get("unionid")) or None
+        openid = _text(row.get("openid")) or None
+        mobile = _text(row.get("mobile")) or None
+        follow_user_userid = _text(row.get("follow_user_userid"))
+        contact_points = []
+        if unionid:
+            contact_points.append(ContactPoint(type="wechat_unionid", value=unionid, verified=True))
+        if external_userid:
+            contact_points.append(ContactPoint(type="wecom_external_userid", value=external_userid, verified=True))
+        if openid:
+            contact_points.append(ContactPoint(type="wechat_openid", value=openid, verified=True))
+        if mobile:
+            contact_points.append(ContactPoint(type="mobile", value=mobile, verified=True))
+        return IdentityResolution(
+            person_id=None,
+            external_userid=external_userid or None,
+            mobile=mobile,
+            openid=openid,
+            unionid=unionid,
+            binding_status="bound" if unionid else "unresolved",
+            owner_userid=_text(row.get("owner_userid")) or follow_user_userid or None,
+            identity_map_id=None,
+            follow_user_userid=follow_user_userid or None,
+            matched_by=matched_by,
+            contact_points=contact_points,
+        )
 
     def _from_identity_map(self, row, *, matched_by: str, mobile: str = "") -> IdentityResolution:
         external_userid = _text(row.get("external_userid"))

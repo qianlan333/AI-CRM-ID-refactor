@@ -12,7 +12,7 @@ class FakeBroadcastRepo:
             {
                 "id": 101,
                 "source_type": "manual",
-                "target_external_userids": ["wm_a", "wm_b"],
+                "target_unionids_json": ["union_a", "union_b"],
                 "scheduled_for": datetime.now(timezone.utc) - timedelta(minutes=1),
             }
         ]
@@ -33,7 +33,7 @@ class FakeBroadcastRepo:
 
 class FakeDispatcher:
     def dispatch(self, job: dict[str, Any]) -> dict[str, Any]:
-        return {"ok": True, "outbound_task_id": 8801, "sent_count": len(job["target_external_userids"])}
+        return {"ok": True, "outbound_task_id": 8801, "sent_count": len(job["target_unionids_json"])}
 
 
 class SkippedDispatcher:
