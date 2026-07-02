@@ -37,6 +37,7 @@ from .customer_tags.api import router as customer_tags_router
 from .customer_tags.api import write_router as customer_tags_write_router
 from .data_health.api import router as data_health_router
 from .delivery_lineage.api import router as delivery_lineage_router
+from .growth_orchestration.api import router as growth_orchestration_router
 from .hxc_dashboard.api import router as hxc_dashboard_router
 from .identity_contact.admin_pages import router as identity_admin_pages_router
 from .identity_contact.api import router as identity_router
@@ -82,6 +83,7 @@ ROUTER_SPECS: tuple[RouterSpec, ...] = (
     RouterSpec("admin_shell", "admin_shell", admin_shell_router, "admin shell pages"),
     RouterSpec("data_health", "data_health", data_health_router, "data health check APIs"),
     RouterSpec("delivery_lineage", "delivery_lineage", delivery_lineage_router, "delivery lineage read APIs"),
+    RouterSpec("growth_orchestration", "growth_orchestration", growth_orchestration_router, "growth orchestration read APIs"),
     RouterSpec("admin_config", "admin_config", admin_config_router, "admin config pages and APIs"),
     RouterSpec("class_user_management", "class_user_management", class_user_management_router),
     RouterSpec("platform_foundation", "common_operation_members", common_operation_members_router),
