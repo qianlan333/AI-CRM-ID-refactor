@@ -2521,6 +2521,17 @@ routes:
   data_source: read_model
   requires_auth: true
   rollback: previous_release
+- path: /api/admin/customer-360/{unionid}
+  methods:
+  - GET
+  route_name: get_admin_customer_360_profile
+  capability_owner: customer_read_model
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: none
+  data_source: read_model
+  requires_auth: true
+  rollback: previous_release
 - path: /api/admin/customers/{unionid}/business-profile
   methods:
   - GET
