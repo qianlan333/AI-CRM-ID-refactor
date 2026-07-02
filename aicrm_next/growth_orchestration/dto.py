@@ -43,3 +43,44 @@ class GrowthMemberList(BaseModel):
     items: list[GrowthMember] = Field(default_factory=list)
     limit: int = 50
     offset: int = 0
+
+
+class GrowthTask(BaseModel):
+    task_key: str
+    program_key: str = ""
+    task_type: str = ""
+    status: str = ""
+    owner_userid: str = ""
+    scheduled_at: datetime | None = None
+    completed_at: datetime | None = None
+    target_unionid: str = ""
+    target_count: int = 0
+    trace_id: str = ""
+    source_table: str
+    source_id: str
+
+
+class GrowthTaskList(BaseModel):
+    ok: bool = True
+    items: list[GrowthTask] = Field(default_factory=list)
+    limit: int = 50
+    offset: int = 0
+
+
+class GrowthTouchpoint(BaseModel):
+    touchpoint_key: str
+    program_key: str = ""
+    unionid: str = ""
+    touchpoint_type: str = ""
+    status: str = ""
+    occurred_at: datetime | None = None
+    trace_id: str = ""
+    source_table: str
+    source_id: str
+
+
+class GrowthTouchpointList(BaseModel):
+    ok: bool = True
+    items: list[GrowthTouchpoint] = Field(default_factory=list)
+    limit: int = 50
+    offset: int = 0

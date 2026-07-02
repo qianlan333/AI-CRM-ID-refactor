@@ -7,13 +7,17 @@ from sqlalchemy import text
 
 from aicrm_next.shared.db_session import get_session_factory
 
-from .dto import GrowthMember, GrowthProgram
+from .dto import GrowthMember, GrowthProgram, GrowthTask, GrowthTouchpoint
 
 
 class GrowthProgramRepository(Protocol):
     def list_programs(self, *, limit: int = 50, offset: int = 0) -> list[GrowthProgram]: ...
 
     def list_members(self, *, limit: int = 50, offset: int = 0) -> list[GrowthMember]: ...
+
+    def list_tasks(self, *, limit: int = 50, offset: int = 0) -> list[GrowthTask]: ...
+
+    def list_touchpoints(self, *, limit: int = 50, offset: int = 0) -> list[GrowthTouchpoint]: ...
 
 
 class EmptyGrowthProgramRepository:
@@ -23,17 +27,37 @@ class EmptyGrowthProgramRepository:
     def list_members(self, *, limit: int = 50, offset: int = 0) -> list[GrowthMember]:
         return []
 
+    def list_tasks(self, *, limit: int = 50, offset: int = 0) -> list[GrowthTask]:
+        return []
+
+    def list_touchpoints(self, *, limit: int = 50, offset: int = 0) -> list[GrowthTouchpoint]:
+        return []
+
 
 class InMemoryGrowthProgramRepository(EmptyGrowthProgramRepository):
-    def __init__(self, items: list[GrowthProgram], members: list[GrowthMember] | None = None) -> None:
+    def __init__(
+        self,
+        items: list[GrowthProgram],
+        members: list[GrowthMember] | None = None,
+        tasks: list[GrowthTask] | None = None,
+        touchpoints: list[GrowthTouchpoint] | None = None,
+    ) -> None:
         self._items = list(items)
         self._members = list(members or [])
+        self._tasks = list(tasks or [])
+        self._touchpoints = list(touchpoints or [])
 
     def list_programs(self, *, limit: int = 50, offset: int = 0) -> list[GrowthProgram]:
         return self._items[offset : offset + limit]
 
     def list_members(self, *, limit: int = 50, offset: int = 0) -> list[GrowthMember]:
         return self._members[offset : offset + limit]
+
+    def list_tasks(self, *, limit: int = 50, offset: int = 0) -> list[GrowthTask]:
+        return self._tasks[offset : offset + limit]
+
+    def list_touchpoints(self, *, limit: int = 50, offset: int = 0) -> list[GrowthTouchpoint]:
+        return self._touchpoints[offset : offset + limit]
 
 
 class PostgresGrowthProgramRepository:
@@ -49,6 +73,16 @@ class PostgresGrowthProgramRepository:
         with self._session_factory() as session:
             rows = session.execute(text(GROWTH_MEMBERS_SQL), {"limit": int(limit), "offset": int(offset)}).mappings().all()
         return [GrowthMember(**dict(row)) for row in rows]
+
+    def list_tasks(self, *, limit: int = 50, offset: int = 0) -> list[GrowthTask]:
+        with self._session_factory() as session:
+            rows = session.execute(text(GROWTH_TASKS_SQL), {"limit": int(limit), "offset": int(offset)}).mappings().all()
+        return [GrowthTask(**dict(row)) for row in rows]
+
+    def list_touchpoints(self, *, limit: int = 50, offset: int = 0) -> list[GrowthTouchpoint]:
+        with self._session_factory() as session:
+            rows = session.execute(text(GROWTH_TOUCHPOINTS_SQL), {"limit": int(limit), "offset": int(offset)}).mappings().all()
+        return [GrowthTouchpoint(**dict(row)) for row in rows]
 
 
 def build_growth_program_repository() -> GrowthProgramRepository:
@@ -233,5 +267,144 @@ WITH members AS (
 SELECT *
 FROM members
 ORDER BY last_touch_at DESC NULLS LAST, program_key ASC, unionid ASC
+LIMIT :limit OFFSET :offset
+"""
+
+
+GROWTH_TASKS_SQL = """
+WITH tasks AS (
+    SELECT
+        'broadcast_job:' || bj.id::text AS task_key,
+        CASE
+            WHEN bj.source_type IN ('campaign', 'cloud_plan', 'group_ops', 'ai_audience_package')
+                THEN bj.source_type || ':' || bj.source_id
+            WHEN COALESCE(bj.source_id, '') <> ''
+                THEN 'broadcast:' || COALESCE(NULLIF(bj.source_type, ''), 'manual') || ':' || bj.source_id
+            ELSE 'broadcast:' || COALESCE(NULLIF(bj.source_type, ''), 'manual') || ':' || bj.id::text
+        END AS program_key,
+        COALESCE(NULLIF(bj.content_type, ''), bj.source_type, 'broadcast') AS task_type,
+        COALESCE(bj.status, '') AS status,
+        COALESCE(bj.created_by, '') AS owner_userid,
+        bj.scheduled_for AS scheduled_at,
+        bj.sent_at AS completed_at,
+        '' AS target_unionid,
+        COALESCE(NULLIF(bj.target_count, 0), jsonb_array_length(COALESCE(bj.target_unionids_json, '[]'::jsonb)))::int AS target_count,
+        COALESCE(bj.trace_id, '') AS trace_id,
+        'broadcast_jobs' AS source_table,
+        bj.id::text AS source_id
+    FROM broadcast_jobs bj
+    UNION ALL
+    SELECT
+        'external_effect_job:' || job.id::text AS task_key,
+        CASE
+            WHEN COALESCE(job.business_type, '') <> '' AND COALESCE(job.business_id, '') <> ''
+                THEN job.business_type || ':' || job.business_id
+            WHEN COALESCE(job.source_module, '') <> '' AND COALESCE(job.source_command_id, '') <> ''
+                THEN job.source_module || ':' || job.source_command_id
+            ELSE 'external_effect:' || job.id::text
+        END AS program_key,
+        COALESCE(NULLIF(job.operation, ''), job.effect_type, 'external_effect') AS task_type,
+        COALESCE(job.status, '') AS status,
+        COALESCE(job.actor_id, '') AS owner_userid,
+        job.scheduled_at AS scheduled_at,
+        job.executed_at AS completed_at,
+        COALESCE(job.target_unionid, '') AS target_unionid,
+        CASE WHEN COALESCE(job.target_unionid, '') <> '' THEN 1 ELSE 0 END AS target_count,
+        COALESCE(job.trace_id, '') AS trace_id,
+        'external_effect_job' AS source_table,
+        job.id::text AS source_id
+    FROM external_effect_job job
+    UNION ALL
+    SELECT
+        'outbound_task:' || ot.id::text AS task_key,
+        CASE
+            WHEN COALESCE(ot.trace_id, '') <> '' THEN 'outbound_trace:' || ot.trace_id
+            ELSE 'outbound_task:' || ot.id::text
+        END AS program_key,
+        COALESCE(NULLIF(ot.task_type, ''), 'outbound_task') AS task_type,
+        COALESCE(ot.status, '') AS status,
+        '' AS owner_userid,
+        ot.created_at AS scheduled_at,
+        ot.created_at AS completed_at,
+        '' AS target_unionid,
+        0 AS target_count,
+        COALESCE(ot.trace_id, '') AS trace_id,
+        'outbound_tasks' AS source_table,
+        ot.id::text AS source_id
+    FROM outbound_tasks ot
+    WHERE NOT EXISTS (
+        SELECT 1
+        FROM broadcast_jobs bj
+        WHERE bj.outbound_task_id = ot.id
+    )
+)
+SELECT *
+FROM tasks
+ORDER BY scheduled_at DESC NULLS LAST, task_key ASC
+LIMIT :limit OFFSET :offset
+"""
+
+
+GROWTH_TOUCHPOINTS_SQL = """
+WITH touchpoints AS (
+    SELECT
+        'broadcast_job:' || bj.id::text AS touchpoint_key,
+        CASE
+            WHEN bj.source_type IN ('campaign', 'cloud_plan', 'group_ops', 'ai_audience_package')
+                THEN bj.source_type || ':' || bj.source_id
+            WHEN COALESCE(bj.source_id, '') <> ''
+                THEN 'broadcast:' || COALESCE(NULLIF(bj.source_type, ''), 'manual') || ':' || bj.source_id
+            ELSE 'broadcast:' || COALESCE(NULLIF(bj.source_type, ''), 'manual') || ':' || bj.id::text
+        END AS program_key,
+        '' AS unionid,
+        COALESCE(NULLIF(bj.content_type, ''), bj.source_type, 'broadcast') AS touchpoint_type,
+        COALESCE(bj.status, '') AS status,
+        COALESCE(bj.sent_at, bj.claimed_at, bj.updated_at, bj.created_at) AS occurred_at,
+        COALESCE(bj.trace_id, '') AS trace_id,
+        'broadcast_jobs' AS source_table,
+        bj.id::text AS source_id
+    FROM broadcast_jobs bj
+    UNION ALL
+    SELECT
+        'external_effect_job:' || job.id::text AS touchpoint_key,
+        CASE
+            WHEN COALESCE(job.business_type, '') <> '' AND COALESCE(job.business_id, '') <> ''
+                THEN job.business_type || ':' || job.business_id
+            WHEN COALESCE(job.source_module, '') <> '' AND COALESCE(job.source_command_id, '') <> ''
+                THEN job.source_module || ':' || job.source_command_id
+            ELSE 'external_effect:' || job.id::text
+        END AS program_key,
+        COALESCE(job.target_unionid, '') AS unionid,
+        COALESCE(NULLIF(job.operation, ''), job.effect_type, 'external_effect') AS touchpoint_type,
+        COALESCE(job.status, '') AS status,
+        COALESCE(job.executed_at, job.locked_at, job.updated_at, job.created_at) AS occurred_at,
+        COALESCE(job.trace_id, '') AS trace_id,
+        'external_effect_job' AS source_table,
+        job.id::text AS source_id
+    FROM external_effect_job job
+    UNION ALL
+    SELECT
+        'outbound_task:' || ot.id::text AS touchpoint_key,
+        CASE
+            WHEN COALESCE(ot.trace_id, '') <> '' THEN 'outbound_trace:' || ot.trace_id
+            ELSE 'outbound_task:' || ot.id::text
+        END AS program_key,
+        '' AS unionid,
+        COALESCE(NULLIF(ot.task_type, ''), 'outbound_task') AS touchpoint_type,
+        COALESCE(ot.status, '') AS status,
+        ot.created_at AS occurred_at,
+        COALESCE(ot.trace_id, '') AS trace_id,
+        'outbound_tasks' AS source_table,
+        ot.id::text AS source_id
+    FROM outbound_tasks ot
+    WHERE NOT EXISTS (
+        SELECT 1
+        FROM broadcast_jobs bj
+        WHERE bj.outbound_task_id = ot.id
+    )
+)
+SELECT *
+FROM touchpoints
+ORDER BY occurred_at DESC NULLS LAST, touchpoint_key ASC
 LIMIT :limit OFFSET :offset
 """
