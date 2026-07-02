@@ -144,7 +144,10 @@ class ListMaterialAssetsQuery:
         limit = max(1, min(int(limit or 50), 100))
         offset = max(0, int(offset or 0))
         repo = self._repo_or_build()
+        is_all = normalized_type == "all"
         material_types = ["image", "miniprogram", "attachment"] if normalized_type == "all" else [normalized_type]
+        repo_limit = offset + limit if is_all else limit
+        repo_offset = 0 if is_all else offset
 
         assets: list[dict[str, Any]] = []
         total = 0
@@ -153,17 +156,18 @@ class ListMaterialAssetsQuery:
                 material_type,
                 q=q,
                 enabled_only=enabled_only,
-                limit=limit,
-                offset=0,
+                limit=repo_limit,
+                offset=repo_offset,
             )
             total += int(result.get("total") or 0)
             assets.extend(_material_asset_item(material_type, item) for item in result.get("items") or [])
+        visible_assets = assets[offset : offset + limit] if is_all else assets[:limit]
 
         return {
             "ok": True,
             "read_model": "material_assets",
             "type": normalized_type,
-            "assets": assets[offset : offset + limit],
+            "assets": visible_assets,
             "total": total,
             "limit": limit,
             "offset": offset,

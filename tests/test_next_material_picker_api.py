@@ -158,3 +158,27 @@ def test_material_assets_can_filter_to_one_source_type(client) -> None:
     assert body["type"] == "miniprogram"
     assert body["assets"]
     assert {item["asset_type"] for item in body["assets"]} == {"miniprogram"}
+
+
+def test_material_assets_single_type_preserves_offset(client) -> None:
+    response = client.get("/api/admin/material-assets?type=image&offset=1&limit=1")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["type"] == "image"
+    assert body["offset"] == 1
+    assert body["limit"] == 1
+    assert [item["material_asset_id"] for item in body["assets"]] == ["image:13"]
+    assert body["total"] == 2
+
+
+def test_material_assets_all_type_fetches_enough_rows_before_unified_slice(client) -> None:
+    response = client.get("/api/admin/material-assets?type=all&offset=3&limit=1")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["type"] == "all"
+    assert body["offset"] == 3
+    assert body["limit"] == 1
+    assert [item["material_asset_id"] for item in body["assets"]] == ["attachment:56"]
+    assert body["total"] == 4
