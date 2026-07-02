@@ -91,6 +91,10 @@ ADMIN_ROUTE_REGISTRY: dict[str, AdminRoute] = {
     "api.admin_console_jobs": AdminRoute("api.admin_console_jobs", "/admin/jobs"),
     "api.admin_data_health_page": AdminRoute("api.admin_data_health_page", "/admin/data-health"),
     "api.admin_delivery_lineage_page": AdminRoute("api.admin_delivery_lineage_page", "/admin/delivery-lineage"),
+    "api.admin_growth_orchestration_page": AdminRoute(
+        "api.admin_growth_orchestration_page",
+        "/admin/growth-orchestration",
+    ),
     "api.admin_dashboard_shell_context": AdminRoute(
         "api.admin_dashboard_shell_context",
         "/api/admin/dashboard/shell-context",
@@ -121,6 +125,9 @@ def admin_path_for(name: str, **path_params: object) -> str:
         return "/admin/wechat-shop/transactions/" + str(path_params.get("order_id", "")).strip()
     if name == "api.admin_console_questionnaire_detail":
         return "/admin/questionnaires/" + str(path_params.get("questionnaire_id", "")).strip()
+    if name == "api.admin_growth_orchestration_detail_page":
+        program_key = quote(str(path_params.get("program_key", "")).strip(), safe="")
+        return f"/admin/growth-orchestration/{program_key}"
 
     route = ADMIN_ROUTE_REGISTRY.get(name)
     base = route.path if route else "#"
@@ -167,6 +174,7 @@ ADMIN_NAV_GROUPS: list[dict[str, Any]] = [
             {"key": "webhook_inbox", "label": "Webhook Inbox", "endpoint": "api.admin_webhook_inbox_page"},
             {"key": "data_health", "label": "数据健康", "endpoint": "api.admin_data_health_page"},
             {"key": "delivery_lineage", "label": "投递排障", "endpoint": "api.admin_delivery_lineage_page"},
+            {"key": "growth_orchestration", "label": "增长运营", "endpoint": "api.admin_growth_orchestration_page"},
             {"key": "automation_agents", "label": "自动化话术", "endpoint": "api.admin_automation_agents_page"},
             {"key": "owner_migration", "label": "负责人迁移", "endpoint": "api.admin_owner_migration_page"},
             {"key": "config", "label": "配置", "endpoint": "api.admin_config"},
