@@ -35,6 +35,7 @@ from .customer_tags.admin_pages import router as customer_tags_admin_pages_route
 from .customer_tags.api import read_router as customer_tags_read_router
 from .customer_tags.api import router as customer_tags_router
 from .customer_tags.api import write_router as customer_tags_write_router
+from .data_health.api import router as data_health_router
 from .hxc_dashboard.api import router as hxc_dashboard_router
 from .identity_contact.admin_pages import router as identity_admin_pages_router
 from .identity_contact.api import router as identity_router
@@ -78,6 +79,7 @@ ROUTER_SPECS: tuple[RouterSpec, ...] = (
     RouterSpec("platform_foundation", "webhook_inbox", webhook_inbox_router, "webhook inbox metrics and operations APIs"),
     RouterSpec("admin_auth", "admin_auth", admin_auth_router, "admin auth APIs"),
     RouterSpec("admin_shell", "admin_shell", admin_shell_router, "admin shell pages"),
+    RouterSpec("data_health", "data_health", data_health_router, "data health check APIs"),
     RouterSpec("admin_config", "admin_config", admin_config_router, "admin config pages and APIs"),
     RouterSpec("class_user_management", "class_user_management", class_user_management_router),
     RouterSpec("platform_foundation", "common_operation_members", common_operation_members_router),
