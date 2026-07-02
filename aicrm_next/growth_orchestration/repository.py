@@ -7,24 +7,33 @@ from sqlalchemy import text
 
 from aicrm_next.shared.db_session import get_session_factory
 
-from .dto import GrowthProgram
+from .dto import GrowthMember, GrowthProgram
 
 
 class GrowthProgramRepository(Protocol):
     def list_programs(self, *, limit: int = 50, offset: int = 0) -> list[GrowthProgram]: ...
+
+    def list_members(self, *, limit: int = 50, offset: int = 0) -> list[GrowthMember]: ...
 
 
 class EmptyGrowthProgramRepository:
     def list_programs(self, *, limit: int = 50, offset: int = 0) -> list[GrowthProgram]:
         return []
 
+    def list_members(self, *, limit: int = 50, offset: int = 0) -> list[GrowthMember]:
+        return []
+
 
 class InMemoryGrowthProgramRepository(EmptyGrowthProgramRepository):
-    def __init__(self, items: list[GrowthProgram]) -> None:
+    def __init__(self, items: list[GrowthProgram], members: list[GrowthMember] | None = None) -> None:
         self._items = list(items)
+        self._members = list(members or [])
 
     def list_programs(self, *, limit: int = 50, offset: int = 0) -> list[GrowthProgram]:
         return self._items[offset : offset + limit]
+
+    def list_members(self, *, limit: int = 50, offset: int = 0) -> list[GrowthMember]:
+        return self._members[offset : offset + limit]
 
 
 class PostgresGrowthProgramRepository:
@@ -35,6 +44,11 @@ class PostgresGrowthProgramRepository:
         with self._session_factory() as session:
             rows = session.execute(text(GROWTH_PROGRAMS_SQL), {"limit": int(limit), "offset": int(offset)}).mappings().all()
         return [GrowthProgram(**dict(row)) for row in rows]
+
+    def list_members(self, *, limit: int = 50, offset: int = 0) -> list[GrowthMember]:
+        with self._session_factory() as session:
+            rows = session.execute(text(GROWTH_MEMBERS_SQL), {"limit": int(limit), "offset": int(offset)}).mappings().all()
+        return [GrowthMember(**dict(row)) for row in rows]
 
 
 def build_growth_program_repository() -> GrowthProgramRepository:
@@ -169,5 +183,55 @@ programs AS (
 SELECT *
 FROM programs
 ORDER BY last_activity_at DESC NULLS LAST, program_key ASC
+LIMIT :limit OFFSET :offset
+"""
+
+
+GROWTH_MEMBERS_SQL = """
+WITH members AS (
+    SELECT
+        'campaign:' || c.campaign_code AS program_key,
+        cm.unionid AS unionid,
+        'step:' || cm.current_step_index::text AS current_stage,
+        COALESCE(cm.status, '') AS status,
+        COALESCE(c.owner_userid, '') AS owner_userid,
+        COALESCE(cm.last_step_sent_at, cm.updated_at, cm.created_at) AS last_touch_at,
+        cm.next_due_at AS next_task_at,
+        'campaign_members' AS source_table,
+        cm.id::text AS source_id
+    FROM campaign_members cm
+    JOIN campaigns c ON c.id = cm.campaign_id
+    WHERE COALESCE(cm.unionid, '') <> ''
+    UNION ALL
+    SELECT
+        'cloud_plan:' || r.plan_id AS program_key,
+        r.unionid AS unionid,
+        COALESCE(r.approval_status, '') AS current_stage,
+        COALESCE(r.send_status, '') AS status,
+        COALESCE(r.owner_userid, '') AS owner_userid,
+        COALESCE(r.updated_at, r.created_at) AS last_touch_at,
+        NULL::timestamptz AS next_task_at,
+        'cloud_broadcast_plan_recipients' AS source_table,
+        r.id::text AS source_id
+    FROM cloud_broadcast_plan_recipients r
+    WHERE COALESCE(r.unionid, '') <> ''
+    UNION ALL
+    SELECT
+        'ai_audience_package:' || p.package_key AS program_key,
+        m.unionid AS unionid,
+        COALESCE(m.event_source_key, '') AS current_stage,
+        COALESCE(m.status, '') AS status,
+        COALESCE(m.owner_userid, '') AS owner_userid,
+        COALESCE(m.last_seen_at, m.last_updated_at, m.updated_at, m.created_at) AS last_touch_at,
+        NULL::timestamptz AS next_task_at,
+        'ai_audience_member_current' AS source_table,
+        m.id::text AS source_id
+    FROM ai_audience_member_current m
+    JOIN ai_audience_package p ON p.id = m.package_id
+    WHERE COALESCE(m.unionid, '') <> ''
+)
+SELECT *
+FROM members
+ORDER BY last_touch_at DESC NULLS LAST, program_key ASC, unionid ASC
 LIMIT :limit OFFSET :offset
 """
