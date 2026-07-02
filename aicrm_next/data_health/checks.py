@@ -211,6 +211,37 @@ def _payment_order_without_user_guard() -> DataHealthCheckResult:
     )
 
 
+def _customer_360_freshness_guard() -> DataHealthCheckResult:
+    return DataHealthCheckResult(
+        check_id="customer_360_freshness_guard",
+        title="Customer 360 freshness guard",
+        status="not_applicable",
+        severity="gray",
+        summary="Customer 360 freshness probes are registered but no production-safe database reader is attached in this PR.",
+        evidence={
+            "freshness_probes": [
+                "latest_identity_update",
+                "latest_order",
+                "latest_questionnaire",
+                "latest_message",
+                "latest_projection_refresh",
+            ],
+            "source_tables": [
+                "crm_user_identity",
+                "wechat_pay_orders",
+                "alipay_pay_orders",
+                "wechat_shop_orders",
+                "questionnaire_submissions",
+                "archived_messages",
+                "customer_list_index_next",
+                "customer_detail_snapshot_next",
+            ],
+            "runtime_probe": "not_configured",
+        },
+        remediation="Attach a production-safe read repository that computes max freshness timestamps by unionid before turning this into a red/yellow operational check.",
+    )
+
+
 _CHECKS: tuple[Callable[[], DataHealthCheckResult], ...] = (
     _identity_legacy_column_guard,
     _table_lifecycle_manifest_guard,
@@ -223,4 +254,5 @@ _CHECKS: tuple[Callable[[], DataHealthCheckResult], ...] = (
     _external_effect_failed_retryable_backlog,
     _questionnaire_submission_without_user_guard,
     _payment_order_without_user_guard,
+    _customer_360_freshness_guard,
 )
