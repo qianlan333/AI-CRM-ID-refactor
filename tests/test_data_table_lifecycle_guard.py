@@ -28,6 +28,17 @@ INITIAL_PR10_TABLES = {
     "marketing_automation_question_rules",
     "marketing_automation_configs",
 }
+EVENT_EFFECT_TABLES = {
+    "domain_event_outbox",
+    "external_push_delivery",
+    "outbound_webhook_deliveries",
+    "outbound_event_outbox",
+    "internal_event",
+    "internal_event_consumer_run",
+    "internal_event_consumer_attempt",
+    "external_effect_job",
+    "external_effect_attempt",
+}
 
 OWNED_LIFECYCLES = {"canonical", "read_model", "event", "queue", "config"}
 
@@ -86,7 +97,7 @@ def _migration_prefix(path: Path) -> int | None:
 
 def test_lifecycle_manifest_registers_pr10_scope() -> None:
     tables = _table_entries()
-    missing = INITIAL_PR10_TABLES - set(tables)
+    missing = (INITIAL_PR10_TABLES | EVENT_EFFECT_TABLES) - set(tables)
     assert missing == set()
 
     for table_name, entry in tables.items():
