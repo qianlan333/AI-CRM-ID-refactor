@@ -6,6 +6,8 @@ from fastapi import APIRouter, Request
 from fastapi.responses import RedirectResponse
 from fastapi.templating import Jinja2Templates
 
+from aicrm_next.data_health.application import data_health_summary
+
 from .navigation import admin_path_for, shell_context
 from .view_model import AdminShellApiClient
 
@@ -80,6 +82,35 @@ def admin_p1_group_ops_workspace(request: Request):
     return templates.TemplateResponse(request, "admin_shell/p1_group_ops_workspace.html", context)
 
 
+@router.get("/admin/data-health", name="api.admin_data_health_page")
+def admin_data_health_page(request: Request):
+    summary = data_health_summary()
+    context = shell_context(
+        request=request,
+        page_title="数据健康",
+        page_summary="查看 identity、schema drift、队列和事实归属检查的当前状态。",
+        active_endpoint="api.admin_data_health_page",
+    )
+    context.update(
+        {
+            "breadcrumbs": [
+                {"label": "客户管理后台", "href": admin_path_for("api.admin_console_dashboard")},
+                {"label": "数据健康", "href": ""},
+            ],
+            "page_actions": [
+                {
+                    "label": "查看 API",
+                    "href": "/api/admin/data-health/summary",
+                    "variant": "secondary",
+                },
+            ],
+            "health_summary": summary,
+            "health_cards": _data_health_cards(summary),
+        }
+    )
+    return templates.TemplateResponse(request, "admin_shell/data_health.html", context)
+
+
 @router.get("/api/admin/dashboard/shell-context", name="api.admin_dashboard_shell_context")
 def admin_dashboard_shell_context() -> dict:
     return AdminShellApiClient().shell_context_payload()
@@ -88,3 +119,37 @@ def admin_dashboard_shell_context() -> dict:
 @router.get("/admin/logout", name="api.admin_logout_compat")
 def admin_logout_compat() -> RedirectResponse:
     return RedirectResponse(admin_path_for("api.admin_logout"), status_code=302)
+
+
+def _data_health_cards(summary: dict) -> list[dict[str, str]]:
+    counts = summary.get("counts") or {}
+    fail_count = int(counts.get("fail") or 0)
+    warn_count = int(counts.get("warn") or 0)
+    ok_count = int(counts.get("ok") or 0)
+    pending_count = int(counts.get("not_applicable") or 0)
+    return [
+        {
+            "label": "红色",
+            "value": str(fail_count),
+            "description": "schema drift、runtime reference、orphan facts 等阻断项。",
+            "tone": "danger" if fail_count else "ok",
+        },
+        {
+            "label": "黄色",
+            "value": str(warn_count),
+            "description": "队列积压、投影延迟、缺 owner 等需关注项。",
+            "tone": "warn" if warn_count else "ok",
+        },
+        {
+            "label": "绿色",
+            "value": str(ok_count),
+            "description": "当前证据已经通过的治理检查。",
+            "tone": "ok",
+        },
+        {
+            "label": "待接入",
+            "value": str(pending_count),
+            "description": "未配置 DB 探针或仍待接生产安全读仓库的检查。",
+            "tone": "neutral" if pending_count else "ok",
+        },
+    ]

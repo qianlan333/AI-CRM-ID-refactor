@@ -15,11 +15,16 @@ def _client(monkeypatch) -> TestClient:
 
 
 def _route_owner(client: TestClient, path: str, method: str = "GET") -> str:
-    scope = {"type": "http", "path": path, "method": method}
+    scope = {"type": "http", "path": path, "method": method, "root_path": "", "query_string": b""}
     for route in client.app.routes:
         match, _ = route.matches(scope)
         if match is Match.FULL:
             endpoint = getattr(route, "endpoint", None)
+            if endpoint is None:
+                for candidate in getattr(route, "_effective_candidates", ()):
+                    if getattr(candidate, "path", "") == path:
+                        endpoint = getattr(candidate, "endpoint", None)
+                        break
             return getattr(endpoint, "__module__", "")
     return ""
 
@@ -28,6 +33,7 @@ def test_admin_shell_family_routes_resolve_to_native_module(monkeypatch) -> None
     client = _client(monkeypatch)
 
     assert _route_owner(client, "/admin") == "aicrm_next.admin_shell.routes"
+    assert _route_owner(client, "/admin/data-health") == "aicrm_next.admin_shell.routes"
     assert _route_owner(client, "/api/admin/dashboard/shell-context") == "aicrm_next.admin_shell.routes"
     assert _route_owner(client, "/admin/logout") == "aicrm_next.admin_shell.routes"
 
@@ -43,6 +49,8 @@ def test_admin_dashboard_page_uses_native_shell_template(monkeypatch) -> None:
     assert "Frontend parity" in html
     assert "后台 shell 已切换为分组导航与生产数据入口。" in html
     assert 'data-shell-context-url="/api/admin/dashboard/shell-context"' in html
+    assert 'href="/admin/data-health"' in html
+    assert "数据健康" in html
     assert 'href="/admin/automation-conversion"' in html
     assert 'href="/admin/customers"' in html
 
@@ -66,6 +74,23 @@ def test_admin_shell_context_api_exposes_native_states(monkeypatch) -> None:
         for group in payload["nav_groups"]
         for item in group["items"]
     )
+    assert any(
+        item["href"] == "/admin/data-health"
+        for group in payload["nav_groups"]
+        for item in group["items"]
+    )
+
+
+def test_admin_data_health_page_renders_summary_cards(monkeypatch) -> None:
+    response = _client(monkeypatch).get("/admin/data-health")
+    html = response.text
+
+    assert response.status_code == 200
+    assert "X-AICRM-Compatibility-Facade" not in response.headers
+    assert "健康概况" in html
+    assert "schema_drift_guard" in html
+    assert "待接入" in html
+    assert 'href="/api/admin/data-health/summary"' in html
 
 
 def test_admin_logout_legacy_url_redirects_to_canonical_logout(monkeypatch) -> None:

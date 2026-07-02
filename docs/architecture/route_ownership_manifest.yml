@@ -6803,6 +6803,17 @@ routes:
   data_source: read_model
   requires_auth: true
   rollback: previous_release
+- path: /admin/data-health
+  methods:
+  - GET
+  route_name: api.admin_data_health_page
+  capability_owner: data_health
+  runtime_owner: ai_crm_next
+  layer: admin_page
+  external_effects: none
+  data_source: read_model
+  requires_auth: true
+  rollback: previous_release
 - path: /admin/jobs
   methods:
   - GET
