@@ -31,8 +31,11 @@ Registered runtime data probes:
 - `external_effect_failed_retryable_backlog`
 - `questionnaire_submission_without_user_guard`
 - `payment_order_without_user_guard`
+- `customer_360_freshness_guard`
 
 The runtime probes are intentionally `not_applicable` in PR #19 until a production-safe read repository is attached. `schema_drift_guard` is also `not_applicable` when `DATABASE_URL` is absent; when a migrated database is available it compares `information_schema.columns` with the lifecycle manifest and fails on missing declared physical tables, unregistered live tables, retired physical tables, missing canonical owners, missing PII levels, or missing queue status enum metadata.
+
+`customer_360_freshness_guard` registers Phase 4 freshness probes for `latest_identity_update`, `latest_order`, `latest_questionnaire`, `latest_message`, and `latest_projection_refresh`. Until a read-only production repository is attached, it reports only probe metadata and table names; it must not expose raw identity values or payloads.
 
 ## Status Semantics
 

@@ -37,10 +37,34 @@ def test_data_health_summary_exposes_registered_checks(client) -> None:
         "external_effect_failed_retryable_backlog",
         "questionnaire_submission_without_user_guard",
         "payment_order_without_user_guard",
+        "customer_360_freshness_guard",
     } <= check_ids
     assert body["counts"]["fail"] == 0
     assert body["counts"]["ok"] >= 3
     assert body["counts"]["not_applicable"] >= 1
+
+
+def test_customer_360_freshness_guard_registers_phase4_probes(client) -> None:
+    response = client.get("/api/admin/data-health/checks/customer_360_freshness_guard")
+    payload = response.json()
+
+    assert response.status_code == 200
+    assert payload["ok"] is True
+    check = payload["check"]
+    assert check["status"] == "not_applicable"
+    assert check["evidence"]["freshness_probes"] == [
+        "latest_identity_update",
+        "latest_order",
+        "latest_questionnaire",
+        "latest_message",
+        "latest_projection_refresh",
+    ]
+    assert set(check["evidence"]["source_tables"]) >= {
+        "crm_user_identity",
+        "questionnaire_submissions",
+        "archived_messages",
+        "customer_detail_snapshot_next",
+    }
 
 
 def test_data_health_checks_do_not_expose_raw_identity_values(client) -> None:
