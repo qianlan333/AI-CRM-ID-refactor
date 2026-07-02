@@ -332,6 +332,17 @@ def test_automation_runtime_v2_tables_are_unionid_only() -> None:
     assert "uq_automation_membership_v2_program_external" not in source
 
 
+def test_retired_automation_member_table_is_physically_removed() -> None:
+    source = _read("migrations/versions/0070_retire_automation_member_table.py")
+    sidebar_source = _read("aicrm_next/customer_read_model/sidebar_v2.py")
+
+    assert '"automation_member"' in source
+    assert '"automation_member_interaction_stats"' in source
+    assert "DROP VIEW IF EXISTS {view_name}" in source
+    assert "DROP TABLE IF EXISTS {table_name} CASCADE" in source
+    assert "FROM automation_member" not in sidebar_source
+
+
 def test_alipay_orders_are_unionid_only_customer_identity() -> None:
     source = _read("migrations/versions/0014_alipay_pay.py")
     cleanup_source = _read("migrations/versions/0063_unionid_business_table_foundation.py")
