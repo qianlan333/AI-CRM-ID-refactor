@@ -138,11 +138,16 @@ class SidebarV2SqlRepository:
         row = self._one(
             """
             SELECT COALESCE(NULLIF(l.link_name, ''), NULLIF(c.channel_name, ''), NULLIF(l.initial_audience_code, ''), NULLIF(c.channel_code, '')) AS title
-            FROM automation_member m
-            LEFT JOIN automation_channel c ON c.id = m.source_channel_id
+            FROM crm_user_identity identity
+            JOIN automation_channel_contact channel_contact ON channel_contact.unionid = identity.unionid
+            LEFT JOIN automation_channel c ON c.id = channel_contact.channel_id
             LEFT JOIN wecom_customer_acquisition_links l ON l.automation_channel_id = c.id
-            WHERE m.external_contact_id = :external_userid
-            ORDER BY m.updated_at DESC, m.id DESC, l.updated_at DESC, l.id DESC
+            WHERE (
+                identity.primary_external_userid = :external_userid
+                OR jsonb_exists(identity.external_userids_json, :external_userid)
+            )
+              AND COALESCE(identity.unionid, '') <> ''
+            ORDER BY channel_contact.updated_at DESC, channel_contact.id DESC, l.updated_at DESC, l.id DESC
             LIMIT 1
             """,
             {"external_userid": external_userid},
