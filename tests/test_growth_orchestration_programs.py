@@ -2,9 +2,13 @@ from __future__ import annotations
 
 from fastapi.testclient import TestClient
 
-from aicrm_next.growth_orchestration.application import list_growth_programs
-from aicrm_next.growth_orchestration.dto import GrowthProgram
-from aicrm_next.growth_orchestration.repository import GROWTH_PROGRAMS_SQL, InMemoryGrowthProgramRepository
+from aicrm_next.growth_orchestration.application import list_growth_members, list_growth_programs
+from aicrm_next.growth_orchestration.dto import GrowthMember, GrowthProgram
+from aicrm_next.growth_orchestration.repository import (
+    GROWTH_MEMBERS_SQL,
+    GROWTH_PROGRAMS_SQL,
+    InMemoryGrowthProgramRepository,
+)
 from aicrm_next.main import create_app
 
 
@@ -17,11 +21,16 @@ def _client(monkeypatch) -> TestClient:
 
 
 def test_growth_orchestration_programs_api_returns_empty_without_database(monkeypatch) -> None:
-    response = _client(monkeypatch).get("/api/admin/growth-orchestration/programs")
+    client = _client(monkeypatch)
+    response = client.get("/api/admin/growth-orchestration/programs")
 
     assert response.status_code == 200
     assert response.headers["X-AICRM-Route-Owner"] == "ai_crm_next"
     assert response.json() == {"ok": True, "items": [], "limit": 50, "offset": 0}
+
+    members = client.get("/api/admin/growth-orchestration/members")
+    assert members.status_code == 200
+    assert members.json() == {"ok": True, "items": [], "limit": 50, "offset": 0}
 
 
 def test_growth_orchestration_programs_application_lists_all_active_program_types() -> None:
@@ -91,6 +100,50 @@ def test_growth_orchestration_programs_application_lists_all_active_program_type
     }
 
 
+def test_growth_orchestration_members_application_is_unionid_only() -> None:
+    repo = InMemoryGrowthProgramRepository(
+        items=[],
+        members=[
+            GrowthMember(
+                program_key="campaign:c-1",
+                unionid="union-1",
+                current_stage="step:1",
+                status="pending",
+                owner_userid="owner-1",
+                source_table="campaign_members",
+                source_id="1",
+            ),
+            GrowthMember(
+                program_key="cloud_plan:p-1",
+                unionid="union-2",
+                current_stage="approved",
+                status="queued",
+                owner_userid="owner-2",
+                source_table="cloud_broadcast_plan_recipients",
+                source_id="2",
+            ),
+            GrowthMember(
+                program_key="ai_audience_package:pkg",
+                unionid="union-3",
+                current_stage="refresh",
+                status="active",
+                owner_userid="owner-3",
+                source_table="ai_audience_member_current",
+                source_id="3",
+            ),
+        ],
+    )
+
+    payload = list_growth_members(repo=repo)
+
+    assert [item["unionid"] for item in payload["items"]] == ["union-1", "union-2", "union-3"]
+    assert {item["source_table"] for item in payload["items"]} == {
+        "campaign_members",
+        "cloud_broadcast_plan_recipients",
+        "ai_audience_member_current",
+    }
+
+
 def test_growth_orchestration_program_sql_uses_only_active_unionid_safe_sources() -> None:
     assert "automation_workflow" not in GROWTH_PROGRAMS_SQL
     assert "automation_program" not in GROWTH_PROGRAMS_SQL
@@ -99,3 +152,7 @@ def test_growth_orchestration_program_sql_uses_only_active_unionid_safe_sources(
     assert "external_userid" not in GROWTH_PROGRAMS_SQL
     assert "cloud_broadcast_plans" in GROWTH_PROGRAMS_SQL
     assert "campaigns" in GROWTH_PROGRAMS_SQL
+    assert "external_user_id" not in GROWTH_MEMBERS_SQL
+    assert "external_userid" not in GROWTH_MEMBERS_SQL
+    assert "automation_group_ops_plan_member" not in GROWTH_MEMBERS_SQL
+    assert "automation_membership_v2" not in GROWTH_MEMBERS_SQL

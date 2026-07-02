@@ -24,3 +24,22 @@ class GrowthProgramList(BaseModel):
     items: list[GrowthProgram] = Field(default_factory=list)
     limit: int = 50
     offset: int = 0
+
+
+class GrowthMember(BaseModel):
+    program_key: str
+    unionid: str
+    current_stage: str = ""
+    status: str = ""
+    owner_userid: str = ""
+    last_touch_at: datetime | None = None
+    next_task_at: datetime | None = None
+    source_table: str
+    source_id: str
+
+
+class GrowthMemberList(BaseModel):
+    ok: bool = True
+    items: list[GrowthMember] = Field(default_factory=list)
+    limit: int = 50
+    offset: int = 0
