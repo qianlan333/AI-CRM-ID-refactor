@@ -80,6 +80,12 @@ LEGACY_AUTOMATION_PROGRAM_TABLES = {
     "automation_event",
     "automation_program",
 }
+MATERIAL_LIBRARY_TABLES = {
+    "image_library",
+    "image_library_variants",
+    "miniprogram_library",
+    "attachment_library",
+}
 OWNED_LIFECYCLES = {"canonical", "read_model", "event", "queue", "config"}
 
 
@@ -111,6 +117,7 @@ def check_data_table_lifecycle(root: Path = ROOT, manifest_path: Path = DEFAULT_
         | EVENT_EFFECT_TABLES
         | CAMPAIGN_AUTOMATION_BOUNDARY_TABLES
         | LEGACY_AUTOMATION_PROGRAM_TABLES
+        | MATERIAL_LIBRARY_TABLES
     )
     missing_initial = sorted(required_tables - set(tables))
     if missing_initial:
