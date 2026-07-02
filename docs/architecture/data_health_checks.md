@@ -73,6 +73,16 @@ Admin dashboard:
 The dashboard groups rules by operator domain and displays rule severity,
 threshold, source table metadata, and remediation text from the registry.
 
+Scheduled snapshot entrypoint:
+
+- `scripts/run_data_quality_snapshot.py`
+- `aicrm_next.background_jobs.data_quality_snapshot.run_scheduled_data_quality_snapshot`
+
+The scheduled entrypoint currently generates a registry snapshot payload for
+cron/systemd orchestration. It reports `database_probe_executed=false` and
+`persistence_status=not_configured`; a later PR must attach production-safe
+read probes and persistence before it can become a historical DQ snapshot table.
+
 Groups and registered rule counts:
 
 - `identity`: 5 checks covering pending identity queues, conflicts, duplicate
