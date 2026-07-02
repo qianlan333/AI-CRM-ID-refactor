@@ -13,6 +13,12 @@ from aicrm_next.delivery_lineage.application import (
     list_delivery_lineage_by_trace,
     list_delivery_lineage_by_unionid,
 )
+from aicrm_next.growth_orchestration.application import (
+    list_growth_members,
+    list_growth_programs,
+    list_growth_tasks,
+    list_growth_touchpoints,
+)
 
 from .navigation import admin_path_for, shell_context
 from .view_model import AdminShellApiClient
@@ -148,6 +154,69 @@ def admin_delivery_lineage_page(request: Request):
     return templates.TemplateResponse(request, "admin_shell/delivery_lineage.html", context)
 
 
+@router.get("/admin/growth-orchestration", name="api.admin_growth_orchestration_page")
+def admin_growth_orchestration_page(request: Request):
+    payload = _growth_orchestration_payload()
+    context = shell_context(
+        request=request,
+        page_title="增长运营",
+        page_summary="统一查看 program、成员、任务和触达 read model；页面只读，不执行外部动作。",
+        active_endpoint="api.admin_growth_orchestration_page",
+    )
+    context.update(
+        {
+            "breadcrumbs": [
+                {"label": "客户管理后台", "href": admin_path_for("api.admin_console_dashboard")},
+                {"label": "增长运营", "href": ""},
+            ],
+            "page_actions": [
+                {
+                    "label": "Programs API",
+                    "href": "/api/admin/growth-orchestration/programs",
+                    "variant": "secondary",
+                },
+                {
+                    "label": "Tasks API",
+                    "href": "/api/admin/growth-orchestration/tasks",
+                    "variant": "secondary",
+                },
+            ],
+            **payload,
+        }
+    )
+    return templates.TemplateResponse(request, "admin_shell/growth_orchestration.html", context)
+
+
+@router.get("/admin/growth-orchestration/{program_key:path}", name="api.admin_growth_orchestration_detail_page")
+def admin_growth_orchestration_detail_page(request: Request, program_key: str):
+    payload = _growth_orchestration_payload(program_key=program_key)
+    context = shell_context(
+        request=request,
+        page_title="增长运营详情",
+        page_summary=f"查看 {program_key} 的成员、任务和触达 read model。",
+        active_endpoint="api.admin_growth_orchestration_page",
+    )
+    context.update(
+        {
+            "breadcrumbs": [
+                {"label": "客户管理后台", "href": admin_path_for("api.admin_console_dashboard")},
+                {"label": "增长运营", "href": admin_path_for("api.admin_growth_orchestration_page")},
+                {"label": program_key, "href": ""},
+            ],
+            "page_actions": [
+                {
+                    "label": "返回列表",
+                    "href": admin_path_for("api.admin_growth_orchestration_page"),
+                    "variant": "secondary",
+                },
+            ],
+            "selected_program_key": program_key,
+            **payload,
+        }
+    )
+    return templates.TemplateResponse(request, "admin_shell/growth_orchestration.html", context)
+
+
 @router.get("/api/admin/dashboard/shell-context", name="api.admin_dashboard_shell_context")
 def admin_dashboard_shell_context() -> dict:
     return AdminShellApiClient().shell_context_payload()
@@ -212,3 +281,28 @@ def _delivery_lineage_payload(filters: dict[str, str]) -> dict:
     if filters["trace_id"]:
         return list_delivery_lineage_by_trace(filters["trace_id"])
     return list_delivery_lineage()
+
+
+def _growth_orchestration_payload(*, program_key: str = "") -> dict:
+    programs = list_growth_programs(limit=50).get("items") or []
+    members = list_growth_members(limit=50).get("items") or []
+    tasks = list_growth_tasks(limit=50).get("items") or []
+    touchpoints = list_growth_touchpoints(limit=50).get("items") or []
+    if program_key:
+        programs = [item for item in programs if item.get("program_key") == program_key]
+        members = [item for item in members if item.get("program_key") == program_key]
+        tasks = [item for item in tasks if item.get("program_key") == program_key]
+        touchpoints = [item for item in touchpoints if item.get("program_key") == program_key]
+    return {
+        "selected_program_key": program_key,
+        "growth_programs": programs,
+        "growth_members": members,
+        "growth_tasks": tasks,
+        "growth_touchpoints": touchpoints,
+        "growth_summary_cards": [
+            {"label": "Programs", "value": str(len(programs)), "description": "统一运营项目数量。"},
+            {"label": "Members", "value": str(len(members)), "description": "按 unionid 关联的成员记录。"},
+            {"label": "Tasks", "value": str(len(tasks)), "description": "执行任务 read model。"},
+            {"label": "Touchpoints", "value": str(len(touchpoints)), "description": "触达记录 read model。"},
+        ],
+    }

@@ -43,6 +43,12 @@ class AdminShellApiClient:
                 "description": "按 unionid、trace 或任务 ID 查询投递链路。",
                 "href": admin_path_for("api.admin_delivery_lineage_page"),
             },
+            {
+                "label": "增长运营",
+                "value": "read model",
+                "description": "统一查看 program、成员、任务和触达 read model。",
+                "href": admin_path_for("api.admin_growth_orchestration_page"),
+            },
         ]
 
     def shell_context_payload(self) -> dict[str, Any]:
