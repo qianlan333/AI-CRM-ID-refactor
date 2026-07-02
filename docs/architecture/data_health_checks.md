@@ -97,6 +97,13 @@ scripts, tools, and guarded migrations. It blocks:
 
 The guard is part of `scripts/ci/run_architecture_gates.sh`.
 
+`docs/architecture/repository_ownership.yml` declares repository capability
+owners plus reviewed `table_reads` and `table_writes`. The companion
+`tools/check_repository_ownership.py` guard requires every repository file to
+appear in the registry, blocks declared reads of retired tables, and verifies
+declared writes against lifecycle manifest write owners for tables already under
+manifest governance.
+
 Groups and registered rule counts:
 
 - `identity`: 5 checks covering pending identity queues, conflicts, duplicate
