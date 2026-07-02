@@ -30,6 +30,15 @@ def _load_automation_member_retirement_migration():
     return module
 
 
+def _load_conversion_trace_retirement_migration():
+    path = PROJECT_ROOT / "migrations" / "versions" / "0071_retire_conversion_trace_tables.py"
+    spec = importlib.util.spec_from_file_location("retire_conversion_trace_tables_0071", path)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
 def test_retired_automation_precheck_scope_keeps_agent_and_channel_tables_out_of_drop_candidates():
     drop_tables = set(precheck.DROP_CANDIDATES)
     preserve_tables = set(precheck.PRESERVE_SAMPLES)
@@ -40,6 +49,8 @@ def test_retired_automation_precheck_scope_keeps_agent_and_channel_tables_out_of
     assert "automation_program_channel_binding" in drop_tables
     assert "automation_program" in drop_tables
     assert "automation_member" in drop_tables
+    assert "automation_execution_trace" in drop_tables
+    assert "conversion_dispatch_log" in drop_tables
 
     assert "automation_channel_contact" in preserve_tables
     assert "automation_channel_qrcode_asset" in preserve_tables
@@ -54,7 +65,8 @@ def test_retired_automation_precheck_scope_keeps_agent_and_channel_tables_out_of
 def test_retired_automation_drop_migration_matches_precheck_scope():
     migration = _load_retirement_migration()
     member_migration = _load_automation_member_retirement_migration()
-    drop_tables = set(migration.DROP_TABLES) | set(member_migration.DROP_TABLES)
+    trace_migration = _load_conversion_trace_retirement_migration()
+    drop_tables = set(migration.DROP_TABLES) | set(member_migration.DROP_TABLES) | set(trace_migration.DROP_TABLES)
 
     assert set(precheck.DROP_CANDIDATES) <= drop_tables
     assert not (drop_tables & set(precheck.PRESERVE_SAMPLES))
@@ -62,6 +74,7 @@ def test_retired_automation_drop_migration_matches_precheck_scope():
     assert "automation_channel_contact" not in drop_tables
     assert "ai_audience_package" not in drop_tables
     assert "automation_member_interaction_stats" in set(member_migration.DROP_VIEWS)
+    assert "idx_conversion_dispatch_log_external_dispatched" in set(trace_migration.DROP_INDEXES)
 
 
 def test_temporal_detection_keeps_text_time_like_columns_out_of_recent_predicate():
