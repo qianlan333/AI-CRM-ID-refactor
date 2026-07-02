@@ -26,6 +26,17 @@ INITIAL_PR10_TABLES = {
     "marketing_automation_question_rules",
     "marketing_automation_configs",
 }
+EVENT_EFFECT_TABLES = {
+    "domain_event_outbox",
+    "external_push_delivery",
+    "outbound_webhook_deliveries",
+    "outbound_event_outbox",
+    "internal_event",
+    "internal_event_consumer_run",
+    "internal_event_consumer_attempt",
+    "external_effect_job",
+    "external_effect_attempt",
+}
 OWNED_LIFECYCLES = {"canonical", "read_model", "event", "queue", "config"}
 
 
@@ -52,7 +63,7 @@ def check_data_table_lifecycle(root: Path = ROOT, manifest_path: Path = DEFAULT_
     tables = manifest["tables"]
     violations: list[str] = []
 
-    missing_initial = sorted(INITIAL_PR10_TABLES - set(tables))
+    missing_initial = sorted((INITIAL_PR10_TABLES | EVENT_EFFECT_TABLES) - set(tables))
     if missing_initial:
         violations.append(f"missing PR #10 lifecycle table registrations: {missing_initial}")
 

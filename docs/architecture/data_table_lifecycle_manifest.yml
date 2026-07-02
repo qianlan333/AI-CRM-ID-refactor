@@ -205,3 +205,167 @@ tables:
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
     notes: Still actively read/written by admin config code.
+
+  domain_event_outbox:
+    domain: commerce_events
+    lifecycle: event
+    write_owner: aicrm_next.commerce.external_push_outbox
+    read_owners:
+      - aicrm_next.commerce.external_push_admin
+    replacement: internal_event or external_effect_job after event/outbox convergence is designed
+    drop_candidate: true
+    drop_after: "after PR #13 lineage proves commerce outbox is fully represented by internal_event/external_effect"
+    runtime_entrypoints:
+      - product external push outbox
+      - external push admin diagnostics
+    migration_source: 0023_product_external_push
+    guard_tests:
+      - tests/test_data_table_lifecycle_guard.py
+      - tests/test_event_effect_table_lineage.py
+    notes: Business event outbox for commerce external push; not an external side-effect executor.
+
+  external_push_delivery:
+    domain: commerce_events
+    lifecycle: legacy_boundary
+    write_owner: aicrm_next.commerce.external_push_admin
+    read_owners:
+      - aicrm_next.commerce.external_push_admin
+      - external_effect compatibility diagnostics
+    replacement: external_effect_job, external_effect_attempt
+    drop_candidate: true
+    drop_after: "after commerce external push delivery history is projected from external_effect_job/attempt"
+    runtime_entrypoints:
+      - product external push test/retry admin
+      - order delivery retry
+    migration_source: 0023_product_external_push
+    guard_tests:
+      - tests/test_data_table_lifecycle_guard.py
+      - tests/test_event_effect_table_lineage.py
+    notes: Active legacy delivery ledger; future work should converge retries and status to external_effect.
+
+  outbound_webhook_deliveries:
+    domain: outbound_webhook
+    lifecycle: queue
+    write_owner: outbound webhook worker/runtime
+    read_owners:
+      - aicrm_next.admin_jobs.repository
+    replacement: external_effect_job, external_effect_attempt
+    drop_candidate: true
+    drop_after: "after webhook deliveries are represented as external_effect jobs"
+    runtime_entrypoints:
+      - admin jobs webhook deliveries tab
+      - webhook retry/update diagnostics
+    migration_source: pre-Alembic baseline
+    guard_tests:
+      - tests/test_data_table_lifecycle_guard.py
+      - tests/test_event_effect_table_lineage.py
+    notes: Queue-like webhook delivery ledger; overlaps with external_effect but remains active.
+
+  outbound_event_outbox:
+    domain: outbound_webhook
+    lifecycle: event
+    write_owner: legacy outbound event publisher
+    read_owners: []
+    replacement: domain_event_outbox or internal_event after event lineage convergence
+    drop_candidate: true
+    drop_after: "after outbound event producers/readers are audited"
+    runtime_entrypoints: []
+    migration_source: 0002_perf_indexes_and_trace
+    guard_tests:
+      - tests/test_data_table_lifecycle_guard.py
+      - tests/test_event_effect_table_lineage.py
+    notes: Existing outbox table in schema; no PR #13 runtime owner was confirmed.
+
+  internal_event:
+    domain: internal_events
+    lifecycle: event
+    write_owner: aicrm_next.platform_foundation.internal_events.service
+    read_owners:
+      - aicrm_next.platform_foundation.internal_events.worker
+      - internal event admin/reconciliation APIs
+    replacement: none; canonical internal event bus
+    drop_candidate: false
+    drop_after: ""
+    runtime_entrypoints:
+      - internal event publish
+      - internal event worker
+      - internal event admin API
+    migration_source: 0043_internal_event_queue
+    guard_tests:
+      - tests/test_data_table_lifecycle_guard.py
+      - tests/test_event_effect_table_lineage.py
+    notes: Canonical internal event ledger. Handlers must enqueue external_effect_job for real external calls.
+
+  internal_event_consumer_run:
+    domain: internal_events
+    lifecycle: queue
+    write_owner: aicrm_next.platform_foundation.internal_events.worker
+    read_owners:
+      - internal event admin/reconciliation APIs
+    replacement: none; canonical internal consumer queue
+    drop_candidate: false
+    drop_after: ""
+    runtime_entrypoints:
+      - internal event consumer scheduling
+      - internal event worker retry
+    migration_source: 0043_internal_event_queue
+    guard_tests:
+      - tests/test_data_table_lifecycle_guard.py
+      - tests/test_event_effect_table_lineage.py
+    notes: Tracks consumer execution state for internal_event.
+
+  internal_event_consumer_attempt:
+    domain: internal_events
+    lifecycle: audit
+    write_owner: aicrm_next.platform_foundation.internal_events.worker
+    read_owners:
+      - internal event admin/reconciliation APIs
+    replacement: none; canonical internal consumer attempt audit
+    drop_candidate: false
+    drop_after: ""
+    runtime_entrypoints:
+      - internal event worker attempt logging
+    migration_source: 0043_internal_event_queue
+    guard_tests:
+      - tests/test_data_table_lifecycle_guard.py
+      - tests/test_event_effect_table_lineage.py
+    notes: Attempt audit for internal_event_consumer_run.
+
+  external_effect_job:
+    domain: external_effects
+    lifecycle: queue
+    write_owner: aicrm_next.platform_foundation.external_effects.service
+    read_owners:
+      - aicrm_next.platform_foundation.external_effects.worker
+      - push center projection
+      - admin external effect APIs
+    replacement: none; canonical external side-effect queue
+    drop_candidate: false
+    drop_after: ""
+    runtime_entrypoints:
+      - external effect service enqueue
+      - external effect worker
+      - push center reconciliation
+    migration_source: 0039_external_effect_queue
+    guard_tests:
+      - tests/test_data_table_lifecycle_guard.py
+      - tests/test_event_effect_table_lineage.py
+    notes: Canonical queue for real external side effects.
+
+  external_effect_attempt:
+    domain: external_effects
+    lifecycle: audit
+    write_owner: aicrm_next.platform_foundation.external_effects.worker
+    read_owners:
+      - push center projection
+      - admin external effect APIs
+    replacement: none; canonical external side-effect attempt audit
+    drop_candidate: false
+    drop_after: ""
+    runtime_entrypoints:
+      - external effect worker attempt logging
+    migration_source: 0039_external_effect_queue
+    guard_tests:
+      - tests/test_data_table_lifecycle_guard.py
+      - tests/test_event_effect_table_lineage.py
+    notes: Attempt audit for external_effect_job execution.
