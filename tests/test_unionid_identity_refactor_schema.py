@@ -360,6 +360,19 @@ def test_retired_conversion_trace_tables_are_physically_removed() -> None:
     assert "conversion_dispatch_log" not in runtime_sources
 
 
+def test_hxc_snapshot_has_unionid_foundation_without_dropping_external_refresh_field() -> None:
+    source = _read("migrations/versions/0072_hxc_snapshot_unionid_foundation.py")
+    repo_source = _read("aicrm_next/hxc_dashboard/postgres_repo.py")
+
+    assert "ADD COLUMN IF NOT EXISTS unionid TEXT NOT NULL DEFAULT ''" in source
+    assert "idx_hxc_snapshot_unionid" in source
+    assert "jsonb_exists(identity.external_userids_json, snapshot.external_userid)" in source
+    assert "DROP COLUMN IF EXISTS external_userid" not in source
+    assert "s.unionid = ANY(%s)" in repo_source
+    assert "user_ops_do_not_disturb_next" in repo_source
+    assert "FROM user_ops_do_not_disturb dnd" not in repo_source
+
+
 def test_alipay_orders_are_unionid_only_customer_identity() -> None:
     source = _read("migrations/versions/0014_alipay_pay.py")
     cleanup_source = _read("migrations/versions/0063_unionid_business_table_foundation.py")
