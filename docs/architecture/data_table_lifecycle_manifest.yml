@@ -850,6 +850,104 @@ tables:
       - tests/test_campaign_automation_table_boundary.py
     notes: Retired legacy automation program table; keep new work on campaign/group-ops boundaries.
 
+  image_library:
+    domain: media_library
+    lifecycle: canonical
+    write_owner: aicrm_next.media_library.postgres_repo
+    read_owners:
+      - aicrm_next.media_library.postgres_repo
+      - aicrm_next.send_content.postgres_repo
+      - aicrm_next.admin_read_model.projections
+      - aicrm_next.automation_engine.group_ops.material_resolver
+      - aicrm_next.channel_entry.application
+      - aicrm_next.commerce.repo
+    replacement: none; canonical reusable image material table
+    drop_candidate: false
+    drop_after: ""
+    runtime_entrypoints:
+      - image library admin API
+      - material picker
+      - SendContentPackage image resolution
+      - group-ops material resolution
+      - channel welcome material resolution
+      - commerce product page slices
+    migration_source: 0007_image_library
+    guard_tests:
+      - tests/test_data_table_lifecycle_guard.py
+      - tests/test_material_library_table_boundary.py
+    notes: Canonical local image material metadata/payload table; real external storage and WeCom upload remain guarded outside this lifecycle PR.
+
+  image_library_variants:
+    domain: media_library
+    lifecycle: read_model
+    write_owner: aicrm_next.media_library.variants
+    read_owners:
+      - aicrm_next.media_library.postgres_repo
+      - image thumbnail/variant API
+    replacement: image_library
+    drop_candidate: false
+    drop_after: ""
+    runtime_entrypoints:
+      - image thumbnail route
+      - image variant route
+    migration_source: 0017_image_library_variants
+    guard_tests:
+      - tests/test_data_table_lifecycle_guard.py
+      - tests/test_material_library_table_boundary.py
+    notes: Generated thumbnail/preview cache for image_library; not a separate canonical material source.
+
+  miniprogram_library:
+    domain: media_library
+    lifecycle: canonical
+    write_owner: aicrm_next.media_library.postgres_repo
+    read_owners:
+      - aicrm_next.media_library.postgres_repo
+      - aicrm_next.send_content.postgres_repo
+      - aicrm_next.admin_read_model.projections
+      - aicrm_next.automation_engine.group_ops.material_resolver
+      - aicrm_next.channel_entry.application
+      - campaign/group-ops SendContentPackage consumers
+    replacement: none; canonical reusable mini-program material table
+    drop_candidate: false
+    drop_after: ""
+    runtime_entrypoints:
+      - miniprogram library admin API
+      - material picker
+      - SendContentPackage miniprogram resolution
+      - group-ops material resolution
+      - channel welcome material resolution
+    migration_source: 0006_miniprogram_library, 0007_image_library thumb_image_id
+    guard_tests:
+      - tests/test_data_table_lifecycle_guard.py
+      - tests/test_material_library_table_boundary.py
+    notes: Canonical mini-program card material table; thumb_image_id should reference image_library while thumb_media_id remains a WeCom cache.
+
+  attachment_library:
+    domain: media_library
+    lifecycle: canonical
+    write_owner: aicrm_next.media_library.postgres_repo
+    read_owners:
+      - aicrm_next.media_library.postgres_repo
+      - aicrm_next.send_content.postgres_repo
+      - aicrm_next.admin_read_model.projections
+      - aicrm_next.automation_engine.group_ops.material_resolver
+      - aicrm_next.channel_entry.application
+      - campaign/group-ops SendContentPackage consumers
+    replacement: none; canonical reusable attachment material table
+    drop_candidate: false
+    drop_after: ""
+    runtime_entrypoints:
+      - attachment library admin API
+      - material picker
+      - SendContentPackage attachment resolution
+      - group-ops material resolution
+      - channel welcome material resolution
+    migration_source: pre-Alembic baseline
+    guard_tests:
+      - tests/test_data_table_lifecycle_guard.py
+      - tests/test_material_library_table_boundary.py
+    notes: Canonical attachment material table used by media library and send-content picker.
+
   domain_event_outbox:
     domain: commerce_events
     lifecycle: event

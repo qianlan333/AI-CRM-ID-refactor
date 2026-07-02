@@ -82,6 +82,12 @@ LEGACY_AUTOMATION_PROGRAM_TABLES = {
     "automation_event",
     "automation_program",
 }
+MATERIAL_LIBRARY_TABLES = {
+    "image_library",
+    "image_library_variants",
+    "miniprogram_library",
+    "attachment_library",
+}
 
 OWNED_LIFECYCLES = {"canonical", "read_model", "event", "queue", "config"}
 
@@ -145,6 +151,7 @@ def test_lifecycle_manifest_registers_pr10_scope() -> None:
         | EVENT_EFFECT_TABLES
         | CAMPAIGN_AUTOMATION_BOUNDARY_TABLES
         | LEGACY_AUTOMATION_PROGRAM_TABLES
+        | MATERIAL_LIBRARY_TABLES
     )
     missing = required_tables - set(tables)
     assert missing == set()
