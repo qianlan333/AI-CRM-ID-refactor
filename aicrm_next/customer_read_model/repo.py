@@ -1329,13 +1329,19 @@ class LiveSourceCustomerReadRepository:
                 SELECT unionid, primary_external_userid, primary_openid, identity_status
                 FROM crm_user_identity
                 WHERE primary_external_userid = :external_userid
-                   OR CAST(external_userids_json AS TEXT) LIKE :external_userid_like
+                   OR jsonb_exists(external_userids_json, :external_userid)
+                   OR EXISTS (
+                       SELECT 1
+                       FROM jsonb_array_elements(external_userids_json) AS item(value)
+                       WHERE jsonb_typeof(item.value) = 'object'
+                         AND item.value ->> 'external_userid' = :external_userid
+                   )
                 ORDER BY CASE WHEN primary_external_userid = :external_userid THEN 0 ELSE 1 END,
                          updated_at DESC
                 LIMIT 1
                 """
             ),
-            {"external_userid": normalized, "external_userid_like": f"%{normalized}%"},
+            {"external_userid": normalized},
         ).mappings().first()
         return dict(row or {})
 

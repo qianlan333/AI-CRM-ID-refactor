@@ -282,6 +282,33 @@ def _connect():
     return connect_commerce_db()
 
 
+def _identity_lookup_exists_sql(table_alias: str = "o") -> str:
+    return f"""
+        EXISTS (
+            SELECT 1
+            FROM crm_user_identity identity
+            WHERE identity.unionid = {table_alias}.unionid
+              AND (
+                identity.primary_external_userid ILIKE %s
+                OR identity.primary_openid ILIKE %s
+                OR identity.mobile ILIKE %s
+                OR identity.mobile_normalized ILIKE %s
+              )
+        )
+    """
+
+
+def _identity_mobile_exists_sql(table_alias: str = "o") -> str:
+    return f"""
+        EXISTS (
+            SELECT 1
+            FROM crm_user_identity identity
+            WHERE identity.unionid = {table_alias}.unionid
+              AND (identity.mobile ILIKE %s OR identity.mobile_normalized ILIKE %s)
+        )
+    """
+
+
 def _postgres_filter_clause(provider: str, filters: dict[str, Any], params: list[Any]) -> str:
     table_alias = "o"
     where = ["1 = 1"]
@@ -300,15 +327,13 @@ def _postgres_filter_clause(provider: str, filters: dict[str, Any], params: list
             where.append(f"{WECHAT_SHOP_BUYER_MOBILE_SQL} ILIKE %s")
             params.append(f"%{mobile}%")
         else:
-            where.append(f"COALESCE({table_alias}.mobile_snapshot, '') ILIKE %s")
-            params.append(f"%{mobile}%")
+            where.append(_identity_mobile_exists_sql(table_alias))
+            needle = f"%{mobile}%"
+            params.extend([needle, needle])
     unionid = _text(filters.get("unionid"))
     if unionid:
-        if provider == "alipay":
-            where.append("1 = 0")
-        else:
-            where.append(f"COALESCE({table_alias}.unionid, '') ILIKE %s")
-            params.append(f"%{unionid}%")
+        where.append(f"COALESCE({table_alias}.unionid, '') ILIKE %s")
+        params.append(f"%{unionid}%")
     identity = _text(filters.get("identity") or filters.get("external_userid"))
     if identity:
         if provider == "wechat_shop":
@@ -316,13 +341,13 @@ def _postgres_filter_clause(provider: str, filters: dict[str, Any], params: list
             needle = f"%{identity}%"
             params.extend([needle, needle])
         elif provider == "alipay":
-            where.append("(COALESCE(o.identity_snapshot, '') ILIKE %s OR COALESCE(o.buyer_id, '') ILIKE %s OR COALESCE(o.buyer_logon_id, '') ILIKE %s)")
+            where.append(f"(COALESCE(o.unionid, '') ILIKE %s OR COALESCE(o.buyer_logon_id, '') ILIKE %s OR {_identity_lookup_exists_sql('o')})")
             needle = f"%{identity}%"
-            params.extend([needle, needle, needle])
+            params.extend([needle, needle, needle, needle, needle, needle])
         else:
-            where.append("(COALESCE(o.userid_snapshot, '') ILIKE %s OR COALESCE(o.external_userid, '') ILIKE %s OR COALESCE(o.respondent_key, '') ILIKE %s)")
+            where.append(f"(COALESCE(o.unionid, '') ILIKE %s OR {_identity_lookup_exists_sql('o')})")
             needle = f"%{identity}%"
-            params.extend([needle, needle, needle])
+            params.extend([needle, needle, needle, needle, needle])
     transaction = _text(filters.get("transaction_id") or filters.get("platform_transaction_no"))
     if transaction:
         column = "trade_no" if provider == "alipay" else "transaction_id"
@@ -432,7 +457,10 @@ def _postgres_order_select(provider: str) -> str:
     if provider == "alipay":
         return """
             o.id, o.out_trade_no, o.trade_no, o.product_name, o.product_code, o.amount_total, o.currency,
-            o.buyer_id, o.buyer_logon_id, o.mobile_snapshot, o.identity_snapshot, o.status, o.trade_status,
+            '' AS buyer_id, o.buyer_logon_id,
+            COALESCE((SELECT identity.mobile FROM crm_user_identity identity WHERE identity.unionid = o.unionid LIMIT 1), '') AS mobile_snapshot,
+            COALESCE((SELECT identity.primary_external_userid FROM crm_user_identity identity WHERE identity.unionid = o.unionid LIMIT 1), '') AS identity_snapshot,
+            o.unionid, o.status, o.trade_status,
             o.notify_payload_json, o.return_payload_json, o.refunded_amount_total, o.refund_status,
             o.paid_at, o.created_at, o.updated_at, 0 AS active_refund_amount_total
         """
@@ -454,8 +482,11 @@ def _postgres_order_select(provider: str) -> str:
             ) AS active_refund_amount_total
         """.format(buyer_mobile_sql=WECHAT_SHOP_BUYER_MOBILE_SQL, openid_sql=WECHAT_SHOP_OPENID_SQL)
     return f"""
-        o.id, o.out_trade_no, o.transaction_id, o.payer_name_snapshot, o.mobile_snapshot, o.userid_snapshot,
-        o.external_userid, o.unionid, o.respondent_key, o.product_name, o.product_code, o.amount_total, o.currency,
+        o.id, o.out_trade_no, o.transaction_id, o.payer_name_snapshot,
+        COALESCE((SELECT identity.mobile FROM crm_user_identity identity WHERE identity.unionid = o.unionid LIMIT 1), '') AS mobile_snapshot,
+        '' AS userid_snapshot,
+        COALESCE((SELECT identity.primary_external_userid FROM crm_user_identity identity WHERE identity.unionid = o.unionid LIMIT 1), '') AS external_userid,
+        o.unionid, '' AS respondent_key, o.product_name, o.product_code, o.amount_total, o.currency,
         o.status, o.trade_state, o.notify_payload_json, o.refunded_amount_total, o.refund_status, o.paid_at,
         o.created_at, o.updated_at,
         (

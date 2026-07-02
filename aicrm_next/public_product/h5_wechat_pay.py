@@ -520,24 +520,50 @@ def _lead_qr_for_product_code(conn: Any, product_code: str) -> dict[str, Any]:
     return _resolve_lead_channel_qr(conn, channel_id=channel_id)
 
 
-def _paid_order_for_product_identity(conn: Any, *, product: dict[str, Any], identity: dict[str, str]) -> dict[str, Any] | None:
-    product_codes = product_code_filter_values(product.get("product_code"))
-    identity_clauses: list[str] = []
-    params: list[Any] = list(product_codes)
-    openid = _normalized_text(identity.get("openid"))
-    if openid:
-        identity_clauses.append("payer_openid = %s")
-        params.append(openid)
+def _resolve_unionid_for_payment_identity(conn: Any, identity: dict[str, str]) -> str:
     unionid = _normalized_text(identity.get("unionid"))
     if unionid:
-        identity_clauses.append("unionid = %s")
-        params.append(unionid)
+        return unionid
+    clauses: list[str] = []
+    params: list[Any] = []
+    openid = _normalized_text(identity.get("openid"))
+    if openid:
+        clauses.append("(primary_openid = %s OR jsonb_exists(openids_json, %s))")
+        params.extend([openid, openid])
     external_userid = _normalized_text(identity.get("external_userid"))
-    if external_userid and not identity_clauses:
-        identity_clauses.append("external_userid = %s")
-        params.append(external_userid)
-    if not product_codes or not identity_clauses:
+    if external_userid:
+        clauses.append("(primary_external_userid = %s OR jsonb_exists(external_userids_json, %s))")
+        params.extend([external_userid, external_userid])
+    if not clauses:
+        return ""
+    row = conn.execute(
+        f"""
+        SELECT unionid
+        FROM crm_user_identity
+        WHERE {" OR ".join(clauses)}
+        ORDER BY
+            CASE
+                WHEN primary_external_userid = %s THEN 0
+                WHEN primary_openid = %s THEN 1
+                ELSE 2
+            END,
+            last_seen_at DESC NULLS LAST,
+            updated_at DESC NULLS LAST
+        LIMIT 1
+        """,
+        tuple([*params, external_userid, openid]),
+    ).fetchone()
+    return _normalized_text((row or {}).get("unionid"))
+
+
+def _paid_order_for_product_identity(conn: Any, *, product: dict[str, Any], identity: dict[str, str]) -> dict[str, Any] | None:
+    product_codes = product_code_filter_values(product.get("product_code"))
+    unionid = _normalized_text(identity.get("unionid"))
+    if not unionid:
+        unionid = _resolve_unionid_for_payment_identity(conn, identity)
+    if not product_codes or not unionid:
         return None
+    params: list[Any] = [*product_codes, unionid]
     product_placeholders = ", ".join(["%s"] * len(product_codes))
     row = conn.execute(
         f"""
@@ -549,7 +575,7 @@ def _paid_order_for_product_identity(conn: Any, *, product: dict[str, Any], iden
             COALESCE(refund_status, '') = 'full_refunded'
             OR (amount_total > 0 AND COALESCE(refunded_amount_total, 0) >= amount_total)
           )
-          AND ({" OR ".join(identity_clauses)})
+          AND unionid = %s
         ORDER BY paid_at DESC NULLS LAST, updated_at DESC NULLS LAST, created_at DESC NULLS LAST, id DESC
         LIMIT 1
         """,
@@ -702,7 +728,6 @@ def _apply_transaction(conn: Any, transaction: dict[str, Any], *, source_route: 
     trade_state = _normalized_text(transaction.get("trade_state"))
     status = "paid" if trade_state == "SUCCESS" else ("closed" if trade_state in {"CLOSED", "REVOKED"} else "paying")
     amount = transaction.get("amount") if isinstance(transaction.get("amount"), dict) else {}
-    payer = transaction.get("payer") if isinstance(transaction.get("payer"), dict) else {}
     previous = conn.execute("SELECT * FROM wechat_pay_orders WHERE out_trade_no = %s LIMIT 1", (trade_no,)).fetchone()
     was_paid = _normalized_text((previous or {}).get("status")) == "paid" or _normalized_text((previous or {}).get("trade_state")) == "SUCCESS"
     order = conn.execute(
@@ -712,7 +737,6 @@ def _apply_transaction(conn: Any, transaction: dict[str, Any], *, source_route: 
             trade_state = %s,
             transaction_id = %s,
             bank_type = %s,
-            payer_openid = COALESCE(NULLIF(%s, ''), payer_openid),
             payer_total = %s,
             paid_at = CASE WHEN %s = 'SUCCESS' THEN NULLIF(%s, '')::timestamptz ELSE paid_at END,
             notify_payload_json = %s::jsonb,
@@ -726,7 +750,6 @@ def _apply_transaction(conn: Any, transaction: dict[str, Any], *, source_route: 
             trade_state,
             _normalized_text(transaction.get("transaction_id")),
             _normalized_text(transaction.get("bank_type")),
-            _normalized_text(payer.get("openid")),
             int(amount.get("payer_total") or amount.get("total") or 0),
             trade_state,
             _normalized_text(transaction.get("success_time")),

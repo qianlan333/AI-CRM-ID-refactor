@@ -1019,13 +1019,19 @@ class PostgresQuestionnaireReadRepository:
             )
             rows = conn.execute(
                 """
-                SELECT id, questionnaire_id, respondent_key, openid, unionid, external_userid,
-                       follow_user_userid, matched_by, mobile_snapshot, source_channel, campaign_id,
-                       staff_id, total_score, final_tags, result_token, redirect_url_snapshot,
-                       submitted_at
-                FROM questionnaire_submissions
-                WHERE questionnaire_id = %s
-                ORDER BY submitted_at DESC, id DESC
+                SELECT qs.id, qs.questionnaire_id, '' AS respondent_key,
+                       COALESCE(identity.primary_openid, '') AS openid,
+                       qs.unionid,
+                       COALESCE(identity.primary_external_userid, '') AS external_userid,
+                       qs.follow_user_userid, qs.matched_by,
+                       COALESCE(identity.mobile, '') AS mobile_snapshot,
+                       qs.source_channel, qs.campaign_id,
+                       qs.staff_id, qs.total_score, qs.final_tags, qs.result_token, qs.redirect_url_snapshot,
+                       qs.submitted_at
+                FROM questionnaire_submissions qs
+                LEFT JOIN crm_user_identity identity ON identity.unionid = qs.unionid
+                WHERE qs.questionnaire_id = %s
+                ORDER BY qs.submitted_at DESC, qs.id DESC
                 LIMIT %s OFFSET %s
                 """,
                 (int(questionnaire_id), int(limit), int(offset)),
@@ -1085,14 +1091,16 @@ class PostgresQuestionnaireReadRepository:
         clauses = ["1 = 1"]
         params: list[Any] = []
         if _text(filters.get("mobile")).strip():
-            clauses.append("qs.mobile_snapshot = %s")
-            params.append(_text(filters.get("mobile")).strip())
+            clauses.append("(identity.mobile = %s OR identity.mobile_normalized = %s)")
+            mobile = _text(filters.get("mobile")).strip()
+            params.extend([mobile, mobile])
         if _text(filters.get("unionid")).strip():
             clauses.append("qs.unionid = %s")
             params.append(_text(filters.get("unionid")).strip())
         if _text(filters.get("external_userid")).strip():
-            clauses.append("qs.external_userid = %s")
-            params.append(_text(filters.get("external_userid")).strip())
+            clauses.append("(identity.primary_external_userid = %s OR jsonb_exists(identity.external_userids_json, %s))")
+            external_userid = _text(filters.get("external_userid")).strip()
+            params.extend([external_userid, external_userid])
         if filters.get("questionnaire_id") not in (None, ""):
             clauses.append("qs.questionnaire_id = %s")
             params.append(int(filters.get("questionnaire_id") or 0))
@@ -1108,7 +1116,12 @@ class PostgresQuestionnaireReadRepository:
             total = int(
                 (
                     conn.execute(
-                        f"SELECT COUNT(*) AS total FROM questionnaire_submissions qs WHERE {where_sql}",
+                        f"""
+                        SELECT COUNT(*) AS total
+                        FROM questionnaire_submissions qs
+                        LEFT JOIN crm_user_identity identity ON identity.unionid = qs.unionid
+                        WHERE {where_sql}
+                        """,
                         tuple(params),
                     ).fetchone()
                     or {}
@@ -1121,13 +1134,14 @@ class PostgresQuestionnaireReadRepository:
                     qs.id,
                     qs.questionnaire_id,
                     qs.unionid,
-                    qs.external_userid,
-                    qs.mobile_snapshot,
+                    COALESCE(identity.primary_external_userid, '') AS external_userid,
+                    COALESCE(identity.mobile, '') AS mobile_snapshot,
                     qs.submitted_at,
                     qs.final_tags,
                     qs.assessment_result_snapshot,
                     COALESCE(NULLIF(q.title, ''), NULLIF(q.name, ''), '') AS questionnaire_title
                 FROM questionnaire_submissions qs
+                LEFT JOIN crm_user_identity identity ON identity.unionid = qs.unionid
                 LEFT JOIN questionnaires q ON q.id = qs.questionnaire_id
                 WHERE {where_sql}
                 ORDER BY qs.submitted_at DESC, qs.id DESC
@@ -1644,18 +1658,36 @@ class PostgresQuestionnaireReadRepository:
         clauses: list[str] = []
         params: list[Any] = [int(questionnaire_id)]
         for field, value in candidates:
-            column = "mobile_snapshot" if field == "mobile" else field
-            clauses.append(f"{column} = %s")
-            params.append(value)
+            if field == "unionid":
+                clauses.append("qs.unionid = %s")
+                params.append(value)
+            elif field == "mobile":
+                clauses.append("(identity.mobile = %s OR identity.mobile_normalized = %s)")
+                params.extend([value, value])
+            elif field == "external_userid":
+                clauses.append("(identity.primary_external_userid = %s OR jsonb_exists(identity.external_userids_json, %s))")
+                params.extend([value, value])
+            elif field == "openid":
+                clauses.append("(identity.primary_openid = %s OR jsonb_exists(identity.openids_json, %s))")
+                params.extend([value, value])
+            elif field == "respondent_key":
+                continue
+        if not clauses:
+            return None
         with self._connect() as conn:
             row = conn.execute(
                 f"""
-                SELECT id, questionnaire_id, respondent_key, openid, unionid, external_userid,
-                       mobile_snapshot, total_score, final_tags, result_token, redirect_url_snapshot,
-                       submitted_at
-                FROM questionnaire_submissions
-                WHERE questionnaire_id = %s AND ({" OR ".join(clauses)})
-                ORDER BY submitted_at DESC, id DESC
+                SELECT qs.id, qs.questionnaire_id, '' AS respondent_key,
+                       COALESCE(identity.primary_openid, '') AS openid,
+                       qs.unionid,
+                       COALESCE(identity.primary_external_userid, '') AS external_userid,
+                       COALESCE(identity.mobile, '') AS mobile_snapshot,
+                       qs.total_score, qs.final_tags, qs.result_token, qs.redirect_url_snapshot,
+                       qs.submitted_at
+                FROM questionnaire_submissions qs
+                LEFT JOIN crm_user_identity identity ON identity.unionid = qs.unionid
+                WHERE qs.questionnaire_id = %s AND ({" OR ".join(clauses)})
+                ORDER BY qs.submitted_at DESC, qs.id DESC
                 LIMIT 1
                 """,
                 tuple(params),
