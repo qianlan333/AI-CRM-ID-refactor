@@ -83,6 +83,20 @@ cron/systemd orchestration. It reports `database_probe_executed=false` and
 `persistence_status=not_configured`; a later PR must attach production-safe
 read probes and persistence before it can become a historical DQ snapshot table.
 
+## Development Guardrails
+
+`tools/check_sql_static_guard.py` scans Python SQL literals in production code,
+scripts, tools, and guarded migrations. It blocks:
+
+- runtime SQL references to tables marked `lifecycle=retired`;
+- `CREATE TABLE` statements after the lifecycle guard baseline when the table is
+  absent from `data_table_lifecycle_manifest.yml`;
+- new business-table DDL that declares legacy identity columns such as
+  `external_userid`, `openid`, `mobile_snapshot`, or `person_id` outside the
+  explicit identity boundary.
+
+The guard is part of `scripts/ci/run_architecture_gates.sh`.
+
 Groups and registered rule counts:
 
 - `identity`: 5 checks covering pending identity queues, conflicts, duplicate
