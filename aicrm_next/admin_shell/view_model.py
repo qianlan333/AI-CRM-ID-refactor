@@ -38,6 +38,12 @@ class AdminShellApiClient:
                 "href": admin_path_for("api.admin_data_health_page"),
             },
             {
+                "label": "数据质量规则",
+                "value": "rules",
+                "description": "按运营分组查看 identity、支付、问卷、投递和客户投影规则。",
+                "href": admin_path_for("api.admin_data_quality_page"),
+            },
+            {
                 "label": "投递排障",
                 "value": "lineage",
                 "description": "按 unionid、trace 或任务 ID 查询投递链路。",

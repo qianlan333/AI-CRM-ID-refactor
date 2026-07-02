@@ -66,6 +66,13 @@ Registry API:
 These endpoints expose only registry metadata. They do not connect to the
 production database and do not evaluate rule status yet.
 
+Admin dashboard:
+
+- `GET /admin/data-quality`
+
+The dashboard groups rules by operator domain and displays rule severity,
+threshold, source table metadata, and remediation text from the registry.
+
 Groups and registered rule counts:
 
 - `identity`: 5 checks covering pending identity queues, conflicts, duplicate

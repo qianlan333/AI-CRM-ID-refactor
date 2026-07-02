@@ -90,6 +90,7 @@ ADMIN_ROUTE_REGISTRY: dict[str, AdminRoute] = {
     "api.admin_console_api_docs": AdminRoute("api.admin_console_api_docs", "/admin/api-docs"),
     "api.admin_console_jobs": AdminRoute("api.admin_console_jobs", "/admin/jobs"),
     "api.admin_data_health_page": AdminRoute("api.admin_data_health_page", "/admin/data-health"),
+    "api.admin_data_quality_page": AdminRoute("api.admin_data_quality_page", "/admin/data-quality"),
     "api.admin_delivery_lineage_page": AdminRoute("api.admin_delivery_lineage_page", "/admin/delivery-lineage"),
     "api.admin_growth_orchestration_page": AdminRoute(
         "api.admin_growth_orchestration_page",
@@ -173,6 +174,7 @@ ADMIN_NAV_GROUPS: list[dict[str, Any]] = [
             {"key": "internal_events", "label": "事件中心", "endpoint": "api.admin_internal_events_page"},
             {"key": "webhook_inbox", "label": "Webhook Inbox", "endpoint": "api.admin_webhook_inbox_page"},
             {"key": "data_health", "label": "数据健康", "endpoint": "api.admin_data_health_page"},
+            {"key": "data_quality", "label": "数据质量规则", "endpoint": "api.admin_data_quality_page"},
             {"key": "delivery_lineage", "label": "投递排障", "endpoint": "api.admin_delivery_lineage_page"},
             {"key": "growth_orchestration", "label": "增长运营", "endpoint": "api.admin_growth_orchestration_page"},
             {"key": "automation_agents", "label": "自动化话术", "endpoint": "api.admin_automation_agents_page"},

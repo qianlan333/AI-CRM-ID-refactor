@@ -6,7 +6,12 @@ from fastapi import APIRouter, Request
 from fastapi.responses import RedirectResponse
 from fastapi.templating import Jinja2Templates
 
-from aicrm_next.data_health.application import data_health_summary
+from aicrm_next.data_health.application import (
+    data_health_summary,
+    data_quality_checks,
+    data_quality_groups,
+    data_quality_summary,
+)
 from aicrm_next.delivery_lineage.application import (
     get_delivery_lineage,
     list_delivery_lineage,
@@ -121,6 +126,39 @@ def admin_data_health_page(request: Request):
         }
     )
     return templates.TemplateResponse(request, "admin_shell/data_health.html", context)
+
+
+@router.get("/admin/data-quality", name="api.admin_data_quality_page")
+def admin_data_quality_page(request: Request):
+    summary = data_quality_summary()
+    groups = data_quality_groups()["groups"]
+    checks = data_quality_checks()["checks"]
+    grouped_checks = _data_quality_grouped_checks(groups, checks)
+    context = shell_context(
+        request=request,
+        page_title="数据质量规则",
+        page_summary="按运营可读分组查看 identity、支付、问卷、投递和客户投影的数据质量规则。",
+        active_endpoint="api.admin_data_quality_page",
+    )
+    context.update(
+        {
+            "breadcrumbs": [
+                {"label": "客户管理后台", "href": admin_path_for("api.admin_console_dashboard")},
+                {"label": "数据质量规则", "href": ""},
+            ],
+            "page_actions": [
+                {
+                    "label": "查看 API",
+                    "href": "/api/admin/data-quality/summary",
+                    "variant": "secondary",
+                },
+            ],
+            "quality_summary": summary,
+            "quality_cards": _data_quality_cards(summary),
+            "quality_groups": grouped_checks,
+        }
+    )
+    return templates.TemplateResponse(request, "admin_shell/data_quality.html", context)
 
 
 @router.get("/admin/delivery-lineage", name="api.admin_delivery_lineage_page")
@@ -258,6 +296,50 @@ def _data_health_cards(summary: dict) -> list[dict[str, str]]:
             "description": "未配置 DB 探针或仍待接生产安全读仓库的检查。",
             "tone": "neutral" if pending_count else "ok",
         },
+    ]
+
+
+def _data_quality_cards(summary: dict) -> list[dict[str, str]]:
+    severity_counts = summary.get("severity_counts") or {}
+    probe_status_counts = summary.get("probe_status_counts") or {}
+    return [
+        {
+            "label": "规则总数",
+            "value": str(int(summary.get("total_checks") or 0)),
+            "description": "已注册为运营可读问题清单的数据质量规则。",
+            "tone": "neutral",
+        },
+        {
+            "label": "红色规则",
+            "value": str(int(severity_counts.get("red") or 0)),
+            "description": "后续探针命中后应阻断迁移或上线的规则。",
+            "tone": "danger" if int(severity_counts.get("red") or 0) else "ok",
+        },
+        {
+            "label": "黄色规则",
+            "value": str(int(severity_counts.get("yellow") or 0)),
+            "description": "命中后需要运营或工程关注的规则。",
+            "tone": "warn" if int(severity_counts.get("yellow") or 0) else "ok",
+        },
+        {
+            "label": "待接探针",
+            "value": str(int(probe_status_counts.get("needs_probe") or 0)),
+            "description": "当前只注册元数据，尚未接生产安全只读探针。",
+            "tone": "neutral",
+        },
+    ]
+
+
+def _data_quality_grouped_checks(groups: list[dict], checks: list[dict]) -> list[dict]:
+    checks_by_group: dict[str, list[dict]] = {}
+    for check in checks:
+        checks_by_group.setdefault(str(check.get("group") or ""), []).append(check)
+    return [
+        {
+            **group,
+            "checks": checks_by_group.get(str(group.get("group") or ""), []),
+        }
+        for group in groups
     ]
 
 

@@ -34,6 +34,7 @@ def test_admin_shell_family_routes_resolve_to_native_module(monkeypatch) -> None
 
     assert _route_owner(client, "/admin") == "aicrm_next.admin_shell.routes"
     assert _route_owner(client, "/admin/data-health") == "aicrm_next.admin_shell.routes"
+    assert _route_owner(client, "/admin/data-quality") == "aicrm_next.admin_shell.routes"
     assert _route_owner(client, "/admin/delivery-lineage") == "aicrm_next.admin_shell.routes"
     assert _route_owner(client, "/admin/growth-orchestration") == "aicrm_next.admin_shell.routes"
     assert _route_owner(client, "/api/admin/dashboard/shell-context") == "aicrm_next.admin_shell.routes"
@@ -52,9 +53,11 @@ def test_admin_dashboard_page_uses_native_shell_template(monkeypatch) -> None:
     assert "后台 shell 已切换为分组导航与生产数据入口。" in html
     assert 'data-shell-context-url="/api/admin/dashboard/shell-context"' in html
     assert 'href="/admin/data-health"' in html
+    assert 'href="/admin/data-quality"' in html
     assert 'href="/admin/delivery-lineage"' in html
     assert 'href="/admin/growth-orchestration"' in html
     assert "数据健康" in html
+    assert "数据质量规则" in html
     assert "投递排障" in html
     assert "增长运营" in html
     assert 'href="/admin/automation-conversion"' in html
@@ -86,6 +89,11 @@ def test_admin_shell_context_api_exposes_native_states(monkeypatch) -> None:
         for item in group["items"]
     )
     assert any(
+        item["href"] == "/admin/data-quality"
+        for group in payload["nav_groups"]
+        for item in group["items"]
+    )
+    assert any(
         item["href"] == "/admin/delivery-lineage"
         for group in payload["nav_groups"]
         for item in group["items"]
@@ -107,6 +115,22 @@ def test_admin_data_health_page_renders_summary_cards(monkeypatch) -> None:
     assert "schema_drift_guard" in html
     assert "待接入" in html
     assert 'href="/api/admin/data-health/summary"' in html
+
+
+def test_admin_data_quality_page_renders_registry_dashboard(monkeypatch) -> None:
+    response = _client(monkeypatch).get("/admin/data-quality")
+    html = response.text
+
+    assert response.status_code == 200
+    assert "X-AICRM-Compatibility-Facade" not in response.headers
+    assert "规则概况" in html
+    assert "identity_pending_queue_threshold" in html
+    assert "payment_paid_order_missing_identity" in html
+    assert "customer_projection_timeline_missing_recent_activity" in html
+    assert "待接探针" in html
+    assert 'href="/api/admin/data-quality/summary"' in html
+    assert "raw_payload_json" not in html
+    assert "external_userid_value" not in html
 
 
 def test_admin_delivery_lineage_page_renders_query_form(monkeypatch) -> None:
