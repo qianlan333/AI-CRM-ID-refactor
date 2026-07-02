@@ -60,6 +60,7 @@ IDENTITY_BOUNDARY_TABLE_PREFIXES = (
 _UNQUOTED_SQL_IDENTIFIER = r"[a-zA-Z_][a-zA-Z0-9_]*"
 _QUOTED_SQL_IDENTIFIER = r'"[^"]+"'
 _SQL_IDENTIFIER_PATTERN = rf"(?:{_QUOTED_SQL_IDENTIFIER}|{_UNQUOTED_SQL_IDENTIFIER})"
+_SQL_QUALIFIED_IDENTIFIER_PATTERN = rf"{_SQL_IDENTIFIER_PATTERN}(?:\s*\.\s*{_SQL_IDENTIFIER_PATTERN})*"
 
 
 @dataclass(frozen=True)
@@ -115,7 +116,8 @@ def check_sql_static_guard(root: Path = ROOT, manifest_path: Path = DEFAULT_MANI
             continue
         is_pre_guard_migration = _is_pre_guard_migration(literal.path, root=root, baseline_prefix=baseline_prefix)
         if not is_pre_guard_migration:
-            violations.extend(_retired_table_violations(literal, normalized, retired_tables))
+            if not (_is_migration(literal.path, root=root) and _is_drop_table_statement(normalized)):
+                violations.extend(_retired_table_violations(literal, normalized, retired_tables))
             violations.extend(_legacy_identity_column_violations(literal, normalized))
         violations.extend(
             _create_table_registration_violations(
@@ -282,35 +284,56 @@ def _unquote_identifier(identifier: str) -> str:
     return stripped
 
 
-def _created_tables(sql_text: str) -> set[str]:
-    return {
-        _unquote_identifier(match.group("table"))
-        for match in re.finditer(
-            rf"\bcreate\s+table\s+(?:if\s+not\s+exists\s+)?(?P<table>{_SQL_IDENTIFIER_PATTERN})",
+def _normalize_identifier(identifier: str) -> str:
+    return _unquote_identifier(identifier).lower()
+
+
+def _final_identifier_component(identifier: str) -> str:
+    parts = [part.strip() for part in re.split(r"\s*\.\s*", identifier.strip()) if part.strip()]
+    if not parts:
+        return ""
+    return _normalize_identifier(parts[-1])
+
+
+def _is_drop_table_statement(sql_text: str) -> bool:
+    return bool(
+        re.match(
+            rf"^\s*drop\s+table\s+(?:if\s+exists\s+)?{_SQL_QUALIFIED_IDENTIFIER_PATTERN}(?:\s+cascade|\s+restrict)?\s*;?\s*$",
             sql_text,
             flags=re.IGNORECASE,
         )
-        if _is_real_table_name(_unquote_identifier(match.group("table")))
+    )
+
+
+def _created_tables(sql_text: str) -> set[str]:
+    return {
+        _final_identifier_component(match.group("table"))
+        for match in re.finditer(
+            rf"\bcreate\s+table\s+(?:if\s+not\s+exists\s+)?(?P<table>{_SQL_QUALIFIED_IDENTIFIER_PATTERN})",
+            sql_text,
+            flags=re.IGNORECASE,
+        )
+        if _is_real_table_name(_final_identifier_component(match.group("table")))
     }
 
 
 def _altered_tables(sql_text: str) -> set[str]:
     return {
-        _unquote_identifier(match.group("table"))
+        _final_identifier_component(match.group("table"))
         for match in re.finditer(
-            rf"\balter\s+table\s+(?P<table>{_SQL_IDENTIFIER_PATTERN})",
+            rf"\balter\s+table\s+(?:if\s+exists\s+)?(?P<table>{_SQL_QUALIFIED_IDENTIFIER_PATTERN})",
             sql_text,
             flags=re.IGNORECASE,
         )
-        if _is_real_table_name(_unquote_identifier(match.group("table")))
+        if _is_real_table_name(_final_identifier_component(match.group("table")))
     }
 
 
 def _declared_columns(sql_text: str) -> set[str]:
     return {
-        match.group(1)
+        _normalize_identifier(match.group("column"))
         for match in re.finditer(
-            r"\b([a-zA-Z_][a-zA-Z0-9_]*)\s+(?:TEXT|VARCHAR|UUID|JSONB|JSON|INTEGER|BIGINT|TIMESTAMPTZ|BOOLEAN)\b",
+            rf"(?<![a-zA-Z0-9_\"])(?P<column>{_SQL_IDENTIFIER_PATTERN})\s+(?:TEXT|VARCHAR|UUID|JSONB|JSON|INTEGER|BIGINT|TIMESTAMPTZ|BOOLEAN)\b",
             sql_text,
             flags=re.IGNORECASE,
         )
