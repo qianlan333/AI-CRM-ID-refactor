@@ -39,3 +39,15 @@ class DeliveryLineageDetail(BaseModel):
     ok: bool = True
     item: DeliveryLineageItem
     related: dict[str, Any] = Field(default_factory=dict)
+
+
+class DeliveryLineageDailyMetric(BaseModel):
+    metric: str
+    day: str
+    value: int
+
+
+class DeliveryLineageDailyMetrics(BaseModel):
+    ok: bool = True
+    items: list[DeliveryLineageDailyMetric] = Field(default_factory=list)
+    days: int = 7

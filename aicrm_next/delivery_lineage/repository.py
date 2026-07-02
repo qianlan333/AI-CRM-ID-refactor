@@ -7,7 +7,7 @@ from sqlalchemy import text
 
 from aicrm_next.shared.db_session import get_session_factory
 
-from .dto import DeliveryLineageItem
+from .dto import DeliveryLineageDailyMetric, DeliveryLineageItem
 
 
 class DeliveryLineageRepository(Protocol):
@@ -18,6 +18,8 @@ class DeliveryLineageRepository(Protocol):
     def list_by_unionid(self, unionid: str, *, limit: int = 50, offset: int = 0) -> list[DeliveryLineageItem]: ...
 
     def list_by_trace(self, trace_id: str, *, limit: int = 50, offset: int = 0) -> list[DeliveryLineageItem]: ...
+
+    def daily_metrics(self, *, days: int = 7) -> list[DeliveryLineageDailyMetric]: ...
 
 
 class EmptyDeliveryLineageRepository:
@@ -33,10 +35,18 @@ class EmptyDeliveryLineageRepository:
     def list_by_trace(self, trace_id: str, *, limit: int = 50, offset: int = 0) -> list[DeliveryLineageItem]:
         return []
 
+    def daily_metrics(self, *, days: int = 7) -> list[DeliveryLineageDailyMetric]:
+        return []
+
 
 class InMemoryDeliveryLineageRepository(EmptyDeliveryLineageRepository):
-    def __init__(self, items: list[DeliveryLineageItem]) -> None:
+    def __init__(
+        self,
+        items: list[DeliveryLineageItem],
+        metrics: list[DeliveryLineageDailyMetric] | None = None,
+    ) -> None:
         self._items = list(items)
+        self._metrics = list(metrics or [])
 
     def list_items(self, *, limit: int = 50, offset: int = 0) -> list[DeliveryLineageItem]:
         return self._items[offset : offset + limit]
@@ -51,6 +61,9 @@ class InMemoryDeliveryLineageRepository(EmptyDeliveryLineageRepository):
     def list_by_trace(self, trace_id: str, *, limit: int = 50, offset: int = 0) -> list[DeliveryLineageItem]:
         items = [item for item in self._items if item.trace_id == trace_id]
         return items[offset : offset + limit]
+
+    def daily_metrics(self, *, days: int = 7) -> list[DeliveryLineageDailyMetric]:
+        return self._metrics
 
 
 class PostgresDeliveryLineageRepository:
@@ -71,6 +84,12 @@ class PostgresDeliveryLineageRepository:
     def list_by_trace(self, trace_id: str, *, limit: int = 50, offset: int = 0) -> list[DeliveryLineageItem]:
         where = "WHERE trace_id = :trace_id"
         return self._query(where, {"trace_id": trace_id}, limit=limit, offset=offset)
+
+    def daily_metrics(self, *, days: int = 7) -> list[DeliveryLineageDailyMetric]:
+        safe_days = max(1, min(int(days or 7), 31))
+        with self._session_factory() as session:
+            rows = session.execute(text(_DAILY_METRICS_SQL), {"days": safe_days}).mappings().all()
+        return [DeliveryLineageDailyMetric(**dict(row)) for row in rows]
 
     def _query(self, where_sql: str, params: dict, *, limit: int, offset: int) -> list[DeliveryLineageItem]:
         sql = text(_LINEAGE_SQL.format(where_sql=where_sql))
@@ -164,4 +183,49 @@ FROM lineage
 {where_sql}
 ORDER BY last_updated_at DESC NULLS LAST, lineage_id DESC
 LIMIT :limit OFFSET :offset
+"""
+
+
+_DAILY_METRICS_SQL = """
+WITH metric_rows AS (
+    SELECT
+        'failed_delivery_daily' AS metric,
+        bj.updated_at::date AS day,
+        COUNT(*)::int AS value
+    FROM broadcast_jobs bj
+    WHERE bj.updated_at >= CURRENT_DATE - (:days || ' days')::interval
+      AND (bj.status = 'failed' OR COALESCE(bj.failed_count, 0) > 0)
+    GROUP BY bj.updated_at::date
+    UNION ALL
+    SELECT
+        'blocked_delivery_daily' AS metric,
+        bj.updated_at::date AS day,
+        COUNT(*)::int AS value
+    FROM broadcast_jobs bj
+    WHERE bj.updated_at >= CURRENT_DATE - (:days || ' days')::interval
+      AND bj.status = 'blocked'
+    GROUP BY bj.updated_at::date
+    UNION ALL
+    SELECT
+        'blocked_delivery_daily' AS metric,
+        ej.updated_at::date AS day,
+        COUNT(*)::int AS value
+    FROM external_effect_job ej
+    WHERE ej.updated_at >= CURRENT_DATE - (:days || ' days')::interval
+      AND ej.status = 'blocked'
+    GROUP BY ej.updated_at::date
+    UNION ALL
+    SELECT
+        'retryable_effect_daily' AS metric,
+        ej.updated_at::date AS day,
+        COUNT(*)::int AS value
+    FROM external_effect_job ej
+    WHERE ej.updated_at >= CURRENT_DATE - (:days || ' days')::interval
+      AND ej.status = 'failed_retryable'
+    GROUP BY ej.updated_at::date
+)
+SELECT metric, day::text AS day, SUM(value)::int AS value
+FROM metric_rows
+GROUP BY metric, day
+ORDER BY day DESC, metric ASC
 """
