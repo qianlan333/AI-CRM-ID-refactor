@@ -4,34 +4,73 @@ repositories:
   aicrm_next/admin_config/repository.py:
     capability_owner: aicrm_next.admin_config
     table_reads:
+      - admin_login_audit
+      - admin_operation_logs
+      - admin_user_roles
+      - admin_users
+      - app_settings
       - marketing_automation_configs
       - marketing_automation_question_rules
+      - mcp_tool_settings
+      - questionnaire_options
+      - questionnaire_questions
+      - questionnaires
     table_writes:
+      - admin_login_audit
+      - admin_operation_logs
+      - admin_user_roles
+      - admin_users
+      - app_settings
       - marketing_automation_configs
       - marketing_automation_question_rules
+      - mcp_tool_settings
   aicrm_next/admin_jobs/repository.py:
     capability_owner: aicrm_next.admin_jobs
     table_reads:
+      - broadcast_job_events
+      - broadcast_jobs
+      - broadcast_queue_notification_settings
+      - outbound_tasks
       - outbound_webhook_deliveries
+      - sync_runs
+      - wecom_external_contact_event_logs
     table_writes:
+      - admin_operation_logs
+      - broadcast_job_hourly_reports
+      - broadcast_jobs
+      - broadcast_queue_notification_settings
       - outbound_webhook_deliveries
   aicrm_next/admin_read_model/repo.py:
     capability_owner: aicrm_next.admin_read_model
     table_reads:
+      - admin_operation_logs
       - ai_audience_member_current
       - archived_messages
+      - automation_agent_config
+      - automation_agent_llm_call_log
+      - automation_agent_output
+      - automation_agent_run
       - broadcast_jobs
+      - contacts
       - external_effect_job
       - internal_event
+      - outbound_tasks
       - outbound_webhook_deliveries
+      - questionnaire_submissions
+      - reply_message_batch
+      - sync_runs
+      - wechat_pay_orders
+      - wecom_external_contact_event_logs
     table_writes: []
   aicrm_next/ai_assist/external_campaigns_repo.py:
     capability_owner: aicrm_next.ai_assist
     table_reads:
+      - broadcast_jobs
       - campaign_members
       - campaign_segments
       - campaign_steps
       - campaigns
+      - contacts
       - crm_user_identity
       - segments
       - user_ops_pool_current_next

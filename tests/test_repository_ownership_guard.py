@@ -24,19 +24,69 @@ def test_repository_ownership_current_registry_passes() -> None:
 def test_repository_ownership_targeted_declarations_are_complete() -> None:
     registry = yaml.safe_load(REGISTRY_PATH.read_text(encoding="utf-8"))
     repositories = registry["repositories"]
+    manifest = yaml.safe_load(MANIFEST_PATH.read_text(encoding="utf-8"))
 
-    assert repositories["aicrm_next/admin_config/repository.py"]["table_writes"] == [
+    assert repositories["aicrm_next/admin_config/repository.py"]["table_reads"] == [
+        "admin_login_audit",
+        "admin_operation_logs",
+        "admin_user_roles",
+        "admin_users",
+        "app_settings",
         "marketing_automation_configs",
         "marketing_automation_question_rules",
+        "mcp_tool_settings",
+        "questionnaire_options",
+        "questionnaire_questions",
+        "questionnaires",
     ]
-    assert repositories["aicrm_next/admin_read_model/repo.py"]["table_reads"] == [
-        "ai_audience_member_current",
-        "archived_messages",
+    assert repositories["aicrm_next/admin_config/repository.py"]["table_writes"] == [
+        "admin_login_audit",
+        "admin_operation_logs",
+        "admin_user_roles",
+        "admin_users",
+        "app_settings",
+        "marketing_automation_configs",
+        "marketing_automation_question_rules",
+        "mcp_tool_settings",
+    ]
+    assert repositories["aicrm_next/admin_jobs/repository.py"]["table_reads"] == [
+        "broadcast_job_events",
         "broadcast_jobs",
-        "external_effect_job",
-        "internal_event",
+        "broadcast_queue_notification_settings",
+        "outbound_tasks",
+        "outbound_webhook_deliveries",
+        "sync_runs",
+        "wecom_external_contact_event_logs",
+    ]
+    assert repositories["aicrm_next/admin_jobs/repository.py"]["table_writes"] == [
+        "admin_operation_logs",
+        "broadcast_job_hourly_reports",
+        "broadcast_jobs",
+        "broadcast_queue_notification_settings",
         "outbound_webhook_deliveries",
     ]
+    assert repositories["aicrm_next/admin_read_model/repo.py"]["table_reads"] == [
+        "admin_operation_logs",
+        "ai_audience_member_current",
+        "archived_messages",
+        "automation_agent_config",
+        "automation_agent_llm_call_log",
+        "automation_agent_output",
+        "automation_agent_run",
+        "broadcast_jobs",
+        "contacts",
+        "external_effect_job",
+        "internal_event",
+        "outbound_tasks",
+        "outbound_webhook_deliveries",
+        "questionnaire_submissions",
+        "reply_message_batch",
+        "sync_runs",
+        "wechat_pay_orders",
+        "wecom_external_contact_event_logs",
+    ]
+    assert "aicrm_next.external_push.repo" in manifest["tables"]["domain_event_outbox"]["read_owners"]
+    assert "aicrm_next.external_push.repo" in manifest["tables"]["external_push_delivery"]["read_owners"]
     assert repositories["aicrm_next/ai_assist/external_campaigns_repo.py"]["table_writes"] == [
         "campaign_members",
         "campaign_segments",
@@ -44,8 +94,16 @@ def test_repository_ownership_targeted_declarations_are_complete() -> None:
         "campaigns",
         "segments",
     ]
-    assert repositories["aicrm_next/admin_jobs/repository.py"]["table_writes"] == [
-        "outbound_webhook_deliveries",
+    assert repositories["aicrm_next/ai_assist/external_campaigns_repo.py"]["table_reads"] == [
+        "broadcast_jobs",
+        "campaign_members",
+        "campaign_segments",
+        "campaign_steps",
+        "campaigns",
+        "contacts",
+        "crm_user_identity",
+        "segments",
+        "user_ops_pool_current_next",
     ]
     assert repositories["aicrm_next/external_push/repo.py"]["table_writes"] == [
         "domain_event_outbox",

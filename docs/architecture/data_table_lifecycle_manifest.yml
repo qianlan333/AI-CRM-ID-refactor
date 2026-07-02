@@ -965,6 +965,7 @@ tables:
       - aicrm_next.external_push.repo
     read_owners:
       - aicrm_next.commerce.external_push_admin
+      - aicrm_next.external_push.repo
     replacement: internal_event or external_effect_job after event/outbox convergence is designed
     drop_candidate: true
     drop_after: "after PR #13 lineage proves commerce outbox is fully represented by internal_event/external_effect"
@@ -986,6 +987,7 @@ tables:
       - aicrm_next.external_push.repo
     read_owners:
       - aicrm_next.commerce.external_push_admin
+      - aicrm_next.external_push.repo
       - external_effect compatibility diagnostics
     replacement: external_effect_job, external_effect_attempt
     drop_candidate: true
