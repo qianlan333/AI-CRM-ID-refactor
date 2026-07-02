@@ -148,6 +148,8 @@ def test_material_assets_read_model_unifies_library_sources(client) -> None:
     assert {item["source_table"] for item in assets} == {"image_library", "miniprogram_library", "attachment_library"}
     assert all(item["material_asset_id"] == f"{item['asset_type']}:{item['source_id']}" for item in assets)
     assert all("data_base64" not in item for item in assets)
+    assert {"next_cursor", "has_more", "sort_key", "source_cursor"} <= set(body)
+    assert body["sort_key"] == "asset_type_order:source_offset"
 
 
 def test_material_assets_can_filter_to_one_source_type(client) -> None:
@@ -199,6 +201,52 @@ def test_material_assets_all_type_deep_offset_stays_inside_large_source(client, 
     assert body["limit"] == 1
     assert [item["material_asset_id"] for item in body["assets"]] == ["image:101"]
     assert body["total"] == 103
+
+
+def test_material_assets_cursor_continues_inside_large_source(client, monkeypatch) -> None:
+    import aicrm_next.send_content.application as app_module
+
+    repo = _LargeMaterialAssetsRepository()
+    monkeypatch.setattr(app_module, "build_send_content_repository", lambda: repo)
+
+    first_page = client.get("/api/admin/material-assets?type=all&limit=100")
+    assert first_page.status_code == 200
+    first_body = first_page.json()
+    assert len(first_body["assets"]) == 100
+    assert first_body["has_more"] is True
+    assert first_body["source_cursor"] == {"material_type": "image", "source_index": 0, "offset": 100}
+
+    second_page = client.get(f"/api/admin/material-assets?type=all&limit=1&cursor={first_body['next_cursor']}")
+
+    assert second_page.status_code == 200
+    second_body = second_page.json()
+    assert [item["material_asset_id"] for item in second_body["assets"]] == ["image:101"]
+    assert second_body["has_more"] is True
+    assert second_body["source_cursor"] == {"material_type": "miniprogram", "source_index": 1, "offset": 0}
+
+
+def test_material_assets_cursor_moves_to_next_source_after_current_source(client) -> None:
+    first_page = client.get("/api/admin/material-assets?type=all&limit=2")
+    assert first_page.status_code == 200
+    first_body = first_page.json()
+    assert [item["material_asset_id"] for item in first_body["assets"]] == ["image:12", "image:13"]
+    assert first_body["source_cursor"] == {"material_type": "miniprogram", "source_index": 1, "offset": 0}
+
+    second_page = client.get(f"/api/admin/material-assets?type=all&limit=2&cursor={first_body['next_cursor']}")
+
+    assert second_page.status_code == 200
+    second_body = second_page.json()
+    assert [item["material_asset_id"] for item in second_body["assets"]] == ["miniprogram:34", "attachment:56"]
+    assert second_body["has_more"] is False
+    assert second_body["next_cursor"] == ""
+
+
+def test_material_assets_rejects_invalid_cursor(client) -> None:
+    response = client.get("/api/admin/material-assets?type=all&cursor=not-a-valid-cursor")
+
+    assert response.status_code == 400
+    assert response.json()["ok"] is False
+    assert "游标" in response.json()["error"]
 
 
 class _LargeMaterialAssetsRepository:

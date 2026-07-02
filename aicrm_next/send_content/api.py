@@ -87,6 +87,7 @@ def list_material_assets(
     enabled_only: bool = True,
     limit: int = 50,
     offset: int = 0,
+    cursor: str = "",
 ) -> JSONResponse:
     try:
         return _json_result(
@@ -96,6 +97,7 @@ def list_material_assets(
                 enabled_only=enabled_only,
                 limit=max(1, min(int(limit or 50), 100)),
                 offset=max(0, int(offset or 0)),
+                cursor=cursor,
             )
         )
     except ContractError as exc:
