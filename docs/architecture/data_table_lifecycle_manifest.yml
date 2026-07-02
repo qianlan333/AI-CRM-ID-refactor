@@ -144,35 +144,33 @@ tables:
 
   message_batches:
     domain: messaging
-    lifecycle: read_model
-    write_owner: legacy message batch collector
-    read_owners:
-      - aicrm_next.admin_jobs.repository
+    lifecycle: retired
+    write_owner: ""
+    read_owners: []
     replacement: broadcast_jobs, broadcast_job_events, outbound_tasks
-    drop_candidate: true
-    drop_after: "after admin jobs message batch UI reads broadcast_jobs/outbound_tasks"
-    runtime_entrypoints:
-      - /api/admin/jobs/message-batches
+    drop_candidate: false
+    drop_after: PR #12 runtime cleanup
+    runtime_entrypoints: []
     migration_source: pre-Alembic baseline
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
-    notes: Still read and acknowledged by admin jobs; PR #12 should decide view compatibility versus physical removal.
+    test_fixture_policy: legacy_truncate_compat_absent_ok
+    notes: Retired from fresh schema; admin jobs message-batch UI now reads broadcast_jobs compatibility projection.
 
   message_batch_items:
     domain: messaging
-    lifecycle: read_model
-    write_owner: legacy message batch collector
-    read_owners:
-      - aicrm_next.admin_jobs.repository
+    lifecycle: retired
+    write_owner: ""
+    read_owners: []
     replacement: broadcast_job_events, outbound_tasks, archived_messages
-    drop_candidate: true
-    drop_after: "after message batch detail reads a unified broadcast/outbound read model"
-    runtime_entrypoints:
-      - /api/admin/jobs/message-batches
+    drop_candidate: false
+    drop_after: PR #12 runtime cleanup
+    runtime_entrypoints: []
     migration_source: pre-Alembic baseline
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
-    notes: Detail rows are joined to archived_messages by admin jobs.
+    test_fixture_policy: legacy_truncate_compat_absent_ok
+    notes: Retired from fresh schema; batch details now read broadcast_job_events.
 
   marketing_automation_question_rules:
     domain: admin_config

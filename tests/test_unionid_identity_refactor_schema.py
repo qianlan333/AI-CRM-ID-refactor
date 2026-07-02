@@ -327,6 +327,27 @@ def test_user_ops_legacy_runtime_tables_are_retired() -> None:
     assert "user_ops_deferred_jobs:\n    domain: user_ops\n    lifecycle: retired" in manifest_source
 
 
+def test_message_batch_legacy_runtime_tables_are_retired() -> None:
+    admin_jobs_source = _read("aicrm_next/admin_jobs/repository.py")
+    manifest_source = _read("docs/architecture/data_table_lifecycle_manifest.yml")
+
+    forbidden_sql_patterns = [
+        r"\bFROM\s+message_batches\b",
+        r"\bUPDATE\s+message_batches\b",
+        r"\bINSERT\s+INTO\s+message_batches\b",
+        r"\bFROM\s+message_batch_items\b",
+        r"\bJOIN\s+message_batch_items\b",
+    ]
+    for pattern in forbidden_sql_patterns:
+        assert re.search(pattern, admin_jobs_source) is None
+
+    assert "FROM broadcast_jobs" in admin_jobs_source
+    assert "FROM broadcast_job_events" in admin_jobs_source
+    assert "message_batch_ack" in admin_jobs_source
+    assert "message_batches:\n    domain: messaging\n    lifecycle: retired" in manifest_source
+    assert "message_batch_items:\n    domain: messaging\n    lifecycle: retired" in manifest_source
+
+
 def test_customer_read_model_tables_are_unionid_only() -> None:
     model_source = _read("aicrm_next/customer_read_model/models.py")
     migration_source = _read("migrations/versions/0026_customer_read_model_next.py")
