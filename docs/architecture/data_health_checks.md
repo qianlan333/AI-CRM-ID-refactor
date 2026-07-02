@@ -18,6 +18,10 @@ Green static checks:
 - `table_lifecycle_manifest_guard`
 - `retired_table_runtime_reference_guard`
 
+Live schema drift check:
+
+- `schema_drift_guard`
+
 Registered runtime data probes:
 
 - `unionid_orphan_fact_guard`
@@ -28,7 +32,7 @@ Registered runtime data probes:
 - `questionnaire_submission_without_user_guard`
 - `payment_order_without_user_guard`
 
-The runtime probes are intentionally `not_applicable` in PR #19 until a production-safe read repository is attached. This prevents the admin health API from pretending it has live queue or orphan-fact evidence when it does not.
+The runtime probes are intentionally `not_applicable` in PR #19 until a production-safe read repository is attached. `schema_drift_guard` is also `not_applicable` when `DATABASE_URL` is absent; when a migrated database is available it compares `information_schema.columns` with the lifecycle manifest and fails on missing declared physical tables, unregistered live tables, retired physical tables, missing canonical owners, missing PII levels, or missing queue status enum metadata.
 
 ## Status Semantics
 

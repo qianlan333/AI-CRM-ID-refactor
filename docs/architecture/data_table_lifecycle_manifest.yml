@@ -306,6 +306,8 @@ tables:
     domain: campaign
     lifecycle: queue
     write_owner: aicrm_next.cloud_orchestrator.repository
+    status_enum:
+      column: status
     read_owners:
       - aicrm_next.cloud_orchestrator.campaigns_read
       - aicrm_next.cloud_orchestrator.repository
@@ -989,6 +991,8 @@ tables:
     domain: outbound_webhook
     lifecycle: queue
     write_owner: outbound webhook worker/runtime
+    status_enum:
+      column: status
     read_owners:
       - aicrm_next.admin_jobs.repository
     replacement: external_effect_job, external_effect_attempt
@@ -1042,6 +1046,8 @@ tables:
     domain: internal_events
     lifecycle: queue
     write_owner: aicrm_next.platform_foundation.internal_events.worker
+    status_enum:
+      column: status
     read_owners:
       - internal event admin/reconciliation APIs
     replacement: none; canonical internal consumer queue
@@ -1077,6 +1083,8 @@ tables:
     domain: external_effects
     lifecycle: queue
     write_owner: aicrm_next.platform_foundation.external_effects.service
+    status_enum:
+      column: status
     read_owners:
       - aicrm_next.platform_foundation.external_effects.worker
       - push center projection

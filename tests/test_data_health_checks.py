@@ -29,6 +29,7 @@ def test_data_health_summary_exposes_registered_checks(client) -> None:
         "identity_legacy_column_guard",
         "table_lifecycle_manifest_guard",
         "retired_table_runtime_reference_guard",
+        "schema_drift_guard",
         "unionid_orphan_fact_guard",
         "identity_resolution_queue_backlog",
         "projection_freshness_customer_read_model",
@@ -39,6 +40,7 @@ def test_data_health_summary_exposes_registered_checks(client) -> None:
     } <= check_ids
     assert body["counts"]["fail"] == 0
     assert body["counts"]["ok"] >= 3
+    assert body["counts"]["not_applicable"] >= 1
 
 
 def test_data_health_checks_do_not_expose_raw_identity_values(client) -> None:
@@ -62,3 +64,68 @@ def test_data_health_check_detail_and_missing_check(client) -> None:
     missing = client.get("/api/admin/data-health/checks/not_a_check")
     assert missing.status_code == 404
     assert missing.json()["error_code"] == "data_health_check_not_found"
+
+
+def test_schema_drift_guard_reports_manifest_and_live_schema_mismatches() -> None:
+    from aicrm_next.data_health.schema_drift import evaluate_schema_drift
+
+    manifest = {
+        "tables": {
+            "declared_missing": {
+                "domain": "test",
+                "lifecycle": "canonical",
+                "write_owner": "tests",
+                "drop_candidate": False,
+            },
+            "retired_still_exists": {
+                "domain": "test",
+                "lifecycle": "retired",
+                "replacement": "declared_missing",
+                "drop_candidate": False,
+            },
+            "canonical_without_owner": {
+                "domain": "test",
+                "lifecycle": "canonical",
+                "write_owner": "",
+                "drop_candidate": False,
+            },
+            "pii_without_level": {
+                "domain": "test",
+                "lifecycle": "canonical",
+                "write_owner": "tests",
+                "drop_candidate": False,
+            },
+            "queue_without_status_enum": {
+                "domain": "test",
+                "lifecycle": "queue",
+                "write_owner": "tests",
+                "drop_candidate": False,
+            },
+            "queue_with_status_enum": {
+                "domain": "test",
+                "lifecycle": "queue",
+                "write_owner": "tests",
+                "status_enum": {"column": "status"},
+                "drop_candidate": False,
+            },
+        }
+    }
+    actual_schema = {
+        "retired_still_exists": {"id"},
+        "canonical_without_owner": {"id"},
+        "pii_without_level": {"id", "mobile"},
+        "queue_without_status_enum": {"id", "status"},
+        "queue_with_status_enum": {"id", "status"},
+        "unregistered_live_table": {"id"},
+    }
+
+    violations = evaluate_schema_drift(manifest=manifest, actual_schema=actual_schema)
+    joined = "\n".join(violations)
+
+    assert "declared_missing: manifest declares physical lifecycle=canonical but table is missing" in joined
+    assert "retired_still_exists: retired table still exists in public schema" in joined
+    assert "canonical_without_owner: canonical table must declare write_owner" in joined
+    assert "pii_without_level: table has PII-like columns but missing pii_level" in joined
+    assert "queue_without_status_enum: queue table has status/state column but missing status_enum" in joined
+    assert "unregistered_live_table: table exists but is not registered in lifecycle manifest" in joined
+    assert "queue_with_status_enum" not in joined

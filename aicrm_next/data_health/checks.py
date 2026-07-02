@@ -7,6 +7,12 @@ from typing import Callable
 from tools.check_data_table_lifecycle import check_data_table_lifecycle
 
 from .dto import DataHealthCheckResult
+from .schema_drift import (
+    database_schema_available,
+    evaluate_schema_drift,
+    load_table_lifecycle_manifest,
+    public_schema_snapshot,
+)
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -47,6 +53,41 @@ def _retired_table_runtime_reference_guard() -> DataHealthCheckResult:
         violations=violations,
         ok_summary="No Next runtime SQL references retired lifecycle tables.",
         remediation="Remove the runtime SQL reference or move the table out of retired lifecycle with an approved owner.",
+    )
+
+
+def _schema_drift_guard() -> DataHealthCheckResult:
+    if not database_schema_available():
+        return DataHealthCheckResult(
+            check_id="schema_drift_guard",
+            title="Schema drift guard",
+            status="not_applicable",
+            severity="gray",
+            summary="DATABASE_URL is not configured, so live information_schema drift cannot be checked.",
+            evidence={"runtime_probe": "database_url_not_configured"},
+            remediation="Run this check in an environment with a migrated read-only database connection.",
+        )
+    try:
+        violations = evaluate_schema_drift(
+            manifest=load_table_lifecycle_manifest(),
+            actual_schema=public_schema_snapshot(),
+        )
+    except Exception as exc:  # pragma: no cover - defensive health endpoint guard
+        return DataHealthCheckResult(
+            check_id="schema_drift_guard",
+            title="Schema drift guard",
+            status="fail",
+            severity="red",
+            summary="Schema drift check could not read the live schema.",
+            evidence={"error": type(exc).__name__, "message": str(exc)[:300]},
+            remediation="Verify DATABASE_URL, migration state, and information_schema access.",
+        )
+    return _static_guard_result(
+        check_id="schema_drift_guard",
+        title="Schema drift guard",
+        violations=violations,
+        ok_summary="Live public schema is aligned with the lifecycle manifest.",
+        remediation="Register missing tables, remove retired physical tables, or add required ownership/PII/queue metadata.",
     )
 
 
@@ -174,6 +215,7 @@ _CHECKS: tuple[Callable[[], DataHealthCheckResult], ...] = (
     _identity_legacy_column_guard,
     _table_lifecycle_manifest_guard,
     _retired_table_runtime_reference_guard,
+    _schema_drift_guard,
     _unionid_orphan_fact_guard,
     _identity_resolution_queue_backlog,
     _projection_freshness_customer_read_model,
