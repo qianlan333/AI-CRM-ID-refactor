@@ -47,3 +47,30 @@ The runtime probes are intentionally `not_applicable` in PR #19 until a producti
 ## Next Steps
 
 Follow-up PRs should attach read-only repositories for backlog, orphan-fact, and projection freshness checks, then add admin shell cards once the API can distinguish red/yellow/green with live data.
+
+## Data Quality Registry
+
+Phase 7 starts turning data health into an operator-readable issue list. The
+registry lives in `aicrm_next.data_health.quality_registry` and is metadata-only:
+it defines the rule IDs, groups, source tables, thresholds, and remediation
+language that later admin APIs and scheduled snapshots can execute through
+production-safe read probes.
+
+Groups and registered rule counts:
+
+- `identity`: 5 checks covering pending identity queues, conflicts, duplicate
+  unionids, external contact to unionid collisions, and mobile to active unionid
+  collisions.
+- `payment`: 4 checks covering paid orders without CRM identity, paid orders
+  without product code, refunds greater than paid amount, and local/provider
+  status mismatches.
+- `questionnaire`: 4 checks covering missing unionid, missing answers, answers
+  referencing missing questions, and malformed final tags.
+- `delivery`: 4 checks covering blocked broadcasts, retryable external-effect
+  failures, failed outbound tasks, and stale queued/claimed work.
+- `customer_projection`: 3 checks covering stale customer read models, stale
+  Customer 360 projections, and timelines missing recent activity.
+
+Until each rule gets a read-only probe, `probe_status` remains `needs_probe`.
+The registry must not expose raw identity values, payload JSON, phone numbers,
+OpenIDs, or customer content; it may expose only rule metadata and table names.
