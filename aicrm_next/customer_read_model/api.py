@@ -142,6 +142,11 @@ def _profile_external_userid(profile_result: dict) -> str:
     return str(profile.get("external_userid") or profile.get("user_id") or "").strip()
 
 
+def _profile_unionid(profile_result: dict) -> str:
+    profile = dict(profile_result.get("profile") or profile_result.get("customer") or {})
+    return str(profile.get("unionid") or "").strip()
+
+
 def _profile_questionnaire_answers(profile: dict) -> list[dict]:
     candidate_groups = [
         profile.get("matched_questions"),
@@ -180,7 +185,10 @@ def _questionnaire_answer_text(row: dict) -> str:
 def _profile_questionnaire_answers_from_submissions(*, external_userid: str, mobile: str = "") -> list[dict]:
     if not external_userid and not mobile:
         return []
-    rows = SidebarV2SqlRepository().list_questionnaire_answers(external_userid=external_userid, mobile=mobile)
+    try:
+        rows = SidebarV2SqlRepository().list_questionnaire_answers(external_userid=external_userid, mobile=mobile)
+    except Exception:
+        return []
     answers: list[dict] = []
     seen: set[tuple[str, str, str]] = set()
     for row in rows:
@@ -352,6 +360,17 @@ def get_customer(external_userid: str, db: Session = Depends(get_db)) -> dict:
     return JSONResponse(jsonable_encoder(result), status_code=status_code)
 
 
+@router.get("/api/users/{unionid}")
+def get_user_by_unionid(unionid: str, db: Session = Depends(get_db)) -> dict:
+    customer_repo, live_source_repo = _request_scoped_customer_repositories(db)
+    try:
+        result = GetCustomerDetailQuery(customer_repo, live_source_repo=live_source_repo)(CustomerDetailRequest(unionid=unionid))
+    except NotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    status_code = int(result.pop("status_code", 200) or 200)
+    return JSONResponse(jsonable_encoder(result), status_code=status_code)
+
+
 @router.get("/api/customers/{external_userid}/timeline")
 def get_customer_timeline(
     external_userid: str,
@@ -375,11 +394,46 @@ def get_customer_timeline(
     return JSONResponse(jsonable_encoder(result), status_code=status_code)
 
 
+@router.get("/api/users/{unionid}/timeline")
+def get_user_timeline_by_unionid(
+    unionid: str,
+    event_type: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+    db: Session = Depends(get_db),
+) -> dict:
+    customer_repo, live_source_repo = _request_scoped_customer_repositories(db)
+    try:
+        query = CustomerTimelineRequest(
+            unionid=unionid,
+            event_type=event_type,
+            limit=limit,
+            offset=offset,
+        )
+        result = GetCustomerTimelineQuery(customer_repo, live_source_repo=live_source_repo)(query)
+    except NotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    status_code = int(result.pop("status_code", 200) or 200)
+    return JSONResponse(jsonable_encoder(result), status_code=status_code)
+
+
 @router.get("/api/messages/{external_userid}/recent")
 def get_recent_messages(external_userid: str, limit: int = 20, db: Session = Depends(get_db)) -> dict:
     customer_repo, live_source_repo = _request_scoped_customer_repositories(db)
     try:
         query = RecentMessagesRequest(external_userid=external_userid, limit=limit)
+        result = ListRecentMessagesQuery(customer_repo, live_source_repo=live_source_repo)(query)
+    except NotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    status_code = int(result.pop("status_code", 200) or 200)
+    return JSONResponse(jsonable_encoder(result), status_code=status_code)
+
+
+@router.get("/api/users/{unionid}/messages/recent")
+def get_user_recent_messages_by_unionid(unionid: str, limit: int = 20, db: Session = Depends(get_db)) -> dict:
+    customer_repo, live_source_repo = _request_scoped_customer_repositories(db)
+    try:
+        query = RecentMessagesRequest(unionid=unionid, limit=limit)
         result = ListRecentMessagesQuery(customer_repo, live_source_repo=live_source_repo)(query)
     except NotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
@@ -727,6 +781,7 @@ def get_sidebar_v2_orders(
 
 @router.get("/api/admin/customers/profile")
 def get_admin_customer_profile(
+    unionid: str | None = None,
     external_userid: str | None = None,
     mobile: str | None = None,
     user_id: str | None = None,
@@ -734,6 +789,7 @@ def get_admin_customer_profile(
 ):
     customer_repo, live_source_repo = _request_scoped_customer_repositories(db)
     result = GetAdminCustomerProfileQuery(GetCustomerContextQuery(customer_repo, live_source_repo=live_source_repo))(
+        unionid=unionid,
         external_userid=external_userid,
         mobile=mobile,
         user_id=user_id,
@@ -743,18 +799,18 @@ def get_admin_customer_profile(
 
 
 @router.get(
-    "/api/admin/customers/{external_userid}/business-profile",
+    "/api/admin/customers/{unionid}/business-profile",
     summary="客户商业档案",
     description="Session Cookie 后台接口，只聚合客户标签、最近聊天记录和问卷问题答案三类核心信息；订单和商业摘要请调用独立接口。",
 )
 def get_admin_customer_business_profile(
-    external_userid: str = Path(..., description="企业微信 external_userid"),
+    unionid: str = Path(..., description="客户 unionid"),
     limit: int = Query(20, description="最近聊天记录条数，默认 20，最大 20"),
     db: Session = Depends(get_db),
 ) -> JSONResponse:
     customer_repo, live_source_repo = _request_scoped_customer_repositories(db)
     result = get_customer_business_profile(
-        external_userid,
+        unionid=unionid,
         limit=limit,
         customer_repo=customer_repo,
         live_source_repo=live_source_repo,
@@ -765,12 +821,14 @@ def get_admin_customer_business_profile(
 
 @router.get("/api/admin/customers/profile/tags")
 def get_admin_customer_profile_tags(
+    unionid: str | None = None,
     external_userid: str | None = None,
     user_id: str | None = None,
     db: Session = Depends(get_db),
 ):
     customer_repo, live_source_repo = _request_scoped_customer_repositories(db)
     result = GetAdminCustomerProfileTagsQuery(GetCustomerContextQuery(customer_repo, live_source_repo=live_source_repo))(
+        unionid=unionid,
         external_userid=external_userid,
         user_id=user_id,
     )
@@ -780,6 +838,7 @@ def get_admin_customer_profile_tags(
 
 @router.get("/api/admin/customers/profile/questionnaire-answers")
 def get_admin_customer_profile_questionnaire_answers(
+    unionid: str | None = None,
     external_userid: str | None = None,
     mobile: str | None = None,
     user_id: str | None = None,
@@ -787,6 +846,7 @@ def get_admin_customer_profile_questionnaire_answers(
 ):
     customer_repo, live_source_repo = _request_scoped_customer_repositories(db)
     profile_result = GetAdminCustomerProfileQuery(GetCustomerContextQuery(customer_repo, live_source_repo=live_source_repo))(
+        unionid=unionid,
         external_userid=external_userid,
         mobile=mobile,
         user_id=user_id,
@@ -807,6 +867,7 @@ def get_admin_customer_profile_questionnaire_answers(
     )
     payload = {
         "ok": True,
+        "unionid": _profile_unionid(profile_result),
         "external_userid": _profile_external_userid(profile_result),
         "answers": answers,
         "count": len(answers),
@@ -819,6 +880,7 @@ def get_admin_customer_profile_questionnaire_answers(
 
 @router.get("/api/admin/customers/profile/messages")
 def get_admin_customer_profile_messages(
+    unionid: str | None = None,
     external_userid: str | None = None,
     mobile: str | None = None,
     user_id: str | None = None,
@@ -828,6 +890,7 @@ def get_admin_customer_profile_messages(
 ):
     customer_repo, live_source_repo = _request_scoped_customer_repositories(db)
     profile_result = GetAdminCustomerProfileQuery(GetCustomerContextQuery(customer_repo, live_source_repo=live_source_repo))(
+        unionid=unionid,
         external_userid=external_userid,
         mobile=mobile,
         user_id=user_id,
@@ -836,11 +899,14 @@ def get_admin_customer_profile_messages(
         return JSONResponse(jsonable_encoder(profile_result), status_code=_profile_result_status(profile_result))
     customer = dict(profile_result.get("profile") or profile_result.get("customer") or {})
     resolved_external_userid = _profile_external_userid(profile_result)
-    if not resolved_external_userid:
-        return _input_error("external_userid is required")
+    resolved_unionid = str(customer.get("unionid") or unionid or "").strip()
+    if not resolved_unionid and not resolved_external_userid:
+        return _input_error("unionid is required")
     requested_limit = int(limit or (100 if str(fetch_all or "").strip().lower() in {"1", "true", "yes", "on"} else 30))
     requested_limit = max(1, min(requested_limit, 100))
-    result = ListRecentMessagesQuery(customer_repo, live_source_repo=live_source_repo)(RecentMessagesRequest(external_userid=resolved_external_userid, limit=requested_limit))
+    result = ListRecentMessagesQuery(customer_repo, live_source_repo=live_source_repo)(
+        RecentMessagesRequest(unionid=resolved_unionid or None, external_userid=resolved_external_userid or None, limit=requested_limit)
+    )
     status_code = int(result.pop("status_code", 200) or 200)
     if not result.get("ok", True):
         return JSONResponse(jsonable_encoder(result), status_code=status_code)
@@ -855,6 +921,7 @@ def get_admin_customer_profile_messages(
     ]
     payload = {
         "ok": True,
+        "unionid": resolved_unionid,
         "external_userid": resolved_external_userid,
         "messages": normalized_messages,
         "count": len(normalized_messages),

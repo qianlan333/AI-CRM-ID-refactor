@@ -30,10 +30,11 @@ def test_channel_entry_logs_real_call_disabled_without_fake_success(monkeypatch)
     monkeypatch.setattr("aicrm_next.channel_entry.repo.get_channel_entry_effect_log", lambda *args: None)
     monkeypatch.setattr("aicrm_next.channel_entry.repo.upsert_channel_entry_effect_log", lambda **kwargs: effects.append(kwargs) or kwargs)
     monkeypatch.setattr("aicrm_next.channel_entry.repo.save_tag_snapshot", lambda *args, **kwargs: None)
-    monkeypatch.setattr("aicrm_next.channel_entry.application._wake_welcome_external_effect_job", lambda job_id: wakeups.append(int(job_id)) or True)
+    monkeypatch.setattr("aicrm_next.channel_entry.application.wake_external_effect_job", lambda job_id, **kwargs: wakeups.append(int(job_id)) or True)
 
     result = process_channel_entry(
         ProcessChannelEntryCommand(
+            unionid="union-real-disabled",
             external_contact_id="wm-real-disabled",
             payload_json={"State": "scene-a", "WelcomeCode": "welcome-code", "corp_id": "ww-test"},
             follow_user_userid="owner-a",

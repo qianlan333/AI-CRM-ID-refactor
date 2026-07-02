@@ -36,8 +36,7 @@ class BatchSendRequest(BaseModel):
 
 
 class DoNotDisturbRequest(BaseModel):
-    external_userid: str = ""
-    mobile: str = ""
+    unionid: str = ""
     reason_code: str = "manual_set"
     reason_text: str = "运营设置"
     action: str = ""

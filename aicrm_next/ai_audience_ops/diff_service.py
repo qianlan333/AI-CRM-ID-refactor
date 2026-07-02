@@ -26,10 +26,10 @@ def normalize_audience_row(row: dict[str, Any]) -> dict[str, Any]:
     normalized = {
         "identity_type": identity_type,
         "identity_value": identity_value,
+        "unionid": _text(row.get("unionid") or (identity_value if identity_type == "unionid" else "")),
         "event_source_key": event_source_key,
         "payload_json": dict(payload),
         "payload_hash": payload_hash(dict(payload)),
-        "person_id": _int_or_none(row.get("person_id")),
         "external_userid": _text(row.get("external_userid") or (identity_value if identity_type == "external_userid" else "")),
         "mobile_hash": _text(row.get("mobile_hash") or (identity_value if identity_type == "mobile_hash" else "")),
         "owner_userid": _text(row.get("owner_userid")),
@@ -62,12 +62,3 @@ def member_event_idempotency_key(*, package_id: int, event_type: str, normalized
     if event_type == "exited":
         source_key = f"{normalized.get('identity_type')}:{normalized.get('identity_value')}:{run_id or ''}"
     return f"ai_audience:{int(package_id)}:{event_type}:{source_key}"
-
-
-def _int_or_none(value: Any) -> int | None:
-    try:
-        if value is None or _text(value) == "":
-            return None
-        return int(value)
-    except (TypeError, ValueError):
-        return None

@@ -39,6 +39,43 @@ def _json_dump(value: Any) -> str:
     return json.dumps(value if value is not None else {}, ensure_ascii=False, default=_default)
 
 
+def _resolve_unionid_by_external_userid(conn: Any, external_userid: str) -> str:
+    external = _text(external_userid)
+    if not external:
+        return ""
+    try:
+        row = conn.execute(
+            """
+            SELECT unionid
+            FROM crm_user_identity
+            WHERE primary_external_userid = %s
+               OR jsonb_exists(external_userids_json, %s)
+            ORDER BY CASE WHEN primary_external_userid = %s THEN 0 ELSE 1 END,
+                     updated_at DESC NULLS LAST
+            LIMIT 1
+            """,
+            (external, external, external),
+        ).fetchone()
+    except Exception:
+        return ""
+    return _text((row or {}).get("unionid"))
+
+
+def _unionid_targets_from_external_members(conn: Any, members: list[dict[str, Any]]) -> tuple[list[str], list[dict[str, Any]]]:
+    unionids: list[str] = []
+    normalized_members: list[dict[str, Any]] = []
+    for member in members:
+        unionid = _text(member.get("unionid")) or _resolve_unionid_by_external_userid(conn, member.get("external_contact_id"))
+        if not unionid:
+            continue
+        if unionid not in unionids:
+            unionids.append(unionid)
+        sanitized = {key: value for key, value in dict(member).items() if key not in {"external_contact_id", "external_userid"}}
+        sanitized["unionid"] = unionid
+        normalized_members.append(sanitized)
+    return unionids, normalized_members
+
+
 def _limit(value: int, *, default: int, maximum: int) -> int:
     try:
         parsed = int(value)
@@ -219,7 +256,7 @@ _CAMPAIGN_QUEUE_SOURCE_TYPE = "campaign"
 _CAMPAIGN_QUEUE_SOURCE_TABLE = "campaign_members"
 _CAMPAIGN_QUEUE_CONTENT_TYPE = "private_message"
 _CAMPAIGN_QUEUE_CHANNEL = "wecom_private"
-_CAMPAIGN_QUEUE_TARGET_KIND = "external_userid"
+_CAMPAIGN_QUEUE_TARGET_KIND = "unionid"
 _CAMPAIGN_OPEN_JOB_STATUSES = ["waiting_approval", "queued", "claimed"]
 _CLOUD_HAS_MATCHING_LEGACY_GROUP_SQL = f"""
 EXISTS (
@@ -403,7 +440,7 @@ class PostgresCloudPlanRepository:
             """
             SELECT cm.id AS cm_id,
                    cm.member_id,
-                   cm.external_contact_id,
+                   cm.unionid,
                    cm.campaign_id,
                    cm.campaign_segment_id,
                    cm.anchor_date,
@@ -488,13 +525,13 @@ class PostgresCloudPlanRepository:
                     },
                     "members": [],
                 }
-            external_userid = _text(row.get("external_contact_id"))
-            if external_userid:
+            unionid = _text(row.get("unionid"))
+            if unionid:
                 groups[source_id]["members"].append(
                     {
                         "cm_id": int(row["cm_id"]),
                         "member_id": int(row.get("member_id") or 0),
-                        "external_contact_id": external_userid,
+                        "unionid": unionid,
                         "trace_id": _text(row.get("member_trace_id")),
                         "campaign_segment_id": int(row["campaign_segment_id"]),
                     }
@@ -524,13 +561,15 @@ class PostgresCloudPlanRepository:
                 continue
             campaign = group["campaign"]
             step = group["step"]
-            target_external_userids = [member["external_contact_id"] for member in members]
+            target_unionids, normalized_members = _unionid_targets_from_external_members(conn, members)
+            if not target_unionids:
+                continue
             inserted = conn.execute(
                 """
                 INSERT INTO broadcast_jobs (
                     source_type, source_id, source_table, scheduled_for, priority, batch_key,
                     idempotency_key""" + extra_columns_sql + """, status, requires_approval,
-                    target_external_userids, target_count, target_summary,
+                    target_unionids_json, target_count, target_summary,
                     content_type, content_payload, content_summary, trace_id, created_by
                 ) VALUES (
                     %s, %s, %s, %s::timestamptz, 100, %s,
@@ -550,11 +589,11 @@ class PostgresCloudPlanRepository:
                     normalized_plan_id,
                     f"campaign_member_step:{source_id}",
                     *extra_params,
-                    _json_dump(target_external_userids),
-                    len(target_external_userids),
+                    _json_dump(target_unionids),
+                    len(target_unionids),
                     f"campaign={campaign.get('campaign_code')} step={step.get('step_index')}",
                     _CAMPAIGN_QUEUE_CONTENT_TYPE,
-                    _json_dump(_campaign_private_broadcast_payload(campaign=campaign, step=step, members=members)),
+                    _json_dump(_campaign_private_broadcast_payload(campaign=campaign, step=step, members=normalized_members)),
                     _text(step.get("content_text"))[:200],
                     _text(campaign.get("trace_id")),
                     _text(operator) or "crm_console",
@@ -974,18 +1013,18 @@ class PostgresCloudPlanRepository:
         )
         rows = conn.execute(
             """
-            SELECT cm.id, cm.external_contact_id,
+            SELECT cm.id, cm.unionid,
                    CASE
                        WHEN c.run_status = 'active' AND cm.status = 'pending' AND cm.next_due_at IS NOT NULL THEN 'queued'
                        ELSE cm.status
                    END AS status,
                    cm.updated_at,
                    c.owner_userid,
-                   COALESCE(NULLIF(contacts.customer_name, ''), NULLIF(contacts.remark, ''), cm.external_contact_id) AS display_name,
+                   COALESCE(NULLIF(read_model.display_name, ''), cm.unionid) AS display_name,
                    (SELECT COUNT(*) FROM campaign_steps cs WHERE cs.campaign_segment_id = cm.campaign_segment_id) AS planned_message_count
             FROM campaign_members cm
             JOIN campaigns c ON c.id = cm.campaign_id
-            LEFT JOIN contacts ON contacts.external_userid = cm.external_contact_id
+            LEFT JOIN customer_read_model_current read_model ON read_model.unionid = cm.unionid
             WHERE """ + _LEGACY_GROUP_KEY_SQL + """ = %s
             """
             + status_clause
@@ -999,7 +1038,7 @@ class PostgresCloudPlanRepository:
                 _recipient_view(
                     {
                         "id": -int(row["id"]),
-                        "external_userid": row.get("external_contact_id"),
+                        "unionid": row.get("unionid"),
                         "display_name": row.get("display_name"),
                         "owner_userid": row.get("owner_userid"),
                         "updated_at": row.get("updated_at"),
@@ -1024,18 +1063,18 @@ class PostgresCloudPlanRepository:
                         return item
                 row = conn.execute(
                     """
-                    SELECT cm.id, cm.external_contact_id,
+                    SELECT cm.id, cm.unionid,
                            CASE
                                WHEN c.run_status = 'active' AND cm.status = 'pending' AND cm.next_due_at IS NOT NULL THEN 'queued'
                                ELSE cm.status
                            END AS status,
                            cm.updated_at,
                            c.owner_userid,
-                           COALESCE(NULLIF(contacts.customer_name, ''), NULLIF(contacts.remark, ''), cm.external_contact_id) AS display_name,
+                           COALESCE(NULLIF(read_model.display_name, ''), cm.unionid) AS display_name,
                            (SELECT COUNT(*) FROM campaign_steps cs WHERE cs.campaign_segment_id = cm.campaign_segment_id) AS planned_message_count
                     FROM campaign_members cm
                     JOIN campaigns c ON c.id = cm.campaign_id
-                    LEFT JOIN contacts ON contacts.external_userid = cm.external_contact_id
+                    LEFT JOIN customer_read_model_current read_model ON read_model.unionid = cm.unionid
                     WHERE """ + _LEGACY_GROUP_KEY_SQL + """ = %s AND cm.id = %s
                     """,
                     (_text(plan_id), legacy_id),
@@ -1045,7 +1084,7 @@ class PostgresCloudPlanRepository:
                     return _recipient_view(
                         {
                             "id": -int(row["id"]),
-                            "external_userid": row.get("external_contact_id"),
+                            "unionid": row.get("unionid"),
                             "display_name": row.get("display_name"),
                             "owner_userid": row.get("owner_userid"),
                             "updated_at": row.get("updated_at"),
@@ -1224,11 +1263,11 @@ class PostgresCloudPlanRepository:
                         INSERT INTO broadcast_jobs (
                             source_type, source_id, source_table, scheduled_for, priority, batch_key,
                             business_domain, idempotency_key, channel, target_kind, retry_policy_json, metadata_json,
-                            status, requires_approval, target_external_userids, target_count, target_summary,
+                            status, requires_approval, target_unionids_json, target_count, target_summary,
                             content_type, content_payload, content_summary, trace_id, created_by
                         ) VALUES (
                             'cloud_plan', %s, 'cloud_broadcast_plan_recipients', CURRENT_TIMESTAMP, 100, %s,
-                            'ai_assistant', %s, 'wecom_private', 'external_userid', '{}'::jsonb, %s::jsonb,
+                            'ai_assistant', %s, 'wecom_private', 'unionid', '{}'::jsonb, %s::jsonb,
                             'queued', FALSE, %s::jsonb, 1, %s,
                             'cloud_plan', %s::jsonb, %s, %s, %s
                         )
@@ -1241,17 +1280,17 @@ class PostgresCloudPlanRepository:
                             f"cloud_plan_recipient:{normalized_plan_id}",
                             recipient_idempotency_key,
                             _json_dump(metadata),
-                            _json_dump([_text(recipient.get("external_userid"))]),
-                            _text(recipient.get("display_name")) or _text(recipient.get("external_userid")),
+                            _json_dump([_text(recipient.get("unionid"))]),
+                            _text(recipient.get("display_name")) or _text(recipient.get("unionid")),
                             _json_dump(
                                 {
                                     "plan_id": normalized_plan_id,
                                     "recipient_id": recipient_id,
-                                    "external_userid": _text(recipient.get("external_userid")),
+                                    "unionid": _text(recipient.get("unionid")),
                                     "message_mode": "recipient_messages",
                                 }
                             ),
-                            f"{_text(plan_dict.get('display_name')) or _text(plan_dict.get('intent')) or normalized_plan_id} · {_text(recipient.get('display_name')) or _text(recipient.get('external_userid'))}",
+                            f"{_text(plan_dict.get('display_name')) or _text(plan_dict.get('intent')) or normalized_plan_id} · {_text(recipient.get('display_name')) or _text(recipient.get('unionid'))}",
                             _text(plan_dict.get("trace_id")) or normalized_plan_id,
                             _text(operator) or "internal_event_worker",
                         ),
@@ -1362,9 +1401,15 @@ class PostgresCloudPlanRepository:
             return {"status": "skipped", "reason": "missing_external_userid"}
         if not normalized_owner:
             return {"status": "skipped", "reason": "missing_owner_userid"}
+        normalized_unionid = self._resolve_fixture_unionid_by_external_userid(normalized_external_userid)
+        if not normalized_unionid:
+            return {"status": "skipped", "reason": "identity_pending_unionid"}
         plan_id = _agent_plan_id(normalized_event_id)
         content_payload = _content_payload_for_package(content_package)
         with self._connect() as conn:
+            normalized_unionid = _resolve_unionid_by_external_userid(conn, normalized_external_userid)
+            if not normalized_unionid:
+                return {"status": "skipped", "reason": "identity_pending_unionid"}
             existing_plan = conn.execute(
                 "SELECT plan_id FROM cloud_broadcast_plans WHERE plan_id = %s",
                 (plan_id,),
@@ -1396,7 +1441,7 @@ class PostgresCloudPlanRepository:
                                 "source": "automation_agent",
                                 "package_key": _text(package_key),
                                 "external_event_id": normalized_event_id,
-                                "external_userid": normalized_external_userid,
+                                "unionid": normalized_unionid,
                             }
                         ),
                         _json_dump({"source": "automation_agent", "external_event_id": normalized_event_id}),
@@ -1405,18 +1450,18 @@ class PostgresCloudPlanRepository:
             recipient = conn.execute(
                 """
                 INSERT INTO cloud_broadcast_plan_recipients (
-                    plan_id, external_userid, owner_userid, display_name, planned_message_count,
+                    plan_id, unionid, owner_userid, display_name, planned_message_count,
                     approval_status, send_status, created_at, updated_at
                 ) VALUES (
                     %s, %s, %s, %s, 1, 'approved', 'pending', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
                 )
-                ON CONFLICT (plan_id, external_userid) DO UPDATE SET
+                ON CONFLICT (plan_id, unionid) DO UPDATE SET
                     owner_userid = EXCLUDED.owner_userid,
                     planned_message_count = 1,
                     updated_at = CURRENT_TIMESTAMP
                 RETURNING *
                 """,
-                (plan_id, normalized_external_userid, normalized_owner, normalized_external_userid),
+                (plan_id, normalized_unionid, normalized_owner, normalized_unionid),
             ).fetchone()
             recipient_id = int((recipient or {}).get("id") or 0)
             existing_message = conn.execute(
@@ -1445,7 +1490,7 @@ class PostgresCloudPlanRepository:
                 inserted_message = conn.execute(
                     """
                     INSERT INTO cloud_broadcast_plan_recipient_messages (
-                        plan_id, recipient_id, external_userid, sequence_index, day_offset, send_time,
+                        plan_id, recipient_id, unionid, sequence_index, day_offset, send_time,
                         content_text, content_payload_json, attachments_json, status, created_at, updated_at
                     ) VALUES (
                         %s, %s, %s, 1, 0, '', %s, %s::jsonb, '[]'::jsonb, 'pending', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
@@ -1455,7 +1500,7 @@ class PostgresCloudPlanRepository:
                     (
                         plan_id,
                         recipient_id,
-                        normalized_external_userid,
+                        normalized_unionid,
                         _text(content_package.get("content_text")),
                         _json_dump(content_payload),
                     ),
@@ -1516,11 +1561,11 @@ class PostgresCloudPlanRepository:
                     INSERT INTO broadcast_jobs (
                         source_type, source_id, source_table, scheduled_for, priority, batch_key,
                         business_domain, idempotency_key, channel, target_kind, retry_policy_json, metadata_json,
-                        status, requires_approval, target_external_userids, target_count, target_summary,
+                        status, requires_approval, target_unionids_json, target_count, target_summary,
                         content_type, content_payload, content_summary, trace_id, created_by
                     ) VALUES (
                         'cloud_plan', %s, 'cloud_broadcast_plan_recipients', CURRENT_TIMESTAMP, 100, %s,
-                        'ai_assistant', %s, 'wecom_private', 'external_userid', '{}'::jsonb, '{}'::jsonb,
+                        'ai_assistant', %s, 'wecom_private', 'unionid', '{}'::jsonb, '{}'::jsonb,
                         'queued', FALSE, %s::jsonb, 1, %s,
                         'cloud_plan', %s::jsonb, %s, %s, %s
                     )
@@ -1532,17 +1577,17 @@ class PostgresCloudPlanRepository:
                         f"{normalized_plan_id}:{int(recipient_id)}",
                         f"cloud_plan_recipient:{normalized_plan_id}",
                         idempotency_key,
-                        _json_dump([_text(recipient.get("external_userid"))]),
-                        _text(recipient.get("display_name")) or _text(recipient.get("external_userid")),
+                        _json_dump([_text(recipient.get("unionid"))]),
+                        _text(recipient.get("display_name")) or _text(recipient.get("unionid")),
                         _json_dump(
                             {
                                 "plan_id": normalized_plan_id,
                                 "recipient_id": int(recipient_id),
-                                "external_userid": _text(recipient.get("external_userid")),
+                                "unionid": _text(recipient.get("unionid")),
                                 "message_mode": "recipient_messages",
                             }
                         ),
-                        f"{_text(plan.get('display_name')) or _text(plan.get('intent')) or normalized_plan_id} · {_text(recipient.get('display_name')) or _text(recipient.get('external_userid'))}",
+                        f"{_text(plan.get('display_name')) or _text(plan.get('intent')) or normalized_plan_id} · {_text(recipient.get('display_name')) or _text(recipient.get('unionid'))}",
                         _text(plan.get("trace_id")),
                         _text(operator) or "crm_console",
                     ),
@@ -1814,12 +1859,12 @@ class InMemoryCloudPlanRepository:
             }
         ]
         self.recipients = [
-            {"id": 1, "plan_id": "plan_probe", "external_userid": "wm_a", "owner_userid": "HuangYouCan", "display_name": "赵言方", "planned_message_count": 1, "approval_status": "pending", "send_status": "pending", "updated_at": now},
-            {"id": 2, "plan_id": "plan_probe", "external_userid": "wm_b", "owner_userid": "HuangYouCan", "display_name": "黄永灿", "planned_message_count": 1, "approval_status": "pending", "send_status": "pending", "updated_at": now},
+            {"id": 1, "plan_id": "plan_probe", "unionid": "union_plan_a", "external_userid": "wm_a", "owner_userid": "HuangYouCan", "display_name": "赵言方", "planned_message_count": 1, "approval_status": "pending", "send_status": "pending", "updated_at": now},
+            {"id": 2, "plan_id": "plan_probe", "unionid": "union_plan_b", "external_userid": "wm_b", "owner_userid": "HuangYouCan", "display_name": "黄永灿", "planned_message_count": 1, "approval_status": "pending", "send_status": "pending", "updated_at": now},
         ]
         self.messages = [
-            {"id": 1, "plan_id": "plan_probe", "recipient_id": 1, "external_userid": "wm_a", "sequence_index": 1, "day_offset": 0, "send_time": "10:00", "content_text": "你好", "content_payload_json": {}, "attachments_json": [], "status": "pending"},
-            {"id": 2, "plan_id": "plan_probe", "recipient_id": 2, "external_userid": "wm_b", "sequence_index": 1, "day_offset": 0, "send_time": "10:00", "content_text": "你好", "content_payload_json": {}, "attachments_json": [], "status": "pending"},
+            {"id": 1, "plan_id": "plan_probe", "recipient_id": 1, "unionid": "union_plan_a", "external_userid": "wm_a", "sequence_index": 1, "day_offset": 0, "send_time": "10:00", "content_text": "你好", "content_payload_json": {}, "attachments_json": [], "status": "pending"},
+            {"id": 2, "plan_id": "plan_probe", "recipient_id": 2, "unionid": "union_plan_b", "external_userid": "wm_b", "sequence_index": 1, "day_offset": 0, "send_time": "10:00", "content_text": "你好", "content_payload_json": {}, "attachments_json": [], "status": "pending"},
         ]
         self.legacy_plans = [
             {
@@ -1848,6 +1893,20 @@ class InMemoryCloudPlanRepository:
         ]
         self.broadcast_jobs: list[dict[str, Any]] = []
         self.audits: list[dict[str, Any]] = []
+
+    def _resolve_fixture_unionid_by_external_userid(self, external_userid: str) -> str:
+        normalized_external_userid = _text(external_userid)
+        if not normalized_external_userid:
+            return ""
+        for recipient in self.recipients:
+            if _text(recipient.get("external_userid")) == normalized_external_userid:
+                return _text(recipient.get("unionid"))
+        suffix = normalized_external_userid
+        for prefix in ("wm_", "external_"):
+            if suffix.startswith(prefix):
+                suffix = suffix[len(prefix) :]
+                break
+        return f"union_{suffix}" if suffix else ""
 
     def _stats(self, plan_id: str) -> dict[str, int]:
         rows = [item for item in [*self.recipients, *self.legacy_recipients] if item["plan_id"] == plan_id]
@@ -2014,7 +2073,7 @@ class InMemoryCloudPlanRepository:
             if item["plan_id"] == normalized_plan_id
             and item.get("approval_status") != "rejected"
             and item.get("send_status") not in {"cancelled", "sent"}
-            and _text(item.get("external_userid"))
+            and _text(item.get("unionid"))
             and any(
                 message.get("plan_id") == normalized_plan_id
                 and int(message.get("recipient_id") or 0) == int(item.get("id") or 0)
@@ -2059,20 +2118,20 @@ class InMemoryCloudPlanRepository:
                         "business_domain": "ai_assistant",
                         "idempotency_key": f"cloud_plan_recipient:{normalized_plan_id}:{recipient_id}",
                         "channel": "wecom_private",
-                        "target_kind": "external_userid",
+                        "target_kind": "unionid",
                         "status": "queued",
                         "requires_approval": False,
-                        "target_external_userids": [_text(recipient["external_userid"])],
+                        "target_unionids_json": [_text(recipient["unionid"])],
                         "target_count": 1,
-                        "target_summary": _text(recipient.get("display_name")) or _text(recipient["external_userid"]),
+                        "target_summary": _text(recipient.get("display_name")) or _text(recipient["unionid"]),
                         "content_type": "cloud_plan",
                         "content_payload": {
                             "plan_id": normalized_plan_id,
                             "recipient_id": recipient_id,
-                            "external_userid": _text(recipient["external_userid"]),
+                            "unionid": _text(recipient["unionid"]),
                             "message_mode": "recipient_messages",
                         },
-                        "content_summary": f"{_text(plan.get('display_name')) or _text(plan.get('intent')) or normalized_plan_id} · {_text(recipient.get('display_name')) or _text(recipient['external_userid'])}",
+                        "content_summary": f"{_text(plan.get('display_name')) or _text(plan.get('intent')) or normalized_plan_id} · {_text(recipient.get('display_name')) or _text(recipient['unionid'])}",
                         "trace_id": normalized_plan_id,
                         "created_by": _text(operator) or "internal_event_worker",
                         "created_at": _now(),
@@ -2160,6 +2219,9 @@ class InMemoryCloudPlanRepository:
             return {"status": "skipped", "reason": "missing_external_userid"}
         if not normalized_owner:
             return {"status": "skipped", "reason": "missing_owner_userid"}
+        normalized_unionid = self._resolve_fixture_unionid_by_external_userid(normalized_external_userid)
+        if not normalized_unionid:
+            return {"status": "skipped", "reason": "identity_pending_unionid"}
         plan_id = _agent_plan_id(normalized_event_id)
         existing = next((item for item in self.plans if item.get("plan_id") == plan_id), None)
         if not existing:
@@ -2178,7 +2240,7 @@ class InMemoryCloudPlanRepository:
                         "source": "automation_agent",
                         "package_key": _text(package_key),
                         "external_event_id": normalized_event_id,
-                        "external_userid": normalized_external_userid,
+                        "unionid": normalized_unionid,
                     },
                     "updated_at": _now(),
                     "source_type": "cloud_plan",
@@ -2188,7 +2250,7 @@ class InMemoryCloudPlanRepository:
             (
                 item
                 for item in self.recipients
-                if item.get("plan_id") == plan_id and item.get("external_userid") == normalized_external_userid
+                if item.get("plan_id") == plan_id and item.get("unionid") == normalized_unionid
             ),
             None,
         )
@@ -2196,9 +2258,10 @@ class InMemoryCloudPlanRepository:
             recipient = {
                 "id": len(self.recipients) + 1,
                 "plan_id": plan_id,
+                "unionid": normalized_unionid,
                 "external_userid": normalized_external_userid,
                 "owner_userid": normalized_owner,
-                "display_name": normalized_external_userid,
+                "display_name": normalized_unionid,
                 "planned_message_count": 1,
                 "approval_status": "approved",
                 "send_status": "pending",
@@ -2219,6 +2282,7 @@ class InMemoryCloudPlanRepository:
                 "id": len(self.messages) + 1,
                 "plan_id": plan_id,
                 "recipient_id": int(recipient["id"]),
+                "unionid": normalized_unionid,
                 "external_userid": normalized_external_userid,
                 "sequence_index": 1,
                 "day_offset": 0,
@@ -2275,9 +2339,9 @@ class InMemoryCloudPlanRepository:
                     "source_type": "cloud_plan",
                     "source_table": "cloud_broadcast_plan_recipients",
                     "source_id": source_id,
-                    "target_external_userids": [recipient["external_userid"]],
+                    "target_unionids_json": [recipient["unionid"]],
                     "target_count": 1,
-                    "content_payload": {"plan_id": plan_id, "recipient_id": int(recipient_id), "external_userid": recipient["external_userid"], "message_mode": "recipient_messages"},
+                    "content_payload": {"plan_id": plan_id, "recipient_id": int(recipient_id), "unionid": recipient["unionid"], "message_mode": "recipient_messages"},
                     "idempotency_key": f"cloud_plan_recipient:{plan_id}:{int(recipient_id)}",
                 }
             )

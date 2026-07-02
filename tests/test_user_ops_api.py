@@ -43,16 +43,16 @@ def test_user_ops_read_routes_use_next_fixtures(monkeypatch):
 def test_user_ops_customer_detail_and_timeline_are_next_owned(monkeypatch):
     client = _client(monkeypatch)
     first = client.get("/api/admin/user-ops/customers?limit=1").json()["items"][0]
-    external_userid = first["external_userid"]
+    unionid = first["unionid"]
 
-    detail = client.get(f"/api/admin/user-ops/customers/{external_userid}")
-    timeline = client.get(f"/api/admin/user-ops/customers/{external_userid}/timeline")
+    detail = client.get(f"/api/admin/user-ops/customers/{unionid}")
+    timeline = client.get(f"/api/admin/user-ops/customers/{unionid}/timeline")
 
     for response in (detail, timeline):
         assert response.status_code == 200
         _assert_next(response.json())
 
-    assert detail.json()["customer"]["external_userid"] == external_userid
+    assert detail.json()["customer"]["unionid"] == unionid
     assert timeline.json()["items"]
 
 
@@ -94,7 +94,7 @@ def test_user_ops_batch_send_preview_supports_ai_audience_package_source(next_cl
                     INSERT INTO ai_audience_package (
                         package_key, name, status, query_mode, identity_policy, created_at, updated_at
                     )
-                    VALUES ('uo_ai_audience_pkg', 'User Ops AI Audience 包', 'active', 'hybrid', 'external_userid', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                    VALUES ('uo_ai_audience_pkg', 'User Ops AI Audience 包', 'active', 'hybrid', 'unionid', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
                     RETURNING id
                     """
                 )
@@ -103,12 +103,29 @@ def test_user_ops_batch_send_preview_supports_ai_audience_package_source(next_cl
         session.execute(
             text(
                 """
-                INSERT INTO ai_audience_member_current (
-                    package_id, identity_type, identity_value, status, external_userid, event_source_key, payload_hash
+                INSERT INTO crm_user_identity (
+                    unionid, primary_external_userid, external_userids_json, profile_json, status, created_at, updated_at
                 )
                 VALUES
-                    (:package_id, 'external_userid', 'wm_priority', 'active', 'wm_priority', 'event:1', 'hash:1'),
-                    (:package_id, 'external_userid', 'wm_skip', 'active', 'wm_skip', 'event:2', 'hash:2')
+                    ('union_ai_priority', 'wm_priority', '["wm_priority"]'::jsonb, '{"name":"优先客户"}'::jsonb, 'active', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+                    ('union_ai_skip', 'wm_skip', '["wm_skip"]'::jsonb, '{"name":"跳过客户"}'::jsonb, 'active', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                ON CONFLICT (unionid) DO UPDATE SET
+                    primary_external_userid = EXCLUDED.primary_external_userid,
+                    external_userids_json = EXCLUDED.external_userids_json,
+                    profile_json = EXCLUDED.profile_json,
+                    updated_at = CURRENT_TIMESTAMP
+                """
+            )
+        )
+        session.execute(
+            text(
+                """
+                INSERT INTO ai_audience_member_current (
+                    package_id, identity_type, identity_value, unionid, status, event_source_key, payload_hash
+                )
+                VALUES
+                    (:package_id, 'unionid', 'union_ai_priority', 'union_ai_priority', 'active', 'event:1', 'hash:1'),
+                    (:package_id, 'unionid', 'union_ai_skip', 'union_ai_skip', 'active', 'event:2', 'hash:2')
                 """
             ),
             {"package_id": package_id},
@@ -163,6 +180,7 @@ def test_user_ops_batch_send_preview_supports_ai_audience_package_source(next_cl
             "owner_display_name": "QianLan",
             "sender_userid": "QianLan",
             "target_count": 1,
+            "target_unionids": ["union_ai_priority"],
             "external_userids": ["wm_priority"],
         }
     ]
@@ -194,4 +212,5 @@ def test_user_ops_batch_send_preview_supports_ai_audience_package_source(next_cl
     body = execute.json()
     assert body["sent_count"] == 1
     assert body["task_results"][0]["sender_userid"] == "QianLan"
+    assert body["target_unionids"] == ["union_ai_priority"]
     assert body["side_effect_safety"]["side_effect_executed"] is False

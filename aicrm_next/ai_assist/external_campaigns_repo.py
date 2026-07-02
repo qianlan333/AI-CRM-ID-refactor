@@ -233,11 +233,11 @@ class PostgresExternalCampaignRepository:
                 member_id = int(item.get("member_id") or 0)
             except (TypeError, ValueError):
                 continue
-            if member_id <= 0 or member_id in seen:
+            item["unionid"] = _text(item.get("unionid"))
+            if member_id <= 0 or member_id in seen or not item["unionid"]:
                 continue
             seen.add(member_id)
             item["member_id"] = member_id
-            item["external_contact_id"] = _text(item.get("external_contact_id"))
             cleaned.append(item)
         return cleaned
 
@@ -441,7 +441,7 @@ class PostgresExternalCampaignRepository:
             (int(campaign_id),),
         ).fetchall() or []
         columns = self.table_columns("campaign_members")
-        base_columns = ["campaign_id", "campaign_segment_id", "segment_id", "member_id", "external_contact_id", "status"]
+        base_columns = ["campaign_id", "campaign_segment_id", "segment_id", "member_id", "unionid", "status"]
         optional_columns = [column for column in ("current_step_index", "trace_id") if column in columns]
         allocated = 0
         skipped = 0
@@ -468,7 +468,7 @@ class PostgresExternalCampaignRepository:
                     cs_id,
                     int(segment["segment_id"]),
                     member_id,
-                    _text(member.get("external_contact_id")),
+                    _text(member.get("unionid")),
                     "pending",
                 ]
                 if "current_step_index" in optional_columns:

@@ -140,7 +140,7 @@ def upgrade() -> None:
             id BIGSERIAL PRIMARY KEY,
             budget_id BIGINT NOT NULL,
             member_id BIGINT,
-            external_contact_id TEXT NOT NULL DEFAULT '',
+            unionid TEXT NOT NULL DEFAULT '',
             consumed_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
             source_kind TEXT NOT NULL DEFAULT '',
             source_id TEXT NOT NULL DEFAULT '',
@@ -156,8 +156,8 @@ def upgrade() -> None:
     )
     op.execute(
         """
-        CREATE INDEX IF NOT EXISTS idx_automation_frequency_consumption_external_window
-        ON automation_frequency_consumption (external_contact_id, budget_id, consumed_at DESC)
+        CREATE INDEX IF NOT EXISTS idx_automation_frequency_consumption_unionid_window
+        ON automation_frequency_consumption (unionid, budget_id, consumed_at DESC)
         """
     )
     op.execute(

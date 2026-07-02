@@ -24,7 +24,7 @@ def _ensure_agent_schema() -> None:
         "ALTER TABLE automation_agent_run ADD COLUMN IF NOT EXISTS request_id TEXT NOT NULL DEFAULT ''",
         "ALTER TABLE automation_agent_run ADD COLUMN IF NOT EXISTS batch_id TEXT NOT NULL DEFAULT ''",
         "ALTER TABLE automation_agent_run ADD COLUMN IF NOT EXISTS userid TEXT NOT NULL DEFAULT ''",
-        "ALTER TABLE automation_agent_run ADD COLUMN IF NOT EXISTS external_contact_id TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE automation_agent_run ADD COLUMN IF NOT EXISTS unionid TEXT NOT NULL DEFAULT ''",
         "ALTER TABLE automation_agent_run ADD COLUMN IF NOT EXISTS agent_code TEXT NOT NULL DEFAULT ''",
         "ALTER TABLE automation_agent_run ADD COLUMN IF NOT EXISTS agent_type TEXT NOT NULL DEFAULT ''",
         "ALTER TABLE automation_agent_run ADD COLUMN IF NOT EXISTS provider TEXT NOT NULL DEFAULT ''",
@@ -45,7 +45,7 @@ def _ensure_agent_schema() -> None:
         "ALTER TABLE automation_agent_output ADD COLUMN IF NOT EXISTS run_id TEXT NOT NULL DEFAULT ''",
         "ALTER TABLE automation_agent_output ADD COLUMN IF NOT EXISTS request_id TEXT NOT NULL DEFAULT ''",
         "ALTER TABLE automation_agent_output ADD COLUMN IF NOT EXISTS userid TEXT NOT NULL DEFAULT ''",
-        "ALTER TABLE automation_agent_output ADD COLUMN IF NOT EXISTS external_contact_id TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE automation_agent_output ADD COLUMN IF NOT EXISTS unionid TEXT NOT NULL DEFAULT ''",
         "ALTER TABLE automation_agent_output ADD COLUMN IF NOT EXISTS agent_code TEXT NOT NULL DEFAULT ''",
         "ALTER TABLE automation_agent_output ADD COLUMN IF NOT EXISTS output_type TEXT NOT NULL DEFAULT ''",
         "ALTER TABLE automation_agent_output ADD COLUMN IF NOT EXISTS raw_output_text TEXT NOT NULL DEFAULT ''",
@@ -114,9 +114,9 @@ def _member_event() -> dict:
         "id": 11,
         "package_id": 7,
         "event_type": "entered",
-        "identity_type": "external_userid",
-        "identity_value": "wm_agent_user",
-        "external_userid": "wm_agent_user",
+        "identity_type": "unionid",
+        "identity_value": "union_agent_user",
+        "unionid": "union_agent_user",
         "owner_userid": "HuangYouCan",
         "event_source_key": "questionnaire_submission:100",
         "payload_json": {"answers": {"need": "提升私域自动化转化"}, "tags": ["ai_audience"]},
@@ -135,11 +135,11 @@ def _latest(table: str) -> dict:
 
 
 def test_ai_audience_template_renderer_uses_payload_shortcuts() -> None:
-    rendered, diagnostics, reason = render_template_text("需求={{need}} 用户={{member.external_userid}}", {"payload": {"need": "转化"}, "member": {"external_userid": "wm_1"}})
+    rendered, diagnostics, reason = render_template_text("需求={{need}} 用户={{member.unionid}}", {"payload": {"need": "转化"}, "member": {"unionid": "union_1"}})
 
     assert reason == ""
-    assert rendered == "需求=转化 用户=wm_1"
-    assert diagnostics["template_variables_used"] == ["member.external_userid", "need"]
+    assert rendered == "需求=转化 用户=union_1"
+    assert diagnostics["template_variables_used"] == ["member.unionid", "need"]
 
 
 @pytest.mark.usefixtures("next_pg_schema")
@@ -200,12 +200,12 @@ def test_ai_audience_agent_copywriting_falls_back_without_broadcast(monkeypatch)
         package=_package(),
         member_event=_member_event(),
         agent_code="ai_audience_agent",
-        fallback_content="兜底话术给 {{member.external_userid}}",
+        fallback_content="兜底话术给 {{member.unionid}}",
     )
 
     assert result["ok"] is True
     assert result["content"]["fallback"] is True
-    assert result["content"]["content_text"] == "兜底话术给 wm_agent_user"
+    assert result["content"]["content_text"] == "兜底话术给 union_agent_user"
     assert result["diagnostics"]["fallback_used"] is True
     assert result["diagnostics"]["error_code"] == "agent_gateway_config_missing"
     assert _count("automation_agent_run") == 1

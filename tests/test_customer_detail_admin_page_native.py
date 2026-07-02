@@ -42,7 +42,7 @@ def _patch_profile_query(monkeypatch, result: dict) -> None:
     from aicrm_next.customer_read_model import admin_pages
 
     class FakeGetAdminCustomerProfileQuery:
-        def __call__(self, *, external_userid=None, mobile=None, user_id=None):
+        def __call__(self, *, unionid=None, external_userid=None, mobile=None, user_id=None):
             return dict(result)
 
     monkeypatch.setattr(admin_pages, "GetAdminCustomerProfileQuery", FakeGetAdminCustomerProfileQuery)
@@ -102,10 +102,10 @@ def test_customer_detail_page_url_contract_is_preserved(monkeypatch) -> None:
 
     assert response.status_code == 200
     for marker in (
-        "/api/admin/customers/profile?external_userid=ext_test_001",
-        "/api/admin/customers/profile/tags?external_userid=ext_test_001",
-        "/api/admin/customers/profile/questionnaire-answers?external_userid=ext_test_001",
-        "/api/admin/customers/profile/messages?external_userid=ext_test_001",
+        "/api/admin/customers/profile?unionid=union_test_001",
+        "/api/admin/customers/profile/tags?unionid=union_test_001",
+        "/api/admin/customers/profile/questionnaire-answers?unionid=union_test_001",
+        "/api/admin/customers/profile/messages?unionid=union_test_001",
     ):
         assert marker in response.text
     for marker in (

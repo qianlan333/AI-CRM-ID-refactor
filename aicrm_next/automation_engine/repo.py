@@ -94,7 +94,7 @@ class InMemoryAutomationRepository:
                 "run_id": "phase4bo_run_draft",
                 "request_id": "req_phase4bk_reply",
                 "userid": "user_phase4_fixture",
-                "external_contact_id": "wm_external_001",
+                "unionid": "union_external_001",
                 "agent_code": "phase4bg_review_agent",
                 "output_type": "reply_draft",
                 "rendered_output_text": "Fixture reply draft for console review only.",
@@ -114,7 +114,7 @@ class InMemoryAutomationRepository:
                 "run_id": "phase4bo_run_route",
                 "request_id": "req_phase4bk_route",
                 "userid": "user_phase4_fixture",
-                "external_contact_id": "wm_external_002",
+                "unionid": "union_external_002",
                 "agent_code": "phase4bg_followup_agent",
                 "output_type": "route_decision",
                 "rendered_output_text": "Fixture route decision metadata for audit-only review.",
@@ -137,7 +137,7 @@ class InMemoryAutomationRepository:
                 "agent_code": "phase4bg_review_agent",
                 "run_status": "completed",
                 "trigger_source": "fixture",
-                "external_contact_id": "wm_external_001",
+                "unionid": "union_external_001",
                 "userid": "user_phase4_fixture",
                 "started_at": "2026-05-20T09:48:00Z",
                 "finished_at": "2026-05-20T09:49:00Z",
@@ -156,7 +156,7 @@ class InMemoryAutomationRepository:
                 "agent_code": "phase4bg_followup_agent",
                 "run_status": "failed",
                 "trigger_source": "fixture",
-                "external_contact_id": "wm_external_002",
+                "unionid": "union_external_002",
                 "userid": "user_phase4_fixture",
                 "started_at": "2026-05-20T09:52:00Z",
                 "finished_at": "2026-05-20T09:52:30Z",
@@ -244,7 +244,7 @@ class InMemoryAutomationRepository:
     def list_agent_outputs(self, filters: dict[str, Any] | None = None) -> tuple[list[dict[str, Any]], int, dict[str, Any]]:
         normalized = normalize_agent_output_filters(filters)
         rows = [deepcopy(item) for item in self._agent_outputs.values()]
-        for field in ("request_id", "external_contact_id", "userid", "agent_code", "output_type", "applied_status"):
+        for field in ("request_id", "unionid", "userid", "agent_code", "output_type", "applied_status"):
             value = str(normalized.get(field) or "").strip()
             if value:
                 rows = [item for item in rows if str(item.get(field) or "") == value]
@@ -274,7 +274,7 @@ class InMemoryAutomationRepository:
     def list_agent_runs(self, filters: dict[str, Any] | None = None) -> tuple[list[dict[str, Any]], int, dict[str, Any]]:
         normalized = normalize_agent_run_filters(filters)
         rows = [deepcopy(item) for item in self._agent_runs.values()]
-        for field in ("request_id", "run_id", "agent_code", "run_status", "trigger_source", "external_contact_id", "userid"):
+        for field in ("request_id", "run_id", "agent_code", "run_status", "trigger_source", "unionid", "userid"):
             value = str(normalized.get(field) or "").strip()
             if value:
                 rows = [item for item in rows if str(item.get(field) or "") == value]

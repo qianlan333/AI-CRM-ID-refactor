@@ -64,8 +64,9 @@ def test_questionnaire_submit_shadow_emits_internal_event_without_changing_side_
         "score": 13,
         "final_tag_count": 2,
     }
-    assert run_total == 5
+    assert run_total == 6
     assert sorted(run.consumer_name for run in runs) == [
+        "ai_audience_source_poke_consumer",
         "automation_questionnaire_consumer",
         "customer_summary_consumer",
         "questionnaire_projection_consumer",

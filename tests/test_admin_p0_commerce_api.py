@@ -45,7 +45,7 @@ def test_admin_p0_routes_are_in_api_docs() -> None:
         ("POST", "/api/admin/refunds"): "交易 / 商品",
         ("GET", "/api/admin/customers/{external_userid}/orders"): "客户 / 身份 / 侧边栏",
         ("GET", "/api/admin/customers/{external_userid}/commerce-summary"): "客户 / 身份 / 侧边栏",
-        ("GET", "/api/admin/customers/{external_userid}/business-profile"): "客户 / 身份 / 侧边栏",
+        ("GET", "/api/admin/customers/{unionid}/business-profile"): "客户 / 身份 / 侧边栏",
         ("GET", "/api/admin/identity/resolve"): "客户 / 身份 / 侧边栏",
         ("GET", "/api/admin/identity/links/{identity_key}"): "客户 / 身份 / 侧边栏",
         ("GET", "/api/admin/webhooks/events"): "认证 / 回调",
@@ -188,8 +188,9 @@ def test_product_share_uses_real_qr_svg(monkeypatch) -> None:
 
 def test_customer_business_profile_orders_and_summary(monkeypatch) -> None:
     client = _client(monkeypatch)
-    profile = client.get("/api/admin/customers/wx_ext_001/business-profile").json()
+    profile = client.get("/api/admin/customers/union_customer_001/business-profile").json()
     assert profile["ok"] is True
+    assert profile["unionid"] == "union_customer_001"
     assert set(profile["business_profile"]) == {"tags", "recent_messages", "questionnaire_answers"}
     assert profile["counts"]["recent_messages"] <= 20
     assert isinstance(profile["business_profile"]["tags"], list)

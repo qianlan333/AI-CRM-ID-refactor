@@ -1426,30 +1426,39 @@ class PostgresQuestionnaireReadRepository:
         score = float(payload.get("score") or (payload.get("result_json") or {}).get("score") or 0)
         assessment_result = _json_dict((payload.get("result_json") or {}).get("assessment_result"))
         redirect_url = _text(payload.get("redirect_url") or "")
+        unionid = _text(payload.get("unionid") or respondent_identity.get("unionid"))
+        if not unionid:
+            self._enqueue_identity_resolution(
+                {
+                    "source_type": "questionnaire_submission",
+                    "questionnaire_id": questionnaire_id,
+                    "respondent_key": _text(payload.get("respondent_key") or respondent_identity.get("respondent_key")),
+                    "openid": _text(payload.get("openid") or respondent_identity.get("openid")),
+                    "external_userid": _text(payload.get("external_userid") or respondent_identity.get("external_userid")),
+                    "mobile": mobile_snapshot,
+                    "slug": _text(payload.get("slug")),
+                },
+                reason="missing_unionid",
+            )
+            raise RepositoryProviderError("identity_pending_unionid")
 
         with self._connect() as conn:
             with conn.transaction():
                 row = conn.execute(
                     """
                     INSERT INTO questionnaire_submissions (
-                        questionnaire_id, identity_map_id, respondent_key, openid, unionid, external_userid,
-                        follow_user_userid, matched_by, mobile_snapshot, source_channel, campaign_id,
+                        questionnaire_id, unionid, follow_user_userid, matched_by, source_channel, campaign_id,
                         staff_id, total_score, final_tags, assessment_result_snapshot, result_token,
                         redirect_url_snapshot, submitted_at
                     )
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())
                     RETURNING id, submitted_at
                     """,
                     (
                         questionnaire_id,
-                        int(payload["identity_map_id"]) if payload.get("identity_map_id") else None,
-                        _text(payload.get("respondent_key") or respondent_identity.get("respondent_key")),
-                        _text(payload.get("openid") or respondent_identity.get("openid")),
-                        _text(payload.get("unionid") or respondent_identity.get("unionid")),
-                        _text(payload.get("external_userid") or respondent_identity.get("external_userid")),
+                        unionid,
                         _text(payload.get("follow_user_userid")),
                         _text(payload.get("matched_by")),
-                        mobile_snapshot,
                         _text(source.get("source_channel")),
                         _text(source.get("campaign_id")),
                         _text(source.get("staff_id")),
@@ -1500,7 +1509,7 @@ class PostgresQuestionnaireReadRepository:
             "identity_map_id": payload.get("identity_map_id"),
             "external_userid": _text(payload.get("external_userid") or respondent_identity.get("external_userid")),
             "openid": _text(payload.get("openid") or respondent_identity.get("openid")),
-            "unionid": _text(payload.get("unionid") or respondent_identity.get("unionid")),
+            "unionid": unionid,
             "mobile": mobile_snapshot,
             "mobile_snapshot": mobile_snapshot,
             "binding_status": _text(payload.get("binding_status") or "unresolved"),
@@ -1513,6 +1522,65 @@ class PostgresQuestionnaireReadRepository:
             "updated_at": _text(payload.get("updated_at") or submitted_at),
             "answer_snapshots": answer_snapshots,
         }
+
+    def _enqueue_identity_resolution(self, payload: dict[str, Any], *, reason: str) -> None:
+        source_key = (
+            _text(payload.get("respondent_key"))
+            or _text(payload.get("openid"))
+            or _text(payload.get("external_userid"))
+            or _text(payload.get("mobile"))
+            or f"questionnaire:{int(payload.get('questionnaire_id') or 0)}"
+        )
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO crm_user_identity_resolution_queue (
+                    source_type,
+                    source_key,
+                    external_userid,
+                    openid,
+                    mobile,
+                    payload_json,
+                    reason,
+                    status,
+                    first_seen_at,
+                    last_seen_at,
+                    created_at,
+                    updated_at
+                ) VALUES (
+                    'questionnaire_submission',
+                    %s,
+                    %s,
+                    %s,
+                    %s,
+                    %s,
+                    %s,
+                    'pending',
+                    NOW(),
+                    NOW(),
+                    NOW(),
+                    NOW()
+                )
+                ON CONFLICT (source_type, source_key) WHERE status = 'pending' AND source_type <> '' AND source_key <> ''
+                DO UPDATE SET
+                    external_userid = COALESCE(NULLIF(EXCLUDED.external_userid, ''), crm_user_identity_resolution_queue.external_userid),
+                    openid = COALESCE(NULLIF(EXCLUDED.openid, ''), crm_user_identity_resolution_queue.openid),
+                    mobile = COALESCE(NULLIF(EXCLUDED.mobile, ''), crm_user_identity_resolution_queue.mobile),
+                    payload_json = crm_user_identity_resolution_queue.payload_json || EXCLUDED.payload_json,
+                    reason = EXCLUDED.reason,
+                    last_seen_at = NOW(),
+                    updated_at = NOW()
+                """,
+                (
+                    source_key,
+                    _text(payload.get("external_userid")),
+                    _text(payload.get("openid")),
+                    _text(payload.get("mobile")),
+                    _jsonb(payload),
+                    _text(reason) or "identity_unresolved",
+                ),
+            )
+            conn.commit()
 
     def get_submission(self, submission_id: str) -> dict[str, Any] | None:
         normalized_id = str(submission_id or "").strip()

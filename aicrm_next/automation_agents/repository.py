@@ -78,6 +78,54 @@ class AutomationAgentRepository:
             session.commit()
             return [_public_row(dict(row)) or {} for row in rows]
 
+    def _resolve_unionids_for_external_userids(self, session: Session, external_userids: list[str]) -> list[str]:
+        unique_external_userids: list[str] = []
+        for external_userid in external_userids:
+            normalized = _text(external_userid)
+            if normalized and normalized not in unique_external_userids:
+                unique_external_userids.append(normalized)
+        if not unique_external_userids:
+            return []
+        rows = session.execute(
+            text(
+                """
+                SELECT unionid, primary_external_userid, external_userids_json
+                FROM crm_user_identity
+                WHERE primary_external_userid = ANY(:external_userids)
+                   OR EXISTS (
+                       SELECT 1
+                       FROM jsonb_array_elements(external_userids_json) AS external_item(value)
+                       WHERE CASE
+                           WHEN jsonb_typeof(external_item.value) = 'object' THEN external_item.value->>'external_userid'
+                           ELSE trim('"' from external_item.value::text)
+                       END = ANY(:external_userids)
+                   )
+                """
+            ),
+            {"external_userids": unique_external_userids},
+        ).mappings().fetchall()
+        by_external: dict[str, str] = {}
+        for row in rows:
+            unionid = _text(row.get("unionid"))
+            primary = _text(row.get("primary_external_userid"))
+            if primary:
+                by_external[primary] = unionid
+            raw_external_ids = row.get("external_userids_json") or []
+            if isinstance(raw_external_ids, str):
+                try:
+                    raw_external_ids = json.loads(raw_external_ids)
+                except json.JSONDecodeError:
+                    raw_external_ids = []
+            if isinstance(raw_external_ids, list):
+                for item in raw_external_ids:
+                    if isinstance(item, dict):
+                        external = _text(item.get("external_userid"))
+                    else:
+                        external = _text(item)
+                    if external:
+                        by_external[external] = unionid
+        return [by_external[external] for external in unique_external_userids if by_external.get(external)]
+
     def list_agents(self, *, limit: int = 200) -> list[dict[str, Any]]:
         return self._all(
             """
@@ -125,6 +173,19 @@ class AutomationAgentRepository:
             {"package_key": _text(package_key)},
         )
 
+    def resolve_external_userid_for_unionid(self, unionid: str) -> str:
+        row = self._one(
+            """
+            SELECT primary_external_userid
+            FROM crm_user_identity
+            WHERE unionid = :unionid
+              AND COALESCE(primary_external_userid, '') <> ''
+            LIMIT 1
+            """,
+            {"unionid": _text(unionid)},
+        )
+        return _text((row or {}).get("primary_external_userid"))
+
     def get_bound_audience_context_for_item(self, *, batch_id: str, agent_code: str, external_userid: str) -> dict[str, Any]:
         batch_id = _text(batch_id)
         agent_code = _text(agent_code)
@@ -152,8 +213,28 @@ class AutomationAgentRepository:
                 run_id = _text(batch.get("refresh_run_id"))
                 source_event_type = _text(batch.get("source_event_type"))
                 event_type = source_event_type.rsplit(".", 1)[-1] if source_event_type else ""
+                identity_row = session.execute(
+                    text(
+                        """
+                        SELECT unionid
+                        FROM crm_user_identity
+                        WHERE primary_external_userid = :external_userid
+                           OR EXISTS (
+                               SELECT 1
+                               FROM jsonb_array_elements(external_userids_json) AS external_item(value)
+                               WHERE CASE
+                                   WHEN jsonb_typeof(external_item.value) = 'object' THEN external_item.value->>'external_userid'
+                                   ELSE trim('"' from external_item.value::text)
+                               END = :external_userid
+                           )
+                        LIMIT 1
+                        """
+                    ),
+                    {"external_userid": external_userid},
+                ).mappings().fetchone()
+                unionid = _text((identity_row or {}).get("unionid"))
                 event_row = None
-                if package_key:
+                if package_key and unionid:
                     event_row = session.execute(
                         text(
                             """
@@ -161,7 +242,7 @@ class AutomationAgentRepository:
                             FROM ai_audience_package p
                             JOIN ai_audience_member_event e ON e.package_id = p.id
                             WHERE p.package_key = :package_key
-                              AND e.external_userid = :external_userid
+                              AND e.unionid = :unionid
                               AND (:event_type = '' OR e.event_type = :event_type)
                             ORDER BY
                               CASE WHEN :run_id <> '' AND e.run_id::text = :run_id THEN 0 ELSE 1 END,
@@ -172,13 +253,13 @@ class AutomationAgentRepository:
                         ),
                         {
                             "package_key": package_key,
-                            "external_userid": external_userid,
+                            "unionid": unionid,
                             "event_type": event_type,
                             "run_id": run_id,
                         },
                     ).mappings().fetchone()
                 current_row = None
-                if package_key:
+                if package_key and unionid:
                     current_row = session.execute(
                         text(
                             """
@@ -186,12 +267,12 @@ class AutomationAgentRepository:
                             FROM ai_audience_package p
                             JOIN ai_audience_member_current c ON c.package_id = p.id
                             WHERE p.package_key = :package_key
-                              AND c.external_userid = :external_userid
+                              AND c.unionid = :unionid
                             ORDER BY c.updated_at DESC, c.id DESC
                             LIMIT 1
                             """
                         ),
-                        {"package_key": package_key, "external_userid": external_userid},
+                        {"package_key": package_key, "unionid": unionid},
                     ).mappings().fetchone()
                 return {
                     "batch": batch,
@@ -401,8 +482,9 @@ class AutomationAgentRepository:
         source_event_type: str,
         refresh_run_id: str,
     ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
-        deduped_count = len(external_userids)
         with self._session_factory() as session:
+            unionids = self._resolve_unionids_for_external_userids(session, external_userids)
+            deduped_count = len(unionids)
             row = session.execute(
                 text(
                     """
@@ -436,24 +518,24 @@ class AutomationAgentRepository:
             ).mappings().one()
             batch = dict(row)
             rows: list[dict[str, Any]] = []
-            for external_userid in external_userids:
-                external_event_id = f"agent:{agent['agent_code']}:{external_userid}:{batch['batch_id']}"
+            for unionid in unionids:
+                external_event_id = f"agent:{agent['agent_code']}:{unionid}:{batch['batch_id']}"
                 item = session.execute(
                     text(
                         """
                         INSERT INTO automation_agent_webhook_item (
-                            batch_id, agent_code, external_userid, external_event_id, status, created_at
+                            batch_id, agent_code, unionid, external_event_id, status, created_at
                         ) VALUES (
-                            :batch_id, :agent_code, :external_userid, :external_event_id, 'queued', CURRENT_TIMESTAMP
+                            :batch_id, :agent_code, :unionid, :external_event_id, 'queued', CURRENT_TIMESTAMP
                         )
-                        ON CONFLICT (batch_id, external_userid) DO UPDATE SET updated_at = CURRENT_TIMESTAMP
+                        ON CONFLICT (batch_id, unionid) DO UPDATE SET updated_at = CURRENT_TIMESTAMP
                         RETURNING *
                         """
                     ),
                     {
                         "batch_id": _text(batch["batch_id"]),
                         "agent_code": _text(agent.get("agent_code")),
-                        "external_userid": external_userid,
+                        "unionid": unionid,
                         "external_event_id": external_event_id,
                     },
                 ).mappings().one()

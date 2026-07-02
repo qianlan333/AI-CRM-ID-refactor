@@ -173,6 +173,13 @@ class AudienceRefreshService:
         seen_keys: set[tuple[str, str]] = set()
         counts = Counter()
         for normalized in rows:
+            unionid = _text(normalized.get("unionid")) or self._repo.resolve_member_unionid(normalized)
+            if not unionid:
+                self._repo.enqueue_identity_resolution(normalized, reason="missing_unionid")
+                continue
+            normalized["unionid"] = unionid
+            normalized["identity_type"] = "unionid"
+            normalized["identity_value"] = unionid
             key = identity_key(normalized)
             seen_keys.add(key)
             previous = current_by_identity.get(key)
@@ -200,8 +207,7 @@ class AudienceRefreshService:
                     "event_source_key": previous.get("event_source_key") or f"{previous.get('identity_type')}:{previous.get('identity_value')}",
                     "payload_hash": previous.get("payload_hash"),
                     "payload_json": previous.get("payload_json") or {},
-                    "person_id": previous.get("person_id"),
-                    "external_userid": previous.get("external_userid"),
+                    "unionid": previous.get("unionid"),
                     "mobile_hash": previous.get("mobile_hash"),
                     "owner_userid": previous.get("owner_userid"),
                 }
@@ -232,8 +238,7 @@ class AudienceRefreshService:
                 "event_type": event_type,
                 "identity_type": normalized.get("identity_type"),
                 "identity_value": normalized.get("identity_value"),
-                "person_id": normalized.get("person_id"),
-                "external_userid": normalized.get("external_userid"),
+                "unionid": normalized.get("unionid"),
                 "mobile_hash": normalized.get("mobile_hash"),
                 "owner_userid": normalized.get("owner_userid"),
                 "event_source_key": normalized.get("event_source_key"),
@@ -267,8 +272,7 @@ class AudienceRefreshService:
                 "member": {
                     "identity_type": event.get("identity_type"),
                     "identity_value": event.get("identity_value"),
-                    "person_id": event.get("person_id"),
-                    "external_userid": event.get("external_userid"),
+                    "unionid": event.get("unionid"),
                     "mobile_hash": event.get("mobile_hash"),
                     "owner_userid": event.get("owner_userid"),
                 },

@@ -31,7 +31,7 @@ class AgentOutputListRequest(BaseModel):
     page: int = 1
     page_size: int = 50
     request_id: str = ""
-    external_contact_id: str = ""
+    unionid: str = ""
     userid: str = ""
     agent_code: str = ""
     output_type: str = ""
@@ -55,7 +55,7 @@ class AgentRunListRequest(BaseModel):
     agent_code: str = ""
     run_status: str = ""
     trigger_source: str = ""
-    external_contact_id: str = ""
+    unionid: str = ""
     userid: str = ""
     started_after: str = ""
     started_before: str = ""

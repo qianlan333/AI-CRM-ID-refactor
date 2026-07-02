@@ -39,7 +39,7 @@ class FakeExternalCampaignRepository:
     def table_columns(self, table_name: str) -> set[str]:
         return {
             "id",
-            "external_contact_id",
+            "unionid",
             "owner_staff_id",
             "current_step_index",
             "trace_id",
@@ -258,14 +258,14 @@ def test_campaign_private_broadcast_job_fields_are_complete() -> None:
     payload = _campaign_private_broadcast_payload(
         campaign={"owner_userid": "owner_1"},
         step={"content_text": "", "content_payload_json": {"miniprogram_library_ids": [17]}},
-        members=[{"external_contact_id": "ext_1"}],
+        members=[{"unionid": "union_1"}],
     )
 
     assert columns == ["business_domain", "channel", "target_kind"]
     assert placeholders == ["%s", "%s", "%s"]
-    assert params == ["automation_ops", "wecom_private", "external_userid"]
+    assert params == ["automation_ops", "wecom_private", "unionid"]
     assert payload["channel"] == "wecom_private"
-    assert payload["target_kind"] == "external_userid"
+    assert payload["target_kind"] == "unionid"
     assert payload["step"]["content_payload_json"] == {"miniprogram_library_ids": [17]}
 
 

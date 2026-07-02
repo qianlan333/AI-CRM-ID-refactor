@@ -34,7 +34,7 @@ class FailureDispatcher:
 
 
 def _job() -> dict[str, Any]:
-    return {"id": 1, "source_type": "manual", "target_external_userids": ["wm_a", "wm_b", "wm_c"]}
+    return {"id": 1, "source_type": "manual", "target_unionids_json": ["union_a", "union_b", "union_c"]}
 
 
 def test_worker_dispatches_due_job_and_marks_sent() -> None:
@@ -82,7 +82,7 @@ def test_postgres_mark_failed_syncs_cloud_plan_recipient_state(monkeypatch) -> N
 
     assert len(calls) == 3
     assert "UPDATE broadcast_jobs" in calls[0]["sql"]
-    assert calls[0]["params"] == ("wecom_api_error", "not external contact", 42)
+    assert calls[0]["params"] == ("failed", "wecom_api_error", "not external contact", 42)
     assert "UPDATE cloud_broadcast_plan_recipients" in calls[1]["sql"]
     assert calls[1]["params"] == ("not external contact", 42)
     assert "UPDATE cloud_broadcast_plan_recipient_messages" in calls[2]["sql"]

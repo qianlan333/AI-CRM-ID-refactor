@@ -634,12 +634,11 @@ def _insert_order(conn: Any, *, product: dict[str, Any], identity: dict[str, str
         """
         INSERT INTO wechat_pay_orders (
             out_trade_no, order_source, client_order_ref, product_code, product_name, description,
-            amount_total, currency, payer_openid, respondent_key, unionid, external_userid,
-            userid_snapshot, mobile_snapshot, payer_name_snapshot, status, success_url, metadata_json,
+            amount_total, currency, unionid, payer_name_snapshot, status, success_url, metadata_json,
             request_meta_json, expires_at, created_at, updated_at
         )
         VALUES (
-            %s, 'h5_checkout', '', %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+            %s, 'h5_checkout', '', %s, %s, %s, %s, %s, %s, %s,
             'created', %s, %s::jsonb, %s::jsonb, %s::timestamptz, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
         )
         RETURNING *
@@ -651,15 +650,21 @@ def _insert_order(conn: Any, *, product: dict[str, Any], identity: dict[str, str
             product.get("description") or product["title"],
             int(product.get("price_cents") or 0),
             product.get("currency") or "CNY",
-            identity.get("openid") or "",
-            identity.get("respondent_key") or "",
             identity.get("unionid") or "",
-            identity.get("external_userid") or "",
-            identity.get("owner_userid") or "",
-            mobile,
             identity.get("payer_name") or "",
             _safe_success_url(product.get("completion_redirect_url")),
-            _jsonb({"completion_redirect": product.get("completion_redirect") or {}}),
+            _jsonb(
+                {
+                    "completion_redirect": product.get("completion_redirect") or {},
+                    "payer_identity": {
+                        "openid": identity.get("openid") or "",
+                        "respondent_key": identity.get("respondent_key") or "",
+                        "external_userid": identity.get("external_userid") or "",
+                        "owner_userid": identity.get("owner_userid") or "",
+                        "mobile": mobile,
+                    },
+                }
+            ),
             _jsonb(request_meta or {}),
             _expires_at(),
         ),

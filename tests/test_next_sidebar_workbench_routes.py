@@ -100,7 +100,7 @@ def test_next_sidebar_detail_dependencies_exclude_retired_automation_member(monk
 
     assert member_response.status_code == 404
     assert tags_response.status_code == 400
-    assert tags_response.json()["error"] == "external_userid is required"
+    assert tags_response.json()["error"] == "unionid is required"
 
 
 def test_next_owns_sidebar_customer_context_and_profile_readonly_routes(monkeypatch):

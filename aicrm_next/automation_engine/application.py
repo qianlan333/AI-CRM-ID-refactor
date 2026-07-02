@@ -259,7 +259,7 @@ class ListAgentOutputsQuery(_AgentOutputRepositoryOwner):
                 "page_size": filters["page_size"],
                 "filters": {
                     "request_id": filters["request_id"],
-                    "external_contact_id": filters["external_contact_id"],
+                    "unionid": filters["unionid"],
                     "userid": filters["userid"],
                     "agent_code": filters["agent_code"],
                     "output_type": filters["output_type"],
@@ -320,7 +320,7 @@ class ListAgentRunsQuery(_AgentRunRepositoryOwner):
                     "agent_code": filters["agent_code"],
                     "run_status": filters["run_status"],
                     "trigger_source": filters["trigger_source"],
-                    "external_contact_id": filters["external_contact_id"],
+                    "unionid": filters["unionid"],
                     "userid": filters["userid"],
                     "started_after": filters["started_after"],
                     "started_before": filters["started_before"],

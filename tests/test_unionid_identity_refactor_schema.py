@@ -1,0 +1,527 @@
+from __future__ import annotations
+
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def _read(path: str) -> str:
+    return (ROOT / path).read_text(encoding="utf-8")
+
+
+def test_unionid_identity_migration_creates_foundation_tables() -> None:
+    source = _read("migrations/versions/0062_unionid_identity_refactor.py")
+
+    assert "CREATE TABLE IF NOT EXISTS crm_user_identity" in source
+    assert "unionid TEXT PRIMARY KEY" in source
+    for column in [
+        "mobile_normalized TEXT NOT NULL DEFAULT ''",
+        "mobile_verified BOOLEAN NOT NULL DEFAULT FALSE",
+        "customer_name TEXT NOT NULL DEFAULT ''",
+        "primary_owner_userid TEXT NOT NULL DEFAULT ''",
+        "legacy_person_id TEXT NOT NULL DEFAULT ''",
+        "identity_status TEXT NOT NULL DEFAULT 'active'",
+        "next_poll_at TIMESTAMPTZ",
+    ]:
+        assert column in source
+    assert "CREATE TABLE IF NOT EXISTS crm_user_identity_resolution_queue" in source
+    for column in [
+        "source_table TEXT NOT NULL DEFAULT ''",
+        "source_id TEXT NOT NULL DEFAULT ''",
+        "raw_payload_json JSONB NOT NULL DEFAULT '{}'::jsonb",
+        "resolved_unionid TEXT NOT NULL DEFAULT ''",
+        "conflict_reason TEXT NOT NULL DEFAULT ''",
+        "attempt_count INTEGER NOT NULL DEFAULT 0",
+        "resolved_at TIMESTAMPTZ",
+    ]:
+        assert column in source
+    assert "CREATE TABLE IF NOT EXISTS crm_user_identity_conflicts" in source
+    for column in [
+        "external_userid TEXT NOT NULL DEFAULT ''",
+        "openid TEXT NOT NULL DEFAULT ''",
+        "mobile TEXT NOT NULL DEFAULT ''",
+        "source_payload_json JSONB NOT NULL DEFAULT '{}'::jsonb",
+        "resolution_status TEXT NOT NULL DEFAULT 'open'",
+        "resolved_at TIMESTAMPTZ",
+    ]:
+        assert column in source
+    assert "CREATE TABLE IF NOT EXISTS crm_user_identity_merge_audit" in source
+    assert "missing_unionid" in source
+
+
+def test_business_table_migration_adds_unionid_foundation_columns() -> None:
+    source = _read("migrations/versions/0063_unionid_business_table_foundation.py")
+
+    for table_name in [
+        "alipay_pay_orders",
+        "customer_list_index_next",
+        "customer_detail_snapshot_next",
+        "customer_timeline_event_next",
+        "customer_recent_message_next",
+    ]:
+        assert table_name in source
+    assert "ADD COLUMN IF NOT EXISTS unionid TEXT NOT NULL DEFAULT ''" in source
+    assert "jsonb_exists(cui.external_userids_json" in source
+    assert "INSERT INTO crm_user_identity_resolution_queue" in source
+    assert "'customer_read_model_migration'" in source
+    assert "DROP COLUMN IF EXISTS {column_name}" in source
+    for table_name in [
+        "customer_list_index_next",
+        "customer_detail_snapshot_next",
+        "customer_timeline_event_next",
+        "customer_recent_message_next",
+    ]:
+        assert table_name in source
+
+
+def test_ops_automation_migration_adds_unionid_targets() -> None:
+    source = _read("migrations/versions/0064_unionid_ops_automation_foundation.py")
+
+    for table_name in [
+        "contact_tags",
+        "archived_messages",
+        "class_user_status_current",
+        "user_ops_pool_current_next",
+        "user_ops_do_not_disturb_next",
+        "automation_channel_contact",
+        "automation_event_v2",
+        "automation_membership_v2",
+        "ai_audience_member_current",
+        "ai_audience_member_event",
+    ]:
+        assert table_name in source
+    assert "ADD COLUMN IF NOT EXISTS unionid TEXT NOT NULL DEFAULT ''" in source
+    assert "target_unionids_json JSONB NOT NULL DEFAULT '[]'::jsonb" in source
+    assert "jsonb_exists(cui.external_userids_json" in source
+    assert "uq_automation_channel_contact_channel_unionid" in source
+    assert "ALTER TABLE IF EXISTS automation_channel_contact DROP COLUMN IF EXISTS external_contact_id" in source
+
+
+def test_wecom_identity_bridge_writes_new_identity_tables_not_legacy_maps() -> None:
+    source = _read("aicrm_next/channel_entry/identity_bridge_repo.py")
+
+    assert "INSERT INTO crm_user_identity" in source
+    assert "INSERT INTO crm_user_identity_resolution_queue" in source
+    assert "INSERT INTO wecom_external_contact_identity_map" not in source
+    assert "INSERT INTO wecom_external_contact_follow_users" not in source
+    for legacy in [
+        "external_contact_bindings",
+        "INSERT INTO people",
+        "FROM people",
+        "FROM contacts",
+        "INSERT INTO external_contact_bindings",
+        "UPDATE external_contact_bindings",
+    ]:
+        assert legacy not in source
+    questionnaire_backfill = source.split("def backfill_questionnaire_submissions_for_mobile_binding", 1)[1].split(
+        "def build_identity_bridge_repository", 1
+    )[0]
+    assert "questionnaire_submissions_unionid_only" in questionnaire_backfill
+    assert "UPDATE questionnaire_submissions" not in questionnaire_backfill
+    assert "mobile_snapshot" not in questionnaire_backfill
+    assert "openid = ANY" not in questionnaire_backfill
+
+
+def test_runtime_jsonb_membership_avoids_placeholder_collision() -> None:
+    source = _read("aicrm_next/channel_entry/identity_bridge_repo.py")
+
+    assert "external_userids_json ? ?" not in source
+    assert "jsonb_exists(external_userids_json, ?)" in source
+
+
+def test_questionnaire_postgres_submit_blocks_formal_submission_without_unionid() -> None:
+    source = _read("aicrm_next/questionnaire/repo.py")
+
+    assert "INSERT INTO crm_user_identity_resolution_queue" in source
+    assert "identity_pending_unionid" in source
+    assert "_enqueue_identity_resolution" in source
+
+
+def test_customer_detail_query_supports_unionid_native_lookup(monkeypatch) -> None:
+    from aicrm_next.customer_read_model.application import (
+        GetCustomerDetailQuery,
+        GetCustomerTimelineQuery,
+        ListRecentMessagesQuery,
+    )
+    from aicrm_next.customer_read_model.dto import CustomerDetailRequest, CustomerTimelineRequest, RecentMessagesRequest
+
+    class Repo:
+        def get_customer_by_unionid(self, unionid: str):
+            if unionid != "union_customer_001":
+                return None
+            return {
+                "unionid": unionid,
+                "external_userid": "wm_legacy_boundary",
+                "customer_name": "Union Customer",
+                "binding": {"is_bound": True, "binding_status": "bound"},
+                "identity": {"unionid": unionid},
+                "follow_users": [],
+                "marketing_summary": {},
+                "marketing_profile": {},
+                "contact": {},
+                "sidebar_context": {},
+            }
+
+        def get_customer(self, external_userid: str):  # pragma: no cover - must not be used
+            raise AssertionError("external_userid lookup should not run for unionid-native detail query")
+
+        def customer_exists_by_unionid(self, unionid: str) -> bool:
+            return self.get_customer_by_unionid(unionid) is not None
+
+        def list_timeline_by_unionid(self, unionid: str, filters=None, *, limit=None, offset=0):
+            return [
+                {
+                    "event_id": "evt_union_001",
+                    "event_type": "message",
+                    "event_time": "2026-07-01T00:00:00+00:00",
+                    "title": "Union timeline",
+                    "summary": "",
+                }
+            ]
+
+        def list_recent_messages_by_unionid(self, unionid: str, *, limit=None):
+            return [{"msgid": "msg_union_001", "unionid": unionid}]
+
+    monkeypatch.setattr("aicrm_next.customer_read_model.application._production_customer_data_required", lambda: True)
+
+    repo = Repo()
+    result = GetCustomerDetailQuery(repo=repo)(CustomerDetailRequest(unionid="union_customer_001"))
+    timeline = GetCustomerTimelineQuery(repo=repo)(CustomerTimelineRequest(unionid="union_customer_001"))
+    messages = ListRecentMessagesQuery(repo=repo)(RecentMessagesRequest(unionid="union_customer_001"))
+
+    assert result["ok"] is True
+    assert result["customer"]["unionid"] == "union_customer_001"
+    assert result["source_status"] == "next_read_model"
+    assert timeline["timeline"]["unionid"] == "union_customer_001"
+    assert timeline["timeline"]["items"][0]["event_id"] == "evt_union_001"
+    assert messages["unionid"] == "union_customer_001"
+    assert messages["messages"][0]["msgid"] == "msg_union_001"
+
+
+def test_customer_api_exposes_unionid_user_route() -> None:
+    source = _read("aicrm_next/customer_read_model/api.py")
+    admin_pages = _read("aicrm_next/customer_read_model/admin_pages.py")
+
+    assert '@router.get("/api/users/{unionid}")' in source
+    assert "CustomerDetailRequest(unionid=unionid)" in source
+    assert '@router.get("/api/users/{unionid}/timeline")' in source
+    assert '@router.get("/api/users/{unionid}/messages/recent")' in source
+    assert '@router.get("/admin/customers/{unionid}"' in admin_pages
+    assert 'urlencode({"unionid": unionid})' in admin_pages
+    assert "def get_admin_customer_profile(\n    unionid: str | None = None" in source
+    assert "def get_admin_customer_profile_tags(\n    unionid: str | None = None" in source
+    assert "def get_admin_customer_profile_messages(\n    unionid: str | None = None" in source
+    assert '@router.get(\n    "/api/admin/customers/{unionid}/business-profile"' in source
+
+
+def test_channel_entry_business_write_requires_and_persists_unionid() -> None:
+    application = _read("aicrm_next/channel_entry/application.py")
+    repo = _read("aicrm_next/channel_entry/repo.py")
+
+    assert 'subject_type="unionid"' in application
+    assert '"reason": "identity_pending_unionid"' in application
+    assert "unionid = text(identity_sync.get(\"unionid\"))" in application
+    assert "ProcessChannelEntryCommand(\n                    unionid=unionid" in application
+    assert "repo.upsert_channel_contact(channel_id=channel_id, unionid=command.unionid" in application
+    assert 'target_type="unionid"' in application
+    assert '"target_unionid": command.unionid' in application
+    assert "def upsert_channel_contact(*, channel_id: int, unionid: str = \"\"" in repo
+    assert "INSERT INTO automation_channel_contact" in repo
+    channel_contact_insert = repo.split("INSERT INTO automation_channel_contact", 1)[1].split("RETURNING *", 1)[0]
+    assert "channel_id, unionid, owner_staff_id" in channel_contact_insert
+    assert "external_contact_id" not in channel_contact_insert
+    assert "ON CONFLICT (channel_id, unionid)" in channel_contact_insert
+
+
+def test_sidebar_bind_mobile_writes_user_identity_not_legacy_binding_tables() -> None:
+    source = _read("aicrm_next/sidebar_write/repo.py")
+    event_source = _read("aicrm_next/platform_foundation/internal_events/customer_identity.py")
+
+    postgres_section = source.split("class PostgresSidebarWriteRepository:", 1)[1]
+    assert "UPDATE crm_user_identity" in postgres_section
+    assert "INSERT INTO crm_user_identity_resolution_queue" in postgres_section
+    assert "primary_owner_userid" in postgres_section
+    assert "primary_follow_user_userid" not in postgres_section
+    assert "mobile_normalized = %s" in postgres_section
+    assert "mobile_source = 'sidebar_bind'" in postgres_section
+    assert "profile_json ->> 'mobile_source'" not in postgres_section
+    assert "external_contact_bindings" not in postgres_section
+    assert "INSERT INTO people" not in postgres_section
+    assert "user_ops_lead_pool_current" not in postgres_section
+    assert "unionid = _text(result.get(\"unionid\"))" in event_source
+    assert 'subject_type="unionid" if unionid else "customer"' in event_source
+
+
+def test_external_effect_wecom_adapters_accept_unionid_business_target() -> None:
+    source = _read("aicrm_next/platform_foundation/external_effects/adapters.py")
+
+    assert "def _target_unionid" in source
+    assert "def _wecom_target_mismatch" in source
+    assert "target_id != target_unionid" in source
+    assert '"target_unionid": _target_unionid(payload)' in source
+
+
+def test_user_ops_tables_are_unionid_only_business_models() -> None:
+    model_source = _read("aicrm_next/ops_enrollment/models.py")
+    migration_source = _read("migrations/versions/0029_user_ops_prod_tables.py")
+
+    assert 'Column("unionid"' in model_source
+    assert 'Column("customer_name_snapshot"' in model_source
+    assert 'Column("target_unionids_json"' in model_source
+    assert "unionid VARCHAR(128) NOT NULL" in migration_source
+    assert "target_unionids_json JSONB NOT NULL DEFAULT '[]'::jsonb" in migration_source
+
+    for source in (model_source, migration_source):
+        assert "person_id" not in source
+        assert "Column(\"external_userid\"" not in source
+        assert "Column(\"mobile\"" not in source
+        assert "external_userid VARCHAR" not in source
+        assert "mobile VARCHAR" not in source
+        assert "is_mobile_bound BOOLEAN" not in source
+
+
+def test_customer_read_model_tables_are_unionid_only() -> None:
+    model_source = _read("aicrm_next/customer_read_model/models.py")
+    migration_source = _read("migrations/versions/0026_customer_read_model_next.py")
+
+    for table_name in [
+        "customer_list_index_next",
+        "customer_detail_snapshot_next",
+        "customer_timeline_event_next",
+        "customer_recent_message_next",
+    ]:
+        assert table_name in model_source
+        assert table_name in migration_source
+
+    assert model_source.count('Column("unionid"') == 4
+    assert migration_source.count("unionid TEXT NOT NULL") == 4
+    assert "ix_customer_list_index_next_unionid" in migration_source
+    assert "ix_customer_detail_snapshot_next_unionid" in migration_source
+    assert "ix_customer_timeline_event_next_unionid" in migration_source
+    assert "ix_customer_recent_message_next_unionid" in migration_source
+
+    for source in (model_source, migration_source):
+        assert "person_id" not in source
+        assert "external_userid TEXT" not in source
+        assert 'Column("external_userid"' not in source
+        assert "ix_customer_list_index_next_external_userid" not in source
+        assert "ix_customer_detail_snapshot_next_external_userid" not in source
+        assert "ix_customer_timeline_event_next_external_userid" not in source
+        assert "ix_customer_recent_message_next_external_userid" not in source
+
+
+def test_automation_runtime_v2_tables_are_unionid_only() -> None:
+    source = _read("migrations/versions/0031_automation_runtime_v2.py")
+
+    assert "CREATE TABLE IF NOT EXISTS automation_event_v2" in source
+    assert "CREATE TABLE IF NOT EXISTS automation_membership_v2" in source
+    assert "unionid TEXT NOT NULL" in source
+    assert "idx_automation_event_v2_unionid" in source
+    assert "idx_automation_membership_v2_unionid" in source
+    assert "uq_automation_membership_v2_program_unionid" in source
+    assert "external_userid TEXT" not in source
+    assert "person_id BIGINT" not in source
+    assert "idx_automation_event_v2_external" not in source
+    assert "uq_automation_membership_v2_program_external" not in source
+
+
+def test_alipay_orders_are_unionid_only_customer_identity() -> None:
+    source = _read("migrations/versions/0014_alipay_pay.py")
+    cleanup_source = _read("migrations/versions/0063_unionid_business_table_foundation.py")
+
+    assert "CREATE TABLE IF NOT EXISTS alipay_pay_orders" in source
+    assert "unionid TEXT NOT NULL DEFAULT ''" in source
+    assert "idx_alipay_pay_orders_unionid_created" in source
+    for checked in (source, cleanup_source):
+        assert "buyer_id TEXT" not in checked
+        assert "mobile_snapshot TEXT" not in checked
+        assert "identity_snapshot TEXT" not in checked
+        assert "idx_alipay_pay_orders_mobile_created" not in checked
+
+
+def test_ai_audience_member_tables_are_unionid_only_business_state() -> None:
+    source = _read("migrations/versions/0045_ai_audience_ops.py")
+    cleanup_source = _read("migrations/versions/0064_unionid_ops_automation_foundation.py")
+    repository_source = _read("aicrm_next/ai_audience_ops/repository.py")
+    refresh_source = _read("aicrm_next/ai_audience_ops/refresh_service.py")
+
+    assert "CREATE TABLE IF NOT EXISTS ai_audience_member_current" in source
+    assert "CREATE TABLE IF NOT EXISTS ai_audience_member_event" in source
+    assert "unionid TEXT NOT NULL DEFAULT ''" in source
+    assert "DROP COLUMN IF EXISTS person_id" in cleanup_source
+    assert "DROP COLUMN IF EXISTS external_userid" in cleanup_source
+    assert "resolve_member_unionid" in repository_source
+    assert "enqueue_identity_resolution" in repository_source
+    assert '"reason": "missing_unionid"' not in refresh_source
+
+    member_section = source.split("CREATE TABLE IF NOT EXISTS ai_audience_member_current", 1)[1].split(
+        "CREATE TABLE IF NOT EXISTS ai_audience_outbound_subscription", 1
+    )[0]
+    assert "person_id" not in member_section
+    assert "external_userid TEXT" not in member_section
+    assert "person_id = EXCLUDED" not in repository_source
+    assert "external_userid = EXCLUDED" not in repository_source
+
+
+def test_questionnaire_and_wechat_pay_facts_drop_legacy_identity_columns() -> None:
+    cleanup_source = _read("migrations/versions/0065_unionid_submission_payment_cleanup.py")
+    questionnaire_repo = _read("aicrm_next/questionnaire/repo.py")
+    wechat_pay_source = _read("aicrm_next/public_product/h5_wechat_pay.py")
+
+    assert '["identity_map_id", "respondent_key", "openid", "external_userid", "mobile_snapshot"]' in cleanup_source
+    assert '["payer_openid", "respondent_key", "external_userid", "userid_snapshot", "mobile_snapshot"]' in cleanup_source
+    assert "ALTER TABLE IF EXISTS questionnaire_submissions DROP COLUMN IF EXISTS {column_name}" in cleanup_source
+    assert "ALTER TABLE IF EXISTS wechat_pay_orders DROP COLUMN IF EXISTS {column_name}" in cleanup_source
+
+    questionnaire_insert = questionnaire_repo.split("INSERT INTO questionnaire_submissions", 1)[1].split("RETURNING id, submitted_at", 1)[0]
+    for forbidden in ["identity_map_id", "respondent_key", "openid", "external_userid", "mobile_snapshot"]:
+        assert forbidden not in questionnaire_insert
+
+    wechat_order_insert = wechat_pay_source.split("INSERT INTO wechat_pay_orders", 1)[1].split("RETURNING *", 1)[0]
+    for forbidden in ["payer_openid", "respondent_key", "external_userid", "userid_snapshot", "mobile_snapshot"]:
+        assert forbidden not in wechat_order_insert
+    assert '"payer_identity"' in wechat_pay_source
+
+
+def test_customer_fact_read_sources_drop_legacy_identity_columns() -> None:
+    cleanup_source = _read("migrations/versions/0068_unionid_customer_fact_cleanup.py")
+    customer_repo_source = _read("aicrm_next/customer_read_model/repo.py")
+    message_archive_source = _read("aicrm_next/message_archive/repo.py")
+    channel_entry_repo_source = _read("aicrm_next/channel_entry/repo.py")
+
+    for table_name in ["contact_tags", "archived_messages", "class_user_status_current", "class_user_status_history"]:
+        assert table_name in cleanup_source
+    assert '"contact_tags": ["external_userid"]' in cleanup_source
+    assert '"archived_messages": ["external_userid"]' in cleanup_source
+    assert '"class_user_status_current": ["external_userid", "mobile_snapshot"]' in cleanup_source
+    assert '"class_user_status_history": ["external_userid", "mobile_snapshot"]' in cleanup_source
+    assert '"wechat_shop_orders": ["buyer_mobile", "openid"]' in cleanup_source
+    assert "INSERT INTO crm_user_identity_resolution_queue" in cleanup_source
+    assert "DROP COLUMN IF EXISTS {column_name}" in cleanup_source
+
+    live_source_sql = customer_repo_source.split("def _customer_decorated_sql", 1)[1].split("def _customer_where", 1)[0]
+    assert "SELECT unionid FROM archived_messages" in live_source_sql
+    assert "SELECT unionid FROM contact_tags" in live_source_sql
+    assert "SELECT unionid FROM class_user_status_current" in live_source_sql
+    assert "class_status.mobile_snapshot" not in live_source_sql
+    assert "identity.profile_json" in live_source_sql
+
+    archive_insert = message_archive_source.split("INSERT INTO archived_messages", 1)[1].split("ON CONFLICT (msgid)", 1)[0]
+    assert "unionid" in archive_insert
+    assert "external_userid" not in archive_insert
+    assert "INSERT INTO crm_user_identity_resolution_queue" in message_archive_source
+
+    tag_insert = channel_entry_repo_source.split("INSERT INTO contact_tags", 1)[1].split("conn.commit()", 1)[0]
+    assert "unionid" in tag_insert
+    assert "external_userid" not in tag_insert
+    assert "INSERT INTO crm_user_identity_resolution_queue" in channel_entry_repo_source
+
+
+def test_wechat_shop_orders_keep_customer_identity_in_unionid_and_raw_payload() -> None:
+    cleanup_source = _read("migrations/versions/0068_unionid_customer_fact_cleanup.py")
+    shop_source = _read("aicrm_next/commerce/wechat_shop_service.py")
+    transaction_detail_source = _read("aicrm_next/commerce/admin_transaction_detail.py")
+
+    assert '"wechat_shop_orders": ["buyer_mobile", "openid"]' in cleanup_source
+    assert "ALTER TABLE IF EXISTS {table_name} DROP COLUMN IF EXISTS {column_name}" in cleanup_source
+
+    postgres_insert = shop_source.split("INSERT INTO wechat_shop_orders (\n                order_id, provider", 1)[1].split("ON CONFLICT (order_id)", 1)[0]
+    assert "unionid" in postgres_insert
+    assert "raw_order_json" in postgres_insert
+    assert "buyer_mobile" not in postgres_insert
+    assert "openid" not in postgres_insert
+
+    shop_select = transaction_detail_source.split('if provider == "wechat_shop":', 1)[1].split("return f", 1)[0]
+    assert "WECHAT_SHOP_BUYER_MOBILE_SQL" in transaction_detail_source
+    assert "WECHAT_SHOP_OPENID_SQL" in transaction_detail_source
+    assert "o.buyer_mobile" not in shop_select
+    assert "o.openid" not in shop_select
+
+
+def test_broadcast_cloud_and_agent_targets_are_unionid_only() -> None:
+    broadcast_migration = _read("migrations/versions/0008_broadcast_jobs.py")
+    cloud_migration = _read("migrations/versions/0024_cloud_plan_recipient_approval.py")
+    agent_migration = _read("migrations/versions/0054_automation_agent_runtime_config.py")
+    cleanup_source = _read("migrations/versions/0066_unionid_broadcast_target_cleanup.py")
+    worker_source = _read("aicrm_next/background_jobs/broadcast_queue_worker.py")
+    cloud_repo_source = _read("aicrm_next/cloud_orchestrator/repository.py")
+    agent_repo_source = _read("aicrm_next/automation_agents/repository.py")
+    agent_worker_source = _read("aicrm_next/automation_agents/worker.py")
+
+    assert "target_unionids_json JSONB NOT NULL DEFAULT '[]'::jsonb" in broadcast_migration
+    assert "target_external_userids JSONB" not in broadcast_migration
+    assert "'blocked'" in broadcast_migration
+
+    assert "unionid TEXT NOT NULL" in cloud_migration
+    assert "external_userid TEXT NOT NULL" not in cloud_migration
+    assert "uq_cloud_broadcast_plan_recipients_plan_unionid" in cloud_migration
+
+    assert "unionid TEXT NOT NULL" in agent_migration
+    assert "external_userid TEXT NOT NULL" not in agent_migration
+    assert "uq_automation_agent_webhook_item_batch_unionid" in agent_migration
+
+    assert "DROP COLUMN IF EXISTS target_external_userids" in cleanup_source
+    assert "DROP COLUMN IF EXISTS external_userid" in cleanup_source
+    assert "DROP COLUMN IF EXISTS external_contact_id" in cleanup_source
+
+    assert "_resolve_private_targets_by_unionid" in worker_source
+    assert "target_external_userids_missing" not in worker_source
+    assert "target_unionids_missing" in worker_source
+    assert "identity_external_userid_missing" in worker_source
+
+    assert "target_unionids_json" in cloud_repo_source
+    assert "target_external_userids" not in cloud_repo_source
+    assert "target_kind" in cloud_repo_source
+    assert "unionid" in cloud_repo_source
+
+    assert "INSERT INTO automation_agent_webhook_item" in agent_repo_source
+    agent_item_insert = agent_repo_source.split("INSERT INTO automation_agent_webhook_item", 1)[1].split("RETURNING *", 1)[0]
+    assert "unionid" in agent_item_insert
+    assert "external_userid" not in agent_item_insert
+    assert "resolve_external_userid_for_unionid" in agent_worker_source
+
+
+def test_campaign_frequency_and_agent_outputs_are_unionid_only() -> None:
+    cloud_orchestrator_migration = _read("migrations/versions/0004_cloud_orchestrator.py")
+    campaign_migration = _read("migrations/versions/0005_segments_and_campaigns.py")
+    cleanup_source = _read("migrations/versions/0067_unionid_campaign_frequency_cleanup.py")
+    campaign_repo_source = _read("aicrm_next/cloud_orchestrator/repository.py")
+    external_campaign_repo_source = _read("aicrm_next/ai_assist/external_campaigns_repo.py")
+    agent_copywriting_source = _read("aicrm_next/ai_audience_ops/agent_copywriting.py")
+    admin_projection_source = _read("aicrm_next/admin_read_model/projections.py")
+    agent_run_repo_source = _read("aicrm_next/automation_engine/agent_run_sqlalchemy_repository.py")
+    agent_run_domain_source = _read("aicrm_next/automation_engine/agent_runs.py")
+    agent_output_repo_source = _read("aicrm_next/automation_engine/agent_output_sqlalchemy_repository.py")
+    agent_output_domain_source = _read("aicrm_next/automation_engine/agent_outputs.py")
+
+    assert "unionid TEXT NOT NULL DEFAULT ''" in campaign_migration
+    assert "external_contact_id TEXT NOT NULL DEFAULT ''" not in campaign_migration
+    assert "idx_campaign_members_unionid" in campaign_migration
+
+    assert "idx_automation_frequency_consumption_unionid_window" in cloud_orchestrator_migration
+    assert "idx_automation_frequency_consumption_external_window" not in cloud_orchestrator_migration
+
+    for table in ["segment_member_snapshots", "campaign_members", "automation_frequency_consumption", "automation_agent_run", "automation_agent_output"]:
+        assert table in cleanup_source
+    assert "DROP COLUMN IF EXISTS external_contact_id" in cleanup_source
+    assert "ix_{table}_unionid" in cleanup_source
+
+    campaign_insert = external_campaign_repo_source.split("base_columns =", 1)[1].split("return {", 1)[0]
+    assert '"unionid"' in campaign_insert
+    assert '"external_contact_id"' not in campaign_insert
+    assert "_CAMPAIGN_QUEUE_TARGET_KIND = \"unionid\"" in campaign_repo_source
+    assert "target_unionids_json" in campaign_repo_source
+
+    assert '"unionid": _text(member_event.get("unionid")' in agent_copywriting_source
+    assert '"external_contact_id": _text(member_event' not in agent_copywriting_source
+    assert "SELECT id, run_id, agent_code, status, unionid" in admin_projection_source
+    assert "external_contact_id" not in admin_projection_source
+    assert '"unionid",' in agent_run_repo_source
+    assert '"external_contact_id",' not in agent_run_repo_source
+    assert '"unionid": _text(source.get("unionid"))' in agent_run_domain_source
+    assert '"external_contact_id": _text(source.get("external_contact_id"))' not in agent_run_domain_source
+    assert '"unionid", "userid", "agent_code"' in agent_output_repo_source
+    assert '"external_contact_id", "userid", "agent_code"' not in agent_output_repo_source
+    assert '"unionid": _text(source.get("unionid"))' in agent_output_domain_source
+    assert '"external_contact_id": _text(source.get("external_contact_id"))' not in agent_output_domain_source
