@@ -124,6 +124,59 @@ class ListMaterialPickerItemsQuery:
     __call__ = execute
 
 
+class ListMaterialAssetsQuery:
+    def __init__(self, repo: SendContentRepository | None = None) -> None:
+        self._repo = repo
+
+    def execute(
+        self,
+        *,
+        asset_type: str = "all",
+        q: str = "",
+        enabled_only: bool = True,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> dict[str, Any]:
+        normalized_type = str(asset_type or "all").strip().lower()
+        if normalized_type not in {"all", "image", "miniprogram", "attachment"}:
+            raise ContractError("素材类型必须是 all、image、miniprogram 或 attachment")
+
+        limit = max(1, min(int(limit or 50), 100))
+        offset = max(0, int(offset or 0))
+        repo = self._repo_or_build()
+        material_types = ["image", "miniprogram", "attachment"] if normalized_type == "all" else [normalized_type]
+
+        assets: list[dict[str, Any]] = []
+        total = 0
+        for material_type in material_types:
+            result = repo.list_materials(
+                material_type,
+                q=q,
+                enabled_only=enabled_only,
+                limit=limit,
+                offset=0,
+            )
+            total += int(result.get("total") or 0)
+            assets.extend(_material_asset_item(material_type, item) for item in result.get("items") or [])
+
+        return {
+            "ok": True,
+            "read_model": "material_assets",
+            "type": normalized_type,
+            "assets": assets[offset : offset + limit],
+            "total": total,
+            "limit": limit,
+            "offset": offset,
+        }
+
+    def _repo_or_build(self) -> SendContentRepository:
+        if self._repo is None:
+            self._repo = build_send_content_repository()
+        return self._repo
+
+    __call__ = execute
+
+
 def _picker_item_with_flat_metadata(item: dict[str, Any]) -> dict[str, Any]:
     normalized = dict(item)
     metadata = normalized.get("metadata") if isinstance(normalized.get("metadata"), dict) else {}
@@ -131,6 +184,28 @@ def _picker_item_with_flat_metadata(item: dict[str, Any]) -> dict[str, Any]:
         if key not in normalized and key in metadata:
             normalized[key] = metadata[key]
     return normalized
+
+
+def _material_asset_item(material_type: str, item: dict[str, Any]) -> dict[str, Any]:
+    picker_item = _picker_item_with_flat_metadata(item)
+    library_id = int(picker_item.get("library_id") or 0)
+    source_table = {
+        "image": "image_library",
+        "miniprogram": "miniprogram_library",
+        "attachment": "attachment_library",
+    }[material_type]
+    return {
+        "material_asset_id": f"{material_type}:{library_id}",
+        "asset_type": material_type,
+        "source_table": source_table,
+        "source_id": library_id,
+        "title": str(picker_item.get("title") or ""),
+        "subtitle": str(picker_item.get("subtitle") or ""),
+        "thumbnail_url": str(picker_item.get("thumbnail_url") or ""),
+        "enabled": bool(picker_item.get("enabled", True)),
+        "metadata": picker_item.get("metadata") if isinstance(picker_item.get("metadata"), dict) else {},
+        "picker_item": picker_item,
+    }
 
 
 def send_content_production_unavailable_payload(detail: str | None = None) -> dict[str, Any]:

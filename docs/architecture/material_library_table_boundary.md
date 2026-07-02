@@ -21,6 +21,8 @@ The shared cross-module contract remains `SendContentPackage`:
 ```
 
 Business modules may store these IDs in their own JSON payloads, but they should resolve picker rows through `PostgresSendContentRepository`, which delegates to the media-library repository.
+The short-term unified read model is the Next-native `material_assets` projection exposed at `/api/admin/material-assets`.
+It returns `asset_type`, `material_asset_id`, `source_table`, and `source_id` over the existing `image_library`, `miniprogram_library`, and `attachment_library` tables.
 This keeps campaign steps, group-ops plan nodes, channel welcome messages, HXC broadcast drafts, and sidebar material views from inventing separate material stores.
 
 The current boundary is intentionally conservative:
