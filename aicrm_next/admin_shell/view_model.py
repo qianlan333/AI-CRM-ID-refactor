@@ -31,6 +31,12 @@ class AdminShellApiClient:
                 "description": "自动化运营页优先使用生产数据。",
                 "href": admin_path_for("api.admin_automation_conversion"),
             },
+            {
+                "label": "数据健康",
+                "value": "checks",
+                "description": "查看 schema drift、队列积压和事实归属检查。",
+                "href": admin_path_for("api.admin_data_health_page"),
+            },
         ]
 
     def shell_context_payload(self) -> dict[str, Any]:
