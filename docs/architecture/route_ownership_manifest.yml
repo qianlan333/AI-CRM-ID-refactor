@@ -6814,6 +6814,50 @@ routes:
   data_source: read_model
   requires_auth: true
   rollback: previous_release
+- path: /api/admin/delivery-lineage
+  methods:
+  - GET
+  route_name: api_delivery_lineage_list
+  capability_owner: delivery_lineage
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: none
+  data_source: read_model
+  requires_auth: true
+  rollback: previous_release
+- path: /api/admin/delivery-lineage/{lineage_id}
+  methods:
+  - GET
+  route_name: api_delivery_lineage_detail
+  capability_owner: delivery_lineage
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: none
+  data_source: read_model
+  requires_auth: true
+  rollback: previous_release
+- path: /api/admin/delivery-lineage/by-unionid/{unionid}
+  methods:
+  - GET
+  route_name: api_delivery_lineage_by_unionid
+  capability_owner: delivery_lineage
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: none
+  data_source: read_model
+  requires_auth: true
+  rollback: previous_release
+- path: /api/admin/delivery-lineage/by-trace/{trace_id}
+  methods:
+  - GET
+  route_name: api_delivery_lineage_by_trace
+  capability_owner: delivery_lineage
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: none
+  data_source: read_model
+  requires_auth: true
+  rollback: previous_release
 - path: /admin/jobs
   methods:
   - GET
