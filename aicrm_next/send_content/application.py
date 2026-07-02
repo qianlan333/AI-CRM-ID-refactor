@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import base64
+import json
 from typing import Any
 
 from aicrm_next.shared.errors import ContractError
@@ -7,6 +9,9 @@ from aicrm_next.shared.repository_provider import blocked_production_payload
 
 from .dto import MaterialPickerListRequest, SendContentPackage, SendContentPreviewRequest
 from .repo import SendContentRepository, build_send_content_repository
+
+_MATERIAL_ASSET_TYPES = ("image", "miniprogram", "attachment")
+_MATERIAL_ASSET_CURSOR_VERSION = 1
 
 
 def normalize_send_content_package(
@@ -136,6 +141,7 @@ class ListMaterialAssetsQuery:
         enabled_only: bool = True,
         limit: int = 50,
         offset: int = 0,
+        cursor: str = "",
     ) -> dict[str, Any]:
         normalized_type = str(asset_type or "all").strip().lower()
         if normalized_type not in {"all", "image", "miniprogram", "attachment"}:
@@ -143,9 +149,14 @@ class ListMaterialAssetsQuery:
 
         limit = max(1, min(int(limit or 50), 100))
         offset = max(0, int(offset or 0))
+        cursor_state = _decode_material_assets_cursor(cursor)
+        if cursor_state and cursor_state.get("type") != normalized_type:
+            raise ContractError("素材资产游标与当前素材类型不匹配")
+        if cursor_state:
+            offset = max(0, int(cursor_state.get("offset") or 0))
         repo = self._repo_or_build()
         is_all = normalized_type == "all"
-        material_types = ["image", "miniprogram", "attachment"] if normalized_type == "all" else [normalized_type]
+        material_types = list(_MATERIAL_ASSET_TYPES) if normalized_type == "all" else [normalized_type]
         if is_all:
             return self._execute_all_types(
                 repo=repo,
@@ -155,20 +166,24 @@ class ListMaterialAssetsQuery:
                 limit=limit,
                 offset=offset,
                 normalized_type=normalized_type,
+                cursor_state=cursor_state,
             )
 
-        assets: list[dict[str, Any]] = []
-        total = 0
-        for material_type in material_types:
-            result = repo.list_materials(
-                material_type,
-                q=q,
-                enabled_only=enabled_only,
-                limit=limit,
-                offset=offset,
-            )
-            total += int(result.get("total") or 0)
-            assets.extend(_material_asset_item(material_type, item) for item in result.get("items") or [])
+        material_type = material_types[0]
+        source_offset = offset if not cursor_state else max(0, int(cursor_state.get("source_offset") or 0))
+        result = repo.list_materials(
+            material_type,
+            q=q,
+            enabled_only=enabled_only,
+            limit=limit,
+            offset=source_offset,
+        )
+        total = int(result.get("total") or 0)
+        assets = [_material_asset_item(material_type, item) for item in result.get("items") or []]
+        next_source_offset = source_offset + len(assets)
+        has_more = next_source_offset < total
+        next_offset = offset + len(assets)
+        source_cursor = _source_cursor(material_type=material_type, source_index=0, offset=next_source_offset)
 
         return {
             "ok": True,
@@ -178,6 +193,19 @@ class ListMaterialAssetsQuery:
             "total": total,
             "limit": limit,
             "offset": offset,
+            "next_cursor": _encode_material_assets_cursor(
+                {
+                    "type": normalized_type,
+                    "offset": next_offset,
+                    "source_index": 0,
+                    "source_offset": next_source_offset,
+                }
+            )
+            if has_more
+            else "",
+            "has_more": has_more,
+            "sort_key": "asset_type_order:source_offset",
+            "source_cursor": source_cursor if has_more else _source_cursor(material_type=material_type, source_index=0, offset=total),
         }
 
     def _execute_all_types(
@@ -190,11 +218,12 @@ class ListMaterialAssetsQuery:
         limit: int,
         offset: int,
         normalized_type: str,
+        cursor_state: dict[str, Any],
     ) -> dict[str, Any]:
-        remaining_offset = offset
         remaining_limit = limit
         assets: list[dict[str, Any]] = []
         total = 0
+        source_totals: list[int] = []
 
         for material_type in material_types:
             probe = repo.list_materials(
@@ -205,24 +234,61 @@ class ListMaterialAssetsQuery:
                 offset=0,
             )
             source_total = int(probe.get("total") or 0)
+            source_totals.append(source_total)
             total += source_total
-            if remaining_limit <= 0:
-                continue
-            if remaining_offset >= source_total:
-                remaining_offset -= source_total
-                continue
 
+        if cursor_state:
+            start_source_index = max(0, min(int(cursor_state.get("source_index") or 0), len(material_types)))
+            start_source_offset = max(0, int(cursor_state.get("source_offset") or 0))
+        else:
+            start_source_index, start_source_offset = _source_position_from_global_offset(source_totals, offset)
+
+        next_source_index = start_source_index
+        next_source_offset = start_source_offset
+        has_more = False
+
+        for source_index in range(start_source_index, len(material_types)):
+            material_type = material_types[source_index]
+            source_total = source_totals[source_index]
+            source_offset = start_source_offset if source_index == start_source_index else 0
+            if remaining_limit <= 0:
+                has_more = _has_more_from_source_position(source_totals, source_index, source_offset)
+                break
+            if source_offset >= source_total:
+                next_source_index = source_index + 1
+                next_source_offset = 0
+                continue
             page = repo.list_materials(
                 material_type,
                 q=q,
                 enabled_only=enabled_only,
                 limit=remaining_limit,
-                offset=remaining_offset,
+                offset=source_offset,
             )
             page_items = list(page.get("items") or [])
             assets.extend(_material_asset_item(material_type, item) for item in page_items)
             remaining_limit -= len(page_items)
-            remaining_offset = 0
+            next_source_index = source_index
+            next_source_offset = source_offset + len(page_items)
+            if next_source_offset < source_total:
+                has_more = True
+                break
+            next_source_index = source_index + 1
+            next_source_offset = 0
+
+        if not has_more:
+            next_source_index, next_source_offset, has_more = _next_nonempty_source_position(
+                source_totals,
+                next_source_index,
+                next_source_offset,
+            )
+
+        next_offset = offset + len(assets)
+        source_cursor = _source_cursor(
+            material_type=material_types[next_source_index] if next_source_index < len(material_types) else "",
+            source_index=next_source_index,
+            offset=next_source_offset,
+        )
 
         return {
             "ok": True,
@@ -232,6 +298,19 @@ class ListMaterialAssetsQuery:
             "total": total,
             "limit": limit,
             "offset": offset,
+            "next_cursor": _encode_material_assets_cursor(
+                {
+                    "type": normalized_type,
+                    "offset": next_offset,
+                    "source_index": next_source_index,
+                    "source_offset": next_source_offset,
+                }
+            )
+            if has_more
+            else "",
+            "has_more": has_more,
+            "sort_key": "asset_type_order:source_offset",
+            "source_cursor": source_cursor,
         }
 
     def _repo_or_build(self) -> SendContentRepository:
@@ -240,6 +319,81 @@ class ListMaterialAssetsQuery:
         return self._repo
 
     __call__ = execute
+
+
+def _encode_material_assets_cursor(payload: dict[str, Any]) -> str:
+    body = {
+        "v": _MATERIAL_ASSET_CURSOR_VERSION,
+        "type": str(payload.get("type") or "all"),
+        "offset": max(0, int(payload.get("offset") or 0)),
+        "source_index": max(0, int(payload.get("source_index") or 0)),
+        "source_offset": max(0, int(payload.get("source_offset") or 0)),
+    }
+    encoded = base64.urlsafe_b64encode(json.dumps(body, ensure_ascii=True, separators=(",", ":")).encode("utf-8")).decode("ascii")
+    return encoded.rstrip("=")
+
+
+def _decode_material_assets_cursor(cursor: str | None) -> dict[str, Any]:
+    token = str(cursor or "").strip()
+    if not token:
+        return {}
+    try:
+        padding = "=" * (-len(token) % 4)
+        decoded = base64.urlsafe_b64decode(f"{token}{padding}".encode("ascii")).decode("utf-8")
+        payload = json.loads(decoded)
+        version = _cursor_int(payload.get("v"))
+        offset = _cursor_int(payload.get("offset"))
+        source_index = _cursor_int(payload.get("source_index"))
+        source_offset = _cursor_int(payload.get("source_offset"))
+    except Exception as exc:
+        raise ContractError("素材资产游标无效") from exc
+    if not isinstance(payload, dict) or version != _MATERIAL_ASSET_CURSOR_VERSION:
+        raise ContractError("素材资产游标无效")
+    cursor_type = str(payload.get("type") or "").strip().lower()
+    if cursor_type not in {"all", *_MATERIAL_ASSET_TYPES}:
+        raise ContractError("素材资产游标无效")
+    return {
+        "type": cursor_type,
+        "offset": max(0, offset),
+        "source_index": max(0, source_index),
+        "source_offset": max(0, source_offset),
+    }
+
+
+def _cursor_int(value: Any) -> int:
+    return int(value or 0)
+
+
+def _source_position_from_global_offset(source_totals: list[int], offset: int) -> tuple[int, int]:
+    remaining = max(0, int(offset or 0))
+    for source_index, source_total in enumerate(source_totals):
+        if remaining < source_total:
+            return source_index, remaining
+        remaining -= source_total
+    return len(source_totals), 0
+
+
+def _has_more_from_source_position(source_totals: list[int], source_index: int, source_offset: int) -> bool:
+    if source_index < len(source_totals) and source_offset < source_totals[source_index]:
+        return True
+    return any(source_total > 0 for source_total in source_totals[source_index + 1 :])
+
+
+def _next_nonempty_source_position(source_totals: list[int], source_index: int, source_offset: int) -> tuple[int, int, bool]:
+    if source_index < len(source_totals) and source_offset < source_totals[source_index]:
+        return source_index, source_offset, True
+    for next_index in range(max(0, source_index), len(source_totals)):
+        if source_totals[next_index] > 0:
+            return next_index, 0, True
+    return len(source_totals), 0, False
+
+
+def _source_cursor(*, material_type: str, source_index: int, offset: int) -> dict[str, Any]:
+    return {
+        "material_type": material_type,
+        "source_index": max(0, int(source_index or 0)),
+        "offset": max(0, int(offset or 0)),
+    }
 
 
 def _picker_item_with_flat_metadata(item: dict[str, Any]) -> dict[str, Any]:
