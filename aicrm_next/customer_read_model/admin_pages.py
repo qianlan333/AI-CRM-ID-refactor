@@ -8,7 +8,7 @@ from fastapi.templating import Jinja2Templates
 
 from aicrm_next.admin_shell import shell_context
 
-from .application import GetAdminCustomerProfileQuery, ListCustomersQuery
+from .application import GetAdminCustomerProfileQuery, GetCustomer360ProfileQuery, ListCustomersQuery
 from .dto import ListCustomersRequest
 
 router = APIRouter()
@@ -182,3 +182,52 @@ def admin_customer_detail_page(request: Request, unionid: str, tab: str = ""):
         }
     )
     return templates.TemplateResponse(request, "admin_console/customer_detail.html", context)
+
+
+@router.get("/admin/customer-360/{unionid}", name="api.admin_customer_360_page")
+def admin_customer_360_page(request: Request, unionid: str):
+    result = GetCustomer360ProfileQuery()(unionid)
+    if not result.get("ok"):
+        status_code = int(result.get("status_code") or 404)
+        page_error = str(result.get("page_error") or result.get("error") or "未找到客户 360 档案")
+        context = shell_context(
+            request=request,
+            page_title="Customer 360 不可用",
+            page_summary="当前 unionid 没有查到可展示的 Customer 360 read model。",
+            active_endpoint="api.admin_console_customers",
+        )
+        context.update(
+            {
+                "breadcrumbs": [
+                    {"label": "客户管理后台", "href": request.url_for("api.admin_console_dashboard")},
+                    {"label": "客户", "href": "/admin/customers"},
+                    {"label": "Customer 360", "href": ""},
+                ],
+                "actions": [{"label": "返回客户列表", "href": "/admin/customers", "variant": "secondary"}],
+                "state_title": "Customer 360 不可用",
+                "state_body": page_error,
+                "state_items": ["确认 unionid 是否正确", "确认 Customer Read Model 已同步"],
+                "table_rows": [],
+                "page_error": page_error,
+            }
+        )
+        return templates.TemplateResponse(request, "admin_console/placeholder.html", context, status_code=status_code)
+
+    context = shell_context(
+        request=request,
+        page_title=f"Customer 360 · {unionid}",
+        page_summary="按 unionid 查看身份、成交、问卷、消息、运营状态和风险标记。",
+        active_endpoint="api.admin_console_customers",
+    )
+    context.update(
+        {
+            "breadcrumbs": [
+                {"label": "客户管理后台", "href": request.url_for("api.admin_console_dashboard")},
+                {"label": "客户", "href": "/admin/customers"},
+                {"label": "Customer 360", "href": ""},
+            ],
+            "customer_360": result,
+            "page_error": str(result.get("page_error") or ""),
+        }
+    )
+    return templates.TemplateResponse(request, "admin_console/customer_360.html", context)
