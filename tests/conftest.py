@@ -229,9 +229,6 @@ _TABLES_TO_TRUNCATE = [
     "user_ops_hxc_send_config",
     "user_ops_hxc_dashboard_snapshot",
     "user_ops_hxc_dashboard_meta",
-    # — message batches
-    "message_batch_items",
-    "message_batches",
     # — P1 group ops workspace drafts
     "group_ops_workspace_gray_window_approvals",
     "group_ops_workspace_allowlist_snapshots",
