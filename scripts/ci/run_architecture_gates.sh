@@ -18,3 +18,4 @@ fi
 "$PYTHON" tools/check_data_table_lifecycle.py
 "$PYTHON" tools/check_sql_static_guard.py
 "$PYTHON" tools/check_repository_ownership.py
+"$PYTHON" tools/check_schema_change_templates.py
