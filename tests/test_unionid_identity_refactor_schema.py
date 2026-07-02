@@ -218,6 +218,7 @@ def test_customer_api_exposes_unionid_user_route() -> None:
 def test_channel_entry_business_write_requires_and_persists_unionid() -> None:
     application = _read("aicrm_next/channel_entry/application.py")
     repo = _read("aicrm_next/channel_entry/repo.py")
+    cleanup = _read("migrations/versions/0069_unionid_channel_contact_cleanup.py")
 
     assert 'subject_type="unionid"' in application
     assert '"reason": "identity_pending_unionid"' in application
@@ -231,7 +232,12 @@ def test_channel_entry_business_write_requires_and_persists_unionid() -> None:
     channel_contact_insert = repo.split("INSERT INTO automation_channel_contact", 1)[1].split("RETURNING *", 1)[0]
     assert "channel_id, unionid, owner_staff_id" in channel_contact_insert
     assert "external_contact_id" not in channel_contact_insert
+    assert "external_userid" not in channel_contact_insert
     assert "ON CONFLICT (channel_id, unionid)" in channel_contact_insert
+
+    assert "ALTER TABLE IF EXISTS automation_channel_contact DROP COLUMN IF EXISTS external_userid" in cleanup
+    assert "INSERT INTO crm_user_identity_resolution_queue" in cleanup
+    assert "source_type, source_key" in cleanup
 
 
 def test_sidebar_bind_mobile_writes_user_identity_not_legacy_binding_tables() -> None:
