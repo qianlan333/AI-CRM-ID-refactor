@@ -16,3 +16,4 @@ fi
 "$PYTHON" tools/check_db_access_boundary.py
 "$PYTHON" tools/check_background_job_contract.py
 "$PYTHON" tools/check_data_table_lifecycle.py
+"$PYTHON" tools/check_sql_static_guard.py

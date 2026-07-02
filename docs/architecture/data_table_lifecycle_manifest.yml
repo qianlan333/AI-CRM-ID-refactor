@@ -1119,3 +1119,59 @@ tables:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_event_effect_table_lineage.py
     notes: Attempt audit for external_effect_job execution.
+
+  owner_migration_import_sessions:
+    domain: owner_migration
+    lifecycle: config
+    write_owner: aicrm_next.owner_migration.repo
+    read_owners:
+      - owner migration import/preview APIs
+    replacement: none; canonical owner migration import session state
+    drop_candidate: false
+    drop_after: ""
+    runtime_entrypoints:
+      - owner migration import upload
+      - owner migration execution preview
+    migration_source: 0028_owner_excel_sessions
+    pii_level: internal_contact
+    guard_tests:
+      - tests/test_data_table_lifecycle_guard.py
+    notes: Tracks uploaded owner migration Excel rows and import metadata.
+
+  owner_migration_previews:
+    domain: owner_migration
+    lifecycle: read_model
+    write_owner: aicrm_next.owner_migration.repo
+    read_owners:
+      - owner migration preview APIs
+      - owner migration execute APIs
+    replacement: none; canonical owner migration preview state
+    drop_candidate: false
+    drop_after: ""
+    runtime_entrypoints:
+      - owner migration preview creation
+      - owner migration execution confirmation
+    migration_source: 0028_owner_excel_sessions
+    pii_level: internal_contact
+    guard_tests:
+      - tests/test_data_table_lifecycle_guard.py
+    notes: Stores reviewed owner migration preview rows and scoped counts before execution.
+
+  owner_migration_results:
+    domain: owner_migration
+    lifecycle: audit
+    write_owner: aicrm_next.owner_migration.repo
+    read_owners:
+      - owner migration result APIs
+      - owner migration report downloads
+    replacement: none; canonical owner migration execution audit
+    drop_candidate: false
+    drop_after: ""
+    runtime_entrypoints:
+      - owner migration execution
+      - owner migration result export
+    migration_source: 0028_owner_excel_sessions
+    pii_level: internal_contact
+    guard_tests:
+      - tests/test_data_table_lifecycle_guard.py
+    notes: Stores final owner migration execution stats and row-level outcome payloads.

@@ -1,0 +1,130 @@
+from __future__ import annotations
+
+from pathlib import Path
+
+from tools.check_sql_static_guard import check_sql_static_guard
+
+
+ROOT = Path(__file__).resolve().parents[1]
+MANIFEST_PATH = ROOT / "docs" / "architecture" / "data_table_lifecycle_manifest.yml"
+
+
+def test_sql_static_guard_current_repository_passes() -> None:
+    assert check_sql_static_guard(root=ROOT, manifest_path=MANIFEST_PATH) == []
+
+
+def test_sql_static_guard_blocks_retired_table_runtime_sql(tmp_path: Path) -> None:
+    manifest = _write_manifest(tmp_path)
+    _write(
+        tmp_path / "aicrm_next" / "demo" / "repo.py",
+        '''
+SQL = """
+SELECT id FROM retired_table WHERE id = 1
+"""
+''',
+    )
+
+    violations = check_sql_static_guard(root=tmp_path, manifest_path=manifest)
+
+    assert [violation.rule for violation in violations] == ["retired_table_sql_reference"]
+    assert "retired_table" in violations[0].detail
+
+
+def test_sql_static_guard_blocks_unregistered_create_table(tmp_path: Path) -> None:
+    manifest = _write_manifest(tmp_path)
+    _write(
+        tmp_path / "migrations" / "versions" / "0001_new_table.py",
+        '''
+SQL = """
+CREATE TABLE IF NOT EXISTS unregistered_table (
+    id TEXT PRIMARY KEY
+)
+"""
+''',
+    )
+
+    violations = check_sql_static_guard(root=tmp_path, manifest_path=manifest)
+
+    assert [violation.rule for violation in violations] == ["create_table_without_lifecycle_manifest"]
+    assert "unregistered_table" in violations[0].detail
+
+
+def test_sql_static_guard_blocks_legacy_identity_columns_on_business_tables(tmp_path: Path) -> None:
+    manifest = _write_manifest(tmp_path)
+    _write(
+        tmp_path / "aicrm_next" / "business" / "repo.py",
+        '''
+SQL = """
+CREATE TABLE IF NOT EXISTS business_contacts (
+    id TEXT PRIMARY KEY,
+    external_userid TEXT NOT NULL
+)
+"""
+''',
+    )
+
+    violations = check_sql_static_guard(root=tmp_path, manifest_path=manifest)
+
+    assert {violation.rule for violation in violations} == {
+        "create_table_without_lifecycle_manifest",
+        "legacy_identity_column_in_business_sql",
+    }
+    assert any("external_userid" in violation.detail for violation in violations)
+
+
+def test_sql_static_guard_allows_identity_boundary_legacy_columns(tmp_path: Path) -> None:
+    manifest = _write_manifest(
+        tmp_path,
+        extra_table="""
+  crm_user_identity_custom:
+    domain: identity
+    lifecycle: canonical
+    write_owner: identity
+    replacement: none
+    drop_candidate: false
+""",
+    )
+    _write(
+        tmp_path / "aicrm_next" / "identity" / "repo.py",
+        '''
+SQL = """
+CREATE TABLE IF NOT EXISTS crm_user_identity_custom (
+    id TEXT PRIMARY KEY,
+    external_userid TEXT NOT NULL
+)
+"""
+''',
+    )
+
+    assert check_sql_static_guard(root=tmp_path, manifest_path=manifest) == []
+
+
+def _write_manifest(tmp_path: Path, *, extra_table: str = "") -> Path:
+    manifest = tmp_path / "docs" / "architecture" / "data_table_lifecycle_manifest.yml"
+    _write(
+        manifest,
+        f"""
+version: 1
+migration_guard:
+  migration_file_prefix_after: "0000"
+tables:
+  retired_table:
+    domain: tests
+    lifecycle: retired
+    replacement: active_table
+    drop_candidate: false
+  active_table:
+    domain: tests
+    lifecycle: canonical
+    write_owner: tests
+    replacement: none
+    drop_candidate: false
+{extra_table}
+""",
+    )
+    return manifest
+
+
+def _write(path: Path, content: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(content, encoding="utf-8")

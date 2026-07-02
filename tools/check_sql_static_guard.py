@@ -1,0 +1,313 @@
+from __future__ import annotations
+
+import argparse
+import ast
+import re
+import sys
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any, Iterable
+
+import yaml
+
+
+ROOT = Path(__file__).resolve().parents[1]
+DEFAULT_MANIFEST = ROOT / "docs" / "architecture" / "data_table_lifecycle_manifest.yml"
+SQL_ROOTS = ("aicrm_next", "scripts", "tools", "migrations")
+SQL_PREFIXES = (
+    "select",
+    "with",
+    "insert into",
+    "update",
+    "delete from",
+    "truncate",
+    "create table",
+    "alter table",
+    "drop table",
+)
+RESERVED_TABLE_NAMES = {
+    "__expr__",
+    "exists",
+    "for",
+    "from",
+    "if",
+    "into",
+    "not",
+    "select",
+    "set",
+    "table",
+    "where",
+}
+MIGRATION_METADATA_TABLES = {"alembic_version"}
+LEGACY_IDENTITY_COLUMNS = {
+    "external_userid",
+    "external_contact_id",
+    "openid",
+    "payer_openid",
+    "mobile_snapshot",
+    "buyer_id",
+    "identity_snapshot",
+    "userid_snapshot",
+    "respondent_key",
+    "person_id",
+    "target_external_userids",
+}
+IDENTITY_BOUNDARY_TABLE_PREFIXES = (
+    "crm_user_identity",
+    "external_contact_bindings",
+    "wecom_external_contact_",
+)
+
+
+@dataclass(frozen=True)
+class SqlStaticViolation:
+    path: Path
+    line: int
+    rule: str
+    detail: str
+
+    def format(self, root: Path) -> str:
+        try:
+            display_path = self.path.relative_to(root)
+        except ValueError:
+            display_path = self.path
+        return f"{display_path}:{self.line}: {self.rule}: {self.detail}"
+
+
+@dataclass(frozen=True)
+class SqlLiteral:
+    path: Path
+    line: int
+    value: str
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description="Validate static SQL guardrails for AI-CRM Next.")
+    parser.add_argument("--root", default=str(ROOT))
+    parser.add_argument("--manifest", default=str(DEFAULT_MANIFEST))
+    args = parser.parse_args(argv)
+
+    root = Path(args.root).resolve()
+    violations = check_sql_static_guard(root=root, manifest_path=Path(args.manifest).resolve())
+    if violations:
+        print("SQL static guard failed:")
+        for violation in violations:
+            print(f"- {violation.format(root)}")
+        return 1
+    print(f"SQL static guard OK: {root}")
+    return 0
+
+
+def check_sql_static_guard(root: Path = ROOT, manifest_path: Path = DEFAULT_MANIFEST) -> list[SqlStaticViolation]:
+    manifest = _load_manifest(manifest_path)
+    tables = manifest["tables"]
+    registered_tables = set(tables)
+    retired_tables = {table for table, entry in tables.items() if entry.get("lifecycle") == "retired"}
+    baseline_prefix = int((manifest.get("migration_guard") or {}).get("migration_file_prefix_after") or 0)
+
+    violations: list[SqlStaticViolation] = []
+    for literal in _iter_sql_literals(root):
+        normalized = _normalize_sql(literal.value)
+        if not _looks_like_sql(normalized):
+            continue
+        if not _is_migration(literal.path, root=root):
+            violations.extend(_retired_table_violations(literal, normalized, retired_tables))
+            violations.extend(_legacy_identity_column_violations(literal, normalized))
+        violations.extend(
+            _create_table_registration_violations(
+                literal,
+                normalized,
+                registered_tables,
+                baseline_prefix,
+                root,
+            )
+        )
+    return violations
+
+
+def _load_manifest(path: Path) -> dict[str, Any]:
+    raw = yaml.safe_load(path.read_text(encoding="utf-8"))
+    if not isinstance(raw, dict) or not isinstance(raw.get("tables"), dict):
+        raise ValueError("data table lifecycle manifest must be a mapping with a tables mapping")
+    return raw
+
+
+def _iter_sql_literals(root: Path) -> Iterable[SqlLiteral]:
+    for base_name in SQL_ROOTS:
+        base = root / base_name
+        if not base.exists():
+            continue
+        for path in sorted(base.rglob("*.py")):
+            if "__pycache__" in path.parts:
+                continue
+            source = path.read_text(encoding="utf-8")
+            try:
+                tree = ast.parse(source, filename=str(path))
+            except SyntaxError:
+                continue
+            for node in ast.walk(tree):
+                value = _string_value(node)
+                if value is None:
+                    continue
+                yield SqlLiteral(path=path, line=getattr(node, "lineno", 1), value=value)
+
+
+def _string_value(node: ast.AST) -> str | None:
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        return node.value
+    if isinstance(node, ast.JoinedStr):
+        parts: list[str] = []
+        for value in node.values:
+            if isinstance(value, ast.Constant) and isinstance(value.value, str):
+                parts.append(value.value)
+            elif isinstance(value, ast.FormattedValue):
+                parts.append(" __expr__ ")
+        return "".join(parts)
+    return None
+
+
+def _normalize_sql(value: str) -> str:
+    return re.sub(r"\s+", " ", value.strip())
+
+
+def _looks_like_sql(value: str) -> bool:
+    lowered = value.lower()
+    return lowered.startswith(SQL_PREFIXES)
+
+
+def _retired_table_violations(
+    literal: SqlLiteral,
+    normalized: str,
+    retired_tables: set[str],
+) -> list[SqlStaticViolation]:
+    violations: list[SqlStaticViolation] = []
+    for table in sorted(retired_tables):
+        if _references_table(normalized, table):
+            violations.append(
+                SqlStaticViolation(
+                    path=literal.path,
+                    line=literal.line,
+                    rule="retired_table_sql_reference",
+                    detail=f"SQL references retired table {table}",
+                )
+            )
+    return violations
+
+
+def _create_table_registration_violations(
+    literal: SqlLiteral,
+    normalized: str,
+    registered_tables: set[str],
+    baseline_prefix: int,
+    root: Path,
+) -> list[SqlStaticViolation]:
+    if _is_pre_guard_migration(literal.path, root=root, baseline_prefix=baseline_prefix):
+        return []
+    created = _created_tables(normalized) - MIGRATION_METADATA_TABLES
+    return [
+        SqlStaticViolation(
+            path=literal.path,
+            line=literal.line,
+            rule="create_table_without_lifecycle_manifest",
+            detail=f"CREATE TABLE for {table} is missing from data_table_lifecycle_manifest.yml",
+        )
+        for table in sorted(created - registered_tables)
+    ]
+
+
+def _legacy_identity_column_violations(literal: SqlLiteral, normalized: str) -> list[SqlStaticViolation]:
+    created_tables = _created_tables(normalized) | _altered_tables(normalized)
+    business_tables = {table for table in created_tables if not _is_identity_boundary_table(table)}
+    if not business_tables:
+        return []
+    columns = _declared_columns(normalized) & LEGACY_IDENTITY_COLUMNS
+    return [
+        SqlStaticViolation(
+            path=literal.path,
+            line=literal.line,
+            rule="legacy_identity_column_in_business_sql",
+            detail=f"{table} declares legacy identity column {column}",
+        )
+        for table in sorted(business_tables)
+        for column in sorted(columns)
+    ]
+
+
+def _references_table(sql_text: str, table: str) -> bool:
+    table_pattern = re.escape(table)
+    return bool(
+        re.search(
+            rf"\b(from|join|into|update|table|truncate)\s+(?:if\s+(?:not\s+)?exists\s+)?{table_pattern}\b",
+            sql_text,
+            flags=re.IGNORECASE,
+        )
+    )
+
+
+def _created_tables(sql_text: str) -> set[str]:
+    return {
+        match.group(1)
+        for match in re.finditer(
+            r"\bcreate\s+table\s+(?:if\s+not\s+exists\s+)?([a-zA-Z_][a-zA-Z0-9_]*)",
+            sql_text,
+            flags=re.IGNORECASE,
+        )
+        if _is_real_table_name(match.group(1))
+    }
+
+
+def _altered_tables(sql_text: str) -> set[str]:
+    return {
+        match.group(1)
+        for match in re.finditer(
+            r"\balter\s+table\s+([a-zA-Z_][a-zA-Z0-9_]*)",
+            sql_text,
+            flags=re.IGNORECASE,
+        )
+        if _is_real_table_name(match.group(1))
+    }
+
+
+def _declared_columns(sql_text: str) -> set[str]:
+    return {
+        match.group(1)
+        for match in re.finditer(
+            r"\b([a-zA-Z_][a-zA-Z0-9_]*)\s+(?:TEXT|VARCHAR|UUID|JSONB|JSON|INTEGER|BIGINT|TIMESTAMPTZ|BOOLEAN)\b",
+            sql_text,
+            flags=re.IGNORECASE,
+        )
+    }
+
+
+def _is_identity_boundary_table(table: str) -> bool:
+    return table.startswith(IDENTITY_BOUNDARY_TABLE_PREFIXES)
+
+
+def _is_pre_guard_migration(path: Path, *, root: Path, baseline_prefix: int) -> bool:
+    rel = _rel(path, root)
+    if not rel.startswith("migrations/versions/"):
+        return False
+    match = re.match(r"migrations/versions/(\d{4})_", rel)
+    if not match:
+        return False
+    return int(match.group(1)) <= baseline_prefix
+
+
+def _is_migration(path: Path, *, root: Path) -> bool:
+    return _rel(path, root).startswith("migrations/")
+
+
+def _is_real_table_name(table: str) -> bool:
+    normalized = table.lower()
+    return normalized not in RESERVED_TABLE_NAMES and not normalized.startswith("__")
+
+
+def _rel(path: Path, root: Path) -> str:
+    try:
+        return path.relative_to(root).as_posix()
+    except ValueError:
+        return path.as_posix()
+
+
+if __name__ == "__main__":
+    sys.exit(main())
