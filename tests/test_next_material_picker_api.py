@@ -249,6 +249,53 @@ def test_material_assets_rejects_invalid_cursor(client) -> None:
     assert "游标" in response.json()["error"]
 
 
+def test_material_asset_usage_lineage_lists_business_consumers(client) -> None:
+    response = client.get("/api/admin/material-assets/image:12/usage")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["ok"] is True
+    assert body["read_model"] == "material_asset_usage"
+    assert body["material_asset_id"] == "image:12"
+    assert body["asset_type"] == "image"
+    assert body["source_id"] == 12
+    assert body["total"] >= 3
+    assert {"channel_welcome_config", "cloud_plan_content_payload", "wechat_pay_product_page_slice"} <= {
+        item["consumer_type"] for item in body["usage"]
+    }
+    assert all(item["material_asset_id"] == "image:12" for item in body["usage"])
+    assert all("data_base64" not in str(item) for item in body["usage"])
+
+
+def test_material_asset_usage_lineage_supports_other_material_types(client) -> None:
+    miniprogram_response = client.get("/api/admin/material-assets/miniprogram:34/usage")
+    attachment_response = client.get("/api/admin/material-assets/attachment:56/usage")
+
+    assert miniprogram_response.status_code == 200
+    assert attachment_response.status_code == 200
+    assert {item["consumer_type"] for item in miniprogram_response.json()["usage"]} == {"group_ops_draft"}
+    assert {item["consumer_type"] for item in attachment_response.json()["usage"]} == {"group_ops_draft"}
+
+
+def test_material_asset_usage_lineage_paginates(client) -> None:
+    response = client.get("/api/admin/material-assets/image:12/usage?limit=1")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert len(body["usage"]) == 1
+    assert body["has_more"] is True
+    assert body["limit"] == 1
+    assert body["offset"] == 0
+
+
+def test_material_asset_usage_rejects_invalid_asset_id(client) -> None:
+    response = client.get("/api/admin/material-assets/unknown:12/usage")
+
+    assert response.status_code == 400
+    assert response.json()["ok"] is False
+    assert "material_asset_id" in response.json()["error"]
+
+
 class _LargeMaterialAssetsRepository:
     source_status = "test_large_material_assets"
 
