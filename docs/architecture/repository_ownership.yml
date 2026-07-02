@@ -3,15 +3,27 @@ version: 1
 repositories:
   aicrm_next/admin_config/repository.py:
     capability_owner: aicrm_next.admin_config
-    table_reads: []
-    table_writes: []
+    table_reads:
+      - marketing_automation_configs
+      - marketing_automation_question_rules
+    table_writes:
+      - marketing_automation_configs
+      - marketing_automation_question_rules
   aicrm_next/admin_jobs/repository.py:
     capability_owner: aicrm_next.admin_jobs
-    table_reads: []
-    table_writes: []
+    table_reads:
+      - outbound_webhook_deliveries
+    table_writes:
+      - outbound_webhook_deliveries
   aicrm_next/admin_read_model/repo.py:
     capability_owner: aicrm_next.admin_read_model
-    table_reads: []
+    table_reads:
+      - ai_audience_member_current
+      - archived_messages
+      - broadcast_jobs
+      - external_effect_job
+      - internal_event
+      - outbound_webhook_deliveries
     table_writes: []
   aicrm_next/ai_assist/external_campaigns_repo.py:
     capability_owner: aicrm_next.ai_assist
@@ -23,7 +35,12 @@ repositories:
       - crm_user_identity
       - segments
       - user_ops_pool_current_next
-    table_writes: []
+    table_writes:
+      - campaign_members
+      - campaign_segments
+      - campaign_steps
+      - campaigns
+      - segments
   aicrm_next/ai_audience_ops/repository.py:
     capability_owner: aicrm_next.ai_audience_ops
     table_reads:
@@ -180,7 +197,9 @@ repositories:
       - external_push_delivery
       - wechat_pay_orders
       - wechat_pay_products
-    table_writes: []
+    table_writes:
+      - domain_event_outbox
+      - external_push_delivery
   aicrm_next/growth_orchestration/repository.py:
     capability_owner: aicrm_next.growth_orchestration
     table_reads:

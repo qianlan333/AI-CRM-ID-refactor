@@ -129,8 +129,8 @@ def check_repository_ownership(
             manifest_entry = tables.get(table)
             if not manifest_entry:
                 continue
-            write_owner = str(manifest_entry.get("write_owner") or "").strip()
-            if not write_owner:
+            write_owners = _write_owners(manifest_entry)
+            if not write_owners:
                 violations.append(
                     RepositoryOwnershipViolation(
                         path=path,
@@ -139,12 +139,12 @@ def check_repository_ownership(
                     )
                 )
                 continue
-            if not _owner_matches(capability_owner, write_owner):
+            if not any(_owner_matches(capability_owner, write_owner) for write_owner in write_owners):
                 violations.append(
                     RepositoryOwnershipViolation(
                         path=path,
                         rule="repository_write_owner_mismatch",
-                        detail=f"{table} write_owner={write_owner} does not match capability_owner={capability_owner}",
+                        detail=f"{table} write_owners={write_owners} does not match capability_owner={capability_owner}",
                     )
                 )
     return violations
@@ -174,6 +174,17 @@ def _repository_paths(root: Path) -> set[str]:
 
 def _owner_matches(capability_owner: str, write_owner: str) -> bool:
     return write_owner == capability_owner or write_owner.startswith(f"{capability_owner}.")
+
+
+def _write_owners(manifest_entry: dict[str, Any]) -> list[str]:
+    owners: list[str] = []
+    write_owner = str(manifest_entry.get("write_owner") or "").strip()
+    if write_owner:
+        owners.append(write_owner)
+    extra_owners = manifest_entry.get("write_owners")
+    if isinstance(extra_owners, list):
+        owners.extend(str(owner or "").strip() for owner in extra_owners)
+    return sorted({owner for owner in owners if owner})
 
 
 if __name__ == "__main__":

@@ -246,6 +246,9 @@ tables:
     domain: campaign
     lifecycle: canonical
     write_owner: aicrm_next.cloud_orchestrator.repository
+    write_owners:
+      - aicrm_next.ai_assist.external_campaigns_repo
+      - aicrm_next.cloud_orchestrator.repository
     read_owners:
       - aicrm_next.cloud_orchestrator.campaigns_read
       - aicrm_next.cloud_orchestrator.repository
@@ -306,6 +309,9 @@ tables:
     domain: campaign
     lifecycle: queue
     write_owner: aicrm_next.cloud_orchestrator.repository
+    write_owners:
+      - aicrm_next.ai_assist.external_campaigns_repo
+      - aicrm_next.cloud_orchestrator.repository
     status_enum:
       column: status
     read_owners:
@@ -954,6 +960,9 @@ tables:
     domain: commerce_events
     lifecycle: event
     write_owner: aicrm_next.commerce.external_push_outbox
+    write_owners:
+      - aicrm_next.commerce.external_push_outbox
+      - aicrm_next.external_push.repo
     read_owners:
       - aicrm_next.commerce.external_push_admin
     replacement: internal_event or external_effect_job after event/outbox convergence is designed
@@ -972,6 +981,9 @@ tables:
     domain: commerce_events
     lifecycle: legacy_boundary
     write_owner: aicrm_next.commerce.external_push_admin
+    write_owners:
+      - aicrm_next.commerce.external_push_admin
+      - aicrm_next.external_push.repo
     read_owners:
       - aicrm_next.commerce.external_push_admin
       - external_effect compatibility diagnostics
@@ -991,6 +1003,9 @@ tables:
     domain: outbound_webhook
     lifecycle: queue
     write_owner: outbound webhook worker/runtime
+    write_owners:
+      - aicrm_next.admin_jobs.repository
+      - outbound webhook worker/runtime
     status_enum:
       column: status
     read_owners:
