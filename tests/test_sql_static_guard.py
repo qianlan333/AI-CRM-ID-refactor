@@ -143,6 +143,115 @@ SELECT id FROM retired_table WHERE id = 1
     assert [violation.rule for violation in violations] == ["retired_table_sql_reference"]
 
 
+def test_migration_drop_retired_table_after_0073_is_allowed(tmp_path: Path) -> None:
+    manifest = _write_manifest(tmp_path, baseline_prefix="0073")
+    _write(
+        tmp_path / "migrations" / "versions" / "0074_drop_retired_table.py",
+        '''
+SQL = """
+DROP TABLE IF EXISTS public.retired_table
+"""
+''',
+    )
+
+    assert check_sql_static_guard(root=tmp_path, manifest_path=manifest) == []
+
+
+def test_legacy_identity_column_detection_normalizes_case_and_quotes(tmp_path: Path) -> None:
+    manifest = _write_manifest(
+        tmp_path,
+        extra_table="""
+  business_contacts:
+    domain: tests
+    lifecycle: canonical
+    write_owner: tests
+    replacement: none
+    drop_candidate: false
+""",
+    )
+    _write(
+        tmp_path / "aicrm_next" / "business" / "repo.py",
+        '''
+SQL = """
+CREATE TABLE IF NOT EXISTS business_contacts (
+    id TEXT PRIMARY KEY,
+    EXTERNAL_USERID TEXT NOT NULL,
+    "person_id" TEXT
+)
+"""
+''',
+    )
+
+    violations = check_sql_static_guard(root=tmp_path, manifest_path=manifest)
+
+    assert [violation.rule for violation in violations] == [
+        "legacy_identity_column_in_business_sql",
+        "legacy_identity_column_in_business_sql",
+    ]
+    assert {violation.detail for violation in violations} == {
+        "business_contacts declares legacy identity column external_userid",
+        "business_contacts declares legacy identity column person_id",
+    }
+
+
+def test_schema_qualified_create_table_uses_final_identifier_component(tmp_path: Path) -> None:
+    manifest = _write_manifest(
+        tmp_path,
+        extra_table="""
+  business_contacts:
+    domain: tests
+    lifecycle: canonical
+    write_owner: tests
+    replacement: none
+    drop_candidate: false
+""",
+    )
+    _write(
+        tmp_path / "aicrm_next" / "business" / "repo.py",
+        '''
+SQL = """
+CREATE TABLE IF NOT EXISTS "public"."business_contacts" (
+    id TEXT PRIMARY KEY,
+    external_userid TEXT
+)
+"""
+''',
+    )
+
+    violations = check_sql_static_guard(root=tmp_path, manifest_path=manifest)
+
+    assert [violation.rule for violation in violations] == ["legacy_identity_column_in_business_sql"]
+    assert "business_contacts declares legacy identity column external_userid" in violations[0].detail
+
+
+def test_alter_table_if_exists_detects_business_table_and_legacy_column(tmp_path: Path) -> None:
+    manifest = _write_manifest(
+        tmp_path,
+        extra_table="""
+  business_contacts:
+    domain: tests
+    lifecycle: canonical
+    write_owner: tests
+    replacement: none
+    drop_candidate: false
+""",
+    )
+    _write(
+        tmp_path / "aicrm_next" / "business" / "repo.py",
+        '''
+SQL = """
+ALTER TABLE IF EXISTS public.business_contacts
+ADD COLUMN "external_userid" TEXT
+"""
+''',
+    )
+
+    violations = check_sql_static_guard(root=tmp_path, manifest_path=manifest)
+
+    assert [violation.rule for violation in violations] == ["legacy_identity_column_in_business_sql"]
+    assert "business_contacts declares legacy identity column external_userid" in violations[0].detail
+
+
 def test_sql_static_guard_allows_identity_boundary_legacy_columns(tmp_path: Path) -> None:
     manifest = _write_manifest(
         tmp_path,
