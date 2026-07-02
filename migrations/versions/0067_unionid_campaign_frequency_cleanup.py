@@ -59,7 +59,10 @@ def _prepare_campaign_members() -> None:
     op.execute("ALTER TABLE IF EXISTS campaign_members ADD COLUMN IF NOT EXISTS unionid TEXT NOT NULL DEFAULT ''")
     _backfill_unionid_from_external("campaign_members", "external_contact_id")
     op.execute("DROP INDEX IF EXISTS idx_campaign_members_external")
-    op.execute("CREATE INDEX IF NOT EXISTS idx_campaign_members_unionid ON campaign_members (unionid, campaign_id, id DESC)")
+    _create_index_if_table_exists(
+        "campaign_members",
+        "CREATE INDEX IF NOT EXISTS idx_campaign_members_unionid ON campaign_members (unionid, campaign_id, id DESC)",
+    )
     op.execute("ALTER TABLE IF EXISTS campaign_members DROP COLUMN IF EXISTS external_contact_id")
 
 
@@ -67,11 +70,12 @@ def _prepare_frequency_consumption() -> None:
     op.execute("ALTER TABLE IF EXISTS automation_frequency_consumption ADD COLUMN IF NOT EXISTS unionid TEXT NOT NULL DEFAULT ''")
     _backfill_unionid_from_external("automation_frequency_consumption", "external_contact_id")
     op.execute("DROP INDEX IF EXISTS idx_automation_frequency_consumption_external_window")
-    op.execute(
+    _create_index_if_table_exists(
+        "automation_frequency_consumption",
         """
         CREATE INDEX IF NOT EXISTS idx_automation_frequency_consumption_unionid_window
         ON automation_frequency_consumption (unionid, budget_id, consumed_at DESC)
-        """
+        """,
     )
     op.execute("ALTER TABLE IF EXISTS automation_frequency_consumption DROP COLUMN IF EXISTS external_contact_id")
 
@@ -80,8 +84,25 @@ def _prepare_agent_run_outputs() -> None:
     for table in ("automation_agent_run", "automation_agent_output"):
         op.execute(f"ALTER TABLE IF EXISTS {table} ADD COLUMN IF NOT EXISTS unionid TEXT NOT NULL DEFAULT ''")
         _backfill_unionid_from_external(table, "external_contact_id")
-        op.execute(f"CREATE INDEX IF NOT EXISTS ix_{table}_unionid ON {table} (unionid) WHERE unionid <> ''")
+        _create_index_if_table_exists(
+            table,
+            f"CREATE INDEX IF NOT EXISTS ix_{table}_unionid ON {table} (unionid) WHERE unionid <> ''",
+        )
         op.execute(f"ALTER TABLE IF EXISTS {table} DROP COLUMN IF EXISTS external_contact_id")
+
+
+def _create_index_if_table_exists(table: str, statement: str) -> None:
+    escaped_statement = statement.replace("'", "''")
+    op.execute(
+        f"""
+        DO $$
+        BEGIN
+            IF to_regclass('public.{table}') IS NOT NULL THEN
+                EXECUTE '{escaped_statement}';
+            END IF;
+        END $$;
+        """
+    )
 
 
 def downgrade() -> None:

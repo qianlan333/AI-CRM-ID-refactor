@@ -154,11 +154,11 @@ def test_cloud_plan_failure_marks_recipient_and_message_failed(next_pg_schema) -
             text(
                 """
                 INSERT INTO cloud_broadcast_plan_recipients (
-                    plan_id, external_userid, owner_userid, display_name,
+                    plan_id, unionid, owner_userid, display_name,
                     planned_message_count, approval_status, send_status
                 )
                 VALUES (
-                    :plan_id, 'wm_failed', 'HuangYouCan', '失败客户',
+                    :plan_id, 'union_failed', 'HuangYouCan', '失败客户',
                     1, 'approved', 'queued'
                 )
                 RETURNING id
@@ -171,9 +171,9 @@ def test_cloud_plan_failure_marks_recipient_and_message_failed(next_pg_schema) -
             text(
                 """
                 INSERT INTO cloud_broadcast_plan_recipient_messages (
-                    plan_id, recipient_id, external_userid, content_text, status
+                    plan_id, recipient_id, unionid, content_text, status
                 )
-                VALUES (:plan_id, :recipient_id, 'wm_failed', 'hello', 'queued')
+                VALUES (:plan_id, :recipient_id, 'union_failed', 'hello', 'queued')
                 """
             ),
             {"plan_id": plan_id, "recipient_id": recipient_id},
@@ -184,12 +184,12 @@ def test_cloud_plan_failure_marks_recipient_and_message_failed(next_pg_schema) -
                 INSERT INTO broadcast_jobs (
                     source_type, source_id, source_table, status,
                     business_domain, idempotency_key, channel, target_kind,
-                    target_external_userids, target_count, content_type, content_payload
+                    target_unionids_json, target_count, content_type, content_payload
                 )
                 VALUES (
                     'cloud_plan', :source_id, 'cloud_broadcast_plan_recipients', 'claimed',
-                    'ai_assistant', :idempotency_key, 'wecom_private', 'external_userid',
-                    '["wm_failed"]'::jsonb, 1, 'cloud_plan', CAST(:payload AS jsonb)
+                    'ai_assistant', :idempotency_key, 'wecom_private', 'unionid',
+                    '["union_failed"]'::jsonb, 1, 'cloud_plan', CAST(:payload AS jsonb)
                 )
                 RETURNING id
                 """
@@ -201,7 +201,7 @@ def test_cloud_plan_failure_marks_recipient_and_message_failed(next_pg_schema) -
                     {
                         "plan_id": plan_id,
                         "recipient_id": recipient_id,
-                        "external_userid": "wm_failed",
+                        "unionid": "union_failed",
                         "message_mode": "recipient_messages",
                     },
                     ensure_ascii=False,

@@ -16,6 +16,8 @@ depends_on = None
 
 
 def upgrade() -> None:
+    op.execute("DROP VIEW IF EXISTS audience_read.questionnaire_submissions_v1")
+    op.execute("DROP VIEW IF EXISTS audience_read.orders_v1")
     _prepare_questionnaire_submissions()
     _prepare_wechat_pay_orders()
     _recreate_audience_read_views()
@@ -71,7 +73,10 @@ def _prepare_questionnaire_submissions() -> None:
         END $$;
         """
     )
-    op.execute("CREATE INDEX IF NOT EXISTS idx_questionnaire_submissions_unionid_submitted ON questionnaire_submissions (unionid, submitted_at DESC, id DESC) WHERE unionid <> ''")
+    _create_index_if_table_exists(
+        "questionnaire_submissions",
+        "CREATE INDEX IF NOT EXISTS idx_questionnaire_submissions_unionid_submitted ON questionnaire_submissions (unionid, submitted_at DESC, id DESC) WHERE unionid <> ''",
+    )
     for column_name in ["identity_map_id", "respondent_key", "openid", "external_userid", "mobile_snapshot"]:
         op.execute(f"ALTER TABLE IF EXISTS questionnaire_submissions DROP COLUMN IF EXISTS {column_name}")
 
@@ -126,9 +131,26 @@ def _prepare_wechat_pay_orders() -> None:
         END $$;
         """
     )
-    op.execute("CREATE INDEX IF NOT EXISTS idx_wechat_pay_orders_unionid_created ON wechat_pay_orders (unionid, created_at DESC, id DESC) WHERE unionid <> ''")
+    _create_index_if_table_exists(
+        "wechat_pay_orders",
+        "CREATE INDEX IF NOT EXISTS idx_wechat_pay_orders_unionid_created ON wechat_pay_orders (unionid, created_at DESC, id DESC) WHERE unionid <> ''",
+    )
     for column_name in ["payer_openid", "respondent_key", "external_userid", "userid_snapshot", "mobile_snapshot"]:
         op.execute(f"ALTER TABLE IF EXISTS wechat_pay_orders DROP COLUMN IF EXISTS {column_name}")
+
+
+def _create_index_if_table_exists(table_name: str, statement: str) -> None:
+    escaped_statement = statement.replace("'", "''")
+    op.execute(
+        f"""
+        DO $$
+        BEGIN
+            IF to_regclass('public.{table_name}') IS NOT NULL THEN
+                EXECUTE '{escaped_statement}';
+            END IF;
+        END $$;
+        """
+    )
 
 
 def _recreate_audience_read_views() -> None:

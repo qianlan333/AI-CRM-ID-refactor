@@ -41,25 +41,43 @@ TARGET_UNIONIDS_TABLES = [
 def upgrade() -> None:
     for table_name in UNIONID_TABLES:
         op.execute(f"ALTER TABLE IF EXISTS {table_name} ADD COLUMN IF NOT EXISTS unionid TEXT NOT NULL DEFAULT ''")
-        op.execute(
-            f"""
-            CREATE INDEX IF NOT EXISTS ix_{table_name}_unionid
-            ON {table_name} (unionid)
-            WHERE unionid <> ''
-            """
+        _create_index_if_table_exists(
+            table_name,
+            f"CREATE INDEX IF NOT EXISTS ix_{table_name}_unionid ON {table_name} (unionid) WHERE unionid <> ''",
         )
 
     for table_name in TARGET_UNIONIDS_TABLES:
         op.execute(f"ALTER TABLE IF EXISTS {table_name} ADD COLUMN IF NOT EXISTS target_unionids_json JSONB NOT NULL DEFAULT '[]'::jsonb")
-        op.execute(f"CREATE INDEX IF NOT EXISTS ix_{table_name}_target_unionids_json ON {table_name} USING GIN (target_unionids_json)")
+        _create_index_if_table_exists(
+            table_name,
+            f"CREATE INDEX IF NOT EXISTS ix_{table_name}_target_unionids_json ON {table_name} USING GIN (target_unionids_json)",
+        )
 
     op.execute("ALTER TABLE IF EXISTS external_effect_job ADD COLUMN IF NOT EXISTS target_unionid TEXT NOT NULL DEFAULT ''")
-    op.execute("CREATE INDEX IF NOT EXISTS ix_external_effect_job_target_unionid ON external_effect_job (target_unionid) WHERE target_unionid <> ''")
+    _create_index_if_table_exists(
+        "external_effect_job",
+        "CREATE INDEX IF NOT EXISTS ix_external_effect_job_target_unionid ON external_effect_job (target_unionid) WHERE target_unionid <> ''",
+    )
 
     _backfill_single_unionid_tables()
     _backfill_target_unionids()
     _drop_legacy_channel_identity_columns()
     _drop_legacy_ai_audience_identity_columns()
+    _recreate_ai_audience_identity_views()
+
+
+def _create_index_if_table_exists(table_name: str, statement: str) -> None:
+    escaped_statement = statement.replace("'", "''")
+    op.execute(
+        f"""
+        DO $$
+        BEGIN
+            IF to_regclass('public.{table_name}') IS NOT NULL THEN
+                EXECUTE '{escaped_statement}';
+            END IF;
+        END $$;
+        """
+    )
 
 
 def _backfill_single_unionid_tables() -> None:
@@ -236,14 +254,127 @@ def _drop_legacy_ai_audience_identity_columns() -> None:
 
 
 def _drop_legacy_channel_identity_columns() -> None:
-    op.execute(
+    _create_index_if_table_exists(
+        "automation_channel_contact",
         """
         CREATE UNIQUE INDEX IF NOT EXISTS uq_automation_channel_contact_channel_unionid
         ON automation_channel_contact (channel_id, unionid)
         WHERE unionid <> ''
+        """,
+    )
+    op.execute("DROP VIEW IF EXISTS audience_read.channel_entries_v1")
+    op.execute("DROP VIEW IF EXISTS audience_read.identity_universe_v1")
+    op.execute("ALTER TABLE IF EXISTS automation_channel_contact DROP COLUMN IF EXISTS external_contact_id")
+
+
+def _recreate_ai_audience_identity_views() -> None:
+    op.execute("CREATE SCHEMA IF NOT EXISTS audience_read")
+    op.execute(
+        """
+        CREATE OR REPLACE VIEW audience_read.identity_universe_v1 AS
+        SELECT NULL::bigint AS person_id, ''::text AS external_userid, ''::text AS mobile_hash,
+               ''::text AS owner_userid, ''::text AS identity_type, ''::text AS identity_value,
+               ''::text AS source_table, NULL::timestamptz AS updated_at
+        WHERE FALSE
         """
     )
-    op.execute("ALTER TABLE IF EXISTS automation_channel_contact DROP COLUMN IF EXISTS external_contact_id")
+    op.execute(
+        """
+        DO $$
+        BEGIN
+            IF to_regclass('public.external_contact_bindings') IS NOT NULL
+               AND to_regclass('public.wecom_external_contact_identity_map') IS NOT NULL
+               AND to_regclass('public.automation_channel_contact') IS NOT NULL THEN
+                CREATE OR REPLACE VIEW audience_read.identity_universe_v1 AS
+                SELECT
+                    CASE WHEN b.person_id::text ~ '^[0-9]+$' THEN b.person_id::text::bigint ELSE NULL END AS person_id,
+                    COALESCE(b.external_userid, '')::text AS external_userid,
+                    ''::text AS mobile_hash,
+                    COALESCE(NULLIF(b.last_owner_userid, ''), NULLIF(b.first_owner_userid, ''), '')::text AS owner_userid,
+                    'external_userid'::text AS identity_type,
+                    COALESCE(b.external_userid, '')::text AS identity_value,
+                    'external_contact_bindings'::text AS source_table,
+                    COALESCE(b.updated_at::timestamptz, CURRENT_TIMESTAMP) AS updated_at
+                FROM external_contact_bindings b
+                WHERE COALESCE(b.external_userid, '') <> ''
+                UNION ALL
+                SELECT
+                    NULL::bigint AS person_id,
+                    COALESCE(im.external_userid, '')::text AS external_userid,
+                    ''::text AS mobile_hash,
+                    COALESCE(NULLIF(im.follow_user_userid, ''), '')::text AS owner_userid,
+                    'external_userid'::text AS identity_type,
+                    COALESCE(im.external_userid, '')::text AS identity_value,
+                    'wecom_external_contact_identity_map'::text AS source_table,
+                    COALESCE(im.updated_at::timestamptz, CURRENT_TIMESTAMP) AS updated_at
+                FROM wecom_external_contact_identity_map im
+                WHERE COALESCE(im.external_userid, '') <> ''
+                UNION ALL
+                SELECT
+                    NULL::bigint AS person_id,
+                    COALESCE(identity.primary_external_userid, '')::text AS external_userid,
+                    ''::text AS mobile_hash,
+                    COALESCE(cc.owner_staff_id, '')::text AS owner_userid,
+                    'unionid'::text AS identity_type,
+                    COALESCE(cc.unionid, '')::text AS identity_value,
+                    'automation_channel_contact'::text AS source_table,
+                    COALESCE(cc.updated_at::timestamptz, CURRENT_TIMESTAMP) AS updated_at
+                FROM automation_channel_contact cc
+                LEFT JOIN crm_user_identity identity ON identity.unionid = cc.unionid
+                WHERE COALESCE(cc.unionid, '') <> '';
+            END IF;
+        END $$;
+        """
+    )
+    op.execute(
+        """
+        CREATE OR REPLACE VIEW audience_read.channel_entries_v1 AS
+        SELECT NULL::bigint AS channel_entry_id, NULL::bigint AS channel_id, ''::text AS channel_code,
+               ''::text AS channel_name, ''::text AS scene_value, ''::text AS external_userid,
+               ''::text AS owner_userid, NULL::timestamptz AS first_entered_at,
+               NULL::timestamptz AS last_entered_at, 0::integer AS enter_count,
+               '{}'::jsonb AS source_payload_json, '{}'::jsonb AS payload_json
+        WHERE FALSE
+        """
+    )
+    op.execute(
+        """
+        DO $$
+        BEGIN
+            IF to_regclass('public.automation_channel_contact') IS NOT NULL
+               AND to_regclass('public.automation_channel') IS NOT NULL THEN
+                CREATE OR REPLACE VIEW audience_read.channel_entries_v1 AS
+                SELECT
+                    cc.id::bigint AS channel_entry_id,
+                    cc.channel_id::bigint AS channel_id,
+                    COALESCE(c.channel_code, '')::text AS channel_code,
+                    COALESCE(c.channel_name, '')::text AS channel_name,
+                    COALESCE(c.scene_value, '')::text AS scene_value,
+                    COALESCE(identity.primary_external_userid, '')::text AS external_userid,
+                    COALESCE(cc.owner_staff_id, '')::text AS owner_userid,
+                    COALESCE(cc.first_channel_entered_at, cc.created_at, CURRENT_TIMESTAMP)::timestamptz AS first_entered_at,
+                    COALESCE(cc.last_channel_entered_at, cc.updated_at, CURRENT_TIMESTAMP)::timestamptz AS last_entered_at,
+                    COALESCE(cc.enter_count, 1)::integer AS enter_count,
+                    COALESCE(cc.source_payload_json, '{}'::jsonb) AS source_payload_json,
+                    jsonb_build_object(
+                        'channel_entry_id', cc.id,
+                        'channel_id', cc.channel_id,
+                        'channel_code', COALESCE(c.channel_code, ''),
+                        'channel_name', COALESCE(c.channel_name, ''),
+                        'scene_value', COALESCE(c.scene_value, ''),
+                        'external_userid', COALESCE(identity.primary_external_userid, ''),
+                        'unionid', COALESCE(cc.unionid, ''),
+                        'owner_userid', COALESCE(cc.owner_staff_id, ''),
+                        'enter_count', COALESCE(cc.enter_count, 1)
+                    ) AS payload_json
+                FROM automation_channel_contact cc
+                LEFT JOIN automation_channel c ON c.id = cc.channel_id
+                LEFT JOIN crm_user_identity identity ON identity.unionid = cc.unionid
+                WHERE COALESCE(cc.unionid, '') <> '';
+            END IF;
+        END $$;
+        """
+    )
 
 
 def downgrade() -> None:
