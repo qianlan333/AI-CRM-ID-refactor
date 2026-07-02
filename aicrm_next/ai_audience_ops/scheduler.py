@@ -12,8 +12,8 @@ from .event_types import (
     DAILY_TICK_EVENT,
     INCREMENTAL_REFRESH_CONSUMER,
     INCREMENTAL_TICK_EVENT,
-    MEMBER_EVENT_PREFIX,
     OUTBOUND_EFFECT_CONSUMER,
+    RUN_REFRESHED_EVENT,
     SOURCE_CHANGED_EVENT,
     SOURCE_POKE_CONSUMER,
 )
@@ -58,12 +58,34 @@ def emit_due_ticks(
     }
 
 
-def run_due_refresh_consumers(*, dry_run: bool = True, batch_size: int = 20) -> dict[str, Any]:
+def run_due_refresh_consumers(
+    *,
+    dry_run: bool = True,
+    batch_size: int = 20,
+    include_incremental: bool = True,
+    include_daily: bool = True,
+) -> dict[str, Any]:
+    event_types: list[str] = []
+    consumer_names: list[str] = []
+    if include_incremental:
+        event_types.append(INCREMENTAL_TICK_EVENT)
+        consumer_names.append(INCREMENTAL_REFRESH_CONSUMER)
+    if include_daily:
+        event_types.append(DAILY_TICK_EVENT)
+        consumer_names.append(DAILY_REFRESH_CONSUMER)
+    if not event_types:
+        return {
+            "ok": True,
+            "candidate_count": 0,
+            "processed_count": 0,
+            "skipped": "no_refresh_consumers_selected",
+            "real_external_call_executed": False,
+        }
     return InternalEventWorker().run_due(
         batch_size=batch_size,
         dry_run=dry_run,
-        event_types=[INCREMENTAL_TICK_EVENT, DAILY_TICK_EVENT],
-        consumer_names=[INCREMENTAL_REFRESH_CONSUMER, DAILY_REFRESH_CONSUMER],
+        event_types=event_types,
+        consumer_names=consumer_names,
     )
 
 
@@ -80,14 +102,25 @@ def run_due_outbound_consumers(*, dry_run: bool = True, batch_size: int = 20) ->
     return InternalEventWorker().run_due(
         batch_size=batch_size,
         dry_run=dry_run,
-        event_types=[f"{MEMBER_EVENT_PREFIX}{event_type}" for event_type in ("entered", "updated", "exited")],
+        event_types=[RUN_REFRESHED_EVENT],
         consumer_names=[OUTBOUND_EFFECT_CONSUMER],
     )
 
 
-def run_due_ai_audience_consumers(*, dry_run: bool = True, batch_size: int = 20) -> dict[str, Any]:
+def run_due_ai_audience_consumers(
+    *,
+    dry_run: bool = True,
+    batch_size: int = 20,
+    include_incremental_refresh: bool = True,
+    include_daily_refresh: bool = True,
+) -> dict[str, Any]:
     source_poke = run_due_source_poke_consumers(dry_run=dry_run, batch_size=batch_size)
-    refresh = run_due_refresh_consumers(dry_run=dry_run, batch_size=batch_size)
+    refresh = run_due_refresh_consumers(
+        dry_run=dry_run,
+        batch_size=batch_size,
+        include_incremental=include_incremental_refresh,
+        include_daily=include_daily_refresh,
+    )
     outbound = run_due_outbound_consumers(dry_run=dry_run, batch_size=batch_size)
     return {
         "ok": bool(source_poke.get("ok")) and bool(refresh.get("ok")) and bool(outbound.get("ok")),
@@ -110,7 +143,7 @@ def ai_audience_event_consumer_pairs(*, include_source_poke: bool = True, includ
             ]
         )
     if include_outbound:
-        pairs.extend(f"{MEMBER_EVENT_PREFIX}{event_type}:{OUTBOUND_EFFECT_CONSUMER}" for event_type in ("entered", "updated", "exited"))
+        pairs.append(f"{RUN_REFRESHED_EVENT}:{OUTBOUND_EFFECT_CONSUMER}")
     return pairs
 
 

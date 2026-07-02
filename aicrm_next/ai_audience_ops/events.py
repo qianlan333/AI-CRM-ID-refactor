@@ -17,8 +17,8 @@ from .event_types import (
     DAILY_TICK_EVENT,
     INCREMENTAL_REFRESH_CONSUMER,
     INCREMENTAL_TICK_EVENT,
-    MEMBER_EVENT_PREFIX,
     OUTBOUND_EFFECT_CONSUMER,
+    RUN_REFRESHED_EVENT,
     SOURCE_CHANGED_EVENT,
     SOURCE_POKE_CONSUMER,
 )
@@ -68,12 +68,18 @@ def source_poke_consumer(event: InternalEvent, run: InternalEventConsumerRun) ->
 
 def outbound_effect_consumer(event: InternalEvent, run: InternalEventConsumerRun) -> InternalEventConsumerResult:
     payload = dict(event.payload_json or {})
+    run_id = int(payload.get("run_id") or event.aggregate_id or 0) if event.event_type == RUN_REFRESHED_EVENT else 0
     member_event_id = int(payload.get("member_event_id") or event.aggregate_id or 0)
-    result = AudienceOutboundService().plan_for_member_event(member_event_id)
+    result = AudienceOutboundService().plan_for_run(run_id) if run_id > 0 else AudienceOutboundService().plan_for_member_event(member_event_id)
     ok = bool(result.get("ok"))
     return InternalEventConsumerResult(
         status="succeeded" if ok else "failed_retryable",
-        request_summary={"event_id": event.event_id, "consumer_name": run.consumer_name, "member_event_id": member_event_id},
+        request_summary={
+            "event_id": event.event_id,
+            "consumer_name": run.consumer_name,
+            "run_id": run_id,
+            "member_event_id": member_event_id if run_id <= 0 else 0,
+        },
         response_summary=_summary(result),
         result_summary=_summary(result),
         error_code="" if ok else _text(result.get("error")) or "ai_audience_outbound_plan_failed",
@@ -91,8 +97,7 @@ def register_ai_audience_event_consumers(registry: InternalEventConsumerRegistry
     registry.register("external_form.submitted", SOURCE_POKE_CONSUMER, source_poke_consumer, consumer_type="projection")
     for payment_event_type in PAYMENT_SUCCEEDED_EVENT_TYPES:
         registry.register(payment_event_type, SOURCE_POKE_CONSUMER, source_poke_consumer, consumer_type="projection")
-    for event_type in ("entered", "updated", "exited"):
-        registry.register(f"{MEMBER_EVENT_PREFIX}{event_type}", OUTBOUND_EFFECT_CONSUMER, outbound_effect_consumer, consumer_type="external_effect_planner")
+    registry.register(RUN_REFRESHED_EVENT, OUTBOUND_EFFECT_CONSUMER, outbound_effect_consumer, consumer_type="external_effect_planner")
 
 
 def _limit_from_event(event: InternalEvent, *, default: int) -> int:
@@ -114,6 +119,10 @@ def _summary(payload: dict[str, Any]) -> dict[str, Any]:
         "failed_count",
         "member_event_count",
         "planned_count",
+        "run_id",
+        "entered_count",
+        "updated_count",
+        "exited_count",
         "error",
         "real_external_call_executed",
     ):

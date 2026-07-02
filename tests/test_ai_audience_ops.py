@@ -18,6 +18,7 @@ from aicrm_next.ai_audience_ops.event_types import (
     INCREMENTAL_TICK_EVENT,
     MEMBER_EVENT_PREFIX,
     OUTBOUND_EFFECT_CONSUMER,
+    RUN_REFRESHED_EVENT,
     SOURCE_CHANGED_EVENT,
     SOURCE_POKE_CONSUMER,
 )
@@ -171,9 +172,10 @@ def test_ai_audience_scheduler_consumer_pairs_cover_source_refresh_and_outbound(
     assert f"{SOURCE_CHANGED_EVENT}:{SOURCE_POKE_CONSUMER}" in pairs
     assert f"{INCREMENTAL_TICK_EVENT}:{INCREMENTAL_REFRESH_CONSUMER}" in pairs
     assert f"{DAILY_TICK_EVENT}:{DAILY_REFRESH_CONSUMER}" in pairs
-    assert f"{MEMBER_EVENT_PREFIX}entered:{OUTBOUND_EFFECT_CONSUMER}" in pairs
-    assert f"{MEMBER_EVENT_PREFIX}updated:{OUTBOUND_EFFECT_CONSUMER}" in pairs
-    assert f"{MEMBER_EVENT_PREFIX}exited:{OUTBOUND_EFFECT_CONSUMER}" in pairs
+    assert f"{RUN_REFRESHED_EVENT}:{OUTBOUND_EFFECT_CONSUMER}" in pairs
+    assert f"{MEMBER_EVENT_PREFIX}entered:{OUTBOUND_EFFECT_CONSUMER}" not in pairs
+    assert f"{MEMBER_EVENT_PREFIX}updated:{OUTBOUND_EFFECT_CONSUMER}" not in pairs
+    assert f"{MEMBER_EVENT_PREFIX}exited:{OUTBOUND_EFFECT_CONSUMER}" not in pairs
 
 
 @pytest.mark.usefixtures("next_pg_schema")
@@ -857,7 +859,7 @@ def test_package_refresh_uses_internal_event_and_external_effect_queue(next_clie
     monkeypatch.setenv("AICRM_AI_AUDIENCE_API_TOKEN", TOKEN)
     monkeypatch.setenv("AICRM_AUDIENCE_READONLY_DATABASE_URL", database_url)
     monkeypatch.setenv("AICRM_INTERNAL_EVENTS_ENABLED", "1")
-    monkeypatch.setenv("AICRM_INTERNAL_EVENTS_ALLOWED_EVENT_CONSUMERS", f"{MEMBER_EVENT_PREFIX}entered:{OUTBOUND_EFFECT_CONSUMER}")
+    monkeypatch.setenv("AICRM_INTERNAL_EVENTS_ALLOWED_EVENT_CONSUMERS", f"{RUN_REFRESHED_EVENT}:{OUTBOUND_EFFECT_CONSUMER}")
 
     session_factory = get_session_factory()
     with session_factory() as session:
@@ -910,6 +912,7 @@ def test_package_refresh_uses_internal_event_and_external_effect_queue(next_clie
     assert body["ok"] is True
     assert body["entered_count"] == 2
     assert body["member_event_count"] == 2
+    run_event_id = body["run_event"]["event"]["event_id"]
 
     with session_factory() as session:
         member_events = session.execute(
@@ -929,13 +932,13 @@ def test_package_refresh_uses_internal_event_and_external_effect_queue(next_clie
 
     worker = InternalEventWorker()
     dry_run = worker.dispatch_one_consumer(
-        str(member_event["internal_event_id"]),
+        run_event_id,
         OUTBOUND_EFFECT_CONSUMER,
         dry_run=True,
     )
     assert dry_run["ok"] is True
     worker_result = worker.dispatch_one_consumer(
-        str(member_event["internal_event_id"]),
+        run_event_id,
         OUTBOUND_EFFECT_CONSUMER,
         dry_run=False,
     )
@@ -943,7 +946,7 @@ def test_package_refresh_uses_internal_event_and_external_effect_queue(next_clie
     assert worker_result["counts"]["succeeded_count"] == 1
     for _ in range(2):
         repeat_result = worker.dispatch_one_consumer(
-            str(member_event["internal_event_id"]),
+            run_event_id,
             OUTBOUND_EFFECT_CONSUMER,
             dry_run=False,
             force=True,

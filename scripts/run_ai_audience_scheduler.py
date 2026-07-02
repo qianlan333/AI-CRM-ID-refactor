@@ -51,10 +51,21 @@ def main() -> int:
         )
     }
     if args.run_consumers:
+        run_daily_consumers = include_daily and bool(payload["ticks"].get("daily_tick_due"))
         if args.refresh_consumers_only:
-            payload["consumers"] = run_due_refresh_consumers(dry_run=not args.execute, batch_size=args.batch_size)
+            payload["consumers"] = run_due_refresh_consumers(
+                dry_run=not args.execute,
+                batch_size=args.batch_size,
+                include_incremental=include_incremental,
+                include_daily=run_daily_consumers,
+            )
         else:
-            payload["consumers"] = run_due_ai_audience_consumers(dry_run=not args.execute, batch_size=args.batch_size)
+            payload["consumers"] = run_due_ai_audience_consumers(
+                dry_run=not args.execute,
+                batch_size=args.batch_size,
+                include_incremental_refresh=include_incremental,
+                include_daily_refresh=run_daily_consumers,
+            )
     print(json.dumps(payload, ensure_ascii=False, indent=2, default=str))
     return 0 if payload["ticks"].get("ok") else 1
 

@@ -8,7 +8,7 @@ from aicrm_next.platform_foundation.command_bus.models import CommandContext
 from aicrm_next.platform_foundation.internal_events import InternalEventService
 
 from .diff_service import identity_key, member_event_idempotency_key, normalize_audience_row
-from .event_types import MEMBER_EVENT_PREFIX
+from .event_types import MEMBER_EVENT_PREFIX, RUN_REFRESHED_EVENT
 from .repository import (
     AudienceRepository,
     build_audience_repository,
@@ -145,10 +145,19 @@ class AudienceRefreshService:
                 daily_refresh_time=_text(package.get("daily_refresh_time")) or "02:00",
                 timezone_name=_text(package.get("timezone")) or "Asia/Shanghai",
             )
+            run_event = self._emit_run_refreshed_event(
+                package,
+                completed or run,
+                refresh_kind=refresh_kind,
+                returned_count=len(raw_rows),
+                diff=diff,
+                occurred_at=started_at,
+            )
             return {
                 "ok": True,
                 "package_id": int(package["id"]),
                 "run": completed or run,
+                "run_event": run_event,
                 "returned_count": len(raw_rows),
                 **diff,
                 "real_external_call_executed": False,
@@ -287,3 +296,47 @@ class AudienceRefreshService:
         if event_id:
             return self._repo.update_member_event_internal_event_id(int(event["id"]), event_id)
         return event
+
+    def _emit_run_refreshed_event(
+        self,
+        package: dict[str, Any],
+        run: dict[str, Any],
+        *,
+        refresh_kind: str,
+        returned_count: int,
+        diff: dict[str, int],
+        occurred_at: datetime,
+    ) -> dict[str, Any]:
+        run_id = int(run.get("id") or 0)
+        payload = {
+            "run_id": run_id,
+            "run_type": refresh_kind,
+            "package_id": int(package["id"]),
+            "package_key": package.get("package_key"),
+            "package_name": package.get("name"),
+            "returned_count": int(returned_count or 0),
+            "entered_count": int(diff.get("entered_count") or 0),
+            "updated_count": int(diff.get("updated_count") or 0),
+            "exited_count": int(diff.get("exited_count") or 0),
+            "member_event_count": int(diff.get("member_event_count") or 0),
+        }
+        return self._events.emit_event(
+            event_type=RUN_REFRESHED_EVENT,
+            aggregate_type="ai_audience_package_run",
+            aggregate_id=str(run_id),
+            subject_type="ai_audience_package",
+            subject_id=str(package["id"]),
+            idempotency_key=f"ai_audience.run.refreshed:{run_id}",
+            source_module="ai_audience_ops.refresh_service",
+            payload=payload,
+            payload_summary={
+                "run_id": run_id,
+                "run_type": refresh_kind,
+                "package_key": package.get("package_key"),
+                "entered_count": payload["entered_count"],
+                "updated_count": payload["updated_count"],
+                "exited_count": payload["exited_count"],
+            },
+            context=CommandContext(actor_id="ai_audience_refresh", actor_type="system", source_route="ai_audience.refresh"),
+            occurred_at=occurred_at,
+        )

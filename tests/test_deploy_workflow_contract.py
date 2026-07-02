@@ -488,7 +488,9 @@ def test_ai_audience_scheduler_runs_through_internal_event_queue_only():
     assert "AICRM_INTERNAL_EVENTS_ALLOWED_EVENT_CONSUMERS=" in service
     assert "ai_audience.refresh.incremental_tick:ai_audience_incremental_refresh_consumer" in service
     assert "ai_audience.refresh.daily_tick:ai_audience_daily_refresh_consumer" in service
-    assert "ai_audience.member.entered:ai_audience_outbound_effect_planner" in service
+    assert "ai_audience.run.refreshed:ai_audience_outbound_effect_planner" in service
+    assert "ai_audience.member.updated:ai_audience_outbound_effect_planner" not in service
+    assert "ai_audience.member.exited:ai_audience_outbound_effect_planner" not in service
     assert "ExternalEffectWorker" not in service
     assert "run_external_effect_queue_worker.py" not in service
     assert "OnCalendar=*-*-* *:0/3:00" in timer
