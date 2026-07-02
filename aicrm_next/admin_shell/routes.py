@@ -7,6 +7,12 @@ from fastapi.responses import RedirectResponse
 from fastapi.templating import Jinja2Templates
 
 from aicrm_next.data_health.application import data_health_summary
+from aicrm_next.delivery_lineage.application import (
+    get_delivery_lineage,
+    list_delivery_lineage,
+    list_delivery_lineage_by_trace,
+    list_delivery_lineage_by_unionid,
+)
 
 from .navigation import admin_path_for, shell_context
 from .view_model import AdminShellApiClient
@@ -111,6 +117,37 @@ def admin_data_health_page(request: Request):
     return templates.TemplateResponse(request, "admin_shell/data_health.html", context)
 
 
+@router.get("/admin/delivery-lineage", name="api.admin_delivery_lineage_page")
+def admin_delivery_lineage_page(request: Request):
+    filters = _delivery_lineage_filters(request)
+    payload = _delivery_lineage_payload(filters)
+    context = shell_context(
+        request=request,
+        page_title="投递排障",
+        page_summary="按 unionid、broadcast job、external effect 或 trace 查询统一投递链路。",
+        active_endpoint="api.admin_delivery_lineage_page",
+    )
+    context.update(
+        {
+            "breadcrumbs": [
+                {"label": "客户管理后台", "href": admin_path_for("api.admin_console_dashboard")},
+                {"label": "投递排障", "href": ""},
+            ],
+            "page_actions": [
+                {
+                    "label": "查看 API",
+                    "href": "/api/admin/delivery-lineage",
+                    "variant": "secondary",
+                },
+            ],
+            "filters": filters,
+            "lineage_items": payload.get("items") or ([] if not payload.get("item") else [payload["item"]]),
+            "lineage_error": payload.get("error_code", ""),
+        }
+    )
+    return templates.TemplateResponse(request, "admin_shell/delivery_lineage.html", context)
+
+
 @router.get("/api/admin/dashboard/shell-context", name="api.admin_dashboard_shell_context")
 def admin_dashboard_shell_context() -> dict:
     return AdminShellApiClient().shell_context_payload()
@@ -153,3 +190,25 @@ def _data_health_cards(summary: dict) -> list[dict[str, str]]:
             "tone": "neutral" if pending_count else "ok",
         },
     ]
+
+
+def _delivery_lineage_filters(request: Request) -> dict[str, str]:
+    params = request.query_params
+    return {
+        "unionid": str(params.get("unionid") or "").strip(),
+        "broadcast_job_id": str(params.get("broadcast_job_id") or "").strip(),
+        "external_effect_job_id": str(params.get("external_effect_job_id") or "").strip(),
+        "trace_id": str(params.get("trace_id") or "").strip(),
+    }
+
+
+def _delivery_lineage_payload(filters: dict[str, str]) -> dict:
+    if filters["broadcast_job_id"]:
+        return get_delivery_lineage(f"broadcast:{filters['broadcast_job_id']}")
+    if filters["external_effect_job_id"]:
+        return get_delivery_lineage(f"external_effect:{filters['external_effect_job_id']}")
+    if filters["unionid"]:
+        return list_delivery_lineage_by_unionid(filters["unionid"])
+    if filters["trace_id"]:
+        return list_delivery_lineage_by_trace(filters["trace_id"])
+    return list_delivery_lineage()
