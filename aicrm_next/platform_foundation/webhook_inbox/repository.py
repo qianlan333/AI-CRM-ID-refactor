@@ -132,6 +132,9 @@ class WebhookInboxRepository(Protocol):
     def claim_due(self, *, provider: str, limit: int = 50, locked_by: str = "webhook-inbox-worker") -> list[dict[str, Any]]:
         ...
 
+    def claim_one(self, inbox_id: int, *, locked_by: str = "webhook-inbox-worker") -> dict[str, Any] | None:
+        ...
+
     def acquire_due(self, *, provider: str, limit: int = 50, locked_by: str = "webhook-inbox-worker") -> list[dict[str, Any]]:
         ...
 
@@ -353,6 +356,28 @@ class PostgresWebhookInboxRepository:
             rows = [dict(row) for row in cur.fetchall() or []]
             conn.commit()
             return rows
+
+    def claim_one(self, inbox_id: int, *, locked_by: str = "webhook-inbox-worker") -> dict[str, Any] | None:
+        with _connect(self._database_url) as conn, conn.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE webhook_inbox
+                SET status = 'processing',
+                    locked_at = CURRENT_TIMESTAMP,
+                    locked_by = %s,
+                    started_at = COALESCE(started_at, CURRENT_TIMESTAMP),
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = %s
+                  AND status IN ('received', 'failed_retryable')
+                  AND (next_retry_at IS NULL OR next_retry_at <= CURRENT_TIMESTAMP)
+                  AND (locked_at IS NULL OR locked_at <= CURRENT_TIMESTAMP - INTERVAL '5 minutes')
+                RETURNING *
+                """,
+                (_text(locked_by) or "webhook-inbox-worker", int(inbox_id)),
+            )
+            row = cur.fetchone()
+            conn.commit()
+            return dict(row) if row else None
 
     def acquire_due(self, *, provider: str, limit: int = 50, locked_by: str = "webhook-inbox-worker") -> list[dict[str, Any]]:
         return self.claim_due(provider=provider, limit=limit, locked_by=locked_by)
@@ -780,6 +805,25 @@ class InMemoryWebhookInboxRepository:
                 claimed.append(deepcopy(row))
         claimed.sort(key=lambda item: (item.get("received_at") or now, int(item.get("id") or 0)))
         return claimed
+
+    def claim_one(self, inbox_id: int, *, locked_by: str = "webhook-inbox-worker") -> dict[str, Any] | None:
+        now = datetime.now(timezone.utc)
+        for row in self.rows:
+            if int(row.get("id") or 0) != int(inbox_id):
+                continue
+            locked_expired = bool(row.get("locked_at") and row["locked_at"] <= now - timedelta(minutes=5))
+            if (
+                row.get("status") in {"received", "failed_retryable"}
+                and (not row.get("next_retry_at") or row["next_retry_at"] <= now)
+                and (not row.get("locked_at") or locked_expired)
+            ):
+                row["status"] = "processing"
+                row["locked_at"] = now
+                row["locked_by"] = locked_by
+                row["started_at"] = row.get("started_at") or now
+                row["updated_at"] = now
+                return deepcopy(row)
+        return None
 
     def acquire_due(self, *, provider: str, limit: int = 50, locked_by: str = "webhook-inbox-worker") -> list[dict[str, Any]]:
         return self.claim_due(provider=provider, limit=limit, locked_by=locked_by)

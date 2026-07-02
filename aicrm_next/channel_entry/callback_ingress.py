@@ -32,4 +32,5 @@ def ingest_wecom_external_contact_callback(
         plain_xml=plain_xml,
         route=route,
         repository=repository,
+        process_time_sensitive=True,
     )

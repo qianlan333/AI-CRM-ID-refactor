@@ -148,6 +148,75 @@ def test_ingest_wecom_callback_deduplicates_by_event_key():
     assert "authorization" not in repo.rows[0]["raw_headers_json"]
 
 
+def test_ingest_time_sensitive_welcome_callback_processes_inline(monkeypatch):
+    repo = InMemoryWebhookInboxRepository()
+    processed: list[ProcessWeComExternalContactEventCommand] = []
+
+    def processor(command: ProcessWeComExternalContactEventCommand) -> dict:
+        processed.append(command)
+        return {
+            "handled": True,
+            "event_log": {"id": 42},
+            "identity_sync": {"status": "success"},
+            "entry_result": {
+                "mode": "channel_baseline_only",
+                "reason": "channel_entry_baseline_recorded",
+                "channel_entry_internal_event": {"event_id": "iev_42", "consumer_run_count": 1},
+                "baseline_effects": {
+                    "welcome_message": {"external_effect_job_id": 101},
+                    "entry_tag": {"external_effect_job_id": 102},
+                },
+            },
+        }
+
+    monkeypatch.setattr("aicrm_next.channel_entry.inbox.process_wecom_external_contact_event", processor)
+
+    result = ingest_wecom_callback(
+        query={},
+        headers={},
+        body=b"raw",
+        event_data=_event(),
+        plain_xml="<xml>plain</xml>",
+        route="/wecom/external-contact/callback",
+        repository=repo,
+        process_time_sensitive=True,
+    )
+
+    assert result["time_sensitive_inline"] is True
+    assert result["status"] == "succeeded"
+    assert result["inline_processing"]["event_log_id"] == 42
+    assert processed[0].event_data["WelcomeCode"] == "welcome-a"
+    assert repo.rows[0]["status"] == "succeeded"
+    assert repo.rows[0]["locked_at"] is None
+    assert repo.rows[0]["processing_summary_json"]["external_effect_job_ids"] == [101, 102]
+    assert repo.preview_due(provider="wecom", limit=10) == []
+
+
+def test_ingest_non_welcome_callback_stays_async_even_when_inline_enabled(monkeypatch):
+    repo = InMemoryWebhookInboxRepository()
+
+    monkeypatch.setattr(
+        "aicrm_next.channel_entry.inbox.process_wecom_external_contact_event",
+        lambda command: (_ for _ in ()).throw(AssertionError("non-welcome callback must remain async")),
+    )
+
+    result = ingest_wecom_callback(
+        query={},
+        headers={},
+        body=b"raw",
+        event_data={**_event(), "WelcomeCode": ""},
+        plain_xml="<xml>plain</xml>",
+        route="/wecom/external-contact/callback",
+        repository=repo,
+        process_time_sensitive=True,
+    )
+
+    assert result["time_sensitive_inline"] is False
+    assert result["status"] == "received"
+    assert repo.rows[0]["status"] == "received"
+    assert len(repo.preview_due(provider="wecom", limit=10)) == 1
+
+
 def test_wecom_callback_inbox_worker_processes_claimed_rows():
     repo = InMemoryWebhookInboxRepository()
     ingest_wecom_callback(

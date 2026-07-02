@@ -7,7 +7,7 @@ from typing import Any, Callable
 from aicrm_next.platform_foundation.webhook_inbox import WebhookInboxRepository, WebhookInboxService, build_webhook_inbox_repository
 
 from .application import process_wecom_external_contact_event
-from .domain import text
+from .domain import ENTRY_CHANGE_TYPES, text
 from .schemas import ProcessWeComExternalContactEventCommand
 
 
@@ -55,6 +55,15 @@ def _payload_summary(event_data: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def should_process_callback_inline(event_data: dict[str, Any]) -> bool:
+    return (
+        text(event_data.get("Event")) == "change_external_contact"
+        and text(event_data.get("ChangeType")) in ENTRY_CHANGE_TYPES
+        and bool(text(event_data.get("WelcomeCode")))
+        and bool(text(event_data.get("State")))
+    )
+
+
 def ingest_wecom_callback(
     *,
     query: dict[str, str],
@@ -64,6 +73,7 @@ def ingest_wecom_callback(
     plain_xml: str,
     route: str,
     repository: WebhookInboxRepository | None = None,
+    process_time_sensitive: bool = False,
 ) -> dict[str, Any]:
     corp_id = text(event_data.get("ToUserName"))
     idempotency_key = wecom_callback_idempotency_key(corp_id, event_data)
@@ -87,13 +97,25 @@ def ingest_wecom_callback(
         payload_summary_json=_payload_summary(event_data),
         max_attempts=8,
     )
+    inline_processing: dict[str, Any] = {}
+    if process_time_sensitive and should_process_callback_inline(event_data):
+        inline_processing = WeComCallbackInboxWorker(
+            repository,
+            locked_by="wecom-callback-ingress-inline",
+        ).dispatch_one(
+            int(row.get("id") or 0),
+            reason="time_sensitive_welcome_inline",
+        )
+    current_status = text(inline_processing.get("status")) or text(row.get("status")) or "received"
     return {
         "ok": True,
         "id": int(row.get("id") or 0),
         "duplicate": int(row.get("duplicate_count") or 0) > 0,
         "duplicate_count": int(row.get("duplicate_count") or 0),
-        "status": text(row.get("status")) or "received",
+        "status": current_status,
         "idempotency_key": idempotency_key,
+        "time_sensitive_inline": bool(inline_processing),
+        "inline_processing": inline_processing,
     }
 
 
@@ -213,7 +235,19 @@ class WeComCallbackInboxWorker:
                 "status": text(row.get("status")),
                 "item": self._row_summary(row),
             }
-        if text(row.get("status")) in {"failed_terminal", "dead_letter", "processing"}:
+        original_status = text(row.get("status"))
+        if original_status in {"received", "failed_retryable"}:
+            claimed = self._repo.claim_one(int(inbox_id), locked_by=f"{self._locked_by}:{reason}") or {}
+            if not claimed:
+                latest = self._repo.get_item(int(inbox_id)) or row
+                return {
+                    "ok": False,
+                    "id": int(inbox_id),
+                    "status": text(latest.get("status")),
+                    "error": "webhook_inbox_item_not_claimed",
+                }
+            row = claimed
+        elif original_status in {"failed_terminal", "dead_letter", "processing"}:
             row = self._repo.mark_retryable_now(int(inbox_id), reason=reason) or row
         result = self.dispatch_row(row)
         result["ok"] = text(result.get("status")) == "succeeded"
