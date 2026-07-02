@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from aicrm_next.data_health.quality_registry import (
     data_quality_checks_by_group,
     get_data_quality_check_definition,
@@ -93,3 +95,61 @@ def test_data_quality_registry_lookup_returns_single_definition() -> None:
         "outbound_tasks",
     ]
     assert get_data_quality_check_definition("not_a_quality_check") is None
+
+
+@pytest.fixture()
+def client(monkeypatch):
+    pytest.importorskip("fastapi")
+    from fastapi.testclient import TestClient
+    from aicrm_next.main import create_app
+
+    monkeypatch.setenv("AICRM_NEXT_ENV", "test")
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    monkeypatch.setenv("AICRM_NEXT_ENABLE_LEGACY_PRODUCTION_FACADE", "0")
+    monkeypatch.setenv("AICRM_NEXT_DISABLE_LEGACY_PRODUCTION_FACADE", "1")
+    return TestClient(create_app(), raise_server_exceptions=False)
+
+
+def test_data_quality_summary_api_exposes_registry_counts(client) -> None:
+    response = client.get("/api/admin/data-quality/summary")
+
+    assert response.status_code == 200
+    assert response.headers["X-AICRM-Route-Owner"] == "ai_crm_next"
+    body = response.json()
+    assert body["ok"] is True
+    assert body["total_checks"] == 20
+    assert body["group_counts"] == EXPECTED_GROUP_COUNTS
+    assert body["probe_status_counts"] == {"needs_probe": 20, "registered": 0}
+    assert body["severity_counts"]["red"] >= 1
+    assert body["severity_counts"]["yellow"] >= 1
+
+
+def test_data_quality_groups_and_checks_api_are_metadata_only(client) -> None:
+    groups = client.get("/api/admin/data-quality/groups")
+    checks = client.get("/api/admin/data-quality/checks")
+
+    assert groups.status_code == 200
+    assert {group["group"]: group["check_count"] for group in groups.json()["groups"]} == EXPECTED_GROUP_COUNTS
+    assert checks.status_code == 200
+    assert len(checks.json()["checks"]) == 20
+    assert {check["probe_status"] for check in checks.json()["checks"]} == {"needs_probe"}
+    assert "raw_payload_json" not in checks.text
+    assert "external_userid_value" not in checks.text
+
+
+def test_data_quality_check_detail_api_and_missing_check(client) -> None:
+    detail = client.get("/api/admin/data-quality/checks/payment_paid_order_missing_identity")
+
+    assert detail.status_code == 200
+    payload = detail.json()
+    assert payload["ok"] is True
+    assert payload["check"]["group"] == "payment"
+    assert payload["check"]["source_tables"] == [
+        "wechat_pay_orders",
+        "alipay_pay_orders",
+        "crm_user_identity",
+    ]
+
+    missing = client.get("/api/admin/data-quality/checks/not_a_quality_check")
+    assert missing.status_code == 404
+    assert missing.json()["error_code"] == "data_quality_check_not_found"

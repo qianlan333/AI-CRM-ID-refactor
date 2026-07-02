@@ -56,6 +56,16 @@ it defines the rule IDs, groups, source tables, thresholds, and remediation
 language that later admin APIs and scheduled snapshots can execute through
 production-safe read probes.
 
+Registry API:
+
+- `GET /api/admin/data-quality/summary`
+- `GET /api/admin/data-quality/groups`
+- `GET /api/admin/data-quality/checks`
+- `GET /api/admin/data-quality/checks/{check_id}`
+
+These endpoints expose only registry metadata. They do not connect to the
+production database and do not evaluate rule status yet.
+
 Groups and registered rule counts:
 
 - `identity`: 5 checks covering pending identity queues, conflicts, duplicate
