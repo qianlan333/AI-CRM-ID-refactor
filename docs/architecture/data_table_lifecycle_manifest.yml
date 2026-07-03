@@ -29,6 +29,70 @@ tables:
       - tests/test_data_table_lifecycle_guard.py
     notes: Unionid-only local cache for successful externalcontact tag writes; external_userid belongs only in identity mapping or resolution queue.
 
+  class_user_status_current:
+    domain: customer_read_model
+    lifecycle: read_model
+    write_owner: aicrm_next.user_ops
+    read_owners:
+      - customer read model
+      - sidebar customer context
+      - User Ops customer drawer
+    replacement: none; current class/signup status projection keyed by unionid
+    drop_candidate: false
+    drop_after: ""
+    runtime_entrypoints:
+      - customer list status filters
+      - customer detail class status
+      - User Ops customer status
+    migration_source: 0081_create_customer_status_baseline_tables
+    pii_level: internal_contact
+    guard_tests:
+      - tests/test_unionid_identity_refactor_schema.py::test_customer_status_baseline_tables_exist_in_fresh_schema
+      - tests/test_data_table_lifecycle_guard.py
+    notes: Fresh target schema baseline for unionid keyed customer status; no external_userid or mobile_snapshot columns.
+
+  class_user_status_history:
+    domain: customer_read_model
+    lifecycle: audit
+    write_owner: aicrm_next.user_ops
+    read_owners:
+      - customer timeline
+      - User Ops diagnostics
+    replacement: none; append-only class/signup status status-change audit
+    drop_candidate: false
+    drop_after: ""
+    runtime_entrypoints:
+      - customer status history
+      - customer timeline status events
+    migration_source: 0081_create_customer_status_baseline_tables
+    pii_level: internal_contact
+    guard_tests:
+      - tests/test_unionid_identity_refactor_schema.py::test_customer_status_baseline_tables_exist_in_fresh_schema
+      - tests/test_data_table_lifecycle_guard.py
+    notes: Fresh target schema baseline for unionid keyed status history; no external_userid or mobile_snapshot columns.
+
+  owner_role_map:
+    domain: admin_identity
+    lifecycle: read_model
+    write_owner: admin owner directory sync
+    read_owners:
+      - common operation members
+      - customer read model
+      - sidebar v2 owner display lookup
+    replacement: none; internal owner display-name lookup
+    drop_candidate: false
+    drop_after: ""
+    runtime_entrypoints:
+      - owner display lookup
+      - common operation member directory
+      - sidebar message owner names
+    migration_source: 0081_create_customer_status_baseline_tables
+    pii_level: internal_contact
+    guard_tests:
+      - tests/test_unionid_identity_refactor_schema.py::test_customer_status_baseline_tables_exist_in_fresh_schema
+      - tests/test_data_table_lifecycle_guard.py
+    notes: Internal staff userid/display mapping used for customer read projections.
+
   automation_member:
     domain: automation
     lifecycle: retired
