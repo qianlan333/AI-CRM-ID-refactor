@@ -24,7 +24,7 @@ Storage and side-effect boundary:
 - Multipart image/attachment upload writes the media-library repository row and inline/local payload only. It does not call cloud storage or WeCom media upload.
 - `from-url`, `from-base64`, and data-url upserts use guarded adapters only. Fake/staging adapters are allowed for tests and local smoke, but response metadata exposes `source_status`, adapter mode, idempotency keys, `fallback_used=false`, and `real_external_call_executed=false`.
 - Remote source URLs are stored as references for fake/staging import metadata; thumbnail and variant read paths must not fetch remote URLs directly. If an image has only `source_url` and no local payload/variant, the route returns a controlled contract error instead of making an HTTP client call.
-- Production real external storage and WeCom media upload remain `real_blocked` unless explicitly enabled by adapter flags. The API must not hide fake/staging adapter output as real production storage.
+- Media Library storage/WeCom adapter modes exposed by this API are limited to `fake`, `disabled`, and `staging`. `production` env values are not surfaced as available media-library storage; real cloud storage or WeCom media upload must use a separately implemented and audited path.
 - Upload, import, and delete responses include a `side_effect_plan` or guarded adapter audit/idempotency metadata. Thumbnail and variant routes are binary responses with route-owner/fallback/real-call headers.
 - Smoke payloads use a valid 1x1 PNG fixture for multipart upload. `from-base64` accepts both `data_base64` and compatible `data_url`; miniprogram create uses canonical `appid` and also accepts `app_id`.
 

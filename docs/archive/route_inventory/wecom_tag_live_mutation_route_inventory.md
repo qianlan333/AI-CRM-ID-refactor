@@ -1,6 +1,6 @@
 # WeCom Live Tag Mutation Route Inventory
 
-Scope: Legacy Exit group 14 closeout locks live gate/mark/unmark and tag mutation callers to Next CommandBus plan-only handling. This group does not execute real WeCom, real token exchange, real external push, payment, storage, OpenClaw, or automation runtime. Tag catalog CRUD/sync stays deletion_locked from group 13.
+Scope: Legacy Exit group 14 closeout locks live gate/mark/unmark and tag mutation callers to Next CommandBus handling. The command path can update local CRM tag projection and queue External Effect jobs, but it still does not execute a real WeCom API call during submit/command handling. Tag catalog CRUD/sync stays deletion_locked from group 13.
 
 Closeout status: live gate, live mark, and live unmark are `deletion_locked` / `locked` in both the route registry and production route ownership manifest. Their `legacy_fallback_allowed` flags are false, and production_compat must not register these routes.
 
@@ -8,11 +8,11 @@ Closeout status: live gate, live mark, and live unmark are `deletion_locked` / `
 
 | Caller | Caller file | Current API | Payload | Target external_userid | tag_ids | CommandBus command | SideEffectPlan effect_type | Real WeCom | Smoke / test |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| Live gate smoke | curl / admin diagnostics | `GET /api/admin/wecom/tags/live/gate` | none | none | none | none | none | no; `adapter_mode=real_blocked`, `route_owner=ai_crm_next`, `fallback_used=false` | registry/manifest locked; smoke + `tests/test_wecom_tag_live_mutation_commands.py` |
+| Live gate smoke | curl / admin diagnostics | `GET /api/admin/wecom/tags/live/gate` | none | none | none | none | none | no submit-time call; `adapter_mode=local_projection_and_external_effect`, `route_owner=ai_crm_next`, `fallback_used=false` | registry/manifest locked; smoke + `tests/test_wecom_tag_live_mutation_commands.py` |
 | Admin live mark | API client / smoke | `POST /api/admin/wecom/tags/live/mark` | `external_userid`, `tag_ids`, `operator`, `Idempotency-Key` | `external_userid` | request `tag_ids` | `PlanWeComTagMarkCommand` | `wecom.tag.mark` | no; `real_external_call_executed=false`, `wecom_api_called=false` | registry/manifest locked; smoke + `tests/test_wecom_tag_live_mutation_commands.py` |
 | Admin live unmark | API client / smoke | `POST /api/admin/wecom/tags/live/unmark` | `external_userid`, `tag_ids`, `operator`, `Idempotency-Key` | `external_userid` | request `tag_ids` | `PlanWeComTagUnmarkCommand` | `wecom.tag.unmark` | no; `real_external_call_executed=false`, `wecom_api_called=false` | registry/manifest locked; smoke + `tests/test_wecom_tag_live_mutation_commands.py` |
 | Sidebar signup tag marker | `aicrm_next/sidebar_write/api.py`, `aicrm_next/sidebar_write/application.py` | `POST /api/sidebar/signup-tags/mark` | `external_userid`, `tag_id` or `tag_name`, `marked` | `external_userid` | `tag_id` when present | `MarkSignupTagCommand` | `wecom.tag.update` | no; existing plan-only sidebar CommandBus | locked sidebar route; smoke + `tests/test_wecom_tag_live_mutation_callers_contract.py` |
-| Questionnaire H5 submit tag apply | `aicrm_next/questionnaire/application.py`, `aicrm_next/integration_gateway/questionnaire_adapters.py` | `POST /api/h5/questionnaires/{slug}/submit` | answers + identity; final tags derived by scoring | resolved `external_userid` | `final_tags` | `PlanQuestionnaireTagSideEffectCommand` | `questionnaire.tag.apply` | no; replaced guarded tag adapter call with Next plan-only command | locked H5 submit route; smoke + `tests/test_wecom_tag_live_mutation_callers_contract.py` |
+| Questionnaire H5 submit tag apply | `aicrm_next/questionnaire/application.py`, `aicrm_next/integration_gateway/questionnaire_adapters.py` | `POST /api/h5/questionnaires/{slug}/submit` | answers + identity; final tags derived by scoring | resolved `external_userid`; `unionid` can update local projection without `external_userid` | `final_tags` | `PlanQuestionnaireTagSideEffectCommand` | `questionnaire.tag.apply` | no submit-time call; local projection updates immediately and External Effect job queues when `external_userid` exists | locked H5 submit route; smoke + `tests/test_wecom_tag_live_mutation_callers_contract.py` |
 | Questionnaire admin write tag selector | `aicrm_next/questionnaire/templates/admin_questionnaires.html` | `GET /api/admin/wecom/tags` selector only | none for mutation | none | none | none | none | no mutation route; read CRUD remains deletion_locked | `tests/test_wecom_tag_read_selectors.py` |
 | Customer profile tag read/assignment boundary | `aicrm_next/customer_read_model/api.py`, `aicrm_next/customer_tags/live_mutation.py` | `GET /api/admin/customers/profile/tags`; command-only assignment boundary | `external_userid`, `tag_ids` for assignment command | `external_userid` | command `tag_ids` | `PlanCustomerTagAssignmentCommand` | `wecom.tag.assignment.apply` | no; command-only plan boundary until a write API is approved | no approved write API in this group; `tests/test_wecom_tag_live_mutation_callers_contract.py` |
 | User ops tag filter | `aicrm_next/ops_enrollment/api.py` | customer/user ops reads and previews | filters only | none | none | none | none | no mutation caller found | explicitly no mutation API in this group; `tests/test_wecom_tag_live_mutation_inventory.py` |
@@ -32,19 +32,19 @@ Closeout status: live gate, live mark, and live unmark are `deletion_locked` / `
 
 | Command | Source | SideEffectPlan | Adapter | Status |
 | --- | --- | --- | --- | --- |
-| `PlanWeComTagMarkCommand` | `POST /api/admin/wecom/tags/live/mark` | `wecom.tag.mark` | `wecom`, `real_blocked` | locked |
-| `PlanWeComTagUnmarkCommand` | `POST /api/admin/wecom/tags/live/unmark` | `wecom.tag.unmark` | `wecom`, `real_blocked` | locked |
-| `PlanCustomerTagAssignmentCommand` | customer profile/tag assignment boundary | `wecom.tag.assignment.apply` | `wecom`, `real_blocked` | plan-only boundary |
-| `PlanQuestionnaireTagSideEffectCommand` | questionnaire H5 submit scoring | `questionnaire.tag.apply` | `wecom`, `real_blocked` | plan-only boundary |
+| `PlanWeComTagMarkCommand` | `POST /api/admin/wecom/tags/live/mark` | `wecom.tag.mark` | `wecom_tag`, `queued_external_effect` | queued external effect |
+| `PlanWeComTagUnmarkCommand` | `POST /api/admin/wecom/tags/live/unmark` | `wecom.tag.unmark` | `wecom_tag`, `queued_external_effect` | queued external effect |
+| `PlanCustomerTagAssignmentCommand` | customer profile/tag assignment boundary | `wecom.tag.assignment.apply` | `wecom_tag`, `queued_external_effect` | queued external effect |
+| `PlanQuestionnaireTagSideEffectCommand` | questionnaire H5 submit scoring | `questionnaire.tag.apply` | `wecom_tag`, `queued_external_effect` | local projection + queued external effect |
 
-## SideEffectPlan Only
+## SideEffectPlan And External Effect Queue
 
-All mutation plans include `adapter_name=wecom`, `adapter_mode=real_blocked`, `requires_approval=true`, `real_external_call_executed=false`, `wecom_api_called=false`, `external_userid`, `tag_ids`, and a redacted `payload_summary`.
+All mutation plans include `adapter_name=wecom_tag`, `adapter_mode=queued_external_effect`, `requires_approval=false`, `real_external_call_executed=false`, `wecom_api_called=false`, `external_userid`, `tag_ids`, and a redacted `payload_summary`. Questionnaire H5 submit also returns `local_projection_status` and `external_effect_status`; with `unionid` but no `external_userid`, local projection may update while the WeCom external effect is blocked as `identity_external_userid_missing`.
 
 ## Explicitly Unchanged
 
-- Real WeCom execution is not enabled.
-- Real WeCom token exchange is not enabled.
+- Real WeCom execution is not performed by submit/command handlers.
+- Real WeCom token exchange is deferred to the External Effect worker and gated adapter.
 - Real external push is not changed by this group.
 - Payment, storage, OpenClaw, and automation runtime are not changed.
 - Tag catalog CRUD/sync remains group 13 `deletion_locked`.

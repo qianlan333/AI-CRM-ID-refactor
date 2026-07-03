@@ -4,7 +4,7 @@
 
 This runbook covers the `customer.tagged` and `customer.untagged` internal event vertical slice.
 
-These events record the business fact that a customer tag mutation command was accepted/planned. They do not mean the external WeCom tag API has been called.
+These events record the business fact that a customer tag mutation command was accepted and queued for the External Effect worker. They do not mean the external WeCom tag API has already been called.
 
 ## Feature Flags
 
@@ -96,21 +96,21 @@ The event detail API may keep raw identifiers inside `payload_json` for backend 
 
 The current write path is `aicrm_next/customer_tags/live_mutation.py`.
 
-That path still creates the existing side-effect plan and a shadow `external_effect_job` for WeCom tag mark/unmark. The internal event is emitted after those planning steps through `safe_emit`, so emit failures do not break the customer tag mutation path.
+That path creates a queued side-effect plan and a queued `external_effect_job` for WeCom tag mark/unmark. The internal event is emitted after those planning steps through `safe_emit`, so emit failures do not break the customer tag mutation path.
 
 The consumer receives sanitized references to the existing side-effect plan and external effect job and reuses them. This avoids duplicate external effect planning.
 
-## No Real WeCom Guarantee
+## Submit-Time External Call Safety
 
-This slice does not execute real WeCom tag operations.
+This slice does not execute real WeCom tag operations during the mutation command or internal-event consumer. Real WeCom mutation can only happen later through the External Effect worker after payload and runtime gates pass.
 
 Safety guarantees:
 
-- `live_mutation` uses `adapter_mode=real_blocked`.
-- External effect jobs are planned with `execution_mode=shadow`.
+- `live_mutation` uses `adapter_mode=queued_external_effect`.
+- External effect jobs are queued with `execution_mode=execute`, `status=queued`, and `requires_approval=false` for single-customer tag effects.
 - The customer tag consumer does not dispatch external effects.
 - No `external_effect_attempt` is created by the internal event consumer.
-- Production worker allowlists must not include customer tag consumers until a separate gray approval.
+- The External Effect worker still enforces Push Center capability gates unless the job payload explicitly carries a product-approved `bypass_push_capability=true` marker, as questionnaire single-customer tags do.
 
 ## Production Verification
 

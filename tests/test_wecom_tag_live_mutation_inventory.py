@@ -22,7 +22,9 @@ def test_live_mutation_inventory_covers_callers_and_plan_matrix() -> None:
         "wecom.tag.unmark",
         "wecom.tag.assignment.apply",
         "questionnaire.tag.apply",
-        "real_blocked",
+        "queued_external_effect",
+        "local_projection_and_external_effect",
+        "requires_approval=false",
         "real_external_call_executed=false",
         "wecom_api_called=false",
     ]:

@@ -2,7 +2,9 @@
 
 `questionnaire.submitted` records the business fact that a public H5 questionnaire
 submission was accepted and persisted. It does not mean a webhook was delivered,
-tags were applied, or automation was executed.
+the WeCom API was called, or automation was executed. Questionnaire final tags
+can update the local CRM tag projection during submit; the real WeCom tag call is
+represented by a queued External Effect job.
 
 ## Event Schema
 
@@ -48,14 +50,16 @@ secrets.
 
 - `questionnaire_webhook_consumer`
   Creates or reuses a `WEBHOOK_QUESTIONNAIRE_SUBMISSION_PUSH`
-  `external_effect_job`. It always uses `execution_mode=shadow` and
-  `status=planned`. It never dispatches the external effect and never creates an
-  `external_effect_attempt`.
+  `external_effect_job`. The submit path queues webhook jobs with
+  `execution_mode=execute`, `status=queued`, and `requires_approval=false`, but
+  neither the submit handler nor this consumer dispatches the external effect.
 
 - `questionnaire_tag_consumer`
   Currently skips with
   `questionnaire_tag_side_effect_already_planned_or_not_configured`. Existing H5
-  submit side-effect planning remains in place.
+  submit tag handling remains in place: local `contact_tags` projection is
+  updated immediately when a `unionid` is available, and a WeCom tag
+  `external_effect_job` is queued when `external_userid` is available.
 
 - `automation_questionnaire_consumer`
   Currently skips with `automation_questionnaire_not_configured`.
@@ -79,7 +83,7 @@ The existing H5 submit path in `aicrm_next/questionnaire/h5_write.py` remains in
 place:
 
 - existing questionnaire external push planning is not removed;
-- existing tag side-effect planning is not removed;
+- existing tag local projection and external-effect queue planning is not removed;
 - submit API response fields are preserved.
 
 The webhook consumer deduplicates against existing jobs using:
@@ -92,7 +96,7 @@ The webhook consumer deduplicates against existing jobs using:
 
 If a matching job exists, the consumer returns
 `external_effect_job_reused=true` and does not create a second job. If no job
-exists and external push is configured, it creates exactly one shadow/planned
+exists and external push is configured, it creates exactly one queued
 job.
 
 ## External Call Safety

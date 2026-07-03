@@ -10,30 +10,13 @@ from aicrm_next.shared.runtime_settings import runtime_bool, runtime_setting
 
 from .adapters import DEFAULT_ADAPTER_REGISTRY, ExternalEffectAdapterRegistry
 from .models import (
-    WECOM_CONTACT_TAG_MARK,
-    WECOM_CONTACT_TAG_UNMARK,
     WECOM_MESSAGE_GROUP_SEND,
-    WECOM_MESSAGE_PRIVATE_SEND,
-    WECOM_PROFILE_UPDATE,
-    WECOM_WELCOME_MESSAGE_SEND,
     ExternalEffectJob,
 )
 from .repo import ExternalEffectRepository, build_external_effect_repository
 from .retry_policy import next_retry_at, status_for_failure
 
 LOGGER = logging.getLogger(__name__)
-WECOM_EFFECT_TYPES = frozenset(
-    {
-        WECOM_CONTACT_TAG_MARK,
-        WECOM_CONTACT_TAG_UNMARK,
-        WECOM_MESSAGE_GROUP_SEND,
-        WECOM_MESSAGE_PRIVATE_SEND,
-        WECOM_PROFILE_UPDATE,
-        WECOM_WELCOME_MESSAGE_SEND,
-    }
-)
-
-
 def _enabled(name: str) -> bool:
     return runtime_bool(name)
 
@@ -44,7 +27,8 @@ def _is_test_job(job: ExternalEffectJob) -> bool:
 
 
 def _capability_gate_error(job: ExternalEffectJob) -> str:
-    if job.effect_type in WECOM_EFFECT_TYPES:
+    payload = dict(job.payload_json or {})
+    if payload.get("bypass_push_capability") is True:
         return ""
     capability = capability_for_section(section_for_job(job))
     if capability is None:

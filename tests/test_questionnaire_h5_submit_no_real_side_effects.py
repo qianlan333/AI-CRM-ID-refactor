@@ -27,11 +27,12 @@ def test_h5_submit_returns_side_effect_plan_only(client: TestClient) -> None:
     body = response.json()
     assert body["real_external_call_executed"] is False
     plan = body["side_effect_plan"]
-    assert plan["adapter_mode"] == "real_blocked"
-    assert plan["requires_approval"] is True
+    assert plan["adapter_mode"] == "local_projection_and_external_effect"
+    assert plan["requires_approval"] is False
     assert plan["real_external_call_executed"] is False
     assert plan["payload"]["real_external_call_executed"] is False
-    assert "wecom.tag.plan" in plan["payload"]["planned_effects"]
+    assert "wecom.tag.local_projection.updated" in plan["payload"]["planned_effects"]
+    assert "wecom.tag.external_effect.queued" in plan["payload"]["planned_effects"]
 
     plans = get_questionnaire_h5_side_effect_plans()
     assert all(item["real_external_call_executed"] is False for item in plans)

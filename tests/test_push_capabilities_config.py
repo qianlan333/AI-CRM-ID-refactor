@@ -14,6 +14,7 @@ from aicrm_next.platform_foundation.external_effects import (
     MEDIA_STORAGE_UPLOAD,
     OPENCLAW_CONTEXT_PUSH,
     PAYMENT_WECHAT_ORDER_QUERY,
+    WECOM_CONTACT_TAG_MARK,
     WECOM_MESSAGE_PRIVATE_SEND,
     WECOM_MEDIA_UPLOAD,
     WEBHOOK_QUESTIONNAIRE_SUBMISSION_PUSH,
@@ -143,6 +144,7 @@ def _registry(adapter: _SucceedingAdapter) -> ExternalEffectAdapterRegistry:
     registry = ExternalEffectAdapterRegistry()
     registry._adapters["outbound_webhook"] = adapter  # type: ignore[attr-defined]
     registry._adapters["wecom_private_message"] = adapter  # type: ignore[attr-defined]
+    registry._adapters["wecom_tag"] = adapter  # type: ignore[attr-defined]
     return registry
 
 
@@ -375,8 +377,63 @@ def test_shared_wecom_effect_type_is_gated_by_business_section() -> None:
     assert ai_result["items"][0]["job"]["business_type"] == "ai_assist_campaign"
     assert ai_result["counts"]["succeeded_count"] == 1
     assert private_result["items"][0]["job"]["business_type"] == "private_broadcast"
-    assert private_result["counts"]["succeeded_count"] == 1
-    assert adapter.calls == 2
+    assert private_result["items"][0]["attempt"]["error_code"] == "push_capability_disabled"
+    assert private_result["counts"]["failed_count"] == 1
+    assert adapter.calls == 1
+
+
+def test_wecom_tag_effect_honors_tags_capability_unless_explicitly_bypassed() -> None:
+    reset_external_effect_fixture_state()
+    _set_setting("AICRM_PUSH_CAPABILITY_TAGS_ENABLED", "false")
+    adapter = _SucceedingAdapter()
+
+    _plan_job(
+        effect_type=WECOM_CONTACT_TAG_MARK,
+        adapter_name="wecom_tag",
+        business_type="wecom_tag",
+        business_id="tag-disabled",
+        target_type="external_user",
+        target_id="wx-tag-disabled",
+        idempotency_key="wecom-tag-disabled-capability",
+    )
+    blocked = ExternalEffectWorker(adapter_registry=_registry(adapter)).run_due(
+        batch_size=1,
+        dry_run=False,
+        effect_types=[WECOM_CONTACT_TAG_MARK],
+    )
+
+    assert blocked["items"][0]["attempt"]["error_code"] == "push_capability_disabled"
+    assert blocked["counts"]["failed_count"] == 1
+    assert adapter.calls == 0
+
+    ExternalEffectService().plan_effect(
+        effect_type=WECOM_CONTACT_TAG_MARK,
+        adapter_name="wecom_tag",
+        operation="tag_mark",
+        target_type="external_user",
+        target_id="wx-tag-bypass",
+        business_type="wecom_tag",
+        business_id="tag-bypass",
+        payload={
+            "external_userid": "wx-tag-bypass",
+            "tag_ids": ["tag_a"],
+            "follow_user_userid": "owner-a",
+            "bypass_push_capability": True,
+        },
+        context=_context("trace-wecom-tag-bypass"),
+        source_module="pytest.push_capabilities",
+        idempotency_key="wecom-tag-bypass-capability",
+        status="queued",
+        execution_mode="execute",
+    )
+    bypassed = ExternalEffectWorker(adapter_registry=_registry(adapter)).run_due(
+        batch_size=1,
+        dry_run=False,
+        effect_types=[WECOM_CONTACT_TAG_MARK],
+    )
+
+    assert bypassed["counts"]["succeeded_count"] == 1
+    assert adapter.calls == 1
 
 
 def test_webhooks_push_page_is_push_capability_entry(next_client: TestClient) -> None:

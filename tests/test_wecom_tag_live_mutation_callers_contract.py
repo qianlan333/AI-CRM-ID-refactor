@@ -3,6 +3,7 @@ from __future__ import annotations
 from fastapi.testclient import TestClient
 
 from aicrm_next.customer_tags.live_mutation import execute_wecom_tag_mutation, reset_wecom_tag_live_mutation_fixture_state
+from aicrm_next.customer_tags.local_projection import get_customer_tag_local_projection_fixture_rows
 from aicrm_next.customer_tags.mutation_commands import PlanCustomerTagAssignmentCommand
 from aicrm_next.identity_contact.dto import IdentityResolution
 from aicrm_next.main import create_app
@@ -36,7 +37,7 @@ def test_sidebar_signup_tag_mutation_remains_plan_only(monkeypatch) -> None:
     assert payload["side_effect_plan"]["real_external_call_executed"] is False
 
 
-def test_questionnaire_submit_tag_side_effect_uses_next_plan(monkeypatch) -> None:
+def test_questionnaire_submit_tag_side_effect_updates_projection_and_queues_effect(monkeypatch) -> None:
     client = _client(monkeypatch)
 
     response = client.post(
@@ -55,8 +56,36 @@ def test_questionnaire_submit_tag_side_effect_uses_next_plan(monkeypatch) -> Non
     assert tag_plan["fallback_used"] is False
     assert tag_plan["real_external_call_executed"] is False
     assert tag_plan["wecom_api_called"] is False
-    assert tag_plan["side_effect_plan"]["adapter_mode"] == "real_blocked"
-    assert tag_plan["side_effect_plan"]["requires_approval"] is True
+    assert tag_plan["adapter_mode"] == "queued_external_effect"
+    assert tag_plan["local_projection_updated"] is True
+    assert tag_plan["local_projection_status"] == "updated"
+    assert tag_plan["external_effect_status"] == "queued"
+    assert tag_plan["side_effect_plan"]["adapter_mode"] == "queued_external_effect"
+    assert tag_plan["side_effect_plan"]["requires_approval"] is False
+    assert tag_plan["external_effect_job"]["requires_approval"] is False
+    assert tag_plan["external_effect_job"]["payload_json"]["bypass_push_capability"] is True
+
+
+def test_questionnaire_submit_with_unionid_only_updates_local_projection_without_wecom_queue(monkeypatch) -> None:
+    client = _client(monkeypatch)
+
+    response = client.post(
+        "/api/h5/questionnaires/hxc-activation-v1/submit",
+        json={
+            "answers": {"q_activation": "activated", "q_interest": ["ai_tools"]},
+            "identity": {"openid": "openid_union_only_001", "unionid": "unionid_union_only_001"},
+        },
+        headers={"Idempotency-Key": "questionnaire-union-only-local-tags"},
+    )
+
+    assert response.status_code == 200
+    tag_plan = response.json()["side_effects"]["wecom_tag"]
+    assert tag_plan["adapter_mode"] == "local_projection_and_external_effect"
+    assert tag_plan["local_projection_updated"] is True
+    assert tag_plan["external_effect_status"] == "blocked"
+    assert tag_plan["reason"] == "identity_external_userid_missing"
+    rows = [row for row in get_customer_tag_local_projection_fixture_rows() if row["unionid"] == "unionid_union_only_001"]
+    assert {"tag_hxc_activated", "tag_interest_ai_tools"} <= {row["tag_id"] for row in rows}
 
 
 def test_questionnaire_submit_binds_payload_mobile_when_resolved_identity_has_no_mobile(monkeypatch) -> None:
@@ -135,6 +164,8 @@ def test_customer_tag_assignment_command_is_plan_only() -> None:
     assert payload["ok"] is True
     assert payload["command_name"] == "wecom.tag.assignment.apply"
     assert payload["effect_type"] == "wecom.tag.assignment.apply"
-    assert payload["side_effect_plan"]["adapter_mode"] == "real_blocked"
+    assert payload["side_effect_plan"]["adapter_mode"] == "queued_external_effect"
+    assert payload["side_effect_plan"]["requires_approval"] is False
+    assert payload["external_effect_status"] == "queued"
     assert payload["real_external_call_executed"] is False
     assert payload["wecom_api_called"] is False
