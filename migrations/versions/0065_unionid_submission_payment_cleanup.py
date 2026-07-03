@@ -158,8 +158,25 @@ def _recreate_audience_read_views() -> None:
     op.execute(
         """
         DO $$
+        DECLARE
+            updated_at_expr TEXT;
         BEGIN
             IF to_regclass('public.questionnaire_submissions') IS NOT NULL THEN
+                IF EXISTS (
+                    SELECT 1 FROM information_schema.columns
+                    WHERE table_schema = 'public' AND table_name = 'questionnaire_submissions' AND column_name = 'updated_at'
+                ) THEN
+                    updated_at_expr := 'qs.updated_at';
+                ELSIF EXISTS (
+                    SELECT 1 FROM information_schema.columns
+                    WHERE table_schema = 'public' AND table_name = 'questionnaire_submissions' AND column_name = 'submitted_at'
+                ) THEN
+                    updated_at_expr := 'qs.submitted_at';
+                ELSE
+                    updated_at_expr := 'qs.created_at';
+                END IF;
+
+                EXECUTE format($sql$
                 CREATE OR REPLACE VIEW audience_read.questionnaire_submissions_v1 AS
                 SELECT
                     qs.id AS submission_id,
@@ -170,7 +187,7 @@ def _recreate_audience_read_views() -> None:
                     ''::text AS mobile_hash,
                     qs.submitted_at,
                     qs.created_at,
-                    qs.updated_at,
+                    %s AS updated_at,
                     qs.total_score,
                     qs.final_tags,
                     qs.assessment_result_snapshot,
@@ -184,7 +201,8 @@ def _recreate_audience_read_views() -> None:
                         'tags', qs.final_tags
                     ) AS payload_json
                 FROM questionnaire_submissions qs
-                LEFT JOIN crm_user_identity identity ON identity.unionid = qs.unionid;
+                LEFT JOIN crm_user_identity identity ON identity.unionid = qs.unionid
+                $sql$, updated_at_expr);
             END IF;
         END $$;
         """
