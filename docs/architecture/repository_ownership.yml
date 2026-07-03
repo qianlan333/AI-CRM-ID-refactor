@@ -292,15 +292,23 @@ repositories:
     capability_owner: aicrm_next.message_archive
     table_reads:
       - app_settings
+      - archive_sync_state
       - archived_messages
       - crm_user_identity
     table_writes:
+      - archive_sync_state
       - archived_messages
       - crm_user_identity_resolution_queue
   aicrm_next/ops_enrollment/repo.py:
     capability_owner: aicrm_next.ops_enrollment
-    table_reads: []
-    table_writes: []
+    table_reads:
+      - user_ops_do_not_disturb_next
+      - user_ops_pool_current_next
+      - user_ops_send_records_next
+    table_writes:
+      - user_ops_do_not_disturb_next
+      - user_ops_pool_current_next
+      - user_ops_send_records_next
   aicrm_next/owner_migration/repo.py:
     capability_owner: aicrm_next.owner_migration
     table_reads:
