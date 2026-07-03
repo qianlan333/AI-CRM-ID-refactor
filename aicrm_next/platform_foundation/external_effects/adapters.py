@@ -54,7 +54,7 @@ def _csv_env(name: str) -> set[str]:
 
 
 def _configured_wecom_sender(fallback: str = "") -> str:
-    raw = runtime_setting("AICRM_EXTERNAL_EFFECT_ALLOWED_OWNER_USERIDS", "")
+    raw = runtime_setting("AICRM_WECOM_DEFAULT_SENDER_USERID", "") or runtime_setting("AICRM_EXTERNAL_EFFECT_ALLOWED_OWNER_USERIDS", "")
     candidates = [
         item.strip()
         for item in raw.replace("\n", ",").replace(" ", ",").split(",")

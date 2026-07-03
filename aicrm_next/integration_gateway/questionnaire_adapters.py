@@ -581,12 +581,59 @@ class QuestionnaireSubmitSideEffectGateway:
         self._tag_adapter = tag_adapter or build_wecom_tag_adapter()
         self._push_adapter = push_adapter or build_questionnaire_external_push_adapter()
 
-    def apply_tags(self, *, questionnaire_id: int | str, submission_id: str, external_userid: str, tag_ids: list[str]) -> Json:
-        if not external_userid or not tag_ids:
+    def apply_tags(
+        self,
+        *,
+        questionnaire_id: int | str,
+        submission_id: str,
+        external_userid: str,
+        tag_ids: list[str],
+        unionid: str = "",
+        follow_user_userid: str = "",
+    ) -> Json:
+        from aicrm_next.customer_tags.local_projection import project_questionnaire_tags
+
+        local_projection = project_questionnaire_tags(
+            unionid=unionid,
+            external_userid=external_userid,
+            owner_userid=follow_user_userid,
+            tag_ids=tag_ids,
+            source="questionnaire_submit_pipeline",
+            questionnaire_id=questionnaire_id,
+            submission_id=submission_id,
+            idempotency_key=make_idempotency_key(
+                operation="questionnaire.tag.local_projection",
+                payload={
+                    "questionnaire_id": questionnaire_id,
+                    "submission_id": submission_id,
+                    "unionid": unionid,
+                    "external_userid": external_userid,
+                    "tag_ids": sorted(tag_ids),
+                },
+            ),
+        )
+        if not tag_ids:
             return self.record_side_effect_audit(
                 operation="apply_tags",
                 target={"questionnaire_id": questionnaire_id, "submission_id": submission_id, "external_userid": external_userid, "tag_ids": tag_ids},
-                result={"skipped": True, "reason": "missing_external_userid_or_tags"},
+                result={
+                    "skipped": True,
+                    "reason": "missing_tags",
+                    "local_projection": local_projection,
+                    "local_projection_updated": bool(local_projection.get("local_projection_updated")),
+                },
+            )
+        if not external_userid:
+            return self.record_side_effect_audit(
+                operation="apply_tags",
+                target={"questionnaire_id": questionnaire_id, "submission_id": submission_id, "external_userid": external_userid, "tag_ids": tag_ids},
+                result={
+                    "skipped": False,
+                    "reason": "identity_external_userid_missing",
+                    "external_effect_status": "blocked",
+                    "local_projection": local_projection,
+                    "local_projection_updated": bool(local_projection.get("local_projection_updated")),
+                },
             )
         from aicrm_next.customer_tags.live_mutation import execute_wecom_tag_mutation
         from aicrm_next.customer_tags.mutation_commands import PlanQuestionnaireTagSideEffectCommand
@@ -610,6 +657,11 @@ class QuestionnaireSubmitSideEffectGateway:
                 "source": "questionnaire_submit_pipeline",
                 "questionnaire_id": questionnaire_id,
                 "submission_id": submission_id,
+                "unionid": unionid,
+                "follow_user_userid": follow_user_userid,
+                "local_projection": local_projection,
+                "local_projection_updated": bool(local_projection.get("local_projection_updated")),
+                "bypass_push_capability": True,
             },
         )
         return execute_wecom_tag_mutation(command)

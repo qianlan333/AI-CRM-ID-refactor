@@ -41,7 +41,7 @@ def _audit_hook(command: Command, result: CommandResult) -> None:
             "status": result.status,
             "source_status": "next_command",
             "fallback_used": False,
-            "adapter_mode": "real_blocked",
+            "adapter_mode": "queued_external_effect",
             "real_external_call_executed": False,
             "wecom_api_called": False,
         },
@@ -67,15 +67,20 @@ def get_wecom_tag_live_mutation_side_effect_plans() -> list[dict[str, Any]]:
 def live_gate_status() -> dict[str, Any]:
     return {
         "ok": True,
-        "source_status": "next_live_gate",
+        "source_status": "tag_execution_status",
         "route_owner": "ai_crm_next",
         "fallback_used": False,
         "adapter_name": "wecom",
-        "adapter_mode": "real_blocked",
-        "real_enabled": False,
-        "available": False,
-        "blocked": True,
-        "requires_approval": True,
+        "adapter_mode": "local_projection_and_external_effect",
+        "mode": "local_projection_and_external_effect",
+        "local_projection_supported": True,
+        "external_effect_supported": True,
+        "worker_required": True,
+        "real_enabled": True,
+        "available": True,
+        "blocked": False,
+        "requires_approval": False,
+        "blocking_reason": "",
         "real_external_call_executed": False,
         "wecom_api_called": False,
         "live_call_executed": False,
@@ -201,8 +206,8 @@ def _create_side_effect_plan(
     return _side_effect_plans.create_plan(
         command_id=command.command_id,
         effect_type=effect_type,
-        adapter_name="wecom",
-        adapter_mode="real_blocked",
+        adapter_name="wecom_tag",
+        adapter_mode="queued_external_effect",
         target_type="external_user",
         target_id=external_userid,
         payload={
@@ -214,12 +219,13 @@ def _create_side_effect_plan(
             "external_userid": external_userid,
             "tag_ids": tag_ids,
             "source_context": source_context,
+            "follow_user_userid": _follow_user_userid(command=command, source_context=source_context),
             "real_external_call_executed": False,
             "wecom_api_called": False,
         },
-        status="planned",
+        status="queued",
         risk_level="high",
-        requires_approval=True,
+        requires_approval=False,
     )
 
 
@@ -244,21 +250,24 @@ def _plan_wecom_tag_external_effect_job(
             payload={
                 "external_userid": external_userid,
                 "tag_ids": tag_ids,
+                "follow_user_userid": _follow_user_userid(command=command, source_context=source_context),
                 "operator": command.context.actor_id,
                 "source_context": source_context,
                 "external_effect_queue_required": True,
+                "bypass_push_capability": bool(source_context.get("bypass_push_capability")),
             },
             payload_summary={
                 "external_userid_redacted": _redact_external_userid(external_userid),
                 "tag_count": len(tag_ids),
                 "source": source_context.get("source") or command.context.source_route,
+                "follow_user_userid_present": bool(_follow_user_userid(command=command, source_context=source_context)),
                 "wecom_api_called": False,
             },
             context=command.context,
             source_module="customer_tags.live_mutation",
             source_command_id=command.command_id,
             risk_level="high",
-            requires_approval=True,
+            requires_approval=False,
             execution_mode="execute",
             status="queued",
             idempotency_key=f"{command.idempotency_key or command.command_id}:external-effect:{external_effect_type}",
@@ -274,6 +283,7 @@ def _plan_response(plan: SideEffectPlan) -> dict[str, Any]:
     payload["external_userid"] = plan_payload.get("external_userid") or ""
     payload["tag_ids"] = list(plan_payload.get("tag_ids") or [])
     payload["source_context"] = dict(plan_payload.get("source_context") or {})
+    payload["follow_user_userid"] = plan_payload.get("follow_user_userid") or ""
     payload["real_external_call_executed"] = False
     payload["wecom_api_called"] = False
     return payload
@@ -281,6 +291,8 @@ def _plan_response(plan: SideEffectPlan) -> dict[str, Any]:
 
 def _response_from_result(result: CommandResult, payload: dict[str, Any]) -> dict[str, Any]:
     effect_type = str(payload.get("effect_type") or result.command_name)
+    source_context = dict(payload.get("source_context") or {})
+    local_projection = dict(source_context.get("local_projection") or {})
     return {
         "ok": result.status in {"completed", "dry_run"},
         "command_id": result.command_id,
@@ -289,13 +301,21 @@ def _response_from_result(result: CommandResult, payload: dict[str, Any]) -> dic
         "source_status": "next_command",
         "route_owner": "ai_crm_next",
         "fallback_used": False,
-        "adapter_mode": "real_blocked",
+        "adapter_mode": "queued_external_effect",
         "effect_type": effect_type,
         "external_userid": payload.get("external_userid") or "",
         "tag_ids": list(payload.get("tag_ids") or []),
+        "local_projection": local_projection,
+        "local_projection_updated": bool(
+            source_context.get("local_projection_updated") or local_projection.get("local_projection_updated")
+        ),
+        "local_projection_status": local_projection.get("local_projection_status") or "",
         "side_effect_plan": payload.get("side_effect_plan") or {},
         "external_effect_job": payload.get("external_effect_job"),
         "external_effect_job_id": payload.get("external_effect_job_id"),
+        "external_effect_status": "queued" if payload.get("external_effect_job_id") else "blocked",
+        "mark_tag_queued": effect_type != "wecom.tag.unmark" and bool(payload.get("external_effect_job_id")),
+        "unmark_tag_queued": effect_type == "wecom.tag.unmark" and bool(payload.get("external_effect_job_id")),
         "internal_event_id": payload.get("internal_event_id") or "",
         "internal_event_status": payload.get("internal_event_status") or "",
         "real_external_call_executed": False,
@@ -327,6 +347,16 @@ def _redact_external_userid(external_userid: str) -> str:
     if len(value) <= 8:
         return "<redacted>"
     return f"{value[:4]}...{value[-4:]}"
+
+
+def _follow_user_userid(*, command: Command, source_context: dict[str, Any]) -> str:
+    return str(
+        source_context.get("follow_user_userid")
+        or source_context.get("owner_userid")
+        or source_context.get("operator")
+        or command.payload.get("follow_user_userid")
+        or ""
+    ).strip()
 
 
 reset_wecom_tag_live_mutation_fixture_state()

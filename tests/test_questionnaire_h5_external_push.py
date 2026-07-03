@@ -50,8 +50,8 @@ def test_h5_submit_executes_configured_questionnaire_external_push(client: TestC
     assert body["real_external_call_executed"] is False
     assert body["external_push"]["status"] == "queued"
     assert body["external_push"]["legacy_outbound_disabled"] is True
-    assert body["side_effect_plan"]["adapter_mode"] == "real_blocked"
-    assert body["side_effect_plan"]["requires_approval"] is True
+    assert body["side_effect_plan"]["adapter_mode"] == "local_projection_and_external_effect"
+    assert body["side_effect_plan"]["requires_approval"] is False
     assert "external_push.queued" in body["side_effect_plan"]["payload"]["planned_effects"]
     assert body["external_effect_job_status"] == "queued"
 
