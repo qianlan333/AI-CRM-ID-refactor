@@ -152,6 +152,23 @@ EXTRA_SETTING_DEFINITIONS: dict[str, dict[str, Any]] = {
         "type": "string",
         "description": "已废弃：问卷外推固定只进入统一外部动作队列，legacy/shadow 不再恢复同步外呼。",
     },
+    "AICRM_WECOM_EXECUTION_MODE": {
+        "key": "AICRM_WECOM_EXECUTION_MODE",
+        "label": "企微执行模式",
+        "mode": "editable",
+        "input_type": "select",
+        "type": "string",
+        "options": ["disabled", "dry_run", "execute"],
+        "description": "统一企微执行主开关：disabled 不执行，dry_run 只验收配置，execute 才允许真实企微外呼。",
+    },
+    "AICRM_WECOM_ENABLED_EFFECT_TYPES": {
+        "key": "AICRM_WECOM_ENABLED_EFFECT_TYPES",
+        "label": "企微允许执行 effect types",
+        "mode": "editable",
+        "input_type": "textarea",
+        "type": "string",
+        "description": "逗号或换行分隔，仅允许企微 effect type；留空表示没有企微真实执行白名单。",
+    },
     "AICRM_EXTERNAL_EFFECT_WEBHOOK_EXECUTE": {
         "key": "AICRM_EXTERNAL_EFFECT_WEBHOOK_EXECUTE",
         "label": "Webhook 队列真实执行",
@@ -490,10 +507,30 @@ def _validate_known_setting(key: str, value: str) -> str:
         return "true" if normalized.lower() in {"1", "true", "yes", "y", "on"} else "false"
     if key == "AICRM_QUESTIONNAIRE_EXTERNAL_PUSH_MODE":
         return "queue"
+    if key == "AICRM_WECOM_EXECUTION_MODE":
+        if not normalized:
+            return "disabled"
+        if normalized not in {"disabled", "dry_run", "execute"}:
+            raise ValueError(f"{key} 只允许 disabled / dry_run / execute")
+        return normalized
     if key in {"AICRM_EXTERNAL_EFFECT_ALLOWED_TYPES", REALTIME_ALLOWED_TYPES_KEY}:
         if "*" in {item.strip() for item in normalized.replace("\n", " ").replace(",", " ").split() if item.strip()}:
             raise ValueError(f"{key} 不允许使用 *")
         return normalized
+    if key == "AICRM_WECOM_ENABLED_EFFECT_TYPES":
+        allowed = {
+            "wecom.contact.tag.mark",
+            "wecom.contact.tag.unmark",
+            "wecom.welcome_message.send",
+            "wecom.message.private.send",
+            "wecom.message.group.send",
+            "wecom.profile.update",
+        }
+        values = [item.strip() for item in normalized.replace("\n", ",").split(",") if item.strip()]
+        invalid = sorted({item for item in values if item not in allowed})
+        if invalid:
+            raise ValueError(f"{key} 包含不支持的企微 effect type: {', '.join(invalid)}")
+        return ",".join(values)
     if key in {"AICRM_WECOM_PRIVATE_ADAPTER_MODE", "AICRM_WECOM_GROUP_ADAPTER_MODE"}:
         allowed_modes = {"disabled", "fake", "staging", "production"}
         if normalized and normalized not in allowed_modes:

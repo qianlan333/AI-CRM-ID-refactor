@@ -100,6 +100,15 @@ def test_wecom_tag_sync_route_allows_production_data_mode_without_write_model_bl
     assert "write model is not production-ready" not in response.text
 
 
+def test_fake_stub_routes_are_fixture_only_in_production(monkeypatch) -> None:
+    monkeypatch.setenv("AICRM_NEXT_ENV", "production")
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    response = TestClient(create_app(), raise_server_exceptions=False).get("/api/admin/wecom/tags/fake-stub")
+
+    assert response.status_code == 404
+    assert response.json()["detail"]["source_status"] == "fixture_disabled"
+
+
 def test_wecom_tag_gateway_accepts_existing_wecom_contact_env_names(monkeypatch) -> None:
     captured = {}
 

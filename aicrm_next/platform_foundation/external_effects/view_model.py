@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from .adapters import webhook_execution_settings
+from .adapters import webhook_execution_settings, wecom_execution_settings
 from .jobs import external_effect_scheduler_state
 from .models import ExternalEffectAttempt, ExternalEffectJob, ExternalEffectTestReceipt
 from .realtime import realtime_wakeup_state
@@ -235,6 +235,7 @@ def _public_filters(filters: dict[str, Any]) -> dict[str, str]:
 
 def _execution_summary() -> dict[str, Any]:
     settings = webhook_execution_settings()
+    wecom_settings = wecom_execution_settings()
     allowed = [item for item in settings["allowed_types"] if item in set(settings["supported_types"])]
     real_execution_enabled = bool(settings["enabled"] and allowed)
     if not settings["enabled"]:
@@ -250,6 +251,7 @@ def _execution_summary() -> dict[str, Any]:
         "executable_effect_types": allowed,
         "supported_effect_types": list(settings["supported_types"]),
         "webhook_execution": settings,
+        "wecom_execution": wecom_settings,
     }
 
 
@@ -323,6 +325,7 @@ def build_external_effect_diagnostics_payload(
         "current_base_url_detected": current_base_url,
         **receipt_metrics,
         "webhook_execution": execution["webhook_execution"],
+        "wecom_execution": execution["wecom_execution"],
         "realtime_wakeup": realtime_wakeup_state(),
         "scheduler": external_effect_scheduler_state(),
         "execution_default": "dry_run",

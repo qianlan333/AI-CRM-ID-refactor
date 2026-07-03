@@ -129,6 +129,13 @@ def _idempotency_key(request: ExternalEffectCreateRequest) -> str:
     return context_key or f"{request.effect_type}:{request.target_type}:{request.target_id}"
 
 
+def _initial_status(request: ExternalEffectCreateRequest) -> str:
+    status = _text(request.status) or "queued"
+    if request.requires_approval and status in {"queued", "approved"}:
+        return "planned"
+    return status
+
+
 class ExternalEffectRepository:
     def create_job(self, request: ExternalEffectCreateRequest) -> ExternalEffectJob:
         raise NotImplementedError
@@ -289,7 +296,7 @@ class SQLAlchemyExternalEffectRepository(ExternalEffectRepository):
                 "execution_mode": _text(request.execution_mode) or "execute",
                 "payload_json": _json_dumps(request.payload),
                 "payload_summary_json": _json_dumps(payload_summary),
-                "status": _text(request.status) or "queued",
+                "status": _initial_status(request),
                 "priority": int(request.priority or 100),
                 "scheduled_at": public_datetime(scheduled_at),
                 "max_attempts": int(request.max_attempts or 5),
@@ -562,7 +569,7 @@ class SQLAlchemyExternalEffectRepository(ExternalEffectRepository):
         return self._update(job_id, "status = 'queued', locked_by = '', locked_at = NULL, next_retry_at = CURRENT_TIMESTAMP", {})
 
     def approve_job(self, job_id: int) -> ExternalEffectJob | None:
-        return self._update(job_id, "status = 'approved', approved_at = CURRENT_TIMESTAMP", {})
+        return self._update(job_id, "status = 'queued', approved_at = CURRENT_TIMESTAMP, locked_by = '', locked_at = NULL, next_retry_at = CURRENT_TIMESTAMP", {})
 
     def record_attempt(self, *, job: ExternalEffectJob, status: str, adapter_mode: str, request_summary: dict[str, Any], response_summary: dict[str, Any], error_code: str = "", error_message: str = "") -> ExternalEffectAttempt:
         attempt_id = "eea_" + __import__("uuid").uuid4().hex
@@ -813,7 +820,7 @@ class InMemoryExternalEffectRepository(ExternalEffectRepository):
             "execution_mode": _text(request.execution_mode) or "execute",
             "payload_json": dict(request.payload or {}),
             "payload_summary_json": payload_summary,
-            "status": _text(request.status) or "queued",
+            "status": _initial_status(request),
             "priority": int(request.priority or 100),
             "scheduled_at": public_datetime(request.scheduled_at or now),
             "attempt_count": 0,
@@ -974,7 +981,14 @@ class InMemoryExternalEffectRepository(ExternalEffectRepository):
         return self._mutate(job_id, status="queued", locked_by="", locked_at="", next_retry_at=public_datetime(utcnow()))
 
     def approve_job(self, job_id: int) -> ExternalEffectJob | None:
-        return self._mutate(job_id, status="approved", approved_at=public_datetime(utcnow()))
+        return self._mutate(
+            job_id,
+            status="queued",
+            approved_at=public_datetime(utcnow()),
+            locked_by="",
+            locked_at="",
+            next_retry_at=public_datetime(utcnow()),
+        )
 
     def record_attempt(self, *, job: ExternalEffectJob, status: str, adapter_mode: str, request_summary: dict[str, Any], response_summary: dict[str, Any], error_code: str = "", error_message: str = "") -> ExternalEffectAttempt:
         now = public_datetime(utcnow())

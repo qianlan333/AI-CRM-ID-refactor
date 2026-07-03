@@ -9,11 +9,6 @@ from sqlalchemy import create_engine, text
 from aicrm_next.main import create_app
 from aicrm_next.platform_foundation.external_effects.adapters import webhook_execution_settings, wecom_execution_settings
 from aicrm_next.platform_foundation.external_effects.realtime import realtime_wakeup_state
-from aicrm_next.platform_foundation.external_effects.test_receiver import (
-    test_execution_only_enabled as external_effect_test_execution_only_enabled,
-    test_receiver_enabled as external_effect_test_receiver_enabled,
-)
-from aicrm_next.questionnaire.external_push import questionnaire_external_push_mode
 from aicrm_next.shared.db_session import reset_engine_cache_for_tests
 
 
@@ -524,7 +519,9 @@ def test_webhooks_push_category_controls_external_effect_runtime(monkeypatch, tm
     assert execution["enabled"] is True
     assert execution["allowed_types"] == ["webhook.questionnaire_submission.push"]
     wecom_execution = wecom_execution_settings()
-    assert wecom_execution["enabled"] is True
+    assert wecom_execution["enabled"] is False
+    assert wecom_execution["execution_mode"] == "disabled"
+    assert "wecom_execution_disabled" in wecom_execution["blocking_reasons"]
     assert saved.json()["derived_gates"]["wecom_execute"] is False
     assert _scalar(database_url, "SELECT value FROM app_settings WHERE key = 'AICRM_EXTERNAL_EFFECT_WECOM_EXECUTE'") == "false"
 
