@@ -640,6 +640,7 @@ def test_campaign_frequency_and_agent_outputs_are_unionid_only() -> None:
 
 def test_final_legacy_identity_cleanup_removes_non_boundary_columns() -> None:
     cleanup_source = _read("migrations/versions/0078_final_legacy_identity_column_cleanup.py")
+    target_cleanup_source = _read("migrations/versions/0079_final_target_schema_cleanup.py")
     channel_repo_source = _read("aicrm_next/channel_entry/repo.py")
     channel_app_source = _read("aicrm_next/channel_entry/application.py")
     contact_sync_source = _read("aicrm_next/background_jobs/external_contact_sync.py")
@@ -656,6 +657,9 @@ def test_final_legacy_identity_cleanup_removes_non_boundary_columns() -> None:
     assert "ALTER TABLE IF EXISTS contacts DROP COLUMN IF EXISTS external_userid" in cleanup_source
     assert "automation_touch_delivery_log DROP COLUMN IF EXISTS external_userid" in cleanup_source
     assert "user_ops_do_not_disturb_next DROP COLUMN IF EXISTS external_userid" in cleanup_source
+    assert "down_revision = \"0078_final_legacy_identity_cleanup\"" in target_cleanup_source
+    assert "customer_timeline_event_next DROP COLUMN IF EXISTS person_id" in target_cleanup_source
+    assert "DELETE FROM contacts WHERE COALESCE(unionid, '') = ''" in target_cleanup_source
 
     effect_log_insert = channel_repo_source.split("INSERT INTO automation_channel_entry_effect_log", 1)[1].split("ON CONFLICT", 1)[0]
     assert "unionid" in effect_log_insert
