@@ -560,6 +560,7 @@ def test_customer_fact_read_sources_drop_legacy_identity_columns() -> None:
     assert "SELECT unionid FROM class_user_status_current" in live_source_sql
     assert "class_status.mobile_snapshot" not in live_source_sql
     assert "identity.profile_json" in live_source_sql
+    assert "CAST(latest_messages.last_message_at AS TEXT)" in live_source_sql
 
     archive_insert = message_archive_source.split("INSERT INTO archived_messages", 1)[1].split("ON CONFLICT (msgid)", 1)[0]
     assert "unionid" in archive_insert

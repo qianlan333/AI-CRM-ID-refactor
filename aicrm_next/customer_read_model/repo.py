@@ -1091,7 +1091,7 @@ class LiveSourceCustomerReadRepository:
                         CAST(channel_contact.updated_at AS TEXT),
                         CAST(latest_payment_order.latest_paid_at AS TEXT),
                         CAST(identity.updated_at AS TEXT),
-                        latest_messages.last_message_at,
+                        CAST(latest_messages.last_message_at AS TEXT),
                         ''
                     ) AS sort_updated_at
                 FROM scope
