@@ -152,7 +152,7 @@ def _handle_bind_mobile(command: Command) -> dict[str, Any]:
         )
     else:
         write = _repo.bind_mobile(command_id=command.command_id, external_userid=str(command.payload["external_userid"]), mobile=mobile)
-    response: dict[str, Any] = {"write_model_status": "updated", "write": write}
+    response: dict[str, Any] = {"write_model_status": str(write.get("write_model_status") or "updated"), "write": write}
     if write.get("binding"):
         response["binding"] = write.get("binding")
     elif isinstance(write.get("changes"), dict) and isinstance(write["changes"].get("binding"), dict):
@@ -191,10 +191,9 @@ def _emit_customer_phone_bound_from_sidebar_bind(
     binding_result = {
         "ok": True,
         "binding_status": binding_status,
+        "unionid": str(binding.get("unionid") or write.get("unionid") or ""),
         "external_userid": str(binding.get("external_userid") or command.payload["external_userid"]),
         "mobile": str(binding.get("mobile") or mobile),
-        "person_id": binding.get("person_id"),
-        "identity_map_id": binding.get("identity_map_id"),
         "owner_userid": str(binding.get("owner_userid") or payload.get("owner_userid") or ""),
         "follow_user_userid": str(binding.get("follow_user_userid") or binding.get("owner_userid") or payload.get("owner_userid") or ""),
         "matched_by": str(binding.get("matched_by") or "sidebar_bind_mobile"),

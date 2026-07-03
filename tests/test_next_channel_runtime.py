@@ -166,8 +166,9 @@ def test_program_channel_binding_routes_are_removed(monkeypatch):
     qrcode_bindings = client.get(f"/api/admin/channels/{qrcode['id']}/bindings")
     assert qrcode_bindings.status_code == 404
 
-    page = client.get("/admin/automation-conversion/programs/1/entry-channels")
-    assert page.status_code == 404
+    page = client.get("/admin/automation-conversion/programs/1/entry-channels", follow_redirects=False)
+    assert page.status_code == 302
+    assert page.headers["location"] == "/login?next=/admin/automation-conversion/programs/1/entry-channels"
 
     listed = client.get("/api/admin/channels")
     assert listed.status_code == 200

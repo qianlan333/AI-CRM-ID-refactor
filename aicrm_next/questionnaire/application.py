@@ -409,8 +409,10 @@ class SubmitQuestionnaireCommand:
                 "respondent_identity": dict(payload.respondent_identity),
                 "person_id": identity.person_id if identity else None,
                 "external_userid": (identity.external_userid if identity else payload.respondent_identity.get("external_userid")) or "",
+                "unionid": (identity.unionid if identity else payload.respondent_identity.get("unionid")) or "",
                 "mobile": (identity.mobile if identity else resolved_mobile or payload.respondent_identity.get("mobile")) or "",
                 "binding_status": identity.binding_status if identity else "unresolved",
+                "follow_user_userid": (identity.follow_user_userid if identity else payload.respondent_identity.get("follow_user_userid")) or "",
                 "score": score,
                 "final_tags": final_tags,
             }
@@ -421,6 +423,8 @@ class SubmitQuestionnaireCommand:
             submission_id=submission["submission_id"],
             external_userid=submission.get("external_userid") or "",
             tag_ids=final_tags,
+            unionid=submission.get("unionid") or "",
+            follow_user_userid=submission.get("follow_user_userid") or "",
         )
         external_push_config = item.get("external_push_config") if isinstance(item.get("external_push_config"), dict) else {}
         webhook_url = str(external_push_config.get("webhook_url") or "") if external_push_config.get("enabled") else ""

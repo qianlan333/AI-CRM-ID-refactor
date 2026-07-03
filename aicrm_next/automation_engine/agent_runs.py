@@ -119,7 +119,7 @@ def normalize_agent_run_filters(filters: dict[str, Any] | None = None) -> dict[s
         "agent_code": _text(source.get("agent_code")),
         "run_status": run_status,
         "trigger_source": trigger_source,
-        "external_contact_id": _text(source.get("external_contact_id")),
+        "unionid": _text(source.get("unionid")),
         "userid": _text(source.get("userid")),
         "started_after": _text(source.get("started_after")),
         "started_before": _text(source.get("started_before")),
@@ -142,7 +142,7 @@ def agent_run_projection(run: dict[str, Any], *, visibility: str = "masked") -> 
     normalized_visibility = _text(visibility or "masked").lower()
     if normalized_visibility not in ALLOWED_AGENT_RUN_VISIBILITY:
         raise ContractError("visibility must be masked or console")
-    external_contact_id = _text(item.get("external_contact_id"))
+    unionid = _text(item.get("unionid"))
     userid = _text(item.get("userid"))
     return {
         "id": _text(item.get("id") or item.get("run_id")),
@@ -151,7 +151,7 @@ def agent_run_projection(run: dict[str, Any], *, visibility: str = "masked") -> 
         "agent_code": _text(item.get("agent_code")),
         "run_status": _text(item.get("run_status") or "completed"),
         "trigger_source": _text(item.get("trigger_source") or "fixture"),
-        "external_contact_id": external_contact_id if normalized_visibility == "console" else _mask_identifier(external_contact_id),
+        "unionid": unionid if normalized_visibility == "console" else _mask_identifier(unionid),
         "userid": userid if normalized_visibility == "console" else _mask_identifier(userid),
         "started_at": _text(item.get("started_at")),
         "finished_at": _text(item.get("finished_at")),

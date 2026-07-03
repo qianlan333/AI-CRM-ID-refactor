@@ -3,6 +3,7 @@ from __future__ import annotations
 import inspect
 
 from fastapi.testclient import TestClient
+from sqlalchemy import event
 from sqlalchemy import create_engine, text
 
 from aicrm_next.commerce.repo import PostgresCommerceRepository
@@ -25,14 +26,30 @@ def _assert_next(payload: dict) -> None:
 
 def test_sidebar_workflow_title_uses_preserved_channel_link_tables_after_retirement() -> None:
     engine = create_engine("sqlite:///:memory:", future=True)
+
+    @event.listens_for(engine, "connect")
+    def _sqlite_jsonb_exists(dbapi_connection, _connection_record):
+        dbapi_connection.create_function("jsonb_exists", 2, lambda _payload, _value: 0)
+
     with engine.begin() as conn:
         conn.execute(
             text(
                 """
-                CREATE TABLE automation_member (
+                CREATE TABLE crm_user_identity (
+                    unionid TEXT PRIMARY KEY,
+                    primary_external_userid TEXT NOT NULL,
+                    external_userids_json TEXT NOT NULL DEFAULT '[]'
+                )
+                """
+            )
+        )
+        conn.execute(
+            text(
+                """
+                CREATE TABLE automation_channel_contact (
                     id INTEGER PRIMARY KEY,
-                    external_contact_id TEXT NOT NULL,
-                    source_channel_id INTEGER,
+                    unionid TEXT NOT NULL,
+                    channel_id INTEGER,
                     updated_at TEXT
                 )
                 """
@@ -65,8 +82,16 @@ def test_sidebar_workflow_title_uses_preserved_channel_link_tables_after_retirem
         conn.execute(
             text(
                 """
-                INSERT INTO automation_member (id, external_contact_id, source_channel_id, updated_at)
-                VALUES (1, 'wx_ext_retired', 11, '2026-06-25 10:00:00')
+                INSERT INTO crm_user_identity (unionid, primary_external_userid, external_userids_json)
+                VALUES ('union_sidebar_retired', 'wx_ext_retired', '["wx_ext_retired"]')
+                """
+            )
+        )
+        conn.execute(
+            text(
+                """
+                INSERT INTO automation_channel_contact (id, unionid, channel_id, updated_at)
+                VALUES (1, 'union_sidebar_retired', 11, '2026-06-25 10:00:00')
                 """
             )
         )
@@ -93,6 +118,10 @@ def test_sidebar_workflow_title_uses_preserved_channel_link_tables_after_retirem
         SidebarV2SqlRepository(engine=engine).get_workflow_title_for_customer("wx_ext_retired")
         == "Preserved Link Name"
     )
+    source = inspect.getsource(SidebarV2SqlRepository.get_workflow_title_for_customer)
+    assert "automation_member" not in source
+    assert "automation_channel_contact" in source
+    assert "crm_user_identity" in source
 
 
 def test_sidebar_user_visible_read_paths_do_not_join_retired_automation_tables() -> None:

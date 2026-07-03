@@ -88,17 +88,18 @@ class PostgresBroadcastQueueRepository:
 
     def mark_failed(self, job_id: int, *, error: str, failure_type: str = "handler_error") -> None:
         error_text = str(error or "")[:1000]
+        next_status = "blocked" if failure_type == "identity_external_userid_missing" else "failed"
         with connect() as conn:
             conn.execute(
                 """
                 UPDATE broadcast_jobs
-                SET status = 'failed',
+                SET status = %s,
                     failure_type = %s,
                     last_error = %s,
                     updated_at = CURRENT_TIMESTAMP
                 WHERE id = %s
                 """,
-                (failure_type, error_text, int(job_id)),
+                (next_status, failure_type, error_text, int(job_id)),
             )
             conn.execute(
                 """
@@ -151,7 +152,7 @@ def _summary(*, limit: int, dry_run: bool) -> dict[str, Any]:
 
 
 def _count_targets(job: dict[str, Any]) -> int:
-    return len(json_list(job.get("target_external_userids"))) or int_value(job.get("target_count"))
+    return len(json_list(job.get("target_unionids_json"))) or int_value(job.get("target_count"))
 
 
 def _json_dict(value: Any) -> dict[str, Any]:
@@ -240,9 +241,32 @@ def _record_outbound_task(
     return int((row or {}).get("id") or 0) or None
 
 
-def _extract_private_targets(job: dict[str, Any], payload: dict[str, Any]) -> list[str]:
-    values = _json_list(job.get("target_external_userids")) or _json_list(payload.get("target_external_userids"))
+def _extract_target_unionids(job: dict[str, Any], payload: dict[str, Any]) -> list[str]:
+    values = _json_list(job.get("target_unionids_json")) or _json_list(payload.get("target_unionids"))
     return [_text(item) for item in values if _text(item)]
+
+
+def _resolve_private_targets_by_unionid(unionids: list[str]) -> tuple[list[str], list[str]]:
+    unique_unionids = []
+    for unionid in unionids:
+        if unionid and unionid not in unique_unionids:
+            unique_unionids.append(unionid)
+    if not unique_unionids:
+        return [], []
+    with connect() as conn:
+        rows = conn.execute(
+            """
+            SELECT unionid, primary_external_userid
+            FROM crm_user_identity
+            WHERE unionid = ANY(%s)
+              AND COALESCE(primary_external_userid, '') <> ''
+            """,
+            (unique_unionids,),
+        ).fetchall()
+    by_unionid = {_text(dict(row).get("unionid")): _text(dict(row).get("primary_external_userid")) for row in rows}
+    targets = [by_unionid[unionid] for unionid in unique_unionids if by_unionid.get(unionid)]
+    missing = [unionid for unionid in unique_unionids if not by_unionid.get(unionid)]
+    return targets, missing
 
 
 def _extract_private_text(payload: dict[str, Any]) -> str:
@@ -405,13 +429,21 @@ def _dispatch_wecom_private(job: dict[str, Any], payload: dict[str, Any]) -> dic
     from aicrm_next.integration_gateway.wecom_private_adapter import build_wecom_private_message_adapter
 
     payload = _with_cloud_plan_recipient_message(payload)
-    targets = _extract_private_targets(job, payload)
+    target_unionids = _extract_target_unionids(job, payload)
+    targets, missing_unionids = _resolve_private_targets_by_unionid(target_unionids)
     target_count = int_value(job.get("target_count"))
     sender_userid = _extract_private_sender(payload)
     content_text = _extract_private_text(payload)
-    if not targets:
-        return {"ok": False, "error": "target_external_userids_missing", "failure_type": "validation_failed"}
-    if target_count != len(targets):
+    if not target_unionids:
+        return {"ok": False, "error": "target_unionids_missing", "failure_type": "validation_failed"}
+    if missing_unionids:
+        return {
+            "ok": False,
+            "error": "identity_external_userid_missing",
+            "failure_type": "identity_external_userid_missing",
+            "missing_unionids": missing_unionids,
+        }
+    if target_count != len(target_unionids):
         return {"ok": False, "error": "target_count_mismatch", "failure_type": "validation_failed"}
     if not sender_userid:
         return {"ok": False, "error": "sender_userid_missing", "failure_type": "validation_failed"}
@@ -434,6 +466,7 @@ def _dispatch_wecom_private(job: dict[str, Any], payload: dict[str, Any]) -> dic
         "source_type": _text(job.get("source_type")),
         "source_id": _text(job.get("source_id")),
         "sender_userid": sender_userid,
+        "target_unionids": target_unionids,
         "external_userids": targets,
         "content_hash": _json_dict(payload.get("rendered_content")).get("content_hash") or "",
         "content_preview": content_text[:120],

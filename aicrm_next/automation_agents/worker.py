@@ -120,7 +120,10 @@ class AutomationAgentWorker:
             return self._fail(item_id, "agent_not_found", "agent not found")
         if _text(agent.get("status")) != "active":
             return self._fail(item_id, "agent_not_active", "agent is not active")
-        external_userid = _text(item.get("external_userid"))
+        unionid = _text(item.get("unionid"))
+        external_userid = self._repo.resolve_external_userid_for_unionid(unionid) if unionid else ""
+        if not external_userid:
+            return self._fail(item_id, "identity_external_userid_missing", "primary_external_userid is required")
         automation_type = _text(agent.get("automation_type")) or "agent"
         if automation_type == "fixed_script":
             return self._run_fixed_script_item(item, agent, external_userid)

@@ -27,7 +27,7 @@ def upgrade() -> None:
             s.id,
             s.segment_code,
             100,
-            COALESCE(NULLIF(c.metadata_json->>'external_userid', ''), c.display_name)
+            COALESCE(NULLIF(c.metadata_json->>'unionid', ''), c.display_name)
         FROM campaigns c
         JOIN segments s
           ON s.segment_code = 'seg_ext_mini_only_' || (c.metadata_json->>'original_campaign_id')
@@ -67,7 +67,7 @@ def upgrade() -> None:
     op.execute(
         f"""
         INSERT INTO campaign_members (
-            campaign_id, campaign_segment_id, segment_id, member_id, external_contact_id,
+            campaign_id, campaign_segment_id, segment_id, member_id, unionid,
             anchor_date, current_step_index, status, trace_id, updated_at
         )
         SELECT
@@ -75,7 +75,7 @@ def upgrade() -> None:
             cseg.id,
             cseg.segment_id,
             old_cm.member_id,
-            old_cm.external_contact_id,
+            old_cm.unionid,
             '2026-06-11',
             -1,
             'pending',

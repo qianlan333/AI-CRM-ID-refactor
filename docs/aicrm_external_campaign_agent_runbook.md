@@ -106,12 +106,12 @@ export AICRM_AGENT_TOKEN="<configured-token>"
 
 | 名称 | 含义 | 在外部 Campaign 链路里的作用 |
 |---|---|---|
-| `external_userid` | 企微外部联系人的稳定 ID | 外部 Agent 的最终用户识别字段；创建接口不直接接受手机号 |
-| `contacts` | 客户列表 / 客户激活读模型里的联系人资料 | 用于展示和 owner 校验；客户存在于这里不代表已进入自动化发送成员池 |
-| `user_ops_pool_current` | 用户运营池当前快照 | 可作为 Campaign segment 的目标来源；`_lookup_target` 命中它即可认为目标已解析 |
-| `campaign_members` | 某个 Campaign 创建后分配出来的成员明细 | 创建 Campaign 时由 segment allocation 生成，不需要 Agent 手工写入 |
+| `target_id` / `target_id_type` | 发送目标 ID，可为 `unionid` 或 `external_userid` | 默认发送路径的目标输入；由 `crm_user_identity` 解析成 unionid + external_userid |
+| `crm_user_identity` | unionid-first 身份表 | direct send / external campaign 默认路径的目标来源 |
+| `user_ops_pool_current` | 用户运营池当前快照 | 只作为 User Ops 页面/统计快照；不再作为默认发送门禁 |
+| `campaign_members` | 某个 Campaign 创建后分配出来的成员明细 | 仅在显式 `use_campaign_workflow=true` 时由 segment allocation 生成 |
 
-旧 `automation_member` 自动化转化成员池已退场，不再作为外部 Campaign 目标来源，也不允许通过本接口回填。目标用户必须先进入 `user_ops_pool_current` 或后续 AI Audience 新链路。
+旧 `automation_member` 自动化转化成员池已退场，不再作为外部 Campaign 目标来源，也不允许通过本接口回填。目标用户不需要进入 `user_ops_pool_current`；只要 `crm_user_identity` 能解析到 unionid + external_userid，默认路径即可创建 `broadcast_jobs`。
 
 ---
 
@@ -413,7 +413,7 @@ curl -sS -X GET "${AICRM_BASE_URL}/api/ai-assist/external/campaigns/${CAMPAIGN_C
 }
 ```
 
-如果目标只存在于 `contacts`，应先通过新的 AI Audience / 用户运营池链路沉淀到 `user_ops_pool_current`，不要再写旧自动化成员池。
+如果目标只存在于 `contacts`，应先补齐 `crm_user_identity` 的 unionid / external_userid 身份映射，不要再写旧自动化成员池或依赖运营池快照作为发送门禁。
 
 ### 7.4 step 字段
 
@@ -437,25 +437,27 @@ curl -sS -X GET "${AICRM_BASE_URL}/api/ai-assist/external/campaigns/${CAMPAIGN_C
 | 401 | `invalid_internal_token` | token 不匹配 |
 | 503 | `external_campaign_token_not_configured` | 服务端没有配置 token |
 | 400 | `scheduled_for is required` | 没有可推导的首发时间 |
-| 400 | `message/content_text is required` | 没有话术 |
-| 404 | `target_not_found` | `user_ops_pool_current` 未命中 |
+| 400 | `content_required` | 没有话术或附件 |
+| 400 | `material_invalid` | 素材引用无法被发送 worker 消费 |
+| 400 | `sender_userid_required` | 没有发送人 userid |
+| 404 | `target_identity_not_found` | `crm_user_identity` 无法解析目标 |
 | 410 | `automation_member_backfill_retired` | 旧 `automation_member` 回填参数已退场 |
 | 409 | `owner_mismatch` | 联系人 owner 与请求 owner 不一致 |
-| 409 | `target_headcount_invalid` | 单人 segment 没有精确命中 1 人 |
-| 409 | `campaign_member_allocation_failed` | Campaign 已建草稿但 allocation 未分配到 1 人，系统会自动清理半创建草稿 |
+| 409 | `target_external_userid_missing` | 目标有 unionid 但缺企微 external_userid |
+| 409 | `do_not_disturb` | 命中 active DND 且未显式 `bypass_dnd=true` |
+| 409 | `target_headcount_invalid` | 仅显式 `use_campaign_workflow=true` 时，单人 segment 没有精确命中 1 人 |
+| 409 | `campaign_member_allocation_failed` | 仅显式 `use_campaign_workflow=true` 时，Campaign allocation 未分配到 1 人 |
 
 失败响应是结构化对象，例如：
 
 ```json
 {
   "ok": false,
-  "error": "target_not_found",
+  "error": "target_identity_not_found",
   "phase": "target_lookup",
-  "external_userid": "wm_xxx",
+  "details": {"target_id": "wm_xxx", "target_id_type": "external_userid"},
   "owner_userid": "HuangYouCan",
-  "group_code": "example_group",
-  "campaign_code": "camp_ext_xxx",
-  "trace_id": "ext-campaign-xxx"
+  "group_code": "example_group"
 }
 ```
 
@@ -474,9 +476,10 @@ allocation 失败会额外包含：
 Agent 规则：
 
 - 401/503：停止，要求配置 token。
-- 404：先确认 `external_userid` 是否存在于 `user_ops_pool_current`；如果只存在于 `contacts`，先走 AI Audience / 用户运营池链路沉淀，不要回填旧 `automation_member`。
-- 410 `automation_member_backfill_retired`：移除 `auto_backfill_automation_member` 参数，改用 `user_ops_pool_current` 或 AI Audience 新链路。
-- 409 owner mismatch：默认停止；除非用户明确允许改用该 owner 或设置 `allow_owner_mismatch=true`。
+- 404：先确认 `target_id` 是否已进入 `crm_user_identity`，不要为了发送而回填 `automation_member` 或运营池快照。
+- 410 `automation_member_backfill_retired`：移除 `auto_backfill_automation_member` 参数，改用 `crm_user_identity` 目标解析。
+- 409 owner mismatch：默认以 warning 进入 direct job；只有显式 `strict_owner_match=true` 时阻断。
+- 409 DND：默认停止；只有用户确认后才传 `bypass_dnd=true`，并保留 warning。
 - 任何 500：不要重试大量请求；先反馈错误并查服务日志。
 
 ---
@@ -484,14 +487,14 @@ Agent 规则：
 ## 9. Agent 标准流程
 
 ```text
-1. 把用户输入解析成 external_userid 列表。
-2. 确定 owner_userid。
+1. 把用户输入解析成 target_id + target_id_type，优先使用 unionid 或 external_userid。
+2. 确定 sender_userid / owner_userid。
 3. 确定首发时间，必须是未来时间。
 4. 生成稳定 idempotency_key 和 group_code。
 5. 先 dry_run=true 调预检。
-6. 如果返回 target_not_found，则先让目标进入 user_ops_pool_current 或 AI Audience 新链路，不要写旧 automation_member。
+6. 如果返回 target_identity_not_found，则先修复 crm_user_identity，不要写旧 automation_member 或运营池快照。
 7. dry-run 通过后，移除 dry_run 再真实创建。
-8. 返回 group_code、campaign_code、scheduled_jobs、状态查询命令。
+8. 默认返回 broadcast_job_id / jobs；只有 `use_campaign_workflow=true` 时才返回 campaign_code。
 9. 不要手动调用 run-due 或直接写 DB。
 ```
 

@@ -214,6 +214,8 @@ def _mask_value(field: str, value: object) -> str:
     text = str(value or "")
     if not text:
         return ""
+    if field == "unionid":
+        return f"{text[:6]}***{text[-4:]}" if len(text) >= 12 else "***"
     if field == "mobile":
         return f"{text[:3]}****{text[-4:]}" if len(text) >= 7 else "***"
     if field == "external_userid":
@@ -226,6 +228,7 @@ def _mask_value(field: str, value: object) -> str:
 def _customer_summary(row: JsonDict) -> JsonDict:
     return {
         "id": row["id"],
+        "unionid": row["unionid"],
         "external_userid": row["external_userid"],
         "customer_name": row["customer_name"],
         "mobile_masked": _mask_value("mobile", row.get("mobile")),
@@ -273,9 +276,9 @@ def _timeline_for_customer(row: JsonDict) -> list[JsonDict]:
     return events
 
 
-def _find_projected_row(repo: UserOpsRepository, *, external_userid: str) -> JsonDict | None:
+def _find_projected_row(repo: UserOpsRepository, *, unionid: str) -> JsonDict | None:
     for row in repo.list_rows():
-        if str(row.get("external_userid") or "") == external_userid:
+        if str(row.get("unionid") or "") == unionid:
             return row
     return None
 
@@ -389,10 +392,10 @@ class GetUserOpsCustomerQuery:
     def __init__(self, repo: UserOpsRepository | None = None) -> None:
         self._repo = repo
 
-    def execute(self, external_userid: str) -> JsonDict:
+    def execute(self, unionid: str) -> JsonDict:
         repo = self._repo or _default_repo()
         try:
-            row = _find_projected_row(repo, external_userid=external_userid)
+            row = _find_projected_row(repo, unionid=unionid)
             if row is None:
                 raise NotFoundError("user ops customer not found")
             projected = _customer_summary(row)
@@ -401,6 +404,7 @@ class GetUserOpsCustomerQuery:
                 **_readonly_meta(),
                 "customer": projected,
                 "profile": {
+                    "unionid": projected["unionid"],
                     "external_userid": projected["external_userid"],
                     "customer_name": projected["customer_name"],
                     "owner_userid": projected["owner_userid"],
@@ -424,10 +428,10 @@ class GetUserOpsCustomerTimelineQuery:
     def __init__(self, repo: UserOpsRepository | None = None) -> None:
         self._repo = repo
 
-    def execute(self, external_userid: str, *, limit: int = 20, offset: int = 0) -> JsonDict:
+    def execute(self, unionid: str, *, limit: int = 20, offset: int = 0) -> JsonDict:
         repo = self._repo or _default_repo()
         try:
-            row = _find_projected_row(repo, external_userid=external_userid)
+            row = _find_projected_row(repo, unionid=unionid)
             if row is None:
                 raise NotFoundError("user ops customer not found")
             events = _timeline_for_customer(row)
@@ -435,7 +439,7 @@ class GetUserOpsCustomerTimelineQuery:
             return {
                 "ok": True,
                 **_readonly_meta(),
-                "external_userid": external_userid,
+                "unionid": unionid,
                 "items": page,
                 "timeline": page,
                 "total": len(events),
@@ -638,11 +642,11 @@ def _build_export_preview_response(command: Command, *, request: ExportPreviewRe
     rows = apply_filters(repo.list_rows(), filters)
     requested_fields = [field.strip() for field in request.fields if field.strip()]
     is_controlled_default = _filters_are_empty(filter_payload) and not requested_fields
-    allowed_fields = ["external_userid", "customer_name", "mobile", "owner_userid", "class_term_no", "activation_bucket"]
+    allowed_fields = ["unionid", "external_userid", "customer_name", "mobile", "owner_userid", "class_term_no", "activation_bucket"]
     fields = [field for field in requested_fields if field in allowed_fields] or allowed_fields[:4]
     masked_sample = [
         {
-            field: _mask_value(field, row.get(field)) if field in {"external_userid", "customer_name", "mobile"} else str(row.get(field) or "")
+            field: _mask_value(field, row.get(field)) if field in {"unionid", "external_userid", "customer_name", "mobile"} else str(row.get(field) or "")
             for field in fields
         }
         for row in rows[:5]
@@ -733,6 +737,8 @@ class ExecuteUserOpsBatchSendCommand:
                         "owner_userid": bucket["owner_userid"],
                         "sender_userid": sender_userid,
                         "owner_display_name": bucket.get("owner_display_name") or sender_userid,
+                        "target_unionids": bucket["target_unionids"],
+                        "target_unionid_count": len(bucket["target_unionids"]),
                         "external_userids": bucket["external_userids"],
                         "external_userid_count": len(bucket["external_userids"]),
                         "target_count": bucket["target_count"],
@@ -759,6 +765,7 @@ class ExecuteUserOpsBatchSendCommand:
                 "content_preview": preview["content_preview"],
                 "image_count": preview["image_count"],
                 "sender_userids": sorted(set(sender_userids)),
+                "target_unionids": preview["target_unionids"],
                 "filter_snapshot": preview["filters"],
                 "operator": request.operator,
                 "status": "created",
@@ -907,10 +914,9 @@ class SetUserOpsDoNotDisturbCommand:
     def execute(self, request: DoNotDisturbRequest) -> JsonDict:
         repo = self._repo or _default_repo()
         try:
-            external_userid = request.external_userid.strip()
-            mobile = request.mobile.strip()
-            if not external_userid and not mobile:
-                raise ContractError("external_userid or mobile is required")
+            unionid = request.unionid.strip()
+            if not unionid:
+                raise ContractError("unionid is required")
 
             action = request.action.strip().lower()
             is_active = request.is_active
@@ -919,27 +925,24 @@ class SetUserOpsDoNotDisturbCommand:
 
             gateway_result = (
                 self._dnd_gateway.enable_do_not_disturb(
-                    external_userid=external_userid,
-                    mobile=mobile,
                     reason_code=request.reason_code.strip() or "manual_set",
                     reason_text=request.reason_text.strip() or "运营设置",
                     operator=request.operator,
+                    unionid=unionid,
                 )
                 if is_active
                 else self._dnd_gateway.cancel_do_not_disturb(
-                    external_userid=external_userid,
-                    mobile=mobile,
                     reason_code=request.reason_code.strip() or "manual_set",
                     reason_text=request.reason_text.strip() or "运营设置",
                     operator=request.operator,
+                    unionid=unionid,
                 )
             )
             if not gateway_result["ok"]:
                 raise ContractError(gateway_result["error_message"] or gateway_result["error_code"])
 
             row = repo.set_do_not_disturb(
-                external_userid=external_userid,
-                mobile=mobile,
+                unionid=unionid,
                 reason_code=request.reason_code.strip() or "manual_set",
                 reason_text=request.reason_text.strip() or "运营设置",
                 is_active=bool(is_active),
@@ -951,6 +954,7 @@ class SetUserOpsDoNotDisturbCommand:
                 "ok": True,
                 "target": {
                     "id": row["id"],
+                    "unionid": row["unionid"],
                     "external_userid": row["external_userid"],
                     "mobile": row["mobile"],
                 },

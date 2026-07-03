@@ -31,7 +31,7 @@ def test_welcome_supports_text_image_file_miniprogram(monkeypatch):
     channel = {"id": 10, "scene_value": "scene-a", "status": "active", "owner_staff_id": "sales", "welcome_message": "hello", "entry_tag_id": "", "welcome_image_library_ids": [1], "welcome_attachment_library_ids": [2], "welcome_miniprogram_library_ids": [3]}
     sent, effects, previous = _base(monkeypatch, channel)
     try:
-        result = process_channel_entry(ProcessChannelEntryCommand(external_contact_id="wm", payload_json={"State": "scene-a", "WelcomeCode": "wc"}, send_welcome_message=True))
+        result = process_channel_entry(ProcessChannelEntryCommand(unionid="union-wm", external_contact_id="wm", payload_json={"State": "scene-a", "WelcomeCode": "wc"}, send_welcome_message=True))
     finally:
         set_wecom_adapter(previous)
 
@@ -49,7 +49,7 @@ def test_welcome_renders_customer_name_placeholder_from_identity_name(monkeypatc
     )
     sent, effects, previous = _base(monkeypatch, channel)
     try:
-        result = process_channel_entry(ProcessChannelEntryCommand(external_contact_id="wm", payload_json={"State": "scene-a", "WelcomeCode": "wc"}, send_welcome_message=True))
+        result = process_channel_entry(ProcessChannelEntryCommand(unionid="union-wm", external_contact_id="wm", payload_json={"State": "scene-a", "WelcomeCode": "wc"}, send_welcome_message=True))
     finally:
         set_wecom_adapter(previous)
 
@@ -67,7 +67,7 @@ def test_welcome_customer_name_placeholder_is_empty_when_identity_name_missing(m
     )
     sent, effects, previous = _base(monkeypatch, channel)
     try:
-        result = process_channel_entry(ProcessChannelEntryCommand(external_contact_id="wm_external_id", payload_json={"State": "scene-a", "WelcomeCode": "wc"}, send_welcome_message=True))
+        result = process_channel_entry(ProcessChannelEntryCommand(unionid="union-wm", external_contact_id="wm_external_id", payload_json={"State": "scene-a", "WelcomeCode": "wc"}, send_welcome_message=True))
     finally:
         set_wecom_adapter(previous)
 
@@ -81,7 +81,7 @@ def test_welcome_attachment_limit_failed(monkeypatch):
     channel = {"id": 10, "scene_value": "scene-a", "status": "active", "owner_staff_id": "sales", "welcome_message": "hello", "entry_tag_id": "", "welcome_image_library_ids": [1, 2, 3, 4], "welcome_attachment_library_ids": [5, 6, 7], "welcome_miniprogram_library_ids": [8, 9, 10]}
     sent, effects, previous = _base(monkeypatch, channel)
     try:
-        result = process_channel_entry(ProcessChannelEntryCommand(external_contact_id="wm", payload_json={"State": "scene-a", "WelcomeCode": "wc"}, send_welcome_message=True))
+        result = process_channel_entry(ProcessChannelEntryCommand(unionid="union-wm", external_contact_id="wm", payload_json={"State": "scene-a", "WelcomeCode": "wc"}, send_welcome_message=True))
     finally:
         set_wecom_adapter(previous)
 

@@ -15,17 +15,20 @@ class ListCustomersRequest(BaseModel):
 
 
 class CustomerDetailRequest(BaseModel):
-    external_userid: str
+    external_userid: str | None = None
+    unionid: str | None = None
 
 
 class CustomerTimelineRequest(BaseModel):
-    external_userid: str
+    external_userid: str | None = None
+    unionid: str | None = None
     event_type: str | None = None
     limit: int = Field(default=50, ge=1, le=200)
     offset: int = Field(default=0, ge=0)
 
 
 class CustomerContextRequest(BaseModel):
+    unionid: str | None = None
     external_userid: str | None = None
     mobile: str | None = None
     user_id: str | None = None
@@ -37,5 +40,6 @@ CustomerChatContextRequest = CustomerContextRequest
 
 
 class RecentMessagesRequest(BaseModel):
-    external_userid: str
+    external_userid: str | None = None
+    unionid: str | None = None
     limit: int = Field(default=20, ge=1, le=100)

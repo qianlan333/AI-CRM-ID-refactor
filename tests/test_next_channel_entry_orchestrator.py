@@ -45,7 +45,7 @@ def test_active_channel_baseline_emits_only_channel_entry_without_program_admiss
 
     monkeypatch.setattr("aicrm_next.channel_entry.application.wake_external_effect_job", fake_wake)
     try:
-        result = process_channel_entry(ProcessChannelEntryCommand(external_contact_id="wm-a", payload_json={"State": "scene-a", "WelcomeCode": "wc"}, send_welcome_message=True))
+        result = process_channel_entry(ProcessChannelEntryCommand(unionid="union-a", external_contact_id="wm-a", payload_json={"State": "scene-a", "WelcomeCode": "wc"}, send_welcome_message=True))
     finally:
         set_wecom_adapter(previous)
 
@@ -75,11 +75,11 @@ def test_active_channel_baseline_emits_only_channel_entry_without_program_admiss
     assert "legacy_member" not in calls
 
     welcome_jobs, _ = ExternalEffectService().list_jobs(
-        {"effect_type": WECOM_WELCOME_MESSAGE_SEND, "target_id": "wm-a"},
+        {"effect_type": WECOM_WELCOME_MESSAGE_SEND, "target_id": "union-a"},
         limit=10,
     )
     fallback_jobs, _ = ExternalEffectService().list_jobs(
-        {"effect_type": WECOM_MESSAGE_PRIVATE_SEND, "target_id": "wm-a"},
+        {"effect_type": WECOM_MESSAGE_PRIVATE_SEND, "target_id": "union-a"},
         limit=10,
     )
     assert welcome_jobs[0].status == "cancelled"
@@ -92,7 +92,7 @@ def test_active_channel_baseline_emits_only_channel_entry_without_program_admiss
 def test_archived_program_state_is_not_part_of_channel_baseline(monkeypatch):
     calls, previous = _patch_repo(monkeypatch, bindings=[{"id": 20, "program_id": 30, "program_status": "archived"}])
     try:
-        result = process_channel_entry(ProcessChannelEntryCommand(external_contact_id="wm-a", payload_json={"State": "scene-a", "WelcomeCode": "wc"}, send_welcome_message=True))
+        result = process_channel_entry(ProcessChannelEntryCommand(unionid="union-a", external_contact_id="wm-a", payload_json={"State": "scene-a", "WelcomeCode": "wc"}, send_welcome_message=True))
     finally:
         set_wecom_adapter(previous)
 
@@ -109,10 +109,23 @@ def test_archived_program_state_is_not_part_of_channel_baseline(monkeypatch):
 def test_channel_disabled_has_no_baseline_side_effects(monkeypatch):
     calls, previous = _patch_repo(monkeypatch, channel_status="inactive")
     try:
-        result = process_channel_entry(ProcessChannelEntryCommand(external_contact_id="wm-a", payload_json={"State": "scene-a", "WelcomeCode": "wc"}, send_welcome_message=True))
+        result = process_channel_entry(ProcessChannelEntryCommand(unionid="union-a", external_contact_id="wm-a", payload_json={"State": "scene-a", "WelcomeCode": "wc"}, send_welcome_message=True))
     finally:
         set_wecom_adapter(previous)
 
     assert result["handled"] is False
     assert result["mode"] == "channel_disabled"
+    assert calls == []
+
+
+def test_channel_entry_without_unionid_does_not_write_business_contact(monkeypatch):
+    calls, previous = _patch_repo(monkeypatch)
+    try:
+        result = process_channel_entry(ProcessChannelEntryCommand(external_contact_id="wm-a", payload_json={"State": "scene-a", "WelcomeCode": "wc"}, send_welcome_message=True))
+    finally:
+        set_wecom_adapter(previous)
+
+    assert result["handled"] is False
+    assert result["mode"] == "identity_pending"
+    assert result["reason"] == "identity_pending_unionid"
     assert calls == []

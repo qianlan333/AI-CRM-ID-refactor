@@ -9,8 +9,8 @@ Scope: Legacy Exit group 6 moves User Ops read and preview surfaces to Next-nati
 | `/api/admin/user-ops/overview` | GET | `aicrm_next.ops_enrollment` | next_native | readonly overview | none | none | deletion_locked / locked | `tests/test_user_ops_next_queries.py` |
 | `/api/admin/user-ops/cards` | GET | `aicrm_next.ops_enrollment` | next_native | readonly cards | none | none | deletion_locked / locked | `tests/test_user_ops_cards_next_native.py` |
 | `/api/admin/user-ops/customers` | GET | `aicrm_next.ops_enrollment` | next_native | readonly customer list | none | none | deletion_locked / locked | `tests/test_user_ops_next_queries.py` |
-| `/api/admin/user-ops/customers/{external_userid}` | GET | `aicrm_next.ops_enrollment` | next_native | drawer/profile read | none | none | deletion_locked / locked | `tests/test_user_ops_drawer_next_native.py` |
-| `/api/admin/user-ops/customers/{external_userid}/timeline` | GET | `aicrm_next.ops_enrollment` | next_native | timeline read | none | none | deletion_locked / locked | `tests/test_user_ops_drawer_next_native.py` |
+| `/api/admin/user-ops/customers/{unionid}` | GET | `aicrm_next.ops_enrollment` | next_native | drawer/profile read | none | none | deletion_locked / locked | `tests/test_user_ops_drawer_next_native.py` |
+| `/api/admin/user-ops/customers/{unionid}/timeline` | GET | `aicrm_next.ops_enrollment` | next_native | timeline read | none | none | deletion_locked / locked | `tests/test_user_ops_drawer_next_native.py` |
 | `/api/admin/user-ops/filters` | GET | `aicrm_next.ops_enrollment` | next_native | readonly filter options | none | none | deletion_locked / locked | `tests/test_user_ops_next_queries.py` |
 | `/api/admin/user-ops/send-records` | GET | `aicrm_next.ops_enrollment` | next_native | readonly send-record list | none | none | deletion_locked / locked | `tests/test_user_ops_next_queries.py` |
 | `/api/admin/user-ops/broadcast/preview` | POST | `aicrm_next.ops_enrollment` | next_command | broadcast preview only | none | `SideEffectPlan` only, `real_blocked`; empty payload is controlled default preview | deletion_locked / locked | `tests/test_user_ops_broadcast_preview.py` |

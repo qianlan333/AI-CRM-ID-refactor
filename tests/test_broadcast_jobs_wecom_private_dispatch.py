@@ -4,6 +4,7 @@ import json
 from datetime import datetime, timezone
 from typing import Any
 
+import pytest
 from sqlalchemy import text
 
 import aicrm_next.background_jobs.broadcast_queue_worker as worker
@@ -46,11 +47,19 @@ class RecordingWeComClient:
         return {"errcode": 0, "msgid": "msg-recorded"}
 
 
+@pytest.fixture(autouse=True)
+def _resolve_unionid_targets(monkeypatch) -> None:
+    def fake_resolver(unionids: list[str]) -> tuple[list[str], list[str]]:
+        return [f"wm_{str(item).removeprefix('union_')}" for item in unionids], []
+
+    monkeypatch.setattr(worker, "_resolve_private_targets_by_unionid", fake_resolver)
+
+
 def _job(**overrides: Any) -> dict[str, Any]:
     payload = {
         "channel": "wecom_private",
         "sender_userid": "HuangYouCan",
-        "target_external_userids": ["wm_test"],
+        "target_unionids": ["union_test"],
         "rendered_content": {"content_text": "hello private"},
     }
     payload.update(overrides.pop("payload", {}))
@@ -63,8 +72,8 @@ def _job(**overrides: Any) -> dict[str, Any]:
         "trace_id": "campaign:1:member:3",
         "channel": "wecom_private",
         "content_type": "private_message",
-        "target_kind": "external_userid",
-        "target_external_userids": json.dumps(["wm_test"]),
+        "target_kind": "unionid",
+        "target_unionids_json": json.dumps(["union_test"]),
         "target_count": 1,
         "content_payload": payload,
     }
@@ -145,11 +154,11 @@ def test_cloud_plan_failure_marks_recipient_and_message_failed(next_pg_schema) -
             text(
                 """
                 INSERT INTO cloud_broadcast_plan_recipients (
-                    plan_id, external_userid, owner_userid, display_name,
+                    plan_id, unionid, owner_userid, display_name,
                     planned_message_count, approval_status, send_status
                 )
                 VALUES (
-                    :plan_id, 'wm_failed', 'HuangYouCan', '失败客户',
+                    :plan_id, 'union_failed', 'HuangYouCan', '失败客户',
                     1, 'approved', 'queued'
                 )
                 RETURNING id
@@ -162,9 +171,9 @@ def test_cloud_plan_failure_marks_recipient_and_message_failed(next_pg_schema) -
             text(
                 """
                 INSERT INTO cloud_broadcast_plan_recipient_messages (
-                    plan_id, recipient_id, external_userid, content_text, status
+                    plan_id, recipient_id, unionid, content_text, status
                 )
-                VALUES (:plan_id, :recipient_id, 'wm_failed', 'hello', 'queued')
+                VALUES (:plan_id, :recipient_id, 'union_failed', 'hello', 'queued')
                 """
             ),
             {"plan_id": plan_id, "recipient_id": recipient_id},
@@ -175,12 +184,12 @@ def test_cloud_plan_failure_marks_recipient_and_message_failed(next_pg_schema) -
                 INSERT INTO broadcast_jobs (
                     source_type, source_id, source_table, status,
                     business_domain, idempotency_key, channel, target_kind,
-                    target_external_userids, target_count, content_type, content_payload
+                    target_unionids_json, target_count, content_type, content_payload
                 )
                 VALUES (
                     'cloud_plan', :source_id, 'cloud_broadcast_plan_recipients', 'claimed',
-                    'ai_assistant', :idempotency_key, 'wecom_private', 'external_userid',
-                    '["wm_failed"]'::jsonb, 1, 'cloud_plan', CAST(:payload AS jsonb)
+                    'ai_assistant', :idempotency_key, 'wecom_private', 'unionid',
+                    '["union_failed"]'::jsonb, 1, 'cloud_plan', CAST(:payload AS jsonb)
                 )
                 RETURNING id
                 """
@@ -192,7 +201,7 @@ def test_cloud_plan_failure_marks_recipient_and_message_failed(next_pg_schema) -
                     {
                         "plan_id": plan_id,
                         "recipient_id": recipient_id,
-                        "external_userid": "wm_failed",
+                        "unionid": "union_failed",
                         "message_mode": "recipient_messages",
                     },
                     ensure_ascii=False,
@@ -443,10 +452,10 @@ def test_campaign_private_message_job_with_complete_fields_is_dispatched(monkeyp
                 source_table="campaign_members",
                 content_type="private_message",
                 channel="wecom_private",
-                target_kind="external_userid",
+                target_kind="unionid",
                 payload={
                     "channel": "wecom_private",
-                    "target_kind": "external_userid",
+                    "target_kind": "unionid",
                     "rendered_content": {},
                     "campaign": {"owner_userid": "HuangYouCan"},
                     "step": {"content_text": "campaign complete fields"},
@@ -507,12 +516,12 @@ def test_wecom_private_sender_missing_is_validation_failed() -> None:
 
 
 def test_wecom_private_target_missing_is_validation_failed() -> None:
-    repo = FakeRepo([_job(target_external_userids="[]", target_count=0, payload={"target_external_userids": []})])
+    repo = FakeRepo([_job(target_unionids_json="[]", target_count=0, payload={"target_unionids": []})])
 
     run_broadcast_queue_worker(repo=repo, dispatcher=SafeSkippedBroadcastDispatcher())
 
     assert repo.failed[0]["failure_type"] == "validation_failed"
-    assert repo.failed[0]["error"] == "target_external_userids_missing"
+    assert repo.failed[0]["error"] == "target_unionids_missing"
 
 
 def test_wecom_private_target_count_mismatch_is_validation_failed() -> None:

@@ -2,7 +2,11 @@
 
 `questionnaire.submitted` records the business fact that a public H5 questionnaire
 submission was accepted and persisted. It does not mean a webhook was delivered,
-tags were applied, or automation was executed.
+or automation was executed. The H5 submit handler itself is responsible for
+synchronous questionnaire `final_tags` application: it calls the real WeCom
+`/cgi-bin/externalcontact/mark_tag` API when tags, `external_userid`,
+`follow_user_userid`, and WeCom config are present. Local CRM tag rows are only a
+post-success mirror.
 
 ## Event Schema
 
@@ -48,14 +52,16 @@ secrets.
 
 - `questionnaire_webhook_consumer`
   Creates or reuses a `WEBHOOK_QUESTIONNAIRE_SUBMISSION_PUSH`
-  `external_effect_job`. It always uses `execution_mode=shadow` and
-  `status=planned`. It never dispatches the external effect and never creates an
-  `external_effect_attempt`.
+  `external_effect_job`. The submit path queues webhook jobs with
+  `execution_mode=execute`, `status=queued`, and `requires_approval=false`, but
+  neither the submit handler nor this consumer dispatches the external effect.
 
 - `questionnaire_tag_consumer`
   Currently skips with
   `questionnaire_tag_side_effect_already_planned_or_not_configured`. Existing H5
-  submit side-effect planning remains in place.
+  submit tag handling remains in place: submit-time code has already attempted
+  the real WeCom mark_tag call and returned `tag_apply.status`; this consumer
+  must not treat queued/planned state as tag success.
 
 - `automation_questionnaire_consumer`
   Currently skips with `automation_questionnaire_not_configured`.
@@ -79,7 +85,9 @@ The existing H5 submit path in `aicrm_next/questionnaire/h5_write.py` remains in
 place:
 
 - existing questionnaire external push planning is not removed;
-- existing tag side-effect planning is not removed;
+- existing tag apply response fields are preserved, but tag success is now tied
+  to the real WeCom mark_tag result and local projection is only a post-success
+  mirror;
 - submit API response fields are preserved.
 
 The webhook consumer deduplicates against existing jobs using:
@@ -92,7 +100,7 @@ The webhook consumer deduplicates against existing jobs using:
 
 If a matching job exists, the consumer returns
 `external_effect_job_reused=true` and does not create a second job. If no job
-exists and external push is configured, it creates exactly one shadow/planned
+exists and external push is configured, it creates exactly one queued
 job.
 
 ## External Call Safety

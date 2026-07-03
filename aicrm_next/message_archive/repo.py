@@ -237,21 +237,27 @@ class PostgresMessageArchiveReadRepository:
         offset: int = 0,
     ) -> list[JsonDict]:
         normalized = str(chat_type or "").strip().lower()
-        clauses = ["external_userid = %s"]
-        params: list[Any] = [str(external_userid or "").strip()]
-        if normalized:
-            scene_values = ("private", "single") if _normalize_stored_chat_scene(normalized) == "private" else ("group",)
-            clauses.append("chat_type = ANY(%s)")
-            params.append(list(scene_values))
-        where_sql = " AND ".join(clauses)
         with self._connect() as conn:
+            unionid = _resolve_unionid_for_external(conn, str(external_userid or "").strip())
+            if not unionid:
+                return []
+            clauses = ["message.unionid = %s"]
+            params: list[Any] = [unionid]
+            if normalized:
+                scene_values = ("private", "single") if _normalize_stored_chat_scene(normalized) == "private" else ("group",)
+                clauses.append("message.chat_type = ANY(%s)")
+                params.append(list(scene_values))
+            where_sql = " AND ".join(clauses)
             rows = conn.execute(
                 f"""
-                SELECT id, msgid, chat_type, external_userid, owner_userid, sender, receiver,
-                       msgtype, content, send_time, raw_payload, created_at
-                FROM archived_messages
+                SELECT message.id, message.msgid, message.chat_type, message.unionid,
+                       COALESCE(identity.primary_external_userid, '') AS external_userid,
+                       message.owner_userid, message.sender, message.receiver,
+                       message.msgtype, message.content, message.send_time, message.raw_payload, message.created_at
+                FROM archived_messages message
+                LEFT JOIN crm_user_identity identity ON identity.unionid = message.unionid
                 WHERE {where_sql}
-                ORDER BY send_time DESC, id DESC
+                ORDER BY message.send_time DESC, message.id DESC
                 LIMIT %s OFFSET %s
                 """,
                 tuple(params + [int(limit or 20), int(offset or 0)]),
@@ -285,18 +291,21 @@ class PostgresMessageArchiveReadRepository:
         offset: int = 0,
     ) -> tuple[list[JsonDict], int]:
         scene_values = ("private", "single") if chat_scene == "private" else ("group",)
-        clauses = ["external_userid = %s", "chat_type = ANY(%s)", "send_time >= %s"]
-        params: list[Any] = [str(external_userid or "").strip(), list(scene_values), start_time]
-        if chat_scene == "private" and str(with_userid or "").strip():
-            clauses.append("(owner_userid = %s OR sender = %s OR receiver = %s)")
-            peer = str(with_userid or "").strip()
-            params.extend([peer, peer, peer])
-        where_sql = " AND ".join(clauses)
         with self._connect() as conn:
+            unionid = _resolve_unionid_for_external(conn, str(external_userid or "").strip())
+            if not unionid:
+                return [], 0
+            clauses = ["message.unionid = %s", "message.chat_type = ANY(%s)", "message.send_time >= %s"]
+            params: list[Any] = [unionid, list(scene_values), start_time]
+            if chat_scene == "private" and str(with_userid or "").strip():
+                clauses.append("(message.owner_userid = %s OR message.sender = %s OR message.receiver = %s)")
+                peer = str(with_userid or "").strip()
+                params.extend([peer, peer, peer])
+            where_sql = " AND ".join(clauses)
             total = int(
                 (
                     conn.execute(
-                        f"SELECT COUNT(*) AS total FROM archived_messages WHERE {where_sql}",
+                        f"SELECT COUNT(*) AS total FROM archived_messages message WHERE {where_sql}",
                         tuple(params),
                     ).fetchone()
                     or {}
@@ -305,11 +314,14 @@ class PostgresMessageArchiveReadRepository:
             )
             rows = conn.execute(
                 f"""
-                SELECT id, msgid, chat_type, external_userid, owner_userid, sender, receiver,
-                       msgtype, content, send_time, raw_payload, created_at
-                FROM archived_messages
+                SELECT message.id, message.msgid, message.chat_type, message.unionid,
+                       COALESCE(identity.primary_external_userid, '') AS external_userid,
+                       message.owner_userid, message.sender, message.receiver,
+                       message.msgtype, message.content, message.send_time, message.raw_payload, message.created_at
+                FROM archived_messages message
+                LEFT JOIN crm_user_identity identity ON identity.unionid = message.unionid
                 WHERE {where_sql}
-                ORDER BY send_time ASC, id ASC
+                ORDER BY message.send_time ASC, message.id ASC
                 LIMIT %s OFFSET %s
                 """,
                 tuple(params + [int(limit), int(offset)]),
@@ -383,10 +395,16 @@ class PostgresArchiveSyncRepository:
         with self._connect() as conn:
             try:
                 for message in messages:
+                    unionid = str(message.get("unionid") or "").strip()
+                    if not unionid:
+                        unionid = _resolve_unionid_for_external(conn, str(message.get("external_userid") or "").strip())
+                    if not unionid:
+                        _enqueue_archive_identity_resolution(conn, message)
+                        continue
                     row = conn.execute(
                         """
                         INSERT INTO archived_messages (
-                            seq, msgid, chat_type, external_userid, owner_userid, sender, receiver,
+                            seq, msgid, chat_type, unionid, owner_userid, sender, receiver,
                             msgtype, content, send_time, raw_payload
                         )
                         VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
@@ -397,7 +415,7 @@ class PostgresArchiveSyncRepository:
                             int(message.get("seq") or 0),
                             str(message.get("msgid") or ""),
                             str(message.get("chat_type") or "private"),
-                            str(message.get("external_userid") or ""),
+                            unionid,
                             str(message.get("owner_userid") or ""),
                             str(message.get("sender") or ""),
                             str(message.get("receiver") or ""),
@@ -478,6 +496,67 @@ def _json_payload(value: Any) -> dict[str, Any]:
     return {}
 
 
+def _resolve_unionid_for_external(conn, external_userid: str) -> str:
+    normalized = str(external_userid or "").strip()
+    if not normalized:
+        return ""
+    row = conn.execute(
+        """
+        SELECT unionid
+        FROM crm_user_identity
+        WHERE primary_external_userid = %s
+           OR jsonb_exists(external_userids_json, %s)
+        ORDER BY CASE WHEN primary_external_userid = %s THEN 0 ELSE 1 END,
+                 updated_at DESC
+        LIMIT 1
+        """,
+        (normalized, normalized, normalized),
+    ).fetchone()
+    return str((row or {}).get("unionid") or "").strip()
+
+
+def _enqueue_archive_identity_resolution(conn, message: JsonDict) -> None:
+    external_userid = str(message.get("external_userid") or "").strip()
+    source_key = str(message.get("msgid") or message.get("seq") or "").strip()
+    if not external_userid or not source_key:
+        return
+    conn.execute(
+        """
+        INSERT INTO crm_user_identity_resolution_queue (
+            source_type,
+            source_key,
+            external_userid,
+            payload_json,
+            reason,
+            status,
+            first_seen_at,
+            last_seen_at,
+            created_at,
+            updated_at
+        ) VALUES (
+            'archived_messages',
+            %s,
+            %s,
+            %s::jsonb,
+            'missing_unionid',
+            'pending',
+            NOW(),
+            NOW(),
+            NOW(),
+            NOW()
+        )
+        ON CONFLICT (source_type, source_key) WHERE status = 'pending' AND source_type <> '' AND source_key <> ''
+        DO UPDATE SET
+            external_userid = COALESCE(NULLIF(EXCLUDED.external_userid, ''), crm_user_identity_resolution_queue.external_userid),
+            payload_json = crm_user_identity_resolution_queue.payload_json || EXCLUDED.payload_json,
+            reason = EXCLUDED.reason,
+            last_seen_at = NOW(),
+            updated_at = NOW()
+        """,
+        (source_key, external_userid, json.dumps({"message": message}, ensure_ascii=False, default=str)),
+    )
+
+
 def _normalize_stored_chat_scene(value: str | None) -> str:
     text = str(value or "").strip().lower()
     if text in {"", "private", "single"}:
@@ -534,6 +613,7 @@ def _project_external_chat_record(row: JsonDict) -> JsonDict:
         "msgid": str(row.get("msgid") or "").strip(),
         "chat_scene": _message_scene(row),
         "chat_type": str(row.get("chat_type") or "").strip(),
+        "unionid": str(row.get("unionid") or "").strip(),
         "external_userid": str(row.get("external_userid") or "").strip(),
         "with_userid": str(row.get("owner_userid") or "").strip(),
         "sender": str(row.get("sender") or row.get("from") or "").strip(),

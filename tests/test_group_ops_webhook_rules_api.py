@@ -183,7 +183,7 @@ def test_action_port_enqueue_uses_next_queue_gateway_and_exact_external_userid()
             "plan_id": 1,
             "trigger_event_id": "evt_001",
             "operator_member_id": "HuangYouCan",
-            "recipient": {"external_user_id": "wmbNXyCwAAXhagLBNjtlFj2jbQevWinQ"},
+            "recipient": {"external_user_id": "wmbNXyCwAAXhagLBNjtlFj2jbQevWinQ", "unionid": "union_group_ops_001"},
             "action": {"action_type": "enqueue", "content": "AI-CRM Webhook 触发测试消息"},
         }
     )
@@ -192,7 +192,7 @@ def test_action_port_enqueue_uses_next_queue_gateway_and_exact_external_userid()
     assert result["status"] == "queued"
     assert result["side_effect_executed"] is False
     assert captured["command"].idempotency_key == "group_ops:1:evt_001:wmbNXyCwAAXhagLBNjtlFj2jbQevWinQ:enqueue"
-    assert captured["payload"]["external_userid"] == ["wmbNXyCwAAXhagLBNjtlFj2jbQevWinQ"]
+    assert captured["payload"]["unionids"] == ["union_group_ops_001"]
     assert captured["payload"]["sender"] == "HuangYouCan"
 
 
@@ -217,7 +217,7 @@ def test_action_port_enqueue_duplicate_does_not_create_second_task():
         "plan_id": 1,
         "trigger_event_id": "evt_dup",
         "operator_member_id": "HuangYouCan",
-        "recipient": {"external_user_id": "wm_dup"},
+        "recipient": {"external_user_id": "wm_dup", "unionid": "union_dup"},
         "action": {"action_type": "enqueue", "content": "hello"},
     }
 
@@ -249,7 +249,7 @@ def test_action_port_publish_task_uses_next_queue_gateway():
             "plan_id": 2,
             "trigger_event_id": "evt_publish",
             "operator_member_id": "HuangYouCan",
-            "recipient": {"external_user_id": "wm_publish"},
+            "recipient": {"external_user_id": "wm_publish", "unionid": "union_publish"},
             "action": {"action_type": "publish_task", "content": "publish task content"},
         }
     )
@@ -258,7 +258,7 @@ def test_action_port_publish_task_uses_next_queue_gateway():
     assert result["status"] == "queued"
     assert result["side_effect_executed"] is False
     assert captured["command"].idempotency_key == "group_ops:2:evt_publish:wm_publish:publish_task"
-    assert captured["payload"]["external_userid"] == ["wm_publish"]
+    assert captured["payload"]["unionids"] == ["union_publish"]
     assert captured["payload"]["action"]["action_type"] == "publish_task"
 
 

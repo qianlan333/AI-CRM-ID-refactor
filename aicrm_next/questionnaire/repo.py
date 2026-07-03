@@ -1019,13 +1019,19 @@ class PostgresQuestionnaireReadRepository:
             )
             rows = conn.execute(
                 """
-                SELECT id, questionnaire_id, respondent_key, openid, unionid, external_userid,
-                       follow_user_userid, matched_by, mobile_snapshot, source_channel, campaign_id,
-                       staff_id, total_score, final_tags, result_token, redirect_url_snapshot,
-                       submitted_at
-                FROM questionnaire_submissions
-                WHERE questionnaire_id = %s
-                ORDER BY submitted_at DESC, id DESC
+                SELECT qs.id, qs.questionnaire_id, '' AS respondent_key,
+                       COALESCE(identity.primary_openid, '') AS openid,
+                       qs.unionid,
+                       COALESCE(identity.primary_external_userid, '') AS external_userid,
+                       qs.follow_user_userid, qs.matched_by,
+                       COALESCE(identity.mobile, '') AS mobile_snapshot,
+                       qs.source_channel, qs.campaign_id,
+                       qs.staff_id, qs.total_score, qs.final_tags, qs.result_token, qs.redirect_url_snapshot,
+                       qs.submitted_at
+                FROM questionnaire_submissions qs
+                LEFT JOIN crm_user_identity identity ON identity.unionid = qs.unionid
+                WHERE qs.questionnaire_id = %s
+                ORDER BY qs.submitted_at DESC, qs.id DESC
                 LIMIT %s OFFSET %s
                 """,
                 (int(questionnaire_id), int(limit), int(offset)),
@@ -1085,14 +1091,16 @@ class PostgresQuestionnaireReadRepository:
         clauses = ["1 = 1"]
         params: list[Any] = []
         if _text(filters.get("mobile")).strip():
-            clauses.append("qs.mobile_snapshot = %s")
-            params.append(_text(filters.get("mobile")).strip())
+            clauses.append("(identity.mobile = %s OR identity.mobile_normalized = %s)")
+            mobile = _text(filters.get("mobile")).strip()
+            params.extend([mobile, mobile])
         if _text(filters.get("unionid")).strip():
             clauses.append("qs.unionid = %s")
             params.append(_text(filters.get("unionid")).strip())
         if _text(filters.get("external_userid")).strip():
-            clauses.append("qs.external_userid = %s")
-            params.append(_text(filters.get("external_userid")).strip())
+            clauses.append("(identity.primary_external_userid = %s OR jsonb_exists(identity.external_userids_json, %s))")
+            external_userid = _text(filters.get("external_userid")).strip()
+            params.extend([external_userid, external_userid])
         if filters.get("questionnaire_id") not in (None, ""):
             clauses.append("qs.questionnaire_id = %s")
             params.append(int(filters.get("questionnaire_id") or 0))
@@ -1108,7 +1116,12 @@ class PostgresQuestionnaireReadRepository:
             total = int(
                 (
                     conn.execute(
-                        f"SELECT COUNT(*) AS total FROM questionnaire_submissions qs WHERE {where_sql}",
+                        f"""
+                        SELECT COUNT(*) AS total
+                        FROM questionnaire_submissions qs
+                        LEFT JOIN crm_user_identity identity ON identity.unionid = qs.unionid
+                        WHERE {where_sql}
+                        """,
                         tuple(params),
                     ).fetchone()
                     or {}
@@ -1121,13 +1134,14 @@ class PostgresQuestionnaireReadRepository:
                     qs.id,
                     qs.questionnaire_id,
                     qs.unionid,
-                    qs.external_userid,
-                    qs.mobile_snapshot,
+                    COALESCE(identity.primary_external_userid, '') AS external_userid,
+                    COALESCE(identity.mobile, '') AS mobile_snapshot,
                     qs.submitted_at,
                     qs.final_tags,
                     qs.assessment_result_snapshot,
                     COALESCE(NULLIF(q.title, ''), NULLIF(q.name, ''), '') AS questionnaire_title
                 FROM questionnaire_submissions qs
+                LEFT JOIN crm_user_identity identity ON identity.unionid = qs.unionid
                 LEFT JOIN questionnaires q ON q.id = qs.questionnaire_id
                 WHERE {where_sql}
                 ORDER BY qs.submitted_at DESC, qs.id DESC
@@ -1426,30 +1440,39 @@ class PostgresQuestionnaireReadRepository:
         score = float(payload.get("score") or (payload.get("result_json") or {}).get("score") or 0)
         assessment_result = _json_dict((payload.get("result_json") or {}).get("assessment_result"))
         redirect_url = _text(payload.get("redirect_url") or "")
+        unionid = _text(payload.get("unionid") or respondent_identity.get("unionid"))
+        if not unionid:
+            self._enqueue_identity_resolution(
+                {
+                    "source_type": "questionnaire_submission",
+                    "questionnaire_id": questionnaire_id,
+                    "respondent_key": _text(payload.get("respondent_key") or respondent_identity.get("respondent_key")),
+                    "openid": _text(payload.get("openid") or respondent_identity.get("openid")),
+                    "external_userid": _text(payload.get("external_userid") or respondent_identity.get("external_userid")),
+                    "mobile": mobile_snapshot,
+                    "slug": _text(payload.get("slug")),
+                },
+                reason="missing_unionid",
+            )
+            raise RepositoryProviderError("identity_pending_unionid")
 
         with self._connect() as conn:
             with conn.transaction():
                 row = conn.execute(
                     """
                     INSERT INTO questionnaire_submissions (
-                        questionnaire_id, identity_map_id, respondent_key, openid, unionid, external_userid,
-                        follow_user_userid, matched_by, mobile_snapshot, source_channel, campaign_id,
+                        questionnaire_id, unionid, follow_user_userid, matched_by, source_channel, campaign_id,
                         staff_id, total_score, final_tags, assessment_result_snapshot, result_token,
                         redirect_url_snapshot, submitted_at
                     )
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())
                     RETURNING id, submitted_at
                     """,
                     (
                         questionnaire_id,
-                        int(payload["identity_map_id"]) if payload.get("identity_map_id") else None,
-                        _text(payload.get("respondent_key") or respondent_identity.get("respondent_key")),
-                        _text(payload.get("openid") or respondent_identity.get("openid")),
-                        _text(payload.get("unionid") or respondent_identity.get("unionid")),
-                        _text(payload.get("external_userid") or respondent_identity.get("external_userid")),
+                        unionid,
                         _text(payload.get("follow_user_userid")),
                         _text(payload.get("matched_by")),
-                        mobile_snapshot,
                         _text(source.get("source_channel")),
                         _text(source.get("campaign_id")),
                         _text(source.get("staff_id")),
@@ -1502,7 +1525,7 @@ class PostgresQuestionnaireReadRepository:
             "follow_user_userid": _text(payload.get("follow_user_userid")),
             "matched_by": _text(payload.get("matched_by")),
             "openid": _text(payload.get("openid") or respondent_identity.get("openid")),
-            "unionid": _text(payload.get("unionid") or respondent_identity.get("unionid")),
+            "unionid": unionid,
             "mobile": mobile_snapshot,
             "mobile_snapshot": mobile_snapshot,
             "source_channel": _text(source.get("source_channel")),
@@ -1518,6 +1541,65 @@ class PostgresQuestionnaireReadRepository:
             "updated_at": _text(payload.get("updated_at") or submitted_at),
             "answer_snapshots": answer_snapshots,
         }
+
+    def _enqueue_identity_resolution(self, payload: dict[str, Any], *, reason: str) -> None:
+        source_key = (
+            _text(payload.get("respondent_key"))
+            or _text(payload.get("openid"))
+            or _text(payload.get("external_userid"))
+            or _text(payload.get("mobile"))
+            or f"questionnaire:{int(payload.get('questionnaire_id') or 0)}"
+        )
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO crm_user_identity_resolution_queue (
+                    source_type,
+                    source_key,
+                    external_userid,
+                    openid,
+                    mobile,
+                    payload_json,
+                    reason,
+                    status,
+                    first_seen_at,
+                    last_seen_at,
+                    created_at,
+                    updated_at
+                ) VALUES (
+                    'questionnaire_submission',
+                    %s,
+                    %s,
+                    %s,
+                    %s,
+                    %s,
+                    %s,
+                    'pending',
+                    NOW(),
+                    NOW(),
+                    NOW(),
+                    NOW()
+                )
+                ON CONFLICT (source_type, source_key) WHERE status = 'pending' AND source_type <> '' AND source_key <> ''
+                DO UPDATE SET
+                    external_userid = COALESCE(NULLIF(EXCLUDED.external_userid, ''), crm_user_identity_resolution_queue.external_userid),
+                    openid = COALESCE(NULLIF(EXCLUDED.openid, ''), crm_user_identity_resolution_queue.openid),
+                    mobile = COALESCE(NULLIF(EXCLUDED.mobile, ''), crm_user_identity_resolution_queue.mobile),
+                    payload_json = crm_user_identity_resolution_queue.payload_json || EXCLUDED.payload_json,
+                    reason = EXCLUDED.reason,
+                    last_seen_at = NOW(),
+                    updated_at = NOW()
+                """,
+                (
+                    source_key,
+                    _text(payload.get("external_userid")),
+                    _text(payload.get("openid")),
+                    _text(payload.get("mobile")),
+                    _jsonb(payload),
+                    _text(reason) or "identity_unresolved",
+                ),
+            )
+            conn.commit()
 
     def get_submission(self, submission_id: str) -> dict[str, Any] | None:
         normalized_id = str(submission_id or "").strip()
@@ -1581,18 +1663,36 @@ class PostgresQuestionnaireReadRepository:
         clauses: list[str] = []
         params: list[Any] = [int(questionnaire_id)]
         for field, value in candidates:
-            column = "mobile_snapshot" if field == "mobile" else field
-            clauses.append(f"{column} = %s")
-            params.append(value)
+            if field == "unionid":
+                clauses.append("qs.unionid = %s")
+                params.append(value)
+            elif field == "mobile":
+                clauses.append("(identity.mobile = %s OR identity.mobile_normalized = %s)")
+                params.extend([value, value])
+            elif field == "external_userid":
+                clauses.append("(identity.primary_external_userid = %s OR jsonb_exists(identity.external_userids_json, %s))")
+                params.extend([value, value])
+            elif field == "openid":
+                clauses.append("(identity.primary_openid = %s OR jsonb_exists(identity.openids_json, %s))")
+                params.extend([value, value])
+            elif field == "respondent_key":
+                continue
+        if not clauses:
+            return None
         with self._connect() as conn:
             row = conn.execute(
                 f"""
-                SELECT id, questionnaire_id, respondent_key, openid, unionid, external_userid,
-                       mobile_snapshot, total_score, final_tags, result_token, redirect_url_snapshot,
-                       submitted_at
-                FROM questionnaire_submissions
-                WHERE questionnaire_id = %s AND ({" OR ".join(clauses)})
-                ORDER BY submitted_at DESC, id DESC
+                SELECT qs.id, qs.questionnaire_id, '' AS respondent_key,
+                       COALESCE(identity.primary_openid, '') AS openid,
+                       qs.unionid,
+                       COALESCE(identity.primary_external_userid, '') AS external_userid,
+                       COALESCE(identity.mobile, '') AS mobile_snapshot,
+                       qs.total_score, qs.final_tags, qs.result_token, qs.redirect_url_snapshot,
+                       qs.submitted_at
+                FROM questionnaire_submissions qs
+                LEFT JOIN crm_user_identity identity ON identity.unionid = qs.unionid
+                WHERE qs.questionnaire_id = %s AND ({" OR ".join(clauses)})
+                ORDER BY qs.submitted_at DESC, qs.id DESC
                 LIMIT 1
                 """,
                 tuple(params),

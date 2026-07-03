@@ -89,7 +89,7 @@ def upgrade() -> None:
             id BIGSERIAL PRIMARY KEY,
             batch_id TEXT NOT NULL REFERENCES automation_agent_webhook_batch(batch_id) ON DELETE RESTRICT,
             agent_code TEXT NOT NULL,
-            external_userid TEXT NOT NULL,
+            unionid TEXT NOT NULL,
             external_event_id TEXT NOT NULL DEFAULT '',
             owner_userid TEXT NOT NULL DEFAULT '',
             status TEXT NOT NULL DEFAULT 'queued'
@@ -107,7 +107,7 @@ def upgrade() -> None:
             started_at TIMESTAMPTZ,
             finished_at TIMESTAMPTZ,
             updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            CONSTRAINT uq_automation_agent_webhook_item_batch_external UNIQUE (batch_id, external_userid)
+            CONSTRAINT uq_automation_agent_webhook_item_batch_unionid UNIQUE (batch_id, unionid)
         )
         """
     )

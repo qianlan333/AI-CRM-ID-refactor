@@ -123,7 +123,7 @@ class SqlAlchemyAgentRunRepository(InMemoryAutomationRepository):
             "agent_code",
             "run_status",
             "trigger_source",
-            "external_contact_id",
+            "unionid",
             "userid",
         ):
             value = str(filters.get(field) or "").strip()
@@ -153,7 +153,7 @@ class SqlAlchemyAgentRunRepository(InMemoryAutomationRepository):
                 "agent_code": row.get("agent_code"),
                 "run_status": row.get("run_status") or "completed",
                 "trigger_source": row.get("trigger_source") or "fixture",
-                "external_contact_id": row.get("external_contact_id"),
+                "unionid": row.get("unionid"),
                 "userid": row.get("userid"),
                 "started_at": row.get("started_at"),
                 "finished_at": row.get("finished_at"),

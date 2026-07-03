@@ -70,22 +70,40 @@ def _insert_package(
 
 
 def _insert_member(session, *, package_id: int, identity_value: str, status: str = "active") -> None:
+    unionid = f"union_{identity_value}"
+    session.execute(
+        text(
+            """
+            INSERT INTO crm_user_identity (
+                unionid, primary_external_userid, external_userids_json, status, created_at, updated_at
+            )
+            VALUES (
+                :unionid, :external_userid, jsonb_build_array(:external_userid), 'active', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+            )
+            ON CONFLICT (unionid) DO UPDATE SET
+                primary_external_userid = EXCLUDED.primary_external_userid,
+                external_userids_json = EXCLUDED.external_userids_json,
+                updated_at = CURRENT_TIMESTAMP
+            """
+        ),
+        {"unionid": unionid, "external_userid": identity_value},
+    )
     session.execute(
         text(
             """
             INSERT INTO ai_audience_member_current (
-                package_id, identity_type, identity_value, status, external_userid,
+                package_id, identity_type, identity_value, unionid, status,
                 event_source_key, payload_hash, payload_json
             )
             VALUES (
-                :package_id, 'external_userid', :identity_value, :status, :identity_value,
+                :package_id, 'unionid', :unionid, :unionid, :status,
                 :event_source_key, :payload_hash, '{"hidden":"payload"}'::jsonb
             )
             """
         ),
         {
             "package_id": package_id,
-            "identity_value": identity_value,
+            "unionid": unionid,
             "status": status,
             "event_source_key": f"event:{identity_value}",
             "payload_hash": f"hash:{identity_value}",

@@ -63,7 +63,7 @@ class RuntimeHarness:
                 "id": 9001,
                 "external_userid": "wm-repair",
                 "user_id": "owner-a",
-                "payload_json": {"State": "scene-current"},
+                "payload_json": {"State": "scene-current", "unionid": "union-repair"},
             }
         }
         self.alias_last_seen: list[str] = []
@@ -185,7 +185,7 @@ def runtime(monkeypatch):
 
 def _command(external="wm-real", state="scene-current", owner="owner-a", welcome_code="welcome-real"):
     payload = {"State": state, "WelcomeCode": welcome_code, "corp_id": "ww-test", "follow_user": [{"userid": owner, "tags": []}]}
-    return ProcessChannelEntryCommand(external_contact_id=external, payload_json=payload, follow_user_userid=owner, send_welcome_message=bool(welcome_code), event_log_id=5001)
+    return ProcessChannelEntryCommand(unionid="union-real", external_contact_id=external, payload_json=payload, follow_user_userid=owner, send_welcome_message=bool(welcome_code), event_log_id=5001)
 
 
 def test_realistic_active_channel_flow_has_qr_alias_effects_without_legacy_member(runtime):
