@@ -7287,6 +7287,17 @@ routes:
   data_source: command
   requires_auth: true
   rollback: previous_release
+- path: /api/admin/jobs/order-identity-repair/run
+  methods:
+  - POST
+  route_name: api_admin_jobs_order_identity_repair_run
+  capability_owner: admin_jobs
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: none
+  data_source: command
+  requires_auth: true
+  rollback: previous_release
 - path: /api/admin/broadcast-jobs/{job_id}/approve
   methods:
   - POST
