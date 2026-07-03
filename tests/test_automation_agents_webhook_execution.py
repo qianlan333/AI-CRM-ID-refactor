@@ -3,11 +3,17 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+from urllib.parse import urlparse
 
 from sqlalchemy import text
 
 from aicrm_next.automation_agents.context_builder import referenced_context_keys
 from aicrm_next.automation_agents.worker import AutomationAgentWorker
+from aicrm_next.platform_foundation.command_bus.models import CommandContext
+from aicrm_next.platform_foundation.external_effects.adapters import ExternalEffectAdapterRegistry, WebhookAdapter
+from aicrm_next.platform_foundation.external_effects.models import WEBHOOK_GENERIC_PUSH
+from aicrm_next.platform_foundation.external_effects.service import ExternalEffectService
+from aicrm_next.platform_foundation.external_effects.worker import ExternalEffectWorker
 from aicrm_next.shared.db_session import get_session_factory
 
 
@@ -83,6 +89,13 @@ def _signature(secret: str, raw: bytes) -> str:
 def _count(table: str) -> int:
     with get_session_factory()() as session:
         return int(session.execute(text(f"SELECT COUNT(*) FROM {table}")).scalar() or 0)
+
+
+def _registry_with_post(fake_post) -> ExternalEffectAdapterRegistry:
+    registry = ExternalEffectAdapterRegistry()
+    registry._adapters["outbound_webhook"] = WebhookAdapter(http_post=fake_post)  # type: ignore[attr-defined]
+    registry._adapters["webhook"] = WebhookAdapter(http_post=fake_post)  # type: ignore[attr-defined]
+    return registry
 
 
 def test_agent_webhook_accepts_url_token_and_optional_hmac(next_client, next_pg_schema) -> None:
@@ -297,6 +310,95 @@ def test_worker_fake_mode_generates_package_and_enqueues_send_plan(next_client, 
     assert plan_count == 1
     assert message["content_text"] == "你好，这是 Agent 生成的话术"
     assert effect_count == 0
+
+
+def test_external_effect_agent_webhook_continuation_enqueues_broadcast_job(next_client, next_pg_schema, monkeypatch) -> None:
+    with get_session_factory()() as session:
+        _insert_package(session, secret="callback-secret")
+        _insert_agent(
+            session,
+            automation_type="fixed_script",
+            fixed_content_package='{"image_library_ids":[],"miniprogram_library_ids":[],"attachment_library_ids":[],"content_text":"收到问卷啦，开始体验。"}',
+        )
+        session.commit()
+
+    from aicrm_next.automation_agents import worker as worker_module
+
+    monkeypatch.setattr(
+        worker_module,
+        "build_agent_context",
+        lambda external_userid, referenced_keys, **kwargs: {
+            "owner_userid": "owner_001",
+            "customer": {"external_userid": external_userid, "owner_userid": "owner_001"},
+            "blocks": {},
+            "referenced_context_keys": sorted(referenced_keys),
+        },
+    )
+    monkeypatch.setenv("AICRM_EXTERNAL_EFFECT_WEBHOOK_EXECUTE", "1")
+    monkeypatch.setenv("AICRM_EXTERNAL_EFFECT_ALLOWED_TYPES", WEBHOOK_GENERIC_PUSH)
+
+    calls: list[dict] = []
+
+    def loopback_post(url, *, json, headers, timeout):
+        parsed = urlparse(url)
+        request_path = parsed.path + (f"?{parsed.query}" if parsed.query else "")
+        calls.append({"url": url, "json": json, "headers": headers, "timeout": timeout})
+        return next_client.post(request_path, json=json, headers=headers)
+
+    job = ExternalEffectService().plan_effect(
+        effect_type=WEBHOOK_GENERIC_PUSH,
+        adapter_name="outbound_webhook",
+        operation="post",
+        target_type="automation_agent_audience_webhook",
+        target_id="activation_agent",
+        payload={
+            "webhook_url": "http://testserver/api/ai/agents/activation_agent/audience-webhook?token=agent-token",
+            "body": {"external_userids": ["wm_001"]},
+            "headers": {
+                "X-AICRM-Event-Type": "audience.incremental.entered",
+                "X-AICRM-Idempotency-Key": "agent-continuation-external-effect",
+            },
+        },
+        context=CommandContext(actor_id="pytest", actor_type="system", trace_id="trace-agent-continuation"),
+        business_type="ai_audience_package",
+        business_id="agent_callback_pkg",
+        source_module="tests",
+        idempotency_key="external-effect-agent-continuation",
+        execution_mode="execute",
+        status="queued",
+    )
+
+    result = ExternalEffectWorker(adapter_registry=_registry_with_post(loopback_post)).run_due(
+        batch_size=1,
+        dry_run=False,
+        effect_types=[WEBHOOK_GENERIC_PUSH],
+    )
+
+    assert result["counts"]["succeeded_count"] == 1
+    assert len(calls) == 1
+    item_result = result["items"][0]["post_success_continuation"]
+    assert item_result["ok"] is True
+    assert item_result["broadcast_enqueue"]["approved_count"] == 1
+    with get_session_factory()() as session:
+        job_row = session.execute(text("SELECT * FROM external_effect_job WHERE id = :job_id"), {"job_id": job["id"]}).mappings().one()
+        attempt = session.execute(text("SELECT * FROM external_effect_attempt WHERE job_id = :job_id"), {"job_id": job["id"]}).mappings().one()
+        item = session.execute(text("SELECT * FROM automation_agent_webhook_item")).mappings().one()
+        recipient = session.execute(text("SELECT * FROM cloud_broadcast_plan_recipients")).mappings().one()
+        message = session.execute(text("SELECT * FROM cloud_broadcast_plan_recipient_messages")).mappings().one()
+        broadcast = session.execute(text("SELECT * FROM broadcast_jobs")).mappings().one()
+        outbound_task_count = int(session.execute(text("SELECT COUNT(*) FROM outbound_tasks")).scalar() or 0)
+    assert job_row["status"] == "succeeded"
+    assert attempt["response_summary_json"]["automation_agent_batch_id"].startswith("agent_batch_")
+    assert attempt["response_summary_json"]["post_success_continuation"]["broadcast_enqueue"]["approved_count"] == 1
+    assert item["status"] == "callback_succeeded"
+    assert recipient["approval_status"] == "approved"
+    assert recipient["send_status"] == "queued"
+    assert recipient["broadcast_job_id"] == broadcast["id"]
+    assert message["status"] == "queued"
+    assert message["content_text"] == "收到问卷啦，开始体验。"
+    assert broadcast["status"] == "queued"
+    assert broadcast["target_external_userids"] == ["wm_001"]
+    assert outbound_task_count == 0
 
 
 def test_worker_fixed_script_uses_configured_text_without_agent_generation(next_client, next_pg_schema, monkeypatch) -> None:

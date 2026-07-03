@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from copy import deepcopy
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -13,8 +14,10 @@ from aicrm_next.customer_tags.live_mutation import execute_wecom_tag_mutation, r
 from aicrm_next.customer_tags.mutation_commands import PlanWeComTagMarkCommand, PlanWeComTagUnmarkCommand
 from aicrm_next.platform_foundation.command_bus import CommandContext
 from aicrm_next.platform_foundation.external_effects import (
+    ExternalEffectDispatchResult,
     ExternalEffectService,
     PAYMENT_WECHAT_REFUND_REQUEST,
+    WEBHOOK_GENERIC_PUSH,
     WEBHOOK_ORDER_PAID_PUSH,
     WEBHOOK_QUESTIONNAIRE_SUBMISSION_PUSH,
     WECOM_CONTACT_TAG_MARK,
@@ -43,6 +46,21 @@ class _AdapterResponse:
     def __init__(self, status_code: int, text: str = "adapter-response"):
         self.status_code = status_code
         self.text = text
+
+
+class _SucceededAgentWebhookAdapter:
+    def dispatch(self, job):
+        return ExternalEffectDispatchResult(
+            status="succeeded",
+            adapter_mode="execute",
+            request_summary={"effect_type": job.effect_type},
+            response_summary={
+                "status_code": 200,
+                "automation_agent_batch_id": "agent_batch_unit_001",
+                "real_external_call_executed": True,
+            },
+            real_external_call_executed=True,
+        )
 
 
 class _QuestionnaireRepoOverride:
@@ -535,6 +553,54 @@ def test_webhook_adapter_enabled_allowlisted_2xx_succeeds_and_records_attempt(mo
     assert attempts[0].status == "succeeded"
     assert attempts[0].request_summary_json["signature_configured"] is True
     assert attempts[0].response_summary_json["real_external_call_executed"] is True
+
+
+def test_external_effect_worker_continues_automation_agent_webhook_batch(monkeypatch) -> None:
+    from aicrm_next.automation_agents.worker import AutomationAgentWorker
+
+    seen: dict[str, str] = {}
+
+    def fake_continue(self, batch_id: str, *, operator: str):
+        seen["batch_id"] = batch_id
+        seen["operator"] = operator
+        return {
+            "ok": True,
+            "batch_id": batch_id,
+            "batch": {"status": "succeeded", "succeeded_count": 1, "failed_count": 0},
+            "broadcast_enqueue": {"approved_count": 1, "failed_count": 0},
+        }
+
+    monkeypatch.setattr(AutomationAgentWorker, "run_batch_and_enqueue_broadcast_jobs", fake_continue)
+    repo = InMemoryExternalEffectRepository()
+    service = _service(repo)
+    job = service.plan_effect(
+        effect_type=WEBHOOK_GENERIC_PUSH,
+        adapter_name="unit_agent_webhook",
+        operation="post",
+        target_type="automation_agent_audience_webhook",
+        target_id="activation_agent",
+        payload={"webhook_url": "https://www.youcangogogo.com/api/ai/agents/activation_agent/audience-webhook?token=hidden"},
+        context=_sample_context("trace-agent-webhook-continuation"),
+        idempotency_key="agent-webhook-continuation-unit",
+        status="queued",
+        execution_mode="execute",
+    )
+    registry = ExternalEffectAdapterRegistry()
+    registry._adapters["unit_agent_webhook"] = _SucceededAgentWebhookAdapter()  # type: ignore[attr-defined]
+
+    result = ExternalEffectWorker(repo, registry).run_due(batch_size=1, dry_run=False, effect_types=[WEBHOOK_GENERIC_PUSH])
+    attempts = repo.list_attempts(job["id"])
+
+    assert seen == {"batch_id": "agent_batch_unit_001", "operator": "external_effect_agent_continuation"}
+    assert result["counts"]["succeeded_count"] == 1
+    continuation = result["items"][0]["post_success_continuation"]
+    assert continuation["ok"] is True
+    assert continuation["broadcast_enqueue"]["approved_count"] == 1
+    response_summary = attempts[0].response_summary_json
+    if isinstance(response_summary, str):
+        response_summary = json.loads(response_summary)
+    continuation_summary = response_summary["post_success_continuation"]
+    assert continuation_summary == "dict" or continuation_summary == continuation
 
 
 def test_webhook_adapter_retryable_statuses_and_timeout_set_next_retry(monkeypatch) -> None:

@@ -33,6 +33,16 @@ class AutomationAgentWorker:
     def __init__(self, repository: AutomationAgentRepository | None = None) -> None:
         self._repo = repository or build_automation_agent_repository()
 
+    def run_batch_and_enqueue_broadcast_jobs(self, batch_id: str, *, operator: str = "automation_agent_queue_bridge") -> dict[str, Any]:
+        batch_result = self.run_batch(batch_id)
+        enqueue_result = self.enqueue_batch_broadcast_jobs(batch_id, operator=operator)
+        return {
+            "ok": bool(batch_result.get("ok")) and int(enqueue_result.get("failed_count") or 0) == 0,
+            "batch_id": batch_id,
+            "batch": batch_result,
+            "broadcast_enqueue": enqueue_result,
+        }
+
     def run_batch(self, batch_id: str) -> dict[str, Any]:
         items = self._repo.list_queued_items(batch_id)
         self._repo.mark_batch_status(batch_id, "running")
@@ -47,6 +57,60 @@ class AutomationAgentWorker:
         status = "succeeded" if failed == 0 else "partial_failed" if succeeded else "failed"
         self._repo.mark_batch_status(batch_id, status)
         return {"ok": failed == 0, "batch_id": batch_id, "succeeded_count": succeeded, "failed_count": failed, "status": status}
+
+    def enqueue_batch_broadcast_jobs(self, batch_id: str, *, operator: str = "automation_agent_queue_bridge") -> dict[str, Any]:
+        from aicrm_next.cloud_orchestrator.application import ApproveCloudPlanRecipientCommand
+
+        approved: list[dict[str, Any]] = []
+        skipped: list[dict[str, Any]] = []
+        failed: list[dict[str, Any]] = []
+        command = ApproveCloudPlanRecipientCommand()
+        for item in self._repo.list_items_for_batch(batch_id):
+            callback = item.get("callback_response_json") if isinstance(item.get("callback_response_json"), dict) else {}
+            send_plan = callback.get("automation_send_plan") if isinstance(callback.get("automation_send_plan"), dict) else {}
+            plan_id = _text(send_plan.get("plan_id"))
+            try:
+                recipient_id = int(send_plan.get("recipient_id") or 0)
+            except (TypeError, ValueError):
+                recipient_id = 0
+            if not plan_id or recipient_id <= 0:
+                skipped.append(
+                    {
+                        "item_id": int(item.get("id") or 0),
+                        "reason": "automation_send_plan_missing",
+                    }
+                )
+                continue
+            try:
+                result = command.execute(plan_id, recipient_id, operator=operator)
+            except Exception as exc:
+                failed.append(
+                    {
+                        "item_id": int(item.get("id") or 0),
+                        "plan_id": plan_id,
+                        "recipient_id": recipient_id,
+                        "error": str(exc)[:300],
+                    }
+                )
+                continue
+            approved.append(
+                {
+                    "item_id": int(item.get("id") or 0),
+                    "plan_id": plan_id,
+                    "recipient_id": recipient_id,
+                    "status": _text(result.get("status")),
+                    "broadcast_job_id": int(result.get("job_id") or 0),
+                }
+            )
+        return {
+            "ok": not failed,
+            "approved_count": len(approved),
+            "skipped_count": len(skipped),
+            "failed_count": len(failed),
+            "approved": approved,
+            "skipped": skipped,
+            "failed": failed,
+        }
 
     def run_item(self, item: dict[str, Any]) -> dict[str, Any]:
         item_id = int(item.get("id") or 0)

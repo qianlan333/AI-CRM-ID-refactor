@@ -472,6 +472,16 @@ class AutomationAgentRepository:
             {"batch_id": _text(batch_id)},
         )
 
+    def list_items_for_batch(self, batch_id: str) -> list[dict[str, Any]]:
+        return self._all(
+            """
+            SELECT * FROM automation_agent_webhook_item
+            WHERE batch_id = :batch_id
+            ORDER BY id ASC
+            """,
+            {"batch_id": _text(batch_id)},
+        )
+
     def mark_batch_status(self, batch_id: str, status: str) -> None:
         self._write_one(
             """

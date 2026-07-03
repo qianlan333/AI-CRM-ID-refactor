@@ -63,6 +63,40 @@ def _configured_wecom_sender(fallback: str = "") -> str:
     return candidates[0] if candidates else str(fallback or "").strip()
 
 
+def _safe_response_json_summary(response: Any) -> dict[str, Any]:
+    parsed: Any = None
+    parser = getattr(response, "json", None)
+    if callable(parser):
+        try:
+            parsed = parser()
+        except Exception:
+            parsed = None
+    if parsed is None:
+        raw_text = str(getattr(response, "text", "") or "").strip()
+        if raw_text.startswith("{") and raw_text.endswith("}"):
+            try:
+                parsed = json.loads(raw_text)
+            except json.JSONDecodeError:
+                parsed = None
+    if not isinstance(parsed, dict):
+        return {}
+    allowed_keys = {
+        "ok",
+        "mode",
+        "batch_id",
+        "received_count",
+        "deduped_count",
+        "accepted_count",
+        "error",
+        "detail",
+    }
+    summary = {key: parsed.get(key) for key in allowed_keys if key in parsed}
+    batch_id = str(parsed.get("batch_id") or "").strip()
+    if batch_id.startswith("agent_batch_"):
+        summary["automation_agent_batch_id"] = batch_id
+    return summary
+
+
 def webhook_execution_settings() -> dict[str, Any]:
     return {
         "enabled": _enabled("AICRM_EXTERNAL_EFFECT_WEBHOOK_EXECUTE"),
@@ -189,11 +223,17 @@ class WebhookAdapter:
             status = "failed_retryable"
         else:
             status = "failed_terminal"
+        response_summary = {"status_code": status_code, "real_external_call_executed": True}
+        response_json_summary = _safe_response_json_summary(response)
+        if response_json_summary:
+            response_summary["response_json"] = response_json_summary
+            if response_json_summary.get("automation_agent_batch_id"):
+                response_summary["automation_agent_batch_id"] = response_json_summary["automation_agent_batch_id"]
         return ExternalEffectDispatchResult(
             status=status,
             adapter_mode="execute",
             request_summary=request_summary,
-            response_summary={"status_code": status_code, "real_external_call_executed": True},
+            response_summary=response_summary,
             error_code="" if status == "succeeded" else http_error_code(status_code),
             error_message="" if status == "succeeded" else response.text[:500],
             real_external_call_executed=True,
