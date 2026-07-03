@@ -142,6 +142,54 @@ tables:
     test_fixture_policy: legacy_truncate_compat_absent_ok
     notes: Retired from fresh schema; admin jobs now returns an empty retired surface until a new deferred gateway is selected.
 
+  user_ops_pool_current_next:
+    domain: user_ops
+    lifecycle: read_model
+    write_owner: aicrm_next.ops_enrollment.repo
+    read_owners:
+      - aicrm_next.ai_assist.external_campaigns_repo
+      - aicrm_next.ops_enrollment.repo
+    replacement: ""
+    drop_candidate: false
+    runtime_entrypoints:
+      - User Ops customer pool admin
+      - AI Assist external campaign target lookup
+    migration_source: 0029_user_ops_prod_tables, hardened by 0077_id_dev_runtime_baseline
+    guard_tests:
+      - tests/test_data_table_lifecycle_guard.py
+      - tests/test_unionid_runtime_breakage_hotfix.py
+    notes: Unionid-first User Ops pool projection. Legacy person_id/mobile/external_userid columns are dropped by 0077.
+
+  user_ops_do_not_disturb_next:
+    domain: user_ops
+    lifecycle: canonical
+    write_owner: aicrm_next.ops_enrollment.repo
+    read_owners:
+      - aicrm_next.ops_enrollment.repo
+    replacement: ""
+    drop_candidate: false
+    runtime_entrypoints:
+      - User Ops do-not-disturb controls
+    migration_source: 0029_user_ops_prod_tables
+    guard_tests:
+      - tests/test_data_table_lifecycle_guard.py
+    notes: Manual DND reasons keyed by unionid.
+
+  user_ops_send_records_next:
+    domain: user_ops
+    lifecycle: event
+    write_owner: aicrm_next.ops_enrollment.repo
+    read_owners:
+      - aicrm_next.ops_enrollment.repo
+    replacement: ""
+    drop_candidate: false
+    runtime_entrypoints:
+      - User Ops batch send records
+    migration_source: 0029_user_ops_prod_tables
+    guard_tests:
+      - tests/test_data_table_lifecycle_guard.py
+    notes: User Ops outbound task audit projection.
+
   message_batches:
     domain: messaging
     lifecycle: retired
@@ -171,6 +219,42 @@ tables:
       - tests/test_data_table_lifecycle_guard.py
     test_fixture_policy: legacy_truncate_compat_absent_ok
     notes: Retired from fresh schema; batch details now read broadcast_job_events.
+
+  archived_messages:
+    domain: messaging
+    lifecycle: read_model
+    write_owner: aicrm_next.message_archive.repo
+    read_owners:
+      - aicrm_next.admin_read_model.repo
+      - aicrm_next.customer_read_model.repo
+      - aicrm_next.customer_read_model.sidebar_v2
+      - aicrm_next.message_archive.repo
+    replacement: ""
+    drop_candidate: false
+    runtime_entrypoints:
+      - message archive sync
+      - customer message timeline
+      - sidebar other staff messages
+    migration_source: pre-Alembic baseline, hardened by 0077_id_dev_runtime_baseline
+    guard_tests:
+      - tests/test_data_table_lifecycle_guard.py
+      - tests/test_unionid_runtime_breakage_hotfix.py
+    notes: Unionid-first message archive. Legacy external_userid column is not required in runtime reads.
+
+  archive_sync_state:
+    domain: messaging
+    lifecycle: config
+    write_owner: aicrm_next.message_archive.repo
+    read_owners:
+      - aicrm_next.message_archive.repo
+    replacement: ""
+    drop_candidate: false
+    runtime_entrypoints:
+      - message archive sync cursor
+    migration_source: pre-Alembic baseline, hardened by 0077_id_dev_runtime_baseline
+    guard_tests:
+      - tests/test_data_table_lifecycle_guard.py
+    notes: Stores the global WeCom archive last_seq cursor.
 
   marketing_automation_question_rules:
     domain: admin_config
@@ -205,6 +289,62 @@ tables:
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
     notes: Still actively read/written by admin config code.
+
+  sidebar_customer_profile_fields:
+    domain: customer_read_model
+    lifecycle: read_model
+    write_owner: aicrm_next.customer_read_model.sidebar_v2
+    read_owners:
+      - aicrm_next.customer_read_model.sidebar_v2
+    replacement: ""
+    drop_candidate: false
+    runtime_entrypoints:
+      - sidebar customer profile fields
+    migration_source: pre-Alembic baseline, hardened by 0077_id_dev_runtime_baseline
+    guard_tests:
+      - tests/test_data_table_lifecycle_guard.py
+      - tests/test_unionid_runtime_breakage_hotfix.py
+    notes: Sidebar-only editable customer profile projection keyed by unionid.
+
+  wecom_customer_acquisition_links:
+    domain: channel_entry
+    lifecycle: read_model
+    write_owner: aicrm_next.automation_engine.channels_api
+    read_owners:
+      - aicrm_next.automation_engine.channels_api
+      - aicrm_next.customer_read_model.sidebar_v2
+    replacement: ""
+    drop_candidate: false
+    runtime_entrypoints:
+      - automation channel list/detail
+      - sidebar workflow title
+      - WeCom customer acquisition links API
+    migration_source: pre-Alembic baseline, hardened by 0077_id_dev_runtime_baseline
+    guard_tests:
+      - tests/test_data_table_lifecycle_guard.py
+      - tests/test_unionid_runtime_breakage_hotfix.py
+    notes: Active WeCom customer acquisition link read model used by channel and sidebar screens.
+
+  wechat_shop_orders:
+    domain: commerce
+    lifecycle: canonical
+    write_owner: aicrm_next.commerce.wechat_shop_service
+    read_owners:
+      - aicrm_next.commerce.admin_transaction_detail
+      - aicrm_next.commerce.wechat_shop_service
+      - aicrm_next.customer_read_model.sidebar_v2
+    replacement: ""
+    drop_candidate: false
+    runtime_entrypoints:
+      - WeChat Shop sync
+      - payment transaction admin
+      - sidebar order list
+    migration_source: pre-Alembic baseline, hardened by 0077_id_dev_runtime_baseline
+    guard_tests:
+      - tests/test_data_table_lifecycle_guard.py
+      - tests/test_unionid_identity_refactor_schema.py::test_wechat_shop_orders_keep_customer_identity_in_unionid_and_raw_payload
+      - tests/test_unionid_runtime_breakage_hotfix.py
+    notes: Unionid-first WeChat Shop order table. Legacy buyer_mobile/openid columns are dropped by 0077.
 
   segments:
     domain: campaign

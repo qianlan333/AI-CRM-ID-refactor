@@ -183,3 +183,91 @@ def test_unionid_runtime_sql_guard_blocks_removed_identity_columns() -> None:
     for label, (source, forbidden_tokens) in scoped_sources.items():
         for token in forbidden_tokens:
             assert token not in source, f"{label} still contains runtime SQL token: {token}"
+
+
+def test_id_dev_runtime_baseline_migration_covers_exposed_missing_tables() -> None:
+    source = _read("migrations/versions/0077_id_dev_runtime_baseline.py")
+
+    assert 'down_revision = "0076_create_missing_baseline_runtime_tables"' in source
+    for table_name in [
+        "sidebar_customer_profile_fields",
+        "wecom_customer_acquisition_links",
+        "archived_messages",
+        "archive_sync_state",
+        "wechat_shop_orders",
+    ]:
+        assert f"CREATE TABLE IF NOT EXISTS {table_name}" in source
+    assert "ADD COLUMN IF NOT EXISTS customer_name_snapshot" in source
+    assert "customer_name_snapshot = COALESCE(NULLIF(customer_name_snapshot, ''), customer_name, '')" in source
+    assert '"person_id", "mobile", "external_userid", "is_mobile_bound", "customer_name"' in source
+    assert "DROP COLUMN IF EXISTS {column_name}" in source
+    assert "buyer_mobile" in source
+    assert "openid" in source
+
+
+def test_identity_contact_resolve_reads_current_owner_column() -> None:
+    source = _read("aicrm_next/identity_contact/repo.py")
+    section = _function_source(source, "resolve")
+    application_source = _read("aicrm_next/identity_contact/application.py")
+    binding_section = application_source.split("class GetSidebarContactBindingStatusQuery:", 1)[1].split("class BindMobileToExternalContactCommand:", 1)[0]
+
+    assert "primary_owner_userid AS follow_user_userid" in section
+    assert "identity_status AS status" in section
+    assert "primary_follow_user_userid" not in section
+    assert "                           status" not in section
+    assert "identity_contact_fallback" in binding_section
+    assert "customer_detail_error" in binding_section
+
+
+def test_wechat_admin_order_list_projects_identity_from_unionid() -> None:
+    source = _read("aicrm_next/commerce/admin_transactions.py")
+    select_source = _function_source(source, "_postgres_order_select")
+    orders_source = _function_source(source, "_postgres_orders")
+
+    assert "crm_user_identity identity" in select_source
+    assert "identity.unionid = wechat_pay_orders.unionid" in select_source
+    assert "identity.mobile" in select_source
+    assert "identity.primary_external_userid" in select_source
+    for forbidden in ["wechat_pay_orders.mobile_snapshot", "wechat_pay_orders.external_userid", "wechat_pay_orders.userid_snapshot", "wechat_pay_orders.respondent_key"]:
+        assert forbidden not in select_source
+        assert forbidden not in orders_source
+
+
+def test_sidebar_v2_reads_orders_and_messages_via_unionid_identity() -> None:
+    source = _read("aicrm_next/customer_read_model/sidebar_v2.py")
+    binding_source = _function_source(source, "get_contact_binding_status")
+    bindable_source = _function_source(source, "get_bindable_wechat_pay_order_mobile")
+    orders_source = _function_source(source, "list_customer_wechat_pay_orders")
+    questionnaire_source = _function_source(source, "list_questionnaire_answers")
+    messages_source = _function_source(source, "list_other_staff_messages")
+
+    assert "FROM crm_user_identity identity" in binding_source
+    assert "LEFT JOIN external_contact_bindings b" in binding_source
+    assert "JOIN people" not in binding_source
+    assert "b.first_bound_by_userid" not in binding_source
+    assert "WHERE COALESCE(identity.unionid, '') <> ''" in bindable_source
+    assert "WHERE COALESCE(m.unionid, '') <> ''" not in bindable_source
+    assert "FROM wechat_pay_orders o" in bindable_source
+    assert "JOIN identity_scope identity ON identity.unionid = o.unionid" in bindable_source
+    assert "FROM wechat_shop_orders o" in orders_source
+    assert "JOIN identity_scope identity ON identity.unionid = o.unionid" in orders_source
+    assert "JOIN crm_user_identity identity ON identity.unionid = s.unionid" in questionnaire_source
+    assert "JOIN crm_user_identity identity ON identity.unionid = message.unionid" in messages_source
+    for forbidden in [
+        "buyer_mobile",
+        "openid AS payer",
+        "questionnaire_submissions.external_userid",
+        "archived_messages.external_userid",
+        "wechat_pay_orders.mobile_snapshot",
+    ]:
+        assert forbidden not in source
+
+
+def test_admin_read_transactions_projection_does_not_require_legacy_order_identity_columns() -> None:
+    source = _read("aicrm_next/admin_read_model/projections.py")
+    section = _function_source(source, "transactions_payload")
+
+    assert "LEFT JOIN crm_user_identity identity ON identity.unionid = o.unionid" in section
+    assert "identity.primary_external_userid" in section
+    assert "NULLIF(external_userid" not in section
+    assert "respondent_key" not in section

@@ -116,12 +116,15 @@ def funnel_payload(repo: AdminReadRepository) -> dict[str, Any]:
     )
     recent_submissions = repo.rows(
         """
-        SELECT respondent_key, external_userid, total_score, submitted_at
-        FROM questionnaire_submissions ORDER BY submitted_at DESC, id DESC LIMIT 10
+        SELECT qs.unionid, COALESCE(NULLIF(identity.primary_external_userid, ''), qs.unionid) AS customer_identity,
+               qs.total_score, qs.submitted_at
+        FROM questionnaire_submissions qs
+        LEFT JOIN crm_user_identity identity ON identity.unionid = qs.unionid
+        ORDER BY qs.submitted_at DESC, qs.id DESC LIMIT 10
         """
     )
     rows = [[r.get("external_userid"), r.get("name"), r.get("owner_userid"), r.get("updated_at")] for r in recent_contacts]
-    rows += [[r.get("respondent_key"), r.get("external_userid"), r.get("total_score"), r.get("submitted_at")] for r in recent_submissions]
+    rows += [[r.get("unionid"), r.get("customer_identity"), r.get("total_score"), r.get("submitted_at")] for r in recent_submissions]
     if not rows and not repo.is_production:
         rows = [["local_contract_contact", "本地结构校验", "system", _now_iso()]]
     return _base_payload(
@@ -183,10 +186,12 @@ def products_payload(repo: AdminReadRepository) -> dict[str, Any]:
 def transactions_payload(repo: AdminReadRepository) -> dict[str, Any]:
     rows = repo.rows(
         """
-        SELECT out_trade_no, transaction_id, COALESCE(NULLIF(payer_name_snapshot, ''), NULLIF(external_userid, ''), respondent_key) AS customer,
+        SELECT o.out_trade_no, o.transaction_id,
+               COALESCE(NULLIF(o.payer_name_snapshot, ''), NULLIF(identity.primary_external_userid, ''), o.unionid) AS customer,
                product_name, product_code, amount_total, currency, status, trade_state, created_at
-        FROM wechat_pay_orders
-        ORDER BY created_at DESC, id DESC
+        FROM wechat_pay_orders o
+        LEFT JOIN crm_user_identity identity ON identity.unionid = o.unionid
+        ORDER BY o.created_at DESC, o.id DESC
         LIMIT 50
         """
     )
