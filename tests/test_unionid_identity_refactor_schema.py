@@ -143,6 +143,21 @@ def test_customer_status_baseline_tables_exist_in_fresh_schema() -> None:
     assert "mobile_snapshot" not in source
 
 
+def test_marketing_automation_config_tables_exist_in_fresh_schema() -> None:
+    source = _read("migrations/versions/0083_create_marketing_automation_config_tables.py")
+    manifest = _read("docs/architecture/data_table_lifecycle_manifest.yml")
+
+    for table_name in ["marketing_automation_configs", "marketing_automation_question_rules"]:
+        assert f"CREATE TABLE IF NOT EXISTS {table_name}" in source
+        assert f"{table_name}:" in manifest
+
+    assert "external_userid" not in source
+    assert "openid" not in source
+    assert "unionid" not in source
+    assert "uq_marketing_automation_configs_key" in source
+    assert "ix_marketing_automation_question_rules_config_active" in source
+
+
 def test_wecom_identity_bridge_writes_new_identity_tables_not_legacy_maps() -> None:
     source = _read("aicrm_next/channel_entry/identity_bridge_repo.py")
 
