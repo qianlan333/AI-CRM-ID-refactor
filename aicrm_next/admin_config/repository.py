@@ -92,7 +92,7 @@ class AdminConfigRepository:
                     )
                     VALUES (
                         :operator, :action_type, :target_type, :target_id,
-                        :before_json, :after_json, CURRENT_TIMESTAMP
+                        CAST(:before_json AS jsonb), CAST(:after_json AS jsonb), CURRENT_TIMESTAMP
                     )
                     """
                 ),

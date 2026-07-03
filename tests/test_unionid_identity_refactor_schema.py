@@ -182,6 +182,28 @@ def test_id_dev_p1_baseline_tables_exist_in_fresh_schema() -> None:
     assert "mobile" not in source
 
 
+def test_admin_config_audit_baseline_tables_exist_in_fresh_schema() -> None:
+    source = _read("migrations/versions/0085_admin_config_audit_baseline.py")
+    manifest = _read("docs/architecture/data_table_lifecycle_manifest.yml")
+    admin_repo_source = _read("aicrm_next/admin_config/repository.py")
+
+    for table_name in ["admin_operation_logs", "admin_users", "admin_user_roles", "admin_login_audit"]:
+        assert f"CREATE TABLE IF NOT EXISTS {table_name}" in source
+        assert f"{table_name}:" in manifest
+
+    for required in [
+        "before_json JSONB NOT NULL DEFAULT '{}'::jsonb",
+        "after_json JSONB NOT NULL DEFAULT '{}'::jsonb",
+        "ux_admin_users_wecom_userid",
+        "ux_admin_user_roles_user_role",
+        "ix_admin_login_audit_user_created",
+        "migration_source: 0085_admin_config_audit_baseline",
+    ]:
+        assert required in source or required in manifest
+    assert "CAST(:before_json AS jsonb)" in admin_repo_source
+    assert "CAST(:after_json AS jsonb)" in admin_repo_source
+
+
 def test_wecom_identity_bridge_writes_new_identity_tables_not_legacy_maps() -> None:
     source = _read("aicrm_next/channel_entry/identity_bridge_repo.py")
 
