@@ -9,6 +9,9 @@ from zoneinfo import ZoneInfo
 
 from fastapi.responses import JSONResponse
 
+from aicrm_next.send_targets.dto import SendTargetRequest
+from aicrm_next.send_targets.resolver import SendTargetError, SendTargetResolver
+
 from .external_campaigns_repo import ExternalCampaignRepository
 from .external_campaigns_repo import build_external_campaign_repository
 
@@ -17,12 +20,12 @@ JsonDict = dict[str, Any]
 _DEFAULT_TIMEZONE = "Asia/Shanghai"
 _TOKEN_KEYS = ("AICRM_EXTERNAL_CAMPAIGN_TOKEN", "AUTOMATION_INTERNAL_API_TOKEN")
 _ONE_RECIPIENT_SEGMENT_SQL = """
-SELECT member_id, external_contact_id
+SELECT member_id, unionid, external_contact_id
 FROM (
     SELECT (900000000000 + 2147483648 + hashtext(identity.unionid)::bigint) AS member_id,
+           identity.unionid,
            identity.primary_external_userid AS external_contact_id
     FROM crm_user_identity identity
-    JOIN user_ops_pool_current_next pool ON pool.unionid = identity.unionid
     WHERE identity.primary_external_userid = %(external_userid)s
        OR jsonb_exists(identity.external_userids_json, %(external_userid)s)
 ) matched
@@ -126,6 +129,10 @@ def _has_content_package_materials(value: object) -> bool:
     return isinstance(attachments, list) and bool(attachments)
 
 
+def _has_material_refs(value: object) -> bool:
+    return isinstance(value, dict) and isinstance(value.get("material_asset_ids"), list) and any(_text(item) for item in value.get("material_asset_ids") or [])
+
+
 def _slug(value: object, *, fallback: str = "external_campaign") -> str:
     text = _text(value).lower()
     text = re.sub(r"[^a-z0-9_]+", "_", text)
@@ -215,12 +222,14 @@ def _normalize_step_list(raw_steps: Any, payload: JsonDict, recipient: JsonDict,
     for index, item in enumerate(source_steps):
         if not isinstance(item, dict):
             raise ExternalCampaignError("steps items must be objects")
-        content_payload = item.get("content_payload") if isinstance(item.get("content_payload"), dict) else {}
+        content_payload = _content_package_from_sources(payload, recipient, item)
         content = _text(item.get("content_text")) or _text(item.get("message"))
         if not content:
             content = _text(recipient.get("content_text")) or _text(recipient.get("message"))
         if not content and not _has_content_package_materials(content_payload):
-            raise ExternalCampaignError(f"steps[{index}].content_text is required")
+            if _has_material_refs(content_payload):
+                raise ExternalCampaignError("material_invalid", status_code=400, phase="content_validation")
+            raise ExternalCampaignError("content_required", status_code=400, phase="content_validation")
 
         scheduled_value = item.get("scheduled_for") or item.get("scheduled_at") or item.get("send_at")
         if _text(scheduled_value):
@@ -280,20 +289,32 @@ def _normalize_recipients(payload: JsonDict) -> list[JsonDict]:
             recipients = [{"external_userid": _text(item)} for item in external_userids]
         elif _text(payload.get("external_userid")):
             recipients = [{"external_userid": _text(payload.get("external_userid"))}]
+        elif _text(payload.get("unionid")):
+            recipients = [{"unionid": _text(payload.get("unionid"))}]
+        elif _text(payload.get("target_id")):
+            recipients = [{"target_id": _text(payload.get("target_id")), "target_id_type": _text(payload.get("target_id_type")) or "auto"}]
     cleaned = []
     seen = set()
     for item in recipients:
         external_userid = _text(item.get("external_userid") or item.get("external_contact_id"))
-        if not external_userid:
+        unionid = _text(item.get("unionid"))
+        target_id = _text(item.get("target_id")) or unionid or external_userid
+        if not target_id:
             continue
-        key = external_userid
+        target_id_type = _text(item.get("target_id_type")) or ("unionid" if unionid and not external_userid else "external_userid")
+        key = f"{target_id_type}:{target_id}"
         if key in seen:
             continue
         seen.add(key)
-        item["external_userid"] = external_userid
+        if external_userid:
+            item["external_userid"] = external_userid
+        if unionid:
+            item["unionid"] = unionid
+        item["target_id"] = target_id
+        item["target_id_type"] = target_id_type
         cleaned.append(item)
     if not cleaned:
-        raise ExternalCampaignError("external_userid/external_userids/recipients is required")
+        raise ExternalCampaignError("target_id/external_userid/external_userids/recipients is required")
     return cleaned
 
 
@@ -301,40 +322,315 @@ def _build_repo(repo: ExternalCampaignRepository | None) -> ExternalCampaignRepo
     return repo or build_external_campaign_repository()
 
 
+def _direct_auth_failure(headers: Mapping[str, Any], payload: JsonDict, *, allow_admin_action_token: bool) -> tuple[str, int] | None:
+    failure = _auth_failure(headers)
+    if failure is None:
+        return None
+    if allow_admin_action_token:
+        from aicrm_next.admin_jobs.routes import validate_admin_action_token
+
+        token = _text(headers.get("X-Admin-Action-Token") or headers.get("x-admin-action-token") or payload.get("admin_action_token"))
+        token_error = validate_admin_action_token(token)
+        if not token_error:
+            return None
+        return ("admin_action_token_invalid", 401)
+    return failure
+
+
+def _target_id_for_recipient(recipient: JsonDict) -> tuple[str, str]:
+    external_userid = _text(recipient.get("external_userid") or recipient.get("external_contact_id"))
+    unionid = _text(recipient.get("unionid"))
+    target_id = _text(recipient.get("target_id")) or unionid or external_userid
+    target_id_type = _text(recipient.get("target_id_type")) or ("unionid" if unionid and not external_userid else "external_userid")
+    return target_id, target_id_type
+
+
 def _lookup_target(
     *,
-    external_userid: str,
+    target_id: str,
+    target_id_type: str,
     owner_userid: str,
     strict_owner_match: bool,
+    bypass_dnd: bool,
     repo: ExternalCampaignRepository,
 ) -> JsonDict:
-    pool_current = repo.fetch_user_ops_pool_current_row(external_userid)
-    contact = repo.fetch_contact_row(external_userid)
-    contact_owner = _text(contact.get("owner_userid"))
-    if strict_owner_match and contact_owner and contact_owner != owner_userid:
-        raise ExternalCampaignError(
-            "owner_mismatch",
-            status_code=409,
-            message=f"owner_mismatch:contact_owner={contact_owner}:requested_owner={owner_userid}",
-            phase="target_lookup",
-            external_userid=external_userid,
-            owner_userid=owner_userid,
+    try:
+        resolved = SendTargetResolver(repo).resolve(
+            SendTargetRequest(
+                target_id=target_id,
+                target_id_type=target_id_type,
+                sender_userid=owner_userid,
+                strict_owner_match=strict_owner_match,
+                bypass_dnd=bypass_dnd,
+            )
         )
-    if not pool_current:
+    except SendTargetError as exc:
+        external_context = _text(exc.details.get("external_userid")) or (target_id if target_id_type == "external_userid" else "")
         raise ExternalCampaignError(
-            "target_not_found",
-            status_code=404,
-            message=f"target_not_found:{external_userid}",
+            exc.error_code,
+            status_code=exc.status_code,
+            message=str(exc),
             phase="target_lookup",
-            external_userid=external_userid,
+            external_userid=external_context,
             owner_userid=owner_userid,
-        )
+            details=exc.details,
+        ) from exc
+    external_userid = _text(resolved.external_userid)
+    contact = repo.fetch_contact_row(external_userid) if external_userid else {}
     return {
         "resolved": True,
-        "source": "user_ops_pool_current",
-        "pool_current": pool_current,
+        "source": resolved.target_source,
+        "unionid": resolved.unionid,
+        "external_userid": external_userid,
+        "sender_userid": resolved.sender_userid,
+        "customer_name": resolved.customer_name,
+        "owner_userid": resolved.owner_userid,
+        "warnings": list(resolved.warnings),
+        "do_not_disturb_reasons": list(resolved.do_not_disturb_reasons),
         "contact": contact,
     }
+
+
+def _material_package_from_ids(items: Any) -> JsonDict:
+    package: JsonDict = {"material_asset_ids": []}
+    if not isinstance(items, list):
+        return {}
+    for item in items:
+        raw = _text(item)
+        if not raw:
+            continue
+        package["material_asset_ids"].append(raw)
+        prefix, _, value = raw.partition(":")
+        key = {
+            "image": "image_library_ids",
+            "miniprogram": "miniprogram_library_ids",
+            "attachment": "attachment_library_ids",
+        }.get(prefix)
+        if key and _text(value):
+            package.setdefault(key, []).append(value)
+    return {key: value for key, value in package.items() if value}
+
+
+def _merge_package(target: JsonDict, source: JsonDict) -> JsonDict:
+    for key, value in source.items():
+        if isinstance(value, list):
+            existing = list(target.get(key) or [])
+            for item in value:
+                if item not in existing:
+                    existing.append(item)
+            target[key] = existing
+        elif value not in (None, "", {}):
+            target[key] = value
+    return target
+
+
+def _content_package_from_sources(*sources: JsonDict) -> JsonDict:
+    package: JsonDict = {}
+    for source in sources:
+        if not isinstance(source, dict):
+            continue
+        nested = source.get("content_payload") if isinstance(source.get("content_payload"), dict) else {}
+        _merge_package(package, nested)
+        _merge_package(package, _material_package_from_ids(nested.get("material_asset_ids")))
+        nested = source.get("content_package") if isinstance(source.get("content_package"), dict) else {}
+        _merge_package(package, nested)
+        _merge_package(package, _material_package_from_ids(nested.get("material_asset_ids")))
+        for key in ("image_library_ids", "miniprogram_library_ids", "attachment_library_ids", "attachments"):
+            value = source.get(key)
+            if isinstance(value, list):
+                _merge_package(package, {key: value})
+        _merge_package(package, _material_package_from_ids(source.get("material_asset_ids")))
+    return package
+
+
+def _content_summary(content_text: str, content_package: JsonDict) -> str:
+    if content_text:
+        return content_text[:200]
+    counts = {key: len(value) for key, value in content_package.items() if isinstance(value, list)}
+    return "attachments:" + ",".join(f"{key}={value}" for key, value in sorted(counts.items())) if counts else ""
+
+
+def _direct_job_idempotency_key(
+    *,
+    payload: JsonDict,
+    group_code: str,
+    owner_userid: str,
+    target_id: str,
+    scheduled_for: str,
+    step_index: int,
+) -> str:
+    provided = _text(payload.get("idempotency_key"))
+    suffix = _hash_payload(group_code, owner_userid, target_id, scheduled_for, step_index)
+    return f"{provided}:direct:{suffix}" if provided else f"direct_send:{suffix}"
+
+
+def _direct_job_payload(*, step: JsonDict, target: JsonDict, owner_userid: str, content_package: JsonDict) -> JsonDict:
+    content_text = _text(step.get("content_text"))
+    return {
+        "channel": "wecom_private",
+        "sender_userid": owner_userid,
+        "owner_userid": owner_userid,
+        "target_unionids": [target["unionid"]],
+        "content_text": content_text,
+        "rendered_content": {"content_text": content_text},
+        "content_payload_json": content_package,
+        "content_package": content_package,
+        "attachments": list(content_package.get("attachments") or []),
+    }
+
+
+def _preview_single_recipient_direct_send(
+    *,
+    payload: JsonDict,
+    recipient: JsonDict,
+    owner_userid: str,
+    group_code: str,
+    group_label: str,
+    timezone_name: str,
+    strict_owner_match: bool,
+    bypass_dnd: bool,
+    repo: ExternalCampaignRepository,
+) -> JsonDict:
+    target_id, target_id_type = _target_id_for_recipient(recipient)
+    steps = _normalize_step_list(
+        recipient.get("steps") if isinstance(recipient.get("steps"), list) else payload.get("steps"),
+        payload,
+        recipient,
+        timezone_name=timezone_name,
+    )
+    target = _lookup_target(
+        target_id=target_id,
+        target_id_type=target_id_type,
+        owner_userid=owner_userid,
+        strict_owner_match=strict_owner_match,
+        bypass_dnd=bypass_dnd,
+        repo=repo,
+    )
+    return {
+        "status": "preview",
+        "target_id": target_id,
+        "target_id_type": target_id_type,
+        "unionid": target["unionid"],
+        "external_userid": target["external_userid"],
+        "sender_userid": owner_userid,
+        "target_source": target["source"],
+        "group_code": group_code,
+        "group_label": group_label,
+        "job_count": len(steps),
+        "warnings": target.get("warnings") or [],
+        "jobs": [
+            {
+                "status": "would_create",
+                "scheduled_for": _text(step.get("scheduled_for")),
+                "content_summary": _content_summary(_text(step.get("content_text")), _content_package_from_sources(payload, recipient, step)),
+                "step_index": int(step["step_index"]),
+            }
+            for step in steps
+        ],
+    }
+
+
+def _create_single_recipient_direct_send(
+    *,
+    payload: JsonDict,
+    recipient: JsonDict,
+    owner_userid: str,
+    operator: str,
+    group_code: str,
+    group_label: str,
+    timezone_name: str,
+    strict_owner_match: bool,
+    bypass_dnd: bool,
+    repo: ExternalCampaignRepository,
+    source_type: str,
+) -> list[JsonDict]:
+    target_id, target_id_type = _target_id_for_recipient(recipient)
+    steps = _normalize_step_list(
+        recipient.get("steps") if isinstance(recipient.get("steps"), list) else payload.get("steps"),
+        payload,
+        recipient,
+        timezone_name=timezone_name,
+    )
+    target = _lookup_target(
+        target_id=target_id,
+        target_id_type=target_id_type,
+        owner_userid=owner_userid,
+        strict_owner_match=strict_owner_match,
+        bypass_dnd=bypass_dnd,
+        repo=repo,
+    )
+    created: list[JsonDict] = []
+    trace_root = _text(payload.get("trace_id")) or f"{source_type}-{_hash_payload(group_code, owner_userid, target_id)}"
+    for step in steps:
+        content_package = _content_package_from_sources(payload, recipient, step)
+        content_text = _text(step.get("content_text"))
+        content_summary = _content_summary(content_text, content_package)
+        if not content_text and not _has_content_package_materials(content_package):
+            raise ExternalCampaignError(
+                "content_required",
+                status_code=400,
+                message="content_text or material_asset_ids/attachments is required",
+                phase="content_validation",
+                external_userid=target["external_userid"],
+                owner_userid=owner_userid,
+            )
+        scheduled_for = _text(step.get("scheduled_for"))
+        idempotency_key = _direct_job_idempotency_key(
+            payload=payload,
+            group_code=group_code,
+            owner_userid=owner_userid,
+            target_id=target_id,
+            scheduled_for=scheduled_for,
+            step_index=int(step["step_index"]),
+        )
+        job = repo.create_broadcast_job(
+            source_type=source_type,
+            source_id=idempotency_key,
+            source_table=source_type,
+            scheduled_for=scheduled_for,
+            priority=int(payload.get("priority") or 100),
+            batch_key=f"{source_type}:{group_code}:{owner_userid}",
+            idempotency_key=idempotency_key,
+            target_unionids=[target["unionid"]],
+            target_summary=f"{target.get('customer_name') or target['unionid']} / {target['external_userid']}",
+            content_type="private_message",
+            content_payload=_direct_job_payload(step=step, target=target, owner_userid=owner_userid, content_package=content_package),
+            content_summary=content_summary,
+            trace_id=f"{trace_root}:{int(step['step_index'])}",
+            created_by=operator,
+            business_domain="ai_assistant" if source_type == "external_campaign" else "manual",
+            channel="wecom_private",
+            target_kind="unionid",
+            metadata={
+                "source": "external_token_api" if source_type == "external_campaign" else "direct_send_api",
+                "group_code": group_code,
+                "group_label": group_label,
+                "target_id": target_id,
+                "target_id_type": target_id_type,
+                "external_userid": target["external_userid"],
+                "sender_userid": owner_userid,
+                "step_index": int(step["step_index"]),
+                "warnings": target.get("warnings") or [],
+            },
+        )
+        created.append(
+            {
+                "broadcast_job_id": int(job.get("id") or 0),
+                "job_id": int(job.get("id") or 0),
+                "target_id": target_id,
+                "target_id_type": target_id_type,
+                "unionid": target["unionid"],
+                "external_userid": target["external_userid"],
+                "sender_userid": owner_userid,
+                "status": "exists" if job.get("idempotent_existing") else (_text(job.get("status")) or "queued"),
+                "scheduled_for": scheduled_for,
+                "step_index": int(step["step_index"]),
+                "idempotency_key": idempotency_key,
+                "target_source": target["source"],
+                "warnings": target.get("warnings") or [],
+            }
+        )
+    return created
 
 
 def _existing_campaign_response(campaign_code: str, *, repo: ExternalCampaignRepository) -> JsonDict | None:
@@ -372,7 +668,7 @@ def _campaign_identity(
     group_code: str,
     timezone_name: str,
 ) -> tuple[list[JsonDict], datetime, str, str, str]:
-    external_userid = _text(recipient["external_userid"])
+    target_id, _target_id_type = _target_id_for_recipient(recipient)
     steps = _normalize_step_list(
         recipient.get("steps") if isinstance(recipient.get("steps"), list) else payload.get("steps"),
         payload,
@@ -381,7 +677,7 @@ def _campaign_identity(
     )
     first_dt = _parse_local_datetime(steps[0]["scheduled_for"], default_timezone=timezone_name)
     anchor_date = first_dt.date().isoformat()
-    fingerprint = _hash_payload(payload.get("idempotency_key"), group_code, owner_userid, external_userid, anchor_date, steps)
+    fingerprint = _hash_payload(payload.get("idempotency_key"), group_code, owner_userid, target_id, anchor_date, steps)
     campaign_code = _text(recipient.get("campaign_code")) or _text(payload.get("campaign_code"))
     if campaign_code and len(_normalize_recipients(payload)) > 1:
         campaign_code = f"{campaign_code}_{fingerprint[:8]}"
@@ -402,7 +698,8 @@ def _create_single_recipient_campaign(
     strict_owner_match: bool,
     repo: ExternalCampaignRepository,
 ) -> JsonDict:
-    external_userid = _text(recipient["external_userid"])
+    target_id, target_id_type = _target_id_for_recipient(recipient)
+    external_userid = _text(recipient.get("external_userid") or target_id)
     steps, first_dt, campaign_code, trace_id, fingerprint = _campaign_identity(
         payload=payload,
         recipient=recipient,
@@ -416,14 +713,17 @@ def _create_single_recipient_campaign(
         return existing
     try:
         target = _lookup_target(
-            external_userid=external_userid,
+            target_id=target_id,
+            target_id_type=target_id_type,
             owner_userid=owner_userid,
             strict_owner_match=strict_owner_match,
+            bypass_dnd=_truthy(payload.get("bypass_dnd")),
             repo=repo,
         )
     except ExternalCampaignError as exc:
         raise exc.add_context(group_code=group_code, campaign_code=campaign_code, trace_id=trace_id) from exc
 
+    external_userid = _text(target.get("external_userid") or external_userid)
     anchor_date = first_dt.date().isoformat()
     segment_code = f"seg_ext_{fingerprint}"
     campaign_id = 0
@@ -465,6 +765,7 @@ def _create_single_recipient_campaign(
                 "group_code": group_code,
                 "group_label": group_label,
                 "external_userid": external_userid,
+                "unionid": target.get("unionid") or "",
                 "owner_userid": owner_userid,
                 "idempotency_key": _text(payload.get("idempotency_key")),
                 "contact": target.get("contact") or {},
@@ -533,7 +834,8 @@ def _create_single_recipient_campaign(
     return {
         "campaign_code": campaign_code,
         "campaign_id": int(submitted["id"]),
-        "external_userid": external_userid,
+        "external_userid": target.get("external_userid") or external_userid,
+        "unionid": target.get("unionid") or "",
         "segment_code": segment_code,
         "status": "created",
         "review_status": _text(submitted.get("review_status")),
@@ -557,7 +859,8 @@ def _preview_single_recipient_campaign(
     strict_owner_match: bool,
     repo: ExternalCampaignRepository,
 ) -> JsonDict:
-    external_userid = _text(recipient["external_userid"])
+    target_id, target_id_type = _target_id_for_recipient(recipient)
+    external_userid = _text(recipient.get("external_userid") or target_id)
     steps, first_dt, campaign_code, trace_id, fingerprint = _campaign_identity(
         payload=payload,
         recipient=recipient,
@@ -567,16 +870,19 @@ def _preview_single_recipient_campaign(
     )
     try:
         target = _lookup_target(
-            external_userid=external_userid,
+            target_id=target_id,
+            target_id_type=target_id_type,
             owner_userid=owner_userid,
             strict_owner_match=strict_owner_match,
+            bypass_dnd=_truthy(payload.get("bypass_dnd")),
             repo=repo,
         )
     except ExternalCampaignError as exc:
         raise exc.add_context(group_code=group_code, campaign_code=campaign_code, trace_id=trace_id) from exc
     return {
         "campaign_code": campaign_code,
-        "external_userid": external_userid,
+        "external_userid": target.get("external_userid") or external_userid,
+        "unionid": target.get("unionid") or "",
         "segment_code": f"seg_ext_{fingerprint}",
         "anchor_date": first_dt.date().isoformat(),
         "first_scheduled_for": first_dt.isoformat(),
@@ -592,6 +898,7 @@ def _preview_single_recipient_campaign(
         ],
         "contact": target.get("contact") or {},
         "target_source": _text(target.get("source")),
+        "warnings": target.get("warnings") or [],
         "would_create": _existing_campaign_response(campaign_code, repo=repo) is None,
     }
 
@@ -607,33 +914,51 @@ def create_external_campaigns(payload: JsonDict, repo: ExternalCampaignRepositor
     timezone_name = _text(payload.get("timezone")) or _DEFAULT_TIMEZONE
     group_code = _slug(payload.get("group_code") or payload.get("idempotency_key") or payload.get("intent"))
     group_label = _text(payload.get("group_label")) or _text(payload.get("intent")) or group_code
-    strict_owner_match = not _truthy(payload.get("allow_owner_mismatch"))
+    strict_owner_match = _truthy(payload.get("strict_owner_match"))
+    bypass_dnd = _truthy(payload.get("bypass_dnd"))
     recipients = _normalize_recipients(payload)
     dry_run = _truthy(payload.get("dry_run")) or _truthy(payload.get("preview"))
+    use_campaign_workflow = _truthy(payload.get("use_campaign_workflow"))
     if _truthy(payload.get("auto_backfill_automation_member")):
         raise ExternalCampaignError(
             "automation_member_backfill_retired",
             status_code=410,
-            message="automation_member backfill is retired; use user_ops_pool_current or AI Audience membership instead",
+            message="automation_member backfill is retired; resolve crm_user_identity or use direct send targets instead",
             phase="target_lookup",
             owner_userid=owner_userid,
         )
 
     effective_recipients = recipients
     if dry_run:
-        previews = [
-            _preview_single_recipient_campaign(
-                payload=payload,
-                recipient=recipient,
-                owner_userid=owner_userid,
-                group_code=group_code,
-                group_label=group_label,
-                timezone_name=timezone_name,
-                strict_owner_match=strict_owner_match,
-                repo=repository,
-            )
-            for recipient in effective_recipients
-        ]
+        if use_campaign_workflow:
+            previews = [
+                _preview_single_recipient_campaign(
+                    payload=payload,
+                    recipient=recipient,
+                    owner_userid=owner_userid,
+                    group_code=group_code,
+                    group_label=group_label,
+                    timezone_name=timezone_name,
+                    strict_owner_match=strict_owner_match,
+                    repo=repository,
+                )
+                for recipient in effective_recipients
+            ]
+        else:
+            previews = [
+                _preview_single_recipient_direct_send(
+                    payload=payload,
+                    recipient=recipient,
+                    owner_userid=owner_userid,
+                    group_code=group_code,
+                    group_label=group_label,
+                    timezone_name=timezone_name,
+                    strict_owner_match=strict_owner_match,
+                    bypass_dnd=bypass_dnd,
+                    repo=repository,
+                )
+                for recipient in effective_recipients
+            ]
         repository.rollback()
         return {
             "ok": True,
@@ -641,17 +966,49 @@ def create_external_campaigns(payload: JsonDict, repo: ExternalCampaignRepositor
             "side_effect_executed": False,
             "route_owner": "ai_crm_next",
             "source": "external_token_api",
+            "send_path": "campaign_workflow" if use_campaign_workflow else "direct_broadcast_job",
             "group_code": group_code,
             "group_label": group_label,
             "owner_userid": owner_userid,
             "recipient_count": len(previews),
-            "campaigns": previews,
+            "campaigns": previews if use_campaign_workflow else [],
+            "jobs": [] if use_campaign_workflow else previews,
         }
 
-    created: list[JsonDict] = []
+    if use_campaign_workflow:
+        created: list[JsonDict] = []
+        for recipient in effective_recipients:
+            created.append(
+                _create_single_recipient_campaign(
+                    payload=payload,
+                    recipient=recipient,
+                    owner_userid=owner_userid,
+                    operator=operator,
+                    group_code=group_code,
+                    group_label=group_label,
+                    timezone_name=timezone_name,
+                    strict_owner_match=strict_owner_match,
+                    repo=repository,
+                )
+            )
+        return {
+            "ok": True,
+            "route_owner": "ai_crm_next",
+            "source": "external_token_api",
+            "send_path": "campaign_workflow",
+            "group_code": group_code,
+            "group_label": group_label,
+            "owner_userid": owner_userid,
+            "created_count": sum(1 for item in created if item.get("status") == "created"),
+            "existing_count": sum(1 for item in created if item.get("status") == "exists"),
+            "campaigns": created,
+            "jobs": [],
+        }
+
+    jobs: list[JsonDict] = []
     for recipient in effective_recipients:
-        created.append(
-            _create_single_recipient_campaign(
+        jobs.extend(
+            _create_single_recipient_direct_send(
                 payload=payload,
                 recipient=recipient,
                 owner_userid=owner_userid,
@@ -660,19 +1017,114 @@ def create_external_campaigns(payload: JsonDict, repo: ExternalCampaignRepositor
                 group_label=group_label,
                 timezone_name=timezone_name,
                 strict_owner_match=strict_owner_match,
+                bypass_dnd=bypass_dnd,
                 repo=repository,
+                source_type="external_campaign",
             )
         )
+    repository.commit()
     return {
         "ok": True,
         "route_owner": "ai_crm_next",
         "source": "external_token_api",
+        "send_path": "direct_broadcast_job",
         "group_code": group_code,
         "group_label": group_label,
         "owner_userid": owner_userid,
-        "created_count": sum(1 for item in created if item.get("status") == "created"),
-        "existing_count": sum(1 for item in created if item.get("status") == "exists"),
-        "campaigns": created,
+        "created_count": sum(1 for item in jobs if item.get("status") == "queued"),
+        "existing_count": sum(1 for item in jobs if item.get("status") == "exists"),
+        "campaign_code": _text(payload.get("campaign_code") or payload.get("idempotency_key") or group_code),
+        "campaigns": [],
+        "jobs": jobs,
+    }
+
+
+def create_direct_wecom_private_send(payload: JsonDict, repo: ExternalCampaignRepository | None = None, *, source: str = "direct_send_api") -> JsonDict:
+    if not isinstance(payload, dict):
+        raise ExternalCampaignError("json object body is required")
+    repository = _build_repo(repo)
+    sender_userid = _text(payload.get("sender_userid") or payload.get("sender") or payload.get("owner_userid"))
+    if not sender_userid:
+        raise ExternalCampaignError("sender_userid_required", status_code=400, phase="target_lookup")
+    target_id = _text(payload.get("target_id") or payload.get("unionid") or payload.get("external_userid"))
+    if not target_id:
+        raise ExternalCampaignError("target_identity_not_found", status_code=404, phase="target_lookup")
+    content_text = _text(payload.get("content_text") or payload.get("message"))
+    content_package = _content_package_from_sources(payload)
+    if not content_text and not _has_content_package_materials(content_package):
+        if _has_material_refs(content_package):
+            raise ExternalCampaignError("material_invalid", status_code=400, phase="content_validation")
+        raise ExternalCampaignError("content_required", status_code=400, phase="content_validation")
+    scheduled_for = _text(payload.get("scheduled_for") or payload.get("scheduled_at") or payload.get("send_at")) or datetime.now(ZoneInfo(_DEFAULT_TIMEZONE)).isoformat()
+    direct_payload = {
+        **payload,
+        "owner_userid": sender_userid,
+        "sender": sender_userid,
+        "target_id": target_id,
+        "target_id_type": _text(payload.get("target_id_type")) or "auto",
+        "scheduled_for": scheduled_for,
+        "message": content_text,
+        "content_text": content_text,
+        "steps": [
+            {
+                "scheduled_for": scheduled_for,
+                "content_text": content_text,
+                "content_payload": content_package,
+            }
+        ],
+        "group_code": _slug(payload.get("group_code") or payload.get("idempotency_key") or "direct_send"),
+    }
+    recipient = {
+        "target_id": target_id,
+        "target_id_type": _text(payload.get("target_id_type")) or "auto",
+        "content_text": content_text,
+        "content_payload": content_package,
+    }
+    if _truthy(payload.get("dry_run")) or _truthy(payload.get("preview")):
+        preview = _preview_single_recipient_direct_send(
+            payload=direct_payload,
+            recipient=recipient,
+            owner_userid=sender_userid,
+            group_code=direct_payload["group_code"],
+            group_label=_text(payload.get("group_label") or payload.get("intent") or "direct_send"),
+            timezone_name=_text(payload.get("timezone")) or _DEFAULT_TIMEZONE,
+            strict_owner_match=_truthy(payload.get("strict_owner_match")),
+            bypass_dnd=_truthy(payload.get("bypass_dnd")),
+            repo=repository,
+        )
+        return {
+            "ok": True,
+            "route_owner": "ai_crm_next",
+            "source": source,
+            "send_path": "direct_broadcast_job",
+            "dry_run": True,
+            "side_effect_executed": False,
+            "created_count": 0,
+            "existing_count": 0,
+            "jobs": [preview],
+        }
+    jobs = _create_single_recipient_direct_send(
+        payload=direct_payload,
+        recipient=recipient,
+        owner_userid=sender_userid,
+        operator=_text(payload.get("operator")) or f"direct:{sender_userid}",
+        group_code=direct_payload["group_code"],
+        group_label=_text(payload.get("group_label") or payload.get("intent") or "direct_send"),
+        timezone_name=_text(payload.get("timezone")) or _DEFAULT_TIMEZONE,
+        strict_owner_match=_truthy(payload.get("strict_owner_match")),
+        bypass_dnd=_truthy(payload.get("bypass_dnd")),
+        repo=repository,
+        source_type="direct_send",
+    )
+    repository.commit()
+    return {
+        "ok": True,
+        "route_owner": "ai_crm_next",
+        "source": source,
+        "send_path": "direct_broadcast_job",
+        "created_count": sum(1 for item in jobs if item.get("status") == "queued"),
+        "existing_count": sum(1 for item in jobs if item.get("status") == "exists"),
+        "jobs": jobs,
     }
 
 
@@ -690,6 +1142,22 @@ def create_external_campaigns_response(payload: JsonDict, headers: Mapping[str, 
                 trace_id=_text(payload.get("trace_id")),
                 owner_userid=_text(payload.get("owner_userid") or payload.get("sender")),
             )
+        return JSONResponse(exc.to_response(), status_code=exc.status_code)
+    except Exception as exc:
+        return JSONResponse(
+            {"ok": False, "error": "internal_error", "message": str(exc), "route_owner": "ai_crm_next"},
+            status_code=500,
+        )
+
+
+def create_direct_wecom_private_send_response(payload: JsonDict, headers: Mapping[str, Any], *, allow_admin_action_token: bool = False) -> JsonDict | JSONResponse:
+    failure = _direct_auth_failure(headers, payload if isinstance(payload, dict) else {}, allow_admin_action_token=allow_admin_action_token)
+    if failure is not None:
+        error, status_code = failure
+        return JSONResponse({"ok": False, "error": error, "route_owner": "ai_crm_next"}, status_code=status_code)
+    try:
+        return create_direct_wecom_private_send(payload, source="admin_direct_send_api" if allow_admin_action_token else "internal_direct_send_api")
+    except ExternalCampaignError as exc:
         return JSONResponse(exc.to_response(), status_code=exc.status_code)
     except Exception as exc:
         return JSONResponse(

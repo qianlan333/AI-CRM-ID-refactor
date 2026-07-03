@@ -73,15 +73,22 @@ repositories:
       - campaigns
       - crm_user_identity
       - segments
-      - user_ops_pool_current_next
+      - user_ops_do_not_disturb_next
       - wecom_external_contact_follow_users
       - wecom_external_contact_identity_map
     table_writes:
+      - broadcast_jobs
       - campaign_members
       - campaign_segments
       - campaign_steps
       - campaigns
       - segments
+  aicrm_next/send_targets/repo.py:
+    capability_owner: aicrm_next.send_targets
+    table_reads:
+      - crm_user_identity
+      - user_ops_do_not_disturb_next
+    table_writes: []
   aicrm_next/ai_audience_ops/repository.py:
     capability_owner: aicrm_next.ai_audience_ops
     table_reads:
