@@ -215,5 +215,5 @@ def test_questionnaire_final_tags_no_real_blocked_status(monkeypatch) -> None:
     assert body["tag_apply"]["execution_mode"] == "execute"
     assert body["tag_apply"]["requires_approval"] is False
     assert body["tag_apply"]["status"] == "succeeded"
-    for forbidden in ["real_blocked", "plan_only", "execute_dryrun", "shadow"]:
+    for forbidden in ["real_blocked", "planned_as_success", "plan_only", "execute_dryrun", "shadow"]:
         assert forbidden not in serialized

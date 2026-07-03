@@ -5,6 +5,8 @@ from fastapi.testclient import TestClient
 from aicrm_next.customer_tags.live_mutation import (
     get_wecom_tag_live_mutation_audit_events,
     get_wecom_tag_live_mutation_side_effect_plans,
+    live_gate_status,
+    tag_execution_status,
 )
 from aicrm_next.main import create_app
 
@@ -57,6 +59,10 @@ def test_live_gate_reports_projection_and_queue_support(monkeypatch) -> None:
     assert payload["blocked"] is False
     assert payload["real_external_call_executed"] is False
     assert payload["wecom_api_called"] is False
+
+
+def test_live_gate_status_is_deprecated_alias() -> None:
+    assert live_gate_status() == tag_execution_status()
 
 
 def test_live_mark_and_unmark_queue_external_effect_without_approval(monkeypatch) -> None:

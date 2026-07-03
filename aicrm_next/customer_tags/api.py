@@ -28,7 +28,7 @@ from .dto import DryRunTagRequest, LiveTagRequest, ValidateTagIdsRequest
 from .live_mutation import (
     WeComTagMutationInputError,
     execute_wecom_tag_mutation,
-    live_gate_status,
+    tag_execution_status,
 )
 from .mutation_commands import PlanWeComTagMarkCommand, PlanWeComTagUnmarkCommand, WeComTagMutationCommand
 from .read_model import TagCatalogUnavailable, build_tag_catalog_repository
@@ -330,7 +330,7 @@ def dry_run_unmark_tags(payload: DryRunTagRequest) -> dict:
 
 @read_router.get("/api/admin/wecom/tags/live/gate")
 def list_wecom_tags_live_gate() -> dict:
-    return live_gate_status()
+    return tag_execution_status()
 
 
 @router.api_route("/api/admin/wecom/tags/live/mark", methods=["POST", "OPTIONS"])
