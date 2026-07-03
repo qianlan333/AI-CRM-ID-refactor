@@ -22,6 +22,7 @@ def test_user_ops_next_batch_target_resolution_keeps_skip_reasons():
     rows = [
         {
             "id": 1,
+            "unionid": "union_ops_001",
             "external_userid": "wx_ext_001",
             "owner_userid": "owner_001",
             "owner_display_name": "Owner",
@@ -31,6 +32,7 @@ def test_user_ops_next_batch_target_resolution_keeps_skip_reasons():
         },
         {
             "id": 2,
+            "unionid": "",
             "external_userid": "",
             "owner_userid": "owner_001",
             "owner_display_name": "Owner",
@@ -43,5 +45,5 @@ def test_user_ops_next_batch_target_resolution_keeps_skip_reasons():
     payload = resolve_batch_targets(rows, BatchSendRequest(selection_mode="all_filtered", content="hello"))
 
     assert payload["eligible_count"] == 1
-    assert payload["skipped_by_reason"] == {"missing_external_userid": 1}
+    assert payload["skipped_by_reason"] == {"missing_unionid": 1}
     assert payload["owner_buckets"][0]["owner_userid"] == "owner_001"

@@ -70,7 +70,7 @@ def test_postgres_questionnaire_submit_writes_submission_and_answer_snapshots(mo
             "answers": {"11": "13770938680", "12": 31},
             "result_json": {"score": 10},
             "source_json": {"source_channel": "h5"},
-            "respondent_identity": {},
+            "respondent_identity": {"unionid": "union_questionnaire_submit_499"},
             "external_userid": "wm_submit_001",
             "follow_user_userid": "LinKaiYan",
             "matched_by": "unionid",
@@ -89,12 +89,11 @@ def test_postgres_questionnaire_submit_writes_submission_and_answer_snapshots(mo
 
     submission_params = connection.calls[0][1]
     assert submission_params[0] == 499
-    assert submission_params[5] == "wm_submit_001"
-    assert submission_params[6] == "LinKaiYan"
-    assert submission_params[7] == "unionid"
-    assert submission_params[8] == "13770938680"
-    assert submission_params[9] == "h5"
-    assert submission_params[13] == ["activated"]
+    assert submission_params[1] == "union_questionnaire_submit_499"
+    assert submission_params[2] == "LinKaiYan"
+    assert submission_params[3] == "unionid"
+    assert submission_params[4] == "h5"
+    assert submission_params[8] == ["activated"]
 
     mobile_answer_params = connection.calls[1][1]
     assert mobile_answer_params[1] == 11

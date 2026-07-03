@@ -74,7 +74,7 @@ def test_channel_multi_staff_migration_contains_required_schema():
         "automation_channel_assignment_event",
         "idx_channel_assignee_active",
         "idx_channel_assignment_24h",
-        "idx_channel_assignment_external",
+        "idx_channel_assignment_unionid",
     ):
         assert token in source
 

@@ -40,38 +40,68 @@ class PostgresHxcDashboardBroadcastRepository(HxcDashboardBroadcastRepository):
         sender_userid: str,
     ) -> dict[str, Any]:
         selected = [str(item or "").strip() for item in selected_customer_ids if str(item or "").strip()]
+        projection = """
+            WITH snapshot_identity AS (
+                SELECT
+                    COALESCE(NULLIF(s.unionid, ''), identity.unionid, '') AS unionid,
+                    COALESCE(identity.primary_external_userid, '') AS resolved_external_userid,
+                    s.owner_userid,
+                    s.funnel_state,
+                    s.phone_match_key,
+                    s.refreshed_at
+                FROM user_ops_hxc_dashboard_snapshot s
+                LEFT JOIN crm_user_identity identity
+                  ON identity.unionid = s.unionid
+                  OR (
+                      COALESCE(s.unionid, '') = ''
+                      AND COALESCE(s.mobile, '') <> ''
+                      AND identity.mobile_normalized = regexp_replace(s.mobile, '\\D', '', 'g')
+                  )
+            )
+        """
         try:
             with self._connect() as conn:
                 with conn.cursor() as cur:
                     if selected:
                         cur.execute(
-                            """
-                            SELECT external_userid, owner_userid, funnel_state,
+                            projection
+                            + """
+                            SELECT unionid, resolved_external_userid AS external_userid, owner_userid, funnel_state,
                                    EXISTS (
                                        SELECT 1
-                                       FROM user_ops_do_not_disturb dnd
+                                       FROM user_ops_do_not_disturb_next dnd
                                        WHERE dnd.is_active = TRUE
-                                         AND dnd.external_userid <> ''
-                                         AND dnd.external_userid = s.external_userid
+                                         AND dnd.unionid <> ''
+                                         AND dnd.unionid = s.unionid
                                    ) AS do_not_disturb
-                            FROM user_ops_hxc_dashboard_snapshot s
-                            WHERE s.external_userid = ANY(%s)
+                            FROM snapshot_identity s
+                            WHERE s.unionid = ANY(%s)
+                               OR s.resolved_external_userid = ANY(%s)
                                OR s.phone_match_key = ANY(%s)
+                               OR EXISTS (
+                                   SELECT 1
+                                   FROM crm_user_identity selected_identity
+                                   JOIN unnest(%s::text[]) selected(value)
+                                     ON selected_identity.primary_external_userid = selected.value
+                                     OR jsonb_exists(selected_identity.external_userids_json, selected.value)
+                                   WHERE selected_identity.unionid = s.unionid
+                               )
                             """,
-                            (selected, selected),
+                            (selected, selected, selected, selected),
                         )
                     else:
                         cur.execute(
-                            """
-                            SELECT external_userid, owner_userid, funnel_state,
+                            projection
+                            + """
+                            SELECT unionid, resolved_external_userid AS external_userid, owner_userid, funnel_state,
                                    EXISTS (
                                        SELECT 1
-                                       FROM user_ops_do_not_disturb dnd
+                                       FROM user_ops_do_not_disturb_next dnd
                                        WHERE dnd.is_active = TRUE
-                                         AND dnd.external_userid <> ''
-                                         AND dnd.external_userid = s.external_userid
+                                         AND dnd.unionid <> ''
+                                         AND dnd.unionid = s.unionid
                                    ) AS do_not_disturb
-                            FROM user_ops_hxc_dashboard_snapshot s
+                            FROM snapshot_identity s
                             ORDER BY refreshed_at DESC
                             LIMIT 5000
                             """

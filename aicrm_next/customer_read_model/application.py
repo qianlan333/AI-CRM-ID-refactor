@@ -152,6 +152,49 @@ def _customer_detail_unavailable_payload(external_userid: str, exc: Exception) -
     }
 
 
+def _customer_identity_key(query: CustomerDetailRequest | CustomerTimelineRequest | RecentMessagesRequest) -> str:
+    return str(getattr(query, "unionid", None) or getattr(query, "external_userid", None) or "").strip()
+
+
+def _repo_get_customer_by_request(repo: CustomerReadRepository, query: CustomerDetailRequest) -> JsonDict | None:
+    unionid = str(query.unionid or "").strip()
+    if unionid:
+        getter = getattr(repo, "get_customer_by_unionid", None)
+        if callable(getter):
+            return getter(unionid)
+        return None
+    external_userid = str(query.external_userid or "").strip()
+    return repo.get_customer(external_userid) if external_userid else None
+
+
+def _repo_customer_exists_by_request(repo: CustomerReadRepository, query: CustomerTimelineRequest | RecentMessagesRequest) -> bool:
+    unionid = str(query.unionid or "").strip()
+    if unionid:
+        exists = getattr(repo, "customer_exists_by_unionid", None)
+        return bool(exists(unionid)) if callable(exists) else False
+    external_userid = str(query.external_userid or "").strip()
+    return repo.customer_exists(external_userid) if external_userid else False
+
+
+def _repo_list_timeline_by_request(repo: CustomerReadRepository, query: CustomerTimelineRequest, *, limit: int | None = None, offset: int = 0) -> list[JsonDict]:
+    unionid = str(query.unionid or "").strip()
+    filters = {"event_type": query.event_type or ""}
+    if unionid:
+        list_by_unionid = getattr(repo, "list_timeline_by_unionid", None)
+        return list_by_unionid(unionid, filters, limit=limit, offset=offset) if callable(list_by_unionid) else []
+    external_userid = str(query.external_userid or "").strip()
+    return repo.list_timeline(external_userid, filters, limit=limit, offset=offset) if external_userid else []
+
+
+def _repo_list_recent_messages_by_request(repo: CustomerReadRepository, query: RecentMessagesRequest) -> list[JsonDict]:
+    unionid = str(query.unionid or "").strip()
+    if unionid:
+        list_by_unionid = getattr(repo, "list_recent_messages_by_unionid", None)
+        return list_by_unionid(unionid, limit=query.limit) if callable(list_by_unionid) else []
+    external_userid = str(query.external_userid or "").strip()
+    return repo.list_recent_messages(external_userid, limit=query.limit) if external_userid else []
+
+
 def _customer_timeline_unavailable_payload(query: CustomerTimelineRequest, exc: Exception) -> JsonDict:
     return {
         "ok": False,
@@ -307,7 +350,7 @@ def _customer_detail_live_source_payload(query: CustomerDetailRequest, exc: Exce
     owned_repo = repo is None
     repo = repo or build_customer_live_source_repository()
     try:
-        customer = repo.get_customer(query.external_userid)
+        customer = _repo_get_customer_by_request(repo, query)
         if not customer:
             raise NotFoundError("customer not found")
         return {
@@ -333,9 +376,9 @@ def _customer_timeline_live_source_payload(query: CustomerTimelineRequest, exc: 
     owned_repo = repo is None
     repo = repo or build_customer_live_source_repository()
     try:
-        if not repo.customer_exists(query.external_userid):
+        if not _repo_customer_exists_by_request(repo, query):
             raise NotFoundError("customer not found")
-        items = repo.list_timeline(query.external_userid, {"event_type": query.event_type or ""}, limit=None, offset=0)
+        items = _repo_list_timeline_by_request(repo, query, limit=None, offset=0)
         total = len(items)
         page = items[query.offset : query.offset + query.limit]
         return {
@@ -369,9 +412,9 @@ def _recent_messages_live_source_payload(query: RecentMessagesRequest, exc: Exce
     owned_repo = repo is None
     repo = repo or build_customer_live_source_repository()
     try:
-        if not repo.customer_exists(query.external_userid):
+        if not _repo_customer_exists_by_request(repo, query):
             raise NotFoundError("customer not found")
-        messages = repo.list_recent_messages(query.external_userid, limit=query.limit)
+        messages = _repo_list_recent_messages_by_request(repo, query)
         return {
             "ok": True,
             "messages": messages,
@@ -547,7 +590,7 @@ class GetCustomerDetailQuery:
                 if not _customer_read_model_next_primary_enabled():
                     raise RuntimeError("customer read model next primary disabled")
                 repo = self._repo or build_customer_read_model_repository()
-                customer = repo.get_customer(query.external_userid)
+                customer = _repo_get_customer_by_request(repo, query)
                 if not customer:
                     raise NotFoundError("customer not found")
             except NotFoundError as exc:
@@ -569,7 +612,7 @@ class GetCustomerDetailQuery:
                 except NotFoundError:
                     raise
                 except Exception:
-                    return _customer_detail_unavailable_payload(query.external_userid, exc)
+                    return _customer_detail_unavailable_payload(_customer_identity_key(query), exc)
             finally:
                 if self._repo is None:
                     _close_repository(repo)
@@ -584,9 +627,13 @@ class GetCustomerDetailQuery:
         try:
             contacts_adapter = self._contacts_adapter or build_contacts_sync_adapter()
             projection_gateway = self._projection_gateway or build_customer_projection_sync_gateway()
-            contacts_contract = contacts_adapter.fetch_contact_detail(external_userid=query.external_userid)
-            projection_contract = projection_gateway.update_customer_detail_projection(external_userid=query.external_userid)
-            customer = repo.get_customer(query.external_userid)
+            if query.external_userid:
+                contacts_contract = contacts_adapter.fetch_contact_detail(external_userid=query.external_userid)
+                projection_contract = projection_gateway.update_customer_detail_projection(external_userid=query.external_userid)
+            else:
+                contacts_contract = {"ok": True, "skipped": True, "reason": "unionid_native_query"}
+                projection_contract = {"ok": True, "skipped": True, "reason": "unionid_native_query"}
+            customer = _repo_get_customer_by_request(repo, query)
             if not customer:
                 raise NotFoundError("customer not found")
             return {
@@ -624,9 +671,9 @@ class GetCustomerTimelineQuery:
                 if not _customer_read_model_next_primary_enabled():
                     raise RuntimeError("customer read model next primary disabled")
                 repo = self._repo or build_customer_read_model_repository()
-                if not repo.customer_exists(query.external_userid):
+                if not _repo_customer_exists_by_request(repo, query):
                     raise NotFoundError("customer not found")
-                items = repo.list_timeline(query.external_userid, {"event_type": query.event_type or ""}, limit=None, offset=0)
+                items = _repo_list_timeline_by_request(repo, query, limit=None, offset=0)
                 total = len(items)
                 page = items[query.offset : query.offset + query.limit]
             except NotFoundError as exc:
@@ -655,7 +702,8 @@ class GetCustomerTimelineQuery:
             return {
                 "ok": True,
                 "timeline": {
-                    "external_userid": query.external_userid,
+                    "external_userid": query.external_userid or "",
+                    "unionid": query.unionid or "",
                     "items": page,
                     "count": len(page),
                     "limit": query.limit,
@@ -670,14 +718,17 @@ class GetCustomerTimelineQuery:
         repo = self._repo or build_customer_read_model_repository()
         try:
             projection_gateway = self._projection_gateway or build_customer_projection_sync_gateway()
-            projection_contract = projection_gateway.update_customer_timeline_projection(
-                external_userid=query.external_userid,
-                sync_cursor=f"offset:{query.offset}:limit:{query.limit}",
-            )
-            customer = repo.get_customer(query.external_userid)
+            if query.external_userid:
+                projection_contract = projection_gateway.update_customer_timeline_projection(
+                    external_userid=query.external_userid,
+                    sync_cursor=f"offset:{query.offset}:limit:{query.limit}",
+                )
+            else:
+                projection_contract = {"ok": True, "skipped": True, "reason": "unionid_native_query"}
+            customer = _repo_get_customer_by_request(repo, CustomerDetailRequest(external_userid=query.external_userid, unionid=query.unionid))
             if not customer:
                 raise NotFoundError("customer not found")
-            items = repo.list_timeline(query.external_userid)
+            items = _repo_list_timeline_by_request(repo, query)
             if query.event_type:
                 items = [item for item in items if item.get("event_type") == query.event_type]
             total = len(items)
@@ -685,7 +736,8 @@ class GetCustomerTimelineQuery:
             return {
                 "ok": True,
                 "timeline": {
-                    "external_userid": query.external_userid,
+                    "external_userid": query.external_userid or "",
+                    "unionid": query.unionid or "",
                     "items": page,
                     "count": len(page),
                     "limit": query.limit,
@@ -724,9 +776,9 @@ class ListRecentMessagesQuery:
                 if not _customer_read_model_next_primary_enabled():
                     raise RuntimeError("customer read model next primary disabled")
                 repo = self._repo or build_customer_read_model_repository()
-                if not repo.customer_exists(query.external_userid):
+                if not _repo_customer_exists_by_request(repo, query):
                     raise NotFoundError("customer not found")
-                messages = repo.list_recent_messages(query.external_userid, limit=query.limit)
+                messages = _repo_list_recent_messages_by_request(repo, query)
             except NotFoundError as exc:
                 if self._repo is None:
                     _close_repository(repo)
@@ -755,7 +807,8 @@ class ListRecentMessagesQuery:
                 "messages": messages,
                 "items": messages,
                 "count": len(messages),
-                "external_userid": query.external_userid,
+                "external_userid": query.external_userid or "",
+                "unionid": query.unionid or "",
                 "limit": query.limit,
                 "status_code": 200,
                 **_diagnostics(source_status="next_read_model", read_model_status="primary"),
@@ -765,24 +818,29 @@ class ListRecentMessagesQuery:
         try:
             archive_adapter = self._archive_adapter or build_archive_sync_adapter()
             projection_gateway = self._projection_gateway or build_customer_projection_sync_gateway()
-            archive_contract = archive_adapter.fetch_recent_messages(
-                external_userid=query.external_userid,
-                limit=query.limit,
-            )
-            projection_contract = projection_gateway.update_recent_messages_projection(
-                external_userid=query.external_userid,
-                sync_cursor=f"limit:{query.limit}",
-            )
-            customer = repo.get_customer(query.external_userid)
+            if query.external_userid:
+                archive_contract = archive_adapter.fetch_recent_messages(
+                    external_userid=query.external_userid,
+                    limit=query.limit,
+                )
+                projection_contract = projection_gateway.update_recent_messages_projection(
+                    external_userid=query.external_userid,
+                    sync_cursor=f"limit:{query.limit}",
+                )
+            else:
+                archive_contract = {"ok": True, "skipped": True, "reason": "unionid_native_query"}
+                projection_contract = {"ok": True, "skipped": True, "reason": "unionid_native_query"}
+            customer = _repo_get_customer_by_request(repo, CustomerDetailRequest(external_userid=query.external_userid, unionid=query.unionid))
             if not customer:
                 raise NotFoundError("customer not found")
-            messages = repo.list_recent_messages(query.external_userid)[: query.limit]
+            messages = _repo_list_recent_messages_by_request(repo, query)[: query.limit]
             return {
                 "ok": True,
                 "messages": messages,
                 "items": messages,
                 "count": len(messages),
-                "external_userid": query.external_userid,
+                "external_userid": query.external_userid or "",
+                "unionid": query.unionid or "",
                 "limit": query.limit,
                 "adapter_contract": {
                     "archive_sync": archive_contract,
@@ -816,6 +874,7 @@ def _identity_binding_summary(customer: JsonDict) -> JsonDict:
 
 def _customer_context_payload(
     *,
+    unionid: str = "",
     external_userid: str,
     customer: JsonDict,
     timeline: JsonDict,
@@ -829,6 +888,7 @@ def _customer_context_payload(
 ) -> JsonDict:
     return {
         "ok": True,
+        "unionid": unionid,
         "external_userid": external_userid,
         "customer": customer,
         "profile": customer,
@@ -892,8 +952,10 @@ def _admin_profile_payload(
 ) -> JsonDict:
     profile = dict(context.get("customer") or context.get("profile") or {})
     external_userid = str(profile.get("external_userid") or profile.get("user_id") or "")
+    unionid = str(profile.get("unionid") or context.get("unionid") or "")
     normalized_profile = {
         **profile,
+        "unionid": unionid,
         "external_userid": external_userid,
         "user_id": profile.get("user_id") or external_userid,
         "tags": list(profile.get("tags") or []),
@@ -906,7 +968,7 @@ def _admin_profile_payload(
         "ok": True,
         "profile": normalized_profile,
         "customer": normalized_profile,
-        "lookup": {"resolved_by": resolved_by, "external_userid": external_userid},
+        "lookup": {"resolved_by": resolved_by, "unionid": unionid, "external_userid": external_userid},
         "source_status": context.get("source_status"),
         "read_model_status": context.get("read_model_status"),
         "route_owner": "ai_crm_next",
@@ -926,6 +988,7 @@ def _admin_profile_tags_payload(customer: JsonDict, *, source_status: str) -> Js
         "ok": True,
         "tags": tags,
         "count": len(tags),
+        "unionid": str(customer.get("unionid") or ""),
         "external_userid": str(customer.get("external_userid") or ""),
         "source_status": source_status,
         "read_model_status": "fixture" if source_status == "local_contract_probe" else source_status,
@@ -999,25 +1062,31 @@ class GetCustomerContextQuery:
             repo: CustomerReadRepository | None = None
             try:
                 repo = self._repo or build_customer_read_model_repository()
-                external_userid = self._resolve_production_external_userid(query, repo)
-                detail = GetCustomerDetailQuery(repo, live_source_repo=self._live_source_repo)(CustomerDetailRequest(external_userid=external_userid))
+                unionid = str(query.unionid or "").strip()
+                external_userid = "" if unionid else self._resolve_production_external_userid(query, repo)
+                detail_request = CustomerDetailRequest(unionid=unionid or None, external_userid=external_userid or None)
+                detail = GetCustomerDetailQuery(repo, live_source_repo=self._live_source_repo)(detail_request)
                 if not detail.get("ok"):
                     raise RuntimeError(str(detail.get("page_error") or detail.get("error_code") or "customer detail unavailable"))
+                customer = dict(detail.get("customer") or {})
+                unionid = unionid or str(customer.get("unionid") or "").strip()
+                external_userid = external_userid or str(customer.get("external_userid") or customer.get("user_id") or "").strip()
                 timeline_payload = GetCustomerTimelineQuery(repo, live_source_repo=self._live_source_repo)(
-                    CustomerTimelineRequest(external_userid=external_userid, limit=query.timeline_limit)
+                    CustomerTimelineRequest(unionid=unionid or None, external_userid=external_userid or None, limit=query.timeline_limit)
                 )
                 if not timeline_payload.get("ok"):
                     raise RuntimeError(str(timeline_payload.get("page_error") or timeline_payload.get("error_code") or "customer timeline unavailable"))
                 messages_payload = ListRecentMessagesQuery(repo, live_source_repo=self._live_source_repo)(
-                    RecentMessagesRequest(external_userid=external_userid, limit=query.recent_message_limit)
+                    RecentMessagesRequest(unionid=unionid or None, external_userid=external_userid or None, limit=query.recent_message_limit)
                 )
                 if not messages_payload.get("ok"):
                     raise RuntimeError(str(messages_payload.get("page_error") or messages_payload.get("error_code") or "recent messages unavailable"))
                 timeline = dict(timeline_payload.get("timeline") or {})
                 recent_messages = list(messages_payload.get("messages") or messages_payload.get("items") or [])
                 return _customer_context_payload(
+                    unionid=unionid,
                     external_userid=external_userid,
-                    customer=detail["customer"],
+                    customer=customer,
                     timeline=timeline,
                     recent_messages=recent_messages,
                     source_status=str(detail.get("source_status") or "next_read_model"),
@@ -1041,17 +1110,24 @@ class GetCustomerContextQuery:
 
         repo = self._repo or build_customer_read_model_repository()
         try:
-            external_userid = self._resolve_fixture_external_userid(query, repo)
-            detail = GetCustomerDetailQuery(repo, live_source_repo=self._live_source_repo)(CustomerDetailRequest(external_userid=external_userid))
+            unionid = str(query.unionid or "").strip()
+            external_userid = "" if unionid else self._resolve_fixture_external_userid(query, repo)
+            detail = GetCustomerDetailQuery(repo, live_source_repo=self._live_source_repo)(
+                CustomerDetailRequest(unionid=unionid or None, external_userid=external_userid or None)
+            )
+            customer = dict(detail.get("customer") or {})
+            unionid = unionid or str(customer.get("unionid") or "").strip()
+            external_userid = external_userid or str(customer.get("external_userid") or customer.get("user_id") or "").strip()
             timeline = GetCustomerTimelineQuery(repo, live_source_repo=self._live_source_repo)(
-                CustomerTimelineRequest(external_userid=external_userid, limit=query.timeline_limit)
+                CustomerTimelineRequest(unionid=unionid or None, external_userid=external_userid or None, limit=query.timeline_limit)
             )
             messages = ListRecentMessagesQuery(repo, live_source_repo=self._live_source_repo)(
-                RecentMessagesRequest(external_userid=external_userid, limit=query.recent_message_limit)
+                RecentMessagesRequest(unionid=unionid or None, external_userid=external_userid or None, limit=query.recent_message_limit)
             )
             return _customer_context_payload(
+                unionid=unionid,
                 external_userid=external_userid,
-                customer=detail["customer"],
+                customer=customer,
                 timeline=timeline["timeline"],
                 recent_messages=messages["messages"],
                 source_status="local_contract_probe",
@@ -1076,16 +1152,19 @@ class GetAdminCustomerProfileQuery:
     def execute(
         self,
         *,
+        unionid: str | None = None,
         external_userid: str | None = None,
         mobile: str | None = None,
         user_id: str | None = None,
     ) -> JsonDict:
+        resolved_unionid = str(unionid or "").strip()
         resolved_external_userid = str(external_userid or user_id or "").strip()
         resolved_mobile = str(mobile or "").strip()
-        if not resolved_external_userid and not resolved_mobile:
-            return _admin_profile_input_error("external_userid is required")
+        if not resolved_unionid and not resolved_external_userid and not resolved_mobile:
+            return _admin_profile_input_error("unionid is required")
 
         request = CustomerContextRequest(
+            unionid=resolved_unionid or None,
             external_userid=resolved_external_userid or None,
             mobile=resolved_mobile or None,
             user_id=str(user_id or "").strip() or None,
@@ -1108,7 +1187,9 @@ class GetAdminCustomerProfileQuery:
         if not customer:
             return _admin_profile_input_error("customer not found")
 
-        if resolved_mobile and not resolved_external_userid:
+        if resolved_unionid:
+            resolved_by = "unionid"
+        elif resolved_mobile and not resolved_external_userid:
             resolved_by = "mobile"
         else:
             resolved_by = (
@@ -1128,16 +1209,19 @@ class GetAdminCustomerProfileTagsQuery:
     def execute(
         self,
         *,
+        unionid: str | None = None,
         external_userid: str | None = None,
         user_id: str | None = None,
     ) -> JsonDict:
+        resolved_unionid = str(unionid or "").strip()
         resolved_external_userid = str(external_userid or user_id or "").strip()
-        if not resolved_external_userid:
-            return _admin_profile_input_error("external_userid is required")
+        if not resolved_unionid and not resolved_external_userid:
+            return _admin_profile_input_error("unionid is required")
 
         try:
             context = self._context_query(
                 CustomerContextRequest(
+                    unionid=resolved_unionid or None,
                     external_userid=resolved_external_userid,
                     user_id=str(user_id or "").strip() or None,
                 )
@@ -1162,6 +1246,194 @@ class GetAdminCustomerProfileTagsQuery:
         )
 
     __call__ = execute
+
+
+class GetCustomer360ProfileQuery:
+    def __init__(self, context_query: GetCustomerContextQuery | None = None) -> None:
+        self._context_query = context_query or GetCustomerContextQuery()
+
+    def execute(self, unionid: str) -> JsonDict:
+        resolved_unionid = str(unionid or "").strip()
+        if not resolved_unionid:
+            return _admin_profile_input_error("unionid is required")
+
+        try:
+            context = self._context_query(
+                CustomerContextRequest(
+                    unionid=resolved_unionid,
+                    recent_message_limit=20,
+                    timeline_limit=20,
+                )
+            )
+        except NotFoundError:
+            return _admin_profile_input_error("customer not found")
+        except Exception as exc:
+            context = _production_unavailable_payload("", exc)
+
+        if not context.get("ok"):
+            payload = dict(context)
+            payload.setdefault("route_owner", "ai_crm_next")
+            payload["status_code"] = 503 if payload.get("degraded") else 400
+            return payload
+
+        profile = dict(context.get("customer") or context.get("profile") or {})
+        if not profile:
+            return _admin_profile_input_error("customer not found")
+        identity = _customer_360_identity(context, profile, resolved_unionid)
+        messages = list(context.get("recent_messages") or [])
+        timeline_items = list(dict(context.get("timeline") or {}).get("items") or context.get("recent_timeline_events") or [])
+        return {
+            "ok": True,
+            "unionid": resolved_unionid,
+            "identity": identity,
+            "orders_summary": _customer_360_orders_summary(profile),
+            "questionnaire_summary": _customer_360_questionnaire_summary(profile),
+            "message_summary": _customer_360_message_summary(profile, messages),
+            "tags": _normalized_admin_profile_tags(profile.get("tags") or []),
+            "user_ops_status": _customer_360_user_ops_status(profile),
+            "automation_status": _customer_360_automation_status(profile),
+            "recent_touchpoints": _customer_360_touchpoints(timeline_items),
+            "risk_flags": _customer_360_risk_flags(profile, identity, messages),
+            "source_status": context.get("source_status"),
+            "read_model_status": context.get("read_model_status"),
+            "route_owner": "ai_crm_next",
+            "fallback_used": bool(context.get("fallback_used")),
+            "degraded": bool(context.get("degraded")),
+            "status_code": 200,
+        }
+
+    __call__ = execute
+
+
+def _customer_360_identity(context: JsonDict, profile: JsonDict, unionid: str) -> JsonDict:
+    identity = dict(profile.get("identity") or context.get("identity") or {})
+    binding = dict(context.get("identity_binding_summary") or profile.get("binding") or {})
+    return {
+        "unionid": unionid or str(identity.get("unionid") or profile.get("unionid") or ""),
+        "person_id": identity.get("person_id") or binding.get("person_id") or profile.get("person_id"),
+        "external_userid": identity.get("external_userid") or binding.get("external_userid") or profile.get("external_userid") or "",
+        "openid": identity.get("openid") or "",
+        "mobile": identity.get("mobile") or binding.get("mobile") or profile.get("mobile") or "",
+        "binding_status": binding.get("binding_status") or dict(profile.get("binding") or {}).get("binding_status") or "",
+        "owner_userid": profile.get("owner_userid") or binding.get("owner_userid") or "",
+    }
+
+
+def _customer_360_orders_summary(profile: JsonDict) -> JsonDict:
+    summary = dict(profile.get("orders_summary") or profile.get("commerce_summary") or {})
+    return {
+        "source_status": summary.get("source_status") or "not_connected",
+        "paid_order_count": int(summary.get("paid_order_count") or summary.get("paid_count") or 0),
+        "total_paid_amount": summary.get("total_paid_amount") or summary.get("paid_amount") or 0,
+        "latest_order_at": summary.get("latest_order_at") or summary.get("last_paid_at") or "",
+    }
+
+
+def _customer_360_questionnaire_summary(profile: JsonDict) -> JsonDict:
+    answers = _customer_360_questionnaire_answers(profile)
+    latest = answers[0] if answers else {}
+    return {
+        "answer_count": len(answers),
+        "latest_submission_id": str(latest.get("submission_id") or ""),
+        "latest_submitted_at": str(latest.get("submitted_at") or ""),
+        "answers": answers[:5],
+    }
+
+
+def _customer_360_questionnaire_answers(profile: JsonDict) -> list[JsonDict]:
+    candidates = [
+        dict(profile.get("marketing_profile") or {}).get("matched_questions"),
+        dict(profile.get("sidebar_context") or {}).get("matched_questions"),
+        dict(profile.get("marketing_summary") or {}).get("matched_questions"),
+        profile.get("matched_questions"),
+    ]
+    answers: list[JsonDict] = []
+    seen: set[tuple[str, str, str]] = set()
+    for group in candidates:
+        if not isinstance(group, list):
+            continue
+        for item in group:
+            if not isinstance(item, dict):
+                continue
+            answer = {
+                "questionnaire_id": str(item.get("questionnaire_id") or item.get("form_id") or ""),
+                "questionnaire_title": str(item.get("questionnaire_title") or item.get("form_title") or item.get("title") or ""),
+                "submission_id": str(item.get("submission_id") or ""),
+                "submitted_at": str(item.get("submitted_at") or ""),
+                "question": str(item.get("question") or item.get("title") or item.get("question_text") or ""),
+                "answer": str(item.get("answer") or item.get("answer_text") or item.get("value") or ""),
+            }
+            if not answer["question"] and not answer["answer"]:
+                continue
+            key = (answer["submission_id"], answer["question"], answer["answer"])
+            if key in seen:
+                continue
+            seen.add(key)
+            answers.append(answer)
+    return answers
+
+
+def _customer_360_message_summary(profile: JsonDict, messages: list[JsonDict]) -> JsonDict:
+    latest = messages[0] if messages else {}
+    return {
+        "recent_message_count": len(messages),
+        "latest_message_at": profile.get("last_message_at") or latest.get("send_time") or latest.get("created_at") or "",
+        "last_touch_at": profile.get("last_touch_at") or "",
+    }
+
+
+def _customer_360_user_ops_status(profile: JsonDict) -> JsonDict:
+    status = dict(profile.get("class_user_status") or {})
+    marketing = dict(profile.get("marketing_summary") or {})
+    return {
+        "current_status": status.get("current_status") or marketing.get("main_stage") or "",
+        "signup_status": status.get("signup_status") or "",
+        "activation_bucket": status.get("activation_bucket") or marketing.get("sub_stage") or "",
+        "owner_userid": profile.get("owner_userid") or "",
+        "updated_at": status.get("updated_at") or profile.get("updated_at") or "",
+    }
+
+
+def _customer_360_automation_status(profile: JsonDict) -> JsonDict:
+    marketing_profile = dict(profile.get("marketing_profile") or {})
+    marketing_summary = dict(profile.get("marketing_summary") or {})
+    return {
+        "stage_key": marketing_profile.get("stage_key") or "",
+        "recommended_action": marketing_profile.get("recommended_action") or "",
+        "signals": list(marketing_profile.get("signals") or []),
+        "value_segment": marketing_summary.get("value_segment") or "",
+        "source_status": "customer_read_model_projection",
+    }
+
+
+def _customer_360_touchpoints(items: list[JsonDict]) -> list[JsonDict]:
+    touchpoints: list[JsonDict] = []
+    for item in items[:10]:
+        row = dict(item)
+        touchpoints.append(
+            {
+                "touchpoint_key": str(row.get("event_id") or row.get("source_id") or ""),
+                "touchpoint_type": str(row.get("event_type") or ""),
+                "summary": str(row.get("summary") or row.get("title") or ""),
+                "occurred_at": row.get("event_time") or row.get("created_at") or "",
+                "source_table": str(row.get("source_table") or ""),
+                "source_id": str(row.get("source_id") or ""),
+            }
+        )
+    return touchpoints
+
+
+def _customer_360_risk_flags(profile: JsonDict, identity: JsonDict, messages: list[JsonDict]) -> list[JsonDict]:
+    flags: list[JsonDict] = []
+    if not str(identity.get("unionid") or "").strip():
+        flags.append({"flag": "missing_unionid", "severity": "red", "summary": "identity projection missing unionid"})
+    if not str(identity.get("owner_userid") or profile.get("owner_userid") or "").strip():
+        flags.append({"flag": "missing_owner", "severity": "yellow", "summary": "customer has no owner_userid"})
+    if not profile.get("updated_at"):
+        flags.append({"flag": "missing_projection_refresh", "severity": "yellow", "summary": "customer projection has no updated_at"})
+    if not messages and not profile.get("last_message_at"):
+        flags.append({"flag": "no_recent_message", "severity": "info", "summary": "no recent message in read model window"})
+    return flags
 
 
 GetCustomerChatContextQuery = GetCustomerContextQuery

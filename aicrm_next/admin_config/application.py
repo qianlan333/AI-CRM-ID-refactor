@@ -147,10 +147,10 @@ EXTRA_SETTING_DEFINITIONS: dict[str, dict[str, Any]] = {
     "AICRM_QUESTIONNAIRE_EXTERNAL_PUSH_MODE": {
         "key": "AICRM_QUESTIONNAIRE_EXTERNAL_PUSH_MODE",
         "label": "问卷外推模式",
-        "mode": "editable",
+        "mode": "readonly",
         "input_type": "text",
         "type": "string",
-        "description": "legacy=旧同步；shadow=旧同步+队列记录；queue=只入统一外部动作队列。",
+        "description": "已废弃：问卷外推固定只进入统一外部动作队列，legacy/shadow 不再恢复同步外呼。",
     },
     "AICRM_EXTERNAL_EFFECT_WEBHOOK_EXECUTE": {
         "key": "AICRM_EXTERNAL_EFFECT_WEBHOOK_EXECUTE",
@@ -227,11 +227,19 @@ EXTRA_SETTING_DEFINITIONS: dict[str, dict[str, Any]] = {
     },
     "AICRM_EXTERNAL_EFFECT_ALLOWED_OWNER_USERIDS": {
         "key": "AICRM_EXTERNAL_EFFECT_ALLOWED_OWNER_USERIDS",
-        "label": "允许执行的企微客服账号",
+        "label": "企微默认发送账号",
         "mode": "editable",
         "input_type": "text",
         "type": "string",
-        "description": "逗号分隔；真实企微消息执行必须命中。",
+        "description": "兼容旧 key；当前执行层取第一个值作为默认 sender，不是完整 allowlist。",
+    },
+    "AICRM_WECOM_DEFAULT_SENDER_USERID": {
+        "key": "AICRM_WECOM_DEFAULT_SENDER_USERID",
+        "label": "企微默认 sender_userid",
+        "mode": "editable",
+        "input_type": "text",
+        "type": "string",
+        "description": "真实企微私信/群发在 payload 未指定 sender 时使用的默认发送账号；优先级高于旧 key。",
     },
     "AICRM_EXTERNAL_EFFECT_ALLOWED_TARGET_EXTERNAL_USERIDS": {
         "key": "AICRM_EXTERNAL_EFFECT_ALLOWED_TARGET_EXTERNAL_USERIDS",
@@ -481,10 +489,7 @@ def _validate_known_setting(key: str, value: str) -> str:
     }:
         return "true" if normalized.lower() in {"1", "true", "yes", "y", "on"} else "false"
     if key == "AICRM_QUESTIONNAIRE_EXTERNAL_PUSH_MODE":
-        allowed_modes = {"legacy", "shadow", "queue"}
-        if normalized and normalized not in allowed_modes:
-            raise ValueError("AICRM_QUESTIONNAIRE_EXTERNAL_PUSH_MODE 只允许 legacy / shadow / queue")
-        return normalized or "queue"
+        return "queue"
     if key in {"AICRM_EXTERNAL_EFFECT_ALLOWED_TYPES", REALTIME_ALLOWED_TYPES_KEY}:
         if "*" in {item.strip() for item in normalized.replace("\n", " ").replace(",", " ").split() if item.strip()}:
             raise ValueError(f"{key} 不允许使用 *")

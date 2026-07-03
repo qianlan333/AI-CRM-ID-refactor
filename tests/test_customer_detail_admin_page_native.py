@@ -42,7 +42,7 @@ def _patch_profile_query(monkeypatch, result: dict) -> None:
     from aicrm_next.customer_read_model import admin_pages
 
     class FakeGetAdminCustomerProfileQuery:
-        def __call__(self, *, external_userid=None, mobile=None, user_id=None):
+        def __call__(self, *, unionid=None, external_userid=None, mobile=None, user_id=None):
             return dict(result)
 
     monkeypatch.setattr(admin_pages, "GetAdminCustomerProfileQuery", FakeGetAdminCustomerProfileQuery)
@@ -102,10 +102,10 @@ def test_customer_detail_page_url_contract_is_preserved(monkeypatch) -> None:
 
     assert response.status_code == 200
     for marker in (
-        "/api/admin/customers/profile?external_userid=ext_test_001",
-        "/api/admin/customers/profile/tags?external_userid=ext_test_001",
-        "/api/admin/customers/profile/questionnaire-answers?external_userid=ext_test_001",
-        "/api/admin/customers/profile/messages?external_userid=ext_test_001",
+        "/api/admin/customers/profile?unionid=union_test_001",
+        "/api/admin/customers/profile/tags?unionid=union_test_001",
+        "/api/admin/customers/profile/questionnaire-answers?unionid=union_test_001",
+        "/api/admin/customers/profile/messages?unionid=union_test_001",
     ):
         assert marker in response.text
     for marker in (
@@ -198,3 +198,65 @@ def test_customer_detail_page_normalizes_fallback_profile_fields(monkeypatch) ->
     assert "备注客户" in response.text
     assert "13900000000" in response.text
     assert "union_from_identity" in response.text
+
+
+def test_customer_360_page_renders_from_native_shell(monkeypatch) -> None:
+    from aicrm_next.customer_read_model import admin_pages
+
+    class FakeCustomer360Query:
+        def __call__(self, unionid):
+            assert unionid == "union_test_001"
+            return {
+                "ok": True,
+                "unionid": "union_test_001",
+                "identity": {
+                    "unionid": "union_test_001",
+                    "external_userid": "ext_test_001",
+                    "mobile": "13800000000",
+                    "owner_userid": "HuangYouCan",
+                },
+                "orders_summary": {"paid_order_count": 2, "source_status": "test"},
+                "questionnaire_summary": {"answer_count": 1},
+                "message_summary": {"recent_message_count": 3},
+                "tags": ["高意向"],
+                "user_ops_status": {"current_status": "activated", "activation_bucket": "activated"},
+                "automation_status": {"stage_key": "activated/high", "recommended_action": "继续跟进"},
+                "recent_touchpoints": [
+                    {
+                        "touchpoint_key": "evt-1",
+                        "touchpoint_type": "message",
+                        "summary": "客户回复",
+                        "source_table": "archived_messages",
+                        "source_id": "m-1",
+                        "occurred_at": "2026-07-02T09:30:00+08:00",
+                    }
+                ],
+                "risk_flags": [],
+            }
+
+    monkeypatch.setattr(admin_pages, "GetCustomer360ProfileQuery", FakeCustomer360Query)
+    response = TestClient(create_app()).get("/admin/customer-360/union_test_001")
+
+    assert response.status_code == 200
+    assert "X-AICRM-Compatibility-Facade" not in response.headers
+    assert "Customer 360" in response.text
+    assert 'data-customer-360-root' in response.text
+    assert "union_test_001" in response.text
+    assert "ext_test_001" in response.text
+    assert "高意向" in response.text
+    assert "archived_messages #m-1" in response.text
+
+
+def test_customer_360_page_not_found_state(monkeypatch) -> None:
+    from aicrm_next.customer_read_model import admin_pages
+
+    class MissingCustomer360Query:
+        def __call__(self, unionid):
+            return {"ok": False, "status_code": 404, "error": "customer not found"}
+
+    monkeypatch.setattr(admin_pages, "GetCustomer360ProfileQuery", MissingCustomer360Query)
+    response = TestClient(create_app()).get("/admin/customer-360/missing_union")
+
+    assert response.status_code == 404
+    assert "Customer 360 不可用" in response.text
+    assert "返回客户列表" in response.text

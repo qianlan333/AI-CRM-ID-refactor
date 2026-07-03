@@ -122,6 +122,12 @@ class AudienceRepository:
     def list_ai_audience_batch_rows(self, package_id: int) -> list[dict[str, Any]]:
         raise NotImplementedError
 
+    def resolve_member_unionid(self, normalized: dict[str, Any]) -> str:
+        raise NotImplementedError
+
+    def enqueue_identity_resolution(self, normalized: dict[str, Any], *, reason: str) -> None:
+        raise NotImplementedError
+
     def create_package(self, payload: dict[str, Any]) -> dict[str, Any]:
         raise NotImplementedError
 
@@ -984,23 +990,82 @@ class SQLAlchemyAudienceRepository(AudienceRepository):
             {"package_id": int(package_id)},
         )
 
+    def resolve_member_unionid(self, normalized: dict[str, Any]) -> str:
+        unionid = _text(normalized.get("unionid"))
+        if unionid:
+            return unionid
+        external_userid = _text(normalized.get("external_userid"))
+        if not external_userid or not self._table_exists("crm_user_identity"):
+            return ""
+        row = self._one(
+            """
+            SELECT unionid
+            FROM crm_user_identity
+            WHERE primary_external_userid = :external_userid
+               OR jsonb_exists(external_userids_json, :external_userid)
+            ORDER BY CASE WHEN primary_external_userid = :external_userid THEN 0 ELSE 1 END,
+                     updated_at DESC NULLS LAST
+            LIMIT 1
+            """,
+            {"external_userid": external_userid},
+        )
+        return _text((row or {}).get("unionid"))
+
+    def enqueue_identity_resolution(self, normalized: dict[str, Any], *, reason: str) -> None:
+        if not self._table_exists("crm_user_identity_resolution_queue"):
+            return
+        self._write_one(
+            """
+            INSERT INTO crm_user_identity_resolution_queue (
+                source_type, source_key, reason, external_userid, mobile, payload_json, status,
+                created_at, updated_at
+            )
+            VALUES (
+                'ai_audience_ops', :source_key, :reason, :external_userid, :mobile, CAST(:payload_json AS jsonb),
+                'pending', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+            )
+            ON CONFLICT (source_type, source_key)
+            WHERE status = 'pending' AND source_type <> '' AND source_key <> ''
+            DO UPDATE SET reason = EXCLUDED.reason,
+                external_userid = COALESCE(NULLIF(EXCLUDED.external_userid, ''), crm_user_identity_resolution_queue.external_userid),
+                mobile = COALESCE(NULLIF(EXCLUDED.mobile, ''), crm_user_identity_resolution_queue.mobile),
+                payload_json = crm_user_identity_resolution_queue.payload_json || EXCLUDED.payload_json,
+                last_seen_at = CURRENT_TIMESTAMP,
+                updated_at = CURRENT_TIMESTAMP
+            RETURNING id
+            """,
+            {
+                "source_key": _text(normalized.get("event_source_key")) or f"{normalized.get('identity_type')}:{normalized.get('identity_value')}",
+                "reason": _text(reason) or "missing_unionid",
+                "external_userid": _text(normalized.get("external_userid")),
+                "mobile": _text(normalized.get("mobile")),
+                "payload_json": _json_dumps(
+                    {
+                        "identity_type": normalized.get("identity_type"),
+                        "identity_value": normalized.get("identity_value"),
+                        "event_source_key": normalized.get("event_source_key"),
+                        "payload_json": normalized.get("payload_json") or {},
+                    }
+                ),
+            },
+        )
+
     def upsert_active_member(self, package_id: int, normalized: dict[str, Any], *, occurred_at: datetime) -> dict[str, Any]:
         row = self._write_one(
             """
             INSERT INTO ai_audience_member_current (
-                package_id, identity_type, identity_value, status, person_id, external_userid,
+                package_id, identity_type, identity_value, unionid, status,
                 mobile_hash, owner_userid, event_source_key, payload_hash, payload_json,
                 first_entered_at, last_seen_at, last_updated_at, created_at, updated_at
             )
             VALUES (
-                :package_id, :identity_type, :identity_value, 'active', :person_id, :external_userid,
+                :package_id, :identity_type, :identity_value, :unionid, 'active',
                 :mobile_hash, :owner_userid, :event_source_key, :payload_hash, CAST(:payload_json AS jsonb),
                 :occurred_at, :occurred_at, :occurred_at, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
             )
             ON CONFLICT (package_id, identity_type, identity_value)
             DO UPDATE SET status = 'active',
-                person_id = EXCLUDED.person_id,
-                external_userid = EXCLUDED.external_userid,
+                unionid = EXCLUDED.unionid,
                 mobile_hash = EXCLUDED.mobile_hash,
                 owner_userid = EXCLUDED.owner_userid,
                 event_source_key = EXCLUDED.event_source_key,
@@ -1019,8 +1084,7 @@ class SQLAlchemyAudienceRepository(AudienceRepository):
                 "package_id": int(package_id),
                 "identity_type": _text(normalized.get("identity_type")),
                 "identity_value": _text(normalized.get("identity_value")),
-                "person_id": normalized.get("person_id"),
-                "external_userid": _text(normalized.get("external_userid")),
+                "unionid": _text(normalized.get("unionid")),
                 "mobile_hash": _text(normalized.get("mobile_hash")),
                 "owner_userid": _text(normalized.get("owner_userid")),
                 "event_source_key": _text(normalized.get("event_source_key")),
@@ -1052,12 +1116,12 @@ class SQLAlchemyAudienceRepository(AudienceRepository):
             """
             INSERT INTO ai_audience_member_event (
                 package_id, run_id, member_current_id, event_type, identity_type, identity_value,
-                person_id, external_userid, mobile_hash, owner_userid, event_source_key,
+                unionid, mobile_hash, owner_userid, event_source_key,
                 payload_hash, payload_json, idempotency_key, occurred_at, created_at
             )
             VALUES (
                 :package_id, :run_id, :member_current_id, :event_type, :identity_type, :identity_value,
-                :person_id, :external_userid, :mobile_hash, :owner_userid, :event_source_key,
+                :unionid, :mobile_hash, :owner_userid, :event_source_key,
                 :payload_hash, CAST(:payload_json AS jsonb), :idempotency_key, :occurred_at, CURRENT_TIMESTAMP
             )
             ON CONFLICT (idempotency_key) DO NOTHING
@@ -1070,8 +1134,7 @@ class SQLAlchemyAudienceRepository(AudienceRepository):
                 "event_type": _text(event.get("event_type")),
                 "identity_type": _text(event.get("identity_type")),
                 "identity_value": _text(event.get("identity_value")),
-                "person_id": event.get("person_id"),
-                "external_userid": _text(event.get("external_userid")),
+                "unionid": _text(event.get("unionid")),
                 "mobile_hash": _text(event.get("mobile_hash")),
                 "owner_userid": _text(event.get("owner_userid")),
                 "event_source_key": _text(event.get("event_source_key")),
@@ -1292,11 +1355,14 @@ class SQLAlchemyAudienceRepository(AudienceRepository):
     def list_member_events_for_run(self, run_id: int, *, event_type: str = "entered") -> list[dict[str, Any]]:
         return self._all(
             """
-            SELECT *
-            FROM ai_audience_member_event
-            WHERE run_id = :run_id
-              AND event_type = :event_type
-              AND COALESCE(external_userid, '') <> ''
+            SELECT
+                event.*,
+                COALESCE(identity.primary_external_userid, '') AS external_userid
+            FROM ai_audience_member_event event
+            LEFT JOIN crm_user_identity identity ON identity.unionid = event.unionid
+            WHERE event.run_id = :run_id
+              AND event.event_type = :event_type
+              AND COALESCE(event.unionid, '') <> ''
             ORDER BY id ASC
             """,
             {"run_id": int(run_id), "event_type": _text(event_type) or "entered"},
@@ -1313,6 +1379,14 @@ class SQLAlchemyAudienceRepository(AudienceRepository):
                 WHERE package_id = :package_id
                   AND status = 'active'
             ),
+            identity_rows AS (
+                SELECT
+                    unionid,
+                    primary_external_userid,
+                    profile_json
+                FROM crm_user_identity
+                WHERE COALESCE(unionid, '') <> ''
+            ),
             contact_names AS (
                 SELECT DISTINCT ON (external_userid)
                     external_userid,
@@ -1323,12 +1397,14 @@ class SQLAlchemyAudienceRepository(AudienceRepository):
             )
             SELECT
                 m.id,
-                COALESCE(NULLIF(c.customer_name, ''), '未命名客户') AS nickname,
-                m.external_userid,
+                COALESCE(NULLIF(c.customer_name, ''), NULLIF(i.profile_json->>'name', ''), '未命名客户') AS nickname,
+                m.unionid,
+                COALESCE(i.primary_external_userid, '') AS external_userid,
                 m.first_entered_at AS entered_at,
                 COUNT(*) OVER () AS total_count
             FROM active_members m
-            LEFT JOIN contact_names c ON c.external_userid = m.external_userid
+            LEFT JOIN identity_rows i ON i.unionid = m.unionid
+            LEFT JOIN contact_names c ON c.external_userid = i.primary_external_userid
             ORDER BY m.first_entered_at DESC, m.id DESC
             LIMIT :limit OFFSET :offset
             """,
@@ -1426,10 +1502,20 @@ class SQLAlchemyAudienceRepository(AudienceRepository):
         return self._all(
             f"""
             WITH active_members AS (
-                SELECT id, external_userid, first_entered_at
+                SELECT
+                    id,
+                    COALESCE(NULLIF(unionid, ''), CASE WHEN identity_type = 'unionid' THEN identity_value ELSE '' END) AS unionid,
+                    first_entered_at
                 FROM ai_audience_member_current
                 WHERE package_id = :package_id
                   AND status = 'active'
+            ),
+            identity_rows AS (
+                SELECT
+                    unionid,
+                    primary_external_userid
+                FROM crm_user_identity
+                WHERE COALESCE(unionid, '') <> ''
             ),
             relations AS (
                 {relation_sql}
@@ -1443,7 +1529,8 @@ class SQLAlchemyAudienceRepository(AudienceRepository):
             resolved AS (
                 SELECT DISTINCT ON (m.id)
                     m.id,
-                    m.external_userid,
+                    m.unionid,
+                    COALESCE(i.primary_external_userid, '') AS external_userid,
                     COALESCE(NULLIF(r.customer_name, ''), '未命名客户') AS customer_name,
                     w.sender_userid AS owner_userid,
                     COALESCE(NULLIF(w.display_name, ''), w.sender_userid) AS owner_display_name,
@@ -1451,13 +1538,15 @@ class SQLAlchemyAudienceRepository(AudienceRepository):
                     w.priority,
                     w.id AS sender_row_id
                 FROM active_members m
-                JOIN relations r ON r.external_userid = m.external_userid
+                JOIN identity_rows i ON i.unionid = m.unionid
+                JOIN relations r ON r.external_userid = i.primary_external_userid
                 JOIN whitelist w ON w.sender_userid = r.owner_userid
                 ORDER BY m.id, w.priority ASC, w.id ASC
             )
             SELECT
                 m.id,
-                m.external_userid,
+                m.unionid,
+                COALESCE(r.external_userid, '') AS external_userid,
                 COALESCE(r.customer_name, '未命名客户') AS customer_name,
                 COALESCE(r.owner_userid, '') AS owner_userid,
                 COALESCE(r.owner_display_name, '') AS owner_display_name,

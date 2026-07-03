@@ -84,7 +84,7 @@ REQUIRED_TEST_PROOFS = {
     ),
     "quick_ack_dual_probe_detection": (
         "tests/test_wecom_callback_ingress_runtime.py",
-        "test_callback_quick_ack_state_probes_both_default_callback_urls",
+        "test_callback_quick_ack_state_probes_env_callback_urls",
     ),
     "public_state_checker_gate": (
         "tests/test_wecom_callback_public_state.py",

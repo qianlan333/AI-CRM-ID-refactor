@@ -94,8 +94,6 @@ _TABLES_TO_TRUNCATE = [
     "automation_stage_entry_v2",
     "automation_membership_v2",
     "automation_event_v2",
-    "automation_workflow_execution_item",
-    "automation_workflow_execution",
     "automation_member_audience_entry",
     "automation_program_member_stage_history",
     "automation_program_admission_attempt",
@@ -109,10 +107,8 @@ _TABLES_TO_TRUNCATE = [
     "automation_workflow_node_transition",
     "automation_workflow_node",
     "automation_workflow_goal",
-    "automation_operation_task",
     "automation_operation_templates",
     "automation_workflow",
-    "automation_event",
     "automation_member",
     "wecom_customer_acquisition_links",
     "automation_program_config_block",
@@ -219,25 +215,16 @@ _TABLES_TO_TRUNCATE = [
     "class_user_status_current",
     "class_user_status_history",
     # — user_ops
-    "user_ops_lead_pool_history",
-    "user_ops_lead_pool_current",
-    "user_ops_pool_history",
-    "user_ops_pool_current",
     "user_ops_huangxiaocan_activation_source",
     "user_ops_activation_status_source",
     "signup_tag_rules",
     "marketing_automation_question_rules",
     "marketing_automation_configs",
     "class_term_tag_mapping",
-    "user_ops_send_records",
-    "user_ops_deferred_jobs",
     # — 激活漏斗看板 (alembic 0010-0011)
     "user_ops_hxc_send_config",
     "user_ops_hxc_dashboard_snapshot",
     "user_ops_hxc_dashboard_meta",
-    # — message batches
-    "message_batch_items",
-    "message_batches",
     # — P1 group ops workspace drafts
     "group_ops_workspace_gray_window_approvals",
     "group_ops_workspace_allowlist_snapshots",
@@ -454,9 +441,19 @@ def _bootstrap_next_test_baseline_schema(url: str) -> None:
         )
         """,
         """
-        CREATE UNIQUE INDEX IF NOT EXISTS uq_automation_channel_contact_external
-        ON automation_channel_contact(channel_id, external_contact_id)
-        WHERE external_contact_id <> ''
+        DO $$
+        BEGIN
+            IF EXISTS (
+                SELECT 1
+                FROM information_schema.columns
+                WHERE table_name = 'automation_channel_contact'
+                  AND column_name = 'external_contact_id'
+            ) THEN
+                CREATE UNIQUE INDEX IF NOT EXISTS uq_automation_channel_contact_external
+                ON automation_channel_contact(channel_id, external_contact_id)
+                WHERE external_contact_id <> '';
+            END IF;
+        END $$;
         """,
         """
         CREATE TABLE IF NOT EXISTS automation_ai_push_log (
@@ -504,11 +501,6 @@ def _bootstrap_next_test_baseline_schema(url: str) -> None:
             review_status TEXT NOT NULL DEFAULT '',
             status TEXT NOT NULL DEFAULT '',
             updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
-        )
-        """,
-        """
-        CREATE TABLE IF NOT EXISTS automation_workflow_execution_item (
-            id BIGSERIAL PRIMARY KEY
         )
         """,
         """
@@ -580,6 +572,66 @@ def _bootstrap_next_test_baseline_schema(url: str) -> None:
             description TEXT NOT NULL DEFAULT '',
             updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
         )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS crm_user_identity (
+            unionid TEXT PRIMARY KEY,
+            primary_external_userid TEXT NOT NULL DEFAULT '',
+            external_userids_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+            primary_openid TEXT NOT NULL DEFAULT '',
+            openids_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+            mobile TEXT NOT NULL DEFAULT '',
+            mobile_normalized TEXT NOT NULL DEFAULT '',
+            mobile_verified BOOLEAN NOT NULL DEFAULT FALSE,
+            mobile_source TEXT NOT NULL DEFAULT '',
+            customer_name TEXT NOT NULL DEFAULT '',
+            remark TEXT NOT NULL DEFAULT '',
+            description TEXT NOT NULL DEFAULT '',
+            avatar TEXT NOT NULL DEFAULT '',
+            gender INTEGER,
+            profile_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+            primary_owner_userid TEXT NOT NULL DEFAULT '',
+            follow_users_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+            legacy_person_id TEXT NOT NULL DEFAULT '',
+            legacy_identity_map_ids_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+            legacy_sources_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+            identity_status TEXT NOT NULL DEFAULT 'active',
+            unionid_resolved_at TIMESTAMPTZ,
+            first_seen_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            last_seen_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            last_polled_at TIMESTAMPTZ,
+            next_poll_at TIMESTAMPTZ,
+            poll_attempt_count INTEGER NOT NULL DEFAULT 0,
+            last_poll_error TEXT NOT NULL DEFAULT '',
+            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS crm_user_identity_resolution_queue (
+            id BIGSERIAL PRIMARY KEY,
+            source_type TEXT NOT NULL DEFAULT '',
+            source_key TEXT NOT NULL DEFAULT '',
+            corp_id TEXT NOT NULL DEFAULT '',
+            external_userid TEXT NOT NULL DEFAULT '',
+            openid TEXT NOT NULL DEFAULT '',
+            mobile TEXT NOT NULL DEFAULT '',
+            payload_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+            reason TEXT NOT NULL DEFAULT '',
+            status TEXT NOT NULL DEFAULT 'pending',
+            attempts INTEGER NOT NULL DEFAULT 0,
+            last_error TEXT NOT NULL DEFAULT '',
+            next_attempt_at TIMESTAMPTZ,
+            first_seen_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            last_seen_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """,
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS ux_crm_user_identity_resolution_queue_pending_source
+        ON crm_user_identity_resolution_queue (source_type, source_key)
+        WHERE status = 'pending' AND source_type <> '' AND source_key <> ''
         """,
         """
         CREATE TABLE IF NOT EXISTS questionnaires (
@@ -746,30 +798,6 @@ def _bootstrap_next_test_baseline_schema(url: str) -> None:
             payload_json JSONB NOT NULL DEFAULT '{}'::jsonb,
             headers_json JSONB NOT NULL DEFAULT '{}'::jsonb,
             created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
-        )
-        """,
-        """
-        CREATE TABLE IF NOT EXISTS automation_operation_task (
-            id BIGSERIAL PRIMARY KEY,
-            program_id BIGINT NOT NULL DEFAULT 0,
-            task_name TEXT NOT NULL DEFAULT '',
-            status TEXT NOT NULL DEFAULT '',
-            trigger_type TEXT NOT NULL DEFAULT '',
-            send_time TEXT NOT NULL DEFAULT '',
-            timezone TEXT NOT NULL DEFAULT 'Asia/Shanghai',
-            target_audience_code TEXT NOT NULL DEFAULT '',
-            target_stage_code TEXT NOT NULL DEFAULT '',
-            audience_day_offset INTEGER NOT NULL DEFAULT 0,
-            behavior_filter TEXT NOT NULL DEFAULT '',
-            content_mode TEXT NOT NULL DEFAULT 'unified',
-            unified_content_json JSONB NOT NULL DEFAULT '{}'::jsonb,
-            segment_contents_json JSONB NOT NULL DEFAULT '[]'::jsonb,
-            agent_config_json JSONB NOT NULL DEFAULT '{}'::jsonb,
-            created_by TEXT NOT NULL DEFAULT '',
-            updated_by TEXT NOT NULL DEFAULT '',
-            published_at TIMESTAMPTZ,
-            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
         )
         """,
     ]

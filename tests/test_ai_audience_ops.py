@@ -350,9 +350,25 @@ def test_daily_snapshot_publish_latest_version_can_exit_member(next_client, monk
             text(
                 """
                 INSERT INTO wecom_external_contact_identity_map (
-                    external_userid, follow_user_userid, name, status, updated_at
+                    external_userid, unionid, follow_user_userid, name, status, updated_at
                 )
-                VALUES (:external_userid, 'HuangYouCan', 'Daily Exit User', 'active', CURRENT_TIMESTAMP)
+                VALUES (:external_userid, 'union_daily_exit', 'HuangYouCan', 'Daily Exit User', 'active', CURRENT_TIMESTAMP)
+                """
+            ),
+            {"external_userid": test_user},
+        )
+        session.execute(
+            text(
+                """
+                INSERT INTO crm_user_identity (
+                    unionid, primary_external_userid, external_userids_json, profile_json, status, created_at, updated_at
+                )
+                VALUES ('union_daily_exit', :external_userid, jsonb_build_array(:external_userid), '{"name":"Daily Exit User"}'::jsonb, 'active', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                ON CONFLICT (unionid) DO UPDATE SET
+                    primary_external_userid = EXCLUDED.primary_external_userid,
+                    external_userids_json = EXCLUDED.external_userids_json,
+                    profile_json = EXCLUDED.profile_json,
+                    updated_at = CURRENT_TIMESTAMP
                 """
             ),
             {"external_userid": test_user},
@@ -422,8 +438,8 @@ def test_daily_snapshot_publish_latest_version_can_exit_member(next_client, monk
             {"package_id": package_id},
         ).mappings().all()
         member_row = session.execute(
-            text("SELECT status FROM ai_audience_member_current WHERE package_id = :package_id AND external_userid = :external_userid"),
-            {"package_id": package_id, "external_userid": test_user},
+            text("SELECT status FROM ai_audience_member_current WHERE package_id = :package_id AND unionid = 'union_daily_exit'"),
+            {"package_id": package_id},
         ).mappings().one()
     assert package_row["current_version_id"] == v2_id
     assert {int(row["id"]): row["status"] for row in version_rows} == {v1_id: "archived", v2_id: "published"}
@@ -445,6 +461,20 @@ def test_publish_auto_refreshes_package_on_first_launch(next_client, monkeypatch
                     questionnaire_id, respondent_key, external_userid, staff_id, submitted_at
                 )
                 VALUES (202, 'launch_rk_1', 'wm_launch_refresh_001', 'HuangYouCan', CURRENT_TIMESTAMP - interval '1 minute')
+                """
+            )
+        )
+        session.execute(
+            text(
+                """
+                INSERT INTO crm_user_identity (
+                    unionid, primary_external_userid, external_userids_json, status, created_at, updated_at
+                )
+                VALUES ('union_launch_refresh_001', 'wm_launch_refresh_001', '["wm_launch_refresh_001"]'::jsonb, 'active', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                ON CONFLICT (unionid) DO UPDATE SET
+                    primary_external_userid = EXCLUDED.primary_external_userid,
+                    external_userids_json = EXCLUDED.external_userids_json,
+                    updated_at = CURRENT_TIMESTAMP
                 """
             )
         )
@@ -480,7 +510,7 @@ def test_publish_auto_refreshes_package_on_first_launch(next_client, monkeypatch
                 """
                 SELECT status
                 FROM ai_audience_member_current
-                WHERE package_id = :package_id AND external_userid = 'wm_launch_refresh_001'
+                WHERE package_id = :package_id AND unionid = 'union_launch_refresh_001'
                 """
             ),
             {"package_id": package_id},
@@ -515,6 +545,20 @@ def test_publish_does_not_repeat_launch_refresh_for_active_package(next_client, 
                     questionnaire_id, respondent_key, external_userid, staff_id, submitted_at
                 )
                 VALUES (203, 'launch_rk_2', 'wm_launch_refresh_002', 'HuangYouCan', CURRENT_TIMESTAMP - interval '1 minute')
+                """
+            )
+        )
+        session.execute(
+            text(
+                """
+                INSERT INTO crm_user_identity (
+                    unionid, primary_external_userid, external_userids_json, status, created_at, updated_at
+                )
+                VALUES ('union_launch_refresh_002', 'wm_launch_refresh_002', '["wm_launch_refresh_002"]'::jsonb, 'active', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                ON CONFLICT (unionid) DO UPDATE SET
+                    primary_external_userid = EXCLUDED.primary_external_userid,
+                    external_userids_json = EXCLUDED.external_userids_json,
+                    updated_at = CURRENT_TIMESTAMP
                 """
             )
         )

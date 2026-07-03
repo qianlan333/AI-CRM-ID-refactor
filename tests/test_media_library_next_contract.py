@@ -48,6 +48,18 @@ def test_media_library_list_and_page_routes_have_next_contract() -> None:
         assert "total" in payload
 
 
+def test_media_library_production_mode_env_is_not_exposed_as_available(monkeypatch) -> None:
+    monkeypatch.setenv("AICRM_NEXT_MEDIA_STORAGE_MODE", "production")
+    monkeypatch.setenv("AICRM_NEXT_WECOM_MEDIA_MODE", "production")
+    client = make_client()
+
+    payload = client.get("/api/admin/image-library").json()
+
+    assert_json_contract(payload)
+    assert payload["adapter_mode"] == "fake"
+    assert payload["storage_adapter_mode"] == "fake"
+
+
 def test_upload_update_delete_routes_report_local_side_effect_plan() -> None:
     client = make_client()
 

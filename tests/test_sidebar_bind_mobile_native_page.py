@@ -1,8 +1,19 @@
 from __future__ import annotations
 
 from fastapi.testclient import TestClient
+from fastapi.routing import APIRoute
 
 from aicrm_next.main import create_app
+
+
+def _iter_api_routes(routes):
+    for route in routes:
+        original_router = getattr(route, "original_router", None)
+        nested = getattr(route, "routes", None) or getattr(original_router, "routes", None)
+        if nested:
+            yield from _iter_api_routes(nested)
+        elif isinstance(route, APIRoute):
+            yield route
 
 
 def _client(monkeypatch) -> TestClient:
@@ -15,7 +26,7 @@ def _client(monkeypatch) -> TestClient:
 
 def _endpoint_module(path: str) -> str:
     app = create_app()
-    for route in app.routes:
+    for route in _iter_api_routes(app.routes):
         if getattr(route, "path", "") == path and "GET" in getattr(route, "methods", set()):
             return route.endpoint.__module__
     raise AssertionError(f"missing route for {path}")
