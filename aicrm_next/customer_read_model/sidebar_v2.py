@@ -126,10 +126,23 @@ class SidebarV2SqlRepository:
     def get_profile_fields(self, external_userid: str) -> dict[str, Any] | None:
         return self._one(
             """
-            SELECT external_userid, source, industry, industry_description,
-                   needs_blockers_followup, updated_by, updated_at
-            FROM sidebar_customer_profile_fields
-            WHERE external_userid = :external_userid
+            SELECT
+                COALESCE(NULLIF(identity.primary_external_userid, ''), :external_userid) AS external_userid,
+                profile.source,
+                profile.industry,
+                profile.industry_description,
+                profile.needs_blockers_followup,
+                profile.updated_by,
+                profile.updated_at
+            FROM crm_user_identity identity
+            JOIN sidebar_customer_profile_fields profile ON profile.unionid = identity.unionid
+            WHERE (
+                identity.primary_external_userid = :external_userid
+                OR jsonb_exists(identity.external_userids_json, :external_userid)
+            )
+              AND COALESCE(identity.unionid, '') <> ''
+            ORDER BY profile.updated_at DESC
+            LIMIT 1
             """,
             {"external_userid": external_userid},
         )
@@ -180,18 +193,27 @@ class SidebarV2SqlRepository:
         row = self._one(
             """
             SELECT
-                b.external_userid,
+                COALESCE(NULLIF(identity.primary_external_userid, ''), :external_userid) AS external_userid,
                 b.person_id,
-                b.first_bound_by_userid,
+                '' AS first_bound_by_userid,
                 b.first_owner_userid,
                 b.last_owner_userid,
-                b.created_at,
+                NULL::timestamptz AS created_at,
                 b.updated_at,
-                p.mobile,
-                p.third_party_user_id
-            FROM external_contact_bindings b
-            JOIN people p ON p.id = b.person_id
-            WHERE b.external_userid = :external_userid
+                identity.mobile,
+                identity.unionid AS third_party_user_id,
+                identity.primary_owner_userid,
+                identity.customer_name
+            FROM crm_user_identity identity
+            LEFT JOIN external_contact_bindings b
+              ON b.external_userid = identity.primary_external_userid
+            WHERE (
+                identity.primary_external_userid = :external_userid
+                OR jsonb_exists(identity.external_userids_json, :external_userid)
+            )
+              AND COALESCE(identity.unionid, '') <> ''
+            ORDER BY identity.updated_at DESC
+            LIMIT 1
             """,
             {"external_userid": external_userid},
         )
@@ -206,7 +228,8 @@ class SidebarV2SqlRepository:
             "first_bound_by_userid": _text(row.get("first_bound_by_userid")),
             "first_owner_userid": _text(row.get("first_owner_userid")),
             "last_owner_userid": _text(row.get("last_owner_userid")),
-            "owner_userid": _text(row.get("last_owner_userid") or row.get("first_owner_userid")),
+            "owner_userid": _text(row.get("last_owner_userid") or row.get("first_owner_userid") or row.get("primary_owner_userid")),
+            "customer_name": _text(row.get("customer_name")),
             "created_at": _text(row.get("created_at")),
             "updated_at": _text(row.get("updated_at")),
         }
@@ -215,37 +238,27 @@ class SidebarV2SqlRepository:
         rows = self._all(
             """
             WITH target(external_userid) AS (VALUES (:external_userid)),
-            identity_openids AS (
-                SELECT m.openid
-                FROM wecom_external_contact_identity_map m
-                JOIN target t ON m.external_userid = t.external_userid
-                WHERE COALESCE(m.openid, '') <> ''
-            ),
-            identity_unionids AS (
-                SELECT m.unionid
-                FROM wecom_external_contact_identity_map m
-                JOIN target t ON m.external_userid = t.external_userid
-                WHERE COALESCE(m.unionid, '') <> ''
+            identity_scope AS (
+                SELECT identity.unionid, identity.mobile
+                FROM crm_user_identity identity
+                JOIN target t ON (
+                    identity.primary_external_userid = t.external_userid
+                    OR jsonb_exists(identity.external_userids_json, t.external_userid)
+                )
+                WHERE COALESCE(identity.unionid, '') <> ''
             ),
             matching_orders AS (
-                SELECT mobile_snapshot, userid_snapshot, paid_at, created_at, id::text AS id
-                FROM wechat_pay_orders
-                WHERE COALESCE(mobile_snapshot, '') <> ''
+                SELECT identity.mobile AS mobile_snapshot, '' AS userid_snapshot, paid_at, created_at, o.id::text AS id
+                FROM wechat_pay_orders o
+                JOIN identity_scope identity ON identity.unionid = o.unionid
+                WHERE COALESCE(identity.mobile, '') <> ''
                   AND (status = 'paid' OR trade_state = 'SUCCESS')
-                  AND (
-                    (COALESCE(external_userid, '') <> '' AND external_userid = (SELECT external_userid FROM target))
-                    OR (COALESCE(payer_openid, '') <> '' AND payer_openid IN (SELECT openid FROM identity_openids))
-                    OR (COALESCE(unionid, '') <> '' AND unionid IN (SELECT unionid FROM identity_unionids))
-                  )
                 UNION ALL
-                SELECT buyer_mobile AS mobile_snapshot, '' AS userid_snapshot, paid_at, created_at, order_id::text AS id
-                FROM wechat_shop_orders
-                WHERE COALESCE(buyer_mobile, '') <> ''
+                SELECT identity.mobile AS mobile_snapshot, '' AS userid_snapshot, o.paid_at, o.created_at, o.order_id::text AS id
+                FROM wechat_shop_orders o
+                JOIN identity_scope identity ON identity.unionid = o.unionid
+                WHERE COALESCE(identity.mobile, '') <> ''
                   AND (deal_recorded IS TRUE OR status_code::text = '30' OR business_status IN ('deal', 'paid'))
-                  AND (
-                    (COALESCE(openid, '') <> '' AND openid IN (SELECT openid FROM identity_openids))
-                    OR (COALESCE(unionid, '') <> '' AND unionid IN (SELECT unionid FROM identity_unionids))
-                  )
             )
             SELECT
                 mobile_snapshot,
@@ -267,165 +280,56 @@ class SidebarV2SqlRepository:
         return self._all(
             """
             WITH target(external_userid, mobile) AS (VALUES (:external_userid, :mobile)),
-            bound_mobiles AS (
-                SELECT p.mobile
-                FROM external_contact_bindings b
-                JOIN people p ON p.id = b.person_id
-                JOIN target t ON b.external_userid = t.external_userid
-                WHERE COALESCE(p.mobile, '') <> ''
-                UNION
-                SELECT mobile FROM target WHERE COALESCE(mobile, '') <> ''
-            ),
-            identity_openids AS (
-                SELECT m.openid
-                FROM wecom_external_contact_identity_map m
-                JOIN target t ON m.external_userid = t.external_userid
-                WHERE COALESCE(m.openid, '') <> ''
-            ),
-            identity_unionids AS (
-                SELECT m.unionid
-                FROM wecom_external_contact_identity_map m
-                JOIN target t ON m.external_userid = t.external_userid
-                WHERE COALESCE(m.unionid, '') <> ''
-            ),
-            external_orders AS (
-                SELECT
-                    'wechat_pay' AS provider, 'wechat_pay' AS channel, '微信支付' AS channel_label,
-                    id::text AS id, out_trade_no, transaction_id, product_code,
-                    COALESCE(NULLIF(product_name, ''), product_code) AS product_name,
-                    amount_total, currency, external_userid AS order_external_userid,
-                    mobile_snapshot, payer_openid, unionid, status, trade_state,
-                    refunded_amount_total, refund_status, paid_at, created_at,
-                    COALESCE(paid_at, created_at) AS sort_at
-                FROM wechat_pay_orders
-                WHERE :external_userid <> ''
-                  AND external_userid = :external_userid
-                ORDER BY COALESCE(paid_at, created_at) DESC, id DESC
-                LIMIT :candidate_limit
-            ),
-            mobile_orders AS (
-                SELECT
-                    'wechat_pay' AS provider, 'wechat_pay' AS channel, '微信支付' AS channel_label,
-                    id::text AS id, out_trade_no, transaction_id, product_code,
-                    COALESCE(NULLIF(product_name, ''), product_code) AS product_name,
-                    amount_total, currency, external_userid AS order_external_userid,
-                    mobile_snapshot, payer_openid, unionid, status, trade_state,
-                    refunded_amount_total, refund_status, paid_at, created_at,
-                    COALESCE(paid_at, created_at) AS sort_at
-                FROM wechat_pay_orders
-                WHERE mobile_snapshot IN (SELECT mobile FROM bound_mobiles)
-                ORDER BY COALESCE(paid_at, created_at) DESC, id DESC
-                LIMIT :candidate_limit
-            ),
-            openid_orders AS (
-                SELECT
-                    'wechat_pay' AS provider, 'wechat_pay' AS channel, '微信支付' AS channel_label,
-                    id::text AS id, out_trade_no, transaction_id, product_code,
-                    COALESCE(NULLIF(product_name, ''), product_code) AS product_name,
-                    amount_total, currency, external_userid AS order_external_userid,
-                    mobile_snapshot, payer_openid, unionid, status, trade_state,
-                    refunded_amount_total, refund_status, paid_at, created_at,
-                    COALESCE(paid_at, created_at) AS sort_at
-                FROM wechat_pay_orders
-                WHERE payer_openid IN (SELECT openid FROM identity_openids)
-                ORDER BY COALESCE(paid_at, created_at) DESC, id DESC
-                LIMIT :candidate_limit
+            identity_scope AS (
+                SELECT identity.unionid, identity.primary_external_userid, identity.mobile
+                FROM crm_user_identity identity
+                JOIN target t ON (
+                    identity.primary_external_userid = t.external_userid
+                    OR jsonb_exists(identity.external_userids_json, t.external_userid)
+                    OR (t.mobile <> '' AND identity.mobile = t.mobile)
+                    OR (t.mobile <> '' AND identity.mobile_normalized = t.mobile)
+                )
+                WHERE COALESCE(identity.unionid, '') <> ''
             ),
             unionid_orders AS (
                 SELECT
                     'wechat_pay' AS provider, 'wechat_pay' AS channel, '微信支付' AS channel_label,
-                    id::text AS id, out_trade_no, transaction_id, product_code,
-                    COALESCE(NULLIF(product_name, ''), product_code) AS product_name,
-                    amount_total, currency, external_userid AS order_external_userid,
-                    mobile_snapshot, payer_openid, unionid, status, trade_state,
-                    refunded_amount_total, refund_status, paid_at, created_at,
-                    COALESCE(paid_at, created_at) AS sort_at
-                FROM wechat_pay_orders
-                WHERE unionid IN (SELECT unionid FROM identity_unionids)
-                ORDER BY COALESCE(paid_at, created_at) DESC, id DESC
-                LIMIT :candidate_limit
-            ),
-            wechat_shop_mobile_orders AS (
-                SELECT
-                    'wechat_shop' AS provider, 'wechat_shop' AS channel, '微信小店' AS channel_label,
-                    order_id::text AS id, order_id::text AS out_trade_no, transaction_id, product_code,
-                    COALESCE(NULLIF(product_name, ''), product_code) AS product_name,
-                    amount_total, currency, '' AS order_external_userid,
-                    buyer_mobile AS mobile_snapshot, openid AS payer_openid, unionid,
-                    CASE
-                        WHEN deal_recorded IS TRUE OR status_code::text = '30' OR business_status IN ('deal', 'paid') THEN 'paid'
-                        WHEN business_status IN ('closed', 'cancelled') THEN 'closed'
-                        ELSE COALESCE(NULLIF(business_status, ''), 'pending')
-                    END AS status,
-                    CASE
-                        WHEN deal_recorded IS TRUE OR status_code::text = '30' OR business_status IN ('deal', 'paid') THEN 'SUCCESS'
-                        ELSE status_code::text
-                    END AS trade_state,
-                    refunded_amount_total, '' AS refund_status, paid_at, created_at,
-                    COALESCE(paid_at, created_at) AS sort_at
-                FROM wechat_shop_orders
-                WHERE buyer_mobile IN (SELECT mobile FROM bound_mobiles)
-                ORDER BY COALESCE(paid_at, created_at) DESC, order_id DESC
-                LIMIT :candidate_limit
-            ),
-            wechat_shop_openid_orders AS (
-                SELECT
-                    'wechat_shop' AS provider, 'wechat_shop' AS channel, '微信小店' AS channel_label,
-                    order_id::text AS id, order_id::text AS out_trade_no, transaction_id, product_code,
-                    COALESCE(NULLIF(product_name, ''), product_code) AS product_name,
-                    amount_total, currency, '' AS order_external_userid,
-                    buyer_mobile AS mobile_snapshot, openid AS payer_openid, unionid,
-                    CASE
-                        WHEN deal_recorded IS TRUE OR status_code::text = '30' OR business_status IN ('deal', 'paid') THEN 'paid'
-                        WHEN business_status IN ('closed', 'cancelled') THEN 'closed'
-                        ELSE COALESCE(NULLIF(business_status, ''), 'pending')
-                    END AS status,
-                    CASE
-                        WHEN deal_recorded IS TRUE OR status_code::text = '30' OR business_status IN ('deal', 'paid') THEN 'SUCCESS'
-                        ELSE status_code::text
-                    END AS trade_state,
-                    refunded_amount_total, '' AS refund_status, paid_at, created_at,
-                    COALESCE(paid_at, created_at) AS sort_at
-                FROM wechat_shop_orders
-                WHERE openid IN (SELECT openid FROM identity_openids)
-                ORDER BY COALESCE(paid_at, created_at) DESC, order_id DESC
+                    o.id::text AS id, o.out_trade_no, o.transaction_id, o.product_code,
+                    COALESCE(NULLIF(o.product_name, ''), o.product_code) AS product_name,
+                    o.amount_total, o.currency, identity.primary_external_userid AS order_external_userid,
+                    identity.mobile AS mobile_snapshot, '' AS payer_openid, o.unionid, o.status, o.trade_state,
+                    o.refunded_amount_total, o.refund_status, o.paid_at, o.created_at,
+                    COALESCE(o.paid_at, o.created_at) AS sort_at
+                FROM wechat_pay_orders o
+                JOIN identity_scope identity ON identity.unionid = o.unionid
+                ORDER BY COALESCE(o.paid_at, o.created_at) DESC, o.id DESC
                 LIMIT :candidate_limit
             ),
             wechat_shop_unionid_orders AS (
                 SELECT
                     'wechat_shop' AS provider, 'wechat_shop' AS channel, '微信小店' AS channel_label,
-                    order_id::text AS id, order_id::text AS out_trade_no, transaction_id, product_code,
-                    COALESCE(NULLIF(product_name, ''), product_code) AS product_name,
-                    amount_total, currency, '' AS order_external_userid,
-                    buyer_mobile AS mobile_snapshot, openid AS payer_openid, unionid,
+                    o.order_id::text AS id, o.order_id::text AS out_trade_no, o.transaction_id, o.product_code,
+                    COALESCE(NULLIF(o.product_name, ''), o.product_code) AS product_name,
+                    o.amount_total, o.currency, identity.primary_external_userid AS order_external_userid,
+                    identity.mobile AS mobile_snapshot, '' AS payer_openid, o.unionid,
                     CASE
-                        WHEN deal_recorded IS TRUE OR status_code::text = '30' OR business_status IN ('deal', 'paid') THEN 'paid'
-                        WHEN business_status IN ('closed', 'cancelled') THEN 'closed'
-                        ELSE COALESCE(NULLIF(business_status, ''), 'pending')
+                        WHEN o.deal_recorded IS TRUE OR o.status_code::text = '30' OR o.business_status IN ('deal', 'paid') THEN 'paid'
+                        WHEN o.business_status IN ('closed', 'cancelled') THEN 'closed'
+                        ELSE COALESCE(NULLIF(o.business_status, ''), 'pending')
                     END AS status,
                     CASE
-                        WHEN deal_recorded IS TRUE OR status_code::text = '30' OR business_status IN ('deal', 'paid') THEN 'SUCCESS'
-                        ELSE status_code::text
+                        WHEN o.deal_recorded IS TRUE OR o.status_code::text = '30' OR o.business_status IN ('deal', 'paid') THEN 'SUCCESS'
+                        ELSE o.status_code::text
                     END AS trade_state,
-                    refunded_amount_total, '' AS refund_status, paid_at, created_at,
-                    COALESCE(paid_at, created_at) AS sort_at
-                FROM wechat_shop_orders
-                WHERE unionid IN (SELECT unionid FROM identity_unionids)
-                ORDER BY COALESCE(paid_at, created_at) DESC, order_id DESC
+                    o.refunded_amount_total, '' AS refund_status, o.paid_at, o.created_at,
+                    COALESCE(o.paid_at, o.created_at) AS sort_at
+                FROM wechat_shop_orders o
+                JOIN identity_scope identity ON identity.unionid = o.unionid
+                ORDER BY COALESCE(o.paid_at, o.created_at) DESC, o.order_id DESC
                 LIMIT :candidate_limit
             ),
             candidate_orders AS (
-                SELECT * FROM external_orders
-                UNION ALL
-                SELECT * FROM mobile_orders
-                UNION ALL
-                SELECT * FROM openid_orders
-                UNION ALL
                 SELECT * FROM unionid_orders
-                UNION ALL
-                SELECT * FROM wechat_shop_mobile_orders
-                UNION ALL
-                SELECT * FROM wechat_shop_openid_orders
                 UNION ALL
                 SELECT * FROM wechat_shop_unionid_orders
             ),
@@ -460,14 +364,15 @@ class SidebarV2SqlRepository:
                 a.selected_option_texts_snapshot,
                 a.text_value
             FROM questionnaire_submissions s
+            JOIN crm_user_identity identity ON identity.unionid = s.unionid
             LEFT JOIN questionnaires q ON q.id = s.questionnaire_id
             LEFT JOIN questionnaire_submission_answers a ON a.submission_id = s.id
             WHERE (
-                s.external_userid = :external_userid
+                identity.primary_external_userid = :external_userid
+                OR jsonb_exists(identity.external_userids_json, :external_userid)
                 OR (
-                    COALESCE(s.external_userid, '') = ''
-                    AND :mobile <> ''
-                    AND regexp_replace(COALESCE(s.mobile_snapshot, ''), '[^0-9]', '', 'g') = :mobile
+                    :mobile <> ''
+                    AND regexp_replace(COALESCE(identity.mobile, ''), '[^0-9]', '', 'g') = :mobile
                 )
             )
             ORDER BY s.submitted_at DESC, s.id DESC, a.id ASC
@@ -478,10 +383,16 @@ class SidebarV2SqlRepository:
     def list_other_staff_messages(self, external_userid: str, *, limit: int = 200) -> list[dict[str, Any]]:
         return self._all(
             """
-            SELECT id, msgid, chat_type, external_userid, owner_userid, sender, receiver,
-                   msgtype, content, send_time, raw_payload, created_at
-            FROM archived_messages
-            WHERE external_userid = :external_userid
+            SELECT message.id, message.msgid, message.chat_type,
+                   identity.primary_external_userid AS external_userid,
+                   message.owner_userid, message.sender, message.receiver,
+                   message.msgtype, message.content, message.send_time, message.raw_payload, message.created_at
+            FROM archived_messages message
+            JOIN crm_user_identity identity ON identity.unionid = message.unionid
+            WHERE (
+                identity.primary_external_userid = :external_userid
+                OR jsonb_exists(identity.external_userids_json, :external_userid)
+            )
             ORDER BY send_time ASC, id ASC
             LIMIT :limit
             """,

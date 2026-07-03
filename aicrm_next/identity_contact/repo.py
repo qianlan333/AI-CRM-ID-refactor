@@ -161,10 +161,10 @@ class PostgresIdentityRepository:
                     SELECT unionid,
                            primary_external_userid AS external_userid,
                            primary_openid AS openid,
-                           primary_follow_user_userid AS follow_user_userid,
-                           primary_follow_user_userid AS owner_userid,
+                           primary_owner_userid AS follow_user_userid,
+                           primary_owner_userid AS owner_userid,
                            mobile,
-                           status
+                           identity_status AS status
                     FROM crm_user_identity
                     WHERE {where_sql}
                     ORDER BY updated_at DESC
