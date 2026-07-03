@@ -54,6 +54,17 @@ routes:
   data_source: read_model
   requires_auth: true
   rollback: previous_release
+- path: /api/admin/wecom/execution-diagnostics
+  methods:
+  - GET
+  route_name: wecom_execution_diagnostics
+  capability_owner: platform_foundation
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: staging_disabled
+  data_source: read_model
+  requires_auth: true
+  rollback: previous_release
 - path: /api/admin/external-effects/troubleshooting/summary
   methods:
   - GET
@@ -2616,7 +2627,18 @@ routes:
   capability_owner: customer_tags
   runtime_owner: ai_crm_next
   layer: api
-  external_effects: staging_disabled
+  external_effects: fake_only
+  data_source: read_model
+  requires_auth: true
+  rollback: previous_release
+- path: /api/admin/wecom/tags/fake-stub
+  methods:
+  - GET
+  route_name: list_wecom_tags_read_router_fake_stub
+  capability_owner: customer_tags
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: fake_only
   data_source: read_model
   requires_auth: true
   rollback: previous_release
@@ -2627,8 +2649,8 @@ routes:
   capability_owner: customer_tags
   runtime_owner: ai_crm_next
   layer: api
-  external_effects: staging_disabled
-  data_source: external_adapter
+  external_effects: fake_only
+  data_source: command
   requires_auth: true
   rollback: previous_release
 - path: /api/admin/wecom/tags/fake-stub/dry-run/mark
@@ -2638,8 +2660,8 @@ routes:
   capability_owner: customer_tags
   runtime_owner: ai_crm_next
   layer: api
-  external_effects: staging_disabled
-  data_source: external_adapter
+  external_effects: fake_only
+  data_source: command
   requires_auth: true
   rollback: previous_release
 - path: /api/admin/wecom/tags/fake-stub/dry-run/unmark
@@ -2649,8 +2671,8 @@ routes:
   capability_owner: customer_tags
   runtime_owner: ai_crm_next
   layer: api
-  external_effects: staging_disabled
-  data_source: external_adapter
+  external_effects: fake_only
+  data_source: command
   requires_auth: true
   rollback: previous_release
 - path: /api/admin/wecom/tags/live/mark

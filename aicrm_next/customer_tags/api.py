@@ -48,7 +48,7 @@ def _timestamp() -> str:
 def _ensure_local_fixture_allowed() -> None:
     if production_environment() or production_repository_required() or not fixture_mode():
         raise HTTPException(
-            status_code=503,
+            status_code=404,
             detail={
                 "ok": False,
                 "error": "Next fixture WeCom tag API is disabled outside local fixture mode; production must use the Next production repository or live WeCom API.",
@@ -144,6 +144,12 @@ def list_admin_wecom_tags_read_model():
         return _read_catalog_payload()
     except TagCatalogUnavailable as exc:
         return _production_unavailable(exc)
+
+
+@read_router.get("/api/admin/wecom/tags/fake-stub")
+def list_wecom_tags_read_router_fake_stub() -> dict:
+    _ensure_local_fixture_allowed()
+    return build_wecom_tag_application_service().list_wecom_tags()
 
 
 @read_router.get("/api/admin/wecom/tags/{tag_id}")
@@ -300,16 +306,19 @@ def _write_error(
 
 @router.get("/api/admin/wecom/tags/fake-stub")
 def list_wecom_tags() -> dict:
+    _ensure_local_fixture_allowed()
     return build_wecom_tag_application_service().list_wecom_tags()
 
 
 @router.post("/api/admin/wecom/tags/fake-stub/validate")
 def validate_tag_ids(payload: ValidateTagIdsRequest) -> dict:
+    _ensure_local_fixture_allowed()
     return build_wecom_tag_application_service().validate_tag_ids(payload.tag_ids)
 
 
 @router.post("/api/admin/wecom/tags/fake-stub/dry-run/mark")
 def dry_run_mark_tags(payload: DryRunTagRequest) -> dict:
+    _ensure_local_fixture_allowed()
     return build_wecom_tag_application_service().dry_run_mark_tags(
         external_userid=payload.external_userid,
         tag_ids=payload.tag_ids,
@@ -320,6 +329,7 @@ def dry_run_mark_tags(payload: DryRunTagRequest) -> dict:
 
 @router.post("/api/admin/wecom/tags/fake-stub/dry-run/unmark")
 def dry_run_unmark_tags(payload: DryRunTagRequest) -> dict:
+    _ensure_local_fixture_allowed()
     return build_wecom_tag_application_service().dry_run_unmark_tags(
         external_userid=payload.external_userid,
         tag_ids=payload.tag_ids,

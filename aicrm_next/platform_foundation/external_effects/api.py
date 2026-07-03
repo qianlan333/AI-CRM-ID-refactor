@@ -10,6 +10,7 @@ from starlette.concurrency import run_in_threadpool
 
 from aicrm_next.admin_jobs.routes import validate_admin_action_token
 
+from .adapters import wecom_execution_settings
 from .repo import build_external_effect_repository
 from .service import ExternalEffectService
 from .test_receiver import create_loopback_job, record_test_receiver_request, safe_current_base_url
@@ -149,6 +150,24 @@ def external_effect_diagnostics(
         service=_service(),
         current_base_url=safe_current_base_url(request),
     )
+
+
+@router.get("/api/admin/wecom/execution-diagnostics")
+def wecom_execution_diagnostics() -> dict[str, Any]:
+    settings = wecom_execution_settings()
+    return {
+        "ok": True,
+        "route_owner": ROUTE_OWNER,
+        "real_external_call_executed": False,
+        "execution_mode": settings["execution_mode"],
+        "corp_id_present": settings["corp_id_present"],
+        "contact_secret_present": settings["contact_secret_present"],
+        "default_sender_userid_present": settings["default_sender_userid_present"],
+        "enabled_effect_types": settings["enabled_effect_types"],
+        "deprecated_settings_present": settings["deprecated_settings_present"],
+        "blocking_reasons": settings["blocking_reasons"],
+        "wecom_execution": settings,
+    }
 
 
 @router.get(
