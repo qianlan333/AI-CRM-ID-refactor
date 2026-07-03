@@ -118,6 +118,31 @@ def test_contact_tags_mirror_has_fresh_schema_table() -> None:
     assert "migration_source: 0080_create_contact_tags_mirror" in manifest
 
 
+def test_customer_status_baseline_tables_exist_in_fresh_schema() -> None:
+    source = _read("migrations/versions/0081_create_customer_status_baseline_tables.py")
+    manifest = _read("docs/architecture/data_table_lifecycle_manifest.yml")
+
+    for table_name in ["class_user_status_current", "class_user_status_history", "owner_role_map"]:
+        assert f"CREATE TABLE IF NOT EXISTS {table_name}" in source
+        assert f"{table_name}:" in manifest
+        assert "migration_source: 0081_create_customer_status_baseline_tables" in manifest
+
+    assert "unionid TEXT PRIMARY KEY" in source
+    assert "unionid TEXT NOT NULL DEFAULT ''" in source
+    assert "userid TEXT PRIMARY KEY" in source
+    for required in [
+        "owner_userid_snapshot TEXT NOT NULL DEFAULT ''",
+        "customer_name_snapshot TEXT NOT NULL DEFAULT ''",
+        "signup_status TEXT NOT NULL DEFAULT ''",
+        "signup_label_name TEXT NOT NULL DEFAULT ''",
+        "status_flags_json JSONB NOT NULL DEFAULT '{}'::jsonb",
+        "display_name TEXT NOT NULL DEFAULT ''",
+    ]:
+        assert required in source
+    assert "external_userid" not in source
+    assert "mobile_snapshot" not in source
+
+
 def test_wecom_identity_bridge_writes_new_identity_tables_not_legacy_maps() -> None:
     source = _read("aicrm_next/channel_entry/identity_bridge_repo.py")
 
