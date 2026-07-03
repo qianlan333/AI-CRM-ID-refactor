@@ -49,10 +49,38 @@ def upgrade() -> None:
     )
     op.execute(
         """
-        CREATE INDEX IF NOT EXISTS idx_wechat_pay_orders_missing_identity_paid
-        ON wechat_pay_orders (paid_at, id)
-        WHERE COALESCE(external_userid, '') = ''
-          AND (status = 'paid' OR trade_state = 'SUCCESS')
+        DO $$
+        BEGIN
+            IF to_regclass('public.wechat_pay_orders') IS NULL THEN
+                RETURN;
+            END IF;
+
+            IF EXISTS (
+                SELECT 1 FROM information_schema.columns
+                WHERE table_schema = 'public'
+                  AND table_name = 'wechat_pay_orders'
+                  AND column_name = 'external_userid'
+            ) THEN
+                EXECUTE $sql$
+                    CREATE INDEX IF NOT EXISTS idx_wechat_pay_orders_missing_identity_paid
+                    ON wechat_pay_orders (paid_at, id)
+                    WHERE COALESCE(external_userid, '') = ''
+                      AND (status = 'paid' OR trade_state = 'SUCCESS')
+                $sql$;
+            ELSIF EXISTS (
+                SELECT 1 FROM information_schema.columns
+                WHERE table_schema = 'public'
+                  AND table_name = 'wechat_pay_orders'
+                  AND column_name = 'unionid'
+            ) THEN
+                EXECUTE $sql$
+                    CREATE INDEX IF NOT EXISTS idx_wechat_pay_orders_missing_identity_paid
+                    ON wechat_pay_orders (paid_at, id)
+                    WHERE COALESCE(unionid, '') = ''
+                      AND (status = 'paid' OR trade_state = 'SUCCESS')
+                $sql$;
+            END IF;
+        END $$;
         """
     )
 
