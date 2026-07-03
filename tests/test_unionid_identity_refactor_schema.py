@@ -99,6 +99,25 @@ def test_ops_automation_migration_adds_unionid_targets() -> None:
     assert "ALTER TABLE IF EXISTS automation_channel_contact DROP COLUMN IF EXISTS external_contact_id" in source
 
 
+def test_contact_tags_mirror_has_fresh_schema_table() -> None:
+    source = _read("migrations/versions/0080_create_contact_tags_mirror.py")
+    manifest = _read("docs/architecture/data_table_lifecycle_manifest.yml")
+
+    assert "CREATE TABLE IF NOT EXISTS contact_tags" in source
+    for column in [
+        "unionid TEXT NOT NULL DEFAULT ''",
+        "userid TEXT NOT NULL DEFAULT ''",
+        "tag_id TEXT NOT NULL DEFAULT ''",
+        "tag_name TEXT NOT NULL DEFAULT ''",
+        "raw_payload_json JSONB NOT NULL DEFAULT '{}'::jsonb",
+    ]:
+        assert column in source
+    assert "external_userid" not in source
+    assert "uq_contact_tags_unionid_userid_tag_id" in source
+    assert "contact_tags:" in manifest
+    assert "migration_source: 0080_create_contact_tags_mirror" in manifest
+
+
 def test_wecom_identity_bridge_writes_new_identity_tables_not_legacy_maps() -> None:
     source = _read("aicrm_next/channel_entry/identity_bridge_repo.py")
 
