@@ -1697,6 +1697,39 @@ tables:
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
     notes: Registered from the id-dev public schema so schema_drift_guard can fail closed on future unmanaged table changes.
 
+  admin_operation_logs:
+    domain: admin_config
+    lifecycle: audit
+    write_owner: aicrm_next.admin_config
+    write_owners:
+      - aicrm_next.admin_config
+      - aicrm_next.admin_jobs
+      - aicrm_next.ai_audience_ops
+      - aicrm_next.cloud_orchestrator
+      - aicrm_next.owner_migration
+    read_owners:
+      - aicrm_next.admin_config
+      - aicrm_next.admin_jobs
+      - aicrm_next.admin_read_model
+      - aicrm_next.ai_audience_ops
+      - aicrm_next.cloud_orchestrator
+      - aicrm_next.owner_migration
+    replacement: none; canonical admin operation audit log
+    drop_candidate: false
+    drop_after: ""
+    runtime_entrypoints:
+      - admin config save audit
+      - cloud orchestrator approval audit
+      - AI Audience spec audit
+      - owner migration audit
+    migration_source: 0085_admin_config_audit_baseline
+    pii_level: internal_contact
+    guard_tests:
+      - tests/test_data_table_lifecycle_guard.py
+      - tests/test_repository_ownership_guard.py
+      - tests/test_unionid_identity_refactor_schema.py::test_admin_config_audit_baseline_tables_exist_in_fresh_schema
+    notes: JSONB before/after audit payloads for admin-facing configuration and operations.
+
   admin_user_roles:
     domain: admin_config
     lifecycle: canonical
