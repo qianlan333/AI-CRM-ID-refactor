@@ -51,7 +51,6 @@ repositories:
       - automation_agent_output
       - automation_agent_run
       - broadcast_jobs
-      - contacts
       - external_effect_job
       - internal_event
       - outbound_tasks
@@ -61,6 +60,8 @@ repositories:
       - sync_runs
       - wechat_pay_orders
       - wecom_external_contact_event_logs
+      - wecom_external_contact_follow_users
+      - wecom_external_contact_identity_map
     table_writes: []
   aicrm_next/ai_assist/external_campaigns_repo.py:
     capability_owner: aicrm_next.ai_assist
@@ -70,10 +71,11 @@ repositories:
       - campaign_segments
       - campaign_steps
       - campaigns
-      - contacts
       - crm_user_identity
       - segments
       - user_ops_pool_current_next
+      - wecom_external_contact_follow_users
+      - wecom_external_contact_identity_map
     table_writes:
       - campaign_members
       - campaign_segments
@@ -184,8 +186,10 @@ repositories:
       - crm_user_identity_resolution_queue
   aicrm_next/channel_entry/repo.py:
     capability_owner: aicrm_next.channel_entry
-    table_reads: []
-    table_writes: []
+    table_reads:
+      - automation_channel_entry_effect_log
+    table_writes:
+      - automation_channel_entry_effect_log
   aicrm_next/cloud_orchestrator/repository.py:
     capability_owner: aicrm_next.cloud_orchestrator
     table_reads:

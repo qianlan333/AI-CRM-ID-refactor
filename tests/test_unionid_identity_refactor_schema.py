@@ -625,8 +625,9 @@ def test_campaign_frequency_and_agent_outputs_are_unionid_only() -> None:
 
     assert '"unionid": _text(member_event.get("unionid")' in agent_copywriting_source
     assert '"external_contact_id": _text(member_event' not in agent_copywriting_source
-    assert "SELECT id, run_id, agent_code, status, unionid" in admin_projection_source
-    assert "external_contact_id" not in admin_projection_source
+    agent_projection_source = admin_projection_source.split("def funnel_payload", 1)[0]
+    assert "SELECT id, run_id, agent_code, status, unionid" in agent_projection_source
+    assert "external_contact_id" not in agent_projection_source
     assert '"unionid",' in agent_run_repo_source
     assert '"external_contact_id",' not in agent_run_repo_source
     assert '"unionid": _text(source.get("unionid"))' in agent_run_domain_source
@@ -635,3 +636,42 @@ def test_campaign_frequency_and_agent_outputs_are_unionid_only() -> None:
     assert '"external_contact_id", "userid", "agent_code"' not in agent_output_repo_source
     assert '"unionid": _text(source.get("unionid"))' in agent_output_domain_source
     assert '"external_contact_id": _text(source.get("external_contact_id"))' not in agent_output_domain_source
+
+
+def test_final_legacy_identity_cleanup_removes_non_boundary_columns() -> None:
+    cleanup_source = _read("migrations/versions/0078_final_legacy_identity_column_cleanup.py")
+    channel_repo_source = _read("aicrm_next/channel_entry/repo.py")
+    channel_app_source = _read("aicrm_next/channel_entry/application.py")
+    contact_sync_source = _read("aicrm_next/background_jobs/external_contact_sync.py")
+    sidebar_source = _read("aicrm_next/customer_read_model/sidebar_v2.py")
+    identity_contact_source = _read("aicrm_next/identity_contact/repo.py")
+    admin_projection_source = _read("aicrm_next/admin_read_model/projections.py")
+    external_campaigns_source = _read("aicrm_next/ai_assist/external_campaigns_repo.py")
+    owner_migration_source = _read("aicrm_next/owner_migration/repo.py")
+
+    assert "down_revision = \"0077_id_dev_runtime_baseline\"" in cleanup_source
+    assert "ADD COLUMN IF NOT EXISTS unionid TEXT NOT NULL DEFAULT ''" in cleanup_source
+    assert "jsonb_build_object('external_contact_id', log.external_contact_id)" in cleanup_source
+    assert "DROP COLUMN IF EXISTS external_contact_id" in cleanup_source
+    assert "ALTER TABLE IF EXISTS contacts DROP COLUMN IF EXISTS external_userid" in cleanup_source
+    assert "automation_touch_delivery_log DROP COLUMN IF EXISTS external_userid" in cleanup_source
+    assert "user_ops_do_not_disturb_next DROP COLUMN IF EXISTS external_userid" in cleanup_source
+
+    effect_log_insert = channel_repo_source.split("INSERT INTO automation_channel_entry_effect_log", 1)[1].split("ON CONFLICT", 1)[0]
+    assert "unionid" in effect_log_insert
+    assert "external_contact_id" not in effect_log_insert
+    assert "EXCLUDED.unionid" in channel_repo_source
+    assert "EXCLUDED.external_contact_id" not in channel_repo_source
+    assert "source_request.setdefault(\"external_contact_id\"" in channel_repo_source
+    assert "unionid=command.unionid" in channel_app_source
+    for source in [
+        contact_sync_source,
+        sidebar_source,
+        identity_contact_source,
+        admin_projection_source,
+        external_campaigns_source,
+        owner_migration_source,
+    ]:
+        assert "FROM contacts" not in source
+        assert "INSERT INTO contacts" not in source
+        assert "UPDATE contacts" not in source

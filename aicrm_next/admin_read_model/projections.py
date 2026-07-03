@@ -98,7 +98,7 @@ def ai_assistant_payload(repo: AdminReadRepository) -> dict[str, Any]:
 
 def funnel_payload(repo: AdminReadRepository) -> dict[str, Any]:
     counts = {
-        "客户总数": repo.count("contacts"),
+        "客户总数": repo.count("wecom_external_contact_identity_map"),
         "问卷提交": repo.count("questionnaire_submissions"),
         "订单数": repo.count("wechat_pay_orders"),
         "AI 人群包成员": repo.count("ai_audience_member_current"),
@@ -110,8 +110,17 @@ def funnel_payload(repo: AdminReadRepository) -> dict[str, Any]:
     cards = [{"label": key, "value": value, "description": "生产统计" if repo.is_production else "本地结构校验"} for key, value in counts.items()]
     recent_contacts = repo.rows(
         """
-        SELECT external_userid, COALESCE(customer_name, remark, external_userid) AS name, owner_userid, updated_at
-        FROM contacts ORDER BY updated_at DESC, id DESC LIMIT 10
+        SELECT
+            im.external_userid,
+            COALESCE(NULLIF(im.name, ''), NULLIF(fu.remark, ''), im.external_userid) AS name,
+            COALESCE(NULLIF(fu.user_id, ''), NULLIF(im.follow_user_userid, '')) AS owner_userid,
+            im.updated_at
+        FROM wecom_external_contact_identity_map im
+        LEFT JOIN wecom_external_contact_follow_users fu
+          ON fu.corp_id = im.corp_id
+         AND fu.external_userid = im.external_userid
+         AND COALESCE(fu.relation_status, 'active') = 'active'
+        ORDER BY im.updated_at DESC, im.id DESC LIMIT 10
         """
     )
     recent_submissions = repo.rows(
