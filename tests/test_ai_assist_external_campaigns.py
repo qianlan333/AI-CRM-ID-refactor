@@ -6,6 +6,7 @@ from typing import Any
 from fastapi.responses import JSONResponse
 
 from aicrm_next.ai_assist import external_campaigns as service
+from aicrm_next.ai_assist.external_campaigns_repo import PostgresExternalCampaignRepository
 from aicrm_next.platform_foundation.external_effects import AI_ASSIST_CAMPAIGN_MESSAGE_LOOPBACK, ExternalEffectService, reset_external_effect_fixture_state
 
 
@@ -290,6 +291,25 @@ def test_external_campaign_allows_attachment_only_step() -> None:
     assert job["content_payload"]["content_package"]["miniprogram_library_ids"] == [17]
 
 
+def test_external_campaign_contact_lookup_is_optional_when_wecom_tables_missing() -> None:
+    class MissingContactTablesDb:
+        def __init__(self) -> None:
+            self.rolled_back = False
+
+        def execute(self, sql: str, params=()):
+            assert "wecom_external_contact_identity_map" in sql
+            raise RuntimeError("relation does not exist")
+
+        def rollback(self) -> None:
+            self.rolled_back = True
+
+    db = MissingContactTablesDb()
+    repo = PostgresExternalCampaignRepository(db=db)
+
+    assert repo.fetch_contact_row("wm_missing") == {}
+    assert db.rolled_back is True
+
+
 def test_campaign_private_broadcast_job_fields_are_complete() -> None:
     from aicrm_next.cloud_orchestrator.repository import (
         _campaign_private_broadcast_job_extra_fields,
@@ -400,7 +420,7 @@ def test_direct_wecom_private_send_bypass_dnd_warns_and_queues() -> None:
     assert repo.write_calls == ["create_broadcast_job"]
 
 
-def test_external_campaign_target_not_found() -> None:
+def test_external_campaign_target_identity_not_found() -> None:
     repo = FakeExternalCampaignRepository()
 
     try:

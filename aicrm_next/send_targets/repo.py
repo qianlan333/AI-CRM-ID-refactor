@@ -48,7 +48,7 @@ class PostgresSendTargetRepository:
             FROM crm_user_identity
             WHERE primary_external_userid = ?
                OR jsonb_exists(external_userids_json, ?)
-            ORDER BY updated_at DESC, id DESC
+            ORDER BY updated_at DESC, unionid DESC
             LIMIT 1
             """,
             (_text(external_userid), _text(external_userid)),
