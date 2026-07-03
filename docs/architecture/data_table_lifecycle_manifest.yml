@@ -7,6 +7,28 @@ migration_guard:
   migration_file_prefix_after: "0073"
 
 tables:
+  contact_tags:
+    domain: customer_tags
+    lifecycle: read_model
+    write_owner: aicrm_next.customer_tags.local_projection
+    read_owners:
+      - customer read model
+      - admin WeCom tags payload
+      - questionnaire H5 tag apply diagnostics
+    replacement: none; local mirror after successful WeCom tag mutation
+    drop_candidate: false
+    drop_after: ""
+    runtime_entrypoints:
+      - questionnaire final_tags local mirror
+      - channel entry tag snapshot
+      - customer list tag filters
+    migration_source: 0080_create_contact_tags_mirror
+    pii_level: internal_contact
+    guard_tests:
+      - tests/test_unionid_identity_refactor_schema.py::test_contact_tags_mirror_has_fresh_schema_table
+      - tests/test_data_table_lifecycle_guard.py
+    notes: Unionid-only local cache for successful externalcontact tag writes; external_userid belongs only in identity mapping or resolution queue.
+
   automation_member:
     domain: automation
     lifecycle: retired
