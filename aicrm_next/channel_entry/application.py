@@ -140,6 +140,7 @@ def _log_effect(command: ProcessChannelEntryCommand, *, effect_type: str, idempo
         event_log_id=command.event_log_id,
         channel_id=channel_id,
         scene_value=scene_value,
+        unionid=command.unionid,
         external_contact_id=command.external_contact_id,
         owner_staff_id=command.follow_user_userid,
         reason=reason,

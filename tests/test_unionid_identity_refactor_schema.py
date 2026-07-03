@@ -99,6 +99,111 @@ def test_ops_automation_migration_adds_unionid_targets() -> None:
     assert "ALTER TABLE IF EXISTS automation_channel_contact DROP COLUMN IF EXISTS external_contact_id" in source
 
 
+def test_contact_tags_mirror_has_fresh_schema_table() -> None:
+    source = _read("migrations/versions/0080_create_contact_tags_mirror.py")
+    manifest = _read("docs/architecture/data_table_lifecycle_manifest.yml")
+
+    assert "CREATE TABLE IF NOT EXISTS contact_tags" in source
+    for column in [
+        "unionid TEXT NOT NULL DEFAULT ''",
+        "userid TEXT NOT NULL DEFAULT ''",
+        "tag_id TEXT NOT NULL DEFAULT ''",
+        "tag_name TEXT NOT NULL DEFAULT ''",
+        "raw_payload_json JSONB NOT NULL DEFAULT '{}'::jsonb",
+    ]:
+        assert column in source
+    assert "external_userid" not in source
+    assert "uq_contact_tags_unionid_userid_tag_id" in source
+    assert "contact_tags:" in manifest
+    assert "migration_source: 0080_create_contact_tags_mirror" in manifest
+
+
+def test_customer_status_baseline_tables_exist_in_fresh_schema() -> None:
+    source = _read("migrations/versions/0081_create_customer_status_baseline_tables.py")
+    manifest = _read("docs/architecture/data_table_lifecycle_manifest.yml")
+
+    for table_name in ["class_user_status_current", "class_user_status_history", "owner_role_map"]:
+        assert f"CREATE TABLE IF NOT EXISTS {table_name}" in source
+        assert f"{table_name}:" in manifest
+        assert "migration_source: 0081_create_customer_status_baseline_tables" in manifest
+
+    assert "unionid TEXT PRIMARY KEY" in source
+    assert "unionid TEXT NOT NULL DEFAULT ''" in source
+    assert "userid TEXT PRIMARY KEY" in source
+    for required in [
+        "owner_userid_snapshot TEXT NOT NULL DEFAULT ''",
+        "customer_name_snapshot TEXT NOT NULL DEFAULT ''",
+        "signup_status TEXT NOT NULL DEFAULT ''",
+        "signup_label_name TEXT NOT NULL DEFAULT ''",
+        "status_flags_json JSONB NOT NULL DEFAULT '{}'::jsonb",
+        "display_name TEXT NOT NULL DEFAULT ''",
+    ]:
+        assert required in source
+    assert "external_userid" not in source
+    assert "mobile_snapshot" not in source
+
+
+def test_marketing_automation_config_tables_exist_in_fresh_schema() -> None:
+    source = _read("migrations/versions/0083_create_marketing_automation_config_tables.py")
+    manifest = _read("docs/architecture/data_table_lifecycle_manifest.yml")
+
+    for table_name in ["marketing_automation_configs", "marketing_automation_question_rules"]:
+        assert f"CREATE TABLE IF NOT EXISTS {table_name}" in source
+        assert f"{table_name}:" in manifest
+
+    assert "external_userid" not in source
+    assert "openid" not in source
+    assert "unionid" not in source
+    assert "uq_marketing_automation_configs_key" in source
+    assert "ix_marketing_automation_question_rules_config_active" in source
+
+
+def test_id_dev_p1_baseline_tables_exist_in_fresh_schema() -> None:
+    source = _read("migrations/versions/0084_id_dev_p1_baseline_tables.py")
+    manifest = _read("docs/architecture/data_table_lifecycle_manifest.yml")
+
+    for table_name in ["app_settings", "mcp_tool_settings", "wechat_shop_order_events"]:
+        assert f"CREATE TABLE IF NOT EXISTS {table_name}" in source
+        assert f"{table_name}:" in manifest
+        assert "migration_source: 0084_id_dev_p1_baseline_tables" in manifest
+
+    for required in [
+        "ALTER TABLE IF EXISTS outbound_tasks ADD COLUMN IF NOT EXISTS task_type TEXT NOT NULL DEFAULT 'outbound_task'",
+        "key TEXT PRIMARY KEY",
+        "tool_name TEXT PRIMARY KEY",
+        "raw_payload_json JSONB NOT NULL DEFAULT '{}'::jsonb",
+        "process_status TEXT NOT NULL DEFAULT 'received'",
+        "ux_wechat_shop_order_events_source",
+        "ix_wechat_shop_order_events_order_created",
+    ]:
+        assert required in source
+    assert "external_userid" not in source
+    assert "openid" not in source
+    assert "mobile" not in source
+
+
+def test_admin_config_audit_baseline_tables_exist_in_fresh_schema() -> None:
+    source = _read("migrations/versions/0085_admin_config_audit_baseline.py")
+    manifest = _read("docs/architecture/data_table_lifecycle_manifest.yml")
+    admin_repo_source = _read("aicrm_next/admin_config/repository.py")
+
+    for table_name in ["admin_operation_logs", "admin_users", "admin_user_roles", "admin_login_audit"]:
+        assert f"CREATE TABLE IF NOT EXISTS {table_name}" in source
+        assert f"{table_name}:" in manifest
+
+    for required in [
+        "before_json JSONB NOT NULL DEFAULT '{}'::jsonb",
+        "after_json JSONB NOT NULL DEFAULT '{}'::jsonb",
+        "ux_admin_users_wecom_userid",
+        "ux_admin_user_roles_user_role",
+        "ix_admin_login_audit_user_created",
+        "migration_source: 0085_admin_config_audit_baseline",
+    ]:
+        assert required in source or required in manifest
+    assert "CAST(:before_json AS jsonb)" in admin_repo_source
+    assert "CAST(:after_json AS jsonb)" in admin_repo_source
+
+
 def test_wecom_identity_bridge_writes_new_identity_tables_not_legacy_maps() -> None:
     source = _read("aicrm_next/channel_entry/identity_bridge_repo.py")
 
@@ -320,8 +425,11 @@ def test_user_ops_legacy_runtime_tables_are_retired() -> None:
 
     assert "UPDATE crm_user_identity" in identity_contact_source
     assert "INSERT INTO crm_user_identity_resolution_queue" in identity_contact_source
-    assert "JOIN user_ops_pool_current_next pool ON pool.unionid = identity.unionid" in external_campaign_source
-    assert "JOIN user_ops_pool_current_next pool ON pool.unionid = identity.unionid" in external_campaign_repo_source
+    assert "SendTargetResolver" in external_campaign_source
+    assert "FROM crm_user_identity identity" in external_campaign_repo_source
+    assert "user_ops_pool_current_next" not in external_campaign_source
+    assert "user_ops_pool_current_next" not in external_campaign_repo_source
+    assert "identity.id" not in external_campaign_repo_source
     assert "return _status_counts([])" in admin_jobs_source
     assert "user_ops_lead_pool_current:\n    domain: user_ops\n    lifecycle: retired" in manifest_source
     assert "user_ops_deferred_jobs:\n    domain: user_ops\n    lifecycle: retired" in manifest_source
@@ -516,6 +624,7 @@ def test_customer_fact_read_sources_drop_legacy_identity_columns() -> None:
     assert "SELECT unionid FROM class_user_status_current" in live_source_sql
     assert "class_status.mobile_snapshot" not in live_source_sql
     assert "identity.profile_json" in live_source_sql
+    assert "CAST(latest_messages.last_message_at AS TEXT)" in live_source_sql
 
     archive_insert = message_archive_source.split("INSERT INTO archived_messages", 1)[1].split("ON CONFLICT (msgid)", 1)[0]
     assert "unionid" in archive_insert
@@ -625,8 +734,9 @@ def test_campaign_frequency_and_agent_outputs_are_unionid_only() -> None:
 
     assert '"unionid": _text(member_event.get("unionid")' in agent_copywriting_source
     assert '"external_contact_id": _text(member_event' not in agent_copywriting_source
-    assert "SELECT id, run_id, agent_code, status, unionid" in admin_projection_source
-    assert "external_contact_id" not in admin_projection_source
+    agent_projection_source = admin_projection_source.split("def funnel_payload", 1)[0]
+    assert "SELECT id, run_id, agent_code, status, unionid" in agent_projection_source
+    assert "external_contact_id" not in agent_projection_source
     assert '"unionid",' in agent_run_repo_source
     assert '"external_contact_id",' not in agent_run_repo_source
     assert '"unionid": _text(source.get("unionid"))' in agent_run_domain_source
@@ -635,3 +745,46 @@ def test_campaign_frequency_and_agent_outputs_are_unionid_only() -> None:
     assert '"external_contact_id", "userid", "agent_code"' not in agent_output_repo_source
     assert '"unionid": _text(source.get("unionid"))' in agent_output_domain_source
     assert '"external_contact_id": _text(source.get("external_contact_id"))' not in agent_output_domain_source
+
+
+def test_final_legacy_identity_cleanup_removes_non_boundary_columns() -> None:
+    cleanup_source = _read("migrations/versions/0078_final_legacy_identity_column_cleanup.py")
+    target_cleanup_source = _read("migrations/versions/0079_final_target_schema_cleanup.py")
+    channel_repo_source = _read("aicrm_next/channel_entry/repo.py")
+    channel_app_source = _read("aicrm_next/channel_entry/application.py")
+    contact_sync_source = _read("aicrm_next/background_jobs/external_contact_sync.py")
+    sidebar_source = _read("aicrm_next/customer_read_model/sidebar_v2.py")
+    identity_contact_source = _read("aicrm_next/identity_contact/repo.py")
+    admin_projection_source = _read("aicrm_next/admin_read_model/projections.py")
+    external_campaigns_source = _read("aicrm_next/ai_assist/external_campaigns_repo.py")
+    owner_migration_source = _read("aicrm_next/owner_migration/repo.py")
+
+    assert "down_revision = \"0077_id_dev_runtime_baseline\"" in cleanup_source
+    assert "ADD COLUMN IF NOT EXISTS unionid TEXT NOT NULL DEFAULT ''" in cleanup_source
+    assert "jsonb_build_object('external_contact_id', log.external_contact_id)" in cleanup_source
+    assert "DROP COLUMN IF EXISTS external_contact_id" in cleanup_source
+    assert "ALTER TABLE IF EXISTS contacts DROP COLUMN IF EXISTS external_userid" in cleanup_source
+    assert "automation_touch_delivery_log DROP COLUMN IF EXISTS external_userid" in cleanup_source
+    assert "user_ops_do_not_disturb_next DROP COLUMN IF EXISTS external_userid" in cleanup_source
+    assert "down_revision = \"0078_final_legacy_identity_cleanup\"" in target_cleanup_source
+    assert "customer_timeline_event_next DROP COLUMN IF EXISTS person_id" in target_cleanup_source
+    assert "DELETE FROM contacts WHERE COALESCE(unionid, '') = ''" in target_cleanup_source
+
+    effect_log_insert = channel_repo_source.split("INSERT INTO automation_channel_entry_effect_log", 1)[1].split("ON CONFLICT", 1)[0]
+    assert "unionid" in effect_log_insert
+    assert "external_contact_id" not in effect_log_insert
+    assert "EXCLUDED.unionid" in channel_repo_source
+    assert "EXCLUDED.external_contact_id" not in channel_repo_source
+    assert "source_request.setdefault(\"external_contact_id\"" in channel_repo_source
+    assert "unionid=command.unionid" in channel_app_source
+    for source in [
+        contact_sync_source,
+        sidebar_source,
+        identity_contact_source,
+        admin_projection_source,
+        external_campaigns_source,
+        owner_migration_source,
+    ]:
+        assert "FROM contacts" not in source
+        assert "INSERT INTO contacts" not in source
+        assert "UPDATE contacts" not in source

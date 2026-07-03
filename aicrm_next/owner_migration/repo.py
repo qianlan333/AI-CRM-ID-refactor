@@ -246,20 +246,6 @@ class PostgresOwnerMigrationRepository:
             update_counts: dict[str, int] = {}
             touched: list[str] = []
             scope_clause, scope_params = _external_scope_clause(external_userids)
-            if _table_exists(conn, "contacts"):
-                values = _returning_external_userids(
-                    conn,
-                    f"""
-                    UPDATE contacts
-                    SET owner_userid = %s, updated_at = CURRENT_TIMESTAMP
-                    WHERE owner_userid = %s AND COALESCE(external_userid, '') <> ''
-                    {scope_clause}
-                    RETURNING external_userid
-                    """,
-                    (target_owner_userid, source_owner_userid, *scope_params),
-                )
-                update_counts["contacts"] = len(values)
-                touched.extend(values)
             if _table_exists(conn, "external_contact_bindings"):
                 values = _returning_external_userids(
                     conn,
@@ -406,7 +392,6 @@ class PostgresOwnerMigrationRepository:
         params: list[Any] = []
         scope_clause, scope_params = _external_scope_clause(external_userids)
         surfaces = {
-            "contacts": f"SELECT external_userid, 'contacts' AS source_table FROM contacts WHERE owner_userid = %s AND COALESCE(external_userid, '') <> '' {scope_clause}",
             "external_contact_bindings": f"SELECT external_userid, 'external_contact_bindings' AS source_table FROM external_contact_bindings WHERE last_owner_userid = %s AND COALESCE(external_userid, '') <> '' {scope_clause}",
             "wecom_external_contact_identity_map": f"SELECT external_userid, 'wecom_external_contact_identity_map' AS source_table FROM wecom_external_contact_identity_map WHERE follow_user_userid = %s AND COALESCE(external_userid, '') <> '' {scope_clause}",
             "wecom_external_contact_follow_users": f"SELECT external_userid, 'wecom_external_contact_follow_users' AS source_table FROM wecom_external_contact_follow_users WHERE user_id = %s AND COALESCE(relation_status, 'active') = 'active' AND COALESCE(external_userid, '') <> '' {scope_clause}",
@@ -436,7 +421,6 @@ class PostgresOwnerMigrationRepository:
     def _surface_counts(self, conn, source_owner_userid: str, *, external_userids: list[str] | None = None) -> dict[str, int]:
         scope_clause, scope_params = _external_scope_clause(external_userids)
         count_queries = {
-            "contacts": (f"SELECT COUNT(*) AS count FROM contacts WHERE owner_userid = %s {scope_clause}", (source_owner_userid, *scope_params)),
             "external_contact_bindings": (
                 f"SELECT COUNT(*) AS count FROM external_contact_bindings WHERE last_owner_userid = %s {scope_clause}",
                 (source_owner_userid, *scope_params),
@@ -488,7 +472,6 @@ class PostgresOwnerMigrationRepository:
             unions: list[str] = []
             params: list[Any] = []
             surfaces = {
-                "contacts": "SELECT external_userid, owner_userid, COALESCE(remark, customer_name, '') AS customer_name FROM contacts WHERE external_userid = ANY(%s::text[]) AND COALESCE(external_userid, '') <> ''",
                 "external_contact_bindings": "SELECT external_userid, last_owner_userid AS owner_userid, '' AS customer_name FROM external_contact_bindings WHERE external_userid = ANY(%s::text[]) AND COALESCE(external_userid, '') <> ''",
                 "wecom_external_contact_identity_map": "SELECT external_userid, follow_user_userid AS owner_userid, COALESCE(name, '') AS customer_name FROM wecom_external_contact_identity_map WHERE external_userid = ANY(%s::text[]) AND COALESCE(external_userid, '') <> ''",
                 "wecom_external_contact_follow_users": "SELECT external_userid, user_id AS owner_userid, COALESCE(remark, '') AS customer_name FROM wecom_external_contact_follow_users WHERE external_userid = ANY(%s::text[]) AND COALESCE(relation_status, 'active') = 'active' AND COALESCE(external_userid, '') <> ''",

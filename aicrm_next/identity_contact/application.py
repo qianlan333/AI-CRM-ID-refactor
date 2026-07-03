@@ -183,6 +183,21 @@ class GetSidebarContactBindingStatusQuery:
                     raise RuntimeError(str(payload.get("page_error") or payload.get("error_code") or "customer detail unavailable"))
                 customer = dict(payload.get("customer") or {})
             except Exception as exc:
+                result = self._identity_query(
+                    ResolvePersonIdentityRequest(
+                        external_userid=resolved_external_userid,
+                    )
+                )
+                if result is not None:
+                    payload = _identity_binding_status_payload(
+                        result,
+                        external_userid=resolved_external_userid,
+                        owner_userid=resolved_owner_userid,
+                    )
+                    payload["source_status"] = "identity_contact_fallback"
+                    payload["read_model_status"] = "identity_contact_fallback"
+                    payload["customer_detail_error"] = str(exc)
+                    return payload
                 return _production_unavailable_payload(resolved_external_userid, exc)
             return _customer_read_model_binding_status_payload(
                 customer,

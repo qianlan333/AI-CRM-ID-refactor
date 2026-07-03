@@ -14,7 +14,7 @@ def list_growth_programs(
     safe_limit = max(1, min(int(limit or 50), 100))
     safe_offset = max(0, int(offset or 0))
     items = repository.list_programs(limit=safe_limit, offset=safe_offset)
-    return GrowthProgramList(items=items, limit=safe_limit, offset=safe_offset).model_dump()
+    return GrowthProgramList(items=items, limit=safe_limit, offset=safe_offset).model_dump(mode="json")
 
 
 def list_growth_members(
@@ -27,7 +27,7 @@ def list_growth_members(
     safe_limit = max(1, min(int(limit or 50), 100))
     safe_offset = max(0, int(offset or 0))
     items = repository.list_members(limit=safe_limit, offset=safe_offset)
-    return GrowthMemberList(items=items, limit=safe_limit, offset=safe_offset).model_dump()
+    return GrowthMemberList(items=items, limit=safe_limit, offset=safe_offset).model_dump(mode="json")
 
 
 def list_growth_tasks(
@@ -40,7 +40,7 @@ def list_growth_tasks(
     safe_limit = max(1, min(int(limit or 50), 100))
     safe_offset = max(0, int(offset or 0))
     items = repository.list_tasks(limit=safe_limit, offset=safe_offset)
-    return GrowthTaskList(items=items, limit=safe_limit, offset=safe_offset).model_dump()
+    return GrowthTaskList(items=items, limit=safe_limit, offset=safe_offset).model_dump(mode="json")
 
 
 def list_growth_touchpoints(
@@ -53,4 +53,4 @@ def list_growth_touchpoints(
     safe_limit = max(1, min(int(limit or 50), 100))
     safe_offset = max(0, int(offset or 0))
     items = repository.list_touchpoints(limit=safe_limit, offset=safe_offset)
-    return GrowthTouchpointList(items=items, limit=safe_limit, offset=safe_offset).model_dump()
+    return GrowthTouchpointList(items=items, limit=safe_limit, offset=safe_offset).model_dump(mode="json")

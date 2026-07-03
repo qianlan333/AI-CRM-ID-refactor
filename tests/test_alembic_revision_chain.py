@@ -124,6 +124,76 @@ def test_miniprogram_reset_migration_preserves_broadcast_job_claim_token_not_nul
     assert "claim_token = NULL" not in source
 
 
+def test_perf_index_migration_does_not_require_retired_conversion_table_on_fresh_db() -> None:
+    source = (VERSIONS / "0002_perf_indexes_and_trace.py").read_text(encoding="utf-8")
+
+    assert 'if _has_table("conversion_dispatch_log"):' in source
+    assert "CREATE INDEX IF NOT EXISTS idx_conversion_dispatch_log_external_dispatched" in source
+    assert "DO $$" not in source
+
+
+def test_member_segment_migration_does_not_recreate_retired_member_table_on_fresh_db() -> None:
+    source = (VERSIONS / "0003_member_segment_columns.py").read_text(encoding="utf-8")
+
+    assert 'if not _has_table("automation_member"):' in source
+    assert "return" in source
+    assert "CREATE TABLE automation_member" not in source
+    assert "to_regclass" not in source
+
+
+def test_cloud_orchestrator_migration_skips_legacy_automation_tables_on_fresh_db() -> None:
+    source = (VERSIONS / "0004_cloud_orchestrator.py").read_text(encoding="utf-8")
+
+    assert '_create_index_if_table_exists(\n        "automation_touch_delivery_log"' in source
+    assert '_create_index_if_table_exists(\n        "outbound_tasks"' in source
+    assert 'and _has_table("automation_touch_delivery_log")' in source
+    assert 'and _has_table("automation_ai_push_log")' in source
+    assert "CREATE TABLE automation_member" not in source
+    assert "to_regclass" not in source
+
+
+def test_miniprogram_library_migration_skips_missing_sop_template_on_fresh_db() -> None:
+    source = (VERSIONS / "0006_miniprogram_library.py").read_text(encoding="utf-8")
+
+    assert "def _has_table" in source
+    assert "if _has_table(table) and not _has_column(table, column_name):" in source
+    assert 'if _has_table("automation_sop_template"):' in source
+    assert "CREATE TABLE automation_sop_template" not in source
+
+
+def test_radar_pdf_preview_migration_keeps_foreign_keys_optional_for_fresh_db() -> None:
+    source = (VERSIONS / "0025_radar_pdf_preview_assets.py").read_text(encoding="utf-8")
+
+    assert 'if _has_table("radar_links") else ""' in source
+    assert "radar_link_id BIGINT{link_reference}" in source
+    assert "link_id BIGINT NOT NULL{link_reference}" in source
+
+
+def test_group_ops_admin_userids_migration_skips_legacy_group_chats_on_fresh_db() -> None:
+    source = (VERSIONS / "0027_group_ops_admin_userids.py").read_text(encoding="utf-8")
+
+    assert 'if not _has_table("wecom_group_chat_snapshots"):' in source
+    assert 'if not _has_table("group_chats"):' in source
+    assert "FROM group_chats" in source
+
+
+def test_wechat_pay_unionid_index_migration_skips_missing_legacy_orders_on_fresh_db() -> None:
+    source = (VERSIONS / "0030_wechat_pay_unionid_idx.py").read_text(encoding="utf-8")
+
+    assert 'if not _has_table("wechat_pay_orders"):' in source
+    assert "idx_wechat_pay_orders_unionid_created" in source
+
+
+def test_channel_multi_staff_migration_keeps_channel_foreign_key_optional_for_fresh_db() -> None:
+    source = (VERSIONS / "0036_channel_multi_staff_assignment.py").read_text(encoding="utf-8")
+
+    assert 'if _has_table("automation_channel") else ""' in source
+    assert "channel_id BIGINT NOT NULL__CHANNEL_REFERENCE__" in source
+    assert '.replace("__CHANNEL_REFERENCE__", channel_reference)' in source
+    assert "CREATE TABLE IF NOT EXISTS automation_channel_assignee" in source
+    assert "CREATE TABLE IF NOT EXISTS automation_channel_assignment_event" in source
+
+
 def test_raw_migration_sql_does_not_expose_numeric_bind_literals() -> None:
     risky_default_prefix = '"default"' + ":"
     old_sqlalchemy_rendered_default = "default" + "%("
@@ -182,7 +252,7 @@ def test_alembic_commands_can_walk_revision_graph() -> None:
         if args == ("heads",):
             heads = [line for line in result.stdout.splitlines() if "(head)" in line]
             assert len(heads) == 1
-            assert "0076_create_missing_baseline_runtime_tables" in heads[0]
+            assert "0085_admin_config_audit_baseline" in heads[0]
 
 
 def test_deployed_webhook_inbox_revision_is_merged_into_current_head() -> None:

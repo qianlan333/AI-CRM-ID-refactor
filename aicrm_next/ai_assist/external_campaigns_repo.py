@@ -15,8 +15,33 @@ class ExternalCampaignRepositoryError(Exception):
 
 class ExternalCampaignRepository(Protocol):
     def table_columns(self, table_name: str) -> set[str]: ...
-    def fetch_user_ops_pool_current_row(self, external_userid: str) -> JsonDict: ...
+    def fetch_send_target_by_unionid(self, unionid: str) -> JsonDict | None: ...
+    def fetch_send_target_by_external_userid(self, external_userid: str) -> JsonDict | None: ...
+    def fetch_do_not_disturb_reasons(self, unionid: str) -> list[JsonDict]: ...
     def fetch_contact_row(self, external_userid: str) -> JsonDict: ...
+    def get_broadcast_job_by_idempotency_key(self, idempotency_key: str) -> JsonDict | None: ...
+    def create_broadcast_job(
+        self,
+        *,
+        source_type: str,
+        source_id: str,
+        source_table: str,
+        scheduled_for: str,
+        priority: int,
+        batch_key: str,
+        idempotency_key: str,
+        target_unionids: list[str],
+        target_summary: str,
+        content_type: str,
+        content_payload: JsonDict,
+        content_summary: str,
+        trace_id: str,
+        created_by: str,
+        business_domain: str,
+        channel: str,
+        target_kind: str,
+        metadata: JsonDict,
+    ) -> JsonDict: ...
     def get_campaign_by_code(self, campaign_code: str) -> JsonDict | None: ...
     def get_campaign_by_id(self, campaign_id: int) -> JsonDict | None: ...
     def count_open_campaign_jobs(self, campaign_id: int) -> int: ...
@@ -156,37 +181,176 @@ class PostgresExternalCampaignRepository:
         self._columns_cache[safe_name] = set()
         return set()
 
-    def fetch_user_ops_pool_current_row(self, external_userid: str) -> JsonDict:
+    def fetch_send_target_by_unionid(self, unionid: str) -> JsonDict | None:
         row = self.db.execute(
             """
             SELECT
-                pool.*,
-                identity.primary_external_userid AS external_userid,
-                COALESCE(NULLIF(pool.owner_userid, ''), identity.primary_owner_userid) AS owner_userid,
-                COALESCE(NULLIF(pool.customer_name_snapshot, ''), identity.customer_name) AS customer_name
+                unionid,
+                primary_external_userid,
+                primary_external_userid AS external_userid,
+                primary_owner_userid,
+                primary_owner_userid AS owner_userid,
+                customer_name
             FROM crm_user_identity identity
-            JOIN user_ops_pool_current_next pool ON pool.unionid = identity.unionid
+            WHERE identity.unionid = ?
+            LIMIT 1
+            """,
+            (_text(unionid),),
+        ).fetchone()
+        return _row_to_dict(row) or None
+
+    def fetch_send_target_by_external_userid(self, external_userid: str) -> JsonDict | None:
+        row = self.db.execute(
+            """
+            SELECT
+                unionid,
+                primary_external_userid,
+                primary_external_userid AS external_userid,
+                primary_owner_userid,
+                primary_owner_userid AS owner_userid,
+                customer_name
+            FROM crm_user_identity identity
             WHERE identity.primary_external_userid = ?
                OR jsonb_exists(identity.external_userids_json, ?)
-            ORDER BY pool.updated_at DESC, pool.id DESC
+            ORDER BY identity.updated_at DESC, identity.unionid DESC
             LIMIT 1
             """,
             (_text(external_userid), _text(external_userid)),
         ).fetchone()
-        return _row_to_dict(row)
+        return _row_to_dict(row) or None
+
+    def fetch_do_not_disturb_reasons(self, unionid: str) -> list[JsonDict]:
+        try:
+            rows = self.db.execute(
+                """
+                SELECT reason_code, reason_text, source_type
+                FROM user_ops_do_not_disturb_next
+                WHERE unionid = ?
+                  AND is_active = TRUE
+                ORDER BY id ASC
+                """,
+                (_text(unionid),),
+            ).fetchall()
+        except Exception:
+            self.rollback()
+            return []
+        return [
+            {
+                "reason_code": _text(row.get("reason_code")),
+                "reason_text": _text(row.get("reason_text")),
+                "source_type": _text(row.get("source_type")),
+            }
+            for row in rows
+        ]
 
     def fetch_contact_row(self, external_userid: str) -> JsonDict:
+        try:
+            row = self.db.execute(
+                """
+                SELECT
+                    im.external_userid,
+                    COALESCE(NULLIF(fu.user_id, ''), NULLIF(im.follow_user_userid, '')) AS owner_userid,
+                    COALESCE(NULLIF(im.name, ''), NULLIF(im.raw_profile ->> 'name', '')) AS customer_name,
+                    COALESCE(NULLIF(fu.remark, ''), NULLIF(im.raw_profile ->> 'remark', '')) AS remark
+                FROM wecom_external_contact_identity_map im
+                LEFT JOIN wecom_external_contact_follow_users fu
+                  ON fu.corp_id = im.corp_id
+                 AND fu.external_userid = im.external_userid
+                 AND COALESCE(fu.relation_status, 'active') = 'active'
+                WHERE im.external_userid = ?
+                ORDER BY fu.is_primary DESC NULLS LAST, fu.updated_at DESC NULLS LAST, im.updated_at DESC, im.id DESC
+                LIMIT 1
+                """,
+                (_text(external_userid),),
+            ).fetchone()
+        except Exception:
+            self.rollback()
+            return {}
+        return _row_to_dict(row)
+
+    def _decode_broadcast_job(self, row: Any) -> JsonDict | None:
+        if not row:
+            return None
+        item = _row_to_dict(row)
+        item["target_unionids"] = json.loads(item.get("target_unionids_json") or "[]") if isinstance(item.get("target_unionids_json"), str) else list(item.get("target_unionids_json") or [])
+        item["content_payload"] = _json_object(item.get("content_payload"))
+        item["metadata"] = _json_object(item.get("metadata_json"))
+        return item
+
+    def get_broadcast_job_by_idempotency_key(self, idempotency_key: str) -> JsonDict | None:
+        key = _text(idempotency_key)
+        if not key:
+            return None
+        row = self.db.execute(
+            "SELECT * FROM broadcast_jobs WHERE idempotency_key = ? LIMIT 1",
+            (key,),
+        ).fetchone()
+        return self._decode_broadcast_job(row)
+
+    def create_broadcast_job(
+        self,
+        *,
+        source_type: str,
+        source_id: str,
+        source_table: str,
+        scheduled_for: str,
+        priority: int,
+        batch_key: str,
+        idempotency_key: str,
+        target_unionids: list[str],
+        target_summary: str,
+        content_type: str,
+        content_payload: JsonDict,
+        content_summary: str,
+        trace_id: str,
+        created_by: str,
+        business_domain: str,
+        channel: str,
+        target_kind: str,
+        metadata: JsonDict,
+    ) -> JsonDict:
+        existing = self.get_broadcast_job_by_idempotency_key(idempotency_key)
+        if existing:
+            return {**existing, "status": _text(existing.get("status")) or "exists", "idempotent_existing": True}
         row = self.db.execute(
             """
-            SELECT external_userid, owner_userid, customer_name, remark
-            FROM contacts
-            WHERE external_userid = ?
-            ORDER BY id DESC
-            LIMIT 1
+            INSERT INTO broadcast_jobs (
+                source_type, source_id, source_table, scheduled_for, priority, batch_key, status,
+                requires_approval, target_unionids_json, target_count, target_summary,
+                content_type, content_payload, content_summary, trace_id, created_by,
+                business_domain, idempotency_key, channel, target_kind, metadata_json
+            )
+            VALUES (
+                ?, ?, ?, ?, ?, ?, 'queued',
+                FALSE, CAST(? AS jsonb), ?, ?,
+                ?, CAST(? AS jsonb), ?, ?, ?,
+                ?, ?, ?, ?, CAST(? AS jsonb)
+            )
+            RETURNING *
             """,
-            (_text(external_userid),),
+            (
+                _text(source_type),
+                _text(source_id),
+                _text(source_table),
+                _text(scheduled_for) or _now_iso(),
+                int(priority),
+                _text(batch_key),
+                json.dumps([_text(item) for item in target_unionids if _text(item)], ensure_ascii=False),
+                len([item for item in target_unionids if _text(item)]),
+                _text(target_summary)[:1000],
+                _text(content_type) or "private_message",
+                json.dumps(content_payload or {}, ensure_ascii=False, default=str),
+                _text(content_summary)[:1000],
+                _text(trace_id)[:100],
+                _text(created_by)[:100],
+                _text(business_domain) or "ai_assistant",
+                _text(idempotency_key)[:255],
+                _text(channel) or "wecom_private",
+                _text(target_kind) or "unionid",
+                json.dumps(metadata or {}, ensure_ascii=False, default=str),
+            ),
         ).fetchone()
-        return _row_to_dict(row)
+        return self._decode_broadcast_job(row) or {}
 
     def _decode_campaign(self, row: Any) -> JsonDict | None:
         if not row:

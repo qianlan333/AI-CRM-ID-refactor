@@ -327,8 +327,11 @@ def _int_value(value: Any) -> int:
 
 def _postgres_order_select() -> str:
     return f"""
-        id, out_trade_no, transaction_id, payer_name_snapshot, mobile_snapshot, userid_snapshot,
-        external_userid, unionid, respondent_key, product_name, product_code, amount_total, currency,
+        id, out_trade_no, transaction_id, payer_name_snapshot,
+        COALESCE((SELECT identity.mobile FROM crm_user_identity identity WHERE identity.unionid = wechat_pay_orders.unionid LIMIT 1), '') AS mobile_snapshot,
+        '' AS userid_snapshot,
+        COALESCE((SELECT identity.primary_external_userid FROM crm_user_identity identity WHERE identity.unionid = wechat_pay_orders.unionid LIMIT 1), '') AS external_userid,
+        unionid, '' AS respondent_key, product_name, product_code, amount_total, currency,
         status, trade_state, refund_status, refunded_amount_total, created_at,
         (
             SELECT COALESCE(SUM(r.refund_amount_total), 0)
@@ -349,11 +352,31 @@ def _postgres_orders(filters: dict[str, str], *, limit: int, offset: int) -> dic
         where.append(f"product_code IN ({', '.join(['%s'] * len(filter_values))})")
         params.extend(filter_values)
     if filters.get("mobile"):
-        where.append("COALESCE(mobile_snapshot, '') ILIKE %s")
+        where.append(
+            """
+            EXISTS (
+                SELECT 1 FROM crm_user_identity identity
+                WHERE identity.unionid = wechat_pay_orders.unionid
+                  AND COALESCE(identity.mobile, '') ILIKE %s
+            )
+            """
+        )
         params.append(f"%{filters['mobile']}%")
     if filters.get("identity"):
         where.append(
-            "(COALESCE(userid_snapshot, '') ILIKE %s OR COALESCE(external_userid, '') ILIKE %s OR COALESCE(respondent_key, '') ILIKE %s)"
+            """
+            (
+                COALESCE(wechat_pay_orders.unionid, '') ILIKE %s
+                OR EXISTS (
+                    SELECT 1 FROM crm_user_identity identity
+                    WHERE identity.unionid = wechat_pay_orders.unionid
+                      AND (
+                          COALESCE(identity.primary_external_userid, '') ILIKE %s
+                          OR COALESCE(identity.primary_openid, '') ILIKE %s
+                      )
+                )
+            )
+            """
         )
         needle = f"%{filters['identity']}%"
         params.extend([needle, needle, needle])
