@@ -64,7 +64,7 @@ def get_wecom_tag_live_mutation_side_effect_plans() -> list[dict[str, Any]]:
     return [_plan_response(plan) for plan in _side_effect_plans.list_plans()]
 
 
-def live_gate_status() -> dict[str, Any]:
+def tag_execution_status() -> dict[str, Any]:
     return {
         "ok": True,
         "source_status": "tag_execution_status",
@@ -87,6 +87,11 @@ def live_gate_status() -> dict[str, Any]:
         "mark_tag_executed": False,
         "unmark_tag_executed": False,
     }
+
+
+def live_gate_status() -> dict[str, Any]:
+    """Deprecated compatibility alias; use tag_execution_status()."""
+    return tag_execution_status()
 
 
 def execute_wecom_tag_mutation(command: WeComTagMutationCommand) -> dict[str, Any]:
