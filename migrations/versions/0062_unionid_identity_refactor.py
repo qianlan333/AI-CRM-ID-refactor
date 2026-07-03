@@ -188,7 +188,13 @@ def upgrade() -> None:
                     COALESCE(jsonb_agg(DISTINCT im.id::text) FILTER (WHERE im.id IS NOT NULL), '[]'::jsonb),
                     COALESCE((ARRAY_AGG(NULLIF(im.external_userid, '') ORDER BY im.updated_at DESC NULLS LAST, im.id DESC) FILTER (WHERE COALESCE(im.external_userid, '') <> ''))[1], ''),
                     COALESCE((ARRAY_AGG(NULLIF(im.openid, '') ORDER BY im.updated_at DESC NULLS LAST, im.id DESC) FILTER (WHERE COALESCE(im.openid, '') <> ''))[1], ''),
-                    COALESCE((ARRAY_AGG(NULLIF(im.status, '') ORDER BY im.updated_at DESC NULLS LAST, im.id DESC) FILTER (WHERE COALESCE(im.status, '') <> ''))[1], 'active'),
+                    CASE LOWER(COALESCE((ARRAY_AGG(NULLIF(im.status, '') ORDER BY im.updated_at DESC NULLS LAST, im.id DESC) FILTER (WHERE COALESCE(im.status, '') <> ''))[1], 'active'))
+                        WHEN 'pending_merge' THEN 'pending_merge'
+                        WHEN 'conflict' THEN 'conflict'
+                        WHEN 'deleted' THEN 'deleted'
+                        WHEN 'inactive' THEN 'deleted'
+                        ELSE 'active'
+                    END,
                     COALESCE(MAX(im.updated_at), NOW()),
                     COALESCE(MIN(im.updated_at), NOW()),
                     COALESCE(MAX(im.updated_at), NOW()),
