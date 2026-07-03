@@ -38,6 +38,9 @@ class ExternalEffectService:
         idempotency_key: str = "",
         status: str = "queued",
     ) -> dict[str, Any]:
+        initial_status = str(status or "queued").strip() or "queued"
+        if requires_approval and initial_status in {"queued", "approved"}:
+            initial_status = "planned"
         request = ExternalEffectCreateRequest(
             effect_type=effect_type,
             adapter_name=adapter_name,
@@ -59,7 +62,7 @@ class ExternalEffectService:
             priority=priority,
             max_attempts=max_attempts,
             idempotency_key=idempotency_key,
-            status=status,
+            status=initial_status,
         )
         return self._repo.create_job(request).to_dict()
 

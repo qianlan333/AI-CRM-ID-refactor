@@ -19,6 +19,7 @@ from aicrm_next.platform_foundation.external_effects import (
     WEBHOOK_QUESTIONNAIRE_SUBMISSION_PUSH,
     WECOM_CONTACT_TAG_MARK,
     WECOM_CONTACT_TAG_UNMARK,
+    WECOM_WELCOME_MESSAGE_SEND,
     WECOM_PROFILE_UPDATE,
     reset_external_effect_fixture_state,
 )
@@ -685,6 +686,55 @@ def test_external_effect_admin_api_lists_previews_retries_and_cancels(next_clien
     assert diagnostics.json()["webhook_execution"]["enabled"] is False
     assert diagnostics.json()["real_execution_enabled"] is False
     assert diagnostics.json()["execution_mode"] == "disabled"
+    assert diagnostics.json()["wecom_execution"]["execution_mode"] == "disabled"
+
+
+def test_wecom_execution_diagnostics_reports_unified_config(next_client: TestClient, monkeypatch) -> None:
+    monkeypatch.setenv("AICRM_WECOM_EXECUTION_MODE", "execute")
+    monkeypatch.setenv("AICRM_WECOM_ENABLED_EFFECT_TYPES", f"{WECOM_CONTACT_TAG_MARK},{WECOM_WELCOME_MESSAGE_SEND}")
+    monkeypatch.setenv("WECOM_CORP_ID", "ww_fixture")
+    monkeypatch.setenv("WECOM_CONTACT_SECRET", "secret_fixture")
+    monkeypatch.setenv("AICRM_WECOM_DEFAULT_SENDER_USERID", "owner_fixture")
+    monkeypatch.setenv("AICRM_EXTERNAL_EFFECT_ALLOWED_OWNER_USERIDS", "legacy_owner")
+
+    response = next_client.get("/api/admin/wecom/execution-diagnostics")
+    body = response.json()
+
+    assert response.status_code == 200
+    assert body["ok"] is True
+    assert body["execution_mode"] == "execute"
+    assert body["corp_id_present"] is True
+    assert body["contact_secret_present"] is True
+    assert body["default_sender_userid_present"] is True
+    assert body["enabled_effect_types"] == [WECOM_CONTACT_TAG_MARK, WECOM_WELCOME_MESSAGE_SEND]
+    assert body["deprecated_settings_present"] == ["AICRM_EXTERNAL_EFFECT_ALLOWED_OWNER_USERIDS"]
+    assert body["blocking_reasons"] == []
+
+
+def test_external_effect_approval_moves_planned_job_to_due_queue() -> None:
+    repo = InMemoryExternalEffectRepository()
+    service = _service(repo)
+    job = service.plan_effect(
+        effect_type=WEBHOOK_QUESTIONNAIRE_SUBMISSION_PUSH,
+        adapter_name="outbound_webhook",
+        operation="post",
+        target_type="questionnaire_submission",
+        target_id="approval-sub-1",
+        business_type="questionnaire",
+        business_id="approval-q-1",
+        payload={"webhook_url": "https://hooks.example.test/approval", "body": {"ok": True}},
+        context=_sample_context("trace-approval"),
+        idempotency_key="approval-state-machine",
+        requires_approval=True,
+    )
+
+    assert job["status"] == "planned"
+    assert repo.list_due_jobs(limit=10) == []
+
+    approved = service.approve(job["id"])
+    assert approved is not None
+    assert approved.status == "queued"
+    assert [item.id for item in repo.list_due_jobs(limit=10)] == [job["id"]]
 
 
 def test_external_effect_diagnostics_metrics_execution_mode_and_allowed_types(next_client: TestClient, monkeypatch) -> None:
@@ -1170,6 +1220,7 @@ def test_questionnaire_submit_queues_external_push_without_legacy_call(client: T
 
 
 def test_questionnaire_external_push_legacy_shadow_and_queue_modes(client: TestClient, monkeypatch) -> None:
+    assert external_push.QUESTIONNAIRE_EXTERNAL_PUSH_MODES == {"queue"}
     cases = [
         ("legacy", "legacy-questionnaire-effect", "test_phone_legacy_001", False, "queued", "execute"),
         ("shadow", "shadow-questionnaire-effect", "test_phone_shadow_001", False, "queued", "execute"),

@@ -38,6 +38,14 @@ LOW_RISK_WEBHOOK_EFFECT_TYPES = frozenset(
         GROUP_OPS_WEBHOOK_ACTION_LOOPBACK,
     }
 )
+WECOM_EFFECT_TYPES = (
+    WECOM_CONTACT_TAG_MARK,
+    WECOM_CONTACT_TAG_UNMARK,
+    WECOM_WELCOME_MESSAGE_SEND,
+    WECOM_MESSAGE_PRIVATE_SEND,
+    WECOM_MESSAGE_GROUP_SEND,
+    WECOM_PROFILE_UPDATE,
+)
 
 
 class ExternalEffectAdapter(Protocol):
@@ -51,6 +59,30 @@ def _enabled(name: str) -> bool:
 
 def _csv_env(name: str) -> set[str]:
     return runtime_csv(name)
+
+
+def _runtime_present(*names: str) -> bool:
+    return any(bool(runtime_setting(name, "")) for name in names)
+
+
+def _normalized_wecom_execution_mode() -> tuple[str, str]:
+    raw = runtime_setting("AICRM_WECOM_EXECUTION_MODE", "").strip().lower()
+    if raw in {"disabled", "dry_run", "execute"}:
+        return raw, "AICRM_WECOM_EXECUTION_MODE"
+    if _enabled("AICRM_EXTERNAL_EFFECT_WECOM_EXECUTE"):
+        return "execute", "AICRM_EXTERNAL_EFFECT_WECOM_EXECUTE"
+    return "disabled", "default"
+
+
+def _enabled_wecom_effect_types() -> tuple[list[str], str]:
+    supported = set(WECOM_EFFECT_TYPES)
+    configured = _csv_env("AICRM_WECOM_ENABLED_EFFECT_TYPES")
+    if configured:
+        return sorted(item for item in configured if item in supported), "AICRM_WECOM_ENABLED_EFFECT_TYPES"
+    legacy = _csv_env("AICRM_EXTERNAL_EFFECT_ALLOWED_TYPES")
+    if legacy:
+        return sorted(item for item in legacy if item in supported), "AICRM_EXTERNAL_EFFECT_ALLOWED_TYPES"
+    return [], "default_empty"
 
 
 def _configured_wecom_sender(fallback: str = "") -> str:
@@ -84,14 +116,46 @@ def webhook_execution_settings() -> dict[str, Any]:
 
 
 def wecom_execution_settings() -> dict[str, Any]:
+    execution_mode, mode_source = _normalized_wecom_execution_mode()
+    enabled_types, enabled_types_source = _enabled_wecom_effect_types()
+    default_sender = _configured_wecom_sender()
+    deprecated_settings_present = [
+        key
+        for key in (
+            "AICRM_EXTERNAL_EFFECT_WECOM_EXECUTE",
+            "AICRM_EXTERNAL_EFFECT_ALLOWED_TYPES",
+            "AICRM_EXTERNAL_EFFECT_ALLOWED_OWNER_USERIDS",
+        )
+        if runtime_setting(key, "")
+    ]
+    blocking_reasons: list[str] = []
+    if execution_mode == "disabled":
+        blocking_reasons.append("wecom_execution_disabled")
+    if execution_mode == "execute" and not enabled_types:
+        blocking_reasons.append("wecom_enabled_effect_types_empty")
+    if execution_mode == "execute" and not _runtime_present("WECOM_CORP_ID"):
+        blocking_reasons.append("wecom_corp_id_missing")
+    if execution_mode == "execute" and not _runtime_present("WECOM_CONTACT_SECRET", "WECOM_SECRET"):
+        blocking_reasons.append("wecom_contact_secret_missing")
+    if execution_mode == "execute" and not default_sender:
+        blocking_reasons.append("default_sender_userid_missing")
     return {
-        "enabled": True,
-        "allowed_types": "all_wecom_effects",
+        "enabled": execution_mode == "execute" and not blocking_reasons,
+        "execution_mode": execution_mode,
+        "execution_mode_source": mode_source,
+        "allowed_types": enabled_types,
+        "enabled_effect_types": enabled_types,
+        "enabled_effect_types_source": enabled_types_source,
         "allowed_target_external_userids": "all",
         "allowed_group_ops_webhook_keys": "all",
-        "allowed_owner_userids": "all",
+        "allowed_owner_userids": [default_sender] if default_sender else [],
         "allowed_group_chat_ids": "all",
-        "supported_types": [WECOM_MESSAGE_PRIVATE_SEND, WECOM_MESSAGE_GROUP_SEND, WECOM_WELCOME_MESSAGE_SEND],
+        "supported_types": list(WECOM_EFFECT_TYPES),
+        "corp_id_present": _runtime_present("WECOM_CORP_ID"),
+        "contact_secret_present": _runtime_present("WECOM_CONTACT_SECRET", "WECOM_SECRET"),
+        "default_sender_userid_present": bool(default_sender),
+        "deprecated_settings_present": deprecated_settings_present,
+        "blocking_reasons": blocking_reasons,
     }
 
 

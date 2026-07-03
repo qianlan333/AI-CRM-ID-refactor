@@ -57,6 +57,7 @@ def upgrade() -> None:
             WHERE unionid <> ''
             """
         )
+    _drop_dependent_audience_views()
     _drop_customer_read_model_legacy_identity_columns()
 
 
@@ -151,6 +152,10 @@ def _drop_customer_read_model_legacy_identity_columns() -> None:
     for table_name, column_names in legacy_columns_by_table.items():
         for column_name in column_names:
             op.execute(f"ALTER TABLE IF EXISTS {table_name} DROP COLUMN IF EXISTS {column_name}")
+
+
+def _drop_dependent_audience_views() -> None:
+    op.execute("DROP VIEW IF EXISTS audience_read.huangxiaocan_member_usage_status_v1")
 
 
 def downgrade() -> None:

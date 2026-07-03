@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from functools import lru_cache
 from pathlib import Path
 from typing import Callable
@@ -195,6 +196,63 @@ def _external_effect_failed_retryable_backlog() -> DataHealthCheckResult:
     )
 
 
+def _deprecated_execution_settings_present() -> DataHealthCheckResult:
+    deprecated = [
+        key
+        for key in (
+            "AICRM_QUESTIONNAIRE_EXTERNAL_PUSH_MODE",
+            "AICRM_EXTERNAL_EFFECT_WECOM_EXECUTE",
+            "AICRM_EXTERNAL_EFFECT_ALLOWED_TYPES",
+            "AICRM_EXTERNAL_EFFECT_ALLOWED_OWNER_USERIDS",
+        )
+        if str(os.getenv(key) or "").strip()
+    ]
+    if deprecated:
+        return DataHealthCheckResult(
+            check_id="deprecated_execution_settings_present",
+            title="Deprecated execution settings present",
+            status="warn",
+            severity="yellow",
+            summary="Deprecated execution config is still present in the runtime environment.",
+            evidence={"deprecated_settings_present": deprecated},
+            remediation="Move WeCom execution to AICRM_WECOM_EXECUTION_MODE and AICRM_WECOM_ENABLED_EFFECT_TYPES; keep questionnaire external push fixed to queue.",
+        )
+    return DataHealthCheckResult(
+        check_id="deprecated_execution_settings_present",
+        title="Deprecated execution settings present",
+        status="ok",
+        severity="green",
+        summary="No deprecated execution env settings are present in this process.",
+        evidence={"deprecated_settings_present": []},
+        remediation="",
+    )
+
+
+def _fake_stub_route_exposed() -> DataHealthCheckResult:
+    api_path = ROOT / "aicrm_next" / "customer_tags" / "api.py"
+    source = api_path.read_text(encoding="utf-8") if api_path.exists() else ""
+    fake_stub_routes = source.count("/api/admin/wecom/tags/fake-stub")
+    guard_calls = source.count("_ensure_local_fixture_allowed()")
+    violations = []
+    if fake_stub_routes and guard_calls < fake_stub_routes:
+        violations.append("fake-stub routes exist without fixture-only guard on every handler")
+    return _static_guard_result(
+        check_id="fake_stub_route_exposed",
+        title="Fake-stub route exposure guard",
+        violations=violations,
+        ok_summary="WeCom tag fake-stub routes are guarded to local fixture mode only.",
+        remediation="Call _ensure_local_fixture_allowed() from every fake-stub route before returning fixture data.",
+    )
+
+
+def _external_effect_approved_not_queued() -> DataHealthCheckResult:
+    return _db_backed_placeholder(
+        "external_effect_approved_not_queued",
+        "External effect approved-not-queued guard",
+        ["external_effect_job"],
+    )
+
+
 def _questionnaire_submission_without_user_guard() -> DataHealthCheckResult:
     return _db_backed_placeholder(
         "questionnaire_submission_without_user_guard",
@@ -252,6 +310,9 @@ _CHECKS: tuple[Callable[[], DataHealthCheckResult], ...] = (
     _projection_freshness_customer_read_model,
     _broadcast_job_blocked_backlog,
     _external_effect_failed_retryable_backlog,
+    _deprecated_execution_settings_present,
+    _fake_stub_route_exposed,
+    _external_effect_approved_not_queued,
     _questionnaire_submission_without_user_guard,
     _payment_order_without_user_guard,
     _customer_360_freshness_guard,

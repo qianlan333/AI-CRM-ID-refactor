@@ -2616,8 +2616,8 @@ routes:
   capability_owner: customer_tags
   runtime_owner: ai_crm_next
   layer: api
-  external_effects: staging_disabled
-  data_source: read_model
+  external_effects: fixture_only
+  data_source: fixture_only
   requires_auth: true
   rollback: previous_release
 - path: /api/admin/wecom/tags/fake-stub/validate
@@ -2627,8 +2627,8 @@ routes:
   capability_owner: customer_tags
   runtime_owner: ai_crm_next
   layer: api
-  external_effects: staging_disabled
-  data_source: external_adapter
+  external_effects: fixture_only
+  data_source: fixture_only
   requires_auth: true
   rollback: previous_release
 - path: /api/admin/wecom/tags/fake-stub/dry-run/mark
@@ -2638,8 +2638,8 @@ routes:
   capability_owner: customer_tags
   runtime_owner: ai_crm_next
   layer: api
-  external_effects: staging_disabled
-  data_source: external_adapter
+  external_effects: fixture_only
+  data_source: fixture_only
   requires_auth: true
   rollback: previous_release
 - path: /api/admin/wecom/tags/fake-stub/dry-run/unmark
@@ -2649,8 +2649,8 @@ routes:
   capability_owner: customer_tags
   runtime_owner: ai_crm_next
   layer: api
-  external_effects: staging_disabled
-  data_source: external_adapter
+  external_effects: fixture_only
+  data_source: fixture_only
   requires_auth: true
   rollback: previous_release
 - path: /api/admin/wecom/tags/live/mark
