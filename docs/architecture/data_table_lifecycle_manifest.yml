@@ -956,6 +956,141 @@ tables:
       - tests/test_material_library_table_boundary.py
     notes: Canonical attachment material table used by media library and send-content picker.
 
+  questionnaires:
+    domain: questionnaire
+    lifecycle: canonical
+    write_owner: aicrm_next.questionnaire.repo
+    read_owners:
+      - aicrm_next.questionnaire.repo
+      - aicrm_next.questionnaire.api
+    replacement: none; canonical questionnaire definition table
+    drop_candidate: false
+    drop_after: ""
+    runtime_entrypoints:
+      - questionnaire admin API
+      - questionnaire H5 read/submit
+    migration_source: pre-Alembic baseline
+    guard_tests:
+      - tests/test_data_table_lifecycle_guard.py
+      - tests/test_repository_ownership_guard.py
+    notes: Canonical questionnaire metadata table; fresh schemas must include it for admin and H5 flows.
+
+  questionnaire_questions:
+    domain: questionnaire
+    lifecycle: canonical
+    write_owner: aicrm_next.questionnaire.repo
+    read_owners:
+      - aicrm_next.questionnaire.repo
+    replacement: none; canonical questionnaire question table
+    drop_candidate: false
+    drop_after: ""
+    runtime_entrypoints:
+      - questionnaire admin API
+      - questionnaire H5 read/submit
+    migration_source: pre-Alembic baseline
+    guard_tests:
+      - tests/test_data_table_lifecycle_guard.py
+      - tests/test_repository_ownership_guard.py
+    notes: Canonical question definition table used to render forms and derive answer snapshots.
+
+  questionnaire_options:
+    domain: questionnaire
+    lifecycle: canonical
+    write_owner: aicrm_next.questionnaire.repo
+    read_owners:
+      - aicrm_next.questionnaire.repo
+    replacement: none; canonical questionnaire option table
+    drop_candidate: false
+    drop_after: ""
+    runtime_entrypoints:
+      - questionnaire admin API
+      - questionnaire H5 read/submit
+    migration_source: pre-Alembic baseline
+    guard_tests:
+      - tests/test_data_table_lifecycle_guard.py
+      - tests/test_repository_ownership_guard.py
+    notes: Canonical choice-option definition table, including score, tags, and other-option settings.
+
+  questionnaire_score_rules:
+    domain: questionnaire
+    lifecycle: canonical
+    write_owner: aicrm_next.questionnaire.repo
+    read_owners:
+      - aicrm_next.questionnaire.repo
+    replacement: none; canonical questionnaire scoring rule table
+    drop_candidate: false
+    drop_after: ""
+    runtime_entrypoints:
+      - questionnaire admin API
+      - questionnaire H5 submit
+    migration_source: pre-Alembic baseline
+    guard_tests:
+      - tests/test_data_table_lifecycle_guard.py
+      - tests/test_repository_ownership_guard.py
+    notes: Canonical score-to-tag rule table for questionnaire result calculation.
+
+  questionnaire_submissions:
+    domain: questionnaire
+    lifecycle: event
+    write_owner: aicrm_next.questionnaire.repo
+    read_owners:
+      - aicrm_next.questionnaire.repo
+      - aicrm_next.automation_agents.repository
+      - audience_read.questionnaire_submissions_v1
+    replacement: none; canonical questionnaire submission fact table
+    drop_candidate: false
+    drop_after: ""
+    runtime_entrypoints:
+      - questionnaire H5 submit
+      - questionnaire admin submissions
+      - external questionnaire submissions API
+      - automation agents prompt hydration
+    migration_source: pre-Alembic baseline
+    guard_tests:
+      - tests/test_data_table_lifecycle_guard.py
+      - tests/test_unionid_identity_refactor_schema.py
+    notes: Unionid-keyed submission fact table; legacy identity fields are boundary projections only.
+
+  questionnaire_submission_answers:
+    domain: questionnaire
+    lifecycle: event
+    write_owner: aicrm_next.questionnaire.repo
+    read_owners:
+      - aicrm_next.questionnaire.repo
+      - aicrm_next.automation_agents.repository
+    replacement: none; canonical questionnaire answer snapshot table
+    drop_candidate: false
+    drop_after: ""
+    runtime_entrypoints:
+      - questionnaire H5 submit
+      - questionnaire admin submissions
+      - external questionnaire submissions API
+      - automation agents prompt hydration
+    migration_source: pre-Alembic baseline
+    guard_tests:
+      - tests/test_data_table_lifecycle_guard.py
+      - tests/test_repository_ownership_guard.py
+    notes: Answer snapshot table tied to questionnaire_submissions; stores selected option and text snapshots.
+
+  questionnaire_external_push_logs:
+    domain: questionnaire
+    lifecycle: queue
+    write_owner: aicrm_next.questionnaire.repo
+    read_owners:
+      - aicrm_next.questionnaire.repo
+      - questionnaire external push admin pages
+    replacement: external_effect_job, external_effect_attempt after questionnaire push convergence
+    drop_candidate: true
+    drop_after: "after questionnaire external push history is represented by external_effect"
+    runtime_entrypoints:
+      - questionnaire external push
+      - questionnaire external push retry admin
+    migration_source: pre-Alembic baseline
+    guard_tests:
+      - tests/test_data_table_lifecycle_guard.py
+      - tests/test_repository_ownership_guard.py
+    notes: Active questionnaire webhook delivery ledger; future work should converge retries and status to external_effect.
+
   domain_event_outbox:
     domain: commerce_events
     lifecycle: event
