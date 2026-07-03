@@ -58,6 +58,12 @@ def _json(value: Any) -> Any:
     return Jsonb(json_safe(value if value is not None else {}), dumps=_json_dumps)
 
 
+def _with_effect_log_diagnostic_identity(row: dict[str, Any]) -> dict[str, Any]:
+    payload = row.get("request_json") if isinstance(row.get("request_json"), dict) else {}
+    row.setdefault("external_contact_id", text(payload.get("external_contact_id")))
+    return row
+
+
 def find_channel_by_scene_value(scene_value: str) -> dict[str, Any] | None:
     with _connect() as conn, conn.cursor() as cur:
         cur.execute(
@@ -947,7 +953,7 @@ def get_channel_entry_effect_log(effect_type: str, idempotency_key: str) -> dict
             (text(effect_type), text(idempotency_key)),
         )
         row = cur.fetchone()
-        return dict(row) if row else None
+        return _with_effect_log_diagnostic_identity(dict(row)) if row else None
 
 
 def upsert_channel_entry_effect_log(
@@ -958,6 +964,7 @@ def upsert_channel_entry_effect_log(
     event_log_id: int | None = None,
     channel_id: int | None = None,
     scene_value: str = "",
+    unionid: str = "",
     external_contact_id: str = "",
     owner_staff_id: str = "",
     reason: str = "",
@@ -965,10 +972,14 @@ def upsert_channel_entry_effect_log(
     response_json: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     with _connect() as conn, conn.cursor() as cur:
+        resolved_unionid = text(unionid) or _resolve_unionid_by_external_userid(cur, external_contact_id)
+        source_request = dict(request_json or {})
+        if external_contact_id:
+            source_request.setdefault("external_contact_id", text(external_contact_id))
         cur.execute(
             """
             INSERT INTO automation_channel_entry_effect_log (
-                event_log_id, channel_id, scene_value, external_contact_id, owner_staff_id,
+                event_log_id, channel_id, scene_value, unionid, owner_staff_id,
                 effect_type, idempotency_key, status, reason, request_json, response_json, created_at, updated_at
             )
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
@@ -976,7 +987,7 @@ def upsert_channel_entry_effect_log(
             SET event_log_id = COALESCE(EXCLUDED.event_log_id, automation_channel_entry_effect_log.event_log_id),
                 channel_id = COALESCE(EXCLUDED.channel_id, automation_channel_entry_effect_log.channel_id),
                 scene_value = CASE WHEN EXCLUDED.scene_value <> '' THEN EXCLUDED.scene_value ELSE automation_channel_entry_effect_log.scene_value END,
-                external_contact_id = CASE WHEN EXCLUDED.external_contact_id <> '' THEN EXCLUDED.external_contact_id ELSE automation_channel_entry_effect_log.external_contact_id END,
+                unionid = CASE WHEN EXCLUDED.unionid <> '' THEN EXCLUDED.unionid ELSE automation_channel_entry_effect_log.unionid END,
                 owner_staff_id = CASE WHEN EXCLUDED.owner_staff_id <> '' THEN EXCLUDED.owner_staff_id ELSE automation_channel_entry_effect_log.owner_staff_id END,
                 status = EXCLUDED.status,
                 reason = EXCLUDED.reason,
@@ -989,19 +1000,19 @@ def upsert_channel_entry_effect_log(
                 event_log_id,
                 channel_id,
                 text(scene_value),
-                text(external_contact_id),
+                resolved_unionid,
                 text(owner_staff_id),
                 text(effect_type),
                 text(idempotency_key),
                 text(status),
                 text(reason),
-                _json(request_json or {}),
+                _json(source_request),
                 _json(response_json or {}),
             ),
         )
         row = cur.fetchone()
         conn.commit()
-        return dict(row) if row else {}
+        return _with_effect_log_diagnostic_identity(dict(row)) if row else {}
 
 
 def list_channel_entry_effect_logs(*, channel_id: int | None = None, scene_value: str = "", limit: int = 20) -> list[dict[str, Any]]:
@@ -1025,7 +1036,7 @@ def list_channel_entry_effect_logs(*, channel_id: int | None = None, scene_value
             """,
             tuple(params),
         )
-        return [dict(row) for row in cur.fetchall() or []]
+        return [_with_effect_log_diagnostic_identity(dict(row)) for row in cur.fetchall() or []]
 
 
 def log_external_contact_event(

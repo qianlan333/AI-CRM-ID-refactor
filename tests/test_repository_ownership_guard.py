@@ -74,7 +74,6 @@ def test_repository_ownership_targeted_declarations_are_complete() -> None:
         "automation_agent_output",
         "automation_agent_run",
         "broadcast_jobs",
-        "contacts",
         "external_effect_job",
         "internal_event",
         "outbound_tasks",
@@ -84,6 +83,8 @@ def test_repository_ownership_targeted_declarations_are_complete() -> None:
         "sync_runs",
         "wechat_pay_orders",
         "wecom_external_contact_event_logs",
+        "wecom_external_contact_follow_users",
+        "wecom_external_contact_identity_map",
     ]
     assert "aicrm_next.external_push.repo" in manifest["tables"]["domain_event_outbox"]["read_owners"]
     assert "aicrm_next.external_push.repo" in manifest["tables"]["external_push_delivery"]["read_owners"]
@@ -100,10 +101,11 @@ def test_repository_ownership_targeted_declarations_are_complete() -> None:
         "campaign_segments",
         "campaign_steps",
         "campaigns",
-        "contacts",
         "crm_user_identity",
         "segments",
         "user_ops_pool_current_next",
+        "wecom_external_contact_follow_users",
+        "wecom_external_contact_identity_map",
     ]
     assert repositories["aicrm_next/external_push/repo.py"]["table_writes"] == [
         "domain_event_outbox",

@@ -325,6 +325,23 @@ tables:
       - tests/test_unionid_runtime_breakage_hotfix.py
     notes: Active WeCom customer acquisition link read model used by channel and sidebar screens.
 
+  automation_channel_entry_effect_log:
+    domain: channel_entry
+    lifecycle: event
+    write_owner: aicrm_next.channel_entry.repo
+    read_owners:
+      - aicrm_next.channel_entry.repo
+    replacement: ""
+    drop_candidate: false
+    runtime_entrypoints:
+      - channel entry callback effect diagnostics
+      - channel qrcode generation diagnostics
+    migration_source: pre-Alembic baseline, hardened by 0078_final_legacy_identity_column_cleanup
+    guard_tests:
+      - tests/test_data_table_lifecycle_guard.py
+      - tests/test_unionid_identity_refactor_schema.py::test_final_legacy_identity_cleanup_removes_non_boundary_columns
+    notes: Channel-entry effect audit log keyed by unionid; external_contact_id is retained only inside request_json for diagnostics.
+
   wechat_shop_orders:
     domain: commerce
     lifecycle: canonical
