@@ -381,6 +381,48 @@ tables:
       - tests/test_data_table_lifecycle_guard.py
     notes: Still actively read/written by admin config code.
 
+  app_settings:
+    domain: admin_config
+    lifecycle: config
+    write_owner: aicrm_next.admin_config.repository
+    read_owners:
+      - aicrm_next.admin_config.repository
+      - aicrm_next.message_archive.repo
+      - aicrm_next.questionnaire.repo
+      - aicrm_next.shared.runtime_settings
+    replacement: ""
+    drop_candidate: false
+    runtime_entrypoints:
+      - admin config app settings
+      - runtime settings fallback
+      - external effects configuration
+    migration_source: 0084_id_dev_p1_baseline_tables
+    pii_level: config_secret
+    guard_tests:
+      - tests/test_data_table_lifecycle_guard.py
+      - tests/test_repository_ownership_guard.py
+      - tests/test_unionid_identity_refactor_schema.py::test_id_dev_p1_baseline_tables_exist_in_fresh_schema
+    notes: Runtime app configuration table. Secret values are masked at API/UI boundaries.
+
+  mcp_tool_settings:
+    domain: admin_config
+    lifecycle: config
+    write_owner: aicrm_next.admin_config.repository
+    read_owners:
+      - aicrm_next.admin_config.repository
+    replacement: ""
+    drop_candidate: false
+    runtime_entrypoints:
+      - admin MCP tool configuration
+      - cloud integration workspace
+    migration_source: 0084_id_dev_p1_baseline_tables
+    pii_level: config_secret
+    guard_tests:
+      - tests/test_data_table_lifecycle_guard.py
+      - tests/test_repository_ownership_guard.py
+      - tests/test_unionid_identity_refactor_schema.py::test_id_dev_p1_baseline_tables_exist_in_fresh_schema
+    notes: MCP console tool visibility and display configuration seeded by the admin config service.
+
   sidebar_customer_profile_fields:
     domain: customer_read_model
     lifecycle: read_model
@@ -456,6 +498,26 @@ tables:
       - tests/test_unionid_identity_refactor_schema.py::test_wechat_shop_orders_keep_customer_identity_in_unionid_and_raw_payload
       - tests/test_unionid_runtime_breakage_hotfix.py
     notes: Unionid-first WeChat Shop order table. Legacy buyer_mobile/openid columns are dropped by 0077.
+
+  wechat_shop_order_events:
+    domain: commerce
+    lifecycle: event
+    write_owner: aicrm_next.commerce.wechat_shop_service
+    read_owners:
+      - aicrm_next.commerce.admin_transaction_detail
+      - aicrm_next.commerce.wechat_shop_service
+    replacement: ""
+    drop_candidate: false
+    runtime_entrypoints:
+      - WeChat Shop callback ingest
+      - WeChat Shop event admin list
+      - payment transaction admin
+    migration_source: 0084_id_dev_p1_baseline_tables
+    pii_level: internal_contact
+    guard_tests:
+      - tests/test_data_table_lifecycle_guard.py
+      - tests/test_unionid_identity_refactor_schema.py::test_id_dev_p1_baseline_tables_exist_in_fresh_schema
+    notes: Raw WeChat Shop event ledger keyed by provider event type, order id, and WeChat create time.
 
   segments:
     domain: campaign

@@ -14,7 +14,7 @@ def list_delivery_lineage(
     safe_limit = _safe_limit(limit)
     safe_offset = max(0, int(offset or 0))
     items = repository.list_items(limit=safe_limit, offset=safe_offset)
-    return DeliveryLineageList(items=items, limit=safe_limit, offset=safe_offset).model_dump()
+    return DeliveryLineageList(items=items, limit=safe_limit, offset=safe_offset).model_dump(mode="json")
 
 
 def get_delivery_lineage(lineage_id: str, *, repo: DeliveryLineageRepository | None = None) -> dict:
@@ -22,7 +22,7 @@ def get_delivery_lineage(lineage_id: str, *, repo: DeliveryLineageRepository | N
     item = repository.get_item(str(lineage_id or "").strip())
     if item is None:
         return {"ok": False, "status_code": 404, "error_code": "delivery_lineage_not_found"}
-    return DeliveryLineageDetail(item=item).model_dump()
+    return DeliveryLineageDetail(item=item).model_dump(mode="json")
 
 
 def list_delivery_lineage_by_unionid(
@@ -36,7 +36,7 @@ def list_delivery_lineage_by_unionid(
     safe_limit = _safe_limit(limit)
     safe_offset = max(0, int(offset or 0))
     items = repository.list_by_unionid(str(unionid or "").strip(), limit=safe_limit, offset=safe_offset)
-    return DeliveryLineageList(items=items, limit=safe_limit, offset=safe_offset).model_dump()
+    return DeliveryLineageList(items=items, limit=safe_limit, offset=safe_offset).model_dump(mode="json")
 
 
 def list_delivery_lineage_by_trace(
@@ -50,7 +50,7 @@ def list_delivery_lineage_by_trace(
     safe_limit = _safe_limit(limit)
     safe_offset = max(0, int(offset or 0))
     items = repository.list_by_trace(str(trace_id or "").strip(), limit=safe_limit, offset=safe_offset)
-    return DeliveryLineageList(items=items, limit=safe_limit, offset=safe_offset).model_dump()
+    return DeliveryLineageList(items=items, limit=safe_limit, offset=safe_offset).model_dump(mode="json")
 
 
 def delivery_lineage_daily_metrics(
@@ -60,7 +60,7 @@ def delivery_lineage_daily_metrics(
 ) -> dict:
     repository = repo or build_delivery_lineage_repository()
     safe_days = max(1, min(int(days or 7), 31))
-    return DeliveryLineageDailyMetrics(items=repository.daily_metrics(days=safe_days), days=safe_days).model_dump()
+    return DeliveryLineageDailyMetrics(items=repository.daily_metrics(days=safe_days), days=safe_days).model_dump(mode="json")
 
 
 def _safe_limit(limit: int) -> int:

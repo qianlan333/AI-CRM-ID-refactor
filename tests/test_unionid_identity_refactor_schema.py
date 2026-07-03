@@ -158,6 +158,30 @@ def test_marketing_automation_config_tables_exist_in_fresh_schema() -> None:
     assert "ix_marketing_automation_question_rules_config_active" in source
 
 
+def test_id_dev_p1_baseline_tables_exist_in_fresh_schema() -> None:
+    source = _read("migrations/versions/0084_id_dev_p1_baseline_tables.py")
+    manifest = _read("docs/architecture/data_table_lifecycle_manifest.yml")
+
+    for table_name in ["app_settings", "mcp_tool_settings", "wechat_shop_order_events"]:
+        assert f"CREATE TABLE IF NOT EXISTS {table_name}" in source
+        assert f"{table_name}:" in manifest
+        assert "migration_source: 0084_id_dev_p1_baseline_tables" in manifest
+
+    for required in [
+        "ALTER TABLE IF EXISTS outbound_tasks ADD COLUMN IF NOT EXISTS task_type TEXT NOT NULL DEFAULT 'outbound_task'",
+        "key TEXT PRIMARY KEY",
+        "tool_name TEXT PRIMARY KEY",
+        "raw_payload_json JSONB NOT NULL DEFAULT '{}'::jsonb",
+        "process_status TEXT NOT NULL DEFAULT 'received'",
+        "ux_wechat_shop_order_events_source",
+        "ix_wechat_shop_order_events_order_created",
+    ]:
+        assert required in source
+    assert "external_userid" not in source
+    assert "openid" not in source
+    assert "mobile" not in source
+
+
 def test_wecom_identity_bridge_writes_new_identity_tables_not_legacy_maps() -> None:
     source = _read("aicrm_next/channel_entry/identity_bridge_repo.py")
 
