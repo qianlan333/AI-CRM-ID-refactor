@@ -11,6 +11,7 @@ from aicrm_next.questionnaire import h5_write
 
 
 def _client(monkeypatch) -> TestClient:
+    h5_write.reset_questionnaire_h5_write_fixture_state()
     monkeypatch.setenv("SECRET_KEY", "wecom-live-mutation-callers")
     monkeypatch.delenv("DATABASE_URL", raising=False)
     monkeypatch.delenv("AICRM_NEXT_ENV", raising=False)
@@ -37,36 +38,59 @@ def test_sidebar_signup_tag_mutation_remains_plan_only(monkeypatch) -> None:
     assert payload["side_effect_plan"]["real_external_call_executed"] is False
 
 
-def test_questionnaire_submit_tag_side_effect_updates_projection_and_queues_effect(monkeypatch) -> None:
+def test_questionnaire_submit_tag_side_effect_executes_real_wecom_and_updates_mirror(monkeypatch) -> None:
+    calls: list[dict] = []
+
+    class FakeProductionWeComAdapter:
+        def mark_external_contact_tags(self, **payload):
+            calls.append(payload)
+            return {"errcode": 0, "errmsg": "ok"}
+
+    monkeypatch.setenv("WECOM_CORP_ID", "corp-questionnaire")
+    monkeypatch.setenv("WECOM_CONTACT_SECRET", "secret-questionnaire")
+    monkeypatch.setattr(h5_write, "ProductionWeComAdapter", FakeProductionWeComAdapter)
     client = _client(monkeypatch)
 
     response = client.post(
         "/api/h5/questionnaires/hxc-activation-v1/submit",
         json={
             "answers": {"q_activation": "activated", "q_interest": ["ai_tools"]},
-            "identity": {"external_userid": "wx_ext_001", "openid": "openid_001", "unionid": "unionid_001"},
+            "identity": {
+                "external_userid": "wx_ext_001",
+                "follow_user_userid": "owner-questionnaire",
+                "openid": "openid_001",
+                "unionid": "unionid_001",
+            },
         },
-        headers={"Idempotency-Key": "questionnaire-tag-plan-only"},
+        headers={"Idempotency-Key": "questionnaire-tag-real-mark"},
     )
 
     assert response.status_code == 200
     tag_plan = response.json()["side_effects"]["wecom_tag"]
-    assert tag_plan["source_status"] == "next_command"
+    assert tag_plan["source_status"] == "tag_apply"
     assert tag_plan["effect_type"] == "questionnaire.tag.apply"
     assert tag_plan["fallback_used"] is False
-    assert tag_plan["real_external_call_executed"] is False
-    assert tag_plan["wecom_api_called"] is False
-    assert tag_plan["adapter_mode"] == "queued_external_effect"
+    assert tag_plan["status"] == "succeeded"
+    assert tag_plan["real_external_call_executed"] is True
+    assert tag_plan["wecom_api_called"] is True
+    assert tag_plan["mark_tag_executed"] is True
+    assert tag_plan["adapter_mode"] == "real_mark_tag"
+    assert tag_plan["execution_mode"] == "execute"
+    assert tag_plan["requires_approval"] is False
     assert tag_plan["local_projection_updated"] is True
     assert tag_plan["local_projection_status"] == "updated"
-    assert tag_plan["external_effect_status"] == "queued"
-    assert tag_plan["side_effect_plan"]["adapter_mode"] == "queued_external_effect"
-    assert tag_plan["side_effect_plan"]["requires_approval"] is False
-    assert tag_plan["external_effect_job"]["requires_approval"] is False
-    assert tag_plan["external_effect_job"]["payload_json"]["bypass_push_capability"] is True
+    assert tag_plan["external_effect_job"] is None
+    assert calls == [
+        {
+            "external_userid": "wx_ext_001",
+            "follow_user_userid": "owner-questionnaire",
+            "add_tags": ["tag_hxc_activated", "tag_interest_ai_tools"],
+            "remove_tags": [],
+        }
+    ]
 
 
-def test_questionnaire_submit_with_unionid_only_updates_local_projection_without_wecom_queue(monkeypatch) -> None:
+def test_questionnaire_submit_with_unionid_only_fails_without_local_projection(monkeypatch) -> None:
     client = _client(monkeypatch)
 
     response = client.post(
@@ -80,12 +104,13 @@ def test_questionnaire_submit_with_unionid_only_updates_local_projection_without
 
     assert response.status_code == 200
     tag_plan = response.json()["side_effects"]["wecom_tag"]
-    assert tag_plan["adapter_mode"] == "local_projection_and_external_effect"
-    assert tag_plan["local_projection_updated"] is True
-    assert tag_plan["external_effect_status"] == "blocked"
-    assert tag_plan["reason"] == "identity_external_userid_missing"
+    assert tag_plan["adapter_mode"] == "real_mark_tag"
+    assert tag_plan["status"] == "failed"
+    assert tag_plan["error_code"] == "missing_external_userid"
+    assert tag_plan["local_projection_updated"] is False
+    assert tag_plan["wecom_api_called"] is False
     rows = [row for row in get_customer_tag_local_projection_fixture_rows() if row["unionid"] == "unionid_union_only_001"]
-    assert {"tag_hxc_activated", "tag_interest_ai_tools"} <= {row["tag_id"] for row in rows}
+    assert rows == []
 
 
 def test_questionnaire_submit_binds_payload_mobile_when_resolved_identity_has_no_mobile(monkeypatch) -> None:

@@ -104,6 +104,32 @@ def project_questionnaire_tags(
     )
 
 
+def validate_questionnaire_tag_ids(tag_ids: list[str] | None) -> Json:
+    normalized_tags = _normalize_tags(tag_ids or [])
+    if not normalized_tags:
+        return {
+            "ok": False,
+            "reason": "tag_ids_missing",
+            "tag_ids": [],
+            "invalid_tag_ids": [],
+            "tag_names": {},
+        }
+    validation = _validate_tag_catalog(normalized_tags)
+    if validation.get("ok") is False:
+        return {
+            **validation,
+            "ok": False,
+            "reason": "tag_ids_missing",
+            "tag_ids": normalized_tags,
+        }
+    return {
+        **validation,
+        "ok": True,
+        "reason": "",
+        "tag_ids": normalized_tags,
+    }
+
+
 def _project_fixture(
     *,
     unionid: str,
