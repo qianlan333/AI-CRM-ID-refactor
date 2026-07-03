@@ -97,13 +97,23 @@ def _prepare_cloud_broadcast_recipients() -> None:
                ) THEN
                 EXECUTE $sql$
                     UPDATE cloud_broadcast_plan_recipient_messages message
-                    SET unionid = COALESCE(NULLIF(recipient.unionid, ''), cui.unionid)
-                    FROM cloud_broadcast_plan_recipients recipient
-                    LEFT JOIN crm_user_identity cui
-                      ON cui.primary_external_userid = message.external_userid
-                      OR jsonb_exists(cui.external_userids_json, message.external_userid)
-                    WHERE message.recipient_id = recipient.id
-                      AND COALESCE(message.unionid, '') = ''
+                    SET unionid = COALESCE(
+                        NULLIF((
+                            SELECT recipient.unionid
+                            FROM cloud_broadcast_plan_recipients recipient
+                            WHERE recipient.id = message.recipient_id
+                            LIMIT 1
+                        ), ''),
+                        (
+                            SELECT cui.unionid
+                            FROM crm_user_identity cui
+                            WHERE cui.primary_external_userid = message.external_userid
+                               OR jsonb_exists(cui.external_userids_json, message.external_userid)
+                            LIMIT 1
+                        ),
+                        ''
+                    )
+                    WHERE COALESCE(message.unionid, '') = ''
                 $sql$;
             END IF;
         END $$;
