@@ -26,7 +26,7 @@ from aicrm_next.platform_foundation.external_effects import (
     WECOM_PROFILE_UPDATE,
     reset_external_effect_fixture_state,
 )
-from aicrm_next.platform_foundation.external_effects.repo import InMemoryExternalEffectRepository, build_external_effect_repository
+from aicrm_next.platform_foundation.external_effects.repo import InMemoryExternalEffectRepository, _public_job, build_external_effect_repository
 from aicrm_next.platform_foundation.external_effects.retry_policy import classify_error_code, retry_delay_seconds
 from aicrm_next.platform_foundation.external_effects.worker import ExternalEffectWorker
 from aicrm_next.platform_foundation.external_effects.adapters import DEFAULT_ADAPTER_REGISTRY, ExternalEffectAdapterRegistry, WeChatPaymentAdapter, WeComContactTagAdapter, WeComProfileUpdateAdapter, WebhookAdapter
@@ -775,6 +775,23 @@ def test_wecom_execution_diagnostics_reports_unified_config(next_client: TestCli
     assert body["enabled_effect_types"] == [WECOM_CONTACT_TAG_MARK, WECOM_WELCOME_MESSAGE_SEND]
     assert body["deprecated_settings_present"] == ["AICRM_EXTERNAL_EFFECT_ALLOWED_OWNER_USERIDS"]
     assert body["blocking_reasons"] == []
+
+
+def test_external_effect_public_job_ignores_forward_schema_columns() -> None:
+    job = _public_job(
+        {
+            "id": 42,
+            "effect_type": WEBHOOK_QUESTIONNAIRE_SUBMISSION_PUSH,
+            "payload_json": '{"token":"secret-token"}',
+            "payload_summary_json": '{"token":"secret-token"}',
+            "target_unionids_json": '["future-column"]',
+        }
+    )
+
+    assert job is not None
+    assert job.id == 42
+    assert job.effect_type == WEBHOOK_QUESTIONNAIRE_SUBMISSION_PUSH
+    assert job.payload_json == {"token": "secret-token"}
 
 
 def test_external_effect_approval_moves_planned_job_to_due_queue() -> None:

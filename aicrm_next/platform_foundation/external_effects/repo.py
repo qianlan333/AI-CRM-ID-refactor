@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable
+from dataclasses import fields
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -23,6 +24,7 @@ from .models import (
 )
 
 _SENSITIVE_PAYLOAD_KEYS = {"token", "secret", "password", "authorization", "access_token", "refresh_token"}
+_MODEL_FIELD_NAMES: dict[type[Any], set[str]] = {}
 
 
 def _text(value: Any) -> str:
@@ -43,6 +45,11 @@ def _json_obj(value: Any) -> dict[str, Any]:
             return {}
         return dict(data) if isinstance(data, dict) else {}
     return {}
+
+
+def _model_payload(model: type[Any], payload: dict[str, Any]) -> dict[str, Any]:
+    field_names = _MODEL_FIELD_NAMES.setdefault(model, {field.name for field in fields(model)})
+    return {key: value for key, value in payload.items() if key in field_names}
 
 
 def _public_job(row: dict[str, Any] | None) -> ExternalEffectJob | None:
@@ -67,7 +74,7 @@ def _public_job(row: dict[str, Any] | None) -> ExternalEffectJob | None:
     payload["attempt_count"] = int(payload.get("attempt_count") or 0)
     payload["max_attempts"] = int(payload.get("max_attempts") or 0)
     payload["requires_approval"] = bool(payload.get("requires_approval"))
-    return ExternalEffectJob(**payload)
+    return ExternalEffectJob(**_model_payload(ExternalEffectJob, payload))
 
 
 def _public_attempt(row: dict[str, Any] | None) -> ExternalEffectAttempt | None:
@@ -80,7 +87,7 @@ def _public_attempt(row: dict[str, Any] | None) -> ExternalEffectAttempt | None:
         payload[key] = public_datetime(payload.get(key))
     payload["id"] = int(payload.get("id") or 0)
     payload["job_id"] = int(payload.get("job_id") or 0)
-    return ExternalEffectAttempt(**payload)
+    return ExternalEffectAttempt(**_model_payload(ExternalEffectAttempt, payload))
 
 
 def _public_receipt(row: dict[str, Any] | None) -> ExternalEffectTestReceipt | None:
@@ -95,7 +102,7 @@ def _public_receipt(row: dict[str, Any] | None) -> ExternalEffectTestReceipt | N
     payload["response_status"] = int(payload.get("response_status") or 200)
     signature_valid = payload.get("signature_valid")
     payload["signature_valid"] = None if signature_valid is None else bool(signature_valid)
-    return ExternalEffectTestReceipt(**payload)
+    return ExternalEffectTestReceipt(**_model_payload(ExternalEffectTestReceipt, payload))
 
 
 def _payload_summary(payload: dict[str, Any]) -> dict[str, Any]:
