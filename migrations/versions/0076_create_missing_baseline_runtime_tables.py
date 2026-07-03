@@ -207,31 +207,52 @@ def upgrade() -> None:
     )
     op.execute(
         """
-        CREATE OR REPLACE VIEW audience_read.questionnaire_submissions_v1 AS
-        SELECT
-            qs.id AS submission_id,
-            qs.questionnaire_id,
-            qs.unionid,
-            COALESCE(identity.primary_external_userid, '')::text AS external_userid,
-            qs.follow_user_userid AS owner_userid,
-            ''::text AS mobile_hash,
-            qs.submitted_at,
-            qs.created_at,
-            qs.updated_at,
-            qs.total_score,
-            qs.final_tags,
-            qs.assessment_result_snapshot,
-            'unionid'::text AS identity_type,
-            qs.unionid::text AS identity_value,
-            jsonb_build_object(
-                'submission_id', qs.id,
-                'questionnaire_id', qs.questionnaire_id,
-                'unionid', qs.unionid,
-                'score', qs.total_score,
-                'tags', qs.final_tags
-            ) AS payload_json
-        FROM questionnaire_submissions qs
-        LEFT JOIN crm_user_identity identity ON identity.unionid = qs.unionid
+        DO $$
+        DECLARE
+            updated_at_expr TEXT;
+        BEGIN
+            IF EXISTS (
+                SELECT 1 FROM information_schema.columns
+                WHERE table_schema = 'public' AND table_name = 'questionnaire_submissions' AND column_name = 'updated_at'
+            ) THEN
+                updated_at_expr := 'qs.updated_at';
+            ELSIF EXISTS (
+                SELECT 1 FROM information_schema.columns
+                WHERE table_schema = 'public' AND table_name = 'questionnaire_submissions' AND column_name = 'submitted_at'
+            ) THEN
+                updated_at_expr := 'qs.submitted_at';
+            ELSE
+                updated_at_expr := 'qs.created_at';
+            END IF;
+
+            EXECUTE format($sql$
+            CREATE OR REPLACE VIEW audience_read.questionnaire_submissions_v1 AS
+            SELECT
+                qs.id AS submission_id,
+                qs.questionnaire_id,
+                qs.unionid,
+                COALESCE(identity.primary_external_userid, '')::text AS external_userid,
+                qs.follow_user_userid AS owner_userid,
+                ''::text AS mobile_hash,
+                qs.submitted_at,
+                qs.created_at,
+                %s AS updated_at,
+                qs.total_score,
+                qs.final_tags,
+                qs.assessment_result_snapshot,
+                'unionid'::text AS identity_type,
+                qs.unionid::text AS identity_value,
+                jsonb_build_object(
+                    'submission_id', qs.id,
+                    'questionnaire_id', qs.questionnaire_id,
+                    'unionid', qs.unionid,
+                    'score', qs.total_score,
+                    'tags', qs.final_tags
+                ) AS payload_json
+            FROM questionnaire_submissions qs
+            LEFT JOIN crm_user_identity identity ON identity.unionid = qs.unionid
+            $sql$, updated_at_expr);
+        END $$;
         """
     )
     op.execute(
