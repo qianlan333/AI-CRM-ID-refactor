@@ -110,7 +110,7 @@ Safety guarantees:
 - External effect jobs are queued with `execution_mode=execute`, `status=queued`, and `requires_approval=false` for single-customer tag effects.
 - The customer tag consumer does not dispatch external effects.
 - No `external_effect_attempt` is created by the internal event consumer.
-- The External Effect worker still enforces Push Center capability gates unless the job payload explicitly carries a product-approved `bypass_push_capability=true` marker, as questionnaire single-customer tags do.
+- The External Effect worker still enforces Push Center capability gates for queued customer-tag jobs. Questionnaire H5 `final_tags` no longer relies on a queued job or `bypass_push_capability`; submit-time code calls WeCom mark_tag directly and records explicit `tag_apply` success/failure.
 
 ## Production Verification
 

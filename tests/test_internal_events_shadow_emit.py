@@ -14,12 +14,14 @@ from aicrm_next.customer_tags.live_mutation import execute_wecom_tag_mutation, r
 from aicrm_next.customer_tags.mutation_commands import PlanWeComTagMarkCommand, PlanWeComTagUnmarkCommand
 from aicrm_next.main import create_app
 from aicrm_next.platform_foundation.internal_events import InternalEventService, reset_internal_event_fixture_state
+from aicrm_next.questionnaire.h5_write import reset_questionnaire_h5_write_fixture_state
 from aicrm_next.questionnaire.repo import reset_questionnaire_fixture_state
 
 
 def _client(monkeypatch) -> TestClient:
     monkeypatch.delenv("DATABASE_URL", raising=False)
     monkeypatch.delenv("AICRM_NEXT_ENV", raising=False)
+    reset_questionnaire_h5_write_fixture_state()
     reset_questionnaire_fixture_state()
     reset_internal_event_fixture_state()
     return TestClient(create_app())
@@ -47,7 +49,10 @@ def test_questionnaire_submit_shadow_emits_internal_event_without_changing_side_
     assert response.status_code == 200
     assert body["success"] is True
     assert "external_effect_job_id" in body
-    assert body["side_effects"]["wecom_tag"]["external_effect_job_id"]
+    assert body["side_effects"]["wecom_tag"]["status"] == "failed"
+    assert body["side_effects"]["wecom_tag"]["error_code"] == "owner_userid_missing"
+    assert body["side_effects"]["wecom_tag"]["external_effect_job_id"] is None
+    assert body["side_effects"]["wecom_tag"]["wecom_api_called"] is False
     assert body["internal_event_status"] == "emitted"
     assert body["internal_event_id"] == events[0].event_id
     assert total == 1

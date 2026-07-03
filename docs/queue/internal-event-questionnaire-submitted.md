@@ -2,9 +2,11 @@
 
 `questionnaire.submitted` records the business fact that a public H5 questionnaire
 submission was accepted and persisted. It does not mean a webhook was delivered,
-the WeCom API was called, or automation was executed. Questionnaire final tags
-can update the local CRM tag projection during submit; the real WeCom tag call is
-represented by a queued External Effect job.
+or automation was executed. The H5 submit handler itself is responsible for
+synchronous questionnaire `final_tags` application: it calls the real WeCom
+`/cgi-bin/externalcontact/mark_tag` API when tags, `external_userid`,
+`follow_user_userid`, and WeCom config are present. Local CRM tag rows are only a
+post-success mirror.
 
 ## Event Schema
 
@@ -57,9 +59,9 @@ secrets.
 - `questionnaire_tag_consumer`
   Currently skips with
   `questionnaire_tag_side_effect_already_planned_or_not_configured`. Existing H5
-  submit tag handling remains in place: local `contact_tags` projection is
-  updated immediately when a `unionid` is available, and a WeCom tag
-  `external_effect_job` is queued when `external_userid` is available.
+  submit tag handling remains in place: submit-time code has already attempted
+  the real WeCom mark_tag call and returned `tag_apply.status`; this consumer
+  must not treat queued/planned state as tag success.
 
 - `automation_questionnaire_consumer`
   Currently skips with `automation_questionnaire_not_configured`.
@@ -83,7 +85,9 @@ The existing H5 submit path in `aicrm_next/questionnaire/h5_write.py` remains in
 place:
 
 - existing questionnaire external push planning is not removed;
-- existing tag local projection and external-effect queue planning is not removed;
+- existing tag apply response fields are preserved, but tag success is now tied
+  to the real WeCom mark_tag result and local projection is only a post-success
+  mirror;
 - submit API response fields are preserved.
 
 The webhook consumer deduplicates against existing jobs using:

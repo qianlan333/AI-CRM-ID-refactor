@@ -6,11 +6,13 @@ from fastapi.testclient import TestClient
 from aicrm_next.main import create_app
 from aicrm_next.platform_foundation.external_effects import ExternalEffectService, WEBHOOK_QUESTIONNAIRE_SUBMISSION_PUSH
 from aicrm_next.platform_foundation.external_effects.repo import reset_external_effect_fixture_state
+from aicrm_next.questionnaire.h5_write import reset_questionnaire_h5_write_fixture_state
 from aicrm_next.questionnaire.repo import build_questionnaire_repository
 
 
 @pytest.fixture()
 def client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
+    reset_questionnaire_h5_write_fixture_state()
     monkeypatch.delenv("DATABASE_URL", raising=False)
     monkeypatch.delenv("AICRM_NEXT_ENV", raising=False)
     monkeypatch.delenv("AICRM_NEXT_ENABLE_LEGACY_PRODUCTION_FACADE", raising=False)
@@ -50,7 +52,10 @@ def test_h5_submit_executes_configured_questionnaire_external_push(client: TestC
     assert body["real_external_call_executed"] is False
     assert body["external_push"]["status"] == "queued"
     assert body["external_push"]["legacy_outbound_disabled"] is True
-    assert body["side_effect_plan"]["adapter_mode"] == "local_projection_and_external_effect"
+    assert body["tag_apply"]["status"] == "failed"
+    assert body["tag_apply"]["error_code"] == "tag_ids_missing"
+    assert body["tag_apply"]["wecom_api_called"] is False
+    assert body["side_effect_plan"]["adapter_mode"] == "real_mark_tag"
     assert body["side_effect_plan"]["requires_approval"] is False
     assert "external_push.queued" in body["side_effect_plan"]["payload"]["planned_effects"]
     assert body["external_effect_job_status"] == "queued"
