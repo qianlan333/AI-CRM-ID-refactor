@@ -20,6 +20,11 @@ def test_questionnaire_admin_list_page_exposes_next_read_status_without_facade()
     assert "hxc-activation-v1" in html
     assert "data-action=\"duplicate\"" in html
     assert "downloadQuestionnaireData" in html
+    assert ".questionnaire-toast.is-busy" in html
+    assert "导出中，请稍候..." in html
+    assert "导出中..." in html
+    assert "function downloadQuestionnaireData(questionnaireId, button)" in html
+    assert "downloadQuestionnaireData(item.id, button)" in html
     assert "data-admin-shell-source=\"next_admin_shell\"" in html
 
 
