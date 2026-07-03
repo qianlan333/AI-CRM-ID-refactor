@@ -368,6 +368,7 @@ def test_user_ops_legacy_runtime_tables_are_retired() -> None:
     assert "FROM crm_user_identity identity" in external_campaign_repo_source
     assert "user_ops_pool_current_next" not in external_campaign_source
     assert "user_ops_pool_current_next" not in external_campaign_repo_source
+    assert "identity.id" not in external_campaign_repo_source
     assert "return _status_counts([])" in admin_jobs_source
     assert "user_ops_lead_pool_current:\n    domain: user_ops\n    lifecycle: retired" in manifest_source
     assert "user_ops_deferred_jobs:\n    domain: user_ops\n    lifecycle: retired" in manifest_source

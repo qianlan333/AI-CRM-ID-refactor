@@ -212,7 +212,7 @@ class PostgresExternalCampaignRepository:
             FROM crm_user_identity identity
             WHERE identity.primary_external_userid = ?
                OR jsonb_exists(identity.external_userids_json, ?)
-            ORDER BY identity.updated_at DESC, identity.id DESC
+            ORDER BY identity.updated_at DESC, identity.unionid DESC
             LIMIT 1
             """,
             (_text(external_userid), _text(external_userid)),
@@ -244,24 +244,28 @@ class PostgresExternalCampaignRepository:
         ]
 
     def fetch_contact_row(self, external_userid: str) -> JsonDict:
-        row = self.db.execute(
-            """
-            SELECT
-                im.external_userid,
-                COALESCE(NULLIF(fu.user_id, ''), NULLIF(im.follow_user_userid, '')) AS owner_userid,
-                COALESCE(NULLIF(im.name, ''), NULLIF(im.raw_profile ->> 'name', '')) AS customer_name,
-                COALESCE(NULLIF(fu.remark, ''), NULLIF(im.raw_profile ->> 'remark', '')) AS remark
-            FROM wecom_external_contact_identity_map im
-            LEFT JOIN wecom_external_contact_follow_users fu
-              ON fu.corp_id = im.corp_id
-             AND fu.external_userid = im.external_userid
-             AND COALESCE(fu.relation_status, 'active') = 'active'
-            WHERE im.external_userid = ?
-            ORDER BY fu.is_primary DESC NULLS LAST, fu.updated_at DESC NULLS LAST, im.updated_at DESC, im.id DESC
-            LIMIT 1
-            """,
-            (_text(external_userid),),
-        ).fetchone()
+        try:
+            row = self.db.execute(
+                """
+                SELECT
+                    im.external_userid,
+                    COALESCE(NULLIF(fu.user_id, ''), NULLIF(im.follow_user_userid, '')) AS owner_userid,
+                    COALESCE(NULLIF(im.name, ''), NULLIF(im.raw_profile ->> 'name', '')) AS customer_name,
+                    COALESCE(NULLIF(fu.remark, ''), NULLIF(im.raw_profile ->> 'remark', '')) AS remark
+                FROM wecom_external_contact_identity_map im
+                LEFT JOIN wecom_external_contact_follow_users fu
+                  ON fu.corp_id = im.corp_id
+                 AND fu.external_userid = im.external_userid
+                 AND COALESCE(fu.relation_status, 'active') = 'active'
+                WHERE im.external_userid = ?
+                ORDER BY fu.is_primary DESC NULLS LAST, fu.updated_at DESC NULLS LAST, im.updated_at DESC, im.id DESC
+                LIMIT 1
+                """,
+                (_text(external_userid),),
+            ).fetchone()
+        except Exception:
+            self.rollback()
+            return {}
         return _row_to_dict(row)
 
     def _decode_broadcast_job(self, row: Any) -> JsonDict | None:
