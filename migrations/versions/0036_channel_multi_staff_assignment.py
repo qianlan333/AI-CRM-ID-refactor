@@ -7,12 +7,19 @@ Revises: 0035_wechat_shop_refunds
 from __future__ import annotations
 
 from alembic import op
+from sqlalchemy import inspect
 
 
 revision = "0036_channel_multi_staff_assignment"
 down_revision = "0035_wechat_shop_refunds"
 branch_labels = None
 depends_on = None
+
+
+def _has_table(table: str) -> bool:
+    bind = op.get_bind()
+    schema = None if bind.dialect.name == "sqlite" else "public"
+    return inspect(bind).has_table(table, schema=schema)
 
 
 def upgrade() -> None:
@@ -40,11 +47,12 @@ def upgrade() -> None:
         ADD COLUMN IF NOT EXISTS assignment_config_json JSONB NOT NULL DEFAULT '{}'::jsonb
         """
     )
+    channel_reference = " REFERENCES automation_channel(id) ON DELETE CASCADE" if _has_table("automation_channel") else ""
     op.execute(
         """
         CREATE TABLE IF NOT EXISTS automation_channel_assignee (
             id BIGSERIAL PRIMARY KEY,
-            channel_id BIGINT NOT NULL REFERENCES automation_channel(id) ON DELETE CASCADE,
+            channel_id BIGINT NOT NULL__CHANNEL_REFERENCE__,
             staff_id TEXT NOT NULL,
             display_name_snapshot TEXT NOT NULL DEFAULT '',
             priority INTEGER NOT NULL DEFAULT 0,
@@ -55,7 +63,7 @@ def upgrade() -> None:
             updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
             UNIQUE(channel_id, staff_id)
         )
-        """
+        """.replace("__CHANNEL_REFERENCE__", channel_reference)
     )
     op.execute(
         """
@@ -67,7 +75,7 @@ def upgrade() -> None:
         """
         CREATE TABLE IF NOT EXISTS automation_channel_assignment_event (
             id BIGSERIAL PRIMARY KEY,
-            channel_id BIGINT NOT NULL REFERENCES automation_channel(id) ON DELETE CASCADE,
+            channel_id BIGINT NOT NULL__CHANNEL_REFERENCE__,
             assignee_staff_id TEXT NOT NULL DEFAULT '',
             strategy TEXT NOT NULL,
             reason TEXT NOT NULL DEFAULT '',
@@ -80,7 +88,7 @@ def upgrade() -> None:
             created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
         )
-        """
+        """.replace("__CHANNEL_REFERENCE__", channel_reference)
     )
     op.execute(
         """
