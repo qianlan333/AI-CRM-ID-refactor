@@ -2,6 +2,7 @@
 .pytest_cache/
 __pycache__/
 *.pyc
+node_modules/
 .tmp/
 .remote_crm_fix/
 data.sqlite3
@@ -19,6 +20,8 @@ exports/
 /config/
 /outputs/
 .codex_artifacts/
+/local-environments-settings-page-*.js
+/worktree-*.js
 *.swp
 
 .claude/

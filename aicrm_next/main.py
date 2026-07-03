@@ -20,6 +20,17 @@ from .shared.repository_provider import RepositoryProviderError
 from .shared.release import current_release_sha
 from .shared.runtime import fixture_mode
 
+__all__ = [
+    "app",
+    "create_app",
+    "reset_automation_fixture_state",
+    "reset_commerce_fixture_state",
+    "reset_media_library_fixture_state",
+    "reset_questionnaire_fixture_state",
+    "reset_radar_links_fixture_state",
+    "reset_user_ops_fixture_state",
+]
+
 _FRONTEND_COMPAT_DIR = Path(__file__).resolve().parent / "frontend_compat"
 _GROUP_OPS_DIR = Path(__file__).resolve().parent / "automation_engine" / "group_ops"
 _AUTOMATION_ENGINE_DIR = Path(__file__).resolve().parent / "automation_engine"

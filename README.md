@@ -137,13 +137,13 @@ scripts/worktree-new.sh feature/customer-timeline
 默认会在当前仓库旁边创建一个目录，命名规则类似：
 
 ```text
-/Users/qianlan/Downloads/aicrm-new-feature-customer-timeline
+<repo-parent>/aicrm-new-feature-customer-timeline
 ```
 
 如果你要指定基线或目录，也可以这样：
 
 ```bash
-scripts/worktree-new.sh feature/customer-timeline origin/main /tmp/aicrm-customer-timeline
+scripts/worktree-new.sh feature/customer-timeline origin/main <custom-worktree-dir>
 ```
 
 开发完成并合并后，移除 worktree：

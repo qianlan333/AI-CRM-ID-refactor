@@ -371,7 +371,6 @@ class PostgresIdentityBridgeRepository:
         preferred_userid: str = "",
     ) -> None:
         db = get_db()
-        corp = _text(corp_id)
         external = _text(external_userid)
         normalized = [dict(item or {}) for item in list(follow_users or []) if _text((item or {}).get("userid"))]
         userids = {_text(item.get("userid")) for item in normalized}

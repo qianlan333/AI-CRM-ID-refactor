@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 from pathlib import Path
 
 from tools.audit_repo_hygiene import audit_repository, main, render_human_summary, write_report_files
@@ -79,6 +80,17 @@ def test_audit_reports_artifact_directory_candidates_without_git(tmp_path) -> No
         ".codex_artifacts/screenshot.png",
         "artifacts/internal_event_coverage_audit.json",
     }
+
+
+def test_audit_ignores_untracked_artifacts_inside_git_worktree(tmp_path) -> None:
+    subprocess.run(["git", "init"], cwd=tmp_path, check=True, capture_output=True, text=True)
+    _write(tmp_path / "AGENTS.md", "# Entry\n")
+    _write(tmp_path / ".gitignore", ".codex_artifacts/\n")
+    _write(tmp_path / ".codex_artifacts/full_repo_file_inventory.txt", "AGENTS.md\n")
+
+    report = audit_repository(tmp_path)
+
+    assert _issues_by_category(report, "tracked_artifact_candidate") == []
 
 
 def test_audit_reports_agent_entry_drift_and_ops_details(tmp_path) -> None:

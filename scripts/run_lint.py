@@ -7,7 +7,7 @@ from pathlib import Path
 try:
     from scripts.script_runtime import REPO_ROOT
 except ModuleNotFoundError:  # pragma: no cover - direct script execution
-    from script_runtime import REPO_ROOT
+    from script_runtime import REPO_ROOT  # type: ignore[no-redef]
 
 ROOT = REPO_ROOT
 PYTHON_TARGETS = [

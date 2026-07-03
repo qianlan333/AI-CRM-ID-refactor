@@ -314,7 +314,7 @@ def _audit_markdown_references(root: Path, markdown_files: list[Path]) -> list[R
 
 def _audit_tracked_artifacts(root: Path) -> list[RepoFinding]:
     tracked = _git_ls_files(root, ARTIFACT_DIRS)
-    if not tracked:
+    if not tracked and not _is_git_worktree(root):
         tracked = [
             _display_path(path, root)
             for directory in ARTIFACT_DIRS
@@ -541,6 +541,20 @@ def _git_ls_files(root: Path, patterns: Iterable[str]) -> list[str]:
     if result.returncode != 0:
         return []
     return sorted(line.strip() for line in result.stdout.splitlines() if line.strip())
+
+
+def _is_git_worktree(root: Path) -> bool:
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--is-inside-work-tree"],
+            cwd=root,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+    except OSError:
+        return False
+    return result.returncode == 0 and result.stdout.strip() == "true"
 
 
 def _has_skipped_part(path: Path) -> bool:
