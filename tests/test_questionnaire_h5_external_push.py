@@ -21,7 +21,6 @@ def client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
 
 def test_h5_submit_executes_configured_questionnaire_external_push(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
     reset_external_effect_fixture_state()
-    monkeypatch.setenv("AICRM_QUESTIONNAIRE_EXTERNAL_PUSH_MODE", "legacy")
     repo = build_questionnaire_repository()
     questionnaire = repo._questionnaires[0]  # type: ignore[attr-defined]
     questionnaire["external_push_config"] = {

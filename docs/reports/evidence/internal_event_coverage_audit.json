@@ -5873,13 +5873,6 @@
     },
     {
       "call": "record_runtime_marker",
-      "function": "deliver_questionnaire_external_push",
-      "legacy_key": "old_questionnaire_sync_external_push",
-      "line": 43,
-      "path": "aicrm_next/questionnaire/external_push.py"
-    },
-    {
-      "call": "record_runtime_marker",
       "function": "_record_legacy_marker",
       "legacy_key": "old_questionnaire_sync_external_push",
       "line": 37,

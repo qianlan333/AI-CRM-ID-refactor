@@ -19,19 +19,6 @@ JsonDict = dict[str, Any]
 
 _DEFAULT_TIMEZONE = "Asia/Shanghai"
 _TOKEN_KEYS = ("AICRM_EXTERNAL_CAMPAIGN_TOKEN", "AUTOMATION_INTERNAL_API_TOKEN")
-_ONE_RECIPIENT_SEGMENT_SQL = """
-SELECT member_id, unionid, external_contact_id
-FROM (
-    SELECT (900000000000 + 2147483648 + hashtext(identity.unionid)::bigint) AS member_id,
-           identity.unionid,
-           identity.primary_external_userid AS external_contact_id
-    FROM crm_user_identity identity
-    WHERE identity.primary_external_userid = %(external_userid)s
-       OR jsonb_exists(identity.external_userids_json, %(external_userid)s)
-) matched
-ORDER BY member_id DESC
-LIMIT 1
-"""
 
 
 class ExternalCampaignError(Exception):
@@ -633,276 +620,6 @@ def _create_single_recipient_direct_send(
     return created
 
 
-def _existing_campaign_response(campaign_code: str, *, repo: ExternalCampaignRepository) -> JsonDict | None:
-    existing = repo.get_campaign_by_code(campaign_code)
-    if not existing:
-        return None
-    return {
-        "campaign_code": campaign_code,
-        "campaign_id": int(existing["id"]),
-        "status": "exists",
-        "review_status": _text(existing.get("review_status")),
-        "run_status": _text(existing.get("run_status")),
-        "scheduled_jobs": repo.count_open_campaign_jobs(campaign_id=int(existing["id"])),
-    }
-
-
-def _cleanup_campaign_after_failed_create(*, campaign_id: int, repo: ExternalCampaignRepository) -> JsonDict:
-    try:
-        result = repo.delete_campaign(campaign_id=int(campaign_id))
-        repo.commit()
-        return {"cleanup_ok": True, "cleanup_result": result}
-    except Exception as exc:
-        try:
-            repo.rollback()
-        except Exception:
-            pass
-        return {"cleanup_ok": False, "cleanup_error": str(exc)}
-
-
-def _campaign_identity(
-    *,
-    payload: JsonDict,
-    recipient: JsonDict,
-    owner_userid: str,
-    group_code: str,
-    timezone_name: str,
-) -> tuple[list[JsonDict], datetime, str, str, str]:
-    target_id, _target_id_type = _target_id_for_recipient(recipient)
-    steps = _normalize_step_list(
-        recipient.get("steps") if isinstance(recipient.get("steps"), list) else payload.get("steps"),
-        payload,
-        recipient,
-        timezone_name=timezone_name,
-    )
-    first_dt = _parse_local_datetime(steps[0]["scheduled_for"], default_timezone=timezone_name)
-    anchor_date = first_dt.date().isoformat()
-    fingerprint = _hash_payload(payload.get("idempotency_key"), group_code, owner_userid, target_id, anchor_date, steps)
-    campaign_code = _text(recipient.get("campaign_code")) or _text(payload.get("campaign_code"))
-    if campaign_code and len(_normalize_recipients(payload)) > 1:
-        campaign_code = f"{campaign_code}_{fingerprint[:8]}"
-    campaign_code = campaign_code or f"camp_ext_{fingerprint}"
-    trace_id = _text(payload.get("trace_id")) or f"ext-campaign-{fingerprint}"
-    return steps, first_dt, campaign_code, trace_id, fingerprint
-
-
-def _create_single_recipient_campaign(
-    *,
-    payload: JsonDict,
-    recipient: JsonDict,
-    owner_userid: str,
-    operator: str,
-    group_code: str,
-    group_label: str,
-    timezone_name: str,
-    strict_owner_match: bool,
-    repo: ExternalCampaignRepository,
-) -> JsonDict:
-    target_id, target_id_type = _target_id_for_recipient(recipient)
-    external_userid = _text(recipient.get("external_userid") or target_id)
-    steps, first_dt, campaign_code, trace_id, fingerprint = _campaign_identity(
-        payload=payload,
-        recipient=recipient,
-        owner_userid=owner_userid,
-        group_code=group_code,
-        timezone_name=timezone_name,
-    )
-    existing = _existing_campaign_response(campaign_code, repo=repo)
-    if existing:
-        existing["external_userid"] = external_userid
-        return existing
-    try:
-        target = _lookup_target(
-            target_id=target_id,
-            target_id_type=target_id_type,
-            owner_userid=owner_userid,
-            strict_owner_match=strict_owner_match,
-            bypass_dnd=_truthy(payload.get("bypass_dnd")),
-            repo=repo,
-        )
-    except ExternalCampaignError as exc:
-        raise exc.add_context(group_code=group_code, campaign_code=campaign_code, trace_id=trace_id) from exc
-
-    external_userid = _text(target.get("external_userid") or external_userid)
-    anchor_date = first_dt.date().isoformat()
-    segment_code = f"seg_ext_{fingerprint}"
-    campaign_id = 0
-    try:
-        segment = repo.create_or_update_external_segment(
-            segment_code=segment_code,
-            display_name=f"{group_label} · {external_userid}",
-            external_userid=external_userid,
-            owner_userid=owner_userid,
-            sql_query=_ONE_RECIPIENT_SEGMENT_SQL,
-            sql_params={"external_userid": external_userid},
-            operator=operator,
-            session_id=_text(payload.get("session_id")),
-        )
-        if int(segment.get("cached_headcount") or 0) != 1:
-            raise ExternalCampaignError(
-                "target_headcount_invalid",
-                status_code=409,
-                message=f"target_headcount_invalid:{external_userid}:{segment.get('cached_headcount')}",
-                phase="target_lookup",
-                external_userid=external_userid,
-                owner_userid=owner_userid,
-                group_code=group_code,
-                campaign_code=campaign_code,
-                trace_id=trace_id,
-            )
-        display_name = _text(recipient.get("display_name")) or f"{group_label} · {external_userid} · {anchor_date}"
-        campaign = repo.create_campaign_draft(
-            campaign_code=campaign_code,
-            display_name=display_name,
-            intent=_text(payload.get("intent")) or group_label,
-            anchor_date=anchor_date,
-            owner_userid=owner_userid,
-            operator=operator,
-            session_id=_text(payload.get("session_id")),
-            trace_id=trace_id,
-            metadata={
-                "source": "external_token_api",
-                "group_code": group_code,
-                "group_label": group_label,
-                "external_userid": external_userid,
-                "unionid": target.get("unionid") or "",
-                "owner_userid": owner_userid,
-                "idempotency_key": _text(payload.get("idempotency_key")),
-                "contact": target.get("contact") or {},
-            },
-        )
-        campaign_id = int(campaign["id"])
-        campaign_segment = repo.add_segment_to_campaign(
-            campaign_id=campaign_id,
-            segment_code=segment_code,
-            priority=int(payload.get("priority") or 100),
-            label=_text(recipient.get("label")) or external_userid,
-        )
-        for step in steps:
-            repo.add_step_to_campaign(
-                campaign_id=campaign_id,
-                campaign_segment_id=int(campaign_segment["id"]),
-                step_index=int(step["step_index"]),
-                day_offset=int(step["day_offset"]),
-                content_text=_text(step["content_text"]),
-                content_payload=step["content_payload"],
-                send_time=_text(step["send_time"]),
-                timezone_name=_text(step["timezone"]) or timezone_name,
-                stop_on_reply=bool(step["stop_on_reply"]),
-                skip_if_recently_touched_days=int(step["skip_if_recently_touched_days"]),
-                agent_run_id=_text(payload.get("agent_run_id")),
-            )
-        allocation = repo.allocate_campaign_members(campaign_id=campaign_id)
-        if int(allocation.get("allocated") or 0) != 1:
-            repo.rollback()
-            cleanup = _cleanup_campaign_after_failed_create(campaign_id=campaign_id, repo=repo)
-            raise ExternalCampaignError(
-                "campaign_member_allocation_failed",
-                status_code=409,
-                message=(
-                    f"campaign_member_allocation_failed:{external_userid}:{allocation.get('allocated')}"
-                    f":errors={allocation.get('errors') or []}"
-                ),
-                phase="allocation",
-                external_userid=external_userid,
-                owner_userid=owner_userid,
-                group_code=group_code,
-                campaign_code=campaign_code,
-                trace_id=trace_id,
-                details={"allocation": allocation, "allocation_errors": allocation.get("errors") or [], **cleanup},
-            )
-        submitted = repo.submit_campaign_for_review(campaign_id=campaign_id, operator=operator)
-        repo.commit()
-    except ExternalCampaignError:
-        raise
-    except Exception as exc:
-        repo.rollback()
-        cleanup = _cleanup_campaign_after_failed_create(campaign_id=campaign_id, repo=repo) if campaign_id else {}
-        raise ExternalCampaignError(
-            "campaign_create_failed",
-            status_code=500,
-            message=str(exc),
-            phase="campaign_create",
-            external_userid=external_userid,
-            owner_userid=owner_userid,
-            group_code=group_code,
-            campaign_code=campaign_code,
-            trace_id=trace_id,
-            details=cleanup,
-        ) from exc
-
-    return {
-        "campaign_code": campaign_code,
-        "campaign_id": int(submitted["id"]),
-        "external_userid": target.get("external_userid") or external_userid,
-        "unionid": target.get("unionid") or "",
-        "segment_code": segment_code,
-        "status": "created",
-        "review_status": _text(submitted.get("review_status")),
-        "run_status": _text(submitted.get("run_status")),
-        "anchor_date": anchor_date,
-        "first_scheduled_for": first_dt.isoformat(),
-        "step_count": len(steps),
-        "scheduled_jobs": repo.count_open_campaign_jobs(campaign_id=int(submitted["id"])),
-        "requires_human_review": True,
-    }
-
-
-def _preview_single_recipient_campaign(
-    *,
-    payload: JsonDict,
-    recipient: JsonDict,
-    owner_userid: str,
-    group_code: str,
-    group_label: str,
-    timezone_name: str,
-    strict_owner_match: bool,
-    repo: ExternalCampaignRepository,
-) -> JsonDict:
-    target_id, target_id_type = _target_id_for_recipient(recipient)
-    external_userid = _text(recipient.get("external_userid") or target_id)
-    steps, first_dt, campaign_code, trace_id, fingerprint = _campaign_identity(
-        payload=payload,
-        recipient=recipient,
-        owner_userid=owner_userid,
-        group_code=group_code,
-        timezone_name=timezone_name,
-    )
-    try:
-        target = _lookup_target(
-            target_id=target_id,
-            target_id_type=target_id_type,
-            owner_userid=owner_userid,
-            strict_owner_match=strict_owner_match,
-            bypass_dnd=_truthy(payload.get("bypass_dnd")),
-            repo=repo,
-        )
-    except ExternalCampaignError as exc:
-        raise exc.add_context(group_code=group_code, campaign_code=campaign_code, trace_id=trace_id) from exc
-    return {
-        "campaign_code": campaign_code,
-        "external_userid": target.get("external_userid") or external_userid,
-        "unionid": target.get("unionid") or "",
-        "segment_code": f"seg_ext_{fingerprint}",
-        "anchor_date": first_dt.date().isoformat(),
-        "first_scheduled_for": first_dt.isoformat(),
-        "step_count": len(steps),
-        "steps": [
-            {
-                "step_index": int(step["step_index"]),
-                "scheduled_for": _text(step["scheduled_for"]),
-                "content_preview": _text(step["content_text"])[:120],
-                "stop_on_reply": bool(step["stop_on_reply"]),
-            }
-            for step in steps
-        ],
-        "contact": target.get("contact") or {},
-        "target_source": _text(target.get("source")),
-        "warnings": target.get("warnings") or [],
-        "would_create": _existing_campaign_response(campaign_code, repo=repo) is None,
-    }
-
-
 def create_external_campaigns(payload: JsonDict, repo: ExternalCampaignRepository | None = None) -> JsonDict:
     if not isinstance(payload, dict):
         raise ExternalCampaignError("json object body is required")
@@ -919,6 +636,15 @@ def create_external_campaigns(payload: JsonDict, repo: ExternalCampaignRepositor
     recipients = _normalize_recipients(payload)
     dry_run = _truthy(payload.get("dry_run")) or _truthy(payload.get("preview"))
     use_campaign_workflow = _truthy(payload.get("use_campaign_workflow"))
+    if use_campaign_workflow:
+        raise ExternalCampaignError(
+            "campaign_workflow_retired",
+            status_code=410,
+            message="use_campaign_workflow is retired; external campaign requests now create direct broadcast jobs only",
+            phase="request_validation",
+            owner_userid=owner_userid,
+            details={"send_path": "direct_broadcast_job", "retired_path": "campaign_workflow"},
+        )
     if _truthy(payload.get("auto_backfill_automation_member")):
         raise ExternalCampaignError(
             "automation_member_backfill_retired",
@@ -930,35 +656,20 @@ def create_external_campaigns(payload: JsonDict, repo: ExternalCampaignRepositor
 
     effective_recipients = recipients
     if dry_run:
-        if use_campaign_workflow:
-            previews = [
-                _preview_single_recipient_campaign(
-                    payload=payload,
-                    recipient=recipient,
-                    owner_userid=owner_userid,
-                    group_code=group_code,
-                    group_label=group_label,
-                    timezone_name=timezone_name,
-                    strict_owner_match=strict_owner_match,
-                    repo=repository,
-                )
-                for recipient in effective_recipients
-            ]
-        else:
-            previews = [
-                _preview_single_recipient_direct_send(
-                    payload=payload,
-                    recipient=recipient,
-                    owner_userid=owner_userid,
-                    group_code=group_code,
-                    group_label=group_label,
-                    timezone_name=timezone_name,
-                    strict_owner_match=strict_owner_match,
-                    bypass_dnd=bypass_dnd,
-                    repo=repository,
-                )
-                for recipient in effective_recipients
-            ]
+        previews = [
+            _preview_single_recipient_direct_send(
+                payload=payload,
+                recipient=recipient,
+                owner_userid=owner_userid,
+                group_code=group_code,
+                group_label=group_label,
+                timezone_name=timezone_name,
+                strict_owner_match=strict_owner_match,
+                bypass_dnd=bypass_dnd,
+                repo=repository,
+            )
+            for recipient in effective_recipients
+        ]
         repository.rollback()
         return {
             "ok": True,
@@ -966,43 +677,13 @@ def create_external_campaigns(payload: JsonDict, repo: ExternalCampaignRepositor
             "side_effect_executed": False,
             "route_owner": "ai_crm_next",
             "source": "external_token_api",
-            "send_path": "campaign_workflow" if use_campaign_workflow else "direct_broadcast_job",
+            "send_path": "direct_broadcast_job",
             "group_code": group_code,
             "group_label": group_label,
             "owner_userid": owner_userid,
             "recipient_count": len(previews),
-            "campaigns": previews if use_campaign_workflow else [],
-            "jobs": [] if use_campaign_workflow else previews,
-        }
-
-    if use_campaign_workflow:
-        created: list[JsonDict] = []
-        for recipient in effective_recipients:
-            created.append(
-                _create_single_recipient_campaign(
-                    payload=payload,
-                    recipient=recipient,
-                    owner_userid=owner_userid,
-                    operator=operator,
-                    group_code=group_code,
-                    group_label=group_label,
-                    timezone_name=timezone_name,
-                    strict_owner_match=strict_owner_match,
-                    repo=repository,
-                )
-            )
-        return {
-            "ok": True,
-            "route_owner": "ai_crm_next",
-            "source": "external_token_api",
-            "send_path": "campaign_workflow",
-            "group_code": group_code,
-            "group_label": group_label,
-            "owner_userid": owner_userid,
-            "created_count": sum(1 for item in created if item.get("status") == "created"),
-            "existing_count": sum(1 for item in created if item.get("status") == "exists"),
-            "campaigns": created,
-            "jobs": [],
+            "campaigns": [],
+            "jobs": previews,
         }
 
     jobs: list[JsonDict] = []

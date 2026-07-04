@@ -66,7 +66,7 @@ DEFAULT_LEGACY_DEPRECATIONS: tuple[dict[str, Any], ...] = (
     {
         "legacy_key": "old_questionnaire_sync_external_push",
         "legacy_type": "sync_webhook",
-        "legacy_route": "questionnaire.deliver_questionnaire_external_push",
+        "legacy_route": "questionnaire.external_push_logs.retry_one",
         "legacy_module": "questionnaire",
     },
     {

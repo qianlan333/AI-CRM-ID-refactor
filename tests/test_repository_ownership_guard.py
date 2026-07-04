@@ -90,11 +90,6 @@ def test_repository_ownership_targeted_declarations_are_complete() -> None:
     assert "aicrm_next.external_push.repo" in manifest["tables"]["external_push_delivery"]["read_owners"]
     assert repositories["aicrm_next/ai_assist/external_campaigns_repo.py"]["table_writes"] == [
         "broadcast_jobs",
-        "campaign_members",
-        "campaign_segments",
-        "campaign_steps",
-        "campaigns",
-        "segments",
     ]
     assert repositories["aicrm_next/ai_assist/external_campaigns_repo.py"]["table_reads"] == [
         "broadcast_jobs",

@@ -78,11 +78,6 @@ repositories:
       - wecom_external_contact_identity_map
     table_writes:
       - broadcast_jobs
-      - campaign_members
-      - campaign_segments
-      - campaign_steps
-      - campaigns
-      - segments
   aicrm_next/send_targets/repo.py:
     capability_owner: aicrm_next.send_targets
     table_reads:

@@ -147,7 +147,7 @@ response.
 | legacy_key | path | marker behavior | replacement / target |
 |---|---|---|---|
 | `automation_payment_consumer` | `platform_foundation.internal_events.payment` | retired consumer returns skipped; AI Audience source-poke handles audience refresh | `payment.succeeded:ai_audience_source_poke_consumer` |
-| `old_questionnaire_sync_external_push` | `questionnaire.external_push` and retry logs | records `legacy_path_invoked`; no real external call in current fail-closed path | `questionnaire.submitted` + External Effect Queue |
+| `old_questionnaire_sync_external_push` | questionnaire external push retry logs | records `legacy_path_invoked` for historical manual retry paths; H5 submit is queue-only | `questionnaire.submitted` + External Effect Queue |
 | `old_external_push_outbox_worker` | `external_push.service.run_due_external_push_events` | records `legacy_path_invoked` | `payment.succeeded` + External Effect Queue |
 | `old_external_push_delivery_retry` | external push send/test/retry admin paths | records `legacy_path_invoked` | External Effect Queue / Push Center |
 | `old_admin_jobs_deferred_run` | `/api/admin/jobs/deferred-jobs/run` | records `legacy_path_invoked` | future Internal Event consumer or External Effect Queue |
@@ -217,7 +217,7 @@ P0-2. They should remain blocked from real execution until P1/P2 approval.
 | Area | Files / functions | Marker key |
 |---|---|---|
 | Payment legacy automation bridge | `aicrm_next/public_product/h5_wechat_pay.py` | `old_payment_direct_automation_bridge` |
-| Questionnaire legacy external push | `aicrm_next/questionnaire/external_push.py`, `external_push_logs.py` | `old_questionnaire_sync_external_push` |
+| Questionnaire external push retry logs | `aicrm_next/questionnaire/external_push_logs.py` | `old_questionnaire_sync_external_push` |
 | External push outbox worker | `aicrm_next/external_push/service.py` | `old_external_push_outbox_worker` |
 | External push retry/test | `aicrm_next/external_push/service.py`, `aicrm_next/commerce/external_push_admin.py` | `old_external_push_delivery_retry` |
 | Admin deferred jobs runner | `aicrm_next/admin_jobs/application.py` | `old_admin_jobs_deferred_run` |

@@ -232,16 +232,15 @@ def _fake_stub_route_exposed() -> DataHealthCheckResult:
     api_path = ROOT / "aicrm_next" / "customer_tags" / "api.py"
     source = api_path.read_text(encoding="utf-8") if api_path.exists() else ""
     fake_stub_routes = source.count("/api/admin/wecom/tags/fake-stub")
-    guard_calls = source.count("_ensure_local_fixture_allowed()")
     violations = []
-    if fake_stub_routes and guard_calls < fake_stub_routes:
-        violations.append("fake-stub routes exist without fixture-only guard on every handler")
+    if fake_stub_routes:
+        violations.append("fake-stub routes must not be registered in runtime routers")
     return _static_guard_result(
         check_id="fake_stub_route_exposed",
         title="Fake-stub route exposure guard",
         violations=violations,
-        ok_summary="WeCom tag fake-stub routes are guarded to local fixture mode only.",
-        remediation="Call _ensure_local_fixture_allowed() from every fake-stub route before returning fixture data.",
+        ok_summary="WeCom tag fake-stub runtime routes are not registered.",
+        remediation="Keep fake-stub fixtures under tests; runtime routers must use the real read/write models.",
     )
 
 

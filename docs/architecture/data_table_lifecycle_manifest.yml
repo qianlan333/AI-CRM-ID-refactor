@@ -522,7 +522,7 @@ tables:
   segments:
     domain: campaign
     lifecycle: canonical
-    write_owner: aicrm_next.ai_assist.external_campaigns_repo
+    write_owner: aicrm_next.cloud_orchestrator.repository
     read_owners:
       - aicrm_next.ai_assist.external_campaigns_repo
       - aicrm_next.cloud_orchestrator.repository
@@ -530,7 +530,6 @@ tables:
     drop_candidate: true
     drop_after: "after campaign segment sourcing is reconciled with ai_audience and group-ops audience rules"
     runtime_entrypoints:
-      - AI Assist external campaign segment creation
       - cloud-orchestrator campaign audience reads
     migration_source: 0005_segments_and_campaigns
     guard_tests:
@@ -590,7 +589,6 @@ tables:
     lifecycle: canonical
     write_owner: aicrm_next.cloud_orchestrator.repository
     write_owners:
-      - aicrm_next.ai_assist.external_campaigns_repo
       - aicrm_next.cloud_orchestrator.repository
     read_owners:
       - aicrm_next.cloud_orchestrator.campaigns_read
@@ -601,19 +599,19 @@ tables:
     drop_after: ""
     runtime_entrypoints:
       - cloud-orchestrator campaign admin
-      - AI Assist external campaign creation/status when use_campaign_workflow=true
+      - AI Assist historical external campaign status reads
       - campaign run-due
     migration_source: 0005_segments_and_campaigns
     pii_level: internal_contact
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_campaign_automation_table_boundary.py
-    notes: Active campaign business state; external token sends default to broadcast_jobs and only use campaigns when use_campaign_workflow=true.
+    notes: Active campaign business state; external token sends create broadcast_jobs directly and no longer write campaigns.
 
   campaign_segments:
     domain: campaign
     lifecycle: canonical
-    write_owner: aicrm_next.ai_assist.external_campaigns_repo
+    write_owner: aicrm_next.cloud_orchestrator.repository
     read_owners:
       - aicrm_next.cloud_orchestrator.repository
       - aicrm_next.cloud_orchestrator.campaigns_read
@@ -632,7 +630,7 @@ tables:
   campaign_steps:
     domain: campaign
     lifecycle: canonical
-    write_owner: aicrm_next.ai_assist.external_campaigns_repo
+    write_owner: aicrm_next.cloud_orchestrator.repository
     read_owners:
       - aicrm_next.cloud_orchestrator.repository
       - aicrm_next.cloud_orchestrator.campaigns_read
@@ -654,7 +652,6 @@ tables:
     lifecycle: queue
     write_owner: aicrm_next.cloud_orchestrator.repository
     write_owners:
-      - aicrm_next.ai_assist.external_campaigns_repo
       - aicrm_next.cloud_orchestrator.repository
     status_enum:
       column: status
@@ -666,7 +663,6 @@ tables:
     drop_candidate: false
     drop_after: ""
     runtime_entrypoints:
-      - campaign member allocation when campaign workflow is explicitly requested
       - campaign run-due
       - campaign member admin reads
     migration_source: 0005_segments_and_campaigns
@@ -674,7 +670,7 @@ tables:
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_campaign_automation_table_boundary.py
-    notes: Active campaign member state and due queue for explicit campaign workflow; external token sends default to broadcast_jobs and do not allocate campaign_members.
+    notes: Active campaign member state and due queue for campaign run-due; external token sends create broadcast_jobs directly and do not allocate campaign_members.
 
   automation_group_ops_plans:
     domain: automation_group_ops

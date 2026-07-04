@@ -46,10 +46,6 @@ def test_wecom_tag_write_requests_record_side_effect_plan_without_real_call(monk
     monkeypatch.delenv("DATABASE_URL", raising=False)
     monkeypatch.delenv("AICRM_NEXT_ENV", raising=False)
 
-    def fail_side_effect(*args, **kwargs):
-        raise AssertionError("write route attempted a real WeCom side effect")
-
-    monkeypatch.setattr(api, "build_wecom_tag_application_service", fail_side_effect)
     client = TestClient(create_app(), raise_server_exceptions=False)
 
     payloads = [

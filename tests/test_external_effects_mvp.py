@@ -1279,7 +1279,6 @@ def test_external_effect_diagnostics_and_api_docs_show_virtual_test_state(next_c
 
 
 def test_questionnaire_submit_queues_external_push_without_legacy_call(client: TestClient, monkeypatch) -> None:
-    monkeypatch.setenv("AICRM_QUESTIONNAIRE_EXTERNAL_PUSH_MODE", "shadow")
     _questionnaire, phone_question_id = _seed_hxc_questionnaire(
         monkeypatch,
         {"enabled": True, "webhook_url": "https://hooks.example.com/questionnaire"},
@@ -1302,37 +1301,30 @@ def test_questionnaire_submit_queues_external_push_without_legacy_call(client: T
     assert body["external_effect_job_id"]
 
 
-def test_questionnaire_external_push_legacy_shadow_and_queue_modes(client: TestClient, monkeypatch) -> None:
-    assert external_push.QUESTIONNAIRE_EXTERNAL_PUSH_MODES == {"queue"}
-    cases = [
-        ("legacy", "legacy-questionnaire-effect", "test_phone_legacy_001", False, "queued", "execute"),
-        ("shadow", "shadow-questionnaire-effect", "test_phone_shadow_001", False, "queued", "execute"),
-        ("queue", "queue-questionnaire-effect", "test_phone_queue_001", False, "queued", "execute"),
-    ]
+def test_questionnaire_external_push_is_queue_only(client: TestClient, monkeypatch) -> None:
+    monkeypatch.setenv("AICRM_QUESTIONNAIRE_EXTERNAL_PUSH_MODE", "legacy")
+    _questionnaire, phone_question_id = _seed_hxc_questionnaire(
+        monkeypatch,
+        {"enabled": True, "webhook_url": "https://hooks.example.com/questionnaire/queue-only"},
+    )
+    response = client.post(
+        "/api/h5/questionnaires/hxc-activation-v1/submit",
+        json={"answers": {phone_question_id: "test_phone_queue_only_001"}},
+        headers={"Idempotency-Key": "queue-only-questionnaire-effect"},
+    )
+    body = response.json()
 
-    for mode, idempotency_key, phone, should_call_legacy, expected_status, expected_execution_mode in cases:
-        monkeypatch.setenv("AICRM_QUESTIONNAIRE_EXTERNAL_PUSH_MODE", mode)
-        _questionnaire, phone_question_id = _seed_hxc_questionnaire(
-            monkeypatch,
-            {"enabled": True, "webhook_url": f"https://hooks.example.com/questionnaire/{mode}"},
-        )
-        response = client.post(
-            "/api/h5/questionnaires/hxc-activation-v1/submit",
-            json={"answers": {phone_question_id: phone}},
-            headers={"Idempotency-Key": idempotency_key},
-        )
-        body = response.json()
-
-        assert response.status_code == 200
-        assert body["external_push_mode"] == "queue"
-        assert body["external_effect_job_id"]
-        assert body["external_effect_job_status"] == expected_status
-        assert body["external_effect_job"]["execution_mode"] == expected_execution_mode
-        assert body["external_effect_job"]["status"] == expected_status
-        assert body["real_external_call_executed"] is should_call_legacy
-        assert body["external_push"]["attempted"] is False
-        assert body["external_push"]["status"] == "queued"
-        assert "external_push.queued" in body["side_effect_plan"]["payload"]["planned_effects"]
+    assert external_push.QUESTIONNAIRE_EXTERNAL_PUSH_MODE == "queue"
+    assert response.status_code == 200
+    assert body["external_push_mode"] == "queue"
+    assert body["external_effect_job_id"]
+    assert body["external_effect_job_status"] == "queued"
+    assert body["external_effect_job"]["execution_mode"] == "execute"
+    assert body["external_effect_job"]["status"] == "queued"
+    assert body["real_external_call_executed"] is False
+    assert body["external_push"]["attempted"] is False
+    assert body["external_push"]["status"] == "queued"
+    assert "external_push.queued" in body["side_effect_plan"]["payload"]["planned_effects"]
 
 
 def test_questionnaire_queue_mode_preview_dry_run_and_loopback_execute_2xx(next_client: TestClient, monkeypatch) -> None:

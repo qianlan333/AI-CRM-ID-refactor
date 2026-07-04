@@ -27,9 +27,8 @@ from aicrm_next.shared.runtime import production_data_ready
 
 from .domain import normalize_questionnaire, score_and_tags, validate_required_answers
 from .external_push import (
-    deliver_questionnaire_external_push,
+    QUESTIONNAIRE_EXTERNAL_PUSH_MODE,
     plan_questionnaire_external_push_effect,
-    questionnaire_external_push_mode,
 )
 from .repo import QuestionnaireRepository, build_questionnaire_repository
 
@@ -354,27 +353,19 @@ def _handle_submit(command: Command) -> dict[str, Any]:
         score=score,
         final_tags=final_tags,
     )
-    external_push_mode = questionnaire_external_push_mode()
-    if external_push_mode == "queue":
-        external_push_config = dict(item.get("external_push_config") or {})
-        external_push_result = {
-            "enabled": bool(external_push_config.get("enabled") or item.get("external_push_enabled")),
-            "attempted": False,
-            "ok": True,
-            "reason": "queued_external_effect",
-            "status": "queued",
-            "mode": external_push_mode,
-            "legacy_outbound_disabled": True,
-            "external_effect_required": True,
-            "real_external_call_executed": False,
-        }
-    else:
-        external_push_result = deliver_questionnaire_external_push(
-            repo=repo,
-            questionnaire=item,
-            submission=submission,
-            computed_result=result,
-        )
+    external_push_mode = QUESTIONNAIRE_EXTERNAL_PUSH_MODE
+    external_push_config = dict(item.get("external_push_config") or {})
+    external_push_result = {
+        "enabled": bool(external_push_config.get("enabled") or item.get("external_push_enabled")),
+        "attempted": False,
+        "ok": True,
+        "reason": "queued_external_effect",
+        "status": "queued",
+        "mode": external_push_mode,
+        "legacy_outbound_disabled": True,
+        "external_effect_required": True,
+        "real_external_call_executed": False,
+    }
     external_effect_job = plan_questionnaire_external_push_effect(
         questionnaire=item,
         submission=submission,
@@ -400,9 +391,7 @@ def _handle_submit(command: Command) -> dict[str, Any]:
         external_push_result=external_push_result,
         tag_side_effect=tag_side_effect,
     )
-    real_external_call_executed = (
-        bool(external_push_result.get("attempted")) if external_push_mode != "queue" else False
-    ) or bool(tag_side_effect.get("real_external_call_executed"))
+    real_external_call_executed = bool(tag_side_effect.get("real_external_call_executed"))
     questionnaire_projection = normalize_questionnaire(item)
     return {
         "ok": True,

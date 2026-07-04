@@ -50,7 +50,7 @@ AICRM_EXTERNAL_EFFECT_ALLOWED_TYPES=
 | Legacy path | Replacement event | Replacement consumer | Source module | Observation metric |
 | --- | --- | --- | --- | --- |
 | `payment.legacy_direct_automation` | `payment.succeeded` | `ai_audience_source_poke_consumer` | `public_product.h5_wechat_pay` | payment direct automation hits replaced by AI Audience dependency poke |
-| `questionnaire.legacy_webhook_external_push` | `questionnaire.submitted` | `questionnaire_webhook_consumer` | `questionnaire.external_push`, `platform_foundation.internal_events.questionnaire` | legacy webhook push hits |
+| `questionnaire.legacy_webhook_external_push` | `questionnaire.submitted` | `questionnaire_webhook_consumer` | `platform_foundation.internal_events.questionnaire` | historical webhook-consumer observation hits |
 | `questionnaire.legacy_webhook_retry` | `questionnaire.submitted` | `questionnaire_webhook_consumer` | `questionnaire.external_push_logs` | manual retry hits |
 | `questionnaire.legacy_tag_side_effect` | `questionnaire.submitted` | `questionnaire_tag_consumer` | `platform_foundation.internal_events.questionnaire` | questionnaire tag side-effect hits |
 | `questionnaire.legacy_automation_trigger` | `questionnaire.submitted` | `automation_questionnaire_consumer` | `platform_foundation.internal_events.questionnaire` | questionnaire automation hits |

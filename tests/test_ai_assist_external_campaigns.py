@@ -27,19 +27,12 @@ class FakeExternalCampaignRepository:
         self.backfill_rows: dict[str, dict[str, Any]] = {}
         self.campaigns_by_code: dict[str, dict[str, Any]] = {}
         self.campaigns_by_id: dict[int, dict[str, Any]] = {}
-        self.segments_by_code: dict[str, dict[str, Any]] = {}
         self.overview: dict[str, Any] | None = None
-        self.allocate_result: dict[str, Any] | None = None
         self.calls: list[str] = []
         self.write_calls: list[str] = []
-        self.cleanup_calls: list[int] = []
-        self.steps: list[dict[str, Any]] = []
         self.commits = 0
         self.rollbacks = 0
         self.real_outbound_send_called = False
-        self._campaign_id = 100
-        self._segment_id = 200
-        self._campaign_segment_id = 300
 
     def table_columns(self, table_name: str) -> set[str]:
         return {
@@ -105,74 +98,6 @@ class FakeExternalCampaignRepository:
     def count_open_campaign_jobs(self, campaign_id: int) -> int:
         self.calls.append("count_open_campaign_jobs")
         return 0
-
-    def get_segment_by_code(self, segment_code: str) -> dict[str, Any] | None:
-        item = self.segments_by_code.get(segment_code)
-        return dict(item) if item else None
-
-    def create_or_update_external_segment(self, **kwargs: Any) -> dict[str, Any]:
-        self.calls.append("create_or_update_external_segment")
-        self.write_calls.append("create_or_update_external_segment")
-        code = kwargs["segment_code"]
-        self._segment_id += 1
-        segment = {
-            "id": self._segment_id,
-            "segment_code": code,
-            "cached_headcount": int(kwargs.get("headcount") or 1),
-            "status": "active",
-            "source_type": "external_campaign",
-            "sql_params": kwargs.get("sql_params") or {},
-        }
-        self.segments_by_code[code] = segment
-        return dict(segment)
-
-    def create_campaign_draft(self, **kwargs: Any) -> dict[str, Any]:
-        self.calls.append("create_campaign_draft")
-        self.write_calls.append("create_campaign_draft")
-        self._campaign_id += 1
-        campaign = {
-            "id": self._campaign_id,
-            "campaign_code": kwargs["campaign_code"],
-            "review_status": "draft",
-            "run_status": "draft",
-            "trace_id": kwargs.get("trace_id", ""),
-        }
-        self.campaigns_by_code[kwargs["campaign_code"]] = campaign
-        self.campaigns_by_id[self._campaign_id] = campaign
-        return dict(campaign)
-
-    def add_segment_to_campaign(self, **kwargs: Any) -> dict[str, Any]:
-        self.calls.append("add_segment_to_campaign")
-        self.write_calls.append("add_segment_to_campaign")
-        self._campaign_segment_id += 1
-        return {"id": self._campaign_segment_id, "segment_id": self._segment_id}
-
-    def add_step_to_campaign(self, **kwargs: Any) -> dict[str, Any]:
-        self.calls.append("add_step_to_campaign")
-        self.write_calls.append("add_step_to_campaign")
-        self.steps.append(dict(kwargs))
-        return {"campaign_segment_id": kwargs["campaign_segment_id"], "step_index": kwargs["step_index"]}
-
-    def allocate_campaign_members(self, campaign_id: int) -> dict[str, Any]:
-        self.calls.append("allocate_campaign_members")
-        self.write_calls.append("allocate_campaign_members")
-        if self.allocate_result is not None:
-            return dict(self.allocate_result)
-        return {"campaign_id": campaign_id, "allocated": 1, "skipped_collisions": 0, "errors": []}
-
-    def submit_campaign_for_review(self, campaign_id: int, operator: str) -> dict[str, Any]:
-        self.calls.append("submit_campaign_for_review")
-        self.write_calls.append("submit_campaign_for_review")
-        campaign = self.campaigns_by_id[int(campaign_id)]
-        campaign["review_status"] = "pending_review"
-        campaign["run_status"] = "draft"
-        return dict(campaign)
-
-    def delete_campaign(self, campaign_id: int) -> dict[str, Any]:
-        self.calls.append("delete_campaign")
-        self.write_calls.append("delete_campaign")
-        self.cleanup_calls.append(int(campaign_id))
-        return {"ok": True, "deleted_id": int(campaign_id)}
 
     def assemble_campaign_overview(self, campaign_id: int) -> dict[str, Any]:
         self.calls.append("assemble_campaign_overview")
@@ -266,8 +191,6 @@ def test_external_campaign_create_single_recipient_direct_job_success() -> None:
     assert result["campaigns"] == []
     assert repo.write_calls == ["create_broadcast_job"]
     assert "fetch_user_ops_pool_current_row" not in repo.calls
-    assert "create_or_update_external_segment" not in repo.write_calls
-    assert "allocate_campaign_members" not in repo.write_calls
     assert repo.real_outbound_send_called is False
     assert total == 0
 
@@ -340,7 +263,6 @@ def test_external_campaign_idempotent_existing_campaign() -> None:
 
     assert first["jobs"][0]["status"] == "queued"
     assert result["jobs"][0]["status"] == "exists"
-    assert "create_campaign_draft" not in repo.write_calls
 
 
 def test_direct_wecom_private_send_dry_run_no_write() -> None:
@@ -504,20 +426,22 @@ def test_external_campaign_multi_recipient_campaign_code_suffix() -> None:
     assert {item["unionid"] for item in result["jobs"]} == {"union_ext_1", "union_ext_2"}
 
 
-def test_external_campaign_workflow_allocation_failure_cleans_up() -> None:
+def test_external_campaign_workflow_flag_is_retired() -> None:
     repo = _repo_with_target()
-    repo.allocate_result = {"campaign_id": 101, "allocated": 0, "errors": [{"reason": "empty"}]}
 
     try:
         service.create_external_campaigns(_payload(use_campaign_workflow=True), repo=repo)
     except service.ExternalCampaignError as exc:
         payload = exc.to_response()
+        status_code = exc.status_code
     else:  # pragma: no cover
         raise AssertionError("expected ExternalCampaignError")
 
-    assert payload["error"] == "campaign_member_allocation_failed"
-    assert payload["cleanup_ok"] is True
-    assert repo.cleanup_calls
+    assert status_code == 410
+    assert payload["error"] == "campaign_workflow_retired"
+    assert payload["send_path"] == "direct_broadcast_job"
+    assert payload["retired_path"] == "campaign_workflow"
+    assert repo.write_calls == []
 
 
 def test_external_campaign_status_uses_next_repo() -> None:

@@ -85,11 +85,11 @@ export AICRM_AGENT_TOKEN="<configured-token>"
 - 多人统一话术
 - 多人每人定制话术
 - 多人每人多天定制话术
-- `dry_run=true` 预检，不写 DB、不创建 campaign、不排 broadcast job
-- 幂等创建：相同 `idempotency_key + group_code + owner_userid + external_userid + steps` 会生成稳定 `campaign_code`
+- `dry_run=true` 预检，不写 DB、不排 broadcast job
+- 幂等创建：相同 `idempotency_key + group_code + owner_userid + target_id + steps` 会生成稳定 direct job idempotency key
 - 默认校验联系人 owner：`contacts.owner_userid` 与请求 `owner_userid` 不一致时返回 409
-- 自动创建一人 segment、一人 campaign、steps、campaign_member
-- 自动提交审阅，但不会自动签发 approval token、不会自动启动 campaign
+- 默认创建一人或多人 direct `broadcast_jobs`
+- 不再支持通过 `use_campaign_workflow=true` 创建 segment/campaign/allocation
 
 当前接口不支持直接输入：
 
@@ -109,7 +109,7 @@ export AICRM_AGENT_TOKEN="<configured-token>"
 | `target_id` / `target_id_type` | 发送目标 ID，可为 `unionid` 或 `external_userid` | 默认发送路径的目标输入；由 `crm_user_identity` 解析成 unionid + external_userid |
 | `crm_user_identity` | unionid-first 身份表 | direct send / external campaign 默认路径的目标来源 |
 | `user_ops_pool_current` | 用户运营池当前快照 | 只作为 User Ops 页面/统计快照；不再作为默认发送门禁 |
-| `campaign_members` | 某个 Campaign 创建后分配出来的成员明细 | 仅在显式 `use_campaign_workflow=true` 时由 segment allocation 生成 |
+| `campaign_members` | Campaign run-due 的历史/现役成员明细 | 外部 token 接口不再写入；默认 direct send 只创建 `broadcast_jobs` |
 
 旧 `automation_member` 自动化转化成员池已退场，不再作为外部 Campaign 目标来源，也不允许通过本接口回填。目标用户不需要进入 `user_ops_pool_current`；只要 `crm_user_identity` 能解析到 unionid + external_userid，默认路径即可创建 `broadcast_jobs`。
 
@@ -242,7 +242,7 @@ curl -sS -X POST "${AICRM_BASE_URL}/api/ai-assist/external/campaigns" \
 }
 ```
 
-当前实现会为每个 `external_userid` 创建一个一人 campaign，并使用相同 `group_code` 聚合。这样可以支持每人不同话术，也便于单人失败隔离。
+当前实现会为每个 `external_userid` 创建 direct `broadcast_jobs`，并使用相同 `group_code` 聚合。这样可以支持每人不同话术，也便于单人失败隔离。
 
 ### 4.5 多人每人定制话术
 
@@ -442,11 +442,10 @@ curl -sS -X GET "${AICRM_BASE_URL}/api/ai-assist/external/campaigns/${CAMPAIGN_C
 | 400 | `sender_userid_required` | 没有发送人 userid |
 | 404 | `target_identity_not_found` | `crm_user_identity` 无法解析目标 |
 | 410 | `automation_member_backfill_retired` | 旧 `automation_member` 回填参数已退场 |
+| 410 | `campaign_workflow_retired` | `use_campaign_workflow=true` 旧 segment/campaign/allocation workflow 已退场 |
 | 409 | `owner_mismatch` | 联系人 owner 与请求 owner 不一致 |
 | 409 | `target_external_userid_missing` | 目标有 unionid 但缺企微 external_userid |
 | 409 | `do_not_disturb` | 命中 active DND 且未显式 `bypass_dnd=true` |
-| 409 | `target_headcount_invalid` | 仅显式 `use_campaign_workflow=true` 时，单人 segment 没有精确命中 1 人 |
-| 409 | `campaign_member_allocation_failed` | 仅显式 `use_campaign_workflow=true` 时，Campaign allocation 未分配到 1 人 |
 
 失败响应是结构化对象，例如：
 
@@ -461,23 +460,12 @@ curl -sS -X GET "${AICRM_BASE_URL}/api/ai-assist/external/campaigns/${CAMPAIGN_C
 }
 ```
 
-allocation 失败会额外包含：
-
-```json
-{
-  "phase": "allocation",
-  "allocation": {"allocated": 0},
-  "allocation_errors": [],
-  "cleanup_ok": true,
-  "cleanup_result": {}
-}
-```
-
 Agent 规则：
 
 - 401/503：停止，要求配置 token。
 - 404：先确认 `target_id` 是否已进入 `crm_user_identity`，不要为了发送而回填 `automation_member` 或运营池快照。
 - 410 `automation_member_backfill_retired`：移除 `auto_backfill_automation_member` 参数，改用 `crm_user_identity` 目标解析。
+- 410 `campaign_workflow_retired`：移除 `use_campaign_workflow` 参数；外部 token 接口固定使用 direct broadcast job。
 - 409 owner mismatch：默认以 warning 进入 direct job；只有显式 `strict_owner_match=true` 时阻断。
 - 409 DND：默认停止；只有用户确认后才传 `bypass_dnd=true`，并保留 warning。
 - 任何 500：不要重试大量请求；先反馈错误并查服务日志。
@@ -494,23 +482,19 @@ Agent 规则：
 5. 先 dry_run=true 调预检。
 6. 如果返回 target_identity_not_found，则先修复 crm_user_identity，不要写旧 automation_member 或运营池快照。
 7. dry-run 通过后，移除 dry_run 再真实创建。
-8. 默认返回 broadcast_job_id / jobs；只有 `use_campaign_workflow=true` 时才返回 campaign_code。
+8. 返回 `jobs` / `broadcast_job_id`；不要再依赖旧 `campaign_code` 作为真实 Campaign 标识。
 9. 不要手动调用 run-due 或直接写 DB。
 ```
 
 Agent 给用户的成功回复模板：
 
 ```text
-已创建定时 Campaign。
+已创建定时私聊任务。
 
 - group_code: xxx
 - owner_userid: HuangYouCan
-- campaign_code: camp_ext_xxx
 - 首发时间: 2026-05-28 16:15 Asia/Shanghai
-- step_count: 1
-- scheduled_jobs: 1
-- review_status: approved
-- run_status: active
+- jobs: 1
 
 当前还不是“已发送”，会在 scheduled_for 到点后由 broadcast queue worker 执行。
 ```
@@ -523,13 +507,12 @@ Agent 给用户的成功回复模板：
 
 ```text
 1 个 group_code
-N 个一人 campaign
-每个 campaign 1 个 campaign_member
-每个 campaign 内 N 条 campaign_steps
-每个 campaign 启动后生成未来 broadcast_jobs
+N 个 direct broadcast job target
+每个 target 按 steps 生成未来 `broadcast_jobs`
+发送 worker 到点后按 `target_unionids_json` 执行私聊发送
 ```
 
-这和旧设想的 `campaign_member_steps` 不同。当前代码没有 `campaign_member_steps` 表；不要在文档或 Agent 行为里假设它存在。
+这和旧设想的 `campaign_member_steps` 或外部 token campaign workflow 不同。当前代码不会为外部 token 请求创建 `campaign_members` 或 `campaign_steps`。
 
 如果上游只有手机号、phone mask 或白名单名称，必须先通过别的可用数据能力解析成：
 

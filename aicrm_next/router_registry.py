@@ -4,7 +4,13 @@ from dataclasses import dataclass
 from typing import Any
 
 from fastapi import APIRouter, FastAPI
-from fastapi.routing import APIRoute, _iter_routes_with_context
+from fastapi.routing import APIRoute
+
+try:  # FastAPI 0.139 keeps included router routes behind include contexts.
+    from fastapi.routing import _iter_routes_with_context
+except ImportError:  # FastAPI <=0.136 materializes included routes eagerly.
+    def _iter_routes_with_context(routes):
+        return ()
 
 from .ai_assist.api import router as ai_assist_router
 from .ai_audience_ops.admin_api import router as ai_audience_admin_api_router
