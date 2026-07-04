@@ -177,13 +177,28 @@ def test_product_share_uses_real_qr_svg(monkeypatch) -> None:
     payload = client.get(f"/api/admin/wechat-pay/products/{product['id']}/share").json()
 
     share = payload["share"]
-    assert share["url"].endswith(f"/p/{product['product_code']}")
+    assert share["url"].endswith(f"/pay/{product['product_code']}")
     assert share["qr_data_url"].startswith("data:image/svg+xml;base64,")
     svg = base64.b64decode(share["qr_data_url"].split(",", 1)[1]).decode("utf-8")
     assert 'xmlns="http://www.w3.org/2000/svg"' in svg
     assert "<path" in svg
     assert "PRODUCT" not in svg
     assert product["product_code"] not in svg
+
+    material = client.post(
+        "/api/admin/wechat-pay/products",
+        json={
+            "product_code": "share_material_product",
+            "title": "带素材商品",
+            "price_cents": 100,
+            "enabled": True,
+            "status": "active",
+            "buy_button_text": "立即购买",
+            "slices": [{"image_library_id": 1, "image_url": "data:image/png;base64,YQ==", "sort_order": 1}],
+        },
+    ).json()["product"]
+    material_share = client.get(f"/api/admin/wechat-pay/products/{material['id']}/share").json()["share"]
+    assert material_share["url"].endswith("/p/share_material_product")
 
 
 def test_customer_business_profile_orders_and_summary(monkeypatch) -> None:

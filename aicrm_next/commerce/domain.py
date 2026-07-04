@@ -73,6 +73,32 @@ def validate_completion_redirect(enabled: Any, url: Any) -> dict[str, Any]:
     }
 
 
+def _enabled_page_material_item(item: Any) -> bool:
+    if isinstance(item, str):
+        return bool(item.strip())
+    if not isinstance(item, dict):
+        return False
+    if item.get("enabled") is False:
+        return False
+    return any(str(item.get(key) or "").strip() for key in ("image_url", "data_url", "url", "src", "source_url"))
+
+
+def _configured_page_slice(item: Any) -> bool:
+    if _enabled_page_material_item(item):
+        return True
+    if not isinstance(item, dict) or item.get("enabled") is False:
+        return False
+    return any(str(item.get(key) or "").strip() for key in ("image_library_id", "library_image_id", "asset_id"))
+
+
+def has_product_page_material(product: dict[str, Any]) -> bool:
+    if not isinstance(product, dict):
+        return False
+    return any(_configured_page_slice(item) for item in list(product.get("slices") or [])) or any(
+        _enabled_page_material_item(item) for item in list(product.get("detail_images") or [])
+    )
+
+
 def preview_product(product: dict[str, Any]) -> dict[str, Any]:
     completion_target = completion_target_projection(
         product.get("completion_target_json") if product.get("completion_target_json") is not None else product.get("completion_target"),

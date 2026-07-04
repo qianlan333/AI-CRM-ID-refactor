@@ -58,6 +58,7 @@ from .application import (
     SetProductEnabledCommand,
     UpsertProductCommand,
 )
+from .domain import has_product_page_material
 from .dto import CheckoutRequest, PaymentNotifyRequest, ProductUpsertRequest
 from .external_orders import router as external_orders_router
 from .repo import build_commerce_repository
@@ -355,7 +356,8 @@ def _product_admin_context(
 
 def _share_payload(request: Request, product: dict) -> dict:
     product_code = str(product.get("product_code") or "")
-    url = str(request.base_url).rstrip("/") + f"/p/{quote(product_code)}"
+    public_path = "p" if has_product_page_material(product) else "pay"
+    url = str(request.base_url).rstrip("/") + f"/{public_path}/{quote(product_code)}"
     return {
         "product_id": str(product.get("id") or ""),
         "product_code": product_code,

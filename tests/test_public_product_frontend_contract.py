@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from fastapi.testclient import TestClient
 
+from aicrm_next.commerce.repo import reset_commerce_fixture_state
 from aicrm_next.main import create_app
 
 
@@ -12,20 +13,19 @@ def _client(monkeypatch) -> TestClient:
     return TestClient(create_app(), raise_server_exceptions=False)
 
 
-def test_public_product_frontend_contains_detail_images_only_and_wechat_pay_cta(monkeypatch) -> None:
-    product = _client(monkeypatch).get("/p/test-product")
-    pay = _client(monkeypatch).get("/pay/test-product")
+def test_public_product_frontend_redirects_empty_material_and_keeps_checkout_contract(monkeypatch) -> None:
+    client = _client(monkeypatch)
+    product = client.get("/p/test-product", follow_redirects=False)
+    pay = client.get("/pay/test-product")
 
-    assert 'data-route-owner="ai_crm_next"' in product.text
-    assert 'data-fallback-used="false"' in product.text
-    assert 'class="sticky-buy"' in product.text
-    assert "/pay/test-product" in product.text
-    assert 'class="hero-panel"' not in product.text
-    assert 'class="detail-card"' not in product.text
-    assert "当前页面只展示商品信息" not in product.text
+    assert product.status_code == 302
+    assert product.headers["X-AICRM-Route-Owner"] == "ai_crm_next"
+    assert product.headers["X-AICRM-Fallback-Used"] == "false"
+    assert product.headers["location"] == "/pay/test-product"
 
     assert 'data-route-owner="ai_crm_next"' in pay.text
     assert "确认报名信息" in pay.text
+    assert "微信授权" in pay.text
     assert "/api/h5/wechat-pay/jsapi/orders" in pay.text
     assert "WeixinJSBridge.invoke" in pay.text
     assert 'id="leadQrModal"' in pay.text
@@ -34,6 +34,36 @@ def test_public_product_frontend_contains_detail_images_only_and_wechat_pay_cta(
     assert "showLeadQr(order" in pay.text
     assert "支付暂不可用" not in pay.text
     assert "不会创建订单" not in pay.text
+
+
+def test_public_product_frontend_material_page_contains_detail_images_and_cta(monkeypatch) -> None:
+    reset_commerce_fixture_state()
+    client = _client(monkeypatch)
+    created = client.post(
+        "/api/admin/wechat-pay/products",
+        json={
+            "product_code": "frontend-material-product",
+            "title": "前台带素材商品",
+            "price_cents": 100,
+            "enabled": True,
+            "status": "active",
+            "buy_button_text": "立即报名",
+            "slices": [{"image_library_id": 1, "image_url": "data:image/png;base64,YQ==", "sort_order": 1}],
+        },
+    )
+    assert created.status_code == 200
+
+    product = client.get("/p/frontend-material-product")
+
+    assert product.status_code == 200
+    assert 'data-route-owner="ai_crm_next"' in product.text
+    assert 'data-fallback-used="false"' in product.text
+    assert 'class="sticky-buy"' in product.text
+    assert 'class="slice-img"' in product.text
+    assert "/pay/frontend-material-product" in product.text
+    assert 'class="hero-panel"' not in product.text
+    assert 'class="detail-card"' not in product.text
+    assert "当前页面只展示商品信息" not in product.text
 
 
 def test_public_product_frontend_restores_slice_image_layout() -> None:
@@ -242,7 +272,7 @@ def test_public_h5_create_order_returns_existing_paid_order(monkeypatch) -> None
     )
     monkeypatch.setattr(h5_wechat_pay, "WeChatPayClient", FailingClient)
     client = _client(monkeypatch)
-    client.cookies.set(h5_wechat_pay.COOKIE_NAME, h5_wechat_pay._signed_blob({"openid": "op_paid"}))
+    client.cookies.set(h5_wechat_pay.COOKIE_NAME, h5_wechat_pay._signed_blob({"openid": "op_paid", "unionid": "un_paid"}))
 
     response = client.post(
         "/api/h5/wechat-pay/jsapi/orders",
@@ -388,13 +418,13 @@ def test_public_h5_paid_order_lookup_accepts_product_code_alias() -> None:
     _paid_order_for_product_identity(
         FakeConn(),
         product={"product_code": "subscription_trial_month"},
-        identity={"openid": "op_alias"},
+        identity={"openid": "op_alias", "unionid": "un_alias"},
     )
 
     assert "product_code IN" in captured["query"]
     assert "subscription_trial_month" in captured["params"]
     assert "prd_20260518095708_9f77db" in captured["params"]
-    assert "op_alias" in captured["params"]
+    assert "un_alias" in captured["params"]
 
 
 def test_public_h5_paid_order_lookup_prefers_payment_identity_over_sidebar_external_userid() -> None:
@@ -415,10 +445,10 @@ def test_public_h5_paid_order_lookup_prefers_payment_identity_over_sidebar_exter
     _paid_order_for_product_identity(
         FakeConn(),
         product={"product_code": "premium_monthly_trial"},
-        identity={"openid": "op_current", "unionid": "", "external_userid": "ext_from_shared_card"},
+        identity={"openid": "op_current", "unionid": "un_current", "external_userid": "ext_from_shared_card"},
     )
 
-    assert "payer_openid = %s" in captured["query"]
+    assert "unionid = %s" in captured["query"]
     assert "external_userid = %s" not in captured["query"]
-    assert "op_current" in captured["params"]
+    assert "un_current" in captured["params"]
     assert "ext_from_shared_card" not in captured["params"]

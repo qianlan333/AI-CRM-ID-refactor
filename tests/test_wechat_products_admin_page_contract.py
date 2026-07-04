@@ -140,7 +140,19 @@ def test_wechat_product_admin_api_contract_routes_remain_available(next_client, 
     copied_product_id = copied["product"]["id"]
 
     share = _assert_admin_response(next_client.get(f"/api/admin/wechat-pay/products/{product_id}/share"))
-    assert share["share"]["url"].endswith("/p/contract_product_001")
+    assert share["share"]["url"].endswith("/pay/contract_product_001")
+
+    material_product = _assert_admin_response(
+        next_client.post(
+            "/api/admin/wechat-pay/products",
+            json=_product_payload(
+                product_code="contract_product_material",
+                slices=[{"image_library_id": 11, "sort_order": 1}],
+            ),
+        )
+    )["product"]
+    material_share = _assert_admin_response(next_client.get(f"/api/admin/wechat-pay/products/{material_product['id']}/share"))
+    assert material_share["share"]["url"].endswith("/p/contract_product_material")
 
     lead_channels = _assert_admin_response(next_client.get("/api/admin/wechat-pay/products/lead-channels"))
     assert lead_channels["items"]

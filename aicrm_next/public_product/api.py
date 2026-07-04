@@ -5,6 +5,7 @@ from urllib.parse import quote
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 
+from aicrm_next.commerce.domain import has_product_page_material
 from aicrm_next.commerce.product_code_aliases import canonical_product_code
 from aicrm_next.navigation_target.resolver import url_link_resolver_response
 from aicrm_next.shared.errors import NotFoundError
@@ -49,6 +50,12 @@ def _public_product_alias_redirect(request: Request, path: str) -> Response | No
     )
 
 
+def _public_product_checkout_redirect(request: Request, product: dict) -> RedirectResponse:
+    product_code = quote(str(product.get("product_code") or "").strip())
+    query = f"?{request.url.query}" if request.url.query else ""
+    return RedirectResponse(url=f"/pay/{product_code}{query}", status_code=302, headers=route_headers())
+
+
 @router.options("/p/{path:path}", name="api.public_product_page_options")
 def public_product_page_options(path: str) -> JSONResponse:
     return JSONResponse(diagnostics_payload(f"/p/{path}", allowed_methods=["GET", "HEAD", "OPTIONS"]), headers=route_headers())
@@ -63,6 +70,8 @@ def public_product_page(request: Request, path: str) -> Response:
         product = get_public_product(path)
     except NotFoundError:
         return HTMLResponse(render_not_found_page(path), status_code=404, headers=route_headers())
+    if not has_product_page_material(product):
+        return _public_product_checkout_redirect(request, product)
     context_token = str(request.query_params.get("ctx") or "").strip()
     return HTMLResponse(
         render_product_page(product, context_token=context_token, context_status=sidebar_product_context_status(context_token)),
