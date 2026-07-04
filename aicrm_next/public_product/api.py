@@ -27,6 +27,7 @@ from .service import (
     normalize_public_path,
     payment_action_detected,
     product_not_found_payload,
+    public_product_image_variant,
     public_product_payload,
     render_not_found_page,
     render_pay_landing,
@@ -129,6 +130,28 @@ def h5_navigation_target_url_link_resolve(request: Request) -> Response:
         source_url=request.query_params.get("source_url"),
         response_url_key=request.query_params.get("response_url_key") or "url_link",
         fallback_url=request.query_params.get("fallback_url") or "",
+    )
+
+
+@router.get("/api/h5/product-images/{product_code}/{image_id}/variants/{variant_key}", name="api.h5_public_product_image_variant")
+def h5_public_product_image_variant(product_code: str, image_id: str, variant_key: str, request: Request) -> Response:
+    try:
+        variant = public_product_image_variant(product_code, image_id, variant_key)
+    except NotFoundError:
+        return JSONResponse(product_not_found_payload(product_code), status_code=404, headers=route_headers())
+    etag = str(variant.get("etag") or "").strip()
+    headers = {
+        **route_headers(),
+        "Cache-Control": "public, max-age=31536000, immutable",
+    }
+    if etag:
+        headers["ETag"] = etag
+    if etag and str(request.headers.get("If-None-Match") or "").strip() == etag:
+        return Response(status_code=304, headers=headers)
+    return Response(
+        content=variant.get("bytes") or b"",
+        media_type=str(variant.get("mime_type") or "image/png"),
+        headers=headers,
     )
 
 

@@ -48,7 +48,10 @@ def test_public_product_frontend_material_page_contains_detail_images_and_cta(mo
             "enabled": True,
             "status": "active",
             "buy_button_text": "立即报名",
-            "slices": [{"image_library_id": 1, "image_url": "data:image/png;base64,YQ==", "sort_order": 1}],
+            "slices": [
+                {"image_library_id": 1, "image_url": "data:image/png;base64,YQ==", "sort_order": 1},
+                {"image_library_id": 2, "image_url": "data:image/png;base64,Yg==", "sort_order": 2},
+            ],
         },
     )
     assert created.status_code == 200
@@ -60,6 +63,16 @@ def test_public_product_frontend_material_page_contains_detail_images_and_cta(mo
     assert 'data-fallback-used="false"' in product.text
     assert 'class="sticky-buy"' in product.text
     assert 'class="slice-img"' in product.text
+    assert product.text.index('class="sticky-buy"') < product.text.index('class="slice-img"')
+    assert "data:image" not in product.text
+    assert (
+        '<img class="slice-img" src="/api/h5/product-images/frontend-material-product/1/variants/original" '
+        'loading="eager" decoding="async" fetchpriority="high" alt="">'
+    ) in product.text
+    assert (
+        '<img class="slice-img" src="/api/h5/product-images/frontend-material-product/2/variants/original" '
+        'loading="lazy" decoding="async" fetchpriority="low" alt="">'
+    ) in product.text
     assert "/pay/frontend-material-product" in product.text
     assert 'class="hero-panel"' not in product.text
     assert 'class="detail-card"' not in product.text
@@ -82,6 +95,13 @@ def test_public_product_frontend_restores_slice_image_layout() -> None:
                     "image_library_id": 1,
                     "image_url": "data:image/png;base64,YWFhYWFh",
                     "sort_order": 1,
+                    "width": 750,
+                    "height": 2400,
+                },
+                {
+                    "image_library_id": 2,
+                    "image_url": "data:image/png;base64,YmJiYmJi",
+                    "sort_order": 2,
                 }
             ],
             "detail_sections": [{"title": "服务说明", "body": "体验权益说明"}],
@@ -91,11 +111,97 @@ def test_public_product_frontend_restores_slice_image_layout() -> None:
 
     assert 'class="detail-media"' in html
     assert 'class="slice-img"' in html
-    assert "data:image/png;base64,YWFhYWFh" in html
+    assert "data:image" not in html
+    assert html.index('class="sticky-buy"') < html.index('class="slice-img"')
+    assert (
+        '<img class="slice-img" src="/api/h5/product-images/subscription_trial_month/1/variants/original" '
+        'loading="eager" decoding="async" fetchpriority="high" width="750" height="2400" alt="">'
+    ) in html
+    assert (
+        '<img class="slice-img" src="/api/h5/product-images/subscription_trial_month/2/variants/original" '
+        'loading="lazy" decoding="async" fetchpriority="low" alt="">'
+    ) in html
     assert '<section class="hero-panel">' not in html
     assert 'class="detail-card"' not in html
     assert 'class="sticky-buy"' in html
     assert "立即报名" in html
+
+
+def test_public_product_image_route_serves_only_bound_enabled_product_images(monkeypatch) -> None:
+    from aicrm_next.shared.errors import NotFoundError
+
+    reset_commerce_fixture_state()
+    calls: list[tuple[str, str]] = []
+
+    class FakeGetImageVariantQuery:
+        def __call__(self, image_id: str, variant_key: str) -> dict:
+            calls.append((image_id, variant_key))
+            if image_id != "1" or variant_key != "original":
+                raise NotFoundError("image variant not found")
+            return {
+                "ok": True,
+                "variant": {
+                    "bytes": b"public-product-image",
+                    "mime_type": "image/png",
+                    "etag": '"public-product-image-v1"',
+                },
+            }
+
+    monkeypatch.setattr("aicrm_next.public_product.service.GetImageVariantQuery", lambda: FakeGetImageVariantQuery())
+    client = _client(monkeypatch)
+    created = client.post(
+        "/api/admin/wechat-pay/products",
+        json={
+            "product_code": "public-image-product",
+            "title": "公开图片商品",
+            "price_cents": 100,
+            "enabled": True,
+            "status": "active",
+            "slices": [{"image_library_id": 1, "image_url": "data:image/png;base64,YQ==", "sort_order": 1}],
+        },
+    )
+    assert created.status_code == 200
+
+    response = client.get("/api/h5/product-images/public-image-product/1/variants/original")
+
+    assert response.status_code == 200
+    assert response.content == b"public-product-image"
+    assert response.headers["content-type"].startswith("image/png")
+    assert response.headers["cache-control"] == "public, max-age=31536000, immutable"
+    assert response.headers["etag"] == '"public-product-image-v1"'
+    assert response.headers["X-AICRM-Route-Owner"] == "ai_crm_next"
+    assert response.headers["X-AICRM-Fallback-Used"] == "false"
+    assert calls == [("1", "original")]
+
+    cached = client.get(
+        "/api/h5/product-images/public-image-product/1/variants/original",
+        headers={"If-None-Match": response.headers["etag"]},
+    )
+    assert cached.status_code == 304
+    assert cached.headers["etag"] == '"public-product-image-v1"'
+
+    calls.clear()
+    unbound = client.get("/api/h5/product-images/public-image-product/2/variants/original")
+    assert unbound.status_code == 404
+    assert calls == []
+
+    unknown = client.get("/api/h5/product-images/unknown-product/1/variants/original")
+    assert unknown.status_code == 404
+
+    disabled_created = client.post(
+        "/api/admin/wechat-pay/products",
+        json={
+            "product_code": "disabled-image-product",
+            "title": "下架图片商品",
+            "price_cents": 100,
+            "enabled": False,
+            "status": "disabled",
+            "slices": [{"image_library_id": 1, "image_url": "data:image/png;base64,YQ==", "sort_order": 1}],
+        },
+    )
+    assert disabled_created.status_code == 200
+    disabled = client.get("/api/h5/product-images/disabled-image-product/1/variants/original")
+    assert disabled.status_code == 404
 
 
 def test_public_h5_order_payload_adds_lead_qr_only_after_paid() -> None:

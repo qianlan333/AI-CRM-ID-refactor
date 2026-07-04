@@ -54,6 +54,11 @@ def test_public_product_page_renders_when_material_exists(monkeypatch) -> None:
     assert "带素材商品" in response.text
     assert "/pay/material-product" in response.text
     assert 'class="slice-img"' in response.text
+    assert 'class="sticky-buy"' in response.text
+    assert response.text.index('class="sticky-buy"') < response.text.index('class="slice-img"')
+    assert "data:image" not in response.text
+    assert "/api/h5/product-images/material-product/1/variants/original" in response.text
+    assert 'loading="eager" decoding="async" fetchpriority="high"' in response.text
     assert "不创建订单" not in response.text
     assert "商品编码" not in response.text
     assert "X-AICRM-Compatibility-Facade" not in response.headers

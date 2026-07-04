@@ -3,13 +3,20 @@ from __future__ import annotations
 from html import escape
 import json
 from typing import Any
+from urllib.parse import quote
 
 from aicrm_next.commerce.domain import preview_product
 from aicrm_next.commerce.repo import build_commerce_repository
-from aicrm_next.shared.errors import NotFoundError
+from aicrm_next.media_library.application import GetImageVariantQuery
+from aicrm_next.shared.errors import ContractError, NotFoundError
 
 
-PUBLIC_PRODUCT_ROUTES = ("/p/{path:path}", "/pay/{path:path}", "/api/products/{path:path}")
+PUBLIC_PRODUCT_ROUTES = (
+    "/p/{path:path}",
+    "/pay/{path:path}",
+    "/api/products/{path:path}",
+    "/api/h5/product-images/{path:path}",
+)
 PAYMENT_ACTION_SEGMENTS = {"checkout", "payment", "pay", "order", "orders", "jsapi", "notify", "return"}
 
 
@@ -129,6 +136,40 @@ def product_not_found_payload(path: Any) -> dict[str, Any]:
     }
 
 
+def _positive_int_text(value: Any) -> str:
+    try:
+        normalized = int(value or 0)
+    except (TypeError, ValueError):
+        return ""
+    return str(normalized) if normalized > 0 else ""
+
+
+def _product_slice_image_ids(product: dict[str, Any]) -> set[str]:
+    image_ids: set[str] = set()
+    for item in list(product.get("slices") or []):
+        if not isinstance(item, dict) or item.get("enabled") is False:
+            continue
+        image_id = _positive_int_text(item.get("image_library_id") or item.get("library_image_id") or item.get("asset_id"))
+        if image_id:
+            image_ids.add(image_id)
+    return image_ids
+
+
+def public_product_image_variant(product_code: Any, image_id: Any, variant_key: Any) -> dict[str, Any]:
+    product = get_public_product(product_code)
+    normalized_image_id = _positive_int_text(image_id)
+    if not normalized_image_id or normalized_image_id not in _product_slice_image_ids(product):
+        raise NotFoundError("public product image not found")
+    try:
+        payload = GetImageVariantQuery()(normalized_image_id, str(variant_key or "").strip())
+    except (ContractError, NotFoundError, TypeError, ValueError) as exc:
+        raise NotFoundError("public product image not found") from exc
+    variant = payload.get("variant") if isinstance(payload, dict) else None
+    if not isinstance(variant, dict):
+        raise NotFoundError("public product image not found")
+    return variant
+
+
 def render_product_page(product: dict[str, Any], *, context_token: str = "", context_status: str = "") -> str:
     title = escape(str(product.get("title") or "商品详情"))
     cta = escape(str(product.get("buy_button_text") or product.get("cta_text") or "立即报名"))
@@ -143,9 +184,6 @@ def render_product_page(product: dict[str, Any], *, context_token: str = "", con
   {_product_page_styles()}
 </head>
 <body class="product-body">
-  <main class="product-page" data-route-owner="ai_crm_next" data-fallback-used="false">
-    {media}
-  </main>
   <nav class="sticky-buy" aria-label="商品操作">
     <div>
       <div class="sticky-title">{title}</div>
@@ -153,6 +191,9 @@ def render_product_page(product: dict[str, Any], *, context_token: str = "", con
     </div>
     <a class="cta" href="{checkout_url}" data-context-status="{escape(str(context_status or ('valid' if context_token else 'missing')), quote=True)}">{cta}</a>
   </nav>
+  <main class="product-page" data-route-owner="ai_crm_next" data-fallback-used="false">
+    {media}
+  </main>
 </body>
 </html>"""
 
@@ -264,35 +305,51 @@ def render_not_found_page(path: Any) -> str:
 </html>"""
 
 
-def _detail_image_source(item: Any) -> str:
+def _detail_image_source(item: Any, product_code: str = "") -> str:
     if isinstance(item, str):
-        return item.strip()
+        source = item.strip()
+        return "" if source.lower().startswith("data:image/") else source
     if isinstance(item, dict):
+        image_id = _positive_int_text(item.get("image_library_id") or item.get("library_image_id") or item.get("asset_id"))
+        if image_id and product_code:
+            return f"/api/h5/product-images/{quote(product_code, safe='')}/{quote(image_id, safe='')}/variants/original"
         for key in ("image_url", "data_url", "url", "src"):
             value = str(item.get(key) or "").strip()
             if value:
+                if value.lower().startswith("data:image/"):
+                    return ""
                 return value
     return ""
 
 
-def _detail_image_sources(product: dict[str, Any]) -> list[str]:
-    sources: list[str] = []
+def _detail_image_items(product: dict[str, Any]) -> list[dict[str, Any]]:
+    product_code = str(product.get("product_code") or "").strip()
+    items: list[dict[str, Any]] = []
     for group_key in ("slices", "detail_images"):
         for item in list(product.get(group_key) or []):
-            source = _detail_image_source(item)
+            source = _detail_image_source(item, product_code)
             if source:
-                sources.append(source)
-    return sources
+                width = _positive_int_text(item.get("width") if isinstance(item, dict) else None)
+                height = _positive_int_text(item.get("height") if isinstance(item, dict) else None)
+                items.append({"source": source, "width": width, "height": height})
+    return items
 
 
 def _render_detail_media(product: dict[str, Any]) -> str:
-    sources = _detail_image_sources(product)
-    if not sources:
+    items = _detail_image_items(product)
+    if not items:
         return ""
-    images = "\n".join(
-        f'      <img class="slice-img" src="{escape(source, quote=True)}" loading="lazy" alt="">'
-        for source in sources
-    )
+    image_tags: list[str] = []
+    for index, item in enumerate(items):
+        loading = "eager" if index == 0 else "lazy"
+        fetchpriority = "high" if index == 0 else "low"
+        size_attrs = ""
+        if item.get("width") and item.get("height"):
+            size_attrs = f' width="{escape(item["width"], quote=True)}" height="{escape(item["height"], quote=True)}"'
+        image_tags.append(
+            f'      <img class="slice-img" src="{escape(item["source"], quote=True)}" loading="{loading}" decoding="async" fetchpriority="{fetchpriority}"{size_attrs} alt="">'
+        )
+    images = "\n".join(image_tags)
     return f"""
     <section class="detail-media" aria-label="商品详情图">
 {images}
@@ -344,7 +401,7 @@ def _product_page_styles() -> str:
     html, body { margin: 0; min-height: 100%; background: #fff; color: var(--text); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", Arial, sans-serif; letter-spacing: 0; }
     .product-page { width: min(100%, 750px); min-height: 100vh; margin: 0 auto; background: #fff; padding-bottom: 88px; }
     .detail-media { background: #fff; }
-    .slice-img { width: 100%; display: block; background: #fff; }
+    .slice-img { width: 100%; display: block; background: #fff; min-height: 80px; object-fit: cover; }
     .sticky-buy {
       position: fixed; left: 50%; bottom: 0; transform: translateX(-50%); z-index: 20;
       width: min(100%, 750px); padding: 10px 14px 12px; background: rgba(255, 253, 248, .96);
