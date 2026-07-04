@@ -156,6 +156,7 @@ def test_live_source_repository_reads_existing_customer_source_tables(monkeypatc
     assert rows[0]["class_user_status"]["activation_bucket"] == "activated"
     assert detail["identity"]["unionid"] == "union-1"
     assert messages[0]["msgid"] == "msg-1"
+    assert messages[0]["unionid"] == "union-1"
     assert timeline[0]["event_type"] == "message"
 
 

@@ -528,6 +528,7 @@ def test_public_h5_paid_order_lookup_accepts_product_code_alias() -> None:
     )
 
     assert "product_code IN" in captured["query"]
+    assert "payer_openid = %s" in captured["query"]
     assert "subscription_trial_month" in captured["params"]
     assert "prd_20260518095708_9f77db" in captured["params"]
     assert "un_alias" in captured["params"]

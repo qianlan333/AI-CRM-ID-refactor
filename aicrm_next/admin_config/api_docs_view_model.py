@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Iterable
 
 from fastapi import APIRouter
 from fastapi.routing import APIRoute
@@ -177,8 +177,17 @@ def _normalize_path(path: str) -> str:
     return re.sub(r"\{([^}:]+):[^}]+\}", r"{\1}", path)
 
 
-def _path_for_route(route: APIRoute) -> str:
-    return _normalize_path(str(getattr(route, "path_format", None) or route.path))
+def _path_for_route(route: APIRoute, prefix: str = "") -> str:
+    path = _join_paths(prefix, str(getattr(route, "path_format", None) or route.path))
+    return _normalize_path(path)
+
+
+def _join_paths(prefix: str, path: str) -> str:
+    if not prefix:
+        return path
+    if not path:
+        return prefix
+    return f"{prefix.rstrip('/')}/{path.lstrip('/')}"
 
 
 def _should_document(path: str) -> bool:
@@ -500,14 +509,23 @@ def _endpoint_from_route(route: APIRoute, method: str, path: str) -> dict[str, A
     }
 
 
+def _iter_api_routes(routes: Iterable[Any], prefix: str = "") -> Iterable[tuple[APIRoute, str]]:
+    for route in routes:
+        context = getattr(route, "include_context", None)
+        included_router = getattr(route, "original_router", None) or getattr(context, "included_router", None)
+        if included_router is not None and hasattr(included_router, "routes"):
+            yield from _iter_api_routes(getattr(included_router, "routes", ()), _join_paths(prefix, getattr(context, "prefix", "")))
+            continue
+        if isinstance(route, APIRoute):
+            yield route, prefix
+
+
 def _iter_route_endpoints(frontend_router: APIRouter | None = None) -> list[dict[str, Any]]:
     endpoints: list[dict[str, Any]] = []
     seen: set[tuple[str, str]] = set()
     for router in _router_sources(frontend_router):
-        for route in router.routes:
-            if not isinstance(route, APIRoute):
-                continue
-            path = _path_for_route(route)
+        for route, prefix in _iter_api_routes(router.routes):
+            path = _path_for_route(route, prefix)
             if not _should_document(path):
                 continue
             for method in sorted(route.methods or [], key=lambda item: _METHOD_ORDER.get(item, 99)):

@@ -48,9 +48,10 @@ class _PaymentConn:
                     "trade_state": params[1],
                     "transaction_id": params[2],
                     "bank_type": params[3],
-                    "payer_total": params[4],
-                    "paid_at": params[6],
-                    "notify_payload_json": params[7],
+                    "payer_openid": params[4] or self.order.get("payer_openid", ""),
+                    "payer_total": params[5],
+                    "paid_at": params[7],
+                    "notify_payload_json": params[8],
                 }
             )
             return _FakeCursor(dict(self.order))

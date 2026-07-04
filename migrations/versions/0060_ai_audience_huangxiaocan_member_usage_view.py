@@ -116,7 +116,7 @@ def _create_huangxiaocan_member_usage_view() -> None:
                            CASE WHEN COALESCE(s.mobile, '') <> '' THEN md5(s.mobile) ELSE '' END::text AS mobile_hash,
                            %s AS unionid,
                            true::boolean AS has_real_usage,
-                           COALESCE(s.last_msg_at::timestamptz, s.refreshed_at::timestamptz) AS used_at,
+                           COALESCE(last_msg_at::timestamptz, refreshed_at::timestamptz) AS used_at,
                            'user_ops_hxc_dashboard_snapshot'::text AS source
                     FROM public.user_ops_hxc_dashboard_snapshot s
                     WHERE COALESCE(s.conv_chat, 0) > 0

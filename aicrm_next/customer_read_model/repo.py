@@ -1323,6 +1323,8 @@ class LiveSourceCustomerReadRepository:
         normalized = str(external_userid or "").strip()
         if not normalized:
             return {}
+        if self._is_sqlite_session():
+            return self._identity_by_external_userid_sqlite(normalized)
         row = self._session.execute(
             text(
                 """
@@ -1342,6 +1344,28 @@ class LiveSourceCustomerReadRepository:
                 """
             ),
             {"external_userid": normalized},
+        ).mappings().first()
+        return dict(row or {})
+
+    def _is_sqlite_session(self) -> bool:
+        bind = self._session.get_bind()
+        dialect = getattr(bind, "dialect", None)
+        return str(getattr(dialect, "name", "") or "").lower() == "sqlite"
+
+    def _identity_by_external_userid_sqlite(self, external_userid: str) -> JsonDict:
+        row = self._session.execute(
+            text(
+                """
+                SELECT unionid, primary_external_userid, primary_openid, identity_status
+                FROM crm_user_identity
+                WHERE primary_external_userid = :external_userid
+                   OR COALESCE(CAST(external_userids_json AS TEXT), '') LIKE :external_userid_like
+                ORDER BY CASE WHEN primary_external_userid = :external_userid THEN 0 ELSE 1 END,
+                         updated_at DESC
+                LIMIT 1
+                """
+            ),
+            {"external_userid": external_userid, "external_userid_like": f'%"{external_userid}"%'},
         ).mappings().first()
         return dict(row or {})
 
