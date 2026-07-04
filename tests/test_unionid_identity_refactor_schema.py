@@ -329,10 +329,15 @@ def test_channel_entry_business_write_requires_and_persists_unionid() -> None:
     assert 'subject_type="unionid"' in application
     assert '"reason": "identity_pending_unionid"' in application
     assert "unionid = text(identity_sync.get(\"unionid\"))" in application
-    assert "ProcessChannelEntryCommand(\n                    unionid=unionid" in application
-    assert "repo.upsert_channel_contact(channel_id=channel_id, unionid=command.unionid" in application
-    assert 'target_type="unionid"' in application
-    assert '"target_unionid": command.unionid' in application
+    assert "ProcessChannelEntryCommand(\n        unionid=unionid" in application
+    assert "repo.upsert_channel_contact(\n        channel_id=channel_id,\n        unionid=command.unionid" in application
+    assert "def _channel_entry_target(command: ProcessChannelEntryCommand)" in application
+    assert 'return "unionid", unionid, {"target_unionid": unionid}' in application
+    assert 'return "external_userid", text(command.external_contact_id), {}' in application
+    assert "def process_channel_entry_runtime(" in application
+    assert "def process_channel_entry_canonical(" in application
+    assert "repo.upsert_channel_entry_runtime" in application
+    assert "repo.enqueue_channel_entry_identity_resolution" in application
     assert "def upsert_channel_contact(*, channel_id: int, unionid: str = \"\"" in repo
     assert "INSERT INTO automation_channel_contact" in repo
     channel_contact_insert = repo.split("INSERT INTO automation_channel_contact", 1)[1].split("RETURNING *", 1)[0]
@@ -340,6 +345,9 @@ def test_channel_entry_business_write_requires_and_persists_unionid() -> None:
     assert "external_contact_id" not in channel_contact_insert
     assert "external_userid" not in channel_contact_insert
     assert "ON CONFLICT (channel_id, unionid)" in channel_contact_insert
+    assert "def upsert_channel_entry_runtime" in repo
+    assert "INSERT INTO automation_channel_entry_runtime" in repo
+    assert "INSERT INTO crm_user_identity_resolution_queue" in repo
 
     assert "ALTER TABLE IF EXISTS automation_channel_contact DROP COLUMN IF EXISTS external_userid" in cleanup
     assert "INSERT INTO crm_user_identity_resolution_queue" in cleanup

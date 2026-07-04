@@ -477,6 +477,24 @@ tables:
       - tests/test_unionid_identity_refactor_schema.py::test_final_legacy_identity_cleanup_removes_non_boundary_columns
     notes: Channel-entry effect audit log keyed by unionid; external_contact_id is retained only inside request_json for diagnostics.
 
+  automation_channel_entry_runtime:
+    domain: channel_entry
+    lifecycle: queue
+    write_owner: aicrm_next.channel_entry.repo
+    read_owners:
+      - aicrm_next.channel_entry.repo
+    replacement: ""
+    drop_candidate: false
+    runtime_entrypoints:
+      - channel entry callback runtime buffer
+      - unresolved channel entry identity reconciliation
+    migration_source: 0088_channel_entry_identity_best_effort
+    pii_level: internal_contact
+    guard_tests:
+      - tests/test_data_table_lifecycle_guard.py
+      - tests/test_channel_entry_identity_best_effort_contract.py::test_channel_entry_identity_best_effort_runtime_table_is_governed
+    notes: Runtime staging table keyed by WeCom external_userid/follow_user_userid/scene until unionid canonicalization writes automation_channel_contact.
+
   wechat_shop_orders:
     domain: commerce
     lifecycle: canonical

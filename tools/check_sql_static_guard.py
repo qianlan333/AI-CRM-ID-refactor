@@ -57,6 +57,9 @@ IDENTITY_BOUNDARY_TABLE_PREFIXES = (
     "external_contact_bindings",
     "wecom_external_contact_",
 )
+IDENTITY_BOUNDARY_TABLE_NAMES = {
+    "automation_channel_entry_runtime",
+}
 _UNQUOTED_SQL_IDENTIFIER = r"[a-zA-Z_][a-zA-Z0-9_]*"
 _QUOTED_SQL_IDENTIFIER = r'"[^"]+"'
 _SQL_IDENTIFIER_PATTERN = rf"(?:{_QUOTED_SQL_IDENTIFIER}|{_UNQUOTED_SQL_IDENTIFIER})"
@@ -341,7 +344,7 @@ def _declared_columns(sql_text: str) -> set[str]:
 
 
 def _is_identity_boundary_table(table: str) -> bool:
-    return table.startswith(IDENTITY_BOUNDARY_TABLE_PREFIXES)
+    return table in IDENTITY_BOUNDARY_TABLE_NAMES or table.startswith(IDENTITY_BOUNDARY_TABLE_PREFIXES)
 
 
 def _is_pre_guard_migration(path: Path, *, root: Path, baseline_prefix: int) -> bool:

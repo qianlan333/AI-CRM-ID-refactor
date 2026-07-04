@@ -279,6 +279,36 @@ CREATE TABLE IF NOT EXISTS crm_user_identity_custom (
     assert check_sql_static_guard(root=tmp_path, manifest_path=manifest) == []
 
 
+def test_sql_static_guard_allows_channel_entry_runtime_identity_boundary(tmp_path: Path) -> None:
+    manifest = _write_manifest(
+        tmp_path,
+        baseline_prefix="0073",
+        extra_table="""
+  automation_channel_entry_runtime:
+    domain: channel_entry
+    lifecycle: queue
+    write_owner: aicrm_next.channel_entry.repo
+    replacement: none
+    drop_candidate: false
+""",
+    )
+    _write(
+        tmp_path / "migrations" / "versions" / "0088_channel_entry_identity_best_effort.py",
+        '''
+SQL = """
+CREATE TABLE IF NOT EXISTS automation_channel_entry_runtime (
+    id BIGSERIAL PRIMARY KEY,
+    external_userid TEXT NOT NULL DEFAULT '',
+    follow_user_userid TEXT NOT NULL DEFAULT '',
+    unionid TEXT NOT NULL DEFAULT ''
+)
+"""
+''',
+    )
+
+    assert check_sql_static_guard(root=tmp_path, manifest_path=manifest) == []
+
+
 def _write_manifest(tmp_path: Path, *, baseline_prefix: str = "0000", extra_table: str = "") -> Path:
     manifest = tmp_path / "docs" / "architecture" / "data_table_lifecycle_manifest.yml"
     _write(

@@ -197,6 +197,13 @@ def _wake_channel_entry_external_effect_job(job_id: Any, *, effect_type: str, re
     )
 
 
+def _channel_entry_target(command: ProcessChannelEntryCommand) -> tuple[str, str, dict[str, Any]]:
+    unionid = text(command.unionid)
+    if unionid:
+        return "unionid", unionid, {"target_unionid": unionid}
+    return "external_userid", text(command.external_contact_id), {}
+
+
 def _plan_welcome_fallback_message(
     command: ProcessChannelEntryCommand,
     *,
@@ -207,9 +214,9 @@ def _plan_welcome_fallback_message(
     attachments: list[dict[str, Any]],
     welcome_effect_job_id: Any,
 ) -> dict[str, Any]:
+    target_type, target_id, target_payload = _channel_entry_target(command)
     payload: dict[str, Any] = {
         "channel": "wecom_private",
-        "target_unionid": command.unionid,
         "owner_userid": command.follow_user_userid,
         "external_userids": [command.external_contact_id],
         "source": "channel_entry_welcome_fallback",
@@ -217,6 +224,7 @@ def _plan_welcome_fallback_message(
         "source_welcome_effect_job_id": int(welcome_effect_job_id or 0),
         "channel_id": channel_id,
         "scene_value": scene,
+        **target_payload,
     }
     if text_content:
         payload["content_text"] = text_content
@@ -227,15 +235,17 @@ def _plan_welcome_fallback_message(
         effect_type=WECOM_MESSAGE_PRIVATE_SEND,
         adapter_name="wecom_private_message",
         operation="send",
-        target_type="unionid",
-        target_id=command.unionid,
+        target_type=target_type,
+        target_id=target_id,
         business_type="channel_entry_welcome_fallback",
         business_id=str(channel_id),
         idempotency_key=f"{idempotency_key}:fallback_private_message",
         payload=payload,
         payload_summary={
             "external_userid": command.external_contact_id,
-            "target_unionid": command.unionid,
+            "target_type": target_type,
+            "target_id": target_id,
+            "target_unionid": text(target_payload.get("target_unionid")),
             "owner_userid": command.follow_user_userid,
             "channel_id": channel_id,
             "scene_value": scene,
@@ -261,6 +271,8 @@ def _emit_channel_entry_internal_event(
     channel_contact: dict[str, Any],
 ) -> dict[str, Any]:
     unionid = text(command.unionid)
+    if not unionid:
+        return {"ok": False, "reason": "identity_pending_unionid", "deferred": True}
     try:
         result = InternalEventService().emit_event(
             event_type="channel_entry.entered",
@@ -301,6 +313,99 @@ def _emit_channel_entry_internal_event(
         return {"ok": False, "error": str(exc)}
 
 
+def process_channel_entry_canonical(
+    command: ProcessChannelEntryCommand,
+    *,
+    channel_id: int,
+    scene: str,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    if not text(command.unionid):
+        return (
+            {"attempted": False, "deferred": True, "reason": "identity_pending_unionid"},
+            {"ok": False, "deferred": True, "reason": "identity_pending_unionid"},
+        )
+    corp_id = extract_corp_id(command.payload_json)
+    channel_contact = repo.upsert_channel_contact(
+        channel_id=channel_id,
+        unionid=command.unionid,
+        external_contact_id=command.external_contact_id,
+        owner_staff_id=command.follow_user_userid,
+        source_payload=command.payload_json,
+    )
+    channel_entry_event = _emit_channel_entry_internal_event(
+        command,
+        channel_id=channel_id,
+        scene=scene,
+        channel_contact=channel_contact,
+    )
+    _log_effect(
+        command,
+        effect_type="channel_contact",
+        idempotency_key=f"{corp_id}:{command.external_contact_id}:{command.follow_user_userid}:{channel_id}:contact",
+        status="success",
+        channel_id=channel_id,
+        scene_value=scene,
+        reason="upserted",
+        response_json=channel_contact,
+    )
+    return channel_contact, channel_entry_event
+
+
+def process_channel_entry_runtime(
+    command: ProcessChannelEntryCommand,
+    *,
+    channel_id: int,
+    scene: str,
+    identity_status: str = "pending",
+) -> dict[str, Any]:
+    corp_id = extract_corp_id(command.payload_json)
+    if command.dry_run:
+        return {
+            "planned": True,
+            "deferred": True,
+            "channel_id": channel_id,
+            "external_userid": command.external_contact_id,
+            "reason": "identity_pending_unionid",
+        }
+    runtime_entry = repo.upsert_channel_entry_runtime(
+        corp_id=corp_id,
+        event_log_id=command.event_log_id,
+        channel_id=channel_id,
+        scene_value=scene,
+        external_userid=command.external_contact_id,
+        follow_user_userid=command.follow_user_userid,
+        welcome_code_present=bool(extract_welcome_code(command.payload_json)),
+        unionid=command.unionid,
+        identity_status=identity_status,
+        runtime_status="received",
+        payload_json=repo.json_safe(command.payload_json or {}),
+    )
+    identity_queue: dict[str, Any] = {"ok": True}
+    try:
+        repo.enqueue_channel_entry_identity_resolution(
+            corp_id=corp_id,
+            external_userid=command.external_contact_id,
+            follow_user_userid=command.follow_user_userid,
+            payload_json=repo.json_safe(command.payload_json or {}),
+            reason="identity_pending_unionid",
+        )
+    except Exception as exc:
+        LOGGER.warning("channel entry identity resolution enqueue failed: %s", exc)
+        identity_queue = {"ok": False, "reason": "identity_resolution_enqueue_failed", "message": str(exc)}
+    runtime_entry["identity_resolution_queue"] = identity_queue
+    _log_effect(
+        command,
+        effect_type="channel_entry_runtime",
+        idempotency_key=f"{corp_id}:{command.external_contact_id}:{command.follow_user_userid}:{channel_id}:runtime",
+        status="success",
+        channel_id=channel_id,
+        scene_value=scene,
+        reason="runtime_entry_recorded",
+        response_json=runtime_entry,
+    )
+    return runtime_entry
+
+
 def _adapter_failure(exc: Exception) -> tuple[str, dict[str, Any]]:
     if isinstance(exc, WeComAdapterBlocked):
         payload: dict[str, Any] = {"reason": exc.reason}
@@ -313,6 +418,144 @@ def _adapter_failure(exc: Exception) -> tuple[str, dict[str, Any]]:
             payload["wecom_result"] = exc.payload
         return "wecom_api_error", payload
     return "wecom_api_error", {"reason": "wecom_api_error", "message": str(exc)}
+
+
+def _identity_sync_error_fields(identity_sync: dict[str, Any]) -> tuple[str, str]:
+    status = text(identity_sync.get("status"))
+    if status in {"success", "skipped"}:
+        return "", ""
+    wecom_result = identity_sync.get("wecom_result")
+    if not isinstance(wecom_result, dict):
+        wecom_result = {}
+    error_code = text(wecom_result.get("errcode")) or text(identity_sync.get("reason")) or status
+    error_message = (
+        text(wecom_result.get("errmsg"))
+        or text(identity_sync.get("message"))
+        or text(identity_sync.get("reason"))
+        or status
+    )
+    return error_code, error_message
+
+
+def _record_identity_sync_result(event_log_id: int | None, identity_sync: dict[str, Any]) -> dict[str, Any]:
+    if not event_log_id:
+        return {"ok": False, "reason": "event_log_id_missing"}
+    error_code, error_message = _identity_sync_error_fields(identity_sync)
+    try:
+        repo.record_identity_sync_result(
+            int(event_log_id),
+            status=text(identity_sync.get("status")),
+            error_code=error_code,
+            error_message=error_message,
+            response_json=repo.json_safe(identity_sync),
+        )
+    except Exception as exc:
+        LOGGER.warning("identity sync diagnostic persistence failed: %s", exc)
+        return {"ok": False, "reason": "diagnostic_persist_failed", "message": str(exc)}
+    return {"ok": True}
+
+
+def _mark_runtime_identity_from_sync(
+    event: dict[str, Any],
+    *,
+    corp_id: str,
+    event_log_id: int | None,
+    identity_sync: dict[str, Any],
+) -> dict[str, Any]:
+    try:
+        return repo.mark_channel_entry_runtime_identity(
+            event_log_id=event_log_id,
+            corp_id=corp_id,
+            scene_value=extract_scene(event),
+            external_userid=text(event.get("ExternalUserID")),
+            follow_user_userid=text(event.get("UserID")),
+            unionid=text(identity_sync.get("unionid")),
+            identity_status=text(identity_sync.get("status")) or "pending",
+            identity_sync=identity_sync,
+        )
+    except Exception as exc:
+        LOGGER.warning("channel entry runtime identity update failed: %s", exc)
+        return {"status": "failed", "reason": str(exc)}
+
+
+def _canonicalize_channel_entry_after_identity(
+    event: dict[str, Any],
+    *,
+    corp_id: str,
+    event_log_id: int | None,
+    identity_sync: dict[str, Any],
+) -> dict[str, Any]:
+    unionid = text(identity_sync.get("unionid"))
+    scene = extract_scene(event)
+    external_userid = text(event.get("ExternalUserID"))
+    if not unionid:
+        return {"status": "skipped", "reason": "unionid_missing"}
+    if not scene or not external_userid:
+        return {"status": "skipped", "reason": "missing_state_or_external_userid"}
+    channel, match = resolve_channel_for_scene(scene_value=scene, corp_id=corp_id, persist_alias=True)
+    if not channel:
+        return {"status": "skipped", "reason": text(match.get("reason")) or "channel_not_found", "scene_match": match}
+    if not channel_enabled(channel):
+        return {"status": "skipped", "reason": "channel_disabled", "scene_match": match}
+    channel_id = int(channel.get("id") or 0)
+    canonical_command = ProcessChannelEntryCommand(
+        unionid=unionid,
+        external_contact_id=external_userid,
+        payload_json={**event, "corp_id": corp_id, "unionid": unionid},
+        follow_user_userid=text(event.get("UserID")) or text(channel.get("owner_staff_id")) or "HuangYouCan",
+        event_action=text(event.get("ChangeType")),
+        send_welcome_message=False,
+        event_log_id=event_log_id,
+    )
+    channel_contact, channel_entry_event = process_channel_entry_canonical(
+        canonical_command,
+        channel_id=channel_id,
+        scene=scene,
+    )
+    runtime_identity = _mark_runtime_identity_from_sync(
+        event,
+        corp_id=corp_id,
+        event_log_id=event_log_id,
+        identity_sync=identity_sync,
+    )
+    return {
+        "status": "success",
+        "scene_match": match,
+        "channel_contact": channel_contact,
+        "channel_entry_internal_event": channel_entry_event,
+        "runtime_identity": runtime_identity,
+    }
+
+
+def _sync_identity_best_effort(event: dict[str, Any], *, corp_id: str, event_log_id: int | None) -> dict[str, Any]:
+    try:
+        identity_sync = sync_external_contact_identity_for_event(event, corp_id=corp_id)
+    except Exception as exc:
+        reason, failure = _adapter_failure(exc)
+        identity_sync = {"status": "failed", "reason": reason, **failure}
+    diagnostic = _record_identity_sync_result(event_log_id, identity_sync)
+    if diagnostic:
+        identity_sync["diagnostic"] = diagnostic
+    if text(identity_sync.get("status")) == "success":
+        try:
+            canonical = _canonicalize_channel_entry_after_identity(
+                event,
+                corp_id=corp_id,
+                event_log_id=event_log_id,
+                identity_sync=identity_sync,
+            )
+            identity_sync["channel_entry_canonical"] = canonical
+        except Exception as exc:
+            LOGGER.warning("channel entry canonicalization after identity failed: %s", exc)
+            identity_sync["channel_entry_canonical"] = {"status": "failed", "reason": str(exc)}
+    else:
+        identity_sync["runtime_identity"] = _mark_runtime_identity_from_sync(
+            event,
+            corp_id=corp_id,
+            event_log_id=event_log_id,
+            identity_sync=identity_sync,
+        )
+    return identity_sync
 
 
 def _welcome_attachments(channel: dict[str, Any]) -> tuple[list[dict[str, Any]], str]:
@@ -407,27 +650,30 @@ def _send_welcome(command: ProcessChannelEntryCommand, *, channel: dict[str, Any
         payload["attachments"] = attachments
     if command.dry_run:
         return {"attempted": False, "sent": False, "reason": "dry_run", "request_payload": payload}
+    target_type, target_id, target_payload = _channel_entry_target(command)
     try:
         job = _plan_channel_entry_effect(
             command,
             effect_type=WECOM_WELCOME_MESSAGE_SEND,
             adapter_name="wecom_welcome_message",
             operation="send",
-            target_type="unionid",
-            target_id=command.unionid,
+            target_type=target_type,
+            target_id=target_id,
             business_id=str(channel_id),
             idempotency_key=key,
             payload={
                 **payload,
+                **target_payload,
                 "external_userid": command.external_contact_id,
-                "target_unionid": command.unionid,
                 "follow_user_userid": command.follow_user_userid,
                 "channel_id": channel_id,
                 "scene_value": scene,
             },
             payload_summary={
                 "external_userid": command.external_contact_id,
-                "target_unionid": command.unionid,
+                "target_type": target_type,
+                "target_id": target_id,
+                "target_unionid": text(target_payload.get("target_unionid")),
                 "follow_user_userid": command.follow_user_userid,
                 "channel_id": channel_id,
                 "scene_value": scene,
@@ -498,24 +744,28 @@ def _apply_tag(command: ProcessChannelEntryCommand, *, channel: dict[str, Any], 
         payload["target_unionid"] = command.unionid
     if command.dry_run:
         return {"attempted": False, "applied": False, "reason": "dry_run", "request_payload": payload}
+    target_type, target_id, target_payload = _channel_entry_target(command)
     try:
         job = _plan_channel_entry_effect(
             command,
             effect_type=WECOM_CONTACT_TAG_MARK,
             adapter_name="wecom_tag",
             operation="mark",
-            target_type="unionid",
-            target_id=command.unionid,
+            target_type=target_type,
+            target_id=target_id,
             business_id=str(channel_id),
             idempotency_key=key,
             payload={
                 **payload,
+                **target_payload,
                 "channel_id": channel_id,
                 "scene_value": scene,
             },
             payload_summary={
                 "external_userid": command.external_contact_id,
-                "target_unionid": command.unionid,
+                "target_type": target_type,
+                "target_id": target_id,
+                "target_unionid": text(target_payload.get("target_unionid")),
                 "follow_user_userid": command.follow_user_userid,
                 "channel_id": channel_id,
                 "scene_value": scene,
@@ -556,31 +806,34 @@ def _ensure_profile_description(command: ProcessChannelEntryCommand, *, channel:
     if effect_status_for_duplicate(repo.get_channel_entry_effect_log("profile_description", key)):
         return {"attempted": False, "applied": False, "reason": "idempotent_success_exists", "description": external_userid}
     payload = {
-        "target_unionid": command.unionid,
         "external_userid": external_userid,
         "follow_user_userid": command.follow_user_userid,
         "description": external_userid,
     }
     if command.dry_run:
         return {"attempted": False, "applied": False, "reason": "dry_run", "request_payload": payload}
+    target_type, target_id, target_payload = _channel_entry_target(command)
     try:
         job = _plan_channel_entry_effect(
             command,
             effect_type=WECOM_PROFILE_UPDATE,
             adapter_name="wecom_profile",
             operation="update_description",
-            target_type="unionid",
-            target_id=command.unionid,
+            target_type=target_type,
+            target_id=target_id,
             business_id=str(channel_id),
             idempotency_key=key,
             payload={
                 **payload,
+                **target_payload,
                 "channel_id": channel_id,
                 "scene_value": scene,
             },
             payload_summary={
                 "external_userid": external_userid,
-                "target_unionid": command.unionid,
+                "target_type": target_type,
+                "target_id": target_id,
+                "target_unionid": text(target_payload.get("target_unionid")),
                 "follow_user_userid": command.follow_user_userid,
                 "channel_id": channel_id,
                 "scene_value": scene,
@@ -621,18 +874,6 @@ def process_channel_entry(command: ProcessChannelEntryCommand) -> dict[str, Any]
         return {"handled": False, "mode": "channel_not_found", "reason": reason, "scene_match": match}
 
     channel_id = int(channel["id"])
-    if not command.dry_run and not text(command.unionid):
-        result = {
-            "attempted": False,
-            "handled": False,
-            "mode": "identity_pending",
-            "reason": "identity_pending_unionid",
-            "scene_match": match,
-            "channel": channel_payload(channel),
-        }
-        _log_effect(command, effect_type="channel_contact", idempotency_key=f"{corp_id}:{command.external_contact_id}:{channel_id}:identity_pending", status="skipped", channel_id=channel_id, scene_value=scene, reason="identity_pending_unionid", response_json=result)
-        return result
-
     assignment_result: dict[str, Any] = {}
     if not text(command.follow_user_userid) and text(channel.get("assignment_mode")) == "multi_staff":
         try:
@@ -680,26 +921,47 @@ def process_channel_entry(command: ProcessChannelEntryCommand) -> dict[str, Any]
             },
         }
 
+    has_unionid = bool(text(command.unionid))
+    runtime_entry: dict[str, Any] = {}
     if command.dry_run:
-        channel_contact = {"planned": True, "channel_id": channel_id, "unionid": command.unionid, "external_contact_id": command.external_contact_id}
+        if has_unionid:
+            channel_contact = {"planned": True, "channel_id": channel_id, "unionid": command.unionid, "external_contact_id": command.external_contact_id}
+            channel_entry_event = {"ok": False, "reason": "dry_run"}
+        else:
+            runtime_entry = process_channel_entry_runtime(command, channel_id=channel_id, scene=scene)
+            channel_contact = {"planned": False, "deferred": True, "reason": "identity_pending_unionid"}
+            channel_entry_event = {"ok": False, "deferred": True, "reason": "identity_pending_unionid"}
+    elif has_unionid:
+        channel_contact, channel_entry_event = process_channel_entry_canonical(command, channel_id=channel_id, scene=scene)
     else:
-        channel_contact = repo.upsert_channel_contact(channel_id=channel_id, unionid=command.unionid, external_contact_id=command.external_contact_id, owner_staff_id=command.follow_user_userid, source_payload=command.payload_json)
-        channel_entry_event = _emit_channel_entry_internal_event(command, channel_id=channel_id, scene=scene, channel_contact=channel_contact)
-        _log_effect(command, effect_type="channel_contact", idempotency_key=f"{corp_id}:{command.external_contact_id}:{command.follow_user_userid}:{channel_id}:contact", status="success", channel_id=channel_id, scene_value=scene, reason="upserted", response_json=channel_contact)
-    if command.dry_run:
-        channel_entry_event = {"ok": False, "reason": "dry_run"}
+        runtime_entry = process_channel_entry_runtime(command, channel_id=channel_id, scene=scene)
+        channel_contact = {"attempted": False, "deferred": True, "reason": "identity_pending_unionid"}
+        channel_entry_event = {"ok": False, "deferred": True, "reason": "identity_pending_unionid"}
+        _log_effect(
+            command,
+            effect_type="channel_contact",
+            idempotency_key=f"{corp_id}:{command.external_contact_id}:{command.follow_user_userid}:{channel_id}:contact:identity_pending",
+            status="skipped",
+            channel_id=channel_id,
+            scene_value=scene,
+            reason="identity_pending_unionid",
+            response_json=channel_contact,
+        )
 
     welcome = _send_welcome(command, channel=channel, scene=scene)
     tag = _apply_tag(command, channel=channel, scene=scene)
     profile_description = _ensure_profile_description(command, channel=channel, scene=scene)
+    mode = "channel_baseline_only" if has_unionid else "channel_runtime_only"
+    reason = "channel_entry_baseline_recorded" if has_unionid else "channel_entry_runtime_recorded"
     return {
         "handled": True,
-        "mode": "channel_baseline_only",
-        "reason": "channel_entry_baseline_recorded",
+        "mode": mode,
+        "reason": reason,
         "scene_match": match,
         "channel": channel_payload(channel),
         "baseline_effects": {"channel_contact": channel_contact, "welcome_message": welcome, "entry_tag": tag, "profile_description": profile_description},
         "channel_contact": channel_contact,
+        "runtime_entry": runtime_entry,
         "welcome_message": welcome,
         "entry_tag": tag,
         "profile_description": profile_description,
@@ -725,37 +987,34 @@ def process_wecom_external_contact_event(command: ProcessWeComExternalContactEve
     try:
         is_entry_event = text(event.get("Event")) == "change_external_contact" and text(event.get("ChangeType")) in ENTRY_CHANGE_TYPES
         if is_entry_event:
-            identity_sync = sync_external_contact_identity_for_event(event, corp_id=command.corp_id)
-            result["identity_sync"] = identity_sync
-            if text(identity_sync.get("status")) == "pending_identity":
-                repo.mark_event_status(int(logged["id"]), "success")
-                result.update(
-                    {
-                        "handled": False,
-                        "reason": text(identity_sync.get("reason")) or "identity_pending",
-                        "entry_result": {"handled": False, "reason": "identity_pending_unionid"},
-                    }
+            if text(event.get("State")) and text(event.get("ExternalUserID")):
+                entry = process_channel_entry(
+                    ProcessChannelEntryCommand(
+                        external_contact_id=text(event.get("ExternalUserID")),
+                        payload_json={**event, "corp_id": command.corp_id},
+                        follow_user_userid=text(event.get("UserID")),
+                        event_action=text(event.get("ChangeType")),
+                        send_welcome_message=bool(text(event.get("WelcomeCode"))),
+                        event_log_id=int(logged.get("id") or 0) or None,
+                    )
                 )
-                return result
-            if text(identity_sync.get("status")) != "success":
-                reason = text(identity_sync.get("reason")) or text(identity_sync.get("status")) or "identity_sync_failed"
-                raise RuntimeError(f"identity_sync_failed:{reason}")
-            unionid = text(identity_sync.get("unionid"))
-            entry = process_channel_entry(
-                ProcessChannelEntryCommand(
-                    unionid=unionid,
-                    external_contact_id=text(event.get("ExternalUserID")),
-                    payload_json={**event, "corp_id": command.corp_id, "unionid": unionid},
-                    follow_user_userid=text(event.get("UserID")),
-                    event_action=text(event.get("ChangeType")),
-                    send_welcome_message=bool(text(event.get("WelcomeCode"))),
-                    event_log_id=int(logged.get("id") or 0) or None,
-                )
+                result.update({"handled": bool(entry.get("handled")), "entry_result": entry})
+            else:
+                result["entry_result"] = {
+                    "handled": False,
+                    "reason": "missing_state_or_external_userid",
+                    "state_present": bool(text(event.get("State"))),
+                    "external_userid_present": bool(text(event.get("ExternalUserID"))),
+                }
+            result["identity_sync"] = _sync_identity_best_effort(
+                event,
+                corp_id=command.corp_id,
+                event_log_id=int(logged.get("id") or 0) or None,
             )
             repo.mark_event_status(int(logged["id"]), "success")
-            result.update({"handled": bool(entry.get("handled")), "entry_result": entry})
         else:
             result["identity_sync"] = {"status": "skipped", "reason": "non_entry_change_type"}
+            _record_identity_sync_result(int(logged.get("id") or 0) or None, result["identity_sync"])
             repo.mark_event_status(int(logged["id"]), "success")
     except Exception as exc:
         repo.mark_event_status(int(logged["id"]), "failed", str(exc))

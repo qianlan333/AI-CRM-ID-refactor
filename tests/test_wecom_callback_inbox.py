@@ -508,6 +508,7 @@ def test_non_entry_callback_event_does_not_run_identity_sync_or_channel_entry(mo
         lambda **kwargs: {"id": 42, **kwargs},
     )
     monkeypatch.setattr(channel_application.repo, "mark_event_status", lambda *args, **kwargs: calls.append("mark"))
+    monkeypatch.setattr(channel_application.repo, "record_identity_sync_result", lambda *args, **kwargs: calls.append("identity_diag"))
     monkeypatch.setattr(
         channel_application,
         "sync_external_contact_identity_for_event",
@@ -530,4 +531,4 @@ def test_non_entry_callback_event_does_not_run_identity_sync_or_channel_entry(mo
 
     assert result["handled"] is False
     assert result["identity_sync"] == {"status": "skipped", "reason": "non_entry_change_type"}
-    assert calls == ["mark"]
+    assert calls == ["identity_diag", "mark"]

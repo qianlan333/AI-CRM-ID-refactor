@@ -946,6 +946,171 @@ def upsert_channel_contact(*, channel_id: int, unionid: str = "", external_conta
         return dict(row) if row else {}
 
 
+def upsert_channel_entry_runtime(
+    *,
+    corp_id: str,
+    event_log_id: int | None = None,
+    channel_id: int | None = None,
+    scene_value: str = "",
+    external_userid: str = "",
+    follow_user_userid: str = "",
+    welcome_code_present: bool = False,
+    unionid: str = "",
+    identity_status: str = "pending",
+    runtime_status: str = "received",
+    payload_json: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    with _connect() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO automation_channel_entry_runtime (
+                corp_id, event_log_id, channel_id, scene_value, external_userid, follow_user_userid,
+                welcome_code_present, unionid, identity_status, runtime_status, payload_json,
+                first_seen_at, last_seen_at, created_at, updated_at
+            )
+            VALUES (
+                %s, %s, %s, %s, %s, %s,
+                %s, %s, %s, %s, %s,
+                NOW(), NOW(), NOW(), NOW()
+            )
+            ON CONFLICT (corp_id, external_userid, follow_user_userid, scene_value)
+            WHERE external_userid <> '' AND scene_value <> ''
+            DO UPDATE SET
+                event_log_id = COALESCE(EXCLUDED.event_log_id, automation_channel_entry_runtime.event_log_id),
+                channel_id = COALESCE(EXCLUDED.channel_id, automation_channel_entry_runtime.channel_id),
+                welcome_code_present = automation_channel_entry_runtime.welcome_code_present OR EXCLUDED.welcome_code_present,
+                unionid = CASE
+                    WHEN EXCLUDED.unionid <> '' THEN EXCLUDED.unionid
+                    ELSE automation_channel_entry_runtime.unionid
+                END,
+                identity_status = EXCLUDED.identity_status,
+                runtime_status = EXCLUDED.runtime_status,
+                payload_json = automation_channel_entry_runtime.payload_json || EXCLUDED.payload_json,
+                last_seen_at = NOW(),
+                updated_at = NOW()
+            RETURNING *
+            """,
+            (
+                text(corp_id),
+                event_log_id,
+                channel_id,
+                text(scene_value),
+                text(external_userid),
+                text(follow_user_userid),
+                bool(welcome_code_present),
+                text(unionid),
+                text(identity_status) or "pending",
+                text(runtime_status) or "received",
+                _json(payload_json or {}),
+            ),
+        )
+        row = cur.fetchone()
+        conn.commit()
+        return dict(row) if row else {}
+
+
+def mark_channel_entry_runtime_identity(
+    *,
+    event_log_id: int | None = None,
+    corp_id: str = "",
+    scene_value: str = "",
+    external_userid: str = "",
+    follow_user_userid: str = "",
+    unionid: str = "",
+    identity_status: str = "",
+    identity_sync: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    clauses: list[str] = []
+    params: list[Any] = []
+    if event_log_id:
+        clauses.append("event_log_id = %s")
+        params.append(int(event_log_id))
+    if text(external_userid) and text(scene_value):
+        clauses.append(
+            "(corp_id = %s AND external_userid = %s AND follow_user_userid = %s AND scene_value = %s)"
+        )
+        params.extend([text(corp_id), text(external_userid), text(follow_user_userid), text(scene_value)])
+    if not clauses:
+        return {"status": "skipped", "reason": "runtime_lookup_missing", "updated_count": 0}
+    payload = {"identity_sync": json_safe(identity_sync or {})}
+    with _connect() as conn, conn.cursor() as cur:
+        cur.execute(
+            f"""
+            UPDATE automation_channel_entry_runtime
+            SET unionid = CASE WHEN %s <> '' THEN %s ELSE unionid END,
+                identity_status = %s,
+                payload_json = payload_json || %s,
+                last_seen_at = NOW(),
+                updated_at = NOW()
+            WHERE {" OR ".join(clauses)}
+            """,
+            (
+                text(unionid),
+                text(unionid),
+                text(identity_status) or "pending",
+                _json(payload),
+                *params,
+            ),
+        )
+        updated_count = int(cur.rowcount or 0)
+        conn.commit()
+    return {"status": "success", "updated_count": updated_count}
+
+
+def enqueue_channel_entry_identity_resolution(
+    *,
+    corp_id: str,
+    external_userid: str,
+    follow_user_userid: str = "",
+    payload_json: dict[str, Any] | None = None,
+    reason: str = "identity_pending_unionid",
+) -> None:
+    external = text(external_userid)
+    if not external:
+        return
+    source_key = f"{text(corp_id)}:{external}:{text(follow_user_userid)}"
+    with _connect() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO crm_user_identity_resolution_queue (
+                source_type,
+                source_key,
+                corp_id,
+                external_userid,
+                payload_json,
+                reason,
+                status,
+                first_seen_at,
+                last_seen_at,
+                created_at,
+                updated_at
+            ) VALUES (
+                'channel_entry',
+                %s,
+                %s,
+                %s,
+                %s,
+                %s,
+                'pending',
+                NOW(),
+                NOW(),
+                NOW(),
+                NOW()
+            )
+            ON CONFLICT (source_type, source_key) WHERE status = 'pending' AND source_type <> '' AND source_key <> ''
+            DO UPDATE SET
+                corp_id = COALESCE(NULLIF(EXCLUDED.corp_id, ''), crm_user_identity_resolution_queue.corp_id),
+                external_userid = COALESCE(NULLIF(EXCLUDED.external_userid, ''), crm_user_identity_resolution_queue.external_userid),
+                payload_json = crm_user_identity_resolution_queue.payload_json || EXCLUDED.payload_json,
+                reason = EXCLUDED.reason,
+                last_seen_at = NOW(),
+                updated_at = NOW()
+            """,
+            (source_key, text(corp_id), external, _json(payload_json or {}), text(reason) or "identity_pending_unionid"),
+        )
+        conn.commit()
+
+
 def get_channel_entry_effect_log(effect_type: str, idempotency_key: str) -> dict[str, Any] | None:
     with _connect() as conn, conn.cursor() as cur:
         cur.execute(
@@ -1100,11 +1265,43 @@ def mark_event_status(event_log_id: int, status: str, error_message: str = "") -
         conn.commit()
 
 
+def record_identity_sync_result(
+    event_log_id: int,
+    *,
+    status: str,
+    error_code: str = "",
+    error_message: str = "",
+    response_json: dict[str, Any] | None = None,
+) -> None:
+    with _connect() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            UPDATE wecom_external_contact_event_logs
+            SET identity_sync_status = %s,
+                identity_sync_error_code = %s,
+                identity_sync_error_message = %s,
+                identity_sync_response_json = %s,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = %s
+            """,
+            (
+                text(status),
+                text(error_code),
+                text(error_message),
+                _json(response_json or {}),
+                int(event_log_id),
+            ),
+        )
+        conn.commit()
+
+
 def list_recent_events(scene_value: str, limit: int = 20) -> list[dict[str, Any]]:
     with _connect() as conn, conn.cursor() as cur:
         cur.execute(
             """
-            SELECT id, change_type, external_userid, user_id, process_status, error_message, created_at
+            SELECT id, change_type, external_userid, user_id, process_status, error_message,
+                   identity_sync_status, identity_sync_error_code, identity_sync_error_message,
+                   created_at
             FROM wecom_external_contact_event_logs
             WHERE COALESCE(NULLIF(payload_json->>'State', ''), NULLIF(payload_json->>'state', '')) = %s
             ORDER BY created_at DESC, id DESC

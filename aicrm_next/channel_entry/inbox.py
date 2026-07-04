@@ -141,6 +141,8 @@ def _processing_summary(result: dict[str, Any]) -> dict[str, Any]:
     entry_result = result.get("entry_result") or {}
     internal_event = entry_result.get("channel_entry_internal_event") or {}
     baseline_effects = entry_result.get("baseline_effects") or {}
+    identity_sync = result.get("identity_sync") or {}
+    identity_wecom_result = identity_sync.get("wecom_result") if isinstance(identity_sync.get("wecom_result"), dict) else {}
     effect_jobs: list[Any] = []
     for effect_result in baseline_effects.values():
         if isinstance(effect_result, dict):
@@ -151,7 +153,9 @@ def _processing_summary(result: dict[str, Any]) -> dict[str, Any]:
         "internal_event_id": text(internal_event.get("event_id")),
         "internal_event_consumer_run_count": int(internal_event.get("consumer_run_count") or 0),
         "external_effect_job_ids": _int_list(effect_jobs),
-        "identity_sync_status": text((result.get("identity_sync") or {}).get("status")),
+        "identity_sync_status": text(identity_sync.get("status")),
+        "identity_sync_reason": text(identity_sync.get("reason")),
+        "identity_sync_error_code": text(identity_wecom_result.get("errcode")),
         "entry_mode": text(entry_result.get("mode")),
         "entry_reason": text(entry_result.get("reason")),
     }

@@ -185,15 +185,18 @@ def test_next_external_contact_callback_syncs_identity_and_binds_orphan_mobile(a
         set_wecom_adapter(previous_adapter)
 
 
-def test_next_external_contact_callback_marks_failed_when_identity_sync_fails(monkeypatch):
+def test_next_external_contact_callback_keeps_entry_success_when_identity_sync_fails(monkeypatch):
+    calls = []
     status_updates = []
+    diagnostics = []
+    runtime_updates = []
     monkeypatch.setattr(
         "aicrm_next.channel_entry.application.repo.log_external_contact_event",
         lambda **kwargs: {"id": 321, **kwargs},
     )
     monkeypatch.setattr(
         "aicrm_next.channel_entry.application.sync_external_contact_identity_for_event",
-        lambda event, corp_id: {"status": "failed", "reason": "wecom_api_error"},
+        lambda event, corp_id: calls.append("identity_sync") or {"status": "failed", "reason": "wecom_api_error"},
     )
     monkeypatch.setattr(
         "aicrm_next.channel_entry.application.repo.mark_event_status",
@@ -203,43 +206,182 @@ def test_next_external_contact_callback_marks_failed_when_identity_sync_fails(mo
     )
     monkeypatch.setattr(
         "aicrm_next.channel_entry.application.process_channel_entry",
-        lambda command: pytest.fail("process_channel_entry should not run after identity sync failure"),
+        lambda command: calls.append("channel_entry") or {"handled": True, "reason": "channel_entry_baseline_recorded"},
+    )
+    monkeypatch.setattr(
+        "aicrm_next.channel_entry.application.repo.record_identity_sync_result",
+        lambda event_log_id, **kwargs: diagnostics.append({"event_log_id": event_log_id, **kwargs}),
+    )
+    monkeypatch.setattr(
+        "aicrm_next.channel_entry.application.repo.mark_channel_entry_runtime_identity",
+        lambda **kwargs: runtime_updates.append(kwargs) or {"status": "success", "updated_count": 1},
+    )
+    monkeypatch.setattr(
+        "aicrm_next.channel_entry.application._canonicalize_channel_entry_after_identity",
+        lambda *args, **kwargs: pytest.fail("failed identity sync should not canonicalize channel contact"),
     )
 
-    with pytest.raises(RuntimeError, match="identity_sync_failed:wecom_api_error"):
-        process_wecom_external_contact_event(
-            ProcessWeComExternalContactEventCommand(
-                corp_id="ww-bridge",
-                event_data={
-                    "Event": "change_external_contact",
-                    "ChangeType": "add_external_contact",
-                    "ExternalUserID": "wm_bridge_failed",
-                    "UserID": "owner_bridge",
-                    "CreateTime": "1780640001",
-                },
-                payload_xml="<xml/>",
-                route="/wecom/external-contact/callback",
-            )
+    result = process_wecom_external_contact_event(
+        ProcessWeComExternalContactEventCommand(
+            corp_id="ww-bridge",
+            event_data={
+                "Event": "change_external_contact",
+                "ChangeType": "add_external_contact",
+                "ExternalUserID": "wm_bridge_failed",
+                "UserID": "owner_bridge",
+                "State": "scene-a",
+                "WelcomeCode": "welcome-failed",
+                "CreateTime": "1780640001",
+            },
+            payload_xml="<xml/>",
+            route="/wecom/external-contact/callback",
         )
+    )
 
+    assert calls == ["channel_entry", "identity_sync"]
+    assert result["handled"] is True
+    assert result["identity_sync"]["status"] == "failed"
+    assert result["identity_sync"]["reason"] == "wecom_api_error"
+    assert result["identity_sync"]["runtime_identity"] == {"status": "success", "updated_count": 1}
     assert status_updates == [
         {
             "event_id": 321,
-            "status": "failed",
-            "error_message": "identity_sync_failed:wecom_api_error",
+            "status": "success",
+            "error_message": "",
         }
     ]
+    assert diagnostics == [
+        {
+            "event_log_id": 321,
+            "status": "failed",
+            "error_code": "wecom_api_error",
+            "error_message": "wecom_api_error",
+            "response_json": {
+                "status": "failed",
+                "reason": "wecom_api_error",
+            },
+        }
+    ]
+    assert runtime_updates[0]["event_log_id"] == 321
+    assert runtime_updates[0]["external_userid"] == "wm_bridge_failed"
+    assert runtime_updates[0]["identity_status"] == "failed"
 
 
-def test_next_external_contact_callback_skips_business_entry_when_identity_pending(monkeypatch):
+def test_next_external_contact_callback_canonicalizes_channel_entry_after_identity_success(monkeypatch):
+    calls = []
     status_updates = []
+    contacts = []
+    internal_events = []
+    runtime_updates = []
+    effect_logs = []
+    monkeypatch.setattr(
+        "aicrm_next.channel_entry.application.repo.log_external_contact_event",
+        lambda **kwargs: {"id": 432, **kwargs},
+    )
+    monkeypatch.setattr(
+        "aicrm_next.channel_entry.application.sync_external_contact_identity_for_event",
+        lambda event, corp_id: calls.append("identity_sync") or {"status": "success", "unionid": "union_bridge_success"},
+    )
+    monkeypatch.setattr(
+        "aicrm_next.channel_entry.application.process_channel_entry",
+        lambda command: calls.append("runtime_entry") or {"handled": True, "mode": "channel_runtime_only", "reason": "channel_entry_runtime_recorded"},
+    )
+    monkeypatch.setattr(
+        "aicrm_next.channel_entry.application.resolve_channel_for_scene",
+        lambda **kwargs: (
+            {"id": 10, "channel_code": "c", "channel_name": "C", "scene_value": "scene-a", "status": "active", "owner_staff_id": "owner_bridge"},
+            {"match_type": "current_scene", "matched_scene": "scene-a", "channel_id": 10},
+        ),
+    )
+    monkeypatch.setattr(
+        "aicrm_next.channel_entry.application.repo.upsert_channel_contact",
+        lambda **kwargs: contacts.append(kwargs) or {"id": 88, **kwargs},
+    )
+    monkeypatch.setattr(
+        "aicrm_next.channel_entry.application.repo.upsert_channel_entry_effect_log",
+        lambda **kwargs: effect_logs.append(kwargs) or kwargs,
+    )
+    monkeypatch.setattr(
+        "aicrm_next.channel_entry.application.repo.record_identity_sync_result",
+        lambda *args, **kwargs: None,
+    )
+    monkeypatch.setattr(
+        "aicrm_next.channel_entry.application.repo.mark_channel_entry_runtime_identity",
+        lambda **kwargs: runtime_updates.append(kwargs) or {"status": "success", "updated_count": 1},
+    )
+    monkeypatch.setattr(
+        "aicrm_next.channel_entry.application.repo.mark_event_status",
+        lambda event_id, status, error_message="": status_updates.append(
+            {"event_id": event_id, "status": status, "error_message": error_message}
+        ),
+    )
+
+    class FakeInternalEventService:
+        def emit_event(self, **kwargs):
+            internal_events.append(kwargs)
+            return {"event": {"event_id": "evt-channel-entry"}, "consumer_runs": [{}]}
+
+    monkeypatch.setattr("aicrm_next.channel_entry.application.InternalEventService", FakeInternalEventService)
+
+    result = process_wecom_external_contact_event(
+        ProcessWeComExternalContactEventCommand(
+            corp_id="ww-bridge",
+            event_data={
+                "Event": "change_external_contact",
+                "ChangeType": "add_external_contact",
+                "ExternalUserID": "wm_bridge_success",
+                "UserID": "owner_bridge",
+                "State": "scene-a",
+                "WelcomeCode": "welcome-success",
+                "CreateTime": "1780640003",
+            },
+            payload_xml="<xml/>",
+            route="/wecom/external-contact/callback",
+        )
+    )
+
+    assert calls == ["runtime_entry", "identity_sync"]
+    assert result["handled"] is True
+    assert result["identity_sync"]["status"] == "success"
+    assert result["identity_sync"]["channel_entry_canonical"]["status"] == "success"
+    assert contacts == [
+        {
+            "channel_id": 10,
+            "unionid": "union_bridge_success",
+            "external_contact_id": "wm_bridge_success",
+            "owner_staff_id": "owner_bridge",
+            "source_payload": {
+                "Event": "change_external_contact",
+                "ChangeType": "add_external_contact",
+                "ExternalUserID": "wm_bridge_success",
+                "UserID": "owner_bridge",
+                "State": "scene-a",
+                "WelcomeCode": "welcome-success",
+                "CreateTime": "1780640003",
+                "corp_id": "ww-bridge",
+                "unionid": "union_bridge_success",
+            },
+        }
+    ]
+    assert internal_events[0]["subject_type"] == "unionid"
+    assert internal_events[0]["subject_id"] == "union_bridge_success"
+    assert runtime_updates[0]["unionid"] == "union_bridge_success"
+    assert runtime_updates[0]["identity_status"] == "success"
+    assert effect_logs[0]["effect_type"] == "channel_contact"
+    assert status_updates == [{"event_id": 432, "status": "success", "error_message": ""}]
+
+
+def test_next_external_contact_callback_records_runtime_entry_when_identity_pending(monkeypatch):
+    calls = []
+    status_updates = []
+    runtime_updates = []
     monkeypatch.setattr(
         "aicrm_next.channel_entry.application.repo.log_external_contact_event",
         lambda **kwargs: {"id": 654, **kwargs},
     )
     monkeypatch.setattr(
         "aicrm_next.channel_entry.application.sync_external_contact_identity_for_event",
-        lambda event, corp_id: {"status": "pending_identity", "reason": "missing_unionid"},
+        lambda event, corp_id: calls.append("identity_sync") or {"status": "pending_identity", "reason": "missing_unionid"},
     )
     monkeypatch.setattr(
         "aicrm_next.channel_entry.application.repo.mark_event_status",
@@ -249,7 +391,11 @@ def test_next_external_contact_callback_skips_business_entry_when_identity_pendi
     )
     monkeypatch.setattr(
         "aicrm_next.channel_entry.application.process_channel_entry",
-        lambda command: pytest.fail("process_channel_entry should not run while identity is pending"),
+        lambda command: calls.append("channel_entry") or {"handled": True, "mode": "channel_runtime_only", "reason": "channel_entry_runtime_recorded"},
+    )
+    monkeypatch.setattr(
+        "aicrm_next.channel_entry.application.repo.mark_channel_entry_runtime_identity",
+        lambda **kwargs: runtime_updates.append(kwargs) or {"status": "success", "updated_count": 1},
     )
 
     result = process_wecom_external_contact_event(
@@ -260,6 +406,8 @@ def test_next_external_contact_callback_skips_business_entry_when_identity_pendi
                 "ChangeType": "add_external_contact",
                 "ExternalUserID": "wm_bridge_pending",
                 "UserID": "owner_bridge",
+                "State": "scene-a",
+                "WelcomeCode": "welcome-pending",
                 "CreateTime": "1780640002",
             },
             payload_xml="<xml/>",
@@ -267,9 +415,14 @@ def test_next_external_contact_callback_skips_business_entry_when_identity_pendi
         )
     )
 
-    assert result["handled"] is False
-    assert result["reason"] == "missing_unionid"
-    assert result["entry_result"] == {"handled": False, "reason": "identity_pending_unionid"}
+    assert calls == ["channel_entry", "identity_sync"]
+    assert result["handled"] is True
+    assert result["entry_result"] == {"handled": True, "mode": "channel_runtime_only", "reason": "channel_entry_runtime_recorded"}
+    assert result["identity_sync"]["status"] == "pending_identity"
+    assert result["identity_sync"]["runtime_identity"] == {"status": "success", "updated_count": 1}
+    assert runtime_updates[0]["event_log_id"] == 654
+    assert runtime_updates[0]["external_userid"] == "wm_bridge_pending"
+    assert runtime_updates[0]["identity_status"] == "pending_identity"
     assert status_updates == [{"event_id": 654, "status": "success", "error_message": ""}]
 
 

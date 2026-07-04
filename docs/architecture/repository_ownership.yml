@@ -192,6 +192,7 @@ repositories:
       - automation_channel_entry_effect_log
     table_writes:
       - automation_channel_entry_effect_log
+      - automation_channel_entry_runtime
   aicrm_next/cloud_orchestrator/repository.py:
     capability_owner: aicrm_next.cloud_orchestrator
     table_reads:
