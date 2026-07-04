@@ -294,7 +294,6 @@ def test_public_pay_landing_reopens_existing_paid_order(monkeypatch) -> None:
                         "trade_state": "SUCCESS",
                         "refund_status": "",
                         "refunded_amount_total": 0,
-                        "payer_openid": "op_paid",
                         "unionid": "un_paid",
                     }
                 )
@@ -353,7 +352,7 @@ def test_public_h5_create_order_returns_existing_paid_order(monkeypatch) -> None
                         "trade_state": "SUCCESS",
                         "refund_status": "",
                         "refunded_amount_total": 0,
-                        "payer_openid": "op_paid",
+                        "unionid": "un_paid",
                     }
                 )
             if "SELECT lead_channel_id" in query:
@@ -419,7 +418,7 @@ def test_public_h5_create_order_does_not_reuse_paid_order_from_mismatched_sideba
         def execute(self, query, params=()):
             queries.append((query, tuple(params)))
             if "FROM wechat_pay_orders" in query:
-                assert "op_current" in params
+                assert "un_current" in params
                 assert "ext_already_paid" not in params
                 return Cursor(None)
             if "INSERT INTO wechat_pay_orders" in query:
@@ -433,8 +432,7 @@ def test_public_h5_create_order_does_not_reuse_paid_order_from_mismatched_sideba
                         "currency": "CNY",
                         "status": "created",
                         "trade_state": "",
-                        "payer_openid": "op_current",
-                        "external_userid": "ext_already_paid",
+                        "unionid": "un_current",
                     }
                 )
             if "UPDATE wechat_pay_orders" in query and "prepay_id" in query:
@@ -448,8 +446,7 @@ def test_public_h5_create_order_does_not_reuse_paid_order_from_mismatched_sideba
                         "currency": "CNY",
                         "status": "paying",
                         "trade_state": "",
-                        "payer_openid": "op_current",
-                        "external_userid": "ext_already_paid",
+                        "unionid": "un_current",
                     }
                 )
             return Cursor(None)
@@ -490,7 +487,7 @@ def test_public_h5_create_order_does_not_reuse_paid_order_from_mismatched_sideba
     )
     monkeypatch.setattr(h5_wechat_pay, "WeChatPayClient", FakeClient)
     client = _client(monkeypatch)
-    client.cookies.set(h5_wechat_pay.COOKIE_NAME, h5_wechat_pay._signed_blob({"openid": "op_current"}))
+    client.cookies.set(h5_wechat_pay.COOKIE_NAME, h5_wechat_pay._signed_blob({"openid": "op_current", "unionid": "un_current"}))
 
     response = client.post(
         "/api/h5/wechat-pay/jsapi/orders",
@@ -528,7 +525,8 @@ def test_public_h5_paid_order_lookup_accepts_product_code_alias() -> None:
     )
 
     assert "product_code IN" in captured["query"]
-    assert "payer_openid = %s" in captured["query"]
+    assert "payer_openid = %s" not in captured["query"]
+    assert "unionid = %s" in captured["query"]
     assert "subscription_trial_month" in captured["params"]
     assert "prd_20260518095708_9f77db" in captured["params"]
     assert "un_alias" in captured["params"]

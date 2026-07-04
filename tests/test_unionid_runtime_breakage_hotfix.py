@@ -25,10 +25,11 @@ def test_h5_wechat_pay_notify_after_unionid_cleanup() -> None:
     paid_order_source = _function_source(source, "_paid_order_for_product_identity")
     apply_transaction_source = _function_source(source, "_apply_transaction")
 
-    assert "payer_openid = %s" in paid_order_source
+    assert "_resolve_unionid_for_payment_identity" in paid_order_source
+    assert "payer_openid = %s" not in paid_order_source
     assert "unionid = %s" in paid_order_source
     assert "external_userid = %s" not in paid_order_source
-    assert "payer_openid = %s" in apply_transaction_source
+    assert "payer_openid = %s" not in apply_transaction_source
     assert "notify_payload_json = %s::jsonb" in apply_transaction_source
 
 
@@ -117,6 +118,7 @@ def test_unionid_runtime_sql_guard_blocks_removed_identity_columns() -> None:
             _function_source(h5_source, "_paid_order_for_product_identity")
             + _function_source(h5_source, "_apply_transaction"),
             [
+            "payer_openid = %s",
             "respondent_key = %s",
             "external_userid = %s",
             "userid_snapshot",
