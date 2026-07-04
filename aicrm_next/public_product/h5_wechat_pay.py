@@ -188,9 +188,11 @@ def payment_oauth_start_url(return_url: str) -> str:
 
 
 def payment_oauth_start(request: Request) -> RedirectResponse | JSONResponse:
+    return_url = _safe_return_url(request.query_params.get("return_url") or "/")
+    if _identity_from_request(request).get("openid"):
+        return RedirectResponse(return_url, status_code=302, headers=route_headers())
     if not _oauth_configured():
         return JSONResponse({"ok": False, "error": "wechat_pay_oauth_not_configured"}, status_code=501, headers=route_headers())
-    return_url = _safe_return_url(request.query_params.get("return_url") or "/")
     now = int(datetime.now(timezone.utc).timestamp())
     state = _signed_blob({"return_url": return_url, "nonce": secrets.token_urlsafe(16), "iat": now, "exp": now + STATE_TTL_SECONDS})
     authorize_url = _wechat_oauth_authorize_url(
@@ -219,6 +221,8 @@ def payment_oauth_callback(request: Request) -> RedirectResponse | JSONResponse:
     if oauth_payload.get("errcode") not in (None, 0):
         return JSONResponse({"ok": False, "error": oauth_payload.get("errmsg") or "wechat_oauth_failed"}, status_code=502, headers=route_headers())
     openid = _normalized_text(oauth_payload.get("openid"))
+    if not openid:
+        return JSONResponse({"ok": False, "error": "wechat_oauth_openid_missing"}, status_code=502, headers=route_headers())
     unionid = _normalized_text(oauth_payload.get("unionid"))
     payer_name = ""
     access_token = _normalized_text(oauth_payload.get("access_token"))
