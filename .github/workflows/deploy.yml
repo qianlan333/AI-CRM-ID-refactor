@@ -1,12 +1,13 @@
 name: Deploy to Production
 
 on:
-  push:
-    branches:
-      - main
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
 
 jobs:
   deploy:
+    if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main'
     runs-on: ubuntu-latest
     steps:
       - name: Deploy via SSH
@@ -49,6 +50,10 @@ jobs:
             sudo systemctl stop openclaw-internal-event-worker.service || true
             sudo systemctl stop openclaw-external-effect-worker.timer || true
             sudo systemctl stop openclaw-external-effect-worker.service || true
+            sudo systemctl stop openclaw-wechat-pay-order-reconciliation-worker.timer || true
+            sudo systemctl stop openclaw-wechat-pay-order-reconciliation-worker.service || true
+            sudo systemctl stop openclaw-identity-resolution-worker.timer || true
+            sudo systemctl stop openclaw-identity-resolution-worker.service || true
             sudo systemctl stop openclaw-wecom-callback-inbox-worker.timer || true
             sudo systemctl stop openclaw-wecom-callback-inbox-worker.service || true
             sudo systemctl stop openclaw-ai-audience-scheduler.timer || true
@@ -115,6 +120,10 @@ jobs:
             sudo cp deploy/openclaw-internal-event-worker.timer /etc/systemd/system/
             sudo cp deploy/openclaw-external-effect-worker.service /etc/systemd/system/
             sudo cp deploy/openclaw-external-effect-worker.timer /etc/systemd/system/
+            sudo cp deploy/openclaw-wechat-pay-order-reconciliation-worker.service /etc/systemd/system/
+            sudo cp deploy/openclaw-wechat-pay-order-reconciliation-worker.timer /etc/systemd/system/
+            sudo cp deploy/openclaw-identity-resolution-worker.service /etc/systemd/system/
+            sudo cp deploy/openclaw-identity-resolution-worker.timer /etc/systemd/system/
             sudo cp deploy/openclaw-wecom-callback-ingress.service /etc/systemd/system/
             sudo cp deploy/openclaw-wecom-callback-inbox-worker.service /etc/systemd/system/
             sudo cp deploy/openclaw-wecom-callback-inbox-worker.timer /etc/systemd/system/
@@ -170,3 +179,9 @@ jobs:
             sudo systemctl enable openclaw-external-effect-worker.timer
             sudo systemctl restart openclaw-external-effect-worker.timer
             sudo systemctl status openclaw-external-effect-worker.timer --no-pager
+            sudo systemctl enable openclaw-wechat-pay-order-reconciliation-worker.timer
+            sudo systemctl restart openclaw-wechat-pay-order-reconciliation-worker.timer
+            sudo systemctl status openclaw-wechat-pay-order-reconciliation-worker.timer --no-pager
+            sudo systemctl enable openclaw-identity-resolution-worker.timer
+            sudo systemctl restart openclaw-identity-resolution-worker.timer
+            sudo systemctl status openclaw-identity-resolution-worker.timer --no-pager

@@ -219,6 +219,76 @@ def test_external_effect_queue_worker_systemd_units_are_deployable():
     assert "Unit=openclaw-external-effect-worker.service" in timer
 
 
+def test_production_deploy_installs_payment_reconciliation_and_identity_workers():
+    workflow = (ROOT / ".github" / "workflows" / "deploy.yml").read_text(encoding="utf-8")
+
+    effect_stop_index = workflow.index("sudo systemctl stop openclaw-external-effect-worker.service || true")
+    pay_stop_timer_index = workflow.index("sudo systemctl stop openclaw-wechat-pay-order-reconciliation-worker.timer || true")
+    pay_stop_service_index = workflow.index("sudo systemctl stop openclaw-wechat-pay-order-reconciliation-worker.service || true")
+    identity_stop_timer_index = workflow.index("sudo systemctl stop openclaw-identity-resolution-worker.timer || true")
+    identity_stop_service_index = workflow.index("sudo systemctl stop openclaw-identity-resolution-worker.service || true")
+    alembic_upgrade_index = workflow.index("python3 -m alembic upgrade head")
+    copy_pay_service_index = workflow.index("sudo cp deploy/openclaw-wechat-pay-order-reconciliation-worker.service /etc/systemd/system/")
+    copy_pay_timer_index = workflow.index("sudo cp deploy/openclaw-wechat-pay-order-reconciliation-worker.timer /etc/systemd/system/")
+    copy_identity_service_index = workflow.index("sudo cp deploy/openclaw-identity-resolution-worker.service /etc/systemd/system/")
+    copy_identity_timer_index = workflow.index("sudo cp deploy/openclaw-identity-resolution-worker.timer /etc/systemd/system/")
+    daemon_reload_index = workflow.index("sudo systemctl daemon-reload")
+    enable_pay_index = workflow.index("sudo systemctl enable openclaw-wechat-pay-order-reconciliation-worker.timer")
+    restart_pay_index = workflow.index("sudo systemctl restart openclaw-wechat-pay-order-reconciliation-worker.timer")
+    pay_status_index = workflow.index("sudo systemctl status openclaw-wechat-pay-order-reconciliation-worker.timer --no-pager")
+    enable_identity_index = workflow.index("sudo systemctl enable openclaw-identity-resolution-worker.timer")
+    restart_identity_index = workflow.index("sudo systemctl restart openclaw-identity-resolution-worker.timer")
+    identity_status_index = workflow.index("sudo systemctl status openclaw-identity-resolution-worker.timer --no-pager")
+
+    assert (
+        effect_stop_index
+        < pay_stop_timer_index
+        < pay_stop_service_index
+        < identity_stop_timer_index
+        < identity_stop_service_index
+        < alembic_upgrade_index
+    )
+    assert (
+        copy_pay_service_index
+        < copy_pay_timer_index
+        < copy_identity_service_index
+        < copy_identity_timer_index
+        < daemon_reload_index
+    )
+    assert daemon_reload_index < enable_pay_index < restart_pay_index < pay_status_index
+    assert pay_status_index < enable_identity_index < restart_identity_index < identity_status_index
+
+
+def test_payment_reconciliation_and_identity_worker_units_are_deployable():
+    payment_service = (ROOT / "deploy" / "openclaw-wechat-pay-order-reconciliation-worker.service").read_text(
+        encoding="utf-8"
+    )
+    payment_timer = (ROOT / "deploy" / "openclaw-wechat-pay-order-reconciliation-worker.timer").read_text(
+        encoding="utf-8"
+    )
+    identity_service = (ROOT / "deploy" / "openclaw-identity-resolution-worker.service").read_text(encoding="utf-8")
+    identity_timer = (ROOT / "deploy" / "openclaw-identity-resolution-worker.timer").read_text(encoding="utf-8")
+
+    for service in (payment_service, identity_service):
+        assert "After=network.target openclaw-wecom-postgres.service" in service
+        assert "Requires=openclaw-wecom-postgres.service" in service
+        assert "EnvironmentFile=/home/ubuntu/.openclaw-wecom-pg.env" in service
+        assert "WorkingDirectory=/home/ubuntu/极简 crm" in service
+        assert "wecom_ability_service" not in service
+        assert "legacy_flask_app" not in service
+        assert "run-legacy" not in service
+
+    assert "python scripts/run_wechat_pay_order_reconciliation_worker.py --execute" in payment_service
+    assert "OnCalendar=*-*-* *:0/10:45" in payment_timer
+    assert "Persistent=true" in payment_timer
+    assert "Unit=openclaw-wechat-pay-order-reconciliation-worker.service" in payment_timer
+
+    assert "python scripts/run_identity_resolution_backfill_worker.py --execute" in identity_service
+    assert "OnCalendar=*-*-* *:0/2:20" in identity_timer
+    assert "Persistent=true" in identity_timer
+    assert "Unit=openclaw-identity-resolution-worker.service" in identity_timer
+
+
 def test_internal_event_worker_systemd_units_are_deployable():
     service = (ROOT / "deploy" / "openclaw-internal-event-worker.service").read_text(encoding="utf-8")
     timer = (ROOT / "deploy" / "openclaw-internal-event-worker.timer").read_text(encoding="utf-8")

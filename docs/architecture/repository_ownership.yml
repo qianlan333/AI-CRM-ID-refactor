@@ -128,6 +128,26 @@ repositories:
     capability_owner: aicrm_next.automation_engine
     table_reads: []
     table_writes: []
+  aicrm_next/automation_engine/channels_repo.py:
+    capability_owner: aicrm_next.automation_engine.channels_api
+    table_reads:
+      - attachment_library
+      - automation_channel
+      - automation_channel_assignee
+      - automation_channel_assignment_event
+      - automation_channel_contact
+      - automation_channel_entry_effect_log
+      - automation_channel_qrcode_asset
+      - automation_channel_scene_alias
+      - image_library
+      - miniprogram_library
+      - wecom_customer_acquisition_links
+      - wecom_external_contact_event_logs
+    table_writes:
+      - automation_channel
+      - automation_channel_assignee
+      - automation_channel_assignment_event
+      - automation_channel_qrcode_asset
   aicrm_next/automation_engine/group_ops/draft_repository.py:
     capability_owner: aicrm_next.automation_engine.group_ops
     table_reads: []

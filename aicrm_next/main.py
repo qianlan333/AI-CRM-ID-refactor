@@ -8,6 +8,7 @@ from fastapi.staticfiles import StaticFiles
 
 from .ai_audience_ops import register_ai_audience_event_consumers
 from . import fixture_reset_registry
+from .admin_auth.guards import admin_auth_required_response
 from .automation_engine.repo import reset_automation_fixture_state
 from .commerce.repo import reset_commerce_fixture_state
 from .media_library.repo import reset_media_library_fixture_state
@@ -61,7 +62,11 @@ def create_app() -> FastAPI:
 
     @app.middleware("http")
     async def write_route_owner_headers(request, call_next):
-        response = await call_next(request)
+        auth_response = admin_auth_required_response(request)
+        if auth_response is not None:
+            response = auth_response
+        else:
+            response = await call_next(request)
         response.headers.setdefault("X-AICRM-Route-Owner", "ai_crm_next")
         response.headers.setdefault("X-AICRM-Fallback-Used", "false")
         response.headers.setdefault("X-AICRM-App", "ai_crm_next")

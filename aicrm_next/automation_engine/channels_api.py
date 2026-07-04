@@ -9,10 +9,10 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import JSONResponse, RedirectResponse
 
+from aicrm_next.automation_engine import channels_repo
 from aicrm_next.common_operation_members import search_operation_members
-from aicrm_next.channel_entry import repo as channel_entry_repo
-from aicrm_next.automation_engine.repo import channel_admin_uses_postgres as _uses_postgres
-from aicrm_next.automation_engine.repo import connect_channel_admin_db as _connect
+from aicrm_next.shared.repository_provider import RepositoryProviderError, blocked_production_payload
+from aicrm_next.shared.runtime import production_repository_required
 
 router = APIRouter()
 
@@ -135,10 +135,20 @@ def _validate_assignment_contract(payload: dict[str, Any], data: dict[str, Any])
             raise ValueError("invalid_assignment_strategy")
     if "assignees" not in payload:
         return
-    channel_entry_repo.normalize_channel_assignees(
+    channels_repo.normalize_channel_assignees(
         payload.get("assignees") or [],
         strategy=_assignment_strategy(data.get("assignment_strategy")),
     )
+
+
+def _assert_fixture_channel_write_allowed(*, detail: str) -> None:
+    if not production_repository_required():
+        return
+    payload = blocked_production_payload(
+        capability_owner="automation_engine",
+        detail=detail,
+    )
+    raise RepositoryProviderError(payload["page_error"])
 
 
 def _serialize_assignment_event(row: dict[str, Any]) -> dict[str, Any]:
@@ -206,7 +216,7 @@ def _fixture_save_channel_assignees(
         raise LookupError("channel_not_found")
     normalized_mode = _assignment_mode(assignment_mode or "multi_staff")
     normalized_strategy = _assignment_strategy(assignment_strategy)
-    normalized = channel_entry_repo.normalize_channel_assignees(assignees or [], strategy=normalized_strategy)
+    normalized = channels_repo.normalize_channel_assignees(assignees or [], strategy=normalized_strategy)
     rows = _FIXTURE_CHANNEL_ASSIGNEES.setdefault(int(channel_id), [])
     existing_by_staff = {_text(item.get("staff_id")): item for item in rows}
     active_staff = {item["staff_id"] for item in normalized if item["status"] == "active"}
@@ -316,7 +326,7 @@ def _fixture_choose_channel_assignee(
         raise LookupError("channel_not_found")
     strategy = _assignment_strategy(channel.get("assignment_strategy"))
     assignees = _fixture_assignees(int(channel_id), active_only=True)
-    channel_entry_repo.normalize_channel_assignees(assignees, strategy=strategy)
+    channels_repo.normalize_channel_assignees(assignees, strategy=strategy)
     staff_ids = [item["staff_id"] for item in assignees]
     selected: dict[str, Any] | None = None
     reason = ""
@@ -372,15 +382,15 @@ def _fixture_choose_channel_assignee(
 
 
 def _list_channel_assignees_resource(channel_id: int, *, active_only: bool = False) -> list[dict[str, Any]]:
-    if not _uses_postgres():
+    if not channels_repo.uses_postgres():
         return _fixture_assignees(int(channel_id), active_only=active_only)
-    return channel_entry_repo.list_channel_assignees(int(channel_id), active_only=active_only)
+    return channels_repo.list_channel_assignees(int(channel_id), active_only=active_only)
 
 
 def _list_assignment_stats_24h_resource(channel_id: int) -> list[dict[str, Any]]:
-    if not _uses_postgres():
+    if not channels_repo.uses_postgres():
         return _fixture_stats_24h(int(channel_id))
-    return channel_entry_repo.list_assignment_stats_24h(int(channel_id))
+    return channels_repo.list_assignment_stats_24h(int(channel_id))
 
 
 def _save_channel_assignees_resource(
@@ -391,7 +401,8 @@ def _save_channel_assignees_resource(
     assignees: list[dict[str, Any]] | None,
     overflow_policy: str = "",
 ) -> dict[str, Any]:
-    if not _uses_postgres():
+    if not channels_repo.uses_postgres():
+        _assert_fixture_channel_write_allowed(detail="channel assignee write requires production database")
         return _fixture_save_channel_assignees(
             int(channel_id),
             assignment_mode=assignment_mode,
@@ -399,7 +410,7 @@ def _save_channel_assignees_resource(
             assignees=assignees,
             overflow_policy=overflow_policy,
         )
-    return channel_entry_repo.save_channel_assignees(
+    return channels_repo.save_channel_assignees(
         int(channel_id),
         assignment_mode=assignment_mode,
         assignment_strategy=assignment_strategy,
@@ -410,7 +421,7 @@ def _save_channel_assignees_resource(
 
 def _list_assignment_events_resource(channel_id: int, *, limit: int = 50) -> list[dict[str, Any]]:
     safe_limit = max(1, min(int(limit or 50), 200))
-    if not _uses_postgres():
+    if not channels_repo.uses_postgres():
         rows = [
             _serialize_assignment_event(item)
             for item in _FIXTURE_ASSIGNMENT_EVENTS
@@ -418,7 +429,7 @@ def _list_assignment_events_resource(channel_id: int, *, limit: int = 50) -> lis
         ]
         rows.sort(key=lambda item: (_text(item.get("assigned_at")), int(item.get("id") or 0)), reverse=True)
         return rows[:safe_limit]
-    return channel_entry_repo.list_assignment_events(int(channel_id), limit=safe_limit)
+    return channels_repo.list_assignment_events(int(channel_id), limit=safe_limit)
 
 
 def _choose_channel_assignee_resource(
@@ -429,7 +440,9 @@ def _choose_channel_assignee_resource(
     write_event: bool = False,
     source_payload: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    if not _uses_postgres():
+    if not channels_repo.uses_postgres():
+        if write_event:
+            _assert_fixture_channel_write_allowed(detail="channel assignment event write requires production database")
         return _fixture_choose_channel_assignee(
             int(channel_id),
             external_contact_id=external_contact_id,
@@ -437,7 +450,7 @@ def _choose_channel_assignee_resource(
             write_event=write_event,
             source_payload=source_payload or {},
         )
-    return channel_entry_repo.choose_channel_assignee(
+    return channels_repo.choose_channel_assignee(
         int(channel_id),
         external_contact_id=external_contact_id,
         wecom_user_id=wecom_user_id,
@@ -532,52 +545,10 @@ def _default_channel() -> dict[str, Any]:
 
 
 def get_channel_resource(channel_id: int) -> dict[str, Any] | None:
-    conn = _connect()
-    if conn is None:
+    if not channels_repo.uses_postgres():
         channel = _FIXTURE_CHANNELS.get(int(channel_id))
         return _attach_assignment_payload(_serialize_channel(channel), include_assignees=True) if channel else None
-    with conn:
-        with conn.cursor() as cur:
-            cur.execute(
-                """
-                SELECT c.*,
-                       active_asset.id AS active_qrcode_asset_id,
-                       active_asset.status AS qrcode_status,
-                       COALESCE(contact_stats.channel_contact_count, 0) AS channel_contact_count,
-                       contact_stats.latest_channel_entered_at,
-                       wca.customer_channel AS wca_customer_channel,
-                       wca.link_url AS wca_link_url,
-                       wca.final_url AS wca_final_url,
-                       COALESCE(historical_scenes.historical_scene_values, '[]'::jsonb) AS historical_scene_values
-                FROM automation_channel c
-                LEFT JOIN LATERAL (
-                    SELECT id, status
-                    FROM automation_channel_qrcode_asset qa
-                    WHERE qa.channel_id = c.id
-                      AND qa.status = 'active'
-                    ORDER BY qa.generated_at DESC, qa.id DESC
-                    LIMIT 1
-                ) active_asset ON TRUE
-                LEFT JOIN (
-                    SELECT channel_id, count(*) AS channel_contact_count, max(last_channel_entered_at) AS latest_channel_entered_at
-                    FROM automation_channel_contact
-                    GROUP BY channel_id
-                ) contact_stats ON contact_stats.channel_id = c.id
-                LEFT JOIN wecom_customer_acquisition_links wca
-                  ON wca.automation_channel_id = c.id AND wca.status = 'active'
-                LEFT JOIN LATERAL (
-                    SELECT jsonb_agg(a.scene_value ORDER BY a.updated_at DESC, a.id DESC) AS historical_scene_values
-                    FROM automation_channel_scene_alias a
-                    WHERE a.channel_id = c.id
-                      AND a.scene_value <> c.scene_value
-                      AND a.status <> 'revoked'
-                    LIMIT 12
-                ) historical_scenes ON TRUE
-                WHERE c.id = %s
-                """,
-                (int(channel_id),),
-            )
-            row = cur.fetchone()
+    row = channels_repo.fetch_channel(int(channel_id))
     return _attach_assignment_payload(_serialize_channel(dict(row)), include_assignees=True) if row else None
 
 
@@ -587,66 +558,15 @@ def _list_channels_from_postgres(
     status: str = "",
     include_archived: bool = False,
 ) -> list[dict[str, Any]]:
-    conn = _connect()
-    if conn is None:
+    if not channels_repo.uses_postgres():
         channels = [_serialize_channel(item) for item in _FIXTURE_CHANNELS.values()]
         if status:
             channels = [item for item in channels if item.get("status") == status]
         elif not include_archived:
             channels = [item for item in channels if item.get("status") != "archived"]
         return [_attach_assignment_payload(item, include_assignees=False) for item in sorted(channels, key=lambda item: int(item.get("id") or 0), reverse=True)[:limit]]
-    params: list[Any] = []
-    where = ""
-    if status:
-        where = "WHERE c.status = %s"
-        params.append(status)
-    elif not include_archived:
-        where = "WHERE (c.status IS NULL OR c.status <> 'archived')"
-    params.append(limit)
-    with conn:
-        with conn.cursor() as cur:
-            cur.execute(
-                f"""
-                SELECT c.*,
-                       active_asset.id AS active_qrcode_asset_id,
-                       active_asset.status AS qrcode_status,
-                       COALESCE(contact_stats.channel_contact_count, 0) AS channel_contact_count,
-                       contact_stats.latest_channel_entered_at,
-                       wca.customer_channel AS wca_customer_channel,
-                       wca.link_url AS wca_link_url,
-                       wca.final_url AS wca_final_url,
-                       COALESCE(historical_scenes.historical_scene_values, '[]'::jsonb) AS historical_scene_values
-                FROM automation_channel c
-                LEFT JOIN LATERAL (
-                    SELECT id, status
-                    FROM automation_channel_qrcode_asset qa
-                    WHERE qa.channel_id = c.id
-                      AND qa.status = 'active'
-                    ORDER BY qa.generated_at DESC, qa.id DESC
-                    LIMIT 1
-                ) active_asset ON TRUE
-                LEFT JOIN (
-                    SELECT channel_id, count(*) AS channel_contact_count, max(last_channel_entered_at) AS latest_channel_entered_at
-                    FROM automation_channel_contact
-                    GROUP BY channel_id
-                ) contact_stats ON contact_stats.channel_id = c.id
-                LEFT JOIN wecom_customer_acquisition_links wca
-                  ON wca.automation_channel_id = c.id AND wca.status = 'active'
-                LEFT JOIN LATERAL (
-                    SELECT jsonb_agg(a.scene_value ORDER BY a.updated_at DESC, a.id DESC) AS historical_scene_values
-                    FROM automation_channel_scene_alias a
-                    WHERE a.channel_id = c.id
-                      AND a.scene_value <> c.scene_value
-                      AND a.status <> 'revoked'
-                    LIMIT 12
-                ) historical_scenes ON TRUE
-                {where}
-                ORDER BY c.updated_at DESC, c.id DESC
-                LIMIT %s
-                """,
-                tuple(params),
-            )
-            return [_attach_assignment_payload(_serialize_channel(dict(row)), include_assignees=False) for row in cur.fetchall() or []]
+    rows = channels_repo.list_channels(limit=limit, status=status, include_archived=include_archived)
+    return [_attach_assignment_payload(_serialize_channel(row), include_assignees=False) for row in rows]
 
 
 def _payload_value(payload: dict[str, Any], existing: dict[str, Any], key: str, *, partial: bool) -> Any:
@@ -738,56 +658,11 @@ def _save_postgres_channel(payload: dict[str, Any], channel_id: int | None = Non
         raise LookupError("channel_not_found")
     data = _coerce_channel_payload(payload, existing=existing, partial=bool(channel_id))
     _validate_assignment_contract(payload, data)
-    conn = _connect()
-    if conn is None:
+    if not channels_repo.uses_postgres():
+        _assert_fixture_channel_write_allowed(detail="channel admin write requires production database")
         return _save_fixture_channel(payload, channel_id)
-    from psycopg.types.json import Jsonb
-
-    columns = [
-        "channel_type",
-        "carrier_type",
-        "channel_name",
-        "channel_code",
-        "scene_value",
-        "qr_url",
-        "status",
-        "owner_staff_id",
-        "customer_channel",
-        "link_url",
-        "final_url",
-        "welcome_message",
-        "welcome_image_library_ids",
-        "welcome_miniprogram_library_ids",
-        "welcome_attachment_library_ids",
-        "auto_accept_friend",
-        "entry_tag_id",
-        "entry_tag_name",
-        "entry_tag_group_name",
-        "assignment_mode",
-        "assignment_strategy",
-        "overflow_policy",
-        "assignment_config_json",
-    ]
-    values = [Jsonb(data[key]) if key.endswith("_ids") else data[key] for key in columns]
-    values = [Jsonb(data[key]) if key in {"assignment_config_json"} else value for key, value in zip(columns, values)]
     owner_changed = bool(channel_id and _text((existing or {}).get("owner_staff_id")) and _text(data.get("owner_staff_id")) and _text((existing or {}).get("owner_staff_id")) != _text(data.get("owner_staff_id")))
-    with conn:
-        with conn.cursor() as cur:
-            if channel_id:
-                assignments = ", ".join(f"{column} = %s" for column in columns)
-                cur.execute(
-                    f"UPDATE automation_channel SET {assignments}, updated_at = CURRENT_TIMESTAMP WHERE id = %s RETURNING id",
-                    tuple(values + [int(channel_id)]),
-                )
-                saved_id = int((cur.fetchone() or {}).get("id") or channel_id)
-            else:
-                placeholders = ", ".join(["%s"] * len(columns))
-                cur.execute(
-                    f"INSERT INTO automation_channel ({', '.join(columns)}) VALUES ({placeholders}) RETURNING id",
-                    tuple(values),
-                )
-                saved_id = int((cur.fetchone() or {}).get("id") or 0)
-        conn.commit()
+    saved_id = channels_repo.save_channel(data, channel_id=channel_id)
     if "assignees" in payload:
         _save_channel_assignees_resource(
             saved_id,
@@ -797,7 +672,7 @@ def _save_postgres_channel(payload: dict[str, Any], channel_id: int | None = Non
             assignees=payload.get("assignees") or [],
         )
     if owner_changed:
-        channel_entry_repo.mark_qrcode_asset_stale(saved_id, reason="owner_staff_id_changed")
+        channels_repo.mark_qrcode_asset_stale(saved_id, reason="owner_staff_id_changed")
     return get_channel_resource(saved_id) or {"id": saved_id, **data}
 
 
@@ -807,18 +682,17 @@ def get_channel_qrcode_status_resource(channel_id: int) -> dict[str, Any]:
         raise LookupError("channel_not_found")
     if channel.get("carrier_type") == "link" or channel.get("channel_type") == "wecom_customer_acquisition":
         return {"channel_id": int(channel_id), "downloadable": False, "reason": "link_channel_does_not_support_qrcode_download", "channel": channel}
-    conn = _connect()
-    if conn is None:
+    if not channels_repo.uses_postgres():
         raw_channel = _FIXTURE_CHANNELS.get(int(channel_id), {})
         asset = dict(raw_channel.get("_active_qrcode_asset") or {})
         aliases: list[dict[str, Any]] = list(raw_channel.get("_scene_aliases") or [])
         effects: list[dict[str, Any]] = []
         events: list[dict[str, Any]] = []
     else:
-        asset = channel_entry_repo.get_active_qrcode_asset(int(channel_id)) or {}
-        aliases = channel_entry_repo.list_channel_scene_aliases(int(channel_id))
-        effects = channel_entry_repo.list_channel_entry_effect_logs(channel_id=int(channel_id), limit=10)
-        events = channel_entry_repo.list_recent_events(_text(channel.get("scene_value")), limit=10) if _text(channel.get("scene_value")) else []
+        asset = channels_repo.get_active_qrcode_asset(int(channel_id)) or {}
+        aliases = channels_repo.list_channel_scene_aliases(int(channel_id))
+        effects = channels_repo.list_channel_entry_effect_logs(channel_id=int(channel_id), limit=10)
+        events = channels_repo.list_recent_events(_text(channel.get("scene_value")), limit=10) if _text(channel.get("scene_value")) else []
     reason = "downloadable"
     downloadable = True
     if not asset:
@@ -989,6 +863,7 @@ async def wecom_customer_acquisition_links(request: Request) -> JSONResponse:
         )
         return _wecom_link_json(payload)
 
+    _assert_fixture_channel_write_allowed(detail="wecom customer acquisition link write requires production repository")
     body = await _wecom_link_payload(request)
     now = datetime.now(timezone.utc).isoformat()
     link_id = _text(body.get("link_id")) or f"next_link_{_NEXT_WE_COM_LINK_ID}"
@@ -1048,6 +923,7 @@ async def wecom_customer_acquisition_link_detail(request: Request, link_id: str)
         payload = _wecom_link_common_payload("next_wecom_customer_acquisition_links")
         payload.update({"link": _wecom_link_view(row), "adapter_mode": "real_blocked", "wecom_api_called": False})
         return _wecom_link_json(payload)
+    _assert_fixture_channel_write_allowed(detail="wecom customer acquisition link write requires production repository")
     if request.method.upper() == "DELETE":
         row["status"] = "disabled"
     elif request.method.upper() == "PATCH":
@@ -1092,6 +968,7 @@ async def wecom_customer_acquisition_link_action(request: Request, link_id: str,
             }
         )
         return _wecom_link_json(payload, status_code=410)
+    _assert_fixture_channel_write_allowed(detail="wecom customer acquisition link write requires production repository")
     if normalized_action == "enable":
         row["status"] = "active"
     elif normalized_action == "disable":
@@ -1253,22 +1130,12 @@ def preview_channel_assignment(channel_id: int, payload: dict[str, Any] | None =
 
 @router.get("/api/admin/channels/{channel_id:int}/contacts")
 def list_channel_contacts(channel_id: int, limit: int = Query(100)) -> dict[str, Any]:
-    conn = _connect()
-    if conn is None:
+    if not channels_repo.uses_postgres():
         return {"ok": True, "contacts": [], "reason": "channel_contacts_listed", "source": "ai_crm_next"}
-    with conn:
-        with conn.cursor() as cur:
-            cur.execute(
-                """
-                SELECT external_contact_id, display_name, enter_count, last_channel_entered_at
-                FROM automation_channel_contact
-                WHERE channel_id = %s
-                ORDER BY last_channel_entered_at DESC, id DESC
-                LIMIT %s
-                """,
-                (int(channel_id), max(1, min(int(limit or 100), 500))),
-            )
-            contacts = [{**dict(row), "last_channel_entered_at": _iso(row.get("last_channel_entered_at"))} for row in cur.fetchall() or []]
+    contacts = [
+        {**row, "last_channel_entered_at": _iso(row.get("last_channel_entered_at"))}
+        for row in channels_repo.list_channel_contacts(int(channel_id), limit=max(1, min(int(limit or 100), 500)))
+    ]
     return {"ok": True, "contacts": contacts, "reason": "channel_contacts_listed", "source": "ai_crm_next"}
 
 
@@ -1328,39 +1195,7 @@ def get_channel_qrcode_status(channel_id: int) -> dict[str, Any]:
 def list_channel_welcome_materials(type: str = "all", keyword: str = "", q: str = "") -> dict[str, Any]:
     material_type = _text(type).lower() or "all"
     keyword_text = (_text(keyword) or _text(q)).lower()
-    conn = _connect()
-    if conn is None:
+    if not channels_repo.uses_postgres():
         return {"ok": True, "materials": [], "reason": "channel_welcome_materials_listed", "source": "ai_crm_next"}
-    items: list[dict[str, Any]] = []
-    with conn:
-        with conn.cursor() as cur:
-            if material_type in {"all", "miniprogram"}:
-                cur.execute("SELECT id, name, title, appid, pagepath FROM miniprogram_library WHERE enabled = TRUE ORDER BY updated_at DESC, id DESC LIMIT 200")
-                for row in cur.fetchall() or []:
-                    haystack = " ".join(_text(row.get(key)) for key in ("name", "title", "appid", "pagepath")).lower()
-                    if keyword_text and keyword_text not in haystack:
-                        continue
-                    name = _text(row.get("title") or row.get("name"))
-                    items.append({"id": int(row["id"]), "type": "miniprogram", "name": name, "title": name, "description": _text(row.get("pagepath") or row.get("appid"))})
-            if material_type in {"all", "image"}:
-                cur.execute("SELECT id, name, file_name, mime_type FROM image_library WHERE enabled = TRUE ORDER BY updated_at DESC, id DESC LIMIT 200")
-                for row in cur.fetchall() or []:
-                    haystack = " ".join(_text(row.get(key)) for key in ("name", "file_name", "mime_type")).lower()
-                    if keyword_text and keyword_text not in haystack:
-                        continue
-                    name = _text(row.get("name") or row.get("file_name"))
-                    items.append({"id": int(row["id"]), "type": "image", "library": "image_library", "name": name, "title": name, "description": _text(row.get("file_name") or row.get("mime_type")), "mime_type": _text(row.get("mime_type"))})
-            if material_type in {"all", "pdf"}:
-                cur.execute("SELECT id, name, file_name, mime_type FROM attachment_library WHERE enabled = TRUE ORDER BY updated_at DESC, id DESC LIMIT 200")
-                for row in cur.fetchall() or []:
-                    mime = _text(row.get("mime_type")).lower()
-                    file_name = _text(row.get("file_name"))
-                    is_pdf = mime == "application/pdf" or file_name.lower().endswith(".pdf")
-                    if not is_pdf:
-                        continue
-                    haystack = " ".join([_text(row.get("name")), file_name, mime]).lower()
-                    if keyword_text and keyword_text not in haystack:
-                        continue
-                    name = _text(row.get("name") or file_name)
-                    items.append({"id": int(row["id"]), "type": "pdf", "library": "attachment_library", "name": name, "title": name, "description": _text(file_name or mime), "mime_type": mime})
+    items = channels_repo.list_channel_welcome_materials(material_type=material_type, keyword_text=keyword_text)
     return {"ok": True, "materials": items, "reason": "channel_welcome_materials_listed", "source": "ai_crm_next"}

@@ -180,6 +180,26 @@ class WeChatPayClient:
             raise WeChatPayClientError("out_trade_no is required")
         return self._request_json("GET", f"/v3/pay/transactions/out-trade-no/{trade_no}?mchid={self.config.mch_id}")
 
+    def close_order_by_out_trade_no(self, out_trade_no: str) -> dict[str, Any]:
+        trade_no = _normalized_text(out_trade_no)
+        if not trade_no:
+            raise WeChatPayClientError("out_trade_no is required")
+        return self._request_json(
+            "POST",
+            f"/v3/pay/transactions/out-trade-no/{trade_no}/close",
+            payload={"mchid": self.config.mch_id},
+        )
+
+    def request_trade_bill(self, *, bill_date: str, bill_type: str = "ALL") -> dict[str, Any]:
+        normalized_date = _normalized_text(bill_date)
+        if not normalized_date:
+            raise WeChatPayClientError("bill_date is required")
+        normalized_type = _normalized_text(bill_type) or "ALL"
+        return self._request_json(
+            "GET",
+            f"/v3/bill/tradebill?bill_date={normalized_date}&bill_type={normalized_type}",
+        )
+
     def create_refund(self, payload: dict[str, Any]) -> dict[str, Any]:
         return self._request_json("POST", "/v3/refund/domestic/refunds", payload=payload)
 

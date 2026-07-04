@@ -734,9 +734,11 @@ def test_campaign_frequency_and_agent_outputs_are_unionid_only() -> None:
     assert "DROP COLUMN IF EXISTS external_contact_id" in cleanup_source
     assert "ix_{table}_unionid" in cleanup_source
 
-    campaign_insert = external_campaign_repo_source.split("base_columns =", 1)[1].split("return {", 1)[0]
-    assert '"unionid"' in campaign_insert
-    assert '"external_contact_id"' not in campaign_insert
+    campaign_insert = external_campaign_repo_source.split("INSERT INTO broadcast_jobs", 1)[1].split("RETURNING *", 1)[0]
+    assert "target_unionids_json" in campaign_insert
+    assert "target_kind" in campaign_insert
+    assert "target_external_userids" not in campaign_insert
+    assert "external_contact_id" not in campaign_insert
     assert "_CAMPAIGN_QUEUE_TARGET_KIND = \"unionid\"" in campaign_repo_source
     assert "target_unionids_json" in campaign_repo_source
 

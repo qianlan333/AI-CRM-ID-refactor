@@ -1,8 +1,13 @@
 api_import_rules:
   api_file_globs:
     - aicrm_next/*/api.py
+    - aicrm_next/**/*api*.py
+    - aicrm_next/**/*pages*.py
   forbidden_cross_context_modules:
     - repo
+    - repository
+    - repositories
+    - postgres_repo
     - service
   allowed_imports: []
 

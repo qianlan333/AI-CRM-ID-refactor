@@ -93,7 +93,7 @@ def _check_api_import_boundaries(root: Path, config: dict[str, Any]) -> list[Bou
             continue
 
         for node in ast.walk(tree):
-            for imported_module in _imported_modules(path, root, node):
+            for imported_module in _imported_modules(path, root, node, forbidden_modules=forbidden_modules):
                 imported_context, imported_leaf = _context_and_leaf(imported_module)
                 if not imported_context or not imported_leaf:
                     continue
@@ -146,7 +146,7 @@ def _iter_python_files(base: Path) -> Iterable[Path]:
     return (path for path in sorted(base.rglob("*.py")) if "__pycache__" not in path.parts)
 
 
-def _imported_modules(path: Path, root: Path, node: ast.AST) -> list[str]:
+def _imported_modules(path: Path, root: Path, node: ast.AST, *, forbidden_modules: set[str]) -> list[str]:
     if isinstance(node, ast.Import):
         return [alias.name for alias in node.names]
     if isinstance(node, ast.ImportFrom):
@@ -155,7 +155,7 @@ def _imported_modules(path: Path, root: Path, node: ast.AST) -> list[str]:
             return []
         modules = [base]
         for alias in node.names:
-            if alias.name in {"repo", "service"}:
+            if alias.name in forbidden_modules:
                 modules.append(f"{base}.{alias.name}")
         return modules
     return []

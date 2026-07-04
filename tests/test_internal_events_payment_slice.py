@@ -48,10 +48,9 @@ class _PaymentConn:
                     "trade_state": params[1],
                     "transaction_id": params[2],
                     "bank_type": params[3],
-                    "payer_openid": params[4] or self.order.get("payer_openid", ""),
-                    "payer_total": params[5],
-                    "paid_at": params[7],
-                    "notify_payload_json": params[8],
+                    "payer_total": params[4],
+                    "paid_at": params[6],
+                    "notify_payload_json": params[7],
                 }
             )
             return _FakeCursor(dict(self.order))
@@ -251,7 +250,6 @@ def test_webhook_order_paid_consumer_skips_when_no_configured_job_or_production_
     _apply_transaction(_PaymentConn(), _transaction())
     reset_external_effect_fixture_state()
     _delete_order_paid_external_effect_jobs("WXP_INTERNAL_PAYMENT")
-    event = InternalEventService().list_events({"event_type": PAYMENT_SUCCEEDED_EVENT_TYPE})[0][0]
 
     result = InternalEventWorker().run_due(batch_size=1, dry_run=False, consumer_names=["webhook_order_paid_consumer"])
     jobs, total = ExternalEffectService().list_jobs({"effect_type": WEBHOOK_ORDER_PAID_PUSH, "business_id": "77"})

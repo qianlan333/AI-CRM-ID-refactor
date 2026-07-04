@@ -5,6 +5,9 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Callable
 
+from sqlalchemy import text
+
+from aicrm_next.shared.db_session import get_session_factory
 from tools.check_data_table_lifecycle import check_data_table_lifecycle
 
 from .dto import DataHealthCheckResult
@@ -165,10 +168,65 @@ def _unionid_orphan_fact_guard() -> DataHealthCheckResult:
 
 
 def _identity_resolution_queue_backlog() -> DataHealthCheckResult:
-    return _db_backed_placeholder(
-        "identity_resolution_queue_backlog",
-        "Identity resolution queue backlog",
-        ["crm_user_identity_resolution_queue"],
+    if not database_schema_available():
+        return _db_backed_placeholder(
+            "identity_resolution_queue_backlog",
+            "Identity resolution queue backlog",
+            ["crm_user_identity_resolution_queue"],
+        )
+    try:
+        with get_session_factory()() as session:
+            row = (
+                session.execute(
+                    text(
+                        """
+                        SELECT
+                            COUNT(*) FILTER (WHERE status = 'pending') AS pending_count,
+                            EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - MIN(first_seen_at) FILTER (WHERE status = 'pending'))) / 3600
+                                AS oldest_pending_hours
+                        FROM crm_user_identity_resolution_queue
+                        """
+                    )
+                )
+                .mappings()
+                .first()
+                or {}
+            )
+    except Exception as exc:  # pragma: no cover - defensive health endpoint guard
+        return DataHealthCheckResult(
+            check_id="identity_resolution_queue_backlog",
+            title="Identity resolution queue backlog",
+            status="fail",
+            severity="red",
+            summary="Identity resolution queue backlog check could not read the live queue.",
+            evidence={"error": type(exc).__name__, "message": str(exc)[:300]},
+            remediation="Verify crm_user_identity_resolution_queue exists and DATABASE_URL has read access.",
+        )
+    pending_count = int(row.get("pending_count") or 0)
+    oldest_pending_hours = float(row.get("oldest_pending_hours") or 0)
+    violations = []
+    if pending_count > 100:
+        violations.append(f"pending_count={pending_count} exceeds 100")
+    if oldest_pending_hours > 24:
+        violations.append(f"oldest_pending_hours={oldest_pending_hours:.1f} exceeds 24")
+    if violations:
+        return DataHealthCheckResult(
+            check_id="identity_resolution_queue_backlog",
+            title="Identity resolution queue backlog",
+            status="fail",
+            severity="red",
+            summary="Identity resolution queue backlog exceeded the production threshold.",
+            evidence={"pending_count": pending_count, "oldest_pending_hours": oldest_pending_hours, "violations": violations},
+            remediation="Run the identity resolution backfill worker and inspect terminal failures.",
+        )
+    return DataHealthCheckResult(
+        check_id="identity_resolution_queue_backlog",
+        title="Identity resolution queue backlog",
+        status="ok",
+        severity="green",
+        summary="Identity resolution queue backlog is within threshold.",
+        evidence={"pending_count": pending_count, "oldest_pending_hours": oldest_pending_hours},
+        remediation="",
     )
 
 

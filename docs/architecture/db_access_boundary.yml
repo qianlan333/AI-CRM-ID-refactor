@@ -12,8 +12,10 @@ allowed_globs:
 
 forbidden_layers:
   - aicrm_next/*/api.py
+  - aicrm_next/**/*api*.py
   - aicrm_next/*/routes.py
   - aicrm_next/*/admin_pages.py
+  - aicrm_next/**/*pages*.py
   - aicrm_next/*/application.py
   - aicrm_next/*/service.py
   - aicrm_next/frontend_compat/**

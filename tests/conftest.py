@@ -32,6 +32,10 @@ _ROOT = Path(__file__).resolve().parent.parent
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
+# Most production-mode tests exercise data-source behavior, not admin login state.
+# Auth-specific tests opt in with AICRM_ADMIN_AUTH_ENFORCED=true.
+os.environ.setdefault("AICRM_ADMIN_AUTH_ENFORCED", "false")
+
 
 def _xdist_worker_id() -> str:
     """xdist 子 worker 是 "gw0" / "gw1" / ...；非并行运行 / 主进程返回 "master"。"""
@@ -621,6 +625,7 @@ def _bootstrap_next_test_baseline_schema(url: str) -> None:
             reason TEXT NOT NULL DEFAULT '',
             status TEXT NOT NULL DEFAULT 'pending',
             attempts INTEGER NOT NULL DEFAULT 0,
+            attempt_count INTEGER NOT NULL DEFAULT 0,
             last_error TEXT NOT NULL DEFAULT '',
             next_attempt_at TIMESTAMPTZ,
             first_seen_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -741,12 +746,7 @@ def _bootstrap_next_test_baseline_schema(url: str) -> None:
             description TEXT NOT NULL DEFAULT '',
             amount_total INTEGER NOT NULL DEFAULT 0,
             currency TEXT NOT NULL DEFAULT 'CNY',
-            payer_openid TEXT NOT NULL DEFAULT '',
-            respondent_key TEXT NOT NULL DEFAULT '',
             unionid TEXT NOT NULL DEFAULT '',
-            external_userid TEXT NOT NULL DEFAULT '',
-            userid_snapshot TEXT NOT NULL DEFAULT '',
-            mobile_snapshot TEXT NOT NULL DEFAULT '',
             payer_name_snapshot TEXT NOT NULL DEFAULT '',
             status TEXT NOT NULL DEFAULT 'created',
             trade_state TEXT NOT NULL DEFAULT '',
