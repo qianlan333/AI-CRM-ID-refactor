@@ -928,10 +928,10 @@ def order_status_response(out_trade_no: str, request: Request) -> JSONResponse:
     )
 
 
-async def notify_response(request: Request) -> JSONResponse:
-    body = (await request.body()).decode("utf-8")
+def notify_response(request: Request, body: bytes) -> JSONResponse:
+    body_text = body.decode("utf-8")
     try:
-        transaction = WeChatPayClient(_client_config()).verify_and_decrypt_notification(body=body, headers=dict(request.headers))
+        transaction = WeChatPayClient(_client_config()).verify_and_decrypt_notification(body=body_text, headers=dict(request.headers))
         if not production_data_ready():
             raise RuntimeError("production_database_required")
         with _connect() as conn:

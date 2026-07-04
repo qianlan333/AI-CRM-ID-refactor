@@ -105,6 +105,7 @@ def _step_view(row: dict[str, Any]) -> dict[str, Any]:
 
 
 def _member_view(row: dict[str, Any]) -> dict[str, Any]:
+    current_step_index = row.get("current_step_index")
     return {
         "id": int(row.get("id") or 0),
         "member_id": row.get("member_id"),
@@ -112,7 +113,7 @@ def _member_view(row: dict[str, Any]) -> dict[str, Any]:
         "external_contact_id": _text(row.get("external_contact_id")),
         "status": _text(row.get("status")) or "pending",
         "stop_reason": _text(row.get("stop_reason")),
-        "current_step_index": int(row.get("current_step_index") or -1),
+        "current_step_index": int(current_step_index) if current_step_index not in (None, "") else -1,
         "next_due_at": _json_value(row.get("next_due_at") or ""),
         "last_step_sent_at": _json_value(row.get("last_step_sent_at") or ""),
         "last_error_text": _text(row.get("last_error_text")),
@@ -432,8 +433,8 @@ class InMemoryCloudCampaignReadRepository:
             }
         ]
         self.members = [
-            {"id": 101, "member_id": 501, "unionid": "union_fixture_a", "external_contact_id": "wm_fixture_a", "status": "pending", "phone": "13800000001", "segment_label": "Fixture segment", "segment_priority": 100, "segment_name": "Fixture segment", "segment_code": "seg_fixture", "profile_segment_key": "trial", "behavior_tier_key": "warm"},
-            {"id": 102, "member_id": 502, "unionid": "union_fixture_b", "external_contact_id": "wm_fixture_b", "status": "pending", "phone": "13800000002", "segment_label": "Fixture segment", "segment_priority": 100, "segment_name": "Fixture segment", "segment_code": "seg_fixture", "profile_segment_key": "trial", "behavior_tier_key": "cold"},
+            {"id": 101, "member_id": 501, "unionid": "union_fixture_a", "external_contact_id": "wm_fixture_a", "status": "pending", "current_step_index": -1, "next_due_at": "2026-06-03T09:00:00+00:00", "phone": "13800000001", "segment_label": "Fixture segment", "segment_priority": 100, "segment_name": "Fixture segment", "segment_code": "seg_fixture", "profile_segment_key": "trial", "behavior_tier_key": "warm"},
+            {"id": 102, "member_id": 502, "unionid": "union_fixture_b", "external_contact_id": "wm_fixture_b", "status": "pending", "current_step_index": -1, "next_due_at": "2026-06-03T09:00:00+00:00", "phone": "13800000002", "segment_label": "Fixture segment", "segment_priority": 100, "segment_name": "Fixture segment", "segment_code": "seg_fixture", "profile_segment_key": "trial", "behavior_tier_key": "cold"},
         ]
         self.deleted_campaign_codes: set[str] = set()
 

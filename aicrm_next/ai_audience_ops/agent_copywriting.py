@@ -6,6 +6,8 @@ import re
 from typing import Any
 from uuid import uuid4
 
+from aicrm_next.shared.llm_output_guard import looks_like_prompt_output
+
 from . import agent_gateway
 from .repository import AudienceRepository, build_audience_repository, _json_dumps, _json_obj, _text
 
@@ -166,18 +168,7 @@ def _render_prompt_text(raw: str, variables: dict[str, Any]) -> tuple[str, dict[
 
 
 def _looks_like_prompt(final_text: str, *, role_prompt: str, task_prompt: str) -> bool:
-    candidate = _text(final_text)
-    if not candidate:
-        return False
-    if _TEMPLATE_TOKEN_RE.search(candidate):
-        return True
-    role = _text(role_prompt)
-    task = _text(task_prompt)
-    if candidate == role or candidate == task:
-        return True
-    if len(task) >= 120 and (task[:120] in candidate or candidate[:120] in task):
-        return True
-    return any(marker in candidate for marker in _PROMPT_LEAK_MARKERS)
+    return looks_like_prompt_output(final_text, role_prompt=role_prompt, task_prompt=task_prompt)
 
 
 def _render_fallback(fallback: dict[str, Any], variables: dict[str, Any], reason: str) -> tuple[bool, dict[str, Any], str, dict[str, Any]]:

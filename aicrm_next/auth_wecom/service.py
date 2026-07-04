@@ -25,6 +25,7 @@ from aicrm_next.integration_gateway.wecom_admin_auth_client import (
     WeComAdminAuthClientError,
     build_wecom_admin_auth_client,
 )
+from aicrm_next.shared.runtime import require_signing_secret
 
 
 REAL_AUTH_ENV = "AICRM_WECOM_ADMIN_AUTH_ENABLE_REAL"
@@ -271,7 +272,7 @@ def _bool(value: Any) -> bool:
 
 
 def _secret() -> bytes:
-    return (normalize_text(os.getenv("SECRET_KEY")) or "aicrm-next-admin-auth-local-secret").encode("utf-8")
+    return require_signing_secret("SECRET_KEY", local_fallback="aicrm-next-admin-auth-local-secret")
 
 
 def _b64(data: bytes) -> str:

@@ -15,8 +15,8 @@ def _production_client(monkeypatch):
     return TestClient(create_app())
 
 
-def _auth_headers():
-    return {"Authorization": "Bearer probe-token"}
+def _auth_headers(idempotency_key: str = "probe-run-due"):
+    return {"Authorization": "Bearer probe-token", "Idempotency-Key": idempotency_key}
 
 
 def test_legacy_jobs_runner_is_not_part_of_guardrail_surface():
@@ -28,8 +28,8 @@ def test_legacy_jobs_runner_is_not_part_of_guardrail_surface():
 def test_campaign_dry_run_and_preview_are_noop(monkeypatch):
     client = _production_client(monkeypatch)
 
-    dry_run = client.post(checker.CAMPAIGN_ROUTE, json={"dry_run": True, "batch_size": 1}, headers=_auth_headers())
-    preview = client.post(checker.CAMPAIGN_PREVIEW_ROUTE, json={"batch_size": 1}, headers=_auth_headers())
+    dry_run = client.post(checker.CAMPAIGN_ROUTE, json={"dry_run": True, "batch_size": 1}, headers=_auth_headers("probe-dry-run"))
+    preview = client.post(checker.CAMPAIGN_PREVIEW_ROUTE, json={"batch_size": 1}, headers=_auth_headers("probe-preview"))
 
     assert dry_run.status_code == 200
     assert dry_run.json().get("side_effect_executed", False) is False
@@ -43,7 +43,11 @@ def test_campaign_dry_run_and_preview_are_noop(monkeypatch):
 def test_campaign_real_execution_requires_allowlist_in_production(monkeypatch):
     client = _production_client(monkeypatch)
 
-    response = client.post(checker.CAMPAIGN_ROUTE, json={"dry_run": False, "batch_size": 1, "max_dispatch_count": 1}, headers=_auth_headers())
+    response = client.post(
+        checker.CAMPAIGN_ROUTE,
+        json={"dry_run": False, "batch_size": 1, "max_dispatch_count": 1},
+        headers=_auth_headers("probe-real-without-allowlist"),
+    )
 
     assert response.status_code == 409
     payload = response.json()

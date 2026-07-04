@@ -85,7 +85,7 @@ def test_external_push_payload_masks_stored_body_but_sends_full_payload():
             "payer_openid": "openid_product_push",
             "unionid": "unionid_product_push",
             "external_userid": "wm_product_push",
-            "mobile_snapshot": "13800000000",
+            "metadata_json": {"payer_identity": {"mobile": "13800000000"}},
         },
         {"id": 3, "product_code": "subscription_trial_month", "name": "外推商品", "amount_total": 9900},
         {"push_type": "premium", "day": 31, "frequency": 3, "remark": "69元1个月续费"},
@@ -101,6 +101,19 @@ def test_external_push_payload_masks_stored_body_but_sends_full_payload():
     assert redacted["buyer"]["unionid"] == "unio***push"
     assert "config" not in redacted
     assert "tenant" not in redacted
+
+
+def test_external_push_payload_can_resolve_mobile_from_identity_table() -> None:
+    class FakeConn:
+        def execute(self, query, params):
+            assert "crm_user_identity" in query
+            assert params == ("unionid_product_push",)
+            return SimpleNamespace(fetchone=lambda: {"mobile": "13900000000"})
+
+    order = {"id": 7, "unionid": "unionid_product_push", "metadata_json": {}}
+    phone = external_push_admin._resolve_order_mobile(FakeConn(), order)
+
+    assert phone == "13900000000"
 
 
 def test_external_push_attempt_queues_external_effect_and_updates_delivery(monkeypatch):

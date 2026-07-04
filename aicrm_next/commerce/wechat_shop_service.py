@@ -134,8 +134,9 @@ def _event_type(payload: dict[str, Any]) -> str:
 def _verify_query_signature(query_params: dict[str, Any] | None) -> None:
     token = callback_token()
     if not token:
-        should_skip_signature_without_token()
-        return
+        if should_skip_signature_without_token():
+            return
+        raise ValueError("wechat shop callback token is not configured")
     params = dict(query_params or {})
     signature = _text(params.get("signature"))
     timestamp = _text(params.get("timestamp"))

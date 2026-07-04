@@ -14,6 +14,7 @@ from aicrm_next.commerce.wechat_shop_service import (
     sync_wechat_shop_orders_window,
 )
 from aicrm_next.main import create_app
+from aicrm_next.commerce.wechat_shop_signature import verify_signature
 
 
 def _client(monkeypatch) -> TestClient:
@@ -149,6 +150,43 @@ def test_wechat_shop_notify_records_large_order_id_as_string(monkeypatch) -> Non
     events = client.get(f"/api/admin/wechat-shop/events?order_id={order_id}").json()
     assert events["events"][0]["order_id"] == order_id
     assert "e+" not in events["events"][0]["order_id"].lower()
+
+
+def test_wechat_shop_notify_rejects_bad_signature_in_production(monkeypatch) -> None:
+    monkeypatch.setenv("AICRM_NEXT_ENV", "production")
+    monkeypatch.setenv("SECRET_KEY", "wechat-shop-prod-signature-test")
+    monkeypatch.setenv("WECHAT_SHOP_CALLBACK_TOKEN", "wechat-shop-token")
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    client = TestClient(create_app(), raise_server_exceptions=False)
+
+    response = client.post(
+        "/api/wechat-shop/notify?signature=bad&timestamp=1777777777&nonce=nonce",
+        json={"order_info": {"order_id": "3705115058471208928"}},
+    )
+
+    assert response.status_code == 403
+
+
+def test_wechat_shop_notify_insert_failure_returns_retryable_status(monkeypatch) -> None:
+    client = _client(monkeypatch)
+    monkeypatch.setenv("WECHAT_SHOP_CALLBACK_TOKEN", "wechat-shop-token")
+    monkeypatch.setattr("aicrm_next.commerce.wechat_shop_service._insert_event", lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("db down")))
+
+    timestamp = "1777777777"
+    nonce = "nonce"
+    parts = ["wechat-shop-token", timestamp, nonce]
+    import hashlib
+
+    signature = hashlib.sha1("".join(sorted(parts)).encode("utf-8")).hexdigest()
+
+    response = client.post(
+        f"/api/wechat-shop/notify?signature={signature}&timestamp={timestamp}&nonce={nonce}",
+        json={"order_info": {"order_id": "3705115058471208928"}},
+    )
+
+    assert response.status_code == 500
+    assert response.text != "success"
+    assert verify_signature("wechat-shop-token", timestamp, nonce, signature)
 
 
 def test_wechat_shop_paid_order_maps_to_unified_paid_status(monkeypatch) -> None:

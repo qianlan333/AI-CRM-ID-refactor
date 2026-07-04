@@ -312,6 +312,93 @@ def test_worker_fake_mode_generates_package_and_enqueues_send_plan(next_client, 
     assert effect_count == 0
 
 
+def test_worker_rejects_prompt_like_llm_output_before_callback(next_client, next_pg_schema, monkeypatch) -> None:
+    monkeypatch.setenv("AICRM_AI_AUDIENCE_AGENT_MODE", "fake")
+    monkeypatch.setenv("AICRM_AI_AUDIENCE_AGENT_FAKE_ALLOWED", "1")
+    monkeypatch.setenv("AICRM_AI_AUDIENCE_AGENT_FAKE_OUTPUT", "输出话术：{{最近20条聊天信息}}")
+
+    with get_session_factory()() as session:
+        _insert_package(session, secret="callback-secret")
+        _insert_agent(session)
+        session.commit()
+
+    raw = b'{"external_userids":["wm_001"]}'
+    accepted = next_client.post(
+        "/api/ai/agents/activation_agent/audience-webhook?token=agent-token",
+        content=raw,
+        headers={"Content-Type": "application/json", "X-AICRM-Signature": _signature("agent-secret", raw)},
+    )
+    batch_id = accepted.json()["batch_id"]
+
+    from aicrm_next.automation_agents import worker as worker_module
+
+    monkeypatch.setattr(
+        worker_module,
+        "build_agent_context",
+        lambda external_userid, referenced_keys, **kwargs: {
+            "owner_userid": "owner_001",
+            "customer": {"external_userid": external_userid, "owner_userid": "owner_001"},
+            "blocks": {"用户标签": "高意向", "最近20条聊天信息": "2026-06-25 wm_001: 我想了解课程"},
+            "referenced_context_keys": sorted(referenced_keys),
+        },
+    )
+
+    result = AutomationAgentWorker().run_batch(batch_id)
+
+    assert result["status"] == "failed"
+    with get_session_factory()() as session:
+        item = session.execute(text("SELECT * FROM automation_agent_webhook_item")).mappings().one()
+        plan_count = int(session.execute(text("SELECT COUNT(*) FROM cloud_broadcast_plans")).scalar() or 0)
+        message_count = int(session.execute(text("SELECT COUNT(*) FROM cloud_broadcast_plan_recipient_messages")).scalar() or 0)
+    assert item["status"] == "failed"
+    assert item["error_code"] == "llm_output_rejected"
+    assert plan_count == 0
+    assert message_count == 0
+
+
+def test_worker_human_review_gate_blocks_auto_send(next_client, next_pg_schema, monkeypatch) -> None:
+    monkeypatch.setenv("AICRM_AI_AUDIENCE_AGENT_MODE", "fake")
+    monkeypatch.setenv("AICRM_AI_AUDIENCE_AGENT_FAKE_ALLOWED", "1")
+    monkeypatch.setenv("AICRM_AI_AUDIENCE_AGENT_FAKE_OUTPUT", "你好，这是需要审核的话术")
+
+    with get_session_factory()() as session:
+        _insert_package(session, secret="callback-secret")
+        _insert_agent(session)
+        session.execute(text("UPDATE automation_agent_runtime_config SET need_human_review = TRUE WHERE agent_code = 'activation_agent'"))
+        session.commit()
+
+    raw = b'{"external_userids":["wm_001"]}'
+    accepted = next_client.post(
+        "/api/ai/agents/activation_agent/audience-webhook?token=agent-token",
+        content=raw,
+        headers={"Content-Type": "application/json", "X-AICRM-Signature": _signature("agent-secret", raw)},
+    )
+    batch_id = accepted.json()["batch_id"]
+
+    from aicrm_next.automation_agents import worker as worker_module
+
+    monkeypatch.setattr(
+        worker_module,
+        "build_agent_context",
+        lambda external_userid, referenced_keys, **kwargs: {
+            "owner_userid": "owner_001",
+            "customer": {"external_userid": external_userid, "owner_userid": "owner_001"},
+            "blocks": {"用户标签": "高意向", "最近20条聊天信息": "2026-06-25 wm_001: 我想了解课程"},
+            "referenced_context_keys": sorted(referenced_keys),
+        },
+    )
+
+    result = AutomationAgentWorker().run_batch(batch_id)
+
+    assert result["status"] == "failed"
+    with get_session_factory()() as session:
+        item = session.execute(text("SELECT * FROM automation_agent_webhook_item")).mappings().one()
+        plan_count = int(session.execute(text("SELECT COUNT(*) FROM cloud_broadcast_plans")).scalar() or 0)
+    assert item["status"] == "failed"
+    assert item["error_code"] == "human_review_required"
+    assert plan_count == 0
+
+
 def test_external_effect_agent_webhook_continuation_enqueues_broadcast_job(next_client, next_pg_schema, monkeypatch) -> None:
     with get_session_factory()() as session:
         _insert_package(session, secret="callback-secret")

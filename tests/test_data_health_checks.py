@@ -156,3 +156,104 @@ def test_schema_drift_guard_reports_manifest_and_live_schema_mismatches() -> Non
     assert "queue_without_status_enum: queue table has status/state column but missing status_enum" in joined
     assert "unregistered_live_table: table exists but is not registered in lifecycle manifest" in joined
     assert "queue_with_status_enum" not in joined
+
+
+class _FakeResult:
+    def __init__(self, row: dict):
+        self._row = row
+
+    def mappings(self):
+        return self
+
+    def first(self):
+        return self._row
+
+
+class _FakeSession:
+    def __init__(self, row: dict, calls: list[str]):
+        self._row = row
+        self._calls = calls
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        return False
+
+    def execute(self, statement):
+        self._calls.append(str(statement))
+        return _FakeResult(self._row)
+
+
+def _patch_health_db(monkeypatch, row: dict) -> list[str]:
+    from aicrm_next.data_health import checks
+
+    calls: list[str] = []
+    monkeypatch.setattr(checks, "database_schema_available", lambda: True)
+    monkeypatch.setattr(checks, "get_session_factory", lambda: lambda: _FakeSession(row, calls))
+    return calls
+
+
+def test_projection_freshness_probe_uses_live_projection_counts(monkeypatch) -> None:
+    from aicrm_next.data_health import checks
+
+    calls = _patch_health_db(
+        monkeypatch,
+        {
+            "list_count": 12,
+            "detail_count": 0,
+            "list_stale_minutes": 5,
+            "detail_stale_minutes": 90,
+        },
+    )
+
+    result = checks._projection_freshness_customer_read_model()
+
+    assert result.status == "fail"
+    assert result.evidence["list_count"] == 12
+    assert result.evidence["detail_count"] == 0
+    assert any("customer_list_index_next" in sql and "customer_detail_snapshot_next" in sql for sql in calls)
+    assert "external_userid_value" not in str(result.evidence)
+
+
+def test_broadcast_backlog_probe_counts_blocked_and_retryable(monkeypatch) -> None:
+    from aicrm_next.data_health import checks
+
+    calls = _patch_health_db(
+        monkeypatch,
+        {
+            "blocked_count": 1,
+            "failed_terminal_count": 0,
+            "due_retryable_count": 2,
+            "oldest_terminal_hours": 3.5,
+        },
+    )
+
+    result = checks._broadcast_job_blocked_backlog()
+
+    assert result.status == "fail"
+    assert result.evidence["blocked_count"] == 1
+    assert result.evidence["due_retryable_count"] == 2
+    assert any("FROM broadcast_jobs" in sql for sql in calls)
+
+
+def test_external_effect_backlog_probe_accepts_small_retryable_queue(monkeypatch) -> None:
+    from aicrm_next.data_health import checks
+
+    calls = _patch_health_db(
+        monkeypatch,
+        {
+            "failed_retryable_count": 2,
+            "failed_terminal_count": 0,
+            "blocked_count": 0,
+            "due_retryable_count": 2,
+            "oldest_failed_retryable_age_seconds": 120,
+        },
+    )
+
+    result = checks._external_effect_failed_retryable_backlog()
+
+    assert result.status == "ok"
+    assert result.evidence["failed_retryable_count"] == 2
+    assert result.evidence["oldest_failed_retryable_age_seconds"] == 120
+    assert any("FROM external_effect_job" in sql for sql in calls)

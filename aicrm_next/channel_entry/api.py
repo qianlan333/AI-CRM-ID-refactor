@@ -4,6 +4,8 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse, Response
 
+from aicrm_next.shared.sync_request import read_request_body
+
 from .application import (
     callback_config,
     diagnose_channel_runtime,
@@ -25,12 +27,11 @@ callback_router = APIRouter()
 router = APIRouter()
 
 
-async def _handle_callback(request: Request) -> Response:
+def _handle_callback(request: Request, body: bytes = b"") -> Response:
     query = {key: str(value) for key, value in request.query_params.items()}
     try:
         if request.method == "GET":
             return Response(verify_callback_echostr(query), media_type="text/plain")
-        body = await request.body()
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     try:
@@ -48,17 +49,19 @@ async def _handle_callback(request: Request) -> Response:
 
 
 @callback_router.api_route("/wecom/external-contact/callback", methods=["GET", "POST", "OPTIONS", "HEAD"])
-async def external_contact_callback(request: Request) -> Response:
+def external_contact_callback(request: Request) -> Response:
     if request.method in {"OPTIONS", "HEAD"}:
         return Response("", media_type="text/plain")
-    return await _handle_callback(request)
+    body = b"" if request.method == "GET" else read_request_body(request)
+    return _handle_callback(request, body=body)
 
 
 @callback_router.api_route("/api/wecom/events", methods=["GET", "POST", "OPTIONS", "HEAD"])
-async def wecom_events(request: Request) -> Response:
+def wecom_events(request: Request) -> Response:
     if request.method in {"OPTIONS", "HEAD"}:
         return Response("", media_type="text/plain")
-    return await _handle_callback(request)
+    body = b"" if request.method == "GET" else read_request_body(request)
+    return _handle_callback(request, body=body)
 
 
 router.include_router(callback_router)

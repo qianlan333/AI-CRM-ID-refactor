@@ -35,10 +35,20 @@ def _port() -> int:
     return int(os.getenv("APP_PORT", DEFAULT_PORT))
 
 
+def _workers() -> int:
+    raw = os.getenv("AICRM_UVICORN_WORKERS") or os.getenv("WEB_CONCURRENCY") or "1"
+    try:
+        workers = int(raw)
+    except ValueError:
+        workers = 1
+    return max(workers, 1)
+
+
 def run_next() -> None:
     import uvicorn
 
-    uvicorn.run(NEXT_APP_IMPORT, host=_host(), port=_port())
+    uvicorn.run(NEXT_APP_IMPORT, host=_host(), port=_port(), workers=_workers())
+
 
 
 def removed_legacy_command(command: str) -> None:

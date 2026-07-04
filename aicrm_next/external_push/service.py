@@ -196,6 +196,39 @@ def _product_for_order(repository: Any, order: dict[str, Any]) -> dict[str, Any]
     }
 
 
+def _json_object(value: Any) -> dict[str, Any]:
+    if isinstance(value, dict):
+        return value
+    if isinstance(value, str) and value:
+        try:
+            payload = json.loads(value)
+        except json.JSONDecodeError:
+            return {}
+        return payload if isinstance(payload, dict) else {}
+    return {}
+
+
+def _metadata_mobile(order: dict[str, Any]) -> str:
+    metadata = _json_object(order.get("metadata_json"))
+    for key in ("payer_identity", "buyer_identity"):
+        identity = metadata.get(key)
+        if isinstance(identity, dict):
+            mobile = _normalized_text(identity.get("mobile"))
+            if mobile:
+                return mobile
+    return ""
+
+
+def _resolve_order_mobile(repository: Any | None, order: dict[str, Any]) -> str:
+    mobile = _metadata_mobile(order)
+    if mobile or repository is None:
+        return mobile
+    unionid = _normalized_text(order.get("unionid"))
+    if not unionid or not hasattr(repository, "resolve_identity_mobile_by_unionid"):
+        return ""
+    return _normalized_text(repository.resolve_identity_mobile_by_unionid(unionid))
+
+
 def build_external_push_payload(
     event: str,
     order: dict[str, Any],
@@ -203,6 +236,7 @@ def build_external_push_payload(
     config: dict[str, Any],
     *,
     delivery_id: str,
+    phone_number: str | None = None,
 ) -> dict[str, Any]:
     event_type = _normalized_text(event)
     if event_type == EVENT_EXTERNAL_PUSH_TEST:
@@ -232,8 +266,9 @@ def build_external_push_payload(
         "name": _normalized_text(product.get("name") or order.get("product_name")),
         "price": int(product.get("amount_total") or order.get("amount_total") or 0),
     }
+    resolved_phone = _normalized_text(phone_number) or _metadata_mobile(order)
     return {
-        "phone_number": _normalized_text(order.get("mobile_snapshot")),
+        "phone_number": resolved_phone,
         "type": _normalized_text(config.get("push_type")),
         "day": config.get("day"),
         "frequency": config.get("frequency"),
@@ -248,7 +283,7 @@ def build_external_push_payload(
             "id": _normalized_text(order.get("external_userid") or order.get("userid_snapshot") or order.get("respondent_key")),
             "openid": _mask_openid(order.get("payer_openid")),
             "unionid": _normalized_text(order.get("unionid")),
-            "phone": _normalized_text(order.get("mobile_snapshot")),
+            "phone": resolved_phone,
         },
     }
 
@@ -284,6 +319,7 @@ def _attempt_delivery(
             product,
             config,
             delivery_id=delivery_id,
+            phone_number=_resolve_order_mobile(repository, order),
         )
     if request_payload is None:
         request_payload = delivery.get("request_body")
@@ -296,6 +332,7 @@ def _attempt_delivery(
             product,
             config,
             delivery_id=delivery_id,
+            phone_number=_resolve_order_mobile(repository, order),
         )
     raw_body = json.dumps(request_payload, ensure_ascii=False, separators=(",", ":"))
     timestamp = str(int(datetime.now(timezone.utc).timestamp()))
@@ -450,7 +487,14 @@ def process_transaction_paid_outbox(outbox: dict[str, Any], *, repository: Any |
     if _normalized_text(delivery.get("status")) == "success":
         repository.mark_outbox_status(int(outbox["id"]), status="success")
         return {"ok": True, "delivery": delivery, "deduped": True}
-    push_payload = build_external_push_payload(EVENT_TRANSACTION_PAID, order, product, config, delivery_id=delivery["delivery_id"])
+    push_payload = build_external_push_payload(
+        EVENT_TRANSACTION_PAID,
+        order,
+        product,
+        config,
+        delivery_id=delivery["delivery_id"],
+        phone_number=_resolve_order_mobile(repository, order),
+    )
     result = _attempt_delivery(delivery, config=config_with_secret, payload=push_payload, repository=repository)
     repository.mark_outbox_status(int(outbox["id"]), status="success")
     return result

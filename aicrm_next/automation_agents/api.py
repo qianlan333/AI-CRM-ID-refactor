@@ -7,6 +7,8 @@ from fastapi import APIRouter, Request
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 
+from aicrm_next.shared.sync_request import read_request_body
+
 from .application import AutomationAgentWebhookService
 
 router = APIRouter()
@@ -25,8 +27,8 @@ def _json(payload: dict[str, Any], status_code: int = 200) -> JSONResponse:
 
 
 @router.post("/api/ai/agents/{agent_code}/audience-webhook", name="api.ai_automation_agent_audience_webhook")
-async def automation_agent_audience_webhook(agent_code: str, request: Request) -> JSONResponse:
-    raw_body = await request.body()
+def automation_agent_audience_webhook(agent_code: str, request: Request) -> JSONResponse:
+    raw_body = read_request_body(request)
     try:
         payload: Any = json.loads(raw_body.decode("utf-8")) if raw_body else {}
     except Exception as exc:

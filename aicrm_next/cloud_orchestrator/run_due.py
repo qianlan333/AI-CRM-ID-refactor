@@ -138,6 +138,8 @@ def _register_handlers() -> None:
 def _validate_command(command: CloudCampaignRunDueCommand) -> None:
     if not command.command_id.strip():
         raise CloudCampaignRunDueInputError("command_id is required")
+    if command.command_name == PlanCloudCampaignRunDueCommand.command_name and not command.idempotency_key.strip():
+        raise CloudCampaignRunDueInputError("idempotency_key is required")
     if not command.source_route.strip():
         raise CloudCampaignRunDueInputError("source_route is required")
     if int(command.batch_size) < 1 or int(command.batch_size) > MAX_BATCH_SIZE:
@@ -160,7 +162,55 @@ def _repo() -> Any:
     return build_campaign_read_repository()
 
 
-def _due_candidates(batch_size: int) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+def _parse_datetime(value: Any) -> datetime | None:
+    if isinstance(value, datetime):
+        parsed = value
+    else:
+        text = str(value or "").strip()
+        if not text:
+            return None
+        try:
+            parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+        except ValueError:
+            return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def _command_now(payload: dict[str, Any]) -> datetime:
+    parsed = _parse_datetime(payload.get("now"))
+    return parsed or utcnow()
+
+
+def _member_is_due(member: dict[str, Any], now: datetime) -> bool:
+    due_at = _parse_datetime(member.get("next_due_at"))
+    return bool(due_at and due_at <= now)
+
+
+def _member_current_step_index(member: dict[str, Any]) -> int:
+    value = member.get("current_step_index")
+    try:
+        return int(value) if value not in (None, "") else -1
+    except (TypeError, ValueError):
+        return -1
+
+
+def _next_step_for_member(steps: list[dict[str, Any]], member: dict[str, Any]) -> dict[str, Any]:
+    next_index = _member_current_step_index(member) + 1
+    for step in steps:
+        try:
+            if int(step.get("step_index") or 0) == next_index:
+                return step
+        except (TypeError, ValueError):
+            continue
+    return {}
+
+
+def _due_candidates(batch_size: int, *, now: datetime | None = None) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    due_now = now or utcnow()
+    if due_now.tzinfo is None:
+        due_now = due_now.replace(tzinfo=timezone.utc)
     try:
         repo = _repo()
         campaigns, _total = repo.list_campaigns(limit=batch_size, offset=0)
@@ -173,7 +223,6 @@ def _due_candidates(batch_size: int) -> tuple[list[dict[str, Any]], dict[str, An
         if not campaign_code:
             continue
         try:
-            members_payload = repo.list_members(campaign_code, status="pending", limit=batch_size, offset=0) or {}
             steps_payload = repo.list_steps(campaign_code) or {}
         except Exception as exc:
             candidates.append(
@@ -186,31 +235,59 @@ def _due_candidates(batch_size: int) -> tuple[list[dict[str, Any]], dict[str, An
                 }
             )
             continue
-        members = list(members_payload.get("members") or members_payload.get("rows") or [])
         steps = list(steps_payload.get("steps") or [])
-        if not members:
-            continue
-        next_step = steps[0] if steps else {}
-        for member in members:
-            candidates.append(
-                {
-                    "campaign_code": campaign_code,
-                    "campaign_id": campaign.get("id"),
-                    "owner_userid": campaign.get("owner_userid"),
-                    "campaign_trace_id": campaign.get("trace_id"),
-                    "member_id": member.get("member_id"),
-                    "unionid": member.get("unionid"),
-                    "external_contact_id": member.get("external_contact_id"),
-                    "member_status": member.get("status"),
-                    "current_step_index": member.get("current_step_index"),
-                    "next_step_index": next_step.get("step_index", 0),
-                    "next_due_at": member.get("next_due_at") or "",
-                    "next_step": next_step,
-                    "estimated_actions": 1,
-                }
-            )
-            if len(candidates) >= batch_size:
-                return candidates, {"candidate_generation_status": "ready"}
+        member_offset = 0
+        while len(candidates) < batch_size:
+            try:
+                members_payload = repo.list_members(campaign_code, status="pending", limit=batch_size, offset=member_offset) or {}
+            except Exception as exc:
+                candidates.append(
+                    {
+                        "campaign_code": campaign_code,
+                        "campaign_id": campaign.get("id"),
+                        "status": "degraded",
+                        "error": str(exc),
+                        "estimated_actions": 0,
+                    }
+                )
+                break
+            members = list(members_payload.get("members") or members_payload.get("rows") or [])
+            if not members:
+                break
+            for member in members:
+                if not _member_is_due(member, due_now):
+                    continue
+                next_step = _next_step_for_member(steps, member)
+                if not next_step:
+                    continue
+                candidates.append(
+                    {
+                        "campaign_code": campaign_code,
+                        "campaign_id": campaign.get("id"),
+                        "owner_userid": campaign.get("owner_userid"),
+                        "campaign_trace_id": campaign.get("trace_id"),
+                        "member_id": member.get("member_id"),
+                        "unionid": member.get("unionid"),
+                        "external_contact_id": member.get("external_contact_id"),
+                        "member_status": member.get("status"),
+                        "current_step_index": member.get("current_step_index"),
+                        "next_step_index": next_step.get("step_index", 0),
+                        "next_due_at": member.get("next_due_at") or "",
+                        "next_step": next_step,
+                        "estimated_actions": 1,
+                    }
+                )
+                if len(candidates) >= batch_size:
+                    return candidates, {"candidate_generation_status": "ready"}
+            member_offset += len(members)
+            total = int(members_payload.get("total") or 0)
+            if total:
+                if member_offset >= total:
+                    break
+                continue
+            if len(members) < batch_size:
+                break
+            break
     return candidates, {"candidate_generation_status": "ready"}
 
 
@@ -249,6 +326,15 @@ def _candidate_target_id(candidate: dict[str, Any]) -> tuple[str, str]:
     return str(candidate.get("external_contact_id") or "").strip(), "external_contact_id"
 
 
+def _candidate_stable_idempotency_key(effect_type: str, candidate: dict[str, Any]) -> str:
+    campaign_code = str(candidate.get("campaign_code") or "").strip()
+    member_id = str(candidate.get("member_id") or "").strip()
+    if not member_id:
+        member_id, _kind = _candidate_target_id(candidate)
+    step_index = int(candidate.get("next_step_index") or 0)
+    return f"cloud_campaign_run_due:{effect_type}:{campaign_code}:{member_id}:{step_index}"
+
+
 def _loopback_payload_for_candidate(
     *,
     command: Command,
@@ -258,10 +344,7 @@ def _loopback_payload_for_candidate(
     campaign_code = str(candidate.get("campaign_code") or "").strip()
     target_id, target_id_kind = _candidate_target_id(candidate)
     step_index = int(candidate.get("next_step_index") or 0)
-    idempotency_key = (
-        f"{command.idempotency_key or command.command_id}:external-effect:"
-        f"{AI_ASSIST_CAMPAIGN_MESSAGE_LOOPBACK}:{campaign_code}:{target_id}:{step_index}"
-    )
+    idempotency_key = _candidate_stable_idempotency_key(AI_ASSIST_CAMPAIGN_MESSAGE_LOOPBACK, candidate)
     body = {
         "synthetic": bool(loopback_mode),
         "source": "ai_assist_campaign_run_due",
@@ -322,10 +405,7 @@ def _wecom_private_payload_for_candidate(
     step_index = int(candidate.get("next_step_index") or step.get("step_index") or 0)
     content_payload = step.get("content_payload_json") if isinstance(step.get("content_payload_json"), dict) else {}
     content_text = str(step.get("content_text") or content_payload.get("content_text") or "").strip()
-    idempotency_key = (
-        f"{command.idempotency_key or command.command_id}:external-effect:"
-        f"{WECOM_MESSAGE_PRIVATE_SEND}:{campaign_code}:{unionid}:{step_index}"
-    )
+    idempotency_key = _candidate_stable_idempotency_key(WECOM_MESSAGE_PRIVATE_SEND, candidate)
     attachments = content_payload.get("attachments") if isinstance(content_payload.get("attachments"), list) else []
     payload = {
         "channel": "wecom_private",
@@ -380,6 +460,7 @@ def _plan_external_effect_jobs(*, command: Command, candidates: list[dict[str, A
             payload, meta = _wecom_private_payload_for_candidate(command=command, candidate=candidate)
             execution_mode = "execute"
             status = "queued"
+            requires_approval = True
         else:
             effect_type = AI_ASSIST_CAMPAIGN_MESSAGE_LOOPBACK
             adapter_name = "outbound_webhook"
@@ -387,6 +468,7 @@ def _plan_external_effect_jobs(*, command: Command, candidates: list[dict[str, A
             payload, meta = _loopback_payload_for_candidate(command=command, candidate=candidate, loopback_mode=loopback_mode)
             execution_mode = "execute" if loopback_mode else "shadow"
             status = "queued" if loopback_mode else "planned"
+            requires_approval = False
         try:
             jobs.append(
                 service.plan_effect(
@@ -404,7 +486,7 @@ def _plan_external_effect_jobs(*, command: Command, candidates: list[dict[str, A
                     source_event_id=campaign_code,
                     source_command_id=command.command_id,
                     risk_level="medium",
-                    requires_approval=False,
+                    requires_approval=requires_approval,
                     execution_mode=execution_mode,
                     status=status,
                     idempotency_key=str(meta["idempotency_key"]),
@@ -427,7 +509,7 @@ def _estimated_actions(candidates: list[dict[str, Any]]) -> dict[str, Any]:
 
 def _handle_preview(command: Command) -> dict[str, Any]:
     batch_size = normalize_batch_size(command.payload.get("batch_size"))
-    candidates, diagnostics = _due_candidates(batch_size)
+    candidates, diagnostics = _due_candidates(batch_size, now=_command_now(command.payload))
     return {
         "source_status": PREVIEW_SOURCE_STATUS,
         "run_due_status": "preview_only",
@@ -449,7 +531,7 @@ def _handle_preview(command: Command) -> dict[str, Any]:
 
 def _handle_plan(command: Command) -> dict[str, Any]:
     batch_size = normalize_batch_size(command.payload.get("batch_size"))
-    candidates, diagnostics = _due_candidates(batch_size)
+    candidates, diagnostics = _due_candidates(batch_size, now=_command_now(command.payload))
     external_effect_jobs, external_effect_errors = _plan_external_effect_jobs(command=command, candidates=candidates)
     plan = _create_run_due_side_effect_plan(command=command, candidates=candidates, diagnostics=diagnostics)
     attempt = _external_call_attempts.record_attempt(

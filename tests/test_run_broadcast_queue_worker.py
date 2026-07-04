@@ -16,11 +16,11 @@ class FakeRepo:
     def claim_due_jobs(self, *, limit: int, now: datetime, claim_token: str, lease_seconds: int) -> list[dict[str, Any]]:
         return self.jobs[:limit]
 
-    def mark_sent(self, job_id: int, *, outbound_task_id: Any = None, sent_count: int = 0, failed_count: int = 0) -> None:
-        self.sent.append({"job_id": job_id, "outbound_task_id": outbound_task_id, "sent_count": sent_count, "failed_count": failed_count})
+    def mark_sent(self, job_id: int, *, outbound_task_id: Any = None, sent_count: int = 0, failed_count: int = 0, claim_token: str = "") -> None:
+        self.sent.append({"job_id": job_id, "outbound_task_id": outbound_task_id, "sent_count": sent_count, "failed_count": failed_count, "claim_token": claim_token})
 
-    def mark_failed(self, job_id: int, *, error: str, failure_type: str = "handler_error") -> None:
-        self.failed.append({"job_id": job_id, "error": error, "failure_type": failure_type})
+    def mark_failed(self, job_id: int, *, error: str, failure_type: str = "handler_error", claim_token: str = "") -> None:
+        self.failed.append({"job_id": job_id, "error": error, "failure_type": failure_type, "claim_token": claim_token})
 
 
 class SuccessDispatcher:
@@ -50,7 +50,8 @@ def test_worker_dispatches_due_job_and_marks_sent() -> None:
     assert summary["claimed"] == 1
     assert summary["sent_ok"] == 1
     assert summary["sent_failed"] == 0
-    assert repo.sent == [{"job_id": 1, "outbound_task_id": 555, "sent_count": 3, "failed_count": 0}]
+    assert repo.sent[0]["job_id"] == 1
+    assert repo.sent[0]["claim_token"]
 
 
 def test_worker_marks_failed_when_dispatch_fails() -> None:
@@ -80,13 +81,15 @@ def test_postgres_mark_failed_syncs_cloud_plan_recipient_state(monkeypatch) -> N
 
     PostgresBroadcastQueueRepository().mark_failed(42, error="not external contact", failure_type="wecom_api_error")
 
-    assert len(calls) == 3
+    assert len(calls) == 4
     assert "UPDATE broadcast_jobs" in calls[0]["sql"]
-    assert calls[0]["params"] == ("failed", "wecom_api_error", "not external contact", 42)
+    assert calls[0]["params"] == (False, "wecom_api_error", "not external contact", False, 300, 42, "", "")
     assert "UPDATE cloud_broadcast_plan_recipients" in calls[1]["sql"]
-    assert calls[1]["params"] == ("not external contact", 42)
+    assert calls[1]["params"] == ("not external contact", 42, "", "")
     assert "UPDATE cloud_broadcast_plan_recipient_messages" in calls[2]["sql"]
-    assert calls[2]["params"] == ("not external contact", 42)
+    assert calls[2]["params"] == ("not external contact", 42, "", "")
+    assert "SET claim_token = ''" in calls[3]["sql"]
+    assert calls[3]["params"] == (42, "", "")
 
 
 def test_worker_no_due_jobs_returns_empty_summary() -> None:

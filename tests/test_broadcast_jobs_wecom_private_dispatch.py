@@ -21,11 +21,11 @@ class FakeRepo:
     def claim_due_jobs(self, *, limit: int, now: datetime, claim_token: str, lease_seconds: int) -> list[dict[str, Any]]:
         return self.jobs[:limit]
 
-    def mark_sent(self, job_id: int, *, outbound_task_id: Any = None, sent_count: int = 0, failed_count: int = 0) -> None:
-        self.sent.append({"job_id": job_id, "outbound_task_id": outbound_task_id, "sent_count": sent_count, "failed_count": failed_count})
+    def mark_sent(self, job_id: int, *, outbound_task_id: Any = None, sent_count: int = 0, failed_count: int = 0, claim_token: str = "") -> None:
+        self.sent.append({"job_id": job_id, "outbound_task_id": outbound_task_id, "sent_count": sent_count, "failed_count": failed_count, "claim_token": claim_token})
 
-    def mark_failed(self, job_id: int, *, error: str, failure_type: str = "handler_error") -> None:
-        self.failed.append({"job_id": job_id, "error": error, "failure_type": failure_type})
+    def mark_failed(self, job_id: int, *, error: str, failure_type: str = "handler_error", claim_token: str = "") -> None:
+        self.failed.append({"job_id": job_id, "error": error, "failure_type": failure_type, "claim_token": claim_token})
 
 
 class Adapter:
@@ -90,7 +90,13 @@ def test_wecom_private_job_is_dispatched_and_marked_sent(monkeypatch) -> None:
     summary = run_broadcast_queue_worker(repo=repo, dispatcher=SafeSkippedBroadcastDispatcher(), now=datetime(2026, 6, 1, tzinfo=timezone.utc))
 
     assert summary["sent_ok"] == 1
-    assert repo.sent == [{"job_id": 101, "outbound_task_id": 888, "sent_count": 1, "failed_count": 0}]
+    assert {key: repo.sent[0][key] for key in ("job_id", "outbound_task_id", "sent_count", "failed_count")} == {
+        "job_id": 101,
+        "outbound_task_id": 888,
+        "sent_count": 1,
+        "failed_count": 0,
+    }
+    assert repo.sent[0]["claim_token"]
     assert adapter.payload["sender"] == "HuangYouCan"
     assert adapter.payload["external_userids"] == ["wm_test"]
 
@@ -308,7 +314,13 @@ def test_campaign_private_message_job_is_dispatched(monkeypatch) -> None:
     summary = run_broadcast_queue_worker(repo=repo, dispatcher=SafeSkippedBroadcastDispatcher())
 
     assert summary["sent_ok"] == 1
-    assert repo.sent == [{"job_id": 101, "outbound_task_id": 889, "sent_count": 1, "failed_count": 0}]
+    assert {key: repo.sent[0][key] for key in ("job_id", "outbound_task_id", "sent_count", "failed_count")} == {
+        "job_id": 101,
+        "outbound_task_id": 889,
+        "sent_count": 1,
+        "failed_count": 0,
+    }
+    assert repo.sent[0]["claim_token"]
     assert adapter.payload["sender"] == "HuangYouCan"
     assert adapter.payload["external_userids"] == ["wm_test"]
     assert adapter.payload["text"]["content"] == "campaign private hello"

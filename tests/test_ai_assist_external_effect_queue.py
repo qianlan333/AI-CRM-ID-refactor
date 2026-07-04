@@ -159,6 +159,7 @@ def test_ai_assist_campaign_run_due_api_injects_current_host_loopback_url(next_c
         "/api/admin/cloud-orchestrator/campaigns/run-due",
         headers={
             "Authorization": "Bearer timer-token",
+            "Idempotency-Key": "ai-assist-api-loopback-host",
             "X-Forwarded-Proto": "https",
             "X-Forwarded-Host": "crm.example.test",
         },
@@ -189,6 +190,7 @@ def test_ai_assist_campaign_run_due_api_env_test_mode_injects_loopback_url(next_
         "/api/admin/cloud-orchestrator/campaigns/run-due",
         headers={
             "Authorization": "Bearer timer-token",
+            "Idempotency-Key": "ai-assist-api-env-loopback",
             "X-Forwarded-Proto": "https",
             "X-Forwarded-Host": "crm.example.test",
         },
@@ -241,7 +243,7 @@ def test_ai_assist_campaign_loopback_allowlist_miss_blocks_without_receipt(next_
     assert total == 0
 
 
-def test_ai_assist_campaign_run_due_wecom_private_mode_creates_queued_external_effect_job_without_send(monkeypatch) -> None:
+def test_ai_assist_campaign_run_due_wecom_private_mode_creates_approval_gated_external_effect_job(monkeypatch) -> None:
     _reset_fixture_state()
     monkeypatch.setenv("AI_ASSIST_EXTERNAL_EFFECT_SEND_MODE", "wecom_private")
 
@@ -262,7 +264,8 @@ def test_ai_assist_campaign_run_due_wecom_private_mode_creates_queued_external_e
     assert result["real_external_call_executed"] is False
     assert result["wecom_send_executed"] is False
     assert total == 1
-    assert job.status == "queued"
+    assert job.status == "planned"
+    assert job.requires_approval is True
     assert job.execution_mode == "execute"
     assert job.adapter_name == "wecom_private_message"
     assert job.target_type == "unionid"
@@ -299,6 +302,7 @@ def test_wecom_private_external_effect_default_executes_without_wecom_gate(monke
         )
     )
     job_id = plan["external_effect_job_ids"][0]
+    ExternalEffectService().approve(job_id)
 
     result = ExternalEffectWorker().run_due(batch_size=1, dry_run=False, effect_types=[WECOM_MESSAGE_PRIVATE_SEND], test_only=False)
     updated = ExternalEffectService().get(job_id)
@@ -345,6 +349,7 @@ def test_wecom_private_external_effect_allowlisted_execute_succeeds(monkeypatch)
         )
     )
     job_id = plan["external_effect_job_ids"][0]
+    ExternalEffectService().approve(job_id)
 
     preview = ExternalEffectWorker().preview_due(batch_size=1, effect_types=[WECOM_MESSAGE_PRIVATE_SEND], test_only=False)
     dry_run = ExternalEffectWorker().run_due(batch_size=1, dry_run=True, effect_types=[WECOM_MESSAGE_PRIVATE_SEND], test_only=False)
@@ -394,6 +399,7 @@ def test_wecom_private_external_effect_ignores_target_allowlist_miss(monkeypatch
         )
     )
     job_id = plan["external_effect_job_ids"][0]
+    ExternalEffectService().approve(job_id)
 
     result = ExternalEffectWorker().run_due(batch_size=1, dry_run=False, effect_types=[WECOM_MESSAGE_PRIVATE_SEND], test_only=False)
     updated = ExternalEffectService().get(job_id)

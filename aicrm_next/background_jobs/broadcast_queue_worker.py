@@ -17,8 +17,8 @@ class BroadcastDispatcher(Protocol):
 
 class BroadcastQueueRepository(Protocol):
     def claim_due_jobs(self, *, limit: int, now: datetime, claim_token: str, lease_seconds: int) -> list[dict[str, Any]]: ...
-    def mark_sent(self, job_id: int, *, outbound_task_id: Any = None, sent_count: int = 0, failed_count: int = 0) -> None: ...
-    def mark_failed(self, job_id: int, *, error: str, failure_type: str = "handler_error") -> None: ...
+    def mark_sent(self, job_id: int, *, outbound_task_id: Any = None, sent_count: int = 0, failed_count: int = 0, claim_token: str = "") -> None: ...
+    def mark_failed(self, job_id: int, *, error: str, failure_type: str = "handler_error", claim_token: str = "") -> None: ...
 
 
 class SafeSkippedBroadcastDispatcher:
@@ -49,8 +49,19 @@ class PostgresBroadcastQueueRepository:
                 WITH due AS (
                     SELECT id
                     FROM broadcast_jobs
-                    WHERE status = 'queued'
-                      AND scheduled_for <= %s
+                    WHERE scheduled_for <= %s
+                      AND (
+                        status = 'queued'
+                        OR (
+                            status = 'claimed'
+                            AND lease_expires_at IS NOT NULL
+                            AND lease_expires_at <= %s
+                        )
+                        OR (
+                            status = 'failed_retryable'
+                            AND (next_retry_at IS NULL OR next_retry_at <= %s)
+                        )
+                      )
                     ORDER BY priority ASC, scheduled_for ASC, id ASC
                     FOR UPDATE SKIP LOCKED
                     LIMIT %s
@@ -66,11 +77,12 @@ class PostgresBroadcastQueueRepository:
                 WHERE bj.id = due.id
                 RETURNING bj.*
                 """,
-                (now, int(limit), now, claim_token, now + timedelta(seconds=int(lease_seconds))),
+                (now, now, now, int(limit), now, claim_token, now + timedelta(seconds=int(lease_seconds))),
             ).fetchall()
             return [dict(row) for row in rows]
 
-    def mark_sent(self, job_id: int, *, outbound_task_id: Any = None, sent_count: int = 0, failed_count: int = 0) -> None:
+    def mark_sent(self, job_id: int, *, outbound_task_id: Any = None, sent_count: int = 0, failed_count: int = 0, claim_token: str = "") -> None:
+        token = str(claim_token or "")
         with connect() as conn:
             conn.execute(
                 """
@@ -79,27 +91,44 @@ class PostgresBroadcastQueueRepository:
                     outbound_task_id = %s,
                     sent_count = %s,
                     failed_count = %s,
+                    claim_token = '',
+                    lease_expires_at = NULL,
+                    next_retry_at = NULL,
                     sent_at = CURRENT_TIMESTAMP,
                     updated_at = CURRENT_TIMESTAMP
                 WHERE id = %s
+                  AND (%s = '' OR claim_token = %s)
                 """,
-                (outbound_task_id, int(sent_count), int(failed_count), int(job_id)),
+                (outbound_task_id, int(sent_count), int(failed_count), int(job_id), token, token),
             )
 
-    def mark_failed(self, job_id: int, *, error: str, failure_type: str = "handler_error") -> None:
+    def mark_failed(self, job_id: int, *, error: str, failure_type: str = "handler_error", claim_token: str = "") -> None:
         error_text = str(error or "")[:1000]
-        next_status = "blocked" if failure_type == "identity_external_userid_missing" else "failed"
+        token = str(claim_token or "")
+        terminal_failure = failure_type in {"identity_external_userid_missing", "invalid_payload", "cancelled"}
+        retry_delay_seconds = int(os.getenv("BROADCAST_QUEUE_RETRY_DELAY_SECONDS", "300"))
         with connect() as conn:
             conn.execute(
                 """
                 UPDATE broadcast_jobs
-                SET status = %s,
+                SET status = CASE
+                        WHEN %s THEN 'blocked'
+                        WHEN attempt_count >= COALESCE(max_attempts, 3) THEN 'failed_terminal'
+                        ELSE 'failed_retryable'
+                    END,
                     failure_type = %s,
                     last_error = %s,
+                    claim_token = '',
+                    lease_expires_at = NULL,
+                    next_retry_at = CASE
+                        WHEN %s OR attempt_count >= COALESCE(max_attempts, 3) THEN NULL
+                        ELSE CURRENT_TIMESTAMP + (%s * INTERVAL '1 second')
+                    END,
                     updated_at = CURRENT_TIMESTAMP
                 WHERE id = %s
+                  AND (%s = '' OR claim_token = %s)
                 """,
-                (next_status, failure_type, error_text, int(job_id)),
+                (terminal_failure, failure_type, error_text, terminal_failure, retry_delay_seconds, int(job_id), token, token),
             )
             conn.execute(
                 """
@@ -111,10 +140,11 @@ class PostgresBroadcastQueueRepository:
                 WHERE j.id = %s
                   AND j.source_type = 'cloud_plan'
                   AND j.source_table = 'cloud_broadcast_plan_recipients'
+                  AND (%s = '' OR j.claim_token = %s)
                   AND r.broadcast_job_id = j.id
                   AND r.send_status IN ('pending', 'queued', 'sending')
                 """,
-                (error_text, int(job_id)),
+                (error_text, int(job_id), token, token),
             )
             conn.execute(
                 """
@@ -127,11 +157,22 @@ class PostgresBroadcastQueueRepository:
                 WHERE j.id = %s
                   AND j.source_type = 'cloud_plan'
                   AND j.source_table = 'cloud_broadcast_plan_recipients'
+                  AND (%s = '' OR j.claim_token = %s)
                   AND m.plan_id = r.plan_id
                   AND m.recipient_id = r.id
                   AND m.status IN ('pending', 'queued')
                 """,
-                (error_text, int(job_id)),
+                (error_text, int(job_id), token, token),
+            )
+            conn.execute(
+                """
+                UPDATE broadcast_jobs
+                SET claim_token = '',
+                    lease_expires_at = NULL
+                WHERE id = %s
+                  AND (%s = '' OR claim_token = %s)
+                """,
+                (int(job_id), token, token),
             )
 
 
@@ -570,32 +611,37 @@ def run_broadcast_queue_worker(
         current_time = current_time.replace(tzinfo=timezone.utc)
     lease = int(lease_seconds or int(os.getenv("BROADCAST_QUEUE_LEASE_SECONDS", "900")))
     try:
-        jobs = repo.claim_due_jobs(limit=int(limit), now=current_time, claim_token=f"{os.getpid()}:{uuid.uuid4().hex}", lease_seconds=lease)
+        claim_token = f"{os.getpid()}:{uuid.uuid4().hex}"
+        jobs = repo.claim_due_jobs(limit=int(limit), now=current_time, claim_token=claim_token, lease_seconds=lease)
         summary["claimed"] = len(jobs)
         for job in jobs:
             job_id = int(job.get("id") or 0)
-            outcome = dispatcher.dispatch(job)
-            if outcome.get("ok"):
-                sent_count = int_value(outcome.get("sent_count")) or _count_targets(job)
-                repo.mark_sent(
-                    job_id,
-                    outbound_task_id=outcome.get("outbound_task_id") or outcome.get("task_id"),
-                    sent_count=sent_count,
-                    failed_count=int_value(outcome.get("failed_count")),
-                )
-                summary["sent_ok"] += 1
-                summary["results"].append({"id": job_id, "status": "sent", "sent_count": sent_count})
-                continue
-            reason = str(outcome.get("reason") or outcome.get("error") or "next_native_dispatch_failed")
-            repo.mark_failed(
-                job_id,
-                error=reason,
-                failure_type=str(outcome.get("failure_type") or ("next_native_dispatch_skipped" if outcome.get("status") == "skipped" else "handler_error")),
-            )
-            summary["sent_failed"] += 1
-            if outcome.get("status") == "skipped":
-                summary["skipped"] += 1
-            summary["results"].append({"id": job_id, "status": outcome.get("status") or "failed", "reason": reason, "failure_type": outcome.get("failure_type") or ""})
+            try:
+                outcome = dispatcher.dispatch(job)
+                if outcome.get("ok"):
+                    sent_count = int_value(outcome.get("sent_count")) or _count_targets(job)
+                    repo.mark_sent(
+                        job_id,
+                        outbound_task_id=outcome.get("outbound_task_id") or outcome.get("task_id"),
+                        sent_count=sent_count,
+                        failed_count=int_value(outcome.get("failed_count")),
+                        claim_token=claim_token,
+                    )
+                    summary["sent_ok"] += 1
+                    summary["results"].append({"id": job_id, "status": "sent", "sent_count": sent_count})
+                    continue
+                reason = str(outcome.get("reason") or outcome.get("error") or "next_native_dispatch_failed")
+                failure_type = str(outcome.get("failure_type") or ("next_native_dispatch_skipped" if outcome.get("status") == "skipped" else "handler_error"))
+                repo.mark_failed(job_id, error=reason, failure_type=failure_type, claim_token=claim_token)
+                summary["sent_failed"] += 1
+                if outcome.get("status") == "skipped":
+                    summary["skipped"] += 1
+                summary["results"].append({"id": job_id, "status": outcome.get("status") or "failed_retryable", "reason": reason, "failure_type": failure_type})
+            except Exception as exc:
+                reason = str(exc)
+                repo.mark_failed(job_id, error=reason, failure_type="handler_exception", claim_token=claim_token)
+                summary["sent_failed"] += 1
+                summary["results"].append({"id": job_id, "status": "failed_retryable", "reason": reason, "failure_type": "handler_exception"})
         return summary
     except Exception as exc:
         return {**summary, "ok": False, "errors": [{"code": "broadcast_queue_worker_failed", "message": str(exc)}]}

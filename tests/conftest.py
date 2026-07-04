@@ -35,6 +35,8 @@ if str(_ROOT) not in sys.path:
 # Most production-mode tests exercise data-source behavior, not admin login state.
 # Auth-specific tests opt in with AICRM_ADMIN_AUTH_ENFORCED=true.
 os.environ.setdefault("AICRM_ADMIN_AUTH_ENFORCED", "false")
+os.environ.setdefault("SECRET_KEY", "pytest-secret-key")
+os.environ.setdefault("WECHAT_SHOP_CALLBACK_TOKEN", "pytest-wechat-shop-callback-token")
 
 
 def _xdist_worker_id() -> str:

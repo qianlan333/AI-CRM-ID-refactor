@@ -20,7 +20,7 @@ class FakeExternalPushRepository:
             "external_userid": "wm_product_push",
             "payer_openid": "openid_product_push",
             "unionid": "unionid_product_push",
-            "mobile_snapshot": "13800000000",
+            "metadata_json": {"payer_identity": {"mobile": "13800000000"}},
         }
         self.product = {
             "id": 202,
@@ -64,6 +64,7 @@ class FakeExternalPushRepository:
         self.due_deliveries: list[dict] = []
         self.outbox_statuses: list[tuple[int, str]] = []
         self.updated_deliveries: list[dict] = []
+        self.identity_mobiles = {"unionid_product_push": "13900000000"}
 
     def list_due_outbox_events(self, *, limit: int = 20):
         assert limit > 0
@@ -82,6 +83,9 @@ class FakeExternalPushRepository:
 
     def get_product_for_order(self, order: dict):
         return deepcopy(self.product) if order else {}
+
+    def resolve_identity_mobile_by_unionid(self, unionid: str):
+        return self.identity_mobiles.get(unionid, "")
 
     def get_product_by_id(self, product_id: int):
         return deepcopy(self.product) if int(product_id) == int(self.product["id"]) else None
@@ -192,6 +196,21 @@ def test_run_due_events_success_updates_delivery_and_outbox(monkeypatch) -> None
     assert jobs[0].payload_json["body"]["buyer"]["phone"] == "13800000000"
     assert jobs[0].payload_json["body"]["event"] == "transaction.paid"
     assert result["items"][0]["real_external_call_executed"] is False
+
+
+def test_external_push_payload_falls_back_to_identity_mobile(monkeypatch) -> None:
+    reset_external_effect_fixture_state()
+    repository = FakeExternalPushRepository()
+    repository.order["metadata_json"] = {}
+    _allow_no_dns(monkeypatch)
+
+    result = service.run_due_external_push_events(limit=5, repository=repository)
+    jobs, total = ExternalEffectService().list_jobs({"effect_type": WEBHOOK_ORDER_PAID_PUSH})
+
+    assert result["ok"] is True
+    assert total == 1
+    assert jobs[0].payload_json["body"]["phone_number"] == "13900000000"
+    assert jobs[0].payload_json["body"]["buyer"]["phone"] == "13900000000"
 
 
 def test_run_due_events_invalid_url_fails_without_external_call(monkeypatch) -> None:

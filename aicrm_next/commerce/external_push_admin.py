@@ -140,6 +140,58 @@ def _mask_phone(value: Any) -> str:
     return f"{digits[:3]}****{digits[-4:]}"
 
 
+def _json_object(value: Any) -> dict[str, Any]:
+    if isinstance(value, dict):
+        return value
+    if isinstance(value, str) and value:
+        try:
+            payload = json.loads(value)
+        except json.JSONDecodeError:
+            return {}
+        return payload if isinstance(payload, dict) else {}
+    return {}
+
+
+def _metadata_mobile(order: dict[str, Any]) -> str:
+    metadata = _json_object(order.get("metadata_json"))
+    for key in ("payer_identity", "buyer_identity"):
+        identity = metadata.get(key)
+        if isinstance(identity, dict):
+            mobile = _text(identity.get("mobile"))
+            if mobile:
+                return mobile
+    return ""
+
+
+def _identity_mobile_for_order(conn: Any, order: dict[str, Any]) -> str:
+    unionid = _text(order.get("unionid"))
+    if not unionid:
+        return ""
+    row = conn.execute(
+        """
+        SELECT mobile
+        FROM crm_user_identity
+        WHERE unionid = %s
+          AND COALESCE(mobile, '') <> ''
+        LIMIT 1
+        """,
+        (unionid,),
+    ).fetchone()
+    if not row:
+        return ""
+    try:
+        return _text(dict(row).get("mobile"))
+    except (TypeError, ValueError):
+        return _text(getattr(row, "mobile", ""))
+
+
+def _resolve_order_mobile(conn: Any | None, order: dict[str, Any]) -> str:
+    mobile = _metadata_mobile(order)
+    if mobile or conn is None:
+        return mobile
+    return _identity_mobile_for_order(conn, order)
+
+
 def _redact_sensitive_fields(payload: Any) -> Any:
     if isinstance(payload, list):
         return [_redact_sensitive_fields(item) for item in payload]
@@ -183,6 +235,7 @@ def _build_external_push_payload(
     config: dict[str, Any],
     *,
     delivery_id: str,
+    phone_number: str | None = None,
 ) -> dict[str, Any]:
     event_type = _text(event)
     if event_type == EVENT_EXTERNAL_PUSH_TEST:
@@ -212,8 +265,9 @@ def _build_external_push_payload(
         "name": _text(product.get("name") or order.get("product_name")),
         "price": int(product.get("amount_total") or order.get("amount_total") or 0),
     }
+    resolved_phone = _text(phone_number) or _metadata_mobile(order)
     return {
-        "phone_number": _text(order.get("mobile_snapshot")),
+        "phone_number": resolved_phone,
         "type": _text(config.get("push_type")),
         "day": config.get("day"),
         "frequency": config.get("frequency"),
@@ -228,7 +282,7 @@ def _build_external_push_payload(
             "id": _text(order.get("external_userid") or order.get("userid_snapshot") or order.get("respondent_key")),
             "openid": _mask_openid(order.get("payer_openid")),
             "unionid": _text(order.get("unionid")),
-            "phone": _text(order.get("mobile_snapshot")),
+            "phone": resolved_phone,
         },
     }
 
@@ -540,6 +594,7 @@ def plan_order_paid_external_push_effect(
         product,
         _public_config(config),
         delivery_id=delivery["delivery_id"],
+        phone_number=_resolve_order_mobile(conn, order_payload),
     )
     payload["transaction"] = {
         "transaction_id": _text((transaction or {}).get("transaction_id")),
@@ -725,7 +780,14 @@ def retry_order_delivery(order_id: int, delivery_id: str) -> dict[str, Any]:
             raise ExternalPushAdminError("只能重试 failed / retrying / gave_up 状态")
         config = _get_config(conn, int(delivery.get("config_id") or 0)) or {}
         product = _get_product(conn, int(delivery.get("product_id") or 0)) or _get_product_for_order(conn, order)
-        payload = _build_external_push_payload(EVENT_TRANSACTION_PAID, order, product, _public_config(config), delivery_id=delivery["delivery_id"])
+        payload = _build_external_push_payload(
+            EVENT_TRANSACTION_PAID,
+            order,
+            product,
+            _public_config(config),
+            delivery_id=delivery["delivery_id"],
+            phone_number=_resolve_order_mobile(conn, order),
+        )
         result = _attempt_delivery(conn, delivery, config=config, payload=payload)
         conn.commit()
         return result

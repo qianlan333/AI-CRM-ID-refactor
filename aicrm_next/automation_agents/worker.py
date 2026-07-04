@@ -10,6 +10,7 @@ from aicrm_next.ai_audience_ops.agent_gateway import generate_agent_reply
 from aicrm_next.ai_audience_ops.webhook_service import AudienceInboundWebhookService
 from aicrm_next.send_content.application import normalize_send_content_package
 from aicrm_next.shared.errors import ContractError
+from aicrm_next.shared.llm_output_guard import looks_like_prompt_output
 
 from .context_builder import build_agent_context, referenced_context_keys, render_chinese_placeholders
 from .repository import AutomationAgentRepository, build_automation_agent_repository, _text
@@ -162,9 +163,31 @@ class AutomationAgentWorker:
                 owner_userid=owner_userid,
                 prompt_preview=f"{rendered_role}\n\n{rendered_task}"[:1000],
             )
+        final_text = _text(gateway.final_text)
+        prompt_preview = f"{rendered_role}\n\n{rendered_task}"[:2000]
+        raw_prompt_leaked = looks_like_prompt_output(final_text, role_prompt=role_prompt, task_prompt=task_prompt)
+        rendered_prompt_leaked = looks_like_prompt_output(final_text, role_prompt=rendered_role, task_prompt=rendered_task)
+        if raw_prompt_leaked or rendered_prompt_leaked:
+            return self._fail(
+                item_id,
+                "llm_output_rejected",
+                "agent output looks like an unresolved prompt or template",
+                context=context,
+                owner_userid=owner_userid,
+                prompt_preview=prompt_preview[:1000],
+            )
+        if bool(agent.get("need_human_review")):
+            return self._fail(
+                item_id,
+                "human_review_required",
+                "agent requires human review before customer send",
+                context=context,
+                owner_userid=owner_userid,
+                prompt_preview=prompt_preview[:1000],
+            )
         fixed_package = agent.get("fixed_content_package_json") if isinstance(agent.get("fixed_content_package_json"), dict) else {}
         content_package = normalize_send_content_package(
-            {**fixed_package, "content_text": gateway.final_text},
+            {**fixed_package, "content_text": final_text},
             text_enabled=True,
             require_body=True,
         )
@@ -175,9 +198,9 @@ class AutomationAgentWorker:
             external_userid=external_userid,
             owner_userid=owner_userid,
             context=context,
-            prompt_preview=f"{rendered_role}\n\n{rendered_task}"[:2000],
-            raw_output=gateway.final_text,
-            content_text=gateway.final_text,
+            prompt_preview=prompt_preview,
+            raw_output=final_text,
+            content_text=final_text,
             content_package=content_package,
         )
 

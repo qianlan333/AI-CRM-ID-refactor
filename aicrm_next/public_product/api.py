@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+from typing import Any
 from urllib.parse import quote
 
 from fastapi import APIRouter, Request
@@ -9,6 +11,7 @@ from aicrm_next.commerce.domain import has_product_page_material
 from aicrm_next.commerce.product_code_aliases import canonical_product_code
 from aicrm_next.navigation_target.resolver import url_link_resolver_response
 from aicrm_next.shared.errors import NotFoundError
+from aicrm_next.shared.sync_request import read_request_body
 
 from .h5_wechat_pay import (
     checkout_page_state,
@@ -114,8 +117,14 @@ def h5_wechat_pay_product(path: str) -> JSONResponse:
 
 
 @router.post("/api/h5/wechat-pay/jsapi/orders", name="api.h5_wechat_pay_create_jsapi_order")
-async def h5_wechat_pay_create_jsapi_order(request: Request) -> JSONResponse:
-    payload = await request.json() if request.headers.get("content-type", "").startswith("application/json") else {}
+def h5_wechat_pay_create_jsapi_order(request: Request) -> JSONResponse:
+    payload: Any = {}
+    body = read_request_body(request)
+    if request.headers.get("content-type", "").startswith("application/json") and body:
+        try:
+            payload = json.loads(body.decode("utf-8"))
+        except Exception:
+            payload = {}
     return create_jsapi_order_response(request, payload if isinstance(payload, dict) else {})
 
 
@@ -156,8 +165,9 @@ def h5_public_product_image_variant(product_code: str, image_id: str, variant_ke
 
 
 @router.post("/api/h5/wechat-pay/notify", name="api.h5_wechat_pay_notify")
-async def h5_wechat_pay_notify(request: Request) -> JSONResponse:
-    return await notify_response(request)
+def h5_wechat_pay_notify(request: Request) -> JSONResponse:
+    body = read_request_body(request)
+    return notify_response(request, body)
 
 
 @router.options("/api/products/{path:path}", name="api.public_product_api_options")

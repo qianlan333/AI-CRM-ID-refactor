@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -17,9 +18,10 @@ from .platform_foundation.internal_events import register_payment_succeeded_cons
 from .questionnaire.repo import reset_questionnaire_fixture_state
 from .radar_links.repo import reset_radar_links_fixture_state
 from .router_registry import register_routers
+from .shared.errors import ApplicationError
 from .shared.repository_provider import RepositoryProviderError
 from .shared.release import current_release_sha
-from .shared.runtime import fixture_mode
+from .shared.runtime import assert_required_runtime_secrets, fixture_mode
 
 __all__ = [
     "app",
@@ -36,9 +38,11 @@ _FRONTEND_COMPAT_DIR = Path(__file__).resolve().parent / "frontend_compat"
 _GROUP_OPS_DIR = Path(__file__).resolve().parent / "automation_engine" / "group_ops"
 _AUTOMATION_ENGINE_DIR = Path(__file__).resolve().parent / "automation_engine"
 _CUSTOMER_TAGS_DIR = Path(__file__).resolve().parent / "customer_tags"
+logger = logging.getLogger(__name__)
 
 
 def create_app() -> FastAPI:
+    assert_required_runtime_secrets()
     app = FastAPI(title="AI-CRM Next", version="0.1.0")
     register_payment_succeeded_consumers()
     register_shadow_event_consumers()
@@ -57,6 +61,29 @@ def create_app() -> FastAPI:
                 "source_status": "production_unavailable",
                 "error_code": "fixture_repository_blocked_in_production",
                 "detail": str(exc),
+            },
+        )
+
+    @app.exception_handler(ApplicationError)
+    async def application_error_handler(request, exc):
+        return JSONResponse(
+            status_code=int(getattr(exc, "status_code", 400) or 400),
+            content={
+                "ok": False,
+                "error_code": _application_error_code(exc),
+                "detail": str(exc),
+            },
+        )
+
+    @app.exception_handler(Exception)
+    async def unhandled_error_handler(request, exc):
+        logger.exception("unhandled ai-crm next exception")
+        return JSONResponse(
+            status_code=500,
+            content={
+                "ok": False,
+                "error_code": "internal_server_error",
+                "detail": "internal server error",
             },
         )
 
@@ -95,6 +122,19 @@ def create_app() -> FastAPI:
     )
     register_routers(app)
     return app
+
+
+def _application_error_code(exc: ApplicationError) -> str:
+    name = type(exc).__name__
+    chars: list[str] = []
+    for index, char in enumerate(name):
+        if char.isupper() and index:
+            chars.append("_")
+        chars.append(char.lower())
+    error_code = "".join(chars)
+    if error_code.endswith("_error"):
+        error_code = error_code[: -len("_error")]
+    return error_code or "application_error"
 
 
 app = create_app()

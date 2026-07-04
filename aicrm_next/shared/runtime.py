@@ -41,6 +41,28 @@ def production_environment() -> bool:
     return bool(values & {"prod", "production"})
 
 
+def require_signing_secret(
+    env_key: str = "SECRET_KEY",
+    *,
+    local_fallback: str,
+    fallback_env_keys: tuple[str, ...] = (),
+) -> bytes:
+    for key in (env_key, *fallback_env_keys):
+        value = runtime_setting(key)
+        if value:
+            return value.encode("utf-8")
+    if production_environment():
+        keys = ", ".join((env_key, *fallback_env_keys))
+        raise RuntimeError(f"{keys} must be configured in production")
+    return local_fallback.encode("utf-8")
+
+
+def assert_required_runtime_secrets() -> None:
+    require_signing_secret("SECRET_KEY", local_fallback="aicrm-next-local-secret")
+    if production_environment():
+        require_signing_secret("WECHAT_SHOP_CALLBACK_TOKEN", local_fallback="")
+
+
 def production_repository_required() -> bool:
     return database_mode() == "postgres" or production_environment()
 
@@ -67,6 +89,8 @@ def runtime_health_state() -> dict:
         "ok": not degraded,
         "status": "degraded" if degraded else "ok",
         "service": "aicrm-next",
+        "secret_key_present": bool(runtime_setting("SECRET_KEY")),
+        "wechat_shop_callback_token_present": bool(runtime_setting("WECHAT_SHOP_CALLBACK_TOKEN")),
         "database": mode,
         "database_mode": mode,
         "fixture_mode": fixture,

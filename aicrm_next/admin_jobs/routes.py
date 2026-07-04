@@ -39,6 +39,7 @@ from .notification_settings import (
 from aicrm_next.admin_shell import admin_path_for, shell_context
 from aicrm_next.commerce.order_identity_repair import repair_missing_order_identities
 from aicrm_next.platform_foundation.legacy_cleanup.service import LegacyWebhookCleanupService
+from aicrm_next.shared.runtime import require_signing_secret
 
 router = APIRouter()
 
@@ -47,7 +48,11 @@ templates = Jinja2Templates(directory=_ADMIN_JOBS_TEMPLATE_DIR)
 
 
 def _secret_key() -> str:
-    return os.getenv("SECRET_KEY") or os.getenv("AICRM_NEXT_ACTION_TOKEN_SECRET") or "aicrm-next-dev-action-token"
+    return require_signing_secret(
+        "AICRM_NEXT_ACTION_TOKEN_SECRET",
+        fallback_env_keys=("SECRET_KEY",),
+        local_fallback="aicrm-next-dev-action-token",
+    ).decode("utf-8")
 
 
 def _sign(value: str) -> str:

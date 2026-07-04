@@ -127,6 +127,10 @@ def _json(response) -> dict[str, Any]:
     return payload if isinstance(payload, dict) else {}
 
 
+def _probe_headers(token: str, idempotency_key: str) -> dict[str, str]:
+    return {"Authorization": f"Bearer {token}", "Idempotency-Key": idempotency_key}
+
+
 def _noop_payload_ok(payload: dict[str, Any], *, expected_preview: bool | None = None) -> bool:
     if payload.get("ok") is not True:
         return False
@@ -209,13 +213,28 @@ def run_check() -> dict[str, Any]:
     with guardrail_probe_env():
         client = _client()
         token = os.getenv("AUTOMATION_INTERNAL_API_TOKEN", "probe-token")
-        headers = {"Authorization": f"Bearer {token}"}
         sentinel_before = _read_db_sentinel()
 
-        campaign_dry_run = client.post(CAMPAIGN_ROUTE, json={"dry_run": True, "batch_size": 1}, headers=headers)
-        campaign_preview = client.post(CAMPAIGN_ROUTE, json={"preview": True, "batch_size": 1}, headers=headers)
-        campaign_preview_endpoint = client.post(CAMPAIGN_PREVIEW_ROUTE, json={"batch_size": 1}, headers=headers)
-        campaign_without_allowlist = client.post(CAMPAIGN_ROUTE, json={"dry_run": False, "batch_size": 1, "max_dispatch_count": 1}, headers=headers)
+        campaign_dry_run = client.post(
+            CAMPAIGN_ROUTE,
+            json={"dry_run": True, "batch_size": 1},
+            headers=_probe_headers(token, "guardrail-campaign-dry-run"),
+        )
+        campaign_preview = client.post(
+            CAMPAIGN_ROUTE,
+            json={"preview": True, "batch_size": 1},
+            headers=_probe_headers(token, "guardrail-campaign-preview"),
+        )
+        campaign_preview_endpoint = client.post(
+            CAMPAIGN_PREVIEW_ROUTE,
+            json={"batch_size": 1},
+            headers=_probe_headers(token, "guardrail-campaign-preview-endpoint"),
+        )
+        campaign_without_allowlist = client.post(
+            CAMPAIGN_ROUTE,
+            json={"dry_run": False, "batch_size": 1, "max_dispatch_count": 1},
+            headers=_probe_headers(token, "guardrail-campaign-without-allowlist"),
+        )
 
         sentinel_after = _read_db_sentinel()
 

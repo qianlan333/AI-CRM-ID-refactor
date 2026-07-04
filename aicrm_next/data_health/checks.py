@@ -20,6 +20,10 @@ from .schema_drift import (
 
 
 ROOT = Path(__file__).resolve().parents[2]
+PROJECTION_FRESHNESS_MAX_MINUTES = int(os.getenv("AICRM_DATA_HEALTH_PROJECTION_FRESHNESS_MAX_MINUTES", "60") or 60)
+BROADCAST_BLOCKED_MAX_COUNT = int(os.getenv("AICRM_DATA_HEALTH_BROADCAST_BLOCKED_MAX_COUNT", "0") or 0)
+BROADCAST_RETRYABLE_DUE_MAX_COUNT = int(os.getenv("AICRM_DATA_HEALTH_BROADCAST_RETRYABLE_DUE_MAX_COUNT", "100") or 100)
+EXTERNAL_EFFECT_RETRYABLE_DUE_MAX_COUNT = int(os.getenv("AICRM_DATA_HEALTH_EXTERNAL_EFFECT_RETRYABLE_DUE_MAX_COUNT", "100") or 100)
 
 
 def run_all_checks() -> list[DataHealthCheckResult]:
@@ -159,6 +163,10 @@ def _db_backed_placeholder(check_id: str, title: str, source_tables: list[str]) 
     )
 
 
+def _db_unavailable_placeholder(check_id: str, title: str, source_tables: list[str]) -> DataHealthCheckResult:
+    return _db_backed_placeholder(check_id, title, source_tables)
+
+
 def _unionid_orphan_fact_guard() -> DataHealthCheckResult:
     return _db_backed_placeholder(
         "unionid_orphan_fact_guard",
@@ -231,26 +239,249 @@ def _identity_resolution_queue_backlog() -> DataHealthCheckResult:
 
 
 def _projection_freshness_customer_read_model() -> DataHealthCheckResult:
-    return _db_backed_placeholder(
-        "projection_freshness_customer_read_model",
-        "Customer read model projection freshness",
-        ["customer_list_index_next", "customer_detail_snapshot_next"],
+    check_id = "projection_freshness_customer_read_model"
+    title = "Customer read model projection freshness"
+    source_tables = ["customer_list_index_next", "customer_detail_snapshot_next"]
+    if not database_schema_available():
+        return _db_unavailable_placeholder(check_id, title, source_tables)
+    try:
+        with get_session_factory()() as session:
+            row = (
+                session.execute(
+                    text(
+                        """
+                        SELECT
+                            (SELECT COUNT(*) FROM customer_list_index_next) AS list_count,
+                            (SELECT COUNT(*) FROM customer_detail_snapshot_next) AS detail_count,
+                            EXTRACT(EPOCH FROM (
+                                CURRENT_TIMESTAMP - (SELECT MAX(updated_at) FROM customer_list_index_next)
+                            )) / 60 AS list_stale_minutes,
+                            EXTRACT(EPOCH FROM (
+                                CURRENT_TIMESTAMP - (SELECT MAX(updated_at) FROM customer_detail_snapshot_next)
+                            )) / 60 AS detail_stale_minutes
+                        """
+                    )
+                )
+                .mappings()
+                .first()
+                or {}
+            )
+    except Exception as exc:  # pragma: no cover - defensive health endpoint guard
+        return DataHealthCheckResult(
+            check_id=check_id,
+            title=title,
+            status="fail",
+            severity="red",
+            summary="Customer read model freshness check could not read the live projection tables.",
+            evidence={"error": type(exc).__name__, "message": str(exc)[:300]},
+            remediation="Verify customer read model migrations and DATABASE_URL read access.",
+        )
+
+    list_count = int(row.get("list_count") or 0)
+    detail_count = int(row.get("detail_count") or 0)
+    list_stale_minutes = float(row.get("list_stale_minutes") or 0)
+    detail_stale_minutes = float(row.get("detail_stale_minutes") or 0)
+    violations = []
+    if list_count <= 0:
+        violations.append("customer_list_index_next is empty")
+    if detail_count <= 0:
+        violations.append("customer_detail_snapshot_next is empty")
+    if list_stale_minutes > PROJECTION_FRESHNESS_MAX_MINUTES:
+        violations.append(f"list_stale_minutes={list_stale_minutes:.1f} exceeds {PROJECTION_FRESHNESS_MAX_MINUTES}")
+    if detail_stale_minutes > PROJECTION_FRESHNESS_MAX_MINUTES:
+        violations.append(f"detail_stale_minutes={detail_stale_minutes:.1f} exceeds {PROJECTION_FRESHNESS_MAX_MINUTES}")
+    evidence = {
+        "list_count": list_count,
+        "detail_count": detail_count,
+        "list_stale_minutes": list_stale_minutes,
+        "detail_stale_minutes": detail_stale_minutes,
+        "max_stale_minutes": PROJECTION_FRESHNESS_MAX_MINUTES,
+    }
+    if violations:
+        return DataHealthCheckResult(
+            check_id=check_id,
+            title=title,
+            status="fail",
+            severity="red",
+            summary="Customer read model projections are empty or stale.",
+            evidence={**evidence, "violations": violations},
+            remediation="Run the customer read model projection refresh and inspect failed projection jobs.",
+        )
+    return DataHealthCheckResult(
+        check_id=check_id,
+        title=title,
+        status="ok",
+        severity="green",
+        summary="Customer read model projections are populated and fresh.",
+        evidence=evidence,
+        remediation="",
     )
 
 
 def _broadcast_job_blocked_backlog() -> DataHealthCheckResult:
-    return _db_backed_placeholder(
-        "broadcast_job_blocked_backlog",
-        "Broadcast job blocked backlog",
-        ["broadcast_jobs", "broadcast_job_events"],
+    check_id = "broadcast_job_blocked_backlog"
+    title = "Broadcast job blocked backlog"
+    source_tables = ["broadcast_jobs", "broadcast_job_events"]
+    if not database_schema_available():
+        return _db_unavailable_placeholder(check_id, title, source_tables)
+    try:
+        with get_session_factory()() as session:
+            row = (
+                session.execute(
+                    text(
+                        """
+                        SELECT
+                            COUNT(*) FILTER (WHERE status = 'blocked') AS blocked_count,
+                            COUNT(*) FILTER (WHERE status = 'failed_terminal') AS failed_terminal_count,
+                            COUNT(*) FILTER (
+                                WHERE status = 'failed_retryable'
+                                  AND (next_retry_at IS NULL OR next_retry_at <= CURRENT_TIMESTAMP)
+                            ) AS due_retryable_count,
+                            EXTRACT(EPOCH FROM (
+                                CURRENT_TIMESTAMP - MIN(updated_at) FILTER (
+                                    WHERE status IN ('blocked', 'failed_terminal')
+                                )
+                            )) / 3600 AS oldest_terminal_hours
+                        FROM broadcast_jobs
+                        """
+                    )
+                )
+                .mappings()
+                .first()
+                or {}
+            )
+    except Exception as exc:  # pragma: no cover - defensive health endpoint guard
+        return DataHealthCheckResult(
+            check_id=check_id,
+            title=title,
+            status="fail",
+            severity="red",
+            summary="Broadcast backlog check could not read the live queue.",
+            evidence={"error": type(exc).__name__, "message": str(exc)[:300]},
+            remediation="Verify broadcast_jobs migrations and DATABASE_URL read access.",
+        )
+
+    blocked_count = int(row.get("blocked_count") or 0)
+    failed_terminal_count = int(row.get("failed_terminal_count") or 0)
+    due_retryable_count = int(row.get("due_retryable_count") or 0)
+    oldest_terminal_hours = float(row.get("oldest_terminal_hours") or 0)
+    violations = []
+    if blocked_count > BROADCAST_BLOCKED_MAX_COUNT:
+        violations.append(f"blocked_count={blocked_count} exceeds {BROADCAST_BLOCKED_MAX_COUNT}")
+    if failed_terminal_count > 0:
+        violations.append(f"failed_terminal_count={failed_terminal_count} exceeds 0")
+    if due_retryable_count > BROADCAST_RETRYABLE_DUE_MAX_COUNT:
+        violations.append(f"due_retryable_count={due_retryable_count} exceeds {BROADCAST_RETRYABLE_DUE_MAX_COUNT}")
+    evidence = {
+        "blocked_count": blocked_count,
+        "failed_terminal_count": failed_terminal_count,
+        "due_retryable_count": due_retryable_count,
+        "oldest_terminal_hours": oldest_terminal_hours,
+        "due_retryable_threshold": BROADCAST_RETRYABLE_DUE_MAX_COUNT,
+    }
+    if violations:
+        return DataHealthCheckResult(
+            check_id=check_id,
+            title=title,
+            status="fail",
+            severity="red",
+            summary="Broadcast queue has blocked, terminal, or excessive due retryable jobs.",
+            evidence={**evidence, "violations": violations},
+            remediation="Inspect broadcast_job_events, fix terminal causes, and requeue only after operator approval.",
+        )
+    return DataHealthCheckResult(
+        check_id=check_id,
+        title=title,
+        status="ok",
+        severity="green",
+        summary="Broadcast blocked backlog is within threshold.",
+        evidence=evidence,
+        remediation="",
     )
 
 
 def _external_effect_failed_retryable_backlog() -> DataHealthCheckResult:
-    return _db_backed_placeholder(
-        "external_effect_failed_retryable_backlog",
-        "External effect failed retryable backlog",
-        ["external_effect_job", "external_effect_attempt"],
+    check_id = "external_effect_failed_retryable_backlog"
+    title = "External effect failed retryable backlog"
+    source_tables = ["external_effect_job", "external_effect_attempt"]
+    if not database_schema_available():
+        return _db_unavailable_placeholder(check_id, title, source_tables)
+    try:
+        with get_session_factory()() as session:
+            row = (
+                session.execute(
+                    text(
+                        """
+                        SELECT
+                            COUNT(*) FILTER (WHERE status = 'failed_retryable') AS failed_retryable_count,
+                            COUNT(*) FILTER (WHERE status = 'failed_terminal') AS failed_terminal_count,
+                            COUNT(*) FILTER (WHERE status = 'blocked') AS blocked_count,
+                            COUNT(*) FILTER (
+                                WHERE status = 'failed_retryable'
+                                  AND (next_retry_at IS NULL OR next_retry_at <= CURRENT_TIMESTAMP)
+                            ) AS due_retryable_count,
+                            EXTRACT(EPOCH FROM (
+                                CURRENT_TIMESTAMP - MIN(COALESCE(next_retry_at, updated_at)) FILTER (
+                                    WHERE status = 'failed_retryable'
+                                )
+                            )) AS oldest_failed_retryable_age_seconds
+                        FROM external_effect_job
+                        """
+                    )
+                )
+                .mappings()
+                .first()
+                or {}
+            )
+    except Exception as exc:  # pragma: no cover - defensive health endpoint guard
+        return DataHealthCheckResult(
+            check_id=check_id,
+            title=title,
+            status="fail",
+            severity="red",
+            summary="External effect backlog check could not read the live queue.",
+            evidence={"error": type(exc).__name__, "message": str(exc)[:300]},
+            remediation="Verify external_effect_job migrations and DATABASE_URL read access.",
+        )
+
+    failed_retryable_count = int(row.get("failed_retryable_count") or 0)
+    failed_terminal_count = int(row.get("failed_terminal_count") or 0)
+    blocked_count = int(row.get("blocked_count") or 0)
+    due_retryable_count = int(row.get("due_retryable_count") or 0)
+    oldest_failed_retryable_age_seconds = int(float(row.get("oldest_failed_retryable_age_seconds") or 0))
+    violations = []
+    if failed_terminal_count > 0:
+        violations.append(f"failed_terminal_count={failed_terminal_count} exceeds 0")
+    if blocked_count > 0:
+        violations.append(f"blocked_count={blocked_count} exceeds 0")
+    if due_retryable_count > EXTERNAL_EFFECT_RETRYABLE_DUE_MAX_COUNT:
+        violations.append(f"due_retryable_count={due_retryable_count} exceeds {EXTERNAL_EFFECT_RETRYABLE_DUE_MAX_COUNT}")
+    evidence = {
+        "failed_retryable_count": failed_retryable_count,
+        "failed_terminal_count": failed_terminal_count,
+        "blocked_count": blocked_count,
+        "due_retryable_count": due_retryable_count,
+        "oldest_failed_retryable_age_seconds": oldest_failed_retryable_age_seconds,
+        "due_retryable_threshold": EXTERNAL_EFFECT_RETRYABLE_DUE_MAX_COUNT,
+    }
+    if violations:
+        return DataHealthCheckResult(
+            check_id=check_id,
+            title=title,
+            status="fail",
+            severity="red",
+            summary="External effect queue has blocked, terminal, or excessive due retryable jobs.",
+            evidence={**evidence, "violations": violations},
+            remediation="Inspect external_effect_attempt, repair adapter/runtime failures, and requeue explicitly.",
+        )
+    return DataHealthCheckResult(
+        check_id=check_id,
+        title=title,
+        status="ok",
+        severity="green",
+        summary="External effect retryable backlog is within threshold.",
+        evidence=evidence,
+        remediation="",
     )
 
 

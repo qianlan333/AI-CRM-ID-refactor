@@ -8,6 +8,8 @@ from fastapi import APIRouter, Request
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 
+from aicrm_next.shared.sync_request import read_request_body
+
 from .refresh_service import AudienceRefreshService
 from .schemas import (
     InboundWebhookRequest,
@@ -235,8 +237,8 @@ async def pause_subscription(subscription_id: int, request: Request) -> JSONResp
 
 
 @router.post("/api/ai/audience/packages/{package_key}/webhook", name="api.ai_audience_inbound_webhook")
-async def inbound_webhook(package_key: str, request: Request) -> JSONResponse:
-    raw_body = await request.body()
+def inbound_webhook(package_key: str, request: Request) -> JSONResponse:
+    raw_body = read_request_body(request)
     try:
         payload = json.loads(raw_body.decode("utf-8")) if raw_body else {}
         parsed = InboundWebhookRequest(**(payload if isinstance(payload, dict) else {}))
@@ -252,10 +254,11 @@ async def inbound_webhook(package_key: str, request: Request) -> JSONResponse:
 
 
 @router.post("/api/ai/audience/test-agent/webhook", name="api.ai_audience_test_agent_webhook")
-async def test_agent_webhook(request: Request) -> JSONResponse:
+def test_agent_webhook(request: Request) -> JSONResponse:
+    raw_body = read_request_body(request)
     try:
         try:
-            payload = await request.json()
+            payload = json.loads(raw_body.decode("utf-8")) if raw_body else {}
         except Exception:
             payload = {}
         result = AudienceTestAgentService().handle(

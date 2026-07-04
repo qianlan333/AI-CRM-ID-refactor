@@ -13,6 +13,7 @@ from urllib.parse import quote
 from werkzeug.security import check_password_hash
 
 from aicrm_next.admin_shell import admin_path_for
+from aicrm_next.shared.runtime import require_signing_secret
 
 
 SESSION_COOKIE = "aicrm_next_admin_session"
@@ -162,7 +163,7 @@ def authenticate_break_glass(*, username: str, password: str) -> AuthResult:
 
 
 def _secret() -> bytes:
-    return (normalize_text(os.getenv("SECRET_KEY")) or "aicrm-next-admin-auth-local-secret").encode("utf-8")
+    return require_signing_secret("SECRET_KEY", local_fallback="aicrm-next-admin-auth-local-secret")
 
 
 def _b64(data: bytes) -> str:
