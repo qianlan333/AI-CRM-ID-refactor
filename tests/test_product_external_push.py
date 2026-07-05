@@ -108,6 +108,7 @@ def test_external_push_payload_masks_stored_body_but_sends_full_payload():
     )
 
     assert payload["phone_number"] == "13800000000"
+    assert payload["buyer"]["openid"] == "open***push"
     assert payload["buyer"]["unionid"] == "unionid_product_push"
     assert payload["submitted_at"] == "2026-06-01T15:30:10+08:00"
     redacted = external_push_admin._redact_sensitive_fields(payload)
@@ -116,6 +117,27 @@ def test_external_push_payload_masks_stored_body_but_sends_full_payload():
     assert redacted["buyer"]["unionid"] == "unio***push"
     assert "config" not in redacted
     assert "tenant" not in redacted
+
+
+def test_external_push_payload_resolves_openid_from_order_metadata_without_legacy_column():
+    payload = external_push_admin._build_external_push_payload(
+        "transaction.paid",
+        {
+            "id": 8,
+            "out_trade_no": "WXP_METADATA_PUSH",
+            "amount_total": 6900,
+            "paid_at": "2026-06-01T07:30:10+00:00",
+            "unionid": "unionid_metadata_push",
+            "external_userid": "wm_metadata_push",
+            "metadata_json": {"buyer_identity": {"openid": "openid_from_metadata", "mobile": "13900000000"}},
+        },
+        {"id": 4, "product_code": "subscription_trial_month", "name": "外推商品", "amount_total": 6900},
+        {"push_type": "premium", "day": 31, "frequency": 3, "remark": "69元1个月续费"},
+        delivery_id="deliv_metadata_push",
+    )
+
+    assert payload["buyer"]["openid"] == "open***data"
+    assert payload["phone_number"] == "13900000000"
 
 
 def test_external_push_payload_can_resolve_mobile_from_identity_table() -> None:

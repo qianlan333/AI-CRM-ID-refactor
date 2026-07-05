@@ -231,6 +231,7 @@ def _context_for_external_userid(
     external_userid: str,
     *,
     owner_userid: str = "",
+    require_owner_scope: bool = False,
     recent_message_limit: int = 20,
     timeline_limit: int = 20,
     customer_repo: CustomerReadRepository | None = None,
@@ -240,6 +241,7 @@ def _context_for_external_userid(
         CustomerContextRequest(
             external_userid=external_userid,
             owner_userid=owner_userid or None,
+            require_owner_scope=require_owner_scope,
             recent_message_limit=recent_message_limit,
             timeline_limit=timeline_limit,
         )
@@ -271,6 +273,7 @@ def _sidebar_context_or_response(
         context = _context_for_external_userid(
             external_userid,
             owner_userid=owner_userid,
+            require_owner_scope=True,
             customer_repo=customer_repo,
             live_source_repo=live_source_repo,
         )
@@ -295,11 +298,12 @@ def _verify_sidebar_owner_scope(
     owner_userid: str = "",
 ) -> None:
     if not str(owner_userid or "").strip():
-        return
+        raise ValueError("owner_userid is required")
     context_query(
         CustomerContextRequest(
             external_userid=external_userid,
             owner_userid=str(owner_userid or "").strip(),
+            require_owner_scope=True,
             recent_message_limit=1,
             timeline_limit=1,
         )
@@ -479,6 +483,7 @@ def get_sidebar_customer_context(
         context = _context_for_external_userid(
             resolved_external_userid,
             owner_userid=str(owner_userid or "").strip(),
+            require_owner_scope=True,
             customer_repo=customer_repo,
             live_source_repo=live_source_repo,
         )
@@ -524,6 +529,7 @@ def get_sidebar_profile(
         external_userid=external_userid,
         user_id=user_id,
         owner_userid=owner_userid,
+        require_owner_scope=True,
     )
     return JSONResponse(jsonable_encoder(result), status_code=_status_code(result))
 
@@ -540,6 +546,7 @@ def get_sidebar_tags(
         external_userid=external_userid,
         user_id=user_id,
         owner_userid=owner_userid,
+        require_owner_scope=True,
     )
     return JSONResponse(jsonable_encoder(result), status_code=_status_code(result))
 
@@ -794,6 +801,7 @@ def get_sidebar_v2_other_staff_messages(
             CustomerContextRequest(
                 external_userid=str(external_userid or "").strip(),
                 owner_userid=scoped_userid or None,
+                require_owner_scope=True,
                 recent_message_limit=1,
                 timeline_limit=1,
             )
@@ -817,15 +825,24 @@ def get_sidebar_v2_products(
     external_userid: str | None = None,
     owner_userid: str | None = None,
     bind_by_userid: str | None = None,
+    db: Session = Depends(get_db),
 ):
     if not str(external_userid or "").strip():
         return _sidebar_input_error("external_userid is required")
     try:
-        payload = SidebarCommerceReadModel().products(
+        context_query, live_source_repo = _request_scoped_customer_context_query(db)
+        _verify_sidebar_owner_scope(
+            context_query,
+            external_userid=str(external_userid or "").strip(),
+            owner_userid=str(owner_userid or "").strip(),
+        )
+        payload = SidebarCommerceReadModel(context_query=context_query, live_source_repo=live_source_repo).products(
             external_userid=str(external_userid or "").strip(),
             owner_userid=str(owner_userid or "").strip(),
             bind_by_userid=str(bind_by_userid or "").strip(),
         )
+    except NotFoundError as exc:
+        return _sidebar_lookup_error(str(exc) or "customer not found")
     except ValueError as exc:
         return _sidebar_input_error(str(exc))
     except Exception as exc:

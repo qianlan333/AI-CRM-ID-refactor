@@ -7,6 +7,7 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 MIGRATION = ROOT / "migrations" / "versions" / "0088_channel_entry_identity_best_effort.py"
+BACKOFF_MIGRATION = ROOT / "migrations" / "versions" / "0092_channel_entry_runtime_identity_backoff.py"
 LIFECYCLE_MANIFEST = ROOT / "docs" / "architecture" / "data_table_lifecycle_manifest.yml"
 REPOSITORY_OWNERSHIP = ROOT / "docs" / "architecture" / "repository_ownership.yml"
 
@@ -45,10 +46,22 @@ def test_channel_entry_identity_best_effort_runtime_table_is_governed() -> None:
     assert runtime_entry["lifecycle"] == "queue"
     assert runtime_entry["write_owner"] == "aicrm_next.channel_entry.repo"
     assert "aicrm_next.channel_entry.repo" in runtime_entry["read_owners"]
-    assert runtime_entry["migration_source"] == "0088_channel_entry_identity_best_effort"
+    assert runtime_entry["migration_source"].startswith("0088_channel_entry_identity_best_effort")
+    assert "0092_channel_entry_runtime_identity_backoff" in runtime_entry["migration_source"]
     assert runtime_entry["pii_level"] == "internal_contact"
 
     registry = yaml.safe_load(REPOSITORY_OWNERSHIP.read_text(encoding="utf-8"))
     channel_entry_repo = registry["repositories"]["aicrm_next/channel_entry/repo.py"]
 
     assert "automation_channel_entry_runtime" in channel_entry_repo["table_writes"]
+
+
+def test_channel_entry_runtime_identity_backoff_migration_adds_due_controls() -> None:
+    sql = BACKOFF_MIGRATION.read_text(encoding="utf-8")
+
+    assert "Revision ID: 0092_channel_entry_runtime_identity_backoff" in sql
+    assert 'down_revision = "0091_retire_wechat_pay_order_identity_repair"' in sql
+    assert "ADD COLUMN IF NOT EXISTS identity_attempt_count INTEGER NOT NULL DEFAULT 0" in sql
+    assert "ADD COLUMN IF NOT EXISTS identity_next_attempt_at TIMESTAMPTZ" in sql
+    assert "ADD COLUMN IF NOT EXISTS identity_last_error TEXT NOT NULL DEFAULT ''" in sql
+    assert "idx_channel_entry_runtime_identity_due" in sql

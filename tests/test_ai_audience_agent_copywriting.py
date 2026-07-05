@@ -15,6 +15,8 @@ def _session_factory():
 
 def _ensure_agent_schema() -> None:
     statements = [
+        "CREATE TABLE IF NOT EXISTS automation_agent_output (id BIGSERIAL PRIMARY KEY)",
+        "CREATE TABLE IF NOT EXISTS automation_agent_llm_call_log (id BIGSERIAL PRIMARY KEY)",
         "ALTER TABLE automation_agent_config ADD COLUMN IF NOT EXISTS published_role_prompt TEXT NOT NULL DEFAULT ''",
         "ALTER TABLE automation_agent_config ADD COLUMN IF NOT EXISTS published_task_prompt TEXT NOT NULL DEFAULT ''",
         "ALTER TABLE automation_agent_config ADD COLUMN IF NOT EXISTS published_variables_json JSONB NOT NULL DEFAULT '[]'::jsonb",
@@ -86,6 +88,10 @@ def _ensure_agent_schema() -> None:
 
 def _seed_agent(agent_code: str = "ai_audience_agent", *, role_prompt: str = "你是私域运营助手", task_prompt: str = "需求={{questionnaire.answers.need}}") -> None:
     with _session_factory()() as session:
+        session.execute(text("DELETE FROM automation_agent_output"))
+        session.execute(text("DELETE FROM automation_agent_llm_call_log"))
+        session.execute(text("DELETE FROM automation_agent_run"))
+        session.execute(text("DELETE FROM automation_agent_config WHERE agent_code = :agent_code"), {"agent_code": agent_code})
         session.execute(
             text(
                 """
@@ -94,10 +100,6 @@ def _seed_agent(agent_code: str = "ai_audience_agent", *, role_prompt: str = "�
                     published_variables_json, published_output_schema_json, published_version
                 )
                 VALUES (:agent_code, :agent_code, TRUE, :role_prompt, :task_prompt, '[]'::jsonb, '[]'::jsonb, 1)
-                ON CONFLICT (agent_code) DO UPDATE
-                SET published_role_prompt = EXCLUDED.published_role_prompt,
-                    published_task_prompt = EXCLUDED.published_task_prompt,
-                    published_version = EXCLUDED.published_version
                 """
             ),
             {"agent_code": agent_code, "role_prompt": role_prompt, "task_prompt": task_prompt},
@@ -125,7 +127,11 @@ def _member_event() -> dict:
 
 def _count(table: str) -> int:
     with _session_factory()() as session:
-        return int(session.execute(text(f"SELECT COUNT(*) FROM {table}")).scalar() or 0)
+        try:
+            return int(session.execute(text(f"SELECT COUNT(*) FROM {table}")).scalar() or 0)
+        except Exception:
+            session.rollback()
+            return 0
 
 
 def _latest(table: str) -> dict:

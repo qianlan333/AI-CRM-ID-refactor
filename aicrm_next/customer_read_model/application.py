@@ -157,42 +157,25 @@ def _customer_identity_key(query: CustomerDetailRequest | CustomerTimelineReques
 
 
 def _customer_owner_candidates(customer: JsonDict) -> set[str]:
-    candidates = {
-        str(customer.get("owner_userid") or "").strip(),
-        str(customer.get("primary_owner_userid") or "").strip(),
-    }
+    candidates = {str(customer.get(key) or "").strip() for key in ("owner_userid", "primary_owner_userid")}
+    nested_keys = ("owner_userid", "primary_owner_userid", "last_owner_userid", "first_owner_userid", "follow_user_userid")
     for field in ("binding", "identity", "contact"):
         value = customer.get(field)
         if isinstance(value, dict):
-            candidates.update(
-                {
-                    str(value.get("owner_userid") or "").strip(),
-                    str(value.get("primary_owner_userid") or "").strip(),
-                    str(value.get("last_owner_userid") or "").strip(),
-                    str(value.get("first_owner_userid") or "").strip(),
-                    str(value.get("follow_user_userid") or "").strip(),
-                }
-            )
+            candidates.update(str(value.get(key) or "").strip() for key in nested_keys)
     follow_users = customer.get("follow_users")
     if isinstance(follow_users, list):
         for item in follow_users:
             if isinstance(item, dict):
-                candidates.update(
-                    {
-                        str(item.get("userid") or "").strip(),
-                        str(item.get("user_id") or "").strip(),
-                        str(item.get("owner_userid") or "").strip(),
-                    }
-                )
+                candidates.update(str(item.get(key) or "").strip() for key in ("userid", "user_id", "owner_userid"))
     return {item for item in candidates if item}
 
 
-def _assert_customer_owner_scope(customer: JsonDict, owner_userid: str | None) -> None:
+def _assert_customer_owner_scope(customer: JsonDict, owner_userid: str | None, *, require_owner: bool = False) -> None:
     requested_owner = str(owner_userid or "").strip()
-    if not requested_owner:
+    if (requested_owner and requested_owner in _customer_owner_candidates(customer)) or (not requested_owner and not require_owner):
         return
-    if requested_owner not in _customer_owner_candidates(customer):
-        raise NotFoundError("customer not found")
+    raise NotFoundError("customer not found")
 
 
 def _repo_get_customer_by_request(repo: CustomerReadRepository, query: CustomerDetailRequest) -> JsonDict | None:
@@ -1130,7 +1113,7 @@ class GetCustomerContextQuery:
                 if not detail.get("ok"):
                     raise RuntimeError(str(detail.get("page_error") or detail.get("error_code") or "customer detail unavailable"))
                 customer = dict(detail.get("customer") or {})
-                _assert_customer_owner_scope(customer, query.owner_userid)
+                _assert_customer_owner_scope(customer, query.owner_userid, require_owner=query.require_owner_scope)
                 unionid = unionid or str(customer.get("unionid") or "").strip()
                 external_userid = external_userid or str(customer.get("external_userid") or customer.get("user_id") or "").strip()
                 timeline_payload = GetCustomerTimelineQuery(repo, live_source_repo=self._live_source_repo)(
@@ -1178,7 +1161,7 @@ class GetCustomerContextQuery:
                 CustomerDetailRequest(unionid=unionid or None, external_userid=external_userid or None)
             )
             customer = dict(detail.get("customer") or {})
-            _assert_customer_owner_scope(customer, query.owner_userid)
+            _assert_customer_owner_scope(customer, query.owner_userid, require_owner=query.require_owner_scope)
             unionid = unionid or str(customer.get("unionid") or "").strip()
             external_userid = external_userid or str(customer.get("external_userid") or customer.get("user_id") or "").strip()
             timeline = GetCustomerTimelineQuery(repo, live_source_repo=self._live_source_repo)(
@@ -1220,6 +1203,7 @@ class GetAdminCustomerProfileQuery:
         mobile: str | None = None,
         user_id: str | None = None,
         owner_userid: str | None = None,
+        require_owner_scope: bool = False,
     ) -> JsonDict:
         resolved_unionid = str(unionid or "").strip()
         resolved_external_userid = str(external_userid or user_id or "").strip()
@@ -1233,6 +1217,7 @@ class GetAdminCustomerProfileQuery:
             mobile=resolved_mobile or None,
             user_id=str(user_id or "").strip() or None,
             owner_userid=str(owner_userid or "").strip() or None,
+            require_owner_scope=bool(require_owner_scope),
         )
         try:
             context = self._context_query(request)
@@ -1278,6 +1263,7 @@ class GetAdminCustomerProfileTagsQuery:
         external_userid: str | None = None,
         user_id: str | None = None,
         owner_userid: str | None = None,
+        require_owner_scope: bool = False,
     ) -> JsonDict:
         resolved_unionid = str(unionid or "").strip()
         resolved_external_userid = str(external_userid or user_id or "").strip()
@@ -1291,6 +1277,7 @@ class GetAdminCustomerProfileTagsQuery:
                     external_userid=resolved_external_userid,
                     user_id=str(user_id or "").strip() or None,
                     owner_userid=str(owner_userid or "").strip() or None,
+                    require_owner_scope=bool(require_owner_scope),
                 )
             )
         except NotFoundError:

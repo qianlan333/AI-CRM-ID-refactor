@@ -90,7 +90,7 @@ def test_sidebar_and_profile_readonly_routes_reuse_customer_context_query(monkey
     monkeypatch.setattr(customer_application, "GetCustomerContextQuery", FakeGetCustomerContextQuery)
     client = TestClient(create_app())
 
-    sidebar_response = client.get("/api/sidebar/customer-context?external_userid=wx_ext_001")
+    sidebar_response = client.get("/api/sidebar/customer-context?external_userid=wx_ext_001&owner_userid=ZhaoYanFang")
     profile_response = client.get("/api/admin/customers/profile?external_userid=wx_ext_001")
     tags_response = client.get("/api/admin/customers/profile/tags?external_userid=wx_ext_001")
 

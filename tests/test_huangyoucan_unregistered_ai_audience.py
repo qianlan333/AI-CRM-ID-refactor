@@ -122,6 +122,9 @@ def test_huangyoucan_unregistered_package_refresh_filters_registered_identities(
 
     publish_resp = next_client.post(f"/api/ai/audience/packages/{package_id}/publish", headers=_auth(), json={})
     assert publish_resp.status_code == 200, publish_resp.text
+    publish_body = publish_resp.json()
+    assert publish_body["launch_refresh"]["ok"] is True
+    assert publish_body["launch_refresh"]["entered_count"] == 1
 
     refresh_resp = next_client.post(
         f"/api/ai/audience/packages/{package_id}/refresh",
@@ -131,22 +134,26 @@ def test_huangyoucan_unregistered_package_refresh_filters_registered_identities(
     assert refresh_resp.status_code == 200, refresh_resp.text
     body = refresh_resp.json()
     assert body["ok"] is True
-    assert body["entered_count"] == 1
+    assert body["returned_count"] == 1
+    assert body["entered_count"] == 0
     assert body["real_external_call_executed"] is False
 
     with session_factory() as session:
         rows = session.execute(
             text(
                 """
-                SELECT external_userid, payload_json
+                SELECT identity_type, identity_value, unionid, payload_json
                 FROM ai_audience_member_current
                 WHERE package_id = :package_id AND status = 'active'
-                ORDER BY external_userid
+                ORDER BY identity_value
                 """
             ),
             {"package_id": package_id},
         ).mappings().all()
 
-    assert [row["external_userid"] for row in rows] == ["wm_new"]
+    assert [row["identity_type"] for row in rows] == ["unionid"]
+    assert [row["identity_value"] for row in rows] == ["union_new"]
+    assert [row["unionid"] for row in rows] == ["union_new"]
+    assert rows[0]["payload_json"]["external_userid"] == "wm_new"
     assert rows[0]["payload_json"]["registered_mobile_match"] is False
     assert rows[0]["payload_json"]["registered_unionid_match"] is False

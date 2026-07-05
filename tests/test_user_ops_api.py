@@ -104,7 +104,7 @@ def test_user_ops_batch_send_preview_supports_ai_audience_package_source(next_cl
             text(
                 """
                 INSERT INTO crm_user_identity (
-                    unionid, primary_external_userid, external_userids_json, profile_json, status, created_at, updated_at
+                    unionid, primary_external_userid, external_userids_json, profile_json, identity_status, created_at, updated_at
                 )
                 VALUES
                     ('union_ai_priority', 'wm_priority', '["wm_priority"]'::jsonb, '{"name":"优先客户"}'::jsonb, 'active', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
@@ -113,6 +113,7 @@ def test_user_ops_batch_send_preview_supports_ai_audience_package_source(next_cl
                     primary_external_userid = EXCLUDED.primary_external_userid,
                     external_userids_json = EXCLUDED.external_userids_json,
                     profile_json = EXCLUDED.profile_json,
+                    identity_status = EXCLUDED.identity_status,
                     updated_at = CURRENT_TIMESTAMP
                 """
             )

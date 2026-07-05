@@ -208,19 +208,19 @@ class PostgresIdentityBridgeRepository:
                 updated_at
             ) VALUES (
                 ?,
-                CASE WHEN ? = '' THEN '[]'::jsonb ELSE jsonb_build_array(?) END,
-                jsonb_build_array(?),
+                CASE WHEN CAST(? AS text) = '' THEN '[]'::jsonb ELSE jsonb_build_array(CAST(? AS text)) END,
+                jsonb_build_array(CAST(? AS text)),
                 ?,
                 ?,
                 ?,
                 jsonb_strip_nulls(jsonb_build_object(
                     'name', NULLIF(?, ''),
                     'avatar', NULLIF(?, ''),
-                    'gender', ?,
-                    'type', ?,
+                    'gender', CAST(? AS text),
+                    'type', CAST(? AS text),
                     'raw_profile', ?::jsonb
                 )),
-                CASE WHEN ? = '' THEN '[]'::jsonb ELSE jsonb_build_array(jsonb_build_object('userid', ?)) END,
+                CASE WHEN CAST(? AS text) = '' THEN '[]'::jsonb ELSE jsonb_build_array(jsonb_build_object('userid', CAST(? AS text))) END,
                 ?,
                 ?,
                 ?,
@@ -228,7 +228,6 @@ class PostgresIdentityBridgeRepository:
                 NOW(),
                 NOW(),
                 jsonb_build_object('wecom_external_contact_detail', TRUE),
-                NOW(),
                 NOW(),
                 NOW(),
                 NOW(),
@@ -353,7 +352,7 @@ class PostgresIdentityBridgeRepository:
             """
             UPDATE crm_user_identity_resolution_queue
             SET status = 'resolved',
-                payload_json = payload_json || jsonb_build_object('resolved_unionid', ?),
+                payload_json = payload_json || jsonb_build_object('resolved_unionid', CAST(? AS text)),
                 resolved_unionid = ?,
                 resolved_at = NOW(),
                 last_seen_at = NOW(),

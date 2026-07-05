@@ -155,6 +155,7 @@ def sidebar_contact_binding_status(
     result = GetSidebarContactBindingStatusQuery()(
         external_userid=external_userid,
         owner_userid=owner_userid,
+        require_owner_scope=True,
     )
     status_code = int(result.pop("status_code", 200) or 200)
     return JSONResponse(result, status_code=status_code)
@@ -168,6 +169,7 @@ def sidebar_binding_status(
     result = GetSidebarContactBindingStatusQuery()(
         external_userid=external_userid,
         owner_userid=owner_userid,
+        require_owner_scope=True,
     )
     status_code = int(result.pop("status_code", 200) or 200)
     return JSONResponse(result, status_code=status_code)

@@ -22,6 +22,8 @@ SELECT 'external_userid' AS identity_type,
     'huangyoucan_unregistered:' || wc.external_userid AS event_source_key,
     jsonb_build_object(
         'audience_key', 'huangyoucan_wecom_unregistered',
+        'external_userid', wc.external_userid,
+        'unionid', wc.unionid,
         'owner_userid', wc.owner_userid,
         'customer_name', wc.customer_name,
         'has_mobile_hash', COALESCE(wc.mobile_hash, '') <> '',
@@ -30,6 +32,7 @@ SELECT 'external_userid' AS identity_type,
         'registered_unionid_match', false
     ) AS payload_json,
     wc.external_userid,
+    wc.unionid,
     wc.mobile_hash,
     wc.owner_userid,
     wc.updated_at AS event_at

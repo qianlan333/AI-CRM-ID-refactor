@@ -219,6 +219,17 @@ def _metadata_mobile(order: dict[str, Any]) -> str:
     return ""
 
 
+def _metadata_openid(order: dict[str, Any]) -> str:
+    metadata = _json_object(order.get("metadata_json"))
+    for key in ("payer_identity", "buyer_identity"):
+        identity = metadata.get(key)
+        if isinstance(identity, dict):
+            openid = _normalized_text(identity.get("openid"))
+            if openid:
+                return openid
+    return ""
+
+
 def _resolve_order_mobile(repository: Any | None, order: dict[str, Any]) -> str:
     mobile = _metadata_mobile(order)
     if mobile or repository is None:
@@ -227,6 +238,10 @@ def _resolve_order_mobile(repository: Any | None, order: dict[str, Any]) -> str:
     if not unionid or not hasattr(repository, "resolve_identity_mobile_by_unionid"):
         return ""
     return _normalized_text(repository.resolve_identity_mobile_by_unionid(unionid))
+
+
+def _resolve_order_openid(order: dict[str, Any]) -> str:
+    return _normalized_text(order.get("payer_openid")) or _metadata_openid(order)
 
 
 def build_external_push_payload(
@@ -281,7 +296,7 @@ def build_external_push_payload(
         "product": product_payload,
         "buyer": {
             "id": _normalized_text(order.get("external_userid") or order.get("userid_snapshot") or order.get("respondent_key")),
-            "openid": _mask_openid(order.get("payer_openid")),
+            "openid": _mask_openid(_resolve_order_openid(order)),
             "unionid": _normalized_text(order.get("unionid")),
             "phone": resolved_phone,
         },

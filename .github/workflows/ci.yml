@@ -68,6 +68,9 @@ jobs:
         timeout-minutes: 15
 
       - name: Run full pytest regression
+        env:
+          DATABASE_URL: postgresql://test:test@localhost:5432/test
+          AICRM_PYTEST_FIXTURE_DEFAULT: "1"
         run: python -m pytest tests/ -n auto --dist=loadfile -v --tb=short --timeout=120 --timeout-method=thread
         timeout-minutes: 45
 

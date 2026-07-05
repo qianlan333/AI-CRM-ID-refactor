@@ -1401,9 +1401,6 @@ class PostgresCloudPlanRepository:
             return {"status": "skipped", "reason": "missing_external_userid"}
         if not normalized_owner:
             return {"status": "skipped", "reason": "missing_owner_userid"}
-        normalized_unionid = self._resolve_fixture_unionid_by_external_userid(normalized_external_userid)
-        if not normalized_unionid:
-            return {"status": "skipped", "reason": "identity_pending_unionid"}
         plan_id = _agent_plan_id(normalized_event_id)
         content_payload = _content_payload_for_package(content_package)
         with self._connect() as conn:

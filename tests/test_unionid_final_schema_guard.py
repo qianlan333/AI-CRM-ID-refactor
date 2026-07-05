@@ -21,6 +21,7 @@ LEGACY_IDENTITY_COLUMN_NAMES = (
 )
 
 ALLOWED_FINAL_LEGACY_IDENTITY_COLUMNS = {
+    "automation_channel_entry_runtime.external_userid",
     "crm_user_identity_conflicts.external_userid",
     "crm_user_identity_conflicts.openid",
     "crm_user_identity_resolution_queue.external_userid",
@@ -33,6 +34,7 @@ ALLOWED_FINAL_LEGACY_IDENTITY_COLUMNS = {
 }
 
 BOUNDARY_PREFIXES = (
+    "automation_channel_entry_runtime.",
     "crm_user_identity_",
     "external_contact_bindings.",
     "wecom_external_contact_",

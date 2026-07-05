@@ -85,18 +85,23 @@ def test_get_pool_settings_redacts_database_url_and_uses_env(monkeypatch) -> Non
     assert "user" not in str(settings)
 
 
-def test_engine_initialization_log_does_not_include_database_secret(monkeypatch, caplog) -> None:
+def test_engine_initialization_log_does_not_include_database_secret(monkeypatch) -> None:
     class FakeEngine:
         def dispose(self) -> None:
             pass
 
+    logs: list[str] = []
+
+    def fake_info(message: str, *args, **kwargs) -> None:
+        logs.append(message % args)
+
     monkeypatch.setattr(db_session, "create_engine", lambda url, **kwargs: FakeEngine())
+    monkeypatch.setattr(db_session.LOGGER, "info", fake_info)
     monkeypatch.setenv("DB_APPLICATION_NAME", "aicrm-next-test")
 
-    with caplog.at_level(logging.INFO):
-        db_session.get_engine("postgresql://user:super-secret@db.internal:5432/aicrm")
+    db_session.get_engine("postgresql://user:super-secret@db.internal:5432/aicrm")
 
-    log_text = "\n".join(record.getMessage() for record in caplog.records)
+    log_text = "\n".join(logs)
     assert "initializing SQLAlchemy engine" in log_text
     assert "aicrm-next-test" in log_text
     assert "super-secret" not in log_text

@@ -4,6 +4,7 @@ import hashlib
 from typing import Any, Callable
 
 from aicrm_next.automation_engine.group_ops.message_content import normalize_miniprogram_attachment_payload
+from aicrm_next.platform_foundation.external_effects.execution_gates import explicit_wecom_execution_disabled
 from aicrm_next.shared.runtime_settings import runtime_bool, runtime_setting
 
 from .audit import record_audit_event
@@ -14,6 +15,8 @@ Json = dict[str, Any]
 
 
 def _mode() -> str:
+    if explicit_wecom_execution_disabled():
+        return "disabled"
     value = str(runtime_setting("AICRM_WECOM_PRIVATE_ADAPTER_MODE") or runtime_setting("AICRM_WECOM_GROUP_ADAPTER_MODE") or "").strip().lower()
     return value if value in {"disabled", "fake", "staging", "production"} else "disabled"
 

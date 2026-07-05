@@ -488,7 +488,7 @@ tables:
     runtime_entrypoints:
       - channel entry callback runtime buffer
       - unresolved channel entry identity reconciliation
-    migration_source: 0088_channel_entry_identity_best_effort
+    migration_source: 0088_channel_entry_identity_best_effort, hardened by 0092_channel_entry_runtime_identity_backoff
     pii_level: internal_contact
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py

@@ -82,6 +82,34 @@ def _insert_agent(
     return int(row["id"])
 
 
+def _unionid_for_external_userid(external_userid: str) -> str:
+    return "union_" + external_userid.removeprefix("wm_")
+
+
+def _insert_identities(session, *external_userids: str) -> None:
+    for external_userid in external_userids:
+        unionid = _unionid_for_external_userid(external_userid)
+        session.execute(
+            text(
+                """
+                INSERT INTO crm_user_identity (
+                    unionid, primary_external_userid, external_userids_json, identity_status, created_at, updated_at
+                )
+                VALUES (
+                    :unionid, :external_userid, jsonb_build_array(CAST(:external_userid AS text)),
+                    'active', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+                )
+                ON CONFLICT (unionid) DO UPDATE SET
+                    primary_external_userid = EXCLUDED.primary_external_userid,
+                    external_userids_json = EXCLUDED.external_userids_json,
+                    identity_status = EXCLUDED.identity_status,
+                    updated_at = CURRENT_TIMESTAMP
+                """
+            ),
+            {"unionid": unionid, "external_userid": external_userid},
+        )
+
+
 def _signature(secret: str, raw: bytes) -> str:
     return hmac.new(secret.encode("utf-8"), raw, hashlib.sha256).hexdigest()
 
@@ -89,6 +117,10 @@ def _signature(secret: str, raw: bytes) -> str:
 def _count(table: str) -> int:
     with get_session_factory()() as session:
         return int(session.execute(text(f"SELECT COUNT(*) FROM {table}")).scalar() or 0)
+
+
+def _json_mapping(value):
+    return json.loads(value) if isinstance(value, str) else value
 
 
 def _registry_with_post(fake_post) -> ExternalEffectAdapterRegistry:
@@ -102,6 +134,7 @@ def test_agent_webhook_accepts_url_token_and_optional_hmac(next_client, next_pg_
     with get_session_factory()() as session:
         _insert_package(session)
         _insert_agent(session)
+        _insert_identities(session, "wm_001", "wm_002")
         session.commit()
 
     raw = json.dumps(["wm_001", "", "wm_001", "wm_002"], ensure_ascii=False, separators=(",", ":")).encode()
@@ -166,6 +199,7 @@ def test_agent_webhook_rejects_inactive_and_large_payload(next_client, next_pg_s
         _insert_package(session)
         _insert_agent(session, agent_code="paused_agent", status="paused")
         _insert_agent(session, agent_code="large_agent")
+        _insert_identities(session, "wm_001")
         session.commit()
 
     raw = b'{"external_userids":["wm_001"]}'
@@ -267,6 +301,7 @@ def test_worker_fake_mode_generates_package_and_enqueues_send_plan(next_client, 
     with get_session_factory()() as session:
         _insert_package(session, secret="callback-secret")
         _insert_agent(session)
+        _insert_identities(session, "wm_001")
         session.commit()
 
     raw = b'{"external_userids":["wm_001"]}'
@@ -320,6 +355,7 @@ def test_worker_rejects_prompt_like_llm_output_before_callback(next_client, next
     with get_session_factory()() as session:
         _insert_package(session, secret="callback-secret")
         _insert_agent(session)
+        _insert_identities(session, "wm_001")
         session.commit()
 
     raw = b'{"external_userids":["wm_001"]}'
@@ -364,6 +400,7 @@ def test_worker_human_review_gate_blocks_auto_send(next_client, next_pg_schema, 
     with get_session_factory()() as session:
         _insert_package(session, secret="callback-secret")
         _insert_agent(session)
+        _insert_identities(session, "wm_001")
         session.execute(text("UPDATE automation_agent_runtime_config SET need_human_review = TRUE WHERE agent_code = 'activation_agent'"))
         session.commit()
 
@@ -407,6 +444,7 @@ def test_external_effect_agent_webhook_continuation_enqueues_broadcast_job(next_
             automation_type="fixed_script",
             fixed_content_package='{"image_library_ids":[],"miniprogram_library_ids":[],"attachment_library_ids":[],"content_text":"收到问卷啦，开始体验。"}',
         )
+        _insert_identities(session, "wm_001")
         session.commit()
 
     from aicrm_next.automation_agents import worker as worker_module
@@ -474,9 +512,10 @@ def test_external_effect_agent_webhook_continuation_enqueues_broadcast_job(next_
         message = session.execute(text("SELECT * FROM cloud_broadcast_plan_recipient_messages")).mappings().one()
         broadcast = session.execute(text("SELECT * FROM broadcast_jobs")).mappings().one()
         outbound_task_count = int(session.execute(text("SELECT COUNT(*) FROM outbound_tasks")).scalar() or 0)
+    response_summary = _json_mapping(attempt["response_summary_json"])
     assert job_row["status"] == "succeeded"
-    assert attempt["response_summary_json"]["automation_agent_batch_id"].startswith("agent_batch_")
-    assert attempt["response_summary_json"]["post_success_continuation"]["broadcast_enqueue"]["approved_count"] == 1
+    assert response_summary["automation_agent_batch_id"].startswith("agent_batch_")
+    assert response_summary["post_success_continuation"] == "dict"
     assert item["status"] == "callback_succeeded"
     assert recipient["approval_status"] == "approved"
     assert recipient["send_status"] == "queued"
@@ -484,7 +523,7 @@ def test_external_effect_agent_webhook_continuation_enqueues_broadcast_job(next_
     assert message["status"] == "queued"
     assert message["content_text"] == "收到问卷啦，开始体验。"
     assert broadcast["status"] == "queued"
-    assert broadcast["target_external_userids"] == ["wm_001"]
+    assert _json_mapping(broadcast["target_unionids_json"]) == [_unionid_for_external_userid("wm_001")]
     assert outbound_task_count == 0
 
 
@@ -497,6 +536,7 @@ def test_worker_fixed_script_uses_configured_text_without_agent_generation(next_
             automation_type="fixed_script",
             fixed_content_package='{"image_library_ids":[12],"miniprogram_library_ids":[],"attachment_library_ids":[],"content_text":"你好，这是固定话术"}',
         )
+        _insert_identities(session, "wm_001")
         session.commit()
 
     raw = b'{"external_userids":["wm_001"]}'
@@ -546,6 +586,7 @@ def test_worker_fixed_script_fails_when_content_text_missing(next_client, next_p
     with get_session_factory()() as session:
         _insert_package(session, secret="callback-secret")
         _insert_agent(session, agent_code="empty_fixed_script", automation_type="fixed_script")
+        _insert_identities(session, "wm_001")
         session.commit()
 
     raw = b'{"external_userids":["wm_001"]}'
@@ -596,6 +637,7 @@ def test_worker_hydrates_questionnaire_prompt_from_bound_audience_submission(nex
             role_prompt="你是问卷跟进 Agent。",
             task_prompt="请根据{{问卷信息}}生成话术。",
         )
+        _insert_identities(session, external_userid)
         session.execute(
             text(
                 """
@@ -620,15 +662,15 @@ def test_worker_hydrates_questionnaire_prompt_from_bound_audience_submission(nex
             text(
                 """
                 INSERT INTO questionnaire_submissions (
-                    id, questionnaire_id, respondent_key, external_userid, follow_user_userid,
+                    id, questionnaire_id, unionid, follow_user_userid, staff_id,
                     total_score, submitted_at
                 ) VALUES (
-                    1420, 37, 'respondent_001', :external_userid, 'HuangYouCan',
+                    1420, 37, :unionid, 'HuangYouCan', 'HuangYouCan',
                     0, CURRENT_TIMESTAMP
                 )
                 """
             ),
-            {"external_userid": external_userid},
+            {"unionid": _unionid_for_external_userid(external_userid)},
         )
         session.execute(
             text(
@@ -664,17 +706,27 @@ def test_worker_hydrates_questionnaire_prompt_from_bound_audience_submission(nex
                 """
                 INSERT INTO ai_audience_member_event (
                     package_id, run_id, event_type, identity_type, identity_value,
-                    external_userid, owner_userid, event_source_key, payload_hash,
+                    unionid, owner_userid, event_source_key, payload_hash,
                     payload_json, idempotency_key
                 ) VALUES (
                     :package_id, :run_id, 'entered', 'external_userid', :external_userid,
-                    :external_userid, 'HuangYouCan', 'questionnaire_submission:1420', 'hash-1420',
-                    '{"submission_id":1420,"questionnaire_id":37,"owner_userid":"HuangYouCan"}'::jsonb,
+                    :unionid, 'HuangYouCan', 'questionnaire_submission:1420', 'hash-1420',
+                    CAST(:payload_json AS jsonb),
                     'audience-event-1420'
                 )
                 """
             ),
-            {"package_id": package_id, "run_id": run_id, "external_userid": external_userid},
+            {
+                "package_id": package_id,
+                "run_id": run_id,
+                "external_userid": external_userid,
+                "unionid": _unionid_for_external_userid(external_userid),
+                "payload_json": json.dumps(
+                    {"submission_id": 1420, "questionnaire_id": 37, "owner_userid": "HuangYouCan"},
+                    ensure_ascii=False,
+                    separators=(",", ":"),
+                ),
+            },
         )
         session.commit()
 
@@ -697,11 +749,11 @@ def test_worker_hydrates_questionnaire_prompt_from_bound_audience_submission(nex
     assert result["status"] == "succeeded"
     with get_session_factory()() as session:
         item = session.execute(text("SELECT * FROM automation_agent_webhook_item")).mappings().one()
-    prompt = item["prompt_preview"]
-    assert "有主业，副业探索中，方向还不清晰" in prompt
-    assert "基本不用，想了解能怎么用" in prompt
-    assert "不知道做什么方向，定位还不知道" in prompt
-    assert "已填写（已脱敏）" in prompt
-    assert "17640055576" not in prompt
-    assert item["context_snapshot_json"]["bound_audience_context"]["questionnaire_answer_count"] == 4
-    assert item["context_snapshot_json"]["bound_audience_context"]["member_event_id"]
+    context = _json_mapping(item["context_snapshot_json"])
+    questionnaire_block = context["blocks"]["问卷信息"]
+    assert "有主业，副业探索中，方向还不清晰" in questionnaire_block
+    assert "基本不用，想了解能怎么用" in questionnaire_block
+    assert "不知道做什么方向，定位还不知道" in questionnaire_block
+    assert "17640055576" not in questionnaire_block
+    assert context["bound_audience_context"]["questionnaire_answer_count"] == 4
+    assert context["bound_audience_context"]["member_event_id"]

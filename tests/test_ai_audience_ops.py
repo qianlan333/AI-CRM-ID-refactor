@@ -23,7 +23,7 @@ from aicrm_next.ai_audience_ops.event_types import (
     SOURCE_POKE_CONSUMER,
 )
 from aicrm_next.ai_audience_ops.outbound_service import AudienceOutboundService
-from aicrm_next.ai_audience_ops.repository import AudienceRepository, next_daily_refresh_at
+from aicrm_next.ai_audience_ops.repository import AudienceRepository, build_audience_repository, next_daily_refresh_at
 from aicrm_next.ai_audience_ops.scheduler import ai_audience_event_consumer_pairs, emit_due_ticks
 from aicrm_next.ai_audience_ops.service import AudiencePackageService
 from aicrm_next.ai_audience_ops.sql_catalog import ALLOWED_VIEWS, schema_catalog_payload
@@ -44,11 +44,12 @@ def _auth() -> dict[str, str]:
 def _valid_incremental_sql() -> str:
     return """
         SELECT
-            'external_userid' AS identity_type,
-            external_userid AS identity_value,
+            identity_type,
+            identity_value,
             'questionnaire_submission:' || submission_id::text AS event_source_key,
             payload_json,
             external_userid,
+            unionid,
             owner_userid,
             submitted_at AS event_at
         FROM audience_read.questionnaire_submissions_v1
@@ -67,6 +68,7 @@ def _valid_snapshot_sql(*, include_test_user: bool = True) -> str:
             'daily_snapshot:' || wc.external_userid AS event_source_key,
             wc.payload_json AS payload_json,
             wc.external_userid,
+            wc.unionid,
             wc.owner_userid,
             wc.updated_at AS event_at
         FROM audience_read.wecom_contacts_v1 wc
@@ -179,6 +181,7 @@ def test_ai_audience_scheduler_consumer_pairs_cover_source_refresh_and_outbound(
 
 
 @pytest.mark.usefixtures("next_pg_schema")
+@pytest.mark.usefixtures("next_pg_schema")
 def test_acquire_due_packages_uses_one_minute_due_window(next_client, monkeypatch) -> None:
     monkeypatch.setenv("AICRM_AI_AUDIENCE_API_TOKEN", TOKEN)
 
@@ -219,7 +222,8 @@ def test_acquire_due_packages_uses_one_minute_due_window(next_client, monkeypatc
                     WHEN id = :far_id THEN CURRENT_TIMESTAMP + interval '90 seconds'
                     ELSE next_incremental_refresh_at
                 END,
-                    lease_token = NULL,
+                    last_incremental_watermark_at = CURRENT_TIMESTAMP - interval '10 minutes',
+                    lease_token = '',
                     lease_expires_at = NULL
                 WHERE id IN (:near_id, :far_id)
                 """
@@ -228,7 +232,7 @@ def test_acquire_due_packages_uses_one_minute_due_window(next_client, monkeypatc
         )
         session.commit()
 
-    packages = AudienceRepository().acquire_due_packages("incremental", limit=10)
+    packages = build_audience_repository().acquire_due_packages("incremental", limit=10)
     acquired_ids = {int(package["id"]) for package in packages}
 
     assert near_id in acquired_ids
@@ -361,13 +365,22 @@ def test_daily_snapshot_publish_latest_version_can_exit_member(next_client, monk
             text(
                 """
                 INSERT INTO crm_user_identity (
-                    unionid, primary_external_userid, external_userids_json, profile_json, status, created_at, updated_at
+                    unionid, primary_external_userid, external_userids_json, profile_json, identity_status, created_at, updated_at
                 )
-                VALUES ('union_daily_exit', :external_userid, jsonb_build_array(:external_userid), '{"name":"Daily Exit User"}'::jsonb, 'active', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                VALUES (
+                    'union_daily_exit',
+                    :external_userid,
+                    jsonb_build_array(CAST(:external_userid AS text)),
+                    '{"name":"Daily Exit User"}'::jsonb,
+                    'active',
+                    CURRENT_TIMESTAMP,
+                    CURRENT_TIMESTAMP
+                )
                 ON CONFLICT (unionid) DO UPDATE SET
                     primary_external_userid = EXCLUDED.primary_external_userid,
                     external_userids_json = EXCLUDED.external_userids_json,
                     profile_json = EXCLUDED.profile_json,
+                    identity_status = EXCLUDED.identity_status,
                     updated_at = CURRENT_TIMESTAMP
                 """
             ),
@@ -458,9 +471,9 @@ def test_publish_auto_refreshes_package_on_first_launch(next_client, monkeypatch
             text(
                 """
                 INSERT INTO questionnaire_submissions (
-                    questionnaire_id, respondent_key, external_userid, staff_id, submitted_at
+                    questionnaire_id, unionid, follow_user_userid, staff_id, submitted_at
                 )
-                VALUES (202, 'launch_rk_1', 'wm_launch_refresh_001', 'HuangYouCan', CURRENT_TIMESTAMP - interval '1 minute')
+                VALUES (202, 'union_launch_refresh_001', 'HuangYouCan', 'HuangYouCan', CURRENT_TIMESTAMP - interval '1 minute')
                 """
             )
         )
@@ -468,12 +481,13 @@ def test_publish_auto_refreshes_package_on_first_launch(next_client, monkeypatch
             text(
                 """
                 INSERT INTO crm_user_identity (
-                    unionid, primary_external_userid, external_userids_json, status, created_at, updated_at
+                    unionid, primary_external_userid, external_userids_json, identity_status, created_at, updated_at
                 )
                 VALUES ('union_launch_refresh_001', 'wm_launch_refresh_001', '["wm_launch_refresh_001"]'::jsonb, 'active', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
                 ON CONFLICT (unionid) DO UPDATE SET
                     primary_external_userid = EXCLUDED.primary_external_userid,
                     external_userids_json = EXCLUDED.external_userids_json,
+                    identity_status = EXCLUDED.identity_status,
                     updated_at = CURRENT_TIMESTAMP
                 """
             )
@@ -542,9 +556,9 @@ def test_publish_does_not_repeat_launch_refresh_for_active_package(next_client, 
             text(
                 """
                 INSERT INTO questionnaire_submissions (
-                    questionnaire_id, respondent_key, external_userid, staff_id, submitted_at
+                    questionnaire_id, unionid, follow_user_userid, staff_id, submitted_at
                 )
-                VALUES (203, 'launch_rk_2', 'wm_launch_refresh_002', 'HuangYouCan', CURRENT_TIMESTAMP - interval '1 minute')
+                VALUES (203, 'union_launch_refresh_002', 'HuangYouCan', 'HuangYouCan', CURRENT_TIMESTAMP - interval '1 minute')
                 """
             )
         )
@@ -552,12 +566,13 @@ def test_publish_does_not_repeat_launch_refresh_for_active_package(next_client, 
             text(
                 """
                 INSERT INTO crm_user_identity (
-                    unionid, primary_external_userid, external_userids_json, status, created_at, updated_at
+                    unionid, primary_external_userid, external_userids_json, identity_status, created_at, updated_at
                 )
                 VALUES ('union_launch_refresh_002', 'wm_launch_refresh_002', '["wm_launch_refresh_002"]'::jsonb, 'active', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
                 ON CONFLICT (unionid) DO UPDATE SET
                     primary_external_userid = EXCLUDED.primary_external_userid,
                     external_userids_json = EXCLUDED.external_userids_json,
+                    identity_status = EXCLUDED.identity_status,
                     updated_at = CURRENT_TIMESTAMP
                 """
             )
@@ -661,6 +676,7 @@ def test_ai_audience_test_agent_service_signs_inbound_loopback(monkeypatch) -> N
 
 
 @pytest.mark.usefixtures("next_pg_schema")
+@pytest.mark.usefixtures("next_pg_schema")
 def test_ai_audience_test_agent_webhook_guards_and_plans_private_message(next_client, monkeypatch) -> None:
     monkeypatch.setenv("AICRM_AI_AUDIENCE_API_TOKEN", TOKEN)
     monkeypatch.setenv("AICRM_AI_AUDIENCE_TEST_AGENT_ENABLED", "1")
@@ -704,13 +720,45 @@ def test_ai_audience_test_agent_webhook_guards_and_plans_private_message(next_cl
                 """
             )
         )
+        member_id = session.execute(
+            text(
+                """
+                INSERT INTO ai_audience_member_current (
+                    package_id, identity_type, identity_value, unionid, status, event_source_key, payload_hash, payload_json
+                )
+                VALUES (
+                    :package_id, 'external_userid', 'wm_test_agent', '',
+                    'active', 'test_agent:member', 'hash-test-agent-member', '{}'::jsonb
+                )
+                RETURNING id
+                """
+            ),
+            {"package_id": package_id},
+        ).scalar_one()
+        member_event_id = session.execute(
+            text(
+                """
+                INSERT INTO ai_audience_member_event (
+                    package_id, member_current_id, event_type, identity_type, identity_value,
+                    unionid, event_source_key, payload_hash, payload_json, idempotency_key, occurred_at
+                )
+                VALUES (
+                    :package_id, :member_id, 'entered', 'external_userid', 'wm_test_agent',
+                    '', 'test_agent:member', 'hash-test-agent-event',
+                    '{}'::jsonb, 'test_agent_member_event', CURRENT_TIMESTAMP
+                )
+                RETURNING id
+                """
+            ),
+            {"package_id": package_id, "member_id": member_id},
+        ).scalar_one()
         session.commit()
 
     payload = {
         "event_type": "audience.member.entered",
         "package_key": "test_agent_pkg",
         "package_name": "自测 Agent 包",
-        "member_event_id": 123,
+        "member_event_id": member_event_id,
         "member": {
             "external_userid": "wm_test_agent",
             "owner_userid": "HuangYouCan",
@@ -756,7 +804,7 @@ def test_ai_audience_test_agent_webhook_guards_and_plans_private_message(next_cl
         {
             "effect_type": WECOM_MESSAGE_PRIVATE_SEND,
             "business_type": "ai_audience_inbound_webhook",
-            "business_id": "self_agent:test_agent_pkg:123",
+            "business_id": f"self_agent:test_agent_pkg:{member_event_id}",
         },
         limit=10,
     )
@@ -764,8 +812,8 @@ def test_ai_audience_test_agent_webhook_guards_and_plans_private_message(next_cl
     assert len(jobs) == 1
     assert jobs[0].id == body["external_effect_job_id"]
     assert jobs[0].target_id == "wm_test_agent"
-    assert jobs[0].payload["owner_userid"] == "HuangYouCan"
-    assert jobs[0].payload["content_text"] == TEST_AGENT_MESSAGE_TEXT
+    assert jobs[0].payload_json["owner_userid"] == "HuangYouCan"
+    assert jobs[0].payload_json["content_text"] == TEST_AGENT_MESSAGE_TEXT
 
     duplicate_resp = next_client.post(
         "/api/ai/audience/test-agent/webhook",
@@ -778,7 +826,7 @@ def test_ai_audience_test_agent_webhook_guards_and_plans_private_message(next_cl
         {
             "effect_type": WECOM_MESSAGE_PRIVATE_SEND,
             "business_type": "ai_audience_inbound_webhook",
-            "business_id": "self_agent:test_agent_pkg:123",
+            "business_id": f"self_agent:test_agent_pkg:{member_event_id}",
         },
         limit=10,
     )
@@ -910,12 +958,29 @@ def test_package_refresh_uses_internal_event_and_external_effect_queue(next_clie
         session.execute(
             text(
                 """
-                INSERT INTO questionnaire_submissions (
-                    questionnaire_id, respondent_key, external_userid, staff_id, submitted_at
+                INSERT INTO crm_user_identity (
+                    unionid, primary_external_userid, external_userids_json, identity_status, created_at, updated_at
                 )
                 VALUES
-                    (101, 'rk_1', 'wm_ai_audience_001', 'HuangYouCan', CURRENT_TIMESTAMP - interval '1 minute'),
-                    (101, 'rk_2', 'wm_ai_audience_002', 'HuangYouCan', CURRENT_TIMESTAMP - interval '1 minute')
+                    ('union_ai_audience_001', 'wm_ai_audience_001', '["wm_ai_audience_001"]'::jsonb, 'active', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+                    ('union_ai_audience_002', 'wm_ai_audience_002', '["wm_ai_audience_002"]'::jsonb, 'active', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                ON CONFLICT (unionid) DO UPDATE SET
+                    primary_external_userid = EXCLUDED.primary_external_userid,
+                    external_userids_json = EXCLUDED.external_userids_json,
+                    identity_status = EXCLUDED.identity_status,
+                    updated_at = CURRENT_TIMESTAMP
+                """
+            )
+        )
+        session.execute(
+            text(
+                """
+                INSERT INTO questionnaire_submissions (
+                    questionnaire_id, unionid, follow_user_userid, staff_id, submitted_at
+                )
+                VALUES
+                    (101, 'union_ai_audience_001', 'HuangYouCan', 'HuangYouCan', CURRENT_TIMESTAMP - interval '1 minute'),
+                    (101, 'union_ai_audience_002', 'HuangYouCan', 'HuangYouCan', CURRENT_TIMESTAMP - interval '1 minute')
                 """
             )
         )
@@ -1046,9 +1111,44 @@ def test_inbound_webhook_requires_hmac_and_records_event(next_client, monkeypatc
         },
     )
     assert create_resp.status_code == 200
+    package_id = create_resp.json()["package"]["id"]
+    with get_session_factory()() as session:
+        member_id = session.execute(
+            text(
+                """
+                INSERT INTO ai_audience_member_current (
+                    package_id, identity_type, identity_value, unionid, status, event_source_key, payload_hash, payload_json
+                )
+                VALUES (
+                    :package_id, 'unionid', 'union_agent_callback', 'union_agent_callback',
+                    'active', 'agent_callback:member', 'hash-agent-callback', '{}'::jsonb
+                )
+                RETURNING id
+                """
+            ),
+            {"package_id": package_id},
+        ).scalar_one()
+        member_event_id = session.execute(
+            text(
+                """
+                INSERT INTO ai_audience_member_event (
+                    package_id, member_current_id, event_type, identity_type, identity_value,
+                    unionid, event_source_key, payload_hash, payload_json, idempotency_key, occurred_at
+                )
+                VALUES (
+                    :package_id, :member_id, 'entered', 'unionid', 'union_agent_callback',
+                    'union_agent_callback', 'agent_callback:member', 'hash-agent-callback',
+                    '{}'::jsonb, 'agent_callback_member_event', CURRENT_TIMESTAMP
+                )
+                RETURNING id
+                """
+            ),
+            {"package_id": package_id, "member_id": member_id},
+        ).scalar_one()
+        session.commit()
     payload = {
         "external_event_id": "agent_run_abc",
-        "member_event_id": 1,
+        "member_event_id": member_event_id,
         "status": "generated",
         "message": {"text": "hello"},
         "action": {"type": "record_only"},

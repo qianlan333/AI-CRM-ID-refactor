@@ -6,6 +6,11 @@ import json
 from datetime import datetime, timedelta, timezone
 from typing import Any, Protocol
 
+from aicrm_next.platform_foundation.external_effects.execution_gates import (
+    WECOM_EXECUTION_DISABLED_CODE,
+    explicit_wecom_execution_disabled,
+    wecom_execution_disabled_message,
+)
 from aicrm_next.shared.runtime_settings import runtime_setting
 
 from .db import connect, has_database_url, int_value, json_list, utcnow
@@ -469,6 +474,13 @@ def _normalize_private_attachments_for_wecom(attachments: list[dict[str, Any]]) 
 def _dispatch_wecom_private(job: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any]:
     from aicrm_next.integration_gateway.wecom_private_adapter import build_wecom_private_message_adapter
 
+    if explicit_wecom_execution_disabled():
+        return {
+            "ok": False,
+            "error": wecom_execution_disabled_message(),
+            "failure_type": WECOM_EXECUTION_DISABLED_CODE,
+            "side_effect_executed": False,
+        }
     payload = _with_cloud_plan_recipient_message(payload)
     target_unionids = _extract_target_unionids(job, payload)
     targets, missing_unionids = _resolve_private_targets_by_unionid(target_unionids)
@@ -555,6 +567,13 @@ def _dispatch_wecom_private(job: dict[str, Any], payload: dict[str, Any]) -> dic
 def _dispatch_wecom_customer_group(job: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any]:
     from aicrm_next.integration_gateway.wecom_group_adapter import build_wecom_group_message_adapter
 
+    if explicit_wecom_execution_disabled():
+        return {
+            "ok": False,
+            "error": wecom_execution_disabled_message(),
+            "failure_type": WECOM_EXECUTION_DISABLED_CODE,
+            "side_effect_executed": False,
+        }
     existing_outbound_task_id = int_value(job.get("outbound_task_id"))
     if existing_outbound_task_id:
         return {

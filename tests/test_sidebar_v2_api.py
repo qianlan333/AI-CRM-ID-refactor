@@ -136,10 +136,11 @@ def test_sidebar_user_visible_read_paths_do_not_join_retired_automation_tables()
 def test_sidebar_v2_workbench_and_read_panels_are_next_owned(monkeypatch):
     client = _client(monkeypatch)
 
-    workbench = client.get("/api/sidebar/v2/workbench?external_userid=wx_ext_001")
-    questionnaires = client.get("/api/sidebar/v2/questionnaires?external_userid=wx_ext_001")
-    products = client.get("/api/sidebar/v2/products?external_userid=wx_ext_001")
-    orders = client.get("/api/sidebar/v2/orders?external_userid=wx_ext_001")
+    owner_query = "external_userid=wx_ext_001&owner_userid=ZhaoYanFang"
+    workbench = client.get(f"/api/sidebar/v2/workbench?{owner_query}")
+    questionnaires = client.get(f"/api/sidebar/v2/questionnaires?{owner_query}")
+    products = client.get(f"/api/sidebar/v2/products?{owner_query}")
+    orders = client.get(f"/api/sidebar/v2/orders?{owner_query}")
 
     for response in (workbench, questionnaires, products, orders):
         assert response.headers["X-AICRM-Route-Owner"] == "ai_crm_next"
@@ -152,9 +153,9 @@ def test_sidebar_v2_workbench_and_read_panels_are_next_owned(monkeypatch):
 def test_sidebar_v2_profile_context_and_binding_status_use_next_read_models(monkeypatch):
     client = _client(monkeypatch)
 
-    context = client.get("/api/sidebar/customer-context?external_userid=wx_ext_001").json()
-    profile = client.get("/api/sidebar/profile?external_userid=wx_ext_001").json()
-    binding = client.get("/api/sidebar/contact-binding-status?external_userid=wx_ext_001").json()
+    context = client.get("/api/sidebar/customer-context?external_userid=wx_ext_001&owner_userid=ZhaoYanFang").json()
+    profile = client.get("/api/sidebar/profile?external_userid=wx_ext_001&owner_userid=ZhaoYanFang").json()
+    binding = client.get("/api/sidebar/contact-binding-status?external_userid=wx_ext_001&owner_userid=ZhaoYanFang").json()
 
     for payload in (context, profile, binding):
         assert payload["ok"] is True

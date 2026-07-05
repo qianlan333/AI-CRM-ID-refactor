@@ -203,13 +203,30 @@ class GetSidebarContactBindingStatusQuery:
         self._identity_query = identity_query or ResolvePersonIdentityQuery()
         self._customer_detail_query = customer_detail_query or GetCustomerDetailQuery()
 
-    def execute(self, *, external_userid: str | None = None, owner_userid: str | None = None) -> JsonDict:
+    def execute(
+        self,
+        *,
+        external_userid: str | None = None,
+        owner_userid: str | None = None,
+        require_owner_scope: bool = False,
+    ) -> JsonDict:
         resolved_external_userid = str(external_userid or "").strip()
         resolved_owner_userid = str(owner_userid or "").strip()
         if not resolved_external_userid:
             return {
                 "ok": False,
                 "error": "external_userid is required",
+                "source_status": "input_error",
+                "read_model_status": "input_error",
+                "route_owner": "ai_crm_next",
+                "fallback_used": False,
+                "degraded": False,
+                "status_code": 400,
+            }
+        if require_owner_scope and not resolved_owner_userid:
+            return {
+                "ok": False,
+                "error": "owner_userid is required",
                 "source_status": "input_error",
                 "read_model_status": "input_error",
                 "route_owner": "ai_crm_next",

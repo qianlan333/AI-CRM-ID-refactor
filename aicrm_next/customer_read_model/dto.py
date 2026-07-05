@@ -33,6 +33,7 @@ class CustomerContextRequest(BaseModel):
     mobile: str | None = None
     user_id: str | None = None
     owner_userid: str | None = None
+    require_owner_scope: bool = False
     recent_message_limit: int = Field(default=20, ge=1, le=100)
     timeline_limit: int = Field(default=20, ge=1, le=100)
 

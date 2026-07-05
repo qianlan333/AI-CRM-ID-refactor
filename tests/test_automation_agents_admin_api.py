@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from time import time
+
 from sqlalchemy import text
 
 from aicrm_next.admin_auth.service import SESSION_COOKIE, sign_session
@@ -11,8 +13,11 @@ def _admin_cookies() -> dict[str, str]:
         SESSION_COOKIE: sign_session(
             {
                 "username": "admin",
+                "auth_source": "pytest",
+                "login_type": "pytest",
                 "display_name": "admin",
                 "roles": ["super_admin"],
+                "iat": int(time()),
             }
         )
     }

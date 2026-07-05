@@ -33,7 +33,11 @@ class IdentityResolutionBackfillWorker:
         details: list[dict[str, Any]] = []
         try:
             queue_rows = _claim_queue_rows(conn, limit=limit, locked_by=self.locked_by)
-            runtime_rows = _claim_runtime_rows(conn, limit=max(0, int(limit or 100) - len(queue_rows)))
+            runtime_rows = _claim_runtime_rows(
+                conn,
+                limit=max(0, int(limit or 100) - len(queue_rows)),
+                max_attempts=max_attempts,
+            )
             if dry_run:
                 conn.rollback()
                 return {
@@ -76,9 +80,13 @@ class IdentityResolutionBackfillWorker:
                 event = _event_from_runtime_row(row)
                 result = self.sync_func(event, text(row.get("corp_id")), int(row.get("event_log_id") or 0) or None)
                 status = text(result.get("status")) or "pending"
-                _mark_runtime_identity(conn, row, result)
+                attempts = int(row.get("identity_attempt_count") or 0)
+                terminal_after_attempt = status != "success" and attempts + 1 >= max(1, int(max_attempts))
+                _mark_runtime_identity(conn, row, result, terminal=terminal_after_attempt, max_attempts=max_attempts)
                 if status == "success":
                     resolved += 1
+                elif terminal_after_attempt:
+                    terminal += 1
                 else:
                     retryable += 1
                 details.append({"source": "runtime", "id": row.get("id"), "status": status, "reason": text(result.get("reason"))})
@@ -133,7 +141,7 @@ def _claim_queue_rows(conn: Any, *, limit: int, locked_by: str) -> list[dict[str
     return [dict(row) for row in rows or []]
 
 
-def _claim_runtime_rows(conn: Any, *, limit: int) -> list[dict[str, Any]]:
+def _claim_runtime_rows(conn: Any, *, limit: int, max_attempts: int) -> list[dict[str, Any]]:
     if limit <= 0:
         return []
     rows = conn.execute(
@@ -141,11 +149,13 @@ def _claim_runtime_rows(conn: Any, *, limit: int) -> list[dict[str, Any]]:
         SELECT *
         FROM automation_channel_entry_runtime
         WHERE identity_status IN ('pending', 'pending_identity', 'failed')
-        ORDER BY updated_at ASC, id ASC
+          AND COALESCE(identity_attempt_count, 0) < %s
+          AND (identity_next_attempt_at IS NULL OR identity_next_attempt_at <= CURRENT_TIMESTAMP)
+        ORDER BY COALESCE(identity_next_attempt_at, updated_at) ASC, id ASC
         LIMIT %s
         FOR UPDATE SKIP LOCKED
         """,
-        (max(1, min(int(limit or 100), 500)),),
+        (max(1, int(max_attempts or 5)), max(1, min(int(limit or 100), 500))),
     ).fetchall()
     return [dict(row) for row in rows or []]
 
@@ -226,12 +236,31 @@ def _mark_queue_failed(conn: Any, row: dict[str, Any], result: dict[str, Any]) -
     )
 
 
-def _mark_runtime_identity(conn: Any, row: dict[str, Any], result: dict[str, Any]) -> None:
+def _mark_runtime_identity(
+    conn: Any,
+    row: dict[str, Any],
+    result: dict[str, Any],
+    *,
+    terminal: bool = False,
+    max_attempts: int = 5,
+) -> None:
+    status = text(result.get("status")) or "pending"
+    stored_status = "failed_terminal" if terminal else status
     conn.execute(
         """
         UPDATE automation_channel_entry_runtime
         SET unionid = CASE WHEN %s <> '' THEN %s ELSE unionid END,
             identity_status = %s,
+            identity_attempt_count = CASE
+                WHEN %s = 'success' THEN 0
+                ELSE COALESCE(identity_attempt_count, 0) + 1
+            END,
+            identity_next_attempt_at = CASE
+                WHEN %s = 'success' THEN NULL
+                WHEN COALESCE(identity_attempt_count, 0) + 1 >= %s THEN NULL
+                ELSE CURRENT_TIMESTAMP + (LEAST(GREATEST(COALESCE(identity_attempt_count, 0) + 1, 1), 30) || ' minutes')::interval
+            END,
+            identity_last_error = CASE WHEN %s = 'success' THEN '' ELSE %s END,
             payload_json = payload_json || %s,
             last_seen_at = CURRENT_TIMESTAMP,
             updated_at = CURRENT_TIMESTAMP
@@ -240,7 +269,12 @@ def _mark_runtime_identity(conn: Any, row: dict[str, Any], result: dict[str, Any
         (
             text(result.get("unionid")),
             text(result.get("unionid")),
-            text(result.get("status")) or "pending",
+            stored_status,
+            status,
+            status,
+            max(1, int(max_attempts or 5)),
+            status,
+            _result_error(result),
             Jsonb({"identity_backfill_result": json_safe(result)}),
             int(row.get("id") or 0),
         ),

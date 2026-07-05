@@ -56,6 +56,7 @@ class WeChatPayOrderReconciliationWorker:
                 window_hours=window_hours,
                 limit=limit,
             )
+            conn.commit()
             for order in candidates:
                 scanned += 1
                 out_trade_no = str(order.get("out_trade_no") or "").strip()

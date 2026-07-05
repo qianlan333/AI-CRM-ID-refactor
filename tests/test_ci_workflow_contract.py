@@ -29,7 +29,9 @@ def test_ci_runs_full_regression_and_scoped_postgres_gates_on_pr_and_main() -> N
     assert "tests/test_admin_routes_require_auth.py::test_admin_api_routes_require_session_when_enforced" in source
     assert "Run PostgreSQL P0 regression slice\n        env:\n          DATABASE_URL: postgresql://test:test@localhost:5432/test" in source
     assert "Run full pytest regression (PG-only)" not in source
-    assert "Run full pytest regression\n        run: python -m pytest tests/ -n auto" in source
+    assert "Run full pytest regression\n        env:\n          DATABASE_URL: postgresql://test:test@localhost:5432/test" in source
+    assert "AICRM_PYTEST_FIXTURE_DEFAULT: \"1\"" in source
+    assert "Run full pytest regression\n        run: python -m pytest tests/ -n auto" not in source
     assert "python -m pytest tests/ -n auto" in source
     assert "tests/test_broadcast_jobs_service.py" not in source
     assert "Run PR smoke tests" not in source

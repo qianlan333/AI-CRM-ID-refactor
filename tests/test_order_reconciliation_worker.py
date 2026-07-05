@@ -24,6 +24,7 @@ class _FakeConn:
         self.rows = rows
         self.queries: list[tuple[str, tuple]] = []
         self.committed = False
+        self.commit_count = 0
         self.closed = False
 
     def execute(self, query, params=()):
@@ -35,6 +36,7 @@ class _FakeConn:
 
     def commit(self):
         self.committed = True
+        self.commit_count += 1
 
     def rollback(self):
         raise AssertionError("rollback should not be called")
@@ -44,11 +46,14 @@ class _FakeConn:
 
 
 class _FakeClient:
-    def __init__(self, states):
+    def __init__(self, states, *, before_query=None):
         self.states = states
+        self.before_query = before_query
         self.closed_orders: list[str] = []
 
     def query_order_by_out_trade_no(self, out_trade_no):
+        if self.before_query:
+            self.before_query(out_trade_no)
         return {
             "out_trade_no": out_trade_no,
             "trade_state": self.states[out_trade_no],
@@ -90,6 +95,7 @@ def test_wechat_pay_reconciliation_repairs_success_and_closes_unpaid(monkeypatch
     assert client.closed_orders == ["WXP_NOTPAY"]
     assert any("UPDATE wechat_pay_orders" in query and "status = 'closed'" in query for query, _ in conn.queries)
     assert conn.committed is True
+    assert conn.commit_count >= 2
     assert conn.closed is True
 
 
@@ -107,6 +113,24 @@ def test_wechat_pay_reconciliation_dry_run_does_not_mutate() -> None:
     assert result["closed_count"] == 0
     assert client.closed_orders == []
     assert not any("UPDATE wechat_pay_orders" in query for query, _ in conn.queries)
+
+
+def test_wechat_pay_reconciliation_releases_candidate_lock_before_http_query() -> None:
+    conn = _FakeConn([{"id": 1, "out_trade_no": "WXP_SUCCESS"}])
+    commit_counts_before_query: list[int] = []
+    client = _FakeClient(
+        {"WXP_SUCCESS": "SUCCESS"},
+        before_query=lambda out_trade_no: commit_counts_before_query.append(conn.commit_count),
+    )
+
+    result = WeChatPayOrderReconciliationWorker(
+        client_factory=lambda: client,
+        connection_factory=lambda: conn,
+    ).run_once(limit=10, ttl_hours=2, dry_run=True, now=datetime(2026, 7, 4, tzinfo=timezone.utc))
+
+    assert result["dry_run"] is True
+    assert commit_counts_before_query == [1]
+    assert conn.commit_count >= 2
 
 
 def test_wechat_pay_client_close_order_and_trade_bill_request_shapes() -> None:

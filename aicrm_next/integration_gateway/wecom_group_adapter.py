@@ -5,6 +5,7 @@ import json
 from typing import Any, Callable
 
 from aicrm_next.automation_engine.group_ops.domain import normalize_group_admin_userids
+from aicrm_next.platform_foundation.external_effects.execution_gates import explicit_wecom_execution_disabled
 from aicrm_next.shared.postgres_connection import get_db
 from aicrm_next.shared.runtime_settings import runtime_bool, runtime_setting
 
@@ -16,6 +17,8 @@ WECOM_GROUP_CHAT_ID_LIST_FIELD = "chat_id_list"
 
 
 def _mode() -> str:
+    if explicit_wecom_execution_disabled():
+        return "disabled"
     value = str(runtime_setting("AICRM_WECOM_GROUP_ADAPTER_MODE") or "").strip().lower()
     return value if value in {"disabled", "fake", "staging", "production"} else "disabled"
 

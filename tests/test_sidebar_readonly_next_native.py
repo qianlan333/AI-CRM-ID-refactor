@@ -20,13 +20,13 @@ def test_sidebar_readonly_routes_return_next_native_diagnostics() -> None:
     client = _client()
 
     responses = {
-        "customer-context": client.get("/api/sidebar/customer-context?external_userid=wx_ext_001"),
-        "profile": client.get("/api/sidebar/profile?external_userid=wx_ext_001"),
-        "tags": client.get("/api/sidebar/tags?external_userid=wx_ext_001"),
-        "binding-status": client.get("/api/sidebar/binding-status?external_userid=wx_ext_001"),
-        "lead-pool": client.get("/api/sidebar/lead-pool/status?external_userid=wx_ext_001"),
-        "signup-tags": client.get("/api/sidebar/signup-tags/status?external_userid=wx_ext_001"),
-        "marketing-status": client.get("/api/sidebar/marketing-status?external_userid=wx_ext_001"),
+        "customer-context": client.get("/api/sidebar/customer-context?external_userid=wx_ext_001&owner_userid=ZhaoYanFang"),
+        "profile": client.get("/api/sidebar/profile?external_userid=wx_ext_001&owner_userid=ZhaoYanFang"),
+        "tags": client.get("/api/sidebar/tags?external_userid=wx_ext_001&owner_userid=ZhaoYanFang"),
+        "binding-status": client.get("/api/sidebar/binding-status?external_userid=wx_ext_001&owner_userid=ZhaoYanFang"),
+        "lead-pool": client.get("/api/sidebar/lead-pool/status?external_userid=wx_ext_001&owner_userid=ZhaoYanFang"),
+        "signup-tags": client.get("/api/sidebar/signup-tags/status?external_userid=wx_ext_001&owner_userid=ZhaoYanFang"),
+        "marketing-status": client.get("/api/sidebar/marketing-status?external_userid=wx_ext_001&owner_userid=ZhaoYanFang"),
     }
 
     assert {name: response.status_code for name, response in responses.items()} == {
@@ -50,7 +50,7 @@ def test_sidebar_readonly_routes_handle_missing_and_unknown_customers() -> None:
     client = _client()
 
     missing = client.get("/api/sidebar/marketing-status")
-    unknown = client.get("/api/sidebar/marketing-status?external_userid=wx_missing_sidebar")
+    unknown = client.get("/api/sidebar/marketing-status?external_userid=wx_missing_sidebar&owner_userid=ZhaoYanFang")
 
     assert missing.status_code == 400
     assert missing.json()["source_status"] == "input_error"
@@ -58,6 +58,32 @@ def test_sidebar_readonly_routes_handle_missing_and_unknown_customers() -> None:
     assert unknown.status_code == 404
     assert unknown.json()["source_status"] == "not_found"
     assert unknown.json()["fallback_used"] is False
+
+
+def test_sidebar_readonly_routes_reject_missing_owner_userid_for_pii() -> None:
+    client = _client()
+
+    blocked_paths = [
+        "/api/sidebar/customer-context?external_userid=wx_ext_001",
+        "/api/sidebar/profile?external_userid=wx_ext_001",
+        "/api/sidebar/tags?external_userid=wx_ext_001",
+        "/api/sidebar/binding-status?external_userid=wx_ext_001",
+        "/api/sidebar/contact-binding-status?external_userid=wx_ext_001",
+        "/api/sidebar/lead-pool/status?external_userid=wx_ext_001",
+        "/api/sidebar/signup-tags/status?external_userid=wx_ext_001",
+        "/api/sidebar/marketing-status?external_userid=wx_ext_001",
+        "/api/sidebar/v2/workbench?external_userid=wx_ext_001",
+        "/api/sidebar/v2/questionnaires?external_userid=wx_ext_001",
+        "/api/sidebar/v2/products?external_userid=wx_ext_001",
+        "/api/sidebar/v2/orders?external_userid=wx_ext_001",
+        "/api/sidebar/v2/other-staff-messages?external_userid=wx_ext_001",
+    ]
+
+    for path in blocked_paths:
+        response = client.get(path)
+        assert response.status_code in {400, 404}, path
+        assert response.json()["ok"] is False, path
+        assert response.json()["fallback_used"] is False, path
 
 
 def test_sidebar_readonly_routes_filter_by_owner_userid() -> None:
@@ -95,7 +121,7 @@ def test_sidebar_readonly_production_unavailable_is_controlled(monkeypatch) -> N
     monkeypatch.setenv("DATABASE_URL", "postgresql://sidebar-readonly:sidebar-readonly@127.0.0.1:1/aicrm_sidebar")
     client = _client()
 
-    response = client.get("/api/sidebar/customer-context?external_userid=wx_ext_001")
+    response = client.get("/api/sidebar/customer-context?external_userid=wx_ext_001&owner_userid=ZhaoYanFang")
 
     assert response.status_code == 503
     payload = response.json()

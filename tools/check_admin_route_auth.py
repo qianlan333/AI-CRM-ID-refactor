@@ -7,7 +7,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 PROTECTED_EXAMPLES = (
     "/admin/api-docs",
+    "/setup/wizard",
     "/api/admin/channels",
+    "/api/sidebar/profile",
     "/api/customers",
     "/api/users/unionid_1",
     "/api/messages/external_1",
@@ -18,6 +20,7 @@ PUBLIC_EXAMPLES = (
     "/api/h5/questionnaires/slug",
     "/api/wecom/events",
     "/wecom/external-contact/callback",
+    "/api/sidebar/jssdk-config",
     "/static/admin_console/admin_console.css",
 )
 

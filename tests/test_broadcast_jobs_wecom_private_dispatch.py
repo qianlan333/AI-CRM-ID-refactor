@@ -101,6 +101,22 @@ def test_wecom_private_job_is_dispatched_and_marked_sent(monkeypatch) -> None:
     assert adapter.payload["external_userids"] == ["wm_test"]
 
 
+def test_wecom_private_global_execution_mode_disabled_blocks_before_adapter(monkeypatch) -> None:
+    monkeypatch.setenv("AICRM_WECOM_EXECUTION_MODE", "disabled")
+
+    def fail_adapter():
+        raise AssertionError("adapter should not be built when global WeCom execution is disabled")
+
+    monkeypatch.setattr("aicrm_next.integration_gateway.wecom_private_adapter.build_wecom_private_message_adapter", fail_adapter)
+    repo = FakeRepo([_job()])
+
+    summary = run_broadcast_queue_worker(repo=repo, dispatcher=SafeSkippedBroadcastDispatcher())
+
+    assert summary["sent_failed"] == 1
+    assert repo.failed[0]["failure_type"] == "wecom_execution_disabled"
+    assert "AICRM_WECOM_EXECUTION_MODE=disabled" in repo.failed[0]["error"]
+
+
 def test_cloud_plan_recipient_message_uses_bound_sender_and_hydrates_text(monkeypatch) -> None:
     adapter = Adapter({"ok": True, "wecom_msgid": "msg-cloud", "result": {"msgid": "msg-cloud"}})
     marked: dict[str, Any] = {}
@@ -234,7 +250,7 @@ def test_cloud_plan_failure_marks_recipient_and_message_failed(next_pg_schema) -
             {"recipient_id": recipient_id},
         ).mappings().one()
 
-    assert job_row["status"] == "failed"
+    assert job_row["status"] == "failed_retryable"
     assert job_row["failure_type"] == "wecom_api_error"
     assert "not external contact" in job_row["last_error"]
     assert recipient_row["send_status"] == "failed"

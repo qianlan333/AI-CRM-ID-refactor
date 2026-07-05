@@ -40,6 +40,16 @@ def test_admin_pages_redirect_to_login_when_enforced(monkeypatch) -> None:
     assert response.headers["location"] == "/login?next=/admin/api-docs"
 
 
+def test_setup_wizard_redirects_to_login_when_enforced(monkeypatch) -> None:
+    monkeypatch.setenv("AICRM_ADMIN_AUTH_ENFORCED", "true")
+    client = TestClient(create_app(), raise_server_exceptions=False)
+
+    response = client.get("/setup/wizard", follow_redirects=False)
+
+    assert response.status_code == 302
+    assert response.headers["location"] == "/login?next=/setup/wizard"
+
+
 def test_admin_session_allows_protected_route_when_enforced(monkeypatch) -> None:
     monkeypatch.setenv("AICRM_ADMIN_AUTH_ENFORCED", "true")
     client = TestClient(create_app(), raise_server_exceptions=False)
@@ -51,12 +61,23 @@ def test_admin_session_allows_protected_route_when_enforced(monkeypatch) -> None
     assert response.json()["ok"] is True
 
 
+def test_sidebar_pii_routes_require_session_when_enforced(monkeypatch) -> None:
+    monkeypatch.setenv("AICRM_ADMIN_AUTH_ENFORCED", "true")
+    client = TestClient(create_app(), raise_server_exceptions=False)
+
+    response = client.get("/api/sidebar/profile?external_userid=wx_ext_001&owner_userid=ZhaoYanFang")
+
+    assert response.status_code == 401
+    assert response.json()["error"] == "admin_auth_required"
+
+
 def test_public_routes_remain_public_when_admin_auth_is_enforced(monkeypatch) -> None:
     monkeypatch.setenv("AICRM_ADMIN_AUTH_ENFORCED", "true")
     client = TestClient(create_app(), raise_server_exceptions=False)
 
     assert client.get("/health").status_code == 200
     assert client.get("/login").status_code == 200
+    assert client.get("/api/sidebar/jssdk-config").status_code == 400
 
 
 def test_admin_write_routes_require_session_bound_csrf_when_enforced(monkeypatch) -> None:

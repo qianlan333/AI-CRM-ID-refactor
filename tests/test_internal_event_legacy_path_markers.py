@@ -1,9 +1,8 @@
 from __future__ import annotations
 
-import logging
-
 from fastapi.testclient import TestClient
 
+from aicrm_next.platform_foundation.internal_events import legacy_path_markers
 from aicrm_next.platform_foundation.internal_events.legacy_path_markers import (
     legacy_path_marker_diagnostics,
     mark_legacy_path_invoked,
@@ -38,15 +37,21 @@ def test_legacy_path_marker_flag_off_does_not_record(monkeypatch) -> None:
     assert diagnostics["legacy_paths"] == []
 
 
-def test_legacy_path_marker_flag_on_records_structured_marker_and_redacts(monkeypatch, caplog) -> None:
+def test_legacy_path_marker_flag_on_records_structured_marker_and_redacts(monkeypatch) -> None:
     reset_legacy_path_marker_state()
     monkeypatch.setenv("AICRM_INTERNAL_EVENTS_LEGACY_PATH_MARKERS_ENABLED", "1")
     monkeypatch.setenv("AICRM_INTERNAL_EVENTS_LEGACY_PATH_RETIRE_AFTER_DAYS", "7")
-    caplog.set_level(logging.INFO)
+    log_extras: list[dict] = []
+
+    def fake_info(message: str, *args, **kwargs) -> None:
+        if message == "legacy_internal_event_path_invoked":
+            log_extras.append(dict(kwargs.get("extra") or {}))
+
+    monkeypatch.setattr(legacy_path_markers.LOGGER, "info", fake_info)
 
     result = _mark(source_route="https://hooks.example.com/raw-token-secret", reason="contains token secret")
     diagnostics = legacy_path_marker_diagnostics()
-    log_record = next(record for record in caplog.records if record.getMessage() == "legacy_internal_event_path_invoked")
+    log_record = log_extras[0]
 
     assert result["recorded"] is True
     assert result["event"] == "legacy_internal_event_path_invoked"
@@ -58,8 +63,8 @@ def test_legacy_path_marker_flag_on_records_structured_marker_and_redacts(monkey
     assert "openid-secret" not in str(result)
     assert "hooks.example.com" not in str(result)
     assert "token secret" not in str(result)
-    assert getattr(log_record, "event") == "legacy_internal_event_path_invoked"
-    assert getattr(log_record, "aggregate_id").startswith("aggregate_id_ref:")
+    assert log_record["event"] == "legacy_internal_event_path_invoked"
+    assert log_record["aggregate_id"].startswith("aggregate_id_ref:")
     assert diagnostics["legacy_path_invocation_count"] == 1
     assert diagnostics["legacy_paths"][0]["legacy_path"] == "questionnaire.legacy_webhook_external_push"
     assert diagnostics["legacy_paths"][0]["last_aggregate_id_redacted"].startswith("aggregate_id_ref:")

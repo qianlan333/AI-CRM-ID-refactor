@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime, timedelta, timezone
 from time import time
 
 from fastapi.testclient import TestClient
@@ -25,10 +26,10 @@ def _admin_cookies() -> dict[str, str]:
     }
 
 
-def _draft_payload(*, idempotency_key: str = "governance-draft-create") -> dict:
+def _draft_payload(*, idempotency_key: str = "governance-draft-create", source_plan_id: str = "plan-safe-governance-1") -> dict:
     return {
         "idempotency_key": idempotency_key,
-        "source_plan_id": "plan-safe-governance-1",
+        "source_plan_id": source_plan_id,
         "sanitized_payload": {
             "workspace": "p1_group_ops_workspace",
             "selected_count": 2,
@@ -49,7 +50,7 @@ def _draft_payload(*, idempotency_key: str = "governance-draft-create") -> dict:
         "items": [
             {
                 "item_type": "plan",
-                "item_ref_id": "plan-safe-governance-1",
+                "item_ref_id": source_plan_id,
                 "item_order": 0,
                 "sanitized_item": {"title": "Governance safe plan", "status": "ready_preview"},
                 "guardrail_summary": {"no_direct_send": True},
@@ -73,9 +74,14 @@ def _governance_payload(
     idempotency_key: str = "governance-request-idem",
     allowlist_hash: str = "allowlist-hash-safe-1",
     allowlist_count: int = 2,
-    start_at: str = "2026-06-25T10:00:00+00:00",
-    end_at: str = "2026-06-25T11:00:00+00:00",
+    start_at: str | None = None,
+    end_at: str | None = None,
 ) -> dict:
+    if start_at is None or end_at is None:
+        start = (datetime.now(timezone.utc) + timedelta(days=1)).replace(microsecond=0)
+        end = start + timedelta(hours=1)
+        start_at = start_at or start.isoformat()
+        end_at = end_at or end.isoformat()
     return {
         "idempotency_key": idempotency_key,
         "client_snapshot_hash": snapshot_hash,
@@ -361,13 +367,15 @@ def test_governance_request_preconditions_reject_non_ready_archived_snapshot_and
         json=_governance_payload(snapshot_hash="different-safe-snapshot", idempotency_key="snapshot-conflict"),
         cookies=cookies,
     )
+    invalid_start = (datetime.now(timezone.utc) + timedelta(days=1, hours=2)).replace(microsecond=0)
+    invalid_end = invalid_start - timedelta(hours=1)
     invalid_window = next_client.post(
         f"/api/admin/p1/group-ops-workspace/drafts/{ready['draft_id']}/governance/request",
         json=_governance_payload(
             snapshot_hash=ready["snapshot_hash"],
             idempotency_key="invalid-window",
-            start_at="2026-06-24T11:00:00+00:00",
-            end_at="2026-06-24T10:00:00+00:00",
+            start_at=invalid_start.isoformat(),
+            end_at=invalid_end.isoformat(),
         ),
         cookies=cookies,
     )
@@ -379,7 +387,7 @@ def test_governance_request_preconditions_reject_non_ready_archived_snapshot_and
 
     assert not_ready.status_code == 400, not_ready.text
     assert archived.status_code in {400, 409}, archived.text
-    assert snapshot_conflict.status_code == 400, snapshot_conflict.text
+    assert snapshot_conflict.status_code == 409, snapshot_conflict.text
     assert invalid_window.status_code == 400, invalid_window.text
     assert missing_allowlist_hash.status_code == 400, missing_allowlist_hash.text
     assert _count("group_ops_workspace_governance_reviews") == 0

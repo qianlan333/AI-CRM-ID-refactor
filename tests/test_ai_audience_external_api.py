@@ -309,6 +309,33 @@ def _simple_payload(package_key: str = "audience_simple_hyc") -> dict:
     }
 
 
+def _unionid_for_external_userid(external_userid: str) -> str:
+    return "union_" + external_userid.removeprefix("wm_")
+
+
+def _insert_identities(session, *external_userids: str) -> None:
+    for external_userid in external_userids:
+        session.execute(
+            text(
+                """
+                INSERT INTO crm_user_identity (
+                    unionid, primary_external_userid, external_userids_json, identity_status, created_at, updated_at
+                )
+                VALUES (
+                    :unionid, :external_userid, jsonb_build_array(CAST(:external_userid AS text)),
+                    'active', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+                )
+                ON CONFLICT (unionid) DO UPDATE SET
+                    primary_external_userid = EXCLUDED.primary_external_userid,
+                    external_userids_json = EXCLUDED.external_userids_json,
+                    identity_status = EXCLUDED.identity_status,
+                    updated_at = CURRENT_TIMESTAMP
+                """
+            ),
+            {"unionid": _unionid_for_external_userid(external_userid), "external_userid": external_userid},
+        )
+
+
 def test_external_simple_preview_validates_sql_contract(next_client, next_pg_schema, monkeypatch) -> None:
     del next_pg_schema
     _ready_env(monkeypatch)
@@ -439,6 +466,7 @@ def test_external_simple_sync_refresh_enters_idempotently_and_exits(next_client,
     del next_pg_schema
     _ready_env(monkeypatch)
     with get_session_factory()() as session:
+        _insert_identities(session, "wm_simple_001")
         session.execute(
             text(
                 """
@@ -471,6 +499,7 @@ def test_external_simple_outbound_plan_keeps_external_userids_array_body(next_cl
     payload = _simple_payload("audience_outbound_simple")
     payload["outbound_webhook_url"] = "https://agent.example.test/audience"
     with get_session_factory()() as session:
+        _insert_identities(session, "wm_simple_out_001", "wm_simple_out_002")
         session.execute(
             text(
                 """

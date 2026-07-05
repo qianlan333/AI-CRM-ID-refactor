@@ -40,73 +40,65 @@ class DetailAdapter:
         }
 
 
+def _seed_identity_mobile_candidate(db, *, unionid: str, external_userid: str, mobile: str, owner_userid: str, openid: str = "") -> None:
+    db.execute(
+        """
+        INSERT INTO crm_user_identity (
+            unionid, primary_external_userid, primary_openid, primary_owner_userid,
+            external_userids_json, openids_json, mobile, mobile_normalized,
+            identity_status, created_at, updated_at
+        )
+        VALUES (
+            ?, ?, ?, ?,
+            jsonb_build_array(CAST(? AS text)),
+            CASE WHEN CAST(? AS text) = '' THEN '[]'::jsonb ELSE jsonb_build_array(CAST(? AS text)) END,
+            '', ?, 'active', NOW(), NOW() - INTERVAL '5 minutes'
+        )
+        ON CONFLICT (unionid) DO UPDATE SET
+            primary_external_userid = EXCLUDED.primary_external_userid,
+            primary_openid = COALESCE(NULLIF(EXCLUDED.primary_openid, ''), crm_user_identity.primary_openid),
+            primary_owner_userid = EXCLUDED.primary_owner_userid,
+            external_userids_json = EXCLUDED.external_userids_json,
+            openids_json = EXCLUDED.openids_json,
+            mobile = '',
+            mobile_normalized = EXCLUDED.mobile_normalized,
+            identity_status = 'active',
+            updated_at = NOW() - INTERVAL '5 minutes'
+        """,
+        (unionid, external_userid, openid, owner_userid, external_userid, openid, openid, mobile),
+    )
+
+
 def test_next_external_contact_callback_syncs_identity_and_binds_orphan_mobile(app, monkeypatch, next_pg_schema):
     monkeypatch.setattr(
         "aicrm_next.channel_entry.application.process_channel_entry",
         lambda command: {"handled": False, "reason": "channel_entry_not_under_test"},
+    )
+    monkeypatch.setattr(
+        "aicrm_next.channel_entry.application.repo.log_external_contact_event",
+        lambda **kwargs: {"id": 501, **kwargs},
+    )
+    monkeypatch.setattr(
+        "aicrm_next.channel_entry.application.repo.record_identity_sync_result",
+        lambda *args, **kwargs: None,
+    )
+    monkeypatch.setattr(
+        "aicrm_next.channel_entry.application.repo.mark_event_status",
+        lambda *args, **kwargs: None,
     )
     previous_adapter = get_wecom_adapter()
     set_wecom_adapter(DetailAdapter())
     try:
         with _app_context(app):
             db = get_db()
-            db.execute(
-                """
-                INSERT INTO contacts (external_userid, customer_name, owner_userid, remark, description)
-                VALUES (?, ?, ?, ?, ?)
-                """,
-                ("wm_bridge_001", "桥接客户", "owner_bridge", "桥接备注", ""),
+            _seed_identity_mobile_candidate(
+                db,
+                unionid="union_bridge_001",
+                external_userid="wm_bridge_001",
+                openid="openid_bridge_001",
+                mobile="18565883798",
+                owner_userid="owner_bridge",
             )
-            db.execute(
-                """
-                INSERT INTO wechat_pay_orders (
-                    out_trade_no, product_code, product_name, amount_total, currency,
-                    payer_openid, unionid, external_userid, mobile_snapshot, status, trade_state,
-                    transaction_id, paid_at, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?::timestamptz, ?::timestamptz)
-                """,
-                (
-                    "WXP_BRIDGE_001",
-                    "subscription_trial_month",
-                    "黄小璨首月体验",
-                    990,
-                    "CNY",
-                    "openid_bridge_001",
-                    "union_bridge_001",
-                    "",
-                    "185 6588 3798",
-                    "paid",
-                    "SUCCESS",
-                    "4200003130202606052403665106",
-                    "2026-06-05 06:02:08+00",
-                    "2026-06-05 06:02:01+00",
-                ),
-            )
-            questionnaire_id = db.execute(
-                """
-                INSERT INTO questionnaires (slug, name, title)
-                VALUES (?, ?, ?)
-                RETURNING id
-                """,
-                ("bridge-questionnaire", "桥接问卷", "桥接问卷"),
-            ).fetchone()["id"]
-            submission_id = db.execute(
-                """
-                INSERT INTO questionnaire_submissions (
-                    questionnaire_id, respondent_key, openid, unionid, external_userid,
-                    follow_user_userid, matched_by, mobile_snapshot, submitted_at
-                ) VALUES (?, ?, ?, ?, '', '', '', ?, ?::timestamptz)
-                RETURNING id
-                """,
-                (
-                    questionnaire_id,
-                    "union_bridge_001",
-                    "openid_bridge_001",
-                    "union_bridge_001",
-                    "18565883798",
-                    "2026-06-05 06:05:54+00",
-                ),
-            ).fetchone()["id"]
             db.commit()
 
         result = process_wecom_external_contact_event(
@@ -140,27 +132,10 @@ def test_next_external_contact_callback_syncs_identity_and_binds_orphan_mobile(a
                 """,
                 ("union_bridge_001",),
             ).fetchone()
-            binding = db.execute(
-                """
-                SELECT b.external_userid, p.mobile, b.first_owner_userid, b.last_owner_userid
-                FROM external_contact_bindings b
-                JOIN people p ON p.id = b.person_id
-                WHERE b.external_userid = ?
-                """,
-                ("wm_bridge_001",),
-            ).fetchone()
-            submission = db.execute(
-                """
-                SELECT external_userid, follow_user_userid, matched_by
-                FROM questionnaire_submissions
-                WHERE id = ?
-                """,
-                (submission_id,),
-            ).fetchone()
-
         assert result["identity_sync"]["status"] == "success"
         assert result["identity_sync"]["unionid_present"] is True
         assert result["identity_sync"]["mobile_binding"]["status"] == "bound"
+        assert result["identity_sync"]["questionnaire_backfill"]["reason"] == "questionnaire_submissions_unionid_only"
         assert dict(identity) == {
             "unionid": "union_bridge_001",
             "primary_external_userid": "wm_bridge_001",
@@ -169,17 +144,6 @@ def test_next_external_contact_callback_syncs_identity_and_binds_orphan_mobile(a
             "name": "桥接客户",
             "mobile": "18565883798",
             "status": "active",
-        }
-        assert dict(binding) == {
-            "external_userid": "wm_bridge_001",
-            "mobile": "18565883798",
-            "first_owner_userid": "owner_bridge",
-            "last_owner_userid": "owner_bridge",
-        }
-        assert dict(submission) == {
-            "external_userid": "wm_bridge_001",
-            "follow_user_userid": "owner_bridge",
-            "matched_by": "mobile",
         }
     finally:
         set_wecom_adapter(previous_adapter)
@@ -432,37 +396,13 @@ def test_sidebar_identity_refresh_binds_missing_identity_on_access(app, next_pg_
     try:
         with _app_context(app):
             db = get_db()
-            db.execute(
-                """
-                INSERT INTO contacts (external_userid, customer_name, owner_userid, remark, description)
-                VALUES (?, ?, ?, ?, ?)
-                """,
-                ("wm_bridge_001", "桥接客户", "owner_bridge", "桥接备注", ""),
-            )
-            db.execute(
-                """
-                INSERT INTO wechat_pay_orders (
-                    out_trade_no, product_code, product_name, amount_total, currency,
-                    payer_openid, unionid, external_userid, mobile_snapshot, status, trade_state,
-                    transaction_id, paid_at, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?::timestamptz, ?::timestamptz)
-                """,
-                (
-                    "WXP_BRIDGE_SIDEBAR",
-                    "subscription_trial_month",
-                    "黄小璨首月体验",
-                    990,
-                    "CNY",
-                    "openid_bridge_001",
-                    "union_bridge_001",
-                    "",
-                    "18565883798",
-                    "paid",
-                    "SUCCESS",
-                    "4200003130202606052403665107",
-                    "2026-06-05 06:02:08+00",
-                    "2026-06-05 06:02:01+00",
-                ),
+            _seed_identity_mobile_candidate(
+                db,
+                unionid="union_bridge_001",
+                external_userid="wm_bridge_001",
+                openid="openid_bridge_001",
+                mobile="18565883798",
+                owner_userid="owner_bridge",
             )
             db.commit()
 
@@ -475,24 +415,23 @@ def test_sidebar_identity_refresh_binds_missing_identity_on_access(app, next_pg_
 
         with _app_context(app):
             db = get_db()
-            binding = db.execute(
+            identity = db.execute(
                 """
-                SELECT b.external_userid, p.mobile, b.first_owner_userid
-                FROM external_contact_bindings b
-                JOIN people p ON p.id = b.person_id
-                WHERE b.external_userid = ?
+                SELECT primary_external_userid AS external_userid, mobile, primary_owner_userid
+                FROM crm_user_identity
+                WHERE unionid = ?
                 """,
-                ("wm_bridge_001",),
+                ("union_bridge_001",),
             ).fetchone()
 
         assert result["status"] == "attempted"
-        assert result["reason"] == "identity_missing"
+        assert result["reason"] == "mobile_not_bound"
         assert result["sync_status"] == "success"
         assert result["mobile_binding_status"] == "bound"
-        assert dict(binding) == {
+        assert dict(identity) == {
             "external_userid": "wm_bridge_001",
             "mobile": "18565883798",
-            "first_owner_userid": "owner_bridge",
+            "primary_owner_userid": "owner_bridge",
         }
     finally:
         set_wecom_adapter(previous_adapter)
@@ -501,13 +440,6 @@ def test_sidebar_identity_refresh_binds_missing_identity_on_access(app, next_pg_
 def test_identity_mobile_bridge_backfill_repairs_historical_unbound_rows(app, next_pg_schema):
     with _app_context(app):
         db = get_db()
-        db.execute(
-            """
-            INSERT INTO contacts (external_userid, customer_name, owner_userid, remark, description)
-            VALUES (?, ?, ?, ?, ?)
-            """,
-            ("wm_bridge_history", "历史桥接客户", "owner_history", "历史备注", ""),
-        )
         db.execute(
             """
             INSERT INTO wecom_external_contact_identity_map (
@@ -523,87 +455,33 @@ def test_identity_mobile_bridge_backfill_repairs_historical_unbound_rows(app, ne
                 "历史桥接客户",
             ),
         )
-        db.execute(
-            """
-            INSERT INTO wechat_pay_orders (
-                out_trade_no, product_code, product_name, amount_total, currency,
-                payer_openid, unionid, external_userid, mobile_snapshot, status, trade_state,
-                transaction_id, paid_at, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, '', ?, ?, ?, ?, ?::timestamptz, ?::timestamptz)
-            """,
-            (
-                "WXP_BRIDGE_HISTORY",
-                "subscription_trial_month",
-                "黄小璨首月体验",
-                990,
-                "CNY",
-                "openid_bridge_history",
-                "union_bridge_history",
-                "18565883799",
-                "paid",
-                "SUCCESS",
-                "4200003130202606052403665199",
-                "2026-06-05 06:02:08+00",
-                "2026-06-05 06:02:01+00",
-            ),
+        _seed_identity_mobile_candidate(
+            db,
+            unionid="union_bridge_history",
+            external_userid="wm_bridge_history",
+            openid="openid_bridge_history",
+            mobile="18565883799",
+            owner_userid="owner_history",
         )
-        questionnaire_id = db.execute(
-            """
-            INSERT INTO questionnaires (slug, name, title)
-            VALUES (?, ?, ?)
-            RETURNING id
-            """,
-            ("bridge-history-questionnaire", "历史桥接问卷", "历史桥接问卷"),
-        ).fetchone()["id"]
-        submission_id = db.execute(
-            """
-            INSERT INTO questionnaire_submissions (
-                questionnaire_id, respondent_key, openid, unionid, external_userid,
-                follow_user_userid, matched_by, mobile_snapshot, submitted_at
-            ) VALUES (?, ?, ?, ?, '', '', '', ?, ?::timestamptz)
-            RETURNING id
-            """,
-            (
-                questionnaire_id,
-                "union_bridge_history",
-                "openid_bridge_history",
-                "union_bridge_history",
-                "18565883799",
-                "2026-06-05 06:05:54+00",
-            ),
-        ).fetchone()["id"]
         db.commit()
 
         dry_run = run_backfill(execute=False, limit=50, external_userids=["wm_bridge_history"])
         executed = run_backfill(execute=True, limit=50, external_userids=["wm_bridge_history"])
 
-        binding = db.execute(
+        identity = db.execute(
             """
-            SELECT b.external_userid, p.mobile, b.first_owner_userid
-            FROM external_contact_bindings b
-            JOIN people p ON p.id = b.person_id
-            WHERE b.external_userid = ?
+            SELECT primary_external_userid AS external_userid, mobile, primary_owner_userid
+            FROM crm_user_identity
+            WHERE unionid = ?
             """,
-            ("wm_bridge_history",),
-        ).fetchone()
-        submission = db.execute(
-            """
-            SELECT external_userid, follow_user_userid, matched_by
-            FROM questionnaire_submissions
-            WHERE id = ?
-            """,
-            (submission_id,),
+            ("union_bridge_history",),
         ).fetchone()
 
     assert dry_run["summary"] == {"would_bind": 1}
     assert executed["summary"] == {"bound": 1}
-    assert dict(binding) == {
+    assert executed["results"][0]["questionnaire_backfill"]["reason"] == "questionnaire_submissions_unionid_only"
+    assert dict(identity) == {
         "external_userid": "wm_bridge_history",
         "mobile": "18565883799",
-        "first_owner_userid": "owner_history",
-    }
-    assert dict(submission) == {
-        "external_userid": "wm_bridge_history",
-        "follow_user_userid": "owner_history",
-        "matched_by": "mobile",
+        "primary_owner_userid": "owner_history",
     }

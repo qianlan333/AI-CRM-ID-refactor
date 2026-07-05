@@ -113,6 +113,58 @@ def test_identity_resolution_worker_updates_runtime_row() -> None:
     assert any("UPDATE automation_channel_entry_runtime" in query for query, _ in conn.queries)
 
 
+def test_identity_resolution_worker_runtime_rows_use_backoff_and_terminal_limit() -> None:
+    retry_conn = _FakeConn(
+        runtime_rows=[
+            {
+                "id": 21,
+                "event_log_id": 100,
+                "corp_id": "corp",
+                "external_userid": "external_retry",
+                "follow_user_userid": "user_retry",
+                "payload_json": {},
+                "identity_attempt_count": 1,
+            }
+        ]
+    )
+    terminal_conn = _FakeConn(
+        runtime_rows=[
+            {
+                "id": 22,
+                "event_log_id": 101,
+                "corp_id": "corp",
+                "external_userid": "external_terminal",
+                "follow_user_userid": "user_terminal",
+                "payload_json": {},
+                "identity_attempt_count": 4,
+            }
+        ]
+    )
+
+    def failed_sync(event, corp_id, event_log_id):
+        return {"status": "failed", "reason": "wecom_api_error"}
+
+    retry_result = IdentityResolutionBackfillWorker(connection_factory=lambda: retry_conn, sync_func=failed_sync).run_due(
+        dry_run=False,
+        max_attempts=5,
+    )
+    terminal_result = IdentityResolutionBackfillWorker(connection_factory=lambda: terminal_conn, sync_func=failed_sync).run_due(
+        dry_run=False,
+        max_attempts=5,
+    )
+
+    assert retry_result["retryable_count"] == 1
+    assert retry_result["terminal_count"] == 0
+    claim_query = retry_conn.queries[1][0]
+    assert "COALESCE(identity_attempt_count, 0) < %s" in claim_query
+    assert "identity_next_attempt_at IS NULL OR identity_next_attempt_at <= CURRENT_TIMESTAMP" in claim_query
+    update_query = retry_conn.queries[-1][0]
+    assert "identity_attempt_count" in update_query
+    assert "identity_next_attempt_at" in update_query
+    assert terminal_result["terminal_count"] == 1
+    assert "failed_terminal" in terminal_conn.queries[-1][1]
+
+
 def test_identity_resolution_worker_dry_run_rolls_back_claims() -> None:
     conn = _FakeConn(queue_rows=[{"id": 10, "external_userid": "external_1", "payload_json": {}}])
 

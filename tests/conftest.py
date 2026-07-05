@@ -39,6 +39,14 @@ os.environ.setdefault("SECRET_KEY", "pytest-secret-key")
 os.environ.setdefault("WECHAT_SHOP_CALLBACK_TOKEN", "pytest-wechat-shop-callback-token")
 
 
+def _env_flag(name: str) -> bool:
+    return str(os.environ.get(name, "") or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _fixture_default_runtime_enabled() -> bool:
+    return _env_flag("AICRM_PYTEST_FIXTURE_DEFAULT")
+
+
 def _xdist_worker_id() -> str:
     """xdist 子 worker 是 "gw0" / "gw1" / ...；非并行运行 / 主进程返回 "master"。"""
     return os.environ.get("PYTEST_XDIST_WORKER", "master")
@@ -52,7 +60,7 @@ def _resolve_worker_database_url() -> str:
     psycopg 发一次 ``CREATE DATABASE``（postgres 官方镜像里 POSTGRES_USER 是
     superuser，有 CREATEDB 权限）。
     """
-    base_url = os.environ.get("DATABASE_URL", "").strip()
+    base_url = os.environ.get("DATABASE_URL", "").strip() or os.environ.get("AICRM_TEST_DATABASE_URL", "").strip()
     if not base_url:
         return ""
     worker_id = _xdist_worker_id()
@@ -74,9 +82,12 @@ def _resolve_worker_database_url() -> str:
         bootstrap.close()
     except Exception:
         # 起 worker DB 失败时降级回 base DB（serial 模式）
+        os.environ["AICRM_TEST_DATABASE_URL"] = base_url
         return base_url
     new_url = urlunparse(parsed._replace(path=f"/{worker_db}"))
-    os.environ["DATABASE_URL"] = new_url
+    os.environ["AICRM_TEST_DATABASE_URL"] = new_url
+    if not _fixture_default_runtime_enabled():
+        os.environ["DATABASE_URL"] = new_url
     return new_url
 
 
@@ -260,7 +271,7 @@ _TABLES_TO_TRUNCATE = [
 
 
 def _ensure_pg_url() -> str:
-    url = os.environ.get("DATABASE_URL", "").strip()
+    url = os.environ.get("AICRM_TEST_DATABASE_URL", "").strip() or os.environ.get("DATABASE_URL", "").strip()
     if not url:
         pytest.skip(
             "PG required. Run: "
@@ -618,17 +629,23 @@ def _bootstrap_next_test_baseline_schema(url: str) -> None:
             id BIGSERIAL PRIMARY KEY,
             source_type TEXT NOT NULL DEFAULT '',
             source_key TEXT NOT NULL DEFAULT '',
+            source_table TEXT NOT NULL DEFAULT '',
+            source_id TEXT NOT NULL DEFAULT '',
             corp_id TEXT NOT NULL DEFAULT '',
             external_userid TEXT NOT NULL DEFAULT '',
             openid TEXT NOT NULL DEFAULT '',
             mobile TEXT NOT NULL DEFAULT '',
             payload_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+            raw_payload_json JSONB NOT NULL DEFAULT '{}'::jsonb,
             reason TEXT NOT NULL DEFAULT '',
             status TEXT NOT NULL DEFAULT 'pending',
+            resolved_unionid TEXT NOT NULL DEFAULT '',
+            conflict_reason TEXT NOT NULL DEFAULT '',
             attempts INTEGER NOT NULL DEFAULT 0,
             attempt_count INTEGER NOT NULL DEFAULT 0,
             last_error TEXT NOT NULL DEFAULT '',
             next_attempt_at TIMESTAMPTZ,
+            resolved_at TIMESTAMPTZ,
             first_seen_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
             last_seen_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
             created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -828,6 +845,7 @@ def _ensure_schema_once():
     if not url:
         yield
         return
+    os.environ["AICRM_TEST_DATABASE_URL"] = url
     try:
         import psycopg
     except ImportError:  # pragma: no cover
@@ -855,6 +873,8 @@ def _ensure_schema_once():
         if ordered
         else ""
     )
+    if _fixture_default_runtime_enabled():
+        os.environ.pop("DATABASE_URL", None)
     yield
     _close_truncate_conn()
 
@@ -923,14 +943,19 @@ def _truncate_before_each_test():
 
 
 @pytest.fixture
-def next_pg_schema():
+def next_pg_schema(monkeypatch):
     """Explicit opt-in for tests that require the Next/Alembic PG schema."""
-    _ensure_pg_url()
+    monkeypatch.setenv("DATABASE_URL", _ensure_pg_url())
     return None
 
 
 @pytest.fixture
-def next_app(monkeypatch):
+def next_app(monkeypatch, request):
+    if _fixture_default_runtime_enabled():
+        if "next_pg_schema" in request.fixturenames:
+            monkeypatch.setenv("DATABASE_URL", _ensure_pg_url())
+        else:
+            monkeypatch.delenv("DATABASE_URL", raising=False)
     monkeypatch.setenv("AICRM_NEXT_ENV", "test")
     from aicrm_next.main import create_app
 

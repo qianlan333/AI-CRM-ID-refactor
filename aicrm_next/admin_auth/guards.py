@@ -13,7 +13,9 @@ from .service import CSRF_COOKIE, SESSION_COOKIE, csrf_token_from_session, norma
 
 PROTECTED_ROUTE_PREFIXES = (
     "/admin",
+    "/setup",
     "/api/admin",
+    "/api/sidebar",
     "/api/customers",
     "/api/users",
     "/api/messages",
@@ -34,9 +36,11 @@ PUBLIC_EXACT_ROUTES = {
     "/api/system/health",
     "/login",
     "/logout",
+    "/api/sidebar/jssdk-config",
     "/sidebar/bind-mobile",
 }
 
+ADMIN_PAGE_ROUTE_PREFIXES = ("/admin", "/setup")
 CSRF_SAFE_METHODS = {"GET", "HEAD", "OPTIONS", "TRACE"}
 
 
@@ -71,7 +75,7 @@ def admin_auth_required_response(request: Request) -> Response | None:
         if csrf_response is not None:
             return csrf_response
         return None
-    if str(request.url.path or "").startswith("/admin"):
+    if str(request.url.path or "").startswith(ADMIN_PAGE_ROUTE_PREFIXES):
         return admin_page_auth_redirect(request)
     return admin_api_auth_error(request)
 

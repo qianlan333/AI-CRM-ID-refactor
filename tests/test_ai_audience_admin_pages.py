@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from time import time
 
 from sqlalchemy import text
@@ -75,14 +76,15 @@ def _insert_member(session, *, package_id: int, identity_value: str, status: str
         text(
             """
             INSERT INTO crm_user_identity (
-                unionid, primary_external_userid, external_userids_json, status, created_at, updated_at
+                unionid, primary_external_userid, external_userids_json, identity_status, created_at, updated_at
             )
             VALUES (
-                :unionid, :external_userid, jsonb_build_array(:external_userid), 'active', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+                :unionid, :external_userid, jsonb_build_array(CAST(:external_userid AS text)), 'active', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
             )
             ON CONFLICT (unionid) DO UPDATE SET
                 primary_external_userid = EXCLUDED.primary_external_userid,
                 external_userids_json = EXCLUDED.external_userids_json,
+                identity_status = EXCLUDED.identity_status,
                 updated_at = CURRENT_TIMESTAMP
             """
         ),
@@ -151,6 +153,7 @@ def test_admin_ai_audience_package_create_requires_admin_session(next_client) ->
 def test_admin_ai_audience_package_create_version_publish_contract(next_client, next_pg_schema, monkeypatch) -> None:
     del next_pg_schema
     monkeypatch.setenv("SECRET_KEY", "ai-audience-create-test")
+    monkeypatch.setenv("AICRM_AUDIENCE_READONLY_DATABASE_URL", os.environ["DATABASE_URL"])
     sql_text = """
         SELECT
           'external_userid' AS identity_type,
@@ -158,6 +161,7 @@ def test_admin_ai_audience_package_create_version_publish_contract(next_client, 
           'questionnaire_submission:' || qs.submission_id::text AS event_source_key,
           jsonb_build_object('questionnaire_id', qs.questionnaire_id) AS payload_json,
           qs.external_userid,
+          qs.unionid,
           qs.submitted_at AS event_at
         FROM audience_read.questionnaire_submissions_v1 qs
         JOIN audience_read.wecom_contacts_v1 wc ON wc.external_userid = qs.external_userid
@@ -209,6 +213,39 @@ def test_admin_ai_audience_package_create_version_publish_contract(next_client, 
     with session_factory() as session:
         package_row = session.execute(text("SELECT status, incremental_enabled, incremental_interval_seconds, next_incremental_refresh_at FROM ai_audience_package WHERE id = :id"), {"id": package_id}).mappings().one()
         version_row = session.execute(text("SELECT parameters_json FROM ai_audience_package_version WHERE package_id = :id"), {"id": package_id}).mappings().one()
+        session.execute(
+            text(
+                """
+                INSERT INTO crm_user_identity (
+                    unionid, primary_external_userid, external_userids_json, identity_status, created_at, updated_at
+                )
+                VALUES (
+                    'union_preview_102',
+                    'wm_preview_102',
+                    jsonb_build_array('wm_preview_102'::text),
+                    'active',
+                    CURRENT_TIMESTAMP,
+                    CURRENT_TIMESTAMP
+                )
+                ON CONFLICT (unionid) DO UPDATE SET
+                    primary_external_userid = EXCLUDED.primary_external_userid,
+                    external_userids_json = EXCLUDED.external_userids_json,
+                    identity_status = EXCLUDED.identity_status,
+                    updated_at = CURRENT_TIMESTAMP
+                """
+            )
+        )
+        session.execute(
+            text(
+                """
+                INSERT INTO questionnaire_submissions (
+                    questionnaire_id, unionid, follow_user_userid, staff_id, submitted_at
+                )
+                VALUES (102, 'union_preview_102', 'HuangYouCan', 'HuangYouCan', CURRENT_TIMESTAMP - interval '1 minute')
+                """
+            )
+        )
+        session.commit()
     assert package_row["status"] == "paused"
     assert package_row["incremental_enabled"] is True
     assert package_row["incremental_interval_seconds"] == 180
@@ -226,12 +263,15 @@ def test_admin_ai_audience_package_create_version_publish_contract(next_client, 
     preview_sql = """
         SELECT
           'external_userid' AS identity_type,
-          'wm_preview_' || CAST(:questionnaire_id AS text) AS identity_value,
+          qs.external_userid AS identity_value,
           'preview:' || CAST(:package_id AS text) AS event_source_key,
           jsonb_build_object('questionnaire_id', :questionnaire_id, 'lookback_seconds', :lookback_seconds) AS payload_json,
-          'wm_preview_' || CAST(:questionnaire_id AS text) AS external_userid,
+          qs.external_userid,
+          qs.unionid,
           :refresh_started_at AS event_at
-        WHERE :questionnaire_id = 102
+        FROM audience_read.questionnaire_submissions_v1 qs
+        WHERE qs.questionnaire_id = :questionnaire_id
+          AND :questionnaire_id = 102
           AND :refresh_started_at >= :last_watermark_at
           AND :lookback_seconds >= 0
     """

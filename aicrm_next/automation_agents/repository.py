@@ -319,8 +319,20 @@ class AutomationAgentRepository:
                   AND (:questionnaire_id <= 0 OR s.questionnaire_id = :questionnaire_id)
                   AND (
                     :external_userid = ''
-                    OR COALESCE(s.external_userid, '') = ''
-                    OR s.external_userid = :external_userid
+                    OR s.unionid = (
+                        SELECT identity.unionid
+                        FROM crm_user_identity identity
+                        WHERE identity.primary_external_userid = :external_userid
+                           OR EXISTS (
+                               SELECT 1
+                               FROM jsonb_array_elements(identity.external_userids_json) AS external_item(value)
+                               WHERE CASE
+                                   WHEN jsonb_typeof(external_item.value) = 'object' THEN external_item.value->>'external_userid'
+                                   ELSE trim('"' from external_item.value::text)
+                               END = :external_userid
+                           )
+                        LIMIT 1
+                    )
                   )
                 ORDER BY s.submitted_at DESC NULLS LAST, s.id DESC, a.id ASC
                 LIMIT :limit
