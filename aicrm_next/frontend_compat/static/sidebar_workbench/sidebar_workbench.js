@@ -469,7 +469,7 @@
   async function loadTabData(tab) {
     if (tab === "profile" || state.loaded[tab]) return;
     if (tab === "questionnaires") {
-      const payload = await requestJson(queryUrl(endpoint("questionnairesUrl"), { external_userid: state.external_userid }));
+      const payload = await requestJson(queryUrl(endpoint("questionnairesUrl"), customerContextQuery()));
       state.data.questionnaires = payload.questionnaires || [];
     } else if (tab === "products") {
       const payload = await requestJson(queryUrl(endpoint("productsUrl"), customerContextQuery()));

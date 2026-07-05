@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
 from aicrm_next.commerce import external_push_admin
+from aicrm_next.external_push import security, service
 from aicrm_next.commerce.repo import reset_commerce_fixture_state
 from aicrm_next.platform_foundation.external_effects import ExternalEffectService, WEBHOOK_ORDER_PAID_PUSH, reset_external_effect_fixture_state
 
@@ -72,6 +74,19 @@ def test_webhook_url_security_rejects_private_targets(monkeypatch):
     _public_dns(monkeypatch, ip="10.0.0.8")
     with pytest.raises(external_push_admin.WebhookUrlValidationError):
         external_push_admin.resolve_and_validate_public_https_url("https://example.com/foo")
+
+
+def test_external_push_admin_reuses_next_native_security_and_payload_helpers():
+    source = Path("aicrm_next/commerce/external_push_admin.py").read_text(encoding="utf-8")
+
+    assert "def _validate_webhook_url" not in source
+    assert "def _resolve_and_validate_public_https_url" not in source
+    assert "def _sign_webhook_payload" not in source
+    assert "def _redact_sensitive_fields" not in source
+    assert "def _build_external_push_payload" not in source
+    assert external_push_admin.resolve_and_validate_public_https_url is security.resolve_and_validate_public_https_url
+    assert external_push_admin._sign_webhook_payload is service.sign_webhook_payload
+    assert external_push_admin._redact_sensitive_fields is service.redact_sensitive_fields
 
 
 def test_external_push_payload_masks_stored_body_but_sends_full_payload():

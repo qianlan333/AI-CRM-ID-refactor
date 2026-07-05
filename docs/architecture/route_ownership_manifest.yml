@@ -7270,7 +7270,7 @@ routes:
   - POST
   route_name: api_admin_jobs_order_identity_repair_run
   capability_owner: admin_jobs
-  runtime_owner: ai_crm_next
+  runtime_owner: retired
   layer: api
   external_effects: none
   data_source: command

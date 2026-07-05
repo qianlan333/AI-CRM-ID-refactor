@@ -60,6 +60,35 @@ def test_sidebar_readonly_routes_handle_missing_and_unknown_customers() -> None:
     assert unknown.json()["fallback_used"] is False
 
 
+def test_sidebar_readonly_routes_filter_by_owner_userid() -> None:
+    client = _client()
+
+    allowed = client.get("/api/sidebar/customer-context?external_userid=wx_ext_001&owner_userid=ZhaoYanFang")
+    assert allowed.status_code == 200
+    assert allowed.json()["context"]["customer"]["owner_userid"] == "ZhaoYanFang"
+
+    scoped_paths = [
+        "/api/sidebar/customer-context?external_userid=wx_ext_001&owner_userid=LiuXiao",
+        "/api/sidebar/profile?external_userid=wx_ext_001&owner_userid=LiuXiao",
+        "/api/sidebar/tags?external_userid=wx_ext_001&owner_userid=LiuXiao",
+        "/api/sidebar/binding-status?external_userid=wx_ext_001&owner_userid=LiuXiao",
+        "/api/sidebar/contact-binding-status?external_userid=wx_ext_001&owner_userid=LiuXiao",
+        "/api/sidebar/lead-pool/status?external_userid=wx_ext_001&owner_userid=LiuXiao",
+        "/api/sidebar/signup-tags/status?external_userid=wx_ext_001&owner_userid=LiuXiao",
+        "/api/sidebar/marketing-status?external_userid=wx_ext_001&owner_userid=LiuXiao",
+        "/api/sidebar/v2/workbench?external_userid=wx_ext_001&owner_userid=LiuXiao",
+        "/api/sidebar/v2/questionnaires?external_userid=wx_ext_001&owner_userid=LiuXiao",
+        "/api/sidebar/v2/orders?external_userid=wx_ext_001&owner_userid=LiuXiao",
+        "/api/sidebar/v2/other-staff-messages?external_userid=wx_ext_001&current_userid=LiuXiao",
+    ]
+
+    for path in scoped_paths:
+        response = client.get(path)
+        assert response.status_code == 404, path
+        assert response.json()["source_status"] == "not_found"
+        assert response.json()["fallback_used"] is False
+
+
 def test_sidebar_readonly_production_unavailable_is_controlled(monkeypatch) -> None:
     monkeypatch.setenv("AICRM_NEXT_ENV", "production")
     monkeypatch.setenv("AICRM_NEXT_ENABLE_LEGACY_PRODUCTION_FACADE", "1")
@@ -73,4 +102,3 @@ def test_sidebar_readonly_production_unavailable_is_controlled(monkeypatch) -> N
     assert payload["source_status"] == "production_unavailable"
     assert payload["fallback_used"] is False
     assert payload["degraded"] is True
-

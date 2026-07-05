@@ -157,6 +157,42 @@ DROP TABLE IF EXISTS public.retired_table
     assert check_sql_static_guard(root=tmp_path, manifest_path=manifest) == []
 
 
+def test_migration_downgrade_can_restore_retired_table_after_0073(tmp_path: Path) -> None:
+    manifest = _write_manifest(tmp_path, baseline_prefix="0073")
+    _write(
+        tmp_path / "migrations" / "versions" / "0074_retire_table.py",
+        '''
+def downgrade():
+    op.execute("""
+    CREATE TABLE IF NOT EXISTS retired_table (
+        id TEXT PRIMARY KEY
+    )
+    """)
+''',
+    )
+
+    assert check_sql_static_guard(root=tmp_path, manifest_path=manifest) == []
+
+
+def test_migration_upgrade_cannot_restore_retired_table_after_0073(tmp_path: Path) -> None:
+    manifest = _write_manifest(tmp_path, baseline_prefix="0073")
+    _write(
+        tmp_path / "migrations" / "versions" / "0074_restore_table.py",
+        '''
+def upgrade():
+    op.execute("""
+    CREATE TABLE IF NOT EXISTS retired_table (
+        id TEXT PRIMARY KEY
+    )
+    """)
+''',
+    )
+
+    violations = check_sql_static_guard(root=tmp_path, manifest_path=manifest)
+
+    assert [violation.rule for violation in violations] == ["retired_table_sql_reference"]
+
+
 def test_legacy_identity_column_detection_normalizes_case_and_quotes(tmp_path: Path) -> None:
     manifest = _write_manifest(
         tmp_path,

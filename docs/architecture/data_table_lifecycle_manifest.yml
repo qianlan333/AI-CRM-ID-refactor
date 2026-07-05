@@ -3091,6 +3091,22 @@ tables:
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
     notes: Registered from the id-dev public schema so schema_drift_guard can fail closed on future unmanaged table changes.
 
+  wechat_pay_order_identity_repair:
+    domain: commerce
+    lifecycle: retired
+    write_owner: ""
+    read_owners: []
+    replacement: wechat_pay_orders, crm_user_identity, current_order_customer_identity_projection
+    drop_candidate: false
+    drop_after: "0091_retire_wechat_pay_order_identity_repair"
+    runtime_entrypoints: []
+    migration_source: "0062_wechat_pay_order_identity_repair, removed by 0091_retire_wechat_pay_order_identity_repair"
+    pii_level: internal_contact
+    guard_tests:
+      - tests/test_wechat_pay_order_identity_repair.py
+      - tests/test_data_table_lifecycle_guard.py
+    notes: Retired order identity repair queue. The only remaining CREATE TABLE statement is 0091 downgrade support.
+
   wechat_pay_orders:
     domain: commerce
     lifecycle: canonical

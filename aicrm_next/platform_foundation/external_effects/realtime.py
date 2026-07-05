@@ -8,6 +8,7 @@ from typing import Any
 from aicrm_next.shared.runtime_settings import runtime_bool, runtime_csv, runtime_setting
 
 from .adapters import ExternalEffectAdapterRegistry
+from .execution_gates import explicit_wecom_execution_disabled, is_wecom_effect_type
 from .models import WECOM_CONTACT_TAG_MARK, WECOM_PROFILE_UPDATE, WECOM_WELCOME_MESSAGE_SEND
 from .repo import ExternalEffectRepository
 from .worker import ExternalEffectWorker
@@ -41,6 +42,8 @@ def _max_concurrency() -> int:
 
 
 def _execution_gate_enabled_for_type(effect_type: str) -> bool:
+    if is_wecom_effect_type(effect_type) and explicit_wecom_execution_disabled():
+        return False
     allowed_types = runtime_csv("AICRM_EXTERNAL_EFFECT_ALLOWED_TYPES")
     if effect_type not in allowed_types:
         return False

@@ -125,6 +125,32 @@ def test_sidebar_write_routes_return_controlled_errors(client: TestClient) -> No
     assert unknown_customer.json()["fallback_used"] is False
 
 
+def test_sidebar_write_routes_filter_by_owner_userid(client: TestClient) -> None:
+    allowed = client.post(
+        "/api/sidebar/lead-pool/upsert-class-term",
+        json={
+            "external_userid": "wx_ext_001",
+            "owner_userid": "ZhaoYanFang",
+            "class_term": "term-2026-06",
+            "status": "active",
+        },
+    )
+    blocked = client.post(
+        "/api/sidebar/lead-pool/upsert-class-term",
+        json={
+            "external_userid": "wx_ext_001",
+            "owner_userid": "LiuXiao",
+            "class_term": "term-2026-06",
+            "status": "active",
+        },
+    )
+
+    assert allowed.status_code == 200
+    assert blocked.status_code == 404
+    assert blocked.json()["source_status"] == "not_found"
+    assert blocked.json()["fallback_used"] is False
+
+
 def test_sidebar_write_production_unavailable_does_not_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("DATABASE_URL", "postgresql://sidebar-write:sidebar-write@127.0.0.1:1/aicrm_sidebar")
     monkeypatch.setenv("AICRM_NEXT_ENV", "production")

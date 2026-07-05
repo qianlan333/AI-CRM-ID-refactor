@@ -24,6 +24,7 @@ from .application import (
     build_jobs_payload,
     build_jobs_summary_payload,
     build_jobs_webhook_deliveries_payload,
+    build_legacy_disabled_payload,
     cancel_broadcast_job,
     execute_jobs_action,
 )
@@ -37,8 +38,6 @@ from .notification_settings import (
     validate_feishu_webhook,
 )
 from aicrm_next.admin_shell import admin_path_for, shell_context
-from aicrm_next.commerce.order_identity_repair import repair_missing_order_identities
-from aicrm_next.platform_foundation.legacy_cleanup.service import LegacyWebhookCleanupService
 from aicrm_next.shared.runtime import require_signing_secret
 
 router = APIRouter()
@@ -266,7 +265,7 @@ async def api_admin_jobs_deferred_jobs_run(request: Request):
     token_error = await _action_token_error(request, payload)
     if token_error:
         return JSONResponse({"ok": False, "error": token_error}, status_code=401)
-    body = LegacyWebhookCleanupService().disabled_payload(
+    body = build_legacy_disabled_payload(
         "old_admin_jobs_deferred_run",
         error="legacy_deferred_jobs_runner_disabled",
     )
@@ -284,7 +283,7 @@ async def api_admin_jobs_webhook_deliveries_run(request: Request):
     token_error = await _action_token_error(request, payload)
     if token_error:
         return JSONResponse({"ok": False, "error": token_error}, status_code=401)
-    body = LegacyWebhookCleanupService().disabled_payload(
+    body = build_legacy_disabled_payload(
         "old_customer_webhook_delivery_retry",
         error="legacy_webhook_retry_disabled",
     )
@@ -297,11 +296,11 @@ async def api_admin_jobs_webhook_delivery_retry(delivery_id: int, request: Reque
     token_error = await _action_token_error(request, payload)
     if token_error:
         return JSONResponse({"ok": False, "error": token_error}, status_code=401)
-    body = LegacyWebhookCleanupService().disabled_payload(
+    body = build_legacy_disabled_payload(
         "old_customer_webhook_delivery_retry",
         error="legacy_webhook_retry_disabled",
+        extra={"delivery_id": int(delivery_id)},
     )
-    body["delivery_id"] = int(delivery_id)
     return JSONResponse(body, status_code=409)
 
 
@@ -395,10 +394,17 @@ async def api_admin_jobs_order_identity_repair_run(request: Request):
     token_error = await _cron_or_action_token_error(request, payload)
     if token_error:
         return JSONResponse({"ok": False, "error": token_error}, status_code=401)
-    result = repair_missing_order_identities(
-        limit=normalized_int(payload.get("limit"), default=100, minimum=1, maximum=1000),
-        max_attempts=normalized_int(payload.get("max_attempts"), default=3, minimum=1, maximum=10),
-        dry_run=normalized_bool(payload.get("dry_run")),
+    return JSONResponse(
+        {
+            "ok": False,
+            "error": "order_identity_repair_retired",
+            "retired": True,
+            "message": "wechat_pay_order_identity_repair has been retired; paid order identity is handled by the current order/customer identity projection path.",
+            "replacement": "current_order_customer_identity_projection",
+            "route_owner": "ai_crm_next",
+            "real_external_call_executed": False,
+        },
+        status_code=410,
     )
     return _jsonable(result)
 

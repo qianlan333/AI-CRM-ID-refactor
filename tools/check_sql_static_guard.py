@@ -86,6 +86,7 @@ class SqlLiteral:
     path: Path
     line: int
     value: str
+    function_name: str = ""
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -119,7 +120,13 @@ def check_sql_static_guard(root: Path = ROOT, manifest_path: Path = DEFAULT_MANI
             continue
         is_pre_guard_migration = _is_pre_guard_migration(literal.path, root=root, baseline_prefix=baseline_prefix)
         if not is_pre_guard_migration:
-            if not (_is_migration(literal.path, root=root) and _is_drop_table_statement(normalized)):
+            if not (
+                _is_migration(literal.path, root=root)
+                and (
+                    _is_drop_table_statement(normalized)
+                    or _is_downgrade_retired_table_restore(literal, normalized, retired_tables, root)
+                )
+            ):
                 violations.extend(_retired_table_violations(literal, normalized, retired_tables))
             violations.extend(_legacy_identity_column_violations(literal, normalized))
         violations.extend(
@@ -154,11 +161,17 @@ def _iter_sql_literals(root: Path) -> Iterable[SqlLiteral]:
                 tree = ast.parse(source, filename=str(path))
             except SyntaxError:
                 continue
-            for node in ast.walk(tree):
-                value = _string_value(node)
-                if value is None:
-                    continue
-                yield SqlLiteral(path=path, line=getattr(node, "lineno", 1), value=value)
+            yield from _iter_sql_literals_from_node(path, tree)
+
+
+def _iter_sql_literals_from_node(path: Path, node: ast.AST, *, function_name: str = "") -> Iterable[SqlLiteral]:
+    if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+        function_name = node.name
+    value = _string_value(node)
+    if value is not None:
+        yield SqlLiteral(path=path, line=getattr(node, "lineno", 1), value=value, function_name=function_name)
+    for child in ast.iter_child_nodes(node):
+        yield from _iter_sql_literals_from_node(path, child, function_name=function_name)
 
 
 def _string_value(node: ast.AST) -> str | None:
@@ -306,6 +319,18 @@ def _is_drop_table_statement(sql_text: str) -> bool:
             flags=re.IGNORECASE,
         )
     )
+
+
+def _is_downgrade_retired_table_restore(
+    literal: SqlLiteral,
+    normalized: str,
+    retired_tables: set[str],
+    root: Path,
+) -> bool:
+    if literal.function_name != "downgrade" or not _is_migration(literal.path, root=root):
+        return False
+    created = _created_tables(normalized)
+    return bool(created) and created.issubset(retired_tables)
 
 
 def _created_tables(sql_text: str) -> set[str]:

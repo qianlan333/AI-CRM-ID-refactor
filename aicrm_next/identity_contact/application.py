@@ -125,6 +125,48 @@ def _customer_read_model_binding_status_payload(
     }
 
 
+def _owner_candidates_from_customer(customer: JsonDict) -> set[str]:
+    candidates = {str(customer.get("owner_userid") or "").strip()}
+    for field in ("binding", "identity", "contact"):
+        value = customer.get(field)
+        if isinstance(value, dict):
+            candidates.update(
+                {
+                    str(value.get("owner_userid") or "").strip(),
+                    str(value.get("last_owner_userid") or "").strip(),
+                    str(value.get("first_owner_userid") or "").strip(),
+                    str(value.get("primary_owner_userid") or "").strip(),
+                    str(value.get("follow_user_userid") or "").strip(),
+                }
+            )
+    follow_users = customer.get("follow_users")
+    if isinstance(follow_users, list):
+        for item in follow_users:
+            if isinstance(item, dict):
+                candidates.update(
+                    {
+                        str(item.get("userid") or "").strip(),
+                        str(item.get("user_id") or "").strip(),
+                        str(item.get("owner_userid") or "").strip(),
+                    }
+                )
+    return {item for item in candidates if item}
+
+
+def _owner_scope_not_found_payload(external_userid: str) -> JsonDict:
+    return {
+        "ok": False,
+        "error": "customer not found",
+        "source_status": "not_found",
+        "read_model_status": "not_found",
+        "route_owner": "ai_crm_next",
+        "fallback_used": False,
+        "degraded": False,
+        "status_code": 404,
+        "external_userid": external_userid,
+    }
+
+
 def _identity_binding_status_payload(
     result: IdentityResolution,
     *,
@@ -182,6 +224,8 @@ class GetSidebarContactBindingStatusQuery:
                 if not payload.get("ok"):
                     raise RuntimeError(str(payload.get("page_error") or payload.get("error_code") or "customer detail unavailable"))
                 customer = dict(payload.get("customer") or {})
+                if resolved_owner_userid and resolved_owner_userid not in _owner_candidates_from_customer(customer):
+                    return _owner_scope_not_found_payload(resolved_external_userid)
             except Exception as exc:
                 result = self._identity_query(
                     ResolvePersonIdentityRequest(
@@ -189,6 +233,8 @@ class GetSidebarContactBindingStatusQuery:
                     )
                 )
                 if result is not None:
+                    if resolved_owner_userid and resolved_owner_userid != str(result.owner_userid or "").strip():
+                        return _owner_scope_not_found_payload(resolved_external_userid)
                     payload = _identity_binding_status_payload(
                         result,
                         external_userid=resolved_external_userid,
@@ -217,6 +263,8 @@ class GetSidebarContactBindingStatusQuery:
                 owner_userid=resolved_owner_userid,
                 source_status="identity_contact",
             )
+        if resolved_owner_userid and resolved_owner_userid != str(result.owner_userid or "").strip():
+            return _owner_scope_not_found_payload(resolved_external_userid)
         return _identity_binding_status_payload(
             result,
             external_userid=resolved_external_userid,

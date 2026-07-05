@@ -7,12 +7,16 @@ from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse, RedirectResponse
 
 from .service import (
+    CSRF_COOKIE,
     SESSION_COOKIE,
     SESSION_MAX_AGE_SECONDS,
+    admin_cookie_secure,
     auth_route_headers,
     auth_safe_next_path,
     build_authorize_url,
+    csrf_token_from_session,
     handle_callback,
+    session_payload_with_csrf,
     signed_session_cookie,
 )
 
@@ -130,14 +134,26 @@ def auth_wecom_callback(request: Request):
         user_agent=request.headers.get("user-agent", ""),
     )
     if result.ok and result.session_payload:
+        session_payload = session_payload_with_csrf(result.session_payload)
+        csrf_token = csrf_token_from_session(session_payload)
+        secure_cookie = admin_cookie_secure()
         response = RedirectResponse(result.next_path, status_code=302, headers=auth_route_headers())
         response.set_cookie(
             SESSION_COOKIE,
-            signed_session_cookie(result.session_payload),
+            signed_session_cookie(session_payload),
             max_age=SESSION_MAX_AGE_SECONDS,
             httponly=True,
             samesite="lax",
-            secure=False,
+            secure=secure_cookie,
+            path="/",
+        )
+        response.set_cookie(
+            CSRF_COOKIE,
+            csrf_token,
+            max_age=SESSION_MAX_AGE_SECONDS,
+            httponly=False,
+            samesite="lax",
+            secure=secure_cookie,
             path="/",
         )
         return response

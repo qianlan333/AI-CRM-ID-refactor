@@ -89,6 +89,7 @@ def get_sidebar_write_projection_events() -> list[dict[str, Any]]:
 
 def execute_sidebar_write(command: SidebarWriteCommand) -> dict[str, Any]:
     _validate_command(command)
+    _validate_owner_scope(command)
     if production_data_ready() and not isinstance(command, BindMobileCommand):
         raise SidebarWriteProductionUnavailableError("sidebar write model is not production-ready for command execution")
     platform_command = Command(
@@ -134,6 +135,27 @@ def _validate_command(command: SidebarWriteCommand) -> None:
         raise SidebarWriteInputError("external_userid is required")
     if not command.source_route.strip():
         raise SidebarWriteInputError("source_route is required")
+
+
+def _validate_owner_scope(command: SidebarWriteCommand) -> None:
+    owner_userid = str(command.payload.get("owner_userid") or "").strip()
+    if not owner_userid or production_data_ready():
+        return
+    customer = _repo.get_customer(command.external_userid)
+    if not customer:
+        return
+    candidates = {
+        str(customer.get("owner_userid") or "").strip(),
+        str(dict(customer.get("binding") or {}).get("owner_userid") or "").strip(),
+        str(dict(customer.get("identity") or {}).get("owner_userid") or "").strip(),
+    }
+    follow_users = customer.get("follow_users")
+    if isinstance(follow_users, list):
+        for item in follow_users:
+            if isinstance(item, dict):
+                candidates.add(str(item.get("userid") or item.get("user_id") or "").strip())
+    if owner_userid not in {candidate for candidate in candidates if candidate}:
+        raise SidebarWriteNotFoundError("customer not found")
 
 
 def _handle_bind_mobile(command: Command) -> dict[str, Any]:

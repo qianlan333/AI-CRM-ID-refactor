@@ -230,6 +230,7 @@ def _message_speaker(message: dict, customer: dict) -> str:
 def _context_for_external_userid(
     external_userid: str,
     *,
+    owner_userid: str = "",
     recent_message_limit: int = 20,
     timeline_limit: int = 20,
     customer_repo: CustomerReadRepository | None = None,
@@ -238,6 +239,7 @@ def _context_for_external_userid(
     return GetCustomerContextQuery(customer_repo, live_source_repo=live_source_repo)(
         CustomerContextRequest(
             external_userid=external_userid,
+            owner_userid=owner_userid or None,
             recent_message_limit=recent_message_limit,
             timeline_limit=timeline_limit,
         )
@@ -261,12 +263,14 @@ def _sidebar_diagnostics_from_context(context: dict) -> dict:
 def _sidebar_context_or_response(
     external_userid: str,
     *,
+    owner_userid: str = "",
     customer_repo: CustomerReadRepository | None = None,
     live_source_repo: CustomerReadRepository | None = None,
 ) -> tuple[dict | None, JSONResponse | None]:
     try:
         context = _context_for_external_userid(
             external_userid,
+            owner_userid=owner_userid,
             customer_repo=customer_repo,
             live_source_repo=live_source_repo,
         )
@@ -282,6 +286,24 @@ def _sidebar_context_or_response(
         payload.setdefault("read_model_status", "unavailable" if payload.get("degraded") else payload.get("source_status") or "")
         return None, JSONResponse(jsonable_encoder(payload), status_code=status_code)
     return context, None
+
+
+def _verify_sidebar_owner_scope(
+    context_query: GetCustomerContextQuery,
+    *,
+    external_userid: str,
+    owner_userid: str = "",
+) -> None:
+    if not str(owner_userid or "").strip():
+        return
+    context_query(
+        CustomerContextRequest(
+            external_userid=external_userid,
+            owner_userid=str(owner_userid or "").strip(),
+            recent_message_limit=1,
+            timeline_limit=1,
+        )
+    )
 
 
 def _class_term_payload(class_user_status: dict, sidebar_context: dict) -> tuple[int | None, str]:
@@ -446,6 +468,7 @@ def get_user_recent_messages_by_unionid(unionid: str, limit: int = 20, db: Sessi
 def get_sidebar_customer_context(
     external_userid: str | None = None,
     user_id: str | None = None,
+    owner_userid: str | None = None,
     db: Session = Depends(get_db),
 ):
     customer_repo, live_source_repo = _request_scoped_customer_repositories(db)
@@ -455,6 +478,7 @@ def get_sidebar_customer_context(
     try:
         context = _context_for_external_userid(
             resolved_external_userid,
+            owner_userid=str(owner_userid or "").strip(),
             customer_repo=customer_repo,
             live_source_repo=live_source_repo,
         )
@@ -489,21 +513,33 @@ def get_sidebar_customer_context(
 
 
 @router.get("/api/sidebar/profile")
-def get_sidebar_profile(external_userid: str | None = None, user_id: str | None = None, db: Session = Depends(get_db)):
+def get_sidebar_profile(
+    external_userid: str | None = None,
+    user_id: str | None = None,
+    owner_userid: str | None = None,
+    db: Session = Depends(get_db),
+):
     customer_repo, live_source_repo = _request_scoped_customer_repositories(db)
     result = GetAdminCustomerProfileQuery(GetCustomerContextQuery(customer_repo, live_source_repo=live_source_repo))(
         external_userid=external_userid,
         user_id=user_id,
+        owner_userid=owner_userid,
     )
     return JSONResponse(jsonable_encoder(result), status_code=_status_code(result))
 
 
 @router.get("/api/sidebar/tags")
-def get_sidebar_tags(external_userid: str | None = None, user_id: str | None = None, db: Session = Depends(get_db)):
+def get_sidebar_tags(
+    external_userid: str | None = None,
+    user_id: str | None = None,
+    owner_userid: str | None = None,
+    db: Session = Depends(get_db),
+):
     customer_repo, live_source_repo = _request_scoped_customer_repositories(db)
     result = GetAdminCustomerProfileTagsQuery(GetCustomerContextQuery(customer_repo, live_source_repo=live_source_repo))(
         external_userid=external_userid,
         user_id=user_id,
+        owner_userid=owner_userid,
     )
     return JSONResponse(jsonable_encoder(result), status_code=_status_code(result))
 
@@ -521,6 +557,7 @@ def get_sidebar_lead_pool_status(
         return _sidebar_input_error("external_userid is required")
     context, response = _sidebar_context_or_response(
         resolved_external_userid,
+        owner_userid=resolved_owner_userid,
         customer_repo=customer_repo,
         live_source_repo=live_source_repo,
     )
@@ -556,13 +593,19 @@ def get_sidebar_lead_pool_status(
 
 
 @router.get("/api/sidebar/signup-tags/status")
-def get_sidebar_signup_tag_status(external_userid: str | None = None, db: Session = Depends(get_db)):
+def get_sidebar_signup_tag_status(
+    external_userid: str | None = None,
+    owner_userid: str | None = None,
+    db: Session = Depends(get_db),
+):
     customer_repo, live_source_repo = _request_scoped_customer_repositories(db)
     resolved_external_userid = str(external_userid or "").strip()
+    resolved_owner_userid = str(owner_userid or "").strip()
     if not resolved_external_userid:
         return _sidebar_input_error("external_userid is required")
     context, response = _sidebar_context_or_response(
         resolved_external_userid,
+        owner_userid=resolved_owner_userid,
         customer_repo=customer_repo,
         live_source_repo=live_source_repo,
     )
@@ -587,13 +630,19 @@ def get_sidebar_signup_tag_status(external_userid: str | None = None, db: Sessio
 
 
 @router.get("/api/sidebar/marketing-status")
-def get_sidebar_marketing_status(external_userid: str | None = None, db: Session = Depends(get_db)):
+def get_sidebar_marketing_status(
+    external_userid: str | None = None,
+    owner_userid: str | None = None,
+    db: Session = Depends(get_db),
+):
     customer_repo, live_source_repo = _request_scoped_customer_repositories(db)
     resolved_external_userid = str(external_userid or "").strip()
+    resolved_owner_userid = str(owner_userid or "").strip()
     if not resolved_external_userid:
         return _sidebar_input_error("external_userid is required")
     context, response = _sidebar_context_or_response(
         resolved_external_userid,
+        owner_userid=resolved_owner_userid,
         customer_repo=customer_repo,
         live_source_repo=live_source_repo,
     )
@@ -653,6 +702,11 @@ def get_sidebar_v2_workbench(
     normalized_owner_userid = str(owner_userid or "").strip()
     context_query, live_source_repo = _request_scoped_customer_context_query(db)
     try:
+        _verify_sidebar_owner_scope(
+            context_query,
+            external_userid=normalized_external_userid,
+            owner_userid=normalized_owner_userid,
+        )
         payload = SidebarWorkbenchReadModel(context_query=context_query, live_source_repo=live_source_repo)(
             external_userid=normalized_external_userid,
             owner_userid=normalized_owner_userid,
@@ -667,13 +721,23 @@ def get_sidebar_v2_workbench(
 
 
 @router.get("/api/sidebar/v2/questionnaires")
-def get_sidebar_v2_questionnaires(external_userid: str | None = None, db: Session = Depends(get_db)):
+def get_sidebar_v2_questionnaires(
+    external_userid: str | None = None,
+    owner_userid: str | None = None,
+    db: Session = Depends(get_db),
+):
     if not str(external_userid or "").strip():
         return _sidebar_input_error("external_userid is required")
     context_query, live_source_repo = _request_scoped_customer_context_query(db)
     try:
+        _verify_sidebar_owner_scope(
+            context_query,
+            external_userid=str(external_userid or "").strip(),
+            owner_userid=str(owner_userid or "").strip(),
+        )
         payload = SidebarQuestionnaireReadModel(context_query=context_query, live_source_repo=live_source_repo)(
             external_userid=str(external_userid or "").strip(),
+            owner_userid=str(owner_userid or "").strip(),
         )
     except NotFoundError as exc:
         return _sidebar_lookup_error(str(exc) or "customer not found")
@@ -719,17 +783,30 @@ def get_sidebar_v2_other_staff_messages(
     current_userid: str | None = None,
     owner_userid: str | None = None,
     limit: int = 20,
+    db: Session = Depends(get_db),
 ):
     if not str(external_userid or "").strip():
         return _sidebar_input_error("external_userid is required")
+    scoped_userid = str(current_userid or owner_userid or "").strip()
     try:
+        context_query, _live_source_repo = _request_scoped_customer_context_query(db)
+        context_query(
+            CustomerContextRequest(
+                external_userid=str(external_userid or "").strip(),
+                owner_userid=scoped_userid or None,
+                recent_message_limit=1,
+                timeline_limit=1,
+            )
+        )
         payload = SidebarOtherStaffMessagesReadModel()(
             external_userid=str(external_userid or "").strip(),
-            current_userid=str(current_userid or owner_userid or "").strip(),
+            current_userid=scoped_userid,
             limit=limit,
         )
     except ValueError as exc:
         return _sidebar_input_error(str(exc))
+    except NotFoundError as exc:
+        return _sidebar_lookup_error(str(exc) or "customer not found")
     except Exception as exc:
         return _sidebar_read_unavailable(exc)
     return {**payload, "route_owner": "ai_crm_next"}
@@ -767,6 +844,11 @@ def get_sidebar_v2_orders(
     normalized_external_userid = str(external_userid or "").strip()
     context_query, live_source_repo = _request_scoped_customer_context_query(db)
     try:
+        _verify_sidebar_owner_scope(
+            context_query,
+            external_userid=normalized_external_userid,
+            owner_userid=str(owner_userid or "").strip(),
+        )
         payload = SidebarCommerceReadModel(context_query=context_query, live_source_repo=live_source_repo).orders(
             external_userid=normalized_external_userid,
             owner_userid=str(owner_userid or "").strip(),

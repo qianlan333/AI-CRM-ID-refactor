@@ -1,113 +1,48 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
-
-from aicrm_next.commerce.order_identity_repair import repair_missing_order_identities
 
 
-class _Cursor:
-    def __init__(self, rows: list[dict[str, Any]] | None = None, row: dict[str, Any] | None = None) -> None:
-        self._rows = rows or []
-        self._row = row
+def test_order_identity_repair_route_is_retired_after_auth(next_client, monkeypatch) -> None:
+    monkeypatch.setenv("AUTOMATION_INTERNAL_API_TOKEN", "order-identity-retired-test")
 
-    def fetchall(self) -> list[dict[str, Any]]:
-        return self._rows
+    response = next_client.post(
+        "/api/admin/jobs/order-identity-repair/run",
+        headers={"Authorization": "Bearer order-identity-retired-test"},
+        json={"limit": 10, "max_attempts": 3, "dry_run": False},
+    )
 
-    def fetchone(self) -> dict[str, Any] | None:
-        return self._row
-
-
-class _RepairConn:
-    def __init__(self, *, identity: dict[str, Any] | None = None, unresolved_attempt_after: int = 1) -> None:
-        self.identity = identity
-        self.unresolved_attempt_after = unresolved_attempt_after
-        self.queries: list[tuple[str, tuple[Any, ...]]] = []
-        self.committed = False
-        self.rolled_back = False
-
-    def execute(self, query: str, params: tuple[Any, ...] = ()) -> _Cursor:
-        self.queries.append((query, params))
-        if "FROM wechat_pay_orders o" in query and "LEFT JOIN wechat_pay_order_identity_repair" in query:
-            return _Cursor(
-                rows=[
-                    {
-                        "id": 188,
-                        "out_trade_no": "WXP260630074008B968C34438C0",
-                        "product_code": "SOAK-QTR",
-                        "product_name": "浸泡学习营·季度",
-                        "unionid": "union_paid_001",
-                        "payer_openid": "openid_paid_001",
-                        "mobile_snapshot": "18811725941",
-                        "external_userid": "",
-                        "userid_snapshot": "",
-                        "paid_at": "2026-06-30 15:40:16+08",
-                        "repair_attempt_count": self.unresolved_attempt_after - 1,
-                        "repair_status": "retryable" if self.unresolved_attempt_after > 1 else "pending",
-                    }
-                ]
-            )
-        if "FROM wecom_external_contact_identity_map" in query:
-            return _Cursor(row=self.identity)
-        if "FROM people p" in query:
-            return _Cursor(row=None)
-        if "RETURNING status, attempt_count" in query:
-            status = "exhausted" if self.unresolved_attempt_after >= 3 else "retryable"
-            return _Cursor(row={"status": status, "attempt_count": self.unresolved_attempt_after})
-        return _Cursor(row=None)
-
-    def commit(self) -> None:
-        self.committed = True
-
-    def rollback(self) -> None:
-        self.rolled_back = True
+    assert response.status_code == 410
+    payload = response.json()
+    assert payload["ok"] is False
+    assert payload["error"] == "order_identity_repair_retired"
+    assert payload["retired"] is True
+    assert payload["replacement"] == "current_order_customer_identity_projection"
+    assert payload["real_external_call_executed"] is False
 
 
-def test_order_identity_repair_resolves_missing_external_userid_by_unionid() -> None:
-    conn = _RepairConn(identity={"external_userid": "wmbNXyCwAA_syOI8dRmuF4-1kciWS1dQ", "owner_userid": "HuangYouCan"})
+def test_order_identity_repair_requires_cron_or_action_token_before_retired_response(next_client) -> None:
+    response = next_client.post("/api/admin/jobs/order-identity-repair/run", json={})
 
-    result = repair_missing_order_identities(conn=conn, limit=10, max_attempts=3)
-
-    assert result["repaired_count"] == 1
-    assert result["retryable_count"] == 0
-    assert result["items"][0]["matched_by"] == "unionid"
-    assert result["items"][0]["external_userid"] == "wmbNXyCwAA_syOI8dRmuF4-1kciWS1dQ"
-    assert conn.committed is True
-    order_updates = [item for item in conn.queries if "UPDATE wechat_pay_orders" in item[0]]
-    assert order_updates
-    assert order_updates[0][1][0] == "wmbNXyCwAA_syOI8dRmuF4-1kciWS1dQ"
-    assert order_updates[0][1][1] == "HuangYouCan"
+    assert response.status_code == 401
+    assert response.json()["ok"] is False
 
 
-def test_order_identity_repair_exhausts_after_third_unresolved_attempt() -> None:
-    conn = _RepairConn(identity=None, unresolved_attempt_after=3)
+def test_order_identity_repair_runtime_module_is_removed() -> None:
+    routes_source = Path("aicrm_next/admin_jobs/routes.py").read_text(encoding="utf-8")
 
-    result = repair_missing_order_identities(conn=conn, limit=10, max_attempts=3)
-
-    assert result["repaired_count"] == 0
-    assert result["exhausted_count"] == 1
-    assert result["items"][0]["status"] == "exhausted"
-    assert result["items"][0]["attempt_count_after"] == 3
-    assert conn.committed is True
+    assert not Path("aicrm_next/commerce/order_identity_repair.py").exists()
+    assert "aicrm_next.commerce.order_identity_repair" not in routes_source
+    assert "repair_missing_order_identities" not in routes_source
+    assert "order_identity_repair_retired" in routes_source
 
 
-def test_order_identity_repair_route_is_cron_or_action_token_protected() -> None:
-    source = Path("aicrm_next/admin_jobs/routes.py").read_text(encoding="utf-8")
+def test_order_identity_repair_contract_migration_drops_orphan_table() -> None:
+    source = Path("migrations/versions/0091_retire_wechat_pay_order_identity_repair.py").read_text(encoding="utf-8")
+    conftest_source = Path("tests/conftest.py").read_text(encoding="utf-8")
 
-    assert '@router.post("/api/admin/jobs/order-identity-repair/run")' in source
-    route_block = source.split('@router.post("/api/admin/jobs/order-identity-repair/run")', 1)[1].split('@router.post("/api/admin/broadcast-jobs/{job_id}/approve")', 1)[0]
-    assert "_cron_or_action_token_error(request, payload)" in route_block
-    assert "repair_missing_order_identities(" in route_block
-    assert "normalized_int(payload.get(\"limit\"), default=100, minimum=1, maximum=1000)" in route_block
-    assert "normalized_int(payload.get(\"max_attempts\"), default=3, minimum=1, maximum=10)" in route_block
-    assert "dry_run=normalized_bool(payload.get(\"dry_run\"))" in route_block
-
-
-def test_order_identity_repair_migration_tracks_attempts_and_due_index() -> None:
-    source = Path("migrations/versions/0062_wechat_pay_order_identity_repair.py").read_text(encoding="utf-8")
-
-    assert "CREATE TABLE IF NOT EXISTS wechat_pay_order_identity_repair" in source
-    assert "attempt_count INTEGER NOT NULL DEFAULT 0" in source
-    assert "max_attempts INTEGER NOT NULL DEFAULT 3" in source
-    assert "idx_wechat_pay_order_identity_repair_due" in source
-    assert "idx_wechat_pay_orders_missing_identity_paid" in source
+    assert 'down_revision = "0090_automation_agent_output_guard"' in source
+    assert "DROP INDEX IF EXISTS idx_wechat_pay_order_identity_repair_trade_no" in source
+    assert "DROP INDEX IF EXISTS idx_wechat_pay_order_identity_repair_due" in source
+    assert "DROP TABLE IF EXISTS wechat_pay_order_identity_repair" in source
+    assert '"wechat_pay_order_identity_repair"' not in conftest_source

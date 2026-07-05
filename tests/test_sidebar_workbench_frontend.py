@@ -53,3 +53,10 @@ def test_sidebar_workbench_query_context_skips_wecom_sdk_path():
 
     assert "const hasQuery = await resolveContextFromQuery();" in script
     assert "await resolveContextFromWeCom();" in script
+
+
+def test_sidebar_workbench_questionnaire_requests_reuse_owner_scoped_context_query():
+    script = WORKBENCH_JS.read_text(encoding="utf-8")
+
+    assert 'queryUrl(endpoint("questionnairesUrl"), customerContextQuery())' in script
+    assert 'queryUrl(endpoint("questionnairesUrl"), { external_userid: state.external_userid })' not in script

@@ -156,6 +156,45 @@ def _customer_identity_key(query: CustomerDetailRequest | CustomerTimelineReques
     return str(getattr(query, "unionid", None) or getattr(query, "external_userid", None) or "").strip()
 
 
+def _customer_owner_candidates(customer: JsonDict) -> set[str]:
+    candidates = {
+        str(customer.get("owner_userid") or "").strip(),
+        str(customer.get("primary_owner_userid") or "").strip(),
+    }
+    for field in ("binding", "identity", "contact"):
+        value = customer.get(field)
+        if isinstance(value, dict):
+            candidates.update(
+                {
+                    str(value.get("owner_userid") or "").strip(),
+                    str(value.get("primary_owner_userid") or "").strip(),
+                    str(value.get("last_owner_userid") or "").strip(),
+                    str(value.get("first_owner_userid") or "").strip(),
+                    str(value.get("follow_user_userid") or "").strip(),
+                }
+            )
+    follow_users = customer.get("follow_users")
+    if isinstance(follow_users, list):
+        for item in follow_users:
+            if isinstance(item, dict):
+                candidates.update(
+                    {
+                        str(item.get("userid") or "").strip(),
+                        str(item.get("user_id") or "").strip(),
+                        str(item.get("owner_userid") or "").strip(),
+                    }
+                )
+    return {item for item in candidates if item}
+
+
+def _assert_customer_owner_scope(customer: JsonDict, owner_userid: str | None) -> None:
+    requested_owner = str(owner_userid or "").strip()
+    if not requested_owner:
+        return
+    if requested_owner not in _customer_owner_candidates(customer):
+        raise NotFoundError("customer not found")
+
+
 def _repo_get_customer_by_request(repo: CustomerReadRepository, query: CustomerDetailRequest) -> JsonDict | None:
     unionid = str(query.unionid or "").strip()
     if unionid:
@@ -945,6 +984,18 @@ def _admin_profile_input_error(message: str) -> JsonDict:
     }
 
 
+def _admin_profile_not_found_error(message: str = "customer not found") -> JsonDict:
+    return {
+        "ok": False,
+        "error": message,
+        "source_status": "not_found",
+        "read_model_status": "not_found",
+        "route_owner": "ai_crm_next",
+        "fallback_used": False,
+        "status_code": 404,
+    }
+
+
 def _admin_profile_payload(
     context: JsonDict,
     *,
@@ -1035,7 +1086,10 @@ class GetCustomerContextQuery:
         mobile = str(query.mobile or "").strip()
         if not mobile:
             raise NotFoundError("external_userid is required")
-        matches = repo.list_customers({"mobile": mobile}, limit=1, offset=0)
+        filters = {"mobile": mobile}
+        if str(query.owner_userid or "").strip():
+            filters["owner_userid"] = str(query.owner_userid or "").strip()
+        matches = repo.list_customers(filters, limit=1, offset=0)
         if not matches or not str(matches[0].get("external_userid") or "").strip():
             raise NotFoundError("customer not found")
         return str(matches[0]["external_userid"])
@@ -1047,7 +1101,14 @@ class GetCustomerContextQuery:
         mobile = str(query.mobile or "").strip()
         if not mobile:
             raise NotFoundError("external_userid is required")
-        payload = ListCustomersQuery(repo, live_source_repo=self._live_source_repo)(ListCustomersRequest(mobile=mobile, limit=1, offset=0))
+        payload = ListCustomersQuery(repo, live_source_repo=self._live_source_repo)(
+            ListCustomersRequest(
+                mobile=mobile,
+                owner_userid=str(query.owner_userid or "").strip() or None,
+                limit=1,
+                offset=0,
+            )
+        )
         if not payload.get("ok"):
             raise RuntimeError(str(payload.get("page_error") or payload.get("error_code") or "customer read model unavailable"))
         rows = list(payload.get("customers") or payload.get("items") or [])
@@ -1069,6 +1130,7 @@ class GetCustomerContextQuery:
                 if not detail.get("ok"):
                     raise RuntimeError(str(detail.get("page_error") or detail.get("error_code") or "customer detail unavailable"))
                 customer = dict(detail.get("customer") or {})
+                _assert_customer_owner_scope(customer, query.owner_userid)
                 unionid = unionid or str(customer.get("unionid") or "").strip()
                 external_userid = external_userid or str(customer.get("external_userid") or customer.get("user_id") or "").strip()
                 timeline_payload = GetCustomerTimelineQuery(repo, live_source_repo=self._live_source_repo)(
@@ -1116,6 +1178,7 @@ class GetCustomerContextQuery:
                 CustomerDetailRequest(unionid=unionid or None, external_userid=external_userid or None)
             )
             customer = dict(detail.get("customer") or {})
+            _assert_customer_owner_scope(customer, query.owner_userid)
             unionid = unionid or str(customer.get("unionid") or "").strip()
             external_userid = external_userid or str(customer.get("external_userid") or customer.get("user_id") or "").strip()
             timeline = GetCustomerTimelineQuery(repo, live_source_repo=self._live_source_repo)(
@@ -1156,6 +1219,7 @@ class GetAdminCustomerProfileQuery:
         external_userid: str | None = None,
         mobile: str | None = None,
         user_id: str | None = None,
+        owner_userid: str | None = None,
     ) -> JsonDict:
         resolved_unionid = str(unionid or "").strip()
         resolved_external_userid = str(external_userid or user_id or "").strip()
@@ -1168,11 +1232,12 @@ class GetAdminCustomerProfileQuery:
             external_userid=resolved_external_userid or None,
             mobile=resolved_mobile or None,
             user_id=str(user_id or "").strip() or None,
+            owner_userid=str(owner_userid or "").strip() or None,
         )
         try:
             context = self._context_query(request)
         except NotFoundError:
-            return _admin_profile_input_error("customer not found")
+            return _admin_profile_not_found_error()
         except Exception as exc:
             fallback_external_userid = resolved_external_userid
             context = _production_unavailable_payload(fallback_external_userid, exc)
@@ -1185,7 +1250,7 @@ class GetAdminCustomerProfileQuery:
 
         customer = dict(context.get("customer") or {})
         if not customer:
-            return _admin_profile_input_error("customer not found")
+            return _admin_profile_not_found_error()
 
         if resolved_unionid:
             resolved_by = "unionid"
@@ -1212,6 +1277,7 @@ class GetAdminCustomerProfileTagsQuery:
         unionid: str | None = None,
         external_userid: str | None = None,
         user_id: str | None = None,
+        owner_userid: str | None = None,
     ) -> JsonDict:
         resolved_unionid = str(unionid or "").strip()
         resolved_external_userid = str(external_userid or user_id or "").strip()
@@ -1224,10 +1290,11 @@ class GetAdminCustomerProfileTagsQuery:
                     unionid=resolved_unionid or None,
                     external_userid=resolved_external_userid,
                     user_id=str(user_id or "").strip() or None,
+                    owner_userid=str(owner_userid or "").strip() or None,
                 )
             )
         except NotFoundError:
-            return _admin_profile_input_error("customer not found")
+            return _admin_profile_not_found_error()
         except Exception as exc:
             context = _production_unavailable_payload(resolved_external_userid, exc)
 
@@ -1239,7 +1306,7 @@ class GetAdminCustomerProfileTagsQuery:
 
         customer = dict(context.get("customer") or {})
         if not customer:
-            return _admin_profile_input_error("customer not found")
+            return _admin_profile_not_found_error()
         return _admin_profile_tags_payload(
             customer,
             source_status=str(context.get("source_status") or ""),

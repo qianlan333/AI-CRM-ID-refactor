@@ -1,44 +1,35 @@
 # WeChat Pay Order Identity Repair
 
-## Purpose
+## Status
 
-Paid H5 orders can be created without `external_userid` when the buyer enters
-from a public product/payment link without sidebar `ctx`. The order still keeps
-WeChat identity fields such as `unionid` or `payer_openid`, and the repair job
-backfills `wechat_pay_orders.external_userid` from existing CRM identity tables.
+Retired.
 
-## Runtime Contract
+`POST /api/admin/jobs/order-identity-repair/run` is kept only as an authenticated
+410 endpoint so stale cron/admin callers fail closed with
+`order_identity_repair_retired`. It no longer reads or writes order identity
+data, and it makes no external calls.
 
-- Route: `POST /api/admin/jobs/order-identity-repair/run`
-- Auth: `CRON_SECRET` bearer token, or the standard admin action token.
-- Recommended schedule: hourly.
-- Default batch size: 100 orders.
-- Retry limit: each missing order is attempted at most 3 times.
-- External calls: none. The job only reads local identity tables and updates
-  `wechat_pay_orders` plus `wechat_pay_order_identity_repair`.
+The retired ledger table `wechat_pay_order_identity_repair` is dropped by
+Alembic revision `0091_retire_wechat_pay_order_identity_repair`.
 
-## Manual Dry Run
+## Current Path
 
-```bash
-curl -sS -X POST "https://www.youcangogogo.com/api/admin/jobs/order-identity-repair/run" \
-  -H "Authorization: Bearer ${CRON_SECRET}" \
-  -H "Content-Type: application/json" \
-  -d '{"dry_run":true,"limit":100,"max_attempts":3}'
-```
+Paid order customer identity must be handled by the current order/customer
+identity projection path. Do not reintroduce
+`aicrm_next.commerce.order_identity_repair` or schedule a replacement repair job
+without a new architecture review.
 
-## Manual Execute
+## Stale Caller Cleanup
 
-```bash
-curl -sS -X POST "https://www.youcangogogo.com/api/admin/jobs/order-identity-repair/run" \
-  -H "Authorization: Bearer ${CRON_SECRET}" \
-  -H "Content-Type: application/json" \
-  -d '{"dry_run":false,"limit":100,"max_attempts":3}'
-```
+1. Remove any hourly caller still posting to
+   `/api/admin/jobs/order-identity-repair/run`.
+2. Use the 410 response body to confirm callers have stopped relying on the
+   retired repair job.
+3. For historical order investigations, query `wechat_pay_orders` and the
+   current customer identity projection source directly.
 
 ## Rollback
 
-Stop the hourly caller first. The data write is conservative: it only updates
-orders whose `external_userid` is still empty. If a repair result must be
-reverted, clear the specific order's `external_userid` and mark its
-`wechat_pay_order_identity_repair` row as `skipped` with an operator note in
-`detail_json`.
+Rollback is a previous release rollback plus the Alembic downgrade that recreates
+the retired table. Do not treat this runbook as approval to resume the repair
+job in the current release.

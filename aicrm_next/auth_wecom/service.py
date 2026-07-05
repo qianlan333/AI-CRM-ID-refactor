@@ -12,11 +12,15 @@ from typing import Any
 from urllib.parse import urlencode
 
 from aicrm_next.admin_auth.service import (
+    CSRF_COOKIE as CSRF_COOKIE,
     SESSION_COOKIE as SESSION_COOKIE,
     SESSION_MAX_AGE_SECONDS as SESSION_MAX_AGE_SECONDS,
+    admin_cookie_secure,
+    csrf_token_from_session,
     normalize_text,
     route_headers,
     safe_next_path,
+    session_payload_with_csrf,
     sign_session,
 )
 from aicrm_next.admin_config.repository import AdminConfigRepository

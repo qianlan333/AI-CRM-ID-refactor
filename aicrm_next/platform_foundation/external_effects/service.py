@@ -5,6 +5,12 @@ from typing import Any
 
 from aicrm_next.platform_foundation.command_bus.models import CommandContext
 
+from .execution_gates import (
+    WECOM_EXECUTION_DISABLED_CODE,
+    explicit_wecom_execution_disabled,
+    is_wecom_effect_type,
+    wecom_execution_disabled_message,
+)
 from .models import ExternalEffectCreateRequest, ExternalEffectJob
 from .repo import ExternalEffectRepository, build_external_effect_repository
 
@@ -41,6 +47,18 @@ class ExternalEffectService:
         initial_status = str(status or "queued").strip() or "queued"
         if requires_approval and initial_status in {"queued", "approved"}:
             initial_status = "planned"
+        effective_execution_mode = execution_mode
+        effective_payload_summary = dict(payload_summary or {})
+        if is_wecom_effect_type(effect_type) and explicit_wecom_execution_disabled():
+            initial_status = "blocked"
+            effective_execution_mode = "disabled"
+            effective_payload_summary.update(
+                {
+                    "execution_gate": WECOM_EXECUTION_DISABLED_CODE,
+                    "execution_mode_source": "AICRM_WECOM_EXECUTION_MODE",
+                    "real_external_call_executed": False,
+                }
+            )
         request = ExternalEffectCreateRequest(
             effect_type=effect_type,
             adapter_name=adapter_name,
@@ -48,7 +66,7 @@ class ExternalEffectService:
             target_type=target_type,
             target_id=target_id,
             payload=dict(payload or {}),
-            payload_summary=dict(payload_summary or {}),
+            payload_summary=effective_payload_summary,
             context=context or CommandContext(),
             business_type=business_type,
             business_id=business_id,
@@ -57,7 +75,7 @@ class ExternalEffectService:
             source_command_id=source_command_id,
             risk_level=risk_level,
             requires_approval=requires_approval,
-            execution_mode=execution_mode,
+            execution_mode=effective_execution_mode,
             scheduled_at=scheduled_at,
             priority=priority,
             max_attempts=max_attempts,
@@ -112,15 +130,26 @@ class ExternalEffectService:
         return self._repo.test_receipt_metrics()
 
     def enqueue(self, job_id: int) -> ExternalEffectJob | None:
+        job = self._repo.get_job(job_id)
+        blocked = self._block_if_wecom_execution_disabled(job, action="enqueue")
+        if blocked is not None:
+            return blocked
         return self._repo.enqueue_job(job_id)
 
     def approve(self, job_id: int) -> ExternalEffectJob | None:
+        job = self._repo.get_job(job_id)
+        blocked = self._block_if_wecom_execution_disabled(job, action="approve")
+        if blocked is not None:
+            return blocked
         return self._repo.approve_job(job_id)
 
     def retry(self, job_id: int) -> ExternalEffectJob | None:
         job = self._repo.get_job(job_id)
         if not job or job.status not in {"failed_retryable", "failed_terminal", "blocked"}:
             return None
+        blocked = self._block_if_wecom_execution_disabled(job, action="retry")
+        if blocked is not None:
+            return blocked
         return self._repo.enqueue_job(job_id)
 
     def cancel(self, job_id: int) -> ExternalEffectJob | None:
@@ -174,6 +203,35 @@ class ExternalEffectService:
             "items": completed,
             "real_external_call_executed": False,
         }
+
+    def _block_if_wecom_execution_disabled(self, job: ExternalEffectJob | None, *, action: str) -> ExternalEffectJob | None:
+        if job is None or not is_wecom_effect_type(job.effect_type) or not explicit_wecom_execution_disabled():
+            return None
+        attempt = self._repo.record_attempt(
+            job=job,
+            status="blocked",
+            adapter_mode="disabled",
+            request_summary={
+                "effect_type": job.effect_type,
+                "target_type": job.target_type,
+                "target_id": job.target_id,
+                "admin_action": action,
+                "execution_gate": WECOM_EXECUTION_DISABLED_CODE,
+            },
+            response_summary={
+                "blocked": True,
+                "execution_gate": WECOM_EXECUTION_DISABLED_CODE,
+                "real_external_call_executed": False,
+            },
+            error_code=WECOM_EXECUTION_DISABLED_CODE,
+            error_message=wecom_execution_disabled_message(),
+        )
+        return self._repo.mark_blocked(
+            job.id,
+            attempt_id=attempt.attempt_id,
+            error_code=WECOM_EXECUTION_DISABLED_CODE,
+            error_message=wecom_execution_disabled_message(),
+        ) or job
 
 
 def default_external_effect_service() -> ExternalEffectService:

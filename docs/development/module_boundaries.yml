@@ -3,6 +3,8 @@ api_import_rules:
     - aicrm_next/*/api.py
     - aicrm_next/**/*api*.py
     - aicrm_next/**/*pages*.py
+  api_semantic_imports:
+    - fastapi.APIRouter
   forbidden_cross_context_modules:
     - repo
     - repository

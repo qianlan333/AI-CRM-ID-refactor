@@ -115,6 +115,22 @@ def test_jssdk_api_get_head_and_options_are_next_owned(monkeypatch) -> None:
     assert "X-AICRM-Compatibility-Facade" not in head_response.headers
 
 
+def test_jssdk_api_rejects_unallowed_signing_host_in_production(monkeypatch) -> None:
+    monkeypatch.setenv("SECRET_KEY", "sidebar-jssdk-host-guard")
+    monkeypatch.setenv("WECHAT_SHOP_CALLBACK_TOKEN", "sidebar-jssdk-host-guard-token")
+    monkeypatch.setenv("AICRM_NEXT_ENV", "production")
+    monkeypatch.setenv("AICRM_SIDEBAR_JSSDK_ALLOWED_HOSTS", "crm.example.com")
+    client = TestClient(create_app(), raise_server_exceptions=False, base_url="https://crm.example.com")
+
+    response = client.get("/api/sidebar/jssdk-config", params={"url": "https://evil.example.com/sidebar/bind-mobile"})
+
+    assert response.status_code == 400
+    payload = response.json()
+    assert payload["source_status"] == "input_error"
+    assert payload["real_external_call_executed"] is False
+    assert "url host is not allowed" in payload["error"]
+
+
 def test_jssdk_url_validation_accepts_relative_and_rejects_non_http() -> None:
     assert normalize_jssdk_url("/sidebar/bind-mobile") == "http://localhost/sidebar/bind-mobile"
 

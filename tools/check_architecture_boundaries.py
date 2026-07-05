@@ -35,6 +35,8 @@ def load_config(path: str | Path) -> dict[str, Any]:
     raw = yaml.safe_load(Path(path).read_text(encoding="utf-8"))
     if not isinstance(raw, dict):
         raise ValueError("module boundary config must be a mapping")
+    api_rules = raw.get("api_import_rules") or {}
+    _validate_allowed_imports_shape(api_rules.get("allowed_imports") or [])
     _validate_allowlist_shape(raw.get("legacy_allowlist") or [])
     return raw
 
@@ -67,14 +69,13 @@ def main(argv: list[str] | None = None) -> int:
 def _check_api_import_boundaries(root: Path, config: dict[str, Any]) -> list[BoundaryViolation]:
     rule_config = config.get("api_import_rules") or {}
     globs = rule_config.get("api_file_globs") or []
+    semantic_imports = set(rule_config.get("api_semantic_imports") or ["fastapi.APIRouter"])
     forbidden_modules = set(rule_config.get("forbidden_cross_context_modules") or [])
     allowed_imports = rule_config.get("allowed_imports") or []
     violations: list[BoundaryViolation] = []
 
     for path in _iter_python_files(root / "aicrm_next"):
         rel = path.relative_to(root).as_posix()
-        if not any(fnmatch.fnmatch(rel, pattern) for pattern in globs):
-            continue
         context = _context_for_path(path, root)
         if not context:
             continue
@@ -92,6 +93,8 @@ def _check_api_import_boundaries(root: Path, config: dict[str, Any]) -> list[Bou
             )
             continue
 
+        if not _is_api_boundary_file(rel, tree, globs, semantic_imports):
+            continue
         for node in ast.walk(tree):
             for imported_module in _imported_modules(path, root, node, forbidden_modules=forbidden_modules):
                 imported_context, imported_leaf = _context_and_leaf(imported_module)
@@ -144,6 +147,24 @@ def _iter_python_files(base: Path) -> Iterable[Path]:
     if not base.exists():
         return []
     return (path for path in sorted(base.rglob("*.py")) if "__pycache__" not in path.parts)
+
+
+def _is_api_boundary_file(rel: str, tree: ast.AST, globs: list[str], semantic_imports: set[str]) -> bool:
+    if any(fnmatch.fnmatch(rel, pattern) for pattern in globs):
+        return True
+    imported_symbols = set(_semantic_imported_symbols(tree))
+    return bool(imported_symbols & semantic_imports)
+
+
+def _semantic_imported_symbols(tree: ast.AST) -> Iterable[str]:
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                yield alias.name
+        elif isinstance(node, ast.ImportFrom):
+            module = node.module or ""
+            for alias in node.names:
+                yield f"{module}.{alias.name}" if module else alias.name
 
 
 def _imported_modules(path: Path, root: Path, node: ast.AST, *, forbidden_modules: set[str]) -> list[str]:
@@ -220,6 +241,16 @@ def _validate_allowlist_shape(allowlist: list[dict[str, Any]]) -> None:
         missing = sorted(field for field in required if not entry.get(field))
         if missing:
             raise ValueError(f"legacy_allowlist entry #{index} missing required fields: {', '.join(missing)}")
+
+
+def _validate_allowed_imports_shape(allowed_imports: list[dict[str, Any]]) -> None:
+    required = {"path", "module", "owner", "reason", "migration_target"}
+    for index, entry in enumerate(allowed_imports, start=1):
+        if not isinstance(entry, dict):
+            raise ValueError(f"allowed_imports entry #{index} must be a mapping")
+        missing = sorted(field for field in required if not entry.get(field))
+        if missing:
+            raise ValueError(f"allowed_imports entry #{index} missing required fields: {', '.join(missing)}")
 
 
 if __name__ == "__main__":

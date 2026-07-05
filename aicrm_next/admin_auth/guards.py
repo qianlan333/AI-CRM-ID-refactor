@@ -8,7 +8,7 @@ from fastapi.responses import JSONResponse, RedirectResponse, Response
 
 from aicrm_next.shared.runtime import production_environment
 
-from .service import SESSION_COOKIE, normalize_text, route_headers, safe_next_path, verify_session
+from .service import CSRF_COOKIE, SESSION_COOKIE, csrf_token_from_session, normalize_text, route_headers, safe_next_path, verify_session
 
 
 PROTECTED_ROUTE_PREFIXES = (
@@ -37,6 +37,8 @@ PUBLIC_EXACT_ROUTES = {
     "/sidebar/bind-mobile",
 }
 
+CSRF_SAFE_METHODS = {"GET", "HEAD", "OPTIONS", "TRACE"}
+
 
 def current_admin_session(request: Request) -> dict | None:
     return verify_session(request.cookies.get(SESSION_COOKIE))
@@ -63,7 +65,11 @@ def admin_auth_required_response(request: Request) -> Response | None:
         return None
     if not is_protected_admin_path(str(request.url.path or "/")):
         return None
-    if current_admin_session(request):
+    session = current_admin_session(request)
+    if session:
+        csrf_response = admin_csrf_required_response(request, session)
+        if csrf_response is not None:
+            return csrf_response
         return None
     if str(request.url.path or "").startswith("/admin"):
         return admin_page_auth_redirect(request)
@@ -90,6 +96,31 @@ def admin_api_auth_error(request: Request) -> JSONResponse | None:
         status_code=401,
         headers=route_headers(),
     )
+
+
+def admin_csrf_required_response(request: Request, session: dict) -> JSONResponse | None:
+    if str(request.method or "").upper() in CSRF_SAFE_METHODS:
+        return None
+    expected = csrf_token_from_session(session)
+    actual = normalize_text(request.cookies.get(CSRF_COOKIE))
+    if expected and actual and hmac_compare(expected, actual):
+        return None
+    return JSONResponse(
+        {
+            "ok": False,
+            "error": "admin_csrf_required",
+            "route_owner": "ai_crm_next",
+            "real_external_call_executed": False,
+        },
+        status_code=403,
+        headers=route_headers(),
+    )
+
+
+def hmac_compare(left: str, right: str) -> bool:
+    import hmac
+
+    return hmac.compare_digest(left, right)
 
 
 def admin_page_auth_redirect(request: Request) -> RedirectResponse | None:

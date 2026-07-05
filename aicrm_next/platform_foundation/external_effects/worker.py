@@ -11,6 +11,12 @@ from aicrm_next.platform_foundation.push_center.section_mapper import section_fo
 from aicrm_next.shared.runtime_settings import runtime_bool, runtime_setting
 
 from .adapters import DEFAULT_ADAPTER_REGISTRY, ExternalEffectAdapterRegistry
+from .execution_gates import (
+    WECOM_EXECUTION_DISABLED_CODE,
+    explicit_wecom_execution_disabled,
+    is_wecom_effect_type,
+    wecom_execution_disabled_message,
+)
 from .models import (
     WECOM_MESSAGE_GROUP_SEND,
     WEBHOOK_GENERIC_PUSH,
@@ -133,6 +139,9 @@ class ExternalEffectWorker:
         if job is None:
             return {"ok": False, "error": "job_not_found", "real_external_call_executed": False}
         self._repo.mark_dispatching(job.id, locked_by=self._locked_by)
+        wecom_disabled = self._block_if_wecom_execution_disabled(job)
+        if wecom_disabled is not None:
+            return wecom_disabled
         if _enabled("AICRM_EXTERNAL_EFFECT_TEST_EXECUTION_ONLY") and not _is_test_job(job):
             attempt = self._repo.record_attempt(
                 job=job,
@@ -295,6 +304,42 @@ class ExternalEffectWorker:
             "attempt": attempt.to_dict(),
             "post_success_continuation": continuation,
             "real_external_call_executed": dispatch_result.real_external_call_executed,
+        }
+
+    def _block_if_wecom_execution_disabled(self, job: ExternalEffectJob) -> dict[str, Any] | None:
+        if not is_wecom_effect_type(job.effect_type) or not explicit_wecom_execution_disabled():
+            return None
+        attempt = self._repo.record_attempt(
+            job=job,
+            status="blocked",
+            adapter_mode="disabled",
+            request_summary={
+                "effect_type": job.effect_type,
+                "adapter_name": job.adapter_name,
+                "operation": job.operation,
+                "target_type": job.target_type,
+                "target_id": job.target_id,
+                "execution_gate": WECOM_EXECUTION_DISABLED_CODE,
+            },
+            response_summary={
+                "blocked": True,
+                "execution_gate": WECOM_EXECUTION_DISABLED_CODE,
+                "real_external_call_executed": False,
+            },
+            error_code=WECOM_EXECUTION_DISABLED_CODE,
+            error_message=wecom_execution_disabled_message(),
+        )
+        updated = self._repo.mark_blocked(
+            job.id,
+            attempt_id=attempt.attempt_id,
+            error_code=WECOM_EXECUTION_DISABLED_CODE,
+            error_message=wecom_execution_disabled_message(),
+        )
+        return {
+            "ok": False,
+            "job": updated.to_dict() if updated else job.to_dict(),
+            "attempt": attempt.to_dict(),
+            "real_external_call_executed": False,
         }
 
     def _run_post_success_continuations(self, job: ExternalEffectJob, dispatch_result) -> dict[str, Any]:

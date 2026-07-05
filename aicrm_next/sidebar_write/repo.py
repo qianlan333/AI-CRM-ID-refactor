@@ -245,6 +245,9 @@ class PostgresSidebarWriteRepository:
             identity = self._identity_row(conn, normalized_external_userid)
             normalized_owner_userid = str(owner_userid or "").strip() or str((identity or {}).get("primary_owner_userid") or "").strip()
             normalized_bind_by_userid = str(bind_by_userid or "").strip() or normalized_owner_userid or "sidebar_bind"
+            identity_owner_userid = str((identity or {}).get("primary_owner_userid") or "").strip()
+            if identity and str(owner_userid or "").strip() and identity_owner_userid and str(owner_userid or "").strip() != identity_owner_userid:
+                raise KeyError("customer not found")
 
             if not identity:
                 resolution = self._enqueue_identity_resolution(

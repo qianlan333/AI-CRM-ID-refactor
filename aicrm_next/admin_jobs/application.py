@@ -43,6 +43,12 @@ def _record_legacy_marker(legacy_key: str, *, marker: str = "legacy_path_invoked
         pass
 
 
+def build_legacy_disabled_payload(legacy_key: str, *, error: str, extra: dict[str, Any] | None = None) -> dict[str, Any]:
+    payload = LegacyWebhookCleanupService().disabled_payload(legacy_key, error=error)
+    payload.update(extra or {})
+    return payload
+
+
 def _operator(value: Any) -> str:
     return normalized_text(value) or "crm_console"
 

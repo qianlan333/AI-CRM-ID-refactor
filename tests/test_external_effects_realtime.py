@@ -131,6 +131,32 @@ def test_explicit_realtime_disabled_overrides_welcome_capability(monkeypatch) ->
     assert realtime_wakeup_state()["enabled_source"] == "explicit"
 
 
+def test_explicit_wecom_execution_disabled_blocks_realtime_even_when_legacy_gates_enabled(monkeypatch) -> None:
+    repo = InMemoryExternalEffectRepository()
+    job = _plan_welcome(repo, key="welcome-realtime-wecom-disabled")
+    fake = _FakeWelcomeAdapter()
+    monkeypatch.setenv("AICRM_WECOM_EXECUTION_MODE", "disabled")
+    monkeypatch.setenv("AICRM_PUSH_CAPABILITY_WELCOME_MESSAGE_ENABLED", "1")
+    monkeypatch.setenv("AICRM_EXTERNAL_EFFECT_REALTIME_ENABLED", "true")
+    monkeypatch.setenv("AICRM_EXTERNAL_EFFECT_REALTIME_ALLOWED_TYPES", WECOM_WELCOME_MESSAGE_SEND)
+    monkeypatch.setenv("AICRM_EXTERNAL_EFFECT_ALLOWED_TYPES", WECOM_WELCOME_MESSAGE_SEND)
+    monkeypatch.setenv("AICRM_EXTERNAL_EFFECT_WECOM_EXECUTE", "1")
+
+    scheduled = wake_external_effect_job(
+        job["id"],
+        reason="pytest",
+        effect_type=WECOM_WELCOME_MESSAGE_SEND,
+        repository=repo,
+        adapter_registry=_registry(WeComWelcomeMessageAdapter(adapter_factory=lambda: fake)),
+        run_inline=True,
+    )
+
+    assert scheduled is False
+    assert repo.get_job(job["id"]).status == "queued"  # type: ignore[union-attr]
+    assert repo.list_attempts(job["id"]) == []
+    assert fake.payloads == []
+
+
 def test_derived_realtime_wakeup_still_requires_execution_gate(monkeypatch) -> None:
     repo = InMemoryExternalEffectRepository()
     job = _plan_welcome(repo, key="welcome-realtime-derived-gate")

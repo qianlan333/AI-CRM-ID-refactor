@@ -486,6 +486,94 @@ def test_complete_record_only_archives_historical_shadow_without_external_call()
     assert attempts[0].response_summary_json["real_external_call_executed"] is False
 
 
+def test_explicit_wecom_execution_disabled_blocks_planning_admin_and_worker(monkeypatch) -> None:
+    repo = InMemoryExternalEffectRepository()
+    service = _service(repo)
+    monkeypatch.setenv("AICRM_WECOM_EXECUTION_MODE", "disabled")
+
+    blocked_at_plan = service.plan_effect(
+        effect_type=WECOM_CONTACT_TAG_MARK,
+        adapter_name="wecom_tag",
+        operation="mark",
+        target_type="external_user",
+        target_id="wx_disabled_plan",
+        business_type="wecom_tag",
+        business_id="tag_disabled_plan",
+        payload={"external_userid": "wx_disabled_plan", "tag_ids": ["tag_a"]},
+        context=_sample_context("trace-wecom-disabled-plan"),
+        idempotency_key="wecom-disabled-plan",
+        status="queued",
+        execution_mode="execute",
+    )
+
+    assert blocked_at_plan["status"] == "blocked"
+    assert blocked_at_plan["execution_mode"] == "disabled"
+    assert blocked_at_plan["payload_summary_json"]["execution_gate"] == "wecom_execution_disabled"
+    assert repo.list_due_jobs(limit=10) == []
+
+    monkeypatch.delenv("AICRM_WECOM_EXECUTION_MODE", raising=False)
+    planned = service.plan_effect(
+        effect_type=WECOM_CONTACT_TAG_MARK,
+        adapter_name="wecom_tag",
+        operation="mark",
+        target_type="external_user",
+        target_id="wx_disabled_approve",
+        business_type="wecom_tag",
+        business_id="tag_disabled_approve",
+        payload={"external_userid": "wx_disabled_approve", "tag_ids": ["tag_a"]},
+        context=_sample_context("trace-wecom-disabled-approve"),
+        idempotency_key="wecom-disabled-approve",
+        requires_approval=True,
+    )
+    monkeypatch.setenv("AICRM_WECOM_EXECUTION_MODE", "disabled")
+
+    approved = service.approve(planned["id"])
+
+    assert approved is not None
+    assert approved.status == "blocked"
+    assert repo.list_attempts(planned["id"])[0].error_code == "wecom_execution_disabled"
+
+    class _ExplodingWeComAdapter:
+        calls = 0
+
+        def dispatch(self, job):
+            self.calls += 1
+            raise AssertionError("adapter should be blocked by AICRM_WECOM_EXECUTION_MODE before dispatch")
+
+    worker_repo = InMemoryExternalEffectRepository()
+    worker_service = _service(worker_repo)
+    monkeypatch.delenv("AICRM_WECOM_EXECUTION_MODE", raising=False)
+    queued = worker_service.plan_effect(
+        effect_type=WECOM_CONTACT_TAG_MARK,
+        adapter_name="wecom_tag",
+        operation="mark",
+        target_type="external_user",
+        target_id="wx_disabled_worker",
+        business_type="wecom_tag",
+        business_id="tag_disabled_worker",
+        payload={"external_userid": "wx_disabled_worker", "tag_ids": ["tag_a"]},
+        context=_sample_context("trace-wecom-disabled-worker"),
+        idempotency_key="wecom-disabled-worker",
+        status="queued",
+        execution_mode="execute",
+    )
+    adapter = _ExplodingWeComAdapter()
+    registry = ExternalEffectAdapterRegistry()
+    registry._adapters["wecom_tag"] = adapter  # type: ignore[attr-defined]
+    monkeypatch.setenv("AICRM_WECOM_EXECUTION_MODE", "disabled")
+
+    result = ExternalEffectWorker(worker_repo, registry).run_due(batch_size=10, dry_run=False)
+    updated = worker_repo.get_job(queued["id"])
+
+    assert result["counts"]["blocked_count"] == 1
+    assert result["counts"]["failed_count"] == 0
+    assert result["real_external_call_executed"] is False
+    assert adapter.calls == 0
+    assert updated is not None
+    assert updated.status == "blocked"
+    assert worker_repo.list_attempts(queued["id"])[0].error_code == "wecom_execution_disabled"
+
+
 def test_webhook_adapter_default_config_dry_run_and_allowlist_gate_never_send(monkeypatch) -> None:
     repo = InMemoryExternalEffectRepository()
     service = _service(repo)

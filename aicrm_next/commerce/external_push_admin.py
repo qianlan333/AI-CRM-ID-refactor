@@ -2,14 +2,17 @@ from __future__ import annotations
 
 import json
 import secrets
-import hashlib
-import hmac
-import ipaddress
 import socket
 from datetime import datetime, timedelta, timezone
 from typing import Any
-from urllib.parse import urlparse
 
+from aicrm_next.external_push.security import WebhookUrlValidationError, resolve_and_validate_public_https_url
+from aicrm_next.external_push.service import (
+    build_external_push_payload as _build_external_push_payload,
+    redact_sensitive_fields as _redact_sensitive_fields,
+    sign_webhook_payload as _sign_webhook_payload,
+    truncate_body as _truncate_body,
+)
 from aicrm_next.platform_foundation.command_bus import CommandContext
 from aicrm_next.platform_foundation.external_effects import ExternalEffectService, WEBHOOK_GENERIC_PUSH, WEBHOOK_ORDER_PAID_PUSH
 from aicrm_next.platform_foundation.legacy_cleanup.service import LegacyWebhookCleanupService
@@ -20,16 +23,9 @@ from .repo import connect_commerce_db
 
 
 EVENT_EXTERNAL_PUSH_TEST = "external_push.test"
-MAX_BODY_BYTES = 8192
-QUESTIONNAIRE_TITLE_PAYMENT_OPEN_MEMBER = "微信支付开通黄小璨会员"
-WEBHOOK_LOCAL_TIMEZONE = timezone(timedelta(hours=8))
 
 
 class ExternalPushAdminError(ValueError):
-    pass
-
-
-class WebhookUrlValidationError(ValueError):
     pass
 
 
@@ -48,97 +44,6 @@ def _record_legacy_marker(legacy_key: str, *, metadata: dict[str, Any] | None = 
         )
     except Exception:
         pass
-
-
-def _is_blocked_ip(address: str) -> bool:
-    try:
-        ip = ipaddress.ip_address(_text(address).strip("[]"))
-    except ValueError as exc:
-        raise WebhookUrlValidationError("webhook_url DNS resolved to an invalid IP") from exc
-    if ip.is_loopback or ip.is_private or ip.is_link_local or ip.is_multicast or ip.is_unspecified:
-        return True
-    if str(ip) == "169.254.169.254":
-        return True
-    return False
-
-
-def _validate_webhook_url(url: str) -> str:
-    parsed = urlparse(_text(url))
-    if parsed.scheme.lower() != "https":
-        raise WebhookUrlValidationError("webhook_url must be an https URL")
-    if not parsed.hostname:
-        raise WebhookUrlValidationError("webhook_url host is required")
-    hostname = parsed.hostname.strip().lower()
-    if hostname in {"localhost", "127.0.0.1", "0.0.0.0", "::1"} or hostname.endswith(".localhost"):
-        raise WebhookUrlValidationError("webhook_url host is not allowed")
-    try:
-        if _is_blocked_ip(hostname):
-            raise WebhookUrlValidationError("webhook_url host must resolve to a public IP")
-    except WebhookUrlValidationError as exc:
-        if "invalid IP" not in str(exc):
-            raise
-    return parsed.geturl()
-
-
-def _resolve_and_validate_public_https_url(url: str) -> str:
-    normalized = _validate_webhook_url(url)
-    parsed = urlparse(normalized)
-    hostname = parsed.hostname or ""
-    try:
-        addr_infos = socket.getaddrinfo(hostname, parsed.port or 443, type=socket.SOCK_STREAM)
-    except socket.gaierror as exc:
-        raise WebhookUrlValidationError("webhook_url DNS resolution failed") from exc
-    resolved_ips = {item[4][0] for item in addr_infos if item and item[4]}
-    if not resolved_ips:
-        raise WebhookUrlValidationError("webhook_url DNS resolution returned no IP")
-    for address in resolved_ips:
-        if _is_blocked_ip(address):
-            raise WebhookUrlValidationError("webhook_url resolved to a non-public IP")
-    return normalized
-
-
-resolve_and_validate_public_https_url = _resolve_and_validate_public_https_url
-
-
-def _iso(value: Any = None) -> str:
-    if isinstance(value, datetime):
-        dt = value
-    else:
-        text = _text(value)
-        if text:
-            try:
-                dt = datetime.fromisoformat(text.replace("Z", "+00:00"))
-            except ValueError:
-                return text
-        else:
-            dt = datetime.now(timezone.utc)
-    if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
-    return dt.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
-
-
-def _iso_local(value: Any = None) -> str:
-    text = _iso(value)
-    try:
-        dt = datetime.fromisoformat(text.replace("Z", "+00:00"))
-    except ValueError:
-        return text
-    return dt.astimezone(WEBHOOK_LOCAL_TIMEZONE).isoformat()
-
-
-def _mask_openid(value: Any) -> str:
-    text = _text(value)
-    if len(text) <= 8:
-        return text[:2] + "***" if text else ""
-    return f"{text[:4]}***{text[-4:]}"
-
-
-def _mask_phone(value: Any) -> str:
-    digits = _text(value)
-    if len(digits) < 7:
-        return "***" if digits else ""
-    return f"{digits[:3]}****{digits[-4:]}"
-
 
 def _json_object(value: Any) -> dict[str, Any]:
     if isinstance(value, dict):
@@ -190,101 +95,6 @@ def _resolve_order_mobile(conn: Any | None, order: dict[str, Any]) -> str:
     if mobile or conn is None:
         return mobile
     return _identity_mobile_for_order(conn, order)
-
-
-def _redact_sensitive_fields(payload: Any) -> Any:
-    if isinstance(payload, list):
-        return [_redact_sensitive_fields(item) for item in payload]
-    if not isinstance(payload, dict):
-        return payload
-    redacted: dict[str, Any] = {}
-    for key, value in payload.items():
-        lowered = str(key).lower()
-        if lowered in {"secret", "webhook_secret", "pay_sign", "paysign", "api_v3_key", "private_key"}:
-            redacted[key] = "[REDACTED]"
-        elif lowered in {"phone", "mobile", "mobile_snapshot", "phone_number"}:
-            redacted[key] = _mask_phone(value)
-        elif lowered in {"openid", "payer_openid", "unionid"}:
-            redacted[key] = _mask_openid(value)
-        else:
-            redacted[key] = _redact_sensitive_fields(value)
-    return redacted
-
-
-def _sign_webhook_payload(secret: str, timestamp: int | str, raw_body: str) -> str:
-    digest = hmac.new(
-        _text(secret).encode("utf-8"),
-        f"{_text(timestamp)}.{raw_body}".encode("utf-8"),
-        hashlib.sha256,
-    ).hexdigest()
-    return f"sha256={digest}"
-
-
-def _truncate_body(body: Any, max_bytes: int = MAX_BODY_BYTES) -> str:
-    text = body if isinstance(body, str) else json.dumps(body, ensure_ascii=False, separators=(",", ":"))
-    encoded = text.encode("utf-8")
-    if len(encoded) <= max_bytes:
-        return text
-    return encoded[:max_bytes].decode("utf-8", errors="ignore")
-
-
-def _build_external_push_payload(
-    event: str,
-    order: dict[str, Any],
-    product: dict[str, Any],
-    config: dict[str, Any],
-    *,
-    delivery_id: str,
-    phone_number: str | None = None,
-) -> dict[str, Any]:
-    event_type = _text(event)
-    if event_type == EVENT_EXTERNAL_PUSH_TEST:
-        return {
-            "event": EVENT_EXTERNAL_PUSH_TEST,
-            "delivery_id": delivery_id,
-            "occurred_at": _iso(),
-            "tenant": {"id": _text(config.get("tenant_id")) or DEFAULT_TENANT_ID},
-            "product": {
-                "id": str(product.get("id") or config.get("target_id") or ""),
-                "name": _text(product.get("name")),
-            },
-            "custom_params": config.get("custom_params") if isinstance(config.get("custom_params"), dict) else {},
-        }
-    order_payload = {
-        "id": str(order.get("id") or ""),
-        "order_no": _text(order.get("out_trade_no")),
-        "out_trade_no": _text(order.get("out_trade_no")),
-        "status": "paid",
-        "paid_amount": int(order.get("payer_total") or order.get("amount_total") or 0),
-        "paid_at": _iso(order.get("paid_at")),
-        "pay_channel": "wechat",
-    }
-    product_payload = {
-        "id": str(product.get("id") or ""),
-        "code": _text(product.get("product_code")),
-        "name": _text(product.get("name") or order.get("product_name")),
-        "price": int(product.get("amount_total") or order.get("amount_total") or 0),
-    }
-    resolved_phone = _text(phone_number) or _metadata_mobile(order)
-    return {
-        "phone_number": resolved_phone,
-        "type": _text(config.get("push_type")),
-        "day": config.get("day"),
-        "frequency": config.get("frequency"),
-        "remark": _text(config.get("remark")),
-        "submitted_at": _iso_local(order.get("paid_at")),
-        "questionnaire_title": QUESTIONNAIRE_TITLE_PAYMENT_OPEN_MEMBER,
-        "delivery_id": delivery_id,
-        "event": EVENT_TRANSACTION_PAID,
-        "order": order_payload,
-        "product": product_payload,
-        "buyer": {
-            "id": _text(order.get("external_userid") or order.get("userid_snapshot") or order.get("respondent_key")),
-            "openid": _mask_openid(order.get("payer_openid")),
-            "unionid": _text(order.get("unionid")),
-            "phone": resolved_phone,
-        },
-    }
 
 
 def _jsonb(value: Any):

@@ -530,7 +530,7 @@ class SidebarWorkbenchReadModel:
         if not normalized_external:
             raise ValueError("external_userid is required")
         normalized_owner = _text(owner_userid)
-        context, context_diagnostics = self._context(normalized_external)
+        context, context_diagnostics = self._context(normalized_external, owner_userid=normalized_owner)
         contact = self._repo.get_contact_snapshot(normalized_external) or {}
         identity = self._repo.get_external_identity_snapshot(normalized_external) or {}
         profile = self._repo.get_profile_fields(normalized_external) or {}
@@ -566,14 +566,21 @@ class SidebarWorkbenchReadModel:
         payload = self(external_userid=external_userid, owner_userid=owner_userid)
         return dict(payload.get("customer") or {}), dict(payload.get("diagnostics") or {})
 
-    def _context(self, external_userid: str) -> tuple[dict[str, Any], dict[str, Any]]:
+    def _context(self, external_userid: str, *, owner_userid: str = "") -> tuple[dict[str, Any], dict[str, Any]]:
         try:
             payload = self._context_query(
-                CustomerContextRequest(external_userid=external_userid, recent_message_limit=20, timeline_limit=20)
+                CustomerContextRequest(
+                    external_userid=external_userid,
+                    owner_userid=_text(owner_userid) or None,
+                    recent_message_limit=20,
+                    timeline_limit=20,
+                )
             )
             if (payload or {}).get("ok", True) and payload.get("customer"):
                 return dict(payload or {}), {"context_source_status": payload.get("source_status") or "next_read_model"}
         except Exception:
+            if _text(owner_userid):
+                raise
             pass
         repo = self._live_source_repo
         owned_repo = repo is None
@@ -643,12 +650,12 @@ class SidebarQuestionnaireReadModel:
         self._context_query = context_query
         self._live_source_repo = live_source_repo
 
-    def __call__(self, *, external_userid: str) -> dict[str, Any]:
+    def __call__(self, *, external_userid: str, owner_userid: str = "") -> dict[str, Any]:
         customer, diagnostics = SidebarWorkbenchReadModel(
             self._repo,
             context_query=self._context_query,
             live_source_repo=self._live_source_repo,
-        ).customer_with_overlay(external_userid=external_userid)
+        ).customer_with_overlay(external_userid=external_userid, owner_userid=owner_userid)
         rows = self._repo.list_questionnaire_answers(external_userid=_text(external_userid), mobile=_text(customer.get("mobile")))
         return _with_route_owner({"ok": True, "questionnaires": self._group(rows), "diagnostics": diagnostics})
 
