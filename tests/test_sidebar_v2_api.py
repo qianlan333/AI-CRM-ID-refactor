@@ -214,7 +214,11 @@ def test_sidebar_bind_mobile_command_stays_local_only(monkeypatch):
 
 def test_sidebar_orders_expose_wechat_shop_channel_fields() -> None:
     class FakeContextQuery:
+        def __init__(self) -> None:
+            self.requests = []
+
         def __call__(self, request: CustomerContextRequest) -> dict:
+            self.requests.append(request)
             return {
                 "ok": True,
                 "source_status": "fixture",
@@ -274,13 +278,15 @@ def test_sidebar_orders_expose_wechat_shop_channel_fields() -> None:
             ]
 
     repo = FakeRepo()
-    payload = SidebarCommerceReadModel(repo=repo, context_query=FakeContextQuery()).orders(
+    context_query = FakeContextQuery()
+    payload = SidebarCommerceReadModel(repo=repo, context_query=context_query).orders(
         external_userid="wmbNXyCwAAdv14187FTFLDTKp9UUGrbw",
         owner_userid="HuangYouCan",
     )
 
     assert payload["ok"] is True
-    assert payload["diagnostics"]["orders_context"] == "single_context_no_workbench_overlay"
+    assert payload["diagnostics"]["orders_context"] == "workbench_customer_overlay"
+    assert [(request.recent_message_limit, request.timeline_limit) for request in context_query.requests] == [(20, 20)]
     assert repo.order_calls == [
         {
             "external_userid": "wmbNXyCwAAdv14187FTFLDTKp9UUGrbw",

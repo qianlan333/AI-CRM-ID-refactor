@@ -880,21 +880,16 @@ class SidebarCommerceReadModel:
             raise ValueError("external_userid is required")
         if not normalized_owner:
             raise ValueError("owner_userid is required")
-        context = self._context_query(
-            CustomerContextRequest(
-                external_userid=normalized_external,
-                owner_userid=normalized_owner,
-                require_owner_scope=True,
-                owner_verified=owner_verified,
-                recent_message_limit=1,
-                timeline_limit=1,
-            )
+        customer, diagnostics = SidebarWorkbenchReadModel(
+            self._repo,
+            context_query=self._context_query,
+            live_source_repo=self._live_source_repo,
+        ).customer_with_overlay(
+            external_userid=normalized_external,
+            owner_userid=normalized_owner,
+            owner_verified=owner_verified,
         )
-        customer = dict((context or {}).get("customer") or {})
-        diagnostics = {
-            "context_source_status": (context or {}).get("source_status") or "next_read_model",
-            "orders_context": "single_context_no_workbench_overlay",
-        }
+        diagnostics = {**diagnostics, "orders_context": "workbench_customer_overlay"}
         rows = self._sql_repo().list_customer_wechat_pay_orders(
             external_userid=normalized_external,
             mobile=_text(customer.get("mobile")),
