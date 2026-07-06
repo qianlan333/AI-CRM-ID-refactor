@@ -880,16 +880,28 @@ class SidebarCommerceReadModel:
             raise ValueError("external_userid is required")
         if not normalized_owner:
             raise ValueError("owner_userid is required")
-        customer, diagnostics = SidebarWorkbenchReadModel(
-            self._repo,
-            context_query=self._context_query,
-            live_source_repo=self._live_source_repo,
-        ).customer_with_overlay(
-            external_userid=normalized_external,
-            owner_userid=normalized_owner,
-            owner_verified=owner_verified,
-        )
-        diagnostics = {**diagnostics, "orders_context": "workbench_customer_overlay"}
+        try:
+            customer, diagnostics = SidebarWorkbenchReadModel(
+                self._repo,
+                context_query=self._context_query,
+                live_source_repo=self._live_source_repo,
+            ).customer_with_overlay(
+                external_userid=normalized_external,
+                owner_userid=normalized_owner,
+                owner_verified=owner_verified,
+            )
+            diagnostics = {**diagnostics, "orders_context": "workbench_customer_overlay"}
+        except NotFoundError as primary_not_found:
+            try:
+                customer, diagnostics = self._customer_from_identity_snapshot(
+                    external_userid=normalized_external,
+                    owner_userid=normalized_owner,
+                    owner_verified=owner_verified,
+                )
+            except NotFoundError:
+                raise
+            except Exception:
+                raise primary_not_found
         rows = self._sql_repo().list_customer_wechat_pay_orders(
             external_userid=normalized_external,
             mobile=_text(customer.get("mobile")),
@@ -903,6 +915,46 @@ class SidebarCommerceReadModel:
                 "diagnostics": diagnostics,
             }
         )
+
+    def _customer_from_identity_snapshot(
+        self,
+        *,
+        external_userid: str,
+        owner_userid: str,
+        owner_verified: bool = False,
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
+        repo = self._sql_repo()
+        contact = repo.get_contact_snapshot(external_userid) or {}
+        identity = repo.get_external_identity_snapshot(external_userid) or {}
+        binding = repo.get_contact_binding_status(external_userid)
+        if not contact and not identity and not binding.get("is_bound"):
+            raise NotFoundError("customer not found")
+        owner_candidates = {
+            _text(contact.get("owner_userid")),
+            _text(identity.get("follow_user_userid")),
+            _text(binding.get("owner_userid")),
+            _text(binding.get("first_owner_userid")),
+            _text(binding.get("last_owner_userid")),
+        }
+        owner_candidates.discard("")
+        if owner_candidates and _text(owner_userid) not in owner_candidates:
+            raise NotFoundError("customer not found")
+        if not owner_candidates and not owner_verified:
+            raise NotFoundError("customer not found")
+        customer, resolution = _resolve_customer_payload(
+            context={},
+            binding=binding,
+            contacts=contact,
+            identity_map=identity,
+            external_userid=external_userid,
+            owner_userid=owner_userid,
+        )
+        diagnostics = {
+            "context_source_status": "identity_snapshot_fallback",
+            **resolution,
+            "orders_context": "identity_snapshot_fallback",
+        }
+        return customer, diagnostics
 
     def _list_sidebar_products(self, *, limit: int) -> list[dict[str, Any]]:
         repo = build_commerce_repository()

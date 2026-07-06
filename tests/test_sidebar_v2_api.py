@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import inspect
 
+import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import event
 from sqlalchemy import create_engine, text
@@ -12,6 +13,7 @@ from aicrm_next.customer_read_model.dto import CustomerContextRequest
 from aicrm_next.customer_read_model.sidebar_v2 import SidebarCommerceReadModel, SidebarV2SqlRepository
 from aicrm_next.main import create_app
 from aicrm_next.media_library.postgres_repo import PostgresMediaLibraryRepository
+from aicrm_next.shared.errors import NotFoundError
 from aicrm_next.shared.signed_context import build_sidebar_owner_context_token
 
 
@@ -300,6 +302,72 @@ def test_sidebar_orders_expose_wechat_shop_channel_fields() -> None:
     assert item["channel_label"] == "微信小店"
     assert item["detail_url"] == "/admin/wechat-shop/transactions/3737077448554214400"
     assert item["status_label"] == "已支付"
+
+
+def test_sidebar_orders_fall_back_to_identity_snapshot_when_context_flaps() -> None:
+    class FailingContextQuery:
+        def __call__(self, request: CustomerContextRequest) -> dict:
+            raise NotFoundError("customer not found")
+
+    class FakeRepo:
+        def __init__(self) -> None:
+            self.order_calls = []
+
+        def get_contact_snapshot(self, external_userid: str) -> dict:
+            return {"external_userid": external_userid, "customer_name": "快照客户", "owner_userid": "HuangYouCan"}
+
+        def get_external_identity_snapshot(self, external_userid: str) -> dict:
+            return {"external_userid": external_userid, "follow_user_userid": "HuangYouCan", "name": "身份客户"}
+
+        def get_contact_binding_status(self, external_userid: str) -> dict:
+            return {"is_bound": True, "external_userid": external_userid, "mobile": "13391962579", "owner_userid": "HuangYouCan"}
+
+        def list_customer_wechat_pay_orders(self, *, external_userid: str, mobile: str = "", limit: int = 20) -> list[dict]:
+            self.order_calls.append({"external_userid": external_userid, "mobile": mobile, "limit": limit})
+            return []
+
+    repo = FakeRepo()
+    payload = SidebarCommerceReadModel(repo=repo, context_query=FailingContextQuery()).orders(
+        external_userid="wmbNXyCwAAncAArq9MSmXQq6yUo8fC8g",
+        owner_userid="HuangYouCan",
+        owner_verified=True,
+    )
+
+    assert payload["ok"] is True
+    assert payload["orders"] == []
+    assert payload["customer"]["display_name"] == "快照客户"
+    assert payload["customer"]["mobile"] == "13391962579"
+    assert payload["diagnostics"]["orders_context"] == "identity_snapshot_fallback"
+    assert repo.order_calls == [
+        {
+            "external_userid": "wmbNXyCwAAncAArq9MSmXQq6yUo8fC8g",
+            "mobile": "13391962579",
+            "limit": 20,
+        }
+    ]
+
+
+def test_sidebar_orders_identity_snapshot_fallback_keeps_owner_scope() -> None:
+    class FailingContextQuery:
+        def __call__(self, request: CustomerContextRequest) -> dict:
+            raise NotFoundError("customer not found")
+
+    class FakeRepo:
+        def get_contact_snapshot(self, external_userid: str) -> dict:
+            return {"external_userid": external_userid, "customer_name": "快照客户", "owner_userid": "HuangYouCan"}
+
+        def get_external_identity_snapshot(self, external_userid: str) -> dict:
+            return {"external_userid": external_userid, "follow_user_userid": "HuangYouCan"}
+
+        def get_contact_binding_status(self, external_userid: str) -> dict:
+            return {"is_bound": True, "external_userid": external_userid, "mobile": "13391962579", "owner_userid": "HuangYouCan"}
+
+    with pytest.raises(NotFoundError):
+        SidebarCommerceReadModel(repo=FakeRepo(), context_query=FailingContextQuery()).orders(
+            external_userid="wmbNXyCwAAncAArq9MSmXQq6yUo8fC8g",
+            owner_userid="OtherOwner",
+            owner_verified=True,
+        )
 
 
 def test_sidebar_order_sql_includes_wechat_shop_identity_matching() -> None:
