@@ -312,4 +312,41 @@ def test_sidebar_commerce_and_material_paths_avoid_heavy_list_queries() -> None:
     assert "SELECT p.*" not in commerce_source
     assert "WHERE p.enabled = TRUE AND p.status = 'active'" in commerce_source
     assert "SELECT * FROM {table}" not in material_source
-    assert "self._list_columns(kind)" in material_source
+    assert "self._table_columns(cur, table)" in material_source
+    assert "self._list_columns(kind, available_columns)" in material_source
+
+
+def test_sidebar_material_image_list_columns_tolerate_legacy_schema() -> None:
+    repo = PostgresMediaLibraryRepository("postgresql://example.invalid/db")
+    production_columns_without_dimensions = {
+        "id",
+        "name",
+        "file_name",
+        "source",
+        "source_url",
+        "data_base64",
+        "mime_type",
+        "file_size",
+        "thumb_media_id",
+        "thumb_media_id_expires_at",
+        "enabled",
+        "created_at",
+        "updated_at",
+        "description",
+        "tags",
+        "category",
+        "ai_metadata",
+    }
+
+    columns = repo._list_columns("image", production_columns_without_dimensions)
+
+    assert "0 AS width" in columns
+    assert "0 AS height" in columns
+    assert "ai_metadata" in columns
+    assert "width, height" not in columns
+
+
+def test_sidebar_commerce_orders_default_context_query_is_initialized() -> None:
+    model = SidebarCommerceReadModel()
+
+    assert model._context_query is not None

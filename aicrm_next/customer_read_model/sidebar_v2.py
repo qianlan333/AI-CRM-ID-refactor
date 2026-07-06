@@ -837,7 +837,7 @@ class SidebarCommerceReadModel:
         live_source_repo: CustomerReadRepository | None = None,
     ) -> None:
         self._repo = repo
-        self._context_query = context_query
+        self._context_query = context_query or GetCustomerContextQuery()
         self._live_source_repo = live_source_repo
 
     def _sql_repo(self) -> SidebarV2SqlRepository:
