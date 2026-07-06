@@ -4,6 +4,11 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from .constants import (
+    AI_AUDIENCE_REFRESH_DEFAULT_ROW_LIMIT,
+    AI_AUDIENCE_REFRESH_MAX_ROW_LIMIT,
+)
+
 
 class PackageCreateRequest(BaseModel):
     package_key: str
@@ -55,7 +60,11 @@ class PreviewRequest(BaseModel):
 class RefreshRequest(BaseModel):
     run_type: str = "incremental"
     params: dict[str, Any] = Field(default_factory=dict)
-    row_limit: int = Field(default=5000, ge=1, le=100000)
+    row_limit: int = Field(
+        default=AI_AUDIENCE_REFRESH_DEFAULT_ROW_LIMIT,
+        ge=1,
+        le=AI_AUDIENCE_REFRESH_MAX_ROW_LIMIT,
+    )
 
 
 class SourceDirtyRequest(BaseModel):

@@ -2,7 +2,15 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from aicrm_next.ai_audience_ops.refresh_service import AI_AUDIENCE_REFRESH_QUERY_TIMEOUT_SECONDS
+from aicrm_next.ai_audience_ops.constants import (
+    AI_AUDIENCE_REFRESH_DEFAULT_ROW_LIMIT,
+    AI_AUDIENCE_REFRESH_MAX_ROW_LIMIT,
+)
+from aicrm_next.ai_audience_ops.refresh_service import (
+    AI_AUDIENCE_REFRESH_QUERY_TIMEOUT_SECONDS,
+    AudienceRefreshService,
+)
+from aicrm_next.ai_audience_ops.schemas import RefreshRequest
 from aicrm_next.ai_audience_ops.simple_sql import compile_simple_sql
 from scripts.ops.ensure_ai_audience_external_api_env import ensure_allowed_prefixes
 
@@ -32,6 +40,16 @@ def test_ai_audience_refresh_query_timeout_allows_heavier_catalog_views() -> Non
     assert AI_AUDIENCE_REFRESH_QUERY_TIMEOUT_SECONDS == 120
     assert "timeout_seconds=AI_AUDIENCE_REFRESH_QUERY_TIMEOUT_SECONDS" in source
     assert "timeout_seconds=30" not in source
+
+
+def test_ai_audience_refresh_defaults_to_full_platform_row_limit() -> None:
+    source = (ROOT / "aicrm_next/ai_audience_ops/refresh_service.py").read_text(encoding="utf-8")
+
+    assert AI_AUDIENCE_REFRESH_DEFAULT_ROW_LIMIT == 100000
+    assert AI_AUDIENCE_REFRESH_MAX_ROW_LIMIT == 100000
+    assert RefreshRequest().row_limit == AI_AUDIENCE_REFRESH_DEFAULT_ROW_LIMIT
+    assert AudienceRefreshService.refresh_package.__kwdefaults__["row_limit"] == AI_AUDIENCE_REFRESH_DEFAULT_ROW_LIMIT
+    assert "row_limit: int = 5000" not in source
 
 
 def test_ai_audience_external_api_env_allows_runtime_business_prefix(tmp_path) -> None:
