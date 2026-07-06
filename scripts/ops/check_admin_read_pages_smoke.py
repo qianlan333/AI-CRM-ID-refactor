@@ -102,6 +102,25 @@ def _fetch(
         return int(exc.code), dict(exc.headers.items()), body
 
 
+def _admin_api_payload_error(path: str, body: str) -> str:
+    if not path.startswith("/api/admin/"):
+        return ""
+    try:
+        payload = json.loads(body)
+    except json.JSONDecodeError:
+        return ""
+    if not isinstance(payload, dict):
+        return ""
+    if payload.get("degraded") is True:
+        reason = str(payload.get("error_code") or payload.get("read_model_status") or payload.get("source_status") or "degraded")
+        return f"admin_api_degraded:{reason}"
+    if payload.get("read_model_status") == "unavailable":
+        return "admin_api_read_model_unavailable"
+    if payload.get("source_status") == "production_unavailable":
+        return "admin_api_production_unavailable"
+    return ""
+
+
 def _probe(base_url: str, path: str, *, timeout: float, cookie_header: str = "") -> ProbeResult:
     started = time.monotonic()
     try:
@@ -123,6 +142,11 @@ def _probe(base_url: str, path: str, *, timeout: float, cookie_header: str = "")
         if path.startswith("/admin/") and ("后台登录" in body or "admin_auth_required" in body):
             ok = False
             error = "admin_login_page_returned"
+    if ok:
+        payload_error = _admin_api_payload_error(path, body)
+        if payload_error:
+            ok = False
+            error = payload_error
     return ProbeResult(
         path=path,
         status_code=status_code,

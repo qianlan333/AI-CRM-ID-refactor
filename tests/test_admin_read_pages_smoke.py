@@ -53,3 +53,47 @@ def test_probe_rejects_admin_login_page_when_cookie_supplied(monkeypatch) -> Non
 
     assert result.ok is False
     assert result.error == "admin_login_page_returned"
+
+
+def test_probe_rejects_degraded_admin_api_payload(monkeypatch) -> None:
+    monkeypatch.setattr(
+        smoke,
+        "_fetch",
+        lambda *args, **kwargs: (
+            200,
+            {},
+            '{"ok":true,"degraded":true,"error_code":"production_read_unavailable","read_model_status":"unavailable"}',
+        ),
+    )
+
+    result = smoke._probe(
+        "http://127.0.0.1:5001",
+        "/api/admin/internal-events?limit=1",
+        timeout=1,
+        cookie_header="aicrm_next_admin_session=fake",
+    )
+
+    assert result.ok is False
+    assert result.error == "admin_api_degraded:production_read_unavailable"
+
+
+def test_probe_accepts_healthy_empty_admin_api_payload(monkeypatch) -> None:
+    monkeypatch.setattr(
+        smoke,
+        "_fetch",
+        lambda *args, **kwargs: (
+            200,
+            {},
+            '{"ok":true,"degraded":false,"read_model_status":"primary","items":[],"total":0}',
+        ),
+    )
+
+    result = smoke._probe(
+        "http://127.0.0.1:5001",
+        "/api/admin/internal-events?limit=1",
+        timeout=1,
+        cookie_header="aicrm_next_admin_session=fake",
+    )
+
+    assert result.ok is True
+    assert result.error == ""
