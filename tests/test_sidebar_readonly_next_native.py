@@ -3,6 +3,7 @@ from __future__ import annotations
 from fastapi.testclient import TestClient
 
 from aicrm_next.main import create_app
+from aicrm_next.shared.signed_context import build_sidebar_owner_context_token
 
 
 def _client() -> TestClient:
@@ -84,6 +85,22 @@ def test_sidebar_readonly_routes_reject_missing_owner_userid_for_pii() -> None:
         assert response.status_code in {400, 404}, path
         assert response.json()["ok"] is False, path
         assert response.json()["fallback_used"] is False, path
+
+
+def test_sidebar_binding_status_accepts_signed_owner_token() -> None:
+    client = _client()
+    token = build_sidebar_owner_context_token(viewer_userid="ZhaoYanFang", corp_id="ww-test")
+
+    for path in [
+        "/api/sidebar/binding-status?external_userid=wx_ext_001",
+        "/api/sidebar/contact-binding-status?external_userid=wx_ext_001",
+    ]:
+        response = client.get(path, headers={"X-AICRM-Sidebar-Owner-Token": token})
+        assert response.status_code == 200, path
+        payload = response.json()
+        assert payload["ok"] is True
+        assert payload["is_bound"] is True
+        assert payload["owner_userid"] == "ZhaoYanFang"
 
 
 def test_sidebar_readonly_routes_filter_by_owner_userid() -> None:
