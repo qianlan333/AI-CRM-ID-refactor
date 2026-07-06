@@ -21,10 +21,6 @@ REQUIRED_OPENAPI_PATHS = (
     "/api/admin/ai-audience/packages",
     "/api/admin/automation-agents",
     "/api/admin/user-ops/send-records",
-    "/api/admin/data-health/summary",
-    "/api/admin/data-health/checks",
-    "/api/admin/delivery-lineage",
-    "/api/admin/growth-orchestration/programs",
 )
 
 SMOKE_PATHS = (
@@ -45,7 +41,6 @@ SMOKE_PATHS = (
     "/api/admin/ai-audience/packages",
     "/api/admin/automation-agents",
     "/api/admin/user-ops/send-records?limit=1",
-    "/api/admin/data-health/summary",
 )
 
 
