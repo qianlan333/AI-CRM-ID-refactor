@@ -258,7 +258,8 @@
         "aicrm_next/platform_foundation/internal_events/view_model.py",
         "aicrm_next/platform_foundation/push_center/view_model.py",
         "aicrm_next/shared/admin_read_fallback.py",
-        "scripts/ops/check_admin_read_pages_smoke.py"
+        "scripts/ops/check_admin_read_pages_smoke.py",
+        "tests/test_admin_read_pages_smoke.py"
       ],
       "python_tests": [
         "tests/test_push_center.py",
@@ -275,7 +276,8 @@
         "tests/test_admin_shell_native.py",
         "tests/test_router_registry_contract.py",
         "tests/test_delivery_lineage_api.py",
-        "tests/test_growth_orchestration_programs.py"
+        "tests/test_growth_orchestration_programs.py",
+        "tests/test_admin_read_pages_smoke.py"
       ],
       "needs_postgres": false,
       "architecture_gate": "fast"
