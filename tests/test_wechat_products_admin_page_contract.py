@@ -68,6 +68,10 @@ def test_wechat_product_admin_pages_keep_existing_routes_and_sections(next_clien
     assert 'data-product-panel="push"' in edit_page.text
     assert 'id="saveCurrentPanelBtn"' in edit_page.text
     assert 'let activeProductPanel = "sale";' in edit_page.text
+    assert "image_upload_client.js" in edit_page.text
+    assert "prepareImageForUpload(file)" in edit_page.text
+    assert "prepared.file" in edit_page.text
+    assert 'payload.ok === false' in edit_page.text
     assert "saveExternalPushOnly" in edit_page.text
     assert "请先保存商品" in edit_page.text
     assert "product-module" not in edit_page.text

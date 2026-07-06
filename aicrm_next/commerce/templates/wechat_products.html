@@ -1,6 +1,7 @@
 {% extends "admin_console/base.html" %}
 
 {% block head_extra %}
+<script src="{{ url_for('static', filename='admin_console/image_upload_client.js') }}"></script>
 <style>
   .product-admin { display: grid; gap: 18px; }
   .product-toolbar { display: flex; justify-content: space-between; gap: 12px; align-items: center; }
@@ -237,7 +238,7 @@
               <span class="pill gray" id="sliceCount">0 / 10 张</span>
             </div>
             <div class="upload-card">
-              <strong>上传长图切片</strong>
+              <strong>上传长图切片（最大 2MB）</strong>
               <label class="btn primary">
                 上传图片
                 <input id="sliceInput" type="file" accept="image/png,image/jpeg" multiple style="display:none">
@@ -831,16 +832,18 @@
     const selected = Array.from(files || []);
     if ((product.slices || []).length + selected.length > 10) throw new Error("全景贴图最多 10 张");
     for (const file of selected) {
+      const prepared = await window.ImageUploadClient.prepareImageForUpload(file);
       const form = new FormData();
-      form.append("image", file);
+      form.append("image", prepared.file);
       form.append("name", file.name);
-      const payload = await api("/api/admin/image-library/upload", { method: "POST", body: form });
+      const payload = await (window.ImageUploadClient.requestJson || api)("/api/admin/image-library/upload", { method: "POST", body: form });
+      if (payload.ok === false) throw new Error(payload.detail || payload.error || "上传失败");
       product.slices.push({
         local_id: `local_${Date.now()}_${Math.random().toString(16).slice(2)}`,
         image_library_id: payload.item.id,
         name: payload.item.name || file.name,
         file_name: payload.item.file_name || file.name,
-        file_size: payload.item.file_size || file.size
+        file_size: payload.item.file_size || prepared.uploadSize || prepared.file.size
       });
     }
     renderSlices();
