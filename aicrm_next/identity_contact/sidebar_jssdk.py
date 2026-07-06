@@ -16,8 +16,7 @@ from aicrm_next.integration_gateway.wecom_jssdk_adapter import (
 from aicrm_next.shared.runtime import production_environment
 from aicrm_next.shared.signed_context import build_sidebar_owner_context_token, sidebar_owner_context_ttl_seconds
 
-from .application import ResolvePersonIdentityQuery
-from .dto import ResolvePersonIdentityRequest
+from .application import ListExternalContactOwnerCandidatesQuery
 
 
 router = APIRouter()
@@ -89,21 +88,30 @@ async def sidebar_jssdk_config(request: Request) -> Response:
 def _with_sidebar_owner_context(request: Request, payload: dict) -> dict:
     result = dict(payload)
     viewer_userid = _viewer_userid_from_request(request)
+    external_userid = _external_userid_from_request(request)
+    owner_candidates = _owner_userids_from_external_userid(external_userid)
     source = "sidebar_jssdk_request_context"
     status = "issued"
+    if viewer_userid and owner_candidates and viewer_userid not in owner_candidates:
+        return _without_sidebar_owner_token(
+            result,
+            status="viewer_not_in_contact_owner_scope",
+            external_userid=external_userid,
+            source="sidebar_jssdk_viewer_scope_rejected",
+            owner_candidates_count=len(owner_candidates),
+        )
     if not viewer_userid:
-        external_userid = _external_userid_from_request(request)
-        viewer_userid = _owner_userid_from_external_userid(external_userid)
+        viewer_userid = next(iter(owner_candidates)) if len(owner_candidates) == 1 else ""
         source = "sidebar_jssdk_identity_owner_fallback" if viewer_userid else "missing"
-        status = "issued_identity_owner" if viewer_userid else "viewer_missing"
+        status = "issued_identity_owner" if viewer_userid else "viewer_missing_multi_owner" if owner_candidates else "viewer_missing"
         if not viewer_userid:
-            result.setdefault("sidebar_owner_token", "")
-            result.setdefault("sidebar_owner_token_status", status)
-            result.setdefault(
-                "sidebar_owner_context",
-                {"external_userid": external_userid, "source": source} if external_userid else {},
+            return _without_sidebar_owner_token(
+                result,
+                status=status,
+                external_userid=external_userid,
+                source="sidebar_jssdk_viewer_required" if owner_candidates else source,
+                owner_candidates_count=len(owner_candidates),
             )
-            return result
     ttl_seconds = sidebar_owner_context_ttl_seconds()
     result["sidebar_owner_token"] = build_sidebar_owner_context_token(
         viewer_userid=viewer_userid,
@@ -120,7 +128,26 @@ def _with_sidebar_owner_context(request: Request, payload: dict) -> dict:
         "external_userid": _external_userid_from_request(request),
         "expires_in": ttl_seconds,
         "source": source,
+        "owner_candidates_count": len(owner_candidates),
     }
+    return result
+
+
+def _without_sidebar_owner_token(
+    payload: dict,
+    *,
+    status: str,
+    external_userid: str = "",
+    source: str = "missing",
+    owner_candidates_count: int = 0,
+) -> dict:
+    result = dict(payload)
+    result["sidebar_owner_token"] = ""
+    result["sidebar_owner_token_status"] = status
+    context = {"source": source, "owner_candidates_count": owner_candidates_count}
+    if external_userid:
+        context["external_userid"] = external_userid
+    result["sidebar_owner_context"] = context
     return result
 
 
@@ -176,19 +203,14 @@ def _external_userid_from_request(request: Request) -> str:
     return ""
 
 
-def _owner_userid_from_external_userid(external_userid: str) -> str:
+def _owner_userids_from_external_userid(external_userid: str) -> set[str]:
     normalized_external = str(external_userid or "").strip()
     if not normalized_external:
-        return ""
+        return set()
     try:
-        resolution = ResolvePersonIdentityQuery()(
-            ResolvePersonIdentityRequest(external_userid=normalized_external)
-        )
+        return ListExternalContactOwnerCandidatesQuery()(external_userid=normalized_external)
     except Exception:
-        return ""
-    if resolution is None:
-        return ""
-    return str(resolution.owner_userid or resolution.follow_user_userid or "").strip()
+        return set()
 
 
 def _validate_jssdk_url_host(request: Request, raw_url: str) -> None:

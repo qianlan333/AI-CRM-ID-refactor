@@ -125,13 +125,31 @@
 
   function applySidebarOwnerToken(payload) {
     const token = String((payload && payload.sidebar_owner_token) || "").trim();
-    if (token) state.sidebar_owner_token = token;
+    if (payload && Object.prototype.hasOwnProperty.call(payload, "sidebar_owner_token")) state.sidebar_owner_token = token;
     state.sidebar_owner_token_status = String((payload && payload.sidebar_owner_token_status) || state.sidebar_owner_token_status || "").trim();
     const context = (payload && payload.sidebar_owner_context) || {};
     const owner = String(context.owner_userid || context.viewer_userid || "").trim();
     if (owner) state.owner_userid = owner;
     const bindBy = String(context.bind_by_userid || "").trim();
     if (bindBy) state.bind_by_userid = bindBy;
+  }
+
+  function ownerTokenNeedsViewer() {
+    return [
+      "viewer_missing_multi_owner",
+      "viewer_not_in_contact_owner_scope",
+      "viewer_missing",
+    ].indexOf(state.sidebar_owner_token_status) !== -1;
+  }
+
+  function ownerPendingMessage() {
+    if (state.sidebar_owner_token_status === "viewer_missing_multi_owner") {
+      return "当前客户存在多个添加员工，请从企微客户侧边栏重新打开以确认当前员工身份。";
+    }
+    if (state.sidebar_owner_token_status === "viewer_not_in_contact_owner_scope") {
+      return "当前员工未在该客户的添加员工列表中，无法加载客户侧边栏。";
+    }
+    return "员工身份待确认，请从企微侧边栏重新打开或稍后重试。";
   }
 
   function jssdkConfigUrl(viewerUserId) {
@@ -288,6 +306,14 @@
 
   function getQueryValue(key) {
     return new URLSearchParams(window.location.search).get(key) || "";
+  }
+
+  function firstQueryValue(keys) {
+    for (const key of keys || []) {
+      const value = getQueryValue(key).trim();
+      if (value) return value;
+    }
+    return "";
   }
 
   function setPanelLoading(title) {
@@ -807,10 +833,10 @@
   }
 
   async function resolveContextFromQuery() {
-    state.external_userid = getQueryValue("external_userid").trim();
-    state.owner_userid = getQueryValue("owner_userid").trim();
-    state.bind_by_userid = getQueryValue("bind_by_userid").trim() || state.owner_userid;
-    state.sidebar_owner_token = getQueryValue("sidebar_owner_token").trim() || getQueryValue("owner_token").trim() || state.sidebar_owner_token;
+    state.external_userid = firstQueryValue(["external_userid", "externalUserid", "externalUserId", "user_id", "userId"]);
+    state.owner_userid = firstQueryValue(["owner_userid", "ownerUserid", "viewer_userid", "viewerUserId", "operator_userid", "operatorUserId", "userid"]) || state.owner_userid;
+    state.bind_by_userid = firstQueryValue(["bind_by_userid", "bindByUserid", "operator_userid", "operatorUserId"]) || state.owner_userid;
+    state.sidebar_owner_token = firstQueryValue(["sidebar_owner_token", "owner_token"]) || state.sidebar_owner_token;
     writeDebug("query context", {
       external_userid: state.external_userid,
       owner_userid: state.owner_userid,
@@ -943,14 +969,24 @@
     setPanelLoading("");
     try {
       const hasQuery = await resolveContextFromQuery();
-      const contextResult = hasQuery ? { ok: true, status: WORKBENCH_STATES.identifying_customer, source: "query" } : await resolveContextFromWeCom();
+      let contextResult = hasQuery ? { ok: true, status: WORKBENCH_STATES.identifying_customer, source: "query" } : await resolveContextFromWeCom();
+      if (hasQuery && !state.sidebar_owner_token && !state.owner_userid) {
+        const sdkContext = await resolveContextFromWeCom();
+        if (sdkContext.ok) contextResult = sdkContext;
+      }
       writeDebug("identity result", contextResult);
       if (!contextResult.ok) {
         setWorkbenchState(contextResult.status || WORKBENCH_STATES.context_missing, contextResult);
         renderRetryPanel("", contextResult.status === WORKBENCH_STATES.sdk_unavailable ? "企微 SDK 暂不可用，请确认从企微侧边栏打开，或带 external_userid 参数重试。" : "未识别到客户，请从企微客户侧边栏重新打开。");
         return;
       }
-      if (!state.sidebar_owner_token) await refreshSidebarOwnerToken();
+      if (!state.sidebar_owner_token) {
+        await refreshSidebarOwnerToken();
+        if (!state.sidebar_owner_token && ownerTokenNeedsViewer()) {
+          renderOwnerPendingWorkbench(ownerPendingMessage());
+          return;
+        }
+      }
       await loadWorkbench();
     } catch (error) {
       writeDebug("boot error", { message: error.message || String(error), stage: error.stage || "" });

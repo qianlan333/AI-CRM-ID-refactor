@@ -70,6 +70,19 @@ class FixtureIdentityRepository:
                 return person
         return None
 
+    def list_external_contact_owner_userids(self, external_userid: str) -> set[str]:
+        person = self.resolve(ResolvePersonIdentityRequest(external_userid=external_userid))
+        if person is None:
+            return set()
+        return {
+            owner
+            for owner in {
+                _text(person.owner_userid),
+                _text(person.follow_user_userid),
+            }
+            if owner
+        }
+
 
 class FixtureIdentityBindingRepository:
     source_status = "fixture_identity_binding"
@@ -175,6 +188,50 @@ class PostgresIdentityRepository:
                 if row:
                     return self._from_user_identity(row, matched_by=field)
         return None
+
+    def list_external_contact_owner_userids(self, external_userid: str) -> set[str]:
+        normalized_external = _text(external_userid)
+        if not normalized_external:
+            return set()
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT DISTINCT owner_userid
+                FROM (
+                    SELECT COALESCE(NULLIF(user_id, ''), NULLIF(raw_follow_user ->> 'userid', '')) AS owner_userid
+                    FROM wecom_external_contact_follow_users
+                    WHERE external_userid = %s
+                      AND COALESCE(relation_status, 'active') = 'active'
+                    UNION ALL
+                    SELECT NULLIF(follow_user_userid, '') AS owner_userid
+                    FROM wecom_external_contact_identity_map
+                    WHERE external_userid = %s
+                    UNION ALL
+                    SELECT NULLIF(primary_owner_userid, '') AS owner_userid
+                    FROM crm_user_identity
+                    WHERE primary_external_userid = %s
+                       OR jsonb_exists(external_userids_json, %s)
+                    UNION ALL
+                    SELECT NULLIF(first_owner_userid, '') AS owner_userid
+                    FROM external_contact_bindings
+                    WHERE external_userid = %s
+                    UNION ALL
+                    SELECT NULLIF(last_owner_userid, '') AS owner_userid
+                    FROM external_contact_bindings
+                    WHERE external_userid = %s
+                ) owners
+                WHERE COALESCE(owner_userid, '') <> ''
+                """,
+                (
+                    normalized_external,
+                    normalized_external,
+                    normalized_external,
+                    normalized_external,
+                    normalized_external,
+                    normalized_external,
+                ),
+            ).fetchall()
+        return {_text(row.get("owner_userid")) for row in rows if _text(row.get("owner_userid"))}
 
     def _from_user_identity(self, row, *, matched_by: str) -> IdentityResolution:
         external_userid = _text(row.get("external_userid"))

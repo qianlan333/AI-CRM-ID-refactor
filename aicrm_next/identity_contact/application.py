@@ -39,6 +39,26 @@ class ResolvePersonIdentityQuery:
     __call__ = execute
 
 
+class ListExternalContactOwnerCandidatesQuery:
+    def __init__(
+        self,
+        repo: FixtureIdentityRepository | None = None,
+        postgres_repo: PostgresIdentityRepository | None = None,
+    ) -> None:
+        self._repo = repo or FixtureIdentityRepository()
+        self._postgres_repo = postgres_repo or PostgresIdentityRepository()
+
+    def execute(self, *, external_userid: str | None = None) -> set[str]:
+        normalized_external = str(external_userid or "").strip()
+        if not normalized_external:
+            return set()
+        if production_data_ready():
+            return self._postgres_repo.list_external_contact_owner_userids(normalized_external)
+        return self._repo.list_external_contact_owner_userids(normalized_external)
+
+    __call__ = execute
+
+
 def _empty_binding_status_payload(
     *,
     external_userid: str,

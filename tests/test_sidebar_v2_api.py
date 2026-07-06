@@ -560,6 +560,45 @@ def test_sidebar_workbench_identity_snapshot_fallback_keeps_owner_scope() -> Non
         )
 
 
+def test_sidebar_workbench_allows_current_viewer_from_contact_owner_candidates() -> None:
+    class FailingContextQuery:
+        def __call__(self, request: CustomerContextRequest) -> dict:
+            raise NotFoundError("customer not found")
+
+    class FakeRepo:
+        def get_contact_snapshot(self, external_userid: str) -> dict:
+            return {"external_userid": external_userid, "customer_name": "共同客户", "owner_userid": "HuangYouCan"}
+
+        def get_external_identity_snapshot(self, external_userid: str) -> dict:
+            return {"external_userid": external_userid, "follow_user_userid": "HuangYouCan", "name": "共同客户"}
+
+        def get_contact_binding_status(self, external_userid: str) -> dict:
+            return {"is_bound": True, "external_userid": external_userid, "mobile": "15950551623", "owner_userid": "HuangYouCan"}
+
+        def get_contact_owner_userids(self, external_userid: str) -> set[str]:
+            return {"HuangYouCan", "ZhaoYanFang"}
+
+        def get_profile_fields(self, external_userid: str) -> dict:
+            return {}
+
+        def get_workflow_title_for_customer(self, external_userid: str) -> str:
+            return ""
+
+        def get_bindable_wechat_pay_order_mobile(self, external_userid: str) -> dict | None:
+            return None
+
+    payload = SidebarWorkbenchReadModel(repo=FakeRepo(), context_query=FailingContextQuery())(
+        external_userid="wmbNXyCwAARg-umkvY19AtDXGOMknjww",
+        owner_userid="ZhaoYanFang",
+        owner_verified=True,
+    )
+
+    assert payload["ok"] is True
+    assert payload["customer"]["display_name"] == "共同客户"
+    assert payload["customer"]["owner_userid"] == "ZhaoYanFang"
+    assert payload["diagnostics"]["context_source_status"] == "identity_snapshot_fallback"
+
+
 def test_sidebar_order_sql_includes_wechat_shop_identity_matching() -> None:
     source = inspect.getsource(sidebar_v2.SidebarV2SqlRepository.list_customer_wechat_pay_orders)
 

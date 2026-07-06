@@ -164,6 +164,91 @@ def test_jssdk_api_issues_sidebar_owner_token_from_external_identity(monkeypatch
     assert token_result["context"]["owner_userid"] == "ZhaoYanFang"
 
 
+def test_jssdk_api_requires_viewer_when_external_contact_has_multiple_owners(monkeypatch) -> None:
+    monkeypatch.setenv("SECRET_KEY", "sidebar-owner-token-multi-owner")
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    monkeypatch.setattr(
+        "aicrm_next.identity_contact.sidebar_jssdk._owner_userids_from_external_userid",
+        lambda external_userid: {"ZhaoYanFang", "HuangYouCan"},
+    )
+    client = TestClient(create_app(), raise_server_exceptions=False)
+
+    response = client.get(
+        "/api/sidebar/jssdk-config",
+        params={
+            "url": "http://127.0.0.1:5001/sidebar/bind-mobile",
+            "external_userid": "wx_ext_multi_owner",
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["sidebar_owner_token"] == ""
+    assert payload["sidebar_owner_token_status"] == "viewer_missing_multi_owner"
+    assert payload["sidebar_owner_context"] == {
+        "external_userid": "wx_ext_multi_owner",
+        "source": "sidebar_jssdk_viewer_required",
+        "owner_candidates_count": 2,
+    }
+
+
+def test_jssdk_api_issues_viewer_token_when_viewer_is_in_owner_candidates(monkeypatch) -> None:
+    monkeypatch.setenv("SECRET_KEY", "sidebar-owner-token-viewer-candidate")
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    monkeypatch.setattr(
+        "aicrm_next.identity_contact.sidebar_jssdk._owner_userids_from_external_userid",
+        lambda external_userid: {"ZhaoYanFang", "HuangYouCan"},
+    )
+    client = TestClient(create_app(), raise_server_exceptions=False)
+
+    response = client.get(
+        "/api/sidebar/jssdk-config",
+        params={
+            "url": "http://127.0.0.1:5001/sidebar/bind-mobile",
+            "external_userid": "wx_ext_multi_owner",
+            "viewer_userid": "HuangYouCan",
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["sidebar_owner_token_status"] == "issued"
+    assert payload["sidebar_owner_context"]["owner_userid"] == "HuangYouCan"
+    assert payload["sidebar_owner_context"]["owner_candidates_count"] == 2
+    token_result = load_sidebar_owner_context_token(payload["sidebar_owner_token"])
+    assert token_result["ok"] is True
+    assert token_result["context"]["viewer_userid"] == "HuangYouCan"
+
+
+def test_jssdk_api_does_not_issue_token_when_viewer_is_outside_owner_candidates(monkeypatch) -> None:
+    monkeypatch.setenv("SECRET_KEY", "sidebar-owner-token-viewer-rejected")
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    monkeypatch.setattr(
+        "aicrm_next.identity_contact.sidebar_jssdk._owner_userids_from_external_userid",
+        lambda external_userid: {"ZhaoYanFang", "HuangYouCan"},
+    )
+    client = TestClient(create_app(), raise_server_exceptions=False)
+
+    response = client.get(
+        "/api/sidebar/jssdk-config",
+        params={
+            "url": "http://127.0.0.1:5001/sidebar/bind-mobile",
+            "external_userid": "wx_ext_multi_owner",
+            "viewer_userid": "OtherOwner",
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["sidebar_owner_token"] == ""
+    assert payload["sidebar_owner_token_status"] == "viewer_not_in_contact_owner_scope"
+    assert payload["sidebar_owner_context"] == {
+        "external_userid": "wx_ext_multi_owner",
+        "source": "sidebar_jssdk_viewer_scope_rejected",
+        "owner_candidates_count": 2,
+    }
+
+
 def test_jssdk_api_rejects_unallowed_signing_host_in_production(monkeypatch) -> None:
     monkeypatch.setenv("SECRET_KEY", "sidebar-jssdk-host-guard")
     monkeypatch.setenv("WECHAT_SHOP_CALLBACK_TOKEN", "sidebar-jssdk-host-guard-token")
