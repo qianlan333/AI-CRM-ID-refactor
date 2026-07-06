@@ -300,8 +300,8 @@ class PostgresSidebarWriteRepository:
                     mobile_source = 'sidebar_bind',
                     primary_owner_userid = COALESCE(NULLIF(%s, ''), primary_owner_userid),
                     profile_json = profile_json || jsonb_build_object(
-                        'sidebar_bind_by_userid', %s,
-                        'sidebar_external_userid', %s
+                        'sidebar_bind_by_userid', %s::text,
+                        'sidebar_external_userid', %s::text
                     ),
                     last_seen_at = NOW(),
                     updated_at = NOW()

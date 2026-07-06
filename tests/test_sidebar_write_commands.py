@@ -216,6 +216,8 @@ def test_sidebar_bind_mobile_executes_postgres_binding_in_production(monkeypatch
             if "FROM wecom_external_contact_follow_users" in compact_sql:
                 return FakeResult(rows=[{"owner_userid": "sales_09"}])
             if compact_sql.startswith("UPDATE crm_user_identity"):
+                assert "'sidebar_bind_by_userid', %s::text" in compact_sql
+                assert "'sidebar_external_userid', %s::text" in compact_sql
                 row = next(item for item in self.identities.values() if item["unionid"] == params[5])
                 row.update(
                     {
@@ -322,6 +324,8 @@ def test_sidebar_bind_mobile_allows_active_follow_user_owner_in_production(monke
                     ]
                 )
             if compact_sql.startswith("UPDATE crm_user_identity"):
+                assert "'sidebar_bind_by_userid', %s::text" in compact_sql
+                assert "'sidebar_external_userid', %s::text" in compact_sql
                 self.identity.update(
                     {
                         "mobile": params[0],
