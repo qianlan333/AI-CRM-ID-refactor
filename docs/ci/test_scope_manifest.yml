@@ -121,6 +121,7 @@
       ],
       "python_tests": [
         "tests/test_sidebar_v2_api.py",
+        "tests/test_sidebar_write_commands.py",
         "tests/test_customer_read_model_request_scope.py",
         "tests/test_sidebar_workbench_frontend.py",
         "tests/test_sidebar_jssdk_frontend_contract.py"

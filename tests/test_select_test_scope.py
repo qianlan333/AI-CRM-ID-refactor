@@ -47,6 +47,15 @@ def test_identity_contact_change_selects_pg_and_db_architecture_gate() -> None:
     assert result["architecture_gate"] == "db"
 
 
+def test_sidebar_write_change_selects_write_command_regression() -> None:
+    result = _select("aicrm_next/sidebar_write/repo.py")
+
+    assert "customer_read_model_sidebar" in result["matched_scopes"]
+    assert "tests/test_sidebar_write_commands.py" in result["python_tests"]
+    assert result["needs_postgres"] is True
+    assert result["architecture_gate"] == "db"
+
+
 def test_signed_session_change_selects_sidebar_shared_runtime_slice() -> None:
     result = _select("aicrm_next/shared/signed_session.py")
 
