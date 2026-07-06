@@ -10,7 +10,12 @@ from sqlalchemy import create_engine, text
 from aicrm_next.commerce.repo import PostgresCommerceRepository
 from aicrm_next.customer_read_model import sidebar_v2
 from aicrm_next.customer_read_model.dto import CustomerContextRequest
-from aicrm_next.customer_read_model.sidebar_v2 import SidebarCommerceReadModel, SidebarV2SqlRepository
+from aicrm_next.customer_read_model.sidebar_v2 import (
+    SidebarCommerceReadModel,
+    SidebarQuestionnaireReadModel,
+    SidebarV2SqlRepository,
+    SidebarWorkbenchReadModel,
+)
 from aicrm_next.main import create_app
 from aicrm_next.media_library.postgres_repo import PostgresMediaLibraryRepository
 from aicrm_next.shared.errors import NotFoundError
@@ -322,6 +327,15 @@ def test_sidebar_orders_fall_back_to_identity_snapshot_when_context_flaps() -> N
         def get_contact_binding_status(self, external_userid: str) -> dict:
             return {"is_bound": True, "external_userid": external_userid, "mobile": "13391962579", "owner_userid": "HuangYouCan"}
 
+        def get_profile_fields(self, external_userid: str) -> dict:
+            return {}
+
+        def get_workflow_title_for_customer(self, external_userid: str) -> str:
+            return ""
+
+        def get_bindable_wechat_pay_order_mobile(self, external_userid: str) -> dict | None:
+            return None
+
         def list_customer_wechat_pay_orders(self, *, external_userid: str, mobile: str = "", limit: int = 20) -> list[dict]:
             self.order_calls.append({"external_userid": external_userid, "mobile": mobile, "limit": limit})
             return []
@@ -362,9 +376,185 @@ def test_sidebar_orders_identity_snapshot_fallback_keeps_owner_scope() -> None:
         def get_contact_binding_status(self, external_userid: str) -> dict:
             return {"is_bound": True, "external_userid": external_userid, "mobile": "13391962579", "owner_userid": "HuangYouCan"}
 
+        def get_profile_fields(self, external_userid: str) -> dict:
+            return {}
+
+        def get_workflow_title_for_customer(self, external_userid: str) -> str:
+            return ""
+
+        def get_bindable_wechat_pay_order_mobile(self, external_userid: str) -> dict | None:
+            return None
+
     with pytest.raises(NotFoundError):
         SidebarCommerceReadModel(repo=FakeRepo(), context_query=FailingContextQuery()).orders(
             external_userid="wmbNXyCwAAncAArq9MSmXQq6yUo8fC8g",
+            owner_userid="OtherOwner",
+            owner_verified=True,
+        )
+
+
+def test_sidebar_workbench_snapshot_values_win_over_placeholder_live_source() -> None:
+    class PlaceholderContextQuery:
+        def __call__(self, request: CustomerContextRequest) -> dict:
+            return {
+                "ok": True,
+                "source_status": "live_source_fallback",
+                "customer": {
+                    "external_userid": request.external_userid,
+                    "owner_userid": "HuangYouCan",
+                    "display_name": "remark",
+                    "customer_name": "customer_name",
+                    "remark": "remark",
+                    "mobile": "mobile",
+                    "binding": {"is_bound": True, "mobile": "mobile"},
+                    "contact": {"remark": "remark"},
+                },
+            }
+
+    class FakeRepo:
+        def get_contact_snapshot(self, external_userid: str) -> dict:
+            return {"external_userid": external_userid, "customer_name": "Wayne", "owner_userid": "HuangYouCan", "remark": "Wayne"}
+
+        def get_external_identity_snapshot(self, external_userid: str) -> dict:
+            return {"external_userid": external_userid, "follow_user_userid": "HuangYouCan", "name": "Wayne"}
+
+        def get_contact_binding_status(self, external_userid: str) -> dict:
+            return {"is_bound": True, "external_userid": external_userid, "mobile": "18086851909", "owner_userid": "QianLan"}
+
+        def get_contact_owner_userids(self, external_userid: str) -> set[str]:
+            return {"HuangYouCan", "QianLan"}
+
+        def get_profile_fields(self, external_userid: str) -> dict:
+            return {}
+
+        def get_workflow_title_for_customer(self, external_userid: str) -> str:
+            return ""
+
+        def get_bindable_wechat_pay_order_mobile(self, external_userid: str) -> dict | None:
+            return None
+
+    payload = SidebarWorkbenchReadModel(repo=FakeRepo(), context_query=PlaceholderContextQuery())(
+        external_userid="wmbNXyCwAAdmxZosevw5DHT5K2_MKIyQ",
+        owner_userid="HuangYouCan",
+        owner_verified=True,
+    )
+
+    assert payload["customer"]["display_name"] == "Wayne"
+    assert payload["customer"]["mobile"] == "18086851909"
+    assert payload["customer"]["is_bound"] is True
+
+
+def test_sidebar_questionnaires_fall_back_to_identity_snapshot_when_context_flaps() -> None:
+    class FailingContextQuery:
+        def __call__(self, request: CustomerContextRequest) -> dict:
+            raise NotFoundError("customer not found")
+
+    class FakeRepo:
+        def __init__(self) -> None:
+            self.questionnaire_calls = []
+
+        def get_contact_snapshot(self, external_userid: str) -> dict:
+            return {"external_userid": external_userid, "customer_name": "Wayne", "owner_userid": "HuangYouCan", "remark": "Wayne"}
+
+        def get_external_identity_snapshot(self, external_userid: str) -> dict:
+            return {"external_userid": external_userid, "follow_user_userid": "HuangYouCan", "name": "Wayne"}
+
+        def get_contact_binding_status(self, external_userid: str) -> dict:
+            return {"is_bound": True, "external_userid": external_userid, "mobile": "18086851909", "owner_userid": "HuangYouCan"}
+
+        def get_contact_owner_userids(self, external_userid: str) -> set[str]:
+            return {"HuangYouCan"}
+
+        def get_profile_fields(self, external_userid: str) -> dict:
+            return {}
+
+        def get_workflow_title_for_customer(self, external_userid: str) -> str:
+            return ""
+
+        def get_bindable_wechat_pay_order_mobile(self, external_userid: str) -> dict | None:
+            return None
+
+        def list_questionnaire_answers(self, *, external_userid: str, mobile: str = "") -> list[dict]:
+            self.questionnaire_calls.append({"external_userid": external_userid, "mobile": mobile})
+            return [
+                {
+                    "submission_id": "1414",
+                    "questionnaire_id": "21",
+                    "questionnaire_title": "填写问卷激活黄小璨AI",
+                    "submitted_at": "2026-06-24 18:04:31+08:00",
+                    "question_id": "596",
+                    "question": "请输入手机号",
+                    "selected_option_texts_snapshot": [],
+                    "text_value": "18086851909",
+                },
+                {
+                    "submission_id": "1414",
+                    "questionnaire_id": "21",
+                    "questionnaire_title": "questionnaire_title",
+                    "submitted_at": "2026-06-24 18:04:31+08:00",
+                    "question_id": "placeholder",
+                    "question": "question",
+                    "selected_option_texts_snapshot": [],
+                    "text_value": "text_value",
+                },
+            ]
+
+    repo = FakeRepo()
+    payload = SidebarQuestionnaireReadModel(repo=repo, context_query=FailingContextQuery())(
+        external_userid="wmbNXyCwAAdmxZosevw5DHT5K2_MKIyQ",
+        owner_userid="HuangYouCan",
+        owner_verified=True,
+    )
+
+    assert repo.questionnaire_calls == [
+        {
+            "external_userid": "wmbNXyCwAAdmxZosevw5DHT5K2_MKIyQ",
+            "mobile": "18086851909",
+        }
+    ]
+    assert payload["diagnostics"]["context_source_status"] == "identity_snapshot_fallback"
+    assert payload["questionnaires"] == [
+        {
+            "id": "1414",
+            "title": "填写问卷激活黄小璨AI",
+            "submitted_at": "2026-06-24 18:04",
+            "answer_count": 1,
+            "total_count": 1,
+            "answers": [{"question": "请输入手机号", "answer": "18086851909"}],
+        }
+    ]
+
+
+def test_sidebar_workbench_identity_snapshot_fallback_keeps_owner_scope() -> None:
+    class FailingContextQuery:
+        def __call__(self, request: CustomerContextRequest) -> dict:
+            raise NotFoundError("customer not found")
+
+    class FakeRepo:
+        def get_contact_snapshot(self, external_userid: str) -> dict:
+            return {"external_userid": external_userid, "customer_name": "Jane初芯", "owner_userid": "HuangYouCan"}
+
+        def get_external_identity_snapshot(self, external_userid: str) -> dict:
+            return {"external_userid": external_userid, "follow_user_userid": "HuangYouCan", "name": "Jane初芯"}
+
+        def get_contact_binding_status(self, external_userid: str) -> dict:
+            return {"is_bound": True, "external_userid": external_userid, "mobile": "18201398887", "owner_userid": "HuangYouCan"}
+
+        def get_contact_owner_userids(self, external_userid: str) -> set[str]:
+            return {"HuangYouCan"}
+
+        def get_profile_fields(self, external_userid: str) -> dict:
+            return {}
+
+        def get_workflow_title_for_customer(self, external_userid: str) -> str:
+            return ""
+
+        def get_bindable_wechat_pay_order_mobile(self, external_userid: str) -> dict | None:
+            return None
+
+    with pytest.raises(NotFoundError):
+        SidebarWorkbenchReadModel(repo=FakeRepo(), context_query=FailingContextQuery())(
+            external_userid="wmbNXyCwAABrzB-3rPps07AecwEGRGMA",
             owner_userid="OtherOwner",
             owner_verified=True,
         )

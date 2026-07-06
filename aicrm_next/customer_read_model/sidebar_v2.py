@@ -28,6 +28,20 @@ ORDER_STATUS_LABELS = {
     "closed": "已关闭",
     "failed": "支付失败",
 }
+_CUSTOMER_PLACEHOLDER_TEXTS = {
+    "customer_name",
+    "display_name",
+    "name",
+    "remark",
+    "description",
+    "mobile",
+    "phone",
+    "title",
+    "external_userid",
+}
+_QUESTIONNAIRE_TITLE_PLACEHOLDER_TEXTS = {"questionnaire_title", "title", "name", "submitted_at"}
+_QUESTION_PLACEHOLDER_TEXTS = {"question", "question_title", "question_title_snapshot"}
+_ANSWER_PLACEHOLDER_TEXTS = {"text_value", "selected_option_texts_snapshot", "answer", "value"}
 
 
 def _text(value: Any) -> str:
@@ -90,6 +104,35 @@ def _money_label(amount_total: Any) -> str:
 
 def _normalize_mobile(value: Any) -> str:
     return "".join(ch for ch in str(value or "") if ch.isdigit())
+
+
+def _clean_placeholder_text(value: Any, placeholders: set[str]) -> str:
+    value_text = _text(value)
+    if not value_text:
+        return ""
+    if value_text.lower() in placeholders:
+        return ""
+    return value_text
+
+
+def _customer_text(value: Any) -> str:
+    return _clean_placeholder_text(value, _CUSTOMER_PLACEHOLDER_TEXTS)
+
+
+def _customer_mobile(value: Any) -> str:
+    return _normalize_mobile(value)
+
+
+def _questionnaire_title_text(value: Any) -> str:
+    return _clean_placeholder_text(value, _QUESTIONNAIRE_TITLE_PLACEHOLDER_TEXTS)
+
+
+def _question_text(value: Any) -> str:
+    return _clean_placeholder_text(value, _QUESTION_PLACEHOLDER_TEXTS)
+
+
+def _answer_text_value(value: Any) -> str:
+    return _clean_placeholder_text(value, _ANSWER_PLACEHOLDER_TEXTS)
 
 
 def _diagnostics(**extra: Any) -> dict[str, Any]:
@@ -199,6 +242,26 @@ class SidebarV2SqlRepository:
             """,
             {"external_userid": external_userid},
         )
+
+    def get_contact_owner_userids(self, external_userid: str) -> set[str]:
+        rows = self._all(
+            """
+            SELECT DISTINCT owner_userid
+            FROM (
+                SELECT COALESCE(NULLIF(user_id, ''), NULLIF(raw_follow_user ->> 'userid', '')) AS owner_userid
+                FROM wecom_external_contact_follow_users
+                WHERE external_userid = :external_userid
+                  AND COALESCE(relation_status, 'active') = 'active'
+                UNION ALL
+                SELECT NULLIF(follow_user_userid, '') AS owner_userid
+                FROM wecom_external_contact_identity_map
+                WHERE external_userid = :external_userid
+            ) owners
+            WHERE COALESCE(owner_userid, '') <> ''
+            """,
+            {"external_userid": external_userid},
+        )
+        return {_text(row.get("owner_userid")) for row in rows if _text(row.get("owner_userid"))}
 
     def get_contact_binding_status(self, external_userid: str) -> dict[str, Any]:
         row = self._one(
@@ -449,7 +512,7 @@ class SidebarV2SqlRepository:
 
 def _first_named_value(*candidates: tuple[str, Any]) -> tuple[str, str]:
     for source, value in candidates:
-        value_text = _text(value)
+        value_text = _customer_text(value)
         if value_text:
             return value_text, source
     return "未命名客户", "default"
@@ -489,8 +552,12 @@ def _resolve_customer_payload(
         or _text(contacts_row.get("owner_userid"))
         or _text(identity_row.get("follow_user_userid"))
     )
-    mobile = _text(binding.get("mobile")) or _text(customer.get("mobile")) or _text(customer_binding.get("mobile"))
-    is_bound = bool(binding.get("is_bound")) or bool(customer_binding.get("is_bound")) or bool(mobile)
+    mobile = (
+        _customer_mobile(binding.get("mobile"))
+        or _customer_mobile(customer.get("mobile"))
+        or _customer_mobile(customer_binding.get("mobile"))
+    )
+    is_bound = bool(mobile)
     payload = {
         "display_name": display_name,
         "avatar_text": display_name[:1] if display_name else "",
@@ -511,6 +578,114 @@ def _resolve_customer_payload(
         "binding_source": binding_source,
     }
     return payload, diagnostics
+
+
+def _snapshot_owner_candidates(
+    *,
+    repo: SidebarV2SqlRepository,
+    external_userid: str,
+    contact: dict[str, Any],
+    identity: dict[str, Any],
+    binding: dict[str, Any],
+) -> set[str]:
+    candidates = {
+        _text(contact.get("owner_userid")),
+        _text(identity.get("follow_user_userid")),
+        _text(binding.get("owner_userid")),
+        _text(binding.get("first_owner_userid")),
+        _text(binding.get("last_owner_userid")),
+    }
+    owner_list = getattr(repo, "get_contact_owner_userids", None)
+    if callable(owner_list):
+        candidates.update(owner_list(external_userid))
+    candidates.discard("")
+    return candidates
+
+
+def _assert_snapshot_owner_scope(
+    *,
+    repo: SidebarV2SqlRepository,
+    external_userid: str,
+    owner_userid: str,
+    owner_verified: bool,
+    contact: dict[str, Any],
+    identity: dict[str, Any],
+    binding: dict[str, Any],
+) -> None:
+    owner_candidates = _snapshot_owner_candidates(
+        repo=repo,
+        external_userid=external_userid,
+        contact=contact,
+        identity=identity,
+        binding=binding,
+    )
+    if owner_candidates and _text(owner_userid) not in owner_candidates:
+        raise NotFoundError("customer not found")
+    if not owner_candidates and not owner_verified:
+        raise NotFoundError("customer not found")
+
+
+def verify_sidebar_identity_snapshot_owner_scope(
+    *,
+    external_userid: str,
+    owner_userid: str,
+    owner_verified: bool = False,
+    repo: SidebarV2SqlRepository | None = None,
+) -> None:
+    normalized_external = _text(external_userid)
+    normalized_owner = _text(owner_userid)
+    if not normalized_external:
+        raise ValueError("external_userid is required")
+    if not normalized_owner:
+        raise ValueError("owner_userid is required")
+    sql_repo = repo or SidebarV2SqlRepository()
+    contact = sql_repo.get_contact_snapshot(normalized_external) or {}
+    identity = sql_repo.get_external_identity_snapshot(normalized_external) or {}
+    binding = sql_repo.get_contact_binding_status(normalized_external)
+    if not contact and not identity and not binding.get("is_bound"):
+        raise NotFoundError("customer not found")
+    _assert_snapshot_owner_scope(
+        repo=sql_repo,
+        external_userid=normalized_external,
+        owner_userid=normalized_owner,
+        owner_verified=owner_verified,
+        contact=contact,
+        identity=identity,
+        binding=binding,
+    )
+
+
+def _customer_from_identity_snapshot(
+    *,
+    repo: SidebarV2SqlRepository,
+    external_userid: str,
+    owner_userid: str,
+    owner_verified: bool = False,
+    context_source_status: str = "identity_snapshot_fallback",
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    contact = repo.get_contact_snapshot(external_userid) or {}
+    identity = repo.get_external_identity_snapshot(external_userid) or {}
+    binding = repo.get_contact_binding_status(external_userid)
+    if not contact and not identity and not binding.get("is_bound"):
+        raise NotFoundError("customer not found")
+    _assert_snapshot_owner_scope(
+        repo=repo,
+        external_userid=external_userid,
+        owner_userid=owner_userid,
+        owner_verified=owner_verified,
+        contact=contact,
+        identity=identity,
+        binding=binding,
+    )
+    customer, resolution = _resolve_customer_payload(
+        context={},
+        binding=binding,
+        contacts=contact,
+        identity_map=identity,
+        external_userid=external_userid,
+        owner_userid=owner_userid,
+    )
+    return customer, {"context_source_status": context_source_status, **resolution}
 
 
 class SidebarWorkbenchReadModel:
@@ -537,11 +712,19 @@ class SidebarWorkbenchReadModel:
         normalized_owner = _text(owner_userid)
         if not normalized_owner:
             raise ValueError("owner_userid is required")
-        context, context_diagnostics = self._context(
-            normalized_external,
-            owner_userid=normalized_owner,
-            owner_verified=owner_verified,
-        )
+        try:
+            context, context_diagnostics = self._context(
+                normalized_external,
+                owner_userid=normalized_owner,
+                owner_verified=owner_verified,
+            )
+        except NotFoundError:
+            if self._repo is None:
+                from aicrm_next.shared.runtime import production_data_ready
+
+                if not production_data_ready():
+                    raise
+            context, context_diagnostics = {}, {"context_source_status": "not_found"}
         repo = self._sql_repo()
         contact = repo.get_contact_snapshot(normalized_external) or {}
         identity = repo.get_external_identity_snapshot(normalized_external) or {}
@@ -549,6 +732,18 @@ class SidebarWorkbenchReadModel:
         binding = repo.get_contact_binding_status(normalized_external)
         if not context.get("customer") and not contact and not identity and not profile and not binding.get("is_bound"):
             raise NotFoundError("customer not found")
+        if not context.get("customer") or context_diagnostics.get("context_source_status") in {"missing", "error", "live_source", "not_found"}:
+            _assert_snapshot_owner_scope(
+                repo=repo,
+                external_userid=normalized_external,
+                owner_userid=normalized_owner,
+                owner_verified=owner_verified,
+                contact=contact,
+                identity=identity,
+                binding=binding,
+            )
+            if not context.get("customer"):
+                context_diagnostics["context_source_status"] = "identity_snapshot_fallback"
         customer, resolution = _resolve_customer_payload(
             context=context,
             binding=binding,
@@ -657,10 +852,10 @@ class SidebarWorkbenchReadModel:
             }
         sidebar_context = dict((context.get("customer") or {}).get("sidebar_context") or {})
         return {
-            "source": _text(sidebar_context.get("source")),
-            "industry": _text(sidebar_context.get("industry")),
-            "industry_description": _text(sidebar_context.get("industry_description")),
-            "needs_blockers_followup": _text(sidebar_context.get("needs_blockers_followup")),
+            "source": _customer_text(sidebar_context.get("source")),
+            "industry": _customer_text(sidebar_context.get("industry")),
+            "industry_description": _customer_text(sidebar_context.get("industry_description")),
+            "needs_blockers_followup": _customer_text(sidebar_context.get("needs_blockers_followup")),
         }
 
 
@@ -682,11 +877,25 @@ class SidebarQuestionnaireReadModel:
         return self._repo
 
     def __call__(self, *, external_userid: str, owner_userid: str = "", owner_verified: bool = False) -> dict[str, Any]:
-        customer, diagnostics = SidebarWorkbenchReadModel(
-            self._repo,
-            context_query=self._context_query,
-            live_source_repo=self._live_source_repo,
-        ).customer_with_overlay(external_userid=external_userid, owner_userid=owner_userid, owner_verified=owner_verified)
+        try:
+            customer, diagnostics = SidebarWorkbenchReadModel(
+                self._repo,
+                context_query=self._context_query,
+                live_source_repo=self._live_source_repo,
+            ).customer_with_overlay(external_userid=external_userid, owner_userid=owner_userid, owner_verified=owner_verified)
+        except NotFoundError as primary_not_found:
+            try:
+                customer, diagnostics = _customer_from_identity_snapshot(
+                    repo=self._sql_repo(),
+                    external_userid=_text(external_userid),
+                    owner_userid=_text(owner_userid),
+                    owner_verified=owner_verified,
+                    context_source_status="identity_snapshot_fallback",
+                )
+            except NotFoundError:
+                raise
+            except Exception:
+                raise primary_not_found
         rows = self._sql_repo().list_questionnaire_answers(external_userid=_text(external_userid), mobile=_text(customer.get("mobile")))
         return _with_route_owner({"ok": True, "questionnaires": self._group(rows), "diagnostics": diagnostics})
 
@@ -697,7 +906,7 @@ class SidebarQuestionnaireReadModel:
             submission_id = _text(row.get("submission_id"))
             questionnaire_id = _text(row.get("questionnaire_id"))
             submitted_at = _format_time(row.get("submitted_at"))
-            title = _text(row.get("questionnaire_title")) or "未命名问卷"
+            title = _questionnaire_title_text(row.get("questionnaire_title")) or "未命名问卷"
             key = (submission_id or questionnaire_id, title, submitted_at)
             if key not in grouped:
                 order.append(key)
@@ -710,17 +919,18 @@ class SidebarQuestionnaireReadModel:
                     "answers": [],
                 }
             answer = self._answer_text(row)
-            if _text(row.get("question")) or answer:
-                grouped[key]["answers"].append({"question": _text(row.get("question")) or "未命名问题", "answer": answer})
+            question = _question_text(row.get("question"))
+            if question or answer:
+                grouped[key]["answers"].append({"question": question or "未命名问题", "answer": answer})
                 grouped[key]["answer_count"] += 1
                 grouped[key]["total_count"] += 1
-        return [grouped[key] for key in order]
+        return [grouped[key] for key in order if grouped[key]["answer_count"] > 0]
 
     def _answer_text(self, row: dict[str, Any]) -> str:
         selected = _json(row.get("selected_option_texts_snapshot"), [])
         if isinstance(selected, list) and selected:
-            return "、".join(_text(item) for item in selected if _text(item))
-        return _text(row.get("text_value"))
+            return "、".join(_answer_text_value(item) for item in selected if _answer_text_value(item))
+        return _answer_text_value(row.get("text_value"))
 
 
 class SidebarMaterialReadModel:
@@ -890,14 +1100,21 @@ class SidebarCommerceReadModel:
                 owner_userid=normalized_owner,
                 owner_verified=owner_verified,
             )
-            diagnostics = {**diagnostics, "orders_context": "workbench_customer_overlay"}
+            orders_context = (
+                "identity_snapshot_fallback"
+                if diagnostics.get("context_source_status") == "identity_snapshot_fallback"
+                else "workbench_customer_overlay"
+            )
+            diagnostics = {**diagnostics, "orders_context": orders_context}
         except NotFoundError as primary_not_found:
             try:
-                customer, diagnostics = self._customer_from_identity_snapshot(
+                customer, diagnostics = _customer_from_identity_snapshot(
+                    repo=self._sql_repo(),
                     external_userid=normalized_external,
                     owner_userid=normalized_owner,
                     owner_verified=owner_verified,
                 )
+                diagnostics = {**diagnostics, "orders_context": "identity_snapshot_fallback"}
             except NotFoundError:
                 raise
             except Exception:
@@ -915,46 +1132,6 @@ class SidebarCommerceReadModel:
                 "diagnostics": diagnostics,
             }
         )
-
-    def _customer_from_identity_snapshot(
-        self,
-        *,
-        external_userid: str,
-        owner_userid: str,
-        owner_verified: bool = False,
-    ) -> tuple[dict[str, Any], dict[str, Any]]:
-        repo = self._sql_repo()
-        contact = repo.get_contact_snapshot(external_userid) or {}
-        identity = repo.get_external_identity_snapshot(external_userid) or {}
-        binding = repo.get_contact_binding_status(external_userid)
-        if not contact and not identity and not binding.get("is_bound"):
-            raise NotFoundError("customer not found")
-        owner_candidates = {
-            _text(contact.get("owner_userid")),
-            _text(identity.get("follow_user_userid")),
-            _text(binding.get("owner_userid")),
-            _text(binding.get("first_owner_userid")),
-            _text(binding.get("last_owner_userid")),
-        }
-        owner_candidates.discard("")
-        if owner_candidates and _text(owner_userid) not in owner_candidates:
-            raise NotFoundError("customer not found")
-        if not owner_candidates and not owner_verified:
-            raise NotFoundError("customer not found")
-        customer, resolution = _resolve_customer_payload(
-            context={},
-            binding=binding,
-            contacts=contact,
-            identity_map=identity,
-            external_userid=external_userid,
-            owner_userid=owner_userid,
-        )
-        diagnostics = {
-            "context_source_status": "identity_snapshot_fallback",
-            **resolution,
-            "orders_context": "identity_snapshot_fallback",
-        }
-        return customer, diagnostics
 
     def _list_sidebar_products(self, *, limit: int) -> list[dict[str, Any]]:
         repo = build_commerce_repository()

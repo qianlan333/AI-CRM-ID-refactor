@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from aicrm_next.shared.config import get_settings
 from aicrm_next.shared.db_session import get_db
 from aicrm_next.shared.errors import NotFoundError
-from aicrm_next.shared.runtime import database_mode
+from aicrm_next.shared.runtime import database_mode, production_data_ready
 from aicrm_next.shared.signed_context import load_sidebar_owner_context_token
 
 from . import application as customer_application
@@ -41,6 +41,7 @@ from .sidebar_v2 import (
     SidebarQuestionnaireReadModel,
     SidebarV2SqlRepository,
     SidebarWorkbenchReadModel,
+    verify_sidebar_identity_snapshot_owner_scope,
 )
 
 router = APIRouter()
@@ -303,15 +304,28 @@ def _verify_sidebar_owner_scope(
 ) -> None:
     if not str(owner_userid or "").strip():
         raise ValueError("owner_userid is required")
-    context_query(
-        CustomerContextRequest(
-            external_userid=external_userid,
-            owner_userid=str(owner_userid or "").strip(),
-            require_owner_scope=True,
-            owner_verified=owner_verified,
-            recent_message_limit=1,
-            timeline_limit=1,
+    try:
+        payload = context_query(
+            CustomerContextRequest(
+                external_userid=external_userid,
+                owner_userid=str(owner_userid or "").strip(),
+                require_owner_scope=True,
+                owner_verified=owner_verified,
+                recent_message_limit=1,
+                timeline_limit=1,
+            )
         )
+        if not isinstance(payload, dict) or payload.get("ok", True):
+            return
+    except NotFoundError:
+        if not production_data_ready():
+            raise
+    if not production_data_ready():
+        raise NotFoundError("customer not found")
+    verify_sidebar_identity_snapshot_owner_scope(
+        external_userid=external_userid,
+        owner_userid=str(owner_userid or "").strip(),
+        owner_verified=owner_verified,
     )
 
 
