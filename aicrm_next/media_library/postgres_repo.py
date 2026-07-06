@@ -298,7 +298,7 @@ class PostgresMediaLibraryRepository:
                 cur.execute(f"SELECT count(*) AS total FROM {table}{where_sql}", tuple(params))
                 total = int((cur.fetchone() or {}).get("total") or 0)
                 cur.execute(
-                    f"SELECT * FROM {table}{where_sql} ORDER BY {order_by} LIMIT %s OFFSET %s",
+                    f"SELECT {self._list_columns(kind)} FROM {table}{where_sql} ORDER BY {order_by} LIMIT %s OFFSET %s",
                     tuple(params + [limit, offset]),
                 )
                 raw_rows = [dict(row) for row in cur.fetchall() or []]
@@ -310,6 +310,23 @@ class PostgresMediaLibraryRepository:
                 if kind == "image":
                     self._attach_image_variant_dimensions(cur, rows)
         return {"items": rows, "total": total, "limit": limit, "offset": offset}
+
+    def _list_columns(self, kind: str) -> str:
+        if kind == "image":
+            return (
+                "id, name, file_name, source, source_url, mime_type, file_size, "
+                "thumb_media_id, thumb_media_id_expires_at, enabled, description, "
+                "tags, category, ai_metadata, width, height, created_at, updated_at"
+            )
+        if kind == "miniprogram":
+            return (
+                "id, name, appid, pagepath, title, thumb_image_id, thumb_media_id, "
+                "thumb_media_id_expires_at, thumb_image_url, enabled, created_at, updated_at"
+            )
+        return (
+            "id, name, file_name, mime_type, file_size, media_id, media_id_expires_at, "
+            "tags, enabled, created_at, updated_at"
+        )
 
     def _image_variants_table_exists(self, cur: Any) -> bool:
         if self._variants_table_available is not None:

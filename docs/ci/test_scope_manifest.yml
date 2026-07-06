@@ -232,6 +232,23 @@
       "architecture_gate": "full"
     },
     {
+      "name": "shared_sidebar_runtime",
+      "paths": [
+        "aicrm_next/shared/db_session.py",
+        "aicrm_next/shared/signed_context.py",
+        "tests/test_shared_db_session.py",
+        "tests/test_shared_flask_config_retirement.py"
+      ],
+      "python_tests": [
+        "tests/test_shared_db_session.py",
+        "tests/test_shared_flask_config_retirement.py",
+        "tests/test_sidebar_jssdk_adapter.py",
+        "tests/test_sidebar_v2_api.py"
+      ],
+      "needs_postgres": false,
+      "architecture_gate": "fast"
+    },
+    {
       "name": "docs_only",
       "paths": [
         "docs/**",

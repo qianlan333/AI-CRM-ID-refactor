@@ -16,7 +16,9 @@ def test_frontend_declares_and_consumes_jssdk_config_contract() -> None:
     script = SCRIPT.read_text(encoding="utf-8")
 
     assert 'data-jssdk-config-url="/api/sidebar/jssdk-config"' in template
-    assert 'endpoint("jssdkConfigUrl") + "?url="' in script
+    assert "jssdkConfigUrl()" in script
+    assert "applySidebarOwnerToken(configPayload)" in script
+    assert '"X-AICRM-Sidebar-Owner-Token": state.sidebar_owner_token' in script
     assert "configPayload.corp_id" in script
     assert "configPayload.agent_id" in script
     assert "configPayload.config.timestamp" in script

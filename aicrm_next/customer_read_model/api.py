@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import os
+from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Path, Query
+from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse, RedirectResponse, Response
 from sqlalchemy.orm import Session
@@ -11,6 +12,7 @@ from aicrm_next.shared.config import get_settings
 from aicrm_next.shared.db_session import get_db
 from aicrm_next.shared.errors import NotFoundError
 from aicrm_next.shared.runtime import database_mode
+from aicrm_next.shared.signed_context import load_sidebar_owner_context_token
 
 from . import application as customer_application
 from .application import (
@@ -43,6 +45,7 @@ from .sidebar_v2 import (
 
 router = APIRouter()
 _SQL_REPO_BACKENDS = {"sql", "sqlalchemy", "postgres", "postgresql"}
+SIDEBAR_OWNER_TOKEN_HEADER = "x-aicrm-sidebar-owner-token"
 
 
 def _customer_read_model_sql_backend_enabled() -> bool:
@@ -296,6 +299,7 @@ def _verify_sidebar_owner_scope(
     *,
     external_userid: str,
     owner_userid: str = "",
+    owner_verified: bool = False,
 ) -> None:
     if not str(owner_userid or "").strip():
         raise ValueError("owner_userid is required")
@@ -304,10 +308,44 @@ def _verify_sidebar_owner_scope(
             external_userid=external_userid,
             owner_userid=str(owner_userid or "").strip(),
             require_owner_scope=True,
+            owner_verified=owner_verified,
             recent_message_limit=1,
             timeline_limit=1,
         )
     )
+
+
+def _sidebar_owner_context_from_request(
+    request: Request,
+    *,
+    owner_userid: str | None = None,
+    current_userid: str | None = None,
+    bind_by_userid: str | None = None,
+) -> dict[str, Any]:
+    token = (
+        str(request.headers.get(SIDEBAR_OWNER_TOKEN_HEADER) or "").strip()
+        or str(request.query_params.get("sidebar_owner_token") or "").strip()
+        or str(request.query_params.get("owner_token") or "").strip()
+    )
+    token_result = load_sidebar_owner_context_token(token)
+    if token_result.get("ok"):
+        context = dict(token_result.get("context") or {})
+        viewer = str(context.get("viewer_userid") or context.get("owner_userid") or "").strip()
+        return {
+            "owner_userid": viewer,
+            "bind_by_userid": str(context.get("bind_by_userid") or viewer).strip(),
+            "owner_verified": True,
+            "source": str(context.get("source") or "signed_sidebar_owner_context"),
+            "token_status": token_result.get("status") or "valid",
+        }
+    fallback_owner = str(owner_userid or current_userid or "").strip()
+    return {
+        "owner_userid": fallback_owner,
+        "bind_by_userid": str(bind_by_userid or current_userid or fallback_owner).strip(),
+        "owner_verified": False,
+        "source": "query_fallback" if fallback_owner else "missing",
+        "token_status": token_result.get("status") or "missing",
+    }
 
 
 def _class_term_payload(class_user_status: dict, sidebar_context: dict) -> tuple[int | None, str]:
@@ -699,6 +737,7 @@ def get_sidebar_marketing_status(
 
 @router.get("/api/sidebar/v2/workbench")
 def get_sidebar_v2_workbench(
+    request: Request,
     external_userid: str | None = None,
     owner_userid: str | None = None,
     db: Session = Depends(get_db),
@@ -706,17 +745,14 @@ def get_sidebar_v2_workbench(
     if not str(external_userid or "").strip():
         return _sidebar_input_error("external_userid is required")
     normalized_external_userid = str(external_userid or "").strip()
-    normalized_owner_userid = str(owner_userid or "").strip()
+    owner_context = _sidebar_owner_context_from_request(request, owner_userid=owner_userid)
+    normalized_owner_userid = str(owner_context.get("owner_userid") or "").strip()
     context_query, live_source_repo = _request_scoped_customer_context_query(db)
     try:
-        _verify_sidebar_owner_scope(
-            context_query,
-            external_userid=normalized_external_userid,
-            owner_userid=normalized_owner_userid,
-        )
         payload = SidebarWorkbenchReadModel(context_query=context_query, live_source_repo=live_source_repo)(
             external_userid=normalized_external_userid,
             owner_userid=normalized_owner_userid,
+            owner_verified=bool(owner_context.get("owner_verified")),
         )
     except NotFoundError as exc:
         return _sidebar_lookup_error(str(exc) or "customer not found")
@@ -729,22 +765,21 @@ def get_sidebar_v2_workbench(
 
 @router.get("/api/sidebar/v2/questionnaires")
 def get_sidebar_v2_questionnaires(
+    request: Request,
     external_userid: str | None = None,
     owner_userid: str | None = None,
     db: Session = Depends(get_db),
 ):
     if not str(external_userid or "").strip():
         return _sidebar_input_error("external_userid is required")
+    owner_context = _sidebar_owner_context_from_request(request, owner_userid=owner_userid)
+    scoped_owner_userid = str(owner_context.get("owner_userid") or "").strip()
     context_query, live_source_repo = _request_scoped_customer_context_query(db)
     try:
-        _verify_sidebar_owner_scope(
-            context_query,
-            external_userid=str(external_userid or "").strip(),
-            owner_userid=str(owner_userid or "").strip(),
-        )
         payload = SidebarQuestionnaireReadModel(context_query=context_query, live_source_repo=live_source_repo)(
             external_userid=str(external_userid or "").strip(),
-            owner_userid=str(owner_userid or "").strip(),
+            owner_userid=scoped_owner_userid,
+            owner_verified=bool(owner_context.get("owner_verified")),
         )
     except NotFoundError as exc:
         return _sidebar_lookup_error(str(exc) or "customer not found")
@@ -767,7 +802,7 @@ def get_sidebar_v2_materials(type: str = "", limit: int = 50):
 
 
 @router.get("/api/sidebar/v2/materials/image/{image_id}/thumbnail")
-def get_sidebar_v2_image_thumbnail(image_id: int):
+def get_sidebar_v2_image_thumbnail(request: Request, image_id: int):
     try:
         payload = SidebarMaterialReadModel().thumbnail(image_id)
     except LookupError as exc:
@@ -779,13 +814,19 @@ def get_sidebar_v2_image_thumbnail(image_id: int):
     redirect_url = str(payload.get("redirect_url") or "").strip()
     if redirect_url:
         return RedirectResponse(redirect_url, status_code=302)
-    response = Response(payload.get("body") or b"", media_type=str(payload.get("mime_type") or "image/png"))
-    response.headers["Cache-Control"] = "private, max-age=86400"
+    headers = {"Cache-Control": "public, max-age=86400"}
+    etag = str(payload.get("etag") or "").strip()
+    if etag:
+        headers["ETag"] = etag
+    if etag and str(request.headers.get("if-none-match") or "").strip() == etag:
+        return Response(status_code=304, headers=headers)
+    response = Response(payload.get("body") or b"", media_type=str(payload.get("mime_type") or "image/png"), headers=headers)
     return response
 
 
 @router.get("/api/sidebar/v2/other-staff-messages")
 def get_sidebar_v2_other_staff_messages(
+    request: Request,
     external_userid: str | None = None,
     current_userid: str | None = None,
     owner_userid: str | None = None,
@@ -794,17 +835,15 @@ def get_sidebar_v2_other_staff_messages(
 ):
     if not str(external_userid or "").strip():
         return _sidebar_input_error("external_userid is required")
-    scoped_userid = str(current_userid or owner_userid or "").strip()
+    owner_context = _sidebar_owner_context_from_request(request, owner_userid=owner_userid, current_userid=current_userid)
+    scoped_userid = str(owner_context.get("owner_userid") or "").strip()
     try:
         context_query, _live_source_repo = _request_scoped_customer_context_query(db)
-        context_query(
-            CustomerContextRequest(
-                external_userid=str(external_userid or "").strip(),
-                owner_userid=scoped_userid or None,
-                require_owner_scope=True,
-                recent_message_limit=1,
-                timeline_limit=1,
-            )
+        _verify_sidebar_owner_scope(
+            context_query,
+            external_userid=str(external_userid or "").strip(),
+            owner_userid=scoped_userid,
+            owner_verified=bool(owner_context.get("owner_verified")),
         )
         payload = SidebarOtherStaffMessagesReadModel()(
             external_userid=str(external_userid or "").strip(),
@@ -822,6 +861,7 @@ def get_sidebar_v2_other_staff_messages(
 
 @router.get("/api/sidebar/v2/products")
 def get_sidebar_v2_products(
+    request: Request,
     external_userid: str | None = None,
     owner_userid: str | None = None,
     bind_by_userid: str | None = None,
@@ -829,17 +869,20 @@ def get_sidebar_v2_products(
 ):
     if not str(external_userid or "").strip():
         return _sidebar_input_error("external_userid is required")
+    owner_context = _sidebar_owner_context_from_request(request, owner_userid=owner_userid, bind_by_userid=bind_by_userid)
+    scoped_owner_userid = str(owner_context.get("owner_userid") or "").strip()
     try:
         context_query, live_source_repo = _request_scoped_customer_context_query(db)
         _verify_sidebar_owner_scope(
             context_query,
             external_userid=str(external_userid or "").strip(),
-            owner_userid=str(owner_userid or "").strip(),
+            owner_userid=scoped_owner_userid,
+            owner_verified=bool(owner_context.get("owner_verified")),
         )
         payload = SidebarCommerceReadModel(context_query=context_query, live_source_repo=live_source_repo).products(
             external_userid=str(external_userid or "").strip(),
-            owner_userid=str(owner_userid or "").strip(),
-            bind_by_userid=str(bind_by_userid or "").strip(),
+            owner_userid=scoped_owner_userid,
+            bind_by_userid=str(owner_context.get("bind_by_userid") or bind_by_userid or "").strip(),
         )
     except NotFoundError as exc:
         return _sidebar_lookup_error(str(exc) or "customer not found")
@@ -852,6 +895,7 @@ def get_sidebar_v2_products(
 
 @router.get("/api/sidebar/v2/orders")
 def get_sidebar_v2_orders(
+    request: Request,
     external_userid: str | None = None,
     owner_userid: str | None = None,
     db: Session = Depends(get_db),
@@ -859,16 +903,14 @@ def get_sidebar_v2_orders(
     if not str(external_userid or "").strip():
         return _sidebar_input_error("external_userid is required")
     normalized_external_userid = str(external_userid or "").strip()
+    owner_context = _sidebar_owner_context_from_request(request, owner_userid=owner_userid)
+    scoped_owner_userid = str(owner_context.get("owner_userid") or "").strip()
     context_query, live_source_repo = _request_scoped_customer_context_query(db)
     try:
-        _verify_sidebar_owner_scope(
-            context_query,
-            external_userid=normalized_external_userid,
-            owner_userid=str(owner_userid or "").strip(),
-        )
         payload = SidebarCommerceReadModel(context_query=context_query, live_source_repo=live_source_repo).orders(
             external_userid=normalized_external_userid,
-            owner_userid=str(owner_userid or "").strip(),
+            owner_userid=scoped_owner_userid,
+            owner_verified=bool(owner_context.get("owner_verified")),
         )
     except NotFoundError as exc:
         return _sidebar_lookup_error(str(exc) or "customer not found")

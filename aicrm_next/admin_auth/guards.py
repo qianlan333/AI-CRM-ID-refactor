@@ -15,7 +15,6 @@ PROTECTED_ROUTE_PREFIXES = (
     "/admin",
     "/setup",
     "/api/admin",
-    "/api/sidebar",
     "/api/customers",
     "/api/users",
     "/api/messages",

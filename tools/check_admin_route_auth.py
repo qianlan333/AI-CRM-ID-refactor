@@ -9,7 +9,6 @@ PROTECTED_EXAMPLES = (
     "/admin/api-docs",
     "/setup/wizard",
     "/api/admin/channels",
-    "/api/sidebar/profile",
     "/api/customers",
     "/api/users/unionid_1",
     "/api/messages/external_1",
@@ -21,6 +20,8 @@ PUBLIC_EXAMPLES = (
     "/api/wecom/events",
     "/wecom/external-contact/callback",
     "/api/sidebar/jssdk-config",
+    "/api/sidebar/profile",
+    "/api/sidebar/v2/workbench",
     "/static/admin_console/admin_console.css",
 )
 

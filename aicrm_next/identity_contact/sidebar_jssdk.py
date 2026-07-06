@@ -14,6 +14,7 @@ from aicrm_next.integration_gateway.wecom_jssdk_adapter import (
     normalize_jssdk_url,
 )
 from aicrm_next.shared.runtime import production_environment
+from aicrm_next.shared.signed_context import build_sidebar_owner_context_token, sidebar_owner_context_ttl_seconds
 
 
 router = APIRouter()
@@ -52,6 +53,7 @@ async def sidebar_jssdk_config(request: Request) -> Response:
             debug=debug,
             corp_context=corp_context,
         )
+        payload = _with_sidebar_owner_context(request, payload)
     except SidebarJSSDKInputError as exc:
         return JSONResponse(
             {
@@ -79,6 +81,67 @@ async def sidebar_jssdk_config(request: Request) -> Response:
             status_code=502,
         )
     return JSONResponse(jsonable_encoder(payload), status_code=200)
+
+
+def _with_sidebar_owner_context(request: Request, payload: dict) -> dict:
+    result = dict(payload)
+    viewer_userid = _viewer_userid_from_request(request)
+    if not viewer_userid:
+        result.setdefault("sidebar_owner_token", "")
+        result.setdefault("sidebar_owner_token_status", "viewer_missing")
+        result.setdefault("sidebar_owner_context", {})
+        return result
+    ttl_seconds = sidebar_owner_context_ttl_seconds()
+    result["sidebar_owner_token"] = build_sidebar_owner_context_token(
+        viewer_userid=viewer_userid,
+        corp_id=str(result.get("corp_id") or result.get("corpId") or ""),
+        bind_by_userid=_bind_by_userid_from_request(request) or viewer_userid,
+        ttl_seconds=ttl_seconds,
+    )
+    result["sidebar_owner_token_status"] = "issued"
+    result["sidebar_owner_context"] = {
+        "viewer_userid": viewer_userid,
+        "owner_userid": viewer_userid,
+        "bind_by_userid": _bind_by_userid_from_request(request) or viewer_userid,
+        "corp_id": str(result.get("corp_id") or result.get("corpId") or ""),
+        "expires_in": ttl_seconds,
+        "source": "sidebar_jssdk_request_context",
+    }
+    return result
+
+
+def _viewer_userid_from_request(request: Request) -> str:
+    params = request.query_params
+    for value in (
+        params.get("viewer_userid"),
+        params.get("viewerUserId"),
+        params.get("operator_userid"),
+        params.get("operatorUserId"),
+        params.get("owner_userid"),
+        params.get("ownerUserid"),
+        params.get("userid"),
+        request.headers.get("x-wecom-viewer-userid"),
+        request.headers.get("x-wecom-userid"),
+        request.headers.get("x-aicrm-sidebar-viewer-userid"),
+    ):
+        normalized = str(value or "").strip()
+        if normalized:
+            return normalized
+    return ""
+
+
+def _bind_by_userid_from_request(request: Request) -> str:
+    params = request.query_params
+    for value in (
+        params.get("bind_by_userid"),
+        params.get("bindByUserid"),
+        params.get("operator_userid"),
+        params.get("operatorUserId"),
+    ):
+        normalized = str(value or "").strip()
+        if normalized:
+            return normalized
+    return ""
 
 
 def _validate_jssdk_url_host(request: Request, raw_url: str) -> None:

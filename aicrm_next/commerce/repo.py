@@ -6,6 +6,7 @@ import secrets
 from typing import Any, Protocol
 
 from aicrm_next.navigation_target import completion_action_for_target
+from aicrm_next.shared.db_session import connect_pooled_postgres
 from aicrm_next.shared.errors import ContractError, NotFoundError
 from aicrm_next.shared.repository_provider import assert_repository_allowed
 from aicrm_next.shared.runtime import production_data_ready, raw_database_url
@@ -15,10 +16,7 @@ from .domain import validate_product_code
 
 
 def connect_commerce_db(database_url: str | None = None):
-    import psycopg
-    from psycopg.rows import dict_row
-
-    return psycopg.connect(database_url or raw_database_url(), row_factory=dict_row)
+    return connect_pooled_postgres(database_url or raw_database_url())
 
 
 class CommerceRepository(Protocol):
@@ -573,10 +571,7 @@ class PostgresCommerceRepository:
         self._database_url = database_url
 
     def _connect(self):
-        import psycopg
-        from psycopg.rows import dict_row
-
-        return psycopg.connect(self._database_url, row_factory=dict_row)
+        return connect_commerce_db(self._database_url)
 
     def list_products(self, *, limit: int, offset: int) -> dict[str, Any]:
         limit = max(1, min(int(limit or 50), 100))
@@ -596,6 +591,51 @@ class PostgresCommerceRepository:
                     (limit, offset),
                 ).fetchall()
                 total_row = cur.execute("SELECT count(*) AS total FROM wechat_pay_products").fetchone() or {}
+        return {
+            "items": [self._serialize_product(row) for row in rows],
+            "total": int(total_row.get("total") or 0),
+            "limit": limit,
+            "offset": offset,
+        }
+
+    def list_sidebar_active_products(self, *, limit: int, offset: int) -> dict[str, Any]:
+        limit = max(1, min(int(limit or 50), 100))
+        offset = max(0, int(offset or 0))
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                rows = cur.execute(
+                    """
+                    SELECT
+                        p.id,
+                        p.product_code,
+                        p.name,
+                        p.amount_total,
+                        p.currency,
+                        p.enabled,
+                        p.status,
+                        p.cta_text,
+                        p.require_mobile,
+                        p.lead_channel_id,
+                        p.completion_redirect_enabled,
+                        p.completion_redirect_url,
+                        p.completion_target_json,
+                        p.metadata_json,
+                        p.created_at,
+                        p.updated_at,
+                        count(s.id) AS slice_count
+                    FROM wechat_pay_products p
+                    LEFT JOIN wechat_pay_product_page_slices s
+                      ON s.product_id = p.id AND s.enabled = TRUE
+                    WHERE p.enabled = TRUE AND p.status = 'active'
+                    GROUP BY p.id
+                    ORDER BY p.updated_at DESC, p.id DESC
+                    LIMIT %s OFFSET %s
+                    """,
+                    (limit, offset),
+                ).fetchall()
+                total_row = cur.execute(
+                    "SELECT count(*) AS total FROM wechat_pay_products WHERE enabled = TRUE AND status = 'active'"
+                ).fetchone() or {}
         return {
             "items": [self._serialize_product(row) for row in rows],
             "total": int(total_row.get("total") or 0),

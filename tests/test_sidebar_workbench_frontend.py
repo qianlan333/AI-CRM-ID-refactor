@@ -38,9 +38,15 @@ def test_sidebar_workbench_static_contract_has_next_surface_only():
     assert "PRODUCT_CARD_IMAGE_PATH" in script
     assert "product-card-cover.png" in script
     assert "material-thumb" in script
+    assert "skeleton-list" in script
+    assert "requestPanelJson" in script
+    assert "PANEL_TIMEOUT_MS" in script
+    assert "PANEL_CACHE_TTL_MS" in script
+    assert "sidebar_owner_token" in script
     assert "data-material-thumb-img" in script
     assert "data-order-detail-url" in script
     assert "grid-template-columns: minmax(0, 1fr) auto" in css
+    assert "@keyframes sidebar-skeleton" in css
     assert WORKBENCH_PRODUCT_CARD_COVER.exists()
     assert "context_token" not in script
     assert "customer-avatar" not in combined

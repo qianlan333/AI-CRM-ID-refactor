@@ -8,11 +8,11 @@ from sqlalchemy import text
 from sqlalchemy.engine import Engine
 
 from aicrm_next.commerce.application import ListProductsQuery
+from aicrm_next.commerce.repo import build_commerce_repository
 from aicrm_next.customer_read_model.application import GetCustomerContextQuery, _close_repository
 from aicrm_next.customer_read_model.dto import CustomerContextRequest
 from aicrm_next.customer_read_model.repo import CustomerReadRepository, build_customer_live_source_repository
-from aicrm_next.media_library.application import GetImageThumbnailQuery, GetMediaItemQuery, ListMediaItemsQuery
-from aicrm_next.media_library.variants import decode_image_base64
+from aicrm_next.media_library.application import GetImageThumbnailQuery, ListMediaItemsQuery
 from aicrm_next.shared.db_session import get_engine
 from aicrm_next.shared.errors import ContractError, NotFoundError
 from aicrm_next.shared.runtime import raw_database_url
@@ -521,20 +521,32 @@ class SidebarWorkbenchReadModel:
         context_query: GetCustomerContextQuery | None = None,
         live_source_repo: CustomerReadRepository | None = None,
     ) -> None:
-        self._repo = repo or SidebarV2SqlRepository()
+        self._repo = repo
         self._context_query = context_query or GetCustomerContextQuery()
         self._live_source_repo = live_source_repo
 
-    def __call__(self, *, external_userid: str, owner_userid: str = "") -> dict[str, Any]:
+    def _sql_repo(self) -> SidebarV2SqlRepository:
+        if self._repo is None:
+            self._repo = SidebarV2SqlRepository()
+        return self._repo
+
+    def __call__(self, *, external_userid: str, owner_userid: str = "", owner_verified: bool = False) -> dict[str, Any]:
         normalized_external = _text(external_userid)
         if not normalized_external:
             raise ValueError("external_userid is required")
         normalized_owner = _text(owner_userid)
-        context, context_diagnostics = self._context(normalized_external, owner_userid=normalized_owner)
-        contact = self._repo.get_contact_snapshot(normalized_external) or {}
-        identity = self._repo.get_external_identity_snapshot(normalized_external) or {}
-        profile = self._repo.get_profile_fields(normalized_external) or {}
-        binding = self._repo.get_contact_binding_status(normalized_external)
+        if not normalized_owner:
+            raise ValueError("owner_userid is required")
+        context, context_diagnostics = self._context(
+            normalized_external,
+            owner_userid=normalized_owner,
+            owner_verified=owner_verified,
+        )
+        repo = self._sql_repo()
+        contact = repo.get_contact_snapshot(normalized_external) or {}
+        identity = repo.get_external_identity_snapshot(normalized_external) or {}
+        profile = repo.get_profile_fields(normalized_external) or {}
+        binding = repo.get_contact_binding_status(normalized_external)
         if not context.get("customer") and not contact and not identity and not profile and not binding.get("is_bound"):
             raise NotFoundError("customer not found")
         customer, resolution = _resolve_customer_payload(
@@ -550,7 +562,7 @@ class SidebarWorkbenchReadModel:
         workflow_title = (
             _text(sidebar_context.get("workflow_title"))
             or _text(sidebar_context.get("sop_title"))
-            or self._repo.get_workflow_title_for_customer(normalized_external)
+            or repo.get_workflow_title_for_customer(normalized_external)
         )
         payload = {
             "ok": True,
@@ -562,16 +574,30 @@ class SidebarWorkbenchReadModel:
         }
         return _with_route_owner(payload)
 
-    def customer_with_overlay(self, *, external_userid: str, owner_userid: str = "") -> tuple[dict[str, Any], dict[str, Any]]:
-        payload = self(external_userid=external_userid, owner_userid=owner_userid)
+    def customer_with_overlay(
+        self,
+        *,
+        external_userid: str,
+        owner_userid: str = "",
+        owner_verified: bool = False,
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
+        payload = self(external_userid=external_userid, owner_userid=owner_userid, owner_verified=owner_verified)
         return dict(payload.get("customer") or {}), dict(payload.get("diagnostics") or {})
 
-    def _context(self, external_userid: str, *, owner_userid: str = "") -> tuple[dict[str, Any], dict[str, Any]]:
+    def _context(
+        self,
+        external_userid: str,
+        *,
+        owner_userid: str = "",
+        owner_verified: bool = False,
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
         try:
             payload = self._context_query(
                 CustomerContextRequest(
                     external_userid=external_userid,
                     owner_userid=_text(owner_userid) or None,
+                    require_owner_scope=True,
+                    owner_verified=owner_verified,
                     recent_message_limit=20,
                     timeline_limit=20,
                 )
@@ -611,7 +637,7 @@ class SidebarWorkbenchReadModel:
         if customer.get("is_bound") or _text(customer.get("mobile")):
             diagnostics["paid_order_mobile_binding"] = {"ok": True, "status": "already_bound"}
             return
-        candidate = self._repo.get_bindable_wechat_pay_order_mobile(_text(customer.get("external_userid")))
+        candidate = self._sql_repo().get_bindable_wechat_pay_order_mobile(_text(customer.get("external_userid")))
         mobile = _text((candidate or {}).get("mobile_snapshot"))
         if not mobile:
             diagnostics["paid_order_mobile_binding"] = {"ok": True, "status": "no_single_candidate"}
@@ -621,7 +647,7 @@ class SidebarWorkbenchReadModel:
         diagnostics["paid_order_mobile_binding"] = {"ok": True, "status": "read_overlay"}
 
     def _profile_payload(self, external_userid: str, context: dict[str, Any], *, persisted: dict[str, Any] | None = None) -> dict[str, str]:
-        persisted = persisted if persisted is not None else self._repo.get_profile_fields(external_userid) or {}
+        persisted = persisted if persisted is not None else self._sql_repo().get_profile_fields(external_userid) or {}
         if persisted:
             return {
                 "source": _text(persisted.get("source")),
@@ -646,17 +672,22 @@ class SidebarQuestionnaireReadModel:
         context_query: GetCustomerContextQuery | None = None,
         live_source_repo: CustomerReadRepository | None = None,
     ) -> None:
-        self._repo = repo or SidebarV2SqlRepository()
+        self._repo = repo
         self._context_query = context_query
         self._live_source_repo = live_source_repo
 
-    def __call__(self, *, external_userid: str, owner_userid: str = "") -> dict[str, Any]:
+    def _sql_repo(self) -> SidebarV2SqlRepository:
+        if self._repo is None:
+            self._repo = SidebarV2SqlRepository()
+        return self._repo
+
+    def __call__(self, *, external_userid: str, owner_userid: str = "", owner_verified: bool = False) -> dict[str, Any]:
         customer, diagnostics = SidebarWorkbenchReadModel(
             self._repo,
             context_query=self._context_query,
             live_source_repo=self._live_source_repo,
-        ).customer_with_overlay(external_userid=external_userid, owner_userid=owner_userid)
-        rows = self._repo.list_questionnaire_answers(external_userid=_text(external_userid), mobile=_text(customer.get("mobile")))
+        ).customer_with_overlay(external_userid=external_userid, owner_userid=owner_userid, owner_verified=owner_verified)
+        rows = self._sql_repo().list_questionnaire_answers(external_userid=_text(external_userid), mobile=_text(customer.get("mobile")))
         return _with_route_owner({"ok": True, "questionnaires": self._group(rows), "diagnostics": diagnostics})
 
     def _group(self, rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -704,9 +735,6 @@ class SidebarMaterialReadModel:
         return _with_route_owner({"ok": True, "materials": [self._material_item(dict(item), normalized_type) for item in rows]})
 
     def thumbnail(self, image_id: int) -> dict[str, Any]:
-        original = self._original_image_payload(image_id)
-        if original:
-            return original
         try:
             payload = GetImageThumbnailQuery()(str(int(image_id)), 160)
         except NotFoundError:
@@ -717,30 +745,8 @@ class SidebarMaterialReadModel:
         return {
             "body": thumbnail.get("bytes") or b"",
             "mime_type": _text(thumbnail.get("mime_type")) or "image/png",
+            "etag": _text(thumbnail.get("etag")),
         }
-
-    def _original_image_payload(self, image_id: int) -> dict[str, Any] | None:
-        try:
-            item = dict(GetMediaItemQuery("image")(str(int(image_id)), include_data=True).get("item") or {})
-        except NotFoundError:
-            raise LookupError("image not found") from None
-        except ContractError as exc:
-            raise ValueError("invalid image data") from exc
-        except Exception:
-            return None
-        source_url = _text(item.get("source_url"))
-        if _text(item.get("source")) == "url" and source_url:
-            return None
-        data_base64 = _text(item.get("data_base64"))
-        if not data_base64:
-            return None
-        try:
-            return {
-                "body": decode_image_base64(data_base64),
-                "mime_type": _text(item.get("mime_type")) or "image/png",
-            }
-        except ContractError as exc:
-            raise ValueError("invalid image data") from exc
 
     def _material_item(self, item: dict[str, Any], material_type: str) -> dict[str, Any]:
         item_id = _int(item.get("id"))
@@ -770,13 +776,19 @@ class SidebarMaterialReadModel:
 
 class SidebarOtherStaffMessagesReadModel:
     def __init__(self, repo: SidebarV2SqlRepository | None = None) -> None:
-        self._repo = repo or SidebarV2SqlRepository()
+        self._repo = repo
+
+    def _sql_repo(self) -> SidebarV2SqlRepository:
+        if self._repo is None:
+            self._repo = SidebarV2SqlRepository()
+        return self._repo
 
     def __call__(self, *, external_userid: str, current_userid: str = "", limit: int = 20) -> dict[str, Any]:
         if not _text(external_userid):
             raise ValueError("external_userid is required")
         safe_limit = _limit(limit, default=20, maximum=100)
-        rows = self._repo.list_other_staff_messages(_text(external_userid), limit=200)
+        repo = self._sql_repo()
+        rows = repo.list_other_staff_messages(_text(external_userid), limit=200)
         current_staff = {_text(current_userid)}
         filtered: list[dict[str, Any]] = []
         for row in rows:
@@ -786,9 +798,9 @@ class SidebarOtherStaffMessagesReadModel:
                 continue
             filtered.append(row)
         selected = filtered[-safe_limit:]
-        staff_names = self._repo.owner_names({_text(item.get("sender")) for item in selected})
+        staff_names = repo.owner_names({_text(item.get("sender")) for item in selected})
         chat_ids = {self._chat_id(item) for item in selected}
-        group_names = self._repo.group_names(chat_ids)
+        group_names = repo.group_names(chat_ids)
         return _with_route_owner({"ok": True, "messages": [self._message_item(item, staff_names, group_names) for item in selected]})
 
     def _chat_id(self, message: dict[str, Any]) -> str:
@@ -824,9 +836,14 @@ class SidebarCommerceReadModel:
         context_query: GetCustomerContextQuery | None = None,
         live_source_repo: CustomerReadRepository | None = None,
     ) -> None:
-        self._repo = repo or SidebarV2SqlRepository()
+        self._repo = repo
         self._context_query = context_query
         self._live_source_repo = live_source_repo
+
+    def _sql_repo(self) -> SidebarV2SqlRepository:
+        if self._repo is None:
+            self._repo = SidebarV2SqlRepository()
+        return self._repo
 
     def products(self, *, external_userid: str, owner_userid: str = "", bind_by_userid: str = "") -> dict[str, Any]:
         normalized_external = _text(external_userid)
@@ -846,7 +863,7 @@ class SidebarCommerceReadModel:
             context_status = "sign_failed"
             diagnostics["context_error"] = str(exc).strip() or exc.__class__.__name__
         diagnostics["context_status"] = context_status
-        rows = list(ListProductsQuery()(limit=100, offset=0).get("items") or [])
+        rows = self._list_sidebar_products(limit=100)
         active = [dict(item) for item in rows if bool(item.get("enabled")) and _text(item.get("status")) == "active"]
         return _with_route_owner(
             {
@@ -856,17 +873,30 @@ class SidebarCommerceReadModel:
             }
         )
 
-    def orders(self, *, external_userid: str, owner_userid: str = "") -> dict[str, Any]:
-        customer, diagnostics = SidebarWorkbenchReadModel(
-            self._repo,
-            context_query=self._context_query,
-            live_source_repo=self._live_source_repo,
-        ).customer_with_overlay(
-            external_userid=external_userid,
-            owner_userid=owner_userid,
+    def orders(self, *, external_userid: str, owner_userid: str = "", owner_verified: bool = False) -> dict[str, Any]:
+        normalized_external = _text(external_userid)
+        normalized_owner = _text(owner_userid)
+        if not normalized_external:
+            raise ValueError("external_userid is required")
+        if not normalized_owner:
+            raise ValueError("owner_userid is required")
+        context = self._context_query(
+            CustomerContextRequest(
+                external_userid=normalized_external,
+                owner_userid=normalized_owner,
+                require_owner_scope=True,
+                owner_verified=owner_verified,
+                recent_message_limit=1,
+                timeline_limit=1,
+            )
         )
-        rows = self._repo.list_customer_wechat_pay_orders(
-            external_userid=_text(external_userid),
+        customer = dict((context or {}).get("customer") or {})
+        diagnostics = {
+            "context_source_status": (context or {}).get("source_status") or "next_read_model",
+            "orders_context": "single_context_no_workbench_overlay",
+        }
+        rows = self._sql_repo().list_customer_wechat_pay_orders(
+            external_userid=normalized_external,
             mobile=_text(customer.get("mobile")),
             limit=20,
         )
@@ -878,6 +908,12 @@ class SidebarCommerceReadModel:
                 "diagnostics": diagnostics,
             }
         )
+
+    def _list_sidebar_products(self, *, limit: int) -> list[dict[str, Any]]:
+        repo = build_commerce_repository()
+        if hasattr(repo, "list_sidebar_active_products"):
+            return list(repo.list_sidebar_active_products(limit=limit, offset=0).get("items") or [])
+        return list(ListProductsQuery(repo=repo)(limit=limit, offset=0).get("items") or [])
 
     def _product_item(self, item: dict[str, Any], *, context_token: str = "", context_status: str = "") -> dict[str, Any]:
         product_code = _text(item.get("product_code"))

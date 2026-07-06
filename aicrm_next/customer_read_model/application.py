@@ -171,9 +171,10 @@ def _customer_owner_candidates(customer: JsonDict) -> set[str]:
     return {item for item in candidates if item}
 
 
-def _assert_customer_owner_scope(customer: JsonDict, owner_userid: str | None, *, require_owner: bool = False) -> None:
+def _assert_customer_owner_scope(customer: JsonDict, owner_userid: str | None, *, require_owner: bool = False, owner_verified: bool = False) -> None:
     requested_owner = str(owner_userid or "").strip()
-    if (requested_owner and requested_owner in _customer_owner_candidates(customer)) or (not requested_owner and not require_owner):
+    candidates = _customer_owner_candidates(customer)
+    if (requested_owner and requested_owner in candidates) or (requested_owner and owner_verified and not candidates) or (not requested_owner and not require_owner):
         return
     raise NotFoundError("customer not found")
 
@@ -1113,7 +1114,7 @@ class GetCustomerContextQuery:
                 if not detail.get("ok"):
                     raise RuntimeError(str(detail.get("page_error") or detail.get("error_code") or "customer detail unavailable"))
                 customer = dict(detail.get("customer") or {})
-                _assert_customer_owner_scope(customer, query.owner_userid, require_owner=query.require_owner_scope)
+                _assert_customer_owner_scope(customer, query.owner_userid, require_owner=query.require_owner_scope, owner_verified=query.owner_verified)
                 unionid = unionid or str(customer.get("unionid") or "").strip()
                 external_userid = external_userid or str(customer.get("external_userid") or customer.get("user_id") or "").strip()
                 timeline_payload = GetCustomerTimelineQuery(repo, live_source_repo=self._live_source_repo)(
@@ -1161,7 +1162,7 @@ class GetCustomerContextQuery:
                 CustomerDetailRequest(unionid=unionid or None, external_userid=external_userid or None)
             )
             customer = dict(detail.get("customer") or {})
-            _assert_customer_owner_scope(customer, query.owner_userid, require_owner=query.require_owner_scope)
+            _assert_customer_owner_scope(customer, query.owner_userid, require_owner=query.require_owner_scope, owner_verified=query.owner_verified)
             unionid = unionid or str(customer.get("unionid") or "").strip()
             external_userid = external_userid or str(customer.get("external_userid") or customer.get("user_id") or "").strip()
             timeline = GetCustomerTimelineQuery(repo, live_source_repo=self._live_source_repo)(

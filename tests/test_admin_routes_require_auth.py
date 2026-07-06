@@ -61,14 +61,14 @@ def test_admin_session_allows_protected_route_when_enforced(monkeypatch) -> None
     assert response.json()["ok"] is True
 
 
-def test_sidebar_pii_routes_require_session_when_enforced(monkeypatch) -> None:
+def test_sidebar_routes_do_not_use_admin_session_when_enforced(monkeypatch) -> None:
     monkeypatch.setenv("AICRM_ADMIN_AUTH_ENFORCED", "true")
     client = TestClient(create_app(), raise_server_exceptions=False)
 
     response = client.get("/api/sidebar/profile?external_userid=wx_ext_001&owner_userid=ZhaoYanFang")
 
-    assert response.status_code == 401
-    assert response.json()["error"] == "admin_auth_required"
+    assert response.status_code == 200
+    assert response.json()["route_owner"] == "ai_crm_next"
 
 
 def test_public_routes_remain_public_when_admin_auth_is_enforced(monkeypatch) -> None:
@@ -78,6 +78,7 @@ def test_public_routes_remain_public_when_admin_auth_is_enforced(monkeypatch) ->
     assert client.get("/health").status_code == 200
     assert client.get("/login").status_code == 200
     assert client.get("/api/sidebar/jssdk-config").status_code == 400
+    assert client.get("/sidebar/bind-mobile").status_code == 200
 
 
 def test_admin_write_routes_require_session_bound_csrf_when_enforced(monkeypatch) -> None:

@@ -26,6 +26,10 @@ def test_shared_signed_context_has_no_flask_config_imports(monkeypatch) -> None:
     result = signed_context.load_sidebar_product_context_token(token)
 
     assert result["ok"] is True
+    owner_token = signed_context.build_sidebar_owner_context_token(viewer_userid="viewer_001", corp_id="ww-test")
+    owner_result = signed_context.load_sidebar_owner_context_token(owner_token)
+    assert owner_result["ok"] is True
+    assert owner_result["context"]["viewer_userid"] == "viewer_001"
     source = Path("aicrm_next/shared/signed_context.py").read_text(encoding="utf-8")
     assert "current_app" not in source
     assert "flask" not in source

@@ -12,6 +12,7 @@ from aicrm_next.integration_gateway.wecom_jssdk_adapter import (
     reset_sidebar_jssdk_attempts,
 )
 from aicrm_next.main import create_app
+from aicrm_next.shared.signed_context import load_sidebar_owner_context_token
 
 
 def test_fake_adapter_response_matches_frontend_contract(monkeypatch) -> None:
@@ -113,6 +114,29 @@ def test_jssdk_api_get_head_and_options_are_next_owned(monkeypatch) -> None:
     assert "X-AICRM-Compatibility-Facade" not in options_response.headers
     assert head_response.status_code == 204
     assert "X-AICRM-Compatibility-Facade" not in head_response.headers
+
+
+def test_jssdk_api_issues_sidebar_owner_token_when_viewer_is_available(monkeypatch) -> None:
+    monkeypatch.setenv("SECRET_KEY", "sidebar-owner-token")
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    client = TestClient(create_app(), raise_server_exceptions=False)
+
+    response = client.get(
+        "/api/sidebar/jssdk-config",
+        params={
+            "url": "http://127.0.0.1:5001/sidebar/bind-mobile",
+            "viewer_userid": "ZhaoYanFang",
+            "bind_by_userid": "ZhaoYanFang",
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["sidebar_owner_token_status"] == "issued"
+    token_result = load_sidebar_owner_context_token(payload["sidebar_owner_token"])
+    assert token_result["ok"] is True
+    assert token_result["context"]["viewer_userid"] == "ZhaoYanFang"
+    assert token_result["context"]["owner_userid"] == "ZhaoYanFang"
 
 
 def test_jssdk_api_rejects_unallowed_signing_host_in_production(monkeypatch) -> None:

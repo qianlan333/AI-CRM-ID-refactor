@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-import logging
+import sys
+import types
 
 import pytest
 
@@ -140,6 +141,26 @@ def test_reset_engine_cache_disposes_cached_engines(monkeypatch) -> None:
     db_session.reset_engine_cache_for_tests()
 
     assert disposed == [True]
+
+
+def test_connect_pooled_postgres_falls_back_for_psycopg_test_double(monkeypatch) -> None:
+    calls: list[tuple[str, dict[str, object]]] = []
+
+    class FakeConnection:
+        pass
+
+    def connect(url: str, **kwargs):
+        calls.append((url, kwargs))
+        return FakeConnection()
+
+    psycopg = types.ModuleType("psycopg")
+    psycopg.connect = connect
+    monkeypatch.setitem(sys.modules, "psycopg", psycopg)
+
+    connection = db_session.connect_pooled_postgres("postgresql://test/test")
+
+    assert isinstance(connection, FakeConnection)
+    assert calls == [("postgresql://test/test", {"autocommit": False})]
 
 
 def test_session_scope_cleanup_error_does_not_mask_business_exception(monkeypatch) -> None:

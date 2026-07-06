@@ -11,6 +11,8 @@ from aicrm_next.customer_read_model import sidebar_v2
 from aicrm_next.customer_read_model.dto import CustomerContextRequest
 from aicrm_next.customer_read_model.sidebar_v2 import SidebarCommerceReadModel, SidebarV2SqlRepository
 from aicrm_next.main import create_app
+from aicrm_next.media_library.postgres_repo import PostgresMediaLibraryRepository
+from aicrm_next.shared.signed_context import build_sidebar_owner_context_token
 
 
 def _client(monkeypatch) -> TestClient:
@@ -150,6 +152,22 @@ def test_sidebar_v2_workbench_and_read_panels_are_next_owned(monkeypatch):
         assert payload["source_status"] in {"next_read_model", "production_unavailable"}
 
 
+def test_sidebar_v2_owner_token_takes_precedence_over_query_owner(monkeypatch):
+    monkeypatch.setenv("SECRET_KEY", "sidebar-v2-owner-token")
+    client = _client(monkeypatch)
+    token = build_sidebar_owner_context_token(viewer_userid="ZhaoYanFang", corp_id="ww-test")
+
+    response = client.get(
+        "/api/sidebar/v2/products?external_userid=wx_ext_001&owner_userid=LiuXiao",
+        headers={"X-AICRM-Sidebar-Owner-Token": token},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    _assert_next(payload)
+    assert payload["products"]
+
+
 def test_sidebar_v2_profile_context_and_binding_status_use_next_read_models(monkeypatch):
     client = _client(monkeypatch)
 
@@ -204,6 +222,7 @@ def test_sidebar_orders_expose_wechat_shop_channel_fields() -> None:
                     "external_userid": request.external_userid,
                     "customer_name": "微信小店客户",
                     "owner_userid": "HuangYouCan",
+                    "mobile": "18028720840",
                     "binding": {},
                 },
             }
@@ -261,6 +280,7 @@ def test_sidebar_orders_expose_wechat_shop_channel_fields() -> None:
     )
 
     assert payload["ok"] is True
+    assert payload["diagnostics"]["orders_context"] == "single_context_no_workbench_overlay"
     assert repo.order_calls == [
         {
             "external_userid": "wmbNXyCwAAdv14187FTFLDTKp9UUGrbw",
@@ -283,3 +303,13 @@ def test_sidebar_order_sql_includes_wechat_shop_identity_matching() -> None:
     assert "wechat_shop_unionid_orders" in source
     assert "微信小店" in source
     assert "DISTINCT ON (provider, id)" in source
+
+
+def test_sidebar_commerce_and_material_paths_avoid_heavy_list_queries() -> None:
+    commerce_source = inspect.getsource(PostgresCommerceRepository.list_sidebar_active_products)
+    material_source = inspect.getsource(PostgresMediaLibraryRepository._select_list)
+
+    assert "SELECT p.*" not in commerce_source
+    assert "WHERE p.enabled = TRUE AND p.status = 'active'" in commerce_source
+    assert "SELECT * FROM {table}" not in material_source
+    assert "self._list_columns(kind)" in material_source
