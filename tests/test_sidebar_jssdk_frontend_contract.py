@@ -17,6 +17,7 @@ def test_frontend_declares_and_consumes_jssdk_config_contract() -> None:
 
     assert 'data-jssdk-config-url="/api/sidebar/jssdk-config"' in template
     assert "jssdkConfigUrl()" in script
+    assert 'url.searchParams.set("external_userid", state.external_userid)' in script
     assert "applySidebarOwnerToken(configPayload)" in script
     assert '"X-AICRM-Sidebar-Owner-Token": state.sidebar_owner_token' in script
     assert "configPayload.corp_id" in script
@@ -26,6 +27,14 @@ def test_frontend_declares_and_consumes_jssdk_config_contract() -> None:
     assert "configPayload.config.signature" in script
     assert "configPayload.agent_config.signature" in script
     assert "sendChatMessage" in script
+
+
+def test_frontend_refreshes_owner_token_after_external_userid_resolution() -> None:
+    script = SCRIPT.read_text(encoding="utf-8")
+
+    assert "if (!state.owner_userid && !state.external_userid) return false;" in script
+    assert "await refreshSidebarOwnerToken();" in script
+    assert "if (!state.sidebar_owner_token) await refreshSidebarOwnerToken();" in script
 
 
 def test_sidebar_page_and_jssdk_api_contract_are_compatible(monkeypatch) -> None:

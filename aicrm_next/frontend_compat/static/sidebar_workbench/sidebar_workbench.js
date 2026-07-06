@@ -138,6 +138,7 @@
     const currentUrl = window.location.href.split("#")[0];
     const url = new URL(endpoint("jssdkConfigUrl"), window.location.origin);
     url.searchParams.set("url", currentUrl);
+    if (state.external_userid) url.searchParams.set("external_userid", state.external_userid);
     const viewer = String(viewerUserId || state.owner_userid || "").trim();
     if (viewer) url.searchParams.set("viewer_userid", viewer);
     const bindBy = String(state.bind_by_userid || viewer || "").trim();
@@ -146,7 +147,7 @@
   }
 
   async function refreshSidebarOwnerToken() {
-    if (!state.owner_userid) return false;
+    if (!state.owner_userid && !state.external_userid) return false;
     try {
       const payload = await requestJson(jssdkConfigUrl(state.owner_userid), { timeoutMs: SDK_TIMEOUT_MS, retryCount: 1, retryDelayMs: 300 });
       applySidebarOwnerToken(payload);
@@ -949,7 +950,7 @@
         renderRetryPanel("", contextResult.status === WORKBENCH_STATES.sdk_unavailable ? "企微 SDK 暂不可用，请确认从企微侧边栏打开，或带 external_userid 参数重试。" : "未识别到客户，请从企微客户侧边栏重新打开。");
         return;
       }
-      if (state.owner_userid && !state.sidebar_owner_token) await refreshSidebarOwnerToken();
+      if (!state.sidebar_owner_token) await refreshSidebarOwnerToken();
       await loadWorkbench();
     } catch (error) {
       writeDebug("boot error", { message: error.message || String(error), stage: error.stage || "" });

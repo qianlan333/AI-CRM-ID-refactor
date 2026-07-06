@@ -16,6 +16,9 @@ from aicrm_next.integration_gateway.wecom_jssdk_adapter import (
 from aicrm_next.shared.runtime import production_environment
 from aicrm_next.shared.signed_context import build_sidebar_owner_context_token, sidebar_owner_context_ttl_seconds
 
+from .application import ResolvePersonIdentityQuery
+from .dto import ResolvePersonIdentityRequest
+
 
 router = APIRouter()
 DEFAULT_SIDEBAR_JSSDK_ALLOWED_HOSTS = {"youcangogogo.com", "www.youcangogogo.com"}
@@ -86,11 +89,21 @@ async def sidebar_jssdk_config(request: Request) -> Response:
 def _with_sidebar_owner_context(request: Request, payload: dict) -> dict:
     result = dict(payload)
     viewer_userid = _viewer_userid_from_request(request)
+    source = "sidebar_jssdk_request_context"
+    status = "issued"
     if not viewer_userid:
-        result.setdefault("sidebar_owner_token", "")
-        result.setdefault("sidebar_owner_token_status", "viewer_missing")
-        result.setdefault("sidebar_owner_context", {})
-        return result
+        external_userid = _external_userid_from_request(request)
+        viewer_userid = _owner_userid_from_external_userid(external_userid)
+        source = "sidebar_jssdk_identity_owner_fallback" if viewer_userid else "missing"
+        status = "issued_identity_owner" if viewer_userid else "viewer_missing"
+        if not viewer_userid:
+            result.setdefault("sidebar_owner_token", "")
+            result.setdefault("sidebar_owner_token_status", status)
+            result.setdefault(
+                "sidebar_owner_context",
+                {"external_userid": external_userid, "source": source} if external_userid else {},
+            )
+            return result
     ttl_seconds = sidebar_owner_context_ttl_seconds()
     result["sidebar_owner_token"] = build_sidebar_owner_context_token(
         viewer_userid=viewer_userid,
@@ -98,14 +111,15 @@ def _with_sidebar_owner_context(request: Request, payload: dict) -> dict:
         bind_by_userid=_bind_by_userid_from_request(request) or viewer_userid,
         ttl_seconds=ttl_seconds,
     )
-    result["sidebar_owner_token_status"] = "issued"
+    result["sidebar_owner_token_status"] = status
     result["sidebar_owner_context"] = {
         "viewer_userid": viewer_userid,
         "owner_userid": viewer_userid,
         "bind_by_userid": _bind_by_userid_from_request(request) or viewer_userid,
         "corp_id": str(result.get("corp_id") or result.get("corpId") or ""),
+        "external_userid": _external_userid_from_request(request),
         "expires_in": ttl_seconds,
-        "source": "sidebar_jssdk_request_context",
+        "source": source,
     }
     return result
 
@@ -142,6 +156,39 @@ def _bind_by_userid_from_request(request: Request) -> str:
         if normalized:
             return normalized
     return ""
+
+
+def _external_userid_from_request(request: Request) -> str:
+    params = request.query_params
+    for value in (
+        params.get("external_userid"),
+        params.get("externalUserid"),
+        params.get("external_userId"),
+        params.get("externalUserId"),
+        params.get("user_id"),
+        params.get("userId"),
+        request.headers.get("x-wecom-external-userid"),
+        request.headers.get("x-aicrm-sidebar-external-userid"),
+    ):
+        normalized = str(value or "").strip()
+        if normalized:
+            return normalized
+    return ""
+
+
+def _owner_userid_from_external_userid(external_userid: str) -> str:
+    normalized_external = str(external_userid or "").strip()
+    if not normalized_external:
+        return ""
+    try:
+        resolution = ResolvePersonIdentityQuery()(
+            ResolvePersonIdentityRequest(external_userid=normalized_external)
+        )
+    except Exception:
+        return ""
+    if resolution is None:
+        return ""
+    return str(resolution.owner_userid or resolution.follow_user_userid or "").strip()
 
 
 def _validate_jssdk_url_host(request: Request, raw_url: str) -> None:

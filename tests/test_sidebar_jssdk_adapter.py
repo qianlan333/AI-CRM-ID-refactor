@@ -139,6 +139,31 @@ def test_jssdk_api_issues_sidebar_owner_token_when_viewer_is_available(monkeypat
     assert token_result["context"]["owner_userid"] == "ZhaoYanFang"
 
 
+def test_jssdk_api_issues_sidebar_owner_token_from_external_identity(monkeypatch) -> None:
+    monkeypatch.setenv("SECRET_KEY", "sidebar-owner-token-external")
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    client = TestClient(create_app(), raise_server_exceptions=False)
+
+    response = client.get(
+        "/api/sidebar/jssdk-config",
+        params={
+            "url": "http://127.0.0.1:5001/sidebar/bind-mobile",
+            "external_userid": "wx_ext_001",
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["sidebar_owner_token_status"] == "issued_identity_owner"
+    assert payload["sidebar_owner_context"]["external_userid"] == "wx_ext_001"
+    assert payload["sidebar_owner_context"]["owner_userid"] == "ZhaoYanFang"
+    assert payload["sidebar_owner_context"]["source"] == "sidebar_jssdk_identity_owner_fallback"
+    token_result = load_sidebar_owner_context_token(payload["sidebar_owner_token"])
+    assert token_result["ok"] is True
+    assert token_result["context"]["viewer_userid"] == "ZhaoYanFang"
+    assert token_result["context"]["owner_userid"] == "ZhaoYanFang"
+
+
 def test_jssdk_api_rejects_unallowed_signing_host_in_production(monkeypatch) -> None:
     monkeypatch.setenv("SECRET_KEY", "sidebar-jssdk-host-guard")
     monkeypatch.setenv("WECHAT_SHOP_CALLBACK_TOKEN", "sidebar-jssdk-host-guard-token")
