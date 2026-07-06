@@ -56,6 +56,11 @@ def test_deploy_waits_for_successful_ci_fast_on_main() -> None:
     assert "github.event.workflow_run.conclusion == 'success'" in source
     assert "github.event.workflow_run.head_branch == 'main'" in source
     assert "push:" not in source
+    assert "set -o pipefail" in source
+    assert (
+        "python scripts/ops/check_admin_read_pages_smoke.py --base-url http://127.0.0.1:5001 --require-admin-cookie "
+        "| tee /tmp/aicrm-admin-read-pages-smoke.json"
+    ) in source
 
 
 def test_architecture_gate_script_has_fast_db_and_full_modes() -> None:

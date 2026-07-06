@@ -85,6 +85,15 @@ def test_admin_read_override_selects_focused_slice_without_pg() -> None:
     assert result["architecture_gate"] == "fast"
 
 
+def test_admin_read_smoke_test_file_selects_admin_read_scope() -> None:
+    result = _select("tests/test_admin_read_pages_smoke.py")
+
+    assert result["matched_scopes"] == ["admin_read_pages"]
+    assert "tests/test_admin_read_pages_smoke.py" in result["python_tests"]
+    assert result["needs_postgres"] is False
+    assert result["architecture_gate"] == "fast"
+
+
 def test_ci_change_selects_contract_tests_and_full_gate() -> None:
     result = _select(".github/workflows/ci-fast.yml")
 
