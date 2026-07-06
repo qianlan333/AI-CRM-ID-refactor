@@ -97,6 +97,7 @@
       "paths": [
         "aicrm_next/customer_read_model/**",
         "aicrm_next/sidebar_write/**",
+        "aicrm_next/frontend_compat/templates/sidebar_customer_workbench.html",
         "aicrm_next/frontend_compat/static/sidebar_workbench/**",
         "tests/test_sidebar_*.py",
         "tests/test_customer_*read_model*.py",
