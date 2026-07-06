@@ -51,6 +51,7 @@ def test_sidebar_workbench_static_contract_has_next_surface_only():
     assert "context_token" not in script
     assert "customer-avatar" not in combined
     assert "复制商品链接" not in combined
+    assert "待确认员工身份" not in combined
     assert "demo" not in combined.lower()
 
 

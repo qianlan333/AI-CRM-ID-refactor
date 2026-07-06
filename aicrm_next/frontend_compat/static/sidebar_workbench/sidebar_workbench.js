@@ -339,6 +339,7 @@
     document.getElementById("workflow-title").textContent = "";
     const bindingState = document.getElementById("binding-state");
     bindingState.textContent = isLoading ? (status === WORKBENCH_STATES.identifying_customer ? "识别中" : "加载中...") : stateLabel(status);
+    bindingState.classList.remove("hidden");
     bindingState.classList.toggle("loading", isLoading);
     bindingState.classList.toggle("unbound", !isLoading);
     if (detail && detail.message) writeDebug("top state detail", detail);
@@ -383,7 +384,9 @@
     document.getElementById("customer-external-userid").textContent = externalUserid ? "外部联系人 ID " + externalUserid : "";
     document.getElementById("workflow-title").textContent = String(workflow.title || "").trim();
     const bindingState = document.getElementById("binding-state");
-    bindingState.textContent = customer.owner_pending ? "待确认员工身份" : (isBound ? "手机号已绑定" : "手机号未绑定");
+    const hideBindingState = Boolean(customer.owner_pending);
+    bindingState.textContent = hideBindingState ? "" : (isBound ? "手机号已绑定" : "手机号未绑定");
+    bindingState.classList.toggle("hidden", hideBindingState);
     bindingState.classList.remove("loading");
     bindingState.classList.toggle("unbound", !isBound);
     const changeButton = document.getElementById("change-mobile-button");
