@@ -73,10 +73,6 @@ def test_sidebar_readonly_routes_reject_missing_owner_userid_for_pii() -> None:
         "/api/sidebar/lead-pool/status?external_userid=wx_ext_001",
         "/api/sidebar/signup-tags/status?external_userid=wx_ext_001",
         "/api/sidebar/marketing-status?external_userid=wx_ext_001",
-        "/api/sidebar/v2/workbench?external_userid=wx_ext_001",
-        "/api/sidebar/v2/questionnaires?external_userid=wx_ext_001",
-        "/api/sidebar/v2/products?external_userid=wx_ext_001",
-        "/api/sidebar/v2/orders?external_userid=wx_ext_001",
         "/api/sidebar/v2/other-staff-messages?external_userid=wx_ext_001",
     ]
 

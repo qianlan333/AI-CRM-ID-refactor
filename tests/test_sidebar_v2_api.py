@@ -210,8 +210,81 @@ def test_sidebar_v2_workbench_uses_readonly_owner_fallback_when_viewer_missing(m
     assert payload["customer"]["external_userid"] == "wx_ext_001"
     assert payload["customer"]["owner_pending"] is True
     assert payload["customer"]["owner_userid"] == ""
-    assert payload["diagnostics"]["owner_context_source"] == "readonly_snapshot_fallback"
+    assert payload["diagnostics"]["owner_context_source"] == "readonly_owner_pending"
     assert payload["diagnostics"]["owner_verified"] is False
+
+
+def test_sidebar_v2_empty_readonly_fallback_returns_owner_pending_shell(monkeypatch):
+    class EmptySidebarRepo:
+        def get_contact_snapshot(self, external_userid: str) -> dict:
+            return {}
+
+        def get_external_identity_snapshot(self, external_userid: str) -> dict:
+            return {}
+
+        def get_contact_binding_status(self, external_userid: str) -> dict:
+            return {"is_bound": False, "external_userid": external_userid}
+
+        def get_contact_owner_userids(self, external_userid: str) -> set[str]:
+            return set()
+
+        def get_profile_fields(self, external_userid: str) -> dict:
+            return {}
+
+        def get_workflow_title_for_customer(self, external_userid: str) -> str:
+            return ""
+
+        def get_bindable_wechat_pay_order_mobile(self, external_userid: str) -> dict | None:
+            return None
+
+        def list_questionnaire_answers(self, *, external_userid: str, mobile: str = "") -> list[dict]:
+            return []
+
+        def list_customer_wechat_pay_orders(self, *, external_userid: str, mobile: str = "", limit: int = 20) -> list[dict]:
+            return []
+
+    class FakeCommerceRepo:
+        def list_sidebar_active_products(self, *, limit: int = 100, offset: int = 0) -> dict:
+            return {
+                "items": [
+                    {
+                        "id": 1,
+                        "product_code": "trial",
+                        "title": "体验月",
+                        "price_cents": 990,
+                        "enabled": True,
+                        "status": "active",
+                    }
+                ]
+            }
+
+    monkeypatch.setattr("aicrm_next.customer_read_model.api.SidebarV2SqlRepository", EmptySidebarRepo)
+    monkeypatch.setattr("aicrm_next.customer_read_model.sidebar_v2.SidebarV2SqlRepository", EmptySidebarRepo)
+    monkeypatch.setattr("aicrm_next.customer_read_model.sidebar_v2.build_commerce_repository", lambda: FakeCommerceRepo())
+    client = _client(monkeypatch)
+
+    workbench = client.get("/api/sidebar/v2/workbench?external_userid=wx_ext_missing")
+    questionnaires = client.get("/api/sidebar/v2/questionnaires?external_userid=wx_ext_missing")
+    orders = client.get("/api/sidebar/v2/orders?external_userid=wx_ext_missing")
+    products = client.get("/api/sidebar/v2/products?external_userid=wx_ext_missing")
+
+    for response in (workbench, questionnaires, orders, products):
+        assert response.status_code == 200
+        payload = response.json()
+        _assert_next(payload)
+        assert payload["diagnostics"]["owner_context_source"] == "readonly_owner_pending"
+        assert payload["diagnostics"]["owner_pending"] is True
+        assert payload["diagnostics"]["owner_verified"] is False
+        assert payload["customer"]["owner_pending"] is True
+        assert payload["customer"]["owner_userid"] == ""
+
+    assert workbench.json()["customer"]["external_userid"] == "wx_ext_missing"
+    assert questionnaires.json()["questionnaires"] == []
+    assert orders.json()["orders"] == []
+    product = products.json()["products"][0]
+    assert product["context_status"] == "owner_pending"
+    assert "?ctx=" not in product["product_url"]
+    assert "?ctx=" not in product["checkout_url"]
 
 
 def test_sidebar_v2_profile_context_and_binding_status_use_next_read_models(monkeypatch):

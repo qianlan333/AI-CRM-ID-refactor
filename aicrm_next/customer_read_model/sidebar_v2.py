@@ -19,6 +19,7 @@ from aicrm_next.shared.runtime import raw_database_url
 from aicrm_next.shared.signed_context import append_ctx_query, build_sidebar_product_context_token
 
 MODULES = ["profile", "questionnaires", "products", "orders", "materials", "other_staff_messages"]
+READONLY_OWNER_PENDING_USERID = "__aicrm_readonly_owner_pending__"
 ORDER_STATUS_LABELS = {
     "pending": "待支付",
     "paid": "已支付",
@@ -46,6 +47,10 @@ _ANSWER_PLACEHOLDER_TEXTS = {"text_value", "selected_option_texts_snapshot", "an
 
 def _text(value: Any) -> str:
     return str(value or "").strip()
+
+
+def _is_readonly_owner_pending(owner_userid: Any, *, owner_verified: bool = False) -> bool:
+    return owner_verified and _text(owner_userid) == READONLY_OWNER_PENDING_USERID
 
 
 def _limit(value: Any, *, default: int = 50, maximum: int = 200) -> int:
@@ -544,14 +549,17 @@ def _resolve_customer_payload(
         ("binding.customer_name", binding.get("customer_name")),
         ("binding.remark", binding.get("remark")),
     )
-    resolved_owner = (
-        _text(owner_userid)
-        or _text(customer.get("owner_userid"))
-        or _text(binding.get("owner_userid"))
-        or _text(binding.get("last_owner_userid"))
-        or _text(contacts_row.get("owner_userid"))
-        or _text(identity_row.get("follow_user_userid"))
-    )
+    if _text(owner_userid) == READONLY_OWNER_PENDING_USERID:
+        resolved_owner = ""
+    else:
+        resolved_owner = (
+            _text(owner_userid)
+            or _text(customer.get("owner_userid"))
+            or _text(binding.get("owner_userid"))
+            or _text(binding.get("last_owner_userid"))
+            or _text(contacts_row.get("owner_userid"))
+            or _text(identity_row.get("follow_user_userid"))
+        )
     mobile = (
         _customer_mobile(binding.get("mobile"))
         or _customer_mobile(customer.get("mobile"))
@@ -612,6 +620,8 @@ def _assert_snapshot_owner_scope(
     identity: dict[str, Any],
     binding: dict[str, Any],
 ) -> None:
+    if _is_readonly_owner_pending(owner_userid, owner_verified=owner_verified):
+        return
     owner_candidates = _snapshot_owner_candidates(
         repo=repo,
         external_userid=external_userid,
@@ -637,6 +647,8 @@ def verify_sidebar_identity_snapshot_owner_scope(
     if not normalized_external:
         raise ValueError("external_userid is required")
     if not normalized_owner:
+        raise ValueError("owner_userid is required")
+    if _text(normalized_owner) == READONLY_OWNER_PENDING_USERID:
         raise ValueError("owner_userid is required")
     sql_repo = repo or SidebarV2SqlRepository()
     contact = sql_repo.get_contact_snapshot(normalized_external) or {}
@@ -712,6 +724,7 @@ class SidebarWorkbenchReadModel:
         normalized_owner = _text(owner_userid)
         if not normalized_owner:
             raise ValueError("owner_userid is required")
+        readonly_owner_pending = _is_readonly_owner_pending(normalized_owner, owner_verified=owner_verified)
         try:
             context, context_diagnostics = self._context(
                 normalized_external,
@@ -731,18 +744,22 @@ class SidebarWorkbenchReadModel:
         profile = repo.get_profile_fields(normalized_external) or {}
         binding = repo.get_contact_binding_status(normalized_external)
         if not context.get("customer") and not contact and not identity and not profile and not binding.get("is_bound"):
-            raise NotFoundError("customer not found")
+            if not readonly_owner_pending:
+                raise NotFoundError("customer not found")
         if not context.get("customer") or context_diagnostics.get("context_source_status") in {"missing", "error", "live_source", "not_found"}:
-            _assert_snapshot_owner_scope(
-                repo=repo,
-                external_userid=normalized_external,
-                owner_userid=normalized_owner,
-                owner_verified=owner_verified,
-                contact=contact,
-                identity=identity,
-                binding=binding,
-            )
-            if not context.get("customer"):
+            if readonly_owner_pending:
+                context_diagnostics["context_source_status"] = "readonly_owner_pending"
+            else:
+                _assert_snapshot_owner_scope(
+                    repo=repo,
+                    external_userid=normalized_external,
+                    owner_userid=normalized_owner,
+                    owner_verified=owner_verified,
+                    contact=contact,
+                    identity=identity,
+                    binding=binding,
+                )
+            if not context.get("customer") and not readonly_owner_pending:
                 context_diagnostics["context_source_status"] = "identity_snapshot_fallback"
         customer, resolution = _resolve_customer_payload(
             context=context,
@@ -786,6 +803,8 @@ class SidebarWorkbenchReadModel:
         owner_userid: str = "",
         owner_verified: bool = False,
     ) -> tuple[dict[str, Any], dict[str, Any]]:
+        if _is_readonly_owner_pending(owner_userid, owner_verified=owner_verified):
+            return {}, {"context_source_status": "readonly_owner_pending"}
         try:
             payload = self._context_query(
                 CustomerContextRequest(
@@ -1062,16 +1081,19 @@ class SidebarCommerceReadModel:
         diagnostics = {"context_source": "sidebar_product_link"}
         context_token = ""
         context_status = "missing"
-        try:
-            context_token = build_sidebar_product_context_token(
-                external_userid=normalized_external,
-                owner_userid=_text(owner_userid),
-                bind_by_userid=_text(bind_by_userid) or _text(owner_userid),
-            )
-            context_status = "signed"
-        except Exception as exc:
-            context_status = "sign_failed"
-            diagnostics["context_error"] = str(exc).strip() or exc.__class__.__name__
+        if _text(owner_userid):
+            try:
+                context_token = build_sidebar_product_context_token(
+                    external_userid=normalized_external,
+                    owner_userid=_text(owner_userid),
+                    bind_by_userid=_text(bind_by_userid) or _text(owner_userid),
+                )
+                context_status = "signed"
+            except Exception as exc:
+                context_status = "sign_failed"
+                diagnostics["context_error"] = str(exc).strip() or exc.__class__.__name__
+        else:
+            context_status = "owner_pending"
         diagnostics["context_status"] = context_status
         rows = self._list_sidebar_products(limit=100)
         active = [dict(item) for item in rows if bool(item.get("enabled")) and _text(item.get("status")) == "active"]

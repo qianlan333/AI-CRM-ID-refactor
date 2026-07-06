@@ -35,6 +35,7 @@ from .dto import (
     RecentMessagesRequest,
 )
 from .sidebar_v2 import (
+    READONLY_OWNER_PENDING_USERID,
     SidebarCommerceReadModel,
     SidebarMaterialReadModel,
     SidebarOtherStaffMessagesReadModel,
@@ -47,7 +48,6 @@ from .sidebar_v2 import (
 router = APIRouter()
 _SQL_REPO_BACKENDS = {"sql", "sqlalchemy", "postgres", "postgresql"}
 SIDEBAR_OWNER_TOKEN_HEADER = "x-aicrm-sidebar-owner-token"
-READONLY_OWNER_PENDING_USERID = "__aicrm_readonly_owner_pending__"
 
 
 def _customer_read_model_sql_backend_enabled() -> bool:
@@ -361,8 +361,8 @@ def _sidebar_owner_context_from_request(
     if not fallback_owner and allow_readonly_fallback:
         fallback_owner = _sidebar_readonly_owner_fallback(external_userid)
         if fallback_owner:
-            source = "readonly_snapshot_fallback"
             readonly_unscoped = fallback_owner == READONLY_OWNER_PENDING_USERID
+            source = "readonly_owner_pending" if readonly_unscoped else "readonly_snapshot_fallback"
     return {
         "owner_userid": fallback_owner,
         "bind_by_userid": "" if readonly_unscoped else str(bind_by_userid or current_userid or fallback_owner).strip(),
@@ -377,38 +377,19 @@ def _sidebar_readonly_owner_fallback(external_userid: str | None) -> str:
     normalized_external = str(external_userid or "").strip()
     if not normalized_external:
         return ""
-    try:
-        repo = SidebarV2SqlRepository()
-        contact = repo.get_contact_snapshot(normalized_external) or {}
-        identity = repo.get_external_identity_snapshot(normalized_external) or {}
-        profile = repo.get_profile_fields(normalized_external) or {}
-        binding = repo.get_contact_binding_status(normalized_external)
-        candidates = [
-            str(contact.get("owner_userid") or "").strip(),
-            str(identity.get("follow_user_userid") or "").strip(),
-            str(binding.get("owner_userid") or "").strip(),
-            str(binding.get("last_owner_userid") or "").strip(),
-            str(binding.get("first_owner_userid") or "").strip(),
-        ]
-        owner_list = getattr(repo, "get_contact_owner_userids", None)
-        if callable(owner_list):
-            candidates.extend(sorted(owner_list(normalized_external)))
-        owner = next((item for item in candidates if item), "")
-        if owner:
-            return owner
-        if contact or identity or profile or binding.get("is_bound"):
-            return READONLY_OWNER_PENDING_USERID
-        return ""
-    except Exception:
-        return ""
+    return READONLY_OWNER_PENDING_USERID
 
 
 def _apply_readonly_owner_pending(payload: dict[str, Any], owner_context: dict[str, Any]) -> dict[str, Any]:
     result = dict(payload)
     diagnostics = dict(result.get("diagnostics") or {})
     diagnostics["owner_context_source"] = str(owner_context.get("source") or "")
-    diagnostics["owner_verified"] = bool(owner_context.get("owner_verified")) and owner_context.get("source") != "readonly_snapshot_fallback"
-    if owner_context.get("source") == "readonly_snapshot_fallback":
+    owner_pending = owner_context.get("readonly_unscoped") or owner_context.get("source") in {
+        "readonly_owner_pending",
+        "readonly_snapshot_fallback",
+    }
+    diagnostics["owner_verified"] = bool(owner_context.get("owner_verified")) and not owner_pending
+    if owner_pending:
         diagnostics["owner_pending"] = True
         customer = dict(result.get("customer") or {})
         customer["owner_pending"] = True
@@ -419,7 +400,10 @@ def _apply_readonly_owner_pending(payload: dict[str, Any], owner_context: dict[s
 
 
 def _readonly_fallback_repo(owner_context: dict[str, Any]) -> SidebarV2SqlRepository | None:
-    if owner_context.get("source") != "readonly_snapshot_fallback":
+    if not (
+        owner_context.get("readonly_unscoped")
+        or owner_context.get("source") in {"readonly_owner_pending", "readonly_snapshot_fallback"}
+    ):
         return None
     try:
         return SidebarV2SqlRepository()
@@ -978,12 +962,13 @@ def get_sidebar_v2_products(
     scoped_owner_userid = str(owner_context.get("owner_userid") or "").strip()
     try:
         context_query, live_source_repo = _request_scoped_customer_context_query(db)
-        _verify_sidebar_owner_scope(
-            context_query,
-            external_userid=str(external_userid or "").strip(),
-            owner_userid=scoped_owner_userid,
-            owner_verified=bool(owner_context.get("owner_verified")),
-        )
+        if not owner_context.get("readonly_unscoped"):
+            _verify_sidebar_owner_scope(
+                context_query,
+                external_userid=str(external_userid or "").strip(),
+                owner_userid=scoped_owner_userid,
+                owner_verified=bool(owner_context.get("owner_verified")),
+            )
         payload = SidebarCommerceReadModel(context_query=context_query, live_source_repo=live_source_repo).products(
             external_userid=str(external_userid or "").strip(),
             owner_userid="" if owner_context.get("readonly_unscoped") else scoped_owner_userid,
