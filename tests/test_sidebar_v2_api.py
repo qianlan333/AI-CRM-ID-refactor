@@ -175,6 +175,45 @@ def test_sidebar_v2_owner_token_takes_precedence_over_query_owner(monkeypatch):
     assert payload["products"]
 
 
+def test_sidebar_v2_workbench_uses_readonly_owner_fallback_when_viewer_missing(monkeypatch):
+    class FakeSidebarRepo:
+        def get_contact_snapshot(self, external_userid: str) -> dict:
+            return {"external_userid": external_userid, "customer_name": "只读客户", "owner_userid": ""}
+
+        def get_external_identity_snapshot(self, external_userid: str) -> dict:
+            return {"external_userid": external_userid, "follow_user_userid": ""}
+
+        def get_contact_binding_status(self, external_userid: str) -> dict:
+            return {"is_bound": False, "external_userid": external_userid}
+
+        def get_contact_owner_userids(self, external_userid: str) -> set[str]:
+            return set()
+
+        def get_profile_fields(self, external_userid: str) -> dict:
+            return {}
+
+        def get_workflow_title_for_customer(self, external_userid: str) -> str:
+            return ""
+
+        def get_bindable_wechat_pay_order_mobile(self, external_userid: str) -> dict | None:
+            return None
+
+    monkeypatch.setattr("aicrm_next.customer_read_model.api.SidebarV2SqlRepository", FakeSidebarRepo)
+    monkeypatch.setattr("aicrm_next.customer_read_model.sidebar_v2.SidebarV2SqlRepository", FakeSidebarRepo)
+    client = _client(monkeypatch)
+
+    response = client.get("/api/sidebar/v2/workbench?external_userid=wx_ext_001")
+
+    assert response.status_code == 200
+    payload = response.json()
+    _assert_next(payload)
+    assert payload["customer"]["external_userid"] == "wx_ext_001"
+    assert payload["customer"]["owner_pending"] is True
+    assert payload["customer"]["owner_userid"] == ""
+    assert payload["diagnostics"]["owner_context_source"] == "readonly_snapshot_fallback"
+    assert payload["diagnostics"]["owner_verified"] is False
+
+
 def test_sidebar_v2_profile_context_and_binding_status_use_next_read_models(monkeypatch):
     client = _client(monkeypatch)
 

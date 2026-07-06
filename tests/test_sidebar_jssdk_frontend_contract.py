@@ -37,8 +37,8 @@ def test_frontend_refreshes_owner_token_after_external_userid_resolution() -> No
     assert "if (!state.sidebar_owner_token) {" in script
     assert 'firstQueryValue(["owner_userid", "ownerUserid", "viewer_userid", "viewerUserId", "operator_userid", "operatorUserId", "userid"])' in script
     assert "if (hasQuery && !state.sidebar_owner_token && !state.owner_userid)" in script
-    assert "ownerTokenNeedsViewer()" in script
-    assert "viewer_missing_multi_owner" in script
+    assert "renderOwnerPendingWorkbench(ownerPendingMessage())" not in script
+    assert "await loadWorkbench();" in script
 
 
 def test_sidebar_page_and_jssdk_api_contract_are_compatible(monkeypatch) -> None:

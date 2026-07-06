@@ -134,24 +134,6 @@
     if (bindBy) state.bind_by_userid = bindBy;
   }
 
-  function ownerTokenNeedsViewer() {
-    return [
-      "viewer_missing_multi_owner",
-      "viewer_not_in_contact_owner_scope",
-      "viewer_missing",
-    ].indexOf(state.sidebar_owner_token_status) !== -1;
-  }
-
-  function ownerPendingMessage() {
-    if (state.sidebar_owner_token_status === "viewer_missing_multi_owner") {
-      return "当前客户存在多个添加员工，请从企微客户侧边栏重新打开以确认当前员工身份。";
-    }
-    if (state.sidebar_owner_token_status === "viewer_not_in_contact_owner_scope") {
-      return "当前员工未在该客户的添加员工列表中，无法加载客户侧边栏。";
-    }
-    return "员工身份待确认，请从企微侧边栏重新打开或稍后重试。";
-  }
-
   function jssdkConfigUrl(viewerUserId) {
     const currentUrl = window.location.href.split("#")[0];
     const url = new URL(endpoint("jssdkConfigUrl"), window.location.origin);
@@ -404,6 +386,8 @@
     bindingState.textContent = customer.owner_pending ? "待确认员工身份" : (isBound ? "手机号已绑定" : "手机号未绑定");
     bindingState.classList.remove("loading");
     bindingState.classList.toggle("unbound", !isBound);
+    const changeButton = document.getElementById("change-mobile-button");
+    if (changeButton) changeButton.disabled = Boolean(customer.owner_pending);
   }
 
   function updateProfileField(key, value) {
@@ -567,6 +551,10 @@
   function renderOtherStaffMessages() {
     const rows = state.data.other_staff_messages || [];
     if (!rows.length) {
+      if (((state.workbench || {}).customer || {}).owner_pending) {
+        content.innerHTML = panel("其他客服的聊天记录", empty("员工身份待确认后可查看其他客服聊天记录"));
+        return;
+      }
       content.innerHTML = panel("其他客服的聊天记录", empty("暂无其他客服聊天记录"));
       return;
     }
@@ -664,6 +652,11 @@
     } else if (tab === "materials") {
       await loadMaterials(state.materialType);
     } else if (tab === "other_staff_messages") {
+      if (((state.workbench || {}).customer || {}).owner_pending) {
+        state.data.other_staff_messages = [];
+        state.loaded[tab] = true;
+        return;
+      }
       const payload = await requestPanelJson(
         "other_staff_messages",
         queryUrl(endpoint("otherStaffMessagesUrl"), {
@@ -806,6 +799,9 @@
     mobileStatus.textContent = "正在保存…";
     try {
       const customer = (state.workbench || {}).customer || {};
+      if (customer.owner_pending) {
+        throw new Error("请先从企微侧边栏重新打开以确认当前员工身份");
+      }
       const payload = await requestJson(endpoint("bindMobileUrl"), {
         method: "POST",
         body: JSON.stringify({
@@ -982,10 +978,6 @@
       }
       if (!state.sidebar_owner_token) {
         await refreshSidebarOwnerToken();
-        if (!state.sidebar_owner_token && ownerTokenNeedsViewer()) {
-          renderOwnerPendingWorkbench(ownerPendingMessage());
-          return;
-        }
       }
       await loadWorkbench();
     } catch (error) {
