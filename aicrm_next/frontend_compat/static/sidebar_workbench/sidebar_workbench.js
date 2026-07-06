@@ -134,6 +134,69 @@
     if (bindBy) state.bind_by_userid = bindBy;
   }
 
+  function firstPayloadValue(payload, keys) {
+    const queue = [payload];
+    const seen = [];
+    while (queue.length) {
+      const current = queue.shift();
+      if (!current || typeof current !== "object" || seen.indexOf(current) >= 0) continue;
+      seen.push(current);
+      for (const key of keys || []) {
+        const value = String(current[key] || "").trim();
+        if (value) return value;
+      }
+      ["data", "context", "user", "member", "currentUser", "current_user"].forEach((key) => {
+        if (current[key] && typeof current[key] === "object") queue.push(current[key]);
+      });
+    }
+    return "";
+  }
+
+  function extractWeComViewerUserid(payload, options) {
+    const keys = [
+      "viewer_userid",
+      "viewerUserid",
+      "viewerUserId",
+      "operator_userid",
+      "operatorUserid",
+      "operatorUserId",
+      "owner_userid",
+      "ownerUserid",
+      "ownerUserId",
+      "current_userid",
+      "currentUserid",
+      "currentUserId",
+      "userid",
+      "user_id",
+      "UserId",
+    ];
+    if (options && options.allowUserId) keys.push("userId");
+    return firstPayloadValue(payload, keys);
+  }
+
+  function extractWeComExternalUserid(payload) {
+    return firstPayloadValue(payload, [
+      "external_userid",
+      "externalUserid",
+      "external_userId",
+      "externalUserId",
+      "external_user_id",
+      "externalUserID",
+      "userId",
+      "user_id",
+    ]);
+  }
+
+  function applyWeComViewerIdentity(payload, source, options) {
+    const viewer = extractWeComViewerUserid(payload, options || {});
+    if (!viewer) return false;
+    const previousOwner = state.owner_userid;
+    state.owner_userid = viewer;
+    if (!state.bind_by_userid || state.bind_by_userid === previousOwner) state.bind_by_userid = viewer;
+    writeDebug("viewer identity resolved", { source: source || "", owner_userid: state.owner_userid, bind_by_userid: state.bind_by_userid });
+    return true;
+  }
+
   function jssdkConfigUrl(viewerUserId) {
     const currentUrl = window.location.href.split("#")[0];
     const url = new URL(endpoint("jssdkConfigUrl"), window.location.origin);
@@ -896,6 +959,7 @@
           jsApiList: ["getContext", "getCurExternalContact", "sendChatMessage"],
           success: function (res) {
             writeDebug("wx.agentConfig success", res || {});
+            applyWeComViewerIdentity(res || {}, "agentConfig", { allowUserId: true });
             finish(true, "");
           },
           fail: function (err) {
@@ -937,19 +1001,23 @@
   async function resolveContextFromWeCom() {
     const sdkReady = await initWeComSdk();
     if (!sdkReady.ok || !window.wx || typeof window.wx.invoke !== "function") return sdkReady;
-    invokeWeCom("getContext", {}, SDK_TIMEOUT_MS)
-      .then((res) => writeDebug("getContext result", res || {}))
-      .catch((error) => writeDebug("getContext error", { message: error.message || String(error) }));
+    try {
+      const contextPayload = await invokeWeCom("getContext", {}, SDK_TIMEOUT_MS);
+      writeDebug("getContext result", contextPayload || {});
+      applyWeComViewerIdentity(contextPayload || {}, "getContext", { allowUserId: true });
+    } catch (error) {
+      writeDebug("getContext error", { message: error.message || String(error) });
+    }
     try {
       const res = await invokeWeCom("getCurExternalContact", {}, SDK_TIMEOUT_MS);
       writeDebug("getCurExternalContact result", res || {});
-      const externalUserid = String((res || {}).userId || (res || {}).external_userid || "").trim();
+      const externalUserid = extractWeComExternalUserid(res || {});
       if (!externalUserid) {
         return { ok: false, status: WORKBENCH_STATES.context_missing, reason: "external_userid_missing" };
       }
       state.external_userid = externalUserid;
-      state.owner_userid = String((res || {}).owner_userid || state.owner_userid || "").trim();
-      state.bind_by_userid = String((res || {}).operator_userid || state.bind_by_userid || state.owner_userid || "").trim();
+      applyWeComViewerIdentity(res || {}, "getCurExternalContact");
+      if (!state.bind_by_userid) state.bind_by_userid = state.owner_userid;
       await refreshSidebarOwnerToken();
       writeDebug("getCurExternalContact success", {
         external_userid: state.external_userid,

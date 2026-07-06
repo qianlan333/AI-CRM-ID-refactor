@@ -19,6 +19,8 @@ def test_frontend_declares_and_consumes_jssdk_config_contract() -> None:
     assert "jssdkConfigUrl()" in script
     assert 'url.searchParams.set("external_userid", state.external_userid)' in script
     assert "applySidebarOwnerToken(configPayload)" in script
+    assert "extractWeComViewerUserid" in script
+    assert "applyWeComViewerIdentity" in script
     assert '"X-AICRM-Sidebar-Owner-Token": state.sidebar_owner_token' in script
     assert "configPayload.corp_id" in script
     assert "configPayload.agent_id" in script
@@ -36,6 +38,11 @@ def test_frontend_refreshes_owner_token_after_external_userid_resolution() -> No
     assert "await refreshSidebarOwnerToken();" in script
     assert "if (!state.sidebar_owner_token) {" in script
     assert 'firstQueryValue(["owner_userid", "ownerUserid", "viewer_userid", "viewerUserId", "operator_userid", "operatorUserId", "userid"])' in script
+    assert 'applyWeComViewerIdentity(res || {}, "agentConfig", { allowUserId: true });' in script
+    assert 'const contextPayload = await invokeWeCom("getContext", {}, SDK_TIMEOUT_MS);' in script
+    assert 'applyWeComViewerIdentity(contextPayload || {}, "getContext", { allowUserId: true });' in script
+    assert 'const externalUserid = extractWeComExternalUserid(res || {});' in script
+    assert 'applyWeComViewerIdentity(res || {}, "getCurExternalContact");' in script
     assert "if (hasQuery && !state.sidebar_owner_token && !state.owner_userid)" in script
     assert "renderOwnerPendingWorkbench(ownerPendingMessage())" not in script
     assert "await loadWorkbench();" in script

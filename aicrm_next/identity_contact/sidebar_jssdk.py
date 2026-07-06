@@ -13,6 +13,7 @@ from aicrm_next.integration_gateway.wecom_jssdk_adapter import (
     build_sidebar_jssdk_config,
     normalize_jssdk_url,
 )
+from aicrm_next.admin_auth.service import SESSION_COOKIE, verify_session
 from aicrm_next.shared.runtime import production_environment
 from aicrm_next.shared.signed_context import build_sidebar_owner_context_token, sidebar_owner_context_ttl_seconds
 
@@ -168,6 +169,10 @@ def _viewer_userid_from_request(request: Request) -> str:
         normalized = str(value or "").strip()
         if normalized:
             return normalized
+    session = verify_session(request.cookies.get(SESSION_COOKIE))
+    session_userid = str((session or {}).get("wecom_userid") or "").strip()
+    if session_userid:
+        return session_userid
     return ""
 
 

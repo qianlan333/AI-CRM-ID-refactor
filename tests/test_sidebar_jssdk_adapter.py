@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import hashlib
+from time import time
 from urllib.parse import parse_qs, urlparse
 
 from fastapi.testclient import TestClient
 
+from aicrm_next.admin_auth.service import SESSION_COOKIE, sign_session
 from aicrm_next.integration_gateway.wecom_jssdk_adapter import (
     build_sidebar_jssdk_config,
     list_sidebar_jssdk_attempts,
@@ -207,6 +209,37 @@ def test_jssdk_api_issues_viewer_token_when_viewer_is_in_owner_candidates(monkey
             "url": "http://127.0.0.1:5001/sidebar/bind-mobile",
             "external_userid": "wx_ext_multi_owner",
             "viewer_userid": "HuangYouCan",
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["sidebar_owner_token_status"] == "issued"
+    assert payload["sidebar_owner_context"]["owner_userid"] == "HuangYouCan"
+    assert payload["sidebar_owner_context"]["owner_candidates_count"] == 2
+    token_result = load_sidebar_owner_context_token(payload["sidebar_owner_token"])
+    assert token_result["ok"] is True
+    assert token_result["context"]["viewer_userid"] == "HuangYouCan"
+
+
+def test_jssdk_api_uses_admin_session_wecom_userid_for_multi_owner_viewer(monkeypatch) -> None:
+    monkeypatch.setenv("SECRET_KEY", "sidebar-owner-token-admin-session")
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    monkeypatch.setattr(
+        "aicrm_next.identity_contact.sidebar_jssdk._owner_userids_from_external_userid",
+        lambda external_userid: {"ZhaoYanFang", "HuangYouCan"},
+    )
+    client = TestClient(create_app(), raise_server_exceptions=False)
+    client.cookies.set(
+        SESSION_COOKIE,
+        sign_session({"wecom_userid": "HuangYouCan", "username": "HuangYouCan", "iat": int(time())}),
+    )
+
+    response = client.get(
+        "/api/sidebar/jssdk-config",
+        params={
+            "url": "http://127.0.0.1:5001/sidebar/bind-mobile",
+            "external_userid": "wx_ext_multi_owner",
         },
     )
 
