@@ -1,54 +1,41 @@
-# AI-CRM 外部 Agent 定时 Campaign 调用手册
+# AI-CRM 外部 Agent Campaign 审阅调用手册
 
-> 适用对象：Codex / OpenClaw / Claude Code / 自定义 Agent。<br>
-> 当前状态：本文只记录当前代码已实现、可调用的接口能力。没有列在“已支持能力”里的场景，不要按旧文档猜接口调用。<br>
+> 适用对象：Codex / OpenClaw / Claude Code / 自定义 Agent。
+> 当前状态：外部 Campaign 入口只允许进入“AI 助手待审阅计划”链路；禁止绕过审阅直接创建 `broadcast_jobs`。
 > 安全提醒：不要把真实 token 写进本文档、GitHub、前端代码、日志、飞书公开文档或审计备注。
 
 ---
 
-## 1. 当前可用接口
+## 1. 当前硬规则
 
-当前接口分两类：
+外部 Agent 发起私聊群发、定制化 Campaign、每周复盘推送等动作时，必须满足：
 
-- 外部 Agent 创建/查询入口：给 Agent 使用，负责把明确的 `external_userid` 创建成可调度 Campaign。
-- 后台 Campaign 管理入口：给运营后台、内部排障和受控运维使用，负责查看、审批、启动、暂停、编辑 step、查询成员和 run-due。
+- 先生成 AI 助手待审阅计划，计划状态必须是 `review_status=pending_review`、`run_status=draft`。
+- 审核前 `scheduled_jobs=0`，不允许出现可执行发送任务。
+- 运营必须在 `/admin/cloud-orchestrator/plans` 或对应 AI 助手审阅页完成审核。
+- 审核通过后，才允许由 cloud plan 审批链路生成 `source_type=cloud_plan` 的 `broadcast_jobs`。
+- 外部 Campaign 入口不得直接创建 `source_type=external_campaign` 的 `broadcast_jobs`。
+- 如果任务直接出现在任务列表/群发任务里，而没有先出现在 AI 助手审阅里，视为错误链路，必须停止并回滚/取消。
 
-### 1.1 外部 Agent 创建/查询入口
-
-| 能力 | 方法 | 路径 | 说明 |
-|---|---:|---|---|
-| 创建或预检外部 Campaign | POST | `/api/ai-assist/external/campaigns` | token 保护；支持单人、多人、每人定制话术、多天 step |
-| 查询外部 Campaign 状态 | GET | `/api/ai-assist/external/campaigns/{campaign_code}` | token 保护；返回 campaign、steps、成员状态、排队 job 数 |
-
-这两个接口挂在 `aicrm_next` FastAPI 应用下，响应里会带 `route_owner=ai_crm_next`。
-
-外部 Campaign API 当前由 Next 原生 repository 和 service orchestration 拥有。创建接口只做 token guard、目标读取、必要的 automation member 回填、单人 segment/campaign/step/member 草稿创建和提交人工审核；不会启动 Campaign，不会创建真实发送任务，也不会调用 WeCom。状态查询只读取当前 DB 状态，不触发 scheduler 或任何写入副作用。
-
-### 1.2 后台 Campaign 管理入口
-
-这些能力当前也必须保留，但运行边界已拆分：Campaign read/workspace GET 已锁定到 `aicrm_next.cloud_orchestrator` Next read model，`legacy_fallback_allowed=false`，不会通过 compatibility facade；production_compat empty router 已删除，不再提供 runtime fallback；写入、启动、删除、step mutation 和 run-due 由 Next safe-mode / CommandBus 路径守护。
-
-| 能力 | HTTP 方法 | 路径 | 当前用途 |
-|---|---:|---|---|
-| Campaign 列表 | GET | `/api/admin/cloud-orchestrator/campaigns` | Next read model locked；后台列表、按状态筛选 |
-| Campaign 详情 | GET | `/api/admin/cloud-orchestrator/campaigns/{campaign_code}` | Next read model locked；查看分层、steps、成员状态汇总 |
-| 签发启动审批 token | POST | `/api/admin/cloud-orchestrator/campaigns/{campaign_code}/approve` | 为人工启动签发一次性 token |
-| 启动 Campaign | POST | `/api/admin/cloud-orchestrator/campaigns/{campaign_code}/start` | 人工批准后启动 draft/paused Campaign |
-| 批量启动同 group Campaign | POST | `/api/admin/cloud-orchestrator/campaigns/batch-start` | 按 `group_code` 批量审批并启动 |
-| 暂停 Campaign | POST | `/api/admin/cloud-orchestrator/campaigns/{campaign_code}/pause` | 暂停 active Campaign |
-| 拒绝 Campaign | POST | `/api/admin/cloud-orchestrator/campaigns/{campaign_code}/reject` | 拒绝并取消 Campaign |
-| 删除 Campaign | DELETE | `/api/admin/cloud-orchestrator/campaigns/{campaign_code}` | 删除非 active Campaign 及关联 steps/members/jobs |
-| 扫描到期 Campaign 成员 | POST | `/api/admin/cloud-orchestrator/campaigns/run-due` | 内部定时器/受控运维扫描 due 成员 |
-| 查询成员明细 | GET | `/api/admin/cloud-orchestrator/campaigns/{campaign_code}/members` | Next read model locked；查看命中成员和发送状态 |
-| 新增 step | POST | `/api/admin/cloud-orchestrator/campaigns/{campaign_code}/steps` | 为可编辑 Campaign 追加 step |
-| 更新 step | PATCH/POST | `/api/admin/cloud-orchestrator/campaigns/{campaign_code}/steps/{step_index}` | 更新文案、时间、素材等 |
-| 删除 step | DELETE | `/api/admin/cloud-orchestrator/campaigns/{campaign_code}/steps/{step_index}` | 删除可编辑 Campaign 的 step |
-
-外部 Agent 创建接口只自动完成创建和提交审阅，成功后应保持 `review_status=pending_review`、`run_status=draft`、`scheduled_jobs=0`。后续仍需要人工在后台审批并启动；启动后才会进入 scheduler / broadcast queue。
+当前代码层也会保护这条规则：`POST /api/ai-assist/external/campaigns` 非 dry-run 请求会返回 `409 ai_assist_review_required`，不会写入 `broadcast_jobs`。
 
 ---
 
-## 2. 鉴权
+## 2. 可用接口
+
+| 能力 | 方法 | 路径 | 当前用途 |
+|---|---:|---|---|
+| 外部 Campaign 预检 | POST | `/api/ai-assist/external/campaigns` | token 保护；`dry_run=true` 时解析目标、校验话术/素材，返回 AI 助手审阅路径提示 |
+| 外部 Campaign 真实创建保护 | POST | `/api/ai-assist/external/campaigns` | 不允许直排发送；返回 `409 ai_assist_review_required` |
+| 查询历史 Campaign 状态 | GET | `/api/ai-assist/external/campaigns/{campaign_code}` | token 保护；仅查询，不触发写入或发送 |
+| AI 助手计划列表 | GET | `/api/admin/cloud-orchestrator/plans` | 运营后台查看待审阅计划 |
+| AI 助手计划审核 | POST | `/api/admin/cloud-orchestrator/plans/{plan_id}/approve` | 人工审核后才会规划发送任务 |
+
+所有接口挂在 `aicrm_next` FastAPI 应用下，响应里应带 `route_owner=ai_crm_next`。
+
+---
+
+## 3. 鉴权
 
 服务端接受下面任一环境变量中的 token：
 
@@ -75,79 +62,33 @@ export AICRM_AGENT_TOKEN="<configured-token>"
 
 ---
 
-## 3. 已支持能力
+## 4. 支持输入
 
-当前接口支持：
+当前 dry-run 支持：
 
-- 输入 `external_userid` / `external_contact_id`
-- 单人单步定时发送
-- 单人多天持续跟进
-- 多人统一话术
-- 多人每人定制话术
-- 多人每人多天定制话术
-- `dry_run=true` 预检，不写 DB、不排 broadcast job
-- 幂等创建：相同 `idempotency_key + group_code + owner_userid + target_id + steps` 会生成稳定 direct job idempotency key
-- 默认校验联系人 owner：`contacts.owner_userid` 与请求 `owner_userid` 不一致时返回 409
-- 默认创建一人或多人 direct `broadcast_jobs`
-- 不再支持通过 `use_campaign_workflow=true` 创建 segment/campaign/allocation
+- `external_userid` / `external_contact_id`
+- `unionid`
+- `target_id + target_id_type`
+- `external_userids`
+- `recipients`
+- 单人或多人定制话术
+- 多 step 预检
+- 图片、小程序、附件素材字段的基础结构校验
 
-当前接口不支持直接输入：
+当前不支持直接输入：
 
 - 手机号
 - 手机号前 3 后 4 mask
 - segment_code
 - previous_campaign_failed / previous_campaign_unreplied
-- A/B test
+- A/B test 自动分流
 - 每个用户多个 owner 自动择优
 
-这些目标必须由 Agent 或上游系统先解析成明确的 `external_userid`，再调用本文接口。
-
-### 3.1 身份与成员表的区别
-
-| 名称 | 含义 | 在外部 Campaign 链路里的作用 |
-|---|---|---|
-| `target_id` / `target_id_type` | 发送目标 ID，可为 `unionid` 或 `external_userid` | 默认发送路径的目标输入；由 `crm_user_identity` 解析成 unionid + external_userid |
-| `crm_user_identity` | unionid-first 身份表 | direct send / external campaign 默认路径的目标来源 |
-| `user_ops_pool_current` | 用户运营池当前快照 | 只作为 User Ops 页面/统计快照；不再作为默认发送门禁 |
-| `campaign_members` | Campaign run-due 的历史/现役成员明细 | 外部 token 接口不再写入；默认 direct send 只创建 `broadcast_jobs` |
-
-旧 `automation_member` 自动化转化成员池已退场，不再作为外部 Campaign 目标来源，也不允许通过本接口回填。目标用户不需要进入 `user_ops_pool_current`；只要 `crm_user_identity` 能解析到 unionid + external_userid，默认路径即可创建 `broadcast_jobs`。
+这些目标必须由 Agent 或上游系统先解析成明确的 `unionid` 或 `external_userid`，再进入预检或 AI 助手计划生成流程。
 
 ---
 
-## 4. 创建接口
-
-```http
-POST /api/ai-assist/external/campaigns
-```
-
-### 4.1 最小单人请求
-
-```bash
-curl -sS -X POST "${AICRM_BASE_URL}/api/ai-assist/external/campaigns" \
-  -H "Authorization: Bearer ${AICRM_AGENT_TOKEN}" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "owner_userid": "HuangYouCan",
-    "external_userid": "wmbNXyCwAAXhagLBNjtlFj2jbQevWinQ",
-    "scheduled_for": "2026-05-28 16:15",
-    "timezone": "Asia/Shanghai",
-    "message": "咱今天还报名吗？",
-    "idempotency_key": "hyc_signup_wmbnxy_20260528_1615",
-    "group_code": "hyc_signup_20260528",
-    "group_label": "HuangYouCan 报名跟进 2026-05-28",
-    "intent": "询问用户今天是否还报名"
-  }'
-```
-
-说明：
-
-- `scheduled_for` 支持 `YYYY-MM-DD HH:MM` 或 ISO datetime。
-- 没有时区后缀时按 `timezone` 解释，默认 `Asia/Shanghai`。
-- `message` 是单步话术；如果传 `steps`，以 `steps` 为准。
-- `idempotency_key` 建议稳定传入；不要依赖 HTTP `Idempotency-Key` 头，当前实现使用 body 字段。
-
-### 4.2 dry-run 预检
+## 5. dry-run 预检
 
 上线前或真实创建前，先加 `dry_run=true`：
 
@@ -158,11 +99,12 @@ curl -sS -X POST "${AICRM_BASE_URL}/api/ai-assist/external/campaigns" \
   -d '{
     "dry_run": true,
     "owner_userid": "HuangYouCan",
-    "external_userid": "wmbNXyCwAAXhagLBNjtlFj2jbQevWinQ",
-    "scheduled_for": "2026-05-28 16:15",
+    "external_userid": "wm_xxx",
+    "scheduled_for": "2026-07-06 12:00",
     "timezone": "Asia/Shanghai",
-    "message": "咱今天还报名吗？",
-    "idempotency_key": "hyc_signup_wmbnxy_20260528_1615"
+    "message": "这是一条预检话术",
+    "idempotency_key": "hxc_weekly_review_preview_20260706",
+    "group_code": "hxc_weekly_review_20260706"
   }'
 ```
 
@@ -174,204 +116,67 @@ curl -sS -X POST "${AICRM_BASE_URL}/api/ai-assist/external/campaigns" \
   "dry_run": true,
   "side_effect_executed": false,
   "route_owner": "ai_crm_next",
-  "recipient_count": 1,
-  "campaigns": [
-    {
-      "campaign_code": "camp_ext_...",
-      "external_userid": "wmbNXyCwAAXhagLBNjtlFj2jbQevWinQ",
-      "first_scheduled_for": "2026-05-28T16:15:00+08:00",
-      "step_count": 1,
-      "would_create": true
-    }
-  ]
-}
-```
-
-### 4.3 多天 step
-
-```json
-{
-  "owner_userid": "HuangYouCan",
-  "external_userid": "wm_xxx",
-  "timezone": "Asia/Shanghai",
-  "group_code": "single_user_3day_followup",
-  "group_label": "单人 3 天跟进",
-  "intent": "连续 3 天跟进，回复后停止",
-  "idempotency_key": "single_user_3day_followup_wm_xxx",
-  "steps": [
-    {
-      "scheduled_for": "2026-05-28 10:30",
-      "content_text": "第一条：我先把这件事跟你说清楚。",
-      "stop_on_reply": true
-    },
-    {
-      "day_offset": 1,
-      "send_time": "10:30",
-      "content_text": "第二条：昨天那条你可能还没来得及看。",
-      "stop_on_reply": true
-    },
-    {
-      "day_offset": 2,
-      "send_time": "10:30",
-      "content_text": "第三条：最后提醒一次，如果你需要我可以直接帮你开通。",
-      "stop_on_reply": true
-    }
-  ]
-}
-```
-
-第一步必须能推导出首发日期，可以用顶层 `scheduled_for`，也可以在第一条 step 写 `scheduled_for`。后续 step 可以用：
-
-- `scheduled_for`
-- 或 `day_offset + send_time`
-
-`day_offset` 是相对第一步日期的天数。
-
-### 4.4 多人统一话术
-
-```json
-{
-  "owner_userid": "HuangYouCan",
-  "external_userids": ["wm_001", "wm_002", "wm_003"],
-  "scheduled_for": "2026-05-28 20:00",
-  "timezone": "Asia/Shanghai",
-  "message": "今晚有一场内部分享，我觉得你可以来听一下。",
-  "group_code": "event_notice_20260528",
-  "group_label": "今晚活动通知",
-  "idempotency_key": "event_notice_20260528"
-}
-```
-
-当前实现会为每个 `external_userid` 创建 direct `broadcast_jobs`，并使用相同 `group_code` 聚合。这样可以支持每人不同话术，也便于单人失败隔离。
-
-### 4.5 多人每人定制话术
-
-```json
-{
-  "owner_userid": "HuangYouCan",
-  "timezone": "Asia/Shanghai",
-  "group_code": "v_invite_top20_whitelist_20260528",
-  "group_label": "新版灰度邀请 Top20 2026-05-28",
-  "intent": "新版灰度邀请，每人两条定制消息",
-  "idempotency_key": "v_invite_top20_whitelist_20260528",
-  "recipients": [
-    {
-      "external_userid": "wm_001",
-      "display_name": "Susie",
-      "steps": [
-        {
-          "scheduled_for": "2026-05-28 10:30",
-          "content_text": "Susie，跟你说一件正经事——这次新版我觉得你很适合先试。",
-          "stop_on_reply": true
-        },
-        {
-          "day_offset": 1,
-          "send_time": "10:30",
-          "content_text": "Susie，跟进一下——如果这两天进来试用了，任何一个具体的小感受都对我们有用。",
-          "stop_on_reply": true
-        }
-      ]
-    },
-    {
-      "external_userid": "wm_002",
-      "display_name": "Vicky",
-      "steps": [
-        {
-          "scheduled_for": "2026-05-28 10:30",
-          "content_text": "Vicky，这次新版我第一批想到你，主要是它跟你现在的业务节奏比较匹配。",
-          "stop_on_reply": true
-        },
-        {
-          "day_offset": 1,
-          "send_time": "10:30",
-          "content_text": "Vicky，昨天那条你可能没来得及看，我再补一句。",
-          "stop_on_reply": true
-        }
-      ]
-    }
-  ]
-}
-```
-
----
-
-## 5. 创建成功响应
-
-```json
-{
-  "ok": true,
-  "route_owner": "ai_crm_next",
   "source": "external_token_api",
-  "group_code": "v_invite_top20_whitelist_20260528",
-  "group_label": "新版灰度邀请 Top20 2026-05-28",
-  "owner_userid": "HuangYouCan",
-  "created_count": 2,
-  "existing_count": 0,
-  "campaigns": [
+  "send_path": "ai_assist_pending_review",
+  "required_send_path": "ai_assist_pending_review",
+  "forbidden_send_path": "direct_broadcast_job",
+  "review_required": true,
+  "review_status": "pending_review",
+  "run_status": "draft",
+  "scheduled_jobs": 0,
+  "recipient_count": 1,
+  "jobs": [],
+  "previews": [
     {
-      "campaign_code": "camp_ext_...",
-      "campaign_id": 123,
-      "external_userid": "wm_001",
-      "segment_code": "seg_ext_...",
-      "status": "created",
-      "review_status": "approved",
-      "run_status": "active",
-      "anchor_date": "2026-05-28",
-      "first_scheduled_for": "2026-05-28T10:30:00+08:00",
-      "step_count": 2,
-      "scheduled_jobs": 1
+      "status": "preview",
+      "unionid": "union_xxx",
+      "external_userid": "wm_xxx",
+      "job_count": 1
     }
   ]
 }
 ```
 
-注意：接口创建后会自动启动 campaign，并生成未来 `broadcast_jobs`。这不等于立即发送；真正发送由队列 worker 在 `scheduled_for` 到点后执行。
+dry-run 的用途是确认“目标能解析、话术能生成、素材字段可被识别”。它不会创建 AI 助手计划，也不会创建发送任务。
 
 ---
 
-## 6. 查询状态
+## 6. 非 dry-run 保护响应
 
-```bash
-curl -sS -X GET "${AICRM_BASE_URL}/api/ai-assist/external/campaigns/${CAMPAIGN_CODE}" \
-  -H "Authorization: Bearer ${AICRM_AGENT_TOKEN}"
-```
-
-响应结构：
+当前外部 Campaign 入口没有被允许直接真实创建。移除 `dry_run=true` 后，预期返回：
 
 ```json
 {
-  "ok": true,
+  "ok": false,
+  "error": "ai_assist_review_required",
+  "phase": "ai_assist_review_guard",
   "route_owner": "ai_crm_next",
-  "campaign": {
-    "campaign_code": "camp_ext_...",
-    "review_status": "approved",
-    "run_status": "active",
-    "owner_userid": "HuangYouCan"
-  },
-  "segments": [],
-  "member_status_counts": {
-    "pending": 1
-  },
-  "total_members": 1,
-  "scheduled_jobs": 1
+  "send_path": "ai_assist_pending_review",
+  "required_send_path": "ai_assist_pending_review",
+  "forbidden_send_path": "direct_broadcast_job",
+  "review_required": true,
+  "review_status": "pending_review",
+  "run_status": "draft",
+  "scheduled_jobs": 0
 }
 ```
+
+Agent 看到这个响应时，不能改用直写 `broadcast_jobs` 或直接调用任务接口。必须改走 AI 助手计划生成能力，并确认计划出现在审阅页。
 
 ---
 
 ## 7. 字段速查
 
-### 7.1 顶层字段
-
 | 字段 | 必填 | 说明 |
 |---|---:|---|
 | `owner_userid` / `sender` | 是 | 用哪个企微员工账号发送 |
 | `external_userid` | 条件 | 单个目标用户；和 `external_contact_id` 等价 |
+| `unionid` | 条件 | 单个目标用户 unionid |
 | `external_userids` | 条件 | 多个目标用户，统一话术 |
 | `recipients` | 条件 | 多个目标用户，每人可定制话术 |
 | `scheduled_for` | 条件 | 顶层首发时间；没有时第一条 step 必须提供 |
 | `message` / `content_text` | 条件 | 单步统一话术；有 `steps` 时可省略 |
-| `steps` | 否 | 多步统一话术 |
+| `steps` | 否 | 多步统一/定制话术 |
 | `timezone` | 否 | 默认 `Asia/Shanghai` |
 | `group_code` | 否 | 聚合标识；建议必传 |
 | `group_label` | 否 | 人可读标题 |
@@ -379,53 +184,10 @@ curl -sS -X GET "${AICRM_BASE_URL}/api/ai-assist/external/campaigns/${CAMPAIGN_C
 | `idempotency_key` | 否 | 幂等键；建议必传 |
 | `operator` | 否 | 默认 `external:{owner_userid}` |
 | `dry_run` / `preview` | 否 | true 时只预检，不写 DB |
-| `allow_owner_mismatch` | 否 | true 时允许联系人 owner 与请求 owner 不一致 |
 | `auto_backfill_automation_member` | 否 | 已退场；传 true 会返回 `410 automation_member_backfill_retired` |
+| `use_campaign_workflow` | 否 | 已退场；传 true 会返回 `410 campaign_workflow_retired` |
 
-至少需要 `external_userid`、`external_userids`、`recipients` 三者之一。
-
-### 7.2 recipients 字段
-
-| 字段 | 必填 | 说明 |
-|---|---:|---|
-| `external_userid` / `external_contact_id` | 是 | 明确的企微外部联系人 ID |
-| `display_name` | 否 | 只用于展示命名 |
-| `message` / `content_text` | 条件 | 该用户单步话术 |
-| `steps` | 条件 | 该用户多步定制话术 |
-| `campaign_code` | 否 | 指定 campaign_code；多人时会自动追加 hash 后缀 |
-
-### 7.3 已退场的 auto backfill 字段
-
-旧 `automation_member` 回填能力已退场。请求中显式传：
-
-```json
-{
-  "auto_backfill_automation_member": true
-}
-```
-
-会返回：
-
-```json
-{
-  "ok": false,
-  "error": "automation_member_backfill_retired"
-}
-```
-
-如果目标只存在于 `contacts`，应先补齐 `crm_user_identity` 的 unionid / external_userid 身份映射，不要再写旧自动化成员池或依赖运营池快照作为发送门禁。
-
-### 7.4 step 字段
-
-| 字段 | 必填 | 说明 |
-|---|---:|---|
-| `scheduled_for` | 条件 | 该 step 的绝对发送时间 |
-| `day_offset` | 条件 | 相对第一步日期的天数 |
-| `send_time` | 条件 | `HH:MM` |
-| `content_text` / `message` | 是 | 话术 |
-| `stop_on_reply` | 否 | 默认 true |
-| `content_payload` | 否 | 图片、小程序、附件等 payload |
-| `skip_if_recently_touched_days` | 否 | 默认 0 |
+至少需要 `external_userid`、`unionid`、`external_userids`、`recipients` 四者之一。
 
 ---
 
@@ -439,36 +201,22 @@ curl -sS -X GET "${AICRM_BASE_URL}/api/ai-assist/external/campaigns/${CAMPAIGN_C
 | 400 | `scheduled_for is required` | 没有可推导的首发时间 |
 | 400 | `content_required` | 没有话术或附件 |
 | 400 | `material_invalid` | 素材引用无法被发送 worker 消费 |
-| 400 | `sender_userid_required` | 没有发送人 userid |
-| 404 | `target_identity_not_found` | `crm_user_identity` 无法解析目标 |
-| 410 | `automation_member_backfill_retired` | 旧 `automation_member` 回填参数已退场 |
-| 410 | `campaign_workflow_retired` | `use_campaign_workflow=true` 旧 segment/campaign/allocation workflow 已退场 |
-| 409 | `owner_mismatch` | 联系人 owner 与请求 owner 不一致 |
+| 404 | `target_identity_not_found` | 身份表无法解析目标 |
+| 409 | `ai_assist_review_required` | 外部 Campaign 不能直排发送，必须进入 AI 助手审阅 |
+| 409 | `owner_mismatch` | 联系人 owner 与请求 owner 不一致且开启严格匹配 |
 | 409 | `target_external_userid_missing` | 目标有 unionid 但缺企微 external_userid |
 | 409 | `do_not_disturb` | 命中 active DND 且未显式 `bypass_dnd=true` |
-
-失败响应是结构化对象，例如：
-
-```json
-{
-  "ok": false,
-  "error": "target_identity_not_found",
-  "phase": "target_lookup",
-  "details": {"target_id": "wm_xxx", "target_id_type": "external_userid"},
-  "owner_userid": "HuangYouCan",
-  "group_code": "example_group"
-}
-```
+| 410 | `automation_member_backfill_retired` | 旧 `automation_member` 回填参数已退场 |
+| 410 | `campaign_workflow_retired` | 旧 segment/campaign/allocation workflow 已退场 |
 
 Agent 规则：
 
 - 401/503：停止，要求配置 token。
-- 404：先确认 `target_id` 是否已进入 `crm_user_identity`，不要为了发送而回填 `automation_member` 或运营池快照。
-- 410 `automation_member_backfill_retired`：移除 `auto_backfill_automation_member` 参数，改用 `crm_user_identity` 目标解析。
-- 410 `campaign_workflow_retired`：移除 `use_campaign_workflow` 参数；外部 token 接口固定使用 direct broadcast job。
-- 409 owner mismatch：默认以 warning 进入 direct job；只有显式 `strict_owner_match=true` 时阻断。
+- 404：先修复身份解析，不要为了发送而回填旧 `automation_member` 或运营池快照。
+- 409 `ai_assist_review_required`：这是保护性成功拦截，下一步必须创建 AI 助手待审阅计划。
 - 409 DND：默认停止；只有用户确认后才传 `bypass_dnd=true`，并保留 warning。
-- 任何 500：不要重试大量请求；先反馈错误并查服务日志。
+- 410：移除退场参数，不要回退到旧 workflow。
+- 任何 500：不要批量重试；先反馈错误并查服务日志。
 
 ---
 
@@ -476,57 +224,51 @@ Agent 规则：
 
 ```text
 1. 把用户输入解析成 target_id + target_id_type，优先使用 unionid 或 external_userid。
-2. 确定 sender_userid / owner_userid。
+2. 确定 owner_userid。
 3. 确定首发时间，必须是未来时间。
 4. 生成稳定 idempotency_key 和 group_code。
-5. 先 dry_run=true 调预检。
-6. 如果返回 target_identity_not_found，则先修复 crm_user_identity，不要写旧 automation_member 或运营池快照。
-7. dry-run 通过后，移除 dry_run 再真实创建。
-8. 返回 `jobs` / `broadcast_job_id`；不要再依赖旧 `campaign_code` 作为真实 Campaign 标识。
-9. 不要手动调用 run-due 或直接写 DB。
+5. 先 dry_run=true 调外部 Campaign 预检。
+6. 如果返回 target_identity_not_found，先修复身份解析。
+7. dry-run 通过后，创建 AI 助手 pending_review/draft 计划。
+8. 确认 `/admin/cloud-orchestrator/plans` 中能看到该计划，且 target_count / pending_count 正确。
+9. 等运营人工审核；审核前不得创建 broadcast_jobs。
+10. 审核通过后，再验证生成的是 `source_type=cloud_plan` 的任务。
 ```
 
 Agent 给用户的成功回复模板：
 
 ```text
-已创建定时私聊任务。
+已创建 AI 助手待审核运营计划。
 
-- group_code: xxx
+- plan_id: xxx
 - owner_userid: HuangYouCan
-- 首发时间: 2026-05-28 16:15 Asia/Shanghai
-- jobs: 1
+- target_count: N
+- review_status: pending_review
+- run_status: draft
+- scheduled_jobs: 0
 
-当前还不是“已发送”，会在 scheduled_for 到点后由 broadcast queue worker 执行。
+当前还不是“已发送”，需要在 AI 助手里审核通过后才会进入发送任务。
 ```
 
 ---
 
-## 10. 截图场景的当前标准做法
+## 10. 严禁路径
 
-截图里的“Top20 每人两条定制消息”当前按下面方式实现：
+以下做法都不允许：
 
 ```text
-1 个 group_code
-N 个 direct broadcast job target
-每个 target 按 steps 生成未来 `broadcast_jobs`
-发送 worker 到点后按 `target_unionids_json` 执行私聊发送
+POST /api/ai-assist/external/campaigns 非 dry-run 后直接写 broadcast_jobs
+直接 INSERT broadcast_jobs 作为外部 Campaign 创建结果
+让任务直接出现在群发任务列表而没有 AI 助手待审阅记录
+把 review_status=approved/run_status=active 当作外部创建默认值
+用旧 automation_member/user_ops_pool_current 作为发送门禁或回填捷径
 ```
 
-这和旧设想的 `campaign_member_steps` 或外部 token campaign workflow 不同。当前代码不会为外部 token 请求创建 `campaign_members` 或 `campaign_steps`。
+正确路径必须是：
 
-如果上游只有手机号、phone mask 或白名单名称，必须先通过别的可用数据能力解析成：
-
-```json
-[
-  {
-    "external_userid": "wm_xxx",
-    "owner_userid": "HuangYouCan",
-    "steps": []
-  }
-]
+```text
+external data -> dry-run preview -> AI assistant pending_review plan -> human approve -> cloud_plan broadcast_jobs
 ```
-
-再调用本文接口。
 
 ---
 
@@ -549,9 +291,9 @@ curl -sS -X POST "${AICRM_BASE_URL}/api/ai-assist/external/campaigns" \
     "dry_run": true,
     "owner_userid": "HuangYouCan",
     "external_userid": "wm_xxx",
-    "scheduled_for": "2026-05-28 16:15",
+    "scheduled_for": "2026-07-06 12:00",
     "message": "smoke test",
-    "idempotency_key": "smoke_external_campaign"
+    "idempotency_key": "smoke_external_campaign_review_guard"
   }'
 ```
 
@@ -561,43 +303,28 @@ curl -sS -X POST "${AICRM_BASE_URL}/api/ai-assist/external/campaigns" \
 ok=true
 dry_run=true
 side_effect_executed=false
-route_owner=ai_crm_next
-campaigns[0].would_create 明确
+send_path=ai_assist_pending_review
+forbidden_send_path=direct_broadcast_job
+jobs=[]
+previews 至少 1 条
 ```
 
-### 11.3 生产真实创建
+### 11.3 生产非 dry-run 保护
 
-只在 dry-run 通过、用户确认后执行真实创建。创建后马上 GET 状态接口确认：
-
-```bash
-curl -sS -X GET "${AICRM_BASE_URL}/api/ai-assist/external/campaigns/${CAMPAIGN_CODE}" \
-  -H "Authorization: Bearer ${AICRM_AGENT_TOKEN}"
-```
-
-要求：
+同样请求去掉 `dry_run=true` 后，要求：
 
 ```text
-ok=true
-run_status=active
-scheduled_jobs >= 1
+HTTP 409
+error=ai_assist_review_required
+phase=ai_assist_review_guard
+scheduled_jobs=0
+forbidden_send_path=direct_broadcast_job
 ```
 
----
+同时查询：
 
-## 12. 不要再使用的旧路径
-
-旧文档里的这些路径当前不是本文能力的一部分，不要让 Agent 调用：
-
-```text
-POST /api/external/ai-campaigns/resolve-targets
-POST /api/external/ai-campaigns
-POST /api/external/ai-campaigns/{campaign_code}/submit-review
-GET  /api/external/ai-campaigns/{campaign_code}
+```sql
+SELECT COUNT(*) FROM broadcast_jobs WHERE source_type = 'external_campaign';
 ```
 
-当前有效路径是：
-
-```text
-POST /api/ai-assist/external/campaigns
-GET  /api/ai-assist/external/campaigns/{campaign_code}
-```
+要求本次调用不会新增记录。

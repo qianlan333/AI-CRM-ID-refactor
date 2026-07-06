@@ -19,6 +19,8 @@ JsonDict = dict[str, Any]
 
 _DEFAULT_TIMEZONE = "Asia/Shanghai"
 _TOKEN_KEYS = ("AICRM_EXTERNAL_CAMPAIGN_TOKEN", "AUTOMATION_INTERNAL_API_TOKEN")
+_EXTERNAL_CAMPAIGN_REQUIRED_SEND_PATH = "ai_assist_pending_review"
+_EXTERNAL_CAMPAIGN_FORBIDDEN_SEND_PATH = "direct_broadcast_job"
 
 
 class ExternalCampaignError(Exception):
@@ -307,6 +309,32 @@ def _normalize_recipients(payload: JsonDict) -> list[JsonDict]:
 
 def _build_repo(repo: ExternalCampaignRepository | None) -> ExternalCampaignRepository:
     return repo or build_external_campaign_repository()
+
+
+def _external_campaign_review_details(
+    *,
+    owner_userid: str,
+    group_code: str,
+    group_label: str,
+    recipient_count: int,
+    previews: list[JsonDict] | None = None,
+) -> JsonDict:
+    details: JsonDict = {
+        "send_path": _EXTERNAL_CAMPAIGN_REQUIRED_SEND_PATH,
+        "required_send_path": _EXTERNAL_CAMPAIGN_REQUIRED_SEND_PATH,
+        "forbidden_send_path": _EXTERNAL_CAMPAIGN_FORBIDDEN_SEND_PATH,
+        "review_status": "pending_review",
+        "run_status": "draft",
+        "scheduled_jobs": 0,
+        "review_required": True,
+        "owner_userid": owner_userid,
+        "group_code": group_code,
+        "group_label": group_label,
+        "recipient_count": int(recipient_count or 0),
+    }
+    if previews is not None:
+        details["previews"] = previews
+    return details
 
 
 def _direct_auth_failure(headers: Mapping[str, Any], payload: JsonDict, *, allow_admin_action_token: bool) -> tuple[str, int] | None:
@@ -627,7 +655,6 @@ def create_external_campaigns(payload: JsonDict, repo: ExternalCampaignRepositor
     owner_userid = _text(payload.get("owner_userid") or payload.get("sender"))
     if not owner_userid:
         raise ExternalCampaignError("owner_userid/sender is required")
-    operator = _text(payload.get("operator")) or f"external:{owner_userid}"
     timezone_name = _text(payload.get("timezone")) or _DEFAULT_TIMEZONE
     group_code = _slug(payload.get("group_code") or payload.get("idempotency_key") or payload.get("intent"))
     group_label = _text(payload.get("group_label")) or _text(payload.get("intent")) or group_code
@@ -640,10 +667,17 @@ def create_external_campaigns(payload: JsonDict, repo: ExternalCampaignRepositor
         raise ExternalCampaignError(
             "campaign_workflow_retired",
             status_code=410,
-            message="use_campaign_workflow is retired; external campaign requests now create direct broadcast jobs only",
+            message="use_campaign_workflow is retired; external campaign requests must enter AI assistant review before any send job is queued",
             phase="request_validation",
             owner_userid=owner_userid,
-            details={"send_path": "direct_broadcast_job", "retired_path": "campaign_workflow"},
+            details={
+                "send_path": _EXTERNAL_CAMPAIGN_REQUIRED_SEND_PATH,
+                "required_send_path": _EXTERNAL_CAMPAIGN_REQUIRED_SEND_PATH,
+                "forbidden_send_path": _EXTERNAL_CAMPAIGN_FORBIDDEN_SEND_PATH,
+                "retired_path": "campaign_workflow",
+                "review_status": "pending_review",
+                "run_status": "draft",
+            },
         )
     if _truthy(payload.get("auto_backfill_automation_member")):
         raise ExternalCampaignError(
@@ -677,47 +711,53 @@ def create_external_campaigns(payload: JsonDict, repo: ExternalCampaignRepositor
             "side_effect_executed": False,
             "route_owner": "ai_crm_next",
             "source": "external_token_api",
-            "send_path": "direct_broadcast_job",
+            "send_path": _EXTERNAL_CAMPAIGN_REQUIRED_SEND_PATH,
+            "required_send_path": _EXTERNAL_CAMPAIGN_REQUIRED_SEND_PATH,
+            "forbidden_send_path": _EXTERNAL_CAMPAIGN_FORBIDDEN_SEND_PATH,
+            "review_required": True,
+            "review_status": "pending_review",
+            "run_status": "draft",
+            "scheduled_jobs": 0,
             "group_code": group_code,
             "group_label": group_label,
             "owner_userid": owner_userid,
             "recipient_count": len(previews),
             "campaigns": [],
-            "jobs": previews,
+            "jobs": [],
+            "previews": previews,
         }
 
-    jobs: list[JsonDict] = []
-    for recipient in effective_recipients:
-        jobs.extend(
-            _create_single_recipient_direct_send(
-                payload=payload,
-                recipient=recipient,
-                owner_userid=owner_userid,
-                operator=operator,
-                group_code=group_code,
-                group_label=group_label,
-                timezone_name=timezone_name,
-                strict_owner_match=strict_owner_match,
-                bypass_dnd=bypass_dnd,
-                repo=repository,
-                source_type="external_campaign",
-            )
+    previews = [
+        _preview_single_recipient_direct_send(
+            payload=payload,
+            recipient=recipient,
+            owner_userid=owner_userid,
+            group_code=group_code,
+            group_label=group_label,
+            timezone_name=timezone_name,
+            strict_owner_match=strict_owner_match,
+            bypass_dnd=bypass_dnd,
+            repo=repository,
         )
-    repository.commit()
-    return {
-        "ok": True,
-        "route_owner": "ai_crm_next",
-        "source": "external_token_api",
-        "send_path": "direct_broadcast_job",
-        "group_code": group_code,
-        "group_label": group_label,
-        "owner_userid": owner_userid,
-        "created_count": sum(1 for item in jobs if item.get("status") == "queued"),
-        "existing_count": sum(1 for item in jobs if item.get("status") == "exists"),
-        "campaign_code": _text(payload.get("campaign_code") or payload.get("idempotency_key") or group_code),
-        "campaigns": [],
-        "jobs": jobs,
-    }
+        for recipient in effective_recipients
+    ]
+    repository.rollback()
+    raise ExternalCampaignError(
+        "ai_assist_review_required",
+        status_code=409,
+        message="external campaign requests must create an AI assistant pending_review draft before any broadcast job is queued",
+        phase="ai_assist_review_guard",
+        owner_userid=owner_userid,
+        group_code=group_code,
+        campaign_code=_text(payload.get("campaign_code") or payload.get("idempotency_key") or group_code),
+        details=_external_campaign_review_details(
+            owner_userid=owner_userid,
+            group_code=group_code,
+            group_label=group_label,
+            recipient_count=len(previews),
+            previews=previews,
+        ),
+    )
 
 
 def create_direct_wecom_private_send(payload: JsonDict, repo: ExternalCampaignRepository | None = None, *, source: str = "direct_send_api") -> JsonDict:

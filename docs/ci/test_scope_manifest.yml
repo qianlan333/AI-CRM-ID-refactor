@@ -79,6 +79,20 @@
       "architecture_gate": "fast"
     },
     {
+      "name": "ai_assist_external_campaigns",
+      "paths": [
+        "aicrm_next/ai_assist/**",
+        "tests/test_ai_assist_external_campaigns.py",
+        "tests/test_ai_assist_external_effect_queue.py"
+      ],
+      "python_tests": [
+        "tests/test_ai_assist_external_campaigns.py",
+        "tests/test_ai_assist_external_effect_queue.py"
+      ],
+      "needs_postgres": false,
+      "architecture_gate": "fast"
+    },
+    {
       "name": "customer_read_model_sidebar",
       "paths": [
         "aicrm_next/customer_read_model/**",

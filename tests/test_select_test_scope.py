@@ -47,6 +47,15 @@ def test_identity_contact_change_selects_pg_and_db_architecture_gate() -> None:
     assert result["architecture_gate"] == "db"
 
 
+def test_ai_assist_external_campaign_change_selects_focused_python_slice() -> None:
+    result = _select("aicrm_next/ai_assist/external_campaigns.py")
+
+    assert "ai_assist_external_campaigns" in result["matched_scopes"]
+    assert "tests/test_ai_assist_external_campaigns.py" in result["python_tests"]
+    assert result["needs_postgres"] is False
+    assert result["architecture_gate"] == "fast"
+
+
 def test_ci_change_selects_contract_tests_and_full_gate() -> None:
     result = _select(".github/workflows/ci-fast.yml")
 

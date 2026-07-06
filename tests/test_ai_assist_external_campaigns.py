@@ -169,27 +169,46 @@ def test_external_campaign_dry_run_preview_no_write() -> None:
     assert result["ok"] is True
     assert result["dry_run"] is True
     assert result["side_effect_executed"] is False
-    assert result["send_path"] == "direct_broadcast_job"
-    assert result["jobs"][0]["status"] == "preview"
+    assert result["send_path"] == "ai_assist_pending_review"
+    assert result["required_send_path"] == "ai_assist_pending_review"
+    assert result["forbidden_send_path"] == "direct_broadcast_job"
+    assert result["review_required"] is True
+    assert result["review_status"] == "pending_review"
+    assert result["run_status"] == "draft"
+    assert result["jobs"] == []
+    assert result["previews"][0]["status"] == "preview"
     assert repo.write_calls == []
     assert total == 0
 
 
-def test_external_campaign_create_single_recipient_direct_job_success() -> None:
+def test_external_campaign_create_requires_ai_assist_review_without_direct_job() -> None:
     reset_external_effect_fixture_state()
     repo = _repo_with_target()
-    result = service.create_external_campaigns(_payload(), repo=repo)
+    try:
+        service.create_external_campaigns(_payload(), repo=repo)
+    except service.ExternalCampaignError as exc:
+        payload = exc.to_response()
+        status_code = exc.status_code
+    else:  # pragma: no cover
+        raise AssertionError("expected ExternalCampaignError")
     _items, total = ExternalEffectService().list_jobs({"effect_type": AI_ASSIST_CAMPAIGN_MESSAGE_LOOPBACK})
 
-    job = result["jobs"][0]
-    assert result["send_path"] == "direct_broadcast_job"
-    assert job["status"] == "queued"
-    assert job["broadcast_job_id"]
-    assert job["unionid"] == "union_ext_1"
-    assert job["external_userid"] == "ext_1"
-    assert result["created_count"] == 1
-    assert result["campaigns"] == []
-    assert repo.write_calls == ["create_broadcast_job"]
+    assert status_code == 409
+    assert payload["error"] == "ai_assist_review_required"
+    assert payload["phase"] == "ai_assist_review_guard"
+    assert payload["send_path"] == "ai_assist_pending_review"
+    assert payload["required_send_path"] == "ai_assist_pending_review"
+    assert payload["forbidden_send_path"] == "direct_broadcast_job"
+    assert payload["review_required"] is True
+    assert payload["review_status"] == "pending_review"
+    assert payload["run_status"] == "draft"
+    assert payload["scheduled_jobs"] == 0
+    assert payload["recipient_count"] == 1
+    assert payload["previews"][0]["unionid"] == "union_ext_1"
+    assert payload["previews"][0]["external_userid"] == "ext_1"
+    assert repo.write_calls == []
+    assert repo.commits == 0
+    assert repo.rollbacks == 1
     assert "fetch_user_ops_pool_current_row" not in repo.calls
     assert repo.real_outbound_send_called is False
     assert total == 0
@@ -207,11 +226,16 @@ def test_external_campaign_allows_attachment_only_step() -> None:
         ],
     )
 
-    result = service.create_external_campaigns(payload, repo=repo)
+    try:
+        service.create_external_campaigns(payload, repo=repo)
+    except service.ExternalCampaignError as exc:
+        result = exc.to_response()
+    else:  # pragma: no cover
+        raise AssertionError("expected ExternalCampaignError")
 
-    assert result["created_count"] == 1
-    job = next(iter(repo.broadcast_jobs_by_idempotency_key.values()))
-    assert job["content_payload"]["content_package"]["miniprogram_library_ids"] == [17]
+    assert result["error"] == "ai_assist_review_required"
+    assert result["previews"][0]["jobs"][0]["content_summary"] == "attachments:miniprogram_library_ids=1"
+    assert repo.broadcast_jobs_by_idempotency_key == {}
 
 
 def test_external_campaign_contact_lookup_is_optional_when_wecom_tables_missing() -> None:
@@ -256,13 +280,20 @@ def test_campaign_private_broadcast_job_fields_are_complete() -> None:
     assert payload["step"]["content_payload_json"] == {"miniprogram_library_ids": [17]}
 
 
-def test_external_campaign_idempotent_existing_campaign() -> None:
+def test_external_campaign_repeated_create_still_requires_review_and_stays_read_only() -> None:
     repo = _repo_with_target()
-    first = service.create_external_campaigns(_payload(campaign_code="fixed_code"), repo=repo)
-    result = service.create_external_campaigns(_payload(campaign_code="fixed_code"), repo=repo)
+    for _ in range(2):
+        try:
+            service.create_external_campaigns(_payload(campaign_code="fixed_code"), repo=repo)
+        except service.ExternalCampaignError as exc:
+            payload = exc.to_response()
+        else:  # pragma: no cover
+            raise AssertionError("expected ExternalCampaignError")
 
-    assert first["jobs"][0]["status"] == "queued"
-    assert result["jobs"][0]["status"] == "exists"
+        assert payload["error"] == "ai_assist_review_required"
+        assert payload["campaign_code"] == "fixed_code"
+    assert repo.write_calls == []
+    assert repo.commits == 0
 
 
 def test_direct_wecom_private_send_dry_run_no_write() -> None:
@@ -364,10 +395,11 @@ def test_external_campaign_owner_mismatch_is_warning_by_default() -> None:
     repo.identity_by_external["ext_1"]["primary_owner_userid"] = "owner_2"
     repo.contact_rows["ext_1"] = {"external_userid": "ext_1", "owner_userid": "owner_2"}
 
-    result = service.create_external_campaigns(_payload(), repo=repo)
+    result = service.create_external_campaigns(_payload(dry_run=True), repo=repo)
 
     assert result["ok"] is True
-    assert result["jobs"][0]["warnings"][0]["code"] == "owner_mismatch_warning"
+    assert result["previews"][0]["warnings"][0]["code"] == "owner_mismatch_warning"
+    assert repo.write_calls == []
 
 
 def test_external_campaign_strict_owner_match_can_still_fail() -> None:
@@ -418,12 +450,14 @@ def test_external_campaign_multi_recipient_campaign_code_suffix() -> None:
     repo.identity_by_unionid["union_ext_2"] = row
     repo.contact_rows["ext_2"] = {"external_userid": "ext_2", "owner_userid": "owner_1"}
     result = service.create_external_campaigns(
-        _payload(campaign_code="fixed_code", recipients=["ext_1", "ext_2"]),
+        _payload(dry_run=True, campaign_code="fixed_code", recipients=["ext_1", "ext_2"]),
         repo=repo,
     )
 
-    assert len(result["jobs"]) == 2
-    assert {item["unionid"] for item in result["jobs"]} == {"union_ext_1", "union_ext_2"}
+    assert len(result["previews"]) == 2
+    assert result["jobs"] == []
+    assert {item["unionid"] for item in result["previews"]} == {"union_ext_1", "union_ext_2"}
+    assert repo.write_calls == []
 
 
 def test_external_campaign_workflow_flag_is_retired() -> None:
@@ -439,7 +473,9 @@ def test_external_campaign_workflow_flag_is_retired() -> None:
 
     assert status_code == 410
     assert payload["error"] == "campaign_workflow_retired"
-    assert payload["send_path"] == "direct_broadcast_job"
+    assert payload["send_path"] == "ai_assist_pending_review"
+    assert payload["required_send_path"] == "ai_assist_pending_review"
+    assert payload["forbidden_send_path"] == "direct_broadcast_job"
     assert payload["retired_path"] == "campaign_workflow"
     assert repo.write_calls == []
 
