@@ -110,6 +110,11 @@ jobs:
               exit 1
             fi
             cat /tmp/aicrm_health.json
+            if ! python scripts/ops/check_admin_read_pages_smoke.py --base-url http://127.0.0.1:5001 | tee /tmp/aicrm-admin-read-pages-smoke.json; then
+              sudo systemctl status openclaw-wecom-postgres.service --no-pager || true
+              sudo journalctl -u openclaw-wecom-postgres.service -n 120 --no-pager || true
+              exit 1
+            fi
             sudo cp deploy/openclaw-external-push-worker.service /etc/systemd/system/
             sudo cp deploy/openclaw-external-push-worker.timer /etc/systemd/system/
             sudo cp deploy/openclaw-broadcast-queue-worker.service /etc/systemd/system/

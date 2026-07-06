@@ -67,6 +67,24 @@ def test_user_ops_change_selects_batch_send_contract_slice() -> None:
     assert result["architecture_gate"] == "fast"
 
 
+def test_admin_read_override_selects_focused_slice_without_pg() -> None:
+    result = _select(
+        "aicrm_next/ai_audience_ops/admin_api.py",
+        "aicrm_next/automation_engine/group_ops/application.py",
+        "aicrm_next/ops_enrollment/api.py",
+    )
+
+    assert result["matched_scopes"] == ["admin_read_pages"]
+    assert "tests/test_ai_audience_admin_pages.py" in result["python_tests"]
+    assert "tests/test_group_ops_plans_api.py" in result["python_tests"]
+    assert "tests/test_user_ops_api.py" in result["python_tests"]
+    assert "tests/test_ai_audience_ops.py" not in result["python_tests"]
+    assert "tests/test_group_ops_queue_contract.py" not in result["python_tests"]
+    assert "tests/test_user_ops_application_contract.py" not in result["python_tests"]
+    assert result["needs_postgres"] is False
+    assert result["architecture_gate"] == "fast"
+
+
 def test_ci_change_selects_contract_tests_and_full_gate() -> None:
     result = _select(".github/workflows/ci-fast.yml")
 
