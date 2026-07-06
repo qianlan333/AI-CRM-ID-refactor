@@ -110,6 +110,7 @@
     {
       "name": "customer_read_model_sidebar",
       "paths": [
+        "aicrm_next/main.py",
         "aicrm_next/customer_read_model/**",
         "aicrm_next/sidebar_write/**",
         "aicrm_next/frontend_compat/templates/sidebar_customer_workbench.html",

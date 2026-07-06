@@ -201,6 +201,7 @@
       ? window.setTimeout(() => controller.abort(), timeoutMs)
       : null;
     const finalOptions = {
+      cache: "no-store",
       headers: {
         Accept: "application/json",
         ...(options && options.body ? { "Content-Type": "application/json" } : {}),
