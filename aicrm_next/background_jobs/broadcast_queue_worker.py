@@ -348,22 +348,20 @@ def _load_cloud_plan_recipient_message(payload: dict[str, Any]) -> dict[str, Any
         return {}
     plan_id = _text(payload.get("plan_id"))
     recipient_id = int_value(payload.get("recipient_id"))
-    external_userid = _text(payload.get("external_userid"))
     if not plan_id or not recipient_id:
         return {}
     with connect() as conn:
         row = conn.execute(
             """
-            SELECT id, recipient_id, external_userid, content_text, content_payload_json, attachments_json
+            SELECT id, recipient_id, content_text, content_payload_json, attachments_json
             FROM cloud_broadcast_plan_recipient_messages
             WHERE plan_id = %s
               AND recipient_id = %s
-              AND (%s = '' OR external_userid = %s)
               AND status IN ('queued', 'pending')
             ORDER BY sequence_index ASC, id ASC
             LIMIT 1
             """,
-            (plan_id, recipient_id, external_userid, external_userid),
+            (plan_id, recipient_id),
         ).fetchone()
     if not row:
         return {}

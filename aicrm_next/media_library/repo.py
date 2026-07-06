@@ -475,9 +475,10 @@ def _psycopg_url(url: str) -> str:
 
 
 def connect_media_library_db(database_url: str) -> Any:
-    from aicrm_next.shared.db_session import connect_pooled_postgres
+    import psycopg
+    from psycopg.rows import dict_row
 
-    return connect_pooled_postgres(_psycopg_url(database_url))
+    return psycopg.connect(_psycopg_url(database_url), row_factory=dict_row)
 
 
 def reset_media_library_fixture_state() -> None:

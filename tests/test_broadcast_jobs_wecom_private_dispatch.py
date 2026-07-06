@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from typing import Any
 
@@ -157,6 +158,45 @@ def test_cloud_plan_recipient_message_uses_bound_sender_and_hydrates_text(monkey
     assert adapter.payload["text"] == {"content": "agent generated hello"}
     assert marked["payload"]["cloud_plan_message_id"] == 77
     assert marked["outbound_task_id"] == 901
+
+
+def test_cloud_plan_message_loader_does_not_require_external_userid_column(monkeypatch) -> None:
+    class Cursor:
+        def execute(self, sql: str, params: tuple[Any, ...]) -> "Cursor":
+            assert "external_userid" not in sql
+            assert params == ("agent_plan", 2)
+            return self
+
+        def fetchone(self) -> dict[str, Any]:
+            return {
+                "id": 77,
+                "recipient_id": 2,
+                "content_text": "agent generated hello",
+                "content_payload_json": {"miniprogram_library_ids": [1325]},
+                "attachments_json": [],
+            }
+
+    @contextmanager
+    def fake_connect():
+        yield Cursor()
+
+    monkeypatch.setattr(worker, "connect", fake_connect)
+
+    message = worker._load_cloud_plan_recipient_message(
+        {
+            "plan_id": "agent_plan",
+            "recipient_id": 2,
+            "external_userid": "stale-column-value",
+            "message_mode": "recipient_messages",
+        }
+    )
+
+    assert message == {
+        "cloud_plan_message_id": 77,
+        "content_text": "agent generated hello",
+        "content_payload_json": {"miniprogram_library_ids": [1325]},
+        "attachments": [],
+    }
 
 
 def test_cloud_plan_failure_marks_recipient_and_message_failed(next_pg_schema) -> None:

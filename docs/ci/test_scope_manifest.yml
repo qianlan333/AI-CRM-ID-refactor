@@ -52,11 +52,13 @@
         "aicrm_next/media_library/**",
         "aicrm_next/commerce/templates/wechat_products.html",
         "tests/test_image_upload_client_static.py",
-        "tests/test_image_library*.py"
+        "tests/test_image_library*.py",
+        "tests/test_media_library_next_contract.py"
       ],
       "python_tests": [
         "tests/test_image_upload_client_static.py",
-        "tests/test_image_library_template.py"
+        "tests/test_image_library_template.py",
+        "tests/test_media_library_next_contract.py"
       ],
       "needs_postgres": false,
       "architecture_gate": "none"
