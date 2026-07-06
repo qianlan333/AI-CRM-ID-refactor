@@ -47,6 +47,16 @@ def test_identity_contact_change_selects_pg_and_db_architecture_gate() -> None:
     assert result["architecture_gate"] == "db"
 
 
+def test_signed_session_change_selects_sidebar_shared_runtime_slice() -> None:
+    result = _select("aicrm_next/shared/signed_session.py")
+
+    assert result["matched_scopes"] == ["shared_sidebar_runtime"]
+    assert "tests/test_sidebar_jssdk_adapter.py" in result["python_tests"]
+    assert "tests/test_shared_flask_config_retirement.py" in result["python_tests"]
+    assert result["needs_postgres"] is False
+    assert result["architecture_gate"] == "fast"
+
+
 def test_ai_assist_external_campaign_change_selects_focused_python_slice() -> None:
     result = _select("aicrm_next/ai_assist/external_campaigns.py")
 

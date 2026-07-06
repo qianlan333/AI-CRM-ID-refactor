@@ -327,6 +327,7 @@
       "paths": [
         "aicrm_next/shared/db_session.py",
         "aicrm_next/shared/signed_context.py",
+        "aicrm_next/shared/signed_session.py",
         "tests/test_shared_db_session.py",
         "tests/test_shared_flask_config_retirement.py"
       ],

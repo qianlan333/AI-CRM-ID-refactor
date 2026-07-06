@@ -51,6 +51,8 @@
     bind_by_userid: "",
     sidebar_owner_token: "",
     sidebar_owner_token_status: "",
+    sidebar_oauth_url: "",
+    sidebar_oauth_started: false,
     activeTab: "profile",
     materialType: "image",
     workbench: null,
@@ -127,11 +129,21 @@
     const token = String((payload && payload.sidebar_owner_token) || "").trim();
     if (payload && Object.prototype.hasOwnProperty.call(payload, "sidebar_owner_token")) state.sidebar_owner_token = token;
     state.sidebar_owner_token_status = String((payload && payload.sidebar_owner_token_status) || state.sidebar_owner_token_status || "").trim();
+    if (payload && Object.prototype.hasOwnProperty.call(payload, "sidebar_oauth_url")) {
+      state.sidebar_oauth_url = String(payload.sidebar_oauth_url || "").trim();
+    }
     const context = (payload && payload.sidebar_owner_context) || {};
     const owner = String(context.owner_userid || context.viewer_userid || "").trim();
     if (owner) state.owner_userid = owner;
     const bindBy = String(context.bind_by_userid || "").trim();
     if (bindBy) state.bind_by_userid = bindBy;
+    if (token && state.external_userid && window.sessionStorage) {
+      try {
+        window.sessionStorage.removeItem(sidebarOAuthAttemptKey());
+      } catch (_error) {
+        // Ignore storage cleanup failures; the fresh owner token is the source of truth.
+      }
+    }
   }
 
   function firstPayloadValue(payload, keys) {
@@ -220,6 +232,53 @@
       writeDebug("sidebar owner token refresh failed", { message: error.message || String(error) });
       return false;
     }
+  }
+
+  function sidebarOAuthAttemptKey() {
+    return "aicrm_sidebar_oauth:" + String(state.external_userid || "unknown");
+  }
+
+  function currentSidebarNextPath() {
+    const params = new URLSearchParams(window.location.search);
+    params.delete("sidebar_oauth_error");
+    const query = params.toString();
+    return window.location.pathname + (query ? "?" + query : "");
+  }
+
+  async function maybeStartSidebarOAuth(reason) {
+    if (state.sidebar_owner_token || state.sidebar_oauth_started || !state.external_userid) return false;
+    const params = new URLSearchParams(window.location.search);
+    const oauthError = String(params.get("sidebar_oauth_error") || "").trim();
+    if (oauthError) {
+      writeDebug("sidebar oauth skipped after callback error", { error: oauthError, reason: reason || "" });
+      return false;
+    }
+    if (!state.sidebar_oauth_url) {
+      await refreshSidebarOwnerToken();
+    }
+    if (!state.sidebar_oauth_url) {
+      writeDebug("sidebar oauth unavailable", { reason: reason || "", owner_token_status: state.sidebar_owner_token_status });
+      return false;
+    }
+    if (window.sessionStorage) {
+      try {
+        const key = sidebarOAuthAttemptKey();
+        if (window.sessionStorage.getItem(key) === "1") {
+          writeDebug("sidebar oauth skipped after prior attempt", { reason: reason || "" });
+          return false;
+        }
+        window.sessionStorage.setItem(key, "1");
+      } catch (_error) {
+        // Best-effort loop guard; OAuth can proceed when storage is unavailable.
+      }
+    }
+    const target = new URL(state.sidebar_oauth_url, window.location.origin);
+    target.searchParams.set("external_userid", state.external_userid);
+    target.searchParams.set("next", currentSidebarNextPath());
+    state.sidebar_oauth_started = true;
+    writeDebug("sidebar oauth start", { reason: reason || "", target: target.pathname });
+    window.location.assign(target.toString());
+    return true;
   }
 
   function showToast(message, tone) {
@@ -1044,6 +1103,7 @@
       }
       writeDebug("identity result", contextResult);
       if (!contextResult.ok) {
+        if (!state.sidebar_owner_token && state.external_userid && await maybeStartSidebarOAuth(contextResult.reason || "context_not_ready")) return;
         setWorkbenchState(contextResult.status || WORKBENCH_STATES.context_missing, contextResult);
         renderRetryPanel("", contextResult.status === WORKBENCH_STATES.sdk_unavailable ? "企微 SDK 暂不可用，请确认从企微侧边栏打开，或带 external_userid 参数重试。" : "未识别到客户，请从企微客户侧边栏重新打开。");
         return;
@@ -1051,6 +1111,7 @@
       if (!state.sidebar_owner_token) {
         await refreshSidebarOwnerToken();
       }
+      if (!state.sidebar_owner_token && await maybeStartSidebarOAuth("owner_token_missing")) return;
       await loadWorkbench();
     } catch (error) {
       writeDebug("boot error", { message: error.message || String(error), stage: error.stage || "" });
