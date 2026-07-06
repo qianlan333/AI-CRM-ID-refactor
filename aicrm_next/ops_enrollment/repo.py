@@ -4,9 +4,11 @@ import os
 from copy import deepcopy
 from datetime import datetime, timezone
 from typing import Protocol
+from uuid import uuid4
 
-from sqlalchemy import delete, func, insert, select, update
+from sqlalchemy import delete, insert, select, update
 from sqlalchemy.engine import Engine
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from aicrm_next.shared.config import Settings, get_settings
@@ -42,6 +44,75 @@ def _now() -> datetime:
 
 def _now_iso() -> str:
     return _now().isoformat()
+
+
+def _status_label(status: str) -> str:
+    return {
+        "created": "已创建任务",
+        "planned": "待审批",
+        "queued": "排队中",
+        "dispatching": "发送中",
+        "partially_succeeded": "部分成功",
+        "succeeded": "已成功",
+        "failed": "发送失败",
+        "blocked": "已阻断",
+        "cancelled": "已取消",
+    }.get(str(status or "").strip(), str(status or "").strip() or "未知")
+
+
+def _new_record_key() -> str:
+    return f"user_ops_send_{uuid4().hex[:12]}"
+
+
+def _job_id_from_result(job: JsonDict) -> int | None:
+    value = job.get("job_id") or job.get("id")
+    try:
+        job_id = int(value)
+    except (TypeError, ValueError):
+        return None
+    return job_id if job_id > 0 else None
+
+
+def _external_effect_summary_from_jobs(jobs: list[JsonDict]) -> JsonDict:
+    statuses = [str(job.get("status") or "").strip() for job in jobs if bool(job.get("ok", True))]
+    planned_count = statuses.count("planned")
+    queued_count = statuses.count("queued")
+    dispatching_count = statuses.count("dispatching")
+    succeeded_count = statuses.count("succeeded")
+    failed_count = statuses.count("failed") + statuses.count("failed_retryable") + statuses.count("failed_terminal")
+    blocked_count = statuses.count("blocked")
+    cancelled_count = statuses.count("cancelled")
+    total = len(statuses)
+    if total <= 0:
+        status = "failed"
+    elif succeeded_count == total:
+        status = "succeeded"
+    elif blocked_count == total:
+        status = "blocked"
+    elif cancelled_count == total:
+        status = "cancelled"
+    elif failed_count == total:
+        status = "failed"
+    elif dispatching_count:
+        status = "dispatching"
+    elif succeeded_count or failed_count or blocked_count or cancelled_count:
+        status = "partially_succeeded"
+    elif queued_count:
+        status = "queued"
+    else:
+        status = "planned"
+    return {
+        "status": status,
+        "planned_count": planned_count,
+        "queued_count": queued_count,
+        "dispatching_count": dispatching_count,
+        "succeeded_count": succeeded_count,
+        "failed_count": failed_count,
+        "blocked_count": blocked_count,
+        "cancelled_count": cancelled_count,
+        "total_count": total,
+        "by_status": {status: statuses.count(status) for status in sorted(set(statuses)) if status},
+    }
 
 
 def _iso(value: object) -> str:
@@ -160,8 +231,8 @@ def _project_row(row: JsonDict) -> JsonDict:
             "huangxiaocan_activation_state_label": ACTIVATION_LABELS.get(activation_bucket, activation_bucket),
             "do_not_disturb": bool(reasons),
             "do_not_disturb_reasons": reasons,
-            "can_open_customer_detail": bool(unionid),
-            "can_batch_send": bool(unionid),
+            "can_open_customer_detail": bool(external_userid),
+            "can_batch_send": bool(external_userid),
             "tags": list(projected.get("tags") or []),
         }
     )
@@ -186,6 +257,14 @@ class UserOpsRepository(Protocol):
     ) -> JsonDict | None: ...
 
     def create_send_record(self, payload: JsonDict) -> JsonDict: ...
+
+    def create_or_get_send_record_by_idempotency(self, *, idempotency_key: str, payload: JsonDict) -> JsonDict: ...
+
+    def attach_external_effect_jobs(self, record_id: str, jobs: list[JsonDict]) -> JsonDict: ...
+
+    def refresh_send_record_external_effect_status(self, record_id: str, summary: JsonDict) -> JsonDict: ...
+
+    def get_send_record_external_effect_job_ids(self, record_id: str) -> list[int]: ...
 
     def list_send_records(self) -> list[JsonDict]: ...
 
@@ -242,16 +321,116 @@ class InMemoryUserOpsRepository:
         record_id = self._next_send_record_id
         self._next_send_record_id += 1
         created_at = _now_iso()
+        execution_backend = str(payload.get("execution_backend") or "legacy_fake")
         record = {
             "id": record_id,
             "record_id": f"user_ops_send_{record_id:04d}",
             "task_type": "user_ops_batch_send",
             "created_at": created_at,
             "updated_at": created_at,
+            "idempotency_key": str(payload.get("idempotency_key") or ""),
+            "execution_backend": execution_backend,
+            "external_effect_job_ids": list(payload.get("external_effect_job_ids") or []),
+            "external_effect_status_summary": dict(payload.get("external_effect_status_summary") or {}),
+            "external_effect_status_supported": execution_backend == "external_effect_queue",
+            "wecom_delivery_status_supported": False,
+            "delivery_status_supported": False,
+            "planned_count": int(payload.get("planned_count") or 0),
+            "queued_count": int(payload.get("queued_count") or 0),
+            "dispatching_count": int(payload.get("dispatching_count") or 0),
+            "succeeded_count": int(payload.get("succeeded_count") or 0),
+            "failed_count": int(payload.get("failed_count") or 0),
+            "blocked_count": int(payload.get("blocked_count") or 0),
+            "cancelled_count": int(payload.get("cancelled_count") or 0),
+            "last_refreshed_at": str(payload.get("last_refreshed_at") or ""),
             **payload,
         }
         self._send_records.insert(0, record)
         return deepcopy(record)
+
+    def create_or_get_send_record_by_idempotency(self, *, idempotency_key: str, payload: JsonDict) -> JsonDict:
+        key = str(idempotency_key or "").strip()
+        if key:
+            for record in self._send_records:
+                if str(record.get("idempotency_key") or "") == key:
+                    return deepcopy(record)
+        enriched = dict(payload)
+        enriched["idempotency_key"] = key
+        return self.create_send_record(enriched)
+
+    def attach_external_effect_jobs(self, record_id: str, jobs: list[JsonDict]) -> JsonDict:
+        record = self._find_send_record(record_id)
+        if record is None:
+            return {}
+        job_ids = [job_id for job in jobs if (job_id := _job_id_from_result(job)) is not None]
+        summary = _external_effect_summary_from_jobs(jobs)
+        now = _now_iso()
+        record.update(
+            {
+                "external_effect_job_ids": job_ids,
+                "external_effect_status_summary": summary,
+                "task_results": [deepcopy(job) for job in jobs],
+                "status": summary["status"],
+                "status_label": _status_label(summary["status"]),
+                "sent_count": int(summary.get("succeeded_count") or 0),
+                "planned_count": int(summary.get("planned_count") or 0),
+                "queued_count": int(summary.get("queued_count") or 0),
+                "dispatching_count": int(summary.get("dispatching_count") or 0),
+                "succeeded_count": int(summary.get("succeeded_count") or 0),
+                "failed_count": int(summary.get("failed_count") or 0),
+                "blocked_count": int(summary.get("blocked_count") or 0),
+                "cancelled_count": int(summary.get("cancelled_count") or 0),
+                "updated_at": now,
+                "last_refreshed_at": now,
+                "external_effect_status_supported": True,
+                "wecom_delivery_status_supported": False,
+                "delivery_status_supported": False,
+            }
+        )
+        return deepcopy(record)
+
+    def refresh_send_record_external_effect_status(self, record_id: str, summary: JsonDict) -> JsonDict:
+        record = self._find_send_record(record_id)
+        if record is None:
+            return {}
+        now = _now_iso()
+        status = str(summary.get("status") or record.get("status") or "planned")
+        record.update(
+            {
+                "status": status,
+                "status_label": _status_label(status),
+                "external_effect_status_summary": dict(summary),
+                "task_results": list(summary.get("task_results") or record.get("task_results") or []),
+                "sent_count": int(summary.get("succeeded_count") or 0),
+                "planned_count": int(summary.get("planned_count") or 0),
+                "queued_count": int(summary.get("queued_count") or 0),
+                "dispatching_count": int(summary.get("dispatching_count") or 0),
+                "succeeded_count": int(summary.get("succeeded_count") or 0),
+                "failed_count": int(summary.get("failed_count") or 0),
+                "blocked_count": int(summary.get("blocked_count") or 0),
+                "cancelled_count": int(summary.get("cancelled_count") or 0),
+                "updated_at": now,
+                "last_refreshed_at": now,
+                "external_effect_status_supported": True,
+                "wecom_delivery_status_supported": False,
+                "delivery_status_supported": False,
+            }
+        )
+        if summary.get("external_effect_job_ids"):
+            record["external_effect_job_ids"] = list(summary.get("external_effect_job_ids") or [])
+        return deepcopy(record)
+
+    def get_send_record_external_effect_job_ids(self, record_id: str) -> list[int]:
+        record = self.get_send_record(record_id)
+        if not record:
+            return []
+        job_ids: list[int] = []
+        for item in list(record.get("external_effect_job_ids") or []):
+            try:
+                job_ids.append(int(item))
+            except (TypeError, ValueError):
+                continue
+        return job_ids
 
     def list_send_records(self) -> list[JsonDict]:
         if not self._send_records:
@@ -260,12 +439,26 @@ class InMemoryUserOpsRepository:
                     "id": 0,
                     "record_id": "fixture_record_001",
                     "task_type": "user_ops_batch_send",
+                    "idempotency_key": "",
+                    "execution_backend": "legacy_fake",
                     "selected_count": 1,
                     "eligible_count": 1,
                     "sent_count": 1,
+                    "planned_count": 0,
+                    "queued_count": 0,
+                    "dispatching_count": 0,
+                    "succeeded_count": 0,
+                    "failed_count": 0,
+                    "blocked_count": 0,
+                    "cancelled_count": 0,
                     "target_unionids": ["union_ops_001"],
                     "skipped_count": 0,
                     "skipped_reasons": {},
+                    "external_effect_job_ids": [],
+                    "external_effect_status_summary": {},
+                    "external_effect_status_supported": False,
+                    "wecom_delivery_status_supported": False,
+                    "delivery_status_supported": False,
                     "include_do_not_disturb": False,
                     "content_preview": "欢迎继续了解黄小璨课程",
                     "image_count": 0,
@@ -275,6 +468,7 @@ class InMemoryUserOpsRepository:
                     "status": "created",
                     "status_label": "已创建任务",
                     "created_at": "2026-05-18T10:30:00+08:00",
+                    "last_refreshed_at": "",
                     "task_results": [],
                 }
             ]
@@ -283,6 +477,12 @@ class InMemoryUserOpsRepository:
     def get_send_record(self, record_id: str) -> JsonDict | None:
         for record in self.list_send_records():
             if str(record.get("record_id")) == record_id or str(record.get("id")) == record_id:
+                return record
+        return None
+
+    def _find_send_record(self, record_id: str) -> JsonDict | None:
+        for record in self._send_records:
+            if str(record.get("record_id")) == str(record_id) or str(record.get("id")) == str(record_id):
                 return record
         return None
 
@@ -394,22 +594,133 @@ class SqlAlchemyUserOpsRepository:
         return _project_row(self._row_to_dict(self._fetch_pool_row_by_id(int(target["id"]))))
 
     def create_send_record(self, payload: JsonDict) -> JsonDict:
-        next_id = int(self._session.execute(select(func.coalesce(func.max(user_ops_send_records_next.c.id), 0))).scalar_one()) + 1
-        record_key = f"user_ops_send_{next_id:04d}"
+        record_key = str(payload.get("record_key") or payload.get("record_id") or _new_record_key())
+        self._insert_send_record(record_key=record_key, payload=payload)
+        self._session.commit()
+        return self.get_send_record(record_key) or {}
+
+    def create_or_get_send_record_by_idempotency(self, *, idempotency_key: str, payload: JsonDict) -> JsonDict:
+        key = str(idempotency_key or "").strip()
+        if key:
+            existing = self._get_send_record_by_idempotency(key)
+            if existing is not None:
+                return existing
+        enriched = dict(payload)
+        enriched["idempotency_key"] = key
+        record_key = str(enriched.get("record_key") or enriched.get("record_id") or _new_record_key())
+        try:
+            self._insert_send_record(record_key=record_key, payload=enriched)
+            self._session.commit()
+        except IntegrityError:
+            self._session.rollback()
+            if key:
+                existing = self._get_send_record_by_idempotency(key)
+                if existing is not None:
+                    return existing
+            raise
+        return self.get_send_record(record_key) or {}
+
+    def attach_external_effect_jobs(self, record_id: str, jobs: list[JsonDict]) -> JsonDict:
+        record = self.get_send_record(record_id)
+        if record is None:
+            return {}
+        job_ids = [job_id for job in jobs if (job_id := _job_id_from_result(job)) is not None]
+        summary = _external_effect_summary_from_jobs(jobs)
+        now = _now()
+        self._session.execute(
+            update(user_ops_send_records_next)
+            .where(user_ops_send_records_next.c.record_key == record["record_id"])
+            .values(
+                external_effect_job_ids_json=job_ids,
+                external_effect_status_summary_json=summary,
+                task_results_json=[dict(job) for job in jobs],
+                sent_count=int(summary.get("succeeded_count") or 0),
+                planned_count=int(summary.get("planned_count") or 0),
+                queued_count=int(summary.get("queued_count") or 0),
+                dispatching_count=int(summary.get("dispatching_count") or 0),
+                succeeded_count=int(summary.get("succeeded_count") or 0),
+                failed_count=int(summary.get("failed_count") or 0),
+                blocked_count=int(summary.get("blocked_count") or 0),
+                cancelled_count=int(summary.get("cancelled_count") or 0),
+                status=str(summary.get("status") or "planned"),
+                status_label=_status_label(str(summary.get("status") or "planned")),
+                last_status_sync_at=now,
+                last_refreshed_at=now,
+            )
+        )
+        self._session.commit()
+        return self.get_send_record(record["record_id"]) or {}
+
+    def refresh_send_record_external_effect_status(self, record_id: str, summary: JsonDict) -> JsonDict:
+        record = self.get_send_record(record_id)
+        if record is None:
+            return {}
+        now = _now()
+        status = str(summary.get("status") or record.get("status") or "planned")
+        values = {
+            "external_effect_status_summary_json": dict(summary),
+            "task_results_json": list(summary.get("task_results") or record.get("task_results") or []),
+            "sent_count": int(summary.get("succeeded_count") or 0),
+            "planned_count": int(summary.get("planned_count") or 0),
+            "queued_count": int(summary.get("queued_count") or 0),
+            "dispatching_count": int(summary.get("dispatching_count") or 0),
+            "succeeded_count": int(summary.get("succeeded_count") or 0),
+            "failed_count": int(summary.get("failed_count") or 0),
+            "blocked_count": int(summary.get("blocked_count") or 0),
+            "cancelled_count": int(summary.get("cancelled_count") or 0),
+            "status": status,
+            "status_label": _status_label(status),
+            "last_status_sync_at": now,
+            "last_refreshed_at": now,
+        }
+        if summary.get("external_effect_job_ids"):
+            values["external_effect_job_ids_json"] = list(summary.get("external_effect_job_ids") or [])
+        self._session.execute(
+            update(user_ops_send_records_next)
+            .where(user_ops_send_records_next.c.record_key == record["record_id"])
+            .values(**values)
+        )
+        self._session.commit()
+        return self.get_send_record(record["record_id"]) or {}
+
+    def get_send_record_external_effect_job_ids(self, record_id: str) -> list[int]:
+        record = self.get_send_record(record_id)
+        if not record:
+            return []
+        job_ids: list[int] = []
+        for item in list(record.get("external_effect_job_ids") or []):
+            try:
+                job_ids.append(int(item))
+            except (TypeError, ValueError):
+                continue
+        return job_ids
+
+    def _insert_send_record(self, *, record_key: str, payload: JsonDict) -> None:
         now = _now()
         task_results = list(payload.get("task_results") or [])
-        outbound_task_ids = [result.get("task_id") for result in task_results if result.get("task_id")]
+        outbound_task_ids = [result.get("task_id") for result in task_results if isinstance(result, dict) and result.get("task_id")]
+        status = str(payload.get("status") or "created")
         self._session.execute(
             insert(user_ops_send_records_next).values(
-                id=next_id,
                 record_key=record_key,
+                idempotency_key=str(payload.get("idempotency_key") or "") or None,
                 task_type="user_ops_batch_send",
+                execution_backend=str(payload.get("execution_backend") or "legacy_fake"),
                 outbound_task_ids_json=outbound_task_ids,
                 task_results_json=task_results,
+                external_effect_job_ids_json=list(payload.get("external_effect_job_ids") or []),
+                external_effect_status_summary_json=dict(payload.get("external_effect_status_summary") or {}),
                 selected_count=int(payload.get("selected_count") or 0),
                 eligible_count=int(payload.get("eligible_count") or 0),
                 sent_count=int(payload.get("sent_count") or 0),
                 skipped_count=int(payload.get("skipped_count") or 0),
+                planned_count=int(payload.get("planned_count") or 0),
+                queued_count=int(payload.get("queued_count") or 0),
+                dispatching_count=int(payload.get("dispatching_count") or 0),
+                succeeded_count=int(payload.get("succeeded_count") or 0),
+                failed_count=int(payload.get("failed_count") or 0),
+                blocked_count=int(payload.get("blocked_count") or 0),
+                cancelled_count=int(payload.get("cancelled_count") or 0),
                 skipped_reasons_json=dict(payload.get("skipped_reasons") or payload.get("skipped_by_reason") or {}),
                 include_do_not_disturb=bool(payload.get("include_do_not_disturb")),
                 target_unionids_json=list(payload.get("target_unionids") or []),
@@ -418,13 +729,20 @@ class SqlAlchemyUserOpsRepository:
                 sender_userids_json=list(payload.get("sender_userids") or []),
                 filter_snapshot_json=dict(payload.get("filter_snapshot") or {}),
                 operator=str(payload.get("operator") or "fixture-admin"),
-                status=str(payload.get("status") or "created"),
-                status_label=str(payload.get("status_label") or "已创建任务"),
+                status=status,
+                status_label=str(payload.get("status_label") or _status_label(status)),
+                last_refreshed_at=payload.get("last_refreshed_at"),
                 created_at=now,
             )
         )
-        self._session.commit()
-        return self.get_send_record(record_key) or {}
+
+    def _get_send_record_by_idempotency(self, idempotency_key: str) -> JsonDict | None:
+        row = self._session.execute(
+            select(user_ops_send_records_next)
+            .where(user_ops_send_records_next.c.idempotency_key == idempotency_key)
+            .limit(1)
+        ).mappings().first()
+        return self._record_to_dict(row) if row else None
 
     def list_send_records(self) -> list[JsonDict]:
         rows = self._session.execute(
@@ -482,16 +800,31 @@ class SqlAlchemyUserOpsRepository:
 
     def _record_to_dict(self, row) -> JsonDict:
         data = dict(row)
+        execution_backend = str(data.get("execution_backend") or "legacy_fake")
         return {
             "id": data["id"],
             "record_id": data["record_key"],
             "task_type": data["task_type"],
+            "idempotency_key": data.get("idempotency_key") or "",
+            "execution_backend": execution_backend,
             "selected_count": data["selected_count"],
             "eligible_count": data["eligible_count"],
             "sent_count": data["sent_count"],
+            "planned_count": int(data.get("planned_count") or 0),
+            "queued_count": int(data.get("queued_count") or 0),
+            "dispatching_count": int(data.get("dispatching_count") or 0),
+            "succeeded_count": int(data.get("succeeded_count") or 0),
+            "failed_count": int(data.get("failed_count") or 0),
+            "blocked_count": int(data.get("blocked_count") or 0),
+            "cancelled_count": int(data.get("cancelled_count") or 0),
             "target_unionids": data.get("target_unionids_json") or [],
             "skipped_count": data["skipped_count"],
             "skipped_reasons": data.get("skipped_reasons_json") or {},
+            "external_effect_job_ids": data.get("external_effect_job_ids_json") or [],
+            "external_effect_status_summary": data.get("external_effect_status_summary_json") or {},
+            "external_effect_status_supported": execution_backend == "external_effect_queue",
+            "wecom_delivery_status_supported": False,
+            "delivery_status_supported": False,
             "include_do_not_disturb": data["include_do_not_disturb"],
             "content_preview": data["content_preview"],
             "image_count": data["image_count"],
@@ -501,6 +834,7 @@ class SqlAlchemyUserOpsRepository:
             "status": data["status"],
             "status_label": data["status_label"],
             "created_at": _iso(data["created_at"]),
+            "last_refreshed_at": _iso(data.get("last_refreshed_at")),
             "task_results": data.get("task_results_json") or [],
         }
 

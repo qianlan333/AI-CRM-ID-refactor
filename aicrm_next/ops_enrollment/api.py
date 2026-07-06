@@ -210,9 +210,9 @@ def user_ops_export_preview(request: ExportPreviewRequest, idempotency_key: str 
 
 
 @router.post("/api/admin/user-ops/batch-send/execute")
-def user_ops_batch_send_execute(request: BatchSendRequest) -> dict:
+def user_ops_batch_send_execute(request: BatchSendRequest, idempotency_key: str = Header(default="", alias="Idempotency-Key")) -> dict:
     try:
-        return ExecuteUserOpsBatchSendCommand()(request)
+        return ExecuteUserOpsBatchSendCommand()(request, idempotency_key=idempotency_key)
     except ContractError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 

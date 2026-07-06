@@ -5,13 +5,17 @@ from sqlalchemy import text
 
 from aicrm_next.main import create_app
 from aicrm_next.ops_enrollment.application import reset_user_ops_fixture_state
+from aicrm_next.platform_foundation.external_effects import ExternalEffectService, WECOM_MESSAGE_PRIVATE_SEND, reset_external_effect_fixture_state
 from aicrm_next.shared.db_session import get_session_factory
 
 
 def _client(monkeypatch) -> TestClient:
     monkeypatch.delenv("DATABASE_URL", raising=False)
     monkeypatch.delenv("AICRM_NEXT_ENV", raising=False)
+    monkeypatch.delenv("AICRM_WECOM_EXECUTION_MODE", raising=False)
+    monkeypatch.delenv("AICRM_USER_OPS_SEND_REQUIRES_APPROVAL", raising=False)
     reset_user_ops_fixture_state()
+    reset_external_effect_fixture_state()
     return TestClient(create_app(), raise_server_exceptions=False)
 
 
@@ -81,6 +85,70 @@ def test_user_ops_preview_routes_plan_without_real_external_calls(monkeypatch):
         safety = payload.get("side_effect_safety") or {}
         assert safety.get("side_effect_executed", False) is False
         assert payload.get("fallback_used", False) is False
+
+
+def test_user_ops_batch_send_execute_enqueues_external_effect_jobs_idempotently(monkeypatch):
+    client = _client(monkeypatch)
+    payload = {"selection_mode": "manual", "selected_ids": [1], "content": "hello", "confirm": True}
+
+    first = client.post(
+        "/api/admin/user-ops/batch-send/execute",
+        headers={"Idempotency-Key": "idem-user-ops-api-001"},
+        json=payload,
+    )
+    second = client.post(
+        "/api/admin/user-ops/batch-send/execute",
+        headers={"Idempotency-Key": "idem-user-ops-api-001"},
+        json=payload,
+    )
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    first_body = first.json()
+    second_body = second.json()
+    assert first_body["execution_backend"] == "external_effect_queue"
+    assert first_body["execution_summary"]["backend"] == "external_effect_queue"
+    assert first_body["execution_summary"].get("dispatch_adapter") != "fake_wecom"
+    assert first_body["real_external_call_executed"] is False
+    assert first_body["planned_count"] == 1
+    assert first_body["queued_count"] == 0
+    assert first_body["record_id"] == second_body["record_id"]
+    assert first_body["external_effect_job_ids"] == second_body["external_effect_job_ids"]
+    jobs, total = ExternalEffectService().list_jobs(
+        {
+            "effect_type": WECOM_MESSAGE_PRIVATE_SEND,
+            "business_type": "user_ops_batch_send",
+            "business_id": first_body["record_id"],
+        }
+    )
+    assert total == 1
+    assert jobs[0].payload_json["external_userids"] == ["wx_ext_001"]
+
+    detail = client.get(f"/api/admin/user-ops/send-records/{first_body['record_id']}")
+    assert detail.status_code == 200
+    detail_body = detail.json()
+    assert detail_body["external_effect_status_supported"] is True
+    assert detail_body["wecom_delivery_status_supported"] is False
+    assert detail_body["record"]["planned_count"] == 1
+    assert detail_body["task_results"][0]["external_effect_job_id"] == first_body["external_effect_job_ids"][0]
+
+    refresh = client.post(f"/api/admin/user-ops/send-records/{first_body['record_id']}/refresh")
+    assert refresh.status_code == 200
+    refresh_body = refresh.json()
+    assert refresh_body["refreshed"] is True
+    assert refresh_body["summary"]["planned_count"] == 1
+
+
+def test_user_ops_batch_send_execute_rejects_targets_missing_external_userid(monkeypatch):
+    client = _client(monkeypatch)
+
+    response = client.post(
+        "/api/admin/user-ops/batch-send/execute",
+        json={"selection_mode": "manual", "selected_ids": [3], "content": "hello", "confirm": True},
+    )
+
+    assert response.status_code == 400
+    assert "no eligible targets" in response.text
 
 
 def test_user_ops_batch_send_preview_supports_ai_audience_package_source(next_client, next_pg_schema) -> None:
@@ -201,6 +269,7 @@ def test_user_ops_batch_send_preview_supports_ai_audience_package_source(next_cl
 
     execute = next_client.post(
         "/api/admin/user-ops/batch-send/execute",
+        headers={"Idempotency-Key": "test-user-ops-ai-audience-execute"},
         json={
             "selection_mode": "all_filtered",
             "target_source": "ai_audience_package",
@@ -211,7 +280,23 @@ def test_user_ops_batch_send_preview_supports_ai_audience_package_source(next_cl
     )
     assert execute.status_code == 200
     body = execute.json()
-    assert body["sent_count"] == 1
-    assert body["task_results"][0]["sender_userid"] == "QianLan"
+    assert body["sent_count"] == 0
+    assert body["execution_backend"] == "external_effect_queue"
+    assert body["external_effect_status_supported"] is True
+    assert body["wecom_delivery_status_supported"] is False
+    assert body["planned_count"] == 1
+    assert body["external_effect_job_ids"]
     assert body["target_unionids"] == ["union_ai_priority"]
     assert body["side_effect_safety"]["side_effect_executed"] is False
+    jobs, total = ExternalEffectService().list_jobs(
+        {
+            "effect_type": WECOM_MESSAGE_PRIVATE_SEND,
+            "business_type": "user_ops_batch_send",
+            "business_id": body["record_id"],
+        }
+    )
+    assert total == 1
+    assert jobs[0].status == "planned"
+    assert jobs[0].payload_json["target_unionid"] == "union_ai_priority"
+    assert jobs[0].payload_json["external_userids"] == ["wm_priority"]
+    assert jobs[0].payload_json["owner_userid"] == "QianLan"

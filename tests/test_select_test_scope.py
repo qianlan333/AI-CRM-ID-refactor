@@ -56,6 +56,17 @@ def test_ai_assist_external_campaign_change_selects_focused_python_slice() -> No
     assert result["architecture_gate"] == "fast"
 
 
+def test_user_ops_change_selects_batch_send_contract_slice() -> None:
+    result = _select("aicrm_next/ops_enrollment/application.py")
+
+    assert "user_ops" in result["matched_scopes"]
+    assert "tests/test_user_ops_api.py" in result["python_tests"]
+    assert "tests/test_user_ops_external_effect_enqueue.py" in result["python_tests"]
+    assert "tests/test_user_ops_send_record_projection.py" in result["python_tests"]
+    assert result["needs_postgres"] is False
+    assert result["architecture_gate"] == "fast"
+
+
 def test_ci_change_selects_contract_tests_and_full_gate() -> None:
     result = _select(".github/workflows/ci-fast.yml")
 

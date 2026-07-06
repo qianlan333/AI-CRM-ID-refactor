@@ -3,9 +3,11 @@ from __future__ import annotations
 from fastapi.testclient import TestClient
 
 from aicrm_next.main import create_app
+from aicrm_next.platform_foundation.external_effects import reset_external_effect_fixture_state
 
 
 def _client() -> TestClient:
+    reset_external_effect_fixture_state()
     return TestClient(create_app())
 
 
@@ -114,7 +116,10 @@ def test_user_ops_write_like_routes_remain_no_real_side_effect() -> None:
     assert execute_body["side_effect_safety"]["real_batch_send_executed"] is False
     assert execute_body["side_effect_safety"]["real_wecom_dispatch_executed"] is False
     assert execute_body["side_effect_safety"]["side_effect_executed"] is False
+    assert execute_body["execution_backend"] == "external_effect_queue"
+    assert execute_body["external_effect_job_ids"]
     assert execute_body["execution_summary"]["side_effect_safety"]["side_effect_executed"] is False
+    assert execute_body["execution_summary"]["backend"] == "external_effect_queue"
 
     dnd = client.post(
         "/api/admin/user-ops/do-not-disturb",
@@ -128,5 +133,7 @@ def test_user_ops_write_like_routes_remain_no_real_side_effect() -> None:
     refresh = client.post(f"/api/admin/user-ops/send-records/{execute_body['record_id']}/refresh")
     assert refresh.status_code == 200
     refresh_body = refresh.json()
-    assert refresh_body["refreshed"] is False
+    assert refresh_body["refreshed"] is True
+    assert refresh_body["external_effect_status_supported"] is True
+    assert refresh_body["wecom_delivery_status_supported"] is False
     assert refresh_body["real_external_call_executed"] is False

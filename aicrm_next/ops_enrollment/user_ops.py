@@ -19,6 +19,7 @@ CARD_DEFINITIONS = [
 
 SKIPPED_REASON_LABELS = {
     "missing_unionid": "缺少 unionid",
+    "missing_external_userid": "缺少 external_userid，无法企微私信",
     "missing_owner_userid": "缺少负责人",
     "do_not_disturb": "免打扰",
     "no_allowed_sender": "无可用发送人",
@@ -164,6 +165,9 @@ def resolve_batch_targets(rows: list[JsonDict], request: BatchSendRequest) -> Js
             continue
         if not item.get("unionid"):
             skipped_reasons["missing_unionid"] += 1
+            continue
+        if not item.get("external_userid"):
+            skipped_reasons["missing_external_userid"] += 1
             continue
         if not item.get("owner_userid"):
             skipped_reasons["missing_owner_userid"] += 1
