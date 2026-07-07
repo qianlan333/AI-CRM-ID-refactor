@@ -123,6 +123,29 @@ def test_admin_read_smoke_test_file_selects_admin_read_scope() -> None:
     assert result["architecture_gate"] == "fast"
 
 
+def test_wecom_tag_catalog_write_change_selects_real_tag_crud_slice() -> None:
+    result = _select(
+        "aicrm_next/customer_tags/admin_write.py",
+        "aicrm_next/integration_gateway/wecom_tag_live_gateway.py",
+        "docs/architecture/wecom_tag_read_route_inventory.md",
+        "docs/architecture/wecom_tag_write_route_inventory.md",
+        "tests/test_wecom_tag_next_sync.py",
+        "tests/test_wecom_tag_write_no_real_side_effects.py",
+    )
+
+    assert result["matched_scopes"] == ["wecom_tag_catalog_write", "docs_only"]
+    assert "tests/test_wecom_tag_write_no_real_side_effects.py" in result["python_tests"]
+    assert "tests/test_wecom_tag_next_sync.py" in result["python_tests"]
+    assert "tests/test_wecom_tag_write_commands.py" in result["python_tests"]
+    assert "tests/test_wecom_tag_write_idempotency.py" in result["python_tests"]
+    assert "tests/test_wecom_tag_write_inventory.py" in result["python_tests"]
+    assert "tests/test_wecom_tag_read_selectors.py" in result["python_tests"]
+    assert "tests/test_group_ops_queue_contract.py" not in result["python_tests"]
+    assert result["needs_postgres"] is False
+    assert result["architecture_gate"] == "full"
+    assert result["needs_full_ci"] is True
+
+
 def test_ci_change_selects_contract_tests_and_full_gate() -> None:
     result = _select(".github/workflows/ci-fast.yml")
 

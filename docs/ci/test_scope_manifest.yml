@@ -27,6 +27,14 @@
   "exclusive_scope_overrides": [
     {
       "paths": [
+        "aicrm_next/integration_gateway/wecom_tag_live_gateway.py"
+      ],
+      "scopes": [
+        "wecom_tag_catalog_write"
+      ]
+    },
+    {
+      "paths": [
         "aicrm_next/ai_audience_ops/admin_api.py",
         "aicrm_next/automation_engine/group_ops/api.py",
         "aicrm_next/automation_engine/group_ops/application.py",
@@ -244,6 +252,25 @@
       ],
       "needs_postgres": true,
       "architecture_gate": "db"
+    },
+    {
+      "name": "wecom_tag_catalog_write",
+      "paths": [
+        "aicrm_next/customer_tags/admin_write.py",
+        "aicrm_next/integration_gateway/wecom_tag_live_gateway.py",
+        "tests/test_wecom_tag_next_sync.py",
+        "tests/test_wecom_tag_write_*.py"
+      ],
+      "python_tests": [
+        "tests/test_wecom_tag_write_no_real_side_effects.py",
+        "tests/test_wecom_tag_next_sync.py",
+        "tests/test_wecom_tag_write_commands.py",
+        "tests/test_wecom_tag_write_idempotency.py",
+        "tests/test_wecom_tag_write_inventory.py",
+        "tests/test_wecom_tag_read_selectors.py"
+      ],
+      "needs_postgres": false,
+      "architecture_gate": "fast"
     },
     {
       "name": "frontend_p1",
