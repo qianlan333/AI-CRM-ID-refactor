@@ -55,12 +55,16 @@
         "aicrm_next/public_product/**",
         "tests/test_wechat_products_admin_page_contract.py",
         "tests/test_product_external_push.py",
+        "tests/test_admin_p0_commerce_api.py",
+        "tests/test_commerce_admin_transaction_detail.py",
         "tests/test_h5_wechat_pay_mobile_projection.py",
         "tests/test_wechat_pay_*.py",
         "tests/test_public_product_*.py",
         "tests/test_next_h5_wechat_pay_external_push_outbox.py"
       ],
       "python_tests": [
+        "tests/test_admin_p0_commerce_api.py",
+        "tests/test_commerce_admin_transaction_detail.py",
         "tests/test_wechat_products_admin_page_contract.py",
         "tests/test_product_external_push.py",
         "tests/test_h5_wechat_pay_mobile_projection.py",

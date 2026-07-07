@@ -48,6 +48,21 @@ def test_h5_wechat_pay_mobile_projection_test_selects_commerce_scope() -> None:
     assert result["needs_full_ci"] is False
 
 
+def test_commerce_admin_order_tests_select_commerce_scope() -> None:
+    result = _select(
+        "aicrm_next/commerce/templates/admin_orders.html",
+        "tests/test_admin_p0_commerce_api.py",
+        "tests/test_commerce_admin_transaction_detail.py",
+    )
+
+    assert result["matched_scopes"] == ["commerce"]
+    assert "tests/test_admin_p0_commerce_api.py" in result["python_tests"]
+    assert "tests/test_commerce_admin_transaction_detail.py" in result["python_tests"]
+    assert result["needs_postgres"] is False
+    assert result["architecture_gate"] == "fast"
+    assert result["needs_full_ci"] is False
+
+
 def test_identity_contact_change_selects_pg_and_db_architecture_gate() -> None:
     result = _select("aicrm_next/identity_contact/application.py")
 
