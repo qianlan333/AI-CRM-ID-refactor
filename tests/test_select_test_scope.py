@@ -63,6 +63,24 @@ def test_commerce_admin_order_tests_select_commerce_scope() -> None:
     assert result["needs_full_ci"] is False
 
 
+def test_service_period_change_selects_service_period_slice() -> None:
+    result = _select(
+        "aicrm_next/service_period/api.py",
+        "aicrm_next/service_period/templates/service_period_products.html",
+        "tests/test_service_period_frontend_contract.py",
+    )
+
+    assert result["matched_scopes"] == ["service_period"]
+    assert "tests/test_service_period_application.py" in result["python_tests"]
+    assert "tests/test_service_period_h5_payment.py" in result["python_tests"]
+    assert "tests/test_service_period_frontend_contract.py" in result["python_tests"]
+    assert "tests/test_service_period_schema.py" in result["python_tests"]
+    assert "tests/test_router_registry_contract.py" in result["python_tests"]
+    assert result["needs_postgres"] is False
+    assert result["architecture_gate"] == "fast"
+    assert result["needs_full_ci"] is False
+
+
 def test_identity_contact_change_selects_pg_and_db_architecture_gate() -> None:
     result = _select("aicrm_next/identity_contact/application.py")
 

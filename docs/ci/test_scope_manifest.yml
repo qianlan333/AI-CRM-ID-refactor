@@ -76,6 +76,27 @@
       "architecture_gate": "fast"
     },
     {
+      "name": "service_period",
+      "paths": [
+        "aicrm_next/service_period/**",
+        "tests/test_service_period_*.py"
+      ],
+      "python_tests": [
+        "tests/test_service_period_application.py",
+        "tests/test_service_period_h5_payment.py",
+        "tests/test_service_period_frontend_contract.py",
+        "tests/test_service_period_schema.py",
+        "tests/test_public_product_frontend_contract.py",
+        "tests/test_wechat_products_admin_page_contract.py",
+        "tests/test_internal_events_payment_slice.py",
+        "tests/test_router_registry_contract.py",
+        "tests/test_fixture_reset_registry.py",
+        "tests/test_next_api_docs_page.py"
+      ],
+      "needs_postgres": false,
+      "architecture_gate": "fast"
+    },
+    {
       "name": "media_library",
       "paths": [
         "aicrm_next/media_library/**",
@@ -345,7 +366,8 @@
         "tests/test_sql_static_guard.py"
       ],
       "python_tests": [
-        "tests/test_alembic_revision_chain.py"
+        "tests/test_alembic_revision_chain.py",
+        "tests/test_sql_static_guard.py"
       ],
       "needs_postgres": true,
       "architecture_gate": "db"
@@ -360,8 +382,18 @@
         "docs/ci/**",
         "docs/development/**",
         "docs/architecture/*manifest*",
+        "docs/architecture/repository_ownership.yml",
+        "aicrm_next/admin_config/api_docs_view_model.py",
+        "aicrm_next/admin_shell/navigation.py",
+        "aicrm_next/fixture_reset_registry.py",
+        "aicrm_next/router_registry.py",
+        "tests/conftest.py",
         "tests/test_ci_workflow_contract.py",
         "tests/test_select_test_scope.py",
+        "tests/test_fixture_reset_registry.py",
+        "tests/test_internal_events_payment_slice.py",
+        "tests/test_next_api_docs_page.py",
+        "tests/test_router_registry_contract.py",
         "requirements.txt",
         "app.py",
         "aicrm_next/platform_foundation/**"
@@ -369,7 +401,11 @@
       "python_tests": [
         "tests/test_ci_workflow_contract.py",
         "tests/test_select_test_scope.py",
-        "tests/test_architecture_boundaries.py"
+        "tests/test_architecture_boundaries.py",
+        "tests/test_fixture_reset_registry.py",
+        "tests/test_internal_events_payment_slice.py",
+        "tests/test_next_api_docs_page.py",
+        "tests/test_router_registry_contract.py"
       ],
       "needs_postgres": false,
       "architecture_gate": "full"

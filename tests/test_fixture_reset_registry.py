@@ -10,6 +10,7 @@ EXPECTED_RESET_ORDER = [
     "automation",
     "group_ops",
     "commerce",
+    "service_period",
     "media_library",
     "admin_jobs",
     "hxc_dashboard",
@@ -68,4 +69,3 @@ def test_create_app_skips_fixture_reset_registry_in_production_mode(monkeypatch)
 
     assert app.title == "AI-CRM Next"
     assert calls == []
-
