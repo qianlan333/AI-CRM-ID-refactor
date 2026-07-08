@@ -174,7 +174,10 @@
         "aicrm_next/auth_wecom/**",
         "tests/test_identity_*.py",
         "tests/test_channel_entry_*.py",
+        "tests/test_channel_identity_bridge_native_service.py",
         "tests/test_next_channel_*.py",
+        "tests/test_wecom_callback_external_effect_boundary.py",
+        "tests/test_wecom_callback_inbox.py",
         "tests/test_auth_wecom_*.py",
         "tests/test_identity_resolution_backfill_worker.py"
       ],
@@ -182,7 +185,11 @@
         "tests/test_identity_application_contract.py",
         "tests/test_channel_entry_identity_best_effort_contract.py",
         "tests/test_identity_resolution_backfill_worker.py",
-        "tests/test_next_channel_entry_orchestrator.py"
+        "tests/test_channel_identity_bridge_native_service.py",
+        "tests/test_next_channel_entry_orchestrator.py",
+        "tests/test_next_channel_identity_bridge.py",
+        "tests/test_wecom_callback_external_effect_boundary.py",
+        "tests/test_wecom_callback_inbox.py"
       ],
       "needs_postgres": true,
       "architecture_gate": "db"
