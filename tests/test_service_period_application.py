@@ -145,6 +145,24 @@ def test_public_state_and_page_use_service_period_slug(next_client) -> None:
     assert "周期课服务" in page.text
 
 
+def test_draft_service_period_slug_renders_owned_preview_without_payment(next_client) -> None:
+    _reset()
+    CreateServicePeriodProductCommand()(ServicePeriodProductCreateRequest(**_payload(product_code="sp_public_draft", status="draft")))
+
+    state = next_client.get("/api/h5/service-period-products/sp_public_draft")
+    assert state.status_code == 404
+
+    page = next_client.get("/s/sp_public_draft")
+    assert page.status_code == 200
+    assert 'data-route-owner="ai_crm_next"' in page.text
+    assert "周期课服务" in page.text
+    assert "暂未开放" in page.text
+    assert "questionnaire not found" not in page.text
+
+    order = next_client.post("/api/h5/service-period-products/sp_public_draft/wechat-pay/jsapi/orders", json={})
+    assert order.status_code == 404
+
+
 def test_grant_or_renew_entitlement_rules_are_idempotent() -> None:
     _reset()
     product = CreateServicePeriodProductCommand()(ServicePeriodProductCreateRequest(**_payload()))["product"]

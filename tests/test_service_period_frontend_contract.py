@@ -169,6 +169,18 @@ def test_service_period_public_page_renders_none_active_and_expired_ctas(next_cl
     assert "上次到期日" in expired_page.text
 
 
+def test_service_period_public_page_keeps_draft_slug_in_service_period_context(next_client) -> None:
+    _reset()
+    _create(next_client, product_code="sp_public_draft", status="draft")
+
+    page = next_client.get("/s/sp_public_draft")
+    assert page.status_code == 200
+    assert "暂未开放" in page.text
+    assert 'button.disabled = true;' in page.text
+    assert "payload && payload.ok !== false" in page.text
+    assert "questionnaire not found" not in page.text
+
+
 def test_service_period_membership_configs_contract(next_client) -> None:
     _reset()
 

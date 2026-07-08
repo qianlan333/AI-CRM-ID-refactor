@@ -81,6 +81,7 @@ class ServicePeriodRepository(Protocol):
     def list_products(self, *, limit: int, offset: int) -> dict[str, Any]: ...
     def create_service_product(self, *, trade_product: dict[str, Any], duration_days: int, membership_config_id: str, membership_config_name: str, link_slug: str, metadata_json: dict[str, Any] | None = None) -> dict[str, Any]: ...
     def get_product(self, service_product_id: str) -> dict[str, Any] | None: ...
+    def get_product_by_slug(self, link_slug: str) -> dict[str, Any] | None: ...
     def get_public_product_by_slug(self, link_slug: str) -> dict[str, Any] | None: ...
     def update_service_product(self, service_product_id: str, *, trade_product: dict[str, Any], duration_days: int, membership_config_id: str, membership_config_name: str, metadata_json: dict[str, Any] | None = None) -> dict[str, Any]: ...
     def copy_service_product(self, service_product_id: str, *, copied_trade_product: dict[str, Any]) -> dict[str, Any]: ...
@@ -144,6 +145,13 @@ class InMemoryServicePeriodRepository:
     def get_product(self, service_product_id: str) -> dict[str, Any] | None:
         row = self._find_product(service_product_id)
         return self._serialize_product(row) if row else None
+
+    def get_product_by_slug(self, link_slug: str) -> dict[str, Any] | None:
+        slug = text(link_slug)
+        for row in self._products:
+            if not row.get("deleted") and text(row.get("link_slug")) == slug:
+                return self._serialize_product(row)
+        return None
 
     def get_public_product_by_slug(self, link_slug: str) -> dict[str, Any] | None:
         slug = text(link_slug)
@@ -581,6 +589,21 @@ class PostgresServicePeriodRepository:
                 (text(service_product_id),),
             ).fetchone()
         return self._serialize_join_row(dict(row)) if row else None
+
+    def get_product_by_slug(self, link_slug: str) -> dict[str, Any] | None:
+        with self._connect() as conn:
+            row = conn.execute(
+                """
+                SELECT sp.id
+                FROM service_period_products sp
+                WHERE sp.tenant_id = 'aicrm'
+                  AND sp.deleted = FALSE
+                  AND sp.link_slug = %s
+                LIMIT 1
+                """,
+                (text(link_slug),),
+            ).fetchone()
+        return self.get_product(text(row.get("id"))) if row else None
 
     def get_public_product_by_slug(self, link_slug: str) -> dict[str, Any] | None:
         with self._connect() as conn:

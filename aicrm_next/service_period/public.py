@@ -26,7 +26,17 @@ def render_service_period_public_page(service_product: dict[str, Any], state: di
     entitlement = state.get("entitlement") if isinstance(state.get("entitlement"), dict) else {}
     status = str(entitlement.get("status") or "none")
     cta_text = escape(str(state.get("cta_text") or ("立即报名" if status == "none" else "")) or "立即报名")
-    if status == "active":
+    unavailable = state.get("available") is False or status == "unavailable"
+    if unavailable:
+        tag_text = "未上架"
+        hero_text = "该周期商品暂未开放"
+        bar_meta = "暂未开放"
+        card_html = f"""
+      <div class="service-period-price"><small>¥</small>{price_yuan}</div>
+      <div class="service-period-line"><span class="service-period-muted">开通后获得</span><strong>{membership_name}</strong></div>
+      <div class="service-period-line"><span class="service-period-muted">有效期</span><strong>{duration_days} 天</strong></div>
+      <p class="service-period-tip">该周期商品尚未上架，暂不可购买。</p>"""
+    elif status == "active":
         tag_text = "使用中"
         hero_text = "当前服务仍在有效期内"
         bar_meta = f"剩余 {int(entitlement.get('remaining_days') or 0)} 天"
@@ -261,10 +271,28 @@ def render_service_period_public_page(service_product: dict[str, Any], state: di
           '<div class="service-period-line"><span class="service-period-muted">' + ["重新", "开通价格 / 有效期"].join("") + '</span><strong>' + priceText + ' / ' + durationDays + ' 天</strong></div>';
         barMeta.textContent = priceText + " / " + durationDays + " 天";
       }}
+      function renderUnavailable() {{
+        tag.textContent = "未上架";
+        heroText.textContent = "该周期商品暂未开放";
+        card.innerHTML = '<div class="service-period-price"><small>¥</small>{price_yuan}</div>' +
+          '<div class="service-period-line"><span class="service-period-muted">开通后获得</span><strong>' + membershipName + '</strong></div>' +
+          '<div class="service-period-line"><span class="service-period-muted">有效期</span><strong>' + durationDays + ' 天</strong></div>' +
+          '<p class="service-period-tip">该周期商品尚未上架，暂不可购买。</p>';
+        barMeta.textContent = "暂未开放";
+      }}
       function applyState(state) {{
+        if (!state || state.ok === false) return;
         const entitlement = state.entitlement || {{status: "none"}};
         const status = entitlement.status || "none";
         button.textContent = state.cta_text || button.textContent || "立即报名";
+        if (state.available === false || status === "unavailable") {{
+          renderUnavailable();
+          button.textContent = state.cta_text || "暂未开放";
+          button.disabled = true;
+          button.onclick = null;
+          return;
+        }}
+        button.disabled = false;
         if (status === "active") renderActive(entitlement);
         else if (status === "expired") renderExpired(entitlement);
         else renderNone();
@@ -299,7 +327,9 @@ def render_service_period_public_page(service_product: dict[str, Any], state: di
       applyState(initialState);
       fetch(window.location.pathname.replace(/^\\/s\\//, "/api/h5/service-period-products/"))
         .then(function (response) {{ return response.json(); }})
-        .then(applyState)
+        .then(function (payload) {{
+          if (payload && payload.ok !== false) applyState(payload);
+        }})
         .catch(function () {{}});
     }})();
   </script>

@@ -21,6 +21,7 @@ from .application import (
     CreateServicePeriodProductCommand,
     DeleteServicePeriodProductCommand,
     GetPublicServicePeriodProductQuery,
+    GetServicePeriodProductBySlugQuery,
     GetServicePeriodProductQuery,
     GetServicePeriodProductStatsQuery,
     GetServicePeriodPublicStateQuery,
@@ -62,6 +63,23 @@ def product_not_found_payload(path: str) -> dict[str, object]:
         "real_external_call_executed": False,
         "payment_request_executed": False,
         "order_create_executed": False,
+    }
+
+
+def _inactive_public_state(product: dict) -> dict:
+    return {
+        "ok": True,
+        "available": False,
+        "product": {
+            "title": product.get("title") or product.get("name"),
+            "price_cents": int(product.get("price_cents") or product.get("amount_total") or 0),
+            "currency": str(product.get("currency") or "CNY"),
+            "duration_days": int(product.get("duration_days") or 0),
+        },
+        "service_product": product,
+        "entitlement": {"status": "unavailable", "remaining_days": 0, "end_at": ""},
+        "cta_text": "暂未开放",
+        "create_order_url": "",
     }
 
 
@@ -310,21 +328,34 @@ def service_period_product_members(
 def public_service_period_product_page(request: Request, link_slug: str):
     try:
         product = GetPublicServicePeriodProductQuery()(link_slug)["product"]
+    except NotFoundError:
+        try:
+            product = GetServicePeriodProductBySlugQuery()(link_slug)["product"]
+        except NotFoundError:
+            from aicrm_next.questionnaire.api import public_questionnaire_h5_page
+
+            try:
+                return public_questionnaire_h5_page(request, link_slug)
+            except HTTPException:
+                raise
+            except Exception:
+                return HTMLResponse(
+                    "<!doctype html><meta charset='utf-8'><main data-route-owner='ai_crm_next'>周期商品不存在</main>",
+                    status_code=404,
+                    headers=route_headers(),
+                )
+        state = _inactive_public_state(product)
+        html = render_service_period_public_page(product, state)
+        return templates.TemplateResponse(request, "service_period_public.html", {"request": request, "html": html}, headers=route_headers())
+    except Exception as exc:
+        _raise_http(exc)
+    try:
         identity = h5_wechat_pay.h5_payment_identity_from_request(request)
         state = GetServicePeriodPublicStateQuery()(link_slug, unionid=str(identity.get("unionid") or ""))
-    except Exception:
-        from aicrm_next.questionnaire.api import public_questionnaire_h5_page
-
-        try:
-            return public_questionnaire_h5_page(request, link_slug)
-        except HTTPException:
-            raise
-        except Exception:
-            return HTMLResponse(
-                "<!doctype html><meta charset='utf-8'><main data-route-owner='ai_crm_next'>周期商品不存在</main>",
-                status_code=404,
-                headers=route_headers(),
-            )
+    except NotFoundError:
+        state = _inactive_public_state(product)
+    except Exception as exc:
+        _raise_http(exc)
     html = render_service_period_public_page(product, state)
     return templates.TemplateResponse(request, "service_period_public.html", {"request": request, "html": html}, headers=route_headers())
 

@@ -91,6 +91,17 @@ class GetPublicServicePeriodProductQuery:
         return {"ok": True, "product": product}
 
 
+class GetServicePeriodProductBySlugQuery:
+    def __init__(self, repo: ServicePeriodRepository | None = None) -> None:
+        self._repo = repo or build_service_period_repository()
+
+    def __call__(self, link_slug: str) -> dict[str, Any]:
+        product = self._repo.get_product_by_slug(link_slug)
+        if not product:
+            raise NotFoundError("service period product not found")
+        return {"ok": True, "product": product}
+
+
 class CreateServicePeriodProductCommand:
     def __init__(self, repo: ServicePeriodRepository | None = None) -> None:
         self._repo = repo or build_service_period_repository()

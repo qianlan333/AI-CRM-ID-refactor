@@ -30,6 +30,7 @@ def test_ci_fast_uses_selector_and_single_required_result() -> None:
     assert "needs.select.outputs.frontend_tests != ''" in source
     assert "needs.select.outputs.needs_frontend_build == 'true'" in source
     assert "bash scripts/ci/run_architecture_gates.sh --mode" in source
+    assert "timeout-minutes: 8" in source
     assert "force_full != 'true'" not in source
     assert not LEGACY_CI_WORKFLOW.exists()
 
