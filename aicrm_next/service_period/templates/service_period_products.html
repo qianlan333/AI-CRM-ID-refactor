@@ -795,10 +795,23 @@
   const esc = (value) => String(value == null ? "" : value).replace(/[&<>'"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" }[c]));
   const money = (value) => (Number(value || 0) / 100).toFixed(2);
   const statusLabel = (value) => ({active: "已上架", draft: "草稿", disabled: "已下架"}[value] || value || "草稿");
+  function formatApiError(value) {
+    if (!value) return "";
+    if (typeof value === "string") return value;
+    if (Array.isArray(value)) return value.map(formatApiError).filter(Boolean).join("；");
+    if (typeof value === "object") {
+      const loc = Array.isArray(value.loc) ? `${value.loc.join(".")}: ` : "";
+      if (value.msg) return `${loc}${value.msg}`;
+      if (value.detail) return formatApiError(value.detail);
+      if (value.error) return formatApiError(value.error);
+      try { return JSON.stringify(value); } catch (_error) { return String(value); }
+    }
+    return String(value);
+  }
   const api = async (url, options) => {
     const response = await fetch(url, Object.assign({credentials: "same-origin"}, options || {}));
     const payload = await response.json().catch(() => ({}));
-    if (!response.ok || payload.ok === false) throw new Error(payload.detail || payload.error || "请求失败");
+    if (!response.ok || payload.ok === false) throw new Error(formatApiError(payload.detail || payload.error) || "请求失败");
     return payload;
   };
   function openShare(share) {
@@ -922,10 +935,23 @@
   };
   const money = (value) => (Number(value || 0) / 100).toFixed(2);
   const statusLabel = (value) => ({active: "已上架", draft: "草稿", disabled: "已下架"}[value] || value || "草稿");
+  function formatApiError(value) {
+    if (!value) return "";
+    if (typeof value === "string") return value;
+    if (Array.isArray(value)) return value.map(formatApiError).filter(Boolean).join("；");
+    if (typeof value === "object") {
+      const loc = Array.isArray(value.loc) ? `${value.loc.join(".")}: ` : "";
+      if (value.msg) return `${loc}${value.msg}`;
+      if (value.detail) return formatApiError(value.detail);
+      if (value.error) return formatApiError(value.error);
+      try { return JSON.stringify(value); } catch (_error) { return String(value); }
+    }
+    return String(value);
+  }
   const api = async (url, options) => {
     const response = await fetch(url, Object.assign({credentials: "same-origin"}, options || {}));
     const payload = await response.json().catch(() => ({}));
-    if (!response.ok || payload.ok === false) throw new Error(payload.detail || payload.error || "请求失败");
+    if (!response.ok || payload.ok === false) throw new Error(formatApiError(payload.detail || payload.error) || "请求失败");
     return payload;
   };
   function showToast(text) { if (toast) toast.textContent = text; }
@@ -1120,8 +1146,7 @@
   function readProductBody() {
     const productCodeValue = productCode();
     const selected = $("membershipConfig").selectedOptions[0];
-    return {
-      product_code: productCodeValue,
+    const body = {
       title: productTitle(),
       description: $("productDescription").value.trim(),
       price_cents: cents($("productPrice").value),
@@ -1135,6 +1160,8 @@
       ...completionRedirectPayload(),
       slices: (product.slices || []).map((slice, index) => ({image_library_id: Number(slice.image_library_id), sort_order: index + 1}))
     };
+    if (mode === "new") body.product_code = productCodeValue;
+    return body;
   }
   function renderSlices() {
     const target = $("sliceList");

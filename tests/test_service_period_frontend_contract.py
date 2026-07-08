@@ -95,6 +95,9 @@ def test_service_period_edit_page_keeps_four_existing_dimensions_only(next_clien
     assert "/api/admin/wechat-pay/products/${encodeURIComponent(tradeId)}/external-push" in text
     assert "image_upload_client.js" in text
     assert "prepareImageForUpload(file)" in text
+    assert 'if (mode === "new") body.product_code = productCodeValue;' in text
+    assert "formatApiError(payload.detail || payload.error)" in text
+    assert "product_code: productCodeValue" not in text
     for forbidden in (
         "购买按钮文案",
         "周期设置",

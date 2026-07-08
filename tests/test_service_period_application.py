@@ -100,6 +100,33 @@ def test_create_update_copy_disable_delete_facade(next_client) -> None:
     assert "/s/sp_course_001" in share.json()["share"]["url"]
 
 
+def test_update_service_period_product_persists_page_slices(next_client) -> None:
+    _reset()
+    created = next_client.post("/api/admin/service-period-products", json=_payload(product_code="sp_course_slices"))
+    assert created.status_code == 201
+    product = created.json()["product"]
+    image_id = 11
+
+    updated = next_client.put(
+        f"/api/admin/service-period-products/{product['id']}",
+        json={
+            "title": product["title"],
+            "duration_days": product["duration_days"],
+            "membership_config_id": product["membership_config_id"],
+            "membership_config_name": product["membership_config_name"],
+            "slices": [{"image_library_id": image_id, "sort_order": 1}],
+        },
+    )
+
+    assert updated.status_code == 200, updated.text
+    slices = updated.json()["product"]["trade_product"]["slices"]
+    assert [item["image_library_id"] for item in slices] == [image_id]
+
+    detail = next_client.get(f"/api/admin/service-period-products/{product['id']}")
+    assert detail.status_code == 200
+    assert [item["image_library_id"] for item in detail.json()["product"]["trade_product"]["slices"]] == [image_id]
+
+
 def test_public_state_and_page_use_service_period_slug(next_client) -> None:
     _reset()
     CreateServicePeriodProductCommand()(ServicePeriodProductCreateRequest(**_payload(product_code="sp_public_001")))
