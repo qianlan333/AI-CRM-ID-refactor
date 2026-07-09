@@ -278,16 +278,38 @@
       "name": "admin_auth_security",
       "paths": [
         "aicrm_next/admin_auth/**",
+        "aicrm_next/frontend_compat/templates/admin_console/login.html",
         "tests/test_admin_auth_*.py",
         "tests/test_admin_routes_require_auth.py"
       ],
       "python_tests": [
         "tests/test_admin_routes_require_auth.py",
+        "tests/test_admin_auth_login_pages.py",
         "tests/test_admin_auth_login_submit.py",
         "tests/test_admin_auth_logout.py"
       ],
       "needs_postgres": true,
       "architecture_gate": "db"
+    },
+    {
+      "name": "admin_config",
+      "paths": [
+        "aicrm_next/admin_config/**",
+        "aicrm_next/frontend_compat/static/admin_console/config_center.css",
+        "aicrm_next/frontend_compat/static/admin_console/config_center.js",
+        "aicrm_next/frontend_compat/templates/admin_console/config_*.html",
+        "tests/test_admin_config_next.py",
+        "tests/test_operation_member_picker_frontend.py",
+        "tests/test_admin_pages_real_data_binding.py"
+      ],
+      "python_tests": [
+        "tests/test_admin_config_next.py",
+        "tests/test_operation_member_picker_frontend.py",
+        "tests/test_admin_auth_login_pages.py",
+        "tests/test_admin_pages_real_data_binding.py"
+      ],
+      "needs_postgres": false,
+      "architecture_gate": "fast"
     },
     {
       "name": "wecom_tag_catalog_write",

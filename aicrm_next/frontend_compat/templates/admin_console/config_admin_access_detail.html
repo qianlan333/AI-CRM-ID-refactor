@@ -1,0 +1,381 @@
+{% extends "admin_console/base.html" %}
+
+{% set category = config_category_detail.category %}
+{% set selected_member_label = (form_row.display_name or form_row.wecom_userid or "") %}
+
+{% block head_extra %}
+<link rel="stylesheet" href="{{ url_for('static', filename='admin_console/config_center.css') }}?v=config-center-shell-20260611">
+{% endblock %}
+
+{% block content %}
+<section
+  class="cc-page cc-detail"
+  data-config-detail
+  data-admin-access-detail
+  data-category-key="{{ category.key }}"
+  data-admin-action-token="{{ admin_action_token }}"
+>
+  <div class="cc-alert" data-config-alert hidden></div>
+
+  <div class="cc-detail-top">
+    <div class="cc-detail-title">{{ category.label }}</div>
+
+    <div class="cc-detail-state">
+      <span class="cc-state{% if category.enabled %} is-on{% endif %}" data-category-status>
+        {{ "已生效" if category.enabled else "未生效" }}
+      </span>
+      <label class="cc-switch">
+        <input
+          type="checkbox"
+          data-category-enabled
+          data-category-key="{{ category.key }}"
+          {% if category.enabled %}checked{% endif %}
+        >
+        <span class="cc-slider"></span>
+      </label>
+    </div>
+
+    <a class="cc-btn" href="/admin/config">返回</a>
+  </div>
+
+  <form class="cc-form" data-config-settings-form>
+    {% for block in config_category_detail.blocks %}
+    <section class="cc-card cc-block" data-config-detail-block>
+      <div class="cc-card-h">
+        <h2>{{ block.title }}</h2>
+      </div>
+
+      <div class="cc-table-wrap">
+        <table class="cc-table cc-field-table">
+          <tbody>
+            {% for field in block.fields %}
+            {% set is_boolean = field.type == "boolean" or field.key.endswith("_ENABLED") %}
+            {% set normalized_value = (field.value or field.display_value or "") | lower %}
+            <tr>
+              <th>{{ field.label }}</th>
+              <td>
+                {% if is_boolean %}
+                <label class="cc-switch">
+                  <input
+                    type="checkbox"
+                    data-config-field
+                    data-field-key="{{ field.key }}"
+                    data-field-type="boolean"
+                    {% if normalized_value in ["true", "1", "yes", "on"] %}checked{% endif %}
+                    {% if field.readonly %}disabled{% endif %}
+                  >
+                  <span class="cc-slider"></span>
+                </label>
+                {% elif field.sensitive %}
+                <input
+                  class="cc-input"
+                  type="password"
+                  data-config-field
+                  data-field-key="{{ field.key }}"
+                  placeholder="{{ '已设置' if field.configured else '未设置' }}"
+                  autocomplete="new-password"
+                  {% if field.readonly %}readonly{% endif %}
+                >
+                {% elif field.readonly %}
+                <input
+                  class="cc-input is-readonly"
+                  type="text"
+                  data-config-field
+                  data-field-key="{{ field.key }}"
+                  value="{{ field.display_value or field.value }}"
+                  readonly
+                >
+                {% elif field.input_type == "textarea" %}
+                <textarea
+                  class="cc-input cc-textarea"
+                  data-config-field
+                  data-field-key="{{ field.key }}"
+                >{{ field.value }}</textarea>
+                {% elif field.input_type == "number" or field.type == "integer" %}
+                <input
+                  class="cc-input"
+                  type="number"
+                  data-config-field
+                  data-field-key="{{ field.key }}"
+                  value="{{ field.value }}"
+                >
+                {% else %}
+                <input
+                  class="cc-input"
+                  type="text"
+                  data-config-field
+                  data-field-key="{{ field.key }}"
+                  value="{{ field.value }}"
+                >
+                {% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
+    {% endfor %}
+
+    <div class="cc-bottom-actions">
+      <a class="cc-btn" href="/admin/config">取消</a>
+      {% if category.check_supported %}
+      <button class="cc-btn cc-btn-secondary" type="button" data-config-check>检查</button>
+      {% endif %}
+      <button class="cc-btn cc-btn-primary" type="submit">保存配置</button>
+    </div>
+  </form>
+
+  <section class="cc-card cc-block">
+    <div class="cc-card-h">
+      <h2>访问概览</h2>
+      {% if can_manage_accounts %}
+      <form method="post" action="/admin/config/login-access/directory/refresh">
+        <input type="hidden" name="admin_action_token" value="{{ admin_action_token }}">
+        <button class="cc-btn cc-btn-secondary" type="submit">刷新企微通讯录</button>
+      </form>
+      {% endif %}
+    </div>
+    <div class="cc-access-summary">
+      <div>
+        <span>认证模式</span>
+        <strong>{{ auth_mode }}</strong>
+      </div>
+      <div>
+        <span>当前企业 ID</span>
+        <strong>{{ corp_id or "-" }}</strong>
+      </div>
+      <div>
+        <span>已授权成员</span>
+        <strong>{{ rows|length }}</strong>
+      </div>
+      <div>
+        <span>本地应急入口</span>
+        <strong>{{ "已开启" if break_glass_enabled else "默认关闭" }}</strong>
+      </div>
+    </div>
+  </section>
+
+  <section class="cc-card cc-block">
+    <div class="cc-card-h">
+      <h2>超级管理员</h2>
+    </div>
+    {% if super_admin_rows %}
+    <div class="cc-table-wrap">
+      <table class="cc-table cc-access-table">
+        <thead>
+          <tr>
+            <th>企微成员</th>
+            <th>显示名称</th>
+            <th>登录状态</th>
+            <th>最近登录</th>
+            <th>更新人</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in super_admin_rows %}
+          <tr>
+            <td><code>{{ row.wecom_userid }}</code></td>
+            <td>{{ row.display_name }}</td>
+            <td>{{ "允许登录" if row.login_enabled else "禁止登录" }}</td>
+            <td>{{ row.last_login_at or "-" }}</td>
+            <td>{{ row.updated_by or "-" }}</td>
+            <td>
+              {% if can_manage_super_admin %}
+              <a class="cc-inline-link" href="/admin/config/detail/admin_access?edit_id={{ row.id }}">编辑</a>
+              {% else %}
+              <span>-</span>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="cc-empty-state">
+      <strong>尚未设置超级管理员</strong>
+      <span>请用应急入口或初始化流程设置第一个超级管理员。</span>
+    </div>
+    {% endif %}
+  </section>
+
+  <section class="cc-card cc-block">
+    <div class="cc-access-layout">
+      <div class="cc-access-list">
+        <div class="cc-card-h">
+          <h2>后台授权成员</h2>
+        </div>
+        <div class="cc-table-wrap">
+          <table class="cc-table cc-access-table">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>企微成员</th>
+                <th>显示名称</th>
+                <th>层级</th>
+                <th>角色</th>
+                <th>登录状态</th>
+                <th>最近登录</th>
+                <th>授权来源</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for row in admin_rows %}
+              <tr>
+                <td>{{ row.id }}</td>
+                <td><code>{{ row.wecom_userid }}</code></td>
+                <td>{{ row.display_name }}</td>
+                <td>{{ row.admin_level_label }}</td>
+                <td>{{ row.roles_display }}</td>
+                <td>{{ "允许登录" if row.login_enabled else "禁止登录" }}</td>
+                <td>{{ row.last_login_at or "-" }}</td>
+                <td>{{ row.auth_source }}</td>
+                <td>
+                  {% if can_manage_accounts %}
+                  <a class="cc-inline-link" href="/admin/config/detail/admin_access?edit_id={{ row.id }}">编辑</a>
+                  {% else %}
+                  <span>-</span>
+                  {% endif %}
+                </td>
+              </tr>
+              {% else %}
+              <tr>
+                <td colspan="9">暂无普通授权成员</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <aside class="cc-access-editor">
+        <div class="cc-card-h">
+          <h2>{{ "编辑授权成员" if form_row.id else "新增授权成员" }}</h2>
+        </div>
+
+        {% if can_manage_form %}
+        <form class="cc-access-form" method="post" action="/admin/config/login-access/save" data-admin-access-form>
+          <input type="hidden" name="id" value="{{ form_row.id or '' }}">
+          <input type="hidden" name="admin_action_token" value="{{ admin_action_token }}">
+          <input type="hidden" name="auth_source" value="{{ form_row.auth_source or 'wecom_sso' }}">
+          <input type="hidden" name="is_active" value="1">
+          <input type="hidden" name="wecom_userid" value="{{ form_row.wecom_userid or '' }}" data-admin-access-wecom-userid required>
+
+          <label>
+            <span>企微成员</span>
+            <div class="cc-member-field" data-admin-access-member-field>
+              <div class="cc-member-current" data-admin-access-member-current>
+                {% if form_row.wecom_userid %}
+                {{ selected_member_label }} / {{ form_row.wecom_userid }}
+                {% else %}
+                未选择企微成员
+                {% endif %}
+              </div>
+              <button class="cc-btn cc-btn-secondary" type="button" data-admin-access-member-picker>
+                {{ "更换企微成员" if form_row.wecom_userid else "选择企微成员" }}
+              </button>
+            </div>
+            <small>从企微成员选择器选择可访问后台的人，不需要手动输入客服 ID。</small>
+          </label>
+
+          <label>
+            <span>显示名称</span>
+            <input class="cc-input" type="text" name="display_name" value="{{ form_row.display_name or '' }}" placeholder="默认取选择器姓名" data-admin-access-display-name>
+          </label>
+          <label>
+            <span>企业 ID</span>
+            <input class="cc-input" type="text" name="wecom_corpid" value="{{ form_row.wecom_corpid or corp_id or '' }}" placeholder="默认使用当前企业 ID">
+          </label>
+          <label>
+            <span>管理员层级</span>
+            <select class="cc-input" name="admin_level" required>
+              <option value="admin" {% if (form_row.admin_level or 'admin') == 'admin' %}selected{% endif %}>管理员</option>
+              {% if can_manage_super_admin %}
+              <option value="super_admin" {% if form_row.admin_level == 'super_admin' %}selected{% endif %}>超级管理员</option>
+              {% endif %}
+            </select>
+            <small>超级管理员全公司唯一；转让会把原超级管理员降为普通管理员。</small>
+          </label>
+          <label class="cc-checkbox">
+            <input type="checkbox" name="login_enabled" value="1" {% if form_row.login_enabled is not defined or form_row.login_enabled %}checked{% endif %}>
+            <span>允许登录后台</span>
+          </label>
+          <div class="cc-role-grid">
+            <span>角色分配</span>
+            <div>
+              {% for option in role_options %}
+              <label class="cc-checkbox">
+                <input type="checkbox" name="role_codes" value="{{ option.value }}" {% if option.value in (form_row.roles or []) %}checked{% endif %}>
+                <span>{{ option.label }}</span>
+              </label>
+              {% endfor %}
+            </div>
+          </div>
+          {% if can_manage_super_admin %}
+          <label class="cc-checkbox">
+            <input type="checkbox" name="confirm_super_admin_transfer" value="1">
+            <span>确认转让超级管理员</span>
+          </label>
+          {% endif %}
+          <label>
+            <span>操作人</span>
+            <input class="cc-input" type="text" name="operator" placeholder="默认取当前登录账号">
+          </label>
+          <div class="cc-access-actions">
+            <button class="cc-btn cc-btn-primary" type="submit">{{ "保存授权成员" if form_row.id else "创建授权成员" }}</button>
+          </div>
+        </form>
+        {% else %}
+        <div class="cc-empty-state">
+          <strong>只读访问</strong>
+          <span>当前账号没有修改该成员的权限；普通管理员不能创建、转让或编辑超级管理员。</span>
+        </div>
+        {% endif %}
+      </aside>
+    </div>
+  </section>
+
+  <section class="cc-card cc-block">
+    <div class="cc-card-h">
+      <h2>最近登录审计</h2>
+    </div>
+    <div class="cc-table-wrap">
+      <table class="cc-table cc-access-table">
+        <thead>
+          <tr>
+            <th>时间</th>
+            <th>成员</th>
+            <th>登录方式</th>
+            <th>结果</th>
+            <th>IP</th>
+            <th>客户端信息</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in login_audit_rows %}
+          <tr>
+            <td>{{ row.created_at }}</td>
+            <td>{{ row.display_name or row.wecom_userid or "-" }}</td>
+            <td><code>{{ row.login_type }}</code></td>
+            <td><code>{{ row.login_result }}</code></td>
+            <td>{{ row.ip or "-" }}</td>
+            <td>{{ row.user_agent or "-" }}</td>
+          </tr>
+          {% else %}
+          <tr>
+            <td colspan="6">暂无登录审计记录</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+</section>
+{% endblock %}
+
+{% block scripts_extra %}
+<script defer src="{{ url_for('static', filename='admin_console/config_center.js') }}?v=config-center-shell-20260611"></script>
+{% endblock %}

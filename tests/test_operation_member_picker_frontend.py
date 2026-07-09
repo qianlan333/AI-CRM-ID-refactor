@@ -16,6 +16,8 @@ OPERATIONS_TEMPLATE = ROOT / "aicrm_next/frontend_compat/templates/admin_console
 JOBS_TEMPLATE = ROOT / "aicrm_next/frontend_compat/templates/admin_console/jobs.html"
 ADMIN_JOBS_TEMPLATE = ROOT / "aicrm_next/admin_jobs/templates/admin_console/jobs.html"
 ADMIN_JOBS_BASE = ROOT / "aicrm_next/admin_jobs/templates/admin_console/base.html"
+CONFIG_CENTER_JS = ROOT / "aicrm_next/frontend_compat/static/admin_console/config_center.js"
+ADMIN_ACCESS_TEMPLATE = ROOT / "aicrm_next/frontend_compat/templates/admin_console/config_admin_access_detail.html"
 AI_ASSISTANT_SOURCES = [
     ROOT / "aicrm_next/frontend_compat/static/admin_console/automation_agent_config.js",
     ROOT / "aicrm_next/frontend_compat/static/admin_console/automation_agent_config_channel_model.js",
@@ -131,12 +133,15 @@ def test_business_pages_use_operation_member_picker_instead_of_visible_userid_in
     admin_jobs = _read(ADMIN_JOBS_TEMPLATE)
     admin_jobs_base = _read(ADMIN_JOBS_BASE)
     base_template = _read(BASE_TEMPLATE)
+    config_center = _read(CONFIG_CENTER_JS)
+    admin_access = _read(ADMIN_ACCESS_TEMPLATE)
 
     assert "OperationMemberPicker.open" in group_ops
     assert "OperationMemberPicker.open" in channel_js
     assert "OperationMemberPicker.open" in operations
     assert "OperationMemberPicker.open" in jobs
     assert "OperationMemberPicker.open" in admin_jobs
+    assert "OperationMemberPicker.open" in config_center
     assert "operation_member_picker.js') }}?v=operation-member-picker-fix-20260527" in base_template
     assert "operation_member_picker.js') }}?v=operation-member-picker-fix-20260527" in admin_jobs_base
     assert "admin_console.css') }}?v=operation-member-picker-fix-20260527" in base_template
@@ -167,6 +172,11 @@ def test_business_pages_use_operation_member_picker_instead_of_visible_userid_in
         assert "请输入 userID" not in source
         assert "请输入 userid" not in source.lower()
 
+    assert 'type="hidden" name="wecom_userid"' in admin_access
+    assert 'type="text" name="wecom_userid"' not in admin_access
+    assert '<select name="wecom_userid"' not in admin_access
+    assert "data-admin-access-member-picker" in admin_access
+    assert "手动输入客服 ID" in admin_access
     assert 'type="hidden" name="owner_staff_id"' in channel_form
     assert 'type="text" name="owner_staff_id"' not in channel_form
     assert 'placeholder="sales_01"' not in channel_form
