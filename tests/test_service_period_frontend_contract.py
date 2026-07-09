@@ -211,6 +211,20 @@ def test_service_period_public_page_renders_none_active_and_expired_ctas(next_cl
     assert "上次到期日" in expired_page.text
 
 
+def test_service_period_public_page_starts_oauth_before_state_in_wechat(next_client) -> None:
+    _reset()
+    _create(next_client, product_code="sp_public_auth_gate")
+
+    response = next_client.get(
+        "/s/sp_public_auth_gate",
+        headers={"User-Agent": "Mozilla/5.0 MicroMessenger"},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 302
+    assert response.headers["location"] == "/api/h5/wechat-pay/oauth/start?return_url=%2Fs%2Fsp_public_auth_gate"
+
+
 def test_service_period_pay_page_reuses_public_pay_confirmation_contract(next_client, monkeypatch) -> None:
     _reset()
     _create(next_client, product_code="sp_public_pay_mobile", require_mobile=True)
@@ -229,6 +243,8 @@ def test_service_period_pay_page_reuses_public_pay_confirmation_contract(next_cl
     assert "授权登录" not in after_auth.text
     assert 'id="mobileInput"' in after_auth.text
     assert "/api/h5/service-period-products/sp_public_pay_mobile/wechat-pay/jsapi/orders" in after_auth.text
+    assert '"post_paid_redirect_url": "/s/sp_public_pay_mobile"' in after_auth.text
+    assert "支付成功，正在刷新服务期..." in after_auth.text
     assert 'WeixinJSBridge.invoke("getBrandWCPayRequest"' in after_auth.text
     assert "请填写 11 位手机号后再继续。" in after_auth.text
 

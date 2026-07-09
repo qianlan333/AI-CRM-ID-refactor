@@ -634,6 +634,11 @@ def _pay_page_script(state_json: str) -> str:
         return /^https:\\/\\//.test(url) || /^\\/(?!\\/)[^\\s\\\\]*$/.test(url);
       }}
 
+      function postPaidRedirectUrl() {{
+        const url = String(state.post_paid_redirect_url || "");
+        return url && isSafeRedirectUrl(url) ? url : "";
+      }}
+
       function escapeAttr(value) {{
         return String(value || "")
           .replace(/&/g, "&amp;")
@@ -798,6 +803,12 @@ def _pay_page_script(state_json: str) -> str:
         if (completionAction.type === "redirect" && completionAction.redirect_url) {{
           setState("报名成功，正在跳转...", "success");
           window.location.href = completionAction.redirect_url;
+          return;
+        }}
+        const servicePeriodRedirect = postPaidRedirectUrl();
+        if (servicePeriodRedirect) {{
+          setState("支付成功，正在刷新服务期...", "success");
+          window.location.href = servicePeriodRedirect;
           return;
         }}
         if (checkoutCard) checkoutCard.style.display = "none";

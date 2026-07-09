@@ -7,7 +7,7 @@ from urllib.parse import quote
 
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.encoders import jsonable_encoder
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
 from aicrm_next.admin_shell import shell_context
@@ -105,6 +105,7 @@ def _service_period_checkout_state(product: dict, request: Request, public_state
     identity = h5_wechat_pay.h5_payment_identity_from_request(request)
     link_slug = str(product.get("link_slug") or "").strip()
     checkout_path = f"/s/{link_slug}/pay"
+    public_path = f"/s/{quote(link_slug, safe='')}"
     checkout_product = _service_period_checkout_product(product, public_state)
     return {
         "product": {
@@ -117,6 +118,7 @@ def _service_period_checkout_state(product: dict, request: Request, public_state
         "oauth_start_url": h5_wechat_pay.payment_oauth_start_url(checkout_path),
         "create_order_url": f"/api/h5/service-period-products/{link_slug}/wechat-pay/jsapi/orders",
         "status_url_template": "/api/h5/wechat-pay/orders/{out_trade_no}",
+        "post_paid_redirect_url": public_path,
         "enabled": h5_wechat_pay._env_bool("WECHAT_PAY_ENABLED", False),
         "require_mobile": bool(checkout_product.get("require_mobile")),
         "cta_text": str(public_state.get("cta_text") or "确认支付"),
@@ -397,6 +399,12 @@ def public_service_period_product_page(request: Request, link_slug: str):
         _raise_http(exc)
     try:
         identity = h5_wechat_pay.h5_payment_identity_from_request(request)
+        if not identity.get("openid") and h5_wechat_pay._is_wechat_browser(request):
+            return RedirectResponse(
+                h5_wechat_pay.payment_oauth_start_url(f"/s/{quote(str(link_slug or '').strip(), safe='')}"),
+                status_code=302,
+                headers=route_headers(),
+            )
         state = GetServicePeriodPublicStateQuery()(link_slug, unionid=str(identity.get("unionid") or ""))
     except NotFoundError:
         state = _inactive_public_state(product)
