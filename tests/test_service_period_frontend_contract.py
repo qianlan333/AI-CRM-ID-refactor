@@ -168,6 +168,12 @@ def test_service_period_data_page_has_only_data_contract(next_client) -> None:
     assert "前端周期服务数据" in text
     assert "查看有效用户、到期用户和续费订单。" in text
     assert "导出数据" in text
+    product_card = text[
+        text.index('class="admin-card service-period-product-card"') : text.index('class="service-period-stats-grid"')
+    ]
+    assert 'href="/admin/service-period-products">返回列表</a>' in product_card
+    assert 'id="exportMembersBtn"' in product_card
+    assert "service-period-inline-actions" not in text
     for label in ("有效用户", "7 天内到期", "续费订单", "累计金额", "会员列表"):
         assert label in text
     for header in ("会员", "状态", "剩余有效期", "到期日", "最近订单", "操作"):

@@ -7,8 +7,7 @@
 <style>
   .service-period-admin { display: grid; gap: 14px; }
   .service-period-toolbar,
-  .service-period-actions,
-  .service-period-inline-actions {
+  .service-period-actions {
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -364,6 +363,10 @@
     gap: 16px;
     align-items: center;
   }
+  .service-period-data-actions {
+    flex: 0 0 auto;
+    justify-content: flex-end;
+  }
   .service-period-product-main {
     display: flex;
     align-items: center;
@@ -717,10 +720,6 @@
   </div>
   {% elif page_mode == "data" %}
   {% set product = initial_product %}
-  <div class="service-period-inline-actions" style="justify-content:flex-end;">
-    <a class="admin-button admin-button--ghost" href="/admin/service-period-products">返回列表</a>
-    <button class="admin-button admin-button--primary" id="exportMembersBtn" type="button">导出数据</button>
-  </div>
   <section class="admin-card service-period-product-card">
     <div class="service-period-product-main">
       <div class="service-period-cover">{{ (product.title or product.name or "周期商品")[:12] }}</div>
@@ -728,6 +727,10 @@
         <h2 style="margin:0;font-size:18px;">{{ product.title or product.name }} <span class="service-period-pill {{ product.status }}">{{ {"active":"已上架","draft":"草稿","disabled":"已下架"}.get(product.status, product.status) }}</span></h2>
         <p class="service-period-muted">绑定：{{ product.membership_config_name or "默认会员设置" }} · 价格：¥{{ "%.2f"|format((product.price_cents or product.amount_total or 0) / 100) }} / {{ product.duration_days or 0 }} 天</p>
       </div>
+    </div>
+    <div class="service-period-actions service-period-data-actions">
+      <a class="admin-button admin-button--ghost" href="/admin/service-period-products">返回列表</a>
+      <button class="admin-button admin-button--primary" id="exportMembersBtn" type="button">导出数据</button>
     </div>
   </section>
   <div class="service-period-stats-grid">
