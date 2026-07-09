@@ -34,6 +34,7 @@ def test_wecom_callback_ingress_runtime_only_exposes_callback_and_health_routes(
     assert "/admin/webhook-inbox" not in paths
     assert health.status_code == 200
     assert health.json()["runtime"] == "ai_crm_wecom_ingress"
+    assert health.json()["time_sensitive_inline_enabled"] is True
     assert health.headers["X-AICRM-App"] == "ai_crm_wecom_ingress"
     assert admin.status_code == 404
 

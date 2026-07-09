@@ -100,6 +100,26 @@ def test_identity_contact_change_selects_pg_and_db_architecture_gate() -> None:
     assert result["architecture_gate"] == "db"
 
 
+def test_wecom_callback_ops_change_selects_identity_contact_slice() -> None:
+    result = _select(
+        "scripts/ops/check_wecom_callback_deploy_smoke.py",
+        "scripts/ops/check_wecom_callback_permanent_fix_readiness.py",
+        "scripts/ops/prepare_wecom_callback_ingress_cutover.py",
+        "tests/test_wecom_callback_deploy_smoke.py",
+        "tests/test_wecom_callback_ingress_runtime.py",
+        "tests/test_wecom_callback_permanent_fix_readiness.py",
+    )
+
+    assert result["matched_scopes"] == ["identity_contact"]
+    assert "tests/test_wecom_callback_inbox.py" in result["python_tests"]
+    assert "tests/test_wecom_callback_deploy_smoke.py" in result["python_tests"]
+    assert "tests/test_wecom_callback_ingress_runtime.py" in result["python_tests"]
+    assert "tests/test_wecom_callback_permanent_fix_readiness.py" in result["python_tests"]
+    assert result["unmatched_files"] == []
+    assert result["needs_postgres"] is True
+    assert result["architecture_gate"] == "db"
+
+
 def test_sidebar_write_change_selects_write_command_regression() -> None:
     result = _select("aicrm_next/sidebar_write/repo.py")
 
@@ -214,7 +234,7 @@ def test_operation_member_wecom_sync_change_selects_admin_config_and_db_scope() 
 
     assert "admin_config" in result["matched_scopes"]
     assert "migration_db" in result["matched_scopes"]
-    assert "ci_deploy" in result["matched_scopes"]
+    assert "ci_scope_selector" in result["matched_scopes"]
     assert "tests/test_wecom_operation_members_sync.py" in result["python_tests"]
     assert "tests/test_operation_member_picker_frontend.py" in result["python_tests"]
     assert result["unmatched_files"] == []
@@ -255,6 +275,16 @@ def test_ci_change_selects_contract_tests_and_full_gate() -> None:
     assert result["needs_postgres"] is False
     assert result["architecture_gate"] == "full"
     assert result["needs_full_ci"] is True
+
+
+def test_ci_manifest_change_selects_lightweight_selector_scope() -> None:
+    result = _select("docs/ci/test_scope_manifest.yml", "tests/test_select_test_scope.py")
+
+    assert result["matched_scopes"] == ["ci_scope_selector"]
+    assert result["python_tests"] == ["tests/test_select_test_scope.py", "tests/test_ci_workflow_contract.py"]
+    assert result["unmatched_files"] == []
+    assert result["needs_postgres"] is False
+    assert result["architecture_gate"] == "full"
 
 
 def test_frontend_typescript_change_runs_frontend_tests_and_build() -> None:
