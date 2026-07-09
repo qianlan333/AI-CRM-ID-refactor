@@ -43,22 +43,7 @@ jobs:
             source /home/ubuntu/.openclaw-wecom-pg.env
             set +a
             # 1) AI-CRM Next schema migrations
-            sudo systemctl stop openclaw-broadcast-queue-worker.timer || true
-            sudo systemctl stop openclaw-broadcast-queue-worker.service || true
-            sudo systemctl stop aicrm-wechat-shop-order-sync.timer || true
-            sudo systemctl stop aicrm-wechat-shop-order-sync.service || true
-            sudo systemctl stop openclaw-internal-event-worker.timer || true
-            sudo systemctl stop openclaw-internal-event-worker.service || true
-            sudo systemctl stop openclaw-external-effect-worker.timer || true
-            sudo systemctl stop openclaw-external-effect-worker.service || true
-            sudo systemctl stop openclaw-wechat-pay-order-reconciliation-worker.timer || true
-            sudo systemctl stop openclaw-wechat-pay-order-reconciliation-worker.service || true
-            sudo systemctl stop openclaw-identity-resolution-worker.timer || true
-            sudo systemctl stop openclaw-identity-resolution-worker.service || true
-            sudo systemctl stop openclaw-wecom-callback-inbox-worker.timer || true
-            sudo systemctl stop openclaw-wecom-callback-inbox-worker.service || true
-            sudo systemctl stop openclaw-ai-audience-scheduler.timer || true
-            sudo systemctl stop openclaw-ai-audience-scheduler.service || true
+            python3 scripts/ops/manage_production_runtime_units.py --phase stop-for-migration --execute
             python3 -m alembic upgrade head
             # Production currently uses the openclaw-* compatible 5001 web unit.
             # Stop the canonical alias if it exists so both units cannot bind 5001.
@@ -116,78 +101,6 @@ jobs:
               sudo journalctl -u openclaw-wecom-postgres.service -n 120 --no-pager || true
               exit 1
             fi
-            sudo cp deploy/openclaw-external-push-worker.service /etc/systemd/system/
-            sudo cp deploy/openclaw-external-push-worker.timer /etc/systemd/system/
-            sudo cp deploy/openclaw-broadcast-queue-worker.service /etc/systemd/system/
-            sudo cp deploy/openclaw-broadcast-queue-worker.timer /etc/systemd/system/
-            sudo cp deploy/aicrm-wechat-shop-order-sync.service /etc/systemd/system/
-            sudo cp deploy/aicrm-wechat-shop-order-sync.timer /etc/systemd/system/
-            sudo cp deploy/openclaw-internal-event-worker.service /etc/systemd/system/
-            sudo cp deploy/openclaw-internal-event-worker.timer /etc/systemd/system/
-            sudo cp deploy/openclaw-external-effect-worker.service /etc/systemd/system/
-            sudo cp deploy/openclaw-external-effect-worker.timer /etc/systemd/system/
-            sudo cp deploy/openclaw-wechat-pay-order-reconciliation-worker.service /etc/systemd/system/
-            sudo cp deploy/openclaw-wechat-pay-order-reconciliation-worker.timer /etc/systemd/system/
-            sudo cp deploy/openclaw-identity-resolution-worker.service /etc/systemd/system/
-            sudo cp deploy/openclaw-identity-resolution-worker.timer /etc/systemd/system/
-            sudo cp deploy/openclaw-wecom-callback-ingress.service /etc/systemd/system/
-            sudo cp deploy/openclaw-wecom-callback-inbox-worker.service /etc/systemd/system/
-            sudo cp deploy/openclaw-wecom-callback-inbox-worker.timer /etc/systemd/system/
-            sudo cp deploy/openclaw-ai-audience-scheduler.service /etc/systemd/system/
-            sudo cp deploy/openclaw-ai-audience-scheduler.timer /etc/systemd/system/
-            sudo systemctl daemon-reload
-            sudo systemctl enable openclaw-wecom-callback-ingress.service
-            sudo systemctl restart openclaw-wecom-callback-ingress.service
-            for _ in $(seq 1 20); do
-              if curl -sSf http://127.0.0.1:5002/health; then
-                break
-              fi
-              sleep 0.5
-            done
-            curl -sSf http://127.0.0.1:5002/health
-            sudo systemctl enable openclaw-wecom-callback-inbox-worker.timer
-            sudo systemctl restart openclaw-wecom-callback-inbox-worker.timer
-            sudo systemctl status openclaw-wecom-callback-ingress.service --no-pager
-            sudo systemctl status openclaw-wecom-callback-inbox-worker.timer --no-pager
+            python3 scripts/ops/manage_production_runtime_units.py --phase install-enable-after-web-health --execute
             python scripts/ops/check_wecom_callback_deploy_smoke.py | tee /tmp/wecom-callback-deploy-smoke.json
-            sudo systemctl enable openclaw-external-push-worker.timer
-            sudo systemctl restart openclaw-external-push-worker.timer
-            sudo systemctl start openclaw-external-push-worker.service
-            sudo systemctl status openclaw-external-push-worker.timer --no-pager
-            sudo systemctl enable aicrm-wechat-shop-order-sync.timer
-            sudo systemctl restart aicrm-wechat-shop-order-sync.timer
-            if ! sudo systemctl start aicrm-wechat-shop-order-sync.service; then
-              sudo systemctl status aicrm-wechat-shop-order-sync.service --no-pager || true
-              sudo journalctl -u aicrm-wechat-shop-order-sync.service -n 80 --no-pager || true
-            fi
-            sudo systemctl status aicrm-wechat-shop-order-sync.timer --no-pager
-            sudo systemctl enable openclaw-ai-audience-scheduler.timer
-            sudo systemctl restart openclaw-ai-audience-scheduler.timer
-            if ! sudo systemctl start openclaw-ai-audience-scheduler.service; then
-              sudo systemctl status openclaw-ai-audience-scheduler.service --no-pager || true
-              sudo journalctl -u openclaw-ai-audience-scheduler.service -n 80 --no-pager || true
-            fi
-            sudo systemctl status openclaw-ai-audience-scheduler.timer --no-pager
-            sudo systemctl enable openclaw-broadcast-queue-worker.timer
-            sudo systemctl restart openclaw-broadcast-queue-worker.timer
-            if ! sudo systemctl start openclaw-broadcast-queue-worker.service; then
-              sudo systemctl status openclaw-broadcast-queue-worker.service --no-pager || true
-              sudo journalctl -u openclaw-broadcast-queue-worker.service -n 80 --no-pager || true
-            fi
-            sudo systemctl status openclaw-broadcast-queue-worker.timer --no-pager
-            sudo systemctl enable openclaw-internal-event-worker.timer
-            sudo systemctl restart openclaw-internal-event-worker.timer
-            if ! sudo systemctl start openclaw-internal-event-worker.service; then
-              sudo systemctl status openclaw-internal-event-worker.service --no-pager || true
-              sudo journalctl -u openclaw-internal-event-worker.service -n 80 --no-pager || true
-            fi
-            sudo systemctl status openclaw-internal-event-worker.timer --no-pager
-            sudo systemctl enable openclaw-external-effect-worker.timer
-            sudo systemctl restart openclaw-external-effect-worker.timer
-            sudo systemctl status openclaw-external-effect-worker.timer --no-pager
-            sudo systemctl enable openclaw-wechat-pay-order-reconciliation-worker.timer
-            sudo systemctl restart openclaw-wechat-pay-order-reconciliation-worker.timer
-            sudo systemctl status openclaw-wechat-pay-order-reconciliation-worker.timer --no-pager
-            sudo systemctl enable openclaw-identity-resolution-worker.timer
-            sudo systemctl restart openclaw-identity-resolution-worker.timer
-            sudo systemctl status openclaw-identity-resolution-worker.timer --no-pager
+            python3 scripts/ops/manage_production_runtime_units.py --phase verify --execute

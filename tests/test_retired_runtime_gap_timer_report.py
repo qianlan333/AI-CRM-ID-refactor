@@ -24,4 +24,5 @@ def test_runtime_gap_report_tracks_ai_audience_scheduler_as_active_timer(monkeyp
     result = run_check()
 
     assert "openclaw-ai-audience-scheduler.timer" in result["active_timer_units"]
-    assert "aicrm-campaign-run-due.timer" in result["active_timer_units"]
+    assert "openclaw-external-effect-worker.timer" in result["active_timer_units"]
+    assert "aicrm-archive-sync.timer" in result["approval_required_timer_units"]

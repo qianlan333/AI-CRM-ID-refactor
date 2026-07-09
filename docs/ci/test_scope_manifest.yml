@@ -483,6 +483,7 @@
       "paths": [
         ".github/**",
         "scripts/ci/**",
+        "scripts/ops/manage_production_runtime_units.py",
         "scripts/diagnose_external_orders_blockers.py",
         "scripts/run_internal_event_worker.py",
         "deploy/**",
@@ -498,6 +499,8 @@
         "tests/conftest.py",
         "tests/test_ci_workflow_contract.py",
         "tests/test_deploy_workflow_contract.py",
+        "tests/test_retired_runtime_gap_timer_report.py",
+        "tests/test_runtime_units_autostart.py",
         "tests/test_select_test_scope.py",
         "tests/test_fixture_reset_registry.py",
         "tests/test_internal_events_payment_slice.py",
@@ -512,6 +515,8 @@
       "python_tests": [
         "tests/test_ci_workflow_contract.py",
         "tests/test_deploy_workflow_contract.py",
+        "tests/test_retired_runtime_gap_timer_report.py",
+        "tests/test_runtime_units_autostart.py",
         "tests/test_select_test_scope.py",
         "tests/test_architecture_boundaries.py",
         "tests/test_fixture_reset_registry.py",

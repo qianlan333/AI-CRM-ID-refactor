@@ -277,6 +277,24 @@ def test_ci_change_selects_contract_tests_and_full_gate() -> None:
     assert result["needs_full_ci"] is True
 
 
+def test_runtime_units_change_selects_deploy_contract_tests() -> None:
+    result = _select(
+        "deploy/production_runtime_units.json",
+        "scripts/ops/manage_production_runtime_units.py",
+        "tests/test_runtime_units_autostart.py",
+        "tests/test_retired_runtime_gap_timer_report.py",
+    )
+
+    assert "ci_deploy" in result["matched_scopes"]
+    assert "tests/test_deploy_workflow_contract.py" in result["python_tests"]
+    assert "tests/test_runtime_units_autostart.py" in result["python_tests"]
+    assert "tests/test_retired_runtime_gap_timer_report.py" in result["python_tests"]
+    assert result["unmatched_files"] == []
+    assert result["needs_postgres"] is False
+    assert result["architecture_gate"] == "full"
+    assert result["needs_full_ci"] is True
+
+
 def test_ci_manifest_change_selects_lightweight_selector_scope() -> None:
     result = _select("docs/ci/test_scope_manifest.yml", "tests/test_select_test_scope.py")
 
