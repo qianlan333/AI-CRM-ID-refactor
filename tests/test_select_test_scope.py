@@ -183,6 +183,20 @@ def test_admin_config_page_change_selects_config_scope() -> None:
     assert result["architecture_gate"] == "fast"
 
 
+def test_operation_member_picker_static_assets_select_admin_config_scope() -> None:
+    result = _select(
+        "aicrm_next/frontend_compat/static/admin_console/admin_console.css",
+        "aicrm_next/frontend_compat/static/admin_console/operation_member_picker.js",
+        "tests/test_operation_member_picker_frontend.py",
+    )
+
+    assert result["matched_scopes"] == ["admin_config"]
+    assert "tests/test_operation_member_picker_frontend.py" in result["python_tests"]
+    assert result["needs_postgres"] is False
+    assert result["architecture_gate"] == "fast"
+    assert result["needs_full_ci"] is False
+
+
 def test_wecom_tag_catalog_write_change_selects_real_tag_crud_slice() -> None:
     result = _select(
         "aicrm_next/customer_tags/admin_write.py",

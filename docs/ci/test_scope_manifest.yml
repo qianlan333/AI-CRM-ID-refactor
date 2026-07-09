@@ -295,8 +295,10 @@
       "name": "admin_config",
       "paths": [
         "aicrm_next/admin_config/**",
+        "aicrm_next/frontend_compat/static/admin_console/admin_console.css",
         "aicrm_next/frontend_compat/static/admin_console/config_center.css",
         "aicrm_next/frontend_compat/static/admin_console/config_center.js",
+        "aicrm_next/frontend_compat/static/admin_console/operation_member_picker.js",
         "aicrm_next/frontend_compat/templates/admin_console/config_*.html",
         "tests/test_admin_config_next.py",
         "tests/test_operation_member_picker_frontend.py",

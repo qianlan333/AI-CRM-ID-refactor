@@ -48,11 +48,13 @@ def test_operation_member_picker_modal_is_simplified_and_searches_common_api():
     assert "member-modal__actions" in source
     assert "data-operation-member-search" in source
     assert "data-operation-member-clear" in source
+    assert "data-operation-member-refresh" in source
     assert "data-operation-member-list" in source
     assert "data-operation-member-cancel" in source
     assert "data-operation-member-confirm" in source
     assert "operation-member-picker__close" in source
     assert ">关闭<" in source
+    assert "刷新客服" in source
     assert "data-operation-member-search-button" not in source
     assert "全部来源" not in source
     assert "当前选择" not in source
@@ -89,10 +91,10 @@ def test_operation_member_picker_rows_only_show_identity_avatar_and_select_butto
     assert ".role" not in source
     assert "operation-member-picker__select" in css
     assert "width: min(860px, 100%)" in source
-    assert "grid-template-columns: 1fr 100px" in source
+    assert "grid-template-columns: 1fr 100px 110px" in source
     assert "border-radius: 18px" in source
     assert "width: min(820px, 100%)" in css
-    assert "grid-template-columns: 1fr 110px" in css
+    assert "grid-template-columns: 1fr 100px 110px" in css
     assert "background: var(--panel-strong, #fff)" in css
     assert "box-shadow: var(--shadow-lg, 0 18px 54px rgba(15, 23, 42, 0.18))" in css
     assert "display: none !important" in css
@@ -107,6 +109,9 @@ def test_operation_member_picker_error_empty_debounce_clear_cancel_confirm_contr
     assert 'searchInput?.addEventListener("input"' in source
     assert "clearTimeout(state.debounceTimer)" in source
     assert "if (input) input.value = \"\";" in source
+    assert "data-operation-member-refresh" in source
+    assert 'cache: "no-store"' in source
+    assert 'refreshButton.textContent = state.loading ? "刷新中" : "刷新客服"' in source
     assert "state.selected = state.confirmed" in source
     assert "if (!state.selected) return;" in source
     assert "state.onSelect(state.selected)" in source
