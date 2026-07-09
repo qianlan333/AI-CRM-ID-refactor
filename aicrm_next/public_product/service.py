@@ -806,7 +806,7 @@ def _pay_page_script(state_json: str) -> str:
           return;
         }}
         const servicePeriodRedirect = postPaidRedirectUrl();
-        if (servicePeriodRedirect) {{
+        if (servicePeriodRedirect && !leadQrFromOrder(paidOrder).qr_url) {{
           setState("支付成功，正在刷新服务期...", "success");
           window.location.href = servicePeriodRedirect;
           return;

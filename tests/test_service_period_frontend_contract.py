@@ -264,6 +264,7 @@ def test_service_period_pay_page_reuses_public_pay_confirmation_contract(next_cl
     assert "/api/h5/service-period-products/sp_public_pay_mobile/wechat-pay/jsapi/orders" in after_auth.text
     assert '"post_paid_redirect_url": "/s/sp_public_pay_mobile"' in after_auth.text
     assert "支付成功，正在刷新服务期..." in after_auth.text
+    assert "servicePeriodRedirect && !leadQrFromOrder(paidOrder).qr_url" in after_auth.text
     assert 'WeixinJSBridge.invoke("getBrandWCPayRequest"' in after_auth.text
     assert "请填写 11 位手机号后再继续。" in after_auth.text
 
