@@ -251,6 +251,14 @@ button[disabled] {
   line-height: 1.42;
 }
 
+.periodic-remark {
+  margin-top: 8px;
+}
+
+.periodic-remark-textarea {
+  min-height: 66px;
+}
+
 .card {
   margin-top: 7px;
   padding: 9px;

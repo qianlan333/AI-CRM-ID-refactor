@@ -3114,6 +3114,7 @@ tables:
     read_owners:
       - aicrm_next.service_period
       - aicrm_next.commerce
+      - aicrm_next.customer_read_model.sidebar_v2
     replacement: none; service period semantic binding over wechat_pay_products
     drop_candidate: false
     drop_after: ""
@@ -3121,6 +3122,7 @@ tables:
       - aicrm_next.service_period.api
       - aicrm_next.service_period.application
       - aicrm_next.service_period.payment_consumer
+      - aicrm_next.customer_read_model.sidebar_v2
     migration_source: 0095_service_period_products
     pii_level: internal_contact
     guard_tests:
@@ -3134,6 +3136,7 @@ tables:
     write_owner: aicrm_next.service_period
     read_owners:
       - aicrm_next.service_period
+      - aicrm_next.customer_read_model.sidebar_v2
     replacement: none; current entitlement state for service period products
     drop_candidate: false
     drop_after: ""
@@ -3141,6 +3144,7 @@ tables:
       - aicrm_next.service_period.api
       - aicrm_next.service_period.application
       - aicrm_next.service_period.payment_consumer
+      - aicrm_next.customer_read_model.sidebar_v2
     migration_source: 0095_service_period_products
     pii_level: direct_contact
     guard_tests:
@@ -3215,11 +3219,13 @@ tables:
     read_owners:
       - aicrm_next.external_push
       - aicrm_next.service_period
+      - aicrm_next.customer_read_model.sidebar_v2
     replacement: none; active production schema table registered during schema drift closeout
     drop_candidate: false
     drop_after: ""
     runtime_entrypoints:
       - existing production runtime
+      - aicrm_next.customer_read_model.sidebar_v2
     migration_source: pre-Alembic baseline, registered by 0083 schema drift closeout
     pii_level: internal_contact
     guard_tests:
