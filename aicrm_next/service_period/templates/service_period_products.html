@@ -749,7 +749,7 @@
     </div>
     <div class="admin-table-wrap" style="margin-top:14px;">
       <table class="admin-table service-period-data-table">
-        <thead><tr><th>会员</th><th>外部联系人id</th><th>状态</th><th>剩余有效期</th><th>到期日</th><th>最近订单</th><th>备注</th><th>操作</th></tr></thead>
+        <thead><tr><th>会员</th><th>外部联系人id</th><th>状态</th><th>剩余有效期</th><th>到期日</th><th>备注</th><th>操作</th></tr></thead>
         <tbody id="memberRows">
           {% for member in members %}
           <tr>
@@ -758,12 +758,11 @@
             <td><span class="service-period-pill {{ 'ok' if member.status == 'active' else 'off' }}">{{ {"active":"使用中","expired":"已过期","disabled":"已停用","refunded":"已退款"}.get(member.status, member.status) }}</span></td>
             <td>{{ member.remaining_days or 0 }} 天</td>
             <td>{{ (member.end_at or "")[:10] }}</td>
-            <td>¥{{ "%.2f"|format((member.last_order_amount or 0) / 100) }} / {{ member.last_order_duration_days or 0 }} 天</td>
             <td>{{ member.remark or "-" }}</td>
             <td><button class="admin-button admin-button--ghost" data-member-remark data-unionid="{{ member.unionid|forceescape }}" data-remark="{{ (member.remark or '')|forceescape }}" type="button">备注</button></td>
           </tr>
           {% else %}
-          <tr><td colspan="8" class="service-period-muted">暂无会员数据</td></tr>
+          <tr><td colspan="7" class="service-period-muted">暂无会员数据</td></tr>
           {% endfor %}
         </tbody>
       </table>
@@ -1453,10 +1452,9 @@
       <td><span class="service-period-pill ${member.status === "active" ? "ok" : "off"}">${esc(statusLabel(member.status))}</span></td>
       <td>${Number(member.remaining_days || 0)} 天</td>
       <td>${esc(dateOnly(member.end_at))}</td>
-      <td>¥${money(member.last_order_amount)} / ${Number(member.last_order_duration_days || 0)} 天</td>
       <td>${esc(member.remark || "-")}</td>
       <td><button class="admin-button admin-button--ghost" data-member-remark data-unionid="${esc(member.unionid)}" data-remark="${esc(member.remark || "")}" type="button">备注</button></td>
-    </tr>`).join("") || '<tr><td colspan="8" class="service-period-muted">暂无会员数据</td></tr>';
+    </tr>`).join("") || '<tr><td colspan="7" class="service-period-muted">暂无会员数据</td></tr>';
   }
   async function refreshData() {
     if (!serviceProductId) return;
@@ -1471,7 +1469,7 @@
     renderMembers(members.items || []);
   }
   function downloadCsv() {
-    const header = ["unionid", "display_name", "external_userid", "mobile", "status", "remaining_days", "end_at", "last_order_amount", "last_order_duration_days", "remark"];
+    const header = ["unionid", "display_name", "external_userid", "mobile", "status", "remaining_days", "end_at", "remark"];
     const lines = [header.join(",")].concat(currentMembers.map(member => header.map(key => `"${String(member[key] ?? "").replace(/"/g, '""')}"`).join(",")));
     const blob = new Blob([lines.join("\n")], {type: "text/csv;charset=utf-8"});
     const url = URL.createObjectURL(blob);
