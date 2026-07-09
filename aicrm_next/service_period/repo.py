@@ -77,6 +77,25 @@ def _to_service_id(value: Any) -> str:
     return text(value)
 
 
+def _compact_trade_product_payload(product: dict[str, Any], *, product_id: Any | None = None) -> dict[str, Any]:
+    price = int(product.get("price_cents") or product.get("amount_total") or 0)
+    slice_count = int(product.get("slice_count") or len(product.get("slices") or []))
+    return {
+        "id": text(product_id if product_id is not None else product.get("id")),
+        "product_code": text(product.get("product_code")),
+        "title": text(product.get("title") or product.get("name")),
+        "name": text(product.get("title") or product.get("name")),
+        "description": text(product.get("description")),
+        "price_cents": price,
+        "amount_total": price,
+        "currency": text(product.get("currency")) or "CNY",
+        "status": text(product.get("status")) or "draft",
+        "enabled": bool(product.get("enabled")),
+        "slice_count": slice_count,
+        "updated_at": isoformat(product.get("trade_updated_at") or product.get("updated_at")),
+    }
+
+
 class ServicePeriodRepository(Protocol):
     def list_products(self, *, limit: int, offset: int) -> dict[str, Any]: ...
     def create_service_product(self, *, trade_product: dict[str, Any], duration_days: int, membership_config_id: str, membership_config_name: str, link_slug: str, metadata_json: dict[str, Any] | None = None) -> dict[str, Any]: ...
@@ -104,7 +123,7 @@ class InMemoryServicePeriodRepository:
         self._next_event_id = 1
 
     def list_products(self, *, limit: int, offset: int) -> dict[str, Any]:
-        rows = [self._serialize_product(row) for row in self._products if not row.get("deleted")]
+        rows = [self._serialize_product(row, include_trade_product=False) for row in self._products if not row.get("deleted")]
         rows.sort(key=lambda item: (text(item.get("updated_at")), text(item.get("id"))), reverse=True)
         return {"ok": True, "items": rows[offset : offset + limit], "total": len(rows), "limit": limit, "offset": offset}
 
@@ -441,28 +460,29 @@ class InMemoryServicePeriodRepository:
         self._events.append(row)
         return deepcopy(row)
 
-    def _serialize_product(self, row: dict[str, Any]) -> dict[str, Any]:
+    def _serialize_product(self, row: dict[str, Any], *, include_trade_product: bool = True) -> dict[str, Any]:
         commerce = build_commerce_repository()
-        trade_product = commerce.get_product(text(row.get("trade_product_id"))) or {}
-        product_code = text(trade_product.get("product_code"))
+        full_trade_product = commerce.get_product(text(row.get("trade_product_id"))) or {}
+        trade_product = deepcopy(full_trade_product) if include_trade_product else _compact_trade_product_payload(full_trade_product)
+        product_code = text(full_trade_product.get("product_code"))
         sold_count = commerce.count_orders_for_product_code(product_code) if product_code else 0
-        updated_at = text(trade_product.get("updated_at") or row.get("updated_at"))
+        updated_at = text(full_trade_product.get("updated_at") or row.get("updated_at"))
         return {
             **deepcopy(row),
             "id": text(row.get("id")),
             "trade_product_id": text(row.get("trade_product_id")),
             "product_code": product_code,
-            "title": text(trade_product.get("title") or trade_product.get("name")),
-            "name": text(trade_product.get("title") or trade_product.get("name")),
-            "description": text(trade_product.get("description")),
-            "price_cents": int(trade_product.get("price_cents") or trade_product.get("amount_total") or 0),
-            "amount_total": int(trade_product.get("price_cents") or trade_product.get("amount_total") or 0),
-            "currency": text(trade_product.get("currency")) or "CNY",
-            "status": text(trade_product.get("status")) or "draft",
-            "enabled": bool(trade_product.get("enabled")),
+            "title": text(full_trade_product.get("title") or full_trade_product.get("name")),
+            "name": text(full_trade_product.get("title") or full_trade_product.get("name")),
+            "description": text(full_trade_product.get("description")),
+            "price_cents": int(full_trade_product.get("price_cents") or full_trade_product.get("amount_total") or 0),
+            "amount_total": int(full_trade_product.get("price_cents") or full_trade_product.get("amount_total") or 0),
+            "currency": text(full_trade_product.get("currency")) or "CNY",
+            "status": text(full_trade_product.get("status")) or "draft",
+            "enabled": bool(full_trade_product.get("enabled")),
             "sold_count": sold_count,
             "updated_at": updated_at,
-            "trade_product": deepcopy(trade_product),
+            "trade_product": trade_product,
         }
 
     def _entitlement_payload(self, row: dict[str, Any]) -> dict[str, Any]:
@@ -524,7 +544,7 @@ class PostgresServicePeriodRepository:
             total_row = conn.execute(
                 "SELECT count(*) AS total FROM service_period_products WHERE tenant_id = 'aicrm' AND deleted = FALSE"
             ).fetchone() or {}
-        items = [self._serialize_join_row(dict(row)) for row in rows]
+            items = [self._serialize_join_row(dict(row), include_trade_product=False) for row in rows]
         return {"ok": True, "items": items, "total": int(total_row.get("total") or 0), "limit": limit, "offset": offset}
 
     def create_service_product(
@@ -884,8 +904,11 @@ class PostgresServicePeriodRepository:
             conn.commit()
         return {"ok": True, "expired_count": expired_count}
 
-    def _serialize_join_row(self, row: dict[str, Any]) -> dict[str, Any]:
-        trade_product = build_commerce_repository().get_product(text(row.get("trade_product_id"))) or {}
+    def _serialize_join_row(self, row: dict[str, Any], *, include_trade_product: bool = True) -> dict[str, Any]:
+        if include_trade_product:
+            trade_product = build_commerce_repository().get_product(text(row.get("trade_product_id"))) or {}
+        else:
+            trade_product = _compact_trade_product_payload(row, product_id=row.get("trade_product_id"))
         price = int(row.get("amount_total") or trade_product.get("price_cents") or 0)
         return {
             **row,

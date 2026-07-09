@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 from aicrm_next.commerce.repo import reset_commerce_fixture_state
 from aicrm_next.public_product import h5_wechat_pay
 from aicrm_next.service_period.application import GrantOrRenewEntitlementCommand
@@ -115,6 +117,43 @@ def test_service_period_edit_page_keeps_four_existing_dimensions_only(next_clien
         "重新开通成功文案",
     ):
         assert forbidden not in text
+
+
+def test_service_period_admin_payloads_omit_inline_slice_image_data(next_client) -> None:
+    _reset()
+    product = _create(
+        next_client,
+        product_code="sp_light_slices",
+        slices=[
+            {"image_library_id": 21, "image_url": "data:image/png;base64,YQ==", "sort_order": 1},
+            {"image_library_id": 22, "data_url": "data:image/png;base64,Yg==", "sort_order": 2},
+        ],
+    )
+
+    listed = next_client.get("/api/admin/service-period-products?limit=100")
+    assert listed.status_code == 200
+    listed_payload = listed.json()
+    listed_text = json.dumps(listed_payload, ensure_ascii=False)
+    assert "data:image" not in listed_text
+    assert "data_base64" not in listed_text
+    listed_product = next(item for item in listed_payload["items"] if item["id"] == product["id"])
+    assert "slices" not in (listed_product.get("trade_product") or {})
+
+    detail = next_client.get(f"/api/admin/service-period-products/{product['id']}")
+    assert detail.status_code == 200
+    detail_payload = detail.json()
+    detail_text = json.dumps(detail_payload, ensure_ascii=False)
+    assert "data:image" not in detail_text
+    assert "data_base64" not in detail_text
+    slices = detail_payload["product"]["trade_product"]["slices"]
+    assert [item["image_library_id"] for item in slices] == [21, 22]
+    assert [item["sort_order"] for item in slices] == [1, 2]
+    assert all(not str(item.get("image_url") or "").startswith("data:") for item in slices)
+
+    edit_page = next_client.get(f"/admin/service-period-products/{product['id']}/edit")
+    assert edit_page.status_code == 200
+    assert "data:image" not in edit_page.text
+    assert "data_base64" not in edit_page.text
 
 
 def test_service_period_data_page_has_only_data_contract(next_client) -> None:

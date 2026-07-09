@@ -893,7 +893,6 @@
   document.getElementById("service-period-share-modal")?.addEventListener("click", event => {
     if (event.target === document.getElementById("service-period-share-modal")) closeShare();
   });
-  refreshList().catch(() => {});
 })();
 </script>
 {% elif page_mode in ["new", "edit"] %}
@@ -1326,18 +1325,17 @@
     showToast("分享链接已复制");
   }
   async function initEditor() {
-    const [memberships, channels] = await Promise.all([
+    const tradeId = mode === "edit" ? tradeProductId() : "";
+    const [memberships, channels, pushConfig] = await Promise.all([
       api("/api/admin/service-period-products/membership-configs").catch(() => ({items: []})),
-      api("/api/admin/wechat-pay/products/lead-channels").catch(() => ({items: leadChannels}))
+      api("/api/admin/wechat-pay/products/lead-channels").catch(() => ({items: leadChannels})),
+      tradeId
+        ? api(`/api/admin/wechat-pay/products/${encodeURIComponent(tradeId)}/external-push`).catch(() => ({config: externalPush}))
+        : Promise.resolve({config: externalPush})
     ]);
     membershipOptions = memberships.items || [];
     leadChannels = channels.items || leadChannels;
-    if (mode === "edit" && product.id) {
-      product = (await api(`/api/admin/service-period-products/${encodeURIComponent(product.id)}`)).product || product;
-      normalizeProductSlices();
-      const tradeId = tradeProductId();
-      if (tradeId) externalPush = (await api(`/api/admin/wechat-pay/products/${encodeURIComponent(tradeId)}/external-push`).catch(() => ({config: externalPush}))).config || externalPush;
-    }
+    externalPush = pushConfig.config || externalPush;
     fillForm();
     fillExternalPush();
   }

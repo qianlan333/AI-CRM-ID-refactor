@@ -527,6 +527,14 @@ def _normalize_slices(value: Any) -> list[dict[str, Any]]:
         if not image_id or image_id in seen:
             continue
         seen.add(image_id)
+        image_url = _lightweight_slice_image_url(
+            image_id,
+            item.get("source_url"),
+            item.get("image_url"),
+            item.get("data_url"),
+            item.get("url"),
+            item.get("src"),
+        )
         normalized.append(
             {
                 "id": str(item.get("id") or ""),
@@ -536,22 +544,31 @@ def _normalize_slices(value: Any) -> list[dict[str, Any]]:
                 "file_name": str(item.get("file_name") or ""),
                 "file_size": int(item.get("file_size") or 0),
                 "mime_type": str(item.get("mime_type") or "image/png"),
-                "image_url": str(item.get("image_url") or item.get("data_url") or item.get("source_url") or ""),
+                "image_url": image_url,
+                "thumb_url": _image_variant_url(image_id, "thumb_320"),
+                "preview_url": _image_variant_url(image_id, "mobile_1080"),
+                "original_url": _image_variant_url(image_id, "original"),
                 "enabled": bool(item.get("enabled", True)),
             }
         )
     return normalized
 
 
+def _image_variant_url(image_id: Any, variant_key: str) -> str:
+    normalized = _positive_int_or_none(image_id)
+    return f"/api/admin/image-library/{normalized}/variants/{variant_key}" if normalized else ""
+
+
+def _lightweight_slice_image_url(image_id: Any, *candidates: Any) -> str:
+    for candidate in candidates:
+        url = str(candidate or "").strip()
+        if url and not url.lower().startswith("data:"):
+            return url
+    return _image_variant_url(image_id, "mobile_1080")
+
+
 def _image_public_url(row: dict[str, Any]) -> str:
-    source_url = str(row.get("source_url") or "").strip()
-    if source_url:
-        return source_url
-    data_base64 = str(row.get("data_base64") or "").strip()
-    if not data_base64:
-        return ""
-    mime_type = str(row.get("mime_type") or "image/png").strip() or "image/png"
-    return f"data:{mime_type};base64,{data_base64}"
+    return _lightweight_slice_image_url(row.get("image_library_id"), row.get("source_url"))
 
 
 def _empty_external_push_config() -> dict[str, Any]:
@@ -1171,9 +1188,7 @@ class PostgresCommerceRepository:
                 s.enabled,
                 image.name,
                 image.file_name,
-                image.source,
                 image.source_url,
-                image.data_base64,
                 image.mime_type,
                 image.file_size
             FROM wechat_pay_product_page_slices s
@@ -1194,6 +1209,9 @@ class PostgresCommerceRepository:
                 "mime_type": str(row.get("mime_type") or "image/png"),
                 "file_size": int(row.get("file_size") or 0),
                 "image_url": _image_public_url(row),
+                "thumb_url": _image_variant_url(row.get("image_library_id"), "thumb_320"),
+                "preview_url": _image_variant_url(row.get("image_library_id"), "mobile_1080"),
+                "original_url": _image_variant_url(row.get("image_library_id"), "original"),
                 "enabled": bool(row.get("enabled")),
             }
             for row in rows
