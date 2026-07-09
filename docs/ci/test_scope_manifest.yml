@@ -420,7 +420,10 @@
         "aicrm_next/platform_foundation/push_center/view_model.py",
         "aicrm_next/shared/admin_read_fallback.py",
         "scripts/ops/check_admin_read_pages_smoke.py",
-        "tests/test_admin_read_pages_smoke.py"
+        "tests/test_admin_read_pages_smoke.py",
+        "tests/test_automation_agents_admin_api.py",
+        "tests/test_p1_group_ops_workspace_draft_api.py",
+        "tests/test_p1_group_ops_workspace_governance_api.py"
       ],
       "python_tests": [
         "tests/test_push_center.py",
@@ -431,6 +434,8 @@
         "tests/test_admin_wecom_tags_management.py",
         "tests/test_automation_agents_admin_api.py",
         "tests/test_ai_audience_admin_pages.py",
+        "tests/test_p1_group_ops_workspace_draft_api.py",
+        "tests/test_p1_group_ops_workspace_governance_api.py",
         "tests/test_user_ops_admin_pages_native.py",
         "tests/test_user_ops_api.py",
         "tests/test_data_health_checks.py",
