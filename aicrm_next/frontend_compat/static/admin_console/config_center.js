@@ -156,9 +156,32 @@
     const pickButton = root.querySelector("[data-admin-access-member-picker]");
     const input = root.querySelector("[data-admin-access-wecom-userid]");
     const label = root.querySelector("[data-admin-access-member-current]");
+    const feedback = root.querySelector("[data-admin-access-member-feedback]");
     const displayNameInput = root.querySelector("[data-admin-access-display-name]");
+    const loginEnabled = root.querySelector("[data-admin-access-login-enabled]");
+    const superAdminToggle = root.querySelector("[data-admin-access-super-admin]");
+    const adminLevelInput = root.querySelector("[data-admin-access-level]");
+    const transferConfirmInput = root.querySelector("[data-admin-access-transfer-confirm]");
     if (!form || !pickButton || !input || !label) {
       return;
+    }
+
+    function applySuperAdminState() {
+      const isSuperAdmin = Boolean(superAdminToggle && superAdminToggle.checked);
+      if (adminLevelInput) {
+        adminLevelInput.value = isSuperAdmin ? "super_admin" : "admin";
+      }
+      if (transferConfirmInput) {
+        transferConfirmInput.value = isSuperAdmin ? "1" : "";
+      }
+      if (isSuperAdmin && loginEnabled) {
+        loginEnabled.checked = true;
+      }
+    }
+
+    if (superAdminToggle) {
+      superAdminToggle.addEventListener("change", applySuperAdminState);
+      applySuperAdminState();
     }
 
     pickButton.addEventListener("click", function () {
@@ -166,24 +189,43 @@
         showAlert(root, "人员选择器加载失败，请稍后重试", "error");
         return;
       }
+      const previousText = pickButton.textContent;
+      pickButton.textContent = "正在打开...";
+      pickButton.disabled = true;
+      showAlert(root, "", "");
       window.OperationMemberPicker.open({
         value: input.value,
         selectedLabel: label.textContent.trim(),
+        selectedMember: input.value ? { user_id: input.value, display_name: displayNameInput ? displayNameInput.value : label.textContent.trim() } : null,
         title: "选择可访问后台的企微成员",
         scope: "common",
         page_size: 100,
         onSelect: function (member) {
           input.value = member.user_id || "";
-          label.textContent = memberLabel(member) || "未选择企微成员";
+          const nextLabel = memberLabel(member) || "未选择企微成员";
+          label.textContent = nextLabel;
+          label.classList.toggle("is-selected", Boolean(member.user_id));
           pickButton.textContent = "更换企微成员";
-          if (displayNameInput && !displayNameInput.value.trim()) {
+          if (feedback) {
+            feedback.textContent = `已选择 ${nextLabel}`;
+          }
+          if (displayNameInput) {
             displayNameInput.value = member.display_name || member.name || member.user_id || "";
           }
+          showAlert(root, `已选择 ${nextLabel}`, "success");
         },
+      }).catch(function () {
+        showAlert(root, "人员选择器加载失败，请稍后重试", "error");
+      }).finally(function () {
+        pickButton.disabled = false;
+        if (!input.value.trim()) {
+          pickButton.textContent = previousText;
+        }
       });
     });
 
     form.addEventListener("submit", function (event) {
+      applySuperAdminState();
       if (input.value.trim()) {
         return;
       }

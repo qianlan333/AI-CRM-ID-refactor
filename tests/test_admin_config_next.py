@@ -395,16 +395,32 @@ def test_admin_access_detail_combines_settings_and_member_picker_authorization(m
 
     assert response.status_code == 200
     assert "后台访问" in response.text
-    assert "访问概览" in response.text
-    assert "后台授权成员" in response.text
-    assert "最近登录审计" in response.text
+    assert "后台管理员" in response.text
+    assert "超级管理员" in response.text
+    assert "编辑管理员" in response.text
     assert 'data-admin-access-detail' in response.text
     assert 'data-admin-access-member-picker' in response.text
+    assert 'data-admin-access-member-feedback' in response.text
+    assert 'data-admin-access-super-admin' in response.text
     assert 'type="hidden" name="wecom_userid"' in response.text
     assert 'type="text" name="wecom_userid"' not in response.text
     assert '<select name="wecom_userid"' not in response.text
+    assert 'type="text" name="display_name"' not in response.text
+    assert 'type="text" name="wecom_corpid"' not in response.text
+    assert 'name="role_codes" value="viewer"' in response.text
+    assert "访问概览" not in response.text
+    assert "当前企业 ID" not in response.text
+    assert "后台授权成员" not in response.text
+    assert "最近登录审计" not in response.text
+    assert "角色分配" not in response.text
+    assert "授权来源" not in response.text
+    assert "操作人" not in response.text
     assert "未缓存通讯录时保留手工输入兜底" not in response.text
-    assert "不需要手动输入客服 ID" in response.text
+    assert "手动输入客服 ID" not in response.text
+
+    add_response = client.get("/admin/config/detail/admin_access")
+    assert add_response.status_code == 200
+    assert "加入管理员" in add_response.text
 
 
 def test_retired_reply_monitor_chat_settings_are_not_exposed(monkeypatch, tmp_path) -> None:
@@ -672,7 +688,7 @@ def test_login_access_save_and_directory_refresh_do_not_call_wecom(monkeypatch, 
             "is_active": "1",
             "login_enabled": "1",
             "admin_level": "admin",
-            "role_codes": ["config_admin", "viewer"],
+            "role_codes": "viewer",
             "operator": "access-test",
         },
         follow_redirects=False,
@@ -685,7 +701,7 @@ def test_login_access_save_and_directory_refresh_do_not_call_wecom(monkeypatch, 
     assert save.headers["location"].startswith("/admin/config/detail/admin_access")
     database_url = _db_url(monkeypatch)
     assert _scalar(database_url, "SELECT COUNT(*) FROM admin_users WHERE wecom_userid = 'root.admin'") == 1
-    assert _scalar(database_url, "SELECT COUNT(*) FROM admin_user_roles WHERE role_code = 'config_admin'") == 1
+    assert _scalar(database_url, "SELECT COUNT(*) FROM admin_user_roles WHERE role_code = 'viewer'") == 1
     assert _scalar(database_url, "SELECT COUNT(*) FROM admin_operation_logs WHERE target_type = 'admin_user'") == 1
 
 

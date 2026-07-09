@@ -176,7 +176,16 @@ def test_business_pages_use_operation_member_picker_instead_of_visible_userid_in
     assert 'type="text" name="wecom_userid"' not in admin_access
     assert '<select name="wecom_userid"' not in admin_access
     assert "data-admin-access-member-picker" in admin_access
-    assert "手动输入客服 ID" in admin_access
+    assert "data-admin-access-member-feedback" in admin_access
+    assert "data-admin-access-super-admin" in admin_access
+    assert 'name="role_codes" value="viewer"' in admin_access
+    assert "角色分配" not in admin_access
+    assert "手动输入客服 ID" not in admin_access
+    assert "访问概览" not in admin_access
+    assert "最近登录审计" not in admin_access
+    assert "OperationMemberPicker.open" in config_center
+    assert "已选择 ${nextLabel}" in config_center
+    assert "data-admin-access-level" in admin_access
     assert 'type="hidden" name="owner_staff_id"' in channel_form
     assert 'type="text" name="owner_staff_id"' not in channel_form
     assert 'placeholder="sales_01"' not in channel_form
