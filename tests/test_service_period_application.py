@@ -8,6 +8,7 @@ from aicrm_next.service_period.application import (
     CreateServicePeriodProductCommand,
     ExpireDueEntitlementsCommand,
     GrantOrRenewEntitlementCommand,
+    UpdateServicePeriodMemberRemarkCommand,
 )
 from aicrm_next.service_period.dto import ServicePeriodProductCreateRequest
 from aicrm_next.service_period.repo import build_service_period_repository, reset_service_period_fixture_state
@@ -237,6 +238,46 @@ def test_grant_or_renew_entitlement_rules_are_idempotent() -> None:
     assert idempotent["idempotent"] is True
     entitlement = build_service_period_repository().entitlement_for_unionid(product["id"], "union_sp_001")
     assert entitlement["end_at"].startswith("2099-03-02T00:00:00")
+
+
+def test_member_list_exposes_external_userid_and_preserves_admin_remark(next_client) -> None:
+    _reset()
+    product = CreateServicePeriodProductCommand()(ServicePeriodProductCreateRequest(**_payload(product_code="sp_member_note")))["product"]
+    grant = GrantOrRenewEntitlementCommand()
+
+    grant(order=_paid_order("SP_MEMBER_NOTE_1", product_code="sp_member_note", paid_at="2099-01-01T00:00:00+00:00"))
+
+    members = next_client.get(f"/api/admin/service-period-products/{product['id']}/members")
+    assert members.status_code == 200
+    member = members.json()["items"][0]
+    assert member["external_userid"] == "wm_sp_001"
+    assert member["remark"] == ""
+
+    updated = next_client.put(
+        f"/api/admin/service-period-products/{product['id']}/members/union_sp_001/remark",
+        json={"remark": "重点跟进"},
+    )
+    assert updated.status_code == 200
+    assert updated.json()["member"]["remark"] == "重点跟进"
+
+    grant(order=_paid_order("SP_MEMBER_NOTE_2", product_code="sp_member_note", paid_at="2099-01-02T00:00:00+00:00"))
+    refreshed = next_client.get(f"/api/admin/service-period-products/{product['id']}/members")
+    assert refreshed.status_code == 200
+    refreshed_member = refreshed.json()["items"][0]
+    assert refreshed_member["external_userid"] == "wm_sp_001"
+    assert refreshed_member["remark"] == "重点跟进"
+
+
+def test_member_remark_command_rejects_unknown_entitlement() -> None:
+    _reset()
+    product = CreateServicePeriodProductCommand()(ServicePeriodProductCreateRequest(**_payload(product_code="sp_member_missing")))["product"]
+
+    try:
+        UpdateServicePeriodMemberRemarkCommand()(product["id"], "missing_unionid", remark="备注")
+    except Exception as exc:
+        assert "service period member not found" in str(exc)
+    else:
+        raise AssertionError("missing service period member should not be editable")
 
 
 def test_expired_reactivation_missing_unionid_and_due_expiry() -> None:

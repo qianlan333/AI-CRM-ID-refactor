@@ -176,9 +176,13 @@ def test_service_period_data_page_has_only_data_contract(next_client) -> None:
     assert "service-period-inline-actions" not in text
     for label in ("有效用户", "7 天内到期", "续费订单", "累计金额", "会员列表"):
         assert label in text
-    for header in ("会员", "状态", "剩余有效期", "到期日", "最近订单", "操作"):
+    for header in ("会员", "外部联系人id", "状态", "剩余有效期", "到期日", "最近订单", "备注", "操作"):
         assert f"<th>{header}</th>" in text
-    assert ">查看<" in text
+    assert ">备注<" in text
+    assert ">查看<" not in text
+    assert "/members/${encodeURIComponent(unionid)}/remark" in text
+    assert '"external_userid"' in text
+    assert '"remark"' in text
     for forbidden in ("报名链接", "续费规则", "交易商品卡片", "交易商品信息", ">编辑<", "用户报名页", "用户续费页", "管理配置页", "管理详情页"):
         assert forbidden not in text
 

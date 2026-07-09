@@ -219,6 +219,17 @@ class ListServicePeriodMembersQuery:
         return self._repo.members(service_product_id, status=text(status) or None, limit=max(1, min(int(limit or 50), 200)), offset=max(0, int(offset or 0)))
 
 
+class UpdateServicePeriodMemberRemarkCommand:
+    def __init__(self, repo: ServicePeriodRepository | None = None) -> None:
+        self._repo = repo or build_service_period_repository()
+
+    def __call__(self, service_product_id: str, unionid: str, *, remark: str) -> dict[str, Any]:
+        if not self._repo.get_product(service_product_id):
+            raise NotFoundError("service period product not found")
+        normalized_remark = text(remark)[:500]
+        return self._repo.update_member_remark(service_product_id, text(unionid), normalized_remark)
+
+
 class GetServicePeriodPublicStateQuery:
     def __init__(self, repo: ServicePeriodRepository | None = None) -> None:
         self._repo = repo or build_service_period_repository()
