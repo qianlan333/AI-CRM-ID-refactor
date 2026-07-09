@@ -53,6 +53,8 @@ def test_next_sidebar_workbench_static_assets_are_served(monkeypatch):
     assert js_response.status_code == 200
     assert "other_staff_messages" in js_response.text
     assert "periodic_orders" in js_response.text
+    assert "service_period_products" in js_response.text
+    assert "data-product-type" in js_response.text
     assert "savePeriodicOrderRemark" in js_response.text
 
 
@@ -60,7 +62,8 @@ def test_next_sidebar_workbench_css_keeps_dense_three_column_tabs():
     css = NEXT_SIDEBAR_WORKBENCH_CSS.read_text(encoding="utf-8")
 
     assert css.count("grid-template-columns: repeat(3, minmax(0, 1fr));") >= 2
-    assert "grid-template-columns: repeat(2, minmax(0, 1fr));" not in css
+    assert ".product-seg" in css
+    assert "grid-template-columns: repeat(2, minmax(0, 1fr));" in css
     assert "font-size: 22px" not in css
     assert "min-height: 50px" not in css
     assert "font-size: 19px" not in css

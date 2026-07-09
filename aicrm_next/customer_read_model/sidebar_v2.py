@@ -13,6 +13,7 @@ from aicrm_next.customer_read_model.application import GetCustomerContextQuery, 
 from aicrm_next.customer_read_model.dto import CustomerContextRequest
 from aicrm_next.customer_read_model.repo import CustomerReadRepository, build_customer_live_source_repository
 from aicrm_next.media_library.application import GetImageThumbnailQuery, ListMediaItemsQuery
+from aicrm_next.service_period.application import ListServicePeriodProductsQuery
 from aicrm_next.service_period.domain import (
     entitlement_status as service_period_entitlement_status,
     isoformat as service_period_isoformat,
@@ -1237,10 +1238,20 @@ class SidebarCommerceReadModel:
         diagnostics["context_status"] = context_status
         rows = self._list_sidebar_products(limit=100)
         active = [dict(item) for item in rows if bool(item.get("enabled")) and _text(item.get("status")) == "active"]
+        service_period_rows = self._list_sidebar_service_period_products(limit=100)
+        active_service_period = [
+            dict(item)
+            for item in service_period_rows
+            if bool(item.get("enabled")) and _text(item.get("status")) == "active" and _text(item.get("link_slug"))
+        ]
         return _with_route_owner(
             {
                 "ok": True,
                 "products": [self._product_item(item, context_token=context_token, context_status=context_status) for item in active],
+                "service_period_products": [
+                    self._service_period_product_item(item, context_token=context_token, context_status=context_status)
+                    for item in active_service_period
+                ],
                 "diagnostics": diagnostics,
             }
         )
@@ -1389,6 +1400,9 @@ class SidebarCommerceReadModel:
             return list(repo.list_sidebar_active_products(limit=limit, offset=0).get("items") or [])
         return list(ListProductsQuery(repo=repo)(limit=limit, offset=0).get("items") or [])
 
+    def _list_sidebar_service_period_products(self, *, limit: int) -> list[dict[str, Any]]:
+        return list(ListServicePeriodProductsQuery()(limit=limit, offset=0).get("items") or [])
+
     def _product_item(self, item: dict[str, Any], *, context_token: str = "", context_status: str = "") -> dict[str, Any]:
         product_code = _text(item.get("product_code"))
         product_id = _text(item.get("id"))
@@ -1402,6 +1416,30 @@ class SidebarCommerceReadModel:
             "price_label": _money_label(item.get("price_cents") or item.get("amount_total")),
             "product_url": product_url,
             "checkout_url": checkout_url,
+            "context_source": "sidebar_product_link" if context_token else "",
+            "context_status": context_status,
+        }
+
+    def _service_period_product_item(
+        self,
+        item: dict[str, Any],
+        *,
+        context_token: str = "",
+        context_status: str = "",
+    ) -> dict[str, Any]:
+        service_product_id = _text(item.get("id") or item.get("service_product_id"))
+        link_slug = _text(item.get("link_slug"))
+        public_path = f"/s/{link_slug}" if link_slug else ""
+        product_url = append_ctx_query(public_path, context_token) if context_token else public_path
+        return {
+            "id": service_product_id,
+            "service_product_id": service_product_id,
+            "trade_product_id": _text(item.get("trade_product_id")),
+            "title": _text(item.get("title") or item.get("name")) or _text(item.get("product_code")) or "未命名周期商品",
+            "price_label": _money_label(item.get("price_cents") or item.get("amount_total")),
+            "duration_days": _int(item.get("duration_days")),
+            "link_slug": link_slug,
+            "product_url": product_url,
             "context_source": "sidebar_product_link" if context_token else "",
             "context_status": context_status,
         }

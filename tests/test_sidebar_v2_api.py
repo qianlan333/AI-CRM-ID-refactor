@@ -295,6 +295,80 @@ def test_sidebar_v2_empty_readonly_fallback_returns_owner_pending_shell(monkeypa
     assert "?ctx=" not in product["checkout_url"]
 
 
+def test_sidebar_products_include_service_period_products_with_signed_links(monkeypatch) -> None:
+    class FakeCommerceRepo:
+        def list_sidebar_active_products(self, *, limit: int = 100, offset: int = 0) -> dict:
+            return {
+                "items": [
+                    {
+                        "id": "trade_regular",
+                        "product_code": "regular_001",
+                        "title": "普通商品",
+                        "price_cents": 19900,
+                        "enabled": True,
+                        "status": "active",
+                    }
+                ]
+            }
+
+    class FakeListServicePeriodProductsQuery:
+        def __call__(self, *, limit: int = 100, offset: int = 0) -> dict:
+            return {
+                "items": [
+                    {
+                        "id": "sp_active",
+                        "trade_product_id": "trade_periodic",
+                        "title": "季度周期商品",
+                        "price_cents": 99900,
+                        "duration_days": 90,
+                        "link_slug": "periodic-quarter",
+                        "enabled": True,
+                        "status": "active",
+                    },
+                    {
+                        "id": "sp_disabled",
+                        "trade_product_id": "trade_disabled",
+                        "title": "禁用周期商品",
+                        "duration_days": 30,
+                        "link_slug": "periodic-disabled",
+                        "enabled": False,
+                        "status": "active",
+                    },
+                    {
+                        "id": "sp_draft",
+                        "trade_product_id": "trade_draft",
+                        "title": "草稿周期商品",
+                        "duration_days": 30,
+                        "link_slug": "periodic-draft",
+                        "enabled": True,
+                        "status": "draft",
+                    },
+                ]
+            }
+
+    monkeypatch.setattr(sidebar_v2, "build_commerce_repository", lambda: FakeCommerceRepo())
+    monkeypatch.setattr(sidebar_v2, "ListServicePeriodProductsQuery", lambda: FakeListServicePeriodProductsQuery())
+
+    payload = SidebarCommerceReadModel().products(
+        external_userid="wx_periodic_product",
+        owner_userid="HuangYouCan",
+        bind_by_userid="HuangYouCan",
+    )
+
+    assert [item["id"] for item in payload["products"]] == ["regular_001"]
+    assert len(payload["service_period_products"]) == 1
+    periodic = payload["service_period_products"][0]
+    assert periodic["id"] == "sp_active"
+    assert periodic["service_product_id"] == "sp_active"
+    assert periodic["trade_product_id"] == "trade_periodic"
+    assert periodic["title"] == "季度周期商品"
+    assert periodic["price_label"] == "¥999"
+    assert periodic["duration_days"] == 90
+    assert periodic["link_slug"] == "periodic-quarter"
+    assert periodic["product_url"].startswith("/s/periodic-quarter?ctx=")
+    assert periodic["context_status"] == "signed"
+
+
 def test_sidebar_v2_profile_context_and_binding_status_use_next_read_models(monkeypatch):
     client = _client(monkeypatch)
 
@@ -981,7 +1055,10 @@ def test_sidebar_commerce_and_material_paths_avoid_heavy_list_queries() -> None:
     material_source = inspect.getsource(PostgresMediaLibraryRepository._select_list)
 
     assert "SELECT p.*" not in commerce_source
-    assert "WHERE p.enabled = TRUE AND p.status = 'active'" in commerce_source
+    assert "WHERE p.enabled = TRUE" in commerce_source
+    assert "p.status = 'active'" in commerce_source
+    assert "metadata_json->>'aicrm_product_owner'" in commerce_source
+    assert "service_period_products sp" in commerce_source
     assert "SELECT * FROM {table}" not in material_source
     assert "self._table_columns(cur, table)" in material_source
     assert "self._list_columns(kind, available_columns)" in material_source

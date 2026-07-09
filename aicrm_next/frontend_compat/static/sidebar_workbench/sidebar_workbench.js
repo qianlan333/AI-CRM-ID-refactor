@@ -23,6 +23,10 @@
     ["mini", "小程序素材"],
     ["pdf", "PDF 素材"],
   ];
+  const productTabs = [
+    ["regular", "普通商品"],
+    ["service_period", "周期性商品"],
+  ];
   const WORKBENCH_STATES = {
     identifying_customer: "identifying_customer",
     sdk_unavailable: "sdk_unavailable",
@@ -57,11 +61,13 @@
     sidebar_oauth_started: false,
     activeTab: "profile",
     materialType: "image",
+    productType: "regular",
     workbench: null,
     loaded: {},
     data: {
       questionnaires: null,
       products: null,
+      service_period_products: null,
       orders: null,
       periodic_orders: null,
       materials: {},
@@ -640,19 +646,23 @@
   }
 
   function renderProducts() {
-    const rows = state.data.products || [];
+    const isServicePeriod = state.productType === "service_period";
+    const rows = isServicePeriod ? state.data.service_period_products || [] : state.data.products || [];
+    const controls = '<div class="seg product-seg">' + productTabs.map(([key, label]) => '<button type="button" class="' + (key === state.productType ? "active" : "") + '" data-product-type="' + key + '">' + escapeHtml(label) + "</button>").join("") + "</div>";
     if (!rows.length) {
-      content.innerHTML = panel("商品", empty("暂无商品记录"));
+      content.innerHTML = panel("商品", controls + empty(isServicePeriod ? "暂无周期性商品" : "暂无普通商品"));
       return;
     }
     content.innerHTML = panel(
       "商品",
-      rows
+      controls +
+        rows
         .map((item, index) => {
+          const meta = isServicePeriod && item.duration_days ? '<div class="mini">有效期 ' + escapeHtml(String(item.duration_days)) + " 天</div>" : "";
           return (
             '<article class="card"><div class="card-title"><h3>' + escapeHtml(item.title || "未命名商品") + "</h3>" +
-            '<div class="price">' + escapeHtml(item.price_label || "") + "</div></div>" +
-            '<div class="row-actions"><button class="btn primary" type="button" data-product-send="' + escapeHtml(index) + '">发送商品</button></div></article>'
+            '<div class="price">' + escapeHtml(item.price_label || "") + "</div></div>" + meta +
+            '<div class="row-actions"><button class="btn primary" type="button" data-product-send="' + escapeHtml(index) + '" data-product-kind="' + escapeHtml(state.productType) + '">发送商品</button></div></article>'
           );
         })
         .join("")
@@ -840,6 +850,7 @@
       const payload = await requestPanelJson("products", queryUrl(endpoint("productsUrl"), customerContextQuery()));
       writeDebug("products response", productContextDiagnostics(payload));
       state.data.products = payload.products || [];
+      state.data.service_period_products = payload.service_period_products || [];
     } else if (tab === "orders") {
       const payload = await requestPanelJson("orders", queryUrl(endpoint("ordersUrl"), customerContextQuery()));
       if (payload.customer) {
@@ -932,9 +943,11 @@
     }
   }
 
-  async function sendProduct(productIndex) {
-    const item = (state.data.products || [])[Number(productIndex)] || {};
-    const link = absoluteUrl(item.product_url || (item.id ? "/p/" + item.id : ""));
+  async function sendProduct(productIndex, kind) {
+    const rows = kind === "service_period" ? state.data.service_period_products || [] : state.data.products || [];
+    const item = rows[Number(productIndex)] || {};
+    const fallbackPath = kind === "service_period" ? "" : item.id ? "/p/" + item.id : "";
+    const link = absoluteUrl(item.product_url || fallbackPath);
     if (!link) {
       showToast("暂无商品链接", "error");
       return;
@@ -1280,11 +1293,17 @@
       }
       return;
     }
+    const productTypeButton = event.target.closest("[data-product-type]");
+    if (productTypeButton) {
+      state.productType = productTypeButton.dataset.productType || "regular";
+      renderProducts();
+      return;
+    }
     const productSendButton = event.target.closest("[data-product-send]");
     if (productSendButton) {
       productSendButton.disabled = true;
       try {
-        await sendProduct(productSendButton.dataset.productSend);
+        await sendProduct(productSendButton.dataset.productSend, productSendButton.dataset.productKind || state.productType);
       } finally {
         productSendButton.disabled = false;
       }

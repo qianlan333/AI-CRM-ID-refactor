@@ -37,6 +37,8 @@ def test_sidebar_workbench_static_contract_has_next_surface_only():
     assert '["products", "商品"]' in script
     assert '["orders", "订单"]' in script
     assert '["periodic_orders", "周期订单"]' in script
+    assert '["regular", "普通商品"]' in script
+    assert '["service_period", "周期性商品"]' in script
     assert 'invokeWeCom("getCurExternalContact"' in script
     assert "sendChatMessage" in script
     assert "PRODUCT_CARD_IMAGE_PATH" in script
@@ -49,6 +51,12 @@ def test_sidebar_workbench_static_contract_has_next_surface_only():
     assert 'cache: "no-store"' in script
     assert "sidebar_owner_token" in script
     assert "data-material-thumb-img" in script
+    assert "service_period_products" in script
+    assert "data-product-type" in script
+    assert "data-product-kind" in script
+    assert "product-seg" in css
+    assert 'payload.service_period_products || []' in script
+    assert 'await sendProduct(productSendButton.dataset.productSend, productSendButton.dataset.productKind || state.productType)' in script
     assert "data-order-detail-url" in script
     assert "renderPeriodicOrders" in script
     assert "data-periodic-order-remark" in script
