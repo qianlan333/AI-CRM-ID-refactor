@@ -181,6 +181,8 @@ def test_service_period_data_page_has_only_data_contract(next_client) -> None:
     assert ">备注<" in text
     assert ">查看<" not in text
     assert "/members/${encodeURIComponent(unionid)}/remark" in text
+    assert 'const dateOnly = (value) => String(value || "").slice(0, 10);' in text
+    assert "dateOnly(member.end_at)" in text
     assert '"external_userid"' in text
     assert '"remark"' in text
     for forbidden in ("报名链接", "续费规则", "交易商品卡片", "交易商品信息", ">编辑<", "用户报名页", "用户续费页", "管理配置页", "管理详情页"):

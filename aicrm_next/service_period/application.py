@@ -270,6 +270,14 @@ class GrantOrRenewEntitlementCommand:
         return self._repo.grant_or_renew_from_paid_order(order=order, transaction=transaction or {})
 
 
+class ApplyServicePeriodRefundCommand:
+    def __init__(self, repo: ServicePeriodRepository | None = None) -> None:
+        self._repo = repo or build_service_period_repository()
+
+    def __call__(self, *, out_trade_no: str, refund: dict[str, Any] | None = None) -> dict[str, Any]:
+        return self._repo.apply_refund_from_order(out_trade_no=text(out_trade_no), refund=refund or {})
+
+
 class ExpireDueEntitlementsCommand:
     def __init__(self, repo: ServicePeriodRepository | None = None) -> None:
         self._repo = repo or build_service_period_repository()

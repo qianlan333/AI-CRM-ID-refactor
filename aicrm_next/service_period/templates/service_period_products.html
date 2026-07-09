@@ -757,7 +757,7 @@
             <td class="service-period-mono">{{ member.external_userid or "-" }}</td>
             <td><span class="service-period-pill {{ 'ok' if member.status == 'active' else 'off' }}">{{ {"active":"使用中","expired":"已过期","disabled":"已停用","refunded":"已退款"}.get(member.status, member.status) }}</span></td>
             <td>{{ member.remaining_days or 0 }} 天</td>
-            <td>{{ member.end_at }}</td>
+            <td>{{ (member.end_at or "")[:10] }}</td>
             <td>¥{{ "%.2f"|format((member.last_order_amount or 0) / 100) }} / {{ member.last_order_duration_days or 0 }} 天</td>
             <td>{{ member.remark or "-" }}</td>
             <td><button class="admin-button admin-button--ghost" data-member-remark data-unionid="{{ member.unionid|forceescape }}" data-remark="{{ (member.remark or '')|forceescape }}" type="button">备注</button></td>
@@ -1426,6 +1426,7 @@
   const esc = (value) => String(value == null ? "" : value).replace(/[&<>'"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" }[c]));
   const money = (value) => (Number(value || 0) / 100).toFixed(2);
   const statusLabel = (value) => ({active: "使用中", expired: "已过期", disabled: "已停用", refunded: "已退款"}[value] || value || "-");
+  const dateOnly = (value) => String(value || "").slice(0, 10);
   function formatApiError(value) {
     if (!value) return "";
     if (typeof value === "string") return value;
@@ -1451,7 +1452,7 @@
       <td class="service-period-mono">${esc(member.external_userid || "-")}</td>
       <td><span class="service-period-pill ${member.status === "active" ? "ok" : "off"}">${esc(statusLabel(member.status))}</span></td>
       <td>${Number(member.remaining_days || 0)} 天</td>
-      <td>${esc(member.end_at || "")}</td>
+      <td>${esc(dateOnly(member.end_at))}</td>
       <td>¥${money(member.last_order_amount)} / ${Number(member.last_order_duration_days || 0)} 天</td>
       <td>${esc(member.remark || "-")}</td>
       <td><button class="admin-button admin-button--ghost" data-member-remark data-unionid="${esc(member.unionid)}" data-remark="${esc(member.remark || "")}" type="button">备注</button></td>

@@ -5,13 +5,14 @@ from datetime import datetime, timezone
 
 from aicrm_next.commerce.repo import PostgresCommerceRepository, reset_commerce_fixture_state
 from aicrm_next.service_period.application import (
+    ApplyServicePeriodRefundCommand,
     CreateServicePeriodProductCommand,
     ExpireDueEntitlementsCommand,
     GrantOrRenewEntitlementCommand,
     UpdateServicePeriodMemberRemarkCommand,
 )
 from aicrm_next.service_period.dto import ServicePeriodProductCreateRequest
-from aicrm_next.service_period.repo import build_service_period_repository, reset_service_period_fixture_state
+from aicrm_next.service_period.repo import PostgresServicePeriodRepository, build_service_period_repository, reset_service_period_fixture_state
 
 
 def _reset() -> None:
@@ -266,6 +267,42 @@ def test_member_list_exposes_external_userid_and_preserves_admin_remark(next_cli
     refreshed_member = refreshed.json()["items"][0]
     assert refreshed_member["external_userid"] == "wm_sp_001"
     assert refreshed_member["remark"] == "重点跟进"
+
+
+def test_member_list_postgres_uses_existing_identity_and_contact_fallbacks() -> None:
+    repo_source = inspect.getsource(PostgresServicePeriodRepository)
+    assert "wecom_external_contact_identity_map" in repo_source
+    assert "wecom_external_contact_follow_users" in repo_source
+    assert "NULLIF(c.primary_external_userid, '')" in repo_source
+    assert "NULLIF(c.remark, '')" in repo_source
+    assert repo_source.index("NULLIF(wfu.remark, '')") < repo_source.index("NULLIF(NULLIF(c.customer_name, ''), '问卷提交用户')")
+    assert "NULLIF(NULLIF(c.customer_name, ''), '问卷提交用户')" in repo_source
+    assert "NULLIF(wim.name, '')" in repo_source
+
+
+def test_service_period_refund_rolls_back_first_order_and_renewal_idempotently() -> None:
+    _reset()
+    product = CreateServicePeriodProductCommand()(ServicePeriodProductCreateRequest(**_payload(product_code="sp_refund_001", duration_days=30)))["product"]
+    grant = GrantOrRenewEntitlementCommand()
+    refund = ApplyServicePeriodRefundCommand()
+
+    grant(order=_paid_order("SP_REFUND_FIRST", product_code="sp_refund_001", paid_at="2099-01-01T00:00:00+00:00"))
+    renewed = grant(order=_paid_order("SP_REFUND_RENEW", product_code="sp_refund_001", paid_at="2099-01-02T00:00:00+00:00"))
+    assert renewed["entitlement"]["end_at"].startswith("2099-03-02T00:00:00")
+
+    renewal_refund = refund(out_trade_no="SP_REFUND_RENEW", refund={"status": "SUCCESS", "order_refund_status": "full_refunded"})
+    assert renewal_refund["event_type"] == "refunded"
+    assert renewal_refund["entitlement"]["status"] == "active"
+    assert renewal_refund["entitlement"]["end_at"].startswith("2099-01-31T00:00:00")
+    assert build_service_period_repository().stats(product["id"])["renewal_order_count"] == 0
+
+    idempotent = refund(out_trade_no="SP_REFUND_RENEW", refund={"status": "SUCCESS", "order_refund_status": "full_refunded"})
+    assert idempotent["idempotent"] is True
+    assert build_service_period_repository().entitlement_for_unionid(product["id"], "union_sp_001")["end_at"].startswith("2099-01-31T00:00:00")
+
+    first_refund = refund(out_trade_no="SP_REFUND_FIRST", refund={"status": "SUCCESS", "order_refund_status": "full_refunded"})
+    assert first_refund["event_type"] == "refunded"
+    assert first_refund["entitlement"]["status"] == "refunded"
 
 
 def test_member_remark_command_rejects_unknown_entitlement() -> None:

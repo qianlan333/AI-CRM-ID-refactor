@@ -73,6 +73,10 @@ def _duration_end(start: datetime, duration_days: int) -> datetime:
     return start + timedelta(days=duration_days)
 
 
+def _duration_start(end: datetime, duration_days: int) -> datetime:
+    return end - timedelta(days=duration_days)
+
+
 def _to_service_id(value: Any) -> str:
     return text(value)
 
@@ -111,6 +115,7 @@ class ServicePeriodRepository(Protocol):
     def update_member_remark(self, service_product_id: str, unionid: str, remark: str) -> dict[str, Any]: ...
     def entitlement_for_unionid(self, service_product_id: str, unionid: str) -> dict[str, Any] | None: ...
     def grant_or_renew_from_paid_order(self, *, order: dict[str, Any], transaction: dict[str, Any] | None = None) -> dict[str, Any]: ...
+    def apply_refund_from_order(self, *, out_trade_no: str, refund: dict[str, Any] | None = None) -> dict[str, Any]: ...
     def expire_due_entitlements(self, *, now: datetime | None = None) -> dict[str, Any]: ...
 
 
@@ -246,8 +251,20 @@ class InMemoryServicePeriodRepository:
             "ok": True,
             "active_user_count": len(active),
             "expiring_7d_count": sum(1 for row in active if _expiring_soon(row)),
-            "renewal_order_count": sum(1 for row in self._events if text(row.get("service_product_id")) == text(service_product_id) and row.get("event_type") == "renewed"),
-            "total_paid_amount_cents": sum(int((row.get("payload_json") or {}).get("amount_total") or 0) for row in self._events if text(row.get("service_product_id")) == text(service_product_id) and row.get("event_type") in {"activated", "renewed"}),
+            "renewal_order_count": sum(
+                1
+                for row in self._events
+                if text(row.get("service_product_id")) == text(service_product_id)
+                and row.get("event_type") == "renewed"
+                and not self._event_for_out_trade_no(text(row.get("out_trade_no")), {"refunded"})
+            ),
+            "total_paid_amount_cents": sum(
+                int((row.get("payload_json") or {}).get("amount_total") or 0)
+                for row in self._events
+                if text(row.get("service_product_id")) == text(service_product_id)
+                and row.get("event_type") in {"activated", "renewed"}
+                and not self._event_for_out_trade_no(text(row.get("out_trade_no")), {"refunded"})
+            ),
         }
 
     def members(self, service_product_id: str, *, status: str | None, limit: int, offset: int) -> dict[str, Any]:
@@ -371,6 +388,63 @@ class InMemoryServicePeriodRepository:
             payload={"order": order, "transaction": transaction or {}, "amount_total": int(order.get("amount_total") or 0)},
         )
         return {"ok": True, "event_type": event_type, "entitlement": self._entitlement_payload(entitlement), "event": event}
+
+    def apply_refund_from_order(self, *, out_trade_no: str, refund: dict[str, Any] | None = None) -> dict[str, Any]:
+        normalized = text(out_trade_no)
+        if not normalized:
+            return {"ok": True, "skipped": True, "reason": "out_trade_no_missing"}
+        source_event = self._event_for_out_trade_no(normalized, {"activated", "renewed"})
+        if not source_event:
+            return {"ok": True, "skipped": True, "reason": "not_service_period_order"}
+        existing_refund = self._event_for_out_trade_no(normalized, {"refunded"})
+        if existing_refund:
+            return {"ok": True, "idempotent": True, "skipped": True, "reason": "refund_already_applied", "event": existing_refund}
+        entitlement = None
+        for row in self._entitlements:
+            if text(row.get("id")) == text(source_event.get("entitlement_id")):
+                entitlement = row
+                break
+        if not entitlement:
+            return {"ok": True, "skipped": True, "reason": "entitlement_not_found"}
+        product = self._find_product(source_event.get("service_product_id"))
+        if not product:
+            return {"ok": True, "skipped": True, "reason": "service_period_product_not_found"}
+        before = deepcopy(entitlement)
+        duration_days = int(source_event.get("duration_days") or product.get("duration_days") or 0)
+        now = utcnow()
+        other_active_events = [
+            row
+            for row in self._events
+            if text(row.get("entitlement_id")) == text(entitlement.get("id"))
+            and text(row.get("event_type")) in {"activated", "renewed"}
+            and text(row.get("out_trade_no")) != normalized
+            and not self._event_for_out_trade_no(text(row.get("out_trade_no")), {"refunded"})
+        ]
+        if not other_active_events:
+            entitlement["status"] = "refunded"
+            entitlement["end_at"] = now.isoformat()
+        else:
+            current_end = parse_datetime(entitlement.get("end_at")) or now
+            new_end = _duration_start(current_end, duration_days) if duration_days > 0 else now
+            entitlement["status"] = "active" if new_end > now else "refunded"
+            entitlement["end_at"] = (new_end if new_end > now else now).isoformat()
+        entitlement["updated_at"] = now.isoformat()
+        metadata = deepcopy(entitlement.get("metadata_json") or {})
+        metadata["last_refund"] = deepcopy(refund or {})
+        entitlement["metadata_json"] = metadata
+        event = self._append_event(
+            product=product,
+            entitlement_id=text(entitlement.get("id")),
+            order={"out_trade_no": normalized},
+            out_trade_no=normalized,
+            unionid=text(entitlement.get("unionid")),
+            event_type="refunded",
+            duration_days=duration_days,
+            before=before,
+            after=entitlement,
+            payload={"refund": refund or {}, "source_event": source_event},
+        )
+        return {"ok": True, "event_type": "refunded", "entitlement": self._entitlement_payload(entitlement), "event": event}
 
     def expire_due_entitlements(self, *, now: datetime | None = None) -> dict[str, Any]:
         now = now or utcnow()
@@ -753,15 +827,22 @@ class PostgresServicePeriodRepository:
             renewal = conn.execute(
                 """
                 SELECT count(*) AS total
-                FROM service_period_events
-                WHERE service_product_id::text = %s
-                  AND event_type = 'renewed'
+                FROM service_period_events renewed
+                WHERE renewed.service_product_id::text = %s
+                  AND renewed.event_type = 'renewed'
+                  AND NOT EXISTS (
+                      SELECT 1
+                      FROM service_period_events refunded
+                      WHERE refunded.tenant_id = renewed.tenant_id
+                        AND refunded.event_type = 'refunded'
+                        AND refunded.out_trade_no = renewed.out_trade_no
+                  )
                 """,
                 (text(service_product_id),),
             ).fetchone() or {}
             amount = conn.execute(
                 """
-                SELECT COALESCE(sum(o.amount_total), 0) AS total
+                SELECT COALESCE(sum(GREATEST(COALESCE(o.amount_total, 0) - COALESCE(o.refunded_amount_total, 0), 0)), 0) AS total
                 FROM service_period_events e
                 JOIN wechat_pay_orders o ON o.out_trade_no = e.out_trade_no
                 WHERE e.service_product_id::text = %s
@@ -792,13 +873,43 @@ class PostgresServicePeriodRepository:
                     e.*,
                     p.duration_days AS last_order_duration_days,
                     o.amount_total AS last_order_amount,
-                    COALESCE(NULLIF(c.customer_name, ''), NULLIF(e.metadata_json->>'payer_name', ''), NULLIF(o.payer_name_snapshot, '')) AS display_name,
+                    COALESCE(
+                        NULLIF(c.remark, ''),
+                        NULLIF(wfu.remark, ''),
+                        NULLIF(NULLIF(c.customer_name, ''), '问卷提交用户'),
+                        NULLIF(NULLIF(c.profile_json->>'name', ''), '问卷提交用户'),
+                        NULLIF(wim.name, ''),
+                        NULLIF(wim.raw_profile->>'name', ''),
+                        NULLIF(c.customer_name, ''),
+                        NULLIF(e.metadata_json->>'payer_name', ''),
+                        NULLIF(o.payer_name_snapshot, '')
+                    ) AS display_name,
+                    COALESCE(
+                        NULLIF(e.external_userid_snapshot, ''),
+                        NULLIF(c.primary_external_userid, ''),
+                        NULLIF(wim.external_userid, '')
+                    ) AS external_userid,
                     COALESCE(NULLIF(e.mobile_snapshot, ''), NULLIF(c.mobile, '')) AS mobile,
                     COALESCE(NULLIF(e.metadata_json->>'admin_remark', ''), NULLIF(e.metadata_json->>'remark', '')) AS remark
                 FROM service_period_entitlements e
                 JOIN service_period_products p ON p.id = e.service_product_id
                 LEFT JOIN wechat_pay_orders o ON o.id = e.last_order_id
                 LEFT JOIN crm_user_identity c ON c.unionid = e.unionid
+                LEFT JOIN LATERAL (
+                    SELECT im.external_userid, im.name, im.raw_profile
+                    FROM wecom_external_contact_identity_map im
+                    WHERE im.unionid = e.unionid
+                    ORDER BY im.updated_at DESC NULLS LAST, im.id DESC
+                    LIMIT 1
+                ) wim ON TRUE
+                LEFT JOIN LATERAL (
+                    SELECT fu.remark
+                    FROM wecom_external_contact_follow_users fu
+                    WHERE fu.external_userid = COALESCE(NULLIF(e.external_userid_snapshot, ''), NULLIF(c.primary_external_userid, ''), NULLIF(wim.external_userid, ''))
+                      AND COALESCE(fu.relation_status, 'active') = 'active'
+                    ORDER BY fu.is_primary DESC NULLS LAST, fu.updated_at DESC NULLS LAST, fu.id DESC
+                    LIMIT 1
+                ) wfu ON TRUE
                 WHERE {" AND ".join(where)}
                 ORDER BY e.end_at DESC, e.id DESC
                 LIMIT %s OFFSET %s
@@ -814,7 +925,7 @@ class PostgresServicePeriodRepository:
             {
                 "unionid": text(row.get("unionid")),
                 "display_name": text(row.get("display_name")),
-                "external_userid": text(row.get("external_userid_snapshot")),
+                "external_userid": text(row.get("external_userid")),
                 "mobile": text(row.get("mobile")),
                 "status": entitlement_status(row.get("end_at"), row.get("status"), now=now),
                 "remaining_days": remaining_days(row.get("end_at"), now=now),
@@ -847,13 +958,43 @@ class PostgresServicePeriodRepository:
                     e.*,
                     p.duration_days AS last_order_duration_days,
                     o.amount_total AS last_order_amount,
-                    COALESCE(NULLIF(c.customer_name, ''), NULLIF(e.metadata_json->>'payer_name', ''), NULLIF(o.payer_name_snapshot, '')) AS display_name,
+                    COALESCE(
+                        NULLIF(c.remark, ''),
+                        NULLIF(wfu.remark, ''),
+                        NULLIF(NULLIF(c.customer_name, ''), '问卷提交用户'),
+                        NULLIF(NULLIF(c.profile_json->>'name', ''), '问卷提交用户'),
+                        NULLIF(wim.name, ''),
+                        NULLIF(wim.raw_profile->>'name', ''),
+                        NULLIF(c.customer_name, ''),
+                        NULLIF(e.metadata_json->>'payer_name', ''),
+                        NULLIF(o.payer_name_snapshot, '')
+                    ) AS display_name,
+                    COALESCE(
+                        NULLIF(e.external_userid_snapshot, ''),
+                        NULLIF(c.primary_external_userid, ''),
+                        NULLIF(wim.external_userid, '')
+                    ) AS external_userid,
                     COALESCE(NULLIF(e.mobile_snapshot, ''), NULLIF(c.mobile, '')) AS mobile,
                     COALESCE(NULLIF(e.metadata_json->>'admin_remark', ''), NULLIF(e.metadata_json->>'remark', '')) AS remark
                 FROM service_period_entitlements e
                 JOIN service_period_products p ON p.id = e.service_product_id
                 LEFT JOIN wechat_pay_orders o ON o.id = e.last_order_id
                 LEFT JOIN crm_user_identity c ON c.unionid = e.unionid
+                LEFT JOIN LATERAL (
+                    SELECT im.external_userid, im.name, im.raw_profile
+                    FROM wecom_external_contact_identity_map im
+                    WHERE im.unionid = e.unionid
+                    ORDER BY im.updated_at DESC NULLS LAST, im.id DESC
+                    LIMIT 1
+                ) wim ON TRUE
+                LEFT JOIN LATERAL (
+                    SELECT fu.remark
+                    FROM wecom_external_contact_follow_users fu
+                    WHERE fu.external_userid = COALESCE(NULLIF(e.external_userid_snapshot, ''), NULLIF(c.primary_external_userid, ''), NULLIF(wim.external_userid, ''))
+                      AND COALESCE(fu.relation_status, 'active') = 'active'
+                    ORDER BY fu.is_primary DESC NULLS LAST, fu.updated_at DESC NULLS LAST, fu.id DESC
+                    LIMIT 1
+                ) wfu ON TRUE
                 WHERE e.tenant_id = 'aicrm'
                   AND e.service_product_id::text = %s
                   AND e.unionid = %s
@@ -870,7 +1011,7 @@ class PostgresServicePeriodRepository:
             "member": {
                 "unionid": text(row.get("unionid")),
                 "display_name": text(row.get("display_name")),
-                "external_userid": text(row.get("external_userid_snapshot")),
+                "external_userid": text(row.get("external_userid")),
                 "mobile": text(row.get("mobile")),
                 "status": entitlement_status(row.get("end_at"), row.get("status"), now=now),
                 "remaining_days": remaining_days(row.get("end_at"), now=now),
@@ -929,6 +1070,121 @@ class PostgresServicePeriodRepository:
             result = self._grant_or_renew_with_unionid(conn, product=product, order=order, transaction=transaction or {}, unionid=unionid, out_trade_no=out_trade_no)
             conn.commit()
             return result
+
+    def apply_refund_from_order(self, *, out_trade_no: str, refund: dict[str, Any] | None = None) -> dict[str, Any]:
+        normalized = text(out_trade_no)
+        if not normalized:
+            return {"ok": True, "skipped": True, "reason": "out_trade_no_missing"}
+        with self._connect() as conn:
+            source_event = conn.execute(
+                """
+                SELECT *
+                FROM service_period_events
+                WHERE tenant_id = 'aicrm'
+                  AND out_trade_no = %s
+                  AND event_type IN ('activated', 'renewed')
+                ORDER BY id DESC
+                LIMIT 1
+                """,
+                (normalized,),
+            ).fetchone()
+            if not source_event:
+                return {"ok": True, "skipped": True, "reason": "not_service_period_order"}
+            existing_refund = conn.execute(
+                """
+                SELECT *
+                FROM service_period_events
+                WHERE tenant_id = 'aicrm'
+                  AND out_trade_no = %s
+                  AND event_type = 'refunded'
+                LIMIT 1
+                """,
+                (normalized,),
+            ).fetchone()
+            if existing_refund:
+                return {"ok": True, "idempotent": True, "skipped": True, "reason": "refund_already_applied", "event": dict(existing_refund)}
+            entitlement = conn.execute(
+                """
+                SELECT *
+                FROM service_period_entitlements
+                WHERE id = %s
+                FOR UPDATE
+                """,
+                (int(source_event["entitlement_id"]),),
+            ).fetchone()
+            if not entitlement:
+                return {"ok": True, "skipped": True, "reason": "entitlement_not_found"}
+            product = conn.execute(
+                """
+                SELECT *
+                FROM service_period_products
+                WHERE id = %s
+                  AND tenant_id = 'aicrm'
+                  AND deleted = FALSE
+                LIMIT 1
+                """,
+                (int(source_event["service_product_id"]),),
+            ).fetchone()
+            if not product:
+                return {"ok": True, "skipped": True, "reason": "service_period_product_not_found"}
+            before = dict(entitlement)
+            duration_days = int(source_event.get("duration_days") or product.get("duration_days") or 0)
+            now = utcnow()
+            other_active_events = conn.execute(
+                """
+                SELECT count(*) AS total
+                FROM service_period_events paid
+                WHERE paid.tenant_id = 'aicrm'
+                  AND paid.entitlement_id = %s
+                  AND paid.event_type IN ('activated', 'renewed')
+                  AND paid.out_trade_no <> %s
+                  AND NOT EXISTS (
+                      SELECT 1
+                      FROM service_period_events refunded
+                      WHERE refunded.tenant_id = 'aicrm'
+                        AND refunded.event_type = 'refunded'
+                        AND refunded.out_trade_no = paid.out_trade_no
+                  )
+                """,
+                (int(entitlement["id"]), normalized),
+            ).fetchone() or {}
+            if int(other_active_events.get("total") or 0) <= 0:
+                next_status = "refunded"
+                next_end = now
+            else:
+                current_end = parse_datetime(entitlement.get("end_at")) or now
+                new_end = _duration_start(current_end, duration_days) if duration_days > 0 else now
+                next_status = "active" if new_end > now else "refunded"
+                next_end = new_end if new_end > now else now
+            metadata = _json_object(entitlement.get("metadata_json"))
+            metadata["last_refund"] = dict(refund or {})
+            updated = conn.execute(
+                """
+                UPDATE service_period_entitlements
+                SET status = %s,
+                    end_at = %s,
+                    metadata_json = %s::jsonb,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = %s
+                RETURNING *
+                """,
+                (next_status, next_end, _jsonb(metadata), int(entitlement["id"])),
+            ).fetchone()
+            event = self._insert_event(
+                conn,
+                product=dict(product),
+                entitlement_id=int(updated["id"]),
+                order={"out_trade_no": normalized},
+                out_trade_no=normalized,
+                unionid=text(updated.get("unionid")),
+                event_type="refunded",
+                duration_days=duration_days,
+                before=before,
+                after=dict(updated),
+                payload={"refund": refund or {}, "source_event": dict(source_event)},
+            )
+            conn.commit()
+        return {"ok": True, "event_type": "refunded", "entitlement": self._entitlement_payload(dict(updated)), "event": event}
 
     def expire_due_entitlements(self, *, now: datetime | None = None) -> dict[str, Any]:
         now = now or utcnow()
