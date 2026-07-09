@@ -39,6 +39,54 @@ def upgrade() -> None:
         )
         """
     )
+    op.execute("ALTER TABLE admin_wecom_directory_members ADD COLUMN IF NOT EXISTS corp_id TEXT NOT NULL DEFAULT ''")
+    op.execute("ALTER TABLE admin_wecom_directory_members ADD COLUMN IF NOT EXISTS department_name TEXT NOT NULL DEFAULT ''")
+    op.execute("ALTER TABLE admin_wecom_directory_members ADD COLUMN IF NOT EXISTS mobile TEXT NOT NULL DEFAULT ''")
+    op.execute("ALTER TABLE admin_wecom_directory_members ADD COLUMN IF NOT EXISTS avatar_url TEXT NOT NULL DEFAULT ''")
+    op.execute(
+        "ALTER TABLE admin_wecom_directory_members ADD COLUMN IF NOT EXISTS first_seen_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP"
+    )
+    op.execute(
+        "ALTER TABLE admin_wecom_directory_members ADD COLUMN IF NOT EXISTS last_synced_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP"
+    )
+    op.execute("ALTER TABLE admin_wecom_directory_members ADD COLUMN IF NOT EXISTS updated_by TEXT NOT NULL DEFAULT ''")
+    op.execute(
+        """
+        DO $$
+        BEGIN
+            IF EXISTS (
+                SELECT 1
+                FROM pg_attribute
+                WHERE attrelid = 'admin_wecom_directory_members'::regclass
+                  AND attname = 'wecom_corpid'
+                  AND NOT attisdropped
+            ) THEN
+                EXECUTE 'UPDATE admin_wecom_directory_members
+                         SET corp_id = COALESCE(NULLIF(corp_id, ''''), NULLIF(wecom_corpid, ''''), ''default'')';
+            ELSE
+                UPDATE admin_wecom_directory_members
+                SET corp_id = COALESCE(NULLIF(corp_id, ''), 'default');
+            END IF;
+
+            IF EXISTS (
+                SELECT 1
+                FROM pg_attribute
+                WHERE attrelid = 'admin_wecom_directory_members'::regclass
+                  AND attname = 'synced_at'
+                  AND NOT attisdropped
+            ) THEN
+                EXECUTE 'UPDATE admin_wecom_directory_members
+                         SET last_synced_at = COALESCE(last_synced_at, synced_at, updated_at, created_at, CURRENT_TIMESTAMP)';
+            ELSE
+                UPDATE admin_wecom_directory_members
+                SET last_synced_at = COALESCE(last_synced_at, updated_at, created_at, CURRENT_TIMESTAMP);
+            END IF;
+
+            UPDATE admin_wecom_directory_members
+            SET first_seen_at = COALESCE(first_seen_at, created_at, CURRENT_TIMESTAMP);
+        END $$;
+        """
+    )
     op.execute(
         """
         CREATE UNIQUE INDEX IF NOT EXISTS ux_admin_wecom_directory_members_corp_userid
