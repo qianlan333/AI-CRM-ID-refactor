@@ -296,11 +296,16 @@ def test_internal_event_worker_systemd_units_are_deployable():
     assert "After=network.target openclaw-wecom-postgres.service" in service
     assert "Requires=openclaw-wecom-postgres.service" in service
     assert "EnvironmentFile=/home/ubuntu/.openclaw-wecom-pg.env" in service
-    assert "Environment=AICRM_INTERNAL_EVENTS_ENABLED=0" in service
+    assert "Environment=AICRM_INTERNAL_EVENTS_ENABLED=1" in service
+    assert "Environment=AICRM_INTERNAL_EVENTS_PAYMENT_ENABLED=1" in service
     assert "Environment=AICRM_INTERNAL_EVENTS_SHADOW_ONLY=1" in service
+    assert "Environment=AICRM_INTERNAL_EVENTS_AUTO_EXECUTE=1" in service
     assert "Environment=AICRM_INTERNAL_EVENT_WORKER_BATCH_SIZE=50" in service
+    assert "Environment=AICRM_INTERNAL_EVENTS_WORKER_BATCH_SIZE=50" in service
+    assert "Environment=AICRM_INTERNAL_EVENTS_AUTO_EXECUTE_MAX_BATCH_SIZE=50" in service
+    assert "payment.succeeded:service_period_entitlement_consumer" in service
     assert "WorkingDirectory=/home/ubuntu/极简 crm" in service
-    assert "python scripts/run_internal_event_worker.py" in service
+    assert "python scripts/run_internal_event_worker.py --execute --limit ${AICRM_INTERNAL_EVENTS_WORKER_BATCH_SIZE:-50}" in service
     assert "wecom_ability_service" not in service
     assert "legacy_flask_app" not in service
     assert "run-legacy" not in service
@@ -521,6 +526,9 @@ def test_due_runner_scripts_share_int_env_reader():
     assert not (ROOT / "scripts" / "run_automation_sop.py").exists()
     assert 'read_int_env("EXTERNAL_PUSH_WORKER_BATCH_SIZE", DEFAULT_BATCH_SIZE)' in external_push_worker
     assert 'read_int_env("AICRM_INTERNAL_EVENT_WORKER_BATCH_SIZE", DEFAULT_WORKER_BATCH_SIZE)' in internal_event_worker
+    assert "register_payment_succeeded_consumers()" in internal_event_worker
+    assert "register_shadow_event_consumers()" in internal_event_worker
+    assert "register_ai_audience_event_consumers()" in internal_event_worker
     assert 'read_int_env("AICRM_AI_AUDIENCE_SCHEDULER_BATCH_SIZE", 20)' in ai_audience_scheduler
     assert "--execute" in internal_event_worker
     assert "InternalEventWorker().run_due" in internal_event_worker
