@@ -4,7 +4,7 @@ from html import escape
 import json
 from typing import Any
 
-from aicrm_next.public_product.service import _render_detail_media, route_headers
+from aicrm_next.public_product.service import _render_detail_media, render_pay_landing, route_headers
 
 
 def _price_yuan(product: dict[str, Any]) -> str:
@@ -297,31 +297,8 @@ def render_service_period_public_page(service_product: dict[str, Any], state: di
         else if (status === "expired") renderExpired(entitlement);
         else renderNone();
         button.onclick = function () {{
-          if (!state.create_order_url) return;
-          button.disabled = true;
-          fetch(state.create_order_url, {{
-            method: "POST",
-            headers: {{"Content-Type": "application/json"}},
-            body: JSON.stringify({{}})
-          }}).then(function (response) {{
-            return response.json();
-          }}).then(function (payload) {{
-            if (payload.oauth_start_url) {{
-              window.location.href = payload.oauth_start_url;
-              return;
-            }}
-            if (payload.pay_params && window.WeixinJSBridge) {{
-              window.WeixinJSBridge.invoke("getBrandWCPayRequest", payload.pay_params, function () {{
-                window.location.reload();
-              }});
-              return;
-            }}
-            barMeta.textContent = payload.error || "支付请求已创建";
-            button.disabled = false;
-          }}).catch(function () {{
-            barMeta.textContent = "支付请求失败";
-            button.disabled = false;
-          }});
+          if (!state.checkout_url) return;
+          window.location.href = state.checkout_url;
         }};
       }}
       applyState(initialState);
@@ -337,4 +314,8 @@ def render_service_period_public_page(service_product: dict[str, Any], state: di
 </html>"""
 
 
-__all__ = ["render_service_period_public_page", "route_headers"]
+def render_service_period_pay_page(product: dict[str, Any], page_state: dict[str, Any]) -> str:
+    return render_pay_landing(product, page_state)
+
+
+__all__ = ["render_service_period_pay_page", "render_service_period_public_page", "route_headers"]

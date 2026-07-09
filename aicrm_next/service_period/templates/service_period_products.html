@@ -567,6 +567,13 @@
                   <option value="disabled">已下架</option>
                 </select>
               </div>
+              <div class="service-period-field">
+                <label for="requireMobile">手机号要求</label>
+                <select id="requireMobile">
+                  <option value="false">不要求</option>
+                  <option value="true">要求填写</option>
+                </select>
+              </div>
               <div class="service-period-field full">
                 <label for="productDescription">商品描述</label>
                 <textarea id="productDescription" placeholder="可选。不填写则用户端不展示。"></textarea>
@@ -1131,6 +1138,7 @@
     $("productPrice").value = money(product.price_cents || product.amount_total || product.trade_product?.price_cents || product.trade_product?.amount_total);
     $("durationDays").value = Number(product.duration_days || 30);
     $("productStatus").value = product.status || (product.enabled ? "active" : "draft");
+    $("requireMobile").value = (product.trade_product?.require_mobile || product.require_mobile) ? "true" : "false";
     $("productDescription").value = product.description || product.trade_product?.description || "";
     renderMembershipOptions();
     renderLeadChannels();
@@ -1154,7 +1162,7 @@
       duration_days: Number($("durationDays").value || 0),
       membership_config_id: $("membershipConfig").value,
       membership_config_name: selected?.dataset.name || selected?.textContent || "",
-      require_mobile: false,
+      require_mobile: $("requireMobile").value === "true",
       lead_channel_id: afterActionEnabled && afterActionMode === "lead" ? (Number($("leadChannel").value || 0) || null) : null,
       ...completionRedirectPayload(),
       slices: (product.slices || []).map((slice, index) => ({image_library_id: Number(slice.image_library_id), sort_order: index + 1}))

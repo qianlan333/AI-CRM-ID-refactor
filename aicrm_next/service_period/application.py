@@ -241,10 +241,12 @@ class GetServicePeriodPublicStateQuery:
                 "price_cents": int(product.get("price_cents") or 0),
                 "currency": text(product.get("currency")) or "CNY",
                 "duration_days": int(product.get("duration_days") or 0),
+                "require_mobile": bool((product.get("trade_product") or {}).get("require_mobile") or product.get("require_mobile")),
             },
             "service_product": product,
             "entitlement": entitlement_payload,
             "cta_text": cta_text_for_status(status),
+            "checkout_url": f"/s/{product.get('link_slug')}/pay",
             "create_order_url": f"/api/h5/service-period-products/{product.get('link_slug')}/wechat-pay/jsapi/orders",
         }
 

@@ -5781,6 +5781,17 @@ routes:
   data_source: read_model
   requires_auth: false
   rollback: previous_release
+- path: /s/{link_slug}/pay
+  methods:
+  - GET
+  route_name: api.public_service_period_pay_page
+  capability_owner: service_period
+  runtime_owner: ai_crm_next
+  layer: integration
+  external_effects: none
+  data_source: read_model
+  requires_auth: false
+  rollback: previous_release
 - path: /api/h5/service-period-products/{link_slug}
   methods:
   - GET

@@ -87,7 +87,7 @@ def test_service_period_edit_page_keeps_four_existing_dimensions_only(next_clien
         assert f'data-service-period-panel-content="{panel}"' in text
     for label in ("售卖信息", "页面素材", "购买后动作", "外部推送"):
         assert label in text
-    for field in ("商品名称", "商品编码", "价格", "有效期", "绑定会员设置", "商品状态", "商品描述"):
+    for field in ("商品名称", "商品编码", "价格", "有效期", "绑定会员设置", "商品状态", "手机号要求", "商品描述"):
         assert field in text
     assert "保存售卖信息" in text
     assert "保存页面素材" in text
@@ -99,6 +99,7 @@ def test_service_period_edit_page_keeps_four_existing_dimensions_only(next_clien
     assert "prepareImageForUpload(file)" in text
     assert 'if (mode === "new") body.product_code = productCodeValue;' in text
     assert "formatApiError(payload.detail || payload.error)" in text
+    assert 'require_mobile: $("requireMobile").value === "true"' in text
     assert "product_code: productCodeValue" not in text
     for forbidden in (
         "购买按钮文案",
@@ -184,6 +185,8 @@ def test_service_period_public_page_renders_none_active_and_expired_ctas(next_cl
     assert none_page.status_code == 200
     assert "立即报名" in none_page.text
     assert "开通后获得" in none_page.text
+    assert 'window.location.href = state.checkout_url' in none_page.text
+    assert 'WeixinJSBridge.invoke("getBrandWCPayRequest"' not in none_page.text
     assert "商品编码" not in none_page.text
     assert "webhook" not in none_page.text.lower()
 
@@ -206,6 +209,28 @@ def test_service_period_public_page_renders_none_active_and_expired_ctas(next_cl
     assert expired_page.status_code == 200
     assert "重新开通" in expired_page.text
     assert "上次到期日" in expired_page.text
+
+
+def test_service_period_pay_page_reuses_public_pay_confirmation_contract(next_client, monkeypatch) -> None:
+    _reset()
+    _create(next_client, product_code="sp_public_pay_mobile", require_mobile=True)
+    monkeypatch.setenv("WECHAT_PAY_ENABLED", "1")
+
+    before_auth = next_client.get("/s/sp_public_pay_mobile/pay")
+    assert before_auth.status_code == 200
+    assert "确认报名信息" in before_auth.text
+    assert "授权登录" in before_auth.text
+    assert "需要先完成微信授权。" in before_auth.text
+    assert 'id="mobileInput"' not in before_auth.text
+
+    next_client.cookies.set(h5_wechat_pay.COOKIE_NAME, h5_wechat_pay._signed_blob({"openid": "op_sp_pay", "unionid": "union_sp_pay"}))
+    after_auth = next_client.get("/s/sp_public_pay_mobile/pay")
+    assert after_auth.status_code == 200
+    assert "授权登录" not in after_auth.text
+    assert 'id="mobileInput"' in after_auth.text
+    assert "/api/h5/service-period-products/sp_public_pay_mobile/wechat-pay/jsapi/orders" in after_auth.text
+    assert 'WeixinJSBridge.invoke("getBrandWCPayRequest"' in after_auth.text
+    assert "请填写 11 位手机号后再继续。" in after_auth.text
 
 
 def test_service_period_public_page_keeps_draft_slug_in_service_period_context(next_client) -> None:

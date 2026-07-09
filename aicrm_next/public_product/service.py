@@ -216,7 +216,7 @@ def render_pay_landing(product: dict[str, Any], page_state: dict[str, Any]) -> s
     identity_ready = bool(page_state.get("identity_ready"))
     paid_order = page_state.get("paid_order")
     show_mobile_input = bool(identity_ready and page_state.get("require_mobile") and not paid_order)
-    cta_text = escape(str(product.get("buy_button_text") or "立即报名"))
+    cta_text = escape(str(page_state.get("cta_text") or product.get("buy_button_text") or "立即报名"))
     require_mobile_html = (
         """
       <div class="pay-mobile" id="mobileBlock">
