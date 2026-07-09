@@ -199,7 +199,9 @@ def test_service_period_public_page_renders_none_active_and_expired_ctas(next_cl
     none_page = next_client.get("/s/sp_public_none")
     assert none_page.status_code == 200
     assert "立即报名" in none_page.text
-    assert "开通后获得" in none_page.text
+    assert "开通后获得" not in none_page.text
+    assert "测试会员设置" not in none_page.text
+    assert "90 天有效期" not in none_page.text
     assert 'window.location.href = state.checkout_url' in none_page.text
     assert 'WeixinJSBridge.invoke("getBrandWCPayRequest"' not in none_page.text
     assert "商品编码" not in none_page.text
@@ -213,7 +215,9 @@ def test_service_period_public_page_renders_none_active_and_expired_ctas(next_cl
     active_page = next_client.get("/s/sp_public_active")
     assert active_page.status_code == 200
     assert "立即续费" in active_page.text
-    assert "续费后有效期将继续顺延" in active_page.text
+    assert "使用中" not in active_page.text
+    assert "当前服务仍在有效期内" not in active_page.text
+    assert "续费后有效期将继续顺延" not in active_page.text
 
     _create(next_client, product_code="sp_public_expired")
     GrantOrRenewEntitlementCommand()(
