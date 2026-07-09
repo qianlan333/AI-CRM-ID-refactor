@@ -14,6 +14,13 @@ from .repo import ServicePeriodRepository, build_service_period_repository
 from .repo import reset_service_period_fixture_state as _reset_repo_fixture_state
 
 
+_SERVICE_PERIOD_TRADE_METADATA = {"aicrm_product_owner": "service_period"}
+
+
+def _service_period_trade_metadata(metadata: dict[str, Any] | None = None) -> dict[str, Any]:
+    return {**(metadata or {}), **_SERVICE_PERIOD_TRADE_METADATA}
+
+
 def _status_enabled(status: str) -> bool:
     return text(status).lower() == "active"
 
@@ -32,6 +39,7 @@ def _trade_payload_from_create(payload: ServicePeriodProductCreateRequest) -> Pr
         completion_redirect_enabled=payload.completion_redirect_enabled,
         completion_redirect_url=payload.completion_redirect_url,
         completion_target=payload.completion_target,
+        metadata_json=_service_period_trade_metadata(),
         require_mobile=payload.require_mobile,
         lead_channel_id=payload.lead_channel_id,
         slices=payload.slices or [],
@@ -41,7 +49,7 @@ def _trade_payload_from_create(payload: ServicePeriodProductCreateRequest) -> Pr
 def _trade_payload_from_update(existing: dict[str, Any], payload: ServicePeriodProductUpdateRequest) -> ProductUpsertRequest:
     trade = dict(existing.get("trade_product") or {})
     status = text(payload.status if payload.status is not None else trade.get("status")) or "active"
-    metadata = payload.metadata_json if payload.metadata_json is not None else trade.get("metadata_json")
+    metadata = trade.get("metadata_json")
     return ProductUpsertRequest(
         product_code=text(trade.get("product_code") or existing.get("product_code")),
         title=text(payload.title if payload.title is not None else trade.get("title") or trade.get("name")),
@@ -55,6 +63,7 @@ def _trade_payload_from_update(existing: dict[str, Any], payload: ServicePeriodP
         completion_redirect_enabled=bool(payload.completion_redirect_enabled if payload.completion_redirect_enabled is not None else trade.get("completion_redirect_enabled")),
         completion_redirect_url=text(payload.completion_redirect_url if payload.completion_redirect_url is not None else trade.get("completion_redirect_url")),
         completion_target=payload.completion_target if payload.completion_target is not None else trade.get("completion_target_json") or trade.get("completion_target"),
+        metadata_json=_service_period_trade_metadata(metadata if isinstance(metadata, dict) else {}),
         require_mobile=bool(payload.require_mobile if payload.require_mobile is not None else trade.get("require_mobile")),
         lead_channel_id=payload.lead_channel_id if payload.lead_channel_id is not None else trade.get("lead_channel_id"),
         slices=payload.slices if payload.slices is not None else trade.get("slices") or [],

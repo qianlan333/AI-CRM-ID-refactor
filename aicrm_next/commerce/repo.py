@@ -41,6 +41,7 @@ class CommerceRepository(Protocol):
 
 
 _REFUND_RELATED_ORDER_STATUSES = {"requested", "processing", "refund_processing", "partial_refunded", "full_refunded"}
+_SERVICE_PERIOD_PRODUCT_OWNER = "service_period"
 
 
 def _int_or_zero(value: Any) -> int:
@@ -77,6 +78,11 @@ def _product_sales_counts(orders: list[dict[str, Any]], product_code: str) -> di
         "refund_order_count": refund_order_count,
         "sold_count": max(0, paid_order_count - refund_order_count),
     }
+
+
+def _is_service_period_trade_product(item: dict[str, Any]) -> bool:
+    metadata = item.get("metadata_json") if isinstance(item.get("metadata_json"), dict) else {}
+    return str(metadata.get("aicrm_product_owner") or "").strip() == _SERVICE_PERIOD_PRODUCT_OWNER
 
 
 def _seed_products() -> list[dict[str, Any]]:
@@ -239,7 +245,11 @@ class InMemoryCommerceRepository:
         self._external_push: dict[str, dict[str, Any]] = {}
 
     def list_products(self, *, limit: int, offset: int) -> dict[str, Any]:
-        rows = [self._serialize_product(item) for item in self._products if not item.get("deleted")]
+        rows = [
+            self._serialize_product(item)
+            for item in self._products
+            if not item.get("deleted") and not _is_service_period_trade_product(item)
+        ]
         return {"items": rows[offset : offset + limit], "total": len(rows), "limit": limit, "offset": offset}
 
     def get_product(self, product_id: str) -> dict[str, Any] | None:
@@ -659,12 +669,29 @@ class PostgresCommerceRepository:
                     FROM wechat_pay_products p
                     LEFT JOIN slice_counts sc ON sc.product_id = p.id
                     LEFT JOIN order_counts oc ON oc.product_code = p.product_code
+                    WHERE COALESCE(p.metadata_json->>'aicrm_product_owner', '') <> 'service_period'
+                      AND NOT EXISTS (
+                          SELECT 1
+                          FROM service_period_products sp
+                          WHERE sp.trade_product_id = p.id
+                      )
                     ORDER BY p.updated_at DESC, p.id DESC
                     LIMIT %s OFFSET %s
                     """,
                     (limit, offset),
                 ).fetchall()
-                total_row = cur.execute("SELECT count(*) AS total FROM wechat_pay_products").fetchone() or {}
+                total_row = cur.execute(
+                    """
+                    SELECT count(*) AS total
+                    FROM wechat_pay_products p
+                    WHERE COALESCE(p.metadata_json->>'aicrm_product_owner', '') <> 'service_period'
+                      AND NOT EXISTS (
+                          SELECT 1
+                          FROM service_period_products sp
+                          WHERE sp.trade_product_id = p.id
+                      )
+                    """
+                ).fetchone() or {}
         return {
             "items": [self._serialize_product(row) for row in rows],
             "total": int(total_row.get("total") or 0),
@@ -1061,7 +1088,9 @@ class PostgresCommerceRepository:
         raise ContractError("refund writes are not available from the native commerce repository yet")
 
     def _metadata_from_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
+        metadata = payload.get("metadata_json") if isinstance(payload.get("metadata_json"), dict) else {}
         return {
+            **metadata,
             "description": str(payload.get("description") or ""),
             "page_slug": str(payload.get("page_slug") or payload.get("product_code") or ""),
             "cover_image_id": payload.get("cover_image_id"),

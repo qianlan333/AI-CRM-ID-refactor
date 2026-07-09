@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import inspect
 from datetime import datetime, timezone
 
-from aicrm_next.commerce.repo import reset_commerce_fixture_state
+from aicrm_next.commerce.repo import PostgresCommerceRepository, reset_commerce_fixture_state
 from aicrm_next.service_period.application import (
     CreateServicePeriodProductCommand,
     ExpireDueEntitlementsCommand,
@@ -98,6 +99,59 @@ def test_create_update_copy_disable_delete_facade(next_client) -> None:
     share = next_client.get(f"/api/admin/service-period-products/{product['id']}/share")
     assert share.status_code == 200
     assert "/s/sp_course_001" in share.json()["share"]["url"]
+
+
+def test_service_period_trade_product_is_hidden_from_regular_product_management(next_client) -> None:
+    _reset()
+
+    regular = next_client.post(
+        "/api/admin/wechat-pay/products",
+        json={
+            "product_code": "regular_visible_001",
+            "title": "普通商品可见",
+            "description": "普通商品管理可见 fixture",
+            "price_cents": 9900,
+            "currency": "CNY",
+            "status": "active",
+            "enabled": True,
+            "page_slug": "regular-visible-001",
+        },
+    )
+    assert regular.status_code == 200
+
+    created = next_client.post(
+        "/api/admin/service-period-products",
+        json=_payload(product_code="sp_hidden_regular", title="周期商品不进入普通管理"),
+    )
+    assert created.status_code == 201
+    service_product = created.json()["product"]
+
+    regular_list = next_client.get("/api/admin/wechat-pay/products?limit=100")
+    assert regular_list.status_code == 200
+    regular_codes = [item["product_code"] for item in regular_list.json()["items"]]
+    assert "regular_visible_001" in regular_codes
+    assert "sp_hidden_regular" not in regular_codes
+
+    regular_page = next_client.get("/admin/wechat-pay/products")
+    assert regular_page.status_code == 200
+    assert "regular_visible_001" in regular_page.text
+    assert "sp_hidden_regular" not in regular_page.text
+
+    service_list = next_client.get("/api/admin/service-period-products?limit=100")
+    assert service_list.status_code == 200
+    service_codes = [item["product_code"] for item in service_list.json()["items"]]
+    assert "sp_hidden_regular" in service_codes
+
+    trade_detail = next_client.get(f"/api/admin/wechat-pay/products/{service_product['trade_product_id']}")
+    assert trade_detail.status_code == 200
+    assert trade_detail.json()["product"]["product_code"] == "sp_hidden_regular"
+
+
+def test_postgres_regular_product_list_filters_service_period_trade_products() -> None:
+    source = inspect.getsource(PostgresCommerceRepository.list_products)
+    assert "service_period_products sp" in source
+    assert "sp.trade_product_id = p.id" in source
+    assert "NOT EXISTS" in source
 
 
 def test_update_service_period_product_persists_page_slices(next_client) -> None:
