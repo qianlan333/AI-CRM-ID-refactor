@@ -197,6 +197,32 @@ def test_operation_member_picker_static_assets_select_admin_config_scope() -> No
     assert result["needs_full_ci"] is False
 
 
+def test_operation_member_wecom_sync_change_selects_admin_config_and_db_scope() -> None:
+    result = _select(
+        "aicrm_next/common_operation_members.py",
+        "aicrm_next/operation_members/application.py",
+        "aicrm_next/operation_members/repository.py",
+        "aicrm_next/integration_gateway/wecom_operation_members_client.py",
+        "aicrm_next/frontend_compat/static/admin_console/operation_member_picker.js",
+        "aicrm_next/frontend_compat/templates/admin_console/base.html",
+        "migrations/versions/0096_admin_wecom_directory_members.py",
+        "docs/architecture/route_ownership_manifest.yml",
+        "docs/ci/test_scope_manifest.yml",
+        "tests/test_wecom_operation_members_sync.py",
+        "tests/test_operation_member_picker_frontend.py",
+    )
+
+    assert "admin_config" in result["matched_scopes"]
+    assert "migration_db" in result["matched_scopes"]
+    assert "ci_deploy" in result["matched_scopes"]
+    assert "tests/test_wecom_operation_members_sync.py" in result["python_tests"]
+    assert "tests/test_operation_member_picker_frontend.py" in result["python_tests"]
+    assert result["unmatched_files"] == []
+    assert result["needs_postgres"] is True
+    assert result["architecture_gate"] == "full"
+    assert result["needs_full_ci"] is True
+
+
 def test_wecom_tag_catalog_write_change_selects_real_tag_crud_slice() -> None:
     result = _select(
         "aicrm_next/customer_tags/admin_write.py",

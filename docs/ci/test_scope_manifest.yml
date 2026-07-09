@@ -35,6 +35,29 @@
     },
     {
       "paths": [
+        "aicrm_next/integration_gateway/wecom_operation_members_client.py"
+      ],
+      "scopes": [
+        "admin_config"
+      ]
+    },
+    {
+      "paths": [
+        "aicrm_next/admin_jobs/templates/admin_console/base.html",
+        "aicrm_next/customer_tags/templates/admin_console/base.html",
+        "aicrm_next/automation_engine/templates/admin_console/base.html",
+        "aicrm_next/automation_engine/group_ops/templates/admin_console/base.html",
+        "aicrm_next/frontend_compat/templates/admin_console/base.html",
+        "aicrm_next/admin_shell/templates/admin_shell/base.html",
+        "aicrm_next/radar_links/templates/admin_console/base.html",
+        "tests/test_channel_multi_staff_frontend_contract.py"
+      ],
+      "scopes": [
+        "admin_config"
+      ]
+    },
+    {
+      "paths": [
         "aicrm_next/ai_audience_ops/admin_api.py",
         "aicrm_next/automation_engine/group_ops/api.py",
         "aicrm_next/automation_engine/group_ops/application.py",
@@ -295,6 +318,16 @@
       "name": "admin_config",
       "paths": [
         "aicrm_next/admin_config/**",
+        "aicrm_next/common_operation_members.py",
+        "aicrm_next/operation_members/**",
+        "aicrm_next/integration_gateway/wecom_operation_members_client.py",
+        "aicrm_next/admin_jobs/templates/admin_console/base.html",
+        "aicrm_next/customer_tags/templates/admin_console/base.html",
+        "aicrm_next/automation_engine/templates/admin_console/base.html",
+        "aicrm_next/automation_engine/group_ops/templates/admin_console/base.html",
+        "aicrm_next/frontend_compat/templates/admin_console/base.html",
+        "aicrm_next/admin_shell/templates/admin_shell/base.html",
+        "aicrm_next/radar_links/templates/admin_console/base.html",
         "aicrm_next/frontend_compat/static/admin_console/admin_console.css",
         "aicrm_next/frontend_compat/static/admin_console/config_center.css",
         "aicrm_next/frontend_compat/static/admin_console/config_center.js",
@@ -302,11 +335,15 @@
         "aicrm_next/frontend_compat/templates/admin_console/config_*.html",
         "tests/test_admin_config_next.py",
         "tests/test_operation_member_picker_frontend.py",
+        "tests/test_channel_multi_staff_frontend_contract.py",
+        "tests/test_wecom_operation_members_sync.py",
         "tests/test_admin_pages_real_data_binding.py"
       ],
       "python_tests": [
         "tests/test_admin_config_next.py",
         "tests/test_operation_member_picker_frontend.py",
+        "tests/test_channel_multi_staff_frontend_contract.py",
+        "tests/test_wecom_operation_members_sync.py",
         "tests/test_admin_auth_login_pages.py",
         "tests/test_admin_pages_real_data_binding.py"
       ],

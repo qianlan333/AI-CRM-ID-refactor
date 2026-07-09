@@ -1078,6 +1078,17 @@ routes:
   data_source: read_model
   requires_auth: true
   rollback: previous_release
+- path: /api/admin/common/operation-members/sync
+  methods:
+  - POST
+  route_name: api_operation_members_sync
+  capability_owner: common_operation_members
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: real_requires_approval
+  data_source: command
+  requires_auth: true
+  rollback: previous_release
 - path: /wecom/external-contact/callback
   methods:
   - GET
