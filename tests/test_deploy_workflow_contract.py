@@ -38,8 +38,9 @@ def test_production_deploy_stashes_dirty_worktree_before_remote_update():
     reset_index = workflow.index('git reset --hard "$verified_sha"')
 
     assert stash_index < before_sha_index < verified_sha_index < fetch_index < reset_index
-    assert 'release_repo="https://github.com/qianlan333/AI-CRM-ID-refactor.git"' in workflow
+    assert 'release_repo="git@github.com:qianlan333/AI-CRM-ID-refactor.git"' in workflow
     assert "git fetch origin main:refs/remotes/origin/main" not in workflow
+    assert "https://github.com/qianlan333/AI-CRM-ID-refactor.git" not in workflow
 
 
 def test_production_deploy_installs_dependencies_only_when_hashed_lock_changes():
@@ -71,6 +72,20 @@ def test_production_deploy_fails_closed_unless_checkout_matches_verified_workflo
     assert "invalid verified workflow sha" in workflow
     assert "verified workflow sha is no longer the ID-refactor main head" in workflow
     assert "deployed checkout does not match verified workflow sha" in workflow
+
+
+def test_production_deploy_uses_bounded_ssh_fetch_retries_before_stopping_services():
+    workflow = (ROOT / ".github" / "workflows" / "deploy.yml").read_text(encoding="utf-8")
+
+    ssh_repo_index = workflow.index('release_repo="git@github.com:qianlan333/AI-CRM-ID-refactor.git"')
+    retry_index = workflow.index("for attempt in 1 2 3; do")
+    ssh_guard_index = workflow.index('GIT_SSH_COMMAND="ssh -o BatchMode=yes -o ConnectTimeout=20')
+    fetch_index = workflow.index('git fetch --no-tags "$release_repo" main:refs/remotes/aicrm-id-refactor/main')
+    fetch_guard_index = workflow.index('if [ "$release_fetch_ok" != "1" ]; then')
+    stop_index = workflow.index(_runtime_units_phase("stop-for-migration"))
+
+    assert ssh_repo_index < retry_index < ssh_guard_index < fetch_index < fetch_guard_index < stop_index
+    assert "unable to fetch verified release from ID-refactor after 3 attempts" in workflow
 
 
 def test_production_deploy_refreshes_release_marker_before_restart_and_checks_health_header():

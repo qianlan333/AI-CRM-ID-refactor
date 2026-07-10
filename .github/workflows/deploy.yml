@@ -29,8 +29,21 @@ jobs:
               echo "invalid verified workflow sha"
               exit 1
             fi
-            release_repo="https://github.com/qianlan333/AI-CRM-ID-refactor.git"
-            git fetch --no-tags "$release_repo" main:refs/remotes/aicrm-id-refactor/main
+            release_repo="git@github.com:qianlan333/AI-CRM-ID-refactor.git"
+            release_fetch_ok=0
+            for attempt in 1 2 3; do
+              if GIT_SSH_COMMAND="ssh -o BatchMode=yes -o ConnectTimeout=20 -o ServerAliveInterval=15 -o ServerAliveCountMax=2" \
+                git fetch --no-tags "$release_repo" main:refs/remotes/aicrm-id-refactor/main; then
+                release_fetch_ok=1
+                break
+              fi
+              echo "ID-refactor release fetch failed on attempt $attempt"
+              sleep "$((attempt * 2))"
+            done
+            if [ "$release_fetch_ok" != "1" ]; then
+              echo "unable to fetch verified release from ID-refactor after 3 attempts"
+              exit 1
+            fi
             release_head_sha="$(git rev-parse refs/remotes/aicrm-id-refactor/main)"
             if [ "$release_head_sha" != "$verified_sha" ]; then
               echo "verified workflow sha is no longer the ID-refactor main head"
