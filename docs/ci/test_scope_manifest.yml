@@ -4,6 +4,8 @@
   "unmapped_path_message": "No CI test scope matched these changed files. Add or update docs/ci/test_scope_manifest.yml instead of falling back to full PR regression.",
   "high_risk_paths": [
     "requirements.txt",
+    "requirements-dev.txt",
+    "requirements.lock",
     ".github/**",
     "scripts/ci/**",
     "tests/conftest.py",
@@ -386,6 +388,7 @@
         "docs/architecture/r02_sensitive_data_inventory.yml",
         "docs/architecture/runtime_contract_inventory.json",
         "docs/security/dependency_risk_acceptance.yml",
+        "requirements-dev.txt",
         "requirements.lock",
         "scripts/audit_internal_event_coverage.py",
         "scripts/backfill_missing_external_push_outbox.py",
@@ -402,6 +405,7 @@
         "tests/test_secret_store.py",
         "tests/test_admin_config_secret_references.py",
         "tests/test_app_setting_secret_migration.py",
+        "tests/test_dependency_security_contract.py",
         "tests/test_pii_audit_contract.py",
         "tests/test_pii_log_scanner.py",
         "tests/test_external_push_ssrf_transport.py",
@@ -419,6 +423,7 @@
         "tests/test_secret_store.py",
         "tests/test_admin_config_secret_references.py",
         "tests/test_app_setting_secret_migration.py",
+        "tests/test_dependency_security_contract.py",
         "tests/test_pii_audit_contract.py",
         "tests/test_pii_log_scanner.py",
         "tests/test_external_push_ssrf_transport.py",
@@ -648,6 +653,9 @@
         "tests/test_router_registry_contract.py",
         "tests/test_runtime_contract_inventory.py",
         "tests/test_high_risk_contract_inventory.py",
+        "tests/test_dependency_security_contract.py",
+        "requirements-dev.txt",
+        "requirements.lock",
         "requirements.txt",
         "app.py",
         "aicrm_next/platform_foundation/**"
@@ -668,7 +676,8 @@
         "tests/test_next_api_docs_page.py",
         "tests/test_router_registry_contract.py",
         "tests/test_runtime_contract_inventory.py",
-        "tests/test_high_risk_contract_inventory.py"
+        "tests/test_high_risk_contract_inventory.py",
+        "tests/test_dependency_security_contract.py"
       ],
       "needs_postgres": false,
       "architecture_gate": "full"
