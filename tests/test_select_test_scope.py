@@ -285,6 +285,23 @@ def test_ci_change_selects_contract_tests_and_full_gate() -> None:
     assert result["needs_full_ci"] is True
 
 
+def test_ci_shard_selector_test_change_selects_full_gate() -> None:
+    for changed_path in (
+        "docs/ci/pytest_duration_baseline.json",
+        "tests/test_pytest_duration_baseline_builder.py",
+        "tests/test_pytest_shard_selector.py",
+    ):
+        result = _select(changed_path)
+
+        assert "ci_deploy" in result["matched_scopes"]
+        assert "tests/test_pytest_duration_baseline_builder.py" in result["python_tests"]
+        assert "tests/test_pytest_shard_selector.py" in result["python_tests"]
+        assert result["unmatched_files"] == []
+        assert result["needs_postgres"] is False
+        assert result["architecture_gate"] == "full"
+        assert result["needs_full_ci"] is True
+
+
 def test_workflow_dispatch_with_null_inputs_does_not_break_selector(tmp_path: Path, monkeypatch) -> None:
     event_path = tmp_path / "event.json"
     event_path.write_text(json.dumps({"inputs": None}), encoding="utf-8")
