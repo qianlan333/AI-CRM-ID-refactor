@@ -37,6 +37,15 @@ def test_runtime_contract_inventory_covers_r00_behavior_surfaces() -> None:
     assert inventory["external_effects"]
     assert any(unit["unit"] == "openclaw-wecom-callback-ingress.service" for unit in inventory["runtime_units"])
     assert "DATABASE_URL" in inventory["environment_variables"]
+    assert {
+        "AICRM_LEGACY_INTERNAL_TOKEN_FALLBACK_ENABLED",
+        "ARCHIVE_INTERNAL_API_TOKEN",
+        "AUTOMATION_INTERNAL_API_TOKEN",
+        "CALLBACK_INTERNAL_API_TOKEN",
+        "GROUP_BROADCAST_INTERNAL_API_TOKEN",
+        "IDENTITY_INTERNAL_API_TOKEN",
+        "MCP_BEARER_TOKEN",
+    } <= set(inventory["environment_variables"])
     assert all("value" not in item for item in inventory["environment_variable_references"])
 
 

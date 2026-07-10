@@ -27,6 +27,7 @@ class RoutePolicy:
     pii_level: str
     csrf: bool
     rate_limit: str
+    token_purpose: str = "none"
 
     @property
     def key(self) -> str:
@@ -49,6 +50,7 @@ class RoutePolicy:
             pii_level=str(entry["pii_level"]),
             csrf=bool(entry["csrf"]),
             rate_limit=str(entry["rate_limit"]),
+            token_purpose=str(entry.get("token_purpose") or "none"),
         )
 
 

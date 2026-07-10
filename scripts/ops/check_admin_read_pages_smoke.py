@@ -15,6 +15,8 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from scripts.script_runtime import print_json  # noqa: E402
+
 REQUIRED_OPENAPI_PATHS = (
     "/api/admin/push-center/stats",
     "/api/admin/push-center/jobs",
@@ -199,7 +201,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
     payload = run(args.base_url, timeout=max(1.0, float(args.timeout)), require_admin_cookie=args.require_admin_cookie)
-    print(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True))
+    print_json(payload, indent=2, sort_keys=True)
     return 0 if payload["ok"] else 1
 
 

@@ -121,10 +121,10 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Validate Issue #67 high-risk golden contract coverage.")
     parser.add_argument("--manifest", type=Path, default=MANIFEST)
     args = parser.parse_args(argv)
-    errors = validate_manifest(load_manifest(args.manifest), root=ROOT)
-    if errors:
-        for error in errors:
-            print(error)
+    validation_messages = validate_manifest(load_manifest(args.manifest), root=ROOT)
+    if validation_messages:
+        for validation_message in validation_messages:
+            print(validation_message)
         return 1
     print("high-risk contract inventory: ok")
     return 0

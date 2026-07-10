@@ -13,6 +13,9 @@ from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 
+from aicrm_next.shared.internal_service_tokens import validate_internal_service_token
+from aicrm_next.shared.runtime_settings import runtime_setting
+
 from .application import (
     approve_broadcast_job,
     build_broadcast_jobs_payload,
@@ -99,14 +102,12 @@ def _operator_from_request(request: Request, payload: dict[str, Any] | None = No
 
 def _internal_token_error(request: Request) -> str:
     header = normalized_text(request.headers.get("Authorization"))
-    if not header.lower().startswith("bearer "):
-        return "missing bearer token"
-    actual = header.split(" ", 1)[1].strip()
-    expected = normalized_text(os.getenv("AUTOMATION_INTERNAL_API_TOKEN")) or normalized_text(os.getenv("MCP_BEARER_TOKEN"))
-    if not expected:
+    actual = header.split(" ", 1)[1].strip() if header.lower().startswith("bearer ") else ""
+    result = validate_internal_service_token("automation_worker", actual)
+    if result.error == "internal_token_not_configured":
         return "internal token is not configured"
-    if not hmac.compare_digest(actual, expected):
-        return "invalid bearer token"
+    if not result.ok:
+        return "invalid bearer token" if actual else "missing bearer token"
     return ""
 
 
@@ -137,7 +138,7 @@ async def _action_token_error(request: Request, payload: dict[str, Any] | None =
 
 async def _cron_or_action_token_error(request: Request, payload: dict[str, Any] | None = None) -> str:
     header = normalized_text(request.headers.get("Authorization"))
-    secret = normalized_text(os.getenv("CRON_SECRET"))
+    secret = normalized_text(runtime_setting("CRON_SECRET"))
     if secret and header.lower().startswith("bearer "):
         actual = header.split(" ", 1)[1].strip()
         if hmac.compare_digest(actual, secret):

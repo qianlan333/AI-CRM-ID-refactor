@@ -10,6 +10,7 @@ from uuid import uuid4
 from aicrm_next.navigation_target.service import normalize_completion_target_for_storage
 from aicrm_next.shared.repository_provider import RepositoryProviderError, assert_repository_allowed
 from aicrm_next.shared.runtime import production_data_ready, raw_database_url
+from aicrm_next.shared.runtime_settings import runtime_setting
 from .domain import CHOICE_QUESTION_TYPES, selected_choice_options
 
 
@@ -1718,11 +1719,7 @@ class PostgresQuestionnaireReadRepository:
         raise RepositoryProviderError("questionnaire export remains out of scope for the admin read replacement")
 
     def get_app_setting(self, key: str) -> str | None:
-        with self._connect() as conn:
-            row = conn.execute("SELECT value FROM app_settings WHERE key = %s", (str(key or "").strip(),)).fetchone()
-        if not row:
-            return None
-        return _text(row.get("value"))
+        return runtime_setting(key, "") or None
 
     def create_external_push_log(self, **kwargs: Any) -> dict[str, Any]:
         with self._connect() as conn:

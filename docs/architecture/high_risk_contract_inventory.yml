@@ -1,6 +1,7 @@
 {
   "version": 1,
   "description": "Issue #67 R00 golden contracts. Every domain keeps success, failure, and replay/concurrency evidence in its scoped CI job without real provider calls.",
+  "pii_logging_allowlist": [],
   "domains": [
     {
       "domain": "auth",

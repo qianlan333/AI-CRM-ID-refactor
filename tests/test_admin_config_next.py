@@ -13,6 +13,7 @@ from aicrm_next.admin_auth.service import CSRF_COOKIE, SESSION_COOKIE, sign_sess
 from aicrm_next.platform_foundation.external_effects.adapters import webhook_execution_settings, wecom_execution_settings
 from aicrm_next.platform_foundation.external_effects.realtime import realtime_wakeup_state
 from aicrm_next.shared.db_session import reset_engine_cache_for_tests
+from aicrm_next.shared.secret_store import FileSecretStore, is_secret_reference
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -24,6 +25,7 @@ def _prepare_client(monkeypatch, tmp_path) -> TestClient:
     monkeypatch.setenv("DATABASE_URL", database_url)
     monkeypatch.setenv("AICRM_NEXT_ENV", "production")
     monkeypatch.setenv("AICRM_NEXT_DISABLE_LEGACY_PRODUCTION_FACADE", "1")
+    monkeypatch.setenv("AICRM_SECRET_STORE_DIR", str(tmp_path / "secret-store"))
     monkeypatch.setenv("SECRET_KEY", "admin-config-next-test")
     monkeypatch.setenv("WECOM_CORP_ID", "ww-env-corp")
     reset_engine_cache_for_tests()
@@ -324,7 +326,7 @@ def test_app_settings_api_masks_secrets_and_save_is_idempotent(monkeypatch, tmp_
     assert masked_response.status_code == 200
     text_payload = masked_response.text
     assert "super-secret-value" not in text_payload
-    assert "sup***ue" in text_payload
+    assert "[redacted]" in text_payload
 
     save_payload = {
         "admin_action_token": token,
@@ -346,6 +348,39 @@ def test_app_settings_api_masks_secrets_and_save_is_idempotent(monkeypatch, tmp_
     assert _scalar(database_url, "SELECT value FROM app_settings WHERE key = 'WECOM_CORP_ID'") == "ww-next-corp"
     assert _scalar(database_url, "SELECT value FROM app_settings WHERE key = 'WECOM_SECRET'") == "super-secret-value"
     assert _scalar(database_url, "SELECT COUNT(*) FROM admin_operation_logs WHERE target_type = 'app_setting' AND target_id = 'WECOM_CORP_ID'") == 1
+
+
+def test_app_settings_api_secret_write_returns_metadata_without_raw_value_or_reference(monkeypatch, tmp_path) -> None:
+    client = _prepare_client(monkeypatch, tmp_path)
+    token = _token(client.get("/admin/config/app-settings").text)
+    raw_secret = "complete-contact-secret"
+
+    response = client.put(
+        "/api/admin/config/app-settings",
+        json={
+            "admin_action_token": token,
+            "confirm": True,
+            "operator": "next-test",
+            "settings": {"WECOM_CONTACT_SECRET": raw_secret},
+        },
+    )
+
+    assert response.status_code == 200
+    assert raw_secret not in response.text
+    assert "secretref:file:" not in response.text
+    changed = response.json()["changed"]
+    assert changed == [
+        {
+            "key": "WECOM_CONTACT_SECRET",
+            "configured": True,
+            "display_value": "[redacted]",
+            "version": changed[0]["version"],
+            "updated_at": changed[0]["updated_at"],
+        }
+    ]
+    stored = _scalar(_db_url(monkeypatch), "SELECT value FROM app_settings WHERE key = 'WECOM_CONTACT_SECRET'")
+    assert is_secret_reference(stored)
+    assert FileSecretStore(tmp_path / "secret-store").read(stored) == raw_secret
 
 
 def test_app_settings_save_requires_clear_token_and_confirm_errors(monkeypatch, tmp_path) -> None:
@@ -400,7 +435,7 @@ def test_config_category_detail_returns_blocks_and_masks_sensitive_fields(monkey
     secret = next(field for field in fields if field["key"] == "WECOM_SECRET")
     assert secret["sensitive"] is True
     assert secret["value"] == ""
-    assert secret["display_value"] == "sup***ue"
+    assert secret["display_value"] == "[redacted]"
     assert secret["configured"] is True
     assert any(field["key"] == "WECOM_CALLBACK_TOKEN" for field in fields)
 

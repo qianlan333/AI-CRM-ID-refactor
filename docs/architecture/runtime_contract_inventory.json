@@ -5,25 +5,25 @@
       "accessor": "os.getenv",
       "file": "aicrm_next/admin_auth/service.py",
       "key": "ADMIN_BREAK_GLASS_LOGIN_ENABLED",
-      "line": 88
+      "line": 89
     },
     {
-      "accessor": "os.getenv",
+      "accessor": "runtime_setting",
       "file": "aicrm_next/admin_auth/service.py",
       "key": "ADMIN_BREAK_GLASS_PASSWORD_HASH",
-      "line": 151
+      "line": 152
     },
     {
       "accessor": "os.getenv",
       "file": "aicrm_next/admin_auth/service.py",
       "key": "ADMIN_BREAK_GLASS_USERNAME",
-      "line": 150
+      "line": 151
     },
     {
       "accessor": "os.getenv",
       "file": "aicrm_next/auth_wecom/service.py",
       "key": "ADMIN_LOGIN_REDIRECT_URI",
-      "line": 81
+      "line": 82
     },
     {
       "accessor": "os.getenv",
@@ -35,7 +35,7 @@
       "accessor": "os.getenv",
       "file": "aicrm_next/admin_auth/route_policy.py",
       "key": "AICRM_ADMIN_AUTH_ENFORCED",
-      "line": 87
+      "line": 88
     },
     {
       "accessor": "os.getenv",
@@ -47,7 +47,7 @@
       "accessor": "os.getenv",
       "file": "aicrm_next/admin_auth/service.py",
       "key": "AICRM_ADMIN_SESSION_COOKIE_SECURE",
-      "line": 181
+      "line": 182
     },
     {
       "accessor": "os.getenv",
@@ -68,7 +68,7 @@
       "line": 100
     },
     {
-      "accessor": "os.getenv",
+      "accessor": "runtime_setting",
       "file": "aicrm_next/ai_audience_ops/api.py",
       "key": "AICRM_AI_AUDIENCE_API_TOKEN",
       "line": 52
@@ -83,31 +83,31 @@
       "accessor": "runtime_bool",
       "file": "aicrm_next/ai_audience_ops/test_agent_service.py",
       "key": "AICRM_AI_AUDIENCE_E2E_RUNNER_ENABLED",
-      "line": 178
+      "line": 177
     },
     {
       "accessor": "runtime_bool",
       "file": "aicrm_next/ai_audience_ops/webhook_service.py",
       "key": "AICRM_AI_AUDIENCE_INBOUND_ACTION_EXECUTE",
-      "line": 68
+      "line": 67
     },
     {
-      "accessor": "os.getenv",
+      "accessor": "runtime_setting",
       "file": "aicrm_next/ai_audience_ops/test_agent_service.py",
       "key": "AICRM_AI_AUDIENCE_INBOUND_WEBHOOK_SECRET",
-      "line": 72
+      "line": 71
     },
     {
-      "accessor": "os.getenv",
+      "accessor": "runtime_setting",
       "file": "aicrm_next/ai_audience_ops/test_agent_service.py",
       "key": "AICRM_AI_AUDIENCE_INBOUND_WEBHOOK_SECRET",
-      "line": 133
+      "line": 132
     },
     {
-      "accessor": "os.getenv",
+      "accessor": "runtime_setting",
       "file": "aicrm_next/ai_audience_ops/webhook_service.py",
       "key": "AICRM_AI_AUDIENCE_INBOUND_WEBHOOK_SECRET",
-      "line": 52
+      "line": 51
     },
     {
       "accessor": "os.getenv",
@@ -128,10 +128,10 @@
       "line": 453
     },
     {
-      "accessor": "os.getenv",
+      "accessor": "runtime_setting",
       "file": "aicrm_next/ai_audience_ops/external_auth.py",
       "key": "AICRM_AI_AUDIENCE_SPEC_API_TOKEN",
-      "line": 12
+      "line": 13
     },
     {
       "accessor": "os.getenv",
@@ -149,19 +149,19 @@
       "accessor": "runtime_bool",
       "file": "aicrm_next/ai_audience_ops/test_agent_service.py",
       "key": "AICRM_AI_AUDIENCE_TEST_AGENT_ENABLED",
-      "line": 28
+      "line": 27
     },
     {
       "accessor": "runtime_setting",
       "file": "aicrm_next/ai_audience_ops/test_agent_service.py",
       "key": "AICRM_AI_AUDIENCE_TEST_AGENT_SENDER_USERID",
-      "line": 60
+      "line": 59
     },
     {
       "accessor": "runtime_setting",
       "file": "aicrm_next/ai_audience_ops/test_agent_service.py",
       "key": "AICRM_AI_AUDIENCE_TEST_AGENT_SENDER_USERID",
-      "line": 120
+      "line": 119
     },
     {
       "accessor": "os.getenv",
@@ -176,7 +176,7 @@
       "line": 920
     },
     {
-      "accessor": "os.getenv",
+      "accessor": "runtime_setting",
       "file": "aicrm_next/automation_agents/application.py",
       "key": "AICRM_AUTOMATION_AGENT_WEBHOOK_SECRET",
       "line": 363
@@ -221,13 +221,13 @@
       "accessor": "os.getenv",
       "file": "aicrm_next/admin_jobs/application.py",
       "key": "AICRM_ENABLE_IN_PROCESS_ARCHIVE_SYNC",
-      "line": 311
+      "line": 312
     },
     {
       "accessor": "os.getenv",
       "file": "aicrm_next/message_archive/api.py",
       "key": "AICRM_ENABLE_IN_PROCESS_ARCHIVE_SYNC",
-      "line": 186
+      "line": 191
     },
     {
       "accessor": "os.getenv",
@@ -245,19 +245,19 @@
       "accessor": "runtime_setting",
       "file": "aicrm_next/platform_foundation/external_effects/adapters.py",
       "key": "AICRM_EXTERNAL_EFFECT_ALLOWED_OWNER_USERIDS",
-      "line": 89
+      "line": 98
     },
     {
       "accessor": "runtime_bool",
       "file": "aicrm_next/platform_foundation/external_effects/realtime.py",
       "key": "AICRM_EXTERNAL_EFFECT_WEBHOOK_EXECUTE",
-      "line": 53
+      "line": 54
     },
     {
       "accessor": "runtime_setting",
       "file": "aicrm_next/platform_foundation/external_effects/adapters.py",
       "key": "AICRM_EXTERNAL_EFFECT_WEBHOOK_SIGNING_SECRET",
-      "line": 359
+      "line": 414
     },
     {
       "accessor": "runtime_setting",
@@ -266,7 +266,7 @@
       "line": 279
     },
     {
-      "accessor": "os.getenv",
+      "accessor": "runtime_setting",
       "file": "aicrm_next/questionnaire/external_push.py",
       "key": "AICRM_EXTERNAL_EFFECT_WEBHOOK_SIGNING_SECRET",
       "line": 101
@@ -275,13 +275,13 @@
       "accessor": "runtime_setting",
       "file": "aicrm_next/platform_foundation/external_effects/adapters.py",
       "key": "AICRM_EXTERNAL_EFFECT_WEBHOOK_TIMEOUT_SECONDS",
-      "line": 262
+      "line": 288
     },
     {
       "accessor": "runtime_bool",
       "file": "aicrm_next/platform_foundation/external_effects/realtime.py",
       "key": "AICRM_EXTERNAL_EFFECT_WECOM_EXECUTE",
-      "line": 51
+      "line": 52
     },
     {
       "accessor": "os.environ.get",
@@ -380,22 +380,28 @@
       "line": 164
     },
     {
-      "accessor": "os.getenv",
+      "accessor": "declared_runtime_environment_key",
+      "file": "aicrm_next/shared/internal_service_tokens.py",
+      "key": "AICRM_LEGACY_INTERNAL_TOKEN_FALLBACK_ENABLED",
+      "line": 48
+    },
+    {
+      "accessor": "runtime_setting",
       "file": "aicrm_next/questionnaire/oauth.py",
       "key": "AICRM_NEXT_ACTION_TOKEN_SECRET",
-      "line": 53
+      "line": 54
     },
     {
       "accessor": "os.getenv",
       "file": "aicrm_next/admin_auth/service.py",
       "key": "AICRM_NEXT_ADMIN_AUTH_USER_COUNT",
-      "line": 92
+      "line": 93
     },
     {
       "accessor": "os.getenv",
       "file": "aicrm_next/admin_config/application.py",
       "key": "AICRM_NEXT_ALIPAY_MODE",
-      "line": 1771
+      "line": 1769
     },
     {
       "accessor": "os.getenv",
@@ -449,13 +455,13 @@
       "accessor": "os.getenv",
       "file": "aicrm_next/admin_auth/route_policy.py",
       "key": "AICRM_NEXT_ENV",
-      "line": 79
+      "line": 80
     },
     {
       "accessor": "os.getenv",
       "file": "aicrm_next/commerce/wechat_shop_signature.py",
       "key": "AICRM_NEXT_ENV",
-      "line": 31
+      "line": 32
     },
     {
       "accessor": "os.getenv",
@@ -467,25 +473,25 @@
       "accessor": "os.getenv",
       "file": "aicrm_next/integration_gateway/oauth_identity_live_adapter.py",
       "key": "AICRM_NEXT_ENV",
-      "line": 138
+      "line": 140
     },
     {
       "accessor": "os.getenv",
       "file": "aicrm_next/integration_gateway/questionnaire_adapters.py",
       "key": "AICRM_NEXT_ENV",
-      "line": 436
+      "line": 438
     },
     {
       "accessor": "os.getenv",
       "file": "aicrm_next/integration_gateway/wecom_contact_callback_live_adapter.py",
       "key": "AICRM_NEXT_ENV",
-      "line": 210
+      "line": 212
     },
     {
       "accessor": "os.getenv",
       "file": "aicrm_next/shared/runtime.py",
       "key": "AICRM_NEXT_ENV",
-      "line": 36
+      "line": 38
     },
     {
       "accessor": "os.getenv",
@@ -515,7 +521,7 @@
       "accessor": "os.getenv",
       "file": "aicrm_next/media_library/api.py",
       "key": "AICRM_NEXT_MEDIA_STORAGE_MODE",
-      "line": 34
+      "line": 35
     },
     {
       "accessor": "os.getenv",
@@ -545,7 +551,7 @@
       "accessor": "os.getenv",
       "file": "aicrm_next/integration_gateway/questionnaire_adapters.py",
       "key": "AICRM_NEXT_QUESTIONNAIRE_WEBHOOK_MODE",
-      "line": 803
+      "line": 805
     },
     {
       "accessor": "os.getenv",
@@ -587,7 +593,7 @@
       "accessor": "os.getenv",
       "file": "aicrm_next/integration_gateway/questionnaire_adapters.py",
       "key": "AICRM_NEXT_WECHAT_OAUTH_MODE",
-      "line": 795
+      "line": 797
     },
     {
       "accessor": "os.getenv",
@@ -599,7 +605,7 @@
       "accessor": "os.getenv",
       "file": "aicrm_next/admin_config/application.py",
       "key": "AICRM_NEXT_WECHAT_PAY_MODE",
-      "line": 1765
+      "line": 1763
     },
     {
       "accessor": "os.getenv",
@@ -623,7 +629,7 @@
       "accessor": "os.getenv",
       "file": "aicrm_next/media_library/api.py",
       "key": "AICRM_NEXT_WECOM_MEDIA_MODE",
-      "line": 35
+      "line": 36
     },
     {
       "accessor": "os.getenv",
@@ -635,19 +641,25 @@
       "accessor": "os.getenv",
       "file": "aicrm_next/integration_gateway/wecom_channel_entry_client.py",
       "key": "AICRM_NEXT_WECOM_REAL_CALLS_ENABLED",
-      "line": 218
+      "line": 220
     },
     {
       "accessor": "os.getenv",
       "file": "aicrm_next/integration_gateway/questionnaire_adapters.py",
       "key": "AICRM_NEXT_WECOM_TAG_MODE",
-      "line": 799
+      "line": 801
     },
     {
       "accessor": "os.getenv",
       "file": "scripts/ops/check_callback_quick_ack_state.py",
       "key": "AICRM_NGINX_CONFIG",
       "line": 201
+    },
+    {
+      "accessor": "os.getenv",
+      "file": "aicrm_next/shared/pii_audit.py",
+      "key": "AICRM_PII_AUDIT_ENABLED",
+      "line": 92
     },
     {
       "accessor": "os.getenv",
@@ -665,25 +677,25 @@
       "accessor": "os.getenv",
       "file": "aicrm_next/commerce/api.py",
       "key": "AICRM_PUBLIC_BASE_URL",
-      "line": 321
+      "line": 305
     },
     {
       "accessor": "os.getenv",
       "file": "aicrm_next/questionnaire/oauth.py",
       "key": "AICRM_QUESTIONNAIRE_OAUTH_ADAPTER_MODE",
-      "line": 89
+      "line": 90
     },
     {
       "accessor": "os.getenv",
       "file": "aicrm_next/questionnaire/oauth.py",
       "key": "AICRM_QUESTIONNAIRE_OAUTH_REDIRECT_ALLOWLIST",
-      "line": 105
+      "line": 106
     },
     {
-      "accessor": "os.getenv",
+      "accessor": "runtime_setting",
       "file": "aicrm_next/questionnaire/oauth.py",
       "key": "AICRM_QUESTIONNAIRE_OAUTH_STATE_SECRET",
-      "line": 52
+      "line": 53
     },
     {
       "accessor": "os.getenv",
@@ -707,31 +719,31 @@
       "accessor": "os.getenv",
       "file": "aicrm_next/integration_gateway/wecom_jssdk_adapter.py",
       "key": "AICRM_SIDEBAR_JSSDK_ADAPTER_MODE",
-      "line": 58
+      "line": 59
     },
     {
       "accessor": "os.getenv",
       "file": "aicrm_next/identity_contact/sidebar_jssdk.py",
       "key": "AICRM_SIDEBAR_JSSDK_ALLOWED_HOSTS",
-      "line": 520
+      "line": 521
     },
     {
       "accessor": "_env_flag",
       "file": "aicrm_next/integration_gateway/wecom_jssdk_adapter.py",
       "key": "AICRM_SIDEBAR_JSSDK_REAL_ENABLED",
-      "line": 61
+      "line": 62
     },
     {
-      "accessor": "os.getenv",
+      "accessor": "runtime_setting",
       "file": "aicrm_next/integration_gateway/wecom_jssdk_adapter.py",
       "key": "AICRM_SIDEBAR_JSSDK_SECRET",
-      "line": 205
+      "line": 206
     },
     {
       "accessor": "os.getenv",
       "file": "aicrm_next/integration_gateway/wecom_jssdk_adapter.py",
       "key": "AICRM_SIDEBAR_JSSDK_TIMEOUT_SECONDS",
-      "line": 214
+      "line": 215
     },
     {
       "accessor": "runtime_bool",
@@ -767,13 +779,13 @@
       "accessor": "runtime_setting",
       "file": "aicrm_next/platform_foundation/external_effects/adapters.py",
       "key": "AICRM_WECOM_DEFAULT_SENDER_USERID",
-      "line": 89
+      "line": 98
     },
     {
       "accessor": "runtime_setting",
       "file": "aicrm_next/platform_foundation/external_effects/adapters.py",
       "key": "AICRM_WECOM_EXECUTION_MODE",
-      "line": 69
+      "line": 78
     },
     {
       "accessor": "runtime_setting",
@@ -791,7 +803,7 @@
       "accessor": "os.getenv",
       "file": "aicrm_next/integration_gateway/wecom_operation_members_client.py",
       "key": "AICRM_WECOM_OPERATION_MEMBERS_TIMEOUT",
-      "line": 67
+      "line": 69
     },
     {
       "accessor": "runtime_setting",
@@ -800,28 +812,28 @@
       "line": 20
     },
     {
-      "accessor": "os.getenv",
+      "accessor": "runtime_setting",
       "file": "aicrm_next/integration_gateway/wecom_tag_live_gateway.py",
       "key": "AICRM_WECOM_TAG_AGENT_SECRET",
-      "line": 26
+      "line": 29
     },
     {
       "accessor": "os.getenv",
       "file": "aicrm_next/integration_gateway/wecom_tag_live_gateway.py",
       "key": "AICRM_WECOM_TAG_API_BASE",
-      "line": 16
+      "line": 18
     },
     {
       "accessor": "os.getenv",
       "file": "aicrm_next/integration_gateway/wecom_tag_live_gateway.py",
       "key": "AICRM_WECOM_TAG_CORP_ID",
-      "line": 25
+      "line": 27
     },
     {
       "accessor": "os.getenv",
       "file": "aicrm_next/integration_gateway/wecom_tag_live_gateway.py",
       "key": "AICRM_WECOM_TAG_TIMEOUT_SECONDS",
-      "line": 17
+      "line": 19
     },
     {
       "accessor": "os.getenv",
@@ -833,19 +845,19 @@
       "accessor": "os.getenv",
       "file": "aicrm_next/commerce/api.py",
       "key": "APP_BASE_URL",
-      "line": 323
+      "line": 307
     },
     {
       "accessor": "os.getenv",
       "file": "aicrm_next/integration_gateway/questionnaire_adapters.py",
       "key": "APP_ENV",
-      "line": 438
+      "line": 440
     },
     {
       "accessor": "os.getenv",
       "file": "aicrm_next/shared/runtime.py",
       "key": "APP_ENV",
-      "line": 38
+      "line": 40
     },
     {
       "accessor": "os.getenv",
@@ -857,73 +869,61 @@
       "accessor": "os.getenv",
       "file": "scripts/script_runtime.py",
       "key": "APP_HOST",
-      "line": 38
+      "line": 44
     },
     {
       "accessor": "os.getenv",
       "file": "scripts/script_runtime.py",
       "key": "APP_PORT",
-      "line": 42
+      "line": 48
     },
     {
-      "accessor": "os.getenv",
-      "file": "aicrm_next/admin_auth/route_policy.py",
-      "key": "AUTOMATION_INTERNAL_API_TOKEN",
-      "line": 148
+      "accessor": "declared_runtime_environment_key",
+      "file": "aicrm_next/shared/internal_service_tokens.py",
+      "key": "ARCHIVE_INTERNAL_API_TOKEN",
+      "line": 48
     },
     {
-      "accessor": "os.getenv",
-      "file": "aicrm_next/admin_jobs/routes.py",
-      "key": "AUTOMATION_INTERNAL_API_TOKEN",
-      "line": 105
-    },
-    {
-      "accessor": "os.getenv",
+      "accessor": "runtime_setting",
       "file": "aicrm_next/ai_audience_ops/api.py",
       "key": "AUTOMATION_INTERNAL_API_TOKEN",
       "line": 53
     },
     {
-      "accessor": "os.getenv",
-      "file": "aicrm_next/automation_engine/group_ops/broadcast.py",
-      "key": "AUTOMATION_INTERNAL_API_TOKEN",
-      "line": 68
-    },
-    {
-      "accessor": "os.getenv",
+      "accessor": "runtime_setting",
       "file": "aicrm_next/platform_foundation/external_effects/api.py",
       "key": "AUTOMATION_INTERNAL_API_TOKEN",
       "line": 76
     },
     {
-      "accessor": "os.getenv",
+      "accessor": "runtime_setting",
       "file": "aicrm_next/platform_foundation/internal_events/api.py",
       "key": "AUTOMATION_INTERNAL_API_TOKEN",
       "line": 87
     },
     {
-      "accessor": "os.getenv",
+      "accessor": "runtime_setting",
       "file": "aicrm_next/platform_foundation/internal_run_due_guard.py",
       "key": "AUTOMATION_INTERNAL_API_TOKEN",
-      "line": 67
+      "line": 69
     },
     {
-      "accessor": "os.getenv",
+      "accessor": "runtime_setting",
       "file": "aicrm_next/platform_foundation/legacy_cleanup/api.py",
       "key": "AUTOMATION_INTERNAL_API_TOKEN",
       "line": 62
     },
     {
-      "accessor": "os.getenv",
+      "accessor": "runtime_setting",
       "file": "aicrm_next/platform_foundation/push_center/api.py",
       "key": "AUTOMATION_INTERNAL_API_TOKEN",
       "line": 69
     },
     {
-      "accessor": "os.getenv",
-      "file": "aicrm_next/platform_foundation/webhook_inbox/api.py",
+      "accessor": "declared_runtime_environment_key",
+      "file": "aicrm_next/shared/internal_service_tokens.py",
       "key": "AUTOMATION_INTERNAL_API_TOKEN",
-      "line": 88
+      "line": 48
     },
     {
       "accessor": "os.getenv",
@@ -951,12 +951,6 @@
     },
     {
       "accessor": "os.getenv",
-      "file": "scripts/script_runtime.py",
-      "key": "AUTOMATION_INTERNAL_API_TOKEN",
-      "line": 46
-    },
-    {
-      "accessor": "os.getenv",
       "file": "aicrm_next/background_jobs/automation_ops_scheduler.py",
       "key": "AUTOMATION_OPS_SCHEDULER_OPERATOR",
       "line": 35
@@ -974,22 +968,28 @@
       "line": 114
     },
     {
-      "accessor": "os.getenv",
+      "accessor": "declared_runtime_environment_key",
+      "file": "aicrm_next/shared/internal_service_tokens.py",
+      "key": "CALLBACK_INTERNAL_API_TOKEN",
+      "line": 48
+    },
+    {
+      "accessor": "runtime_setting",
       "file": "aicrm_next/admin_jobs/routes.py",
       "key": "CRON_SECRET",
-      "line": 140
+      "line": 141
     },
     {
       "accessor": "_env_flag",
       "file": "aicrm_next/customer_read_model/application.py",
       "key": "CUSTOMER_READ_MODEL_LIVE_SOURCE_FALLBACK_ENABLED",
-      "line": 40
+      "line": 41
     },
     {
       "accessor": "_env_flag",
       "file": "aicrm_next/customer_read_model/application.py",
       "key": "CUSTOMER_READ_MODEL_NEXT_PRIMARY",
-      "line": 36
+      "line": 37
     },
     {
       "accessor": "os.getenv",
@@ -1067,7 +1067,7 @@
       "accessor": "os.getenv",
       "file": "aicrm_next/platform_foundation/internal_run_due_guard.py",
       "key": "DATABASE_URL",
-      "line": 60
+      "line": 62
     },
     {
       "accessor": "os.getenv",
@@ -1139,37 +1139,37 @@
       "accessor": "os.getenv",
       "file": "aicrm_next/shared/db_session.py",
       "key": "DB_APPLICATION_NAME",
-      "line": 86
+      "line": 87
     },
     {
       "accessor": "os.getenv",
       "file": "aicrm_next/integration_gateway/questionnaire_adapters.py",
       "key": "ENVIRONMENT",
-      "line": 437
-    },
-    {
-      "accessor": "os.getenv",
-      "file": "aicrm_next/shared/runtime.py",
-      "key": "ENVIRONMENT",
-      "line": 37
-    },
-    {
-      "accessor": "os.getenv",
-      "file": "aicrm_next/external_push/service.py",
-      "key": "EXTERNAL_PUSH_WEBHOOK_TIMEOUT_SECONDS",
-      "line": 314
-    },
-    {
-      "accessor": "os.getenv",
-      "file": "aicrm_next/integration_gateway/questionnaire_adapters.py",
-      "key": "FLASK_ENV",
       "line": 439
     },
     {
       "accessor": "os.getenv",
       "file": "aicrm_next/shared/runtime.py",
-      "key": "FLASK_ENV",
+      "key": "ENVIRONMENT",
       "line": 39
+    },
+    {
+      "accessor": "os.getenv",
+      "file": "aicrm_next/external_push/service.py",
+      "key": "EXTERNAL_PUSH_WEBHOOK_TIMEOUT_SECONDS",
+      "line": 293
+    },
+    {
+      "accessor": "os.getenv",
+      "file": "aicrm_next/integration_gateway/questionnaire_adapters.py",
+      "key": "FLASK_ENV",
+      "line": 441
+    },
+    {
+      "accessor": "os.getenv",
+      "file": "aicrm_next/shared/runtime.py",
+      "key": "FLASK_ENV",
+      "line": 41
     },
     {
       "accessor": "os.environ.get",
@@ -1202,28 +1202,34 @@
       "line": 64
     },
     {
+      "accessor": "declared_runtime_environment_key",
+      "file": "aicrm_next/shared/internal_service_tokens.py",
+      "key": "GROUP_BROADCAST_INTERNAL_API_TOKEN",
+      "line": 48
+    },
+    {
+      "accessor": "declared_runtime_environment_key",
+      "file": "aicrm_next/shared/internal_service_tokens.py",
+      "key": "IDENTITY_INTERNAL_API_TOKEN",
+      "line": 48
+    },
+    {
       "accessor": "os.getenv",
       "file": "scripts/run_wecom_callback_ingress.py",
       "key": "LOG_LEVEL",
       "line": 33
     },
     {
-      "accessor": "os.getenv",
-      "file": "aicrm_next/admin_auth/route_policy.py",
-      "key": "MCP_BEARER_TOKEN",
-      "line": 151
-    },
-    {
-      "accessor": "os.getenv",
+      "accessor": "runtime_setting",
       "file": "aicrm_next/admin_jobs/application.py",
       "key": "MCP_BEARER_TOKEN",
-      "line": 240
+      "line": 241
     },
     {
-      "accessor": "os.getenv",
-      "file": "aicrm_next/admin_jobs/routes.py",
+      "accessor": "declared_runtime_environment_key",
+      "file": "aicrm_next/shared/internal_service_tokens.py",
       "key": "MCP_BEARER_TOKEN",
-      "line": 105
+      "line": 48
     },
     {
       "accessor": "os.getenv",
@@ -1241,7 +1247,7 @@
       "accessor": "os.getenv",
       "file": "aicrm_next/commerce/api.py",
       "key": "PUBLIC_BASE_URL",
-      "line": 322
+      "line": 306
     },
     {
       "accessor": "os.getenv",
@@ -1253,13 +1259,13 @@
       "accessor": "os.getenv",
       "file": "aicrm_next/admin_auth/route_policy.py",
       "key": "PYTEST_CURRENT_TEST",
-      "line": 77
+      "line": 78
     },
     {
       "accessor": "os.getenv",
       "file": "aicrm_next/admin_auth/route_policy.py",
       "key": "PYTEST_CURRENT_TEST",
-      "line": 85
+      "line": 86
     },
     {
       "accessor": "os.getenv",
@@ -1271,7 +1277,7 @@
       "accessor": "os.getenv",
       "file": "aicrm_next/shared/runtime.py",
       "key": "REDIS_URL",
-      "line": 119
+      "line": 121
     },
     {
       "accessor": "os.getenv",
@@ -1280,25 +1286,25 @@
       "line": 63
     },
     {
-      "accessor": "os.getenv",
+      "accessor": "runtime_setting",
       "file": "aicrm_next/questionnaire/application.py",
       "key": "SECRET_KEY",
-      "line": 298
+      "line": 299
     },
     {
-      "accessor": "os.getenv",
+      "accessor": "runtime_setting",
       "file": "aicrm_next/questionnaire/oauth.py",
       "key": "SECRET_KEY",
-      "line": 54
+      "line": 55
     },
     {
-      "accessor": "os.getenv",
+      "accessor": "runtime_setting",
       "file": "aicrm_next/radar_links/api.py",
       "key": "SECRET_KEY",
-      "line": 110
+      "line": 111
     },
     {
-      "accessor": "os.getenv",
+      "accessor": "runtime_setting",
       "file": "aicrm_next/radar_links/application.py",
       "key": "SECRET_KEY",
       "line": 39
@@ -1307,7 +1313,7 @@
       "accessor": "runtime_setting",
       "file": "aicrm_next/shared/runtime.py",
       "key": "SECRET_KEY",
-      "line": 92
+      "line": 94
     },
     {
       "accessor": "os.getenv",
@@ -1319,49 +1325,49 @@
       "accessor": "os.getenv",
       "file": "aicrm_next/admin_read_model/projections.py",
       "key": "WECHAT_MP_APPID",
-      "line": 277
+      "line": 278
     },
     {
       "accessor": "os.getenv",
       "file": "aicrm_next/integration_gateway/questionnaire_adapters.py",
       "key": "WECHAT_MP_APP_ID",
-      "line": 414
+      "line": 416
     },
     {
       "accessor": "os.getenv",
       "file": "aicrm_next/integration_gateway/wechat_pay_client.py",
       "key": "WECHAT_MP_APP_ID",
-      "line": 51
+      "line": 53
     },
     {
       "accessor": "os.getenv",
       "file": "aicrm_next/questionnaire/application.py",
       "key": "WECHAT_MP_APP_ID",
-      "line": 300
+      "line": 301
     },
     {
-      "accessor": "os.getenv",
+      "accessor": "runtime_setting",
       "file": "aicrm_next/integration_gateway/questionnaire_adapters.py",
       "key": "WECHAT_MP_APP_SECRET",
-      "line": 418
+      "line": 420
     },
     {
-      "accessor": "os.getenv",
+      "accessor": "runtime_setting",
       "file": "aicrm_next/questionnaire/application.py",
       "key": "WECHAT_MP_APP_SECRET",
-      "line": 301
+      "line": 302
     },
     {
       "accessor": "os.getenv",
       "file": "aicrm_next/integration_gateway/questionnaire_adapters.py",
       "key": "WECHAT_MP_OAUTH_SCOPE",
-      "line": 422
+      "line": 424
     },
     {
       "accessor": "os.getenv",
       "file": "aicrm_next/admin_read_model/projections.py",
       "key": "WECHAT_OAUTH_APPID",
-      "line": 277
+      "line": 278
     },
     {
       "accessor": "os.getenv",
@@ -1373,43 +1379,43 @@
       "accessor": "os.getenv",
       "file": "aicrm_next/integration_gateway/wechat_pay_client.py",
       "key": "WECHAT_PAY_API_BASE",
-      "line": 60
+      "line": 62
     },
     {
-      "accessor": "os.getenv",
+      "accessor": "runtime_setting",
       "file": "aicrm_next/integration_gateway/wechat_pay_client.py",
       "key": "WECHAT_PAY_API_V3_KEY",
-      "line": 55
+      "line": 57
     },
     {
       "accessor": "os.getenv",
       "file": "aicrm_next/integration_gateway/wechat_pay_client.py",
       "key": "WECHAT_PAY_APP_ID",
-      "line": 51
+      "line": 53
     },
     {
-      "accessor": "os.getenv",
+      "accessor": "runtime_setting",
       "file": "aicrm_next/integration_gateway/wechat_pay_client.py",
       "key": "WECHAT_PAY_CERT_SERIAL_NO",
-      "line": 57
+      "line": 59
     },
     {
       "accessor": "os.getenv",
       "file": "aicrm_next/admin_read_model/projections.py",
       "key": "WECHAT_PAY_MCH_ID",
-      "line": 276
+      "line": 277
     },
     {
       "accessor": "os.getenv",
       "file": "aicrm_next/integration_gateway/wechat_pay_client.py",
       "key": "WECHAT_PAY_MCH_ID",
-      "line": 54
+      "line": 56
     },
     {
       "accessor": "os.getenv",
       "file": "aicrm_next/integration_gateway/questionnaire_adapters.py",
       "key": "WECHAT_PAY_NOTIFY_URL",
-      "line": 454
+      "line": 456
     },
     {
       "accessor": "os.getenv",
@@ -1421,19 +1427,19 @@
       "accessor": "os.getenv",
       "file": "aicrm_next/integration_gateway/wechat_pay_client.py",
       "key": "WECHAT_PAY_PLATFORM_CERT_SERIAL_NO",
-      "line": 59
+      "line": 61
     },
     {
       "accessor": "os.getenv",
       "file": "aicrm_next/integration_gateway/wechat_pay_client.py",
       "key": "WECHAT_PAY_PLATFORM_PUBLIC_KEY_PATH",
-      "line": 58
+      "line": 60
     },
     {
       "accessor": "os.getenv",
       "file": "aicrm_next/integration_gateway/wechat_pay_client.py",
       "key": "WECHAT_PAY_PRIVATE_KEY_PATH",
-      "line": 56
+      "line": 58
     },
     {
       "accessor": "os.getenv",
@@ -1445,85 +1451,85 @@
       "accessor": "os.getenv",
       "file": "aicrm_next/commerce/api.py",
       "key": "WECHAT_PAY_REFUND_NOTIFY_URL",
-      "line": 330
+      "line": 314
     },
     {
       "accessor": "os.getenv",
       "file": "aicrm_next/integration_gateway/wechat_pay_client.py",
       "key": "WECHAT_PAY_TIMEOUT_SECONDS",
-      "line": 61
+      "line": 63
     },
     {
       "accessor": "os.getenv",
       "file": "aicrm_next/commerce/wechat_shop_service.py",
       "key": "WECHAT_SHOP_API_BASE",
-      "line": 110
+      "line": 111
     },
     {
       "accessor": "os.getenv",
       "file": "aicrm_next/commerce/wechat_shop_service.py",
       "key": "WECHAT_SHOP_APPID",
-      "line": 108
-    },
-    {
-      "accessor": "os.getenv",
-      "file": "aicrm_next/commerce/wechat_shop_service.py",
-      "key": "WECHAT_SHOP_APPID",
-      "line": 698
-    },
-    {
-      "accessor": "os.getenv",
-      "file": "aicrm_next/commerce/wechat_shop_service.py",
-      "key": "WECHAT_SHOP_APPSECRET",
-      "line": 94
-    },
-    {
-      "accessor": "os.getenv",
-      "file": "aicrm_next/commerce/wechat_shop_service.py",
-      "key": "WECHAT_SHOP_APPSECRET",
       "line": 109
     },
     {
       "accessor": "os.getenv",
       "file": "aicrm_next/commerce/wechat_shop_service.py",
-      "key": "WECHAT_SHOP_CALLBACK_TOKEN",
-      "line": 94
+      "key": "WECHAT_SHOP_APPID",
+      "line": 699
     },
     {
-      "accessor": "os.getenv",
+      "accessor": "runtime_setting",
+      "file": "aicrm_next/commerce/wechat_shop_service.py",
+      "key": "WECHAT_SHOP_APPSECRET",
+      "line": 95
+    },
+    {
+      "accessor": "runtime_setting",
+      "file": "aicrm_next/commerce/wechat_shop_service.py",
+      "key": "WECHAT_SHOP_APPSECRET",
+      "line": 110
+    },
+    {
+      "accessor": "runtime_setting",
+      "file": "aicrm_next/commerce/wechat_shop_service.py",
+      "key": "WECHAT_SHOP_CALLBACK_TOKEN",
+      "line": 95
+    },
+    {
+      "accessor": "runtime_setting",
       "file": "aicrm_next/commerce/wechat_shop_signature.py",
       "key": "WECHAT_SHOP_CALLBACK_TOKEN",
-      "line": 27
+      "line": 28
     },
     {
       "accessor": "runtime_setting",
       "file": "aicrm_next/shared/runtime.py",
       "key": "WECHAT_SHOP_CALLBACK_TOKEN",
-      "line": 93
+      "line": 95
     },
     {
       "accessor": "os.getenv",
       "file": "aicrm_next/commerce/wechat_shop_service.py",
       "key": "WECHAT_SHOP_HTTP_TIMEOUT_SECONDS",
-      "line": 105
+      "line": 106
     },
     {
       "accessor": "os.getenv",
       "file": "aicrm_next/admin_auth/service.py",
       "key": "WECOM_AGENT_ID",
-      "line": 110
+      "line": 111
     },
     {
       "accessor": "os.getenv",
       "file": "aicrm_next/auth_wecom/service.py",
       "key": "WECOM_AGENT_ID",
-      "line": 87
+      "line": 88
     },
     {
       "accessor": "os.getenv",
       "file": "aicrm_next/integration_gateway/wecom_jssdk_adapter.py",
       "key": "WECOM_AGENT_ID",
-      "line": 81
+      "line": 82
     },
     {
       "accessor": "os.getenv",
@@ -1535,19 +1541,19 @@
       "accessor": "os.getenv",
       "file": "aicrm_next/integration_gateway/wecom_channel_entry_client.py",
       "key": "WECOM_API_BASE",
-      "line": 106
+      "line": 108
     },
     {
       "accessor": "os.getenv",
       "file": "aicrm_next/integration_gateway/wecom_jssdk_adapter.py",
       "key": "WECOM_API_BASE",
-      "line": 213
+      "line": 214
     },
     {
       "accessor": "os.getenv",
       "file": "aicrm_next/questionnaire/application.py",
       "key": "WECOM_API_BASE",
-      "line": 312
+      "line": 313
     },
     {
       "accessor": "os.getenv",
@@ -1580,10 +1586,10 @@
       "line": 77
     },
     {
-      "accessor": "os.getenv",
+      "accessor": "runtime_setting",
       "file": "aicrm_next/channel_entry/application.py",
       "key": "WECOM_CALLBACK_AES_KEY",
-      "line": 52
+      "line": 54
     },
     {
       "accessor": "os.getenv",
@@ -1604,16 +1610,16 @@
       "line": 32
     },
     {
-      "accessor": "os.getenv",
+      "accessor": "runtime_setting",
       "file": "aicrm_next/admin_read_model/projections.py",
       "key": "WECOM_CALLBACK_TOKEN",
-      "line": 275
+      "line": 276
     },
     {
-      "accessor": "os.getenv",
+      "accessor": "runtime_setting",
       "file": "aicrm_next/channel_entry/application.py",
       "key": "WECOM_CALLBACK_TOKEN",
-      "line": 51
+      "line": 53
     },
     {
       "accessor": "os.getenv",
@@ -1622,40 +1628,40 @@
       "line": 51
     },
     {
-      "accessor": "os.getenv",
+      "accessor": "runtime_setting",
       "file": "aicrm_next/integration_gateway/wecom_channel_entry_client.py",
       "key": "WECOM_CONTACT_SECRET",
-      "line": 105
+      "line": 107
     },
     {
-      "accessor": "os.getenv",
+      "accessor": "runtime_setting",
       "file": "aicrm_next/integration_gateway/wecom_channel_entry_client.py",
       "key": "WECOM_CONTACT_SECRET",
-      "line": 225
+      "line": 227
     },
     {
-      "accessor": "os.getenv",
+      "accessor": "runtime_setting",
       "file": "aicrm_next/integration_gateway/wecom_tag_live_gateway.py",
       "key": "WECOM_CONTACT_SECRET",
-      "line": 26
+      "line": 30
     },
     {
-      "accessor": "os.getenv",
+      "accessor": "runtime_setting",
       "file": "aicrm_next/questionnaire/application.py",
       "key": "WECOM_CONTACT_SECRET",
-      "line": 307
+      "line": 308
     },
     {
       "accessor": "os.getenv",
       "file": "aicrm_next/admin_auth/service.py",
       "key": "WECOM_CORP_ID",
-      "line": 109
+      "line": 110
     },
     {
       "accessor": "os.getenv",
       "file": "aicrm_next/auth_wecom/service.py",
       "key": "WECOM_CORP_ID",
-      "line": 86
+      "line": 87
     },
     {
       "accessor": "os.getenv",
@@ -1667,7 +1673,7 @@
       "accessor": "os.getenv",
       "file": "aicrm_next/channel_entry/application.py",
       "key": "WECOM_CORP_ID",
-      "line": 50
+      "line": 52
     },
     {
       "accessor": "os.getenv",
@@ -1679,43 +1685,43 @@
       "accessor": "os.getenv",
       "file": "aicrm_next/identity_contact/sidebar_jssdk.py",
       "key": "WECOM_CORP_ID",
-      "line": 404
+      "line": 405
     },
     {
       "accessor": "os.getenv",
       "file": "aicrm_next/integration_gateway/wecom_channel_entry_client.py",
       "key": "WECOM_CORP_ID",
-      "line": 104
+      "line": 106
     },
     {
       "accessor": "os.getenv",
       "file": "aicrm_next/integration_gateway/wecom_channel_entry_client.py",
       "key": "WECOM_CORP_ID",
-      "line": 223
+      "line": 225
     },
     {
       "accessor": "os.getenv",
       "file": "aicrm_next/integration_gateway/wecom_jssdk_adapter.py",
       "key": "WECOM_CORP_ID",
-      "line": 80
+      "line": 81
     },
     {
       "accessor": "os.getenv",
       "file": "aicrm_next/integration_gateway/wecom_tag_live_gateway.py",
       "key": "WECOM_CORP_ID",
-      "line": 25
+      "line": 27
     },
     {
       "accessor": "os.getenv",
       "file": "aicrm_next/questionnaire/application.py",
       "key": "WECOM_CORP_ID",
-      "line": 306
+      "line": 307
     },
     {
       "accessor": "os.getenv",
       "file": "aicrm_next/questionnaire/application.py",
       "key": "WECOM_CORP_ID",
-      "line": 310
+      "line": 311
     },
     {
       "accessor": "os.getenv",
@@ -1727,7 +1733,7 @@
       "accessor": "os.getenv",
       "file": "aicrm_next/admin_jobs/application.py",
       "key": "WECOM_DEFAULT_OWNER_USERID",
-      "line": 94
+      "line": 95
     },
     {
       "accessor": "os.getenv",
@@ -1736,70 +1742,70 @@
       "line": 20
     },
     {
-      "accessor": "os.getenv",
+      "accessor": "runtime_setting",
       "file": "aicrm_next/auth_wecom/service.py",
       "key": "WECOM_SECRET",
-      "line": 88
+      "line": 89
     },
     {
-      "accessor": "os.getenv",
+      "accessor": "runtime_setting",
       "file": "aicrm_next/identity_contact/sidebar_jssdk.py",
       "key": "WECOM_SECRET",
-      "line": 405
+      "line": 406
     },
     {
-      "accessor": "os.getenv",
+      "accessor": "runtime_setting",
       "file": "aicrm_next/integration_gateway/wecom_channel_entry_client.py",
       "key": "WECOM_SECRET",
-      "line": 105
+      "line": 107
     },
     {
-      "accessor": "os.getenv",
+      "accessor": "runtime_setting",
       "file": "aicrm_next/integration_gateway/wecom_channel_entry_client.py",
       "key": "WECOM_SECRET",
-      "line": 225
+      "line": 227
     },
     {
-      "accessor": "os.getenv",
+      "accessor": "runtime_setting",
       "file": "aicrm_next/integration_gateway/wecom_jssdk_adapter.py",
       "key": "WECOM_SECRET",
-      "line": 205
+      "line": 206
     },
     {
-      "accessor": "os.getenv",
+      "accessor": "runtime_setting",
       "file": "aicrm_next/integration_gateway/wecom_tag_live_gateway.py",
       "key": "WECOM_SECRET",
-      "line": 26
+      "line": 31
     },
     {
-      "accessor": "os.getenv",
+      "accessor": "runtime_setting",
       "file": "aicrm_next/questionnaire/application.py",
       "key": "WECOM_SECRET",
-      "line": 311
+      "line": 312
     },
     {
       "accessor": "os.getenv",
       "file": "aicrm_next/integration_gateway/wecom_channel_entry_client.py",
       "key": "WECOM_TIMEOUT_SECONDS",
-      "line": 107
+      "line": 109
     },
     {
       "accessor": "os.getenv",
       "file": "aicrm_next/channel_entry/application.py",
       "key": "WORKER_RELEASE_SHA",
-      "line": 988
+      "line": 990
     },
     {
       "accessor": "os.getenv",
       "file": "aicrm_next/channel_entry/application.py",
       "key": "WORKER_RELEASE_SHA",
-      "line": 1206
+      "line": 1208
     },
     {
       "accessor": "os.getenv",
       "file": "aicrm_next/shared/runtime.py",
       "key": "WORKER_RELEASE_SHA",
-      "line": 113
+      "line": 115
     }
   ],
   "environment_variables": [
@@ -1852,6 +1858,7 @@
     "AICRM_INTERNAL_EVENTS_LEGACY_PATH_RETIRE_AFTER_DAYS",
     "AICRM_INTERNAL_EVENTS_WORKER_BATCH_SIZE",
     "AICRM_INTERNAL_EVENT_WORKER_BATCH_SIZE",
+    "AICRM_LEGACY_INTERNAL_TOKEN_FALLBACK_ENABLED",
     "AICRM_NEXT_ACTION_TOKEN_SECRET",
     "AICRM_NEXT_ADMIN_AUTH_USER_COUNT",
     "AICRM_NEXT_ALIPAY_MODE",
@@ -1883,6 +1890,7 @@
     "AICRM_NEXT_WECOM_REAL_CALLS_ENABLED",
     "AICRM_NEXT_WECOM_TAG_MODE",
     "AICRM_NGINX_CONFIG",
+    "AICRM_PII_AUDIT_ENABLED",
     "AICRM_PUBLIC_BASE_URL",
     "AICRM_QUESTIONNAIRE_OAUTH_ADAPTER_MODE",
     "AICRM_QUESTIONNAIRE_OAUTH_REDIRECT_ALLOWLIST",
@@ -1914,10 +1922,12 @@
     "APP_ENV",
     "APP_HOST",
     "APP_PORT",
+    "ARCHIVE_INTERNAL_API_TOKEN",
     "AUTOMATION_INTERNAL_API_TOKEN",
     "AUTOMATION_OPS_SCHEDULER_OPERATOR",
     "BROADCAST_QUEUE_LEASE_SECONDS",
     "BROADCAST_QUEUE_RETRY_DELAY_SECONDS",
+    "CALLBACK_INTERNAL_API_TOKEN",
     "CRON_SECRET",
     "CUSTOMER_READ_MODEL_LIVE_SOURCE_FALLBACK_ENABLED",
     "CUSTOMER_READ_MODEL_NEXT_PRIMARY",
@@ -1931,6 +1941,8 @@
     "GITHUB_EVENT_NAME",
     "GITHUB_EVENT_PATH",
     "GIT_SHA",
+    "GROUP_BROADCAST_INTERNAL_API_TOKEN",
+    "IDENTITY_INTERNAL_API_TOKEN",
     "LOG_LEVEL",
     "MCP_BEARER_TOKEN",
     "OWNER_MIGRATION_FIXTURE_STORE",

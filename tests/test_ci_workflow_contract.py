@@ -30,6 +30,11 @@ def test_ci_fast_uses_selector_and_single_required_result() -> None:
     assert "needs.select.outputs.frontend_tests != ''" in source
     assert "needs.select.outputs.needs_frontend_build == 'true'" in source
     assert "bash scripts/ci/run_architecture_gates.sh --mode" in source
+    assert "dependency-audit:" in source
+    assert "python -m pip_audit -r requirements.lock --require-hashes --progress-spinner=off" in source
+    assert "npm audit --audit-level=high" in source
+    assert source.count("python -m pip install --require-hashes -r requirements.lock") == 4
+    assert source.count("cache-dependency-path: requirements.lock") == 4
     assert "timeout-minutes: 8" in source
     assert "force_full != 'true'" not in source
     assert "full-regression:" in source
@@ -37,6 +42,7 @@ def test_ci_fast_uses_selector_and_single_required_result() -> None:
     assert "needs.select.outputs.needs_full_ci == 'true'" in source
     assert source.count("needs.select.outputs.needs_full_ci != 'true'") == 2
     assert "- full-regression" in source
+    assert "- dependency-audit" in source
     assert "full-regression={needs.get('full-regression', {}).get('result', 'missing')}_but_required" in source
     assert not LEGACY_CI_WORKFLOW.exists()
 
@@ -50,6 +56,10 @@ def test_full_regression_owns_full_pytest_and_full_frontend() -> None:
     assert 'cron: "0 18 * * *"' in source
     assert "python -m pytest tests/ -n auto --dist=loadfile" in source
     assert "bash scripts/ci/run_architecture_gates.sh --mode full" in source
+    assert "python scripts/ci/check_dependency_security.py" in source
+    assert "python -m pip_audit -r requirements.lock --require-hashes --progress-spinner=off" in source
+    assert "python -m pip install --require-hashes -r requirements.lock" in source
+    assert "npm audit --audit-level=high" in source
     assert "npm run typecheck" in source
     assert "npm run build:frontend" in source
     assert "npm run test:frontend:all" in source
@@ -86,6 +96,7 @@ def test_architecture_gate_script_has_fast_db_and_full_modes() -> None:
     assert "tools/check_sql_static_guard.py" in script
     assert "tests/test_alembic_revision_chain.py" in script
     assert "tools/check_background_job_contract.py" in script
+    assert "scripts/ci/check_dependency_security.py" in script
     assert "Unknown architecture gate mode" in script
 
 

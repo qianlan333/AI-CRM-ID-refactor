@@ -33,6 +33,8 @@ def enforced_client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
     monkeypatch.setenv("AICRM_NEXT_ENV", "test")
     monkeypatch.setenv("AICRM_ROUTE_POLICY_ENFORCED", "true")
     monkeypatch.setenv("AUTOMATION_INTERNAL_API_TOKEN", "route-policy-internal-token")
+    monkeypatch.setenv("MCP_BEARER_TOKEN", "route-policy-mcp-token")
+    monkeypatch.setenv("IDENTITY_INTERNAL_API_TOKEN", "route-policy-identity-token")
     monkeypatch.delenv("DATABASE_URL", raising=False)
     return TestClient(create_app(), raise_server_exceptions=False)
 
@@ -56,9 +58,14 @@ def test_mcp_and_identity_resolve_require_internal_service_token(enforced_client
     assert missing_mcp.json()["error"] == "internal_token_required"
     assert missing_identity.status_code == 401
 
-    headers = {"Authorization": "Bearer route-policy-internal-token"}
-    assert enforced_client.get("/mcp", headers=headers).status_code == 200
-    resolved = enforced_client.get("/api/identity/resolve?external_userid=wx_ext_001", headers=headers)
+    assert enforced_client.get(
+        "/mcp",
+        headers={"Authorization": "Bearer route-policy-mcp-token"},
+    ).status_code == 200
+    resolved = enforced_client.get(
+        "/api/identity/resolve?external_userid=wx_ext_001",
+        headers={"Authorization": "Bearer route-policy-identity-token"},
+    )
     assert resolved.status_code == 200
     assert resolved.json()["identity"]["unionid"] == "unionid_001"
 
@@ -168,6 +175,7 @@ def test_five_principal_permission_matrix(monkeypatch: pytest.MonkeyPatch) -> No
     monkeypatch.setenv("AICRM_NEXT_ENV", "test")
     monkeypatch.setenv("AICRM_ROUTE_POLICY_ENFORCED", "true")
     monkeypatch.setenv("AUTOMATION_INTERNAL_API_TOKEN", "principal-matrix-service-token")
+    monkeypatch.setenv("IDENTITY_INTERNAL_API_TOKEN", "principal-matrix-identity-token")
     monkeypatch.delenv("DATABASE_URL", raising=False)
 
     anonymous = TestClient(create_app(), raise_server_exceptions=False)
@@ -193,7 +201,7 @@ def test_five_principal_permission_matrix(monkeypatch: pytest.MonkeyPatch) -> No
         ).status_code,
         "service_internal_read": service.get(
             "/api/identity/resolve?external_userid=wx_ext_001",
-            headers={"Authorization": "Bearer principal-matrix-service-token"},
+            headers={"Authorization": "Bearer principal-matrix-identity-token"},
         ).status_code,
         "service_admin_read": service.get(
             "/api/automation/group-ops/plans",

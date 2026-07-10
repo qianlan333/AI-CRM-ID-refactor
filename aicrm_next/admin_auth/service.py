@@ -15,6 +15,7 @@ from werkzeug.security import check_password_hash
 
 from aicrm_next.admin_shell import admin_path_for
 from aicrm_next.shared.runtime import require_signing_secret
+from aicrm_next.shared.runtime_settings import runtime_setting
 
 
 SESSION_COOKIE = "aicrm_next_admin_session"
@@ -148,7 +149,7 @@ def authenticate_break_glass(*, username: str, password: str) -> AuthResult:
     if not break_glass_enabled():
         return AuthResult(ok=False, error="break_glass_disabled")
     expected_username = normalize_text(os.getenv("ADMIN_BREAK_GLASS_USERNAME"))
-    password_hash = normalize_text(os.getenv("ADMIN_BREAK_GLASS_PASSWORD_HASH"))
+    password_hash = normalize_text(runtime_setting("ADMIN_BREAK_GLASS_PASSWORD_HASH"))
     if not expected_username or not password_hash:
         return AuthResult(ok=False, error="break_glass_not_configured")
     if normalize_text(username) != expected_username:

@@ -39,18 +39,18 @@ def test_production_deploy_stashes_dirty_worktree_before_remote_update():
     assert stash_index < before_sha_index < fetch_index < reset_index
 
 
-def test_production_deploy_installs_dependencies_only_when_requirements_change():
+def test_production_deploy_installs_dependencies_only_when_hashed_lock_changes():
     workflow = (ROOT / ".github" / "workflows" / "deploy.yml").read_text(encoding="utf-8")
 
     fetch_index = workflow.index("git fetch origin main:refs/remotes/origin/main")
     reset_index = workflow.index("git reset --hard refs/remotes/origin/main")
     after_sha_index = workflow.index('after_sha="$(git rev-parse HEAD)"')
-    requirements_guard_index = workflow.index('git diff --quiet "$before_sha" "$after_sha" -- requirements.txt')
-    pip_install_index = workflow.index("pip install -r requirements.txt")
+    requirements_guard_index = workflow.index('git diff --quiet "$before_sha" "$after_sha" -- requirements.lock')
+    pip_install_index = workflow.index("python -m pip install --require-hashes -r requirements.lock")
     alembic_upgrade_index = workflow.index("python3 -m alembic upgrade head")
 
     assert fetch_index < reset_index < after_sha_index < requirements_guard_index < pip_install_index < alembic_upgrade_index
-    assert "requirements.txt unchanged; skipping pip install" in workflow
+    assert "requirements.lock unchanged; skipping pip install" in workflow
 
 
 def test_production_deploy_refreshes_release_marker_before_restart_and_checks_health_header():
@@ -71,7 +71,7 @@ def test_production_deploy_runs_alembic_upgrade_before_service_restart():
 
     env_source_index = workflow.index("source /home/ubuntu/.openclaw-wecom-pg.env")
     database_url_guard_index = workflow.index('test -n "${DATABASE_URL:-}"')
-    pip_install_index = workflow.index("pip install -r requirements.txt")
+    pip_install_index = workflow.index("python -m pip install --require-hashes -r requirements.lock")
     stop_runtime_units_index = workflow.index(_runtime_units_phase("stop-for-migration"))
     alembic_upgrade_index = workflow.index("python3 -m alembic upgrade head")
     stop_canonical_web_index = workflow.index("sudo systemctl stop aicrm-web.service || true")
@@ -105,6 +105,24 @@ def test_production_deploy_runs_alembic_upgrade_before_service_restart():
     assert "alembic stamp head" not in workflow
     assert f"ALTER TABLE IF EXISTS {alembic_table}" not in workflow
     assert f"ALTER TABLE {alembic_table}" not in workflow
+
+
+def test_production_deploy_migrates_and_reconciles_secret_references_before_web_restart():
+    workflow = (ROOT / ".github" / "workflows" / "deploy.yml").read_text(encoding="utf-8")
+
+    alembic_upgrade_index = workflow.index("python3 -m alembic upgrade head")
+    migration_index = workflow.index("python3 scripts/ops/migrate_app_setting_secrets.py --execute")
+    refreshed_env_index = workflow.index("source /home/ubuntu/.openclaw-wecom-pg.env", migration_index)
+    reconciliation_index = workflow.index("python3 scripts/ops/check_secret_reference_cutover.py")
+    stop_web_index = workflow.index("sudo systemctl stop aicrm-web.service || true")
+    start_web_index = workflow.index("if ! sudo systemctl start openclaw-wecom-postgres.service; then")
+
+    assert alembic_upgrade_index < stop_web_index < migration_index < refreshed_env_index < reconciliation_index < start_web_index
+    assert "--secret-store-dir \"$AICRM_SECRET_STORE_DIR\"" in workflow
+    assert "--environment-file /home/ubuntu/.openclaw-wecom-pg.env" in workflow
+    assert "tee /tmp/aicrm-secret-migration.json" in workflow
+    assert "tee /tmp/aicrm-secret-reconciliation.json" in workflow
+    assert "set -x" not in workflow
 
 
 def test_production_deploy_polls_health_after_restart_instead_of_fixed_sleep():

@@ -346,6 +346,19 @@ def test_questionnaire_change_selects_postgres_contracts_and_full_regression() -
     assert result["needs_full_ci"] is True
 
 
+def test_security_hardening_inventory_forces_postgres_and_full_regression() -> None:
+    result = _select(
+        "docs/architecture/r02_sensitive_data_inventory.yml",
+        "tests/test_r02_sensitive_data_inventory.py",
+    )
+
+    assert "security_hardening" in result["matched_scopes"]
+    assert "tests/test_r02_sensitive_data_inventory.py" in result["python_tests"]
+    assert result["needs_postgres"] is True
+    assert result["architecture_gate"] == "full"
+    assert result["needs_full_ci"] is True
+
+
 def test_callback_change_forces_full_regression() -> None:
     result = _select("aicrm_next/channel_entry/callback_ingress.py")
 

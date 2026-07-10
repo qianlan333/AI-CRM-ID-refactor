@@ -33,10 +33,10 @@ jobs:
             set +a
             test -n "${DATABASE_URL:-}"
             source /home/ubuntu/venvs/openclaw/bin/activate
-            if [ "$before_sha" = "$after_sha" ] || git diff --quiet "$before_sha" "$after_sha" -- requirements.txt; then
-              echo "requirements.txt unchanged; skipping pip install"
+            if [ "$before_sha" = "$after_sha" ] || git diff --quiet "$before_sha" "$after_sha" -- requirements.lock; then
+              echo "requirements.lock unchanged; skipping pip install"
             else
-              pip install -r requirements.txt
+              python -m pip install --require-hashes -r requirements.lock
             fi
             python3 scripts/ops/ensure_ai_audience_external_api_env.py /home/ubuntu/.openclaw-wecom-pg.env
             set -a
@@ -72,6 +72,18 @@ jobs:
               sudo ss -ltnp 'sport = :5001' || true
               exit 1
             fi
+            export AICRM_SECRET_STORE_DIR="${AICRM_SECRET_STORE_DIR:-/home/ubuntu/.aicrm-secrets}"
+            python3 scripts/ops/migrate_app_setting_secrets.py --execute \
+              --secret-store-dir "$AICRM_SECRET_STORE_DIR" \
+              --environment-file /home/ubuntu/.openclaw-wecom-pg.env \
+              | tee /tmp/aicrm-secret-migration.json
+            set -a
+            source /home/ubuntu/.openclaw-wecom-pg.env
+            set +a
+            python3 scripts/ops/check_secret_reference_cutover.py \
+              --secret-store-dir "$AICRM_SECRET_STORE_DIR" \
+              --environment-file /home/ubuntu/.openclaw-wecom-pg.env \
+              | tee /tmp/aicrm-secret-reconciliation.json
             sudo systemctl reset-failed openclaw-wecom-postgres.service || true
             if ! sudo systemctl start openclaw-wecom-postgres.service; then
               sudo systemctl status openclaw-wecom-postgres.service --no-pager || true
