@@ -32,6 +32,34 @@ def test_runtime_units_manifest_validates_units_and_calendar_persistence() -> No
     runtime_units.validate_manifest(_manifest())
 
 
+def test_runtime_units_manifest_retires_callback_hotfix_overlay_dropins() -> None:
+    retired = {
+        (item["unit"], item["dropin"])
+        for item in _manifest()["retired_dropins"]
+    }
+
+    assert retired == {
+        ("openclaw-wecom-postgres.service", "10-aicrm-callback-hotfix-runtime.conf"),
+        ("openclaw-wecom-callback-ingress.service", "10-aicrm-callback-hotfix-runtime.conf"),
+        ("openclaw-wecom-callback-inbox-worker.service", "10-aicrm-callback-hotfix-runtime.conf"),
+    }
+
+
+def test_runtime_units_retire_legacy_overlays_is_idempotent_and_verified(capsys) -> None:
+    assert runtime_units.main(["--phase", "retire-legacy-overlays", "--dry-run"]) == 0
+    output = capsys.readouterr().out
+
+    for unit in (
+        "openclaw-wecom-postgres.service",
+        "openclaw-wecom-callback-ingress.service",
+        "openclaw-wecom-callback-inbox-worker.service",
+    ):
+        path = f"/etc/systemd/system/{unit}.d/10-aicrm-callback-hotfix-runtime.conf"
+        assert f"sudo rm -f {path}" in output
+        assert f"sudo test '!' -e {path}" in output
+    assert output.index("sudo rm -f") < output.index("sudo systemctl daemon-reload") < output.index("sudo test '!' -e")
+
+
 def test_runtime_units_install_dry_run_copies_and_enables_only_active_units(capsys) -> None:
     assert runtime_units.main(["--phase", "install-enable-after-web-health", "--dry-run"]) == 0
     output = capsys.readouterr().out
@@ -59,4 +87,5 @@ def test_runtime_units_stop_and_verify_dry_runs_are_manifest_driven(capsys) -> N
 
     assert "sudo systemctl is-active openclaw-external-effect-worker.timer" in verify_output
     assert "sudo systemctl is-active openclaw-wecom-callback-ingress.service" in verify_output
+    assert "sudo test '!' -e /etc/systemd/system/openclaw-wecom-callback-ingress.service.d/10-aicrm-callback-hotfix-runtime.conf" in verify_output
     assert "approval_required_timers=aicrm-archive-sync.timer" in verify_output

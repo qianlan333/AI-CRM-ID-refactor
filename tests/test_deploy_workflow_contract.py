@@ -39,6 +39,20 @@ def test_production_deploy_stashes_dirty_worktree_before_remote_update():
     assert stash_index < before_sha_index < fetch_index < reset_index
 
 
+def test_production_deploy_retires_callback_hotfix_overlay_before_migration_and_restart():
+    workflow = (ROOT / ".github" / "workflows" / "deploy.yml").read_text(encoding="utf-8")
+
+    reset_index = workflow.index("git reset --hard refs/remotes/origin/main")
+    marker_index = workflow.index('printf \'%s\\n\' "$after_sha" > .release-sha')
+    retire_index = workflow.index(_runtime_units_phase("retire-legacy-overlays"))
+    stop_runtime_units_index = workflow.index(_runtime_units_phase("stop-for-migration"))
+    alembic_upgrade_index = workflow.index("python3 -m alembic upgrade head")
+    web_start_index = workflow.index("if ! sudo systemctl start openclaw-wecom-postgres.service; then")
+    install_index = workflow.index(_runtime_units_phase("install-enable-after-web-health"))
+
+    assert reset_index < marker_index < retire_index < stop_runtime_units_index < alembic_upgrade_index < web_start_index < install_index
+
+
 def test_production_deploy_installs_dependencies_only_when_requirements_change():
     workflow = (ROOT / ".github" / "workflows" / "deploy.yml").read_text(encoding="utf-8")
 

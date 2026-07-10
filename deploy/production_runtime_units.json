@@ -61,5 +61,19 @@
     "aicrm-reply-monitor-run-due.timer",
     "aicrm-reply-monitor-capture.timer",
     "aicrm-automation-jobs-run-due.timer"
+  ],
+  "retired_dropins": [
+    {
+      "unit": "openclaw-wecom-postgres.service",
+      "dropin": "10-aicrm-callback-hotfix-runtime.conf"
+    },
+    {
+      "unit": "openclaw-wecom-callback-ingress.service",
+      "dropin": "10-aicrm-callback-hotfix-runtime.conf"
+    },
+    {
+      "unit": "openclaw-wecom-callback-inbox-worker.service",
+      "dropin": "10-aicrm-callback-hotfix-runtime.conf"
+    }
   ]
 }
