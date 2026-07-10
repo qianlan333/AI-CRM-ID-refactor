@@ -37,6 +37,8 @@ run_full_only() {
   "$PYTHON" tools/check_external_effects_boundary.py
   "$PYTHON" tools/check_background_job_contract.py
   "$PYTHON" tools/check_schema_change_templates.py
+  "$PYTHON" scripts/ci/runtime_contract_inventory.py --check docs/architecture/runtime_contract_inventory.json
+  "$PYTHON" scripts/ci/check_high_risk_contract_inventory.py
 }
 
 case "$MODE" in

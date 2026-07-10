@@ -1,6 +1,7 @@
 name: Full Regression
 
 on:
+  workflow_call:
   workflow_dispatch:
   schedule:
     # Nightly full regression at 02:00 Asia/Shanghai.
