@@ -213,7 +213,7 @@ R02 uses an expand/migrate/contract sequence in one work package. The expand rel
 ### Local verification evidence
 
 - Rebased the R02-only commits onto `origin/main` at the R01 merge commit before final verification.
-- Python 3.10 hashed lock: two clean installs produced 86 packages and the same `pip freeze --all` SHA-256 `38cedf1215a06af59374cb3a66fa9264947a37ac0761ee21b0c6a04e0259f521`; `requirements.lock` SHA-256 is `908fab17672733e767f96155700ed35a3970b86b8de9c52ce8ef69334cd6dad4`.
+- Python 3.10 hashed lock: two clean installs produced 87 packages and the same `pip freeze --all` SHA-256 `21ec855bc57ea79dfd1978c2fd2a4e7aefd936a57a7230cfda0b2526ec0c5064`; `requirements.lock` SHA-256 is `94357b5f349cf7cd716e963e1b3e62a12c6f52cf5aa83ade23512e511baaead4`.
 - `pip-audit -r requirements.lock --require-hashes` and `npm audit --audit-level=high` both reported zero known vulnerabilities.
 - Dependency/security compatibility set: 242 tests passed. Secret migration, PII logging/audit, SSRF, token-purpose, and secret-store set: 81 tests passed. Final fresh-PostgreSQL regression: 2893 tests passed.
 - Full frontend typecheck, build, and all frontend test groups passed. All architecture gates and the R02-relative Ruff check passed. The repository-wide Ruff command still reports the pre-existing baseline findings outside this work package.
