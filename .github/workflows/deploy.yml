@@ -30,12 +30,7 @@ jobs:
               exit 1
             fi
             release_repo="git@github.com:qianlan333/AI-CRM-ID-refactor.git"
-            release_ssh_config="/home/ubuntu/.ssh/config"
             release_known_hosts="/home/ubuntu/.ssh/known_hosts"
-            if [ ! -r "$release_ssh_config" ]; then
-              echo "release SSH config is missing or unreadable: $release_ssh_config"
-              exit 1
-            fi
             if [ ! -r "$release_known_hosts" ]; then
               echo "release known_hosts is missing or unreadable: $release_known_hosts"
               exit 1
@@ -44,7 +39,7 @@ jobs:
               echo "github.com is not pinned in the release known_hosts file"
               exit 1
             fi
-            release_ssh_command="ssh -F /home/ubuntu/.ssh/config -o UserKnownHostsFile=/home/ubuntu/.ssh/known_hosts -o StrictHostKeyChecking=yes -o BatchMode=yes -o ConnectTimeout=20 -o ServerAliveInterval=15 -o ServerAliveCountMax=2"
+            release_ssh_command="ssh -o UserKnownHostsFile=/home/ubuntu/.ssh/known_hosts -o StrictHostKeyChecking=yes -o BatchMode=yes -o ConnectTimeout=20 -o ServerAliveInterval=15 -o ServerAliveCountMax=2"
             release_fetch_ok=0
             for attempt in 1 2 3; do
               if GIT_SSH_COMMAND="$release_ssh_command" \
