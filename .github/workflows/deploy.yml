@@ -5,11 +5,61 @@ on:
     workflows: ["CI Fast"]
     types: [completed]
 
+permissions:
+  contents: read
+
 jobs:
   deploy:
     if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main'
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout verified release
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          fetch-depth: 0
+
+      - name: Build verified release bundle
+        run: |
+          set -e
+          set -o pipefail
+          verified_sha="${{ github.event.workflow_run.head_sha }}"
+          if ! printf '%s' "$verified_sha" | grep -Eq '^[0-9a-f]{40}$'; then
+            echo "invalid verified workflow sha"
+            exit 1
+          fi
+          if [ "$(git rev-parse HEAD)" != "$verified_sha" ]; then
+            echo "runner checkout does not match verified workflow sha"
+            exit 1
+          fi
+          git fetch --no-tags origin main
+          if [ "$(git rev-parse FETCH_HEAD)" != "$verified_sha" ]; then
+            echo "verified workflow sha is no longer the ID-refactor main head"
+            exit 1
+          fi
+          mkdir -p release
+          git bundle create release/aicrm-release.bundle HEAD
+          git bundle verify release/aicrm-release.bundle
+          if ! git bundle list-heads release/aicrm-release.bundle | grep -Fx "$verified_sha HEAD" >/dev/null; then
+            echo "release bundle does not advertise the verified workflow sha"
+            exit 1
+          fi
+          (
+            cd release
+            sha256sum aicrm-release.bundle > aicrm-release.bundle.sha256
+          )
+
+      - name: Transfer verified release bundle
+        uses: appleboy/scp-action@ff85246acaad7bdce478db94a363cd2bf7c90345 # v1.0.0
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          source: "release/aicrm-release.bundle,release/aicrm-release.bundle.sha256"
+          target: /tmp/aicrm-release-${{ github.event.workflow_run.head_sha }}
+          strip_components: 1
+          overwrite: true
+
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v1.2.0
         with:
@@ -29,43 +79,24 @@ jobs:
               echo "invalid verified workflow sha"
               exit 1
             fi
-            release_repo="git@github.com:qianlan333/AI-CRM-ID-refactor.git"
-            # Source: https://api.github.com/meta (ssh_keys and ssh_key_fingerprints), verified 2026-07-10.
-            # Rotate the key material and expected fingerprints together in one reviewed change.
-            release_known_hosts="$(mktemp /tmp/aicrm-github-known-hosts.XXXXXX)"
-            trap 'rm -f "$release_known_hosts"' EXIT
-            printf '%s\n' \
-              'github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl' \
-              'github.com ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBEmKSENjQEezOmxkZMy7opKgwFB9nkt5YRrYMjNuG5N87uRgg6CLrbo5wAdT/y6v0mKV0U2w0WZ2YB/++Tpockg=' \
-              'github.com ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQCj7ndNxQowgcQnjshcLrqPEiiphnt+VTTvDP6mHBL9j1aNUkY4Ue1gvwnGLVlOhGeYrnZaMgRK6+PKCUXaDbC7qtbW8gIkhL7aGCsOr/C56SJMy/BCZfxd1nWzAOxSDPgVsmerOBYfNqltV9/hWCqBywINIR+5dIg6JTJ72pcEpEjcYgXkE2YEFXV1JHnsKgbLWNlhScqb2UmyRkQyytRLtL+38TGxkxCflmO+5Z8CSSNY7GidjMIZ7Q4zMjA2n1nGrlTDkzwDCsw+wqFPGQA179cnfGWOWRVruj16z6XyvxvjJwbz0wQZ75XK5tKSb7FNyeIEs4TT4jk+S4dhPeAUC5y+bDYirYgM4GC7uEnztnZyaVWQ7B381AK4Qdrwt51ZqExKbQpTUNn+EjqoTwvqNj4kqx5QUCI0ThS/YkOxJCXmPUWZbhjpCg56i+2aB6CmK2JGhn57K5mj0MNdBXA4/WnwH6XoPWJzK5Nyu2zB3nAZp+S5hpQs+p1vN1/wsjk=' \
-              > "$release_known_hosts"
-            chmod 600 "$release_known_hosts"
-            release_host_fingerprints="$(ssh-keygen -lf "$release_known_hosts" -E sha256 | awk '{print $2}')"
-            for expected_fingerprint in \
-              'SHA256:+DiY3wvvV6TuJJhbpZisF/zLDA0zPMSvHdkr4UvCOqU' \
-              'SHA256:p2QAMXNIC1TJYWeIOttrVc98/R1BUFWu3/LiyKgUfQM' \
-              'SHA256:uNiVztksCsDhcc0u9e8BujQXVUpKZIDTMczCvj3tD2s'
-            do
-              if ! printf '%s\n' "$release_host_fingerprints" | grep -Fx "$expected_fingerprint" >/dev/null; then
-                echo "pinned GitHub host key fingerprint validation failed"
-                exit 1
-              fi
-            done
-            release_ssh_command="ssh -o UserKnownHostsFile=$release_known_hosts -o GlobalKnownHostsFile=/dev/null -o StrictHostKeyChecking=yes -o BatchMode=yes -o ConnectTimeout=20 -o ServerAliveInterval=15 -o ServerAliveCountMax=2"
-            release_fetch_ok=0
-            for attempt in 1 2 3; do
-              if GIT_SSH_COMMAND="$release_ssh_command" \
-                git fetch --no-tags "$release_repo" main:refs/remotes/aicrm-id-refactor/main; then
-                release_fetch_ok=1
-                break
-              fi
-              echo "ID-refactor release fetch failed on attempt $attempt"
-              sleep "$((attempt * 2))"
-            done
-            if [ "$release_fetch_ok" != "1" ]; then
-              echo "unable to fetch verified release from ID-refactor after 3 attempts"
+            release_bundle_dir="/tmp/aicrm-release-$verified_sha"
+            release_bundle="/tmp/aicrm-release-$verified_sha/aicrm-release.bundle"
+            release_bundle_checksum="/tmp/aicrm-release-$verified_sha/aicrm-release.bundle.sha256"
+            trap 'rm -rf -- "$release_bundle_dir"' EXIT
+            if [ ! -r "$release_bundle" ] || [ ! -r "$release_bundle_checksum" ]; then
+              echo "verified release bundle or checksum is missing"
               exit 1
             fi
+            (
+              cd "$release_bundle_dir"
+              sha256sum -c aicrm-release.bundle.sha256
+            )
+            git bundle verify "$release_bundle"
+            if ! git bundle list-heads "$release_bundle" | grep -Fx "$verified_sha HEAD" >/dev/null; then
+              echo "release bundle does not advertise the verified workflow sha"
+              exit 1
+            fi
+            git fetch --no-tags "$release_bundle" "${verified_sha}:refs/remotes/aicrm-id-refactor/main"
             release_head_sha="$(git rev-parse refs/remotes/aicrm-id-refactor/main)"
             if [ "$release_head_sha" != "$verified_sha" ]; then
               echo "verified workflow sha is no longer the ID-refactor main head"

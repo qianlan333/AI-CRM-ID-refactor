@@ -2,8 +2,6 @@ from __future__ import annotations
 
 import ast
 from pathlib import Path
-import re
-import subprocess
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -35,20 +33,24 @@ def test_production_deploy_stashes_dirty_worktree_before_remote_update():
 
     stash_index = workflow.index("git stash push --include-untracked")
     before_sha_index = workflow.index('before_sha="$(git rev-parse HEAD)"')
-    verified_sha_index = workflow.index('verified_sha="${{ github.event.workflow_run.head_sha }}"')
-    fetch_index = workflow.index('git fetch --no-tags "$release_repo" main:refs/remotes/aicrm-id-refactor/main')
+    verified_sha_index = workflow.index('verified_sha="${{ github.event.workflow_run.head_sha }}"', stash_index)
+    fetch_index = workflow.index(
+        'git fetch --no-tags "$release_bundle" "${verified_sha}:refs/remotes/aicrm-id-refactor/main"'
+    )
     reset_index = workflow.index('git reset --hard "$verified_sha"')
 
     assert stash_index < before_sha_index < verified_sha_index < fetch_index < reset_index
-    assert 'release_repo="git@github.com:qianlan333/AI-CRM-ID-refactor.git"' in workflow
-    assert "git fetch origin main:refs/remotes/origin/main" not in workflow
-    assert "https://github.com/qianlan333/AI-CRM-ID-refactor.git" not in workflow
+    assert 'release_bundle="/tmp/aicrm-release-$verified_sha/aicrm-release.bundle"' in workflow
+    assert "git@github.com" not in workflow
+    assert "GIT_SSH_COMMAND" not in workflow
 
 
 def test_production_deploy_installs_dependencies_only_when_hashed_lock_changes():
     workflow = (ROOT / ".github" / "workflows" / "deploy.yml").read_text(encoding="utf-8")
 
-    fetch_index = workflow.index('git fetch --no-tags "$release_repo" main:refs/remotes/aicrm-id-refactor/main')
+    fetch_index = workflow.index(
+        'git fetch --no-tags "$release_bundle" "${verified_sha}:refs/remotes/aicrm-id-refactor/main"'
+    )
     reset_index = workflow.index('git reset --hard "$verified_sha"')
     after_sha_index = workflow.index('after_sha="$(git rev-parse HEAD)"')
     requirements_guard_index = workflow.index('git diff --quiet "$before_sha" "$after_sha" -- requirements.lock')
@@ -62,7 +64,8 @@ def test_production_deploy_installs_dependencies_only_when_hashed_lock_changes()
 def test_production_deploy_fails_closed_unless_checkout_matches_verified_workflow_sha():
     workflow = (ROOT / ".github" / "workflows" / "deploy.yml").read_text(encoding="utf-8")
 
-    verified_sha_index = workflow.index('verified_sha="${{ github.event.workflow_run.head_sha }}"')
+    remote_deploy_index = workflow.index("uses: appleboy/ssh-action@v1.2.0")
+    verified_sha_index = workflow.index('verified_sha="${{ github.event.workflow_run.head_sha }}"', remote_deploy_index)
     release_head_index = workflow.index('release_head_sha="$(git rev-parse refs/remotes/aicrm-id-refactor/main)"')
     head_guard_index = workflow.index('if [ "$release_head_sha" != "$verified_sha" ]; then')
     reset_index = workflow.index('git reset --hard "$verified_sha"')
@@ -76,58 +79,44 @@ def test_production_deploy_fails_closed_unless_checkout_matches_verified_workflo
     assert "deployed checkout does not match verified workflow sha" in workflow
 
 
-def test_production_deploy_uses_bounded_ssh_fetch_retries_before_stopping_services():
+def test_production_deploy_verifies_local_bundle_before_fetch_and_stopping_services():
     workflow = (ROOT / ".github" / "workflows" / "deploy.yml").read_text(encoding="utf-8")
 
-    ssh_repo_index = workflow.index('release_repo="git@github.com:qianlan333/AI-CRM-ID-refactor.git"')
-    retry_index = workflow.index("for attempt in 1 2 3; do")
-    ssh_command_index = workflow.index('release_ssh_command="ssh -o UserKnownHostsFile=$release_known_hosts')
-    ssh_guard_index = workflow.index('GIT_SSH_COMMAND="$release_ssh_command"')
-    fetch_index = workflow.index('git fetch --no-tags "$release_repo" main:refs/remotes/aicrm-id-refactor/main')
-    fetch_guard_index = workflow.index('if [ "$release_fetch_ok" != "1" ]; then')
+    bundle_index = workflow.index('release_bundle="/tmp/aicrm-release-$verified_sha/aicrm-release.bundle"')
+    checksum_index = workflow.index("sha256sum -c aicrm-release.bundle.sha256")
+    verify_index = workflow.index('git bundle verify "$release_bundle"')
+    head_guard_index = workflow.index('git bundle list-heads "$release_bundle"')
+    fetch_index = workflow.index(
+        'git fetch --no-tags "$release_bundle" "${verified_sha}:refs/remotes/aicrm-id-refactor/main"'
+    )
     stop_index = workflow.index(_runtime_units_phase("stop-for-migration"))
 
-    assert ssh_repo_index < ssh_command_index < retry_index < ssh_guard_index < fetch_index < fetch_guard_index < stop_index
-    assert "unable to fetch verified release from ID-refactor after 3 attempts" in workflow
+    assert bundle_index < checksum_index < verify_index < head_guard_index < fetch_index < stop_index
+    assert "release bundle does not advertise the verified workflow sha" in workflow
+    assert "git@github.com" not in workflow
+    assert "GIT_SSH_COMMAND" not in workflow
 
 
-def test_production_deploy_builds_and_verifies_pinned_github_host_keys_before_release_fetch(tmp_path: Path):
+def test_production_deploy_builds_and_transfers_exact_sha_bundle_before_remote_deploy():
     workflow = (ROOT / ".github" / "workflows" / "deploy.yml").read_text(encoding="utf-8")
 
-    known_hosts_index = workflow.index('release_known_hosts="$(mktemp /tmp/aicrm-github-known-hosts.XXXXXX)"')
-    cleanup_index = workflow.index('trap \'rm -f "$release_known_hosts"\' EXIT')
-    fingerprint_guard_index = workflow.index('ssh-keygen -lf "$release_known_hosts" -E sha256')
-    strict_ssh_index = workflow.index('-o StrictHostKeyChecking=yes')
-    fetch_index = workflow.index('git fetch --no-tags "$release_repo" main:refs/remotes/aicrm-id-refactor/main')
-    stop_index = workflow.index(_runtime_units_phase("stop-for-migration"))
+    checkout_index = workflow.index("uses: actions/checkout@v4")
+    build_index = workflow.index("git bundle create release/aicrm-release.bundle HEAD")
+    transfer_index = workflow.index("uses: appleboy/scp-action@ff85246acaad7bdce478db94a363cd2bf7c90345")
+    remote_deploy_index = workflow.index("uses: appleboy/ssh-action@v1.2.0")
 
-    assert known_hosts_index < cleanup_index < fingerprint_guard_index < strict_ssh_index < fetch_index < stop_index
-    assert "GlobalKnownHostsFile=/dev/null" in workflow
-    assert "/home/ubuntu/.ssh/known_hosts" not in workflow
-    assert "release_ssh_config" not in workflow
-    assert "ssh -F " not in workflow
-    assert "StrictHostKeyChecking=no" not in workflow
-    assert "ssh-keyscan" not in workflow
-
-    pinned_keys = re.findall(
-        r"'(github\.com (?:ssh-ed25519|ecdsa-sha2-nistp256|ssh-rsa) [A-Za-z0-9+/=]+)'",
-        workflow,
-    )
-    assert len(pinned_keys) == 3
-    known_hosts = tmp_path / "known_hosts"
-    known_hosts.write_text("\n".join(pinned_keys) + "\n", encoding="utf-8")
-    completed = subprocess.run(
-        ["ssh-keygen", "-lf", str(known_hosts), "-E", "sha256"],
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    fingerprints = {line.split()[1] for line in completed.stdout.splitlines()}
-    assert fingerprints == {
-        "SHA256:+DiY3wvvV6TuJJhbpZisF/zLDA0zPMSvHdkr4UvCOqU",
-        "SHA256:p2QAMXNIC1TJYWeIOttrVc98/R1BUFWu3/LiyKgUfQM",
-        "SHA256:uNiVztksCsDhcc0u9e8BujQXVUpKZIDTMczCvj3tD2s",
-    }
+    assert checkout_index < build_index < transfer_index < remote_deploy_index
+    assert "permissions:\n  contents: read" in workflow
+    assert "ref: ${{ github.event.workflow_run.head_sha }}" in workflow
+    assert "fetch-depth: 0" in workflow
+    assert 'verified_sha="${{ github.event.workflow_run.head_sha }}"' in workflow
+    assert 'git fetch --no-tags origin main' in workflow
+    assert 'if [ "$(git rev-parse FETCH_HEAD)" != "$verified_sha" ]; then' in workflow
+    assert "sha256sum aicrm-release.bundle" in workflow
+    assert "git bundle verify release/aicrm-release.bundle" in workflow
+    assert "target: /tmp/aicrm-release-${{ github.event.workflow_run.head_sha }}" in workflow
+    assert "strip_components: 1" in workflow
+    assert "overwrite: true" in workflow
 
 
 def test_production_deploy_refreshes_release_marker_before_restart_and_checks_health_header():
