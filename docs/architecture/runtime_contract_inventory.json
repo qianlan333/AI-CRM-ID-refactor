@@ -651,6 +651,12 @@
     },
     {
       "accessor": "os.getenv",
+      "file": "aicrm_next/shared/pii_audit.py",
+      "key": "AICRM_PII_AUDIT_ENABLED",
+      "line": 92
+    },
+    {
+      "accessor": "os.getenv",
       "file": "aicrm_next/ai_audience_ops/e2e_runner.py",
       "key": "AICRM_PUBLIC_BASE_URL",
       "line": 561
@@ -665,7 +671,7 @@
       "accessor": "os.getenv",
       "file": "aicrm_next/commerce/api.py",
       "key": "AICRM_PUBLIC_BASE_URL",
-      "line": 321
+      "line": 324
     },
     {
       "accessor": "os.getenv",
@@ -833,7 +839,7 @@
       "accessor": "os.getenv",
       "file": "aicrm_next/commerce/api.py",
       "key": "APP_BASE_URL",
-      "line": 323
+      "line": 326
     },
     {
       "accessor": "os.getenv",
@@ -869,7 +875,7 @@
       "accessor": "runtime_setting",
       "file": "aicrm_next/admin_auth/route_policy.py",
       "key": "AUTOMATION_INTERNAL_API_TOKEN",
-      "line": 149
+      "line": 156
     },
     {
       "accessor": "runtime_setting",
@@ -1211,7 +1217,7 @@
       "accessor": "runtime_setting",
       "file": "aicrm_next/admin_auth/route_policy.py",
       "key": "MCP_BEARER_TOKEN",
-      "line": 152
+      "line": 159
     },
     {
       "accessor": "runtime_setting",
@@ -1241,7 +1247,7 @@
       "accessor": "os.getenv",
       "file": "aicrm_next/commerce/api.py",
       "key": "PUBLIC_BASE_URL",
-      "line": 322
+      "line": 325
     },
     {
       "accessor": "os.getenv",
@@ -1295,7 +1301,7 @@
       "accessor": "runtime_setting",
       "file": "aicrm_next/radar_links/api.py",
       "key": "SECRET_KEY",
-      "line": 110
+      "line": 111
     },
     {
       "accessor": "runtime_setting",
@@ -1445,7 +1451,7 @@
       "accessor": "os.getenv",
       "file": "aicrm_next/commerce/api.py",
       "key": "WECHAT_PAY_REFUND_NOTIFY_URL",
-      "line": 330
+      "line": 333
     },
     {
       "accessor": "os.getenv",
@@ -1883,6 +1889,7 @@
     "AICRM_NEXT_WECOM_REAL_CALLS_ENABLED",
     "AICRM_NEXT_WECOM_TAG_MODE",
     "AICRM_NGINX_CONFIG",
+    "AICRM_PII_AUDIT_ENABLED",
     "AICRM_PUBLIC_BASE_URL",
     "AICRM_QUESTIONNAIRE_OAUTH_ADAPTER_MODE",
     "AICRM_QUESTIONNAIRE_OAUTH_REDIRECT_ALLOWLIST",

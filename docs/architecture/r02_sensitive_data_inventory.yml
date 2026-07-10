@@ -265,6 +265,8 @@ pii_route_overrides:
       - export_wechat_admin_orders
       - create_admin_export
       - get_admin_export
+      - user_ops_export_preview
+      - user_ops_export_stub
     purpose: pii_export
     audit_mode: required_fail_closed
     scope_source: resource_fingerprint

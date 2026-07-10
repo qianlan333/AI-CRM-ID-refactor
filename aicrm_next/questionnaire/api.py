@@ -18,6 +18,7 @@ from fastapi.templating import Jinja2Templates
 
 from aicrm_next.navigation_target import safe_completion_url
 from aicrm_next.shared.errors import ContractError, NotFoundError
+from aicrm_next.shared.pii_audit import infer_pii_result_count, set_pii_audit_result_count
 from aicrm_next.shared.runtime import production_data_ready
 from aicrm_next.shared.runtime_settings import runtime_setting
 
@@ -196,10 +197,11 @@ def _csv_value(value: Any) -> Any:
     return value
 
 
-def _csv_download_response(payload: dict[str, Any]) -> Response:
+def _csv_download_response(payload: dict[str, Any], *, request: Request) -> Response:
     export_payload = dict(payload.get("export_download") or {})
     fields = [str(field) for field in export_payload.get("fields") or []]
     rows = export_payload.get("rows") if isinstance(export_payload.get("rows"), list) else []
+    set_pii_audit_result_count(request, len(rows))
     buffer = StringIO()
     writer = csv.DictWriter(buffer, fieldnames=fields, extrasaction="ignore")
     writer.writeheader()
@@ -246,6 +248,8 @@ async def _execute_admin_write(
             trace_id=str(payload.get("trace_id") or request.headers.get("X-Request-Id") or uuid4().hex),
         )
         response = execute_questionnaire_admin_write(command)
+        if command_name in {"questionnaire.admin.export_download", "questionnaire.admin.export_preview"}:
+            set_pii_audit_result_count(request, infer_pii_result_count(response))
         return JSONResponse(jsonable_encoder(response), status_code=200)
     except QuestionnaireAdminWriteInputError as exc:
         return _write_error(str(exc), status_code=400, source_status="input_error", write_model_status="input_error")
@@ -894,7 +898,7 @@ async def export_questionnaire(questionnaire_id: int, request: Request) -> Respo
             trace_id=str(request.headers.get("X-Request-Id") or uuid4().hex),
         )
         response = execute_questionnaire_admin_write(command)
-        return _csv_download_response(response)
+        return _csv_download_response(response, request=request)
     except QuestionnaireAdminWriteInputError as exc:
         return _write_error(str(exc), status_code=400, source_status="input_error", write_model_status="input_error")
     except QuestionnaireAdminWriteNotFoundError as exc:

@@ -364,6 +364,7 @@
         "aicrm_next/admin_config/repository.py",
         "aicrm_next/admin_config/pii_audit_repository.py",
         "aicrm_next/admin_config/settings.py",
+        "aicrm_next/class_user_management/api.py",
         "aicrm_next/external_push/security.py",
         "aicrm_next/external_push/service.py",
         "aicrm_next/external_push/https_transport.py",

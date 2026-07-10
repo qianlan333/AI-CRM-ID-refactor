@@ -108,6 +108,7 @@ async def route_policy_required_response(
         return None
 
     request.state.route_policy = policy
+    _set_pii_principal(request, actor_type="anonymous", actor_id="anonymous", policy_scope=policy.access_scope)
     if enforcement_enabled and not _rate_limit_allows(request, policy):
         return _error("route_rate_limited", status_code=429)
 
@@ -130,6 +131,12 @@ async def _enforce_admin_session(request: Request, policy: RoutePolicy) -> Respo
         if str(request.url.path).startswith(("/admin", "/setup")):
             return admin_page_auth_redirect(request)
         return _error("admin_auth_required", status_code=401)
+    _set_pii_principal(
+        request,
+        actor_type="admin_session",
+        actor_id=normalize_text(session.get("admin_user_id") or session.get("username")) or "admin_session",
+        policy_scope=policy.access_scope,
+    )
     session_state = await run_in_threadpool(validate_admin_session_state, session)
     if not session_state.ok:
         return _error(session_state.error or "admin_session_revoked", status_code=401)
@@ -158,6 +165,7 @@ def _enforce_internal_bearer(request: Request) -> Response | None:
     if not provided or not any(hmac.compare_digest(provided, expected) for expected in expected_tokens):
         return _error("internal_token_required", status_code=401)
     request.state.service_account = service_account
+    _set_pii_principal(request, actor_type="internal_service", actor_id=service_account)
     return None
 
 
@@ -166,6 +174,7 @@ def _enforce_scoped_bearer_presence(request: Request) -> Response | None:
     if not provided:
         return _error("scoped_token_required", status_code=401)
     request.state.service_account = "scoped_integration"
+    _set_pii_principal(request, actor_type="scoped_service", actor_id="scoped_integration")
     return None
 
 
@@ -201,7 +210,21 @@ async def _enforce_sidebar_context(request: Request) -> Response | None:
         return _error("sidebar_owner_scope_forbidden", status_code=403)
     request.state.sidebar_context = context
     request.state.sidebar_owner_userid = owner_userid
+    _set_pii_principal(request, actor_type="sidebar_owner", actor_id=owner_userid, policy_scope="owner")
     return None
+
+
+def _set_pii_principal(
+    request: Request,
+    *,
+    actor_type: str,
+    actor_id: str,
+    policy_scope: str = "",
+) -> None:
+    request.state.pii_actor_type = normalize_text(actor_type) or "anonymous"
+    request.state.pii_actor_id = normalize_text(actor_id) or "anonymous"
+    if policy_scope:
+        request.state.pii_policy_scope = normalize_text(policy_scope)
 
 
 async def _csrf_error(request: Request, session: dict[str, Any]) -> JSONResponse | None:
