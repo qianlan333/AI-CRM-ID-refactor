@@ -9,7 +9,7 @@ from fastapi.staticfiles import StaticFiles
 
 from .ai_audience_ops import register_ai_audience_event_consumers
 from . import fixture_reset_registry
-from .admin_auth.guards import admin_auth_required_response
+from .admin_auth.route_policy import route_policy_required_response
 from .automation_engine.repo import reset_automation_fixture_state
 from .commerce.repo import reset_commerce_fixture_state
 from .media_library.repo import reset_media_library_fixture_state
@@ -21,6 +21,7 @@ from .router_registry import register_routers
 from .shared.errors import ApplicationError
 from .shared.repository_provider import RepositoryProviderError
 from .shared.release import current_release_sha
+from .shared.route_policy import RoutePolicyIndex
 from .shared.runtime import assert_required_runtime_secrets, fixture_mode
 
 __all__ = [
@@ -50,6 +51,7 @@ def create_app() -> FastAPI:
 
     if fixture_mode():
         fixture_reset_registry.reset_fixture_state()
+    route_policy_index = RoutePolicyIndex.from_manifest()
 
     @app.exception_handler(RepositoryProviderError)
     async def repository_provider_error_handler(request, exc):
@@ -89,7 +91,7 @@ def create_app() -> FastAPI:
 
     @app.middleware("http")
     async def write_route_owner_headers(request, call_next):
-        auth_response = admin_auth_required_response(request)
+        auth_response = await route_policy_required_response(request, app=app, index=route_policy_index)
         if auth_response is not None:
             response = auth_response
         else:
