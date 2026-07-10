@@ -451,9 +451,13 @@
         "aicrm_next/shared/admin_read_fallback.py",
         "scripts/ops/check_admin_read_pages_smoke.py",
         "tests/test_admin_read_pages_smoke.py",
+        "tests/test_automation_admin_pages_next_native.py",
+        "tests/test_automation_agents_admin_pages.py",
         "tests/test_automation_agents_admin_api.py",
         "tests/test_p1_group_ops_workspace_draft_api.py",
-        "tests/test_p1_group_ops_workspace_governance_api.py"
+        "tests/test_p1_group_ops_workspace_governance_api.py",
+        "tests/test_wecom_tag_read_inventory.py",
+        "tests/test_wecom_tag_read_no_fixture_production.py"
       ],
       "python_tests": [
         "tests/test_push_center.py",
@@ -462,6 +466,10 @@
         "tests/test_group_ops_plans_api.py",
         "tests/test_wecom_tag_read_selectors.py",
         "tests/test_admin_wecom_tags_management.py",
+        "tests/test_wecom_tag_read_inventory.py",
+        "tests/test_wecom_tag_read_no_fixture_production.py",
+        "tests/test_automation_admin_pages_next_native.py",
+        "tests/test_automation_agents_admin_pages.py",
         "tests/test_automation_agents_admin_api.py",
         "tests/test_ai_audience_admin_pages.py",
         "tests/test_p1_group_ops_workspace_draft_api.py",
@@ -530,6 +538,8 @@
         "tests/conftest.py",
         "tests/test_ci_workflow_contract.py",
         "tests/test_deploy_workflow_contract.py",
+        "tests/test_external_orders_blocker_diagnostics.py",
+        "tests/test_external_orders_consumer_run_due_diagnostics.py",
         "tests/test_retired_runtime_gap_timer_report.py",
         "tests/test_runtime_units_autostart.py",
         "tests/test_select_test_scope.py",
@@ -548,6 +558,8 @@
       "python_tests": [
         "tests/test_ci_workflow_contract.py",
         "tests/test_deploy_workflow_contract.py",
+        "tests/test_external_orders_blocker_diagnostics.py",
+        "tests/test_external_orders_consumer_run_due_diagnostics.py",
         "tests/test_retired_runtime_gap_timer_report.py",
         "tests/test_runtime_units_autostart.py",
         "tests/test_select_test_scope.py",
