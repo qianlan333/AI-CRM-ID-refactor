@@ -191,6 +191,21 @@ def test_production_deploy_migrates_and_reconciles_secret_references_before_web_
     assert "set -x" not in workflow
 
 
+def test_production_deploy_repairs_only_approved_legacy_nginx_web_route_and_requires_public_exact_sha():
+    workflow = (ROOT / ".github" / "workflows" / "deploy.yml").read_text(encoding="utf-8")
+
+    local_health_index = workflow.index('grep -i "x-aicrm-release-sha: $after_sha"')
+    runtime_verify_index = workflow.index(_runtime_units_phase("verify"))
+    public_route_index = workflow.index("scripts/ops/ensure_production_public_release_route.py --execute")
+    public_sha_index = workflow.index('--expected-sha "$after_sha"', public_route_index)
+
+    assert local_health_index < runtime_verify_index < public_route_index < public_sha_index
+    assert "--server-name www.youcangogogo.com" in workflow
+    assert "--public-health-url https://www.youcangogogo.com/health" in workflow
+    assert "--nginx-config /etc/nginx/sites-enabled/youcangogogo.conf" in workflow
+    assert "tee /tmp/aicrm-public-release-route.json" in workflow
+
+
 def test_production_deploy_polls_health_after_restart_instead_of_fixed_sleep():
     workflow = (ROOT / ".github" / "workflows" / "deploy.yml").read_text(encoding="utf-8")
 

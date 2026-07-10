@@ -197,3 +197,11 @@ jobs:
             python3 scripts/ops/manage_production_runtime_units.py --phase install-enable-after-web-health --execute
             python scripts/ops/check_wecom_callback_deploy_smoke.py | tee /tmp/wecom-callback-deploy-smoke.json
             python3 scripts/ops/manage_production_runtime_units.py --phase verify --execute
+            sudo /home/ubuntu/venvs/openclaw/bin/python \
+              scripts/ops/ensure_production_public_release_route.py --execute \
+              --expected-sha "$after_sha" \
+              --server-name www.youcangogogo.com \
+              --nginx-config /etc/nginx/sites-enabled/youcangogogo.conf \
+              --local-health-url http://127.0.0.1:5001/health \
+              --public-health-url https://www.youcangogogo.com/health \
+              | tee /tmp/aicrm-public-release-route.json
