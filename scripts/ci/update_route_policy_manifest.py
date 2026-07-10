@@ -104,6 +104,17 @@ def _policy_for(entry: dict[str, Any]) -> dict[str, Any]:
             "authenticated",
         )
 
+    if path == "/api/automation/group-ops/broadcast":
+        return _policy(
+            "external_integration",
+            "internal_bearer",
+            "external_write",
+            "service",
+            _pii_level(entry),
+            False,
+            "integration",
+        )
+
     if path.startswith("/api/automation/group-ops/") and "/webhooks/" not in path:
         return _policy(
             "admin",

@@ -326,8 +326,16 @@
       "name": "admin_auth_security",
       "paths": [
         "aicrm_next/admin_auth/**",
+        "aicrm_next/admin_jobs/routes.py",
+        "aicrm_next/frontend_compat/static/admin_console/admin_api_client.js",
         "aicrm_next/frontend_compat/templates/admin_console/login.html",
+        "aicrm_next/shared/route_ownership.py",
+        "aicrm_next/shared/route_policy.py",
         "tests/test_admin_auth_*.py",
+        "tests/test_admin_action_token_binding.py",
+        "tests/test_admin_session_revocation.py",
+        "tests/test_route_policy_*.py",
+        "tests/frontend/admin_request_security.test.mjs",
         "tests/test_admin_routes_require_auth.py"
       ],
       "python_tests": [
@@ -335,6 +343,10 @@
         "tests/test_admin_auth_login_pages.py",
         "tests/test_admin_auth_login_submit.py",
         "tests/test_admin_auth_logout.py",
+        "tests/test_admin_action_token_binding.py",
+        "tests/test_admin_session_revocation.py",
+        "tests/test_route_policy_contract.py",
+        "tests/test_route_policy_enforcement.py",
         "tests/test_questionnaire_oauth_state_security.py"
       ],
       "needs_postgres": true,
@@ -425,6 +437,7 @@
         "package-lock.json"
       ],
       "frontend_tests": [
+        "tests/frontend/admin_request_security.test.mjs",
         "tests/frontend/p1_push_center_status.test.mjs",
         "tests/frontend/p1_group_ops_status.test.mjs",
         "tests/frontend/p1_group_ops_workspace.test.mjs",

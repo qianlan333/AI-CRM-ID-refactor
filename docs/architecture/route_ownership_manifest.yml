@@ -8253,13 +8253,13 @@ routes:
   data_source: external_adapter
   requires_auth: true
   rollback: previous_release
-  audience: admin
-  auth_scheme: admin_session
-  capability: manage_group_ops
-  access_scope: global
+  audience: external_integration
+  auth_scheme: internal_bearer
+  capability: external_write
+  access_scope: service
   pii_level: none
-  csrf: true
-  rate_limit: authenticated
+  csrf: false
+  rate_limit: integration
 - path: /api/customers/automation/activation-webhook
   methods:
   - OPTIONS

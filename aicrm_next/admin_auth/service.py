@@ -20,6 +20,7 @@ from aicrm_next.shared.runtime import require_signing_secret
 SESSION_COOKIE = "aicrm_next_admin_session"
 CSRF_COOKIE = "aicrm_next_csrf"
 CSRF_SESSION_KEY = "csrf_token"
+SESSION_ID_KEY = "sid"
 SESSION_MAX_AGE_SECONDS = 8 * 60 * 60
 DEFAULT_NEXT_PATH = "/admin"
 
@@ -168,6 +169,7 @@ def authenticate_break_glass(*, username: str, password: str) -> AuthResult:
 def session_payload_with_csrf(payload: dict[str, Any]) -> dict[str, Any]:
     session_payload = dict(payload or {})
     session_payload[CSRF_SESSION_KEY] = normalize_text(session_payload.get(CSRF_SESSION_KEY)) or secrets.token_urlsafe(32)
+    session_payload[SESSION_ID_KEY] = normalize_text(session_payload.get(SESSION_ID_KEY)) or secrets.token_urlsafe(24)
     return session_payload
 
 

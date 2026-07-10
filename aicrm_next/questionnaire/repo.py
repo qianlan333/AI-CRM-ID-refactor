@@ -8,8 +8,7 @@ from typing import Any, Protocol
 from uuid import uuid4
 
 from aicrm_next.navigation_target.service import normalize_completion_target_for_storage
-from aicrm_next.shared.repository_provider import RepositoryProviderError
-from aicrm_next.shared.repository_provider import assert_repository_allowed
+from aicrm_next.shared.repository_provider import RepositoryProviderError, assert_repository_allowed
 from aicrm_next.shared.runtime import production_data_ready, raw_database_url
 from .domain import CHOICE_QUESTION_TYPES, selected_choice_options
 
@@ -498,6 +497,7 @@ class InMemoryQuestionnaireRepository:
         self._submissions: list[dict[str, Any]] = [
             {
                 "submission_id": "sub_fixture_001",
+                "result_token": "result_fixture_001_grant_7e3a9c5b2d8f4a61",
                 "questionnaire_id": 1,
                 "slug": "hxc-activation-v1",
                 "answers": {"q_activation": "activated"},
@@ -673,7 +673,7 @@ class InMemoryQuestionnaireRepository:
 
     def get_submission(self, submission_id: str) -> dict[str, Any] | None:
         for item in self._submissions:
-            if item.get("submission_id") == submission_id:
+            if item.get("result_token") == submission_id:
                 payload = deepcopy(item)
                 if isinstance(payload.get("answer_snapshots"), list):
                     payload["answers"] = _answers_from_snapshots(payload["answer_snapshots"])
@@ -1511,6 +1511,7 @@ class PostgresQuestionnaireReadRepository:
         return {
             "id": submission_id,
             "submission_id": str(submission_id),
+            "result_token": _text(payload.get("result_token")),
             "questionnaire_id": questionnaire_id,
             "slug": _text(payload.get("slug")),
             "answers": answers,
@@ -1611,10 +1612,9 @@ class PostgresQuestionnaireReadRepository:
                 SELECT qs.*, q.slug
                 FROM questionnaire_submissions qs
                 JOIN questionnaires q ON q.id = qs.questionnaire_id
-                WHERE qs.id::text = %s OR qs.result_token = %s
-                LIMIT 1
+                WHERE qs.result_token = %s LIMIT 1
                 """,
-                (normalized_id, normalized_id),
+                (normalized_id,),
             ).fetchone()
             if not row:
                 return None

@@ -5,19 +5,19 @@
       "accessor": "os.getenv",
       "file": "aicrm_next/admin_auth/service.py",
       "key": "ADMIN_BREAK_GLASS_LOGIN_ENABLED",
-      "line": 87
+      "line": 88
     },
     {
       "accessor": "os.getenv",
       "file": "aicrm_next/admin_auth/service.py",
       "key": "ADMIN_BREAK_GLASS_PASSWORD_HASH",
-      "line": 150
+      "line": 151
     },
     {
       "accessor": "os.getenv",
       "file": "aicrm_next/admin_auth/service.py",
       "key": "ADMIN_BREAK_GLASS_USERNAME",
-      "line": 149
+      "line": 150
     },
     {
       "accessor": "os.getenv",
@@ -33,6 +33,12 @@
     },
     {
       "accessor": "os.getenv",
+      "file": "aicrm_next/admin_auth/route_policy.py",
+      "key": "AICRM_ADMIN_AUTH_ENFORCED",
+      "line": 87
+    },
+    {
+      "accessor": "os.getenv",
       "file": "scripts/ai_audience_apply_package_spec.py",
       "key": "AICRM_ADMIN_SESSION_COOKIE",
       "line": 315
@@ -41,7 +47,7 @@
       "accessor": "os.getenv",
       "file": "aicrm_next/admin_auth/service.py",
       "key": "AICRM_ADMIN_SESSION_COOKIE_SECURE",
-      "line": 179
+      "line": 181
     },
     {
       "accessor": "os.getenv",
@@ -383,7 +389,7 @@
       "accessor": "os.getenv",
       "file": "aicrm_next/admin_auth/service.py",
       "key": "AICRM_NEXT_ADMIN_AUTH_USER_COUNT",
-      "line": 91
+      "line": 92
     },
     {
       "accessor": "os.getenv",
@@ -438,6 +444,12 @@
       "file": "aicrm_next/admin_auth/guards.py",
       "key": "AICRM_NEXT_ENV",
       "line": 66
+    },
+    {
+      "accessor": "os.getenv",
+      "file": "aicrm_next/admin_auth/route_policy.py",
+      "key": "AICRM_NEXT_ENV",
+      "line": 79
     },
     {
       "accessor": "os.getenv",
@@ -675,6 +687,12 @@
     },
     {
       "accessor": "os.getenv",
+      "file": "aicrm_next/admin_auth/action_token.py",
+      "key": "AICRM_ROUTE_POLICY_ENFORCED",
+      "line": 187
+    },
+    {
+      "accessor": "os.getenv",
       "file": "aicrm_next/ai_audience_ops/agent_gateway.py",
       "key": "AICRM_RUNTIME_V2_AGENT_FAKE_ALLOWED",
       "line": 42
@@ -849,9 +867,15 @@
     },
     {
       "accessor": "os.getenv",
+      "file": "aicrm_next/admin_auth/route_policy.py",
+      "key": "AUTOMATION_INTERNAL_API_TOKEN",
+      "line": 148
+    },
+    {
+      "accessor": "os.getenv",
       "file": "aicrm_next/admin_jobs/routes.py",
       "key": "AUTOMATION_INTERNAL_API_TOKEN",
-      "line": 98
+      "line": 105
     },
     {
       "accessor": "os.getenv",
@@ -953,7 +977,7 @@
       "accessor": "os.getenv",
       "file": "aicrm_next/admin_jobs/routes.py",
       "key": "CRON_SECRET",
-      "line": 133
+      "line": 140
     },
     {
       "accessor": "_env_flag",
@@ -1185,6 +1209,12 @@
     },
     {
       "accessor": "os.getenv",
+      "file": "aicrm_next/admin_auth/route_policy.py",
+      "key": "MCP_BEARER_TOKEN",
+      "line": 151
+    },
+    {
+      "accessor": "os.getenv",
       "file": "aicrm_next/admin_jobs/application.py",
       "key": "MCP_BEARER_TOKEN",
       "line": 240
@@ -1193,7 +1223,7 @@
       "accessor": "os.getenv",
       "file": "aicrm_next/admin_jobs/routes.py",
       "key": "MCP_BEARER_TOKEN",
-      "line": 98
+      "line": 105
     },
     {
       "accessor": "os.getenv",
@@ -1221,6 +1251,18 @@
     },
     {
       "accessor": "os.getenv",
+      "file": "aicrm_next/admin_auth/route_policy.py",
+      "key": "PYTEST_CURRENT_TEST",
+      "line": 77
+    },
+    {
+      "accessor": "os.getenv",
+      "file": "aicrm_next/admin_auth/route_policy.py",
+      "key": "PYTEST_CURRENT_TEST",
+      "line": 85
+    },
+    {
+      "accessor": "os.getenv",
       "file": "aicrm_next/ai_audience_ops/agent_gateway.py",
       "key": "PYTEST_CURRENT_TEST",
       "line": 43
@@ -1241,7 +1283,7 @@
       "accessor": "os.getenv",
       "file": "aicrm_next/questionnaire/application.py",
       "key": "SECRET_KEY",
-      "line": 297
+      "line": 298
     },
     {
       "accessor": "os.getenv",
@@ -1295,7 +1337,7 @@
       "accessor": "os.getenv",
       "file": "aicrm_next/questionnaire/application.py",
       "key": "WECHAT_MP_APP_ID",
-      "line": 299
+      "line": 300
     },
     {
       "accessor": "os.getenv",
@@ -1307,7 +1349,7 @@
       "accessor": "os.getenv",
       "file": "aicrm_next/questionnaire/application.py",
       "key": "WECHAT_MP_APP_SECRET",
-      "line": 300
+      "line": 301
     },
     {
       "accessor": "os.getenv",
@@ -1469,7 +1511,7 @@
       "accessor": "os.getenv",
       "file": "aicrm_next/admin_auth/service.py",
       "key": "WECOM_AGENT_ID",
-      "line": 109
+      "line": 110
     },
     {
       "accessor": "os.getenv",
@@ -1505,7 +1547,7 @@
       "accessor": "os.getenv",
       "file": "aicrm_next/questionnaire/application.py",
       "key": "WECOM_API_BASE",
-      "line": 311
+      "line": 312
     },
     {
       "accessor": "os.getenv",
@@ -1601,13 +1643,13 @@
       "accessor": "os.getenv",
       "file": "aicrm_next/questionnaire/application.py",
       "key": "WECOM_CONTACT_SECRET",
-      "line": 306
+      "line": 307
     },
     {
       "accessor": "os.getenv",
       "file": "aicrm_next/admin_auth/service.py",
       "key": "WECOM_CORP_ID",
-      "line": 108
+      "line": 109
     },
     {
       "accessor": "os.getenv",
@@ -1667,13 +1709,13 @@
       "accessor": "os.getenv",
       "file": "aicrm_next/questionnaire/application.py",
       "key": "WECOM_CORP_ID",
-      "line": 305
+      "line": 306
     },
     {
       "accessor": "os.getenv",
       "file": "aicrm_next/questionnaire/application.py",
       "key": "WECOM_CORP_ID",
-      "line": 309
+      "line": 310
     },
     {
       "accessor": "os.getenv",
@@ -1733,7 +1775,7 @@
       "accessor": "os.getenv",
       "file": "aicrm_next/questionnaire/application.py",
       "key": "WECOM_SECRET",
-      "line": 310
+      "line": 311
     },
     {
       "accessor": "os.getenv",
@@ -1845,6 +1887,7 @@
     "AICRM_QUESTIONNAIRE_OAUTH_ADAPTER_MODE",
     "AICRM_QUESTIONNAIRE_OAUTH_REDIRECT_ALLOWLIST",
     "AICRM_QUESTIONNAIRE_OAUTH_STATE_SECRET",
+    "AICRM_ROUTE_POLICY_ENFORCED",
     "AICRM_RUNTIME_V2_AGENT_FAKE_ALLOWED",
     "AICRM_RUNTIME_V2_AGENT_FAKE_OUTPUT",
     "AICRM_SIDEBAR_JSSDK_ADAPTER_MODE",
@@ -2570,7 +2613,7 @@
     }
   ],
   "migration_heads": [
-    "0097_service_period_unionid_cleanup"
+    "0098_admin_session_revocation"
   ],
   "openapi_components": {
     "schemas": {
