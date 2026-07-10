@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import ast
 from pathlib import Path
+import re
+import subprocess
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -79,9 +81,7 @@ def test_production_deploy_uses_bounded_ssh_fetch_retries_before_stopping_servic
 
     ssh_repo_index = workflow.index('release_repo="git@github.com:qianlan333/AI-CRM-ID-refactor.git"')
     retry_index = workflow.index("for attempt in 1 2 3; do")
-    ssh_command_index = workflow.index(
-        'release_ssh_command="ssh -o UserKnownHostsFile=/home/ubuntu/.ssh/known_hosts'
-    )
+    ssh_command_index = workflow.index('release_ssh_command="ssh -o UserKnownHostsFile=$release_known_hosts')
     ssh_guard_index = workflow.index('GIT_SSH_COMMAND="$release_ssh_command"')
     fetch_index = workflow.index('git fetch --no-tags "$release_repo" main:refs/remotes/aicrm-id-refactor/main')
     fetch_guard_index = workflow.index('if [ "$release_fetch_ok" != "1" ]; then')
@@ -91,21 +91,43 @@ def test_production_deploy_uses_bounded_ssh_fetch_retries_before_stopping_servic
     assert "unable to fetch verified release from ID-refactor after 3 attempts" in workflow
 
 
-def test_production_deploy_uses_pinned_server_ssh_trust_before_release_fetch():
+def test_production_deploy_builds_and_verifies_pinned_github_host_keys_before_release_fetch(tmp_path: Path):
     workflow = (ROOT / ".github" / "workflows" / "deploy.yml").read_text(encoding="utf-8")
 
-    known_hosts_index = workflow.index('release_known_hosts="/home/ubuntu/.ssh/known_hosts"')
-    known_hosts_guard_index = workflow.index('if [ ! -r "$release_known_hosts" ]; then')
-    github_host_guard_index = workflow.index('ssh-keygen -F github.com -f "$release_known_hosts"')
+    known_hosts_index = workflow.index('release_known_hosts="$(mktemp /tmp/aicrm-github-known-hosts.XXXXXX)"')
+    cleanup_index = workflow.index('trap \'rm -f "$release_known_hosts"\' EXIT')
+    fingerprint_guard_index = workflow.index('ssh-keygen -lf "$release_known_hosts" -E sha256')
     strict_ssh_index = workflow.index('-o StrictHostKeyChecking=yes')
     fetch_index = workflow.index('git fetch --no-tags "$release_repo" main:refs/remotes/aicrm-id-refactor/main')
     stop_index = workflow.index(_runtime_units_phase("stop-for-migration"))
 
-    assert known_hosts_index < known_hosts_guard_index < github_host_guard_index < strict_ssh_index < fetch_index < stop_index
+    assert known_hosts_index < cleanup_index < fingerprint_guard_index < strict_ssh_index < fetch_index < stop_index
+    assert "GlobalKnownHostsFile=/dev/null" in workflow
+    assert "/home/ubuntu/.ssh/known_hosts" not in workflow
     assert "release_ssh_config" not in workflow
     assert "ssh -F " not in workflow
     assert "StrictHostKeyChecking=no" not in workflow
     assert "ssh-keyscan" not in workflow
+
+    pinned_keys = re.findall(
+        r"'(github\.com (?:ssh-ed25519|ecdsa-sha2-nistp256|ssh-rsa) [A-Za-z0-9+/=]+)'",
+        workflow,
+    )
+    assert len(pinned_keys) == 3
+    known_hosts = tmp_path / "known_hosts"
+    known_hosts.write_text("\n".join(pinned_keys) + "\n", encoding="utf-8")
+    completed = subprocess.run(
+        ["ssh-keygen", "-lf", str(known_hosts), "-E", "sha256"],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    fingerprints = {line.split()[1] for line in completed.stdout.splitlines()}
+    assert fingerprints == {
+        "SHA256:+DiY3wvvV6TuJJhbpZisF/zLDA0zPMSvHdkr4UvCOqU",
+        "SHA256:p2QAMXNIC1TJYWeIOttrVc98/R1BUFWu3/LiyKgUfQM",
+        "SHA256:uNiVztksCsDhcc0u9e8BujQXVUpKZIDTMczCvj3tD2s",
+    }
 
 
 def test_production_deploy_refreshes_release_marker_before_restart_and_checks_health_header():
