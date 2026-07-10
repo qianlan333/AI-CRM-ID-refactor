@@ -9,6 +9,7 @@
     ".github/**",
     "scripts/ci/**",
     "tests/conftest.py",
+    "tests/test_pytest_shard_selector.py",
     "app.py",
     "aicrm_next/platform_foundation/**",
     "aicrm_next/admin_auth/**",
@@ -644,6 +645,7 @@
         "tests/conftest.py",
         "tests/test_ci_workflow_contract.py",
         "tests/test_deploy_workflow_contract.py",
+        "tests/test_pytest_shard_selector.py",
         "tests/test_external_orders_blocker_diagnostics.py",
         "tests/test_external_orders_consumer_run_due_diagnostics.py",
         "tests/test_retired_runtime_gap_timer_report.py",
@@ -667,6 +669,7 @@
       "python_tests": [
         "tests/test_ci_workflow_contract.py",
         "tests/test_deploy_workflow_contract.py",
+        "tests/test_pytest_shard_selector.py",
         "tests/test_external_orders_blocker_diagnostics.py",
         "tests/test_external_orders_consumer_run_due_diagnostics.py",
         "tests/test_retired_runtime_gap_timer_report.py",
