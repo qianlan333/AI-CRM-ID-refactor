@@ -56,12 +56,15 @@ def test_full_regression_owns_full_pytest_and_full_frontend() -> None:
     assert 'cron: "0 18 * * *"' in source
     assert "full-python-shard:" in source
     assert "fail-fast: false" in source
-    assert "max-parallel: 3" in source
-    assert source.count("shard_index:") == 3
+    assert "max-parallel: 4" in source
+    assert source.count("shard_index:") == 4
     assert "shard_index: 0" in source
     assert "shard_index: 1" in source
     assert "shard_index: 2" in source
+    assert "shard_index: 3" in source
     assert "python scripts/ci/select_pytest_shard.py" in source
+    assert "--shard-total 4" in source
+    assert "--duration-baseline docs/ci/pytest_duration_baseline.json" in source
     assert "set -o pipefail" in source
     assert "pytest_files=()" in source
     assert "while IFS= read -r test_file; do" in source

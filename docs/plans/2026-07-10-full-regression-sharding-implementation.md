@@ -4,7 +4,7 @@
 
 **Goal:** Preserve the complete Python/PostgreSQL regression while reducing representative PR and `main` full-CI wall-clock time from about 29 minutes to at most 14 minutes.
 
-**Architecture:** Collect the actual pytest node IDs, group them by file, and deterministically bin-pack files into three near-equal item-count shards. Run those shards concurrently on isolated GitHub runners/PostgreSQL services, retain xdist inside each shard, and upload per-shard JUnit timing evidence.
+**Architecture:** Collect the actual pytest node IDs, group them by file, and deterministically bin-pack files into four duration-weighted shards using a validated JUnit baseline. Run those shards concurrently on isolated GitHub runners/PostgreSQL services, retain xdist inside each shard, and upload refreshed per-shard JUnit timing evidence.
 
 **Tech Stack:** Python 3.10, pytest/pytest-xdist, PostgreSQL 16 service containers, GitHub Actions reusable workflows, PyYAML contract parsing.
 
@@ -14,11 +14,12 @@
 
 **Files:**
 - Create: `tests/test_pytest_shard_selector.py`
+- Create: `tests/test_pytest_duration_baseline_builder.py`
 - Modify: `tests/test_ci_workflow_contract.py`
 
 **Step 1: Write failing selector tests**
 
-Cover deterministic assignment, exhaustive and mutually exclusive files, balanced item counts, file preservation, invalid indexes, empty collection, and exact output-file contents.
+Cover deterministic assignment, exhaustive and mutually exclusive files, duration weighting, baseline validation, file preservation, invalid indexes, empty collection, and exact output-file contents.
 
 **Step 2: Write failing workflow contracts**
 
@@ -38,19 +39,21 @@ Expected: selector import and new workflow assertions fail.
 
 **Files:**
 - Create: `scripts/ci/select_pytest_shard.py`
+- Create: `scripts/ci/build_pytest_duration_baseline.py`
+- Create: `docs/ci/pytest_duration_baseline.json`
 - Test: `tests/test_pytest_shard_selector.py`
 
 **Step 1: Add pure parsing and partition functions**
 
-Parse only collected `tests/**/*.py::node` IDs, count items per file, sort by descending count/path, and greedily assign the next file to the shard with the lowest `(item_count, file_count, index)` tuple.
+Parse only collected `tests/**/*.py::node` IDs, scale known file durations by current item count, use a suite-wide fallback for new files, sort by descending estimated duration/count/path, and greedily assign the next file to the shard with the lowest `(estimated_seconds, item_count, file_count, index)` tuple.
 
 **Step 2: Add the fail-closed CLI**
 
-Accept `--shard-index`, `--shard-total`, and `--output-file`; invoke `python -m pytest tests/ --collect-only -q --disable-warnings`; reject failed/empty collection and an empty selected shard; atomically write one selected file per line; print a JSON count summary.
+Accept `--shard-index`, `--shard-total`, `--duration-baseline`, and `--output-file`; invoke `python -m pytest tests/ --collect-only -q --disable-warnings`; reject failed/empty collection, a malformed baseline, and an empty selected shard; atomically write one selected file per line; print a JSON count/duration summary.
 
 **Step 3: Prove GREEN**
 
-Run the selector unit tests and invoke all three shards against the real repository collection. Verify that selected file sets are disjoint, their union equals all collected test files, and selected item counts sum to the collected total.
+Run the selector/baseline unit tests and invoke all four shards against the real repository collection. Verify that selected file sets are disjoint, their union equals all collected test files, selected item counts sum to the collected total, and estimated durations are near-equal.
 
 ### Task 3: Parallelize Full Regression without removing gates
 
@@ -63,9 +66,9 @@ Run the selector unit tests and invoke all three shards against the real reposit
 
 Create one `full-governance` job for direct/nightly runs. Add a boolean `workflow_call` input and have CI Fast pass `run_governance: false`, because its `architecture-gates` and `dependency-audit` jobs remain required.
 
-**Step 2: Add three Python shards**
+**Step 2: Add four Python shards**
 
-Use a static include matrix for indexes 0, 1, and 2 with `fail-fast: false` and `max-parallel: 3`. Give every shard its own PostgreSQL service, select files at runtime, run pytest with `-n auto --dist=loadfile`, and upload JUnit timing artifacts even on failure.
+Use a static include matrix for indexes 0 through 3 with `fail-fast: false` and `max-parallel: 4`. Give every shard its own PostgreSQL service, select files at runtime, run pytest with `-n auto --dist=loadfile`, and upload JUnit timing artifacts even on failure.
 
 **Step 3: Verify contracts and YAML**
 
@@ -93,7 +96,7 @@ Commit only CI optimization files, push `codex/ci-full-regression-shards`, and c
 
 **Step 3: Benchmark the PR**
 
-Wait for every check. Acceptance requires all three shard item counts to sum to the full collection, every shard to pass, and CI Fast wall-clock time at or below 14 minutes. If skew or timeout violates the target, inspect JUnit artifacts and rebalance before merge.
+Wait for every check. Acceptance requires all four shard item counts to sum to the full collection, every shard to pass, and CI Fast wall-clock time at or below 14 minutes. If skew or timeout violates the target, rebuild the checked-in duration baseline from JUnit artifacts and rebalance before merge.
 
 **Step 4: Benchmark `main` and resume the Epic**
 
