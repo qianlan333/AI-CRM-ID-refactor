@@ -200,6 +200,8 @@ jobs:
     needs: select
     if: needs.select.outputs.needs_full_ci == 'true'
     uses: ./.github/workflows/full-regression.yml
+    with:
+      run_governance: false
 
   ci-fast-result:
     needs:

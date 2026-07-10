@@ -54,7 +54,24 @@ def test_full_regression_owns_full_pytest_and_full_frontend() -> None:
     assert "workflow_dispatch:" in source
     assert "workflow_call:" in source
     assert 'cron: "0 18 * * *"' in source
-    assert "python -m pytest tests/ -n auto --dist=loadfile" in source
+    assert "full-python-shard:" in source
+    assert "fail-fast: false" in source
+    assert "max-parallel: 3" in source
+    assert source.count("shard_index:") == 3
+    assert "shard_index: 0" in source
+    assert "shard_index: 1" in source
+    assert "shard_index: 2" in source
+    assert "python scripts/ci/select_pytest_shard.py" in source
+    assert "set -o pipefail" in source
+    assert "pytest_files=()" in source
+    assert "while IFS= read -r test_file; do" in source
+    assert 'pytest_files+=("$test_file")' in source
+    assert 'done < "$RUNNER_TEMP/pytest-shard-files.txt"' in source
+    assert "mapfile" not in source
+    assert 'python -m pytest "${pytest_files[@]}" -n auto --dist=loadfile -q' in source
+    assert "--junitxml=" in source
+    assert "actions/upload-artifact@v4" in source
+    assert "timeout-minutes: 25" in source
     assert "bash scripts/ci/run_architecture_gates.sh --mode full" in source
     assert "python scripts/ci/check_dependency_security.py" in source
     assert "python -m pip_audit -r requirements.lock --require-hashes --progress-spinner=off" in source
@@ -63,6 +80,20 @@ def test_full_regression_owns_full_pytest_and_full_frontend() -> None:
     assert "npm run typecheck" in source
     assert "npm run build:frontend" in source
     assert "npm run test:frontend:all" in source
+
+
+def test_full_regression_runs_governance_once_and_ci_fast_does_not_duplicate_it() -> None:
+    full_source = _source(FULL_REGRESSION_WORKFLOW)
+    ci_fast_source = _source(CI_FAST_WORKFLOW)
+
+    assert "run_governance:" in full_source
+    assert "type: boolean" in full_source
+    assert "default: true" in full_source
+    assert "full-governance:" in full_source
+    assert "github.event_name != 'workflow_call' || inputs.run_governance == true" in full_source
+    assert full_source.count("python scripts/ci/check_dependency_security.py") == 1
+    assert full_source.count("bash scripts/ci/run_architecture_gates.sh --mode full") == 1
+    assert "uses: ./.github/workflows/full-regression.yml\n    with:\n      run_governance: false" in ci_fast_source
 
 
 def test_deploy_waits_for_successful_ci_fast_on_main() -> None:
