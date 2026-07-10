@@ -16,6 +16,7 @@ from fastapi.templating import Jinja2Templates
 from aicrm_next.admin_shell import shell_context
 from aicrm_next.shared.errors import ContractError, NotFoundError
 from aicrm_next.shared.pii_audit import infer_pii_result_count, set_pii_audit_result_count
+from aicrm_next.shared.safe_logging import safe_log_exception
 from aicrm_next.shared.share_qr import svg_qr_data_url
 from aicrm_next.shared.sync_request import read_request_body, read_request_json
 
@@ -90,7 +91,7 @@ def _raise_http(exc: Exception) -> None:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     if isinstance(exc, ContractError):
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    logger.exception("commerce api unexpected error")
+    safe_log_exception(logger, "commerce api unexpected error", exc)
     raise HTTPException(
         status_code=500,
         detail={"error_code": "commerce_internal_error", "message": "internal commerce error"},
@@ -980,8 +981,8 @@ def wechat_shop_notify(request: Request) -> Response:
     except ValueError as exc:
         status_code = 403 if "signature" in str(exc).lower() or "callback token" in str(exc).lower() else 400
         return Response(str(exc), media_type="text/plain", status_code=status_code)
-    except Exception:
-        logger.exception("wechat shop notify failed before durable event handling")
+    except Exception as exc:
+        safe_log_exception(logger, "wechat shop notify failed before durable event handling", exc)
         return Response("wechat shop notify failed", media_type="text/plain", status_code=500)
 
 

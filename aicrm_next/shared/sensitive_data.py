@@ -37,6 +37,7 @@ _PII_IDENTIFIER_KEY_FRAGMENTS = {
     "idcard",
     "mobile",
     "openid",
+    "outtradeno",
     "owneruserid",
     "phonenumber",
     "phone",

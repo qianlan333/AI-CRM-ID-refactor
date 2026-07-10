@@ -21,6 +21,7 @@ from aicrm_next.shared.errors import ContractError, NotFoundError
 from aicrm_next.shared.pii_audit import infer_pii_result_count, set_pii_audit_result_count
 from aicrm_next.shared.runtime import production_data_ready
 from aicrm_next.shared.runtime_settings import runtime_setting
+from aicrm_next.shared.safe_logging import safe_log_fields
 
 from .admin_write import (
     QuestionnaireAdminWriteCommand,
@@ -1014,12 +1015,12 @@ def wechat_oauth_start(
         return RedirectResponse(str(payload["redirect_url"]), status_code=302)
     logger.warning(
         "questionnaire oauth start browser redirect unavailable",
-        extra={
-            "slug": slug,
-            "adapter_mode": payload.get("adapter_mode"),
-            "error": payload.get("error"),
-            "source_status": payload.get("source_status"),
-        },
+        extra=safe_log_fields(
+            slug=slug,
+            adapter_mode=payload.get("adapter_mode"),
+            error=payload.get("error"),
+            source_status=payload.get("source_status"),
+        ),
     )
     return _oauth_html_error(
         title="当前微信授权配置未完成",
@@ -1084,12 +1085,12 @@ def wechat_oauth_callback(
             return redirect_response
         logger.warning(
             "questionnaire oauth callback browser redirect failed",
-            extra={
-                "slug": payload.get("slug") or state_context.get("slug"),
-                "adapter_mode": payload.get("adapter_mode"),
-                "error": payload.get("error"),
-                "source_status": payload.get("source_status"),
-            },
+            extra=safe_log_fields(
+                slug=payload.get("slug") or state_context.get("slug"),
+                adapter_mode=payload.get("adapter_mode"),
+                error=payload.get("error"),
+                source_status=payload.get("source_status"),
+            ),
         )
         return _oauth_html_error(
             title="授权未完成",

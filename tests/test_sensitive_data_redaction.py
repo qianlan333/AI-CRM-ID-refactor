@@ -10,6 +10,7 @@ import requests
 
 from aicrm_next.admin_config.repository import AdminConfigRepository
 from aicrm_next.admin_config.settings import mask_value
+from aicrm_next.ai_audience_ops.package_spec import redact_report
 from aicrm_next.platform_foundation.external_calls import scrub_summary
 from aicrm_next.platform_foundation.external_effects.adapters import WebhookAdapter
 from aicrm_next.platform_foundation.external_effects.models import WEBHOOK_GENERIC_PUSH
@@ -102,6 +103,24 @@ def test_sensitive_text_scrubs_credentials_and_pii_from_exception_messages() -> 
     assert "complete-private-material" not in redacted
     assert SECRET_MASK in redacted
     assert PII_MASK in redacted
+
+
+def test_ai_audience_cli_report_uses_shared_secret_and_pii_redaction() -> None:
+    report = json.loads(
+        redact_report(
+            {
+                "sender_userid": "ownerRuntimeSentinel001",
+                "mobile": "13987654321",
+                "external_token": "runtime-sentinel-secret-001",
+            }
+        )
+    )
+
+    assert report == {
+        "sender_userid": PII_MASK,
+        "mobile": PII_MASK,
+        "external_token": SECRET_MASK,
+    }
 
 
 def test_stable_hmac_identifier_supports_correlation_without_disclosing_source() -> None:

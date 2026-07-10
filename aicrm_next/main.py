@@ -25,6 +25,7 @@ from .shared.release import current_release_sha
 from .shared.pii_audit import PiiAuditRepository, apply_pii_audit, pii_audit_enabled
 from .shared.route_policy import RoutePolicyIndex
 from .shared.runtime import assert_required_runtime_secrets, fixture_mode, require_signing_secret
+from .shared.safe_logging import safe_log_exception
 
 __all__ = [
     "app",
@@ -83,7 +84,7 @@ def create_app(*, pii_audit_repository: PiiAuditRepository | None = None) -> Fas
 
     @app.exception_handler(Exception)
     async def unhandled_error_handler(request, exc):
-        logger.exception("unhandled ai-crm next exception")
+        safe_log_exception(logger, "unhandled ai-crm next exception", exc)
         return JSONResponse(
             status_code=500,
             content={

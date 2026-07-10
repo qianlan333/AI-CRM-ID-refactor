@@ -11,6 +11,7 @@ from aicrm_next.shared.db_session import connect_pooled_postgres
 from aicrm_next.shared.errors import ContractError, NotFoundError
 from aicrm_next.shared.repository_provider import assert_repository_allowed
 from aicrm_next.shared.runtime import production_data_ready, raw_database_url
+from aicrm_next.shared.safe_logging import safe_log_fields
 
 from .domain import (
     TENANT_ID,
@@ -316,7 +317,10 @@ class InMemoryServicePeriodRepository:
                 after=None,
                 payload={"reason": "missing_unionid", "order": order, "transaction": transaction or {}},
             )
-            LOGGER.warning("service_period_grant_failed_missing_unionid", extra={"out_trade_no": out_trade_no, "service_product_id": product.get("id")})
+            LOGGER.warning(
+                "service_period_grant_failed_missing_unionid",
+                extra=safe_log_fields(out_trade_no=out_trade_no, service_product_id=product.get("id")),
+            )
             return {"ok": False, "skipped": True, "reason": "missing_unionid", "event": event}
         now = utcnow()
         paid_at = _order_paid_at(order, transaction)
@@ -1064,7 +1068,10 @@ class PostgresServicePeriodRepository:
                     payload={"reason": "missing_unionid", "order": order, "transaction": transaction or {}},
                 )
                 conn.commit()
-                LOGGER.warning("service_period_grant_failed_missing_unionid", extra={"out_trade_no": out_trade_no, "service_product_id": product.get("id")})
+                LOGGER.warning(
+                    "service_period_grant_failed_missing_unionid",
+                    extra=safe_log_fields(out_trade_no=out_trade_no, service_product_id=product.get("id")),
+                )
                 return {"ok": False, "skipped": True, "reason": "missing_unionid", "event": event}
             result = self._grant_or_renew_with_unionid(conn, product=product, order=order, transaction=transaction or {}, unionid=unionid, out_trade_no=out_trade_no)
             conn.commit()

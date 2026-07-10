@@ -9,6 +9,7 @@ from sqlalchemy import text
 from sqlalchemy.engine import Engine
 
 from aicrm_next.shared.db_session import get_engine
+from aicrm_next.shared.safe_logging import safe_log_exception
 from aicrm_next.shared.secret_store import FileSecretStore, is_secret_reference
 from aicrm_next.shared.sensitive_data import redact_sensitive_data
 
@@ -33,8 +34,8 @@ class AdminConfigRepository:
                         """
                     )
                 ).mappings().all()
-        except SQLAlchemyError:
-            LOGGER.warning("admin config app_settings read unavailable", exc_info=True)
+        except SQLAlchemyError as exc:
+            safe_log_exception(LOGGER, "admin config app_settings read unavailable", exc, level=logging.WARNING)
             return []
         return [dict(row) for row in rows]
 
@@ -51,8 +52,8 @@ class AdminConfigRepository:
                     ),
                     {"key": str(key or "").strip()},
                 ).mappings().first()
-        except SQLAlchemyError:
-            LOGGER.warning("admin config app_setting read unavailable", exc_info=True)
+        except SQLAlchemyError as exc:
+            safe_log_exception(LOGGER, "admin config app_setting read unavailable", exc, level=logging.WARNING)
             return None
         return dict(row) if row else None
 
@@ -154,8 +155,8 @@ class AdminConfigRepository:
                     ),
                     params,
                 ).mappings().all()
-        except SQLAlchemyError:
-            LOGGER.warning("admin config audit map read unavailable", exc_info=True)
+        except SQLAlchemyError as exc:
+            safe_log_exception(LOGGER, "admin config audit map read unavailable", exc, level=logging.WARNING)
             return {}
         result: dict[str, dict[str, Any]] = {}
         for row in rows:
@@ -184,8 +185,8 @@ class AdminConfigRepository:
                     ),
                     params,
                 ).mappings().all()
-        except SQLAlchemyError:
-            LOGGER.warning("admin config audit log read unavailable", exc_info=True)
+        except SQLAlchemyError as exc:
+            safe_log_exception(LOGGER, "admin config audit log read unavailable", exc, level=logging.WARNING)
             return []
         return [dict(row) for row in rows]
 
@@ -211,8 +212,8 @@ class AdminConfigRepository:
                         """
                     )
                 ).mappings().all()
-        except SQLAlchemyError:
-            LOGGER.warning("admin config mcp_tool_settings read unavailable", exc_info=True)
+        except SQLAlchemyError as exc:
+            safe_log_exception(LOGGER, "admin config mcp_tool_settings read unavailable", exc, level=logging.WARNING)
             return []
         return [dict(row) for row in rows]
 
@@ -239,8 +240,8 @@ class AdminConfigRepository:
                     ),
                     {"tool_name": str(tool_name or "").strip()},
                 ).mappings().first()
-        except SQLAlchemyError:
-            LOGGER.warning("admin config mcp_tool_setting read unavailable", exc_info=True)
+        except SQLAlchemyError as exc:
+            safe_log_exception(LOGGER, "admin config mcp_tool_setting read unavailable", exc, level=logging.WARNING)
             return None
         return dict(row) if row else None
 
@@ -335,8 +336,8 @@ class AdminConfigRepository:
                     ),
                     {"automation_key": str(automation_key or "").strip()},
                 ).mappings().first()
-        except SQLAlchemyError:
-            LOGGER.warning("admin config marketing automation config read unavailable", exc_info=True)
+        except SQLAlchemyError as exc:
+            safe_log_exception(LOGGER, "admin config marketing automation config read unavailable", exc, level=logging.WARNING)
             return None
         return dict(row) if row else None
 
@@ -371,8 +372,8 @@ class AdminConfigRepository:
                     ),
                     {"automation_config_id": int(automation_config_id or 0)},
                 ).mappings().all()
-        except SQLAlchemyError:
-            LOGGER.warning("admin config marketing automation rules read unavailable", exc_info=True)
+        except SQLAlchemyError as exc:
+            safe_log_exception(LOGGER, "admin config marketing automation rules read unavailable", exc, level=logging.WARNING)
             return []
         return [dict(row) for row in rows]
 
@@ -389,8 +390,8 @@ class AdminConfigRepository:
                     ),
                     {"questionnaire_id": int(questionnaire_id or 0)},
                 ).mappings().first()
-        except SQLAlchemyError:
-            LOGGER.warning("admin config questionnaire lookup unavailable", exc_info=True)
+        except SQLAlchemyError as exc:
+            safe_log_exception(LOGGER, "admin config questionnaire lookup unavailable", exc, level=logging.WARNING)
             return None
         return dict(row) if row else None
 
@@ -408,8 +409,8 @@ class AdminConfigRepository:
                     ),
                     {"questionnaire_id": int(questionnaire_id or 0)},
                 ).mappings().all()
-        except SQLAlchemyError:
-            LOGGER.warning("admin config questionnaire questions read unavailable", exc_info=True)
+        except SQLAlchemyError as exc:
+            safe_log_exception(LOGGER, "admin config questionnaire questions read unavailable", exc, level=logging.WARNING)
             return []
         return [dict(row) for row in rows]
 
@@ -432,8 +433,8 @@ class AdminConfigRepository:
                     ),
                     params,
                 ).mappings().all()
-        except SQLAlchemyError:
-            LOGGER.warning("admin config questionnaire options read unavailable", exc_info=True)
+        except SQLAlchemyError as exc:
+            safe_log_exception(LOGGER, "admin config questionnaire options read unavailable", exc, level=logging.WARNING)
             return []
         return [dict(row) for row in rows]
 
@@ -566,8 +567,8 @@ class AdminConfigRepository:
         try:
             with self._engine.connect() as conn:
                 value = conn.execute(text("SELECT COUNT(*) FROM admin_users")).scalar()
-        except SQLAlchemyError:
-            LOGGER.warning("admin users count unavailable", exc_info=True)
+        except SQLAlchemyError as exc:
+            safe_log_exception(LOGGER, "admin users count unavailable", exc, level=logging.WARNING)
             return 0
         return int(value or 0)
 
@@ -586,8 +587,8 @@ class AdminConfigRepository:
                         """
                     )
                 ).mappings().all()
-        except SQLAlchemyError:
-            LOGGER.warning("admin users read unavailable", exc_info=True)
+        except SQLAlchemyError as exc:
+            safe_log_exception(LOGGER, "admin users read unavailable", exc, level=logging.WARNING)
             return []
         return [dict(row) for row in rows]
 
@@ -610,8 +611,8 @@ class AdminConfigRepository:
                     ),
                     params,
                 ).mappings().all()
-        except SQLAlchemyError:
-            LOGGER.warning("admin user roles read unavailable", exc_info=True)
+        except SQLAlchemyError as exc:
+            safe_log_exception(LOGGER, "admin user roles read unavailable", exc, level=logging.WARNING)
             return []
         return [dict(row) for row in rows]
 
@@ -734,8 +735,8 @@ class AdminConfigRepository:
                     ),
                     {"limit": max(1, min(int(limit), 200))},
                 ).mappings().all()
-        except SQLAlchemyError:
-            LOGGER.warning("admin login audit read unavailable", exc_info=True)
+        except SQLAlchemyError as exc:
+            safe_log_exception(LOGGER, "admin login audit read unavailable", exc, level=logging.WARNING)
             return []
         return [dict(row) for row in rows]
 

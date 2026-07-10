@@ -15,6 +15,7 @@ from aicrm_next.shared.secret_store import (
     SecretStoreError,
     parse_secret_reference,
 )
+from aicrm_next.shared.safe_logging import safe_log_exception
 
 LOGGER = logging.getLogger(__name__)
 _TRUE_VALUES = {"1", "true", "yes", "y", "on"}
@@ -67,8 +68,8 @@ def runtime_setting(key: str, default: str = "") -> str:
             stored_value = str((row or {}).get("value") or "").strip()
             if normalized_key in SENSITIVE_SETTING_KEYS and not stored_value.startswith("secretref:"):
                 cutover_enabled = _cutover_enabled(conn)
-    except (AttributeError, SQLAlchemyError, RuntimeError):
-        LOGGER.debug("runtime app_settings read unavailable", exc_info=True)
+    except (AttributeError, SQLAlchemyError, RuntimeError) as exc:
+        safe_log_exception(LOGGER, "runtime app_settings read unavailable", exc, level=logging.DEBUG)
         row = None
     if row is not None:
         return _resolve_candidate(

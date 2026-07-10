@@ -40,6 +40,7 @@ run_full_only() {
   "$PYTHON" tools/check_schema_change_templates.py
   "$PYTHON" scripts/ci/runtime_contract_inventory.py --check docs/architecture/runtime_contract_inventory.json
   "$PYTHON" scripts/ci/check_high_risk_contract_inventory.py
+  "$PYTHON" scripts/ci/check_pii_logging.py
 }
 
 case "$MODE" in
