@@ -251,6 +251,126 @@ def test_legacy_shared_token_migration_generates_distinct_purpose_credentials(mo
     assert ["identity", "mcp"] in collision_report["duplicate_internal_token_purposes"]
 
 
+def test_existing_cutover_repairs_duplicate_internal_token_and_redacts_historical_audit(tmp_path: Path) -> None:
+    engine = _engine(tmp_path)
+    root = tmp_path / "secrets"
+    store = FileSecretStore(root)
+    environment_file = tmp_path / "runtime.env"
+    shared_token = "legacy-shared-token-that-must-stop-being-universal"
+    automation_reference = store.write("AUTOMATION_INTERNAL_API_TOKEN", shared_token)
+    mcp_reference = store.write("MCP_BEARER_TOKEN", shared_token)
+    _upsert(engine, "AUTOMATION_INTERNAL_API_TOKEN", automation_reference)
+    _upsert(engine, "MCP_BEARER_TOKEN", mcp_reference)
+    _upsert(engine, "AICRM_SECRET_REFERENCE_CUTOVER", "true")
+    environment_file.write_text(
+        "\n".join(
+            (
+                f"AUTOMATION_INTERNAL_API_TOKEN='{automation_reference}'",
+                f"MCP_BEARER_TOKEN='{mcp_reference}'",
+                f"AICRM_SECRET_STORE_DIR='{root}'",
+                "AICRM_SECRET_REFERENCE_CUTOVER='true'",
+                "",
+            )
+        ),
+        encoding="utf-8",
+    )
+    os.chmod(environment_file, 0o600)
+    with engine.begin() as conn:
+        conn.execute(
+            text("INSERT INTO admin_operation_logs (before_json, after_json) VALUES (:before_json, :after_json)"),
+            {
+                "before_json": json.dumps({"value": shared_token, "safe": "keep-me"}),
+                "after_json": json.dumps({"nested": {"authorization": f"Bearer {shared_token}"}}),
+            },
+        )
+
+    first = migrate_app_setting_secrets(
+        engine=engine,
+        store=store,
+        environment={},
+        dry_run=False,
+        environment_file=environment_file,
+    )
+
+    rotated_mcp_reference = _value(engine, "MCP_BEARER_TOKEN")
+    assert shared_token not in json.dumps(first, ensure_ascii=False, sort_keys=True)
+    assert first["rotated_internal_tokens"] == 1
+    assert first["internal_token_rotations_pending"] == 0
+    assert first["audit_rows_redacted"] == 1
+    assert first["audit_rows_redaction_pending"] == 0
+    assert _value(engine, "AUTOMATION_INTERNAL_API_TOKEN") == automation_reference
+    assert rotated_mcp_reference != mcp_reference
+    assert store.read(rotated_mcp_reference) != shared_token
+    assert f"MCP_BEARER_TOKEN='{rotated_mcp_reference}'" in environment_file.read_text(encoding="utf-8")
+    with engine.connect() as conn:
+        audit_row = conn.execute(text("SELECT before_json, after_json FROM admin_operation_logs LIMIT 1")).first()
+    rendered_audit = "\n".join(str(value or "") for value in (audit_row or ()))
+    assert shared_token not in rendered_audit
+    assert "keep-me" in rendered_audit
+    assert "[redacted]" in rendered_audit
+
+    reconciled = reconcile_secret_reference_cutover(
+        engine=engine,
+        store=store,
+        environment_file=environment_file,
+    )
+    assert reconciled["ok"] is True
+    assert reconciled["duplicate_internal_token_purposes"] == []
+    assert reconciled["unsafe_audit_hits"] == 0
+    assert reconciled["missing_internal_token_purposes"] == []
+
+    references_after_first = sorted(store.list_references())
+    second = migrate_app_setting_secrets(
+        engine=engine,
+        store=store,
+        environment={},
+        dry_run=False,
+        environment_file=environment_file,
+    )
+    assert second["rotated_internal_tokens"] == 0
+    assert second["audit_rows_redacted"] == 0
+    assert _value(engine, "MCP_BEARER_TOKEN") == rotated_mcp_reference
+    assert sorted(store.list_references()) == references_after_first
+
+
+def test_secret_migration_dry_run_reports_duplicate_rotation_and_audit_redaction_without_writes(tmp_path: Path) -> None:
+    engine = _engine(tmp_path)
+    root = tmp_path / "secrets"
+    store = FileSecretStore(root)
+    shared_token = "dry-run-shared-internal-token"
+    automation_reference = store.write("AUTOMATION_INTERNAL_API_TOKEN", shared_token)
+    mcp_reference = store.write("MCP_BEARER_TOKEN", shared_token)
+    _upsert(engine, "AUTOMATION_INTERNAL_API_TOKEN", automation_reference)
+    _upsert(engine, "MCP_BEARER_TOKEN", mcp_reference)
+    _upsert(engine, "AICRM_SECRET_REFERENCE_CUTOVER", "true")
+    with engine.begin() as conn:
+        conn.execute(
+            text("INSERT INTO admin_operation_logs (before_json, after_json) VALUES (:before_json, '{}')"),
+            {"before_json": json.dumps({"value": shared_token})},
+        )
+    references_before = sorted(store.list_references())
+
+    report = migrate_app_setting_secrets(
+        engine=engine,
+        store=store,
+        environment={},
+        dry_run=True,
+    )
+
+    assert report["ok"] is False
+    assert report["rotated_internal_tokens"] == 0
+    assert report["internal_token_rotations_pending"] == 1
+    assert report["audit_rows_redacted"] == 0
+    assert report["audit_rows_redaction_pending"] == 1
+    assert shared_token not in json.dumps(report, ensure_ascii=False, sort_keys=True)
+    assert _value(engine, "AUTOMATION_INTERNAL_API_TOKEN") == automation_reference
+    assert _value(engine, "MCP_BEARER_TOKEN") == mcp_reference
+    assert sorted(store.list_references()) == references_before
+    with engine.connect() as conn:
+        before_json = conn.execute(text("SELECT before_json FROM admin_operation_logs LIMIT 1")).scalar_one()
+    assert shared_token in str(before_json)
+
+
 def test_reconciliation_blocks_incomplete_internal_token_split(tmp_path: Path) -> None:
     engine = _engine(tmp_path)
     store = FileSecretStore(tmp_path / "secrets")
