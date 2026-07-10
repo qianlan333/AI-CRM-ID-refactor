@@ -35,6 +35,7 @@ def test_ci_fast_uses_selector_and_single_required_result() -> None:
     assert "full-regression:" in source
     assert "uses: ./.github/workflows/full-regression.yml" in source
     assert "needs.select.outputs.needs_full_ci == 'true'" in source
+    assert source.count("needs.select.outputs.needs_full_ci != 'true'") == 2
     assert "- full-regression" in source
     assert "full-regression={needs.get('full-regression', {}).get('result', 'missing')}_but_required" in source
     assert not LEGACY_CI_WORKFLOW.exists()

@@ -65,7 +65,7 @@ jobs:
 
   fast-python-no-pg:
     needs: select
-    if: needs.select.outputs.python_tests != '' && needs.select.outputs.needs_postgres != 'true'
+    if: needs.select.outputs.needs_full_ci != 'true' && needs.select.outputs.python_tests != '' && needs.select.outputs.needs_postgres != 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 4
     steps:
@@ -91,7 +91,7 @@ jobs:
 
   fast-python-pg:
     needs: select
-    if: needs.select.outputs.python_tests != '' && needs.select.outputs.needs_postgres == 'true'
+    if: needs.select.outputs.needs_full_ci != 'true' && needs.select.outputs.python_tests != '' && needs.select.outputs.needs_postgres == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 8
     services:
