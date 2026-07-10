@@ -170,7 +170,7 @@ REQUIRED_TEST_PROOFS = {
     "external_effect_boundary": ("tests/test_wecom_callback_external_effect_boundary.py", "test_channel_entry_real_wecom_actions_are_planned_as_external_effect_jobs"),
     "channel_entry_effect_realtime_wakeup": (
         "tests/test_next_channel_entry_orchestrator.py",
-        "channel_entry_profile_update",
+        "test_active_channel_baseline_emits_only_channel_entry_without_program_admission",
     ),
     "external_effect_realtime_retryable_failure": (
         "tests/test_external_effects_realtime.py",

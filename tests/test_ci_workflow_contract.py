@@ -32,6 +32,12 @@ def test_ci_fast_uses_selector_and_single_required_result() -> None:
     assert "bash scripts/ci/run_architecture_gates.sh --mode" in source
     assert "timeout-minutes: 8" in source
     assert "force_full != 'true'" not in source
+    assert "full-regression:" in source
+    assert "uses: ./.github/workflows/full-regression.yml" in source
+    assert "needs.select.outputs.needs_full_ci == 'true'" in source
+    assert source.count("needs.select.outputs.needs_full_ci != 'true'") == 2
+    assert "- full-regression" in source
+    assert "full-regression={needs.get('full-regression', {}).get('result', 'missing')}_but_required" in source
     assert not LEGACY_CI_WORKFLOW.exists()
 
 
@@ -40,6 +46,7 @@ def test_full_regression_owns_full_pytest_and_full_frontend() -> None:
 
     assert "name: Full Regression" in source
     assert "workflow_dispatch:" in source
+    assert "workflow_call:" in source
     assert 'cron: "0 18 * * *"' in source
     assert "python -m pytest tests/ -n auto --dist=loadfile" in source
     assert "bash scripts/ci/run_architecture_gates.sh --mode full" in source

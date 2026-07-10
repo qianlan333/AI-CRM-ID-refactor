@@ -65,7 +65,7 @@ jobs:
 
   fast-python-no-pg:
     needs: select
-    if: needs.select.outputs.python_tests != '' && needs.select.outputs.needs_postgres != 'true'
+    if: needs.select.outputs.needs_full_ci != 'true' && needs.select.outputs.python_tests != '' && needs.select.outputs.needs_postgres != 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 4
     steps:
@@ -91,7 +91,7 @@ jobs:
 
   fast-python-pg:
     needs: select
-    if: needs.select.outputs.python_tests != '' && needs.select.outputs.needs_postgres == 'true'
+    if: needs.select.outputs.needs_full_ci != 'true' && needs.select.outputs.python_tests != '' && needs.select.outputs.needs_postgres == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 8
     services:
@@ -165,6 +165,11 @@ jobs:
             node "$test_file"
           done
 
+  full-regression:
+    needs: select
+    if: needs.select.outputs.needs_full_ci == 'true'
+    uses: ./.github/workflows/full-regression.yml
+
   ci-fast-result:
     needs:
       - select
@@ -172,6 +177,7 @@ jobs:
       - fast-python-no-pg
       - fast-python-pg
       - fast-frontend
+      - full-regression
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -193,6 +199,12 @@ jobs:
               for name, job in needs.items()
               if job["result"] not in {"success", "skipped"}
           ]
+          if (
+              os.environ.get("NEEDS_FULL_CI") == "true"
+              and needs.get("full-regression", {}).get("result") != "success"
+              and not any(item.startswith("full-regression=") for item in failed)
+          ):
+              failed.append(f"full-regression={needs.get('full-regression', {}).get('result', 'missing')}_but_required")
           print(f"selected_scopes={os.environ.get('SCOPES') or 'none'}")
           print(f"architecture_gate={os.environ.get('ARCHITECTURE_GATE') or 'none'}")
           print(f"needs_full_ci={os.environ.get('NEEDS_FULL_CI') or 'false'}")

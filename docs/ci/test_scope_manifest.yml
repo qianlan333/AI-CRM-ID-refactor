@@ -10,7 +10,15 @@
     "app.py",
     "aicrm_next/platform_foundation/**",
     "aicrm_next/admin_auth/**",
+    "aicrm_next/channel_entry/**",
+    "aicrm_next/commerce/admin_transactions.py",
     "aicrm_next/commerce/order_reconciliation.py",
+    "aicrm_next/commerce/repo.py",
+    "aicrm_next/public_product/h5_wechat_pay.py",
+    "aicrm_next/service_period/payment_consumer.py",
+    "aicrm_next/service_period/repo.py",
+    "aicrm_next/questionnaire/**",
+    "aicrm_next/automation_engine/group_ops/**",
     "aicrm_next/integration_gateway/**",
     "aicrm_next/background_jobs/**",
     "aicrm_next/external_push/**",
@@ -252,6 +260,7 @@
       "python_tests": [
         "tests/test_broadcast_jobs_platform_contract.py",
         "tests/test_group_ops_queue_contract.py",
+        "tests/test_group_ops_token_broadcast_api.py",
         "tests/test_external_effects_mvp.py",
         "tests/test_external_effect_scheduler.py"
       ],
@@ -325,7 +334,28 @@
         "tests/test_admin_routes_require_auth.py",
         "tests/test_admin_auth_login_pages.py",
         "tests/test_admin_auth_login_submit.py",
-        "tests/test_admin_auth_logout.py"
+        "tests/test_admin_auth_logout.py",
+        "tests/test_questionnaire_oauth_state_security.py"
+      ],
+      "needs_postgres": true,
+      "architecture_gate": "db"
+    },
+    {
+      "name": "questionnaire",
+      "paths": [
+        "aicrm_next/questionnaire/**",
+        "tests/test_questionnaire_*.py",
+        "tests/test_internal_events_questionnaire_slice.py"
+      ],
+      "python_tests": [
+        "tests/test_questionnaire_h5_submit_commands.py",
+        "tests/test_questionnaire_h5_submit_idempotency.py",
+        "tests/test_questionnaire_h5_submit_validation.py",
+        "tests/test_questionnaire_h5_external_push.py",
+        "tests/test_questionnaire_oauth_state_security.py",
+        "tests/test_questionnaire_admin_write_no_real_side_effects.py",
+        "tests/test_questionnaire_admin_read_no_real_side_effects.py",
+        "tests/test_internal_events_questionnaire_slice.py"
       ],
       "needs_postgres": true,
       "architecture_gate": "db"
@@ -421,9 +451,13 @@
         "aicrm_next/shared/admin_read_fallback.py",
         "scripts/ops/check_admin_read_pages_smoke.py",
         "tests/test_admin_read_pages_smoke.py",
+        "tests/test_automation_admin_pages_next_native.py",
+        "tests/test_automation_agents_admin_pages.py",
         "tests/test_automation_agents_admin_api.py",
         "tests/test_p1_group_ops_workspace_draft_api.py",
-        "tests/test_p1_group_ops_workspace_governance_api.py"
+        "tests/test_p1_group_ops_workspace_governance_api.py",
+        "tests/test_wecom_tag_read_inventory.py",
+        "tests/test_wecom_tag_read_no_fixture_production.py"
       ],
       "python_tests": [
         "tests/test_push_center.py",
@@ -432,6 +466,10 @@
         "tests/test_group_ops_plans_api.py",
         "tests/test_wecom_tag_read_selectors.py",
         "tests/test_admin_wecom_tags_management.py",
+        "tests/test_wecom_tag_read_inventory.py",
+        "tests/test_wecom_tag_read_no_fixture_production.py",
+        "tests/test_automation_admin_pages_next_native.py",
+        "tests/test_automation_agents_admin_pages.py",
         "tests/test_automation_agents_admin_api.py",
         "tests/test_ai_audience_admin_pages.py",
         "tests/test_p1_group_ops_workspace_draft_api.py",
@@ -491,6 +529,7 @@
         "docs/ci/**",
         "docs/development/**",
         "docs/architecture/*manifest*",
+        "docs/architecture/runtime_contract_inventory.json",
         "docs/architecture/repository_ownership.yml",
         "aicrm_next/admin_config/api_docs_view_model.py",
         "aicrm_next/admin_shell/navigation.py",
@@ -499,6 +538,8 @@
         "tests/conftest.py",
         "tests/test_ci_workflow_contract.py",
         "tests/test_deploy_workflow_contract.py",
+        "tests/test_external_orders_blocker_diagnostics.py",
+        "tests/test_external_orders_consumer_run_due_diagnostics.py",
         "tests/test_retired_runtime_gap_timer_report.py",
         "tests/test_runtime_units_autostart.py",
         "tests/test_select_test_scope.py",
@@ -508,6 +549,8 @@
         "tests/test_internal_events_worker_allowlist.py",
         "tests/test_next_api_docs_page.py",
         "tests/test_router_registry_contract.py",
+        "tests/test_runtime_contract_inventory.py",
+        "tests/test_high_risk_contract_inventory.py",
         "requirements.txt",
         "app.py",
         "aicrm_next/platform_foundation/**"
@@ -515,6 +558,8 @@
       "python_tests": [
         "tests/test_ci_workflow_contract.py",
         "tests/test_deploy_workflow_contract.py",
+        "tests/test_external_orders_blocker_diagnostics.py",
+        "tests/test_external_orders_consumer_run_due_diagnostics.py",
         "tests/test_retired_runtime_gap_timer_report.py",
         "tests/test_runtime_units_autostart.py",
         "tests/test_select_test_scope.py",
@@ -524,7 +569,9 @@
         "tests/test_internal_events_single_consumer_run.py",
         "tests/test_internal_events_worker_allowlist.py",
         "tests/test_next_api_docs_page.py",
-        "tests/test_router_registry_contract.py"
+        "tests/test_router_registry_contract.py",
+        "tests/test_runtime_contract_inventory.py",
+        "tests/test_high_risk_contract_inventory.py"
       ],
       "needs_postgres": false,
       "architecture_gate": "full"

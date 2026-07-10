@@ -132,7 +132,8 @@ def _full_ci_requested() -> bool:
 
     payload = json.loads(Path(event_path).read_text(encoding="utf-8"))
     if os.environ.get("GITHUB_EVENT_NAME") == "workflow_dispatch":
-        value = payload.get("inputs", {}).get("full", "")
+        inputs = payload.get("inputs") or {}
+        value = inputs.get("full", "") if isinstance(inputs, dict) else ""
         return str(value).lower() in {"1", "true", "yes"}
 
     pull_request = payload.get("pull_request") or {}
