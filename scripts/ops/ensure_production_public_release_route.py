@@ -336,6 +336,116 @@ def _nginx_command(*args: str) -> bool:
     return result.returncode == 0
 
 
+def _nginx_config_sections(dump: str) -> list[tuple[Path, str]]:
+    marker = re.compile(r"(?m)^# configuration file (?P<path>/etc/nginx/[^:\r\n]+):\s*$")
+    matches = list(marker.finditer(dump))
+    sections: list[tuple[Path, str]] = []
+    for index, match in enumerate(matches):
+        start = match.end()
+        end = matches[index + 1].start() if index + 1 < len(matches) else len(dump)
+        sections.append((Path(match.group("path")), dump[start:end]))
+    return sections
+
+
+def _discover_nginx_config(*, server_name: str) -> tuple[Path | None, str, dict[str, Any]]:
+    try:
+        result = subprocess.run(
+            ["/usr/sbin/nginx", "-T"],
+            check=False,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+    except OSError:
+        return None, "", {
+            "config_source": "discovery",
+            "config_path": "",
+            "discovered_config_count": 0,
+            "error_code": "nginx_effective_config_unavailable",
+        }
+    if result.returncode != 0:
+        return None, "", {
+            "config_source": "discovery",
+            "config_path": "",
+            "discovered_config_count": 0,
+            "error_code": "nginx_effective_config_unavailable",
+        }
+    sections = _nginx_config_sections(result.stdout + "\n" + result.stderr)
+    domain_candidates: list[tuple[Path, dict[str, Any]]] = []
+    for path, content in sections:
+        report = analyze_nginx_config(content, server_name=server_name)
+        if int(report.get("server_block_count") or 0) > 0:
+            domain_candidates.append((path, report))
+    routed_tls_candidates = [
+        item
+        for item in domain_candidates
+        if item[1].get("selected_tls_server") and item[1].get("root_proxy_target")
+    ]
+    selected_pool = routed_tls_candidates or domain_candidates
+    if len(selected_pool) != 1:
+        return None, "", {
+            "config_source": "discovery",
+            "config_path": "",
+            "discovered_config_count": len(domain_candidates),
+            "error_code": (
+                "nginx_domain_config_not_found"
+                if not domain_candidates
+                else "nginx_domain_config_ambiguous"
+            ),
+        }
+    path = selected_pool[0][0]
+    try:
+        target = path.resolve(strict=True)
+        content = target.read_text(encoding="utf-8")
+    except (OSError, UnicodeError):
+        return None, "", {
+            "config_source": "discovery",
+            "config_path": "",
+            "discovered_config_count": len(domain_candidates),
+            "error_code": "nginx_discovered_config_unreadable",
+        }
+    return path, content, {
+        "config_source": "discovery",
+        "config_path": str(path),
+        "discovered_config_count": len(domain_candidates),
+        "error_code": "",
+    }
+
+
+def _load_or_discover_nginx_config(
+    *,
+    configured_path: Path,
+    server_name: str,
+    allow_discovery: bool,
+) -> tuple[Path | None, str, dict[str, Any], dict[str, Any]]:
+    try:
+        target = configured_path.resolve(strict=True)
+        content = target.read_text(encoding="utf-8")
+    except (OSError, UnicodeError):
+        content = ""
+    if content:
+        topology = analyze_nginx_config(content, server_name=server_name)
+        if int(topology.get("server_block_count") or 0) > 0:
+            return configured_path, content, topology, {
+                "config_source": "configured",
+                "config_path": str(configured_path),
+                "discovered_config_count": 0,
+                "error_code": "",
+            }
+    if not allow_discovery:
+        return None, "", {}, {
+            "config_source": "configured",
+            "config_path": str(configured_path),
+            "discovered_config_count": 0,
+            "error_code": "nginx_config_unreadable_or_domain_missing",
+        }
+    discovered_path, discovered_content, discovery = _discover_nginx_config(server_name=server_name)
+    if discovered_path is None:
+        return None, "", {}, discovery
+    topology = analyze_nginx_config(discovered_content, server_name=server_name)
+    return discovered_path, discovered_content, topology, discovery
+
+
 def _restore_nginx(*, backup: Path, target: Path, metadata: os.stat_result) -> bool:
     try:
         _atomic_write(target, backup.read_text(encoding="utf-8"), metadata=metadata)
@@ -419,12 +529,6 @@ def run(argv: list[str] | None = None) -> dict[str, Any]:
     if not _SHA_PATTERN.fullmatch(expected_sha):
         return {"ok": False, "error_code": "expected_sha_invalid"}
     configured_path = Path(str(args.nginx_config))
-    try:
-        target = configured_path.resolve(strict=True)
-        content = target.read_text(encoding="utf-8")
-    except (OSError, UnicodeError):
-        return {"ok": False, "error_code": "nginx_config_unreadable"}
-    topology = analyze_nginx_config(content, server_name=str(args.server_name))
     local_probe = _probe_release(str(args.local_health_url), timeout_seconds=float(args.probe_timeout))
     public_probe = _probe_release(str(args.public_health_url), timeout_seconds=float(args.probe_timeout))
     payload: dict[str, Any] = {
@@ -433,7 +537,13 @@ def run(argv: list[str] | None = None) -> dict[str, Any]:
         "expected_sha": expected_sha,
         "local_probe": local_probe,
         "public_probe": public_probe,
-        "nginx_topology": _public_topology(topology),
+        "nginx_config": {
+            "config_source": "not_checked",
+            "config_path": "",
+            "discovered_config_count": 0,
+            "error_code": "",
+        },
+        "nginx_topology": {},
         "mutation_executed": False,
         "backup_path": "",
         "rollback_ok": None,
@@ -443,6 +553,16 @@ def run(argv: list[str] | None = None) -> dict[str, Any]:
         return payload
     if public_probe.get("status_code") == 200 and public_probe.get("release_sha") == expected_sha:
         payload["ok"] = True
+        return payload
+    selected_path, content, topology, config_state = _load_or_discover_nginx_config(
+        configured_path=configured_path,
+        server_name=str(args.server_name),
+        allow_discovery=bool(args.execute),
+    )
+    payload["nginx_config"] = config_state
+    payload["nginx_topology"] = _public_topology(topology)
+    if selected_path is None:
+        payload["error_code"] = str(config_state.get("error_code") or "nginx_config_unavailable")
         return payload
     if not args.execute:
         payload["error_code"] = "public_release_sha_mismatch"
@@ -456,7 +576,7 @@ def run(argv: list[str] | None = None) -> dict[str, Any]:
         payload["error_code"] = "nginx_route_render_failed"
         return payload
     applied = _apply_nginx_route(
-        configured_path=configured_path,
+        configured_path=selected_path,
         updated_content=updated,
         expected_sha=expected_sha,
         public_health_url=str(args.public_health_url),
