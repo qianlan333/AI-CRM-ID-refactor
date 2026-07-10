@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from aicrm_next.shared.sensitive_data import SECRET_MASK
+
 SENSITIVE_KEYS = {
     "AUTOMATION_INTERNAL_API_TOKEN",
     "AUTOMATION_ACTIVATION_WEBHOOK_TOKEN",
@@ -30,6 +32,4 @@ def mask_value(key: str, value: str) -> str:
         return value
     if not value:
         return ""
-    if len(value) <= 6:
-        return "*" * len(value)
-    return f"{value[:3]}***{value[-2:]}"
+    return SECRET_MASK

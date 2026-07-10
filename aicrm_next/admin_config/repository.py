@@ -9,6 +9,9 @@ from sqlalchemy import text
 from sqlalchemy.engine import Engine
 
 from aicrm_next.shared.db_session import get_engine
+from aicrm_next.shared.sensitive_data import redact_sensitive_data
+
+from .settings import SENSITIVE_KEYS
 
 LOGGER = logging.getLogger(__name__)
 
@@ -101,8 +104,18 @@ class AdminConfigRepository:
                     "action_type": str(action_type or "").strip(),
                     "target_type": str(target_type or "").strip(),
                     "target_id": str(target_id or "").strip(),
-                    "before_json": json.dumps(before or {}, ensure_ascii=False, sort_keys=True, default=str),
-                    "after_json": json.dumps(after or {}, ensure_ascii=False, sort_keys=True, default=str),
+                    "before_json": json.dumps(
+                        redact_sensitive_data(before or {}, sensitive_keys=SENSITIVE_KEYS),
+                        ensure_ascii=False,
+                        sort_keys=True,
+                        default=str,
+                    ),
+                    "after_json": json.dumps(
+                        redact_sensitive_data(after or {}, sensitive_keys=SENSITIVE_KEYS),
+                        ensure_ascii=False,
+                        sort_keys=True,
+                        default=str,
+                    ),
                 },
             )
 

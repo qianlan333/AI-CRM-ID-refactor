@@ -8,6 +8,7 @@ from typing import Any, Protocol
 import requests
 
 from aicrm_next.shared.runtime_settings import runtime_bool, runtime_csv, runtime_setting
+from aicrm_next.shared.sensitive_data import redact_sensitive_data, redact_sensitive_text
 
 from .models import (
     AI_ASSIST_CAMPAIGN_MESSAGE_LOOPBACK,
@@ -126,7 +127,11 @@ def _safe_response_json_summary(response: Any) -> dict[str, Any]:
     batch_id = str(parsed.get("batch_id") or "").strip()
     if batch_id.startswith("agent_batch_"):
         summary["automation_agent_batch_id"] = batch_id
-    return summary
+    return redact_sensitive_data(summary)
+
+
+def _safe_error_message(value: Any, *, limit: int = 500) -> str:
+    return redact_sensitive_text(value)[: max(0, int(limit))]
 
 
 def _target_unionid(payload: dict[str, Any]) -> str:
@@ -288,7 +293,7 @@ class WebhookAdapter:
                 request_summary=request_summary,
                 response_summary={"real_external_call_executed": True},
                 error_code="network_error",
-                error_message=str(exc),
+                error_message=_safe_error_message(exc),
                 real_external_call_executed=True,
             )
 
@@ -311,7 +316,7 @@ class WebhookAdapter:
             request_summary=request_summary,
             response_summary=response_summary,
             error_code="" if status == "succeeded" else http_error_code(status_code),
-            error_message="" if status == "succeeded" else response.text[:500],
+            error_message="" if status == "succeeded" else _safe_error_message(response.text),
             real_external_call_executed=True,
         )
 
@@ -424,7 +429,7 @@ class WeComPrivateMessageAdapter:
                 request_summary=request_summary,
                 response_summary={"real_external_call_executed": True, "wecom_send_executed": False},
                 error_code="adapter_exception",
-                error_message=str(exc),
+                error_message=_safe_error_message(exc),
                 real_external_call_executed=True,
             )
         side_effect_executed = bool(result.get("side_effect_executed"))
@@ -453,7 +458,7 @@ class WeComPrivateMessageAdapter:
                 request_summary=request_summary,
                 response_summary=response_summary,
                 error_code=error_code or "adapter_blocked",
-                error_message=str(result.get("error_message") or "WeCom private-message adapter blocked before external call."),
+                error_message=_safe_error_message(result.get("error_message") or "WeCom private-message adapter blocked before external call."),
                 real_external_call_executed=False,
             )
         retryable = error_code in {"external_call_unknown", "adapter_exception", "network_error", "timeout", "rate_limited"}
@@ -463,7 +468,7 @@ class WeComPrivateMessageAdapter:
             request_summary=request_summary,
             response_summary=response_summary,
             error_code=error_code or "wecom_private_send_failed",
-            error_message=str(result.get("error_message") or "WeCom private-message send failed."),
+            error_message=_safe_error_message(result.get("error_message") or "WeCom private-message send failed."),
             real_external_call_executed=True,
         )
 
@@ -528,7 +533,7 @@ class WeComGroupMessageExternalEffectAdapter:
                 request_summary=request_summary,
                 response_summary={"real_external_call_executed": True, "wecom_send_executed": False},
                 error_code="network_error",
-                error_message=str(exc),
+                error_message=_safe_error_message(exc),
                 real_external_call_executed=True,
             )
 
@@ -559,7 +564,7 @@ class WeComGroupMessageExternalEffectAdapter:
             request_summary=request_summary,
             response_summary=response_summary,
             error_code=error_code,
-            error_message=str(result.get("error_message") or error_code)[:500],
+            error_message=_safe_error_message(result.get("error_message") or error_code),
             real_external_call_executed=bool(result.get("side_effect_executed")),
         )
 
@@ -714,7 +719,7 @@ class WeComWelcomeMessageAdapter:
 
     def _failure_result(self, exc: Exception, *, request_summary: dict[str, Any]) -> ExternalEffectDispatchResult:
         error_code = "wecom_welcome_send_failed"
-        error_message = str(exc)[:500]
+        error_message = _safe_error_message(exc)
         retryable = False
         response_summary: dict[str, Any] = {"real_external_call_executed": True, "wecom_send_executed": False}
         try:
@@ -730,7 +735,7 @@ class WeComWelcomeMessageAdapter:
                     }
                 )
                 error_code = f"wecom_error_{errcode}" if errcode else "network_error"
-                error_message = str(payload.get("errmsg") or exc.message or exc)[:500]
+                error_message = _safe_error_message(payload.get("errmsg") or exc.message or exc)
                 retryable = errcode in {-1, 42001, 45009, 45011} or errcode == 0
         except Exception:
             pass
@@ -848,7 +853,7 @@ class WeComContactTagAdapter:
 
     def _failure_result(self, exc: Exception, *, request_summary: dict[str, Any]) -> ExternalEffectDispatchResult:
         error_code = "wecom_tag_mark_failed"
-        error_message = str(exc)[:500]
+        error_message = _safe_error_message(exc)
         retryable = False
         response_summary: dict[str, Any] = {"real_external_call_executed": True, "wecom_tag_executed": False}
         try:
@@ -864,7 +869,7 @@ class WeComContactTagAdapter:
                     }
                 )
                 error_code = f"wecom_error_{errcode}" if errcode else "network_error"
-                error_message = str(payload.get("errmsg") or exc.message or exc)[:500]
+                error_message = _safe_error_message(payload.get("errmsg") or exc.message or exc)
                 retryable = errcode in {-1, 42001, 45009, 45011} or errcode == 0
         except Exception:
             pass
@@ -994,7 +999,7 @@ class WeComProfileUpdateAdapter:
 
     def _failure_result(self, exc: Exception, *, request_summary: dict[str, Any]) -> ExternalEffectDispatchResult:
         error_code = "wecom_profile_update_failed"
-        error_message = str(exc)[:500]
+        error_message = _safe_error_message(exc)
         retryable = False
         response_summary: dict[str, Any] = {"real_external_call_executed": True, "wecom_profile_update_executed": False}
         try:
@@ -1010,7 +1015,7 @@ class WeComProfileUpdateAdapter:
                     }
                 )
                 error_code = f"wecom_error_{errcode}" if errcode else "network_error"
-                error_message = str(payload.get("errmsg") or exc.message or exc)[:500]
+                error_message = _safe_error_message(payload.get("errmsg") or exc.message or exc)
                 retryable = errcode in {-1, 42001, 45009, 45011} or errcode == 0
         except Exception:
             pass
@@ -1092,7 +1097,7 @@ class WeChatPaymentAdapter:
                     "refund_id_present": bool(str(refund_payload.get("refund_id") or "").strip()),
                 },
                 error_code="network_error",
-                error_message=f"wechat refund created but local result sync failed: {str(exc)[:400]}",
+                error_message=_safe_error_message(f"wechat refund created but local result sync failed: {exc}"),
                 real_external_call_executed=True,
             )
 
@@ -1197,12 +1202,12 @@ class WeChatPaymentAdapter:
                 or {}
             )
         except Exception as exc:
-            return {"ok": False, "reason": "refund_failure_sync_failed", "error": str(exc)[:200]}
+            return {"ok": False, "reason": "refund_failure_sync_failed", "error": _safe_error_message(exc, limit=200)}
 
     def _failure_result(self, exc: Exception, *, request_summary: dict[str, Any], out_refund_no: str) -> ExternalEffectDispatchResult:
         status_code = getattr(exc, "status_code", None)
         provider_payload = dict(getattr(exc, "payload", {}) or {})
-        error_message = str(exc)[:500]
+        error_message = _safe_error_message(exc)
         if status_code is None and ("required" in error_message or "failed to load WeChat Pay" in error_message):
             error_code = "config_missing"
             real_external_call_executed = False

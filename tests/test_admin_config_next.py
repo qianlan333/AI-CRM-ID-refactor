@@ -324,7 +324,7 @@ def test_app_settings_api_masks_secrets_and_save_is_idempotent(monkeypatch, tmp_
     assert masked_response.status_code == 200
     text_payload = masked_response.text
     assert "super-secret-value" not in text_payload
-    assert "sup***ue" in text_payload
+    assert "[redacted]" in text_payload
 
     save_payload = {
         "admin_action_token": token,
@@ -400,7 +400,7 @@ def test_config_category_detail_returns_blocks_and_masks_sensitive_fields(monkey
     secret = next(field for field in fields if field["key"] == "WECOM_SECRET")
     assert secret["sensitive"] is True
     assert secret["value"] == ""
-    assert secret["display_value"] == "sup***ue"
+    assert secret["display_value"] == "[redacted]"
     assert secret["configured"] is True
     assert any(field["key"] == "WECOM_CALLBACK_TOKEN" for field in fields)
 
