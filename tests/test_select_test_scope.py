@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -10,13 +11,19 @@ ROOT = Path(__file__).resolve().parents[1]
 SELECTOR = ROOT / "scripts" / "ci" / "select_test_scope.py"
 
 
-def _select(*changed_files: str) -> dict:
+def _select(*changed_files: str, inherit_ci_event: bool = False) -> dict:
     command = [sys.executable, str(SELECTOR), "--json"]
     for changed_file in changed_files:
         command.extend(["--changed-file", changed_file])
+    env = os.environ.copy()
+    env.pop("AICRM_FORCE_FULL_CI", None)
+    if not inherit_ci_event:
+        for key in ("GITHUB_EVENT_NAME", "GITHUB_EVENT_PATH"):
+            env.pop(key, None)
     completed = subprocess.run(
         command,
         cwd=ROOT,
+        env=env,
         text=True,
         check=True,
         capture_output=True,
@@ -284,7 +291,7 @@ def test_workflow_dispatch_with_null_inputs_does_not_break_selector(tmp_path: Pa
     monkeypatch.setenv("GITHUB_EVENT_NAME", "workflow_dispatch")
     monkeypatch.setenv("GITHUB_EVENT_PATH", str(event_path))
 
-    result = _select(".github/workflows/ci-fast.yml")
+    result = _select(".github/workflows/ci-fast.yml", inherit_ci_event=True)
 
     assert "ci_deploy" in result["matched_scopes"]
     assert result["force_full"] is False

@@ -54,7 +54,8 @@ def _prepare_client(monkeypatch, tmp_path) -> tuple[TestClient, FakeWeComAdminAu
                     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                     updated_by TEXT NOT NULL DEFAULT '',
                     login_enabled BOOLEAN NOT NULL DEFAULT TRUE,
-                    admin_level TEXT NOT NULL DEFAULT 'admin'
+                    admin_level TEXT NOT NULL DEFAULT 'admin',
+                    session_version INTEGER NOT NULL DEFAULT 1
                 )
                 """
             )
@@ -157,5 +158,7 @@ def test_real_wecom_auth_start_and_callback_signs_admin_session(monkeypatch, tmp
     cookie_value = callback.headers["set-cookie"].split(f"{SESSION_COOKIE}=", 1)[1].split(";", 1)[0]
     session = verify_session(cookie_value)
     assert session["login_type"] == "wecom_sso"
+    assert session["admin_user_id"] == 1
+    assert session["session_version"] == 1
     assert session["wecom_userid"] == "HuangYouCan"
     assert session["roles"] == ["super_admin"]

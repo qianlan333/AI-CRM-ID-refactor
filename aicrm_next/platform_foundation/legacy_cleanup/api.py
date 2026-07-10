@@ -73,7 +73,7 @@ def _action_or_internal_token_error(request: Request, payload: dict[str, Any]) -
     if not internal_error:
         return ""
     token = _text(request.headers.get("X-Admin-Action-Token")) or _text(payload.get("admin_action_token"))
-    return validate_admin_action_token(token)
+    return validate_admin_action_token(token, request=request)
 
 
 @router.get("/api/admin/legacy-webhook-cleanup/status")

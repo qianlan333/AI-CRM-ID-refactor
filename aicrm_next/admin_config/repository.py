@@ -551,7 +551,8 @@ class AdminConfigRepository:
                         """
                         SELECT
                             id, wecom_userid, wecom_corpid, display_name, is_active, auth_source,
-                            last_login_at, created_at, updated_at, updated_by, login_enabled, admin_level
+                            last_login_at, created_at, updated_at, updated_by, login_enabled, admin_level,
+                            session_version
                         FROM admin_users
                         ORDER BY id ASC
                         """
@@ -593,7 +594,8 @@ class AdminConfigRepository:
                     """
                     SELECT
                         id, wecom_userid, wecom_corpid, display_name, is_active, auth_source,
-                        last_login_at, created_at, updated_at, updated_by, login_enabled, admin_level
+                        last_login_at, created_at, updated_at, updated_by, login_enabled, admin_level,
+                        session_version
                     FROM admin_users
                     WHERE id = :id
                     """
@@ -609,7 +611,8 @@ class AdminConfigRepository:
                     """
                     SELECT
                         id, wecom_userid, wecom_corpid, display_name, is_active, auth_source,
-                        last_login_at, created_at, updated_at, updated_by, login_enabled, admin_level
+                        last_login_at, created_at, updated_at, updated_by, login_enabled, admin_level,
+                        session_version
                     FROM admin_users
                     WHERE wecom_userid = :wecom_userid
                     ORDER BY id ASC
@@ -636,7 +639,8 @@ class AdminConfigRepository:
                             updated_at = CURRENT_TIMESTAMP,
                             updated_by = :updated_by,
                             login_enabled = :login_enabled,
-                            admin_level = :admin_level
+                            admin_level = :admin_level,
+                            session_version = session_version + 1
                         WHERE id = :id
                         """
                     ),
@@ -680,6 +684,10 @@ class AdminConfigRepository:
                     ),
                     {"admin_user_id": int(admin_user_id), "role_code": str(role_code or "").strip()},
                 )
+            conn.execute(
+                text("UPDATE admin_users SET session_version = session_version + 1 WHERE id = :id"),
+                {"id": int(admin_user_id)},
+            )
 
     def list_admin_login_audit(self, *, limit: int = 20) -> list[dict[str, Any]]:
         try:

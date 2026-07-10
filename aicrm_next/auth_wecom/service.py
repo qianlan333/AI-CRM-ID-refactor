@@ -12,15 +12,15 @@ from typing import Any
 from urllib.parse import urlencode
 
 from aicrm_next.admin_auth.service import (
-    CSRF_COOKIE as CSRF_COOKIE,
-    SESSION_COOKIE as SESSION_COOKIE,
-    SESSION_MAX_AGE_SECONDS as SESSION_MAX_AGE_SECONDS,
-    admin_cookie_secure,
-    csrf_token_from_session,
+    CSRF_COOKIE as CSRF_COOKIE,  # noqa: F401 - auth context facade
+    SESSION_COOKIE as SESSION_COOKIE,  # noqa: F401 - auth context facade
+    SESSION_MAX_AGE_SECONDS as SESSION_MAX_AGE_SECONDS,  # noqa: F401 - auth context facade
+    admin_cookie_secure as admin_cookie_secure,  # noqa: F401 - auth context facade
+    csrf_token_from_session as csrf_token_from_session,  # noqa: F401 - auth context facade
     normalize_text,
     route_headers,
     safe_next_path,
-    session_payload_with_csrf,
+    session_payload_with_csrf as session_payload_with_csrf,  # noqa: F401 - auth context facade
     sign_session,
 )
 from aicrm_next.admin_config.repository import AdminConfigRepository
@@ -193,6 +193,8 @@ def handle_callback(
     session_payload = {
         "auth_source": "wecom_sso",
         "login_type": "wecom_sso",
+        "admin_user_id": admin_user_id,
+        "session_version": int(admin_user.get("session_version") or 1),
         "username": wecom_userid,
         "wecom_userid": wecom_userid,
         "display_name": normalize_text(admin_user.get("display_name")) or wecom_userid,
