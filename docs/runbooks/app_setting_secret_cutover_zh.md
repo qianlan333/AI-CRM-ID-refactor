@@ -22,7 +22,7 @@
 
 内部服务令牌必须按用途独立：`MCP_BEARER_TOKEN`、`IDENTITY_INTERNAL_API_TOKEN`、`ARCHIVE_INTERNAL_API_TOKEN`、`GROUP_BROADCAST_INTERNAL_API_TOKEN`、`CALLBACK_INTERNAL_API_TOKEN` 与 `AUTOMATION_INTERNAL_API_TOKEN` 不得复用值。若仅存在旧的 `AUTOMATION_INTERNAL_API_TOKEN`，正式迁移会为缺失的五个用途生成互不相同的随机令牌，写入 secret store，并只把引用写回 DB/环境文件；令牌不会从旧值派生，也不会出现在命令输出中。
 
-`AICRM_LEGACY_INTERNAL_TOKEN_FALLBACK_ENABLED` 只用于紧急、短期迁移，默认必须为 `false`。负责人是 `platform_ops`，删除期限为 `2026-08-10`；生产 reconciliation 要求该开关关闭。
+`AICRM_LEGACY_INTERNAL_TOKEN_FALLBACK_ENABLED` 只用于紧急、短期迁移，默认必须为 `false`。负责人是 `platform_ops`，删除期限为 `2026-08-10`；生产 reconciliation 要求该开关关闭。如果历史配置已把同一个万能令牌分别保存为多个用途引用，正式迁移会保留 automation worker 用途作为兼容锚点，为其他冲突用途生成新版本；不同用途之间的其他冲突则保留按 key 排序的第一个并轮换其余用途。
 
 ## 预演
 
@@ -37,7 +37,7 @@ python3 scripts/ops/migrate_app_setting_secrets.py --dry-run \
   --secret-store-dir "$AICRM_SECRET_STORE_DIR"
 ```
 
-预演只报告 `key/source/version/present/status` 和计数，不创建目录、不写数据库、不修改环境文件。存在原文或需要拆分旧共享令牌时，`ok=false`，并分别显示 `plaintext_pending>0` 或 `generated_pending>0`；输出中不应出现任何配置值。
+预演只报告 `key/source/version/present/status` 和计数，不创建目录、不写数据库、不修改环境文件。存在原文、缺失的用途令牌、已有令牌冲突或历史审计原文时，`ok=false`，并通过 `plaintext_pending`、`generated_pending`、`internal_token_rotations_pending` 和 `audit_rows_redaction_pending` 的计数说明待处理量；输出中不应出现任何配置值或命中的审计内容。
 
 ## 正式切换
 
@@ -64,12 +64,13 @@ python3 scripts/ops/check_secret_reference_cutover.py \
 
 1. 读取 DB 与当前进程环境中的敏感 key 清单；
 2. 写入并 `fsync` 不可变版本文件；
-3. 在一个数据库事务中把原文替换为引用、校验全部引用并启用 DB cutover 哨兵；
-4. 原子更新环境文件，把敏感项替换为引用，并持久化 store 目录与 cutover 哨兵；
-5. 重新加载环境文件，执行独立 reconciliation checker；
-6. checker 通过后才允许重启 Web、恢复 worker 并执行最终 readiness。
+3. 如果已有内部令牌引用解析为同一原值，在 secret store 中先为冲突用途写入独立的不可变版本；
+4. 在一个数据库事务中把原文/冲突引用替换为目标引用，将历史审计中命中已知 secret 的字符串固定替换为 `[redacted]`，校验全部引用并启用 DB cutover 哨兵；
+5. 原子更新环境文件，把敏感项替换为引用，并持久化 store 目录与 cutover 哨兵；
+6. 重新加载环境文件，执行独立 reconciliation checker；
+7. checker 通过后才允许重启 Web、恢复 worker 并执行最终 readiness。
 
-重复执行是幂等的：已经解析成功的引用不会新建版本，也不会刷新对应 `app_settings.updated_at`。
+重复执行是幂等的：已经解析成功且用途独立的引用不会新建版本，已脱敏审计行不会再次改写，也不会刷新对应 `app_settings.updated_at`。执行报告中 `rotated_internal_tokens` 和 `audit_rows_redacted` 仅为计数，不包含令牌、审计行 ID 或原内容。
 
 ## 必须为零的对账项
 
