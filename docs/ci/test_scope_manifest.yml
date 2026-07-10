@@ -630,6 +630,7 @@
       "paths": [
         ".github/**",
         "scripts/ci/**",
+        "scripts/ops/ensure_production_public_release_route.py",
         "scripts/ops/manage_production_runtime_units.py",
         "scripts/diagnose_external_orders_blockers.py",
         "scripts/run_internal_event_worker.py",
@@ -649,6 +650,7 @@
         "tests/test_deploy_workflow_contract.py",
         "tests/test_pytest_duration_baseline_builder.py",
         "tests/test_pytest_shard_selector.py",
+        "tests/test_production_public_release_route.py",
         "tests/test_external_orders_blocker_diagnostics.py",
         "tests/test_external_orders_consumer_run_due_diagnostics.py",
         "tests/test_retired_runtime_gap_timer_report.py",
@@ -674,6 +676,7 @@
         "tests/test_deploy_workflow_contract.py",
         "tests/test_pytest_duration_baseline_builder.py",
         "tests/test_pytest_shard_selector.py",
+        "tests/test_production_public_release_route.py",
         "tests/test_external_orders_blocker_diagnostics.py",
         "tests/test_external_orders_consumer_run_due_diagnostics.py",
         "tests/test_retired_runtime_gap_timer_report.py",
