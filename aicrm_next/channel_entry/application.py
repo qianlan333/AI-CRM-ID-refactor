@@ -8,6 +8,7 @@ import secrets
 from typing import Any
 
 from aicrm_next.shared.release import current_release_sha
+from aicrm_next.shared.runtime_settings import runtime_setting
 
 from . import repo
 from .domain import (
@@ -48,8 +49,8 @@ LOGGER = logging.getLogger(__name__)
 def callback_config() -> dict[str, str]:
     return {
         "corp_id": text(os.getenv("WECOM_CORP_ID")),
-        "token": text(os.getenv("WECOM_CALLBACK_TOKEN")),
-        "aes_key": text(os.getenv("WECOM_CALLBACK_AES_KEY")),
+        "token": text(runtime_setting("WECOM_CALLBACK_TOKEN")),
+        "aes_key": text(runtime_setting("WECOM_CALLBACK_AES_KEY")),
     }
 
 

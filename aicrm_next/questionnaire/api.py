@@ -5,7 +5,6 @@ import csv
 from datetime import datetime, timezone
 import json
 import logging
-import os
 from io import StringIO
 from pathlib import Path
 from typing import Any
@@ -20,6 +19,7 @@ from fastapi.templating import Jinja2Templates
 from aicrm_next.navigation_target import safe_completion_url
 from aicrm_next.shared.errors import ContractError, NotFoundError
 from aicrm_next.shared.runtime import production_data_ready
+from aicrm_next.shared.runtime_settings import runtime_setting
 
 from .admin_write import (
     QuestionnaireAdminWriteCommand,
@@ -139,7 +139,7 @@ def _external_error(*, error_code: str, message: str, status_code: int) -> JSONR
 
 
 def _external_auth_failure(request: Request) -> JSONResponse | None:
-    expected = _external_text(os.getenv(_EXTERNAL_TOKEN_ENV_KEY))
+    expected = _external_text(runtime_setting(_EXTERNAL_TOKEN_ENV_KEY))
     if not expected:
         return _external_error(
             error_code="internal_token_not_configured",

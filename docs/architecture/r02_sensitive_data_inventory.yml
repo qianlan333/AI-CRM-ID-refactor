@@ -27,6 +27,93 @@ secret_keys:
     <<: *secret_defaults
     runtime_consumers:
       - aicrm_next.admin_config
+  SECRET_KEY:
+    <<: *secret_defaults
+    runtime_consumers:
+      - aicrm_next.shared.runtime
+      - aicrm_next.admin_auth.service
+      - aicrm_next.shared.signed_session
+      - aicrm_next.questionnaire.oauth
+      - aicrm_next.radar_links
+  CRON_SECRET:
+    <<: *secret_defaults
+    runtime_consumers:
+      - aicrm_next.admin_jobs.routes
+  AICRM_NEXT_ACTION_TOKEN_SECRET:
+    <<: *secret_defaults
+    runtime_consumers:
+      - aicrm_next.admin_auth.action_token
+      - aicrm_next.admin_jobs.routes
+  AICRM_QUESTIONNAIRE_OAUTH_STATE_SECRET:
+    <<: *secret_defaults
+    runtime_consumers:
+      - aicrm_next.questionnaire.oauth
+  AICRM_AI_AUDIENCE_API_TOKEN:
+    <<: *secret_defaults
+    runtime_consumers:
+      - aicrm_next.ai_audience_ops.api
+  AICRM_AI_AUDIENCE_SPEC_API_TOKEN:
+    <<: *secret_defaults
+    runtime_consumers:
+      - aicrm_next.ai_audience_ops.external_auth
+  AICRM_AI_AUDIENCE_INBOUND_WEBHOOK_SECRET:
+    <<: *secret_defaults
+    runtime_consumers:
+      - aicrm_next.ai_audience_ops.test_agent_service
+      - aicrm_next.ai_audience_ops.webhook_service
+  AICRM_AI_AUDIENCE_AGENT_API_KEY:
+    <<: *secret_defaults
+    runtime_consumers:
+      - aicrm_next.ai_audience_ops.agent_gateway
+  AICRM_RUNTIME_V2_AGENT_API_KEY:
+    <<: *secret_defaults
+    runtime_consumers:
+      - aicrm_next.ai_audience_ops.agent_gateway
+  AICRM_AUTOMATION_AGENT_WEBHOOK_SECRET:
+    <<: *secret_defaults
+    runtime_consumers:
+      - aicrm_next.automation_agents.application
+  AICRM_EXTERNAL_CAMPAIGN_TOKEN:
+    <<: *secret_defaults
+    runtime_consumers:
+      - aicrm_next.ai_assist.external_campaigns
+  AICRM_MEDIA_UPLOAD_PROVIDER_SECRET:
+    <<: *secret_defaults
+    runtime_consumers:
+      - aicrm_next.integration_gateway.media_live_adapter
+  AICRM_OAUTH_IDENTITY_APP_SECRET:
+    <<: *secret_defaults
+    runtime_consumers:
+      - aicrm_next.integration_gateway.oauth_identity_live_adapter
+  AICRM_PAYMENT_COMMERCE_PROVIDER_SECRET:
+    <<: *secret_defaults
+    runtime_consumers:
+      - aicrm_next.integration_gateway.payment_commerce_live_adapter
+  AICRM_WECOM_CONTACT_CALLBACK_AES_KEY:
+    <<: *secret_defaults
+    runtime_consumers:
+      - aicrm_next.integration_gateway.wecom_contact_callback_live_adapter
+  AICRM_WECOM_CONTACT_CALLBACK_TOKEN:
+    <<: *secret_defaults
+    runtime_consumers:
+      - aicrm_next.integration_gateway.wecom_contact_callback_live_adapter
+  AICRM_WECOM_GROUP_SECRET:
+    <<: *secret_defaults
+    runtime_consumers:
+      - aicrm_next.integration_gateway.wecom_customer_group_client
+      - aicrm_next.integration_gateway.wecom_media_upload_client
+  AICRM_WECOM_MEDIA_SECRET:
+    <<: *secret_defaults
+    runtime_consumers:
+      - aicrm_next.integration_gateway.wecom_media_upload_client
+  AICRM_WECOM_OPERATION_MEMBERS_SECRET:
+    <<: *secret_defaults
+    runtime_consumers:
+      - aicrm_next.integration_gateway.wecom_operation_members_client
+  AICRM_WECOM_TAG_AGENT_SECRET:
+    <<: *secret_defaults
+    runtime_consumers:
+      - aicrm_next.integration_gateway.wecom_tag_live_gateway
   DEEPSEEK_API_KEY:
     <<: *secret_defaults
     runtime_consumers:

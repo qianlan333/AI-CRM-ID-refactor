@@ -16,6 +16,7 @@ from starlette.concurrency import run_in_threadpool
 
 from aicrm_next.shared.route_policy import RoutePolicy, RoutePolicyIndex, match_route_policy
 from aicrm_next.shared.runtime import production_environment
+from aicrm_next.shared.runtime_settings import runtime_setting
 from aicrm_next.shared.signed_context import load_sidebar_owner_context_token
 
 from .capabilities import session_can, viewer_only
@@ -145,10 +146,10 @@ async def _enforce_admin_session(request: Request, policy: RoutePolicy) -> Respo
 
 
 def _enforce_internal_bearer(request: Request) -> Response | None:
-    expected_tokens = [normalize_text(os.getenv("AUTOMATION_INTERNAL_API_TOKEN"))]
+    expected_tokens = [normalize_text(runtime_setting("AUTOMATION_INTERNAL_API_TOKEN"))]
     service_account = "automation_internal"
     if str(request.url.path) == "/mcp":
-        expected_tokens.insert(0, normalize_text(os.getenv("MCP_BEARER_TOKEN")))
+        expected_tokens.insert(0, normalize_text(runtime_setting("MCP_BEARER_TOKEN")))
         service_account = "mcp_integration"
     expected_tokens = [token for token in expected_tokens if token]
     if not expected_tokens:

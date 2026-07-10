@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import hmac
-import os
 from datetime import date, datetime, time
 from decimal import Decimal
 from pathlib import Path
@@ -18,6 +17,7 @@ from aicrm_next.admin_shell import admin_path_for, shell_context
 from aicrm_next.channel_entry.inbox import WeComCallbackInboxWorker
 from aicrm_next.platform_foundation.external_effects import ExternalEffectService
 from aicrm_next.platform_foundation.internal_events import InternalEventService
+from aicrm_next.shared.runtime_settings import runtime_setting
 
 from .repository import build_webhook_inbox_repository
 from .service import WebhookInboxService
@@ -85,7 +85,7 @@ def _internal_token_error(request: Request) -> str:
     header = _text(request.headers.get("Authorization"))
     if not header.lower().startswith("bearer "):
         return "internal_token_required"
-    expected = _text(os.getenv("AUTOMATION_INTERNAL_API_TOKEN"))
+    expected = _text(runtime_setting("AUTOMATION_INTERNAL_API_TOKEN"))
     if not expected:
         return "automation_internal_token_not_configured"
     actual = header.split(" ", 1)[1].strip()

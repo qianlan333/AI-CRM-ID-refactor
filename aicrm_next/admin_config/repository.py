@@ -9,6 +9,7 @@ from sqlalchemy import text
 from sqlalchemy.engine import Engine
 
 from aicrm_next.shared.db_session import get_engine
+from aicrm_next.shared.secret_store import FileSecretStore, is_secret_reference
 from aicrm_next.shared.sensitive_data import redact_sensitive_data
 
 from .settings import SENSITIVE_KEYS
@@ -56,6 +57,20 @@ class AdminConfigRepository:
         return dict(row) if row else None
 
     def upsert_app_setting(self, *, key: str, value: str) -> dict[str, Any]:
+        normalized_key = str(key or "").strip()
+        normalized_value = str(value if value is not None else "")
+        stored_value = normalized_value
+        if normalized_key in SENSITIVE_KEYS:
+            if is_secret_reference(normalized_value):
+                raise ValueError("secret references cannot be submitted as setting values")
+            current = self.get_app_setting(normalized_key)
+            current_value = str((current or {}).get("value") or "").strip()
+            current_reference = current_value if is_secret_reference(current_value) else ""
+            stored_value = FileSecretStore.from_environment().write(
+                normalized_key,
+                normalized_value,
+                current_reference=current_reference,
+            )
         with self._engine.begin() as conn:
             conn.execute(
                 text(
@@ -67,13 +82,13 @@ class AdminConfigRepository:
                         updated_at = CURRENT_TIMESTAMP
                     """
                 ),
-                {"key": str(key or "").strip(), "value": str(value)},
+                {"key": normalized_key, "value": stored_value},
             )
             row = conn.execute(
                 text("SELECT key, value, updated_at FROM app_settings WHERE key = :key"),
-                {"key": str(key or "").strip()},
+                {"key": normalized_key},
             ).mappings().first()
-        return dict(row) if row else {"key": str(key or "").strip(), "value": str(value)}
+        return dict(row) if row else {"key": normalized_key, "value": stored_value}
 
     def insert_audit_log(
         self,

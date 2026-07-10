@@ -9,6 +9,8 @@ from fastapi import APIRouter, Query, Request
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 
+from aicrm_next.shared.runtime_settings import runtime_setting
+
 from .application import (
     ListExternalChatRecordsQuery,
     ListArchivedMessagesQuery,
@@ -48,7 +50,7 @@ def _external_error(*, error_code: str, message: str, status_code: int) -> JSONR
 
 
 def _external_auth_failure(request: Request) -> JSONResponse | None:
-    expected = _text(os.getenv(_EXTERNAL_TOKEN_ENV_KEY))
+    expected = _text(runtime_setting(_EXTERNAL_TOKEN_ENV_KEY))
     if not expected:
         return _external_error(
             error_code="internal_token_not_configured",
@@ -65,7 +67,7 @@ def _external_auth_failure(request: Request) -> JSONResponse | None:
 
 
 def _internal_auth_failure(request: Request) -> JSONResponse | None:
-    expected = _text(os.getenv(_EXTERNAL_TOKEN_ENV_KEY))
+    expected = _text(runtime_setting(_EXTERNAL_TOKEN_ENV_KEY))
     if not expected:
         return None
     auth_header = _text(request.headers.get("Authorization"))

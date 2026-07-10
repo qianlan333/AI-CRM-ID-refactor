@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import hashlib
-import os
 import re
 from datetime import datetime, time, timedelta
 from typing import Any, Mapping
@@ -11,6 +10,7 @@ from fastapi.responses import JSONResponse
 
 from aicrm_next.send_targets.dto import SendTargetRequest
 from aicrm_next.send_targets.resolver import SendTargetError, SendTargetResolver
+from aicrm_next.shared.runtime_settings import runtime_setting
 
 from .external_campaigns_repo import ExternalCampaignRepository
 from .external_campaigns_repo import build_external_campaign_repository
@@ -138,7 +138,7 @@ def _configured_tokens() -> list[str]:
     tokens: list[str] = []
     seen: set[str] = set()
     for key in _TOKEN_KEYS:
-        token = _text(os.getenv(key))
+        token = _text(runtime_setting(key))
         if token and token not in seen:
             seen.add(token)
             tokens.append(token)

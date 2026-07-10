@@ -30,6 +30,7 @@ from aicrm_next.integration_gateway.wecom_admin_auth_client import (
     build_wecom_admin_auth_client,
 )
 from aicrm_next.shared.runtime import require_signing_secret
+from aicrm_next.shared.runtime_settings import runtime_setting
 
 
 REAL_AUTH_ENV = "AICRM_WECOM_ADMIN_AUTH_ENABLE_REAL"
@@ -85,7 +86,7 @@ def build_config(*, request_base_url: str = "") -> WeComAuthConfig:
         enabled=_truthy(os.getenv(REAL_AUTH_ENV)),
         corp_id=normalize_text(os.getenv("WECOM_CORP_ID")),
         agent_id=normalize_text(os.getenv("WECOM_AGENT_ID")),
-        corp_secret=normalize_text(os.getenv("WECOM_SECRET")),
+        corp_secret=normalize_text(runtime_setting("WECOM_SECRET")),
         redirect_uri=redirect_uri,
     )
 

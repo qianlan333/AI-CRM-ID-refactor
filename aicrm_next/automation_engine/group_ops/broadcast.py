@@ -25,6 +25,7 @@ from aicrm_next.platform_foundation.external_effects.repo import (
 )
 from aicrm_next.platform_foundation.external_effects.service import ExternalEffectService
 from aicrm_next.platform_foundation.external_effects.worker import ExternalEffectWorker
+from aicrm_next.shared.runtime_settings import runtime_setting
 
 from .application import ReceiveTrustedGroupOpsBroadcastCommand
 from .domain import clean_text
@@ -65,7 +66,7 @@ class ParsedCardPath:
 
 
 def internal_broadcast_token_error(headers: Mapping[str, Any]) -> tuple[str, int] | None:
-    expected = clean_text(os.getenv("AUTOMATION_INTERNAL_API_TOKEN"))
+    expected = clean_text(runtime_setting("AUTOMATION_INTERNAL_API_TOKEN"))
     if not expected:
         return ("broadcast_token_not_configured", 503)
     authorization = clean_text(headers.get("authorization") or headers.get("Authorization"))

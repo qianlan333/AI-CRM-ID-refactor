@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import hmac
-import os
 from pathlib import Path
 from typing import Any
 
@@ -12,6 +11,7 @@ from fastapi.templating import Jinja2Templates
 from aicrm_next.admin_jobs.routes import ensure_admin_action_token, validate_admin_action_token
 from aicrm_next.admin_shell import admin_path_for, shell_context
 from aicrm_next.platform_foundation.external_effects.service import ExternalEffectService
+from aicrm_next.shared.runtime_settings import runtime_setting
 
 from . import CAPABILITY_OWNER, ROUTE_OWNER
 from .repository import PushCenterRepository
@@ -66,7 +66,7 @@ def _internal_token_error(request: Request) -> str:
     header = _text(request.headers.get("Authorization"))
     if not header.lower().startswith("bearer "):
         return "internal_token_required"
-    expected = _text(os.getenv("AUTOMATION_INTERNAL_API_TOKEN"))
+    expected = _text(runtime_setting("AUTOMATION_INTERNAL_API_TOKEN"))
     if not expected:
         return "automation_internal_token_not_configured"
     actual = header.split(" ", 1)[1].strip()
