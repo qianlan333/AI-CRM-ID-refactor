@@ -259,3 +259,88 @@ def test_run_fails_closed_when_public_mismatches_but_nginx_already_targets_5001(
     assert payload["ok"] is False
     assert payload["error_code"] == "public_route_change_not_supported"
     assert payload["mutation_executed"] is False
+
+
+def test_effective_nginx_dump_sections_keep_only_absolute_nginx_paths() -> None:
+    dump = """
+nginx: configuration file /etc/nginx/nginx.conf test is successful
+# configuration file /etc/nginx/nginx.conf:
+events {}
+# configuration file /etc/nginx/sites-enabled/production.conf:
+server { listen 443 ssl; }
+# configuration file relative.conf:
+ignored
+"""
+
+    sections = release_route._nginx_config_sections(dump)
+
+    assert [str(path) for path, _ in sections] == [
+        "/etc/nginx/nginx.conf",
+        "/etc/nginx/sites-enabled/production.conf",
+    ]
+    assert "events {}" in sections[0][1]
+    assert "listen 443 ssl" in sections[1][1]
+
+
+def test_run_discovers_effective_domain_config_when_documented_path_is_missing(monkeypatch, tmp_path: Path) -> None:
+    configured = tmp_path / "documented-missing.conf"
+    discovered = tmp_path / "actual-production.conf"
+    source = _config("127.0.0.1:5000")
+    discovered.write_text(source, encoding="utf-8")
+
+    def probe(url: str, **_: object) -> dict[str, object]:
+        return {
+            "checked": True,
+            "status_code": 200,
+            "release_sha": EXPECTED_SHA if "127.0.0.1" in url else OLD_SHA,
+            "error_code": "",
+        }
+
+    monkeypatch.setattr(release_route, "_probe_release", probe)
+    monkeypatch.setattr(
+        release_route,
+        "_discover_nginx_config",
+        lambda **_: (
+            discovered,
+            source,
+            {
+                "config_source": "discovery",
+                "config_path": str(discovered),
+                "discovered_config_count": 1,
+                "error_code": "",
+            },
+        ),
+    )
+    captured: dict[str, object] = {}
+
+    def apply(**kwargs: object) -> dict[str, object]:
+        captured.update(kwargs)
+        return {
+            "ok": True,
+            "error_code": "",
+            "backup_path": "/etc/nginx/backups/safe-backup",
+            "rollback_ok": None,
+            "public_probe": {
+                "checked": True,
+                "status_code": 200,
+                "release_sha": EXPECTED_SHA,
+                "error_code": "",
+            },
+        }
+
+    monkeypatch.setattr(release_route, "_apply_nginx_route", apply)
+
+    payload = release_route.run(
+        [
+            "--execute",
+            "--expected-sha",
+            EXPECTED_SHA,
+            "--nginx-config",
+            str(configured),
+        ]
+    )
+
+    assert payload["ok"] is True
+    assert payload["nginx_config"]["config_source"] == "discovery"
+    assert payload["nginx_config"]["discovered_config_count"] == 1
+    assert captured["configured_path"] == discovered

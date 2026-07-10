@@ -86,6 +86,8 @@ sudo /home/ubuntu/venvs/openclaw/bin/python \
   --public-health-url https://www.youcangogogo.com/health
 ```
 
+如果手册中的配置路径已经漂移或不存在，脚本会读取 `nginx -T` 输出的 `/etc/nginx/` 有效配置文件清单，只在唯一文件承载目标域名 TLS 根路由时选中它；找不到或命中多个文件会 fail closed，不扫描或修改 Nginx 未实际 include 的其他文件。
+
 该步骤只允许一种自动修复：生产域名 TLS server 的根路由单一 loopback Web upstream `127.0.0.1:5000` 切到已验证的 `127.0.0.1:5001`。多 upstream、非 loopback、其他端口、根路由歧义或 Web/callback 共用 upstream 都必须 fail closed，只输出不含配置原文的拓扑摘要。受控修复先在 `/etc/nginx/backups` 写入 `0600` 备份，之后要求 `nginx -t`、reload 和公网 `x-aicrm-release-sha` 全部命中；任一失败都恢复原配置并再次 reload。
 
 只有本机和公网两个 health 均为 HTTP 200，且 `x-aicrm-release-sha == verified workflow SHA`，才能记录部署完成。

@@ -8,6 +8,7 @@
     "requirements.lock",
     ".github/**",
     "scripts/ci/**",
+    "scripts/ops/ensure_production_public_release_route.py",
     "tests/conftest.py",
     "docs/ci/pytest_duration_baseline.json",
     "tests/test_pytest_duration_baseline_builder.py",
