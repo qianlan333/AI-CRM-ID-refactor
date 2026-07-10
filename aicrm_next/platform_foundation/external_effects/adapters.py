@@ -7,6 +7,14 @@ from typing import Any, Protocol
 
 import requests
 
+from aicrm_next.external_push.https_transport import (
+    CallableHttpsTransport,
+    HttpsTransport,
+    HttpsTransportError,
+    HttpsTransportTimeout,
+    PinnedHttpsTransport,
+)
+from aicrm_next.external_push.security import Resolver, WebhookUrlValidationError, resolve_and_validate_public_https_target
 from aicrm_next.shared.runtime_settings import runtime_bool, runtime_csv, runtime_setting
 from aicrm_next.shared.sensitive_data import redact_sensitive_data, redact_sensitive_text
 
@@ -220,8 +228,21 @@ class DisabledAdapter:
 
 
 class WebhookAdapter:
-    def __init__(self, http_post=None) -> None:
-        self._http_post = http_post or requests.post
+    def __init__(
+        self,
+        http_post=None,
+        *,
+        transport: HttpsTransport | None = None,
+        resolver: Resolver | None = None,
+    ) -> None:
+        if http_post is not None and transport is not None:
+            raise ValueError("provide either http_post or transport, not both")
+        self._transport = transport or (CallableHttpsTransport(http_post) if http_post is not None else PinnedHttpsTransport())
+        self._resolver = resolver or (self._injected_test_resolver if http_post is not None else None)
+
+    @staticmethod
+    def _injected_test_resolver(_hostname: str, _port: int) -> list[str]:
+        return ["8.8.8.8"]
 
     def dispatch(self, job: ExternalEffectJob) -> ExternalEffectDispatchResult:
         gate_error = self._execution_gate_error(job)
@@ -273,10 +294,29 @@ class WebhookAdapter:
             "timeout_seconds": timeout,
             "body_type": type(body).__name__,
             "signature_configured": signature_configured,
+            "redirect_policy": "deny",
         }
         try:
-            response = self._http_post(url, json=body, headers=headers, timeout=timeout)
-        except requests.Timeout:
+            target = resolve_and_validate_public_https_target(url, resolver=self._resolver)
+        except WebhookUrlValidationError:
+            return ExternalEffectDispatchResult(
+                status="failed_terminal",
+                adapter_mode="execute",
+                request_summary=request_summary,
+                response_summary={"blocked": True, "real_external_call_executed": False},
+                error_code="ssrf_blocked",
+                error_message="webhook target failed public HTTPS validation",
+                real_external_call_executed=False,
+            )
+        request_summary["resolved_ip_count"] = len(target.ip_addresses)
+        try:
+            response = self._transport.post(
+                target,
+                json_body=body,
+                headers=headers,
+                timeout=timeout,
+            )
+        except (HttpsTransportTimeout, requests.Timeout):
             return ExternalEffectDispatchResult(
                 status="failed_retryable",
                 adapter_mode="execute",
@@ -286,7 +326,7 @@ class WebhookAdapter:
                 error_message="webhook request timed out",
                 real_external_call_executed=True,
             )
-        except requests.RequestException as exc:
+        except (HttpsTransportError, requests.RequestException) as exc:
             return ExternalEffectDispatchResult(
                 status="failed_retryable",
                 adapter_mode="execute",
@@ -298,6 +338,16 @@ class WebhookAdapter:
             )
 
         status_code = int(response.status_code)
+        if 300 <= status_code < 400:
+            return ExternalEffectDispatchResult(
+                status="failed_terminal",
+                adapter_mode="execute",
+                request_summary=request_summary,
+                response_summary={"status_code": status_code, "redirect_blocked": True, "real_external_call_executed": True},
+                error_code="redirect_blocked",
+                error_message="webhook redirects are not allowed",
+                real_external_call_executed=True,
+            )
         if 200 <= status_code < 300:
             status = "succeeded"
         elif status_code in {408, 429} or status_code >= 500:

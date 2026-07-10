@@ -245,7 +245,7 @@
       "accessor": "runtime_setting",
       "file": "aicrm_next/platform_foundation/external_effects/adapters.py",
       "key": "AICRM_EXTERNAL_EFFECT_ALLOWED_OWNER_USERIDS",
-      "line": 90
+      "line": 98
     },
     {
       "accessor": "runtime_bool",
@@ -257,7 +257,7 @@
       "accessor": "runtime_setting",
       "file": "aicrm_next/platform_foundation/external_effects/adapters.py",
       "key": "AICRM_EXTERNAL_EFFECT_WEBHOOK_SIGNING_SECRET",
-      "line": 364
+      "line": 414
     },
     {
       "accessor": "runtime_setting",
@@ -275,7 +275,7 @@
       "accessor": "runtime_setting",
       "file": "aicrm_next/platform_foundation/external_effects/adapters.py",
       "key": "AICRM_EXTERNAL_EFFECT_WEBHOOK_TIMEOUT_SECONDS",
-      "line": 267
+      "line": 288
     },
     {
       "accessor": "runtime_bool",
@@ -773,13 +773,13 @@
       "accessor": "runtime_setting",
       "file": "aicrm_next/platform_foundation/external_effects/adapters.py",
       "key": "AICRM_WECOM_DEFAULT_SENDER_USERID",
-      "line": 90
+      "line": 98
     },
     {
       "accessor": "runtime_setting",
       "file": "aicrm_next/platform_foundation/external_effects/adapters.py",
       "key": "AICRM_WECOM_EXECUTION_MODE",
-      "line": 70
+      "line": 78
     },
     {
       "accessor": "runtime_setting",
