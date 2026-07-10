@@ -33,6 +33,12 @@ class ServiceUnit:
     stop_for_migration: bool = False
 
 
+@dataclass(frozen=True)
+class RetiredDropIn:
+    unit: str
+    dropin: str
+
+
 def load_manifest(path: Path = MANIFEST_PATH) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8"))
 
@@ -62,6 +68,13 @@ def active_services(manifest: dict[str, Any]) -> list[ServiceUnit]:
             )
         )
     return services
+
+
+def retired_dropins(manifest: dict[str, Any]) -> list[RetiredDropIn]:
+    return [
+        RetiredDropIn(unit=str(item["unit"]), dropin=str(item["dropin"]))
+        for item in manifest.get("retired_dropins") or []
+    ]
 
 
 def _deploy_path(unit: str) -> Path:
@@ -108,10 +121,17 @@ def validate_manifest(manifest: dict[str, Any]) -> None:
     services = active_services(manifest)
     approval_required = [str(unit) for unit in manifest.get("approval_required") or []]
     retired_forbidden = [str(unit) for unit in manifest.get("retired_forbidden") or []]
+    retired_overlay_dropins = retired_dropins(manifest)
     active_timer_names = [unit.timer for unit in timers]
     active_service_names = [unit.service for unit in timers] + [unit.service for unit in services]
     _unique(active_timer_names + approval_required + retired_forbidden, "timer classification")
     _unique(active_service_names, "active service")
+    _unique([f"{item.unit}.d/{item.dropin}" for item in retired_overlay_dropins], "retired drop-in")
+    for item in retired_overlay_dropins:
+        if not item.unit.endswith(".service"):
+            raise ValueError(f"retired drop-in unit must be a service: {item.unit}")
+        if not item.dropin.endswith(".conf") or Path(item.dropin).name != item.dropin:
+            raise ValueError(f"retired drop-in must be a .conf basename: {item.dropin}")
     for service in services:
         if not _deploy_path(service.service).exists():
             raise FileNotFoundError(f"missing active service unit: {_deploy_path(service.service)}")
@@ -153,6 +173,22 @@ def _quote(value: str) -> str:
 
 def _copy_unit(runner: Runner, unit: str) -> None:
     runner.run(["sudo", "cp", f"deploy/{unit}", str(SYSTEMD_DIR) + "/"])
+
+
+def _retired_dropin_path(item: RetiredDropIn) -> Path:
+    return SYSTEMD_DIR / f"{item.unit}.d" / item.dropin
+
+
+def _verify_retired_dropins_absent(manifest: dict[str, Any], runner: Runner) -> None:
+    for item in retired_dropins(manifest):
+        runner.run(["sudo", "test", "!", "-e", str(_retired_dropin_path(item))])
+
+
+def phase_retire_legacy_overlays(manifest: dict[str, Any], runner: Runner) -> None:
+    for item in retired_dropins(manifest):
+        runner.run(["sudo", "rm", "-f", str(_retired_dropin_path(item))])
+    runner.systemctl("daemon-reload")
+    _verify_retired_dropins_absent(manifest, runner)
 
 
 def phase_stop_for_migration(manifest: dict[str, Any], runner: Runner) -> None:
@@ -225,6 +261,7 @@ def phase_verify(manifest: dict[str, Any], runner: Runner) -> None:
         proc = runner.systemctl("is-active", str(unit), check=False)
         if runner.execute and proc is not None and proc.returncode == 0:
             raise RuntimeError(f"retired runtime unit is active: {unit}")
+    _verify_retired_dropins_absent(manifest, runner)
     approval_required = manifest.get("approval_required") or []
     if approval_required:
         print("approval_required_timers=" + ",".join(str(unit) for unit in approval_required))
@@ -235,7 +272,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--phase",
         required=True,
-        choices=("stop-for-migration", "install-enable-after-web-health", "verify"),
+        choices=("retire-legacy-overlays", "stop-for-migration", "install-enable-after-web-health", "verify"),
     )
     parser.add_argument("--manifest", default=str(MANIFEST_PATH))
     parser.add_argument("--execute", action="store_true", default=False)
@@ -245,7 +282,9 @@ def main(argv: list[str] | None = None) -> int:
     manifest = load_manifest(Path(args.manifest))
     validate_manifest(manifest)
     runner = Runner(execute=bool(args.execute and not args.dry_run))
-    if args.phase == "stop-for-migration":
+    if args.phase == "retire-legacy-overlays":
+        phase_retire_legacy_overlays(manifest, runner)
+    elif args.phase == "stop-for-migration":
         phase_stop_for_migration(manifest, runner)
     elif args.phase == "install-enable-after-web-health":
         phase_install_enable_after_web_health(manifest, runner)
