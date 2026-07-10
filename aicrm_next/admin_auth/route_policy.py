@@ -15,8 +15,8 @@ from fastapi.responses import JSONResponse, Response
 from starlette.concurrency import run_in_threadpool
 
 from aicrm_next.shared.route_policy import RoutePolicy, RoutePolicyIndex, match_route_policy
+from aicrm_next.shared.internal_service_tokens import validate_internal_service_token
 from aicrm_next.shared.runtime import production_environment
-from aicrm_next.shared.runtime_settings import runtime_setting
 from aicrm_next.shared.signed_context import load_sidebar_owner_context_token
 
 from .capabilities import session_can, viewer_only
@@ -115,7 +115,7 @@ async def route_policy_required_response(
     if policy.auth_scheme == "admin_session":
         return await _enforce_admin_session(request, policy)
     if policy.auth_scheme == "internal_bearer" and enforcement_enabled:
-        return _enforce_internal_bearer(request)
+        return _enforce_internal_bearer(request, policy)
     if policy.auth_scheme == "scoped_bearer" and enforcement_enabled:
         return _enforce_scoped_bearer_presence(request)
     if policy.auth_scheme == "sidebar_signed_context" and enforcement_enabled:
@@ -152,20 +152,16 @@ async def _enforce_admin_session(request: Request, policy: RoutePolicy) -> Respo
     return None
 
 
-def _enforce_internal_bearer(request: Request) -> Response | None:
-    expected_tokens = [normalize_text(runtime_setting("AUTOMATION_INTERNAL_API_TOKEN"))]
-    service_account = "automation_internal"
-    if str(request.url.path) == "/mcp":
-        expected_tokens.insert(0, normalize_text(runtime_setting("MCP_BEARER_TOKEN")))
-        service_account = "mcp_integration"
-    expected_tokens = [token for token in expected_tokens if token]
-    if not expected_tokens:
-        return _error("internal_token_not_configured", status_code=503)
-    provided = _bearer_token(request)
-    if not provided or not any(hmac.compare_digest(provided, expected) for expected in expected_tokens):
-        return _error("internal_token_required", status_code=401)
-    request.state.service_account = service_account
-    _set_pii_principal(request, actor_type="internal_service", actor_id=service_account)
+def _enforce_internal_bearer(request: Request, policy: RoutePolicy) -> Response | None:
+    try:
+        result = validate_internal_service_token(policy.token_purpose, _bearer_token(request))
+    except ValueError:
+        return _error("internal_token_purpose_invalid", status_code=503)
+    if not result.ok:
+        status_code = 503 if result.error == "internal_token_not_configured" else 401
+        return _error(result.error, status_code=status_code)
+    request.state.service_account = result.service_account
+    _set_pii_principal(request, actor_type="internal_service", actor_id=result.service_account)
     return None
 
 

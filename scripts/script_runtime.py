@@ -48,5 +48,8 @@ def read_app_port() -> str:
     return os.getenv("APP_PORT", "5000").strip() or "5000"
 
 
-def read_internal_api_token() -> str:
-    return os.getenv("AUTOMATION_INTERNAL_API_TOKEN", "").strip()
+def read_internal_api_token(*, purpose: str = "automation_worker") -> str:
+    ensure_repo_root_on_path()
+    from aicrm_next.shared.internal_service_tokens import internal_service_token_for_purpose
+
+    return internal_service_token_for_purpose(purpose)

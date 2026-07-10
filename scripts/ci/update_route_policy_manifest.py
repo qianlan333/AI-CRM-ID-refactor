@@ -113,6 +113,7 @@ def _policy_for(entry: dict[str, Any]) -> dict[str, Any]:
             _pii_level(entry),
             False,
             "integration",
+            token_purpose="group_broadcast",
         )
 
     if path.startswith("/api/automation/group-ops/") and "/webhooks/" not in path:
@@ -196,9 +197,18 @@ def _policy_for(entry: dict[str, Any]) -> dict[str, Any]:
         return _policy("external_integration", "public", "health_read", "public", "none", False, "health")
 
     if path == "/api/system/runtime-route-map":
-        return _policy("internal_worker", "internal_bearer", "internal_read", "service", "internal", False, "internal")
+        return _policy(
+            "internal_worker",
+            "internal_bearer",
+            "internal_read",
+            "service",
+            "internal",
+            False,
+            "internal",
+            token_purpose="automation_worker",
+        )
 
-    if path == "/mcp" or path == "/api/identity/resolve":
+    if path == "/mcp":
         return _policy(
             "external_integration",
             "internal_bearer",
@@ -207,6 +217,19 @@ def _policy_for(entry: dict[str, Any]) -> dict[str, Any]:
             "sensitive",
             False,
             "internal",
+            token_purpose="mcp",
+        )
+
+    if path == "/api/identity/resolve":
+        return _policy(
+            "external_integration",
+            "internal_bearer",
+            "external_write" if write else "external_read",
+            "service",
+            "sensitive",
+            False,
+            "internal",
+            token_purpose="identity",
         )
 
     if path.startswith(("/api/customers", "/api/users", "/api/messages")):
@@ -220,8 +243,7 @@ def _policy_for(entry: dict[str, Any]) -> dict[str, Any]:
             "authenticated",
         )
 
-    internal_prefixes = ("/api/archive", "/api/internal")
-    if _starts(path, *internal_prefixes):
+    if _starts(path, "/api/archive"):
         return _policy(
             "internal_worker",
             "internal_bearer",
@@ -230,6 +252,19 @@ def _policy_for(entry: dict[str, Any]) -> dict[str, Any]:
             _pii_level(entry),
             False,
             "internal",
+            token_purpose="archive",
+        )
+
+    if _starts(path, "/api/internal"):
+        return _policy(
+            "internal_worker",
+            "internal_bearer",
+            "internal_execute" if write else "internal_read",
+            "service",
+            _pii_level(entry),
+            False,
+            "internal",
+            token_purpose="automation_worker",
         )
 
     external_prefixes = (
@@ -263,6 +298,8 @@ def _policy(
     pii_level: str,
     csrf: bool,
     rate_limit: str,
+    *,
+    token_purpose: str = "none",
 ) -> dict[str, Any]:
     return {
         "audience": audience,
@@ -272,6 +309,7 @@ def _policy(
         "pii_level": pii_level,
         "csrf": csrf,
         "rate_limit": rate_limit,
+        "token_purpose": token_purpose,
     }
 
 

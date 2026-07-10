@@ -21,6 +21,10 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from aicrm_next.shared.db_session import get_engine  # noqa: E402
+from aicrm_next.shared.internal_service_tokens import (  # noqa: E402
+    LEGACY_FALLBACK_ENABLED_KEY,
+    TOKEN_PURPOSES,
+)
 from aicrm_next.shared.secret_store import (  # noqa: E402
     SECRET_REFERENCE_CUTOVER_KEY,
     SECRET_STORE_DIR_KEY,
@@ -93,6 +97,26 @@ def _environment_secret_values(path: Path | None) -> tuple[dict[str, str], int, 
     return values, parse_errors, 0
 
 
+def _environment_flag_enabled(path: Path | None, key: str) -> bool:
+    if path is None:
+        return False
+    try:
+        body = path.expanduser().read_text(encoding="utf-8")
+    except (OSError, UnicodeError):
+        return False
+    for line in body.splitlines():
+        match = _ENV_ASSIGNMENT.match(line)
+        if not match or str(match.group("key") or "") != key:
+            continue
+        try:
+            parsed = shlex.split(str(match.group("value") or ""), comments=True, posix=True)
+        except ValueError:
+            return False
+        value = parsed[0] if len(parsed) == 1 else ""
+        return str(value or "").strip().lower() in _TRUE_VALUES
+    return False
+
+
 def reconcile_secret_reference_cutover(
     *,
     engine: Engine,
@@ -105,6 +129,7 @@ def reconcile_secret_reference_cutover(
     permission_errors = 0
     store_scan_errors = 0
     secret_values: set[str] = set()
+    resolved_by_key: dict[str, str] = {}
     items: list[dict[str, Any]] = []
 
     for key in sorted(SENSITIVE_SETTING_KEYS):
@@ -119,7 +144,9 @@ def reconcile_secret_reference_cutover(
             parsed = parse_secret_reference(value)
             if parsed.key != key:
                 raise SecretStoreError("secret reference key mismatch")
-            secret_values.add(store.read(value))
+            resolved = store.read(value)
+            secret_values.add(resolved)
+            resolved_by_key[key] = resolved
             items.append({"key": key, "present": True, "status": "resolved", "version": parsed.version})
         except SecretStoreError as exc:
             unresolved_refs += 1
@@ -155,13 +182,39 @@ def reconcile_secret_reference_cutover(
             parsed = parse_secret_reference(value)
             if parsed.key != key:
                 raise SecretStoreError("secret reference key mismatch")
-            store.read(value)
+            resolved = store.read(value)
+            resolved_by_key.setdefault(key, resolved)
             database_reference = str(settings.get(key) or "").strip()
             if database_reference and database_reference != value:
                 environment_reference_mismatches += 1
         except SecretStoreError:
             unresolved_environment_refs += 1
     cutover_enabled = str(settings.get(SECRET_REFERENCE_CUTOVER_KEY) or "").strip().lower() in _TRUE_VALUES
+    legacy_fallback_enabled = bool(
+        str(settings.get(LEGACY_FALLBACK_ENABLED_KEY) or os.getenv(LEGACY_FALLBACK_ENABLED_KEY) or "").strip().lower()
+        in _TRUE_VALUES
+        or _environment_flag_enabled(environment_file, LEGACY_FALLBACK_ENABLED_KEY)
+    )
+    internal_token_split_required = bool(resolved_by_key.get("AUTOMATION_INTERNAL_API_TOKEN"))
+    required_internal_keys = {
+        credential.setting_key
+        for credential in TOKEN_PURPOSES.values()
+    } if internal_token_split_required else set()
+    missing_internal_token_purposes = sorted(
+        credential.purpose
+        for credential in TOKEN_PURPOSES.values()
+        if credential.setting_key in required_internal_keys and not resolved_by_key.get(credential.setting_key)
+    )
+    purposes_by_value: dict[str, list[str]] = {}
+    for credential in TOKEN_PURPOSES.values():
+        value = resolved_by_key.get(credential.setting_key, "")
+        if value:
+            purposes_by_value.setdefault(value, []).append(credential.purpose)
+    duplicate_internal_token_purposes = sorted(
+        sorted(purposes)
+        for purposes in purposes_by_value.values()
+        if len(purposes) > 1
+    )
     ok = bool(
         cutover_enabled
         and plaintext_sensitive_rows == 0
@@ -175,6 +228,9 @@ def reconcile_secret_reference_cutover(
         and environment_scan_errors == 0
         and environment_permission_errors == 0
         and environment_reference_mismatches == 0
+        and not legacy_fallback_enabled
+        and not missing_internal_token_purposes
+        and not duplicate_internal_token_purposes
     )
     return {
         "ok": ok,
@@ -191,6 +247,10 @@ def reconcile_secret_reference_cutover(
         "environment_scan_errors": environment_scan_errors,
         "environment_permission_errors": environment_permission_errors,
         "environment_reference_mismatches": environment_reference_mismatches,
+        "legacy_internal_token_fallback_enabled": legacy_fallback_enabled,
+        "internal_token_split_required": internal_token_split_required,
+        "missing_internal_token_purposes": missing_internal_token_purposes,
+        "duplicate_internal_token_purposes": duplicate_internal_token_purposes,
         "items": items,
     }
 

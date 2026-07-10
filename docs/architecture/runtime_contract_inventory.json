@@ -227,7 +227,7 @@
       "accessor": "os.getenv",
       "file": "aicrm_next/message_archive/api.py",
       "key": "AICRM_ENABLE_IN_PROCESS_ARCHIVE_SYNC",
-      "line": 188
+      "line": 191
     },
     {
       "accessor": "os.getenv",
@@ -293,7 +293,7 @@
       "accessor": "os.getenv",
       "file": "aicrm_next/automation_engine/group_ops/broadcast.py",
       "key": "AICRM_GROUP_OPS_BROADCAST_PLAN_ID",
-      "line": 274
+      "line": 273
     },
     {
       "accessor": "os.getenv",
@@ -311,7 +311,7 @@
       "accessor": "os.getenv",
       "file": "aicrm_next/automation_engine/group_ops/broadcast.py",
       "key": "AICRM_GROUP_OPS_MINIPROGRAM_APPID",
-      "line": 282
+      "line": 281
     },
     {
       "accessor": "os.getenv",
@@ -378,6 +378,12 @@
       "file": "aicrm_next/platform_foundation/internal_events/config.py",
       "key": "AICRM_INTERNAL_EVENT_WORKER_BATCH_SIZE",
       "line": 164
+    },
+    {
+      "accessor": "declared_runtime_environment_key",
+      "file": "aicrm_next/shared/internal_service_tokens.py",
+      "key": "AICRM_LEGACY_INTERNAL_TOKEN_FALLBACK_ENABLED",
+      "line": 48
     },
     {
       "accessor": "runtime_setting",
@@ -872,28 +878,16 @@
       "line": 48
     },
     {
-      "accessor": "runtime_setting",
-      "file": "aicrm_next/admin_auth/route_policy.py",
-      "key": "AUTOMATION_INTERNAL_API_TOKEN",
-      "line": 156
-    },
-    {
-      "accessor": "runtime_setting",
-      "file": "aicrm_next/admin_jobs/routes.py",
-      "key": "AUTOMATION_INTERNAL_API_TOKEN",
-      "line": 107
+      "accessor": "declared_runtime_environment_key",
+      "file": "aicrm_next/shared/internal_service_tokens.py",
+      "key": "ARCHIVE_INTERNAL_API_TOKEN",
+      "line": 48
     },
     {
       "accessor": "runtime_setting",
       "file": "aicrm_next/ai_audience_ops/api.py",
       "key": "AUTOMATION_INTERNAL_API_TOKEN",
       "line": 53
-    },
-    {
-      "accessor": "runtime_setting",
-      "file": "aicrm_next/automation_engine/group_ops/broadcast.py",
-      "key": "AUTOMATION_INTERNAL_API_TOKEN",
-      "line": 69
     },
     {
       "accessor": "runtime_setting",
@@ -926,10 +920,10 @@
       "line": 69
     },
     {
-      "accessor": "runtime_setting",
-      "file": "aicrm_next/platform_foundation/webhook_inbox/api.py",
+      "accessor": "declared_runtime_environment_key",
+      "file": "aicrm_next/shared/internal_service_tokens.py",
       "key": "AUTOMATION_INTERNAL_API_TOKEN",
-      "line": 88
+      "line": 48
     },
     {
       "accessor": "os.getenv",
@@ -957,12 +951,6 @@
     },
     {
       "accessor": "os.getenv",
-      "file": "scripts/script_runtime.py",
-      "key": "AUTOMATION_INTERNAL_API_TOKEN",
-      "line": 52
-    },
-    {
-      "accessor": "os.getenv",
       "file": "aicrm_next/background_jobs/automation_ops_scheduler.py",
       "key": "AUTOMATION_OPS_SCHEDULER_OPERATOR",
       "line": 35
@@ -980,10 +968,16 @@
       "line": 114
     },
     {
+      "accessor": "declared_runtime_environment_key",
+      "file": "aicrm_next/shared/internal_service_tokens.py",
+      "key": "CALLBACK_INTERNAL_API_TOKEN",
+      "line": 48
+    },
+    {
       "accessor": "runtime_setting",
       "file": "aicrm_next/admin_jobs/routes.py",
       "key": "CRON_SECRET",
-      "line": 142
+      "line": 141
     },
     {
       "accessor": "_env_flag",
@@ -1208,16 +1202,22 @@
       "line": 64
     },
     {
+      "accessor": "declared_runtime_environment_key",
+      "file": "aicrm_next/shared/internal_service_tokens.py",
+      "key": "GROUP_BROADCAST_INTERNAL_API_TOKEN",
+      "line": 48
+    },
+    {
+      "accessor": "declared_runtime_environment_key",
+      "file": "aicrm_next/shared/internal_service_tokens.py",
+      "key": "IDENTITY_INTERNAL_API_TOKEN",
+      "line": 48
+    },
+    {
       "accessor": "os.getenv",
       "file": "scripts/run_wecom_callback_ingress.py",
       "key": "LOG_LEVEL",
       "line": 33
-    },
-    {
-      "accessor": "runtime_setting",
-      "file": "aicrm_next/admin_auth/route_policy.py",
-      "key": "MCP_BEARER_TOKEN",
-      "line": 159
     },
     {
       "accessor": "runtime_setting",
@@ -1226,10 +1226,10 @@
       "line": 241
     },
     {
-      "accessor": "runtime_setting",
-      "file": "aicrm_next/admin_jobs/routes.py",
+      "accessor": "declared_runtime_environment_key",
+      "file": "aicrm_next/shared/internal_service_tokens.py",
       "key": "MCP_BEARER_TOKEN",
-      "line": 107
+      "line": 48
     },
     {
       "accessor": "os.getenv",
@@ -1858,6 +1858,7 @@
     "AICRM_INTERNAL_EVENTS_LEGACY_PATH_RETIRE_AFTER_DAYS",
     "AICRM_INTERNAL_EVENTS_WORKER_BATCH_SIZE",
     "AICRM_INTERNAL_EVENT_WORKER_BATCH_SIZE",
+    "AICRM_LEGACY_INTERNAL_TOKEN_FALLBACK_ENABLED",
     "AICRM_NEXT_ACTION_TOKEN_SECRET",
     "AICRM_NEXT_ADMIN_AUTH_USER_COUNT",
     "AICRM_NEXT_ALIPAY_MODE",
@@ -1921,10 +1922,12 @@
     "APP_ENV",
     "APP_HOST",
     "APP_PORT",
+    "ARCHIVE_INTERNAL_API_TOKEN",
     "AUTOMATION_INTERNAL_API_TOKEN",
     "AUTOMATION_OPS_SCHEDULER_OPERATOR",
     "BROADCAST_QUEUE_LEASE_SECONDS",
     "BROADCAST_QUEUE_RETRY_DELAY_SECONDS",
+    "CALLBACK_INTERNAL_API_TOKEN",
     "CRON_SECRET",
     "CUSTOMER_READ_MODEL_LIVE_SOURCE_FALLBACK_ENABLED",
     "CUSTOMER_READ_MODEL_NEXT_PRIMARY",
@@ -1938,6 +1941,8 @@
     "GITHUB_EVENT_NAME",
     "GITHUB_EVENT_PATH",
     "GIT_SHA",
+    "GROUP_BROADCAST_INTERNAL_API_TOKEN",
+    "IDENTITY_INTERNAL_API_TOKEN",
     "LOG_LEVEL",
     "MCP_BEARER_TOKEN",
     "OWNER_MIGRATION_FIXTURE_STORE",

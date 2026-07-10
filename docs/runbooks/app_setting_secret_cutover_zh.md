@@ -20,6 +20,10 @@
 4. 禁止 `set -x`、`env`、`printenv` 或带值的 SQL 输出；不得把环境文件内容复制到工单或日志。
 5. 确认目标目录所在磁盘有足够空间，并且 `/home/ubuntu` 不是不受信任的共享挂载。
 
+内部服务令牌必须按用途独立：`MCP_BEARER_TOKEN`、`IDENTITY_INTERNAL_API_TOKEN`、`ARCHIVE_INTERNAL_API_TOKEN`、`GROUP_BROADCAST_INTERNAL_API_TOKEN`、`CALLBACK_INTERNAL_API_TOKEN` 与 `AUTOMATION_INTERNAL_API_TOKEN` 不得复用值。若仅存在旧的 `AUTOMATION_INTERNAL_API_TOKEN`，正式迁移会为缺失的五个用途生成互不相同的随机令牌，写入 secret store，并只把引用写回 DB/环境文件；令牌不会从旧值派生，也不会出现在命令输出中。
+
+`AICRM_LEGACY_INTERNAL_TOKEN_FALLBACK_ENABLED` 只用于紧急、短期迁移，默认必须为 `false`。负责人是 `platform_ops`，删除期限为 `2026-08-10`；生产 reconciliation 要求该开关关闭。
+
 ## 预演
 
 先加载生产环境，再执行只读预演：
@@ -33,7 +37,7 @@ python3 scripts/ops/migrate_app_setting_secrets.py --dry-run \
   --secret-store-dir "$AICRM_SECRET_STORE_DIR"
 ```
 
-预演只报告 `key/source/version/present/status` 和计数，不创建目录、不写数据库、不修改环境文件。存在原文时，`ok=false` 与 `plaintext_pending>0` 是预期结果；输出中不应出现任何配置值。
+预演只报告 `key/source/version/present/status` 和计数，不创建目录、不写数据库、不修改环境文件。存在原文或需要拆分旧共享令牌时，`ok=false`，并分别显示 `plaintext_pending>0` 或 `generated_pending>0`；输出中不应出现任何配置值。
 
 ## 正式切换
 
@@ -85,6 +89,9 @@ unresolved_environment_refs=0
 environment_scan_errors=0
 environment_permission_errors=0
 environment_reference_mismatches=0
+legacy_internal_token_fallback_enabled=false
+missing_internal_token_purposes=[]
+duplicate_internal_token_purposes=[]
 ```
 
 任一项非零都必须阻断发布。不要通过删除 checker、跳过失败命令或手工修改 JSON 继续上线。

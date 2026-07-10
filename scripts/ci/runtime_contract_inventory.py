@@ -24,6 +24,7 @@ ENV_CALL_NAMES = {
     "_env_flag",
     "env_flag",
 }
+DECLARED_ENVIRONMENT_KEY_NAMES = {"RUNTIME_ENVIRONMENT_KEYS"}
 EFFECT_PREFIXES = (
     "ai_assist.",
     "feishu.",
@@ -245,6 +246,16 @@ def _literal_string(node: ast.AST | None) -> str:
     return ""
 
 
+def _literal_strings(node: ast.AST | None) -> set[str]:
+    if node is None:
+        return set()
+    return {
+        str(item.value).strip()
+        for item in ast.walk(node)
+        if isinstance(item, ast.Constant) and isinstance(item.value, str) and str(item.value).strip()
+    }
+
+
 def _call_name(node: ast.Call) -> str:
     if isinstance(node.func, ast.Name):
         return node.func.id
@@ -272,6 +283,26 @@ def _environment_references(root: Path) -> list[dict[str, Any]]:
                 tree = ast.parse(path.read_text(encoding="utf-8"), filename=relative)
             except (SyntaxError, UnicodeDecodeError) as exc:
                 raise ValueError(f"cannot parse environment references from {relative}: {exc}") from exc
+            for node in tree.body:
+                target_name = ""
+                value: ast.AST | None = None
+                if isinstance(node, ast.Assign) and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name):
+                    target_name = node.targets[0].id
+                    value = node.value
+                elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+                    target_name = node.target.id
+                    value = node.value
+                if target_name not in DECLARED_ENVIRONMENT_KEY_NAMES:
+                    continue
+                for key in sorted(_literal_strings(value)):
+                    references.append(
+                        {
+                            "key": key,
+                            "file": relative,
+                            "line": int(getattr(node, "lineno", 0) or 0),
+                            "accessor": "declared_runtime_environment_key",
+                        }
+                    )
             for node in ast.walk(tree):
                 key = ""
                 accessor = ""

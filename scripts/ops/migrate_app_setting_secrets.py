@@ -21,6 +21,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from aicrm_next.shared.db_session import get_engine  # noqa: E402
+from aicrm_next.shared.internal_service_tokens import TOKEN_PURPOSES  # noqa: E402
 from aicrm_next.shared.secret_store import (  # noqa: E402
     SECRET_REFERENCE_CUTOVER_KEY,
     SECRET_STORE_DIR_KEY,
@@ -206,9 +207,47 @@ def migrate_app_setting_secrets(
     items: list[dict[str, Any]] = []
     plaintext_pending = 0
     already_referenced = 0
+    generated = 0
+    generated_pending = 0
+    generated_keys: set[str] = set()
+    legacy_token_present = any(
+        candidate.key == "AUTOMATION_INTERNAL_API_TOKEN" and bool(candidate.value)
+        for candidate in candidates
+    )
+    split_keys = {
+        credential.setting_key
+        for credential in TOKEN_PURPOSES.values()
+        if credential.purpose != "automation_worker"
+    }
 
     for candidate in candidates:
         if not candidate.value:
+            if legacy_token_present and candidate.key in split_keys:
+                if dry_run:
+                    generated_pending += 1
+                    items.append(
+                        _safe_item(
+                            key=candidate.key,
+                            source="generated",
+                            present=False,
+                            status="generation_pending",
+                        )
+                    )
+                    continue
+                reference = store.write(candidate.key, secrets.token_urlsafe(48))
+                prepared[candidate.key] = reference
+                generated_keys.add(candidate.key)
+                generated += 1
+                items.append(
+                    _safe_item(
+                        key=candidate.key,
+                        source="generated",
+                        present=True,
+                        status="generated",
+                        reference=reference,
+                    )
+                )
+                continue
             items.append(_safe_item(key=candidate.key, source=candidate.source, present=False, status="missing"))
             continue
         if is_secret_reference(candidate.value):
@@ -250,12 +289,14 @@ def migrate_app_setting_secrets(
 
     if dry_run:
         return {
-            "ok": plaintext_pending == 0,
+            "ok": plaintext_pending == 0 and generated_pending == 0,
             "dry_run": True,
             "configured": sum(1 for item in items if item["present"]),
             "plaintext_pending": plaintext_pending,
             "migrated": 0,
             "already_referenced": already_referenced,
+            "generated": 0,
+            "generated_pending": generated_pending,
             "cutover_enabled": False,
             "environment_file_updated": False,
             "items": items,
@@ -269,6 +310,11 @@ def migrate_app_setting_secrets(
     with engine.begin() as connection:
         current = _read_app_settings(connection)
         for key, reference in prepared.items():
+            if key in generated_keys:
+                if str(current.get(key) or "").strip():
+                    raise RuntimeError(f"app setting appeared during secret migration for key={key}")
+                _insert_reference(connection, key=key, reference=reference)
+                continue
             original = original_by_key[key]
             current_value = str(current.get(key) or "").strip()
             if original.source == "app_settings" and current_value != original.value:
@@ -298,7 +344,7 @@ def migrate_app_setting_secrets(
         environment_references = {
             key: reference
             for key, reference in prepared.items()
-            if str(environment.get(key) or "").strip()
+            if str(environment.get(key) or "").strip() or key in generated_keys
         }
         _persist_environment_values(
             environment_file,
@@ -317,6 +363,8 @@ def migrate_app_setting_secrets(
         "plaintext_pending": 0,
         "migrated": sum(1 for item in items if item["status"] == "migrated"),
         "already_referenced": already_referenced,
+        "generated": generated,
+        "generated_pending": 0,
         "cutover_enabled": True,
         "environment_file_updated": environment_file_updated,
         "items": items,

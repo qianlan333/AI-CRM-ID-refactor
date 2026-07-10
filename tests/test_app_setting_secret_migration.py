@@ -9,6 +9,7 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
 
 from aicrm_next.shared.secret_store import FileSecretStore, SecretStoreError, is_secret_reference
+from aicrm_next.shared.internal_service_tokens import LEGACY_FALLBACK_ENABLED_KEY, TOKEN_PURPOSES
 from scripts.ops import migrate_app_setting_secrets as migration_script
 from scripts.ops.check_secret_reference_cutover import reconcile_secret_reference_cutover
 from scripts.ops.migrate_app_setting_secrets import (
@@ -170,6 +171,104 @@ def test_mixed_raw_reference_and_environment_rows_migrate_idempotently(tmp_path:
     assert "raw-database-secret" not in rendered
     assert "environment-signing-secret" not in rendered
     assert existing_reference not in rendered
+
+
+def test_legacy_shared_token_migration_generates_distinct_purpose_credentials(monkeypatch, tmp_path: Path) -> None:
+    engine = _engine(tmp_path)
+    root = tmp_path / "secrets"
+    environment_file = tmp_path / "runtime.env"
+    environment_file.write_text("EXISTING_FLAG='keep-me'\n", encoding="utf-8")
+    os.chmod(environment_file, 0o600)
+    legacy_token = "legacy-shared-internal-token"
+    _upsert(engine, "AUTOMATION_INTERNAL_API_TOKEN", legacy_token)
+
+    first = migrate_app_setting_secrets(
+        engine=engine,
+        store=FileSecretStore(root),
+        environment={},
+        dry_run=False,
+        environment_file=environment_file,
+    )
+    split_credentials = [
+        credential
+        for credential in TOKEN_PURPOSES.values()
+        if credential.purpose != "automation_worker"
+    ]
+    resolved = {
+        credential.purpose: FileSecretStore(root).read(_value(engine, credential.setting_key))
+        for credential in split_credentials
+    }
+
+    assert first["generated"] == len(split_credentials) == 5
+    assert len(set(resolved.values())) == len(split_credentials)
+    assert legacy_token not in set(resolved.values())
+    assert all(is_secret_reference(_value(engine, credential.setting_key)) for credential in split_credentials)
+    environment_body = environment_file.read_text(encoding="utf-8")
+    assert all(f"{credential.setting_key}='secretref:file:{credential.setting_key}:" in environment_body for credential in split_credentials)
+    assert legacy_token not in environment_body
+
+    reconciled = reconcile_secret_reference_cutover(
+        engine=engine,
+        store=FileSecretStore(root),
+        environment_file=environment_file,
+    )
+    assert reconciled["ok"] is True
+    assert reconciled["missing_internal_token_purposes"] == []
+    assert reconciled["duplicate_internal_token_purposes"] == []
+    assert reconciled["legacy_internal_token_fallback_enabled"] is False
+
+    monkeypatch.setenv(LEGACY_FALLBACK_ENABLED_KEY, "true")
+    fallback_enabled = reconcile_secret_reference_cutover(
+        engine=engine,
+        store=FileSecretStore(root),
+        environment_file=environment_file,
+    )
+    assert fallback_enabled["ok"] is False
+    assert fallback_enabled["legacy_internal_token_fallback_enabled"] is True
+    monkeypatch.delenv(LEGACY_FALLBACK_ENABLED_KEY)
+
+    second = migrate_app_setting_secrets(
+        engine=engine,
+        store=FileSecretStore(root),
+        environment={},
+        dry_run=False,
+        environment_file=environment_file,
+    )
+    assert second["generated"] == 0
+    assert second["already_referenced"] == len(split_credentials) + 1
+
+    store = FileSecretStore(root)
+    mcp_collision = store.write("MCP_BEARER_TOKEN", "duplicate-purpose-token")
+    identity_collision = store.write("IDENTITY_INTERNAL_API_TOKEN", "duplicate-purpose-token")
+    _upsert(engine, "MCP_BEARER_TOKEN", mcp_collision)
+    _upsert(engine, "IDENTITY_INTERNAL_API_TOKEN", identity_collision)
+    collision_report = reconcile_secret_reference_cutover(
+        engine=engine,
+        store=store,
+        environment_file=environment_file,
+    )
+    assert collision_report["ok"] is False
+    assert ["identity", "mcp"] in collision_report["duplicate_internal_token_purposes"]
+
+
+def test_reconciliation_blocks_incomplete_internal_token_split(tmp_path: Path) -> None:
+    engine = _engine(tmp_path)
+    store = FileSecretStore(tmp_path / "secrets")
+    automation_reference = store.write("AUTOMATION_INTERNAL_API_TOKEN", "automation-only-token")
+    _upsert(engine, "AUTOMATION_INTERNAL_API_TOKEN", automation_reference)
+    _upsert(engine, "AICRM_SECRET_REFERENCE_CUTOVER", "true")
+
+    report = reconcile_secret_reference_cutover(engine=engine, store=store)
+
+    assert report["ok"] is False
+    assert report["internal_token_split_required"] is True
+    assert report["missing_internal_token_purposes"] == [
+        "archive",
+        "callback",
+        "group_broadcast",
+        "identity",
+        "mcp",
+    ]
 
 
 def test_secret_reference_can_roll_back_to_an_existing_immutable_version(tmp_path: Path) -> None:
