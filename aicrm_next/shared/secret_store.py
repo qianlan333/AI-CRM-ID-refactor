@@ -215,6 +215,34 @@ class FileSecretStore:
         provided = str(candidate if candidate is not None else "").encode("utf-8")
         return hmac.compare_digest(stored, provided)
 
+    def list_references(self) -> list[str]:
+        try:
+            self.root.lstat()
+        except FileNotFoundError:
+            return []
+        except OSError as exc:
+            raise SecretStoreError("secret store inventory failed") from exc
+        self._validate_directory(self.root, expected_mode=0o700)
+        references: list[str] = []
+        try:
+            key_directories = sorted(self.root.iterdir(), key=lambda path: path.name)
+        except OSError as exc:
+            raise SecretStoreError("secret store inventory failed") from exc
+        for key_directory in key_directories:
+            key = _validated_key(key_directory.name)
+            self._validate_directory(key_directory, expected_mode=0o700)
+            try:
+                versions = sorted(key_directory.iterdir(), key=lambda path: path.name)
+            except OSError as exc:
+                raise SecretStoreError("secret version inventory failed") from exc
+            for version_path in versions:
+                if not _VERSION_PATTERN.fullmatch(version_path.name):
+                    raise SecretStoreError("secret store contains an unexpected version entry")
+                reference = SecretReference(key=key, version=version_path.name).encode()
+                self.read(reference)
+                references.append(reference)
+        return references
+
     @staticmethod
     def _new_version() -> str:
         return f"v1_{time.time_ns():016x}_{secrets.token_hex(8)}"

@@ -168,3 +168,18 @@ def test_secret_store_fails_closed_for_missing_or_unreadable_reference(tmp_path:
         store.read("secretref:file:WECOM_SECRET:v1_0000000000000000_0123456789abcdef")
     with pytest.raises(SecretStoreError, match="must not be empty"):
         store.write("WECOM_SECRET", "")
+
+
+def test_secret_store_inventory_validates_every_version_and_dangling_root_symlink(tmp_path: Path) -> None:
+    root = tmp_path / "secrets"
+    store = FileSecretStore(root)
+    first = store.write("WECOM_SECRET", "secret-v1")
+    second = store.write("WECOM_SECRET", "secret-v2", current_reference=first)
+
+    assert store.list_references() == [first, second]
+
+    replacement = tmp_path / "dangling-secrets"
+    root.rename(tmp_path / "real-secrets")
+    root.symlink_to(replacement, target_is_directory=True)
+    with pytest.raises(SecretStoreError, match="symlink|directory"):
+        store.list_references()

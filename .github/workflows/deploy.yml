@@ -72,6 +72,18 @@ jobs:
               sudo ss -ltnp 'sport = :5001' || true
               exit 1
             fi
+            export AICRM_SECRET_STORE_DIR="${AICRM_SECRET_STORE_DIR:-/home/ubuntu/.aicrm-secrets}"
+            python3 scripts/ops/migrate_app_setting_secrets.py --execute \
+              --secret-store-dir "$AICRM_SECRET_STORE_DIR" \
+              --environment-file /home/ubuntu/.openclaw-wecom-pg.env \
+              | tee /tmp/aicrm-secret-migration.json
+            set -a
+            source /home/ubuntu/.openclaw-wecom-pg.env
+            set +a
+            python3 scripts/ops/check_secret_reference_cutover.py \
+              --secret-store-dir "$AICRM_SECRET_STORE_DIR" \
+              --environment-file /home/ubuntu/.openclaw-wecom-pg.env \
+              | tee /tmp/aicrm-secret-reconciliation.json
             sudo systemctl reset-failed openclaw-wecom-postgres.service || true
             if ! sudo systemctl start openclaw-wecom-postgres.service; then
               sudo systemctl status openclaw-wecom-postgres.service --no-pager || true
