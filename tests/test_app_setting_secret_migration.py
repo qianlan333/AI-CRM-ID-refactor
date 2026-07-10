@@ -505,6 +505,41 @@ def test_migration_persists_only_non_sensitive_runtime_environment_values(tmp_pa
     assert bad_permissions["ok"] is False
 
 
+def test_migration_collapses_duplicate_sensitive_environment_assignments(tmp_path: Path) -> None:
+    engine = _engine(tmp_path)
+    root = tmp_path / "secrets"
+    store = FileSecretStore(root)
+    key = "MCP_BEARER_TOKEN"
+    raw = "duplicate-environment-secret-sentinel"
+    reference = store.write(key, "canonical-mcp-secret")
+    _upsert(engine, key, reference)
+    env_file = tmp_path / "runtime.env"
+    env_file.write_text(
+        f"export {key}='{reference}'\n{key}='{raw}'\nEXISTING_FLAG='keep-me'\n",
+        encoding="utf-8",
+    )
+    os.chmod(env_file, 0o600)
+
+    report = migrate_app_setting_secrets(
+        engine=engine,
+        store=store,
+        environment={key: raw},
+        dry_run=False,
+        environment_file=env_file,
+    )
+
+    body = env_file.read_text(encoding="utf-8")
+    assignments = [line for line in body.splitlines() if line.lstrip().removeprefix("export ").startswith(f"{key}=")]
+    assert assignments == [f"export {key}='{reference}'"]
+    assert raw not in body
+    assert "EXISTING_FLAG='keep-me'" in body
+    assert report["environment_file_updated"] is True
+
+    reconciled = reconcile_secret_reference_cutover(engine=engine, store=store, environment_file=env_file)
+    assert reconciled["ok"] is True
+    assert reconciled["plaintext_environment_entries"] == 0
+
+
 def test_migration_cli_failure_never_prints_exception_text(monkeypatch, tmp_path: Path, capsys) -> None:
     raw = "cli-exception-secret-sentinel"
 
