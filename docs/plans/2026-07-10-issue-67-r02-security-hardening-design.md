@@ -210,6 +210,17 @@ R02 uses an expand/migrate/contract sequence in one work package. The expand rel
 4. After merge, verify deployed SHA equals merge SHA, secret migration reconciliation is all zero, no raw value appears in logs/API/audit, SSRF negative smoke is blocked before external call, and all runtime units are healthy.
 5. Close Issue #72 only after migration/deploy evidence is attached.
 
+### Local verification evidence
+
+- Rebased the R02-only commits onto `origin/main` at the R01 merge commit before final verification.
+- Python 3.10 hashed lock: two clean installs produced 86 packages and the same `pip freeze --all` SHA-256 `38cedf1215a06af59374cb3a66fa9264947a37ac0761ee21b0c6a04e0259f521`; `requirements.lock` SHA-256 is `908fab17672733e767f96155700ed35a3970b86b8de9c52ce8ef69334cd6dad4`.
+- `pip-audit -r requirements.lock --require-hashes` and `npm audit --audit-level=high` both reported zero known vulnerabilities.
+- Dependency/security compatibility set: 242 tests passed. Secret migration, PII logging/audit, SSRF, token-purpose, and secret-store set: 81 tests passed. Final fresh-PostgreSQL regression: 2893 tests passed.
+- Full frontend typecheck, build, and all frontend test groups passed. All architecture gates and the R02-relative Ruff check passed. The repository-wide Ruff command still reports the pre-existing baseline findings outside this work package.
+- CI selector for all R02 changes reports `needs_full_ci=true`, `needs_postgres=true`, `architecture_gate=full`, and `unmatched_files=[]`.
+- No-new-capability comparison against `origin/main`: 708 route identities and 110 page route identities are unchanged, with zero additions/removals; admin navigation and frontend/package files are unchanged.
+- Final-regression compatibility cleanup moved existing Commerce response/error helpers into `aicrm_next/commerce/api_contract.py`, kept `aicrm_next/commerce/api.py` below its frozen size budget, and updated the test-only loopback to HTTPS so the SSRF contract remains enforced.
+
 ## Acceptance evidence map
 
 | Requirement | Authoritative evidence |
