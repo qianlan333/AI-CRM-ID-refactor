@@ -86,11 +86,12 @@ def test_full_regression_runs_governance_once_and_ci_fast_does_not_duplicate_it(
     full_source = _source(FULL_REGRESSION_WORKFLOW)
     ci_fast_source = _source(CI_FAST_WORKFLOW)
 
-    assert "run_governance:" in full_source
+    assert full_source.count("run_governance:") == 2
     assert "type: boolean" in full_source
     assert "default: true" in full_source
     assert "full-governance:" in full_source
-    assert "github.event_name != 'workflow_call' || inputs.run_governance == true" in full_source
+    assert "github.event_name == 'schedule' || inputs.run_governance == true" in full_source
+    assert "github.event_name != 'workflow_call'" not in full_source
     assert full_source.count("python scripts/ci/check_dependency_security.py") == 1
     assert full_source.count("bash scripts/ci/run_architecture_gates.sh --mode full") == 1
     assert "uses: ./.github/workflows/full-regression.yml\n    with:\n      run_governance: false" in ci_fast_source
