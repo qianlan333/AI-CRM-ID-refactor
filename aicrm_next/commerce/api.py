@@ -8,13 +8,13 @@ import os
 from pathlib import Path
 from urllib.parse import quote
 
-from fastapi import APIRouter, Body, HTTPException, Path as PathParam, Query, Request
+from fastapi import APIRouter, Body, Path as PathParam, Query, Request
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 from fastapi.templating import Jinja2Templates
 
 from aicrm_next.admin_shell import shell_context
-from aicrm_next.shared.errors import ContractError, NotFoundError
+from aicrm_next.shared.errors import NotFoundError
 from aicrm_next.shared.pii_audit import infer_pii_result_count, set_pii_audit_result_count
 from aicrm_next.shared.safe_logging import safe_log_exception
 from aicrm_next.shared.share_qr import svg_qr_data_url
@@ -35,6 +35,8 @@ from .admin_transaction_detail import (
     provider_config,
 )
 from .admin_exports import create_export_job, get_export_job
+from .api_contract import checkout_order_headers as _checkout_order_headers
+from .api_contract import raise_http as _raise_http
 from .admin_refunds import list_refunds as list_unified_refunds
 from .admin_refunds import request_refund as request_unified_refund
 from .admin_unified_orders import (
@@ -86,18 +88,6 @@ _EXTERNAL_PUSH_CALL_EXECUTED = bool(1)
 logger = logging.getLogger(__name__)
 
 
-def _raise_http(exc: Exception) -> None:
-    if isinstance(exc, NotFoundError):
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-    if isinstance(exc, ContractError):
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    safe_log_exception(logger, "commerce api unexpected error", exc)
-    raise HTTPException(
-        status_code=500,
-        detail={"error_code": "commerce_internal_error", "message": "internal commerce error"},
-    ) from exc
-
-
 def _admin_api_error(*, error_code: str, message: str, source_status: str, status_code: int) -> JSONResponse:
     return JSONResponse(
         {
@@ -111,16 +101,6 @@ def _admin_api_error(*, error_code: str, message: str, source_status: str, statu
         status_code=status_code,
         headers=_payment_final_headers(),
     )
-
-
-def _checkout_order_headers(*, order_create_executed: str = "false") -> dict[str, str]:
-    return {
-        "X-AICRM-Route-Owner": "ai_crm_next",
-        "X-AICRM-Fallback-Used": "false",
-        "X-AICRM-Real-External-Call-Executed": "false",
-        "X-AICRM-Payment-Request-Executed": "false",
-        "X-AICRM-Order-Create-Executed": order_create_executed,
-    }
 
 
 def _checkout_order_side_effects(*, order_create_executed: str | bool = False) -> dict:

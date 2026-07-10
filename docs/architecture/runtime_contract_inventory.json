@@ -677,7 +677,7 @@
       "accessor": "os.getenv",
       "file": "aicrm_next/commerce/api.py",
       "key": "AICRM_PUBLIC_BASE_URL",
-      "line": 325
+      "line": 305
     },
     {
       "accessor": "os.getenv",
@@ -845,7 +845,7 @@
       "accessor": "os.getenv",
       "file": "aicrm_next/commerce/api.py",
       "key": "APP_BASE_URL",
-      "line": 327
+      "line": 307
     },
     {
       "accessor": "os.getenv",
@@ -1247,7 +1247,7 @@
       "accessor": "os.getenv",
       "file": "aicrm_next/commerce/api.py",
       "key": "PUBLIC_BASE_URL",
-      "line": 326
+      "line": 306
     },
     {
       "accessor": "os.getenv",
@@ -1451,7 +1451,7 @@
       "accessor": "os.getenv",
       "file": "aicrm_next/commerce/api.py",
       "key": "WECHAT_PAY_REFUND_NOTIFY_URL",
-      "line": 334
+      "line": 314
     },
     {
       "accessor": "os.getenv",
