@@ -33,17 +33,20 @@ def test_production_deploy_stashes_dirty_worktree_before_remote_update():
 
     stash_index = workflow.index("git stash push --include-untracked")
     before_sha_index = workflow.index('before_sha="$(git rev-parse HEAD)"')
-    fetch_index = workflow.index("git fetch origin main:refs/remotes/origin/main")
-    reset_index = workflow.index("git reset --hard refs/remotes/origin/main")
+    verified_sha_index = workflow.index('verified_sha="${{ github.event.workflow_run.head_sha }}"')
+    fetch_index = workflow.index('git fetch --no-tags "$release_repo" main:refs/remotes/aicrm-id-refactor/main')
+    reset_index = workflow.index('git reset --hard "$verified_sha"')
 
-    assert stash_index < before_sha_index < fetch_index < reset_index
+    assert stash_index < before_sha_index < verified_sha_index < fetch_index < reset_index
+    assert 'release_repo="https://github.com/qianlan333/AI-CRM-ID-refactor.git"' in workflow
+    assert "git fetch origin main:refs/remotes/origin/main" not in workflow
 
 
 def test_production_deploy_installs_dependencies_only_when_hashed_lock_changes():
     workflow = (ROOT / ".github" / "workflows" / "deploy.yml").read_text(encoding="utf-8")
 
-    fetch_index = workflow.index("git fetch origin main:refs/remotes/origin/main")
-    reset_index = workflow.index("git reset --hard refs/remotes/origin/main")
+    fetch_index = workflow.index('git fetch --no-tags "$release_repo" main:refs/remotes/aicrm-id-refactor/main')
+    reset_index = workflow.index('git reset --hard "$verified_sha"')
     after_sha_index = workflow.index('after_sha="$(git rev-parse HEAD)"')
     requirements_guard_index = workflow.index('git diff --quiet "$before_sha" "$after_sha" -- requirements.lock')
     pip_install_index = workflow.index("python -m pip install --require-hashes -r requirements.lock")
@@ -51,6 +54,23 @@ def test_production_deploy_installs_dependencies_only_when_hashed_lock_changes()
 
     assert fetch_index < reset_index < after_sha_index < requirements_guard_index < pip_install_index < alembic_upgrade_index
     assert "requirements.lock unchanged; skipping pip install" in workflow
+
+
+def test_production_deploy_fails_closed_unless_checkout_matches_verified_workflow_sha():
+    workflow = (ROOT / ".github" / "workflows" / "deploy.yml").read_text(encoding="utf-8")
+
+    verified_sha_index = workflow.index('verified_sha="${{ github.event.workflow_run.head_sha }}"')
+    release_head_index = workflow.index('release_head_sha="$(git rev-parse refs/remotes/aicrm-id-refactor/main)"')
+    head_guard_index = workflow.index('if [ "$release_head_sha" != "$verified_sha" ]; then')
+    reset_index = workflow.index('git reset --hard "$verified_sha"')
+    after_sha_index = workflow.index('after_sha="$(git rev-parse HEAD)"')
+    checkout_guard_index = workflow.index('if [ "$after_sha" != "$verified_sha" ]; then')
+    stop_index = workflow.index(_runtime_units_phase("stop-for-migration"))
+
+    assert verified_sha_index < release_head_index < head_guard_index < reset_index < after_sha_index < checkout_guard_index < stop_index
+    assert "invalid verified workflow sha" in workflow
+    assert "verified workflow sha is no longer the ID-refactor main head" in workflow
+    assert "deployed checkout does not match verified workflow sha" in workflow
 
 
 def test_production_deploy_refreshes_release_marker_before_restart_and_checks_health_header():

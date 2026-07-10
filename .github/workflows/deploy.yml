@@ -24,9 +24,24 @@ jobs:
               git stash push --include-untracked -m "deploy-backup-$(date -u +%Y%m%dT%H%M%SZ)"
             fi
             before_sha="$(git rev-parse HEAD)"
-            git fetch origin main:refs/remotes/origin/main
-            git reset --hard refs/remotes/origin/main
+            verified_sha="${{ github.event.workflow_run.head_sha }}"
+            if ! printf '%s' "$verified_sha" | grep -Eq '^[0-9a-f]{40}$'; then
+              echo "invalid verified workflow sha"
+              exit 1
+            fi
+            release_repo="https://github.com/qianlan333/AI-CRM-ID-refactor.git"
+            git fetch --no-tags "$release_repo" main:refs/remotes/aicrm-id-refactor/main
+            release_head_sha="$(git rev-parse refs/remotes/aicrm-id-refactor/main)"
+            if [ "$release_head_sha" != "$verified_sha" ]; then
+              echo "verified workflow sha is no longer the ID-refactor main head"
+              exit 1
+            fi
+            git reset --hard "$verified_sha"
             after_sha="$(git rev-parse HEAD)"
+            if [ "$after_sha" != "$verified_sha" ]; then
+              echo "deployed checkout does not match verified workflow sha"
+              exit 1
+            fi
             printf '%s\n' "$after_sha" > .release-sha
             set -a
             source /home/ubuntu/.openclaw-wecom-pg.env
