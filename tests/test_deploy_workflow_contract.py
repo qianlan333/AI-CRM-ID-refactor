@@ -79,13 +79,32 @@ def test_production_deploy_uses_bounded_ssh_fetch_retries_before_stopping_servic
 
     ssh_repo_index = workflow.index('release_repo="git@github.com:qianlan333/AI-CRM-ID-refactor.git"')
     retry_index = workflow.index("for attempt in 1 2 3; do")
-    ssh_guard_index = workflow.index('GIT_SSH_COMMAND="ssh -o BatchMode=yes -o ConnectTimeout=20')
+    ssh_command_index = workflow.index('release_ssh_command="ssh -F /home/ubuntu/.ssh/config')
+    ssh_guard_index = workflow.index('GIT_SSH_COMMAND="$release_ssh_command"')
     fetch_index = workflow.index('git fetch --no-tags "$release_repo" main:refs/remotes/aicrm-id-refactor/main')
     fetch_guard_index = workflow.index('if [ "$release_fetch_ok" != "1" ]; then')
     stop_index = workflow.index(_runtime_units_phase("stop-for-migration"))
 
-    assert ssh_repo_index < retry_index < ssh_guard_index < fetch_index < fetch_guard_index < stop_index
+    assert ssh_repo_index < ssh_command_index < retry_index < ssh_guard_index < fetch_index < fetch_guard_index < stop_index
     assert "unable to fetch verified release from ID-refactor after 3 attempts" in workflow
+
+
+def test_production_deploy_uses_pinned_server_ssh_trust_before_release_fetch():
+    workflow = (ROOT / ".github" / "workflows" / "deploy.yml").read_text(encoding="utf-8")
+
+    config_index = workflow.index('release_ssh_config="/home/ubuntu/.ssh/config"')
+    known_hosts_index = workflow.index('release_known_hosts="/home/ubuntu/.ssh/known_hosts"')
+    config_guard_index = workflow.index('if [ ! -r "$release_ssh_config" ]; then')
+    known_hosts_guard_index = workflow.index('if [ ! -r "$release_known_hosts" ]; then')
+    github_host_guard_index = workflow.index('ssh-keygen -F github.com -f "$release_known_hosts"')
+    strict_ssh_index = workflow.index('-o StrictHostKeyChecking=yes')
+    fetch_index = workflow.index('git fetch --no-tags "$release_repo" main:refs/remotes/aicrm-id-refactor/main')
+    stop_index = workflow.index(_runtime_units_phase("stop-for-migration"))
+
+    assert config_index < known_hosts_index < config_guard_index < known_hosts_guard_index
+    assert known_hosts_guard_index < github_host_guard_index < strict_ssh_index < fetch_index < stop_index
+    assert "StrictHostKeyChecking=no" not in workflow
+    assert "ssh-keyscan" not in workflow
 
 
 def test_production_deploy_refreshes_release_marker_before_restart_and_checks_health_header():
