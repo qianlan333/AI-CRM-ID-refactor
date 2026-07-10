@@ -30,16 +30,28 @@ jobs:
               exit 1
             fi
             release_repo="git@github.com:qianlan333/AI-CRM-ID-refactor.git"
-            release_known_hosts="/home/ubuntu/.ssh/known_hosts"
-            if [ ! -r "$release_known_hosts" ]; then
-              echo "release known_hosts is missing or unreadable: $release_known_hosts"
-              exit 1
-            fi
-            if ! ssh-keygen -F github.com -f "$release_known_hosts" >/dev/null; then
-              echo "github.com is not pinned in the release known_hosts file"
-              exit 1
-            fi
-            release_ssh_command="ssh -o UserKnownHostsFile=/home/ubuntu/.ssh/known_hosts -o StrictHostKeyChecking=yes -o BatchMode=yes -o ConnectTimeout=20 -o ServerAliveInterval=15 -o ServerAliveCountMax=2"
+            # Source: https://api.github.com/meta (ssh_keys and ssh_key_fingerprints), verified 2026-07-10.
+            # Rotate the key material and expected fingerprints together in one reviewed change.
+            release_known_hosts="$(mktemp /tmp/aicrm-github-known-hosts.XXXXXX)"
+            trap 'rm -f "$release_known_hosts"' EXIT
+            printf '%s\n' \
+              'github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl' \
+              'github.com ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBEmKSENjQEezOmxkZMy7opKgwFB9nkt5YRrYMjNuG5N87uRgg6CLrbo5wAdT/y6v0mKV0U2w0WZ2YB/++Tpockg=' \
+              'github.com ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQCj7ndNxQowgcQnjshcLrqPEiiphnt+VTTvDP6mHBL9j1aNUkY4Ue1gvwnGLVlOhGeYrnZaMgRK6+PKCUXaDbC7qtbW8gIkhL7aGCsOr/C56SJMy/BCZfxd1nWzAOxSDPgVsmerOBYfNqltV9/hWCqBywINIR+5dIg6JTJ72pcEpEjcYgXkE2YEFXV1JHnsKgbLWNlhScqb2UmyRkQyytRLtL+38TGxkxCflmO+5Z8CSSNY7GidjMIZ7Q4zMjA2n1nGrlTDkzwDCsw+wqFPGQA179cnfGWOWRVruj16z6XyvxvjJwbz0wQZ75XK5tKSb7FNyeIEs4TT4jk+S4dhPeAUC5y+bDYirYgM4GC7uEnztnZyaVWQ7B381AK4Qdrwt51ZqExKbQpTUNn+EjqoTwvqNj4kqx5QUCI0ThS/YkOxJCXmPUWZbhjpCg56i+2aB6CmK2JGhn57K5mj0MNdBXA4/WnwH6XoPWJzK5Nyu2zB3nAZp+S5hpQs+p1vN1/wsjk=' \
+              > "$release_known_hosts"
+            chmod 600 "$release_known_hosts"
+            release_host_fingerprints="$(ssh-keygen -lf "$release_known_hosts" -E sha256 | awk '{print $2}')"
+            for expected_fingerprint in \
+              'SHA256:+DiY3wvvV6TuJJhbpZisF/zLDA0zPMSvHdkr4UvCOqU' \
+              'SHA256:p2QAMXNIC1TJYWeIOttrVc98/R1BUFWu3/LiyKgUfQM' \
+              'SHA256:uNiVztksCsDhcc0u9e8BujQXVUpKZIDTMczCvj3tD2s'
+            do
+              if ! printf '%s\n' "$release_host_fingerprints" | grep -Fx "$expected_fingerprint" >/dev/null; then
+                echo "pinned GitHub host key fingerprint validation failed"
+                exit 1
+              fi
+            done
+            release_ssh_command="ssh -o UserKnownHostsFile=$release_known_hosts -o GlobalKnownHostsFile=/dev/null -o StrictHostKeyChecking=yes -o BatchMode=yes -o ConnectTimeout=20 -o ServerAliveInterval=15 -o ServerAliveCountMax=2"
             release_fetch_ok=0
             for attempt in 1 2 3; do
               if GIT_SSH_COMMAND="$release_ssh_command" \
