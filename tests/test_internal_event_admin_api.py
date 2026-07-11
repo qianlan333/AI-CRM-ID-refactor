@@ -147,7 +147,7 @@ def test_internal_event_admin_detail_attempts_retry_skip_and_diagnostics(next_cl
     retried = next_client.post(
         f"/api/admin/internal-events/{event_id}/consumers/webhook_order_paid_consumer/retry",
         headers={"Authorization": "Bearer event-center-token"},
-        json={},
+        json={"reason": "approved retry after timeout review"},
     )
     skipped = next_client.post(
         f"/api/admin/internal-events/{event_id}/consumers/ai_assist_notify_consumer/skip",

@@ -146,6 +146,26 @@ def test_r05_callback_runtime_files_are_mapped_to_full_pg_ci() -> None:
     assert result["needs_full_ci"] is True
 
 
+def test_r06_internal_event_outbox_files_force_full_postgres_ci() -> None:
+    result = _select(
+        "aicrm_next/platform_foundation/internal_events/outbox.py",
+        "aicrm_next/platform_foundation/internal_events/reconciliation/outbox.py",
+        "aicrm_next/public_product/h5_wechat_pay.py",
+        "migrations/versions/0099_internal_event_outbox_and_consumer_lease.py",
+        "scripts/ops/reconcile_internal_event_outbox.py",
+        "tests/test_internal_event_outbox.py",
+        "tests/test_internal_event_worker_exit.py",
+    )
+
+    assert "internal_event_outbox_reliability" in result["matched_scopes"]
+    assert result["unmatched_files"] == []
+    assert "tests/test_internal_event_outbox.py" in result["python_tests"]
+    assert "tests/test_internal_event_worker_exit.py" in result["python_tests"]
+    assert result["needs_postgres"] is True
+    assert result["architecture_gate"] == "full"
+    assert result["needs_full_ci"] is True
+
+
 def test_unionid_identity_cutover_changes_force_pg_full_ci_without_unmapped_files() -> None:
     result = _select(
         "aicrm_next/automation_agents/repository.py",

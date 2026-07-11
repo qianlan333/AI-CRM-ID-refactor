@@ -3,8 +3,10 @@ from __future__ import annotations
 from fastapi.testclient import TestClient
 
 from aicrm_next.platform_foundation.external_effects import WEBHOOK_ORDER_PAID_PUSH, ExternalEffectService, reset_external_effect_fixture_state
-from aicrm_next.platform_foundation.internal_events import InternalEventService, reset_internal_event_fixture_state
+from aicrm_next.platform_foundation.internal_events import InternalEventService, register_payment_succeeded_consumers, reset_internal_event_fixture_state
+from aicrm_next.platform_foundation.internal_events.outbox import InternalEventOutboxRelay
 from aicrm_next.platform_foundation.internal_events.payment import PAYMENT_SUCCEEDED_EVENT_TYPE
+from aicrm_next.platform_foundation.internal_events.repository import build_internal_event_repository
 from aicrm_next.platform_foundation.internal_events.worker import InternalEventWorker
 from aicrm_next.public_product import h5_wechat_pay
 from aicrm_next.public_product.h5_wechat_pay import _apply_transaction
@@ -142,6 +144,11 @@ def _enable_shadow_payment_events(monkeypatch) -> None:
     monkeypatch.setenv("AICRM_EXTERNAL_EFFECT_WEBHOOK_EXECUTE", "0")
     monkeypatch.setenv("AICRM_EXTERNAL_EFFECT_ALLOWED_TYPES", "")
     monkeypatch.setattr("aicrm_next.commerce.external_push_admin.resolve_and_validate_public_https_url", lambda url: url)
+    monkeypatch.setattr(
+        h5_wechat_pay,
+        "enqueue_transactional_internal_event_outbox",
+        lambda conn, request: build_internal_event_repository().enqueue_outbox(request).to_dict(),
+    )
 
 
 def _reset_state() -> None:
@@ -162,6 +169,8 @@ def _emit_payment(monkeypatch, *, out_trade_no: str = "WXP_SINGLE_CONSUMER"):
     _enable_shadow_payment_events(monkeypatch)
     _patch_legacy_outbox(monkeypatch)
     _apply_transaction(_PaymentConn(out_trade_no=out_trade_no), _transaction(out_trade_no))
+    register_payment_succeeded_consumers()
+    assert InternalEventOutboxRelay().relay_due(limit=10)["ok"] is True
     event = InternalEventService().list_events({"event_type": PAYMENT_SUCCEEDED_EVENT_TYPE})[0][0]
     runs, total = InternalEventService().list_consumer_runs({"event_id": event.event_id})
     assert total == 7

@@ -1,5 +1,5 @@
 [Unit]
-Description=AI-CRM Internal Event Worker - dispatch due internal consumers
+Description=AI-CRM Internal Event Worker - relay transactional outbox and dispatch due consumers
 After=network.target openclaw-wecom-postgres.service
 Requires=openclaw-wecom-postgres.service
 

@@ -386,11 +386,13 @@ repositories:
       - internal_event
       - internal_event_consumer_attempt
       - internal_event_consumer_run
+      - internal_event_outbox
       - wechat_pay_orders
     table_writes:
       - internal_event
       - internal_event_consumer_attempt
       - internal_event_consumer_run
+      - internal_event_outbox
   aicrm_next/platform_foundation/legacy_cleanup/repo.py:
     capability_owner: aicrm_next.platform_foundation.legacy_cleanup
     table_reads: []

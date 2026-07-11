@@ -1309,6 +1309,8 @@ def emit_owner_migration_executed_shadow_event(
 
 
 def safe_emit(label: str, func, **kwargs: Any) -> dict[str, Any]:
+    """Best-effort shadow telemetry only; business events must use transactional outbox."""
+
     try:
         return func(**kwargs)
     except Exception as exc:

@@ -718,7 +718,8 @@
   async function mutateConsumer(eventId, consumerName, action) {
     const credential = window.prompt("请输入管理员操作口令");
     if (!credential) return;
-    const reason = action === "skip" ? window.prompt("跳过原因", "operator_skip") || "" : "";
+    const reason = window.prompt(action === "skip" ? "跳过原因（必填）" : "重试原因（必填）", action === "skip" ? "operator_skip" : "operator_retry") || "";
+    if (!reason.trim()) return;
     const actionHeader = "X-Admin-Action-" + "To" + "ken";
     const response = await fetch(`/api/admin/internal-events/${encodeURIComponent(eventId)}/consumers/${encodeURIComponent(consumerName)}/${action}`, {
       method: "POST",

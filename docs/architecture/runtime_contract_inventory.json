@@ -365,7 +365,7 @@
       "accessor": "os.getenv",
       "file": "aicrm_next/platform_foundation/internal_events/worker.py",
       "key": "AICRM_INTERNAL_EVENTS_AUTO_EXECUTE_MAX_BATCH_SIZE",
-      "line": 184
+      "line": 199
     },
     {
       "accessor": "os.getenv",
@@ -2663,7 +2663,7 @@
     }
   ],
   "migration_heads": [
-    "0098_admin_session_revocation"
+    "0099_internal_event_outbox_and_consumer_lease"
   ],
   "openapi_components": {
     "schemas": {
@@ -43075,7 +43075,7 @@
       "domain": "internal_events",
       "drop_candidate": false,
       "lifecycle": "audit",
-      "migration_source": "0043_internal_event_queue",
+      "migration_source": "0043_internal_event_queue, manual retry audit hardened by 0099_internal_event_outbox_and_consumer_lease",
       "pii_level": "",
       "read_owners": [
         "internal event admin/reconciliation APIs"
@@ -43087,13 +43087,26 @@
       "domain": "internal_events",
       "drop_candidate": false,
       "lifecycle": "queue",
-      "migration_source": "0043_internal_event_queue",
+      "migration_source": "0043_internal_event_queue, lease CAS hardened by 0099_internal_event_outbox_and_consumer_lease",
       "pii_level": "",
       "read_owners": [
         "internal event admin/reconciliation APIs"
       ],
       "table": "internal_event_consumer_run",
       "write_owner": "aicrm_next.platform_foundation.internal_events.worker"
+    },
+    {
+      "domain": "internal_events",
+      "drop_candidate": false,
+      "lifecycle": "queue",
+      "migration_source": "0099_internal_event_outbox_and_consumer_lease",
+      "pii_level": "restricted_business_payload",
+      "read_owners": [
+        "aicrm_next.platform_foundation.internal_events.reconciliation",
+        "aicrm_next.platform_foundation.internal_events.worker"
+      ],
+      "table": "internal_event_outbox",
+      "write_owner": "aicrm_next.platform_foundation.internal_events.outbox"
     },
     {
       "domain": "legacy_webhook_cleanup",

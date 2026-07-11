@@ -194,6 +194,7 @@ _TABLES_TO_TRUNCATE = [
     "internal_event_consumer_attempt",
     "internal_event_consumer_run",
     "internal_event",
+    "internal_event_outbox",
     "external_effect_attempt",
     "external_effect_test_receipt",
     "external_effect_job",

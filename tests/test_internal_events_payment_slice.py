@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 from aicrm_next.platform_foundation.external_effects import WEBHOOK_ORDER_PAID_PUSH, ExternalEffectService, reset_external_effect_fixture_state
-from aicrm_next.platform_foundation.internal_events import InternalEventService, reset_internal_event_fixture_state
+from aicrm_next.platform_foundation.internal_events import InternalEventService, register_payment_succeeded_consumers, reset_internal_event_fixture_state
+from aicrm_next.platform_foundation.internal_events.outbox import InternalEventOutboxRelay
 from aicrm_next.platform_foundation.internal_events.payment import PAYMENT_SUCCEEDED_EVENT_TYPE
+from aicrm_next.platform_foundation.internal_events.repository import build_internal_event_repository
 from aicrm_next.platform_foundation.internal_events.worker import InternalEventWorker
 from aicrm_next.public_product import h5_wechat_pay
 from aicrm_next.public_product.h5_wechat_pay import _apply_transaction
@@ -128,6 +130,19 @@ def _enable_payment_events(monkeypatch) -> None:
     monkeypatch.setenv("AICRM_INTERNAL_EVENTS_SHADOW_ONLY", "0")
     monkeypatch.setenv("AICRM_INTERNAL_EVENTS_PAYMENT_DISABLE_LEGACY_AUTOMATION_DIRECT", "1")
     monkeypatch.setattr("aicrm_next.commerce.external_push_admin.resolve_and_validate_public_https_url", lambda url: url)
+    monkeypatch.setattr(
+        h5_wechat_pay,
+        "enqueue_transactional_internal_event_outbox",
+        lambda conn, request: build_internal_event_repository().enqueue_outbox(request).to_dict(),
+    )
+
+
+def _apply_and_relay(conn, transaction):
+    order = _apply_transaction(conn, transaction)
+    register_payment_succeeded_consumers()
+    relayed = InternalEventOutboxRelay().relay_due(limit=10)
+    assert relayed["ok"] is True
+    return order
 
 
 def _reset_state() -> None:
@@ -157,8 +172,8 @@ def test_payment_success_emits_payment_succeeded_and_duplicate_notify_is_idempot
     _patch_legacy_outbox(monkeypatch)
 
     conn = _PaymentConn()
-    first = _apply_transaction(conn, _transaction())
-    second = _apply_transaction(conn, _transaction())
+    first = _apply_and_relay(conn, _transaction())
+    second = _apply_and_relay(conn, _transaction())
     events, event_total = InternalEventService().list_events({"event_type": PAYMENT_SUCCEEDED_EVENT_TYPE})
     runs, run_total = InternalEventService().list_consumer_runs({"event_id": events[0].event_id})
 
@@ -202,7 +217,7 @@ def test_webhook_order_paid_consumer_creates_external_effect_job_without_externa
     _enable_payment_events(monkeypatch)
     _patch_legacy_outbox(monkeypatch)
     conn = _PaymentConn()
-    _apply_transaction(conn, _transaction())
+    _apply_and_relay(conn, _transaction())
     event = InternalEventService().list_events({"event_type": PAYMENT_SUCCEEDED_EVENT_TYPE})[0][0]
     legacy_jobs, legacy_total = ExternalEffectService().list_jobs({"effect_type": WEBHOOK_ORDER_PAID_PUSH, "business_id": "77"})
     legacy_job = legacy_jobs[0]
@@ -232,7 +247,7 @@ def test_retired_automation_payment_consumer_is_not_registered(monkeypatch) -> N
     _reset_state()
     _enable_payment_events(monkeypatch)
     _patch_legacy_outbox(monkeypatch)
-    _apply_transaction(_PaymentConn(), _transaction())
+    _apply_and_relay(_PaymentConn(), _transaction())
     event = InternalEventService().list_events({"event_type": PAYMENT_SUCCEEDED_EVENT_TYPE})[0][0]
 
     runs, _ = InternalEventService().list_consumer_runs({"event_id": event.event_id, "consumer_name": "automation_payment_consumer"})
@@ -249,7 +264,7 @@ def test_webhook_order_paid_consumer_skips_when_no_configured_job_or_production_
     _reset_state()
     _enable_payment_events(monkeypatch)
     _patch_legacy_outbox(monkeypatch)
-    _apply_transaction(_PaymentConn(), _transaction())
+    _apply_and_relay(_PaymentConn(), _transaction())
     reset_external_effect_fixture_state()
     _delete_order_paid_external_effect_jobs("WXP_INTERNAL_PAYMENT")
 
@@ -270,7 +285,7 @@ def test_dnd_consumer_is_skipped_with_visible_reason(monkeypatch) -> None:
     _reset_state()
     _enable_payment_events(monkeypatch)
     _patch_legacy_outbox(monkeypatch)
-    _apply_transaction(_PaymentConn(), _transaction())
+    _apply_and_relay(_PaymentConn(), _transaction())
     event = InternalEventService().list_events({"event_type": PAYMENT_SUCCEEDED_EVENT_TYPE})[0][0]
 
     result = InternalEventWorker().run_due(batch_size=1, dry_run=False, consumer_names=["dnd_policy_consumer"])
@@ -289,7 +304,7 @@ def test_retired_automation_consumer_absence_does_not_affect_payment_apply_resul
     _enable_payment_events(monkeypatch)
     _patch_legacy_outbox(monkeypatch)
 
-    order = _apply_transaction(_PaymentConn(), _transaction())
+    order = _apply_and_relay(_PaymentConn(), _transaction())
     event = InternalEventService().list_events({"event_type": PAYMENT_SUCCEEDED_EVENT_TYPE})[0][0]
     result = InternalEventWorker().dispatch_one_consumer(event.event_id, "automation_payment_consumer", dry_run=False)
 

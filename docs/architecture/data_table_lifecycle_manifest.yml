@@ -1580,7 +1580,31 @@ tables:
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_event_effect_table_lineage.py
-    notes: Canonical internal event ledger. Handlers must enqueue external_effect_job for real external calls.
+    notes: Canonical internal event ledger. Business-critical producers first write internal_event_outbox in the business transaction; relay atomically creates this row and all registered consumer runs. Handlers must enqueue external_effect_job for real external calls.
+
+  internal_event_outbox:
+    domain: internal_events
+    lifecycle: queue
+    write_owner: aicrm_next.platform_foundation.internal_events.outbox
+    status_enum:
+      column: status
+    read_owners:
+      - aicrm_next.platform_foundation.internal_events.worker
+      - aicrm_next.platform_foundation.internal_events.reconciliation
+    replacement: none; transactional durability boundary for existing internal business events
+    drop_candidate: false
+    drop_after: ""
+    runtime_entrypoints:
+      - payment business transaction
+      - internal event outbox relay
+      - internal event outbox reconciliation
+    migration_source: 0099_internal_event_outbox_and_consumer_lease
+    pii_level: restricted_business_payload
+    guard_tests:
+      - tests/test_data_table_lifecycle_guard.py
+      - tests/test_event_effect_table_lineage.py
+      - tests/test_internal_event_outbox.py
+    notes: Technical outbox only; it replaces cross-connection best-effort internal event writes and does not add a product capability. Repair never executes consumers or providers.
 
   internal_event_consumer_run:
     domain: internal_events
@@ -1596,11 +1620,11 @@ tables:
     runtime_entrypoints:
       - internal event consumer scheduling
       - internal event worker retry
-    migration_source: 0043_internal_event_queue
+    migration_source: 0043_internal_event_queue, lease CAS hardened by 0099_internal_event_outbox_and_consumer_lease
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_event_effect_table_lineage.py
-    notes: Tracks consumer execution state for internal_event.
+    notes: Tracks consumer execution state for internal_event. Automatic due is limited to pending, due failed_retryable, and stale running; failed_terminal/blocked require audited manual action.
 
   internal_event_consumer_attempt:
     domain: internal_events
@@ -1613,7 +1637,7 @@ tables:
     drop_after: ""
     runtime_entrypoints:
       - internal event worker attempt logging
-    migration_source: 0043_internal_event_queue
+    migration_source: 0043_internal_event_queue, manual retry audit hardened by 0099_internal_event_outbox_and_consumer_lease
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_event_effect_table_lineage.py

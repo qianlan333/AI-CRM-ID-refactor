@@ -9,6 +9,7 @@ merges must be done in later PRs with producer/consumer evidence.
 
 | Table | Role | Lifecycle | Current owner | Convergence rule |
 | --- | --- | --- | --- | --- |
+| `internal_event_outbox` | Transactional durability boundary for existing internal business events | queue | `platform_foundation.internal_events.outbox` | Keep. Business-critical producers write it in the business transaction; relay creates the canonical event and runs. |
 | `internal_event` | Canonical internal event ledger | event | `platform_foundation.internal_events.service` | Keep. Internal handlers must not execute real external calls directly. |
 | `internal_event_consumer_run` | Internal event consumer queue state | queue | `platform_foundation.internal_events.worker` | Keep. One row per event/consumer execution state. |
 | `internal_event_consumer_attempt` | Internal consumer attempt audit | audit | `platform_foundation.internal_events.worker` | Keep. Append-only execution evidence. |
@@ -23,6 +24,8 @@ merges must be done in later PRs with producer/consumer evidence.
 
 ```text
 domain business action
+  -> internal_event_outbox in the same business transaction
+  -> idempotent relay
   -> internal_event for in-process business state fanout
   -> internal_event_consumer_run / internal_event_consumer_attempt for handler execution
   -> external_effect_job for real external side effects
@@ -50,10 +53,13 @@ outbound event
 
 1. `internal_event*` remains internal only; external calls must be queued through
    `external_effect_job`.
-2. `external_effect_job` and `external_effect_attempt` are the canonical external
+2. `internal_event_outbox` relay creates `internal_event` and every registered
+   `internal_event_consumer_run` in one local transaction. Duplicate relay reuses
+   the existing event/run unique keys.
+3. `external_effect_job` and `external_effect_attempt` are the canonical external
    side-effect queue and audit pair.
-3. `domain_event_outbox`, `external_push_delivery`,
+4. `domain_event_outbox`, `external_push_delivery`,
    `outbound_webhook_deliveries`, and `outbound_event_outbox` are not deleted in
    PR #13 because active runtime references still exist.
-4. Later deletion PRs must prove producer and reader parity before marking any of
+5. Later deletion PRs must prove producer and reader parity before marking any of
    the legacy boundary tables as retired.
