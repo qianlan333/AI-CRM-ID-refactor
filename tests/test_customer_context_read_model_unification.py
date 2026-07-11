@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 from aicrm_next.customer_read_model.application import GetCustomerContextQuery
 from aicrm_next.customer_read_model.dto import CustomerContextRequest
 from aicrm_next.integration_gateway.dispatch import McpToolDispatcher
+from tests.sidebar_auth_test_helpers import install_sidebar_auth
 
 
 def _context_payload(external_userid: str = "wx_ext_001") -> dict:
@@ -89,6 +90,13 @@ def test_sidebar_and_profile_readonly_routes_reuse_customer_context_query(monkey
     monkeypatch.setattr(customer_api, "GetCustomerContextQuery", FakeGetCustomerContextQuery)
     monkeypatch.setattr(customer_application, "GetCustomerContextQuery", FakeGetCustomerContextQuery)
     client = TestClient(create_app())
+    client.headers.update(
+        install_sidebar_auth(
+            client,
+            viewer_userid="ZhaoYanFang",
+            external_userid="wx_ext_001",
+        )
+    )
 
     sidebar_response = client.get("/api/sidebar/customer-context?external_userid=wx_ext_001&owner_userid=ZhaoYanFang")
     profile_response = client.get("/api/admin/customers/profile?external_userid=wx_ext_001")

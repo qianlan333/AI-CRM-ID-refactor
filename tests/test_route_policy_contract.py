@@ -72,9 +72,10 @@ def test_known_unsafe_routes_have_explicit_deny_by_default_policies() -> None:
         "csrf": True,
     })
     _assert_policy("/api/h5/questionnaires/{slug}/result/{submission_id}", "GET", {
-        "auth_scheme": "path_token",
+        "auth_scheme": "signed_session_grant",
         "access_scope": "single_resource",
         "pii_level": "sensitive",
+        "requires_auth": True,
     })
 
 

@@ -239,6 +239,7 @@ _TABLES_TO_TRUNCATE = [
     "class_user_status_current",
     "class_user_status_history",
     # — user_ops
+    "user_ops_send_records_next",
     "user_ops_huangxiaocan_activation_source",
     "user_ops_activation_status_source",
     "signup_tag_rules",

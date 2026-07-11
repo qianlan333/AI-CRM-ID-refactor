@@ -98,13 +98,15 @@ def test_service_period_change_selects_service_period_slice() -> None:
     assert result["needs_full_ci"] is False
 
 
-def test_identity_contact_change_selects_pg_and_db_architecture_gate() -> None:
+def test_identity_contact_change_selects_access_pg_and_full_architecture_gate() -> None:
     result = _select("aicrm_next/identity_contact/application.py")
 
     assert "identity_contact" in result["matched_scopes"]
+    assert "sidebar_questionnaire_access" in result["matched_scopes"]
     assert "tests/test_identity_application_contract.py" in result["python_tests"]
     assert result["needs_postgres"] is True
-    assert result["architecture_gate"] == "db"
+    assert result["architecture_gate"] == "full"
+    assert result["needs_full_ci"] is True
 
 
 def test_wecom_callback_ops_change_selects_identity_contact_slice() -> None:
@@ -154,19 +156,25 @@ def test_sidebar_write_change_selects_write_command_regression() -> None:
     result = _select("aicrm_next/sidebar_write/repo.py")
 
     assert "customer_read_model_sidebar" in result["matched_scopes"]
+    assert "sidebar_questionnaire_access" in result["matched_scopes"]
     assert "tests/test_sidebar_write_commands.py" in result["python_tests"]
     assert result["needs_postgres"] is True
-    assert result["architecture_gate"] == "db"
+    assert result["architecture_gate"] == "full"
+    assert result["needs_full_ci"] is True
 
 
 def test_signed_session_change_selects_sidebar_shared_runtime_slice() -> None:
     result = _select("aicrm_next/shared/signed_session.py")
 
-    assert result["matched_scopes"] == ["shared_sidebar_runtime"]
+    assert result["matched_scopes"] == [
+        "sidebar_questionnaire_access",
+        "shared_sidebar_runtime",
+    ]
     assert "tests/test_sidebar_jssdk_adapter.py" in result["python_tests"]
     assert "tests/test_shared_flask_config_retirement.py" in result["python_tests"]
-    assert result["needs_postgres"] is False
-    assert result["architecture_gate"] == "fast"
+    assert result["needs_postgres"] is True
+    assert result["architecture_gate"] == "full"
+    assert result["needs_full_ci"] is True
 
 
 def test_ai_assist_external_campaign_change_selects_focused_python_slice() -> None:

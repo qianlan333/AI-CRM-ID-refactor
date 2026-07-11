@@ -228,11 +228,19 @@ def _add_shape_blockers(probes: dict[str, Any]) -> tuple[list[str], list[str]]:
     else:
         blockers.append("public_questionnaire_not_json")
 
-    result_payload = probes.get(
+    result_probe = probes.get(
         "GET /api/h5/questionnaires/hxc-activation-v1/result/result_fixture_001_grant_7e3a9c5b2d8f4a61",
         {},
-    ).get("json")
-    if isinstance(result_payload, dict):
+    )
+    result_payload = result_probe.get("json")
+    result_status = int(result_probe.get("status_code") or 0)
+    if (
+        result_status == 403
+        and isinstance(result_payload, dict)
+        and result_payload.get("error_code") == "questionnaire_result_access_forbidden"
+    ):
+        pass
+    elif isinstance(result_payload, dict):
         if "result" not in result_payload:
             blockers.append("submission_result_missing_result")
         if "result_message" not in result_payload:

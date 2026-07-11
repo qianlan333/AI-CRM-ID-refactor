@@ -6029,10 +6029,10 @@ routes:
   layer: api
   external_effects: none
   data_source: read_model
-  requires_auth: false
+  requires_auth: true
   rollback: previous_release
   audience: public_h5
-  auth_scheme: path_token
+  auth_scheme: signed_session_grant
   capability: public_result_read
   access_scope: single_resource
   pii_level: sensitive

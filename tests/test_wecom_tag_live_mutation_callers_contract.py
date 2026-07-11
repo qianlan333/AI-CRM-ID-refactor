@@ -8,6 +8,7 @@ from aicrm_next.customer_tags.mutation_commands import PlanCustomerTagAssignment
 from aicrm_next.identity_contact.dto import IdentityResolution
 from aicrm_next.main import create_app
 from aicrm_next.questionnaire import h5_write
+from tests.sidebar_auth_test_helpers import install_sidebar_auth
 
 
 def _client(monkeypatch) -> TestClient:
@@ -21,11 +22,17 @@ def _client(monkeypatch) -> TestClient:
 
 def test_sidebar_signup_tag_mutation_remains_plan_only(monkeypatch) -> None:
     client = _client(monkeypatch)
+    headers = install_sidebar_auth(
+        client,
+        viewer_userid="ZhaoYanFang",
+        external_userid="wx_ext_001",
+    )
+    headers["Idempotency-Key"] = "sidebar-tag-plan-only"
 
     response = client.post(
         "/api/sidebar/signup-tags/mark",
         json={"external_userid": "wx_ext_001", "tag_id": "tag_fixture_active", "marked": True},
-        headers={"Idempotency-Key": "sidebar-tag-plan-only"},
+        headers=headers,
     )
 
     assert response.status_code == 200

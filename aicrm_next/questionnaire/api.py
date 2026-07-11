@@ -22,6 +22,7 @@ from aicrm_next.shared.pii_audit import infer_pii_result_count, set_pii_audit_re
 from aicrm_next.shared.runtime import production_data_ready
 from aicrm_next.shared.runtime_settings import runtime_setting
 from aicrm_next.shared.safe_logging import safe_log_fields
+from aicrm_next.shared.signed_session import session_cookie_secure
 
 from .admin_write import (
     QuestionnaireAdminWriteCommand,
@@ -60,6 +61,11 @@ from .application import (
 from .dto import OAuthCallbackRequest, OAuthStartRequest
 from .oauth import COOKIE_NAME, questionnaire_oauth_state_context
 from .public_access import QuestionnaireRespondentIdentityService
+from .result_access import (
+    issue_questionnaire_result_grant,
+    result_grant_cookie_name,
+    validate_questionnaire_result_grant,
+)
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -555,6 +561,11 @@ async def _execute_h5_submit(request: Request, slug: str) -> Response:
             )
         submit_identity = dict(request_identity)
         submit_identity.update(_h5_identity_payload(payload))
+        submission_identity_result = QuestionnaireRespondentIdentityService().resolve(
+            cookies=request.cookies,
+            request_identity=submit_identity,
+            slug=slug,
+        )
         command = QuestionnaireH5SubmitCommand(
             questionnaire_slug=slug,
             answers=_h5_submit_answers_payload(payload),
@@ -568,8 +579,24 @@ async def _execute_h5_submit(request: Request, slug: str) -> Response:
             source_route=request.url.path,
             trace_id=str(payload.get("trace_id") or request.headers.get("X-Request-Id") or uuid4().hex),
         )
-        response = execute_questionnaire_h5_submit(command)
-        return JSONResponse(jsonable_encoder(response), status_code=200)
+        payload_response = execute_questionnaire_h5_submit(command)
+        response = JSONResponse(jsonable_encoder(payload_response), status_code=200)
+        result_access_token = str(payload_response.get("result_access_token") or "").strip()
+        if result_access_token:
+            grant = issue_questionnaire_result_grant(
+                slug=slug,
+                result_access_token=result_access_token,
+            )
+            response.set_cookie(
+                grant.cookie_name,
+                grant.cookie_value,
+                httponly=True,
+                secure=session_cookie_secure(),
+                samesite="lax",
+                max_age=grant.max_age_seconds,
+                path=grant.cookie_path,
+            )
+        return _with_identity_cookie(response, submission_identity_result)
     except QuestionnaireH5WriteInputError as exc:
         return _h5_write_error(
             str(exc),
@@ -768,7 +795,7 @@ def _with_identity_cookie(response: Response, identity_result: dict[str, Any]) -
             str(identity_result.get("cookie_name") or COOKIE_NAME),
             cookie_value,
             httponly=True,
-            secure=False,
+            secure=session_cookie_secure(),
             samesite="lax",
             max_age=60 * 60 * 24 * 365,
             path="/",
@@ -971,7 +998,25 @@ def public_questionnaire_client_diagnostics_options(slug: str) -> Response:
 
 
 @router.get("/api/h5/questionnaires/{slug}/result/{submission_id}")
-def public_submission_result(slug: str, submission_id: str) -> dict:
+def public_submission_result(request: Request, slug: str, submission_id: str) -> dict:
+    grant_cookie = request.cookies.get(result_grant_cookie_name(submission_id))
+    if not validate_questionnaire_result_grant(
+        grant_cookie,
+        slug=slug,
+        result_access_token=submission_id,
+    ):
+        set_pii_audit_result_count(request, 0)
+        return JSONResponse(
+            {
+                "ok": False,
+                "error_code": "questionnaire_result_access_forbidden",
+                "message": "questionnaire result access forbidden",
+                "route_owner": "ai_crm_next",
+                "source_status": "access_forbidden",
+                "fallback_used": False,
+            },
+            status_code=403,
+        )
     try:
         return GetSubmissionResultQuery()(slug, submission_id)
     except Exception as exc:

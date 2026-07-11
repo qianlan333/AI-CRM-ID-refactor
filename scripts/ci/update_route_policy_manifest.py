@@ -176,7 +176,7 @@ def _policy_for(entry: dict[str, Any]) -> dict[str, Any]:
         if path.startswith("/api/h5/questionnaires/") and "/result/" in path:
             return _policy(
                 "public_h5",
-                "path_token",
+                "signed_session_grant",
                 "public_result_read",
                 "single_resource",
                 "sensitive",

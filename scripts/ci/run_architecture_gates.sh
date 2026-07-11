@@ -41,6 +41,7 @@ run_full_only() {
   "$PYTHON" scripts/ci/runtime_contract_inventory.py --check docs/architecture/runtime_contract_inventory.json
   "$PYTHON" scripts/ci/check_high_risk_contract_inventory.py
   "$PYTHON" scripts/ci/check_unionid_identity_contract.py
+  "$PYTHON" scripts/ci/check_sidebar_questionnaire_access_contract.py
   "$PYTHON" scripts/ci/check_pii_logging.py
   "$PYTHON" scripts/ci/check_dependency_security.py
 }

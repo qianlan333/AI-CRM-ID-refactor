@@ -23,7 +23,7 @@ def test_sidebar_workbench_v2_page_is_next_owned(client):
     assert 'data-periodic-orders-url="/api/sidebar/v2/periodic-orders"' in html
     assert 'data-periodic-order-remark-url="/api/sidebar/v2/periodic-orders"' in html
     assert "sidebar_workbench/sidebar_workbench.js" in html
-    assert "sidebar_workbench/sidebar_workbench.js?v=20260709-periodic-product-tabs" in html
+    assert "sidebar_workbench/sidebar_workbench.js?v=20260711-r04-access-boundary" in html
     assert "sidebar_workbench/sidebar_workbench.css?v=20260709-periodic-product-tabs" in html
     assert "自动化转化操作区" not in html
 
