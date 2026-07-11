@@ -25,7 +25,7 @@ from aicrm_next.integration_gateway.wechat_oauth_client import WeChatOAuthClient
 from aicrm_next.platform_foundation.internal_events.outbox import enqueue_transactional_internal_event_outbox
 from aicrm_next.platform_foundation.internal_events.payment import PAYMENT_SUCCEEDED_EVENT_TYPE, build_payment_succeeded_event_request
 from aicrm_next.questionnaire.oauth import questionnaire_h5_identity_from_cookies
-from aicrm_next.shared.runtime import production_data_ready
+from aicrm_next.shared.runtime import production_data_ready, runtime_setting
 from aicrm_next.shared.safe_logging import safe_log_exception, safe_log_fields
 
 from .repo import connect_h5_wechat_pay_db as _connect
@@ -46,6 +46,10 @@ def _normalized_text(value: Any) -> str:
 
 def _env(name: str, default: str = "") -> str:
     return _normalized_text(os.getenv(name, default))
+
+
+def _sensitive_setting(name: str, default: str = "") -> str:
+    return _normalized_text(runtime_setting(name, default))
 
 
 def _env_bool(name: str, default: bool = False) -> bool:
@@ -77,7 +81,11 @@ def _oauth_client():
 
 
 def _secret() -> str:
-    return _env("AICRM_NEXT_ACTION_TOKEN_SECRET") or _env("SECRET_KEY") or "aicrm-next-h5-wechat-pay-dev-secret"
+    return (
+        _sensitive_setting("AICRM_NEXT_ACTION_TOKEN_SECRET")
+        or _sensitive_setting("SECRET_KEY")
+        or "aicrm-next-h5-wechat-pay-dev-secret"
+    )
 
 
 def _b64encode(payload: bytes) -> str:
@@ -133,7 +141,7 @@ def _external_base_url(request: Request) -> str:
 
 
 def _oauth_configured() -> bool:
-    return bool(_env("WECHAT_MP_APP_ID") and _env("WECHAT_MP_APP_SECRET") and _secret())
+    return bool(_env("WECHAT_MP_APP_ID") and _sensitive_setting("WECHAT_MP_APP_SECRET") and _secret())
 
 
 def _wechat_oauth_scope() -> str:
@@ -218,7 +226,11 @@ def payment_oauth_callback(request: Request) -> RedirectResponse | JSONResponse:
         return JSONResponse({"ok": False, "error": "code_required"}, status_code=400, headers=route_headers())
     try:
         client = _oauth_client()
-        oauth_payload = client.exchange_code(app_id=_env("WECHAT_MP_APP_ID"), app_secret=_env("WECHAT_MP_APP_SECRET"), code=code)
+        oauth_payload = client.exchange_code(
+            app_id=_env("WECHAT_MP_APP_ID"),
+            app_secret=_sensitive_setting("WECHAT_MP_APP_SECRET"),
+            code=code,
+        )
     except (WeChatOAuthClientError, Exception):
         return JSONResponse({"ok": False, "error": "wechat_oauth_failed"}, status_code=502, headers=route_headers())
     if oauth_payload.get("errcode") not in (None, 0):
@@ -284,9 +296,9 @@ def _client_config() -> WeChatPayClientConfig:
     return WeChatPayClientConfig(
         app_id=app_id,
         mch_id=_env("WECHAT_PAY_MCH_ID"),
-        api_v3_key=_env("WECHAT_PAY_API_V3_KEY"),
+        api_v3_key=_sensitive_setting("WECHAT_PAY_API_V3_KEY"),
         private_key_path=_env("WECHAT_PAY_PRIVATE_KEY_PATH"),
-        merchant_serial_no=_env("WECHAT_PAY_CERT_SERIAL_NO"),
+        merchant_serial_no=_sensitive_setting("WECHAT_PAY_CERT_SERIAL_NO"),
         platform_public_key_path=_env("WECHAT_PAY_PLATFORM_PUBLIC_KEY_PATH"),
         platform_serial_no=_env("WECHAT_PAY_PLATFORM_CERT_SERIAL_NO"),
         api_base=_env("WECHAT_PAY_API_BASE") or "https://api.mch.weixin.qq.com",
