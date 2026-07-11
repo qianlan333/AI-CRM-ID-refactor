@@ -19,6 +19,7 @@
 3. 确认 PostgreSQL 连接可用，`app_settings`、`admin_operation_logs` 表存在，Alembic 已升级到当前 release。
 4. 禁止 `set -x`、`env`、`printenv` 或带值的 SQL 输出；不得把环境文件内容复制到工单或日志。
 5. 确认目标目录所在磁盘有足够空间，并且 `/home/ubuntu` 不是不受信任的共享挂载。
+6. 确认 `qianlan333/AI-CRM` 是唯一生产发布源；旧仓库的 `Deploy to Production` workflow 必须已停用或撤销生产部署凭据。仓库内 concurrency 不能替代这项跨仓库退役动作。
 
 内部服务令牌必须按用途独立：`MCP_BEARER_TOKEN`、`IDENTITY_INTERNAL_API_TOKEN`、`ARCHIVE_INTERNAL_API_TOKEN`、`GROUP_BROADCAST_INTERNAL_API_TOKEN`、`CALLBACK_INTERNAL_API_TOKEN` 与 `AUTOMATION_INTERNAL_API_TOKEN` 不得复用值。若仅存在旧的 `AUTOMATION_INTERNAL_API_TOKEN`，正式迁移会为缺失的五个用途生成互不相同的随机令牌，写入 secret store，并只把引用写回 DB/环境文件；令牌不会从旧值派生，也不会出现在命令输出中。
 
@@ -40,6 +41,23 @@ python3 scripts/ops/migrate_app_setting_secrets.py --dry-run \
 预演只报告 `key/source/version/present/status` 和计数，不创建目录、不写数据库、不修改环境文件。存在原文、缺失的用途令牌、已有令牌冲突或历史审计原文时，`ok=false`，并通过 `plaintext_pending`、`generated_pending`、`internal_token_rotations_pending` 和 `audit_rows_redaction_pending` 的计数说明待处理量；输出中不应出现任何配置值或命中的审计内容。
 
 ## 正式切换
+
+### 发布事务固定顺序
+
+生产发布不是“更新代码后重启”，而是一个由 systemd 持久闸门保护的事务，顺序不得调整：
+
+1. 获取 `/home/ubuntu/.aicrm-production-deploy.lock` 主机锁，并完成 release bundle、checksum、workflow SHA 校验；bundle 临时目录必须包含 GitHub run ID 与 attempt，避免并发上传互相覆盖。
+2. 从已验证 release 中解出 runtime manager、manifest 与 deploy guard；此时不修改工作树。
+3. 给 primary、active、approval 与 retired 运行单元安装 `00-aicrm-deploy-transaction-guard.conf`，创建 `/home/ubuntu/.aicrm-production-deploy-in-progress`。该文件存在且没有对应 `/run` 授权时，systemd `ConditionPathExists` 会拒绝 timer、依赖或人工启动；闸门文件持久化，主机重启不会绕过失败关闭。
+4. 停止并核对全部 active/approval timer、对应 service、active service 和主 Web；退役 unit 必须 disabled、inactive、not-failed，5001 必须无监听。任一停止或状态核对失败都中止发布。
+5. 只有运行时完全静默后，才允许 stash、`git reset --hard`、写 `.release-sha`、安装依赖和执行 Alembic。
+6. 执行本手册下方的 Secret migration 与 reconciliation。任一对账项失败时保留 deploy-in-progress 闸门，Web 和 worker 均不得恢复。
+7. 从当前 release 安装并 enable 唯一主 Web unit `openclaw-wecom-postgres.service`，删除重复的 `/etc/systemd/system/aicrm-web.service`。此时 deploy-in-progress 仍保留；只创建运行时授权 `/run/aicrm-production-web-start-authorized`，让 primary Web 的 OR 条件单独放行，timer/worker 继续被持久闸门阻断。该授权在重启时自动消失，不能跨重启绕过失败关闭。
+8. 在恢复 worker 前执行本地 canary：要求 health 的 exact SHA 与 Secret 状态全绿，QR/OAuth 均 302 到企微官方入口，`appid/agentid` 存在，内层 `redirect_uri` 精确等于 `https://www.youcangogogo.com/auth/wecom/callback`，并且没有真实外呼。若此阶段主机重启，`/run` 授权消失，持久 deploy-in-progress 会继续阻断 Web、worker 与 timer。
+9. canary 与后台只读 smoke 通过后，创建 `/run/aicrm-production-runtime-start-authorized` 并删除 Web 专用授权；持久 deploy-in-progress 仍保留。此运行时授权只允许在当前启动周期恢复 active timer/service，approval timer 只恢复事务前已 enabled 的项。随后验证 primary/active 均 enabled+active，disabled approval 不得 active，retired 均 disabled+inactive+not-failed。
+10. callback smoke 与公网 exact-SHA 均通过后，最终提交动作先删除 `/run` 运行时授权、再删除持久 deploy-in-progress，并立即写入事务 commit 标志。若最终提交前主机重启，两个 `/run` 授权都会消失，持久闸门继续阻断完整 runtime。
+
+任一步失败，EXIT cleanup 会重新创建持久闸门、再次静默运行单元并保持 Web 停止。恢复方式是修复原因后重跑完整、已验证的 AI-CRM 发布事务；禁止直接 `systemctl start`、删除闸门文件或只重跑 Secret checker。
 
 在 worker 已停止、Alembic 已升级且当前 release 代码已就位后执行：
 

@@ -41437,8 +41437,14 @@
   "runtime_units": [
     {
       "kind": "timer",
+      "service": "aicrm-archive-sync.service",
       "state": "approval_required",
       "unit": "aicrm-archive-sync.timer"
+    },
+    {
+      "kind": "service",
+      "state": "retired_forbidden",
+      "unit": "aicrm-automation-jobs-run-due.service"
     },
     {
       "kind": "timer",
@@ -41446,14 +41452,39 @@
       "unit": "aicrm-automation-jobs-run-due.timer"
     },
     {
+      "kind": "service",
+      "state": "retired_forbidden",
+      "unit": "aicrm-campaign-run-due.service"
+    },
+    {
+      "kind": "timer",
+      "state": "retired_forbidden",
+      "unit": "aicrm-campaign-run-due.timer"
+    },
+    {
+      "kind": "service",
+      "state": "retired_forbidden",
+      "unit": "aicrm-reply-monitor-capture.service"
+    },
+    {
       "kind": "timer",
       "state": "retired_forbidden",
       "unit": "aicrm-reply-monitor-capture.timer"
     },
     {
+      "kind": "service",
+      "state": "retired_forbidden",
+      "unit": "aicrm-reply-monitor-run-due.service"
+    },
+    {
       "kind": "timer",
       "state": "retired_forbidden",
       "unit": "aicrm-reply-monitor-run-due.timer"
+    },
+    {
+      "kind": "service",
+      "state": "retired_forbidden",
+      "unit": "aicrm-web.service"
     },
     {
       "kick_after_timer_restart": true,
@@ -41472,12 +41503,19 @@
       "unit": "openclaw-ai-audience-scheduler.timer"
     },
     {
+      "kind": "service",
+      "state": "retired_forbidden",
+      "unit": "openclaw-automation-conversion-due-runner.service"
+    },
+    {
       "kind": "timer",
+      "service": "openclaw-automation-ops-scheduler.service",
       "state": "approval_required",
       "unit": "openclaw-automation-ops-scheduler.timer"
     },
     {
       "kind": "timer",
+      "service": "openclaw-broadcast-hourly-feishu-report.service",
       "state": "approval_required",
       "unit": "openclaw-broadcast-hourly-feishu-report.timer"
     },
@@ -41491,11 +41529,13 @@
     },
     {
       "kind": "timer",
+      "service": "openclaw-external-contact-full-sync.service",
       "state": "approval_required",
       "unit": "openclaw-external-contact-full-sync.timer"
     },
     {
       "kind": "timer",
+      "service": "openclaw-external-contact-sync.service",
       "state": "approval_required",
       "unit": "openclaw-external-contact-sync.timer"
     },
@@ -41552,6 +41592,11 @@
       "kind": "service",
       "state": "active",
       "unit": "openclaw-wecom-callback-ingress.service"
+    },
+    {
+      "kind": "service",
+      "state": "primary_web",
+      "unit": "openclaw-wecom-postgres.service"
     }
   ],
   "schema_version": 1,

@@ -129,24 +129,6 @@
       "architecture_gate": "fast"
     },
     {
-      "name": "questionnaire",
-      "paths": [
-        "aicrm_next/questionnaire/**",
-        "aicrm_next/frontend_compat/templates/questionnaire_h5_page.html",
-        "tests/test_questionnaire_*.py"
-      ],
-      "python_tests": [
-        "tests/test_questionnaire_h5_submit_validation.py",
-        "tests/test_questionnaire_mobile_normalization.py",
-        "tests/test_questionnaire_h5_submit_commands.py",
-        "tests/test_questionnaire_application_contract.py",
-        "tests/test_questionnaire_h5_submit_no_real_side_effects.py",
-        "tests/test_questionnaire_h5_submit_no_fixture_production.py"
-      ],
-      "needs_postgres": false,
-      "architecture_gate": "fast"
-    },
-    {
       "name": "mobile_validation",
       "paths": [
         "aicrm_next/shared/mobile.py"
@@ -488,6 +470,7 @@
       "name": "questionnaire",
       "paths": [
         "aicrm_next/questionnaire/**",
+        "aicrm_next/frontend_compat/templates/questionnaire_h5_page.html",
         "tests/test_questionnaire_*.py",
         "tests/test_internal_events_questionnaire_slice.py"
       ],
@@ -495,6 +478,10 @@
         "tests/test_questionnaire_h5_submit_commands.py",
         "tests/test_questionnaire_h5_submit_idempotency.py",
         "tests/test_questionnaire_h5_submit_validation.py",
+        "tests/test_questionnaire_mobile_normalization.py",
+        "tests/test_questionnaire_application_contract.py",
+        "tests/test_questionnaire_h5_submit_no_real_side_effects.py",
+        "tests/test_questionnaire_h5_submit_no_fixture_production.py",
         "tests/test_questionnaire_h5_external_push.py",
         "tests/test_questionnaire_oauth_state_security.py",
         "tests/test_questionnaire_admin_write_no_real_side_effects.py",
@@ -666,6 +653,7 @@
       "paths": [
         ".github/**",
         "scripts/ci/**",
+        "scripts/ops/check_runtime_secret_readiness.py",
         "scripts/ops/ensure_production_public_release_route.py",
         "scripts/ops/manage_production_runtime_units.py",
         "scripts/diagnose_external_orders_blockers.py",
@@ -690,6 +678,7 @@
         "tests/test_external_orders_blocker_diagnostics.py",
         "tests/test_external_orders_consumer_run_due_diagnostics.py",
         "tests/test_retired_runtime_gap_timer_report.py",
+        "tests/test_runtime_secret_readiness.py",
         "tests/test_runtime_units_autostart.py",
         "tests/test_select_test_scope.py",
         "tests/test_fixture_reset_registry.py",
@@ -716,6 +705,7 @@
         "tests/test_external_orders_blocker_diagnostics.py",
         "tests/test_external_orders_consumer_run_due_diagnostics.py",
         "tests/test_retired_runtime_gap_timer_report.py",
+        "tests/test_runtime_secret_readiness.py",
         "tests/test_runtime_units_autostart.py",
         "tests/test_select_test_scope.py",
         "tests/test_architecture_boundaries.py",

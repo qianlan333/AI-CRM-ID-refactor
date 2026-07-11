@@ -117,9 +117,9 @@ def test_questionnaire_mobile_change_selects_questionnaire_and_commerce_slices()
     assert "tests/test_questionnaire_mobile_normalization.py" in result["python_tests"]
     assert "tests/test_checkout_api_contract.py" in result["python_tests"]
     assert result["unmatched_files"] == []
-    assert result["needs_postgres"] is False
-    assert result["architecture_gate"] == "fast"
-    assert result["needs_full_ci"] is False
+    assert result["needs_postgres"] is True
+    assert result["architecture_gate"] == "full"
+    assert result["needs_full_ci"] is True
 
 
 def test_identity_contact_change_selects_pg_and_db_architecture_gate() -> None:
@@ -342,13 +342,16 @@ def test_workflow_dispatch_with_null_inputs_does_not_break_selector(tmp_path: Pa
 def test_runtime_units_change_selects_deploy_contract_tests() -> None:
     result = _select(
         "deploy/production_runtime_units.json",
+        "scripts/ops/check_runtime_secret_readiness.py",
         "scripts/ops/manage_production_runtime_units.py",
+        "tests/test_runtime_secret_readiness.py",
         "tests/test_runtime_units_autostart.py",
         "tests/test_retired_runtime_gap_timer_report.py",
     )
 
     assert "ci_deploy" in result["matched_scopes"]
     assert "tests/test_deploy_workflow_contract.py" in result["python_tests"]
+    assert "tests/test_runtime_secret_readiness.py" in result["python_tests"]
     assert "tests/test_runtime_units_autostart.py" in result["python_tests"]
     assert "tests/test_retired_runtime_gap_timer_report.py" in result["python_tests"]
     assert result["unmatched_files"] == []

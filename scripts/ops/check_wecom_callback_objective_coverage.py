@@ -32,7 +32,7 @@ REQUIRED_ASSETS = {
     "callback_ingress_systemd_unit": "deploy/openclaw-wecom-callback-ingress.service",
     "callback_worker_systemd_unit": "deploy/openclaw-wecom-callback-inbox-worker.service",
     "callback_worker_systemd_timer": "deploy/openclaw-wecom-callback-inbox-worker.timer",
-    "canonical_web_systemd_unit": "deploy/aicrm-web.service",
+    "canonical_web_systemd_unit": "deploy/openclaw-wecom-postgres.service",
     "canonical_wecom_ingress_systemd_unit": "deploy/aicrm-wecom-ingress.service",
     "canonical_callback_worker_systemd_unit": "deploy/aicrm-wecom-callback-worker.service",
     "canonical_internal_event_worker_systemd_unit": "deploy/aicrm-internal-event-worker.service",
