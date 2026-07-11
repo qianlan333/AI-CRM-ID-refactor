@@ -7,6 +7,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 RUNTIME_DIR = ROOT / ("wecom_ability" + "_service")
 RUNTIME_UNITS_HELPER = "python3 scripts/ops/manage_production_runtime_units.py"
+TEST_DEPLOY_WORKFLOW = ROOT / ".github" / "workflows" / "deploy.yml"
+PRODUCTION_PROMOTION_WORKFLOW = ROOT / ".github" / "workflows" / "promote-production.yml"
 
 
 def _runtime_units_phase(phase: str) -> str:
@@ -33,7 +35,9 @@ def test_production_deploy_stashes_dirty_worktree_before_remote_update():
 
     stash_index = workflow.index("git stash push --include-untracked")
     before_sha_index = workflow.index('before_sha="$(git rev-parse HEAD)"')
-    verified_sha_index = workflow.index('verified_sha="${{ github.event.workflow_run.head_sha }}"', stash_index)
+    verified_sha_index = workflow.index(
+        'verified_sha="${{ inputs.release_sha || github.event.workflow_run.head_sha }}"', stash_index
+    )
     fetch_index = workflow.index(
         'git fetch --no-tags "$release_bundle" "${verified_sha}:refs/remotes/aicrm-id-refactor/main"'
     )
@@ -65,7 +69,9 @@ def test_production_deploy_fails_closed_unless_checkout_matches_verified_workflo
     workflow = (ROOT / ".github" / "workflows" / "deploy.yml").read_text(encoding="utf-8")
 
     remote_deploy_index = workflow.index("uses: appleboy/ssh-action@v1.2.0")
-    verified_sha_index = workflow.index('verified_sha="${{ github.event.workflow_run.head_sha }}"', remote_deploy_index)
+    verified_sha_index = workflow.index(
+        'verified_sha="${{ inputs.release_sha || github.event.workflow_run.head_sha }}"', remote_deploy_index
+    )
     release_head_index = workflow.index('release_head_sha="$(git rev-parse refs/remotes/aicrm-id-refactor/main)"')
     head_guard_index = workflow.index('if [ "$release_head_sha" != "$verified_sha" ]; then')
     reset_index = workflow.index('git reset --hard "$verified_sha"')
@@ -107,14 +113,14 @@ def test_production_deploy_builds_and_transfers_exact_sha_bundle_before_remote_d
 
     assert checkout_index < build_index < transfer_index < remote_deploy_index
     assert "permissions:\n  contents: read" in workflow
-    assert "ref: ${{ github.event.workflow_run.head_sha }}" in workflow
+    assert "ref: ${{ inputs.release_sha || github.event.workflow_run.head_sha }}" in workflow
     assert "fetch-depth: 0" in workflow
-    assert 'verified_sha="${{ github.event.workflow_run.head_sha }}"' in workflow
+    assert 'verified_sha="${{ inputs.release_sha || github.event.workflow_run.head_sha }}"' in workflow
     assert 'git fetch --no-tags origin main' in workflow
     assert 'if [ "$(git rev-parse FETCH_HEAD)" != "$verified_sha" ]; then' in workflow
     assert "sha256sum aicrm-release.bundle" in workflow
     assert "git bundle verify release/aicrm-release.bundle" in workflow
-    assert "target: /tmp/aicrm-release-${{ github.event.workflow_run.head_sha }}" in workflow
+    assert "target: /tmp/aicrm-release-${{ inputs.release_sha || github.event.workflow_run.head_sha }}" in workflow
     assert "strip_components: 1" in workflow
     assert "overwrite: true" in workflow
 
@@ -192,7 +198,7 @@ def test_production_deploy_migrates_and_reconciles_secret_references_before_web_
 
 
 def test_production_deploy_repairs_only_approved_legacy_nginx_web_route_and_requires_public_exact_sha():
-    workflow = (ROOT / ".github" / "workflows" / "deploy.yml").read_text(encoding="utf-8")
+    workflow = TEST_DEPLOY_WORKFLOW.read_text(encoding="utf-8")
 
     local_health_index = workflow.index('grep -i "x-aicrm-release-sha: $after_sha"')
     runtime_verify_index = workflow.index(_runtime_units_phase("verify"))
@@ -204,6 +210,24 @@ def test_production_deploy_repairs_only_approved_legacy_nginx_web_route_and_requ
     assert "--public-health-url https://www.youcangogogo.com/health" in workflow
     assert "--nginx-config /etc/nginx/sites-enabled/youcangogogo.conf" in workflow
     assert "tee /tmp/aicrm-public-release-route.json" in workflow
+
+
+def test_automatic_test_deploy_uses_test_secrets_and_read_only_test_public_health_check():
+    workflow = TEST_DEPLOY_WORKFLOW.read_text(encoding="utf-8")
+
+    runtime_verify_index = workflow.index(_runtime_units_phase("verify"))
+    public_health_index = workflow.index("https://id-dev.youcangogogo.com/health")
+
+    assert runtime_verify_index < public_health_index
+    assert "secrets.TEST_DEPLOY_HOST" in workflow
+    assert "secrets.TEST_DEPLOY_USER" in workflow
+    assert "secrets.TEST_DEPLOY_SSH_KEY" in workflow
+    assert "inputs.target_environment == 'production' && secrets.DEPLOY_HOST || secrets.TEST_DEPLOY_HOST" in workflow
+    assert 'if [ "$deploy_target" = "production" ]; then' in workflow
+    assert workflow.index('if [ "$deploy_target" = "production" ]; then') < workflow.index(
+        "ensure_production_public_release_route.py"
+    )
+    assert 'grep -i "x-aicrm-release-sha: $after_sha"' in workflow
 
 
 def test_production_deploy_polls_health_after_restart_instead_of_fixed_sleep():
