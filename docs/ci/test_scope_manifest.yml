@@ -26,6 +26,7 @@
     "docs/ci/pytest_duration_baseline.json",
     "tests/test_pytest_duration_baseline_builder.py",
     "tests/test_pytest_shard_selector.py",
+    "tests/test_architecture_size_budgets.py",
     "app.py",
     "aicrm_next/platform_foundation/**",
     "aicrm_next/admin_auth/**",
@@ -1427,6 +1428,7 @@
         "aicrm_next/fixture_reset_registry.py",
         "aicrm_next/router_registry.py",
         "tests/conftest.py",
+        "tests/test_architecture_size_budgets.py",
         "tests/test_ci_workflow_contract.py",
         "tests/test_deploy_workflow_contract.py",
         "tests/test_github_action_pins.py",
@@ -1455,6 +1457,7 @@
         "aicrm_next/platform_foundation/**"
       ],
       "python_tests": [
+        "tests/test_architecture_size_budgets.py",
         "tests/test_ci_workflow_contract.py",
         "tests/test_deploy_workflow_contract.py",
         "tests/test_github_action_pins.py",

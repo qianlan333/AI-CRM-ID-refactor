@@ -723,6 +723,7 @@ def test_runtime_units_change_selects_deploy_contract_tests() -> None:
         "deploy/production_runtime_units.json",
         "scripts/ops/check_runtime_secret_readiness.py",
         "scripts/ops/manage_production_runtime_units.py",
+        "tests/test_architecture_size_budgets.py",
         "tests/test_runtime_secret_readiness.py",
         "tests/test_runtime_units_autostart.py",
         "tests/test_retired_runtime_gap_timer_report.py",
@@ -730,6 +731,7 @@ def test_runtime_units_change_selects_deploy_contract_tests() -> None:
 
     assert "ci_deploy" in result["matched_scopes"]
     assert "commerce_fulfillment_reliability" in result["matched_scopes"]
+    assert "tests/test_architecture_size_budgets.py" in result["python_tests"]
     assert "tests/test_deploy_workflow_contract.py" in result["python_tests"]
     assert "tests/test_runtime_secret_readiness.py" in result["python_tests"]
     assert "tests/test_runtime_units_autostart.py" in result["python_tests"]
