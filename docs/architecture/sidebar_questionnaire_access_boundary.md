@@ -44,13 +44,15 @@ python scripts/ci/check_sidebar_questionnaire_access_contract.py
 
 ## Count-only 数据预检
 
-2026-07-11 的只读生产形态抽查（不输出身份原值）：
+2026-07-11 的 R04 前只读生产形态抽查（不输出身份原值）：
 
 - 任一当前 owner source 覆盖 external contact：23,847。
 - active follow：23,844。
 - identity map：23,844。
-- canonical owner：23,783。
-- 仅历史 binding、无当前 owner source：3；R04 后这些请求预期被阻断。
+- canonical owner（当时为非 `deleted` 统计口径）：23,783。R04 运行时与 checker
+  已收紧为仅 `active`，该旧数不作为授权放行依据。
+- 旧口径下仅历史 binding、无 owner source：3。R04 的 `active` 口径可能阻断更多
+  `pending_merge/conflict` 关系，最终以发布后 count-only checker 输出为准。
 
 发布前后均运行：
 
