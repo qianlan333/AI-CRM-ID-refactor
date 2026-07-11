@@ -52,7 +52,7 @@ python3 scripts/ops/migrate_app_setting_secrets.py --dry-run \
 6. 执行本手册下方的 Secret migration 与 reconciliation。任一对账项失败时保留 deploy-in-progress 闸门，Web 和 worker 均不得恢复。
 7. 从当前 release 安装并 enable 唯一主 Web unit `openclaw-wecom-postgres.service`，删除重复的 `/etc/systemd/system/aicrm-web.service`。此时 deploy-in-progress 仍保留；只创建运行时授权 `/run/aicrm-production-web-start-authorized`，让 primary Web 的 OR 条件单独放行，timer/worker 继续被持久闸门阻断。该授权在重启时自动消失，不能跨重启绕过失败关闭。
 8. 在恢复 worker 前执行本地 canary：要求 health 的 exact SHA 与 Secret 状态全绿，QR/OAuth 均 302 到企微官方入口，`appid/agentid` 存在，内层 `redirect_uri` 精确等于 `https://www.youcangogogo.com/auth/wecom/callback`，并且没有真实外呼。若此阶段主机重启，`/run` 授权消失，持久 deploy-in-progress 会继续阻断 Web、worker 与 timer。
-9. canary 与后台只读 smoke 通过后，创建 `/run/aicrm-production-runtime-start-authorized` 并删除 Web 专用授权；持久 deploy-in-progress 仍保留。此运行时授权只允许在当前启动周期恢复 active timer/service，approval timer 只恢复事务前已 enabled 的项。随后验证 primary/active 均 enabled+active，disabled approval 不得 active，retired 均 disabled+inactive+not-failed。
+9. canary 与后台只读 smoke 通过后，创建 `/run/aicrm-production-runtime-start-authorized` 并删除 Web 专用授权；生产后台只读 probe 的单请求阈值为 20 秒，用于覆盖 push-center 冷查询，超时仍失败关闭。持久 deploy-in-progress 仍保留。此运行时授权只允许在当前启动周期恢复 active timer/service，approval timer 只恢复事务前已 enabled 的项。随后验证 primary/active 均 enabled+active，disabled approval 不得 active，retired 均 not-found+inactive+not-failed，且 `retired_unit_files` 必须覆盖全部 `retired_forbidden`。
 10. callback smoke 与公网 exact-SHA 均通过后，最终提交动作先删除 `/run` 运行时授权、再删除持久 deploy-in-progress，并立即写入事务 commit 标志。若最终提交前主机重启，两个 `/run` 授权都会消失，持久闸门继续阻断完整 runtime。
 
 任一步失败，EXIT cleanup 会重新创建持久闸门、再次静默运行单元并保持 Web 停止。恢复方式是修复原因后重跑完整、已验证的 AI-CRM 发布事务；禁止直接 `systemctl start`、删除闸门文件或只重跑 Secret checker。

@@ -13,6 +13,10 @@ from scripts.ops import check_admin_read_pages_smoke as smoke
 from scripts.ops import create_deploy_smoke_session as deploy_session
 
 
+def test_production_smoke_timeout_covers_observed_cold_admin_reads() -> None:
+    assert smoke.DEFAULT_TIMEOUT_SECONDS == 20.0
+
+
 def test_run_fails_when_required_admin_cookie_is_missing(monkeypatch) -> None:
     monkeypatch.setattr(
         smoke,

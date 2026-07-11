@@ -51,6 +51,7 @@ SMOKE_PATHS = (
     "/api/admin/automation-agents",
     "/api/admin/user-ops/send-records?limit=1",
 )
+DEFAULT_TIMEOUT_SECONDS = 20.0
 
 
 @dataclass(frozen=True)
@@ -212,7 +213,7 @@ def run(
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Smoke test production admin read pages and APIs.")
     parser.add_argument("--base-url", default="http://127.0.0.1:5001")
-    parser.add_argument("--timeout", type=float, default=8.0)
+    parser.add_argument("--timeout", type=float, default=DEFAULT_TIMEOUT_SECONDS)
     parser.add_argument(
         "--require-admin-cookie",
         action="store_true",
