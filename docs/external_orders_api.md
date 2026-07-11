@@ -29,11 +29,12 @@ https://www.youcangogogo.com
 ```bash
 BASE_URL="https://www.youcangogogo.com"
 TOKEN="<AUTOMATION_INTERNAL_API_TOKEN>"
+ARCHIVE_TOKEN="<ARCHIVE_INTERNAL_API_TOKEN>"
 ```
 
 ## 鉴权
 
-所有请求都必须带 Bearer Token：
+所有请求都必须带 Bearer Token。用户、问卷与订单接口使用：
 
 ```http
 Authorization: Bearer <AUTOMATION_INTERNAL_API_TOKEN>
@@ -43,6 +44,12 @@ Authorization: Bearer <AUTOMATION_INTERNAL_API_TOKEN>
 
 ```bash
 AUTOMATION_INTERNAL_API_TOKEN
+```
+
+聊天记录接口单独使用 `ARCHIVE_INTERNAL_API_TOKEN`，不得用订单/自动化令牌替代：
+
+```http
+Authorization: Bearer <ARCHIVE_INTERNAL_API_TOKEN>
 ```
 
 错误语义：
@@ -145,7 +152,7 @@ curl -H "Authorization: Bearer $TOKEN" \
 GET /api/external/chat-records
 ```
 
-按用户身份键查询本地归档聊天记录。该接口与订单 API 使用同一个 `AUTOMATION_INTERNAL_API_TOKEN`，只读本地 `archived_messages`/消息读模型，不会实时调用企微，也不会发送消息或触发自动化。
+按用户身份键查询本地归档聊天记录。该接口仅接受 `ARCHIVE_INTERNAL_API_TOKEN`，只读本地 `archived_messages`/消息读模型，不会实时调用企微，也不会发送消息或触发自动化。
 
 ### Query 参数
 
@@ -168,28 +175,28 @@ GET /api/external/chat-records
 按手机号查询与 `HuangYouCan` 的私信记录：
 
 ```bash
-curl -H "Authorization: Bearer $TOKEN" \
+curl -H "Authorization: Bearer $ARCHIVE_TOKEN" \
 "https://www.youcangogogo.com/api/external/chat-records?mobile=13800138000&start_time=1780272000&chat_scene=private"
 ```
 
 按 unionid 查询与指定员工的私信记录：
 
 ```bash
-curl -H "Authorization: Bearer $TOKEN" \
+curl -H "Authorization: Bearer $ARCHIVE_TOKEN" \
 "https://www.youcangogogo.com/api/external/chat-records?unionid=orSqJ5iT9UoeYQRVxvAoo_8avkmA&start_time=1780272000&chat_scene=private&with_userid=ZhaoYanFang"
 ```
 
 按 external_userid 查询群聊记录：
 
 ```bash
-curl -H "Authorization: Bearer $TOKEN" \
+curl -H "Authorization: Bearer $ARCHIVE_TOKEN" \
 "https://www.youcangogogo.com/api/external/chat-records?external_userid=wm_xxx&start_time=1780272000&chat_scene=group"
 ```
 
 拉取下一页：
 
 ```bash
-curl -H "Authorization: Bearer $TOKEN" \
+curl -H "Authorization: Bearer $ARCHIVE_TOKEN" \
 "https://www.youcangogogo.com/api/external/chat-records?mobile=13800138000&start_time=1780272000&chat_scene=private&cursor=xxxx"
 ```
 

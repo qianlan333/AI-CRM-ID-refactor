@@ -5,11 +5,65 @@ on:
     workflows: ["CI Fast"]
     types: [completed]
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ai-crm-production
+  cancel-in-progress: false
+
 jobs:
   deploy:
     if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main'
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout verified release
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          fetch-depth: 0
+
+      - name: Build verified release bundle
+        run: |
+          set -e
+          set -o pipefail
+          verified_sha="${{ github.event.workflow_run.head_sha }}"
+          if ! printf '%s' "$verified_sha" | grep -Eq '^[0-9a-f]{40}$'; then
+            echo "invalid verified workflow sha"
+            exit 1
+          fi
+          if [ "$(git rev-parse HEAD)" != "$verified_sha" ]; then
+            echo "runner checkout does not match verified workflow sha"
+            exit 1
+          fi
+          git fetch --no-tags origin main
+          if [ "$(git rev-parse FETCH_HEAD)" != "$verified_sha" ]; then
+            echo "verified workflow sha is no longer the AI-CRM main head"
+            exit 1
+          fi
+          mkdir -p release
+          git bundle create release/aicrm-release.bundle HEAD
+          git bundle verify release/aicrm-release.bundle
+          if ! git bundle list-heads release/aicrm-release.bundle | grep -Fx "$verified_sha HEAD" >/dev/null; then
+            echo "release bundle does not advertise the verified workflow sha"
+            exit 1
+          fi
+          (
+            cd release
+            sha256sum aicrm-release.bundle > aicrm-release.bundle.sha256
+          )
+
+      - name: Transfer verified release bundle
+        uses: appleboy/scp-action@ff85246acaad7bdce478db94a363cd2bf7c90345 # v1.0.0
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          source: "release/aicrm-release.bundle,release/aicrm-release.bundle.sha256"
+          target: /tmp/aicrm-release-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.event.workflow_run.head_sha }}
+          strip_components: 1
+          overwrite: true
+
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v1.2.0
         with:
@@ -19,39 +73,89 @@ jobs:
           script: |
             set -e
             set -o pipefail
+            runtime_mutation_started=0
+            runtime_committed=0
+            release_bundle_dir=""
+            release_control_dir=""
+            release_control_manager=""
+            release_control_manifest=""
+            cleanup_deploy() {
+              rc=$?
+              trap - EXIT
+              if [ "$runtime_mutation_started" = "1" ] && [ "$runtime_committed" != "1" ]; then
+                if [ -f "$release_control_manager" ] && [ -f "$release_control_manifest" ]; then
+                  python3 "$release_control_manager" \
+                    --manifest "$release_control_manifest" \
+                    --phase begin-transaction --execute || true
+                  python3 "$release_control_manager" \
+                    --manifest "$release_control_manifest" \
+                    --phase stop-for-migration --execute || true
+                fi
+                sudo systemctl stop aicrm-web.service || true
+                sudo systemctl stop openclaw-wecom-postgres.service || true
+              fi
+              if [ -n "$release_control_dir" ]; then
+                rm -rf -- "$release_control_dir"
+              fi
+              if [ -n "$release_bundle_dir" ]; then
+                rm -rf -- "$release_bundle_dir"
+              fi
+              exit "$rc"
+            }
+            trap cleanup_deploy EXIT
+            deploy_lock="/home/ubuntu/.aicrm-production-deploy.lock"
+            exec 9>"$deploy_lock"
+            if ! flock -n 9; then
+              echo "another AI-CRM production deploy transaction is active"
+              exit 1
+            fi
             cd '/home/ubuntu/极简 crm'
-            if ! git diff --quiet || ! git diff --cached --quiet || [ -n "$(git ls-files --others --exclude-standard)" ]; then
-              git stash push --include-untracked -m "deploy-backup-$(date -u +%Y%m%dT%H%M%SZ)"
-            fi
             before_sha="$(git rev-parse HEAD)"
-            git fetch origin main:refs/remotes/origin/main
-            git reset --hard refs/remotes/origin/main
-            after_sha="$(git rev-parse HEAD)"
-            printf '%s\n' "$after_sha" > .release-sha
-            python3 scripts/ops/manage_production_runtime_units.py --phase retire-legacy-overlays --execute
-            set -a
-            source /home/ubuntu/.openclaw-wecom-pg.env
-            set +a
-            test -n "${DATABASE_URL:-}"
-            source /home/ubuntu/venvs/openclaw/bin/activate
-            if [ "$before_sha" = "$after_sha" ] || git diff --quiet "$before_sha" "$after_sha" -- requirements.txt; then
-              echo "requirements.txt unchanged; skipping pip install"
-            else
-              pip install -r requirements.txt
+            verified_sha="${{ github.event.workflow_run.head_sha }}"
+            if ! printf '%s' "$verified_sha" | grep -Eq '^[0-9a-f]{40}$'; then
+              echo "invalid verified workflow sha"
+              exit 1
             fi
-            python3 scripts/ops/ensure_ai_audience_external_api_env.py /home/ubuntu/.openclaw-wecom-pg.env
-            set -a
-            source /home/ubuntu/.openclaw-wecom-pg.env
-            set +a
-            # 1) AI-CRM Next schema migrations
-            python3 scripts/ops/manage_production_runtime_units.py --phase stop-for-migration --execute
-            python3 -m alembic upgrade head
-            # Production currently uses the openclaw-* compatible 5001 web unit.
-            # Stop the canonical alias if it exists so both units cannot bind 5001.
-            sudo systemctl stop aicrm-web.service || true
-            sudo systemctl stop openclaw-wecom-postgres.service || true
+            release_bundle_dir="/tmp/aicrm-release-${{ github.run_id }}-${{ github.run_attempt }}-$verified_sha"
+            release_bundle="$release_bundle_dir/aicrm-release.bundle"
+            release_bundle_checksum="$release_bundle_dir/aicrm-release.bundle.sha256"
+            if [ ! -r "$release_bundle" ] || [ ! -r "$release_bundle_checksum" ]; then
+              echo "verified release bundle or checksum is missing"
+              exit 1
+            fi
+            (
+              cd "$release_bundle_dir"
+              sha256sum -c aicrm-release.bundle.sha256
+            )
+            git bundle verify "$release_bundle"
+            if ! git bundle list-heads "$release_bundle" | grep -Fx "$verified_sha HEAD" >/dev/null; then
+              echo "release bundle does not advertise the verified workflow sha"
+              exit 1
+            fi
+            git fetch --no-tags "$release_bundle" "${verified_sha}:refs/remotes/aicrm-release/main"
+            release_head_sha="$(git rev-parse refs/remotes/aicrm-release/main)"
+            if [ "$release_head_sha" != "$verified_sha" ]; then
+              echo "verified workflow sha is no longer the AI-CRM main head"
+              exit 1
+            fi
+            release_control_dir="$(mktemp -d /tmp/aicrm-release-control.XXXXXX)"
+            git archive "$verified_sha" \
+              scripts/ops/manage_production_runtime_units.py \
+              deploy/production_runtime_units.json \
+              deploy/systemd/00-aicrm-deploy-transaction-guard.conf \
+              deploy/systemd/00-aicrm-primary-web-transaction-guard.conf \
+              | tar -x -C "$release_control_dir"
+            release_control_manager="$release_control_dir/scripts/ops/manage_production_runtime_units.py"
+            release_control_manifest="$release_control_dir/deploy/production_runtime_units.json"
+            runtime_mutation_started=1
+            python3 "$release_control_manager" \
+              --manifest "$release_control_manifest" \
+              --phase begin-transaction --execute
+            python3 "$release_control_manager" \
+              --manifest "$release_control_manifest" \
+              --phase stop-for-migration --execute
             if sudo fuser -s 5001/tcp; then
-              echo "5001 is still occupied before web restart; terminating stale listener"
+              echo "5001 is still occupied before release mutation; terminating stale listener"
               sudo ss -ltnp 'sport = :5001' || true
               sudo fuser -k -TERM 5001/tcp || true
               sleep 2
@@ -73,6 +177,47 @@ jobs:
               sudo ss -ltnp 'sport = :5001' || true
               exit 1
             fi
+            if ! git diff --quiet || ! git diff --cached --quiet || [ -n "$(git ls-files --others --exclude-standard)" ]; then
+              git stash push --include-untracked -m "deploy-backup-$(date -u +%Y%m%dT%H%M%SZ)"
+            fi
+            git reset --hard "$verified_sha"
+            after_sha="$(git rev-parse HEAD)"
+            if [ "$after_sha" != "$verified_sha" ]; then
+              echo "deployed checkout does not match verified workflow sha"
+              exit 1
+            fi
+            printf '%s\n' "$after_sha" > .release-sha
+            python3 scripts/ops/manage_production_runtime_units.py --phase retire-legacy-overlays --execute
+            set -a
+            source /home/ubuntu/.openclaw-wecom-pg.env
+            set +a
+            test -n "${DATABASE_URL:-}"
+            source /home/ubuntu/venvs/openclaw/bin/activate
+            if [ "$before_sha" = "$after_sha" ] || git diff --quiet "$before_sha" "$after_sha" -- requirements.lock; then
+              echo "requirements.lock unchanged; skipping pip install"
+            else
+              python -m pip install --require-hashes -r requirements.lock
+            fi
+            python3 scripts/ops/ensure_ai_audience_external_api_env.py /home/ubuntu/.openclaw-wecom-pg.env
+            set -a
+            source /home/ubuntu/.openclaw-wecom-pg.env
+            set +a
+            # 1) AI-CRM Next schema migrations
+            python3 -m alembic upgrade head
+            export AICRM_SECRET_STORE_DIR="${AICRM_SECRET_STORE_DIR:-/home/ubuntu/.aicrm-secrets}"
+            python3 scripts/ops/migrate_app_setting_secrets.py --execute \
+              --secret-store-dir "$AICRM_SECRET_STORE_DIR" \
+              --environment-file /home/ubuntu/.openclaw-wecom-pg.env \
+              | tee /tmp/aicrm-secret-migration.json
+            set -a
+            source /home/ubuntu/.openclaw-wecom-pg.env
+            set +a
+            python3 scripts/ops/check_secret_reference_cutover.py \
+              --secret-store-dir "$AICRM_SECRET_STORE_DIR" \
+              --environment-file /home/ubuntu/.openclaw-wecom-pg.env \
+              | tee /tmp/aicrm-secret-reconciliation.json
+            python3 scripts/ops/manage_production_runtime_units.py --phase install-primary-web --execute
+            python3 scripts/ops/manage_production_runtime_units.py --phase authorize-web-start --execute
             sudo systemctl reset-failed openclaw-wecom-postgres.service || true
             if ! sudo systemctl start openclaw-wecom-postgres.service; then
               sudo systemctl status openclaw-wecom-postgres.service --no-pager || true
@@ -97,11 +242,27 @@ jobs:
               exit 1
             fi
             cat /tmp/aicrm_health.json
+            python scripts/ops/check_runtime_secret_readiness.py \
+              --base-url http://127.0.0.1:5001 \
+              --expected-sha "$after_sha" \
+              --expected-callback-url https://www.youcangogogo.com/auth/wecom/callback \
+              | tee /tmp/aicrm-runtime-secret-readiness.json
             if ! python scripts/ops/check_admin_read_pages_smoke.py --base-url http://127.0.0.1:5001 --require-admin-cookie | tee /tmp/aicrm-admin-read-pages-smoke.json; then
               sudo systemctl status openclaw-wecom-postgres.service --no-pager || true
               sudo journalctl -u openclaw-wecom-postgres.service -n 120 --no-pager || true
               exit 1
             fi
+            python3 scripts/ops/manage_production_runtime_units.py --phase authorize-runtime-start --execute
             python3 scripts/ops/manage_production_runtime_units.py --phase install-enable-after-web-health --execute
             python scripts/ops/check_wecom_callback_deploy_smoke.py | tee /tmp/wecom-callback-deploy-smoke.json
-            python3 scripts/ops/manage_production_runtime_units.py --phase verify --execute
+            python3 scripts/ops/manage_production_runtime_units.py --phase verify-staged-runtime --execute
+            sudo /home/ubuntu/venvs/openclaw/bin/python \
+              scripts/ops/ensure_production_public_release_route.py --execute \
+              --expected-sha "$after_sha" \
+              --server-name www.youcangogogo.com \
+              --nginx-config /etc/nginx/sites-enabled/youcangogogo.conf \
+              --local-health-url http://127.0.0.1:5001/health \
+              --public-health-url https://www.youcangogogo.com/health \
+              | tee /tmp/aicrm-public-release-route.json
+            python3 scripts/ops/manage_production_runtime_units.py --phase release-runtime-guard --execute
+            runtime_committed=1

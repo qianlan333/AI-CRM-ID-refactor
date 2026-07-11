@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -10,13 +11,19 @@ ROOT = Path(__file__).resolve().parents[1]
 SELECTOR = ROOT / "scripts" / "ci" / "select_test_scope.py"
 
 
-def _select(*changed_files: str) -> dict:
+def _select(*changed_files: str, inherit_ci_event: bool = False) -> dict:
     command = [sys.executable, str(SELECTOR), "--json"]
     for changed_file in changed_files:
         command.extend(["--changed-file", changed_file])
+    env = os.environ.copy()
+    env.pop("AICRM_FORCE_FULL_CI", None)
+    if not inherit_ci_event:
+        for key in ("GITHUB_EVENT_NAME", "GITHUB_EVENT_PATH"):
+            env.pop(key, None)
     completed = subprocess.run(
         command,
         cwd=ROOT,
+        env=env,
         text=True,
         check=True,
         capture_output=True,
@@ -110,9 +117,9 @@ def test_questionnaire_mobile_change_selects_questionnaire_and_commerce_slices()
     assert "tests/test_questionnaire_mobile_normalization.py" in result["python_tests"]
     assert "tests/test_checkout_api_contract.py" in result["python_tests"]
     assert result["unmatched_files"] == []
-    assert result["needs_postgres"] is False
-    assert result["architecture_gate"] == "fast"
-    assert result["needs_full_ci"] is False
+    assert result["needs_postgres"] is True
+    assert result["architecture_gate"] == "full"
+    assert result["needs_full_ci"] is True
 
 
 def test_identity_contact_change_selects_pg_and_db_architecture_gate() -> None:
@@ -198,7 +205,8 @@ def test_admin_read_override_selects_focused_slice_without_pg() -> None:
     assert "tests/test_group_ops_queue_contract.py" not in result["python_tests"]
     assert "tests/test_user_ops_application_contract.py" not in result["python_tests"]
     assert result["needs_postgres"] is False
-    assert result["architecture_gate"] == "fast"
+    assert result["architecture_gate"] == "full"
+    assert result["needs_full_ci"] is True
 
 
 def test_admin_read_smoke_test_file_selects_admin_read_scope() -> None:
@@ -301,16 +309,51 @@ def test_ci_change_selects_contract_tests_and_full_gate() -> None:
     assert result["needs_full_ci"] is True
 
 
+def test_ci_shard_selector_test_change_selects_full_gate() -> None:
+    for changed_path in (
+        "docs/ci/pytest_duration_baseline.json",
+        "tests/test_pytest_duration_baseline_builder.py",
+        "tests/test_pytest_shard_selector.py",
+    ):
+        result = _select(changed_path)
+
+        assert "ci_deploy" in result["matched_scopes"]
+        assert "tests/test_pytest_duration_baseline_builder.py" in result["python_tests"]
+        assert "tests/test_pytest_shard_selector.py" in result["python_tests"]
+        assert result["unmatched_files"] == []
+        assert result["needs_postgres"] is False
+        assert result["architecture_gate"] == "full"
+        assert result["needs_full_ci"] is True
+
+
+def test_workflow_dispatch_with_null_inputs_does_not_break_selector(tmp_path: Path, monkeypatch) -> None:
+    event_path = tmp_path / "event.json"
+    event_path.write_text(json.dumps({"inputs": None}), encoding="utf-8")
+    monkeypatch.setenv("GITHUB_EVENT_NAME", "workflow_dispatch")
+    monkeypatch.setenv("GITHUB_EVENT_PATH", str(event_path))
+
+    result = _select(".github/workflows/ci-fast.yml", inherit_ci_event=True)
+
+    assert "ci_deploy" in result["matched_scopes"]
+    assert result["force_full"] is False
+    assert result["needs_full_ci"] is True
+
+
 def test_runtime_units_change_selects_deploy_contract_tests() -> None:
     result = _select(
         "deploy/production_runtime_units.json",
+        "scripts/ops/check_runtime_secret_readiness.py",
         "scripts/ops/manage_production_runtime_units.py",
+        "tests/test_architecture_size_budgets.py",
+        "tests/test_runtime_secret_readiness.py",
         "tests/test_runtime_units_autostart.py",
         "tests/test_retired_runtime_gap_timer_report.py",
     )
 
     assert "ci_deploy" in result["matched_scopes"]
+    assert "tests/test_architecture_size_budgets.py" in result["python_tests"]
     assert "tests/test_deploy_workflow_contract.py" in result["python_tests"]
+    assert "tests/test_runtime_secret_readiness.py" in result["python_tests"]
     assert "tests/test_runtime_units_autostart.py" in result["python_tests"]
     assert "tests/test_retired_runtime_gap_timer_report.py" in result["python_tests"]
     assert result["unmatched_files"] == []
@@ -336,6 +379,59 @@ def test_frontend_typescript_change_runs_frontend_tests_and_build() -> None:
     assert "tests/frontend/p1_push_center_status.test.mjs" in result["frontend_tests"]
     assert result["needs_frontend_build"] is True
     assert result["python_tests"] == []
+
+
+def test_questionnaire_change_selects_postgres_contracts_and_full_regression() -> None:
+    result = _select("aicrm_next/questionnaire/h5_write.py")
+
+    assert "questionnaire" in result["matched_scopes"]
+    assert "tests/test_questionnaire_h5_submit_idempotency.py" in result["python_tests"]
+    assert "tests/test_internal_events_questionnaire_slice.py" in result["python_tests"]
+    assert result["needs_postgres"] is True
+    assert result["architecture_gate"] == "full"
+    assert result["needs_full_ci"] is True
+
+
+def test_security_hardening_inventory_forces_postgres_and_full_regression() -> None:
+    result = _select(
+        "docs/architecture/r02_sensitive_data_inventory.yml",
+        "tests/test_r02_sensitive_data_inventory.py",
+    )
+
+    assert "security_hardening" in result["matched_scopes"]
+    assert "tests/test_r02_sensitive_data_inventory.py" in result["python_tests"]
+    assert result["needs_postgres"] is True
+    assert result["architecture_gate"] == "full"
+    assert result["needs_full_ci"] is True
+
+
+def test_callback_change_forces_full_regression() -> None:
+    result = _select("aicrm_next/channel_entry/callback_ingress.py")
+
+    assert "identity_contact" in result["matched_scopes"]
+    assert "tests/test_wecom_callback_inbox.py" in result["python_tests"]
+    assert result["needs_postgres"] is True
+    assert result["architecture_gate"] == "full"
+    assert result["needs_full_ci"] is True
+
+
+def test_refund_change_forces_full_regression() -> None:
+    result = _select("aicrm_next/commerce/admin_transactions.py")
+
+    assert "commerce" in result["matched_scopes"]
+    assert "tests/test_next_wechat_pay_refunds.py" in result["python_tests"]
+    assert result["architecture_gate"] == "full"
+    assert result["needs_full_ci"] is True
+
+
+def test_group_ops_change_selects_broadcast_contracts_and_full_regression() -> None:
+    result = _select("aicrm_next/automation_engine/group_ops/domain.py")
+
+    assert "broadcast_group_ops" in result["matched_scopes"]
+    assert "tests/test_group_ops_token_broadcast_api.py" in result["python_tests"]
+    assert result["needs_postgres"] is True
+    assert result["architecture_gate"] == "full"
+    assert result["needs_full_ci"] is True
 
 
 def test_unmapped_path_fails_instead_of_falling_back_to_full_regression() -> None:
