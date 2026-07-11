@@ -228,14 +228,20 @@ def _persist_environment_values(path: Path, values: Mapping[str, str]) -> None:
         body = ""
         mode = 0o600
 
-    pending = {str(key): str(value) for key, value in values.items()}
+    managed = {str(key): str(value) for key, value in values.items()}
+    pending = dict(managed)
+    persisted: set[str] = set()
     lines: list[str] = []
     for line in body.splitlines():
         match = _ENV_ASSIGNMENT.match(line)
         key = str(match.group("key")) if match else ""
-        if key in pending:
+        if key in managed:
+            if key in persisted:
+                continue
             prefix = str(match.group("prefix") or "")
-            lines.append(f"{prefix}{key}={_single_quoted(pending.pop(key))}")
+            lines.append(f"{prefix}{key}={_single_quoted(managed[key])}")
+            persisted.add(key)
+            pending.pop(key, None)
         else:
             lines.append(line)
     for key in sorted(pending):
