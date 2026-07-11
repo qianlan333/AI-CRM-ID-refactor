@@ -84,7 +84,10 @@ def _action_or_internal_token_error(request: Request, payload: dict[str, Any]) -
 
 
 def _page_context(request: Request, *, page_notice: str = "", page_error: str = "", action_result: dict[str, Any] | None = None) -> dict[str, Any]:
-    payload = build_jobs_payload(dict(request.query_params), repository=PushCenterRepository())
+    # The page is an asynchronous shell: its browser code loads jobs and stats
+    # from the protected JSON endpoints. Querying the projection here repeats
+    # those scans before the first byte of HTML and can make deploy smoke checks
+    # time out on production-sized data.
     selected_job_id = _int(request.query_params.get("job_id"), default=0)
     selected_job = build_job_detail_payload(selected_job_id, repository=PushCenterRepository()) if selected_job_id else None
     context = shell_context(
@@ -96,7 +99,6 @@ def _page_context(request: Request, *, page_notice: str = "", page_error: str = 
     context.update(
         {
             "breadcrumbs": [{"label": "客户管理后台", "href": "/"}, {"label": "推送中心", "href": ""}],
-            "push_center": payload,
             "selected_job": selected_job,
             "page_notice": page_notice,
             "page_error": page_error,

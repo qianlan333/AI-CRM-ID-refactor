@@ -81,9 +81,7 @@ def build_jobs_payload(params: dict[str, Any] | None = None, *, repository: Push
     limit = _int((params or {}).get("limit"), default=50, minimum=1, maximum=200)
     offset = _int((params or {}).get("offset"), default=0, minimum=0, maximum=100000)
     try:
-        jobs, total = repository.list_jobs(filters, limit=limit, offset=offset)
-        counts = repository.counts(filters)
-        sections = repository.sections(filters)
+        jobs, total, counts, sections = repository.list_jobs_with_summary(filters, limit=limit, offset=offset)
     except Exception as exc:
         return _read_unavailable_payload(filters, exc, limit=limit, offset=offset, include_sections=True)
     return {
@@ -105,8 +103,7 @@ def build_stats_payload(params: dict[str, Any] | None = None, *, repository: Pus
     repository = repository or PushCenterRepository()
     filters = push_center_filters(params)
     try:
-        counts = repository.counts(filters)
-        sections = repository.sections(filters)
+        counts, sections = repository.summary(filters)
     except Exception as exc:
         return _read_unavailable_payload(filters, exc, include_sections=True)
     return {

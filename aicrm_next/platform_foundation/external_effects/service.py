@@ -114,6 +114,9 @@ class ExternalEffectService:
     def list_attempts(self, job_id: int):
         return self._repo.list_attempts(job_id)
 
+    def list_attempts_for_jobs(self, job_ids: list[int]):
+        return self._repo.list_attempts_for_jobs(job_ids)
+
     def count_jobs(self, filters: dict[str, Any] | None = None) -> dict[str, Any]:
         return self._repo.count_jobs(filters or {})
 
