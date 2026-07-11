@@ -41,8 +41,14 @@ jobs:
             echo "verified workflow sha is no longer the AI-CRM main head"
             exit 1
           fi
+          base_sha="$(git rev-parse "${verified_sha}^1")"
+          if ! printf '%s' "$base_sha" | grep -Eq '^[0-9a-f]{40}$'; then
+            echo "invalid incremental release base sha"
+            exit 1
+          fi
           mkdir -p release
-          git bundle create release/aicrm-release.bundle HEAD
+          printf '%s\n' "$base_sha" > release/aicrm-release.bundle.base
+          git bundle create release/aicrm-release.bundle HEAD "^$base_sha"
           git bundle verify release/aicrm-release.bundle
           if ! git bundle list-heads release/aicrm-release.bundle | grep -Fx "$verified_sha HEAD" >/dev/null; then
             echo "release bundle does not advertise the verified workflow sha"
@@ -50,7 +56,7 @@ jobs:
           fi
           (
             cd release
-            sha256sum aicrm-release.bundle > aicrm-release.bundle.sha256
+            sha256sum aicrm-release.bundle aicrm-release.bundle.base > aicrm-release.bundle.sha256
           )
 
       - name: Transfer verified release bundle
@@ -59,7 +65,7 @@ jobs:
           host: ${{ secrets.DEPLOY_HOST }}
           username: ${{ secrets.DEPLOY_USER }}
           key: ${{ secrets.DEPLOY_SSH_KEY }}
-          source: "release/aicrm-release.bundle,release/aicrm-release.bundle.sha256"
+          source: "release/aicrm-release.bundle,release/aicrm-release.bundle.base,release/aicrm-release.bundle.sha256"
           target: /tmp/aicrm-release-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.event.workflow_run.head_sha }}
           strip_components: 1
           overwrite: true
@@ -118,15 +124,25 @@ jobs:
             fi
             release_bundle_dir="/tmp/aicrm-release-${{ github.run_id }}-${{ github.run_attempt }}-$verified_sha"
             release_bundle="$release_bundle_dir/aicrm-release.bundle"
+            release_bundle_base="$release_bundle_dir/aicrm-release.bundle.base"
             release_bundle_checksum="$release_bundle_dir/aicrm-release.bundle.sha256"
-            if [ ! -r "$release_bundle" ] || [ ! -r "$release_bundle_checksum" ]; then
-              echo "verified release bundle or checksum is missing"
+            if [ ! -r "$release_bundle" ] || [ ! -r "$release_bundle_base" ] || [ ! -r "$release_bundle_checksum" ]; then
+              echo "verified incremental release bundle, base, or checksum is missing"
               exit 1
             fi
             (
               cd "$release_bundle_dir"
               sha256sum -c aicrm-release.bundle.sha256
             )
+            read -r base_sha < "$release_bundle_base"
+            if ! printf '%s' "$base_sha" | grep -Eq '^[0-9a-f]{40}$'; then
+              echo "invalid incremental release base sha"
+              exit 1
+            fi
+            if ! git cat-file -e "$base_sha^{commit}" 2>/dev/null; then
+              echo "incremental release base is missing from the production checkout"
+              exit 1
+            fi
             git bundle verify "$release_bundle"
             if ! git bundle list-heads "$release_bundle" | grep -Fx "$verified_sha HEAD" >/dev/null; then
               echo "release bundle does not advertise the verified workflow sha"
@@ -136,6 +152,10 @@ jobs:
             release_head_sha="$(git rev-parse refs/remotes/aicrm-release/main)"
             if [ "$release_head_sha" != "$verified_sha" ]; then
               echo "verified workflow sha is no longer the AI-CRM main head"
+              exit 1
+            fi
+            if [ "$(git rev-parse "${verified_sha}^1")" != "$base_sha" ]; then
+              echo "incremental release base does not match the verified workflow first parent"
               exit 1
             fi
             release_control_dir="$(mktemp -d /tmp/aicrm-release-control.XXXXXX)"

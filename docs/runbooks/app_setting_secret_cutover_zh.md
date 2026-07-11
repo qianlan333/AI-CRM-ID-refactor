@@ -46,7 +46,7 @@ python3 scripts/ops/migrate_app_setting_secrets.py --dry-run \
 
 生产发布不是“更新代码后重启”，而是一个由 systemd 持久闸门保护的事务，顺序不得调整：
 
-1. 获取 `/home/ubuntu/.aicrm-production-deploy.lock` 主机锁，并完成 release bundle、checksum、workflow SHA 校验；bundle 临时目录必须包含 GitHub run ID 与 attempt，避免并发上传互相覆盖。
+1. 获取 `/home/ubuntu/.aicrm-production-deploy.lock` 主机锁，并完成增量 release bundle、base SHA、checksum、workflow SHA 校验；bundle 只携带相对已验证 release 第一父提交的增量对象，生产仓库缺少任一 bundle prerequisite 时必须在运行时事务开始前失败关闭；临时目录必须包含 GitHub run ID 与 attempt，避免并发上传互相覆盖。
 2. 从已验证 release 中解出 runtime manager、manifest 与 deploy guard；此时不修改工作树。
 3. 给 primary、active、approval 与 retired 运行单元安装 `00-aicrm-deploy-transaction-guard.conf`，创建 `/home/ubuntu/.aicrm-production-deploy-in-progress`。该文件存在且没有对应 `/run` 授权时，systemd `ConditionPathExists` 会拒绝 timer、依赖或人工启动；闸门文件持久化，主机重启不会绕过失败关闭。
 4. 停止并核对全部 active/approval timer、对应 service、active service 和主 Web；退役 unit 必须 disabled、inactive、not-failed，5001 必须无监听。任一停止或状态核对失败都中止发布。
