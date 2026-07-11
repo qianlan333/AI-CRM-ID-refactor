@@ -18,7 +18,7 @@ def client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
     return TestClient(create_app())
 
 
-def test_h5_submit_returns_explicit_tag_failure_without_owner_userid(client: TestClient) -> None:
+def test_h5_submit_uses_canonical_owner_and_returns_explicit_missing_config(client: TestClient) -> None:
     response = client.post(
         "/api/h5/questionnaires/hxc-activation-v1/submit",
         json={"answers": {"q_activation": "activated"}, "identity": {"external_userid": "wx_ext_001"}},
@@ -28,7 +28,7 @@ def test_h5_submit_returns_explicit_tag_failure_without_owner_userid(client: Tes
     body = response.json()
     assert body["real_external_call_executed"] is False
     assert body["tag_apply"]["status"] == "failed"
-    assert body["tag_apply"]["error_code"] == "owner_userid_missing"
+    assert body["tag_apply"]["error_code"] == "missing_wecom_config"
     assert body["tag_apply"]["wecom_api_called"] is False
     assert body["tag_apply"]["local_projection_updated"] is False
     plan = body["side_effect_plan"]

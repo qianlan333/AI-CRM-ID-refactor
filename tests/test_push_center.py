@@ -23,7 +23,8 @@ from aicrm_next.platform_foundation.push_center.view_model import (
     build_jobs_payload,
     build_stats_payload,
 )
-from tests.group_ops_test_helpers import group_ops_api_client
+
+pytest_plugins = ("tests.group_ops_test_helpers",)
 
 
 class _FakeBroadcastJobAdapter(BroadcastJobAdapter):
@@ -520,7 +521,10 @@ def test_questionnaire_default_external_push_is_queue_first(client: TestClient, 
 
     response = client.post(
         "/api/h5/questionnaires/hxc-activation-v1/submit",
-        json={"answers": {phone_question_id: "test_phone_default_queue"}},
+        json={
+            "answers": {phone_question_id: "13770938686"},
+            "identity": {"external_userid": "wx_ext_001"},
+        },
         headers={"Idempotency-Key": "push-center-questionnaire-default-queue"},
     )
     body = response.json()

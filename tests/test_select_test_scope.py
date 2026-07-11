@@ -127,6 +127,29 @@ def test_wecom_callback_ops_change_selects_identity_contact_slice() -> None:
     assert result["architecture_gate"] == "db"
 
 
+def test_unionid_identity_cutover_changes_force_pg_full_ci_without_unmapped_files() -> None:
+    result = _select(
+        "aicrm_next/automation_agents/repository.py",
+        "aicrm_next/customer_tags/local_projection.py",
+        "aicrm_next/message_archive/application.py",
+        "scripts/ops/check_unionid_identity_cutover.py",
+        "scripts/run_identity_mobile_bridge_backfill.py",
+        "tests/test_external_questionnaire_submissions_api.py",
+        "tests/test_internal_events_shadow_emit.py",
+        "tests/test_next_hxc_broadcast_repo.py",
+        "tests/test_unionid_identity_contract_gate.py",
+        "tests/test_wecom_tag_live_mutation_callers_contract.py",
+    )
+
+    assert result["matched_scopes"] == ["unionid_identity_cutover"]
+    assert result["unmatched_files"] == []
+    assert "tests/test_identity_resolver_postgres.py" in result["python_tests"]
+    assert "tests/test_service_period_payment_consumer.py" in result["python_tests"]
+    assert result["needs_postgres"] is True
+    assert result["architecture_gate"] == "full"
+    assert result["needs_full_ci"] is True
+
+
 def test_sidebar_write_change_selects_write_command_regression() -> None:
     result = _select("aicrm_next/sidebar_write/repo.py")
 

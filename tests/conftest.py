@@ -222,6 +222,10 @@ _TABLES_TO_TRUNCATE = [
     # — contacts / identity
     "contacts",
     "external_contact_bindings",
+    "crm_user_identity_merge_audit",
+    "crm_user_identity_conflicts",
+    "crm_user_identity_resolution_queue",
+    "crm_user_identity",
     "sidebar_customer_profile_fields",
     "wecom_external_contact_identity_map",
     "wecom_external_contact_follow_users",

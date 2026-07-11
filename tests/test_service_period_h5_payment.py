@@ -57,6 +57,22 @@ def test_service_period_h5_order_allows_repeat_paid_order(monkeypatch) -> None:
 
         def execute(self, query, params=()):
             queries.append((query, tuple(params)))
+            if "FROM crm_user_identity identity" in query:
+                external_userid, unionid, openid, mobile = tuple(params)
+                return Cursor(
+                    {
+                        "unionid": unionid,
+                        "external_userid": external_userid,
+                        "openid": openid,
+                        "mobile": mobile,
+                        "mobile_normalized": mobile,
+                        "status": "active",
+                        "matched_unionid": bool(unionid),
+                        "matched_external_userid": bool(external_userid),
+                        "matched_openid": bool(openid),
+                        "matched_mobile": bool(mobile),
+                    }
+                )
             if "INSERT INTO wechat_pay_orders" in query:
                 assert params[1] == "service_period_checkout"
                 return Cursor(

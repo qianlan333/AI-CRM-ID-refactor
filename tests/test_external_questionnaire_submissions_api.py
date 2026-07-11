@@ -30,8 +30,8 @@ def _submit_fixture(
     client: TestClient,
     *,
     mobile: str = "13800138000",
-    unionid: str = "unionid_external_q_001",
-    external_userid: str = "wx_ext_external_q_001",
+    unionid: str = "unionid_001",
+    external_userid: str = "wx_ext_001",
 ) -> str:
     response = client.post(
         "/api/h5/questionnaires/hxc-activation-v1/submit",
@@ -39,7 +39,7 @@ def _submit_fixture(
             "answers": {"q_activation": "activated", "q_interest": ["ai_tools"]},
             "identity": {
                 "external_userid": external_userid,
-                "openid": "openid_external_q_001",
+                "openid": "openid_001",
                 "unionid": unionid,
                 "mobile": mobile,
             },
@@ -98,7 +98,7 @@ def test_external_questionnaire_submissions_returns_submission_and_answer_snapsh
 
     item = payload["items"][0]
     assert item["mobile"] == "13800138000"
-    assert item["unionid"] == "unionid_external_q_001"
+    assert item["unionid"] == "unionid_001"
     assert item["external_userid"] == "wx_ext_001"
     assert item["questionnaire_id"] == 1
     assert item["questionnaire_title"] == "黄小璨激活问卷"

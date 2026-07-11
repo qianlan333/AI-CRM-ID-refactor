@@ -10,6 +10,8 @@ from sqlalchemy import Text, bindparam, cast, delete, func, insert, or_, select,
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 
+from aicrm_next.identity_contact.dto import ResolvePersonIdentityRequest
+from aicrm_next.identity_contact.resolver import SQLAlchemyIdentityResolver, classify_identity_candidates
 from aicrm_next.shared.config import Settings, get_settings
 from aicrm_next.shared.db_session import get_session_factory
 from aicrm_next.shared.repository_provider import assert_repository_allowed
@@ -1326,45 +1328,43 @@ class LiveSourceCustomerReadRepository:
         if not normalized:
             return {}
         if is_sqlite_session(self._session):
-            return self._identity_by_external_userid_sqlite(normalized)
-        row = self._session.execute(
-            text(
-                """
-                SELECT unionid, primary_external_userid, primary_openid, identity_status
-                FROM crm_user_identity
-                WHERE primary_external_userid = :external_userid
-                   OR jsonb_exists(external_userids_json, :external_userid)
-                   OR EXISTS (
-                       SELECT 1
-                       FROM jsonb_array_elements(external_userids_json) AS item(value)
-                       WHERE jsonb_typeof(item.value) = 'object'
-                         AND item.value ->> 'external_userid' = :external_userid
-                   )
-                ORDER BY CASE WHEN primary_external_userid = :external_userid THEN 0 ELSE 1 END,
-                         updated_at DESC
-                LIMIT 1
-                """
-            ),
-            {"external_userid": normalized},
-        ).mappings().first()
-        return dict(row or {})
+            return self._identity_by_external_userid_sqlite_fixture_adapter(normalized)
+        resolution = SQLAlchemyIdentityResolver(self._session).resolve(
+            ResolvePersonIdentityRequest(external_userid=normalized)
+        )
+        identity = resolution.identity if resolution.status == "resolved" else None
+        if identity is None:
+            return {}
+        return {
+            "unionid": str(identity.unionid or ""),
+            "primary_external_userid": str(identity.external_userid or ""),
+            "primary_openid": str(identity.openid or ""),
+            "identity_status": "active",
+        }
 
-    def _identity_by_external_userid_sqlite(self, external_userid: str) -> JsonDict:
-        row = self._session.execute(
+    def _identity_by_external_userid_sqlite_fixture_adapter(self, external_userid: str) -> JsonDict:
+        rows = self._session.execute(
             text(
                 """
-                SELECT unionid, primary_external_userid, primary_openid, identity_status
+                SELECT unionid, primary_external_userid, external_userids_json, primary_openid, identity_status
                 FROM crm_user_identity
-                WHERE primary_external_userid = :external_userid
-                   OR COALESCE(CAST(external_userids_json AS TEXT), '') LIKE :external_userid_like
-                ORDER BY CASE WHEN primary_external_userid = :external_userid THEN 0 ELSE 1 END,
-                         updated_at DESC
-                LIMIT 1
+                ORDER BY unionid
                 """
             ),
-            {"external_userid": external_userid, "external_userid_like": f'%"{external_userid}"%'},
-        ).mappings().first()
-        return dict(row or {})
+        ).mappings().all()
+        resolution = classify_identity_candidates(
+            ResolvePersonIdentityRequest(external_userid=external_userid),
+            rows,
+        )
+        identity = resolution.identity if resolution.status == "resolved" else None
+        if identity is None:
+            return {}
+        return {
+            "unionid": str(identity.unionid or ""),
+            "primary_external_userid": str(identity.external_userid or ""),
+            "primary_openid": str(identity.openid or ""),
+            "identity_status": "active",
+        }
 
     def _owner_display_map(self, userids: list[str]) -> dict[str, str]:
         rows = self._execute_in_query(

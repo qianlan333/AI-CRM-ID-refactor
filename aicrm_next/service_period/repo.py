@@ -7,6 +7,8 @@ import logging
 from typing import Any, Protocol
 
 from aicrm_next.commerce.repo import build_commerce_repository
+from aicrm_next.identity_contact.dto import ResolvePersonIdentityRequest
+from aicrm_next.identity_contact.resolver import resolve_identity_with_dbapi, resolved_unionid
 from aicrm_next.shared.db_session import connect_pooled_postgres
 from aicrm_next.shared.errors import ContractError, NotFoundError
 from aicrm_next.shared.repository_provider import assert_repository_allowed
@@ -882,7 +884,6 @@ class PostgresServicePeriodRepository:
                         NULLIF(NULLIF(c.customer_name, ''), '问卷提交用户'),
                         NULLIF(NULLIF(c.profile_json->>'name', ''), '问卷提交用户'),
                         NULLIF(wim.name, ''),
-                        NULLIF(wim.raw_profile->>'name', ''),
                         NULLIF(c.customer_name, ''),
                         NULLIF(e.metadata_json->>'payer_name', ''),
                         NULLIF(o.payer_name_snapshot, '')
@@ -899,7 +900,7 @@ class PostgresServicePeriodRepository:
                 LEFT JOIN wechat_pay_orders o ON o.id = e.last_order_id
                 LEFT JOIN crm_user_identity c ON c.unionid = e.unionid
                 LEFT JOIN LATERAL (
-                    SELECT im.external_userid, im.name, im.raw_profile
+                    SELECT im.external_userid, im.name
                     FROM wecom_external_contact_identity_map im
                     WHERE im.unionid = e.unionid
                     ORDER BY im.updated_at DESC NULLS LAST, im.id DESC
@@ -967,7 +968,6 @@ class PostgresServicePeriodRepository:
                         NULLIF(NULLIF(c.customer_name, ''), '问卷提交用户'),
                         NULLIF(NULLIF(c.profile_json->>'name', ''), '问卷提交用户'),
                         NULLIF(wim.name, ''),
-                        NULLIF(wim.raw_profile->>'name', ''),
                         NULLIF(c.customer_name, ''),
                         NULLIF(e.metadata_json->>'payer_name', ''),
                         NULLIF(o.payer_name_snapshot, '')
@@ -984,7 +984,7 @@ class PostgresServicePeriodRepository:
                 LEFT JOIN wechat_pay_orders o ON o.id = e.last_order_id
                 LEFT JOIN crm_user_identity c ON c.unionid = e.unionid
                 LEFT JOIN LATERAL (
-                    SELECT im.external_userid, im.name, im.raw_profile
+                    SELECT im.external_userid, im.name
                     FROM wecom_external_contact_identity_map im
                     WHERE im.unionid = e.unionid
                     ORDER BY im.updated_at DESC NULLS LAST, im.id DESC
@@ -1052,7 +1052,18 @@ class PostgresServicePeriodRepository:
                 return {"ok": True, "skipped": True, "reason": "not_service_period_product"}
             if self._event_exists(conn, out_trade_no, {"activated", "renewed"}):
                 return {"ok": True, "idempotent": True, "skipped": True, "reason": "event_already_applied"}
-            unionid = self._resolve_order_unionid(conn, order)
+            identity = _order_identity(order)
+            unionid = resolved_unionid(
+                resolve_identity_with_dbapi(
+                    conn,
+                    ResolvePersonIdentityRequest(
+                        unionid=identity["unionid"] or None,
+                        external_userid=identity["external_userid"] or None,
+                        openid=identity["openid"] or None,
+                        mobile=identity["mobile"] or None,
+                    ),
+                )
+            )
             if not unionid:
                 event = self._insert_event(
                     conn,
@@ -1293,32 +1304,6 @@ class PostgresServicePeriodRepository:
             (out_trade_no, list(event_types)),
         ).fetchone()
         return bool(row)
-
-    def _resolve_order_unionid(self, conn: Any, order: dict[str, Any]) -> str:
-        identity = _order_identity(order)
-        if identity["unionid"]:
-            return identity["unionid"]
-        clauses: list[str] = []
-        params: list[Any] = []
-        if identity["openid"]:
-            clauses.append("(primary_openid = %s OR jsonb_exists(openids_json, %s))")
-            params.extend([identity["openid"], identity["openid"]])
-        if identity["external_userid"]:
-            clauses.append("(primary_external_userid = %s OR jsonb_exists(external_userids_json, %s))")
-            params.extend([identity["external_userid"], identity["external_userid"]])
-        if not clauses:
-            return ""
-        row = conn.execute(
-            f"""
-            SELECT unionid
-            FROM crm_user_identity
-            WHERE {" OR ".join(clauses)}
-            ORDER BY updated_at DESC NULLS LAST
-            LIMIT 1
-            """,
-            tuple(params),
-        ).fetchone()
-        return text((row or {}).get("unionid"))
 
     def _grant_or_renew_with_unionid(
         self,

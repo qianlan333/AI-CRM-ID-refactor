@@ -6,7 +6,7 @@ from typing import Any
 from uuid import uuid4
 
 from aicrm_next.identity_contact.application import BindMobileToExternalContactCommand, ResolvePersonIdentityQuery
-from aicrm_next.identity_contact.dto import BindMobileToExternalContactRequest, ResolvePersonIdentityRequest
+from aicrm_next.identity_contact.dto import BindMobileToExternalContactRequest, IdentityResolveResult, ResolvePersonIdentityRequest
 from aicrm_next.customer_tags.local_projection import (
     project_questionnaire_tags,
     reset_customer_tag_local_projection_fixture_state,
@@ -248,6 +248,19 @@ def _repo() -> QuestionnaireRepository:
         raise
 
 
+def _identity_result(query: Any, request: ResolvePersonIdentityRequest) -> IdentityResolveResult:
+    execute_result = getattr(query, "execute_result", None)
+    if callable(execute_result):
+        return execute_result(request)
+    identity = query(request)
+    return IdentityResolveResult(
+        status="resolved" if identity is not None else "not_found",
+        identity=identity,
+        reason="" if identity is not None else "identity_not_found",
+        candidate_count=1 if identity is not None else 0,
+    )
+
+
 def _handle_submit(command: Command) -> dict[str, Any]:
     payload = dict(command.payload)
     slug = str(payload.get("questionnaire_slug") or "").strip()
@@ -266,30 +279,72 @@ def _handle_submit(command: Command) -> dict[str, Any]:
             mobile_answer = _mobile_answer_from_questions(item, answers)
             if mobile_answer:
                 identity_payload["mobile"] = mobile_answer
-        identity_resolution_error = ""
-        try:
-            identity = ResolvePersonIdentityQuery()(
-                ResolvePersonIdentityRequest(
-                    mobile=identity_payload.get("mobile"),
-                    external_userid=identity_payload.get("external_userid"),
-                    openid=identity_payload.get("openid"),
-                    unionid=identity_payload.get("unionid"),
-                )
+        identity_query = ResolvePersonIdentityQuery()
+        has_canonical_alias = any(
+            identity_payload.get(field) for field in ("external_userid", "openid", "unionid")
+        )
+        initial_resolution = _identity_result(
+            identity_query,
+            ResolvePersonIdentityRequest(
+                mobile=identity_payload.get("mobile") if not has_canonical_alias else None,
+                external_userid=identity_payload.get("external_userid"),
+                openid=identity_payload.get("openid"),
+                unionid=identity_payload.get("unionid"),
             )
-        except Exception as exc:
-            identity = None
-            identity_resolution_error = str(exc)
+        )
+        if initial_resolution.status == "conflict":
+            raise ContractError("identity_conflict")
+        identity = initial_resolution.identity if initial_resolution.status == "resolved" else None
+        identity_resolution_error = "" if identity else initial_resolution.reason
+        identity_input_present = any(
+            identity_payload.get(field) for field in ("external_userid", "openid", "unionid", "mobile")
+        )
         resolved_identity = {
             **identity_payload,
             "person_id": identity.person_id if identity else None,
             "external_userid": (identity.external_userid if identity else identity_payload.get("external_userid")) or "",
-            "unionid": identity_payload.get("unionid") or (identity.unionid if identity else "") or "",
-            "mobile": (identity.mobile if identity else "") or identity_payload.get("mobile") or "",
-            "binding_status": identity.binding_status if identity else ("identity_resolution_unavailable" if identity_resolution_error else "unresolved"),
+            "openid": (identity.openid if identity else identity_payload.get("openid")) or "",
+            "unionid": (identity.unionid if identity else "") or "",
+            "mobile": identity_payload.get("mobile") or (identity.mobile if identity else "") or "",
+            "binding_status": identity.binding_status if identity else ("identity_pending_unionid" if identity_input_present else "unresolved"),
             "identity_map_id": identity.identity_map_id if identity else None,
             "follow_user_userid": (identity.follow_user_userid if identity else "") or identity_payload.get("follow_user_userid") or "",
             "matched_by": (identity.matched_by if identity else identity_payload.get("matched_by")) or "",
         }
+        mobile_binding = {
+            "ok": True,
+            "skipped": True,
+            "reason": "canonical_identity_unresolved",
+        }
+        if identity is not None:
+            mobile_binding = _sync_questionnaire_mobile_binding(command=command, submission=resolved_identity)
+            if mobile_binding.get("ok") and not mobile_binding.get("skipped"):
+                final_resolution = _identity_result(
+                    identity_query,
+                    ResolvePersonIdentityRequest(
+                        mobile=resolved_identity.get("mobile") or None,
+                        external_userid=resolved_identity.get("external_userid") or None,
+                        openid=resolved_identity.get("openid") or None,
+                        unionid=resolved_identity.get("unionid") or None,
+                    )
+                )
+                if final_resolution.status == "conflict":
+                    raise ContractError("identity_conflict")
+                if final_resolution.status == "resolved" and final_resolution.identity is not None:
+                    identity = final_resolution.identity
+                    resolved_identity.update(
+                        {
+                            "person_id": identity.person_id,
+                            "external_userid": identity.external_userid or "",
+                            "openid": identity.openid or "",
+                            "unionid": identity.unionid or "",
+                            "mobile": resolved_identity.get("mobile") or identity.mobile or "",
+                            "binding_status": identity.binding_status,
+                            "identity_map_id": identity.identity_map_id,
+                            "follow_user_userid": identity.follow_user_userid or resolved_identity.get("follow_user_userid") or "",
+                            "matched_by": identity.matched_by or "",
+                        }
+                    )
         if repo.find_submission_for_identity(int(item["id"]), resolved_identity):
             raise ContractError("already_submitted")
         score, final_tags = score_and_tags(item, answers)
@@ -304,7 +359,7 @@ def _handle_submit(command: Command) -> dict[str, Any]:
                 "slug": item["slug"],
                 "respondent_key": identity_payload.get("respondent_key") or "",
                 "external_userid": resolved_identity.get("external_userid") or "",
-                "openid": identity_payload.get("openid") or "",
+                "openid": resolved_identity.get("openid") or "",
                 "unionid": resolved_identity.get("unionid") or "",
                 "mobile": resolved_identity.get("mobile") or "",
                 "answers": answers,
@@ -327,13 +382,12 @@ def _handle_submit(command: Command) -> dict[str, Any]:
                 "updated_at": utcnow_iso(),
             }
         )
-        mobile_binding = _sync_questionnaire_mobile_binding(command=command, submission=submission)
         if mobile_binding.get("ok") and not mobile_binding.get("skipped"):
             submission = {
                 **submission,
                 "binding_status": mobile_binding.get("binding_status") or "bound",
                 "person_id": mobile_binding.get("person_id") or submission.get("person_id"),
-                "mobile": mobile_binding.get("mobile") or submission.get("mobile"),
+                "mobile": submission.get("mobile") or mobile_binding.get("mobile"),
                 "follow_user_userid": mobile_binding.get("owner_userid") or submission.get("follow_user_userid"),
             }
     except NotFoundError:
@@ -357,12 +411,26 @@ def _handle_submit(command: Command) -> dict[str, Any]:
     )
     external_push_mode = QUESTIONNAIRE_EXTERNAL_PUSH_MODE
     external_push_config = dict(item.get("external_push_config") or {})
+    canonical_identity_resolved = bool(str(submission.get("unionid") or "").strip())
+    external_push_configured = bool(external_push_config.get("enabled") or item.get("external_push_enabled"))
+    if not external_push_configured:
+        external_push_ok = True
+        external_push_reason = "questionnaire_external_push_not_configured"
+        external_push_status = "skipped"
+    elif canonical_identity_resolved:
+        external_push_ok = True
+        external_push_reason = "queued_external_effect"
+        external_push_status = "queued"
+    else:
+        external_push_ok = False
+        external_push_reason = "identity_pending_unionid"
+        external_push_status = "blocked"
     external_push_result = {
-        "enabled": bool(external_push_config.get("enabled") or item.get("external_push_enabled")),
+        "enabled": external_push_configured,
         "attempted": False,
-        "ok": True,
-        "reason": "queued_external_effect",
-        "status": "queued",
+        "ok": external_push_ok,
+        "reason": external_push_reason,
+        "status": external_push_status,
         "mode": external_push_mode,
         "legacy_outbound_disabled": True,
         "external_effect_required": True,
@@ -571,13 +639,13 @@ def _sync_questionnaire_mobile_binding(*, command: Command, submission: dict[str
         }
     return {
         "ok": bool(result.get("ok", True)),
-        "skipped": False,
-        "reason": "",
+        "skipped": not bool(result.get("ok", True)),
+        "reason": str(result.get("reason") or ""),
         "external_userid": str(result.get("external_userid") or external_userid),
         "mobile": str(result.get("mobile") or mobile),
         "owner_userid": str(result.get("owner_userid") or submission.get("follow_user_userid") or ""),
         "person_id": result.get("person_id"),
-        "binding_status": str(result.get("binding_status") or "bound"),
+        "binding_status": str(result.get("binding_status") or ("bound" if result.get("ok", True) else "pending")),
         "source_status": str(result.get("source_status") or "questionnaire_mobile_binding"),
         "route_owner": "ai_crm_next",
         "fallback_used": False,
@@ -736,6 +804,16 @@ def _execute_questionnaire_tag_apply(
             "error_message": "Questionnaire final_tags are empty or invalid.",
             "reason": "tag_ids_missing",
             "tag_validation": tag_validation,
+            "skipped": False,
+        }
+    if not unionid:
+        return {
+            **base,
+            "status": "failed",
+            "error_code": "identity_pending_unionid",
+            "error_message": "A resolved canonical unionid is required before WeCom tag execution.",
+            "reason": "identity_pending_unionid",
+            "retryable": True,
             "skipped": False,
         }
     if not external_userid:

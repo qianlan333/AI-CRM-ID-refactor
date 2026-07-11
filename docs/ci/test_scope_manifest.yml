@@ -252,6 +252,38 @@
       "architecture_gate": "db"
     },
     {
+      "name": "unionid_identity_cutover",
+      "paths": [
+        "aicrm_next/automation_agents/repository.py",
+        "aicrm_next/customer_tags/local_projection.py",
+        "aicrm_next/message_archive/application.py",
+        "scripts/ops/check_unionid_identity_cutover.py",
+        "scripts/run_identity_mobile_bridge_backfill.py",
+        "tests/test_external_questionnaire_submissions_api.py",
+        "tests/test_internal_events_shadow_emit.py",
+        "tests/test_next_hxc_broadcast_repo.py",
+        "tests/test_unionid_identity_contract_gate.py",
+        "tests/test_wecom_tag_live_mutation_callers_contract.py"
+      ],
+      "python_tests": [
+        "tests/test_identity_application_contract.py",
+        "tests/test_identity_resolution_backfill_worker.py",
+        "tests/test_identity_resolver_contract.py",
+        "tests/test_identity_resolver_postgres.py",
+        "tests/test_identity_cutover_reconciliation_contract.py",
+        "tests/test_unionid_identity_contract_gate.py",
+        "tests/test_unionid_identity_refactor_schema.py",
+        "tests/test_unionid_runtime_breakage_hotfix.py",
+        "tests/test_questionnaire_identity_resolution.py",
+        "tests/test_questionnaire_submission_identity_backfill.py",
+        "tests/test_archive_sync_next.py",
+        "tests/test_service_period_payment_consumer.py"
+      ],
+      "needs_postgres": true,
+      "needs_full_ci": true,
+      "architecture_gate": "full"
+    },
+    {
       "name": "broadcast_group_ops",
       "paths": [
         "aicrm_next/background_jobs/**",

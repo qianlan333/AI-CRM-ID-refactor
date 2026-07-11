@@ -249,6 +249,7 @@ def _emit_questionnaire_event_to_service(service: InternalEventService, *, key: 
                 "slug": "hxc-activation-v1",
                 "respondent_key": "respondent_masked",
                 "external_userid": "wm_questionnaire_consumer",
+                "unionid_present": True,
                 "submitted_at": "2026-06-14T12:00:00Z",
                 "answer_count": 1,
             },

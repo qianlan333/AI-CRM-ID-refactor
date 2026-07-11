@@ -258,6 +258,7 @@ def _submit_questionnaire_queue_loopback_job(
     phone: str,
     receiver_token: str,
     response_status: int,
+    external_userid: str = "wx_ext_001",
 ) -> dict:
     _questionnaire, phone_question_id = _seed_hxc_questionnaire(
         monkeypatch,
@@ -271,7 +272,10 @@ def _submit_questionnaire_queue_loopback_job(
 
     response = client.post(
         "/api/h5/questionnaires/hxc-activation-v1/submit",
-        json={"answers": {phone_question_id: phone}},
+        json={
+            "answers": {phone_question_id: phone},
+            "identity": {"external_userid": external_userid},
+        },
         headers={"Idempotency-Key": idempotency_key},
     )
     body = response.json()
@@ -1374,7 +1378,10 @@ def test_questionnaire_submit_queues_external_push_without_legacy_call(client: T
 
     response = client.post(
         "/api/h5/questionnaires/hxc-activation-v1/submit",
-        json={"answers": {phone_question_id: "13770938680"}},
+        json={
+            "answers": {phone_question_id: "13770938680"},
+            "identity": {"external_userid": "wx_ext_001"},
+        },
         headers={"Idempotency-Key": "questionnaire-shadow-effect"},
     )
 
@@ -1397,7 +1404,10 @@ def test_questionnaire_external_push_is_queue_only(client: TestClient, monkeypat
     )
     response = client.post(
         "/api/h5/questionnaires/hxc-activation-v1/submit",
-        json={"answers": {phone_question_id: "test_phone_queue_only_001"}},
+        json={
+            "answers": {phone_question_id: "13770938681"},
+            "identity": {"external_userid": "wx_ext_001"},
+        },
         headers={"Idempotency-Key": "queue-only-questionnaire-effect"},
     )
     body = response.json()
@@ -1428,7 +1438,7 @@ def test_questionnaire_queue_mode_preview_dry_run_and_loopback_execute_2xx(next_
         next_client,
         monkeypatch,
         idempotency_key="questionnaire-queue-loopback-2xx",
-        phone="test_phone_queue_2xx",
+        phone="13770938682",
         receiver_token="eert_questionnaire_queue_2xx",
         response_status=200,
     )
@@ -1471,7 +1481,7 @@ def test_questionnaire_queue_mode_loopback_500_retryable_and_400_terminal(next_c
         next_client,
         monkeypatch,
         idempotency_key="questionnaire-queue-loopback-500",
-        phone="test_phone_queue_500",
+        phone="13770938683",
         receiver_token="eert_questionnaire_queue_500",
         response_status=500,
     )
@@ -1479,9 +1489,10 @@ def test_questionnaire_queue_mode_loopback_500_retryable_and_400_terminal(next_c
         next_client,
         monkeypatch,
         idempotency_key="questionnaire-queue-loopback-400",
-        phone="test_phone_queue_400",
+        phone="13770938684",
         receiver_token="eert_questionnaire_queue_400",
         response_status=400,
+        external_userid="wx_ext_002",
     )
 
     retry_result = ExternalEffectWorker().run_due(batch_size=1, dry_run=False, effect_types=[WEBHOOK_QUESTIONNAIRE_SUBMISSION_PUSH], test_only=True)
@@ -1522,7 +1533,10 @@ def test_questionnaire_queue_mode_job_creation_failure_does_not_fail_submission(
 
     response = client.post(
         "/api/h5/questionnaires/hxc-activation-v1/submit",
-        json={"answers": {phone_question_id: "test_phone_queue_plan_failure"}},
+        json={
+            "answers": {phone_question_id: "13770938685"},
+            "identity": {"external_userid": "wx_ext_001"},
+        },
         headers={"Idempotency-Key": "questionnaire-queue-plan-failure"},
     )
     body = response.json()

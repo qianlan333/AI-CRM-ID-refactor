@@ -131,7 +131,7 @@ def test_sidebar_workflow_title_uses_preserved_channel_link_tables_after_retirem
     source = inspect.getsource(SidebarV2SqlRepository.get_workflow_title_for_customer)
     assert "automation_member" not in source
     assert "automation_channel_contact" in source
-    assert "crm_user_identity" in source
+    assert "_resolve_identity" in source
 
 
 def test_sidebar_user_visible_read_paths_do_not_join_retired_automation_tables() -> None:

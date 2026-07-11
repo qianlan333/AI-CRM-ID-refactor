@@ -7,6 +7,8 @@ import os
 from datetime import date, datetime, timezone
 from typing import Any, Protocol
 
+from aicrm_next.identity_contact.dto import ResolvePersonIdentityRequest
+from aicrm_next.identity_contact.resolver import resolve_external_userid_with_dbapi, resolve_identity_with_dbapi, resolved_unionid
 from aicrm_next.shared.repository_provider import RepositoryProviderError
 from aicrm_next.shared.runtime import production_data_ready, raw_database_url
 
@@ -39,33 +41,19 @@ def _json_dump(value: Any) -> str:
     return json.dumps(value if value is not None else {}, ensure_ascii=False, default=_default)
 
 
-def _resolve_unionid_by_external_userid(conn: Any, external_userid: str) -> str:
-    external = _text(external_userid)
-    if not external:
-        return ""
-    try:
-        row = conn.execute(
-            """
-            SELECT unionid
-            FROM crm_user_identity
-            WHERE primary_external_userid = %s
-               OR jsonb_exists(external_userids_json, %s)
-            ORDER BY CASE WHEN primary_external_userid = %s THEN 0 ELSE 1 END,
-                     updated_at DESC NULLS LAST
-            LIMIT 1
-            """,
-            (external, external, external),
-        ).fetchone()
-    except Exception:
-        return ""
-    return _text((row or {}).get("unionid"))
-
-
 def _unionid_targets_from_external_members(conn: Any, members: list[dict[str, Any]]) -> tuple[list[str], list[dict[str, Any]]]:
     unionids: list[str] = []
     normalized_members: list[dict[str, Any]] = []
     for member in members:
-        unionid = _text(member.get("unionid")) or _resolve_unionid_by_external_userid(conn, member.get("external_contact_id"))
+        unionid = resolved_unionid(
+            resolve_identity_with_dbapi(
+                conn,
+                ResolvePersonIdentityRequest(
+                    unionid=_text(member.get("unionid")) or None,
+                    external_userid=_text(member.get("external_contact_id")) or None,
+                ),
+            )
+        )
         if not unionid:
             continue
         if unionid not in unionids:
@@ -1404,7 +1392,7 @@ class PostgresCloudPlanRepository:
         plan_id = _agent_plan_id(normalized_event_id)
         content_payload = _content_payload_for_package(content_package)
         with self._connect() as conn:
-            normalized_unionid = _resolve_unionid_by_external_userid(conn, normalized_external_userid)
+            normalized_unionid = resolve_external_userid_with_dbapi(conn, normalized_external_userid)
             if not normalized_unionid:
                 return {"status": "skipped", "reason": "identity_pending_unionid"}
             existing_plan = conn.execute(
