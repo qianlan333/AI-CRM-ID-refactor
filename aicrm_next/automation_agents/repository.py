@@ -10,6 +10,8 @@ from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
+from aicrm_next.identity_contact.dto import ResolvePersonIdentityRequest
+from aicrm_next.identity_contact.resolver import SQLAlchemyIdentityResolver, resolved_unionids_for_external_userids_with_sqlalchemy
 from aicrm_next.shared.db_session import get_session_factory
 
 
@@ -78,54 +80,6 @@ class AutomationAgentRepository:
             session.commit()
             return [_public_row(dict(row)) or {} for row in rows]
 
-    def _resolve_unionids_for_external_userids(self, session: Session, external_userids: list[str]) -> list[str]:
-        unique_external_userids: list[str] = []
-        for external_userid in external_userids:
-            normalized = _text(external_userid)
-            if normalized and normalized not in unique_external_userids:
-                unique_external_userids.append(normalized)
-        if not unique_external_userids:
-            return []
-        rows = session.execute(
-            text(
-                """
-                SELECT unionid, primary_external_userid, external_userids_json
-                FROM crm_user_identity
-                WHERE primary_external_userid = ANY(:external_userids)
-                   OR EXISTS (
-                       SELECT 1
-                       FROM jsonb_array_elements(external_userids_json) AS external_item(value)
-                       WHERE CASE
-                           WHEN jsonb_typeof(external_item.value) = 'object' THEN external_item.value->>'external_userid'
-                           ELSE trim('"' from external_item.value::text)
-                       END = ANY(:external_userids)
-                   )
-                """
-            ),
-            {"external_userids": unique_external_userids},
-        ).mappings().fetchall()
-        by_external: dict[str, str] = {}
-        for row in rows:
-            unionid = _text(row.get("unionid"))
-            primary = _text(row.get("primary_external_userid"))
-            if primary:
-                by_external[primary] = unionid
-            raw_external_ids = row.get("external_userids_json") or []
-            if isinstance(raw_external_ids, str):
-                try:
-                    raw_external_ids = json.loads(raw_external_ids)
-                except json.JSONDecodeError:
-                    raw_external_ids = []
-            if isinstance(raw_external_ids, list):
-                for item in raw_external_ids:
-                    if isinstance(item, dict):
-                        external = _text(item.get("external_userid"))
-                    else:
-                        external = _text(item)
-                    if external:
-                        by_external[external] = unionid
-        return [by_external[external] for external in unique_external_userids if by_external.get(external)]
-
     def list_agents(self, *, limit: int = 200) -> list[dict[str, Any]]:
         return self._all(
             """
@@ -174,17 +128,12 @@ class AutomationAgentRepository:
         )
 
     def resolve_external_userid_for_unionid(self, unionid: str) -> str:
-        row = self._one(
-            """
-            SELECT primary_external_userid
-            FROM crm_user_identity
-            WHERE unionid = :unionid
-              AND COALESCE(primary_external_userid, '') <> ''
-            LIMIT 1
-            """,
-            {"unionid": _text(unionid)},
-        )
-        return _text((row or {}).get("primary_external_userid"))
+        with self._session_factory() as session:
+            resolution = SQLAlchemyIdentityResolver(session).resolve(
+                ResolvePersonIdentityRequest(unionid=_text(unionid) or None)
+            )
+        identity = resolution.identity if resolution.status == "resolved" else None
+        return _text(identity.external_userid if identity else "")
 
     def get_bound_audience_context_for_item(self, *, batch_id: str, agent_code: str, external_userid: str) -> dict[str, Any]:
         batch_id = _text(batch_id)
@@ -495,7 +444,7 @@ class AutomationAgentRepository:
         refresh_run_id: str,
     ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
         with self._session_factory() as session:
-            unionids = self._resolve_unionids_for_external_userids(session, external_userids)
+            unionids = resolved_unionids_for_external_userids_with_sqlalchemy(session, external_userids)
             deduped_count = len(unionids)
             row = session.execute(
                 text(

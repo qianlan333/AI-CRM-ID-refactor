@@ -165,6 +165,25 @@ def questionnaire_webhook_consumer(event: InternalEvent, run: InternalEventConsu
             error_code="questionnaire_identity_missing",
             error_message="submission_id and questionnaire_id are required",
         )
+    if not _external_push_enabled(questionnaire) or not _target_url(questionnaire):
+        return InternalEventConsumerResult(
+            status="skipped",
+            request_summary={"event_id": event.event_id, "submission_id": submission_id},
+            response_summary={
+                "skipped": True,
+                "reason": "questionnaire_external_push_not_configured",
+                "external_effect_job_created": False,
+            },
+            result_summary={"reason": "questionnaire_external_push_not_configured"},
+        )
+    if not bool(submission.get("unionid_present")):
+        return InternalEventConsumerResult(
+            status="failed_retryable",
+            request_summary={"event_id": event.event_id, "submission_id": submission_id},
+            response_summary={"external_effect_job_created": False, "reason": "missing_unionid"},
+            error_code="missing_unionid",
+            error_message="questionnaire external push requires a resolved canonical unionid",
+        )
     external_effects = ExternalEffectService()
     existing_job = external_effects.find_existing_job(
         effect_type=WEBHOOK_QUESTIONNAIRE_SUBMISSION_PUSH,
@@ -190,17 +209,6 @@ def questionnaire_webhook_consumer(event: InternalEvent, run: InternalEventConsu
                 "external_effect_job_reused": True,
                 "effect_type": WEBHOOK_QUESTIONNAIRE_SUBMISSION_PUSH,
             },
-        )
-    if not _external_push_enabled(questionnaire) or not _target_url(questionnaire):
-        return InternalEventConsumerResult(
-            status="skipped",
-            request_summary={"event_id": event.event_id, "submission_id": submission_id},
-            response_summary={
-                "skipped": True,
-                "reason": "questionnaire_external_push_not_configured",
-                "external_effect_job_created": False,
-            },
-            result_summary={"reason": "questionnaire_external_push_not_configured"},
         )
     body = _questionnaire_external_body(
         questionnaire=questionnaire,

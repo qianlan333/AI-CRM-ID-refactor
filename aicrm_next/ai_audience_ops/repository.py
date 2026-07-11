@@ -12,6 +12,8 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from aicrm_next.identity_contact.dto import ResolvePersonIdentityRequest
+from aicrm_next.identity_contact.resolver import SQLAlchemyIdentityResolver, resolved_unionid
 from aicrm_next.shared.db_session import get_session_factory
 
 
@@ -991,25 +993,16 @@ class SQLAlchemyAudienceRepository(AudienceRepository):
         )
 
     def resolve_member_unionid(self, normalized: dict[str, Any]) -> str:
-        unionid = _text(normalized.get("unionid"))
-        if unionid:
-            return unionid
-        external_userid = _text(normalized.get("external_userid"))
-        if not external_userid or not self._table_exists("crm_user_identity"):
+        if not self._table_exists("crm_user_identity"):
             return ""
-        row = self._one(
-            """
-            SELECT unionid
-            FROM crm_user_identity
-            WHERE primary_external_userid = :external_userid
-               OR jsonb_exists(external_userids_json, :external_userid)
-            ORDER BY CASE WHEN primary_external_userid = :external_userid THEN 0 ELSE 1 END,
-                     updated_at DESC NULLS LAST
-            LIMIT 1
-            """,
-            {"external_userid": external_userid},
+        query = ResolvePersonIdentityRequest(
+            unionid=_text(normalized.get("unionid")) or None,
+            external_userid=_text(normalized.get("external_userid")) or None,
+            openid=_text(normalized.get("openid")) or None,
+            mobile=_text(normalized.get("mobile")) or None,
         )
-        return _text((row or {}).get("unionid"))
+        with self._session_factory() as session:
+            return resolved_unionid(SQLAlchemyIdentityResolver(session).resolve(query))
 
     def enqueue_identity_resolution(self, normalized: dict[str, Any], *, reason: str) -> None:
         if not self._table_exists("crm_user_identity_resolution_queue"):

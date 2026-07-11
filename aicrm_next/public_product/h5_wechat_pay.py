@@ -20,6 +20,8 @@ from aicrm_next.navigation_target import completion_action_for_target, completio
 from aicrm_next.commerce.external_push_outbox import enqueue_transaction_paid_outbox
 from aicrm_next.commerce.order_expiration import close_expired_wechat_pay_orders, pending_order_expires_at_text
 from aicrm_next.commerce.product_code_aliases import product_code_filter_values
+from aicrm_next.identity_contact.dto import IdentityResolveResult, ResolvePersonIdentityRequest
+from aicrm_next.identity_contact.resolver import resolve_identity_with_dbapi, resolved_unionid
 from aicrm_next.integration_gateway.wechat_pay_client import WeChatPayClient, WeChatPayClientConfig, WeChatPayClientError
 from aicrm_next.integration_gateway.wechat_oauth_client import WeChatOAuthClientError, build_wechat_oauth_client
 from aicrm_next.platform_foundation.command_bus import CommandContext
@@ -537,47 +539,33 @@ def _lead_qr_for_product_code(conn: Any, product_code: str) -> dict[str, Any]:
     return _resolve_lead_channel_qr(conn, channel_id=channel_id)
 
 
-def _resolve_unionid_for_payment_identity(conn: Any, identity: dict[str, str]) -> str:
-    unionid = _normalized_text(identity.get("unionid"))
-    if unionid:
-        return unionid
-    clauses: list[str] = []
-    params: list[Any] = []
-    openid = _normalized_text(identity.get("openid"))
-    if openid:
-        clauses.append("(primary_openid = %s OR jsonb_exists(openids_json, %s))")
-        params.extend([openid, openid])
-    external_userid = _normalized_text(identity.get("external_userid"))
-    if external_userid:
-        clauses.append("(primary_external_userid = %s OR jsonb_exists(external_userids_json, %s))")
-        params.extend([external_userid, external_userid])
-    if not clauses:
-        return ""
-    row = conn.execute(
-        f"""
-        SELECT unionid
-        FROM crm_user_identity
-        WHERE {" OR ".join(clauses)}
-        ORDER BY
-            CASE
-                WHEN primary_external_userid = %s THEN 0
-                WHEN primary_openid = %s THEN 1
-                ELSE 2
-            END,
-            last_seen_at DESC NULLS LAST,
-            updated_at DESC NULLS LAST
-        LIMIT 1
-        """,
-        tuple([*params, external_userid, openid]),
-    ).fetchone()
-    return _normalized_text((row or {}).get("unionid"))
+def _resolve_payment_identity(
+    conn: Any,
+    identity: dict[str, str],
+    *,
+    for_update: bool = False,
+) -> IdentityResolveResult:
+    """Resolve only payer-owned aliases; sidebar customer context is not payer identity."""
+
+    return resolve_identity_with_dbapi(
+        conn,
+        ResolvePersonIdentityRequest(
+            unionid=_normalized_text(identity.get("unionid")) or None,
+            openid=_normalized_text(identity.get("openid")) or None,
+        ),
+        for_update=for_update,
+    )
 
 
-def _paid_order_for_product_identity(conn: Any, *, product: dict[str, Any], identity: dict[str, str]) -> dict[str, Any] | None:
+def _paid_order_for_product_identity(
+    conn: Any,
+    *,
+    product: dict[str, Any],
+    identity: dict[str, str],
+    canonical_unionid: str = "",
+) -> dict[str, Any] | None:
     product_codes = product_code_filter_values(product.get("product_code"))
-    unionid = _normalized_text(identity.get("unionid"))
-    if not unionid:
-        unionid = _resolve_unionid_for_payment_identity(conn, identity)
+    unionid = _normalized_text(canonical_unionid) or resolved_unionid(_resolve_payment_identity(conn, identity))
     if not product_codes or not unionid:
         return None
     params: list[Any] = [*product_codes, unionid]
@@ -601,8 +589,19 @@ def _paid_order_for_product_identity(conn: Any, *, product: dict[str, Any], iden
     return dict(row) if row else None
 
 
-def _paid_order_payload_for_product_identity(conn: Any, *, product: dict[str, Any], identity: dict[str, str]) -> dict[str, Any] | None:
-    order = _paid_order_for_product_identity(conn, product=product, identity=identity)
+def _paid_order_payload_for_product_identity(
+    conn: Any,
+    *,
+    product: dict[str, Any],
+    identity: dict[str, str],
+    canonical_unionid: str = "",
+) -> dict[str, Any] | None:
+    order = _paid_order_for_product_identity(
+        conn,
+        product=product,
+        identity=identity,
+        canonical_unionid=canonical_unionid,
+    )
     if not order:
         return None
     completion_redirect = _completion_redirect_from_product(product)
@@ -774,15 +773,35 @@ def _order_metadata_identity(order: dict[str, Any]) -> dict[str, Any]:
 def _project_order_mobile_to_identity(conn: Any, order: dict[str, Any], *, source_route: str) -> dict[str, Any]:
     identity = _order_metadata_identity(order)
     mobile = "".join(ch for ch in _normalized_text(identity.get("mobile")) if ch.isdigit())
-    unionid = _normalized_text(order.get("unionid") or identity.get("unionid"))
-    if not unionid:
-        return {"ok": True, "projected": False, "reason": "missing_unionid"}
     if not mobile:
         return {"ok": True, "projected": False, "reason": "missing_mobile"}
     if not (len(mobile) == 11 and mobile.startswith("1")):
         return {"ok": True, "projected": False, "reason": "invalid_mobile"}
 
     external_userid = _normalized_text(identity.get("external_userid"))
+    base_resolution = resolve_identity_with_dbapi(
+        conn,
+        ResolvePersonIdentityRequest(
+            unionid=_normalized_text(order.get("unionid") or identity.get("unionid")) or None,
+            external_userid=external_userid or None,
+            openid=_normalized_text(identity.get("openid")) or None,
+        ),
+    )
+    unionid = resolved_unionid(base_resolution)
+    if not unionid:
+        return {
+            "ok": False if base_resolution.status == "conflict" else True,
+            "projected": False,
+            "reason": "identity_conflict" if base_resolution.status == "conflict" else "missing_unionid",
+        }
+    mobile_resolution = resolve_identity_with_dbapi(
+        conn,
+        ResolvePersonIdentityRequest(mobile=mobile),
+    )
+    mobile_unionid = resolved_unionid(mobile_resolution)
+    if mobile_resolution.status in {"pending", "conflict"} or (mobile_unionid and mobile_unionid != unionid):
+        return {"ok": False, "projected": False, "reason": "mobile_alias_conflict"}
+
     owner_userid = _normalized_text(identity.get("owner_userid"))
     customer_name = _normalized_text(order.get("payer_name_snapshot") or identity.get("payer_name"))
     row = conn.execute(
@@ -996,7 +1015,31 @@ def create_jsapi_order_response(
     }
     try:
         with _connect() as conn:
-            existing_paid_order = _paid_order_payload_for_product_identity(conn, product=product, identity=order_identity) if allow_paid_reuse else None
+            identity_resolution = _resolve_payment_identity(conn, identity, for_update=True)
+            canonical_unionid = resolved_unionid(identity_resolution)
+            if not canonical_unionid:
+                conflict = identity_resolution.status == "conflict"
+                return JSONResponse(
+                    {
+                        "ok": False,
+                        "error": "identity_conflict" if conflict else "identity_resolution_required",
+                        "identity_status": identity_resolution.status,
+                        "retryable": not conflict,
+                    },
+                    status_code=409,
+                    headers=route_headers(),
+                )
+            order_identity["unionid"] = canonical_unionid
+            existing_paid_order = (
+                _paid_order_payload_for_product_identity(
+                    conn,
+                    product=product,
+                    identity=identity,
+                    canonical_unionid=canonical_unionid,
+                )
+                if allow_paid_reuse
+                else None
+            )
             if existing_paid_order is not None:
                 return JSONResponse({"ok": True, "already_paid": True, "order": existing_paid_order}, headers=route_headers())
             client = WeChatPayClient(config)

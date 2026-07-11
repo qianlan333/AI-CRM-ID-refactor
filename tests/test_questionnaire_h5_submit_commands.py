@@ -91,10 +91,10 @@ def test_h5_submit_uses_oauth_cookie_identity_when_payload_has_no_identity(clien
         COOKIE_NAME,
         build_questionnaire_h5_identity_cookie(
             {
-                "openid": "openid-cookie-001",
-                "unionid": "unionid-cookie-001",
-                "respondent_key": "unionid-cookie-001",
-                "external_userid": "wm_cookie_identity_001",
+                "openid": "openid_001",
+                "unionid": "unionid_001",
+                "respondent_key": "unionid_001",
+                "external_userid": "wx_ext_001",
             }
         ),
     )
@@ -108,12 +108,12 @@ def test_h5_submit_uses_oauth_cookie_identity_when_payload_has_no_identity(clien
     body = response.json()
     _assert_next_command(body, "questionnaire.h5.submit")
     assert body["identity"]["anonymous"] is False
-    assert body["identity"]["openid"] == "openid-cookie-001"
-    assert body["identity"]["unionid"] == "unionid-cookie-001"
-    assert body["external_userid"] == "wm_cookie_identity_001"
+    assert body["identity"]["openid"] == "openid_001"
+    assert body["identity"]["unionid"] == "unionid_001"
+    assert body["external_userid"] == "wx_ext_001"
 
 
-def test_h5_submit_persists_when_identity_resolution_is_unavailable(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_h5_submit_fails_closed_when_identity_resolution_is_unavailable(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
     class FailingIdentityQuery:
         def __call__(self, query):
             raise RuntimeError("column b.id does not exist")
@@ -133,14 +133,8 @@ def test_h5_submit_persists_when_identity_resolution_is_unavailable(client: Test
         },
     )
 
-    assert response.status_code == 200
-    body = response.json()
-    _assert_next_command(body, "questionnaire.h5.submit")
-    assert body["success"] is True
-    assert body["external_userid"] == "wm_identity_resolution_down_001"
-    assert body["mobile"] == "13800138099"
-    assert body["binding_status"] == "bound"
-    assert body["mobile_binding"]["source_status"] == "fixture_identity_binding"
+    assert response.status_code == 400
+    assert response.json()["ok"] is False
 
 
 def test_h5_submit_syncs_mobile_binding_without_external_webhook_switch(
@@ -172,8 +166,8 @@ def test_h5_submit_syncs_mobile_binding_without_external_webhook_switch(
         json={
             "answers": {"q_activation": "activated"},
             "identity": {
-                "external_userid": "wm_questionnaire_bind_001",
-                "mobile": "13800138123",
+                "external_userid": "wx_ext_001",
+                "mobile": "13800138000",
             },
         },
         headers={"Idempotency-Key": "h5-submit-mobile-binding"},
@@ -189,10 +183,10 @@ def test_h5_submit_syncs_mobile_binding_without_external_webhook_switch(
     assert body["mobile_binding"]["real_external_call_executed"] is False
     assert body["binding_status"] == "bound"
     assert body["person_id"] == "fixture_person_questionnaire"
-    assert body["side_effects"]["mobile_binding"]["owner_userid"] == "HuangYouCan"
+    assert body["side_effects"]["mobile_binding"]["owner_userid"] == "ZhaoYanFang"
     assert calls
-    assert calls[0].external_userid == "wm_questionnaire_bind_001"
-    assert calls[0].mobile == "13800138123"
+    assert calls[0].external_userid == "wx_ext_001"
+    assert calls[0].mobile == "13800138000"
     assert calls[0].bind_by_userid == "questionnaire_h5_submit"
     assert calls[0].force_rebind is True
 
@@ -201,9 +195,9 @@ def test_h5_submit_rejects_repeated_identity(client: TestClient) -> None:
     payload = {
         "answers": {"q_activation": "activated"},
         "identity": {
-            "external_userid": "wm_repeat_001",
-            "openid": "openid-repeat-001",
-            "unionid": "unionid-repeat-001",
+            "external_userid": "wx_ext_001",
+            "openid": "openid_001",
+            "unionid": "unionid_001",
         },
     }
     first = client.post("/api/h5/questionnaires/hxc-activation-v1/submit", json=payload)

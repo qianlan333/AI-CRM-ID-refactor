@@ -4,9 +4,11 @@ import json
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from sqlalchemy import text
+from sqlalchemy import inspect, text
 from sqlalchemy.engine import Engine
 
+from aicrm_next.identity_contact.dto import IdentityResolution, ResolvePersonIdentityRequest
+from aicrm_next.identity_contact.resolver import SQLAlchemyIdentityResolver, classify_identity_candidates
 from aicrm_next.commerce.application import ListProductsQuery
 from aicrm_next.commerce.repo import build_commerce_repository
 from aicrm_next.customer_read_model.application import GetCustomerContextQuery, _close_repository
@@ -182,46 +184,42 @@ class SidebarV2SqlRepository:
         self._engine = engine or get_engine(database_url=_database_url())
 
     def get_profile_fields(self, external_userid: str) -> dict[str, Any] | None:
+        identity = self._resolve_identity(external_userid=external_userid)
+        if identity is None:
+            return None
         return self._one(
             """
             SELECT
-                COALESCE(NULLIF(identity.primary_external_userid, ''), :external_userid) AS external_userid,
+                :external_userid AS external_userid,
                 profile.source,
                 profile.industry,
                 profile.industry_description,
                 profile.needs_blockers_followup,
                 profile.updated_by,
                 profile.updated_at
-            FROM crm_user_identity identity
-            JOIN sidebar_customer_profile_fields profile ON profile.unionid = identity.unionid
-            WHERE (
-                identity.primary_external_userid = :external_userid
-                OR jsonb_exists(identity.external_userids_json, :external_userid)
-            )
-              AND COALESCE(identity.unionid, '') <> ''
+            FROM sidebar_customer_profile_fields profile
+            WHERE profile.unionid = :unionid
             ORDER BY profile.updated_at DESC
             LIMIT 1
             """,
-            {"external_userid": external_userid},
+            {"external_userid": external_userid, "unionid": _text(identity.unionid)},
         )
 
     def get_workflow_title_for_customer(self, external_userid: str) -> str:
+        identity = self._resolve_identity(external_userid=external_userid)
+        if identity is None:
+            return ""
         row = self._one(
             """
             SELECT COALESCE(NULLIF(l.link_name, ''), NULLIF(c.channel_name, ''), NULLIF(l.initial_audience_code, ''), NULLIF(c.channel_code, '')) AS title
-            FROM crm_user_identity identity
-            JOIN automation_channel_contact channel_contact ON channel_contact.unionid = identity.unionid
+            FROM automation_channel_contact channel_contact
             LEFT JOIN automation_channel c ON c.id = channel_contact.channel_id
             LEFT JOIN wecom_customer_acquisition_links l ON l.automation_channel_id = c.id
-            WHERE (
-                identity.primary_external_userid = :external_userid
-                OR jsonb_exists(identity.external_userids_json, :external_userid)
-            )
-              AND COALESCE(identity.unionid, '') <> ''
+            WHERE channel_contact.unionid = :unionid
             ORDER BY channel_contact.updated_at DESC, channel_contact.id DESC, l.updated_at DESC, l.id DESC
             LIMIT 1
             """,
-            {"external_userid": external_userid},
+            {"unionid": _text(identity.unionid)},
         )
         return _text((row or {}).get("title"))
 
@@ -247,16 +245,17 @@ class SidebarV2SqlRepository:
         )
 
     def get_external_identity_snapshot(self, external_userid: str) -> dict[str, Any] | None:
-        return self._one(
-            """
-            SELECT external_userid, follow_user_userid, name, unionid, openid, status
-            FROM wecom_external_contact_identity_map
-            WHERE external_userid = :external_userid
-            ORDER BY updated_at DESC, id DESC
-            LIMIT 1
-            """,
-            {"external_userid": external_userid},
-        )
+        identity = self._resolve_identity(external_userid=external_userid)
+        if identity is None:
+            return None
+        return {
+            "external_userid": _text(identity.external_userid),
+            "follow_user_userid": _text(identity.follow_user_userid or identity.owner_userid),
+            "name": _text(identity.customer_name),
+            "unionid": _text(identity.unionid),
+            "openid": _text(identity.openid),
+            "status": "active",
+        }
 
     def get_contact_owner_userids(self, external_userid: str) -> set[str]:
         rows = self._all(
@@ -279,63 +278,97 @@ class SidebarV2SqlRepository:
         return {_text(row.get("owner_userid")) for row in rows if _text(row.get("owner_userid"))}
 
     def get_contact_binding_status(self, external_userid: str) -> dict[str, Any]:
+        identity = self._resolve_identity(external_userid=external_userid)
+        if identity is None:
+            return {"is_bound": False, "external_userid": external_userid}
         row = self._one(
             """
             SELECT
-                COALESCE(NULLIF(identity.primary_external_userid, ''), :external_userid) AS external_userid,
+                :external_userid AS external_userid,
                 b.person_id,
                 '' AS first_bound_by_userid,
                 b.first_owner_userid,
                 b.last_owner_userid,
                 NULL::timestamptz AS created_at,
                 b.updated_at,
-                identity.mobile,
-                identity.unionid AS third_party_user_id,
-                identity.primary_owner_userid,
-                identity.customer_name
-            FROM crm_user_identity identity
-            LEFT JOIN external_contact_bindings b
-              ON b.external_userid = identity.primary_external_userid
-            WHERE (
-                identity.primary_external_userid = :external_userid
-                OR jsonb_exists(identity.external_userids_json, :external_userid)
-            )
-              AND COALESCE(identity.unionid, '') <> ''
-            ORDER BY identity.updated_at DESC
+                :mobile AS mobile,
+                :unionid AS third_party_user_id,
+                :owner_userid AS primary_owner_userid,
+                :customer_name AS customer_name
+            FROM external_contact_bindings b
+            WHERE b.external_userid = :canonical_external_userid
+            ORDER BY b.updated_at DESC
             LIMIT 1
             """,
-            {"external_userid": external_userid},
+            {
+                "external_userid": external_userid,
+                "canonical_external_userid": _text(identity.external_userid),
+                "mobile": _text(identity.mobile),
+                "unionid": _text(identity.unionid),
+                "owner_userid": _text(identity.owner_userid),
+                "customer_name": _text(identity.customer_name),
+            },
         )
-        if not row:
-            return {"is_bound": False, "external_userid": external_userid}
+        row = row or {}
         return {
-            "is_bound": True,
-            "external_userid": _text(row.get("external_userid")),
+            "is_bound": bool(_text(identity.mobile)),
+            "external_userid": _text(identity.external_userid) or external_userid,
             "person_id": row.get("person_id"),
-            "mobile": _text(row.get("mobile")),
-            "third_party_user_id": _text(row.get("third_party_user_id")),
+            "mobile": _text(identity.mobile),
+            "third_party_user_id": _text(identity.unionid),
             "first_bound_by_userid": _text(row.get("first_bound_by_userid")),
             "first_owner_userid": _text(row.get("first_owner_userid")),
             "last_owner_userid": _text(row.get("last_owner_userid")),
-            "owner_userid": _text(row.get("last_owner_userid") or row.get("first_owner_userid") or row.get("primary_owner_userid")),
-            "customer_name": _text(row.get("customer_name")),
+            "owner_userid": _text(row.get("last_owner_userid") or row.get("first_owner_userid") or identity.owner_userid),
+            "customer_name": _text(identity.customer_name),
             "created_at": _text(row.get("created_at")),
             "updated_at": _text(row.get("updated_at")),
         }
 
+    def _resolve_identity(self, *, external_userid: str, mobile: str = "") -> IdentityResolution | None:
+        query = ResolvePersonIdentityRequest(
+            external_userid=_text(external_userid) or None,
+            mobile=_normalize_mobile(mobile) or None,
+        )
+        if self._engine.dialect.name == "sqlite":
+            columns = {column["name"] for column in inspect(self._engine).get_columns("crm_user_identity")}
+            projection = []
+            for column in (
+                "unionid",
+                "primary_external_userid",
+                "external_userids_json",
+                "primary_openid",
+                "openids_json",
+                "mobile",
+                "mobile_normalized",
+                "mobile_verified",
+                "mobile_source",
+                "primary_owner_userid",
+                "customer_name",
+                "remark",
+                "description",
+                "identity_status",
+            ):
+                projection.append(column if column in columns else f"'' AS {column}")
+            with self._engine.connect() as connection:
+                rows = connection.execute(
+                    text(f"SELECT {', '.join(projection)} FROM crm_user_identity ORDER BY unionid")
+                ).mappings().all()
+            resolution = classify_identity_candidates(query, rows)
+            return resolution.identity if resolution.status == "resolved" else None
+        with self._engine.connect() as connection:
+            resolution = SQLAlchemyIdentityResolver(connection).resolve(
+                query
+            )
+        return resolution.identity if resolution.status == "resolved" else None
+
     def get_bindable_wechat_pay_order_mobile(self, external_userid: str) -> dict[str, Any] | None:
+        identity = self._resolve_identity(external_userid=external_userid)
+        if identity is None:
+            return None
         rows = self._all(
             """
-            WITH target(external_userid) AS (VALUES (:external_userid)),
-            identity_scope AS (
-                SELECT identity.unionid, identity.mobile
-                FROM crm_user_identity identity
-                JOIN target t ON (
-                    identity.primary_external_userid = t.external_userid
-                    OR jsonb_exists(identity.external_userids_json, t.external_userid)
-                )
-                WHERE COALESCE(identity.unionid, '') <> ''
-            ),
+            WITH identity_scope(unionid, mobile) AS (VALUES (:unionid, :mobile)),
             matching_orders AS (
                 SELECT mobile.mobile_snapshot, '' AS userid_snapshot, paid_at, created_at, o.id::text AS id
                 FROM wechat_pay_orders o
@@ -371,26 +404,20 @@ class SidebarV2SqlRepository:
             ORDER BY latest_order_at DESC, mobile_snapshot ASC
             LIMIT 2
             """,
-            {"external_userid": external_userid},
+            {"unionid": _text(identity.unionid), "mobile": _text(identity.mobile)},
         )
         return rows[0] if len(rows) == 1 else None
 
     def list_customer_wechat_pay_orders(self, *, external_userid: str, mobile: str = "", limit: int = 20) -> list[dict[str, Any]]:
         safe_limit = _limit(limit, default=20, maximum=100)
         candidate_limit = max(safe_limit, 20)
+        identity = self._resolve_identity(external_userid=external_userid, mobile=mobile)
+        if identity is None:
+            return []
         return self._all(
             """
-            WITH target(external_userid, mobile) AS (VALUES (:external_userid, :mobile)),
-            identity_scope AS (
-                SELECT identity.unionid, identity.primary_external_userid, identity.mobile
-                FROM crm_user_identity identity
-                JOIN target t ON (
-                    identity.primary_external_userid = t.external_userid
-                    OR jsonb_exists(identity.external_userids_json, t.external_userid)
-                    OR (t.mobile <> '' AND identity.mobile = t.mobile)
-                    OR (t.mobile <> '' AND identity.mobile_normalized = t.mobile)
-                )
-                WHERE COALESCE(identity.unionid, '') <> ''
+            WITH identity_scope(unionid, primary_external_userid, mobile) AS (
+                VALUES (:unionid, :canonical_external_userid, :canonical_mobile)
             ),
             unionid_orders AS (
                 SELECT
@@ -448,26 +475,23 @@ class SidebarV2SqlRepository:
             ORDER BY sort_at DESC NULLS LAST, id DESC
             LIMIT :limit
             """,
-            {"external_userid": external_userid, "mobile": mobile, "limit": safe_limit, "candidate_limit": candidate_limit},
+            {
+                "unionid": _text(identity.unionid),
+                "canonical_external_userid": _text(identity.external_userid),
+                "canonical_mobile": _text(identity.mobile),
+                "limit": safe_limit,
+                "candidate_limit": candidate_limit,
+            },
         )
 
     def list_customer_service_period_orders(self, *, external_userid: str, mobile: str = "", limit: int = 20) -> list[dict[str, Any]]:
         safe_limit = _limit(limit, default=20, maximum=50)
-        normalized_mobile = _normalize_mobile(mobile)
+        identity = self._resolve_identity(external_userid=external_userid, mobile=mobile)
+        if identity is None:
+            return []
         return self._all(
             """
-            WITH target(external_userid, mobile) AS (VALUES (:external_userid, :mobile)),
-            identity_scope AS (
-                SELECT identity.unionid, identity.primary_external_userid, identity.mobile, identity.mobile_normalized
-                FROM crm_user_identity identity
-                JOIN target t ON (
-                    identity.primary_external_userid = t.external_userid
-                    OR jsonb_exists(identity.external_userids_json, t.external_userid)
-                    OR (t.mobile <> '' AND identity.mobile = t.mobile)
-                    OR (t.mobile <> '' AND identity.mobile_normalized = t.mobile)
-                )
-                WHERE COALESCE(identity.unionid, '') <> ''
-            )
+            WITH identity_scope(unionid) AS (VALUES (:unionid))
             SELECT
                 e.id::text AS entitlement_id,
                 e.service_product_id::text AS service_product_id,
@@ -498,36 +522,23 @@ class SidebarV2SqlRepository:
             LEFT JOIN identity_scope identity ON identity.unionid = e.unionid
             WHERE e.tenant_id = 'aicrm'
               AND e.status IN ('active', 'expired')
-              AND (
-                  identity.unionid IS NOT NULL
-                  OR e.external_userid_snapshot = :external_userid
-                  OR (:mobile <> '' AND regexp_replace(COALESCE(e.mobile_snapshot, ''), '[^0-9]', '', 'g') = :mobile)
-              )
+              AND identity.unionid IS NOT NULL
             ORDER BY
                 CASE WHEN e.status = 'active' AND e.end_at > CURRENT_TIMESTAMP THEN 0 ELSE 1 END,
                 e.end_at DESC NULLS LAST,
                 e.id DESC
             LIMIT :limit
             """,
-            {"external_userid": external_userid, "mobile": normalized_mobile, "limit": safe_limit},
+            {"unionid": _text(identity.unionid), "limit": safe_limit},
         )
 
     def get_customer_service_period_order(self, *, external_userid: str, entitlement_id: str, mobile: str = "") -> dict[str, Any] | None:
-        normalized_mobile = _normalize_mobile(mobile)
+        identity = self._resolve_identity(external_userid=external_userid, mobile=mobile)
+        if identity is None:
+            return None
         rows = self._all(
             """
-            WITH target(external_userid, mobile) AS (VALUES (:external_userid, :mobile)),
-            identity_scope AS (
-                SELECT identity.unionid, identity.primary_external_userid, identity.mobile, identity.mobile_normalized
-                FROM crm_user_identity identity
-                JOIN target t ON (
-                    identity.primary_external_userid = t.external_userid
-                    OR jsonb_exists(identity.external_userids_json, t.external_userid)
-                    OR (t.mobile <> '' AND identity.mobile = t.mobile)
-                    OR (t.mobile <> '' AND identity.mobile_normalized = t.mobile)
-                )
-                WHERE COALESCE(identity.unionid, '') <> ''
-            )
+            WITH identity_scope(unionid) AS (VALUES (:unionid))
             SELECT
                 e.id::text AS entitlement_id,
                 e.service_product_id::text AS service_product_id,
@@ -559,19 +570,17 @@ class SidebarV2SqlRepository:
             WHERE e.tenant_id = 'aicrm'
               AND e.id::text = :entitlement_id
               AND e.status IN ('active', 'expired')
-              AND (
-                  identity.unionid IS NOT NULL
-                  OR e.external_userid_snapshot = :external_userid
-                  OR (:mobile <> '' AND regexp_replace(COALESCE(e.mobile_snapshot, ''), '[^0-9]', '', 'g') = :mobile)
-              )
+              AND identity.unionid IS NOT NULL
             LIMIT 1
             """,
-            {"external_userid": external_userid, "mobile": normalized_mobile, "entitlement_id": entitlement_id},
+            {"unionid": _text(identity.unionid), "entitlement_id": entitlement_id},
         )
         return rows[0] if rows else None
 
     def list_questionnaire_answers(self, *, external_userid: str, mobile: str = "") -> list[dict[str, Any]]:
-        normalized_mobile = _normalize_mobile(mobile)
+        identity = self._resolve_identity(external_userid=external_userid, mobile=mobile)
+        if identity is None:
+            return []
         return self._all(
             """
             SELECT
@@ -587,20 +596,16 @@ class SidebarV2SqlRepository:
             JOIN crm_user_identity identity ON identity.unionid = s.unionid
             LEFT JOIN questionnaires q ON q.id = s.questionnaire_id
             LEFT JOIN questionnaire_submission_answers a ON a.submission_id = s.id
-            WHERE (
-                identity.primary_external_userid = :external_userid
-                OR jsonb_exists(identity.external_userids_json, :external_userid)
-                OR (
-                    :mobile <> ''
-                    AND regexp_replace(COALESCE(identity.mobile, ''), '[^0-9]', '', 'g') = :mobile
-                )
-            )
+            WHERE identity.unionid = :unionid
             ORDER BY s.submitted_at DESC, s.id DESC, a.id ASC
             """,
-            {"external_userid": external_userid, "mobile": normalized_mobile},
+            {"unionid": _text(identity.unionid)},
         )
 
     def list_other_staff_messages(self, external_userid: str, *, limit: int = 200) -> list[dict[str, Any]]:
+        identity = self._resolve_identity(external_userid=external_userid)
+        if identity is None:
+            return []
         return self._all(
             """
             SELECT message.id, message.msgid, message.chat_type,
@@ -609,14 +614,11 @@ class SidebarV2SqlRepository:
                    message.msgtype, message.content, message.send_time, message.raw_payload, message.created_at
             FROM archived_messages message
             JOIN crm_user_identity identity ON identity.unionid = message.unionid
-            WHERE (
-                identity.primary_external_userid = :external_userid
-                OR jsonb_exists(identity.external_userids_json, :external_userid)
-            )
+            WHERE identity.unionid = :unionid
             ORDER BY send_time ASC, id ASC
             LIMIT :limit
             """,
-            {"external_userid": external_userid, "limit": _limit(limit, default=200, maximum=500)},
+            {"unionid": _text(identity.unionid), "limit": _limit(limit, default=200, maximum=500)},
         )
 
     def owner_names(self, userids: set[str]) -> dict[str, str]:

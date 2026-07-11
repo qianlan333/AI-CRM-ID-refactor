@@ -187,6 +187,12 @@ jobs:
             set -a
             source /home/ubuntu/.openclaw-wecom-pg.env
             set +a
+            # Identity preflight must fail before any runtime unit is stopped.
+            python3 scripts/ops/check_unionid_identity_cutover.py \
+              --phase preflight \
+              --register-existing-conflicts \
+              --expected-release-sha "$after_sha" \
+              | tee /tmp/aicrm-identity-preflight.json
             # 1) AI-CRM Next schema migrations
             python3 scripts/ops/manage_production_runtime_units.py --phase stop-for-migration --execute
             python3 -m alembic upgrade head
@@ -253,6 +259,10 @@ jobs:
               exit 1
             fi
             cat /tmp/aicrm_health.json
+            python3 scripts/ops/check_unionid_identity_cutover.py \
+              --phase post-deploy \
+              --expected-release-sha "$after_sha" \
+              | tee /tmp/aicrm-identity-reconciliation.json
             if ! python scripts/ops/check_admin_read_pages_smoke.py --base-url http://127.0.0.1:5001 --require-admin-cookie | tee /tmp/aicrm-admin-read-pages-smoke.json; then
               sudo systemctl status openclaw-wecom-postgres.service --no-pager || true
               sudo journalctl -u openclaw-wecom-postgres.service -n 120 --no-pager || true

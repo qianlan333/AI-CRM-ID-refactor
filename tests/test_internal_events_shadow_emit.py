@@ -50,7 +50,7 @@ def test_questionnaire_submit_shadow_emits_internal_event_without_changing_side_
     assert body["success"] is True
     assert "external_effect_job_id" in body
     assert body["side_effects"]["wecom_tag"]["status"] == "failed"
-    assert body["side_effects"]["wecom_tag"]["error_code"] == "owner_userid_missing"
+    assert body["side_effects"]["wecom_tag"]["error_code"] == "identity_pending_unionid"
     assert body["side_effects"]["wecom_tag"]["external_effect_job_id"] is None
     assert body["side_effects"]["wecom_tag"]["wecom_api_called"] is False
     assert body["internal_event_status"] == "emitted"

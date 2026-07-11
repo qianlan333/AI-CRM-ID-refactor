@@ -513,7 +513,7 @@ def test_sidebar_material_send_uses_postgres_plan_and_cached_media_in_production
 
         def execute(self, sql, params=()):
             compact_sql = " ".join(sql.split())
-            if "FROM crm_user_identity" in compact_sql and compact_sql.startswith("SELECT"):
+            if "FROM crm_user_identity" in compact_sql:
                 return FakeResult(self.identity)
             if "FROM wecom_external_contact_follow_users" in compact_sql:
                 return FakeResult(rows=[{"owner_userid": "sales_09"}])

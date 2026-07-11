@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, Path, Query, Request
+from fastapi import APIRouter, Path, Query, Request
 from fastapi.responses import JSONResponse
 
+from aicrm_next.shared.errors import ContractError
 from aicrm_next.shared.signed_context import load_sidebar_owner_context_token
 
 from .application import GetSidebarContactBindingStatusQuery, ResolvePersonIdentityQuery
@@ -45,8 +46,8 @@ def resolve_identity(
     mobile: str | None = None,
     openid: str | None = None,
     unionid: str | None = None,
-) -> dict:
-    result = ResolvePersonIdentityQuery()(
+) -> JSONResponse:
+    resolution = ResolvePersonIdentityQuery().execute_result(
         ResolvePersonIdentityRequest(
             external_userid=external_userid,
             mobile=mobile,
@@ -54,9 +55,14 @@ def resolve_identity(
             unionid=unionid,
         )
     )
-    if result is None:
-        raise HTTPException(status_code=404, detail="identity not found")
-    return {"ok": True, "identity": result.model_dump()}
+    if resolution.status != "resolved" or resolution.identity is None:
+        return _identity_error(
+            error_code=f"identity_{resolution.status}",
+            message=resolution.reason or f"identity {resolution.status}",
+            source_status="next_identity_resolve",
+            status_code=404 if resolution.status == "not_found" else 409,
+        )
+    return JSONResponse({"ok": True, "identity": resolution.identity.model_dump()})
 
 
 @router.get(
@@ -85,7 +91,7 @@ def admin_resolve_identity(
         warnings.append("buyer_id was mapped to openid for this slice")
     if transaction_id:
         warnings.append("transaction_id cannot be mapped by ResolvePersonIdentityRequest in this slice")
-    result = ResolvePersonIdentityQuery()(
+    resolution = ResolvePersonIdentityQuery().execute_result(
         ResolvePersonIdentityRequest(
             external_userid=mapped_external_userid,
             mobile=mobile,
@@ -93,13 +99,14 @@ def admin_resolve_identity(
             unionid=unionid,
         )
     )
-    if result is None:
+    if resolution.status != "resolved" or resolution.identity is None:
         return _identity_error(
-            error_code="not_found",
-            message="identity not found",
+            error_code=resolution.status,
+            message=resolution.reason or f"identity {resolution.status}",
             source_status="next_admin_identity_resolve",
-            status_code=404,
+            status_code=404 if resolution.status == "not_found" else 409,
         )
+    result = resolution.identity
     return JSONResponse(
         {
             "ok": True,
@@ -128,25 +135,49 @@ def admin_identity_links(
         ResolvePersonIdentityRequest(unionid=key),
         ResolvePersonIdentityRequest(openid=key),
     ]
+    resolved_by_unionid: dict[str, object] = {}
+    pending = False
     for request in attempts:
-        result = query(request)
-        if result is not None:
-            return JSONResponse(
-                {
-                    "ok": True,
-                    "identity_key": key,
-                    "links": _identity_links(result),
-                    "identity": result.model_dump(),
-                    "route_owner": "ai_crm_next",
-                    "source_status": "next_admin_identity_links",
-                    "fallback_used": False,
-                }
+        try:
+            resolution = query.execute_result(request)
+        except ContractError:
+            continue
+        if resolution.status == "conflict":
+            return _identity_error(
+                error_code="conflict",
+                message=resolution.reason or "identity conflict",
+                source_status="next_admin_identity_links",
+                status_code=409,
             )
+        if resolution.status == "pending":
+            pending = True
+        if resolution.status == "resolved" and resolution.identity is not None:
+            resolved_by_unionid[str(resolution.identity.unionid or "")] = resolution.identity
+    if len(resolved_by_unionid) > 1:
+        return _identity_error(
+            error_code="conflict",
+            message="identity key resolves to multiple canonical identities",
+            source_status="next_admin_identity_links",
+            status_code=409,
+        )
+    if resolved_by_unionid:
+        result = next(iter(resolved_by_unionid.values()))
+        return JSONResponse(
+            {
+                "ok": True,
+                "identity_key": key,
+                "links": _identity_links(result),
+                "identity": result.model_dump(),
+                "route_owner": "ai_crm_next",
+                "source_status": "next_admin_identity_links",
+                "fallback_used": False,
+            }
+        )
     return _identity_error(
-        error_code="not_found",
-        message="identity links not found",
+        error_code="pending" if pending else "not_found",
+        message="identity resolution pending" if pending else "identity links not found",
         source_status="next_admin_identity_links",
-        status_code=404,
+        status_code=409 if pending else 404,
     )
 
 

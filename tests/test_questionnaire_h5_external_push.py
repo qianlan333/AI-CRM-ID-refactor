@@ -42,7 +42,10 @@ def test_h5_submit_executes_configured_questionnaire_external_push(client: TestC
 
     response = client.post(
         "/api/h5/questionnaires/hxc-activation-v1/submit",
-        json={"answers": {"phone": "13770938680"}},
+        json={
+            "answers": {"phone": "13770938680"},
+            "identity": {"external_userid": "wx_ext_001"},
+        },
     )
 
     assert response.status_code == 200

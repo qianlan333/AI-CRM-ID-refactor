@@ -2,7 +2,10 @@ from __future__ import annotations
 
 from fastapi.testclient import TestClient
 
+from aicrm_next.identity_contact.resolver import IdentityConflictError
 from aicrm_next.main import create_app
+from aicrm_next.message_archive.application import ListExternalChatRecordsQuery
+from aicrm_next.message_archive.repo import FixtureMessageArchiveRepository
 
 
 TOKEN = "external-chat-token"
@@ -87,7 +90,7 @@ def test_external_chat_records_resolves_by_unionid_and_supports_group_scene(monk
 def test_external_chat_records_cursor_paginates_fixed_twenty_rows(monkeypatch) -> None:
     client = _client(monkeypatch)
     first = client.get(
-        "/api/external/chat-records?external_userid=wm_ext_001&start_time=1773567000&chat_scene=private&with_userid=sales_01&cursor=",
+        "/api/external/chat-records?external_userid=wx_ext_001&start_time=1773567000&chat_scene=private&with_userid=HuangYouCan&cursor=",
         headers=_headers(),
     ).json()
 
@@ -120,3 +123,22 @@ def test_external_chat_records_rejects_bad_inputs(monkeypatch) -> None:
     )
     assert bad_scene.status_code == 400
     assert bad_scene.json()["error_code"] == "invalid_request"
+
+
+def test_external_chat_records_identity_conflict_is_explicit_and_never_falls_back() -> None:
+    class ConflictIdentityQuery:
+        def __call__(self, _request):
+            raise IdentityConflictError("duplicate_alias")
+
+    payload = ListExternalChatRecordsQuery(
+        repo=FixtureMessageArchiveRepository(),
+        identity_query=ConflictIdentityQuery(),
+    ).execute(
+        external_userid="conflicting-external",
+        start_time=1780358760,
+        chat_scene="private",
+    )
+
+    assert payload["status_code"] == 409
+    assert payload["error_code"] == "identity_conflict"
+    assert payload["fallback_used"] is False

@@ -83,7 +83,7 @@ def test_questionnaire_submit_tag_side_effect_executes_real_wecom_and_updates_mi
     assert calls == [
         {
             "external_userid": "wx_ext_001",
-            "follow_user_userid": "owner-questionnaire",
+            "follow_user_userid": "ZhaoYanFang",
             "add_tags": ["tag_hxc_activated", "tag_interest_ai_tools"],
             "remove_tags": [],
         }
@@ -106,7 +106,7 @@ def test_questionnaire_submit_with_unionid_only_fails_without_local_projection(m
     tag_plan = response.json()["side_effects"]["wecom_tag"]
     assert tag_plan["adapter_mode"] == "real_mark_tag"
     assert tag_plan["status"] == "failed"
-    assert tag_plan["error_code"] == "missing_external_userid"
+    assert tag_plan["error_code"] == "identity_pending_unionid"
     assert tag_plan["local_projection_updated"] is False
     assert tag_plan["wecom_api_called"] is False
     rows = [row for row in get_customer_tag_local_projection_fixture_rows() if row["unionid"] == "unionid_union_only_001"]

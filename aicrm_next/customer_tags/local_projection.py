@@ -6,6 +6,8 @@ from typing import Any
 from sqlalchemy import text
 from sqlalchemy.engine import Engine
 
+from aicrm_next.identity_contact.dto import ResolvePersonIdentityRequest
+from aicrm_next.identity_contact.resolver import SQLAlchemyIdentityResolver, resolved_unionid
 from aicrm_next.shared.db_session import get_engine
 from aicrm_next.shared.runtime import database_mode
 
@@ -227,7 +229,14 @@ def _project_postgres(
     validation: Json,
 ) -> Json:
     with engine.begin() as connection:
-        effective_unionid = unionid or _resolve_unionid(connection, external_userid)
+        effective_unionid = resolved_unionid(
+            SQLAlchemyIdentityResolver(connection).resolve(
+                ResolvePersonIdentityRequest(
+                    unionid=unionid or None,
+                    external_userid=external_userid or None,
+                )
+            )
+        )
         if not effective_unionid:
             return _projection_result(
                 local_projection_updated=False,
@@ -300,26 +309,6 @@ def _project_postgres(
         inserted_count=inserted_count,
         extra=validation,
     )
-
-
-def _resolve_unionid(connection: Any, external_userid: str) -> str:
-    if not external_userid:
-        return ""
-    row = connection.execute(
-        text(
-            """
-            SELECT unionid
-            FROM crm_user_identity
-            WHERE primary_external_userid = :external_userid
-               OR jsonb_exists(external_userids_json, :external_userid)
-            ORDER BY CASE WHEN primary_external_userid = :external_userid THEN 0 ELSE 1 END,
-                     updated_at DESC
-            LIMIT 1
-            """
-        ),
-        {"external_userid": external_userid},
-    ).mappings().first()
-    return _text((row or {}).get("unionid"))
 
 
 def _validate_tag_catalog(tag_ids: list[str]) -> Json:

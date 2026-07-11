@@ -53,10 +53,12 @@ def service_period_entitlement_consumer(event: InternalEvent, run: InternalEvent
         )
     if result.get("reason") == "missing_unionid":
         return InternalEventConsumerResult(
-            status="succeeded",
+            status="failed_retryable",
             request_summary={"event_id": event.event_id, "out_trade_no": out_trade_no},
             response_summary={"skipped": True, "reason": "missing_unionid"},
             result_summary={"event_type": "grant_failed_missing_unionid", "out_trade_no": out_trade_no},
+            error_code="missing_unionid",
+            error_message="canonical unionid is required before service entitlement can be granted",
         )
     return InternalEventConsumerResult(
         status="succeeded",

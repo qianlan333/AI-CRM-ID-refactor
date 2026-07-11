@@ -167,13 +167,13 @@
       "accessor": "os.getenv",
       "file": "aicrm_next/ai_audience_ops/repository.py",
       "key": "AICRM_AUDIENCE_READONLY_DATABASE_URL",
-      "line": 906
+      "line": 908
     },
     {
       "accessor": "os.getenv",
       "file": "aicrm_next/ai_audience_ops/repository.py",
       "key": "AICRM_AUDIENCE_READONLY_DATABASE_URL",
-      "line": 920
+      "line": 922
     },
     {
       "accessor": "runtime_setting",
@@ -323,7 +323,7 @@
       "accessor": "os.getenv",
       "file": "aicrm_next/automation_engine/group_ops/action_dispatcher.py",
       "key": "AICRM_GROUP_OPS_PRIVATE_MESSAGE_MODE",
-      "line": 249
+      "line": 255
     },
     {
       "accessor": "os.getenv",
@@ -1031,7 +1031,7 @@
       "accessor": "os.getenv",
       "file": "aicrm_next/cloud_orchestrator/repository.py",
       "key": "DATABASE_URL",
-      "line": 354
+      "line": 342
     },
     {
       "accessor": "os.getenv",
@@ -1098,6 +1098,12 @@
       "file": "scripts/ops/check_callback_quick_ack_state.py",
       "key": "DATABASE_URL",
       "line": 115
+    },
+    {
+      "accessor": "os.getenv",
+      "file": "scripts/ops/check_unionid_identity_cutover.py",
+      "key": "DATABASE_URL",
+      "line": 12
     },
     {
       "accessor": "os.getenv",
@@ -1679,7 +1685,13 @@
       "accessor": "os.getenv",
       "file": "aicrm_next/channel_entry/identity_bridge_service.py",
       "key": "WECOM_CORP_ID",
-      "line": 251
+      "line": 18
+    },
+    {
+      "accessor": "os.getenv",
+      "file": "aicrm_next/identity_contact/domain.py",
+      "key": "WECOM_CORP_ID",
+      "line": 12
     },
     {
       "accessor": "os.getenv",
@@ -37670,11 +37682,7 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Resolve Identity Api Identity Resolve Get",
-                  "type": "object"
-                }
+                "schema": {}
               }
             },
             "description": "Successful Response"
@@ -42706,7 +42714,7 @@
         "aicrm_next.sidebar_write"
       ],
       "table": "crm_user_identity",
-      "write_owner": "aicrm_next.channel_entry"
+      "write_owner": "aicrm_next.identity_contact"
     },
     {
       "domain": "identity_contact",
@@ -42735,14 +42743,14 @@
     {
       "domain": "identity_contact",
       "drop_candidate": false,
-      "lifecycle": "canonical",
+      "lifecycle": "queue",
       "migration_source": "pre-Alembic baseline, registered by 0083 schema drift closeout",
       "pii_level": "internal_contact",
       "read_owners": [
         "aicrm_next.channel_entry"
       ],
       "table": "crm_user_identity_resolution_queue",
-      "write_owner": "aicrm_next.ai_audience_ops"
+      "write_owner": "aicrm_next.identity_contact"
     },
     {
       "domain": "customer_read_model",
@@ -42808,7 +42816,7 @@
     {
       "domain": "identity_contact",
       "drop_candidate": false,
-      "lifecycle": "canonical",
+      "lifecycle": "read_model",
       "migration_source": "pre-Alembic baseline, registered by 0083 schema drift closeout",
       "pii_level": "internal_contact",
       "read_owners": [
@@ -42816,7 +42824,7 @@
         "aicrm_next.owner_migration"
       ],
       "table": "external_contact_bindings",
-      "write_owner": "aicrm_next.identity_contact"
+      "write_owner": "aicrm_next.owner_migration"
     },
     {
       "domain": "external_effects",

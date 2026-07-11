@@ -210,14 +210,18 @@ repositories:
       - crm_user_identity_resolution_queue
     table_writes:
       - crm_user_identity
+      - crm_user_identity_conflicts
       - crm_user_identity_resolution_queue
   aicrm_next/channel_entry/repo.py:
     capability_owner: aicrm_next.channel_entry
     table_reads:
       - automation_channel_entry_effect_log
+      - crm_user_identity
     table_writes:
       - automation_channel_entry_effect_log
       - automation_channel_entry_runtime
+      - contact_tags
+      - crm_user_identity_resolution_queue
   aicrm_next/cloud_orchestrator/repository.py:
     capability_owner: aicrm_next.cloud_orchestrator
     table_reads:
@@ -303,8 +307,8 @@ repositories:
       - external_contact_bindings
     table_writes:
       - crm_user_identity
+      - crm_user_identity_conflicts
       - crm_user_identity_resolution_queue
-      - external_contact_bindings
   aicrm_next/media_library/postgres_repo.py:
     capability_owner: aicrm_next.media_library
     table_reads:

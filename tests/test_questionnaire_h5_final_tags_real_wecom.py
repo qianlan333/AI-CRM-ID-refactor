@@ -3,12 +3,46 @@ from __future__ import annotations
 from fastapi.testclient import TestClient
 
 from aicrm_next.customer_tags.local_projection import get_customer_tag_local_projection_fixture_rows
+from aicrm_next.identity_contact.dto import IdentityResolution, IdentityResolveResult
 from aicrm_next.integration_gateway.wecom_channel_entry_client import WeComApiError
 from aicrm_next.main import create_app
 from aicrm_next.questionnaire import h5_write
 
 
 def _client(monkeypatch) -> TestClient:
+    identities = {
+        "union-real-001": ("wx_real_001", "owner-real-001"),
+        "union-missing-external": (None, "owner-real-001"),
+        "union-missing-owner": ("wx_missing_owner", None),
+        "union-missing-config": ("wx_missing_config", "owner-real-001"),
+        "union-wecom-error": ("wx_wecom_error", "owner-real-001"),
+        "union-mirror-001": ("wx_mirror_001", "owner-mirror-001"),
+        "union-no-blocked": ("wx_no_blocked", "owner-no-blocked"),
+    }
+
+    class ExplicitTagIdentityQuery:
+        def execute_result(self, request):
+            profile = identities.get(str(request.unionid or ""))
+            if profile is None:
+                return IdentityResolveResult(status="not_found", reason="identity_not_found")
+            external_userid, owner_userid = profile
+            return IdentityResolveResult(
+                status="resolved",
+                identity=IdentityResolution(
+                    person_id=f"person-{request.unionid}",
+                    external_userid=external_userid,
+                    mobile=None,
+                    unionid=request.unionid,
+                    binding_status="bound",
+                    owner_userid=owner_userid,
+                    follow_user_userid=owner_userid,
+                    matched_by="unionid",
+                ),
+                candidate_count=1,
+                matched_fields=["unionid"],
+            )
+
+    monkeypatch.setattr(h5_write, "ResolvePersonIdentityQuery", ExplicitTagIdentityQuery)
     h5_write.reset_questionnaire_h5_write_fixture_state()
     monkeypatch.setenv("SECRET_KEY", "questionnaire-real-wecom-tags")
     monkeypatch.delenv("DATABASE_URL", raising=False)

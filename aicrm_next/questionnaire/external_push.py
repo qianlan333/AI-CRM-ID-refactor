@@ -29,7 +29,7 @@ def plan_questionnaire_external_push_effect(
     config = dict(questionnaire.get("external_push_config") or {})
     enabled = _bool(config.get("enabled") or questionnaire.get("external_push_enabled"))
     target_url = _text(config.get("webhook_url") or questionnaire.get("external_push_url"))
-    if not enabled or not target_url:
+    if not enabled or not target_url or not _text(submission.get("unionid")):
         return None
 
     selected_mode = "queue"
