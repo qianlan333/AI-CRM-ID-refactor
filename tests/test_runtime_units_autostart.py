@@ -173,21 +173,30 @@ class _RecordingRunner:
         enabled_units: set[str],
         active_units: set[str] | None = None,
         failed_units: set[str] | None = None,
+        static_units: set[str] | None = None,
     ) -> None:
         self.execute = True
         self.enabled_units = enabled_units
         self.active_units = active_units or set()
         self.failed_units = failed_units or set()
+        self.static_units = static_units or set()
         self.commands: list[tuple[str, ...]] = []
 
     def run(self, command: list[str], *, check: bool = True) -> subprocess.CompletedProcess[str]:
         self.commands.append(tuple(command))
         return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
 
-    def systemctl(self, *args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
+    def systemctl(
+        self,
+        *args: str,
+        check: bool = True,
+        capture_output: bool = False,
+    ) -> subprocess.CompletedProcess[str]:
         command = ("sudo", "systemctl", *args)
         self.commands.append(command)
         if args and args[0] == "is-enabled":
+            if args[1] in self.static_units:
+                return subprocess.CompletedProcess(command, 0, stdout="static\n", stderr="")
             enabled = args[1] in self.enabled_units
             return subprocess.CompletedProcess(command, 0 if enabled else 1, stdout="enabled\n" if enabled else "disabled\n", stderr="")
         if args and args[0] == "is-active":
@@ -363,6 +372,50 @@ def test_runtime_units_verify_requires_primary_active_and_enabled_approval_timer
     assert ("sudo", "systemctl", "is-enabled", "aicrm-reply-monitor-run-due.timer") in runner.commands
     assert ("sudo", "systemctl", "is-active", "aicrm-reply-monitor-run-due.timer") in runner.commands
     assert ("sudo", "systemctl", "is-failed", "aicrm-reply-monitor-run-due.timer") in runner.commands
+
+
+def test_runtime_units_stop_accepts_inactive_static_retired_guard_only_unit() -> None:
+    retired_unit = "aicrm-reply-monitor-run-due.service"
+    manifest = {
+        "primary_web": {"service": "openclaw-wecom-postgres.service"},
+        "active_services": [],
+        "active_autostart": [],
+        "approval_required": [],
+        "retired_forbidden": [retired_unit],
+        "retired_unit_files": [],
+        "retired_dropins": [],
+    }
+    runner = _RecordingRunner(
+        enabled_units={"openclaw-wecom-postgres.service"},
+        static_units={retired_unit},
+    )
+
+    runtime_units.phase_stop_for_migration(manifest, runner)
+
+    assert ("sudo", "systemctl", "is-enabled", retired_unit) in runner.commands
+    assert ("sudo", "systemctl", "is-active", retired_unit) in runner.commands
+    assert ("sudo", "systemctl", "is-failed", retired_unit) in runner.commands
+
+
+def test_runtime_units_steady_state_rejects_static_retired_unit() -> None:
+    retired_unit = "aicrm-reply-monitor-run-due.service"
+    manifest = {
+        "primary_web": {"service": "openclaw-wecom-postgres.service"},
+        "active_services": [],
+        "active_autostart": [],
+        "approval_required": [],
+        "retired_forbidden": [retired_unit],
+        "retired_unit_files": [],
+        "retired_dropins": [],
+    }
+    runner = _RecordingRunner(
+        enabled_units={"openclaw-wecom-postgres.service"},
+        active_units={"openclaw-wecom-postgres.service"},
+        static_units={retired_unit},
+    )
+
+    with pytest.raises(RuntimeError, match=f"retired runtime unit is still enabled: {retired_unit}"):
+        runtime_units.phase_verify(manifest, runner)
 
 
 @pytest.mark.parametrize(
