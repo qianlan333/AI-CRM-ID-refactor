@@ -282,7 +282,18 @@ class Runner:
             return None
         return subprocess.run(command, cwd=ROOT, text=True, check=check)
 
-    def systemctl(self, *args: str, check: bool = True) -> subprocess.CompletedProcess[str] | None:
+    def systemctl(
+        self,
+        *args: str,
+        check: bool = True,
+        capture_output: bool = False,
+    ) -> subprocess.CompletedProcess[str] | None:
+        if capture_output:
+            command = ["sudo", "systemctl", *args]
+            print(_shell_join(command))
+            if not self.execute:
+                return None
+            return subprocess.run(command, cwd=ROOT, text=True, check=check, capture_output=True)
         return self.run(["sudo", "systemctl", *args], check=check)
 
 
@@ -419,7 +430,7 @@ def phase_stop_for_migration(manifest: dict[str, Any], runner: Runner) -> None:
         runner.systemctl("disable", "--now", unit, check=False)
         runner.systemctl("stop", unit, check=False)
         runner.systemctl("reset-failed", unit, check=False)
-        _verify_retired_unit_state(runner, unit)
+        _verify_retired_unit_state(runner, unit, allow_static=True)
     primary_web = primary_web_service(manifest).service
     runner.systemctl("stop", primary_web, check=False)
     runner.systemctl("reset-failed", primary_web, check=False)
@@ -483,9 +494,14 @@ def _verify_approval_timer_state(runner: Runner, unit: str) -> None:
         _require_inactive(runner, unit, error_prefix="disabled approval timer is still active")
 
 
-def _verify_retired_unit_state(runner: Runner, unit: str) -> None:
+def _verify_retired_unit_state(runner: Runner, unit: str, *, allow_static: bool = False) -> None:
+    enabled = runner.systemctl("is-enabled", unit, check=False, capture_output=True)
+    enabled_state = (enabled.stdout or "").strip() if enabled is not None else ""
+    static_guard_only = allow_static and enabled_state == "static"
+    if runner.execute and enabled is not None and enabled.returncode == 0 and not static_guard_only:
+        raise RuntimeError(f"retired runtime unit is still enabled: {unit}")
+
     checks = (
-        ("is-enabled", "retired runtime unit is still enabled"),
         ("is-active", "retired runtime unit is still active"),
         ("is-failed", "retired runtime unit remains failed"),
     )
