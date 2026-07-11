@@ -242,22 +242,28 @@
       "line": 331
     },
     {
-      "accessor": "runtime_setting",
-      "file": "aicrm_next/platform_foundation/external_effects/adapters.py",
+      "accessor": "declared_runtime_environment_key",
+      "file": "aicrm_next/integration_gateway/wecom_runtime.py",
       "key": "AICRM_EXTERNAL_EFFECT_ALLOWED_OWNER_USERIDS",
-      "line": 98
+      "line": 17
+    },
+    {
+      "accessor": "declared_runtime_environment_key",
+      "file": "aicrm_next/integration_gateway/wecom_runtime.py",
+      "key": "AICRM_EXTERNAL_EFFECT_ALLOWED_TYPES",
+      "line": 17
     },
     {
       "accessor": "runtime_bool",
       "file": "aicrm_next/platform_foundation/external_effects/realtime.py",
       "key": "AICRM_EXTERNAL_EFFECT_WEBHOOK_EXECUTE",
-      "line": 54
+      "line": 37
     },
     {
       "accessor": "runtime_setting",
       "file": "aicrm_next/platform_foundation/external_effects/adapters.py",
       "key": "AICRM_EXTERNAL_EFFECT_WEBHOOK_SIGNING_SECRET",
-      "line": 414
+      "line": 428
     },
     {
       "accessor": "runtime_setting",
@@ -275,13 +281,13 @@
       "accessor": "runtime_setting",
       "file": "aicrm_next/platform_foundation/external_effects/adapters.py",
       "key": "AICRM_EXTERNAL_EFFECT_WEBHOOK_TIMEOUT_SECONDS",
-      "line": 288
+      "line": 302
     },
     {
-      "accessor": "runtime_bool",
-      "file": "aicrm_next/platform_foundation/external_effects/realtime.py",
+      "accessor": "declared_runtime_environment_key",
+      "file": "aicrm_next/integration_gateway/wecom_runtime.py",
       "key": "AICRM_EXTERNAL_EFFECT_WECOM_EXECUTE",
-      "line": 52
+      "line": 17
     },
     {
       "accessor": "os.environ.get",
@@ -638,10 +644,10 @@
       "line": 72
     },
     {
-      "accessor": "os.getenv",
-      "file": "aicrm_next/integration_gateway/wecom_channel_entry_client.py",
+      "accessor": "declared_runtime_environment_key",
+      "file": "aicrm_next/integration_gateway/wecom_runtime.py",
       "key": "AICRM_NEXT_WECOM_REAL_CALLS_ENABLED",
-      "line": 220
+      "line": 17
     },
     {
       "accessor": "os.getenv",
@@ -782,16 +788,16 @@
       "line": 77
     },
     {
-      "accessor": "runtime_setting",
-      "file": "aicrm_next/platform_foundation/external_effects/adapters.py",
-      "key": "AICRM_WECOM_DEFAULT_SENDER_USERID",
-      "line": 98
+      "accessor": "declared_runtime_environment_key",
+      "file": "aicrm_next/integration_gateway/wecom_runtime.py",
+      "key": "AICRM_WECOM_API_BASE",
+      "line": 17
     },
     {
-      "accessor": "runtime_setting",
-      "file": "aicrm_next/platform_foundation/external_effects/adapters.py",
-      "key": "AICRM_WECOM_EXECUTION_MODE",
-      "line": 78
+      "accessor": "declared_runtime_environment_key",
+      "file": "aicrm_next/integration_gateway/wecom_runtime.py",
+      "key": "AICRM_WECOM_DEFAULT_SENDER_USERID",
+      "line": 17
     },
     {
       "accessor": "runtime_setting",
@@ -1557,15 +1563,15 @@
     },
     {
       "accessor": "os.getenv",
-      "file": "aicrm_next/integration_gateway/wecom_channel_entry_client.py",
-      "key": "WECOM_API_BASE",
-      "line": 108
-    },
-    {
-      "accessor": "os.getenv",
       "file": "aicrm_next/integration_gateway/wecom_jssdk_adapter.py",
       "key": "WECOM_API_BASE",
       "line": 214
+    },
+    {
+      "accessor": "declared_runtime_environment_key",
+      "file": "aicrm_next/integration_gateway/wecom_runtime.py",
+      "key": "WECOM_API_BASE",
+      "line": 17
     },
     {
       "accessor": "os.getenv",
@@ -1607,7 +1613,7 @@
       "accessor": "runtime_setting",
       "file": "aicrm_next/channel_entry/application.py",
       "key": "WECOM_CALLBACK_AES_KEY",
-      "line": 54
+      "line": 53
     },
     {
       "accessor": "os.getenv",
@@ -1637,7 +1643,7 @@
       "accessor": "runtime_setting",
       "file": "aicrm_next/channel_entry/application.py",
       "key": "WECOM_CALLBACK_TOKEN",
-      "line": 53
+      "line": 52
     },
     {
       "accessor": "os.getenv",
@@ -1646,16 +1652,10 @@
       "line": 51
     },
     {
-      "accessor": "runtime_setting",
-      "file": "aicrm_next/integration_gateway/wecom_channel_entry_client.py",
+      "accessor": "declared_runtime_environment_key",
+      "file": "aicrm_next/integration_gateway/wecom_runtime.py",
       "key": "WECOM_CONTACT_SECRET",
-      "line": 107
-    },
-    {
-      "accessor": "runtime_setting",
-      "file": "aicrm_next/integration_gateway/wecom_channel_entry_client.py",
-      "key": "WECOM_CONTACT_SECRET",
-      "line": 227
+      "line": 17
     },
     {
       "accessor": "runtime_setting",
@@ -1697,7 +1697,7 @@
       "accessor": "os.getenv",
       "file": "aicrm_next/channel_entry/application.py",
       "key": "WECOM_CORP_ID",
-      "line": 52
+      "line": 51
     },
     {
       "accessor": "os.getenv",
@@ -1731,21 +1731,15 @@
     },
     {
       "accessor": "os.getenv",
-      "file": "aicrm_next/integration_gateway/wecom_channel_entry_client.py",
-      "key": "WECOM_CORP_ID",
-      "line": 106
-    },
-    {
-      "accessor": "os.getenv",
-      "file": "aicrm_next/integration_gateway/wecom_channel_entry_client.py",
-      "key": "WECOM_CORP_ID",
-      "line": 225
-    },
-    {
-      "accessor": "os.getenv",
       "file": "aicrm_next/integration_gateway/wecom_jssdk_adapter.py",
       "key": "WECOM_CORP_ID",
       "line": 81
+    },
+    {
+      "accessor": "declared_runtime_environment_key",
+      "file": "aicrm_next/integration_gateway/wecom_runtime.py",
+      "key": "WECOM_CORP_ID",
+      "line": 17
     },
     {
       "accessor": "os.getenv",
@@ -1803,21 +1797,15 @@
     },
     {
       "accessor": "runtime_setting",
-      "file": "aicrm_next/integration_gateway/wecom_channel_entry_client.py",
-      "key": "WECOM_SECRET",
-      "line": 107
-    },
-    {
-      "accessor": "runtime_setting",
-      "file": "aicrm_next/integration_gateway/wecom_channel_entry_client.py",
-      "key": "WECOM_SECRET",
-      "line": 227
-    },
-    {
-      "accessor": "runtime_setting",
       "file": "aicrm_next/integration_gateway/wecom_jssdk_adapter.py",
       "key": "WECOM_SECRET",
       "line": 206
+    },
+    {
+      "accessor": "declared_runtime_environment_key",
+      "file": "aicrm_next/integration_gateway/wecom_runtime.py",
+      "key": "WECOM_SECRET",
+      "line": 17
     },
     {
       "accessor": "runtime_setting",
@@ -1832,22 +1820,22 @@
       "line": 312
     },
     {
-      "accessor": "os.getenv",
-      "file": "aicrm_next/integration_gateway/wecom_channel_entry_client.py",
+      "accessor": "declared_runtime_environment_key",
+      "file": "aicrm_next/integration_gateway/wecom_runtime.py",
       "key": "WECOM_TIMEOUT_SECONDS",
-      "line": 109
+      "line": 17
     },
     {
       "accessor": "os.getenv",
       "file": "aicrm_next/channel_entry/application.py",
       "key": "WORKER_RELEASE_SHA",
-      "line": 990
+      "line": 912
     },
     {
       "accessor": "os.getenv",
       "file": "aicrm_next/channel_entry/application.py",
       "key": "WORKER_RELEASE_SHA",
-      "line": 1208
+      "line": 1130
     },
     {
       "accessor": "os.getenv",
@@ -1887,6 +1875,7 @@
     "AICRM_ENABLE_IN_PROCESS_ARCHIVE_SYNC",
     "AICRM_ENV_FILE",
     "AICRM_EXTERNAL_EFFECT_ALLOWED_OWNER_USERIDS",
+    "AICRM_EXTERNAL_EFFECT_ALLOWED_TYPES",
     "AICRM_EXTERNAL_EFFECT_WEBHOOK_EXECUTE",
     "AICRM_EXTERNAL_EFFECT_WEBHOOK_SIGNING_SECRET",
     "AICRM_EXTERNAL_EFFECT_WEBHOOK_TIMEOUT_SECONDS",
@@ -1957,8 +1946,8 @@
     "AICRM_USER_OPS_SEND_REQUIRES_APPROVAL",
     "AICRM_USER_OPS_SEND_RISK_LEVEL",
     "AICRM_WECOM_ADMIN_AUTH_TIMEOUT",
+    "AICRM_WECOM_API_BASE",
     "AICRM_WECOM_DEFAULT_SENDER_USERID",
-    "AICRM_WECOM_EXECUTION_MODE",
     "AICRM_WECOM_GROUP_ADAPTER_MODE",
     "AICRM_WECOM_OPERATION_MEMBERS_TIMEOUT",
     "AICRM_WECOM_PRIVATE_ADAPTER_MODE",
@@ -41585,11 +41574,14 @@
       "unit": "openclaw-wechat-pay-order-reconciliation-worker.timer"
     },
     {
-      "kick_after_timer_restart": false,
-      "kick_failure_fatal": false,
+      "health_url": "",
+      "kind": "service",
+      "state": "active",
+      "unit": "openclaw-wecom-callback-inbox-worker.service"
+    },
+    {
       "kind": "timer",
-      "service": "openclaw-wecom-callback-inbox-worker.service",
-      "state": "active_autostart",
+      "state": "retired_forbidden",
       "unit": "openclaw-wecom-callback-inbox-worker.timer"
     },
     {

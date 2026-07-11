@@ -30,6 +30,7 @@ class TimerUnit:
 class ServiceUnit:
     service: str
     health_url: str | None = None
+    stop_for_migration: bool = False
 
 
 def load_manifest(path: Path = MANIFEST_PATH) -> dict[str, Any]:
@@ -53,7 +54,13 @@ def active_timers(manifest: dict[str, Any]) -> list[TimerUnit]:
 def active_services(manifest: dict[str, Any]) -> list[ServiceUnit]:
     services: list[ServiceUnit] = []
     for item in manifest.get("active_services") or []:
-        services.append(ServiceUnit(service=str(item["service"]), health_url=item.get("health_url") or None))
+        services.append(
+            ServiceUnit(
+                service=str(item["service"]),
+                health_url=item.get("health_url") or None,
+                stop_for_migration=bool(item.get("stop_for_migration", False)),
+            )
+        )
     return services
 
 
@@ -152,6 +159,14 @@ def phase_stop_for_migration(manifest: dict[str, Any], runner: Runner) -> None:
     for unit in active_timers(manifest):
         runner.systemctl("stop", unit.timer, check=False)
         runner.systemctl("stop", unit.service, check=False)
+    for service in active_services(manifest):
+        if service.stop_for_migration:
+            runner.systemctl("stop", service.service, check=False)
+
+
+def _retire_forbidden_units(manifest: dict[str, Any], runner: Runner) -> None:
+    for unit in manifest.get("retired_forbidden") or []:
+        runner.systemctl("disable", "--now", str(unit), check=False)
 
 
 def _wait_for_health(url: str, *, execute: bool, attempts: int = 20, interval: float = 0.5) -> None:
@@ -183,6 +198,7 @@ def phase_install_enable_after_web_health(manifest: dict[str, Any], runner: Runn
             copied_services.add(unit.service)
         _copy_unit(runner, unit.timer)
     runner.systemctl("daemon-reload")
+    _retire_forbidden_units(manifest, runner)
     for service in services:
         runner.systemctl("enable", service.service)
         runner.systemctl("restart", service.service)
@@ -205,6 +221,10 @@ def phase_verify(manifest: dict[str, Any], runner: Runner) -> None:
         runner.systemctl("is-active", service.service)
     for unit in active_timers(manifest):
         runner.systemctl("is-active", unit.timer)
+    for unit in manifest.get("retired_forbidden") or []:
+        proc = runner.systemctl("is-active", str(unit), check=False)
+        if runner.execute and proc is not None and proc.returncode == 0:
+            raise RuntimeError(f"retired runtime unit is active: {unit}")
     approval_required = manifest.get("approval_required") or []
     if approval_required:
         print("approval_required_timers=" + ",".join(str(unit) for unit in approval_required))

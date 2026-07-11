@@ -216,7 +216,7 @@ EXTRA_SETTING_DEFINITIONS: dict[str, dict[str, Any]] = {
         "mode": "editable",
         "input_type": "text",
         "type": "boolean",
-        "description": "开启后命中实时 allowlist 的 external_effect_job 会在入队后立即异步执行；渠道码欢迎语必须开启。",
+        "description": "Deprecated compatibility alias（owner=integration_gateway，delete_after=2026-10-01）；当前由 typed WeCom execution config 派生，callback durable worker 内同步 claim，不再异步线程池执行。",
     },
     REALTIME_ALLOWED_TYPES_KEY: {
         "key": REALTIME_ALLOWED_TYPES_KEY,
@@ -224,7 +224,7 @@ EXTRA_SETTING_DEFINITIONS: dict[str, dict[str, Any]] = {
         "mode": "editable",
         "input_type": "text",
         "type": "string",
-        "description": "逗号分隔；建议渠道码开启 wecom.welcome_message.send,wecom.contact.tag.mark,wecom.profile.update。",
+        "description": "Deprecated compatibility alias（delete_after=2026-10-01）；新配置使用 AICRM_WECOM_ENABLED_EFFECT_TYPES。",
     },
     REALTIME_MAX_CONCURRENCY_KEY: {
         "key": REALTIME_MAX_CONCURRENCY_KEY,
@@ -232,7 +232,7 @@ EXTRA_SETTING_DEFINITIONS: dict[str, dict[str, Any]] = {
         "mode": "editable",
         "input_type": "number",
         "type": "integer",
-        "description": "单进程实时唤醒最多同时执行多少个外部动作；建议 2。",
+        "description": "Retired compatibility setting（delete_after=2026-10-01）；进程内 realtime executor 已删除，此值不再控制执行并发。",
         "min": 1,
     },
     "AICRM_EXTERNAL_EFFECT_ALLOWED_BASE_HOSTS": {

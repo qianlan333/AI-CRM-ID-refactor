@@ -340,6 +340,8 @@ def test_external_effect_worker_blocks_disabled_capability_before_adapter_and_al
 
 def test_shared_wecom_effect_type_is_gated_by_business_section() -> None:
     reset_external_effect_fixture_state()
+    _set_setting("AICRM_WECOM_EXECUTION_MODE", "execute")
+    _set_setting("AICRM_WECOM_ENABLED_EFFECT_TYPES", WECOM_MESSAGE_PRIVATE_SEND)
     _set_setting("AICRM_PUSH_CAPABILITY_AI_ASSIST_PUSH_ENABLED", "true")
     _set_setting("AICRM_PUSH_CAPABILITY_PRIVATE_BROADCAST_ENABLED", "false")
     adapter = _SucceedingAdapter()
@@ -384,6 +386,8 @@ def test_shared_wecom_effect_type_is_gated_by_business_section() -> None:
 
 def test_wecom_tag_effect_honors_tags_capability_unless_explicitly_bypassed() -> None:
     reset_external_effect_fixture_state()
+    _set_setting("AICRM_WECOM_EXECUTION_MODE", "execute")
+    _set_setting("AICRM_WECOM_ENABLED_EFFECT_TYPES", WECOM_CONTACT_TAG_MARK)
     _set_setting("AICRM_PUSH_CAPABILITY_TAGS_ENABLED", "false")
     adapter = _SucceedingAdapter()
 

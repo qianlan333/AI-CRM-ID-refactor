@@ -267,7 +267,7 @@ def test_group_ops_legacy_bundle_external_effect_creates_wecom_group_job(group_o
     assert jobs[0].payload_json["chat_ids"] == ["wrOgAAA001"]
 
 
-def test_wecom_group_external_effect_adapter_defaults_to_success_path(group_ops_api_client, monkeypatch):
+def test_wecom_group_external_effect_requires_typed_execution_gate(group_ops_api_client, monkeypatch):
     monkeypatch.setenv("AICRM_GROUP_OPS_OUTBOUND_MODE", "external_effect")
     monkeypatch.setenv("AICRM_GROUP_OPS_EXTERNAL_EFFECT_SEND_MODE", "wecom_group")
     monkeypatch.setenv("AICRM_EXTERNAL_EFFECT_ALLOWED_TYPES", WECOM_MESSAGE_GROUP_SEND)
@@ -288,11 +288,11 @@ def test_wecom_group_external_effect_adapter_defaults_to_success_path(group_ops_
     disabled = ExternalEffectWorker().run_due(batch_size=1, dry_run=False, effect_types=[WECOM_MESSAGE_GROUP_SEND], test_only=False)
     disabled_updated = ExternalEffectService().get(disabled_job.id if disabled_job else 0)
 
-    assert disabled["counts"]["succeeded_count"] == 1
-    assert disabled["real_external_call_executed"] is True
+    assert disabled["counts"]["blocked_count"] == 1
+    assert disabled["real_external_call_executed"] is False
     assert disabled_updated is not None
-    assert disabled_updated.status == "succeeded"
-    assert len(wecom_calls) == 1
+    assert disabled_updated.status == "blocked"
+    assert wecom_calls == []
 
     monkeypatch.setenv("AICRM_EXTERNAL_EFFECT_WECOM_EXECUTE", "1")
     response = group_ops_api_client.post(
@@ -316,9 +316,9 @@ def test_wecom_group_external_effect_adapter_defaults_to_success_path(group_ops_
     assert executed["real_external_call_executed"] is True
     assert updated is not None
     assert updated.status == "succeeded"
-    assert len(wecom_calls) == 2
-    assert wecom_calls[1]["payload"]["sender"] == "owner_001"
-    assert wecom_calls[1]["payload"]["chat_ids"] == ["wrOgAAA001"]
+    assert len(wecom_calls) == 1
+    assert wecom_calls[0]["payload"]["sender"] == "owner_001"
+    assert wecom_calls[0]["payload"]["chat_ids"] == ["wrOgAAA001"]
     assert executed["items"][0]["attempt"]["response_summary_json"]["wecom_send_executed"] is True
 
 

@@ -7,6 +7,8 @@ from typing import Any, Protocol
 
 import requests
 
+from aicrm_next.integration_gateway.wecom_runtime import load_wecom_execution_config
+
 from aicrm_next.external_push.https_transport import (
     CallableHttpsTransport,
     HttpsTransport,
@@ -75,33 +77,18 @@ def _runtime_present(*names: str) -> bool:
 
 
 def _normalized_wecom_execution_mode() -> tuple[str, str]:
-    raw = runtime_setting("AICRM_WECOM_EXECUTION_MODE", "").strip().lower()
-    if raw in {"disabled", "dry_run", "execute"}:
-        return raw, "AICRM_WECOM_EXECUTION_MODE"
-    if _enabled("AICRM_EXTERNAL_EFFECT_WECOM_EXECUTE"):
-        return "execute", "AICRM_EXTERNAL_EFFECT_WECOM_EXECUTE"
-    return "disabled", "default"
+    config = load_wecom_execution_config()
+    return config.execution_mode, config.execution_mode_source
 
 
 def _enabled_wecom_effect_types() -> tuple[list[str], str]:
+    config = load_wecom_execution_config()
     supported = set(WECOM_EFFECT_TYPES)
-    configured = _csv_env("AICRM_WECOM_ENABLED_EFFECT_TYPES")
-    if configured:
-        return sorted(item for item in configured if item in supported), "AICRM_WECOM_ENABLED_EFFECT_TYPES"
-    legacy = _csv_env("AICRM_EXTERNAL_EFFECT_ALLOWED_TYPES")
-    if legacy:
-        return sorted(item for item in legacy if item in supported), "AICRM_EXTERNAL_EFFECT_ALLOWED_TYPES"
-    return [], "default_empty"
+    return sorted(item for item in config.enabled_effect_types if item in supported), config.enabled_effect_types_source
 
 
 def _configured_wecom_sender(fallback: str = "") -> str:
-    raw = runtime_setting("AICRM_WECOM_DEFAULT_SENDER_USERID", "") or runtime_setting("AICRM_EXTERNAL_EFFECT_ALLOWED_OWNER_USERIDS", "")
-    candidates = [
-        item.strip()
-        for item in raw.replace("\n", ",").replace(" ", ",").split(",")
-        if item.strip()
-    ]
-    return candidates[0] if candidates else str(fallback or "").strip()
+    return load_wecom_execution_config().default_sender_userid or str(fallback or "").strip()
 
 
 def _safe_response_json_summary(response: Any) -> dict[str, Any]:
@@ -142,6 +129,43 @@ def _safe_error_message(value: Any, *, limit: int = 500) -> str:
     return redact_sensitive_text(value)[: max(0, int(limit))]
 
 
+def _wecom_provider_failure(
+    exc: Exception,
+    *,
+    default_error_code: str,
+    executed_key: str,
+) -> tuple[str, str, bool, dict[str, Any]]:
+    error_code = default_error_code
+    error_message = _safe_error_message(exc)
+    retryable = False
+    response_summary: dict[str, Any] = {"real_external_call_executed": True, executed_key: False}
+    try:
+        from aicrm_next.integration_gateway.wecom_channel_entry_client import WeComApiError
+
+        if isinstance(exc, WeComApiError):
+            payload = dict(exc.payload or {})
+            response_summary.update(
+                {
+                    "errcode": int(payload.get("errcode") or exc.provider_errcode or 0),
+                    "errmsg_present": bool(str(payload.get("errmsg") or "").strip()),
+                    "provider_error_classification": exc.classification,
+                    "http_status": exc.status_code,
+                    "retry_after_seconds": exc.retry_after_seconds,
+                    "real_external_call_executed": exc.real_external_call_executed,
+                }
+            )
+            error_code = exc.error_code
+            error_message = _safe_error_message(payload.get("errmsg") or exc.message or exc)
+            retryable = exc.retryable
+    except Exception:
+        pass
+    if error_message.startswith("missing_wecom_config:"):
+        error_code = "config_missing"
+        retryable = False
+        response_summary["real_external_call_executed"] = False
+    return error_code, error_message, retryable, response_summary
+
+
 def _target_unionid(payload: dict[str, Any]) -> str:
     return str(payload.get("target_unionid") or payload.get("unionid") or "").strip()
 
@@ -163,27 +187,14 @@ def webhook_execution_settings() -> dict[str, Any]:
 
 
 def wecom_execution_settings() -> dict[str, Any]:
-    execution_mode, mode_source = _normalized_wecom_execution_mode()
+    config = load_wecom_execution_config()
+    execution_mode, mode_source = config.execution_mode, config.execution_mode_source
     enabled_types, enabled_types_source = _enabled_wecom_effect_types()
     default_sender = _configured_wecom_sender()
-    deprecated_settings_present = [
-        key
-        for key in (
-            "AICRM_EXTERNAL_EFFECT_WECOM_EXECUTE",
-            "AICRM_EXTERNAL_EFFECT_ALLOWED_TYPES",
-            "AICRM_EXTERNAL_EFFECT_ALLOWED_OWNER_USERIDS",
-        )
-        if runtime_setting(key, "")
-    ]
-    blocking_reasons: list[str] = []
-    if execution_mode == "disabled":
-        blocking_reasons.append("wecom_execution_disabled")
+    deprecated_settings_present = list(config.deprecated_settings_present)
+    blocking_reasons: list[str] = list(config.blocking_reasons)
     if execution_mode == "execute" and not enabled_types:
         blocking_reasons.append("wecom_enabled_effect_types_empty")
-    if execution_mode == "execute" and not _runtime_present("WECOM_CORP_ID"):
-        blocking_reasons.append("wecom_corp_id_missing")
-    if execution_mode == "execute" and not _runtime_present("WECOM_CONTACT_SECRET", "WECOM_SECRET"):
-        blocking_reasons.append("wecom_contact_secret_missing")
     if execution_mode == "execute" and not default_sender:
         blocking_reasons.append("default_sender_userid_missing")
     return {
@@ -198,10 +209,13 @@ def wecom_execution_settings() -> dict[str, Any]:
         "allowed_owner_userids": [default_sender] if default_sender else [],
         "allowed_group_chat_ids": "all",
         "supported_types": list(WECOM_EFFECT_TYPES),
-        "corp_id_present": _runtime_present("WECOM_CORP_ID"),
-        "contact_secret_present": _runtime_present("WECOM_CONTACT_SECRET", "WECOM_SECRET"),
+        "corp_id_present": bool(config.corp_id),
+        "contact_secret_present": bool(config.contact_secret),
         "default_sender_userid_present": bool(default_sender),
         "deprecated_settings_present": deprecated_settings_present,
+        "deprecated_settings_owner": "integration_gateway",
+        "deprecated_settings_delete_after": "2026-10-01",
+        "config_conflict": config.conflict,
         "blocking_reasons": blocking_reasons,
     }
 
@@ -768,31 +782,11 @@ class WeComWelcomeMessageAdapter:
         return ProductionWeComAdapter()
 
     def _failure_result(self, exc: Exception, *, request_summary: dict[str, Any]) -> ExternalEffectDispatchResult:
-        error_code = "wecom_welcome_send_failed"
-        error_message = _safe_error_message(exc)
-        retryable = False
-        response_summary: dict[str, Any] = {"real_external_call_executed": True, "wecom_send_executed": False}
-        try:
-            from aicrm_next.integration_gateway.wecom_channel_entry_client import WeComApiError
-
-            if isinstance(exc, WeComApiError):
-                payload = dict(exc.payload or {})
-                errcode = int(payload.get("errcode") or 0)
-                response_summary.update(
-                    {
-                        "errcode": errcode,
-                        "errmsg_present": bool(str(payload.get("errmsg") or "").strip()),
-                    }
-                )
-                error_code = f"wecom_error_{errcode}" if errcode else "network_error"
-                error_message = _safe_error_message(payload.get("errmsg") or exc.message or exc)
-                retryable = errcode in {-1, 42001, 45009, 45011} or errcode == 0
-        except Exception:
-            pass
-        if error_message.startswith("missing_wecom_config:"):
-            error_code = "config_missing"
-            retryable = False
-            response_summary["real_external_call_executed"] = False
+        error_code, error_message, retryable, response_summary = _wecom_provider_failure(
+            exc,
+            default_error_code="wecom_welcome_send_failed",
+            executed_key="wecom_send_executed",
+        )
         return ExternalEffectDispatchResult(
             status="failed_retryable" if retryable else "failed_terminal",
             adapter_mode="execute",
@@ -902,31 +896,11 @@ class WeComContactTagAdapter:
         return ProductionWeComAdapter()
 
     def _failure_result(self, exc: Exception, *, request_summary: dict[str, Any]) -> ExternalEffectDispatchResult:
-        error_code = "wecom_tag_mark_failed"
-        error_message = _safe_error_message(exc)
-        retryable = False
-        response_summary: dict[str, Any] = {"real_external_call_executed": True, "wecom_tag_executed": False}
-        try:
-            from aicrm_next.integration_gateway.wecom_channel_entry_client import WeComApiError
-
-            if isinstance(exc, WeComApiError):
-                payload = dict(exc.payload or {})
-                errcode = int(payload.get("errcode") or 0)
-                response_summary.update(
-                    {
-                        "errcode": errcode,
-                        "errmsg_present": bool(str(payload.get("errmsg") or "").strip()),
-                    }
-                )
-                error_code = f"wecom_error_{errcode}" if errcode else "network_error"
-                error_message = _safe_error_message(payload.get("errmsg") or exc.message or exc)
-                retryable = errcode in {-1, 42001, 45009, 45011} or errcode == 0
-        except Exception:
-            pass
-        if error_message.startswith("missing_wecom_config:"):
-            error_code = "config_missing"
-            retryable = False
-            response_summary["real_external_call_executed"] = False
+        error_code, error_message, retryable, response_summary = _wecom_provider_failure(
+            exc,
+            default_error_code="wecom_tag_mark_failed",
+            executed_key="wecom_tag_executed",
+        )
         return ExternalEffectDispatchResult(
             status="failed_retryable" if retryable else "failed_terminal",
             adapter_mode="execute",
@@ -1048,31 +1022,11 @@ class WeComProfileUpdateAdapter:
         return ProductionWeComAdapter()
 
     def _failure_result(self, exc: Exception, *, request_summary: dict[str, Any]) -> ExternalEffectDispatchResult:
-        error_code = "wecom_profile_update_failed"
-        error_message = _safe_error_message(exc)
-        retryable = False
-        response_summary: dict[str, Any] = {"real_external_call_executed": True, "wecom_profile_update_executed": False}
-        try:
-            from aicrm_next.integration_gateway.wecom_channel_entry_client import WeComApiError
-
-            if isinstance(exc, WeComApiError):
-                payload = dict(exc.payload or {})
-                errcode = int(payload.get("errcode") or 0)
-                response_summary.update(
-                    {
-                        "errcode": errcode,
-                        "errmsg_present": bool(str(payload.get("errmsg") or "").strip()),
-                    }
-                )
-                error_code = f"wecom_error_{errcode}" if errcode else "network_error"
-                error_message = _safe_error_message(payload.get("errmsg") or exc.message or exc)
-                retryable = errcode in {-1, 42001, 45009, 45011} or errcode == 0
-        except Exception:
-            pass
-        if error_message.startswith("missing_wecom_config:"):
-            error_code = "config_missing"
-            retryable = False
-            response_summary["real_external_call_executed"] = False
+        error_code, error_message, retryable, response_summary = _wecom_provider_failure(
+            exc,
+            default_error_code="wecom_profile_update_failed",
+            executed_key="wecom_profile_update_executed",
+        )
         return ExternalEffectDispatchResult(
             status="failed_retryable" if retryable else "failed_terminal",
             adapter_mode="execute",

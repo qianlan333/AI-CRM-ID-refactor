@@ -23,7 +23,7 @@ def test_objective_coverage_local_contract_is_ready_without_production_completio
     assert payload["objective_requirements"]["worker_queue_processing"]["test_evidence"]["generated_sample_worker_roundtrip"] is True
     assert payload["objective_requirements"]["worker_queue_processing"]["test_evidence"]["worker_dry_run_preview_only"] is True
     assert payload["objective_requirements"]["worker_queue_processing"]["test_evidence"]["worker_entrypoint_dry_run_gate"] is True
-    assert payload["objective_requirements"]["worker_queue_processing"]["test_evidence"]["worker_systemd_default_dry_run"] is True
+    assert payload["objective_requirements"]["worker_queue_processing"]["test_evidence"]["worker_systemd_persistent_service"] is True
     assert payload["objective_requirements"]["worker_queue_processing"]["test_evidence"]["worker_dispatch_one"] is True
     assert payload["objective_requirements"]["worker_queue_processing"]["test_evidence"]["worker_dispatch_one_replay"] is True
     assert payload["objective_requirements"]["worker_queue_processing"]["test_evidence"]["admin_retry_skip"] is True

@@ -21,6 +21,8 @@ def _broadcast_runtime(monkeypatch):
     monkeypatch.setenv("AICRM_GROUP_OPS_MINIPROGRAM_APPID", "wx-fixture-miniprogram")
     monkeypatch.setenv("AICRM_GROUP_OPS_OUTBOUND_MODE", "external_effect")
     monkeypatch.setenv("AICRM_WECOM_GROUP_ADAPTER_MODE", "fake")
+    monkeypatch.setenv("AICRM_WECOM_EXECUTION_MODE", "execute")
+    monkeypatch.setenv("AICRM_WECOM_ENABLED_EFFECT_TYPES", "wecom.message.group.send")
 
 
 def _post_json(client, payload: dict[str, Any], *, idempotency_key: str = "pytest-group-broadcast-001"):

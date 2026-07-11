@@ -4,13 +4,13 @@
     {
       "service": "openclaw-wecom-callback-ingress.service",
       "health_url": "http://127.0.0.1:5002/health"
+    },
+    {
+      "service": "openclaw-wecom-callback-inbox-worker.service",
+      "stop_for_migration": true
     }
   ],
   "active_autostart": [
-    {
-      "timer": "openclaw-wecom-callback-inbox-worker.timer",
-      "service": "openclaw-wecom-callback-inbox-worker.service"
-    },
     {
       "timer": "openclaw-external-push-worker.timer",
       "service": "openclaw-external-push-worker.service",
@@ -58,6 +58,7 @@
     "openclaw-external-contact-sync.timer"
   ],
   "retired_forbidden": [
+    "openclaw-wecom-callback-inbox-worker.timer",
     "aicrm-reply-monitor-run-due.timer",
     "aicrm-reply-monitor-capture.timer",
     "aicrm-automation-jobs-run-due.timer"
