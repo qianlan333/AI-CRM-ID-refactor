@@ -35,7 +35,7 @@
       "accessor": "os.getenv",
       "file": "aicrm_next/admin_auth/route_policy.py",
       "key": "AICRM_ADMIN_AUTH_ENFORCED",
-      "line": 88
+      "line": 91
     },
     {
       "accessor": "os.getenv",
@@ -455,7 +455,7 @@
       "accessor": "os.getenv",
       "file": "aicrm_next/admin_auth/route_policy.py",
       "key": "AICRM_NEXT_ENV",
-      "line": 80
+      "line": 83
     },
     {
       "accessor": "os.getenv",
@@ -699,6 +699,12 @@
     },
     {
       "accessor": "os.getenv",
+      "file": "aicrm_next/questionnaire/result_access.py",
+      "key": "AICRM_QUESTIONNAIRE_RESULT_GRANT_TTL_SECONDS",
+      "line": 91
+    },
+    {
+      "accessor": "os.getenv",
       "file": "aicrm_next/admin_auth/action_token.py",
       "key": "AICRM_ROUTE_POLICY_ENFORCED",
       "line": 187
@@ -725,7 +731,7 @@
       "accessor": "os.getenv",
       "file": "aicrm_next/identity_contact/sidebar_jssdk.py",
       "key": "AICRM_SIDEBAR_JSSDK_ALLOWED_HOSTS",
-      "line": 521
+      "line": 502
     },
     {
       "accessor": "_env_flag",
@@ -983,25 +989,25 @@
       "accessor": "_env_flag",
       "file": "aicrm_next/customer_read_model/application.py",
       "key": "CUSTOMER_READ_MODEL_LIVE_SOURCE_FALLBACK_ENABLED",
-      "line": 41
+      "line": 42
     },
     {
       "accessor": "_env_flag",
       "file": "aicrm_next/customer_read_model/application.py",
       "key": "CUSTOMER_READ_MODEL_NEXT_PRIMARY",
-      "line": 37
+      "line": 38
     },
     {
       "accessor": "os.getenv",
       "file": "aicrm_next/customer_read_model/api.py",
       "key": "CUSTOMER_READ_MODEL_REPO_BACKEND",
-      "line": 55
+      "line": 58
     },
     {
       "accessor": "os.getenv",
       "file": "aicrm_next/customer_read_model/repo.py",
       "key": "CUSTOMER_READ_MODEL_REPO_BACKEND",
-      "line": 1522
+      "line": 1520
     },
     {
       "accessor": "os.getenv",
@@ -1098,6 +1104,12 @@
       "file": "scripts/ops/check_callback_quick_ack_state.py",
       "key": "DATABASE_URL",
       "line": 115
+    },
+    {
+      "accessor": "os.getenv",
+      "file": "scripts/ops/check_sidebar_questionnaire_access.py",
+      "key": "DATABASE_URL",
+      "line": 12
     },
     {
       "accessor": "os.getenv",
@@ -1265,13 +1277,13 @@
       "accessor": "os.getenv",
       "file": "aicrm_next/admin_auth/route_policy.py",
       "key": "PYTEST_CURRENT_TEST",
-      "line": 78
+      "line": 81
     },
     {
       "accessor": "os.getenv",
       "file": "aicrm_next/admin_auth/route_policy.py",
       "key": "PYTEST_CURRENT_TEST",
-      "line": 86
+      "line": 89
     },
     {
       "accessor": "os.getenv",
@@ -1659,6 +1671,12 @@
     },
     {
       "accessor": "os.getenv",
+      "file": "aicrm_next/admin_auth/route_policy.py",
+      "key": "WECOM_CORP_ID",
+      "line": 207
+    },
+    {
+      "accessor": "os.getenv",
       "file": "aicrm_next/admin_auth/service.py",
       "key": "WECOM_CORP_ID",
       "line": 110
@@ -1689,6 +1707,18 @@
     },
     {
       "accessor": "os.getenv",
+      "file": "aicrm_next/customer_read_model/api.py",
+      "key": "WECOM_CORP_ID",
+      "line": 369
+    },
+    {
+      "accessor": "os.getenv",
+      "file": "aicrm_next/identity_contact/api.py",
+      "key": "WECOM_CORP_ID",
+      "line": 241
+    },
+    {
+      "accessor": "os.getenv",
       "file": "aicrm_next/identity_contact/domain.py",
       "key": "WECOM_CORP_ID",
       "line": 12
@@ -1697,7 +1727,7 @@
       "accessor": "os.getenv",
       "file": "aicrm_next/identity_contact/sidebar_jssdk.py",
       "key": "WECOM_CORP_ID",
-      "line": 405
+      "line": 386
     },
     {
       "accessor": "os.getenv",
@@ -1737,6 +1767,12 @@
     },
     {
       "accessor": "os.getenv",
+      "file": "aicrm_next/sidebar_write/api.py",
+      "key": "WECOM_CORP_ID",
+      "line": 142
+    },
+    {
+      "accessor": "os.getenv",
       "file": "scripts/ops/generate_wecom_callback_sample.py",
       "key": "WECOM_CORP_ID",
       "line": 50
@@ -1763,7 +1799,7 @@
       "accessor": "runtime_setting",
       "file": "aicrm_next/identity_contact/sidebar_jssdk.py",
       "key": "WECOM_SECRET",
-      "line": 406
+      "line": 387
     },
     {
       "accessor": "runtime_setting",
@@ -1907,6 +1943,7 @@
     "AICRM_QUESTIONNAIRE_OAUTH_ADAPTER_MODE",
     "AICRM_QUESTIONNAIRE_OAUTH_REDIRECT_ALLOWLIST",
     "AICRM_QUESTIONNAIRE_OAUTH_STATE_SECRET",
+    "AICRM_QUESTIONNAIRE_RESULT_GRANT_TTL_SECONDS",
     "AICRM_ROUTE_POLICY_ENFORCED",
     "AICRM_RUNTIME_V2_AGENT_FAKE_ALLOWED",
     "AICRM_RUNTIME_V2_AGENT_FAKE_OUTPUT",

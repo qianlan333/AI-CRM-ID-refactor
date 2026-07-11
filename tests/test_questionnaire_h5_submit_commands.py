@@ -61,12 +61,20 @@ def test_h5_submit_executes_next_commandbus_and_writes_submission_projection(cli
     assert body["mobile_binding"]["real_external_call_executed"] is False
 
     sequential = client.get(f"/api/h5/questionnaires/hxc-activation-v1/result/{body['submission_id']}")
-    assert sequential.status_code == 404
+    assert sequential.status_code == 403
 
     result = client.get(f"/api/h5/questionnaires/hxc-activation-v1/result/{body['result_access_token']}")
     assert result.status_code == 200
     assert result.json()["result"]["answers"]["q_activation"] == "activated"
     assert "result_token" not in result.json()["result"]
+
+    copied_link_client = TestClient(client.app, raise_server_exceptions=False)
+    copied_link = copied_link_client.get(
+        f"/api/h5/questionnaires/hxc-activation-v1/result/{body['result_access_token']}"
+    )
+    assert copied_link.status_code == 403
+    assert copied_link.json()["error_code"] == "questionnaire_result_access_forbidden"
+    assert "result" not in copied_link.json()
 
     audit_events = get_questionnaire_h5_write_audit_events()
     assert body["command_id"] in {event["command_id"] for event in audit_events}

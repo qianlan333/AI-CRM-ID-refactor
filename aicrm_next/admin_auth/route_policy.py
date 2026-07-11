@@ -17,7 +17,10 @@ from starlette.concurrency import run_in_threadpool
 from aicrm_next.shared.route_policy import RoutePolicy, RoutePolicyIndex, match_route_policy
 from aicrm_next.shared.internal_service_tokens import validate_internal_service_token
 from aicrm_next.shared.runtime import production_environment
-from aicrm_next.shared.signed_context import load_sidebar_owner_context_token
+from aicrm_next.shared.signed_context import (
+    SIDEBAR_VIEWER_SESSION_COOKIE,
+    validate_sidebar_owner_context,
+)
 
 from .capabilities import session_can, viewer_only
 from .guards import admin_auth_enforcement_enabled, admin_auth_required_response, admin_page_auth_redirect, current_admin_session
@@ -119,7 +122,7 @@ async def route_policy_required_response(
     if policy.auth_scheme == "scoped_bearer" and enforcement_enabled:
         return _enforce_scoped_bearer_presence(request)
     if policy.auth_scheme == "sidebar_signed_context" and enforcement_enabled:
-        return await _enforce_sidebar_context(request)
+        return await _enforce_sidebar_context(request, policy)
     return None
 
 
@@ -174,23 +177,15 @@ def _enforce_scoped_bearer_presence(request: Request) -> Response | None:
     return None
 
 
-async def _enforce_sidebar_context(request: Request) -> Response | None:
-    token = (
-        normalize_text(request.headers.get(SIDEBAR_OWNER_TOKEN_HEADER))
-        or normalize_text(request.query_params.get("sidebar_owner_token"))
-        or normalize_text(request.query_params.get("owner_token"))
-    )
-    result = load_sidebar_owner_context_token(token)
-    if not result.get("ok"):
-        return _error("sidebar_context_required", status_code=401)
-    context = dict(result.get("context") or {})
-    owner_userid = normalize_text(context.get("owner_userid") or context.get("viewer_userid"))
-    if not owner_userid:
-        return _error("sidebar_context_required", status_code=401)
+async def _enforce_sidebar_context(request: Request, policy: RoutePolicy) -> Response | None:
+    token = normalize_text(request.headers.get(SIDEBAR_OWNER_TOKEN_HEADER))
     claimed_values = [
         normalize_text(request.query_params.get(key))
         for key in ("owner_userid", "current_userid", "bind_by_userid", "viewer_userid")
     ]
+    target_external_userid = normalize_text(
+        request.query_params.get("external_userid") or request.query_params.get("user_id")
+    )
     content_type = normalize_text(request.headers.get("content-type")).lower()
     if content_type.startswith("application/json"):
         try:
@@ -198,14 +193,31 @@ async def _enforce_sidebar_context(request: Request) -> Response | None:
         except (UnicodeDecodeError, json.JSONDecodeError):
             body = {}
         if isinstance(body, dict):
+            target_external_userid = target_external_userid or normalize_text(
+                body.get("external_userid") or body.get("user_id")
+            )
             claimed_values.extend(
                 normalize_text(body.get(key))
                 for key in ("owner_userid", "current_userid", "bind_by_userid", "viewer_userid", "actor_id")
             )
+    result = validate_sidebar_owner_context(
+        token=token,
+        viewer_session_cookie=normalize_text(request.cookies.get(SIDEBAR_VIEWER_SESSION_COOKIE)),
+        external_userid=target_external_userid,
+        expected_corp_id=normalize_text(os.getenv("WECOM_CORP_ID")),
+    )
+    if not result.get("ok"):
+        status = normalize_text(result.get("status"))
+        status_code = 401 if status in {"missing", "invalid", "expired", "viewer_session_required", "viewer_session_invalid"} else 403
+        return _error("sidebar_context_required" if status_code == 401 else "sidebar_customer_scope_forbidden", status_code=status_code)
+    context = dict(result.get("context") or {})
+    owner_userid = normalize_text(context.get("owner_userid") or context.get("viewer_userid"))
     if any(value and not hmac.compare_digest(value, owner_userid) for value in claimed_values):
         return _error("sidebar_owner_scope_forbidden", status_code=403)
     request.state.sidebar_context = context
     request.state.sidebar_owner_userid = owner_userid
+    request.state.sidebar_external_userid = normalize_text(context.get("external_userid"))
+    request.state.sidebar_capability = policy.capability
     _set_pii_principal(request, actor_type="sidebar_owner", actor_id=owner_userid, policy_scope="owner")
     return None
 

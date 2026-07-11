@@ -12,7 +12,7 @@ from aicrm_next.admin_auth.route_policy import RouteRateLimiter, _csrf_error
 from aicrm_next.admin_auth.session_state import SessionStateResult
 from aicrm_next.admin_auth.service import CSRF_COOKIE, SESSION_COOKIE, sign_session
 from aicrm_next.main import create_app
-from aicrm_next.shared.signed_context import build_sidebar_owner_context_token
+from tests.sidebar_auth_test_helpers import install_sidebar_auth, install_sidebar_viewer_session
 
 
 def _session(*roles: str, csrf_token: str = "route-policy-csrf") -> str:
@@ -91,28 +91,33 @@ def test_sidebar_customer_routes_require_signed_owner_context(enforced_client: T
     assert missing.status_code == 401
     assert missing.json()["error"] == "sidebar_context_required"
 
-    owner_token = build_sidebar_owner_context_token(viewer_userid="ZhaoYanFang", corp_id="ww-test")
+    headers = install_sidebar_auth(
+        enforced_client,
+        viewer_userid="ZhaoYanFang",
+        external_userid="wx_ext_001",
+    )
     allowed = enforced_client.get(
         "/api/sidebar/profile?external_userid=wx_ext_001&owner_userid=ZhaoYanFang",
-        headers={"X-AICRM-Sidebar-Owner-Token": owner_token},
+        headers=headers,
     )
     assert allowed.status_code == 200
     assert allowed.json()["route_owner"] == "ai_crm_next"
 
     cross_owner = enforced_client.get(
         "/api/sidebar/profile?external_userid=wx_ext_001&owner_userid=LiuXiao",
-        headers={"X-AICRM-Sidebar-Owner-Token": owner_token},
+        headers=headers,
     )
     assert cross_owner.status_code == 403
     assert cross_owner.json()["error"] == "sidebar_owner_scope_forbidden"
 
 
 def test_sidebar_write_uses_signed_owner_and_rejects_body_impersonation(enforced_client: TestClient) -> None:
-    owner_token = build_sidebar_owner_context_token(viewer_userid="ZhaoYanFang", corp_id="ww-test")
-    headers = {
-        "X-AICRM-Sidebar-Owner-Token": owner_token,
-        "Idempotency-Key": "route-policy-sidebar-write",
-    }
+    headers = install_sidebar_auth(
+        enforced_client,
+        viewer_userid="ZhaoYanFang",
+        external_userid="wx_ext_001",
+    )
+    headers["Idempotency-Key"] = "route-policy-sidebar-write"
 
     rejected = enforced_client.post(
         "/api/sidebar/lead-pool/upsert-class-term",
@@ -138,6 +143,73 @@ def test_sidebar_write_uses_signed_owner_and_rejects_body_impersonation(enforced
     )
     assert allowed.status_code == 200
     assert allowed.json()["ok"] is True
+
+
+def test_sidebar_context_rejects_cross_customer_query_token_and_new_session_replay(
+    enforced_client: TestClient,
+) -> None:
+    headers = install_sidebar_auth(
+        enforced_client,
+        viewer_userid="ZhaoYanFang",
+        external_userid="wx_ext_001",
+        session_id="original-session",
+    )
+    token = headers["X-AICRM-Sidebar-Owner-Token"]
+
+    cross_customer = enforced_client.get(
+        "/api/sidebar/profile?external_userid=wx_ext_002",
+        headers=headers,
+    )
+    query_token = enforced_client.get(
+        "/api/sidebar/profile?external_userid=wx_ext_001",
+        params={"sidebar_owner_token": token},
+    )
+    enforced_client.cookies.clear()
+    install_sidebar_viewer_session(
+        enforced_client,
+        viewer_userid="ZhaoYanFang",
+        external_userid="wx_ext_001",
+        session_id="replacement-session",
+    )
+    replay = enforced_client.get(
+        "/api/sidebar/profile?external_userid=wx_ext_001",
+        headers=headers,
+    )
+
+    assert cross_customer.status_code == 403
+    assert query_token.status_code == 401
+    assert replay.status_code == 403
+    for response in (cross_customer, query_token, replay):
+        assert all(
+            marker not in response.text
+            for marker in ("13800138000", "union_customer_001", "重点跟进", "q_activation")
+        )
+
+
+def test_customer_detail_aliases_require_admin_capability_before_pii_resolution(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("AICRM_NEXT_ENV", "test")
+    monkeypatch.setenv("AICRM_ROUTE_POLICY_ENFORCED", "true")
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    anonymous = TestClient(create_app(), raise_server_exceptions=False)
+    no_capability = _admin_client(monkeypatch, "unknown_role")
+    viewer = _admin_client(monkeypatch, "viewer")
+    routes = (
+        "/api/customers/wx_ext_001",
+        "/api/users/union_customer_001",
+        "/api/admin/customers/profile?mobile=13800138000",
+    )
+
+    assert [anonymous.get(route).status_code for route in routes] == [401, 401, 401]
+    denied = [no_capability.get(route) for route in routes]
+    assert [response.status_code for response in denied] == [403, 403, 403]
+    assert all(
+        marker not in response.text
+        for response in denied
+        for marker in ("13800138000", "重点跟进", "q_activation")
+    )
+    assert [viewer.get(route).status_code for route in routes] == [200, 200, 200]
 
 
 def test_viewer_can_read_but_cannot_write_group_ops_alias(monkeypatch: pytest.MonkeyPatch) -> None:

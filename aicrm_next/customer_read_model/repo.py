@@ -1254,8 +1254,6 @@ class LiveSourceCustomerReadRepository:
                 "updated_at": _iso(row.get("class_status_updated_at")),
             }
             follow_users = _json_list(row.get("follow_users_json"))
-            if not follow_users and owner_userid:
-                follow_users = [{"userid": owner_userid, "display_name": owner_display_map.get(owner_userid) or owner_userid, "is_primary": True}]
             customers.append(
                 {
                     "unionid": unionid,

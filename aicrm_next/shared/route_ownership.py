@@ -41,6 +41,7 @@ ALLOWED_AUTH_SCHEMES = {
     "provider_signature",
     "public",
     "scoped_bearer",
+    "signed_session_grant",
     "sidebar_signed_context",
     "webhook_bearer",
 }

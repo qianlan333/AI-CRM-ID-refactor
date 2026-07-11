@@ -252,6 +252,52 @@
       "architecture_gate": "db"
     },
     {
+      "name": "sidebar_questionnaire_access",
+      "paths": [
+        "aicrm_next/admin_auth/route_policy.py",
+        "aicrm_next/customer_read_model/**",
+        "aicrm_next/frontend_compat/static/sidebar_workbench/**",
+        "aicrm_next/frontend_compat/templates/sidebar_customer_workbench.html",
+        "aicrm_next/identity_contact/**",
+        "aicrm_next/questionnaire/**",
+        "aicrm_next/shared/signed_context.py",
+        "aicrm_next/shared/signed_session.py",
+        "aicrm_next/sidebar_write/**",
+        "scripts/ci/check_sidebar_questionnaire_access_contract.py",
+        "scripts/ops/check_sidebar_questionnaire_access.py",
+        "docs/architecture/sidebar_questionnaire_access_boundary.md",
+        "docs/architecture/sidebar_readonly_route_inventory.md",
+        "tests/sidebar_auth_test_helpers.py",
+        "tests/test_api.py",
+        "tests/test_sidebar_*.py",
+        "tests/test_customer_read_model_request_scope.py",
+        "tests/test_internal_events_customer_identity_slice.py",
+        "tests/test_questionnaire_h5_submit_commands.py",
+        "tests/test_questionnaire_result_access.py",
+        "tests/test_route_policy_enforcement.py"
+      ],
+      "python_tests": [
+        "tests/test_sidebar_owner_context_security.py",
+        "tests/test_sidebar_access_postgres.py",
+        "tests/test_sidebar_questionnaire_access_contract.py",
+        "tests/test_sidebar_access_reconciliation.py",
+        "tests/test_sidebar_jssdk_adapter.py",
+        "tests/test_sidebar_jssdk_frontend_contract.py",
+        "tests/test_route_policy_enforcement.py",
+        "tests/test_sidebar_v2_api.py",
+        "tests/test_sidebar_write_commands.py",
+        "tests/test_api.py",
+        "tests/test_customer_read_model_request_scope.py",
+        "tests/test_internal_events_customer_identity_slice.py",
+        "tests/test_questionnaire_h5_submit_commands.py",
+        "tests/test_questionnaire_oauth_state_security.py",
+        "tests/test_questionnaire_result_access.py"
+      ],
+      "needs_postgres": true,
+      "needs_full_ci": true,
+      "architecture_gate": "full"
+    },
+    {
       "name": "unionid_identity_cutover",
       "paths": [
         "aicrm_next/automation_agents/repository.py",

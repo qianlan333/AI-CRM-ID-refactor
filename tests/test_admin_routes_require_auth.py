@@ -4,6 +4,7 @@ from fastapi.testclient import TestClient
 
 from aicrm_next.admin_auth.service import CSRF_COOKIE, SESSION_COOKIE, sign_session
 from aicrm_next.main import create_app
+from tests.sidebar_auth_test_helpers import install_sidebar_auth
 from tools.check_admin_route_auth import check_admin_route_auth_gate
 
 
@@ -94,9 +95,17 @@ def test_admin_session_allows_protected_route_when_enforced(monkeypatch) -> None
 def test_sidebar_routes_do_not_use_admin_session_when_enforced(monkeypatch) -> None:
     monkeypatch.setenv("AICRM_ADMIN_AUTH_ENFORCED", "true")
     client = TestClient(create_app(), raise_server_exceptions=False)
+    client.cookies.set(SESSION_COOKIE, _admin_cookie())
 
-    response = client.get("/api/sidebar/profile?external_userid=wx_ext_001&owner_userid=ZhaoYanFang")
+    admin_only = client.get("/api/sidebar/profile?external_userid=wx_ext_001")
+    headers = install_sidebar_auth(
+        client,
+        viewer_userid="ZhaoYanFang",
+        external_userid="wx_ext_001",
+    )
+    response = client.get("/api/sidebar/profile?external_userid=wx_ext_001", headers=headers)
 
+    assert admin_only.status_code == 403
     assert response.status_code == 200
     assert response.json()["route_owner"] == "ai_crm_next"
 

@@ -1,10 +1,15 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Path, Query, Request
+import os
+
+from fastapi import APIRouter, HTTPException, Path, Query, Request
 from fastapi.responses import JSONResponse
 
 from aicrm_next.shared.errors import ContractError
-from aicrm_next.shared.signed_context import load_sidebar_owner_context_token
+from aicrm_next.shared.signed_context import (
+    SIDEBAR_VIEWER_SESSION_COOKIE,
+    validate_sidebar_owner_context,
+)
 
 from .application import GetSidebarContactBindingStatusQuery, ResolvePersonIdentityQuery
 from .dto import ResolvePersonIdentityRequest
@@ -187,7 +192,11 @@ def sidebar_contact_binding_status(
     external_userid: str | None = None,
     owner_userid: str | None = None,
 ):
-    resolved_owner_userid = _sidebar_owner_userid_from_request(request, owner_userid=owner_userid)
+    resolved_owner_userid = _sidebar_owner_userid_from_request(
+        request,
+        external_userid=external_userid,
+        owner_userid=owner_userid,
+    )
     result = GetSidebarContactBindingStatusQuery()(
         external_userid=external_userid,
         owner_userid=resolved_owner_userid,
@@ -203,7 +212,11 @@ def sidebar_binding_status(
     external_userid: str | None = None,
     owner_userid: str | None = None,
 ):
-    resolved_owner_userid = _sidebar_owner_userid_from_request(request, owner_userid=owner_userid)
+    resolved_owner_userid = _sidebar_owner_userid_from_request(
+        request,
+        external_userid=external_userid,
+        owner_userid=owner_userid,
+    )
     result = GetSidebarContactBindingStatusQuery()(
         external_userid=external_userid,
         owner_userid=resolved_owner_userid,
@@ -213,14 +226,29 @@ def sidebar_binding_status(
     return JSONResponse(result, status_code=status_code)
 
 
-def _sidebar_owner_userid_from_request(request: Request, *, owner_userid: str | None = None) -> str:
-    token = (
-        str(request.headers.get(SIDEBAR_OWNER_TOKEN_HEADER) or "").strip()
-        or str(request.query_params.get("sidebar_owner_token") or "").strip()
-        or str(request.query_params.get("owner_token") or "").strip()
-    )
-    token_result = load_sidebar_owner_context_token(token)
-    if token_result.get("ok"):
-        context = dict(token_result.get("context") or {})
-        return str(context.get("owner_userid") or context.get("viewer_userid") or "").strip()
-    return str(owner_userid or "").strip()
+def _sidebar_owner_userid_from_request(
+    request: Request,
+    *,
+    external_userid: str | None,
+    owner_userid: str | None = None,
+) -> str:
+    context = dict(getattr(request.state, "sidebar_context", {}) or {})
+    if not context:
+        result = validate_sidebar_owner_context(
+            token=str(request.headers.get(SIDEBAR_OWNER_TOKEN_HEADER) or "").strip(),
+            viewer_session_cookie=str(request.cookies.get(SIDEBAR_VIEWER_SESSION_COOKIE) or "").strip(),
+            external_userid=str(external_userid or "").strip(),
+            expected_corp_id=str(os.getenv("WECOM_CORP_ID") or "").strip(),
+        )
+        if not result.get("ok"):
+            status = str(result.get("status") or "").strip()
+            status_code = 401 if status in {"missing", "invalid", "expired", "viewer_session_required", "viewer_session_invalid"} else 403
+            raise HTTPException(status_code=status_code, detail="sidebar context required")
+        context = dict(result.get("context") or {})
+    viewer = str(context.get("owner_userid") or context.get("viewer_userid") or "").strip()
+    claimed_owner = str(owner_userid or "").strip()
+    if claimed_owner and claimed_owner != viewer:
+        raise HTTPException(status_code=403, detail="sidebar owner scope forbidden")
+    if str(context.get("external_userid") or "").strip() != str(external_userid or "").strip():
+        raise HTTPException(status_code=403, detail="sidebar customer scope forbidden")
+    return viewer

@@ -191,24 +191,25 @@ class PostgresIdentityRepository:
                     SELECT NULLIF(follow_user_userid, '') AS owner_userid
                     FROM wecom_external_contact_identity_map
                     WHERE external_userid = %s
+                      AND COALESCE(status, 'active') = 'active'
                     UNION ALL
                     SELECT NULLIF(primary_owner_userid, '') AS owner_userid
                     FROM crm_user_identity
-                    WHERE primary_external_userid = %s
-                       OR jsonb_exists(external_userids_json, %s)
-                    UNION ALL
-                    SELECT NULLIF(first_owner_userid, '') AS owner_userid
-                    FROM external_contact_bindings
-                    WHERE external_userid = %s
-                    UNION ALL
-                    SELECT NULLIF(last_owner_userid, '') AS owner_userid
-                    FROM external_contact_bindings
-                    WHERE external_userid = %s
+                    WHERE (
+                            primary_external_userid = %s
+                            OR jsonb_exists(external_userids_json, %s)
+                            OR EXISTS (
+                                SELECT 1
+                                FROM jsonb_array_elements(external_userids_json) AS alias(value)
+                                WHERE jsonb_typeof(alias.value) = 'object'
+                                  AND alias.value ->> 'external_userid' = %s
+                            )
+                          )
+                      AND COALESCE(identity_status, 'active') = 'active'
                 ) owners
                 WHERE COALESCE(owner_userid, '') <> ''
                 """,
                 (
-                    normalized_external,
                     normalized_external,
                     normalized_external,
                     normalized_external,

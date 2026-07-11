@@ -20,6 +20,7 @@ from .dto import (
     ListCustomersRequest,
     RecentMessagesRequest,
 )
+from .errors import CustomerScopeForbiddenError
 from .projections import detail_projection, list_item_projection
 from .repo import CustomerReadRepository, build_customer_live_source_repository, build_customer_read_model_repository
 
@@ -163,12 +164,13 @@ def _customer_identity_key(query: CustomerDetailRequest | CustomerTimelineReques
 
 
 def _customer_owner_candidates(customer: JsonDict) -> set[str]:
-    candidates = {str(customer.get(key) or "").strip() for key in ("owner_userid", "primary_owner_userid")}
-    nested_keys = ("owner_userid", "primary_owner_userid", "last_owner_userid", "first_owner_userid", "follow_user_userid")
-    for field in ("binding", "identity", "contact"):
-        value = customer.get(field)
-        if isinstance(value, dict):
-            candidates.update(str(value.get(key) or "").strip() for key in nested_keys)
+    candidates: set[str] = set()
+    identity = customer.get("identity")
+    if isinstance(identity, dict):
+        candidates.update(
+            str(identity.get(key) or "").strip()
+            for key in ("follow_user_userid", "primary_owner_userid")
+        )
     follow_users = customer.get("follow_users")
     if isinstance(follow_users, list):
         for item in follow_users:
@@ -180,9 +182,11 @@ def _customer_owner_candidates(customer: JsonDict) -> set[str]:
 def _assert_customer_owner_scope(customer: JsonDict, owner_userid: str | None, *, require_owner: bool = False, owner_verified: bool = False) -> None:
     requested_owner = str(owner_userid or "").strip()
     candidates = _customer_owner_candidates(customer)
-    if (requested_owner and requested_owner in candidates) or (requested_owner and owner_verified and not candidates) or (not requested_owner and not require_owner):
+    if requested_owner and requested_owner in candidates:
         return
-    raise NotFoundError("customer not found")
+    if not requested_owner and not require_owner:
+        return
+    raise CustomerScopeForbiddenError("customer scope forbidden")
 
 
 def _repo_get_customer_by_request(repo: CustomerReadRepository, query: CustomerDetailRequest) -> JsonDict | None:
@@ -1151,7 +1155,7 @@ class GetCustomerContextQuery:
                     fallback_used=bool(detail.get("fallback_used") or timeline_payload.get("fallback_used") or messages_payload.get("fallback_used")),
                     fallback_reason=str(detail.get("fallback_reason") or timeline_payload.get("fallback_reason") or messages_payload.get("fallback_reason") or ""),
                 )
-            except NotFoundError:
+            except (NotFoundError, CustomerScopeForbiddenError):
                 raise
             except Exception as exc:
                 fallback_external_userid = str(query.external_userid or query.user_id or "")
