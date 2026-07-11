@@ -1,5 +1,8 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
+  "primary_web": {
+    "service": "openclaw-wecom-postgres.service"
+  },
   "active_services": [
     {
       "service": "openclaw-wecom-callback-ingress.service",
@@ -49,18 +52,52 @@
     }
   ],
   "approval_required": [
-    "aicrm-archive-sync.timer",
-    "openclaw-broadcast-hourly-feishu-report.timer",
-    "openclaw-external-contact-full-sync.timer",
-    "openclaw-external-contact-sync.timer"
+    {
+      "timer": "aicrm-archive-sync.timer",
+      "service": "aicrm-archive-sync.service"
+    },
+    {
+      "timer": "openclaw-broadcast-hourly-feishu-report.timer",
+      "service": "openclaw-broadcast-hourly-feishu-report.service"
+    },
+    {
+      "timer": "openclaw-external-contact-full-sync.timer",
+      "service": "openclaw-external-contact-full-sync.service"
+    },
+    {
+      "timer": "openclaw-external-contact-sync.timer",
+      "service": "openclaw-external-contact-sync.service"
+    }
   ],
   "retired_forbidden": [
+    "aicrm-web.service",
     "openclaw-wecom-callback-inbox-worker.timer",
     "openclaw-external-push-worker.timer",
     "openclaw-external-push-worker.service",
     "aicrm-reply-monitor-run-due.timer",
+    "aicrm-reply-monitor-run-due.service",
     "aicrm-reply-monitor-capture.timer",
-    "aicrm-automation-jobs-run-due.timer"
+    "aicrm-reply-monitor-capture.service",
+    "aicrm-automation-jobs-run-due.timer",
+    "aicrm-automation-jobs-run-due.service",
+    "aicrm-campaign-run-due.timer",
+    "aicrm-campaign-run-due.service",
+    "openclaw-automation-conversion-due-runner.service"
+  ],
+  "retired_unit_files": [
+    "aicrm-web.service",
+    "openclaw-wecom-callback-inbox-worker.timer",
+    "openclaw-external-push-worker.timer",
+    "openclaw-external-push-worker.service",
+    "aicrm-reply-monitor-run-due.timer",
+    "aicrm-reply-monitor-run-due.service",
+    "aicrm-reply-monitor-capture.timer",
+    "aicrm-reply-monitor-capture.service",
+    "aicrm-automation-jobs-run-due.timer",
+    "aicrm-automation-jobs-run-due.service",
+    "aicrm-campaign-run-due.timer",
+    "aicrm-campaign-run-due.service",
+    "openclaw-automation-conversion-due-runner.service"
   ],
   "retired_dropins": [
     {

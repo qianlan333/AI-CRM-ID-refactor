@@ -53,10 +53,11 @@
 **Steps:**
 1. 先写失败 contract：workflow concurrency、主机 `flock`、mutation/commit 标志、EXIT fail-closed、Web 在 Alembic 前停止、Secret reconcile 后才启动。
 2. 运行 contract 并确认失败。
-3. 实现 workflow 与主机双层锁。
-4. 实现只在 mutation 已开始且未 commit 时触发的 cleanup trap。
-5. 将 stop/quiesce 移到 Alembic 与 Secret migration 前；公网 exact-SHA 后才标记 commit。
-6. 运行 contract 并提交。
+3. 实现 workflow 与主机双层锁，并把 bundle 临时路径绑定 run ID/attempt；旧仓库 publisher 作为上线前退役项。
+4. 从已验证 release 解出 controller，在任何工作树变更前安装持久 `ConditionPathExists` guard 并静默运行时。
+5. 实现只在 mutation 已开始且未 commit 时触发的 cleanup trap；失败重新创建 guard，不能依赖重启即失效的 runtime mask。
+6. 将 stash/reset 放到 quiesce 之后；公网 exact-SHA 后才标记 commit。
+7. 运行 contract 并提交。
 
 ### Task 4: 新进程 Secret 与企微登录 canary
 
@@ -67,7 +68,7 @@
 - Modify: `docs/runbooks/app_setting_secret_cutover_zh.md`
 
 **Steps:**
-1. 写失败测试：health Secret 标志为假、release SHA 不一致、企微 start 回到 `auth_error`、跳转非官方域名或标记真实外呼时均失败。
+1. 写失败测试：health Secret 标志为假、release SHA 不一致、企微 start 回到 `auth_error`、跳转非官方域名、内层 callback 非指定公网 URL 或标记真实外呼时均失败。
 2. 实现不跟随重定向的只读 checker，输出只包含状态/host/布尔值，不输出 state 或 Secret。
 3. 在 Web health 后、worker 恢复前执行 checker。
 4. 更新 runbook 的事务顺序与失败处理。
