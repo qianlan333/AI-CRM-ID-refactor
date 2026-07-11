@@ -88,7 +88,16 @@
     "openclaw-automation-conversion-due-runner.service"
   ],
   "retired_unit_files": [
-    "aicrm-web.service"
+    "aicrm-web.service",
+    "aicrm-reply-monitor-run-due.timer",
+    "aicrm-reply-monitor-run-due.service",
+    "aicrm-reply-monitor-capture.timer",
+    "aicrm-reply-monitor-capture.service",
+    "aicrm-automation-jobs-run-due.timer",
+    "aicrm-automation-jobs-run-due.service",
+    "aicrm-campaign-run-due.timer",
+    "aicrm-campaign-run-due.service",
+    "openclaw-automation-conversion-due-runner.service"
   ],
   "retired_dropins": [
     {
