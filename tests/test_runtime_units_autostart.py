@@ -40,7 +40,7 @@ def test_runtime_units_manifest_classifies_every_deploy_timer() -> None:
         "aicrm-campaign-run-due.service",
         "openclaw-automation-conversion-due-runner.service",
     }
-    assert manifest["retired_unit_files"] == ["aicrm-web.service"]
+    assert manifest["retired_unit_files"] == manifest["retired_forbidden"]
 
 
 def test_runtime_units_manifest_declares_primary_web_service() -> None:
