@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import ast
 import json
+import subprocess
 from pathlib import Path
 
 
@@ -10,6 +11,15 @@ RUNTIME_DIR = ROOT / ("wecom_ability" + "_service")
 RUNTIME_UNITS_HELPER = "python3 scripts/ops/manage_production_runtime_units.py"
 TEST_DEPLOY_WORKFLOW = ROOT / ".github" / "workflows" / "deploy.yml"
 PRODUCTION_PROMOTION_WORKFLOW = ROOT / ".github" / "workflows" / "promote-production.yml"
+
+
+def _git(cwd: Path, *args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        ["git", "-C", str(cwd), *args],
+        check=check,
+        capture_output=True,
+        text=True,
+    )
 
 
 def _runtime_units_phase(phase: str) -> str:
@@ -195,7 +205,14 @@ def test_production_deploy_verifies_local_bundle_before_fetch_and_stopping_servi
     )
     stop_index = _deploy_runtime_phase_index(workflow, "stop-for-migration")
 
-    assert bundle_index < checksum_index < verify_index < head_guard_index < fetch_index < stop_index
+    assert (
+        bundle_index
+        < checksum_index
+        < verify_index
+        < head_guard_index
+        < fetch_index
+        < stop_index
+    )
     assert "release bundle does not advertise the verified workflow sha" in workflow
     assert "git@github.com" not in workflow
     assert "GIT_SSH_COMMAND" not in workflow
@@ -248,6 +265,62 @@ def test_production_deploy_requires_remote_head_to_match_bundle_prerequisite_bef
 
     assert before_sha_index < base_sha_index < base_guard_index < bundle_verify_index < stash_index < fetch_index < stop_index
     assert "target checkout moved after the incremental release bundle was built" in workflow
+
+
+def test_incremental_release_bundle_requires_live_base_and_fetches_exact_merge_sha(tmp_path: Path):
+    source = tmp_path / "source"
+    source.mkdir()
+    _git(source, "init", "-b", "main")
+    _git(source, "config", "user.name", "AI CRM CI")
+    _git(source, "config", "user.email", "ci@example.invalid")
+
+    (source / "root.txt").write_text("root\n", encoding="utf-8")
+    _git(source, "add", "root.txt")
+    _git(source, "commit", "-m", "root")
+    root_sha = _git(source, "rev-parse", "HEAD").stdout.strip()
+    _git(source, "branch", "feature")
+
+    (source / "main.txt").write_text("main\n", encoding="utf-8")
+    _git(source, "add", "main.txt")
+    _git(source, "commit", "-m", "main")
+    base_sha = _git(source, "rev-parse", "HEAD").stdout.strip()
+
+    _git(source, "checkout", "feature")
+    (source / "feature.txt").write_text("feature\n", encoding="utf-8")
+    _git(source, "add", "feature.txt")
+    _git(source, "commit", "-m", "feature")
+    _git(source, "checkout", "main")
+    _git(source, "merge", "--no-ff", "feature", "-m", "merge")
+    verified_sha = _git(source, "rev-parse", "HEAD").stdout.strip()
+    _git(source, "update-ref", "refs/deploy/release", verified_sha)
+    _git(source, "update-ref", "refs/deploy/base", base_sha)
+    _git(source, "branch", "release-root", root_sha)
+    _git(source, "branch", "release-base", base_sha)
+
+    bundle = tmp_path / "aicrm-release.bundle"
+    _git(source, "bundle", "create", str(bundle), "refs/deploy/release", "^refs/deploy/base")
+
+    missing_base = tmp_path / "missing-base"
+    missing_base.mkdir()
+    _git(missing_base, "init")
+    _git(missing_base, "fetch", str(source), "release-root:refs/heads/release-root")
+    missing_verify = _git(missing_base, "bundle", "verify", str(bundle), check=False)
+    assert missing_verify.returncode != 0
+
+    receiver = tmp_path / "receiver"
+    receiver.mkdir()
+    _git(receiver, "init")
+    _git(receiver, "fetch", str(source), "release-base:refs/heads/release-base")
+    _git(receiver, "bundle", "verify", str(bundle))
+    _git(
+        receiver,
+        "fetch",
+        "--no-tags",
+        str(bundle),
+        "refs/deploy/release:refs/remotes/aicrm-release/main",
+    )
+    release_sha = _git(receiver, "rev-parse", "refs/remotes/aicrm-release/main").stdout.strip()
+    assert release_sha == verified_sha
 
 
 def test_production_deploy_refreshes_release_marker_before_restart_and_checks_health_header():
