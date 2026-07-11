@@ -14,6 +14,7 @@ from aicrm_next.platform_foundation.external_effects import (
 )
 from aicrm_next.platform_foundation.external_effects.repo import build_external_effect_repository
 from aicrm_next.platform_foundation.push_center.projection import BroadcastJobAdapter, PushCenterProjectionService
+from aicrm_next.platform_foundation.push_center import api as push_center_api
 from aicrm_next.platform_foundation.push_center.repository import PushCenterRepository
 from aicrm_next.platform_foundation.push_center.section_mapper import effect_types_for_section, label_for_section, section_for_job
 from aicrm_next.platform_foundation.push_center.view_model import (
@@ -34,6 +35,36 @@ class _FakeBroadcastJobAdapter(BroadcastJobAdapter):
 
     def get_job(self, job_id: int) -> dict | None:
         return next((row for row in self.rows if int(row["id"]) == int(job_id)), None)
+
+
+class _CountingExternalAdapter:
+    def __init__(self) -> None:
+        self.list_calls = 0
+        self.attempt_batch_calls = 0
+
+    def list_jobs(self, filters: dict | None = None, *, limit: int = 1000) -> list:
+        self.list_calls += 1
+        return []
+
+    def get_job(self, job_id: int):
+        return None
+
+    def list_attempts(self, job_id: int) -> list:
+        raise AssertionError("push center projection must batch attempt reads")
+
+    def list_attempts_for_jobs(self, job_ids: list[int]) -> dict[int, list]:
+        self.attempt_batch_calls += 1
+        return {job_id: [] for job_id in job_ids}
+
+
+class _CountingBroadcastAdapter(_FakeBroadcastJobAdapter):
+    def __init__(self) -> None:
+        super().__init__([])
+        self.list_calls = 0
+
+    def list_jobs(self, filters: dict | None = None, *, limit: int = 1000) -> list[dict]:
+        self.list_calls += 1
+        return super().list_jobs(filters, limit=limit)
 
 
 def _projection_repo(*, broadcast_rows: list[dict]) -> PushCenterRepository:
@@ -407,6 +438,65 @@ def test_push_center_page_smoke(next_client: TestClient) -> None:
     assert "Authorization" not in response.text
     assert "access_token" not in response.text
     assert "secret-token" not in response.text
+
+
+def test_push_center_page_shell_does_not_query_projection(monkeypatch, next_client: TestClient) -> None:
+    def fail_if_constructed(*_args, **_kwargs):
+        raise AssertionError("push center page shell must not query the projection")
+
+    monkeypatch.setattr(push_center_api, "PushCenterRepository", fail_if_constructed)
+
+    response = next_client.get("/admin/push-center")
+
+    assert response.status_code == 200
+    assert 'id="pushCenterTable"' in response.text
+    assert "/api/admin/push-center/stats" in response.text
+    assert "/api/admin/push-center/jobs" in response.text
+
+
+def test_push_center_list_and_stats_reuse_one_projection_snapshot() -> None:
+    external = _CountingExternalAdapter()
+    broadcast = _CountingBroadcastAdapter()
+    repository = PushCenterRepository(
+        service=PushCenterProjectionService(external_adapter=external, broadcast_adapter=broadcast)
+    )
+
+    jobs = build_jobs_payload({"limit": 1}, repository=repository)
+
+    assert jobs["ok"] is True
+    assert external.list_calls == 1
+    assert external.attempt_batch_calls == 1
+    assert broadcast.list_calls == 1
+
+    stats = build_stats_payload({}, repository=repository)
+
+    assert stats["ok"] is True
+    assert external.list_calls == 2
+    assert external.attempt_batch_calls == 2
+    assert broadcast.list_calls == 2
+
+
+def test_push_center_counts_cover_records_beyond_page_limit(monkeypatch) -> None:
+    service = PushCenterProjectionService()
+    records = [
+        {
+            "id": f"external_effect_job:{index}",
+            "effective_status": "sent",
+            "section": "other",
+            "created_at": f"2026-01-01T00:{index // 60:02d}:{index % 60:02d}+00:00",
+        }
+        for index in range(250)
+    ]
+    monkeypatch.setattr(service, "_matching_projections", lambda _filters: records)
+
+    page, total = service.list_projections({}, limit=200)
+    counts = service.counts({})
+
+    assert len(page) == 200
+    assert total == 250
+    assert counts["total"] == 250
+    assert counts["sent"] == 250
+    assert counts["by_section"] == {"other": 250}
 
 
 def test_questionnaire_default_external_push_is_queue_first(client: TestClient, monkeypatch) -> None:

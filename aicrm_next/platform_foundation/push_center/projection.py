@@ -319,6 +319,12 @@ class ExternalEffectAdapter:
     def list_attempts(self, job_id: int) -> list[ExternalEffectAttempt]:
         return list(self._service.list_attempts(job_id))
 
+    def list_attempts_for_jobs(self, job_ids: list[int]) -> dict[int, list[ExternalEffectAttempt]]:
+        return {
+            int(job_id): list(attempts)
+            for job_id, attempts in self._service.list_attempts_for_jobs(job_ids).items()
+        }
+
 
 class BroadcastJobAdapter:
     def __init__(self, session_factory: Any | None = None) -> None:
@@ -418,13 +424,38 @@ class PushCenterProjectionService:
         self._correlation = correlation or BusinessCorrelationService()
 
     def list_projections(self, filters: dict[str, Any] | None = None, *, limit: int = 50, offset: int = 0) -> tuple[list[dict[str, Any]], int]:
+        records = self._matching_projections(filters or {})
+        return self._page(records, limit=limit, offset=offset)
+
+    def query_projections(
+        self,
+        filters: dict[str, Any] | None = None,
+        *,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> tuple[list[dict[str, Any]], int, dict[str, Any], list[dict[str, Any]]]:
+        records = self._matching_projections(filters or {})
+        items, total = self._page(records, limit=limit, offset=offset)
+        counts = self._counts_for_records(records)
+        return items, total, counts, self._sections_for_counts(counts)
+
+    def summary(self, filters: dict[str, Any] | None = None) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+        records = self._matching_projections(filters or {})
+        counts = self._counts_for_records(records)
+        return counts, self._sections_for_counts(counts)
+
+    def _matching_projections(self, filters: dict[str, Any]) -> list[dict[str, Any]]:
         groups = self._groups(filters or {})
         records = [self._projection_item(group) for group in groups]
         matched = [item for item in records if self._matches_projection(item, filters or {})]
         matched.sort(key=lambda item: _text(item.get("created_at")), reverse=True)
+        return matched
+
+    @staticmethod
+    def _page(records: list[dict[str, Any]], *, limit: int, offset: int) -> tuple[list[dict[str, Any]], int]:
         start = max(0, int(offset or 0))
         size = max(1, min(int(limit or 50), 200))
-        return matched[start : start + size], len(matched)
+        return records[start : start + size], len(records)
 
     def get_projection(self, projection_id: str) -> dict[str, Any] | None:
         kind, raw_id = self._parse_projection_id(projection_id)
@@ -443,7 +474,10 @@ class PushCenterProjectionService:
         return None
 
     def counts(self, filters: dict[str, Any] | None = None) -> dict[str, Any]:
-        records, total = self.list_projections(filters or {}, limit=1000, offset=0)
+        return self._counts_for_records(self._matching_projections(filters or {}))
+
+    @staticmethod
+    def _counts_for_records(records: list[dict[str, Any]]) -> dict[str, Any]:
         by_status: dict[str, int] = {}
         by_section: dict[str, int] = {}
         for item in records:
@@ -452,7 +486,7 @@ class PushCenterProjectionService:
             section = _text(item.get("section"))
             by_section[section] = by_section.get(section, 0) + 1
         return {
-            "total": total,
+            "total": len(records),
             "by_effective_status": by_status,
             "by_status": by_status,
             "by_section": by_section,
@@ -465,10 +499,15 @@ class PushCenterProjectionService:
         }
 
     def sections(self, filters: dict[str, Any] | None = None) -> list[dict[str, Any]]:
-        counts = self.counts(filters or {}).get("by_section", {})
+        counts = self.counts(filters or {})
+        return self._sections_for_counts(counts)
+
+    @staticmethod
+    def _sections_for_counts(counts: dict[str, Any]) -> list[dict[str, Any]]:
         from .section_mapper import all_sections
 
-        return [{**section, "count": int(counts.get(section["key"], 0)), "label": label_for_section(section["key"])} for section in all_sections()]
+        by_section = dict(counts.get("by_section") or {})
+        return [{**section, "count": int(by_section.get(section["key"], 0)), "label": label_for_section(section["key"])} for section in all_sections()]
 
     def _groups(self, filters: dict[str, Any]) -> list[ProjectionGroup]:
         external_filters = {
@@ -477,8 +516,9 @@ class PushCenterProjectionService:
             if _text(filters.get(key))
         }
         external_jobs = self._external.list_jobs(external_filters, limit=1000)
+        attempts_by_job = self._external.list_attempts_for_jobs([job.id for job in external_jobs])
         broadcast_jobs = self._broadcast.list_jobs(filters, limit=1000)
-        return self._merge_groups(external_jobs, broadcast_jobs)
+        return self._merge_groups(external_jobs, broadcast_jobs, attempts_by_job=attempts_by_job)
 
     def _groups_for_seed(self, *, external_job: ExternalEffectJob | None = None, broadcast_job: dict[str, Any] | None = None) -> list[ProjectionGroup]:
         filters: dict[str, Any] = {}
@@ -488,7 +528,13 @@ class PushCenterProjectionService:
             filters = {"business_id": _business_id_for_broadcast(broadcast_job)}
         return self._groups(filters)
 
-    def _merge_groups(self, external_jobs: list[ExternalEffectJob], broadcast_jobs: list[dict[str, Any]]) -> list[ProjectionGroup]:
+    def _merge_groups(
+        self,
+        external_jobs: list[ExternalEffectJob],
+        broadcast_jobs: list[dict[str, Any]],
+        *,
+        attempts_by_job: dict[int, list[ExternalEffectAttempt]],
+    ) -> list[ProjectionGroup]:
         groups: list[ProjectionGroup] = []
         key_to_group: dict[str, ProjectionGroup] = {}
 
@@ -509,7 +555,7 @@ class PushCenterProjectionService:
             keys = self._correlation.keys_for_external_job(job)
             group = group_for(keys)
             group.external_effect_jobs.append(_external_job_item(job))
-            group.external_effect_attempts.extend(_attempt_item(attempt) for attempt in self._external.list_attempts(job.id))
+            group.external_effect_attempts.extend(_attempt_item(attempt) for attempt in attempts_by_job.get(job.id, []))
 
         for row in broadcast_jobs:
             keys = self._correlation.keys_for_broadcast_job(row)

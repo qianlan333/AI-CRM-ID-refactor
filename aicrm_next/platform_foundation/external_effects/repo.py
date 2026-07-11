@@ -152,6 +152,10 @@ class ExternalEffectRepository:
     def list_attempts(self, job_id: int) -> list[ExternalEffectAttempt]:
         raise NotImplementedError
 
+    def list_attempts_for_jobs(self, job_ids: list[int]) -> dict[int, list[ExternalEffectAttempt]]:
+        normalized = sorted({int(job_id) for job_id in job_ids})
+        return {job_id: self.list_attempts(job_id) for job_id in normalized}
+
     def count_jobs(self, filters: dict[str, Any] | None = None) -> dict[str, Any]:
         raise NotImplementedError
 
@@ -360,6 +364,23 @@ class SQLAlchemyExternalEffectRepository(ExternalEffectRepository):
             {"job_id": int(job_id)},
         )
         return [attempt for row in rows if (attempt := _public_attempt(row)) is not None]
+
+    def list_attempts_for_jobs(self, job_ids: list[int]) -> dict[int, list[ExternalEffectAttempt]]:
+        normalized = sorted({int(job_id) for job_id in job_ids})
+        grouped: dict[int, list[ExternalEffectAttempt]] = {job_id: [] for job_id in normalized}
+        if not normalized:
+            return grouped
+        placeholders = ", ".join(f":job_id_{index}" for index in range(len(normalized)))
+        params = {f"job_id_{index}": job_id for index, job_id in enumerate(normalized)}
+        rows = self._all(
+            f"SELECT * FROM external_effect_attempt WHERE job_id IN ({placeholders}) ORDER BY job_id ASC, id ASC",
+            params,
+        )
+        for row in rows:
+            attempt = _public_attempt(row)
+            if attempt is not None:
+                grouped.setdefault(int(attempt.job_id), []).append(attempt)
+        return grouped
 
     def count_jobs(self, filters: dict[str, Any] | None = None) -> dict[str, Any]:
         filters = dict(filters or {})
@@ -878,6 +899,19 @@ class InMemoryExternalEffectRepository(ExternalEffectRepository):
             if int(row.get("job_id") or 0) == int(job_id)
             if (attempt := _public_attempt(row)) is not None
         ]
+
+    def list_attempts_for_jobs(self, job_ids: list[int]) -> dict[int, list[ExternalEffectAttempt]]:
+        normalized = sorted({int(job_id) for job_id in job_ids})
+        grouped: dict[int, list[ExternalEffectAttempt]] = {job_id: [] for job_id in normalized}
+        allowed = set(normalized)
+        for row in self._attempts:
+            job_id = int(row.get("job_id") or 0)
+            if job_id not in allowed:
+                continue
+            attempt = _public_attempt(row)
+            if attempt is not None:
+                grouped[job_id].append(attempt)
+        return grouped
 
     def count_jobs(self, filters: dict[str, Any] | None = None) -> dict[str, Any]:
         items = [job for row in self._filtered_rows(filters or {}) if (job := _public_job(row)) is not None]
