@@ -276,7 +276,7 @@ def test_ai_assist_campaign_run_due_wecom_private_mode_creates_approval_gated_ex
     assert job.payload_json["content_text"] == "fixture hello"
 
 
-def test_wecom_private_external_effect_default_executes_without_wecom_gate(monkeypatch) -> None:
+def test_wecom_private_external_effect_default_is_blocked_without_typed_gate(monkeypatch) -> None:
     _reset_fixture_state()
     monkeypatch.setenv("AI_ASSIST_EXTERNAL_EFFECT_SEND_MODE", "wecom_private")
     monkeypatch.setenv("AICRM_EXTERNAL_EFFECT_ALLOWED_OWNER_USERIDS", "HuangYouCan")
@@ -308,13 +308,13 @@ def test_wecom_private_external_effect_default_executes_without_wecom_gate(monke
     updated = ExternalEffectService().get(job_id)
     attempts = ExternalEffectService().list_attempts(job_id)
 
-    assert result["counts"]["succeeded_count"] == 1
-    assert result["real_external_call_executed"] is True
-    assert len(calls) == 1
-    assert calls[0]["payload"]["sender"] == "HuangYouCan"
+    assert result["counts"]["blocked_count"] == 1
+    assert result["real_external_call_executed"] is False
+    assert calls == []
     assert updated is not None
-    assert updated.status == "succeeded"
-    assert attempts[0].status == "succeeded"
+    assert updated.status == "blocked"
+    assert attempts[0].status == "blocked"
+    assert attempts[0].error_code == "wecom_execution_disabled"
 
 
 def test_wecom_private_external_effect_allowlisted_execute_succeeds(monkeypatch) -> None:

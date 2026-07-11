@@ -13,9 +13,8 @@ from aicrm_next.shared.safe_logging import safe_log_exception
 
 from .adapters import DEFAULT_ADAPTER_REGISTRY, ExternalEffectAdapterRegistry
 from .execution_gates import (
-    WECOM_EXECUTION_DISABLED_CODE,
-    explicit_wecom_execution_disabled,
     is_wecom_effect_type,
+    typed_wecom_execution_block_reason,
     wecom_execution_disabled_message,
 )
 from .models import (
@@ -283,7 +282,10 @@ class ExternalEffectWorker:
                 attempt_id=attempt.attempt_id,
                 error_code=dispatch_result.error_code,
                 error_message=dispatch_result.error_message,
-                next_retry_at=next_retry_at(job.attempt_count),
+                next_retry_at=next_retry_at(
+                    job.attempt_count,
+                    retry_after_seconds=(dispatch_result.response_summary or {}).get("retry_after_seconds"),
+                ),
             )
         elif dispatch_result.status in {"failed_retryable", "failed_terminal"}:
             updated = self._repo.mark_failed_terminal(
@@ -308,8 +310,12 @@ class ExternalEffectWorker:
         }
 
     def _block_if_wecom_execution_disabled(self, job: ExternalEffectJob) -> dict[str, Any] | None:
-        if not is_wecom_effect_type(job.effect_type) or not explicit_wecom_execution_disabled():
+        if not is_wecom_effect_type(job.effect_type):
             return None
+        block_code = typed_wecom_execution_block_reason(job.effect_type)
+        if not block_code:
+            return None
+        block_message = wecom_execution_disabled_message(effect_type=job.effect_type)
         attempt = self._repo.record_attempt(
             job=job,
             status="blocked",
@@ -320,21 +326,21 @@ class ExternalEffectWorker:
                 "operation": job.operation,
                 "target_type": job.target_type,
                 "target_id": job.target_id,
-                "execution_gate": WECOM_EXECUTION_DISABLED_CODE,
+                "execution_gate": block_code,
             },
             response_summary={
                 "blocked": True,
-                "execution_gate": WECOM_EXECUTION_DISABLED_CODE,
+                "execution_gate": block_code,
                 "real_external_call_executed": False,
             },
-            error_code=WECOM_EXECUTION_DISABLED_CODE,
-            error_message=wecom_execution_disabled_message(),
+            error_code=block_code,
+            error_message=block_message,
         )
         updated = self._repo.mark_blocked(
             job.id,
             attempt_id=attempt.attempt_id,
-            error_code=WECOM_EXECUTION_DISABLED_CODE,
-            error_message=wecom_execution_disabled_message(),
+            error_code=block_code,
+            error_message=block_message,
         )
         return {
             "ok": False,

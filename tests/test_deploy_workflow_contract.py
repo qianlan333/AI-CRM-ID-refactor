@@ -445,7 +445,6 @@ def test_wecom_callback_ingress_systemd_unit_is_deployable():
 
 def test_wecom_callback_inbox_worker_systemd_units_are_deployable():
     service = (ROOT / "deploy" / "openclaw-wecom-callback-inbox-worker.service").read_text(encoding="utf-8")
-    timer = (ROOT / "deploy" / "openclaw-wecom-callback-inbox-worker.timer").read_text(encoding="utf-8")
 
     assert "After=network.target openclaw-wecom-postgres.service" in service
     assert "Requires=openclaw-wecom-postgres.service" in service
@@ -454,12 +453,15 @@ def test_wecom_callback_inbox_worker_systemd_units_are_deployable():
     assert "Environment=AICRM_WECOM_CALLBACK_INBOX_WORKER_BATCH_SIZE=20" in service
     assert "Environment=AICRM_WECOM_CALLBACK_INBOX_WORKER_MAX_EXECUTE_BATCH_SIZE=20" in service
     assert "WorkingDirectory=/home/ubuntu/极简 crm" in service
-    assert "python scripts/run_wecom_callback_inbox_worker.py --execute --limit ${AICRM_WECOM_CALLBACK_INBOX_WORKER_BATCH_SIZE:-20}" in service
+    assert "Type=simple" in service
+    assert "python scripts/run_wecom_callback_inbox_worker.py --execute --loop" in service
+    assert "AICRM_WECOM_CALLBACK_INBOX_WORKER_POLL_INTERVAL_SECONDS=0.25" in service
+    assert "Restart=always" in service
+    assert "WantedBy=multi-user.target" in service
     assert "wecom_ability_service" not in service
     assert "legacy_flask_app" not in service
     assert "run-legacy" not in service
-    assert "OnUnitActiveSec=60s" in timer
-    assert "Unit=openclaw-wecom-callback-inbox-worker.service" in timer
+    assert not (ROOT / "deploy" / "openclaw-wecom-callback-inbox-worker.timer").exists()
 
 
 def test_aicrm_canonical_runtime_isolation_systemd_units_are_deployable():
@@ -484,8 +486,8 @@ def test_aicrm_canonical_runtime_isolation_systemd_units_are_deployable():
     assert "python scripts/run_wecom_callback_ingress.py" in ingress
     assert "Environment=AICRM_WECOM_CALLBACK_INBOX_WORKER_BATCH_SIZE=20" in callback_worker
     assert "Environment=AICRM_WECOM_CALLBACK_INBOX_WORKER_MAX_EXECUTE_BATCH_SIZE=20" in callback_worker
-    assert "python scripts/run_wecom_callback_inbox_worker.py --limit ${AICRM_WECOM_CALLBACK_INBOX_WORKER_BATCH_SIZE:-20}" in callback_worker
-    assert "--execute" not in callback_worker
+    assert "python scripts/run_wecom_callback_inbox_worker.py --execute --loop" in callback_worker
+    assert "Restart=always" in callback_worker
     assert "python scripts/run_internal_event_worker.py --execute" in internal_worker
     assert "python scripts/run_external_effect_queue_worker.py --execute" in external_worker
 

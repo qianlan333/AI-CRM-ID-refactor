@@ -129,6 +129,23 @@ def test_wecom_callback_ops_change_selects_identity_contact_slice() -> None:
     assert result["architecture_gate"] == "db"
 
 
+def test_r05_callback_runtime_files_are_mapped_to_full_pg_ci() -> None:
+    result = _select(
+        "scripts/ops/reconcile_wecom_callback_runtime.py",
+        "scripts/run_wecom_callback_inbox_worker.py",
+        "tests/test_push_capabilities_config.py",
+        "tests/test_r05_wecom_callback_architecture.py",
+    )
+
+    assert {"identity_contact", "admin_config"} <= set(result["matched_scopes"])
+    assert result["unmatched_files"] == []
+    assert "tests/test_wecom_callback_inbox.py" in result["python_tests"]
+    assert "tests/test_push_capabilities_config.py" in result["python_tests"]
+    assert result["needs_postgres"] is True
+    assert result["architecture_gate"] == "full"
+    assert result["needs_full_ci"] is True
+
+
 def test_unionid_identity_cutover_changes_force_pg_full_ci_without_unmapped_files() -> None:
     result = _select(
         "aicrm_next/automation_agents/repository.py",

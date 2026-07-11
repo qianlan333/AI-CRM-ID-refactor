@@ -29,6 +29,7 @@ location / {
 }
 
 location = /wecom/external-contact/callback {
+    client_max_body_size 1m;
     limit_req zone=aicrm_wecom_callback_req burst=120 nodelay;
     limit_conn aicrm_wecom_callback_conn 20;
     limit_req_status 429;
@@ -46,6 +47,7 @@ location = /wecom/external-contact/callback {
 }
 
 location = /api/wecom/events {
+    client_max_body_size 1m;
     limit_req zone=aicrm_wecom_callback_req burst=120 nodelay;
     limit_conn aicrm_wecom_callback_conn 20;
     limit_req_status 429;

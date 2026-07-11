@@ -25,6 +25,8 @@ def test_runtime_units_manifest_classifies_every_deploy_timer() -> None:
     assert approval_required.isdisjoint(retired_forbidden)
     assert "aicrm-archive-sync.timer" in approval_required
     assert "openclaw-external-effect-worker.timer" in active
+    assert "openclaw-wecom-callback-inbox-worker.timer" in retired_forbidden
+    assert "openclaw-wecom-callback-inbox-worker.timer" not in deploy_timers
     assert "aicrm-automation-jobs-run-due.timer" in retired_forbidden
 
 
@@ -44,6 +46,10 @@ def test_runtime_units_install_dry_run_copies_and_enables_only_active_units(caps
     assert "sudo systemctl enable aicrm-archive-sync.timer" not in output
     assert "sudo cp deploy/aicrm-archive-sync.timer /etc/systemd/system/" not in output
     assert "curl -sSf http://127.0.0.1:5002/health" in output
+    assert "sudo cp deploy/openclaw-wecom-callback-inbox-worker.service /etc/systemd/system/" in output
+    assert "sudo systemctl enable openclaw-wecom-callback-inbox-worker.service" in output
+    assert "sudo systemctl restart openclaw-wecom-callback-inbox-worker.service" in output
+    assert "sudo systemctl disable --now openclaw-wecom-callback-inbox-worker.timer" in output
 
 
 def test_runtime_units_stop_and_verify_dry_runs_are_manifest_driven(capsys) -> None:
@@ -52,6 +58,7 @@ def test_runtime_units_stop_and_verify_dry_runs_are_manifest_driven(capsys) -> N
 
     assert "sudo systemctl stop openclaw-external-effect-worker.timer" in stop_output
     assert "sudo systemctl stop openclaw-external-effect-worker.service" in stop_output
+    assert "sudo systemctl stop openclaw-wecom-callback-inbox-worker.service" in stop_output
     assert "sudo systemctl stop aicrm-archive-sync.timer" not in stop_output
 
     assert runtime_units.main(["--phase", "verify", "--dry-run"]) == 0
@@ -59,4 +66,6 @@ def test_runtime_units_stop_and_verify_dry_runs_are_manifest_driven(capsys) -> N
 
     assert "sudo systemctl is-active openclaw-external-effect-worker.timer" in verify_output
     assert "sudo systemctl is-active openclaw-wecom-callback-ingress.service" in verify_output
+    assert "sudo systemctl is-active openclaw-wecom-callback-inbox-worker.service" in verify_output
+    assert "sudo systemctl is-active openclaw-wecom-callback-inbox-worker.timer" in verify_output
     assert "approval_required_timers=aicrm-archive-sync.timer" in verify_output
