@@ -2,12 +2,14 @@
 from __future__ import annotations
 
 import argparse
+from pathlib import Path
 import sys
 
-try:
-    from scripts.script_runtime import ensure_repo_root_on_path, print_json
-except ModuleNotFoundError:  # pragma: no cover - direct script execution
-    from script_runtime import ensure_repo_root_on_path, print_json
+ROOT = Path(__file__).resolve().parents[2]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from scripts.script_runtime import ensure_repo_root_on_path, print_json
 
 ensure_repo_root_on_path()
 

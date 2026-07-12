@@ -271,6 +271,9 @@ jobs:
             python3 scripts/ops/manage_production_runtime_units.py --phase install-enable-after-web-health --execute
             python scripts/ops/check_wecom_callback_deploy_smoke.py | tee /tmp/wecom-callback-deploy-smoke.json
             python3 scripts/ops/manage_production_runtime_units.py --phase verify --execute
+            # Count-only R06 reconciliation. This command never repairs rows or executes consumers/providers.
+            python scripts/ops/reconcile_internal_event_outbox.py \
+              | tee /tmp/aicrm-internal-event-outbox-reconciliation.json
             if [ "$deploy_target" = "production" ]; then
               sudo /home/ubuntu/venvs/openclaw/bin/python \
                 scripts/ops/ensure_production_public_release_route.py --execute \
