@@ -430,11 +430,11 @@ def test_run_due_preview_dry_run_and_disabled_adapter_do_not_execute_real_call()
     assert preview["counts"]["candidate_count"] == 1
     assert dry_run["dry_run"] is True
     assert dry_run["real_external_call_executed"] is False
-    assert blocked["counts"]["failed_count"] == 1
+    assert blocked["counts"]["blocked_count"] == 1
     assert blocked["real_external_call_executed"] is False
     updated = repo.get_job(job["id"])
     assert updated is not None
-    assert updated.status == "failed_terminal"
+    assert updated.status == "blocked"
     assert repo.list_attempts(job["id"])[0].error_code == "execution_disabled"
 
 
@@ -481,10 +481,10 @@ def test_complete_record_only_archives_historical_shadow_without_external_call()
     assert execute["completed_count"] == 1
     assert execute["real_external_call_executed"] is False
     assert updated is not None
-    assert updated.status == "succeeded"
+    assert updated.status == "simulated"
     assert untouched is not None
     assert untouched.status == "failed_terminal"
-    assert attempts[0].status == "succeeded"
+    assert attempts[0].status == "simulated"
     assert attempts[0].adapter_mode == "historical_record_only"
     assert attempts[0].response_summary_json["historical_record_completed"] is True
     assert attempts[0].response_summary_json["real_external_call_executed"] is False
@@ -730,8 +730,8 @@ def test_webhook_adapter_retryable_statuses_and_timeout_set_next_retry(monkeypat
     attempts = repo.list_attempts(job["id"])
 
     assert updated is not None
-    assert updated.status == "failed_retryable"
-    assert updated.next_retry_at
+    assert updated.status == "unknown_after_dispatch"
+    assert updated.next_retry_at == ""
     assert attempts[0].error_code == "timeout"
     assert attempts[0].response_summary_json["real_external_call_executed"] is True
 
@@ -845,6 +845,49 @@ def test_external_effect_admin_api_lists_previews_retries_and_cancels(next_clien
     assert diagnostics.json()["real_execution_enabled"] is False
     assert diagnostics.json()["execution_mode"] == "disabled"
     assert diagnostics.json()["wecom_execution"]["execution_mode"] == "disabled"
+
+
+def test_unknown_external_effect_api_retry_requires_duplicate_risk_confirmation(next_client: TestClient) -> None:
+    reset_external_effect_fixture_state()
+    repo = build_external_effect_repository()
+    job = _queued_webhook_job(ExternalEffectService(repo), idempotency_key="api-unknown-retry")
+    claimed = repo.acquire_job(job["id"], locked_by="worker-api-unknown")
+    assert claimed is not None
+    assert repo.mark_dispatch_unknown(
+        job=claimed,
+        error_code="timeout",
+        error_message="provider response unknown",
+        side_effect_executed=True,
+    ) is not None
+    token = ensure_admin_action_token()
+
+    missing_confirmation = next_client.post(
+        f"/api/admin/external-effects/jobs/{job['id']}/retry",
+        json={"admin_action_token": token, "actor": "pytest", "reason": "checked provider"},
+    )
+    missing_audit_fields = next_client.post(
+        f"/api/admin/external-effects/jobs/{job['id']}/retry",
+        json={"admin_action_token": token, "confirm_duplicate_risk": True},
+    )
+    accepted = next_client.post(
+        f"/api/admin/external-effects/jobs/{job['id']}/retry",
+        json={
+            "admin_action_token": token,
+            "actor": "pytest",
+            "reason": "provider confirms no delivery",
+            "confirm_duplicate_risk": True,
+        },
+    )
+
+    assert missing_confirmation.status_code == 409
+    assert missing_confirmation.json()["error"] == "duplicate_risk_confirmation_required"
+    assert missing_audit_fields.status_code == 422
+    assert missing_audit_fields.json()["error"] == "manual_retry_actor_and_reason_required"
+    assert accepted.status_code == 200
+    assert accepted.json()["job"]["status"] == "queued"
+    audit_attempt = repo.list_attempts(job["id"])[0]
+    assert audit_attempt.adapter_mode == "manual_retry_authorization"
+    assert audit_attempt.request_summary_json["confirm_duplicate_risk"] is True
 
 
 def test_wecom_execution_diagnostics_reports_unified_config(next_client: TestClient, monkeypatch) -> None:
@@ -963,7 +1006,7 @@ def test_external_effect_diagnostics_metrics_execution_mode_and_allowed_types(ne
     assert enabled_body["allowed_effect_types"] == [WEBHOOK_ORDER_PAID_PUSH]
 
 
-def test_external_effect_due_queue_reclaims_stale_dispatching_jobs() -> None:
+def test_external_effect_due_queue_quarantines_stale_dispatching_jobs() -> None:
     repo = InMemoryExternalEffectRepository()
     service = _service(repo)
     job = _queued_webhook_job(service, idempotency_key="stale-dispatching-reclaim")
@@ -971,26 +1014,32 @@ def test_external_effect_due_queue_reclaims_stale_dispatching_jobs() -> None:
     row = repo._find(job["id"])  # type: ignore[attr-defined]
     assert row is not None
     row["locked_at"] = (datetime.now(timezone.utc) - timedelta(minutes=6)).isoformat()
+    row["lease_expires_at"] = (datetime.now(timezone.utc) - timedelta(minutes=1)).isoformat()
 
+    quarantined = repo.quarantine_stale_dispatching()
     metrics = repo.queue_metrics()
     due = repo.list_due_jobs(limit=10)
     acquired = repo.acquire_due_jobs(limit=10, locked_by="replacement-worker")
     updated = repo.get_job(job["id"])
 
-    assert metrics["eligible_due_count"] == 1
-    assert [item.id for item in due] == [job["id"]]
-    assert [item.id for item in acquired] == [job["id"]]
+    assert quarantined == 1
+    assert metrics["eligible_due_count"] == 0
+    assert metrics["unknown_after_dispatch_count"] == 1
+    assert due == []
+    assert acquired == []
     assert updated is not None
-    assert updated.status == "queued"
-    assert updated.locked_by == "replacement-worker"
-    assert updated.locked_at
+    assert updated.status == "unknown_after_dispatch"
+    assert updated.locked_by == ""
+    assert updated.locked_at == ""
+    assert updated.reconciliation_required is True
 
 
-def test_external_effect_sql_due_queue_reclaims_stale_dispatching_jobs() -> None:
+def test_external_effect_sql_due_queue_quarantines_stale_dispatching_jobs() -> None:
     source = (Path(__file__).resolve().parents[1] / "aicrm_next/platform_foundation/external_effects/repo.py").read_text(encoding="utf-8")
 
-    assert "status = 'dispatching' AND locked_at <= CURRENT_TIMESTAMP - INTERVAL '5 minutes'" in source
-    assert "SET status = CASE WHEN j.status = 'dispatching' THEN 'queued' ELSE j.status END" in source
+    assert "status = 'dispatching'" in source
+    assert "lease_expires_at <= CURRENT_TIMESTAMP" in source
+    assert "status = 'unknown_after_dispatch'" in source
 
 
 def test_external_effect_admin_page_is_removed_and_troubleshooting_api_covers_queue_debug(next_client: TestClient) -> None:
@@ -1324,7 +1373,7 @@ def test_external_effect_loopback_dry_run_allowlist_miss_and_test_only_gate(next
     receipts, total = ExternalEffectService().list_test_receipts({}, limit=10)
 
     assert dry_run["real_external_call_executed"] is False
-    assert blocked["counts"]["failed_count"] == 1
+    assert blocked["counts"]["blocked_count"] == 1
     assert blocked["real_external_call_executed"] is False
     assert calls == []
     assert total == 0
@@ -1338,7 +1387,7 @@ def test_external_effect_loopback_dry_run_allowlist_miss_and_test_only_gate(next
 
     assert rejected["ok"] is False
     assert rejected["error"] == "test_only_required"
-    assert direct["job"]["status"] == "failed_terminal"
+    assert direct["job"]["status"] == "blocked"
     assert direct["attempt"]["error_code"] == "test_execution_only_required"
     assert repo.test_receipt_metrics()["non_test_execution_blocked_count"] == 1
 
@@ -1806,8 +1855,8 @@ def test_wechat_payment_adapter_gate_failure_marks_refund_failed(monkeypatch) ->
 
     result = ExternalEffectWorker(repo, registry).run_due(batch_size=1, dry_run=False, effect_types=[PAYMENT_WECHAT_REFUND_REQUEST])
 
-    assert result["counts"]["failed_count"] == 1
-    assert result["items"][0]["job"]["status"] == "failed_terminal"
+    assert result["counts"]["blocked_count"] == 1
+    assert result["items"][0]["job"]["status"] == "blocked"
     assert result["items"][0]["attempt"]["error_code"] == "payment_execution_disabled"
     assert result["real_external_call_executed"] is False
     assert failure_sync_calls[0]["out_refund_no"] == "WXRTESTPAYGATE"

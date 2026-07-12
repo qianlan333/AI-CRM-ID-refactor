@@ -169,7 +169,13 @@ def test_external_effect_admin_jobs_list_detail_attempts_receipts_and_diagnostic
     listed_body = listed.json()
     assert "payload_json" not in listed_body["items"][0]
     assert "payload_json" not in listed_body["selected_job"]
+    assert "lease_token" not in listed_body["items"][0]
+    assert "lease_token" not in listed_body["selected_job"]
     assert listed_body["items"][0]["payload_json_redacted"] is True
+    assert listed_body["items"][0]["side_effect_executed"] is False
+    assert listed_body["items"][0]["provider_result_received"] is False
+    assert listed_body["items"][0]["reconciliation_required"] is False
+    assert listed_body["items"][0]["result_summary_json"] == {}
     assert listed_body["items"][0]["payload_summary_json"]["mobile"] == "[redacted]"
     assert listed_body["attempts"][0]["request_summary_json"]["endpoint"] == "[redacted]"
     assert listed_body["attempts"][0]["response_summary_json"]["body"] == "[redacted]"

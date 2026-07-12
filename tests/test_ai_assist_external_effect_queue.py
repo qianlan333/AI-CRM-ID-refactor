@@ -233,10 +233,10 @@ def test_ai_assist_campaign_loopback_allowlist_miss_blocks_without_receipt(next_
     attempts = service.list_attempts(job_id)
     receipts, total = service.list_test_receipts({"job_id": job_id}, limit=10)
 
-    assert blocked["counts"]["failed_count"] == 1
+    assert blocked["counts"]["blocked_count"] == 1
     assert blocked["real_external_call_executed"] is False
     assert updated is not None
-    assert updated.status == "failed_terminal"
+    assert updated.status == "blocked"
     assert attempts[0].error_code == "effect_type_not_allowed"
     assert calls == []
     assert receipts == []
@@ -388,6 +388,7 @@ def test_wecom_private_external_effect_ignores_target_allowlist_miss(monkeypatch
                 "side_effect_executed": True,
                 "exact_target_verified": True,
                 "requested_external_userids": ["wm_fixture_a"],
+                "wecom_msgid": "msg-target-allowlist-independent",
             }
 
     monkeypatch.setattr("aicrm_next.integration_gateway.wecom_private_adapter.build_wecom_private_message_adapter", lambda: _Adapter())

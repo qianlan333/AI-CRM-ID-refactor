@@ -39,8 +39,9 @@ class _SucceedingAdapter:
             status="succeeded",
             adapter_mode="execute",
             request_summary={"effect_type": job.effect_type},
-            response_summary={"ok": True, "real_external_call_executed": False},
-            real_external_call_executed=False,
+            response_summary={"ok": True, "status_code": 200, "real_external_call_executed": True},
+            real_external_call_executed=True,
+            provider_result_received=True,
         )
 
 
@@ -315,7 +316,7 @@ def test_external_effect_worker_blocks_disabled_capability_before_adapter_and_al
         effect_types=[WEBHOOK_QUESTIONNAIRE_SUBMISSION_PUSH],
     )
 
-    assert blocked["counts"]["failed_count"] == 1
+    assert blocked["counts"]["blocked_count"] == 1
     assert blocked["items"][0]["attempt"]["error_code"] == "push_capability_disabled"
     assert blocked["real_external_call_executed"] is False
     assert adapter.calls == 0
@@ -380,7 +381,7 @@ def test_shared_wecom_effect_type_is_gated_by_business_section() -> None:
     assert ai_result["counts"]["succeeded_count"] == 1
     assert private_result["items"][0]["job"]["business_type"] == "private_broadcast"
     assert private_result["items"][0]["attempt"]["error_code"] == "push_capability_disabled"
-    assert private_result["counts"]["failed_count"] == 1
+    assert private_result["counts"]["blocked_count"] == 1
     assert adapter.calls == 1
 
 
@@ -407,7 +408,7 @@ def test_wecom_tag_effect_honors_tags_capability_unless_explicitly_bypassed() ->
     )
 
     assert blocked["items"][0]["attempt"]["error_code"] == "push_capability_disabled"
-    assert blocked["counts"]["failed_count"] == 1
+    assert blocked["counts"]["blocked_count"] == 1
     assert adapter.calls == 0
 
     ExternalEffectService().plan_effect(

@@ -11,7 +11,8 @@ from aicrm_next.platform_foundation.external_effects import (
 )
 from aicrm_next.platform_foundation.external_effects.adapters import DEFAULT_ADAPTER_REGISTRY, WebhookAdapter
 from aicrm_next.platform_foundation.external_effects.worker import ExternalEffectWorker
-from tests.group_ops_test_helpers import group_ops_api_client
+
+pytest_plugins = ("tests.group_ops_test_helpers",)
 
 
 def _install_loopback_http_adapter(monkeypatch, client) -> list[dict]:
@@ -150,9 +151,10 @@ def test_group_ops_loopback_without_test_receiver_is_blocked_before_webhook_url_
 
     assert result["real_external_call_executed"] is False
     assert updated is not None
-    assert updated.status == "failed_terminal"
+    assert updated.status == "blocked"
     assert updated.last_error_code == "group_ops_loopback_requires_test_receiver"
     assert attempts[0].error_code == "group_ops_loopback_requires_test_receiver"
+    assert attempts[0].status == "blocked"
 
 
 def test_group_ops_webhook_receive_shadow_logs_action_and_creates_external_effect_job(group_ops_api_client, monkeypatch):
@@ -539,10 +541,10 @@ def test_group_ops_loopback_500_retryable_allowlist_miss_and_test_only_gate(grou
     blocked = ExternalEffectWorker().run_due(batch_size=1, dry_run=False, effect_types=[GROUP_OPS_MESSAGE_LOOPBACK], test_only=True)
     blocked_updated = ExternalEffectService().get(blocked_job.id if blocked_job else 0)
 
-    assert blocked["counts"]["failed_count"] == 1
+    assert blocked["counts"]["blocked_count"] == 1
     assert blocked["real_external_call_executed"] is False
     assert blocked_updated is not None
-    assert blocked_updated.status == "failed_terminal"
+    assert blocked_updated.status == "blocked"
     assert blocked_updated.last_error_code == "effect_type_not_allowed"
     assert len(calls) == 1
 

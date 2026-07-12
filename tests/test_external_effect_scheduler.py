@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 from aicrm_next.platform_foundation.command_bus import CommandContext
 from aicrm_next.platform_foundation.external_effects import (
     WEBHOOK_ORDER_PAID_PUSH,
@@ -15,6 +17,7 @@ from aicrm_next.platform_foundation.external_effects.jobs import (
     run_scheduled_external_effects,
 )
 from aicrm_next.platform_foundation.external_effects.repo import build_external_effect_repository
+from scripts import run_external_effect_queue_worker as worker_script
 
 
 class _SucceedingAdapter:
@@ -27,8 +30,9 @@ class _SucceedingAdapter:
             status="succeeded",
             adapter_mode="execute",
             request_summary={"effect_type": job.effect_type},
-            response_summary={"status_code": 200, "real_external_call_executed": False},
-            real_external_call_executed=False,
+            response_summary={"status_code": 200, "real_external_call_executed": True},
+            real_external_call_executed=True,
+            provider_result_received=True,
         )
 
 
@@ -68,6 +72,8 @@ def test_external_effect_scheduler_dry_run_previews_all_due_jobs() -> None:
 
     assert result["dry_run"] is True
     assert result["counts"]["candidate_count"] == 2
+    assert result["counts"]["skipped_count"] == 2
+    assert {item["dispatch_status"] for item in result["items"]} == {"skipped"}
     assert {item["effect_type"] for item in result["items"]} == {WEBHOOK_QUESTIONNAIRE_SUBMISSION_PUSH, WEBHOOK_ORDER_PAID_PUSH}
     assert result["real_external_call_executed"] is False
 
@@ -90,6 +96,26 @@ def test_external_effect_scheduler_execute_requires_global_scheduler_switch(monk
     assert adapter.calls == 0
 
 
+def test_external_effect_worker_script_returns_nonzero_for_blocked_or_unknown(monkeypatch, capsys) -> None:
+    monkeypatch.setattr(
+        worker_script,
+        "run_scheduled_external_effects",
+        lambda **kwargs: {
+            "ok": False,
+            "exit_code": 1,
+            "counts": {"blocked_count": 1, "unknown_after_dispatch_count": 0},
+            "real_external_call_executed": False,
+        },
+    )
+
+    exit_code = worker_script.main(["--execute", "--limit", "1", "--operator", "pytest"])
+    payload = json.loads(capsys.readouterr().out)
+
+    assert exit_code == 1
+    assert payload["ok"] is False
+    assert payload["counts"]["blocked_count"] == 1
+
+
 def test_external_effect_scheduler_execute_scans_all_due_jobs_one_by_one(monkeypatch) -> None:
     reset_external_effect_fixture_state()
     monkeypatch.setenv(SCHEDULER_ENABLED_KEY, "1")
@@ -105,6 +131,7 @@ def test_external_effect_scheduler_execute_scans_all_due_jobs_one_by_one(monkeyp
     )
 
     assert result["status"] == "ok"
+    assert result["exit_code"] == 0
     assert result["counts"]["processed_count"] == 2
     assert result["counts"]["succeeded_count"] == 2
     assert adapter.calls == 2
@@ -127,7 +154,8 @@ def test_external_effect_scheduler_respects_explicit_wecom_kill_switch(monkeypat
         adapter_registry=registry,
     )
 
-    assert result["status"] == "ok"
+    assert result["status"] == "failed"
+    assert result["exit_code"] == 1
     assert result["counts"]["processed_count"] == 1
     assert result["counts"]["blocked_count"] == 1
     assert result["real_external_call_executed"] is False

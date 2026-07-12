@@ -30,7 +30,7 @@ def test_runtime_contract_inventory_covers_r00_behavior_surfaces() -> None:
     assert all(route["capability_owner"] for route in routes)
     assert all("responses" in route["contract"] for route in routes)
 
-    assert inventory["migration_heads"] == ["0099_internal_event_outbox_and_consumer_lease"]
+    assert inventory["migration_heads"] == ["0100_external_effect_delivery_lease"]
     assert len(inventory["tables"]) >= 150
     assert all(table["write_owner"] for table in inventory["tables"] if table["lifecycle"] != "retired")
     assert inventory["internal_event_consumers"]
@@ -69,7 +69,7 @@ def test_runtime_contract_inventory_write_and_check_detect_drift(tmp_path: Path)
 
     diff = check_inventory(ROOT, destination)
     assert "drifted_head" in diff
-    assert "0099_internal_event_outbox_and_consumer_lease" in diff
+    assert "0100_external_effect_delivery_lease" in diff
 
 
 def test_checked_in_runtime_contract_inventory_matches_current_runtime() -> None:

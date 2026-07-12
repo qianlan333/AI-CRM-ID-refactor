@@ -93,12 +93,12 @@ def realtime_wakeup_state() -> dict[str, Any]:
         "channel_entry_required_types": channel_entry_required,
         "channel_entry_missing_types": missing_channel_entry_types,
         "channel_entry_ready": enabled and not missing_channel_entry_types,
-        "dispatch_boundary": "durable_callback_worker_inline_claim",
+        "dispatch_boundary": "shared_external_effect_lease_claim",
         "uses_process_local_executor": False,
         "deprecated_settings": [REALTIME_ENABLED_KEY, REALTIME_ALLOWED_TYPES_KEY, REALTIME_MAX_CONCURRENCY_KEY],
         "deprecated_settings_owner": "integration_gateway",
         "deprecated_settings_delete_after": "2026-10-01",
-        "description": "渠道码 worker 在 callback durable inbox claim 后同步 claim 已持久化 Effect job。",
+        "description": "渠道码 worker 与定时 worker 通过同一持久化 lease/CAS claim 执行 Effect job。",
     }
 
 

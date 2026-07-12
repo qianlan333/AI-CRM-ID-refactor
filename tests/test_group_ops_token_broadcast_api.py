@@ -58,7 +58,7 @@ def test_group_ops_broadcast_requires_internal_bearer_token(group_ops_api_client
         idempotency_key="machine-auth-no-admin-session",
     )
     assert machine_authorized.status_code == 200
-    assert machine_authorized.json()["status"] == "succeeded"
+    assert machine_authorized.json()["status"] == "simulated"
 
 
 def test_group_ops_broadcast_requires_idempotency_and_content(group_ops_api_client):
@@ -81,7 +81,7 @@ def test_group_ops_broadcast_sends_text_only(group_ops_api_client):
     assert response.status_code == 200
     body = response.json()
     assert body["ok"] is True
-    assert body["status"] == "succeeded"
+    assert body["status"] == "simulated"
     assert body["external_effect_job_id"] > 0
     assert body["requested_chat_count"] == 1
     assert body["exact_target_verified"] is True
@@ -101,7 +101,7 @@ def test_group_ops_broadcast_accepts_multipart_images(group_ops_api_client):
     assert response.status_code == 200
     body = response.json()
     assert body["ok"] is True
-    assert body["status"] == "succeeded"
+    assert body["status"] == "simulated"
     assert body["content"]["text_present"] is False
     assert body["content"]["uploaded_image_count"] == 1
     assert body["content"]["image_count"] == 1
@@ -209,4 +209,4 @@ def test_group_ops_broadcast_idempotency_does_not_send_twice(group_ops_api_clien
     assert duplicate.status_code == 200
     assert first.json()["external_effect_job_id"] == duplicate.json()["external_effect_job_id"]
     assert duplicate.json()["duplicate"] is True
-    assert duplicate.json()["status"] == "succeeded"
+    assert duplicate.json()["status"] == "simulated"

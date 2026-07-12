@@ -351,7 +351,33 @@ async def retry_external_effect_job(job_id: int, request: Request) -> JSONRespon
     token_error = _action_or_internal_token_error(request, payload)
     if token_error:
         return _json({"ok": False, "error": token_error, "route_owner": ROUTE_OWNER}, status_code=401)
-    job = _service().retry(job_id)
+    service = _service()
+    existing = service.get(job_id)
+    if existing and existing.status == "unknown_after_dispatch":
+        if not _bool(payload.get("confirm_duplicate_risk")):
+            return _json(
+                {
+                    "ok": False,
+                    "error": "duplicate_risk_confirmation_required",
+                    "route_owner": ROUTE_OWNER,
+                },
+                status_code=409,
+            )
+        if not _text(payload.get("actor")) or not _text(payload.get("reason")):
+            return _json(
+                {
+                    "ok": False,
+                    "error": "manual_retry_actor_and_reason_required",
+                    "route_owner": ROUTE_OWNER,
+                },
+                status_code=422,
+            )
+    job = service.retry(
+        job_id,
+        actor=_text(payload.get("actor")),
+        reason=_text(payload.get("reason")),
+        confirm_duplicate_risk=_bool(payload.get("confirm_duplicate_risk")),
+    )
     if not job:
         return _json({"ok": False, "error": "external_effect_job_not_retryable", "route_owner": ROUTE_OWNER}, status_code=409)
     return _json({"ok": True, "job": external_effect_job_detail_item(job), "route_owner": ROUTE_OWNER})

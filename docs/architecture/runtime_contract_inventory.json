@@ -239,7 +239,7 @@
       "accessor": "runtime_setting",
       "file": "aicrm_next/background_jobs/broadcast_queue_worker.py",
       "key": "AICRM_EXTERNAL_EFFECT_ALLOWED_OWNER_USERIDS",
-      "line": 331
+      "line": 409
     },
     {
       "accessor": "declared_runtime_environment_key",
@@ -263,7 +263,7 @@
       "accessor": "runtime_setting",
       "file": "aicrm_next/platform_foundation/external_effects/adapters.py",
       "key": "AICRM_EXTERNAL_EFFECT_WEBHOOK_SIGNING_SECRET",
-      "line": 428
+      "line": 429
     },
     {
       "accessor": "runtime_setting",
@@ -971,13 +971,13 @@
       "accessor": "os.getenv",
       "file": "aicrm_next/background_jobs/broadcast_queue_worker.py",
       "key": "BROADCAST_QUEUE_LEASE_SECONDS",
-      "line": 629
+      "line": 733
     },
     {
       "accessor": "os.getenv",
       "file": "aicrm_next/background_jobs/broadcast_queue_worker.py",
       "key": "BROADCAST_QUEUE_RETRY_DELAY_SECONDS",
-      "line": 114
+      "line": 186
     },
     {
       "accessor": "declared_runtime_environment_key",
@@ -2663,7 +2663,7 @@
     }
   ],
   "migration_heads": [
-    "0099_internal_event_outbox_and_consumer_lease"
+    "0100_external_effect_delivery_lease"
   ],
   "openapi_components": {
     "schemas": {
@@ -42522,12 +42522,13 @@
       "domain": "broadcast",
       "drop_candidate": false,
       "lifecycle": "queue",
-      "migration_source": "0008_broadcast_jobs, hardened by 0021/0066 and direct source types by 0080",
+      "migration_source": "0008_broadcast_jobs, hardened by 0021/0066/0089 and truthful simulated delivery by 0100",
       "pii_level": "internal_contact",
       "read_owners": [
         "aicrm_next.admin_jobs.repository",
         "aicrm_next.admin_read_model.repo",
         "aicrm_next.ai_assist.external_campaigns_repo",
+        "aicrm_next.background_jobs.broadcast_queue_worker",
         "aicrm_next.cloud_orchestrator.repository"
       ],
       "table": "broadcast_jobs",
@@ -42872,10 +42873,11 @@
       "domain": "external_effects",
       "drop_candidate": false,
       "lifecycle": "queue",
-      "migration_source": "0039_external_effect_queue",
+      "migration_source": "0039_external_effect_queue, hardened by 0100_external_effect_delivery_lease",
       "pii_level": "internal_contact",
       "read_owners": [
         "admin external effect APIs",
+        "aicrm_next.platform_foundation.external_effects.reconciliation",
         "aicrm_next.platform_foundation.external_effects.worker",
         "push center projection"
       ],

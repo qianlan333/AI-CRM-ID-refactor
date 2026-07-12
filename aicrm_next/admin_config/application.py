@@ -1103,7 +1103,7 @@ class AdminConfigReadService:
     def _last_problem_for_section(self, section: str, repository: PushCenterRepository) -> dict[str, str]:
         jobs, _total = repository.list_jobs({"section": section}, limit=50, offset=0)
         for job in jobs:
-            if _text(job.last_error_code) or job.status in {"blocked", "failed_retryable", "failed_terminal"}:
+            if _text(job.last_error_code) or job.status in {"blocked", "failed_retryable", "failed_terminal", "unknown_after_dispatch"}:
                 return {
                     "last_error_code": _text(job.last_error_code),
                     "last_error_message": _text(job.last_error_message),

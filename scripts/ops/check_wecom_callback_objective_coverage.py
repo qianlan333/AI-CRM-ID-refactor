@@ -172,13 +172,13 @@ REQUIRED_TEST_PROOFS = {
         "tests/test_next_channel_entry_orchestrator.py",
         "test_active_channel_baseline_emits_only_channel_entry_without_program_admission",
     ),
-    "external_effect_realtime_retryable_failure": (
+    "external_effect_realtime_unknown_quarantine": (
         "tests/test_external_effects_realtime.py",
-        "test_realtime_adapter_exception_leaves_job_retryable_for_worker",
+        "test_realtime_adapter_exception_quarantines_job_for_reconciliation",
     ),
-    "external_effect_stale_dispatching_reclaim": (
+    "external_effect_stale_dispatching_quarantine": (
         "tests/test_external_effects_mvp.py",
-        "test_external_effect_due_queue_reclaims_stale_dispatching_jobs",
+        "test_external_effect_due_queue_quarantines_stale_dispatching_jobs",
     ),
     "schema_contract": ("tests/test_webhook_inbox_migration_contract.py", "test_webhook_inbox_migration_locks_status_and_idempotency_contracts"),
     "webhook_inbox_service_models": (
@@ -271,8 +271,8 @@ OBJECTIVE_REQUIREMENTS = {
         "tests": [
             "external_effect_boundary",
             "channel_entry_effect_realtime_wakeup",
-            "external_effect_realtime_retryable_failure",
-            "external_effect_stale_dispatching_reclaim",
+            "external_effect_realtime_unknown_quarantine",
+            "external_effect_stale_dispatching_quarantine",
         ],
         "readiness": ["downstream_worker_isolation_ok"],
     },

@@ -369,7 +369,7 @@ class ExecuteGroupOpsTokenBroadcastCommand:
         attempt = attempts[-1] if attempts else None
         summary = dict(attempt.response_summary_json or {}) if attempt else {}
         status = clean_text(job.status if job else "")
-        ok = status == "succeeded" and bool(summary.get("exact_target_verified"))
+        ok = status in {"succeeded", "simulated"} and bool(summary.get("exact_target_verified"))
         return {
             "ok": ok,
             "status": status or "unknown",

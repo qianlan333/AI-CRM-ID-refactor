@@ -4,7 +4,9 @@ import json
 from collections.abc import Callable
 from dataclasses import fields
 from datetime import datetime, timedelta, timezone
+from threading import RLock
 from typing import Any
+from uuid import uuid4
 
 from sqlalchemy import text
 from sqlalchemy.orm import Session
@@ -18,6 +20,7 @@ from .models import (
     DEFAULT_TENANT_ID,
     ExternalEffectAttempt,
     ExternalEffectCreateRequest,
+    ExternalEffectDispatchResult,
     ExternalEffectJob,
     ExternalEffectTestReceipt,
     public_datetime,
@@ -60,16 +63,19 @@ def _public_job(row: dict[str, Any] | None) -> ExternalEffectJob | None:
     if not row:
         return None
     payload = dict(row)
-    for key in ("payload_json", "payload_summary_json"):
+    for key in ("payload_json", "payload_summary_json", "result_summary_json"):
         payload[key] = _json_obj(payload.get(key))
     for key in (
         "scheduled_at",
         "next_retry_at",
         "locked_at",
+        "lease_expires_at",
+        "dispatch_started_at",
         "created_at",
         "updated_at",
         "approved_at",
         "executed_at",
+        "completed_at",
         "cancelled_at",
     ):
         payload[key] = public_datetime(payload.get(key))
@@ -78,6 +84,9 @@ def _public_job(row: dict[str, Any] | None) -> ExternalEffectJob | None:
     payload["attempt_count"] = int(payload.get("attempt_count") or 0)
     payload["max_attempts"] = int(payload.get("max_attempts") or 0)
     payload["requires_approval"] = bool(payload.get("requires_approval"))
+    payload["side_effect_executed"] = bool(payload.get("side_effect_executed"))
+    payload["provider_result_received"] = bool(payload.get("provider_result_received"))
+    payload["reconciliation_required"] = bool(payload.get("reconciliation_required"))
     return ExternalEffectJob(**_model_payload(ExternalEffectJob, payload))
 
 
@@ -165,13 +174,53 @@ class ExternalEffectRepository:
     def list_due_jobs(self, *, limit: int = 50, effect_types: list[str] | None = None, test_only: bool = False) -> list[ExternalEffectJob]:
         raise NotImplementedError
 
-    def acquire_due_jobs(self, *, limit: int = 50, locked_by: str, effect_types: list[str] | None = None, test_only: bool = False) -> list[ExternalEffectJob]:
+    def acquire_due_jobs(
+        self,
+        *,
+        limit: int = 50,
+        locked_by: str,
+        effect_types: list[str] | None = None,
+        test_only: bool = False,
+        lease_seconds: int = 300,
+    ) -> list[ExternalEffectJob]:
+        raise NotImplementedError
+
+    def acquire_job(self, job_id: int, *, locked_by: str, lease_seconds: int = 300) -> ExternalEffectJob | None:
+        raise NotImplementedError
+
+    def get_active_claim(self, job_id: int, *, lease_token: str) -> ExternalEffectJob | None:
+        raise NotImplementedError
+
+    def quarantine_stale_dispatching(self) -> int:
+        raise NotImplementedError
+
+    def complete_dispatch(
+        self,
+        *,
+        job: ExternalEffectJob,
+        result: ExternalEffectDispatchResult,
+        next_retry_at: datetime | None = None,
+    ) -> tuple[ExternalEffectJob, ExternalEffectAttempt] | None:
+        raise NotImplementedError
+
+    def mark_dispatch_unknown(
+        self,
+        *,
+        job: ExternalEffectJob,
+        error_code: str,
+        error_message: str,
+        side_effect_executed: bool = True,
+        provider_result_received: bool = False,
+    ) -> ExternalEffectJob | None:
         raise NotImplementedError
 
     def mark_dispatching(self, job_id: int, *, locked_by: str) -> ExternalEffectJob | None:
         raise NotImplementedError
 
     def mark_succeeded(self, job_id: int, *, attempt_id: str) -> ExternalEffectJob | None:
+        raise NotImplementedError
+
+    def mark_simulated(self, job_id: int, *, attempt_id: str, result_summary: dict[str, Any]) -> ExternalEffectJob | None:
         raise NotImplementedError
 
     def mark_failed_retryable(self, job_id: int, *, attempt_id: str, error_code: str, error_message: str, next_retry_at: datetime) -> ExternalEffectJob | None:
@@ -186,7 +235,7 @@ class ExternalEffectRepository:
     def cancel_job(self, job_id: int) -> ExternalEffectJob | None:
         raise NotImplementedError
 
-    def enqueue_job(self, job_id: int) -> ExternalEffectJob | None:
+    def enqueue_job(self, job_id: int, *, allow_unknown_after_dispatch: bool = False) -> ExternalEffectJob | None:
         raise NotImplementedError
 
     def approve_job(self, job_id: int) -> ExternalEffectJob | None:
@@ -419,6 +468,8 @@ class SQLAlchemyExternalEffectRepository(ExternalEffectRepository):
             "planned": by_status.get("planned", 0),
             "queued": by_status.get("queued", 0),
             "blocked": by_status.get("blocked", 0),
+            "simulated": by_status.get("simulated", 0),
+            "unknown_after_dispatch": by_status.get("unknown_after_dispatch", 0),
             "failed": by_status.get("failed_retryable", 0) + by_status.get("failed_terminal", 0),
             "succeeded": by_status.get("succeeded", 0),
             "cancelled": by_status.get("cancelled", 0),
@@ -448,15 +499,41 @@ class SQLAlchemyExternalEffectRepository(ExternalEffectRepository):
             f"""
             SELECT
                 COUNT(*) FILTER (
-                    WHERE (
-                            status IN ('queued', 'failed_retryable')
-                         OR (status = 'dispatching' AND locked_at <= CURRENT_TIMESTAMP - INTERVAL '5 minutes')
-                    )
+                    WHERE status IN ('queued', 'failed_retryable')
                       AND scheduled_at <= CURRENT_TIMESTAMP
                       AND (next_retry_at IS NULL OR next_retry_at <= CURRENT_TIMESTAMP)
-                      AND (locked_at IS NULL OR locked_at <= CURRENT_TIMESTAMP - INTERVAL '5 minutes')
+                      AND (lease_expires_at IS NULL OR lease_expires_at <= CURRENT_TIMESTAMP)
                 ) AS eligible_due_count,
                 COUNT(*) FILTER (WHERE status = 'dispatching') AS dispatching_count,
+                COUNT(*) FILTER (
+                    WHERE status = 'dispatching'
+                      AND lease_expires_at IS NOT NULL
+                      AND lease_expires_at <= CURRENT_TIMESTAMP
+                ) AS stale_dispatching_count,
+                COUNT(*) FILTER (WHERE status = 'unknown_after_dispatch') AS unknown_after_dispatch_count,
+                COUNT(*) FILTER (WHERE status = 'simulated') AS simulated_count,
+                COUNT(*) FILTER (WHERE reconciliation_required = TRUE) AS reconciliation_required_count,
+                COUNT(*) FILTER (
+                    WHERE status = 'dispatching'
+                      AND (lease_token = '' OR lease_expires_at IS NULL)
+                ) AS dispatching_without_active_lease_count,
+                COUNT(*) FILTER (
+                    WHERE status <> 'dispatching'
+                      AND (lease_token <> '' OR lease_expires_at IS NOT NULL)
+                ) AS lease_on_non_dispatching_count,
+                COUNT(*) FILTER (
+                    WHERE status = 'succeeded'
+                      AND (side_effect_executed = FALSE OR provider_result_received = FALSE)
+                ) AS succeeded_without_evidence_count,
+                COUNT(*) FILTER (
+                    WHERE status = 'succeeded'
+                      AND side_effect_executed = FALSE
+                      AND LOWER(COALESCE(
+                          result_summary_json->>'mode',
+                          result_summary_json->>'adapter_mode',
+                          ''
+                      )) IN ('fake', 'fixture', 'simulated', 'test_fake')
+                ) AS simulated_recorded_as_succeeded_count,
                 COUNT(*) FILTER (WHERE status = 'failed_retryable') AS failed_retryable_count,
                 COUNT(*) FILTER (WHERE status = 'failed_terminal') AS failed_terminal_count,
                 COALESCE(
@@ -481,6 +558,14 @@ class SQLAlchemyExternalEffectRepository(ExternalEffectRepository):
         return {
             "eligible_due_count": int(row.get("eligible_due_count") or 0),
             "dispatching_count": int(row.get("dispatching_count") or 0),
+            "stale_dispatching_count": int(row.get("stale_dispatching_count") or 0),
+            "unknown_after_dispatch_count": int(row.get("unknown_after_dispatch_count") or 0),
+            "simulated_count": int(row.get("simulated_count") or 0),
+            "reconciliation_required_count": int(row.get("reconciliation_required_count") or 0),
+            "dispatching_without_active_lease_count": int(row.get("dispatching_without_active_lease_count") or 0),
+            "lease_on_non_dispatching_count": int(row.get("lease_on_non_dispatching_count") or 0),
+            "succeeded_without_evidence_count": int(row.get("succeeded_without_evidence_count") or 0),
+            "simulated_recorded_as_succeeded_count": int(row.get("simulated_recorded_as_succeeded_count") or 0),
             "failed_retryable_count": int(row.get("failed_retryable_count") or 0),
             "failed_terminal_count": int(row.get("failed_terminal_count") or 0),
             "oldest_queued_age_seconds": int(float(row.get("oldest_queued_age_seconds") or 0)),
@@ -497,13 +582,10 @@ class SQLAlchemyExternalEffectRepository(ExternalEffectRepository):
             f"""
             SELECT *
             FROM external_effect_job
-            WHERE (
-                    status IN ('queued', 'failed_retryable')
-                 OR (status = 'dispatching' AND locked_at <= CURRENT_TIMESTAMP - INTERVAL '5 minutes')
-            )
+            WHERE status IN ('queued', 'failed_retryable')
               AND scheduled_at <= CURRENT_TIMESTAMP
               AND (next_retry_at IS NULL OR next_retry_at <= CURRENT_TIMESTAMP)
-              AND (locked_at IS NULL OR locked_at <= CURRENT_TIMESTAMP - INTERVAL '5 minutes')
+              AND (lease_expires_at IS NULL OR lease_expires_at <= CURRENT_TIMESTAMP)
               {type_filter}
               {test_filter}
             ORDER BY priority ASC, scheduled_at ASC, id ASC
@@ -513,10 +595,23 @@ class SQLAlchemyExternalEffectRepository(ExternalEffectRepository):
         )
         return [job for row in rows if (job := _public_job(row)) is not None]
 
-    def acquire_due_jobs(self, *, limit: int = 50, locked_by: str, effect_types: list[str] | None = None, test_only: bool = False) -> list[ExternalEffectJob]:
+    def acquire_due_jobs(
+        self,
+        *,
+        limit: int = 50,
+        locked_by: str,
+        effect_types: list[str] | None = None,
+        test_only: bool = False,
+        lease_seconds: int = 300,
+    ) -> list[ExternalEffectJob]:
         type_filter = "AND effect_type = ANY(:effect_types)" if effect_types else ""
         test_filter = "AND COALESCE(payload_json->>'execution_scope', '') = 'test_loopback'" if test_only else ""
-        params: dict[str, Any] = {"limit": max(1, min(int(limit or 50), 200)), "locked_by": _text(locked_by)}
+        params: dict[str, Any] = {
+            "limit": max(1, min(int(limit or 50), 200)),
+            "locked_by": _text(locked_by),
+            "lease_prefix": "eel_" + uuid4().hex,
+            "lease_seconds": max(30, min(int(lease_seconds or 300), 3600)),
+        }
         if effect_types:
             params["effect_types"] = [_text(item) for item in effect_types if _text(item)]
         rows = self._write_all(
@@ -524,13 +619,10 @@ class SQLAlchemyExternalEffectRepository(ExternalEffectRepository):
             WITH due AS (
                 SELECT id
                 FROM external_effect_job
-                WHERE (
-                        status IN ('queued', 'failed_retryable')
-                     OR (status = 'dispatching' AND locked_at <= CURRENT_TIMESTAMP - INTERVAL '5 minutes')
-                )
+                WHERE status IN ('queued', 'failed_retryable')
                   AND scheduled_at <= CURRENT_TIMESTAMP
                   AND (next_retry_at IS NULL OR next_retry_at <= CURRENT_TIMESTAMP)
-                  AND (locked_at IS NULL OR locked_at <= CURRENT_TIMESTAMP - INTERVAL '5 minutes')
+                  AND (lease_expires_at IS NULL OR lease_expires_at <= CURRENT_TIMESTAMP)
                   {type_filter}
                   {test_filter}
                 ORDER BY priority ASC, scheduled_at ASC, id ASC
@@ -538,7 +630,10 @@ class SQLAlchemyExternalEffectRepository(ExternalEffectRepository):
                 FOR UPDATE SKIP LOCKED
             )
             UPDATE external_effect_job j
-            SET status = CASE WHEN j.status = 'dispatching' THEN 'queued' ELSE j.status END,
+            SET status = 'dispatching',
+                lease_token = CAST(:lease_prefix AS text) || '-' || j.id::text,
+                lease_expires_at = CURRENT_TIMESTAMP + (:lease_seconds * INTERVAL '1 second'),
+                dispatch_started_at = CURRENT_TIMESTAMP,
                 locked_at = CURRENT_TIMESTAMP,
                 locked_by = :locked_by,
                 updated_at = CURRENT_TIMESTAMP
@@ -550,20 +645,247 @@ class SQLAlchemyExternalEffectRepository(ExternalEffectRepository):
         )
         return [job for row in rows if (job := _public_job(row)) is not None]
 
+    def acquire_job(self, job_id: int, *, locked_by: str, lease_seconds: int = 300) -> ExternalEffectJob | None:
+        lease_prefix = "eel_" + uuid4().hex
+        row = self._write_one(
+            """
+            UPDATE external_effect_job
+            SET status = 'dispatching',
+                lease_token = :lease_token,
+                lease_expires_at = CURRENT_TIMESTAMP + (:lease_seconds * INTERVAL '1 second'),
+                dispatch_started_at = CURRENT_TIMESTAMP,
+                locked_at = CURRENT_TIMESTAMP,
+                locked_by = :locked_by,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = :job_id
+              AND status IN ('queued', 'failed_retryable')
+              AND (lease_expires_at IS NULL OR lease_expires_at <= CURRENT_TIMESTAMP)
+            RETURNING *
+            """,
+            {
+                "job_id": int(job_id),
+                "locked_by": _text(locked_by),
+                "lease_token": f"{lease_prefix}-{int(job_id)}",
+                "lease_seconds": max(30, min(int(lease_seconds or 300), 3600)),
+            },
+        )
+        return _public_job(row)
+
+    def get_active_claim(self, job_id: int, *, lease_token: str) -> ExternalEffectJob | None:
+        return _public_job(
+            self._one(
+                """
+                SELECT *
+                FROM external_effect_job
+                WHERE id = :job_id
+                  AND status = 'dispatching'
+                  AND lease_token = :lease_token
+                  AND lease_expires_at > CURRENT_TIMESTAMP
+                LIMIT 1
+                """,
+                {"job_id": int(job_id), "lease_token": _text(lease_token)},
+            )
+        )
+
+    def quarantine_stale_dispatching(self) -> int:
+        rows = self._write_all(
+            """
+            UPDATE external_effect_job
+            SET status = 'unknown_after_dispatch',
+                reconciliation_required = TRUE,
+                last_error_code = 'lease_expired_after_dispatch',
+                last_error_message = 'Dispatch lease expired; reconcile provider outcome before retry.',
+                lease_token = '', lease_expires_at = NULL,
+                locked_by = '', locked_at = NULL,
+                completed_at = CURRENT_TIMESTAMP,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE status = 'dispatching'
+              AND lease_expires_at IS NOT NULL
+              AND lease_expires_at <= CURRENT_TIMESTAMP
+            RETURNING id
+            """
+        )
+        return len(rows)
+
+    def complete_dispatch(
+        self,
+        *,
+        job: ExternalEffectJob,
+        result: ExternalEffectDispatchResult,
+        next_retry_at: datetime | None = None,
+    ) -> tuple[ExternalEffectJob, ExternalEffectAttempt] | None:
+        status = _text(result.status)
+        allowed = {
+            "succeeded",
+            "simulated",
+            "unknown_after_dispatch",
+            "failed_retryable",
+            "failed_terminal",
+            "blocked",
+        }
+        if status not in allowed or not _text(job.lease_token):
+            return None
+        attempt_id = "eea_" + uuid4().hex
+        request_summary = scrub_summary(dict(result.request_summary or {}))
+        response_summary = scrub_summary(
+            {
+                **dict(result.response_summary or {}),
+                "real_external_call_executed": bool(result.real_external_call_executed),
+                "provider_result_received": bool(result.provider_result_received),
+            }
+        )
+        with self._session_factory() as session:
+            current = session.execute(
+                text(
+                    "SELECT * FROM external_effect_job "
+                    "WHERE id = :job_id AND status = 'dispatching' AND lease_token = :lease_token "
+                    "FOR UPDATE"
+                ),
+                {"job_id": int(job.id), "lease_token": _text(job.lease_token)},
+            ).mappings().fetchone()
+            if not current:
+                session.rollback()
+                return None
+            attempt_row = session.execute(
+                text(
+                    """
+                    INSERT INTO external_effect_attempt (
+                        attempt_id, job_id, adapter_name, adapter_mode, operation, trace_id,
+                        request_id, status, request_summary_json, response_summary_json,
+                        error_code, error_message, started_at, completed_at
+                    )
+                    VALUES (
+                        :attempt_id, :job_id, :adapter_name, :adapter_mode, :operation, :trace_id,
+                        :request_id, :status, CAST(:request_summary AS jsonb), CAST(:response_summary AS jsonb),
+                        :error_code, :error_message, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+                    )
+                    RETURNING *
+                    """
+                ),
+                {
+                    "attempt_id": attempt_id,
+                    "job_id": int(job.id),
+                    "adapter_name": job.adapter_name,
+                    "adapter_mode": _text(result.adapter_mode) or "none",
+                    "operation": job.operation,
+                    "trace_id": job.trace_id,
+                    "request_id": job.request_id,
+                    "status": status,
+                    "request_summary": _json_dumps(request_summary),
+                    "response_summary": _json_dumps(response_summary),
+                    "error_code": _text(result.error_code),
+                    "error_message": _safe_error_message(result.error_message),
+                },
+            ).mappings().fetchone()
+            updated_row = session.execute(
+                text(
+                    """
+                    UPDATE external_effect_job
+                    SET status = :status,
+                        attempt_count = attempt_count + 1,
+                        next_retry_at = CAST(:next_retry_at AS timestamptz),
+                        last_attempt_id = :attempt_id,
+                        last_error_code = :error_code,
+                        last_error_message = :error_message,
+                        side_effect_executed = :side_effect_executed,
+                        provider_result_received = :provider_result_received,
+                        result_summary_json = CAST(:result_summary AS jsonb),
+                        reconciliation_required = :reconciliation_required,
+                        lease_token = '', lease_expires_at = NULL,
+                        locked_by = '', locked_at = NULL,
+                        executed_at = CASE WHEN :status = 'succeeded' THEN CURRENT_TIMESTAMP ELSE executed_at END,
+                        completed_at = CASE
+                            WHEN :status IN ('succeeded', 'simulated', 'unknown_after_dispatch', 'failed_terminal', 'blocked')
+                            THEN CURRENT_TIMESTAMP ELSE NULL
+                        END,
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE id = :job_id
+                      AND status = 'dispatching'
+                      AND lease_token = :lease_token
+                    RETURNING *
+                    """
+                ),
+                {
+                    "job_id": int(job.id),
+                    "lease_token": _text(job.lease_token),
+                    "status": status,
+                    "next_retry_at": public_datetime(next_retry_at) if status == "failed_retryable" and next_retry_at else None,
+                    "attempt_id": attempt_id,
+                    "error_code": _text(result.error_code),
+                    "error_message": _safe_error_message(result.error_message),
+                    "side_effect_executed": bool(result.real_external_call_executed),
+                    "provider_result_received": bool(result.provider_result_received),
+                    "result_summary": _json_dumps(response_summary),
+                    "reconciliation_required": status == "unknown_after_dispatch",
+                },
+            ).mappings().fetchone()
+            if not updated_row or not attempt_row:
+                session.rollback()
+                return None
+            session.commit()
+            updated = _public_job(dict(updated_row))
+            attempt = _public_attempt(dict(attempt_row))
+            return (updated, attempt) if updated and attempt else None
+
+    def mark_dispatch_unknown(
+        self,
+        *,
+        job: ExternalEffectJob,
+        error_code: str,
+        error_message: str,
+        side_effect_executed: bool = True,
+        provider_result_received: bool = False,
+    ) -> ExternalEffectJob | None:
+        row = self._write_one(
+            """
+            UPDATE external_effect_job
+            SET status = 'unknown_after_dispatch',
+                reconciliation_required = TRUE,
+                side_effect_executed = :side_effect_executed,
+                provider_result_received = :provider_result_received,
+                last_error_code = :error_code,
+                last_error_message = :error_message,
+                lease_token = '', lease_expires_at = NULL,
+                locked_by = '', locked_at = NULL,
+                completed_at = CURRENT_TIMESTAMP,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = :job_id
+              AND status = 'dispatching'
+              AND lease_token = :lease_token
+            RETURNING *
+            """,
+            {
+                "job_id": int(job.id),
+                "lease_token": _text(job.lease_token),
+                "side_effect_executed": bool(side_effect_executed),
+                "provider_result_received": bool(provider_result_received),
+                "error_code": _text(error_code) or "result_persistence_failed",
+                "error_message": _safe_error_message(error_message),
+            },
+        )
+        return _public_job(row)
+
     def mark_dispatching(self, job_id: int, *, locked_by: str) -> ExternalEffectJob | None:
-        return self._update(job_id, "status = 'dispatching', locked_by = :locked_by, locked_at = CURRENT_TIMESTAMP", {"locked_by": _text(locked_by)})
+        return self.acquire_job(job_id, locked_by=locked_by)
 
     def mark_succeeded(self, job_id: int, *, attempt_id: str) -> ExternalEffectJob | None:
         return self._update(
             job_id,
-            "status = 'succeeded', last_attempt_id = :attempt_id, locked_by = '', locked_at = NULL, executed_at = CURRENT_TIMESTAMP",
+            "status = 'succeeded', last_attempt_id = :attempt_id, locked_by = '', locked_at = NULL, lease_token = '', lease_expires_at = NULL, executed_at = CURRENT_TIMESTAMP, completed_at = CURRENT_TIMESTAMP",
             {"attempt_id": _text(attempt_id)},
+        )
+
+    def mark_simulated(self, job_id: int, *, attempt_id: str, result_summary: dict[str, Any]) -> ExternalEffectJob | None:
+        return self._update(
+            job_id,
+            "status = 'simulated', attempt_count = attempt_count + 1, last_attempt_id = :attempt_id, side_effect_executed = FALSE, provider_result_received = FALSE, result_summary_json = CAST(:result_summary AS jsonb), reconciliation_required = FALSE, locked_by = '', locked_at = NULL, lease_token = '', lease_expires_at = NULL, completed_at = CURRENT_TIMESTAMP",
+            {"attempt_id": _text(attempt_id), "result_summary": _json_dumps(scrub_summary(result_summary or {}))},
         )
 
     def mark_failed_retryable(self, job_id: int, *, attempt_id: str, error_code: str, error_message: str, next_retry_at: datetime) -> ExternalEffectJob | None:
         return self._update(
             job_id,
-            "status = 'failed_retryable', attempt_count = attempt_count + 1, next_retry_at = CAST(:next_retry_at AS timestamptz), last_attempt_id = :attempt_id, last_error_code = :error_code, last_error_message = :error_message, locked_by = '', locked_at = NULL",
+            "status = 'failed_retryable', attempt_count = attempt_count + 1, next_retry_at = CAST(:next_retry_at AS timestamptz), last_attempt_id = :attempt_id, last_error_code = :error_code, last_error_message = :error_message, locked_by = '', locked_at = NULL, lease_token = '', lease_expires_at = NULL",
             {
                 "attempt_id": _text(attempt_id),
                 "error_code": _text(error_code),
@@ -575,25 +897,46 @@ class SQLAlchemyExternalEffectRepository(ExternalEffectRepository):
     def mark_failed_terminal(self, job_id: int, *, attempt_id: str, error_code: str, error_message: str) -> ExternalEffectJob | None:
         return self._update(
             job_id,
-            "status = 'failed_terminal', attempt_count = attempt_count + 1, last_attempt_id = :attempt_id, last_error_code = :error_code, last_error_message = :error_message, locked_by = '', locked_at = NULL",
+            "status = 'failed_terminal', attempt_count = attempt_count + 1, last_attempt_id = :attempt_id, last_error_code = :error_code, last_error_message = :error_message, locked_by = '', locked_at = NULL, lease_token = '', lease_expires_at = NULL, completed_at = CURRENT_TIMESTAMP",
             {"attempt_id": _text(attempt_id), "error_code": _text(error_code), "error_message": _safe_error_message(error_message)},
         )
 
     def mark_blocked(self, job_id: int, *, attempt_id: str, error_code: str, error_message: str) -> ExternalEffectJob | None:
         return self._update(
             job_id,
-            "status = 'blocked', attempt_count = attempt_count + 1, last_attempt_id = :attempt_id, last_error_code = :error_code, last_error_message = :error_message, locked_by = '', locked_at = NULL",
+            "status = 'blocked', attempt_count = attempt_count + 1, last_attempt_id = :attempt_id, last_error_code = :error_code, last_error_message = :error_message, locked_by = '', locked_at = NULL, lease_token = '', lease_expires_at = NULL, completed_at = CURRENT_TIMESTAMP",
             {"attempt_id": _text(attempt_id), "error_code": _text(error_code), "error_message": _safe_error_message(error_message)},
         )
 
     def cancel_job(self, job_id: int) -> ExternalEffectJob | None:
-        return self._update(job_id, "status = 'cancelled', locked_by = '', locked_at = NULL, cancelled_at = CURRENT_TIMESTAMP", {})
+        return self._update(job_id, "status = 'cancelled', locked_by = '', locked_at = NULL, lease_token = '', lease_expires_at = NULL, cancelled_at = CURRENT_TIMESTAMP, completed_at = CURRENT_TIMESTAMP", {})
 
-    def enqueue_job(self, job_id: int) -> ExternalEffectJob | None:
-        return self._update(job_id, "status = 'queued', locked_by = '', locked_at = NULL, next_retry_at = CURRENT_TIMESTAMP", {})
+    def enqueue_job(self, job_id: int, *, allow_unknown_after_dispatch: bool = False) -> ExternalEffectJob | None:
+        unknown_clause = "OR status = 'unknown_after_dispatch'" if allow_unknown_after_dispatch else ""
+        return _public_job(
+            self._write_one(
+                f"""
+                UPDATE external_effect_job
+                SET status = 'queued',
+                    locked_by = '', locked_at = NULL,
+                    lease_token = '', lease_expires_at = NULL,
+                    next_retry_at = CURRENT_TIMESTAMP,
+                    reconciliation_required = FALSE,
+                    completed_at = NULL,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = :job_id
+                  AND (
+                    status IN ('planned', 'approved', 'queued', 'failed_retryable', 'failed_terminal', 'blocked')
+                    {unknown_clause}
+                  )
+                RETURNING *
+                """,
+                {"job_id": int(job_id)},
+            )
+        )
 
     def approve_job(self, job_id: int) -> ExternalEffectJob | None:
-        return self._update(job_id, "status = 'queued', approved_at = CURRENT_TIMESTAMP, locked_by = '', locked_at = NULL, next_retry_at = CURRENT_TIMESTAMP", {})
+        return self._update(job_id, "status = 'queued', approved_at = CURRENT_TIMESTAMP, locked_by = '', locked_at = NULL, lease_token = '', lease_expires_at = NULL, next_retry_at = CURRENT_TIMESTAMP, reconciliation_required = FALSE", {})
 
     def record_attempt(self, *, job: ExternalEffectJob, status: str, adapter_mode: str, request_summary: dict[str, Any], response_summary: dict[str, Any], error_code: str = "", error_message: str = "") -> ExternalEffectAttempt:
         attempt_id = "eea_" + __import__("uuid").uuid4().hex
@@ -802,6 +1145,7 @@ class SQLAlchemyExternalEffectRepository(ExternalEffectRepository):
 
 class InMemoryExternalEffectRepository(ExternalEffectRepository):
     def __init__(self) -> None:
+        self._lock = RLock()
         self._jobs: list[dict[str, Any]] = []
         self._attempts: list[dict[str, Any]] = []
         self._receipts: list[dict[str, Any]] = []
@@ -852,13 +1196,21 @@ class InMemoryExternalEffectRepository(ExternalEffectRepository):
             "next_retry_at": "",
             "locked_at": "",
             "locked_by": "",
+            "lease_token": "",
+            "lease_expires_at": "",
+            "dispatch_started_at": "",
             "last_attempt_id": "",
             "last_error_code": "",
             "last_error_message": "",
+            "side_effect_executed": False,
+            "provider_result_received": False,
+            "result_summary_json": {},
+            "reconciliation_required": False,
             "created_at": public_datetime(now),
             "updated_at": public_datetime(now),
             "approved_at": "",
             "executed_at": "",
+            "completed_at": "",
             "cancelled_at": "",
         }
         self._next_id += 1
@@ -925,6 +1277,8 @@ class InMemoryExternalEffectRepository(ExternalEffectRepository):
             "planned": by_status.get("planned", 0),
             "queued": by_status.get("queued", 0),
             "blocked": by_status.get("blocked", 0),
+            "simulated": by_status.get("simulated", 0),
+            "unknown_after_dispatch": by_status.get("unknown_after_dispatch", 0),
             "failed": by_status.get("failed_retryable", 0) + by_status.get("failed_terminal", 0),
             "succeeded": by_status.get("succeeded", 0),
             "cancelled": by_status.get("cancelled", 0),
@@ -936,19 +1290,65 @@ class InMemoryExternalEffectRepository(ExternalEffectRepository):
         due_rows = [
             row
             for row in rows
-            if (
-                row.get("status") in {"queued", "failed_retryable"}
-                or (row.get("status") == "dispatching" and row.get("locked_at") and self._dt(row.get("locked_at")) <= now - timedelta(minutes=5))
-            )
+            if row.get("status") in {"queued", "failed_retryable"}
             and self._dt(row.get("scheduled_at")) <= now
             and (not row.get("next_retry_at") or self._dt(row.get("next_retry_at")) <= now)
-            and (not row.get("locked_at") or self._dt(row.get("locked_at")) <= now - timedelta(minutes=5))
+            and (not row.get("lease_expires_at") or self._dt(row.get("lease_expires_at")) <= now)
         ]
         queued_due = [row for row in due_rows if row.get("status") == "queued"]
         retry_due = [row for row in due_rows if row.get("status") == "failed_retryable"]
         return {
             "eligible_due_count": len(due_rows),
             "dispatching_count": len([row for row in rows if row.get("status") == "dispatching"]),
+            "stale_dispatching_count": len(
+                [
+                    row
+                    for row in rows
+                    if row.get("status") == "dispatching"
+                    and row.get("lease_expires_at")
+                    and self._dt(row.get("lease_expires_at")) <= now
+                ]
+            ),
+            "unknown_after_dispatch_count": len([row for row in rows if row.get("status") == "unknown_after_dispatch"]),
+            "simulated_count": len([row for row in rows if row.get("status") == "simulated"]),
+            "reconciliation_required_count": len([row for row in rows if row.get("reconciliation_required")]),
+            "dispatching_without_active_lease_count": len(
+                [
+                    row
+                    for row in rows
+                    if row.get("status") == "dispatching"
+                    and (not row.get("lease_token") or not row.get("lease_expires_at"))
+                ]
+            ),
+            "lease_on_non_dispatching_count": len(
+                [
+                    row
+                    for row in rows
+                    if row.get("status") != "dispatching"
+                    and (row.get("lease_token") or row.get("lease_expires_at"))
+                ]
+            ),
+            "succeeded_without_evidence_count": len(
+                [
+                    row
+                    for row in rows
+                    if row.get("status") == "succeeded"
+                    and (not row.get("side_effect_executed") or not row.get("provider_result_received"))
+                ]
+            ),
+            "simulated_recorded_as_succeeded_count": len(
+                [
+                    row
+                    for row in rows
+                    if row.get("status") == "succeeded"
+                    and not row.get("side_effect_executed")
+                    and _text(
+                        (row.get("result_summary_json") or {}).get("mode")
+                        or (row.get("result_summary_json") or {}).get("adapter_mode")
+                    ).lower()
+                    in {"fake", "fixture", "simulated", "test_fake"}
+                ]
+            ),
             "failed_retryable_count": len([row for row in rows if row.get("status") == "failed_retryable"]),
             "failed_terminal_count": len([row for row in rows if row.get("status") == "failed_terminal"]),
             "oldest_queued_age_seconds": self._oldest_age_seconds(queued_due, now, "scheduled_at"),
@@ -961,61 +1361,294 @@ class InMemoryExternalEffectRepository(ExternalEffectRepository):
         rows = [
             row
             for row in self._jobs
-            if (
-                row.get("status") in {"queued", "failed_retryable"}
-                or (row.get("status") == "dispatching" and row.get("locked_at") and self._dt(row.get("locked_at")) <= now - timedelta(minutes=5))
-            )
+            if row.get("status") in {"queued", "failed_retryable"}
             and (not type_set or row.get("effect_type") in type_set)
             and (not test_only or (row.get("payload_json") or {}).get("execution_scope") == "test_loopback")
             and self._dt(row.get("scheduled_at")) <= now
             and (not row.get("next_retry_at") or self._dt(row.get("next_retry_at")) <= now)
-            and (not row.get("locked_at") or self._dt(row.get("locked_at")) <= now - timedelta(minutes=5))
+            and (not row.get("lease_expires_at") or self._dt(row.get("lease_expires_at")) <= now)
         ]
         rows.sort(key=lambda row: (int(row.get("priority") or 100), row.get("scheduled_at") or "", int(row.get("id") or 0)))
         return [job for row in rows[: max(1, min(int(limit or 50), 200))] if (job := _public_job(row)) is not None]
 
-    def acquire_due_jobs(self, *, limit: int = 50, locked_by: str, effect_types: list[str] | None = None, test_only: bool = False) -> list[ExternalEffectJob]:
-        jobs = self.list_due_jobs(limit=limit, effect_types=effect_types, test_only=test_only)
-        now = public_datetime(utcnow())
-        for job in jobs:
+    def acquire_due_jobs(
+        self,
+        *,
+        limit: int = 50,
+        locked_by: str,
+        effect_types: list[str] | None = None,
+        test_only: bool = False,
+        lease_seconds: int = 300,
+    ) -> list[ExternalEffectJob]:
+        with self._lock:
+            jobs = self.list_due_jobs(limit=limit, effect_types=effect_types, test_only=test_only)
+            current = utcnow()
+            now = public_datetime(current)
+            expires_at = public_datetime(current + timedelta(seconds=max(30, min(int(lease_seconds or 300), 3600))))
+            lease_prefix = "eel_" + uuid4().hex
+            for job in jobs:
+                row = self._find(job.id)
+                if row:
+                    row["status"] = "dispatching"
+                    row["lease_token"] = f"{lease_prefix}-{job.id}"
+                    row["lease_expires_at"] = expires_at
+                    row["dispatch_started_at"] = now
+                    row["locked_at"] = now
+                    row["locked_by"] = _text(locked_by)
+                    row["updated_at"] = now
+            return [job for job_id in [job.id for job in jobs] if (job := self.get_job(job_id)) is not None]
+
+    def acquire_job(self, job_id: int, *, locked_by: str, lease_seconds: int = 300) -> ExternalEffectJob | None:
+        with self._lock:
+            row = self._find(job_id)
+            now = utcnow()
+            if (
+                not row
+                or row.get("status") not in {"queued", "failed_retryable"}
+                or (row.get("lease_expires_at") and self._dt(row.get("lease_expires_at")) > now)
+            ):
+                return None
+            now_text = public_datetime(now)
+            row.update(
+                {
+                    "status": "dispatching",
+                    "lease_token": f"eel_{uuid4().hex}-{int(job_id)}",
+                    "lease_expires_at": public_datetime(
+                        now + timedelta(seconds=max(30, min(int(lease_seconds or 300), 3600)))
+                    ),
+                    "dispatch_started_at": now_text,
+                    "locked_at": now_text,
+                    "locked_by": _text(locked_by),
+                    "updated_at": now_text,
+                }
+            )
+            return _public_job(row)
+
+    def get_active_claim(self, job_id: int, *, lease_token: str) -> ExternalEffectJob | None:
+        with self._lock:
+            row = self._find(job_id)
+            if (
+                not row
+                or row.get("status") != "dispatching"
+                or _text(row.get("lease_token")) != _text(lease_token)
+                or not row.get("lease_expires_at")
+                or self._dt(row.get("lease_expires_at")) <= utcnow()
+            ):
+                return None
+            return _public_job(row)
+
+    def quarantine_stale_dispatching(self) -> int:
+        with self._lock:
+            current = utcnow()
+            count = 0
+            for row in self._jobs:
+                if (
+                    row.get("status") != "dispatching"
+                    or not row.get("lease_expires_at")
+                    or self._dt(row.get("lease_expires_at")) > current
+                ):
+                    continue
+                now = public_datetime(current)
+                row.update(
+                    {
+                        "status": "unknown_after_dispatch",
+                        "reconciliation_required": True,
+                        "last_error_code": "lease_expired_after_dispatch",
+                        "last_error_message": "Dispatch lease expired; reconcile provider outcome before retry.",
+                        "lease_token": "",
+                        "lease_expires_at": "",
+                        "locked_by": "",
+                        "locked_at": "",
+                        "completed_at": now,
+                        "updated_at": now,
+                    }
+                )
+                count += 1
+            return count
+
+    def complete_dispatch(
+        self,
+        *,
+        job: ExternalEffectJob,
+        result: ExternalEffectDispatchResult,
+        next_retry_at: datetime | None = None,
+    ) -> tuple[ExternalEffectJob, ExternalEffectAttempt] | None:
+        allowed = {
+            "succeeded",
+            "simulated",
+            "unknown_after_dispatch",
+            "failed_retryable",
+            "failed_terminal",
+            "blocked",
+        }
+        status = _text(result.status)
+        with self._lock:
             row = self._find(job.id)
-            if row:
-                if row.get("status") == "dispatching":
-                    row["status"] = "queued"
-                row["locked_at"] = now
-                row["locked_by"] = _text(locked_by)
-                row["updated_at"] = now
-        return [job for job_id in [job.id for job in jobs] if (job := self.get_job(job_id)) is not None]
+            if (
+                status not in allowed
+                or not row
+                or row.get("status") != "dispatching"
+                or not _text(job.lease_token)
+                or _text(row.get("lease_token")) != _text(job.lease_token)
+            ):
+                return None
+            response_summary = {
+                **dict(result.response_summary or {}),
+                "real_external_call_executed": bool(result.real_external_call_executed),
+                "provider_result_received": bool(result.provider_result_received),
+            }
+            attempt = self.record_attempt(
+                job=job,
+                status=status,
+                adapter_mode=result.adapter_mode,
+                request_summary=dict(result.request_summary or {}),
+                response_summary=response_summary,
+                error_code=result.error_code,
+                error_message=result.error_message,
+            )
+            now = public_datetime(utcnow())
+            row.update(
+                {
+                    "status": status,
+                    "attempt_count": int(row.get("attempt_count") or 0) + 1,
+                    "next_retry_at": public_datetime(next_retry_at)
+                    if status == "failed_retryable" and next_retry_at
+                    else "",
+                    "last_attempt_id": attempt.attempt_id,
+                    "last_error_code": _text(result.error_code),
+                    "last_error_message": _safe_error_message(result.error_message),
+                    "side_effect_executed": bool(result.real_external_call_executed),
+                    "provider_result_received": bool(result.provider_result_received),
+                    "result_summary_json": scrub_summary(response_summary),
+                    "reconciliation_required": status == "unknown_after_dispatch",
+                    "lease_token": "",
+                    "lease_expires_at": "",
+                    "locked_by": "",
+                    "locked_at": "",
+                    "executed_at": now if status == "succeeded" else row.get("executed_at") or "",
+                    "completed_at": now
+                    if status in {"succeeded", "simulated", "unknown_after_dispatch", "failed_terminal", "blocked"}
+                    else "",
+                    "updated_at": now,
+                }
+            )
+            updated = _public_job(row)
+            return (updated, attempt) if updated else None
+
+    def mark_dispatch_unknown(
+        self,
+        *,
+        job: ExternalEffectJob,
+        error_code: str,
+        error_message: str,
+        side_effect_executed: bool = True,
+        provider_result_received: bool = False,
+    ) -> ExternalEffectJob | None:
+        with self._lock:
+            row = self._find(job.id)
+            if (
+                not row
+                or row.get("status") != "dispatching"
+                or not _text(job.lease_token)
+                or _text(row.get("lease_token")) != _text(job.lease_token)
+            ):
+                return None
+            now = public_datetime(utcnow())
+            row.update(
+                {
+                    "status": "unknown_after_dispatch",
+                    "reconciliation_required": True,
+                    "side_effect_executed": bool(side_effect_executed),
+                    "provider_result_received": bool(provider_result_received),
+                    "last_error_code": _text(error_code) or "result_persistence_failed",
+                    "last_error_message": _safe_error_message(error_message),
+                    "lease_token": "",
+                    "lease_expires_at": "",
+                    "locked_by": "",
+                    "locked_at": "",
+                    "completed_at": now,
+                    "updated_at": now,
+                }
+            )
+            return _public_job(row)
 
     def mark_dispatching(self, job_id: int, *, locked_by: str) -> ExternalEffectJob | None:
-        return self._mutate(job_id, status="dispatching", locked_by=_text(locked_by), locked_at=public_datetime(utcnow()))
+        return self.acquire_job(job_id, locked_by=locked_by)
 
     def mark_succeeded(self, job_id: int, *, attempt_id: str) -> ExternalEffectJob | None:
-        return self._mutate(job_id, status="succeeded", last_attempt_id=_text(attempt_id), locked_by="", locked_at="", executed_at=public_datetime(utcnow()))
+        now = public_datetime(utcnow())
+        return self._mutate(
+            job_id,
+            status="succeeded",
+            last_attempt_id=_text(attempt_id),
+            locked_by="",
+            locked_at="",
+            lease_token="",
+            lease_expires_at="",
+            executed_at=now,
+            completed_at=now,
+        )
+
+    def mark_simulated(self, job_id: int, *, attempt_id: str, result_summary: dict[str, Any]) -> ExternalEffectJob | None:
+        row = self._find(job_id)
+        if row:
+            row["attempt_count"] = int(row.get("attempt_count") or 0) + 1
+        return self._mutate(
+            job_id,
+            status="simulated",
+            last_attempt_id=_text(attempt_id),
+            side_effect_executed=False,
+            provider_result_received=False,
+            result_summary_json=scrub_summary(result_summary or {}),
+            reconciliation_required=False,
+            locked_by="",
+            locked_at="",
+            lease_token="",
+            lease_expires_at="",
+            completed_at=public_datetime(utcnow()),
+        )
 
     def mark_failed_retryable(self, job_id: int, *, attempt_id: str, error_code: str, error_message: str, next_retry_at: datetime) -> ExternalEffectJob | None:
         row = self._find(job_id)
         if row:
             row["attempt_count"] = int(row.get("attempt_count") or 0) + 1
-        return self._mutate(job_id, status="failed_retryable", next_retry_at=public_datetime(next_retry_at), last_attempt_id=_text(attempt_id), last_error_code=_text(error_code), last_error_message=_safe_error_message(error_message), locked_by="", locked_at="")
+        return self._mutate(job_id, status="failed_retryable", next_retry_at=public_datetime(next_retry_at), last_attempt_id=_text(attempt_id), last_error_code=_text(error_code), last_error_message=_safe_error_message(error_message), locked_by="", locked_at="", lease_token="", lease_expires_at="")
 
     def mark_failed_terminal(self, job_id: int, *, attempt_id: str, error_code: str, error_message: str) -> ExternalEffectJob | None:
         row = self._find(job_id)
         if row:
             row["attempt_count"] = int(row.get("attempt_count") or 0) + 1
-        return self._mutate(job_id, status="failed_terminal", last_attempt_id=_text(attempt_id), last_error_code=_text(error_code), last_error_message=_safe_error_message(error_message), locked_by="", locked_at="")
+        return self._mutate(job_id, status="failed_terminal", last_attempt_id=_text(attempt_id), last_error_code=_text(error_code), last_error_message=_safe_error_message(error_message), locked_by="", locked_at="", lease_token="", lease_expires_at="", completed_at=public_datetime(utcnow()))
 
     def mark_blocked(self, job_id: int, *, attempt_id: str, error_code: str, error_message: str) -> ExternalEffectJob | None:
         row = self._find(job_id)
         if row:
             row["attempt_count"] = int(row.get("attempt_count") or 0) + 1
-        return self._mutate(job_id, status="blocked", last_attempt_id=_text(attempt_id), last_error_code=_text(error_code), last_error_message=_safe_error_message(error_message), locked_by="", locked_at="")
+        return self._mutate(job_id, status="blocked", last_attempt_id=_text(attempt_id), last_error_code=_text(error_code), last_error_message=_safe_error_message(error_message), locked_by="", locked_at="", lease_token="", lease_expires_at="", completed_at=public_datetime(utcnow()))
 
     def cancel_job(self, job_id: int) -> ExternalEffectJob | None:
-        return self._mutate(job_id, status="cancelled", locked_by="", locked_at="", cancelled_at=public_datetime(utcnow()))
+        now = public_datetime(utcnow())
+        return self._mutate(job_id, status="cancelled", locked_by="", locked_at="", lease_token="", lease_expires_at="", cancelled_at=now, completed_at=now)
 
-    def enqueue_job(self, job_id: int) -> ExternalEffectJob | None:
-        return self._mutate(job_id, status="queued", locked_by="", locked_at="", next_retry_at=public_datetime(utcnow()))
+    def enqueue_job(self, job_id: int, *, allow_unknown_after_dispatch: bool = False) -> ExternalEffectJob | None:
+        with self._lock:
+            row = self._find(job_id)
+            allowed = {"planned", "approved", "queued", "failed_retryable", "failed_terminal", "blocked"}
+            if allow_unknown_after_dispatch:
+                allowed.add("unknown_after_dispatch")
+            if not row or row.get("status") not in allowed:
+                return None
+            return self._mutate(
+                job_id,
+                status="queued",
+                locked_by="",
+                locked_at="",
+                lease_token="",
+                lease_expires_at="",
+                next_retry_at=public_datetime(utcnow()),
+                reconciliation_required=False,
+                completed_at="",
+            )
 
     def approve_job(self, job_id: int) -> ExternalEffectJob | None:
         return self._mutate(
@@ -1024,7 +1657,10 @@ class InMemoryExternalEffectRepository(ExternalEffectRepository):
             approved_at=public_datetime(utcnow()),
             locked_by="",
             locked_at="",
+            lease_token="",
+            lease_expires_at="",
             next_retry_at=public_datetime(utcnow()),
+            reconciliation_required=False,
         )
 
     def record_attempt(self, *, job: ExternalEffectJob, status: str, adapter_mode: str, request_summary: dict[str, Any], response_summary: dict[str, Any], error_code: str = "", error_message: str = "") -> ExternalEffectAttempt:

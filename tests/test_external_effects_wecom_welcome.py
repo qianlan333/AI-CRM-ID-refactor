@@ -93,7 +93,7 @@ def test_wecom_welcome_disabled_execution_mode_blocks_real_send(monkeypatch) -> 
         adapter_registry=_registry(WeComWelcomeMessageAdapter(adapter_factory=lambda: fake)),
     ).run_due(batch_size=1, dry_run=False, effect_types=[WECOM_WELCOME_MESSAGE_SEND])
 
-    assert result["counts"]["failed_count"] == 1
+    assert result["counts"]["blocked_count"] == 1
     assert result["items"][0]["attempt"]["error_code"] == "shadow_only"
     assert result["real_external_call_executed"] is False
     assert fake.payloads == []
@@ -168,8 +168,8 @@ def test_channel_entry_welcome_fallback_private_message_preserves_exact_target(m
 
     result = ExternalEffectWorker(repo).dispatch_one(job["id"])
 
-    assert result["job"]["status"] == "succeeded"
-    assert result["attempt"]["status"] == "succeeded"
+    assert result["job"]["status"] == "simulated"
+    assert result["attempt"]["status"] == "simulated"
     assert result["attempt"]["request_summary_json"]["business_type"] == "channel_entry_welcome_fallback"
     assert result["attempt"]["request_summary_json"]["source"] == "channel_entry_welcome_fallback"
     assert calls[0]["payload"]["external_userids"] == ["wm_dynamic_new_contact"]
