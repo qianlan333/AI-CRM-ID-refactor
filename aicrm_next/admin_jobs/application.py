@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 from typing import Any
 
-from aicrm_next.message_archive.sync_service import execute_archive_sync
+from aicrm_next.admin_jobs_archive_sync_gateway import execute_archive_sync
 from aicrm_next.platform_foundation.legacy_cleanup.service import LegacyWebhookCleanupService
 from aicrm_next.shared.runtime_settings import runtime_setting
 

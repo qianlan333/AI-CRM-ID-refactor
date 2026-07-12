@@ -3,8 +3,8 @@ package: aicrm_next
 
 limits:
   max_contexts: 40
-  max_cross_context_edges: 191
-  max_cyclic_contexts: 19
+  max_cross_context_edges: 188
+  max_cyclic_contexts: 18
 
 allowed_cyclic_components:
   - id: legacy_cross_context_runtime_scc
@@ -25,7 +25,6 @@ allowed_cyclic_components:
       - identity_contact
       - integration_gateway
       - media_library
-      - message_archive
       - platform_foundation
       - public_product
       - questionnaire

@@ -111,6 +111,23 @@
   ],
   "scopes": [
     {
+      "name": "admin_jobs_archive_sync_gateway",
+      "paths": [
+        "aicrm_next/admin_jobs_archive_sync_gateway.py",
+        "tests/test_admin_jobs_archive_sync_gateway.py"
+      ],
+      "python_tests": [
+        "tests/test_admin_jobs_archive_sync_gateway.py",
+        "tests/test_archive_sync_next.py",
+        "tests/test_next_admin_jobs_native.py",
+        "tests/test_import_graph_guard.py",
+        "tests/test_select_test_scope.py"
+      ],
+      "needs_postgres": true,
+      "needs_full_ci": true,
+      "architecture_gate": "full"
+    },
+    {
       "name": "runtime_module_size_governance",
       "paths": [
         "tools/check_runtime_module_sizes.py",
