@@ -2,6 +2,15 @@
   "version": 1,
   "description": "Scoped CI routing manifest. Keep this file JSON-compatible so the selector can run before Python dependencies are installed.",
   "unmapped_path_message": "No CI test scope matched these changed files. Add or update docs/ci/test_scope_manifest.yml instead of falling back to full PR regression.",
+  "minimum_architecture_gate_rules": [
+    {
+      "paths": [
+        "aicrm_next/*.py",
+        "aicrm_next/**/*.py"
+      ],
+      "architecture_gate": "fast"
+    }
+  ],
   "high_risk_paths": [
     "requirements.txt",
     "requirements-dev.txt",

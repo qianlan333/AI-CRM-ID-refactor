@@ -45,6 +45,14 @@ def test_media_library_change_runs_small_no_pg_slice() -> None:
     assert result["needs_full_ci"] is False
 
 
+def test_every_runtime_python_change_runs_import_graph_architecture_gate() -> None:
+    result = _select("aicrm_next/media_library/variants.py")
+
+    assert result["matched_scopes"] == ["media_library"]
+    assert result["architecture_gate"] == "fast"
+    assert result["needs_full_ci"] is False
+
+
 def test_h5_wechat_pay_mobile_projection_test_selects_commerce_scope() -> None:
     result = _select("tests/test_h5_wechat_pay_mobile_projection.py")
 
