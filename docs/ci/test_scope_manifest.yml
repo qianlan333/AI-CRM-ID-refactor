@@ -111,6 +111,22 @@
   ],
   "scopes": [
     {
+      "name": "admin_read_model",
+      "paths": [
+        "aicrm_next/admin_read_model/**",
+        "aicrm_next/frontend_compat/admin_real_data.py",
+        "tests/test_admin_read_model_boundary.py",
+        "tests/test_admin_pages_real_data_binding.py"
+      ],
+      "python_tests": [
+        "tests/test_admin_read_model_boundary.py",
+        "tests/test_admin_pages_real_data_binding.py",
+        "tests/test_admin_read_pages_smoke.py"
+      ],
+      "needs_postgres": false,
+      "architecture_gate": "fast"
+    },
+    {
       "name": "commerce",
       "paths": [
         "aicrm_next/commerce/**",

@@ -67,6 +67,20 @@ def test_import_graph_governance_changes_force_mapped_full_ci() -> None:
     assert result["needs_full_ci"] is True
 
 
+def test_admin_read_model_runtime_files_have_a_permanent_ci_scope() -> None:
+    result = _select(
+        "aicrm_next/admin_read_model/application.py",
+        "aicrm_next/frontend_compat/admin_real_data.py",
+    )
+
+    assert "admin_read_model" in result["matched_scopes"]
+    assert result["unmatched_files"] == []
+    assert "tests/test_admin_read_model_boundary.py" in result["python_tests"]
+    assert "tests/test_admin_pages_real_data_binding.py" in result["python_tests"]
+    assert result["architecture_gate"] == "fast"
+    assert result["needs_full_ci"] is False
+
+
 def test_h5_wechat_pay_mobile_projection_test_selects_commerce_scope() -> None:
     result = _select("tests/test_h5_wechat_pay_mobile_projection.py")
 
