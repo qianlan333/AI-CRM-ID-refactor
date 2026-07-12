@@ -117,6 +117,11 @@ repositories:
       - crm_user_identity
   aicrm_next/ai_audience_ops/repository.py:
     capability_owner: aicrm_next.ai_audience_ops
+    non_literal_table_reads:
+      - ai_audience_package_version
+    non_literal_table_writes:
+      - ai_audience_package_dependency
+      - ai_audience_package_version
     table_reads:
       - ai_audience_member_current
       - ai_audience_member_event
@@ -339,6 +344,10 @@ repositories:
       - cloud_broadcast_plans
     non_literal_table_reads:
       - crm_user_identity
+    non_literal_table_writes:
+      - campaign_members
+      - campaign_steps
+      - campaigns
     non_table_relations:
       - customer_read_model_current
   aicrm_next/commerce/repo.py:

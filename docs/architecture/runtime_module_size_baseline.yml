@@ -2,24 +2,4 @@ schema_version: 1
 package: aicrm_next
 max_lines: 1500
 
-allowlisted_modules:
-  - path: aicrm_next/cloud_orchestrator/repository.py
-    max_lines: 2454
-    owner: cloud_orchestrator
-    reason: Existing PostgreSQL and in-memory plan repositories will be split by current repository responsibilities.
-    remove_by: "2026-08-31"
-  - path: aicrm_next/ai_audience_ops/repository.py
-    max_lines: 1847
-    owner: ai_audience_ops
-    reason: Existing audience persistence methods require a mechanical repository split.
-    remove_by: "2026-08-31"
-  - path: aicrm_next/automation_engine/group_ops/postgres_repo.py
-    max_lines: 1683
-    owner: automation_engine
-    reason: Existing group operations PostgreSQL methods require a use-case split.
-    remove_by: "2026-08-31"
-  - path: aicrm_next/commerce/api.py
-    max_lines: 1544
-    owner: commerce
-    reason: Existing route helpers and route handlers require separation without API changes.
-    remove_by: "2026-08-31"
+allowlisted_modules: []

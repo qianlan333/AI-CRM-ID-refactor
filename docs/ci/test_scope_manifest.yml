@@ -493,6 +493,24 @@
       "architecture_gate": "full"
     },
     {
+      "name": "cloud_plan_repository_split",
+      "paths": [
+        "aicrm_next/cloud_orchestrator/repository_legacy.py",
+        "aicrm_next/cloud_orchestrator/repository_memory.py"
+      ],
+      "python_tests": [
+        "tests/test_unionid_runtime_breakage_hotfix.py",
+        "tests/test_unionid_identity_refactor_schema.py",
+        "tests/test_ops_plan_broadcast_planner_consumer.py",
+        "tests/test_internal_events_broadcast_task_slice.py",
+        "tests/test_runtime_module_split_contract.py",
+        "tests/test_select_test_scope.py"
+      ],
+      "needs_postgres": true,
+      "needs_full_ci": true,
+      "architecture_gate": "full"
+    },
+    {
       "name": "cloud_plan_repository",
       "paths": [
         "aicrm_next/cloud_orchestrator/repository.py",

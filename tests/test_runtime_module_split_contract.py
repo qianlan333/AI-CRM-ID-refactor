@@ -2,6 +2,15 @@ from __future__ import annotations
 
 from aicrm_next.admin_config import application as admin_application
 from aicrm_next.admin_config import application_support as admin_support
+from aicrm_next.ai_audience_ops import repository as audience_repository
+from aicrm_next.ai_audience_ops import repository_packages as audience_package_repository
+from aicrm_next.automation_engine.group_ops import postgres_repo as group_ops_repository
+from aicrm_next.automation_engine.group_ops import postgres_repo_mapping as group_ops_mapping_repository
+from aicrm_next.cloud_orchestrator import repository as cloud_repository
+from aicrm_next.cloud_orchestrator import repository_legacy as cloud_legacy_repository
+from aicrm_next.cloud_orchestrator import repository_memory as cloud_memory_repository
+from aicrm_next.commerce import api as commerce_api
+from aicrm_next.commerce import api_support as commerce_api_support
 from aicrm_next.customer_read_model import application as customer_application
 from aicrm_next.customer_read_model import application_customer360_support as customer_application_support
 from aicrm_next.customer_read_model import repo as customer_repository
@@ -55,3 +64,27 @@ def test_customer_read_repository_facade_preserves_all_repository_variants() -> 
 def test_customer_application_facade_preserves_customer_360_helpers() -> None:
     assert customer_application._customer_360_identity is customer_application_support._customer_360_identity
     assert customer_application.GetCustomer360ProfileQuery.__module__ == customer_application.__name__
+
+
+def test_cloud_repository_facade_preserves_classes_and_legacy_mixin() -> None:
+    assert cloud_repository.InMemoryCloudPlanRepository is cloud_memory_repository.InMemoryCloudPlanRepository
+    assert cloud_legacy_repository.CloudLegacyPostgresRepositoryMixin in cloud_repository.PostgresCloudPlanRepository.__mro__
+    assert cloud_repository.PostgresCloudPlanRepository.__module__ == cloud_repository.__name__
+    assert callable(cloud_repository.build_cloud_plan_repository)
+
+
+def test_audience_repository_facade_preserves_sqlalchemy_class_and_package_mixin() -> None:
+    assert audience_package_repository.AudiencePackageRepositoryMixin in audience_repository.SQLAlchemyAudienceRepository.__mro__
+    assert audience_repository.SQLAlchemyAudienceRepository.__module__ == audience_repository.__name__
+    assert callable(audience_repository.build_audience_repository)
+
+
+def test_group_ops_repository_facade_preserves_class_and_mapping_mixin() -> None:
+    assert group_ops_mapping_repository.GroupOpsPostgresMappingMixin in group_ops_repository.PostgresGroupOpsRepository.__mro__
+    assert group_ops_repository.PostgresGroupOpsRepository.__module__ == group_ops_repository.__name__
+
+
+def test_commerce_api_facade_preserves_support_helpers_and_route_module() -> None:
+    assert commerce_api._payment_final_headers is commerce_api_support._payment_final_headers
+    assert commerce_api.list_products.__module__ == commerce_api.__name__
+    assert commerce_api.router.routes
