@@ -1,17 +1,20 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
-from enum import StrEnum
+from enum import Enum
 from types import MappingProxyType
 from typing import Any, Mapping
 
 
-class PrincipalType(StrEnum):
+class PrincipalType(str, Enum):
     HUMAN = "human"
     API_CLIENT = "api_client"
     SERVICE = "service"
     PUBLIC = "public"
     PROVIDER_CALLBACK = "provider_callback"
+
+    def __str__(self) -> str:
+        return self.value
 
 
 def _values(values: tuple[str, ...] | list[str] | set[str]) -> tuple[str, ...]:
