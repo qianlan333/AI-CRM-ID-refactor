@@ -10,6 +10,8 @@ from dataclasses import dataclass
 TOKEN_PREFIX = "at_"
 REFRESH_PREFIX = "rt_"
 CODE_PREFIX = "ac_"
+SESSION_PREFIX = "ss_"
+CSRF_PREFIX = "csrf_"
 
 
 @dataclass(frozen=True)
@@ -34,7 +36,7 @@ class CredentialHasher:
         self._pepper = raw
 
     def issue(self, prefix: str = TOKEN_PREFIX, *, entropy_bytes: int = 32) -> IssuedCredential:
-        if prefix not in {TOKEN_PREFIX, REFRESH_PREFIX, CODE_PREFIX}:
+        if prefix not in {TOKEN_PREFIX, REFRESH_PREFIX, CODE_PREFIX, SESSION_PREFIX, CSRF_PREFIX}:
             raise ValueError("unsupported opaque credential prefix")
         if entropy_bytes < 32:
             raise ValueError("opaque credentials require at least 256 bits of entropy")

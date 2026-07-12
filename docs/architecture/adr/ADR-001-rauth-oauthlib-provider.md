@@ -22,6 +22,9 @@ payment-provider protocols as integration concerns.
 ## Decision
 
 Pin `oauthlib==3.3.1` as the OAuth 2.0/OIDC provider protocol engine.
+Pin `PyJWT[crypto]==2.13.0` for asymmetric OIDC ID-token and registered
+client-assertion JWS validation; algorithm allow-lists and required claims are
+always supplied explicitly.
 
 OAuthLib is framework-independent and its provider endpoints cover RFC 6749
 authorization and token handling, RFC 7009 revocation, RFC 7636 PKCE, RFC 7662

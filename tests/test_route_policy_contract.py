@@ -30,7 +30,7 @@ def test_route_policy_inventory_covers_every_runtime_business_route() -> None:
     index = RoutePolicyIndex.from_manifest(MANIFEST)
     inventory = collect_route_inventory(app)
 
-    assert len(index) == len(inventory) == 679
+    assert len(index) == len(inventory) == 687
     for route in app.routes:
         if not isinstance(route, APIRoute) or route.path in FASTAPI_BUILTIN_ROUTE_PATHS:
             continue
@@ -78,7 +78,7 @@ def test_known_unsafe_routes_have_explicit_deny_by_default_policies() -> None:
         "POST",
         {
             "audience": "admin",
-            "auth_scheme": "admin_session",
+            "auth_scheme": "oauth_session",
             "capability": "manage_group_ops",
             "csrf": True,
         },
@@ -95,14 +95,14 @@ def test_known_unsafe_routes_have_explicit_deny_by_default_policies() -> None:
     )
 
 
-def test_admin_session_writes_always_require_csrf() -> None:
+def test_oauth_session_writes_always_require_csrf() -> None:
     entries = load_route_manifest(MANIFEST)
     unsafe_methods = {"POST", "PUT", "PATCH", "DELETE"}
 
     violations = [
         f"{','.join(entry['methods'])} {entry['path']}"
         for entry in entries
-        if entry["auth_scheme"] == "admin_session" and unsafe_methods.intersection(entry["methods"]) and entry["csrf"] is not True
+        if entry["auth_scheme"] == "oauth_session" and unsafe_methods.intersection(entry["methods"]) and entry["csrf"] is not True
     ]
 
     assert violations == []

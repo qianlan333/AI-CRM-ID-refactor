@@ -75,10 +75,9 @@ class AuthContext:
         if scope and str(scope).strip() not in self.scopes:
             return False
         requested = dict(resource or {})
-        return all(
-            key in self.resource_constraints and _constraint_allows(self.resource_constraints[key], value)
-            for key, value in requested.items()
-        )
+        if not self.resource_constraints:
+            return True
+        return all(key in requested and _constraint_allows(allowed, requested[key]) for key, allowed in self.resource_constraints.items())
 
 
 def _constraint_allows(allowed: Any, requested: Any) -> bool:

@@ -5,6 +5,7 @@ from werkzeug.security import generate_password_hash
 
 from aicrm_next.admin_auth.service import CSRF_COOKIE, SESSION_COOKIE
 from aicrm_next.main import create_app
+from tests.admin_auth_test_helpers import install_admin_auth_service
 
 
 def _client(monkeypatch, *, enabled: bool = False) -> TestClient:
@@ -19,7 +20,9 @@ def _client(monkeypatch, *, enabled: bool = False) -> TestClient:
         monkeypatch.delenv("ADMIN_BREAK_GLASS_LOGIN_ENABLED", raising=False)
         monkeypatch.delenv("ADMIN_BREAK_GLASS_USERNAME", raising=False)
         monkeypatch.delenv("ADMIN_BREAK_GLASS_PASSWORD_HASH", raising=False)
-    return TestClient(create_app(), raise_server_exceptions=False)
+    client = TestClient(create_app(), raise_server_exceptions=False)
+    install_admin_auth_service(client)
+    return client
 
 
 def test_invalid_or_disabled_break_glass_login_is_controlled(monkeypatch) -> None:

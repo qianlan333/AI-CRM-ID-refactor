@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from aicrm_next.shared.db_session import get_session_factory
 
 from .context import PrincipalType
+from .models import AuthSessionRecord, AuthorizationCodeRecord, ClientKeyRecord, OAuthClientRecord
 from .service import AccessTokenRecord, ClientGrant, RefreshTokenRecord
 
 
@@ -60,6 +61,318 @@ class PostgresAuthPlatformRepository:
                 .first()
             )
         return _client_grant(dict(row)) if row else None
+
+    def upsert_principal(
+        self,
+        *,
+        principal_id: str,
+        principal_type: PrincipalType,
+        subject: str,
+        tenant_id: str,
+        display_name: str,
+        session_version: int = 1,
+    ) -> None:
+        with self._session_factory.begin() as session:
+            session.execute(
+                text(
+                    """
+                    INSERT INTO auth_principals (
+                        principal_id, principal_type, tenant_id, subject,
+                        display_name, status, session_version
+                    ) VALUES (
+                        :principal_id, :principal_type, :tenant_id, :subject,
+                        :display_name, 'active', :session_version
+                    )
+                    ON CONFLICT (principal_id) DO UPDATE SET
+                        display_name = EXCLUDED.display_name,
+                        session_version = EXCLUDED.session_version,
+                        status = 'active', updated_at = CURRENT_TIMESTAMP
+                    WHERE auth_principals.principal_type = EXCLUDED.principal_type
+                      AND auth_principals.tenant_id = EXCLUDED.tenant_id
+                      AND auth_principals.subject = EXCLUDED.subject
+                    """
+                ),
+                {
+                    "principal_id": principal_id,
+                    "principal_type": principal_type.value,
+                    "tenant_id": tenant_id,
+                    "subject": subject,
+                    "display_name": display_name,
+                    "session_version": session_version,
+                },
+            )
+
+    def oauth_client(self, client_id: str) -> OAuthClientRecord | None:
+        with self._session_factory() as session:
+            row = (
+                session.execute(
+                    text(
+                        """
+                        SELECT c.client_id, c.client_type, c.client_secret_hash,
+                               c.token_endpoint_auth_method, c.redirect_uris_json,
+                               c.audiences_json, c.scopes_json,
+                               c.capabilities_json, c.resource_constraints_json,
+                               c.sender_constraint_type, c.status,
+                               p.principal_id, p.principal_type, p.subject,
+                               p.tenant_id
+                        FROM auth_clients c
+                        JOIN auth_principals p ON p.principal_id = c.principal_id
+                        WHERE c.client_id = :client_id
+                          AND p.status = 'active'
+                        """
+                    ),
+                    {"client_id": str(client_id or "").strip()},
+                )
+                .mappings()
+                .first()
+            )
+        return _oauth_client(dict(row)) if row else None
+
+    def insert_authorization_code(self, code: AuthorizationCodeRecord) -> None:
+        with self._session_factory.begin() as session:
+            session.execute(
+                text(
+                    """
+                    INSERT INTO auth_authorization_codes (
+                        code_hash, principal_id, client_id, redirect_uri,
+                        audience, scopes_json, code_challenge,
+                        code_challenge_method, nonce, expires_at
+                    ) VALUES (
+                        :code_hash, :principal_id, :client_id, :redirect_uri,
+                        :audience, CAST(:scopes_json AS JSONB), :code_challenge,
+                        :code_challenge_method, :nonce, :expires_at
+                    )
+                    """
+                ),
+                {
+                    "code_hash": code.code_hash,
+                    "principal_id": code.principal_id,
+                    "client_id": code.client_id,
+                    "redirect_uri": code.redirect_uri,
+                    "audience": code.audience,
+                    "scopes_json": _json_text(list(code.scopes)),
+                    "code_challenge": code.code_challenge,
+                    "code_challenge_method": code.code_challenge_method,
+                    "nonce": code.nonce,
+                    "expires_at": code.expires_at,
+                },
+            )
+
+    def authorization_code_by_hash(self, code_hash: str) -> AuthorizationCodeRecord | None:
+        with self._session_factory() as session:
+            row = (
+                session.execute(
+                    text(
+                        """
+                        SELECT c.code_hash, c.principal_id, p.principal_type,
+                               p.subject, p.tenant_id, c.client_id,
+                               c.redirect_uri, c.audience, c.scopes_json,
+                               c.code_challenge, c.code_challenge_method,
+                               c.nonce, c.expires_at, c.consumed_at
+                        FROM auth_authorization_codes c
+                        JOIN auth_principals p ON p.principal_id = c.principal_id
+                        WHERE c.code_hash = :code_hash AND p.status = 'active'
+                        """
+                    ),
+                    {"code_hash": str(code_hash or "").strip()},
+                )
+                .mappings()
+                .first()
+            )
+        return _authorization_code(dict(row)) if row else None
+
+    def consume_authorization_code(self, code_hash: str, *, consumed_at: datetime) -> bool:
+        with self._session_factory.begin() as session:
+            result = session.execute(
+                text(
+                    """
+                    UPDATE auth_authorization_codes
+                    SET consumed_at = :consumed_at
+                    WHERE code_hash = :code_hash AND consumed_at IS NULL
+                      AND expires_at > :consumed_at
+                    """
+                ),
+                {"code_hash": str(code_hash or "").strip(), "consumed_at": consumed_at},
+            )
+            return bool(result.rowcount)
+
+    def client_key(self, client_id: str, key_id: str) -> ClientKeyRecord | None:
+        with self._session_factory() as session:
+            row = (
+                session.execute(
+                    text(
+                        """
+                        SELECT client_id, key_id, algorithm, public_jwk_json,
+                               thumbprint, status, not_before, expires_at
+                        FROM auth_client_keys
+                        WHERE client_id = :client_id AND key_id = :key_id
+                        """
+                    ),
+                    {"client_id": client_id, "key_id": key_id},
+                )
+                .mappings()
+                .first()
+            )
+        return _client_key(dict(row)) if row else None
+
+    def register_client_public_key(
+        self,
+        *,
+        client_id: str,
+        key_id: str,
+        algorithm: str,
+        public_jwk: dict[str, Any],
+        thumbprint: str,
+        not_before: datetime | None = None,
+        expires_at: datetime | None = None,
+    ) -> None:
+        with self._session_factory.begin() as session:
+            session.execute(
+                text(
+                    """
+                    INSERT INTO auth_client_keys (
+                        client_id, key_id, algorithm, public_jwk_json,
+                        thumbprint, status, not_before, expires_at
+                    ) VALUES (
+                        :client_id, :key_id, :algorithm,
+                        CAST(:public_jwk_json AS JSONB), :thumbprint, 'active',
+                        :not_before, :expires_at
+                    )
+                    ON CONFLICT (client_id, key_id) DO UPDATE SET
+                        algorithm = EXCLUDED.algorithm,
+                        public_jwk_json = EXCLUDED.public_jwk_json,
+                        thumbprint = EXCLUDED.thumbprint,
+                        status = 'active',
+                        not_before = EXCLUDED.not_before,
+                        expires_at = EXCLUDED.expires_at
+                    """
+                ),
+                {
+                    "client_id": client_id,
+                    "key_id": key_id,
+                    "algorithm": algorithm,
+                    "public_jwk_json": _json_text(public_jwk),
+                    "thumbprint": thumbprint,
+                    "not_before": not_before,
+                    "expires_at": expires_at,
+                },
+            )
+
+    def consume_replay_nonce(
+        self,
+        *,
+        client_id: str,
+        nonce_hash: str,
+        purpose: str,
+        expires_at: datetime,
+    ) -> bool:
+        with self._session_factory.begin() as session:
+            result = session.execute(
+                text(
+                    """
+                    INSERT INTO auth_replay_nonces (
+                        client_id, nonce_hash, purpose, expires_at
+                    ) VALUES (:client_id, :nonce_hash, :purpose, :expires_at)
+                    ON CONFLICT (client_id, nonce_hash, purpose) DO NOTHING
+                    """
+                ),
+                {
+                    "client_id": client_id,
+                    "nonce_hash": nonce_hash,
+                    "purpose": purpose,
+                    "expires_at": expires_at,
+                },
+            )
+            return bool(result.rowcount)
+
+    def insert_auth_session(self, session_record: AuthSessionRecord) -> None:
+        with self._session_factory.begin() as session:
+            session.execute(
+                text(
+                    """
+                    INSERT INTO auth_sessions (
+                        session_id, principal_id, client_id,
+                        session_secret_hash, csrf_token_hash, session_version,
+                        audience, scopes_json, capabilities_json,
+                        resource_constraints_json, actor, acr, auth_time,
+                        expires_at
+                    ) VALUES (
+                        :session_id, :principal_id, :client_id,
+                        :session_secret_hash, :csrf_token_hash, :session_version,
+                        :audience, CAST(:scopes_json AS JSONB),
+                        CAST(:capabilities_json AS JSONB),
+                        CAST(:resource_constraints_json AS JSONB), :actor, :acr,
+                        :auth_time, :expires_at
+                    )
+                    """
+                ),
+                {
+                    "session_id": session_record.session_id,
+                    "principal_id": session_record.principal_id,
+                    "client_id": session_record.client_id,
+                    "session_secret_hash": session_record.session_secret_hash,
+                    "csrf_token_hash": session_record.csrf_token_hash,
+                    "session_version": session_record.session_version,
+                    "audience": session_record.audience,
+                    "scopes_json": _json_text(list(session_record.scopes)),
+                    "capabilities_json": _json_text(list(session_record.capabilities)),
+                    "resource_constraints_json": _json_text(session_record.resource_constraints),
+                    "actor": session_record.actor,
+                    "acr": session_record.acr,
+                    "auth_time": session_record.auth_time,
+                    "expires_at": session_record.expires_at,
+                },
+            )
+
+    def auth_session_by_hash(self, session_hash: str) -> AuthSessionRecord | None:
+        with self._session_factory.begin() as session:
+            row = (
+                session.execute(
+                    text(
+                        """
+                        SELECT s.session_id, s.session_secret_hash,
+                               s.csrf_token_hash, s.principal_id,
+                               p.principal_type, p.subject, p.tenant_id,
+                               s.client_id, s.session_version, s.audience,
+                               s.scopes_json, s.capabilities_json,
+                               s.resource_constraints_json, s.actor, s.acr,
+                               s.auth_time, s.expires_at, s.revoked_at,
+                               s.revoked_reason
+                        FROM auth_sessions s
+                        JOIN auth_principals p ON p.principal_id = s.principal_id
+                        JOIN auth_clients c ON c.client_id = s.client_id
+                        WHERE s.session_secret_hash = :session_hash
+                          AND p.status = 'active' AND c.status = 'active'
+                          AND p.session_version = s.session_version
+                        FOR UPDATE OF s
+                        """
+                    ),
+                    {"session_hash": str(session_hash or "").strip()},
+                )
+                .mappings()
+                .first()
+            )
+            if row is not None:
+                session.execute(
+                    text("UPDATE auth_sessions SET last_seen_at = CURRENT_TIMESTAMP WHERE session_id = :session_id"),
+                    {"session_id": row["session_id"]},
+                )
+        return _auth_session(dict(row)) if row else None
+
+    def revoke_auth_session(self, session_hash: str, *, revoked_at: datetime, reason: str) -> bool:
+        with self._session_factory.begin() as session:
+            result = session.execute(
+                text(
+                    """
+                    UPDATE auth_sessions
+                    SET revoked_at = COALESCE(revoked_at, :revoked_at),
+                        revoked_reason = CASE WHEN revoked_reason = '' THEN :reason ELSE revoked_reason END
+                    WHERE session_secret_hash = :session_hash
+                    """
+                ),
+                {"session_hash": session_hash, "revoked_at": revoked_at, "reason": reason},
+            )
+            return bool(result.rowcount)
 
     def insert_access_token(self, token: AccessTokenRecord) -> None:
         with self._session_factory.begin() as session:
@@ -241,6 +554,46 @@ class PostgresAuthPlatformRepository:
             )
             return "rotated"
 
+    def revoke_refresh_family_by_hash(self, token_hash: str, *, revoked_at: datetime) -> bool:
+        with self._session_factory.begin() as session:
+            row = (
+                session.execute(
+                    text(
+                        """
+                        SELECT family_id FROM auth_tokens
+                        WHERE token_hash = :token_hash AND token_type = 'refresh'
+                        FOR UPDATE
+                        """
+                    ),
+                    {"token_hash": str(token_hash or "").strip()},
+                )
+                .mappings()
+                .first()
+            )
+            if row is None:
+                return False
+            session.execute(
+                text(
+                    """
+                    UPDATE auth_token_families
+                    SET status = 'revoked', revoked_at = COALESCE(revoked_at, :revoked_at),
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE family_id = :family_id
+                    """
+                ),
+                {"family_id": row["family_id"], "revoked_at": revoked_at},
+            )
+            session.execute(
+                text(
+                    """
+                    UPDATE auth_tokens SET revoked_at = COALESCE(revoked_at, :revoked_at)
+                    WHERE family_id = :family_id
+                    """
+                ),
+                {"family_id": row["family_id"], "revoked_at": revoked_at},
+            )
+            return True
+
     def bootstrap_principal_and_client(
         self,
         *,
@@ -346,6 +699,82 @@ def _client_grant(row: dict[str, Any]) -> ClientGrant:
         resource_constraints=dict(_json(row.get("resource_constraints_json"), {})),
         sender_constraint_type=str(row.get("sender_constraint_type") or ""),
         status=str(row.get("status") or ""),
+    )
+
+
+def _oauth_client(row: dict[str, Any]) -> OAuthClientRecord:
+    return OAuthClientRecord(
+        client_id=str(row["client_id"]),
+        principal_id=str(row["principal_id"]),
+        principal_type=PrincipalType(str(row["principal_type"])),
+        subject=str(row["subject"]),
+        tenant_id=str(row["tenant_id"]),
+        client_type=str(row["client_type"]),
+        client_secret_hash=str(row.get("client_secret_hash") or ""),
+        token_endpoint_auth_method=str(row["token_endpoint_auth_method"]),
+        redirect_uris=tuple(str(value) for value in _json(row.get("redirect_uris_json"), [])),
+        audiences=tuple(str(value) for value in _json(row.get("audiences_json"), [])),
+        scopes=tuple(str(value) for value in _json(row.get("scopes_json"), [])),
+        capabilities=tuple(str(value) for value in _json(row.get("capabilities_json"), [])),
+        resource_constraints=dict(_json(row.get("resource_constraints_json"), {})),
+        sender_constraint_type=str(row.get("sender_constraint_type") or ""),
+        status=str(row.get("status") or ""),
+    )
+
+
+def _authorization_code(row: dict[str, Any]) -> AuthorizationCodeRecord:
+    return AuthorizationCodeRecord(
+        code_hash=str(row["code_hash"]),
+        principal_id=str(row["principal_id"]),
+        principal_type=PrincipalType(str(row["principal_type"])),
+        subject=str(row["subject"]),
+        tenant_id=str(row["tenant_id"]),
+        client_id=str(row["client_id"]),
+        redirect_uri=str(row["redirect_uri"]),
+        audience=str(row["audience"]),
+        scopes=tuple(str(value) for value in _json(row.get("scopes_json"), [])),
+        code_challenge=str(row["code_challenge"]),
+        code_challenge_method=str(row["code_challenge_method"]),
+        nonce=str(row.get("nonce") or ""),
+        expires_at=row["expires_at"],
+        consumed_at=row.get("consumed_at"),
+    )
+
+
+def _client_key(row: dict[str, Any]) -> ClientKeyRecord:
+    return ClientKeyRecord(
+        client_id=str(row["client_id"]),
+        key_id=str(row["key_id"]),
+        algorithm=str(row["algorithm"]),
+        public_jwk=dict(_json(row.get("public_jwk_json"), {})),
+        thumbprint=str(row["thumbprint"]),
+        status=str(row["status"]),
+        not_before=row.get("not_before"),
+        expires_at=row.get("expires_at"),
+    )
+
+
+def _auth_session(row: dict[str, Any]) -> AuthSessionRecord:
+    return AuthSessionRecord(
+        session_id=str(row["session_id"]),
+        session_secret_hash=str(row["session_secret_hash"]),
+        csrf_token_hash=str(row["csrf_token_hash"]),
+        principal_id=str(row["principal_id"]),
+        principal_type=PrincipalType(str(row["principal_type"])),
+        subject=str(row["subject"]),
+        tenant_id=str(row["tenant_id"]),
+        client_id=str(row["client_id"]),
+        session_version=int(row["session_version"]),
+        audience=str(row["audience"]),
+        scopes=tuple(str(value) for value in _json(row.get("scopes_json"), [])),
+        capabilities=tuple(str(value) for value in _json(row.get("capabilities_json"), [])),
+        resource_constraints=dict(_json(row.get("resource_constraints_json"), {})),
+        actor=str(row.get("actor") or ""),
+        acr=str(row.get("acr") or ""),
+        auth_time=row["auth_time"],
+        expires_at=row["expires_at"],
+        revoked_at=row.get("revoked_at"),
+        revoked_reason=str(row.get("revoked_reason") or ""),
     )
 
 

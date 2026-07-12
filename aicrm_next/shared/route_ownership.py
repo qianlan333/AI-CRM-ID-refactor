@@ -34,9 +34,10 @@ ALLOWED_LAYERS = {"api", "admin_page", "h5", "webhook", "static", "integration"}
 ALLOWED_DATA_SOURCES = {"read_model", "command", "external_adapter", "static"}
 ALLOWED_AUDIENCES = {"admin", "sidebar", "public_h5", "callback", "internal_worker", "external_integration"}
 ALLOWED_AUTH_SCHEMES = {
-    "admin_session",
     "internal_bearer",
+    "oauth_session",
     "oauth_state",
+    "oauth_protocol",
     "path_token",
     "provider_signature",
     "public",
@@ -332,8 +333,8 @@ def _validate_manifest_entry(entry: dict[str, Any], index: int) -> list[str]:
         errors.append(_format_error(index, key, "invalid_requires_auth", "`requires_auth` must be true or false."))
     if not isinstance(entry.get("csrf"), bool):
         errors.append(_format_error(index, key, "invalid_csrf", "`csrf` must be true or false."))
-    if entry.get("csrf") is True and entry.get("auth_scheme") != "admin_session":
-        errors.append(_format_error(index, key, "invalid_csrf_auth_scheme", "CSRF can only be required for admin_session routes."))
+    if entry.get("csrf") is True and entry.get("auth_scheme") != "oauth_session":
+        errors.append(_format_error(index, key, "invalid_csrf_auth_scheme", "CSRF can only be required for oauth_session routes."))
     if entry.get("csrf") is True and not (set(normalize_methods(entry.get("methods") or ())) - {"GET", "HEAD", "OPTIONS", "TRACE"}):
         errors.append(_format_error(index, key, "csrf_on_safe_method", "CSRF must only be required for unsafe HTTP methods."))
     expected_requires_auth = entry.get("auth_scheme") not in {"public", "oauth_state", "path_token", "provider_signature"}

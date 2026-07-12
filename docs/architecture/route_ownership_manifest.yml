@@ -68,7 +68,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -87,7 +87,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -106,7 +106,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -125,7 +125,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -144,7 +144,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -163,7 +163,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -182,7 +182,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -201,7 +201,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_operations
   access_scope: global
   pii_level: internal
@@ -220,7 +220,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_operations
   access_scope: global
   pii_level: internal
@@ -239,7 +239,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -258,7 +258,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -277,7 +277,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -296,7 +296,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -315,7 +315,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_operations
   access_scope: global
   pii_level: internal
@@ -334,7 +334,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_operations
   access_scope: global
   pii_level: internal
@@ -353,7 +353,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_operations
   access_scope: global
   pii_level: internal
@@ -372,7 +372,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_operations
   access_scope: global
   pii_level: internal
@@ -391,7 +391,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -429,7 +429,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_operations
   access_scope: global
   pii_level: internal
@@ -448,7 +448,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -467,7 +467,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -486,7 +486,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_operations
   access_scope: global
   pii_level: internal
@@ -505,7 +505,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_operations
   access_scope: global
   pii_level: internal
@@ -524,7 +524,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -543,7 +543,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_operations
   access_scope: global
   pii_level: internal
@@ -562,7 +562,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_operations
   access_scope: global
   pii_level: internal
@@ -581,7 +581,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_operations
   access_scope: global
   pii_level: internal
@@ -600,7 +600,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_operations
   access_scope: global
   pii_level: internal
@@ -619,7 +619,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -638,7 +638,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -657,7 +657,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -676,7 +676,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_operations
   access_scope: global
   pii_level: internal
@@ -695,7 +695,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_operations
   access_scope: global
   pii_level: internal
@@ -714,7 +714,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -733,7 +733,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -752,7 +752,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_operations
   access_scope: global
   pii_level: internal
@@ -771,7 +771,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_operations
   access_scope: global
   pii_level: internal
@@ -790,7 +790,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_operations
   access_scope: global
   pii_level: internal
@@ -809,7 +809,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -828,7 +828,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -847,7 +847,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -866,7 +866,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -885,7 +885,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -904,7 +904,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -923,7 +923,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_operations
   access_scope: global
   pii_level: internal
@@ -942,7 +942,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_operations
   access_scope: global
   pii_level: internal
@@ -1056,7 +1056,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -1075,7 +1075,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -1094,7 +1094,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -1113,7 +1113,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_config
   access_scope: global
   pii_level: internal
@@ -1132,7 +1132,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_config
   access_scope: global
   pii_level: internal
@@ -1151,7 +1151,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_config
   access_scope: global
   pii_level: internal
@@ -1170,7 +1170,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_config
   access_scope: global
   pii_level: internal
@@ -1189,7 +1189,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_config
   access_scope: global
   pii_level: internal
@@ -1208,7 +1208,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_config
   access_scope: global
   pii_level: internal
@@ -1227,7 +1227,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_config
   access_scope: global
   pii_level: internal
@@ -1246,7 +1246,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_config
   access_scope: global
   pii_level: internal
@@ -1265,7 +1265,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_config
   access_scope: global
   pii_level: internal
@@ -1284,7 +1284,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_config
   access_scope: global
   pii_level: internal
@@ -1303,7 +1303,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_config
   access_scope: global
   pii_level: internal
@@ -1322,7 +1322,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_config
   access_scope: global
   pii_level: internal
@@ -1341,7 +1341,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_config
   access_scope: global
   pii_level: internal
@@ -1360,7 +1360,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_config
   access_scope: global
   pii_level: internal
@@ -1379,7 +1379,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_config
   access_scope: global
   pii_level: internal
@@ -1398,7 +1398,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_config
   access_scope: global
   pii_level: internal
@@ -1417,7 +1417,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_config
   access_scope: global
   pii_level: internal
@@ -1436,7 +1436,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_config
   access_scope: global
   pii_level: internal
@@ -1455,7 +1455,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_config
   access_scope: global
   pii_level: internal
@@ -1474,7 +1474,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_config
   access_scope: global
   pii_level: internal
@@ -1493,7 +1493,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_config
   access_scope: global
   pii_level: internal
@@ -1512,7 +1512,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_config
   access_scope: global
   pii_level: internal
@@ -1531,7 +1531,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_config
   access_scope: global
   pii_level: internal
@@ -1550,7 +1550,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_config
   access_scope: global
   pii_level: internal
@@ -1569,7 +1569,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_config
   access_scope: global
   pii_level: internal
@@ -1588,7 +1588,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_config
   access_scope: global
   pii_level: internal
@@ -1607,7 +1607,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_config
   access_scope: global
   pii_level: internal
@@ -1626,7 +1626,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_config
   access_scope: global
   pii_level: internal
@@ -1645,7 +1645,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_config
   access_scope: global
   pii_level: internal
@@ -1664,7 +1664,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_config
   access_scope: global
   pii_level: internal
@@ -1683,7 +1683,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_config
   access_scope: global
   pii_level: internal
@@ -1702,7 +1702,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_config
   access_scope: global
   pii_level: internal
@@ -1721,7 +1721,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_admin
   access_scope: global
   pii_level: internal
@@ -1740,7 +1740,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_admin
   access_scope: global
   pii_level: internal
@@ -1759,7 +1759,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_config
   access_scope: global
   pii_level: internal
@@ -1778,7 +1778,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_config
   access_scope: global
   pii_level: internal
@@ -1797,7 +1797,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_config
   access_scope: global
   pii_level: internal
@@ -1817,7 +1817,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_operations
   access_scope: global
   pii_level: sensitive
@@ -1836,7 +1836,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -1855,7 +1855,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_operations
   access_scope: global
   pii_level: internal
@@ -1914,7 +1914,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -1933,7 +1933,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -1952,7 +1952,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_operations
   access_scope: global
   pii_level: internal
@@ -1971,7 +1971,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_operations
   access_scope: global
   pii_level: internal
@@ -1990,7 +1990,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_operations
   access_scope: global
   pii_level: internal
@@ -2010,7 +2010,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_automation
   access_scope: global
   pii_level: sensitive
@@ -2031,7 +2031,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_automation
   access_scope: global
   pii_level: sensitive
@@ -2050,7 +2050,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_automation
   access_scope: global
   pii_level: sensitive
@@ -2069,7 +2069,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -2088,7 +2088,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_automation
   access_scope: global
   pii_level: internal
@@ -2107,7 +2107,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -2126,7 +2126,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_automation
   access_scope: global
   pii_level: internal
@@ -2145,7 +2145,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -2164,7 +2164,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_automation
   access_scope: global
   pii_level: internal
@@ -2183,7 +2183,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -2202,7 +2202,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_automation
   access_scope: global
   pii_level: internal
@@ -2221,7 +2221,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -2240,7 +2240,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -2259,7 +2259,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -2278,7 +2278,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -2297,7 +2297,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -2316,7 +2316,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -2335,7 +2335,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -2354,7 +2354,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -2373,7 +2373,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -2392,7 +2392,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_operations
   access_scope: global
   pii_level: internal
@@ -2411,7 +2411,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -2430,7 +2430,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_operations
   access_scope: global
   pii_level: internal
@@ -2449,7 +2449,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -2468,7 +2468,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -2487,7 +2487,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_operations
   access_scope: global
   pii_level: internal
@@ -2506,7 +2506,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: sensitive
@@ -2525,7 +2525,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_operations
   access_scope: global
   pii_level: sensitive
@@ -2544,7 +2544,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -2563,7 +2563,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_operations
   access_scope: global
   pii_level: internal
@@ -2582,7 +2582,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_operations
   access_scope: global
   pii_level: internal
@@ -2602,7 +2602,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_operations
   access_scope: global
   pii_level: internal
@@ -3118,7 +3118,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: customer
@@ -3137,7 +3137,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: customer
@@ -3156,7 +3156,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: customer
@@ -3175,7 +3175,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: customer
@@ -3194,7 +3194,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: customer
@@ -3213,7 +3213,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_customer
   access_scope: global
   pii_level: customer
@@ -3232,7 +3232,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_customer
   access_scope: global
   pii_level: customer
@@ -3251,7 +3251,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_customer
   access_scope: global
   pii_level: customer
@@ -3272,7 +3272,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_customer
   access_scope: global
   pii_level: customer
@@ -3291,7 +3291,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_customer
   access_scope: global
   pii_level: customer
@@ -3312,7 +3312,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_customer
   access_scope: global
   pii_level: customer
@@ -3331,7 +3331,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -3350,7 +3350,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -3369,7 +3369,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -3388,7 +3388,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -3407,7 +3407,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -3426,7 +3426,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -3445,7 +3445,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -3464,7 +3464,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_automation
   access_scope: global
   pii_level: internal
@@ -3483,7 +3483,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -3502,7 +3502,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_automation
   access_scope: global
   pii_level: internal
@@ -3521,7 +3521,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -3540,7 +3540,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -3559,7 +3559,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -3578,7 +3578,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -3597,7 +3597,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -3616,7 +3616,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_automation
   access_scope: global
   pii_level: internal
@@ -3635,7 +3635,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_automation
   access_scope: global
   pii_level: internal
@@ -3654,7 +3654,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_automation
   access_scope: global
   pii_level: internal
@@ -3673,7 +3673,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_automation
   access_scope: global
   pii_level: internal
@@ -3692,7 +3692,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_automation
   access_scope: global
   pii_level: internal
@@ -3711,7 +3711,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_automation
   access_scope: global
   pii_level: internal
@@ -3730,7 +3730,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_automation
   access_scope: global
   pii_level: internal
@@ -3749,7 +3749,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_automation
   access_scope: global
   pii_level: internal
@@ -3768,7 +3768,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_automation
   access_scope: global
   pii_level: internal
@@ -3787,7 +3787,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_automation
   access_scope: global
   pii_level: internal
@@ -3806,7 +3806,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_automation
   access_scope: global
   pii_level: internal
@@ -3825,7 +3825,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_automation
   access_scope: global
   pii_level: internal
@@ -3844,7 +3844,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -3863,7 +3863,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -3882,7 +3882,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -3901,7 +3901,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -3920,7 +3920,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -3939,7 +3939,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_automation
   access_scope: global
   pii_level: internal
@@ -3958,7 +3958,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_automation
   access_scope: global
   pii_level: internal
@@ -3977,7 +3977,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_automation
   access_scope: global
   pii_level: internal
@@ -3996,7 +3996,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_automation
   access_scope: global
   pii_level: internal
@@ -4015,7 +4015,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_automation
   access_scope: global
   pii_level: sensitive
@@ -4034,7 +4034,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: external_integration
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: read_customer
   access_scope: global
   pii_level: sensitive
@@ -4053,7 +4053,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: external_integration
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: read_customer
   access_scope: global
   pii_level: sensitive
@@ -4072,7 +4072,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: external_integration
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: read_customer
   access_scope: global
   pii_level: sensitive
@@ -4091,7 +4091,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: external_integration
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: read_customer
   access_scope: global
   pii_level: sensitive
@@ -4110,7 +4110,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: external_integration
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: read_customer
   access_scope: global
   pii_level: sensitive
@@ -4129,7 +4129,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: external_integration
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: read_customer
   access_scope: global
   pii_level: sensitive
@@ -4148,7 +4148,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: external_integration
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: read_customer
   access_scope: global
   pii_level: sensitive
@@ -4452,7 +4452,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: sensitive
@@ -4471,7 +4471,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: sensitive
@@ -4490,7 +4490,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: sensitive
@@ -4509,7 +4509,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: sensitive
@@ -4528,7 +4528,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: sensitive
@@ -4547,7 +4547,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: read_customer
   access_scope: global
   pii_level: sensitive
@@ -4566,7 +4566,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: sensitive
@@ -4585,7 +4585,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: sensitive
@@ -4604,7 +4604,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: sensitive
@@ -4623,7 +4623,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_customer
   access_scope: global
   pii_level: customer
@@ -4642,7 +4642,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_customer
   access_scope: global
   pii_level: customer
@@ -4661,7 +4661,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: sensitive
@@ -4680,7 +4680,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: sensitive
@@ -4699,7 +4699,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: sensitive
@@ -4718,7 +4718,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: sensitive
@@ -4737,7 +4737,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: sensitive
@@ -4756,7 +4756,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: sensitive
@@ -4775,7 +4775,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: sensitive
@@ -4794,7 +4794,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: send_message
   access_scope: global
   pii_level: sensitive
@@ -4813,7 +4813,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: send_message
   access_scope: global
   pii_level: sensitive
@@ -4832,7 +4832,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: send_message
   access_scope: global
   pii_level: sensitive
@@ -4851,7 +4851,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: send_message
   access_scope: global
   pii_level: sensitive
@@ -4870,7 +4870,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: send_message
   access_scope: global
   pii_level: sensitive
@@ -4889,7 +4889,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: sensitive
@@ -4908,7 +4908,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: sensitive
@@ -4927,7 +4927,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: send_message
   access_scope: global
   pii_level: sensitive
@@ -4946,7 +4946,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: read_customer
   access_scope: global
   pii_level: sensitive
@@ -4965,7 +4965,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: sensitive
@@ -4984,7 +4984,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: sensitive
@@ -5060,7 +5060,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: read_customer
   access_scope: global
   pii_level: sensitive
@@ -5079,7 +5079,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: read_customer
   access_scope: global
   pii_level: sensitive
@@ -5212,7 +5212,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: external_integration
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: read_customer
   access_scope: global
   pii_level: sensitive
@@ -5232,7 +5232,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: external_integration
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: send_message
   access_scope: global
   pii_level: sensitive
@@ -5252,7 +5252,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: external_integration
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: send_message
   access_scope: global
   pii_level: sensitive
@@ -5272,7 +5272,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: external_integration
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: send_message
   access_scope: global
   pii_level: sensitive
@@ -5291,7 +5291,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: external_integration
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: read_customer
   access_scope: global
   pii_level: sensitive
@@ -5310,7 +5310,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: external_integration
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: read_customer
   access_scope: global
   pii_level: sensitive
@@ -5329,7 +5329,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: external_integration
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: read_customer
   access_scope: global
   pii_level: sensitive
@@ -5348,7 +5348,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: external_integration
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: read_customer
   access_scope: global
   pii_level: sensitive
@@ -5367,7 +5367,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: sensitive
@@ -5386,7 +5386,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: sensitive
@@ -5405,7 +5405,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: sensitive
@@ -5424,7 +5424,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: sensitive
@@ -5443,7 +5443,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: sensitive
@@ -5462,7 +5462,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: sensitive
@@ -5500,7 +5500,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: sensitive
@@ -5519,7 +5519,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: sensitive
@@ -5538,7 +5538,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_questionnaire
   access_scope: global
   pii_level: sensitive
@@ -5557,7 +5557,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: sensitive
@@ -5576,7 +5576,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: sensitive
@@ -5595,7 +5595,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: sensitive
@@ -5614,7 +5614,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: sensitive
@@ -5633,7 +5633,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: sensitive
@@ -5652,7 +5652,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_questionnaire
   access_scope: global
   pii_level: sensitive
@@ -5671,7 +5671,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_questionnaire
   access_scope: global
   pii_level: sensitive
@@ -5690,7 +5690,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_questionnaire
   access_scope: global
   pii_level: sensitive
@@ -5709,7 +5709,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_questionnaire
   access_scope: global
   pii_level: sensitive
@@ -5728,7 +5728,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_questionnaire
   access_scope: global
   pii_level: sensitive
@@ -5747,7 +5747,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_questionnaire
   access_scope: global
   pii_level: sensitive
@@ -5766,7 +5766,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_questionnaire
   access_scope: global
   pii_level: sensitive
@@ -5785,7 +5785,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: read_customer
   access_scope: global
   pii_level: sensitive
@@ -5804,7 +5804,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_questionnaire
   access_scope: global
   pii_level: sensitive
@@ -5823,7 +5823,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: sensitive
@@ -6070,7 +6070,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -6089,7 +6089,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -6108,7 +6108,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -6127,7 +6127,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -6146,7 +6146,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -6165,7 +6165,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -6184,7 +6184,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_operations
   access_scope: global
   pii_level: internal
@@ -6203,7 +6203,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -6222,7 +6222,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_operations
   access_scope: global
   pii_level: internal
@@ -6241,7 +6241,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -6260,7 +6260,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_operations
   access_scope: global
   pii_level: internal
@@ -6279,7 +6279,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_operations
   access_scope: global
   pii_level: internal
@@ -6298,7 +6298,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -6317,7 +6317,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -6336,7 +6336,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: read_customer
   access_scope: global
   pii_level: internal
@@ -6355,7 +6355,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_operations
   access_scope: global
   pii_level: internal
@@ -6374,7 +6374,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -6393,7 +6393,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_operations
   access_scope: global
   pii_level: internal
@@ -6412,7 +6412,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_operations
   access_scope: global
   pii_level: internal
@@ -6431,7 +6431,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_operations
   access_scope: global
   pii_level: internal
@@ -6640,7 +6640,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_operations
   access_scope: global
   pii_level: internal
@@ -6659,7 +6659,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_operations
   access_scope: global
   pii_level: internal
@@ -6811,7 +6811,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -6830,7 +6830,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -6849,7 +6849,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -6868,7 +6868,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -6887,7 +6887,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -6906,7 +6906,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -6925,7 +6925,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -6944,7 +6944,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_automation
   access_scope: global
   pii_level: internal
@@ -6963,7 +6963,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -6982,7 +6982,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_automation
   access_scope: global
   pii_level: internal
@@ -7001,7 +7001,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_automation
   access_scope: global
   pii_level: internal
@@ -7020,7 +7020,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_automation
   access_scope: global
   pii_level: internal
@@ -7039,7 +7039,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_automation
   access_scope: global
   pii_level: internal
@@ -7058,7 +7058,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_automation
   access_scope: global
   pii_level: internal
@@ -7077,7 +7077,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_automation
   access_scope: global
   pii_level: internal
@@ -7096,7 +7096,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_automation
   access_scope: global
   pii_level: internal
@@ -7115,7 +7115,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_automation
   access_scope: global
   pii_level: internal
@@ -7134,7 +7134,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -7153,7 +7153,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -7172,7 +7172,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_automation
   access_scope: global
   pii_level: internal
@@ -7191,7 +7191,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_automation
   access_scope: global
   pii_level: internal
@@ -7210,7 +7210,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -7229,7 +7229,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_automation
   access_scope: global
   pii_level: internal
@@ -7419,7 +7419,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -7438,7 +7438,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -7457,7 +7457,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -7476,7 +7476,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: customer
@@ -7495,7 +7495,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -7514,7 +7514,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -7533,7 +7533,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_group_ops
   access_scope: global
   pii_level: internal
@@ -7552,7 +7552,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -7571,7 +7571,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_group_ops
   access_scope: global
   pii_level: internal
@@ -7590,7 +7590,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_group_ops
   access_scope: global
   pii_level: internal
@@ -7609,7 +7609,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_group_ops
   access_scope: global
   pii_level: internal
@@ -7628,7 +7628,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_group_ops
   access_scope: global
   pii_level: internal
@@ -7647,7 +7647,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -7666,7 +7666,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_group_ops
   access_scope: global
   pii_level: internal
@@ -7685,7 +7685,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_group_ops
   access_scope: global
   pii_level: internal
@@ -7704,7 +7704,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -7723,7 +7723,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_group_ops
   access_scope: global
   pii_level: internal
@@ -7742,7 +7742,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_group_ops
   access_scope: global
   pii_level: internal
@@ -7761,7 +7761,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_group_ops
   access_scope: global
   pii_level: internal
@@ -7780,7 +7780,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -7799,7 +7799,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_group_ops
   access_scope: global
   pii_level: internal
@@ -7818,7 +7818,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_group_ops
   access_scope: global
   pii_level: internal
@@ -7837,7 +7837,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_group_ops
   access_scope: global
   pii_level: internal
@@ -7856,7 +7856,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_group_ops
   access_scope: global
   pii_level: internal
@@ -7875,7 +7875,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -7894,7 +7894,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_group_ops
   access_scope: global
   pii_level: internal
@@ -7913,7 +7913,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -7932,7 +7932,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_group_ops
   access_scope: global
   pii_level: internal
@@ -7951,7 +7951,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_group_ops
   access_scope: global
   pii_level: internal
@@ -7970,7 +7970,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -7989,7 +7989,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_group_ops
   access_scope: global
   pii_level: internal
@@ -8008,7 +8008,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_group_ops
   access_scope: global
   pii_level: internal
@@ -8027,7 +8027,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_group_ops
   access_scope: global
   pii_level: internal
@@ -8046,7 +8046,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_group_ops
   access_scope: global
   pii_level: internal
@@ -8065,7 +8065,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -8084,7 +8084,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_group_ops
   access_scope: global
   pii_level: internal
@@ -8103,7 +8103,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_group_ops
   access_scope: global
   pii_level: internal
@@ -8122,7 +8122,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -8217,7 +8217,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: external_integration
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: read_customer
   access_scope: global
   pii_level: sensitive
@@ -8236,7 +8236,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: external_integration
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: send_message
   access_scope: global
   pii_level: sensitive
@@ -8255,7 +8255,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: external_integration
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: read_customer
   access_scope: global
   pii_level: sensitive
@@ -8274,7 +8274,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: external_integration
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: send_message
   access_scope: global
   pii_level: sensitive
@@ -8293,7 +8293,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -8312,7 +8312,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -8331,7 +8331,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_automation
   access_scope: global
   pii_level: internal
@@ -8350,7 +8350,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -8369,7 +8369,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -8388,7 +8388,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -8407,7 +8407,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -8445,7 +8445,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: external_integration
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: read_customer
   access_scope: global
   pii_level: sensitive
@@ -8464,7 +8464,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: external_integration
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: read_customer
   access_scope: global
   pii_level: sensitive
@@ -8483,7 +8483,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: external_integration
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: read_customer
   access_scope: global
   pii_level: sensitive
@@ -8559,7 +8559,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: financial
@@ -8578,7 +8578,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: financial
@@ -8597,7 +8597,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: financial
@@ -8616,7 +8616,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: financial
@@ -8635,7 +8635,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: financial
@@ -8654,7 +8654,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: financial
@@ -8673,7 +8673,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: financial
@@ -8692,7 +8692,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: financial
@@ -8711,7 +8711,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: financial
@@ -8730,7 +8730,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: financial
@@ -8749,7 +8749,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -8768,7 +8768,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: financial
@@ -8787,7 +8787,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: financial
@@ -8806,7 +8806,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: financial
@@ -8825,7 +8825,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_commerce
   access_scope: global
   pii_level: financial
@@ -8844,7 +8844,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: financial
@@ -8863,7 +8863,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: financial
@@ -8882,7 +8882,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: financial
@@ -8901,7 +8901,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_commerce
   access_scope: global
   pii_level: financial
@@ -8920,7 +8920,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: refund
   access_scope: global
   pii_level: financial
@@ -8958,7 +8958,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: financial
@@ -8977,7 +8977,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: financial
@@ -8996,7 +8996,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: financial
@@ -9015,7 +9015,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: financial
@@ -9034,7 +9034,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: financial
@@ -9053,7 +9053,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_commerce
   access_scope: global
   pii_level: financial
@@ -9072,7 +9072,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: financial
@@ -9091,7 +9091,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_commerce
   access_scope: global
   pii_level: financial
@@ -9110,7 +9110,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_commerce
   access_scope: global
   pii_level: financial
@@ -9129,7 +9129,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_commerce
   access_scope: global
   pii_level: financial
@@ -9148,7 +9148,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_commerce
   access_scope: global
   pii_level: financial
@@ -9167,7 +9167,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_commerce
   access_scope: global
   pii_level: financial
@@ -9186,7 +9186,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_commerce
   access_scope: global
   pii_level: financial
@@ -9205,7 +9205,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_commerce
   access_scope: global
   pii_level: financial
@@ -9224,7 +9224,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: financial
@@ -9243,7 +9243,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_commerce
   access_scope: global
   pii_level: financial
@@ -9262,7 +9262,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: financial
@@ -9281,7 +9281,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: financial
@@ -9300,7 +9300,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_commerce
   access_scope: global
   pii_level: financial
@@ -9319,7 +9319,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_commerce
   access_scope: global
   pii_level: financial
@@ -9338,7 +9338,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_commerce
   access_scope: global
   pii_level: financial
@@ -9357,7 +9357,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_commerce
   access_scope: global
   pii_level: financial
@@ -9376,7 +9376,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_commerce
   access_scope: global
   pii_level: financial
@@ -9395,7 +9395,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: financial
@@ -9414,7 +9414,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: financial
@@ -9433,7 +9433,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: financial
@@ -9452,7 +9452,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_commerce
   access_scope: global
   pii_level: financial
@@ -9981,7 +9981,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: financial
@@ -10000,7 +10000,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: financial
@@ -10019,7 +10019,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: financial
@@ -10038,7 +10038,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: financial
@@ -10057,7 +10057,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: financial
@@ -10076,7 +10076,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: refund
   access_scope: global
   pii_level: financial
@@ -10095,7 +10095,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: sensitive
@@ -10114,7 +10114,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: sensitive
@@ -10133,7 +10133,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -10152,7 +10152,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_commerce
   access_scope: global
   pii_level: internal
@@ -10171,7 +10171,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_commerce
   access_scope: global
   pii_level: financial
@@ -10190,7 +10190,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -10209,7 +10209,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -10228,7 +10228,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_commerce
   access_scope: global
   pii_level: internal
@@ -10247,7 +10247,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: read_customer
   access_scope: global
   pii_level: internal
@@ -10266,7 +10266,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: financial
@@ -10285,7 +10285,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: financial
@@ -10304,7 +10304,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: financial
@@ -10327,7 +10327,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_commerce
   access_scope: global
   pii_level: financial
@@ -10346,7 +10346,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: financial
@@ -10365,7 +10365,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: financial
@@ -10384,7 +10384,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: financial
@@ -10403,7 +10403,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: financial
@@ -10422,7 +10422,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: financial
@@ -10445,7 +10445,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_commerce
   access_scope: global
   pii_level: financial
@@ -10548,7 +10548,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -10567,7 +10567,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -10586,7 +10586,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_content
   access_scope: global
   pii_level: internal
@@ -10605,7 +10605,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_content
   access_scope: global
   pii_level: internal
@@ -10624,7 +10624,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_content
   access_scope: global
   pii_level: internal
@@ -10643,7 +10643,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_content
   access_scope: global
   pii_level: internal
@@ -10662,7 +10662,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -10681,7 +10681,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -10700,7 +10700,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -10719,7 +10719,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_content
   access_scope: global
   pii_level: internal
@@ -10738,7 +10738,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_content
   access_scope: global
   pii_level: internal
@@ -10757,7 +10757,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -10776,7 +10776,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_content
   access_scope: global
   pii_level: internal
@@ -10795,7 +10795,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_content
   access_scope: global
   pii_level: internal
@@ -10814,7 +10814,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -10833,7 +10833,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_content
   access_scope: global
   pii_level: internal
@@ -10852,7 +10852,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_content
   access_scope: global
   pii_level: internal
@@ -10871,7 +10871,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -10890,7 +10890,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_content
   access_scope: global
   pii_level: internal
@@ -10909,7 +10909,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -10928,7 +10928,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_content
   access_scope: global
   pii_level: internal
@@ -10947,7 +10947,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_content
   access_scope: global
   pii_level: internal
@@ -10966,7 +10966,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_content
   access_scope: global
   pii_level: internal
@@ -10985,7 +10985,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -11004,7 +11004,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -11023,7 +11023,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -11042,7 +11042,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -11118,7 +11118,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_automation
   access_scope: global
   pii_level: internal
@@ -11593,7 +11593,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_content
   access_scope: global
   pii_level: internal
@@ -11612,7 +11612,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_content
   access_scope: global
   pii_level: internal
@@ -11631,7 +11631,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -11650,7 +11650,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -11669,7 +11669,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -11688,7 +11688,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_content
   access_scope: global
   pii_level: internal
@@ -11707,7 +11707,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -11726,7 +11726,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -11745,7 +11745,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -11764,7 +11764,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -11783,7 +11783,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -11802,7 +11802,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -11821,7 +11821,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -11840,7 +11840,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -11859,7 +11859,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -11878,7 +11878,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -11897,7 +11897,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -11916,7 +11916,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -11935,7 +11935,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -11954,7 +11954,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -11973,7 +11973,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -11992,7 +11992,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -12011,7 +12011,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -12030,7 +12030,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -12049,7 +12049,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -12068,7 +12068,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -12087,7 +12087,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -12106,7 +12106,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -12125,7 +12125,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_operations
   access_scope: global
   pii_level: internal
@@ -12144,7 +12144,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -12163,7 +12163,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: read_customer
   access_scope: global
   pii_level: sensitive
@@ -12182,7 +12182,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_operations
   access_scope: global
   pii_level: sensitive
@@ -12201,7 +12201,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -12220,7 +12220,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: sensitive
@@ -12239,7 +12239,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: sensitive
@@ -12258,7 +12258,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_operations
   access_scope: global
   pii_level: sensitive
@@ -12277,7 +12277,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -12296,7 +12296,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_operations
   access_scope: global
   pii_level: internal
@@ -12315,7 +12315,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -12334,7 +12334,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_operations
   access_scope: global
   pii_level: internal
@@ -12353,7 +12353,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_operations
   access_scope: global
   pii_level: internal
@@ -12372,7 +12372,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -12391,7 +12391,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -12410,7 +12410,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -12429,7 +12429,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_operations
   access_scope: global
   pii_level: internal
@@ -12448,7 +12448,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_operations
   access_scope: global
   pii_level: internal
@@ -12467,7 +12467,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_operations
   access_scope: global
   pii_level: internal
@@ -12486,7 +12486,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_operations
   access_scope: global
   pii_level: sensitive
@@ -12505,7 +12505,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_operations
   access_scope: global
   pii_level: internal
@@ -12524,7 +12524,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_operations
   access_scope: global
   pii_level: internal
@@ -12543,7 +12543,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: customer
@@ -12562,7 +12562,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_customer
   access_scope: global
   pii_level: customer
@@ -12581,7 +12581,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_customer
   access_scope: global
   pii_level: customer
@@ -12600,7 +12600,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_customer
   access_scope: global
   pii_level: customer
@@ -12619,7 +12619,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: customer
@@ -12638,7 +12638,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_customer
   access_scope: global
   pii_level: customer
@@ -12657,7 +12657,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: customer
@@ -12676,7 +12676,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: customer
@@ -12695,7 +12695,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_customer
   access_scope: global
   pii_level: customer
@@ -12714,7 +12714,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -12733,7 +12733,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -12752,7 +12752,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -12771,7 +12771,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_automation
   access_scope: global
   pii_level: internal
@@ -12790,7 +12790,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: admin_read
   access_scope: global
   pii_level: internal
@@ -12809,7 +12809,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_automation
   access_scope: global
   pii_level: internal
@@ -12828,7 +12828,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_automation
   access_scope: global
   pii_level: internal
@@ -12847,7 +12847,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_automation
   access_scope: global
   pii_level: internal
@@ -12866,7 +12866,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_automation
   access_scope: global
   pii_level: internal
@@ -12885,7 +12885,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_automation
   access_scope: global
   pii_level: internal
@@ -12904,7 +12904,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_automation
   access_scope: global
   pii_level: internal
@@ -12923,7 +12923,7 @@ routes:
   requires_auth: true
   rollback: previous_release
   audience: admin
-  auth_scheme: admin_session
+  auth_scheme: oauth_session
   capability: manage_automation
   access_scope: global
   pii_level: internal
@@ -12948,4 +12948,157 @@ routes:
   pii_level: none
   csrf: false
   rate_limit: integration
+  token_purpose: none
+- path: /.well-known/openid-configuration
+  methods:
+  - GET
+  route_name: openid_configuration
+  capability_owner: platform_foundation
+  runtime_owner: ai_crm_next
+  layer: integration
+  external_effects: none
+  data_source: read_model
+  requires_auth: false
+  rollback: previous_release
+  audience: external_integration
+  auth_scheme: public
+  capability: oauth_metadata
+  access_scope: public
+  pii_level: none
+  csrf: false
+  rate_limit: auth_strict
+  token_purpose: none
+- path: /.well-known/oauth-authorization-server
+  methods:
+  - GET
+  route_name: oauth_authorization_server_metadata
+  capability_owner: platform_foundation
+  runtime_owner: ai_crm_next
+  layer: integration
+  external_effects: none
+  data_source: read_model
+  requires_auth: false
+  rollback: previous_release
+  audience: external_integration
+  auth_scheme: public
+  capability: oauth_metadata
+  access_scope: public
+  pii_level: none
+  csrf: false
+  rate_limit: auth_strict
+  token_purpose: none
+- path: /oauth/jwks
+  methods:
+  - GET
+  route_name: oauth_jwks
+  capability_owner: platform_foundation
+  runtime_owner: ai_crm_next
+  layer: integration
+  external_effects: none
+  data_source: read_model
+  requires_auth: false
+  rollback: previous_release
+  audience: external_integration
+  auth_scheme: public
+  capability: oauth_metadata
+  access_scope: public
+  pii_level: none
+  csrf: false
+  rate_limit: auth_strict
+  token_purpose: none
+- path: /oauth/authorize
+  methods:
+  - GET
+  - POST
+  route_name: oauth_authorize
+  capability_owner: platform_foundation
+  runtime_owner: ai_crm_next
+  layer: integration
+  external_effects: none
+  data_source: command
+  requires_auth: true
+  rollback: previous_release
+  audience: admin
+  auth_scheme: oauth_protocol
+  capability: oauth_protocol
+  access_scope: self
+  pii_level: none
+  csrf: false
+  rate_limit: auth_strict
+  token_purpose: none
+- path: /oauth/token
+  methods:
+  - POST
+  route_name: oauth_token
+  capability_owner: platform_foundation
+  runtime_owner: ai_crm_next
+  layer: integration
+  external_effects: none
+  data_source: command
+  requires_auth: true
+  rollback: previous_release
+  audience: external_integration
+  auth_scheme: oauth_protocol
+  capability: oauth_protocol
+  access_scope: service
+  pii_level: none
+  csrf: false
+  rate_limit: auth_strict
+  token_purpose: none
+- path: /oauth/introspect
+  methods:
+  - POST
+  route_name: oauth_introspect
+  capability_owner: platform_foundation
+  runtime_owner: ai_crm_next
+  layer: integration
+  external_effects: none
+  data_source: read_model
+  requires_auth: true
+  rollback: previous_release
+  audience: external_integration
+  auth_scheme: oauth_protocol
+  capability: oauth_protocol
+  access_scope: service
+  pii_level: none
+  csrf: false
+  rate_limit: auth_strict
+  token_purpose: none
+- path: /oauth/revoke
+  methods:
+  - POST
+  route_name: oauth_revoke
+  capability_owner: platform_foundation
+  runtime_owner: ai_crm_next
+  layer: integration
+  external_effects: none
+  data_source: command
+  requires_auth: true
+  rollback: previous_release
+  audience: external_integration
+  auth_scheme: oauth_protocol
+  capability: oauth_protocol
+  access_scope: service
+  pii_level: none
+  csrf: false
+  rate_limit: auth_strict
+  token_purpose: none
+- path: /oauth/userinfo
+  methods:
+  - GET
+  route_name: oauth_userinfo
+  capability_owner: platform_foundation
+  runtime_owner: ai_crm_next
+  layer: integration
+  external_effects: none
+  data_source: read_model
+  requires_auth: true
+  rollback: previous_release
+  audience: external_integration
+  auth_scheme: oauth_protocol
+  capability: oauth_protocol
+  access_scope: self
+  pii_level: internal
+  csrf: false
+  rate_limit: auth_strict
   token_purpose: none

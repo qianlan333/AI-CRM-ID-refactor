@@ -12,16 +12,9 @@ from typing import Any
 from urllib.parse import urlencode
 
 from aicrm_next.admin_auth.service import (
-    CSRF_COOKIE as CSRF_COOKIE,  # noqa: F401 - auth context facade
-    SESSION_COOKIE as SESSION_COOKIE,  # noqa: F401 - auth context facade
-    SESSION_MAX_AGE_SECONDS as SESSION_MAX_AGE_SECONDS,  # noqa: F401 - auth context facade
-    admin_cookie_secure as admin_cookie_secure,  # noqa: F401 - auth context facade
-    csrf_token_from_session as csrf_token_from_session,  # noqa: F401 - auth context facade
     normalize_text,
     route_headers,
     safe_next_path,
-    session_payload_with_csrf as session_payload_with_csrf,  # noqa: F401 - auth context facade
-    sign_session,
 )
 from aicrm_next.admin_config.repository import AdminConfigRepository
 from aicrm_next.integration_gateway.wecom_admin_auth_client import (
@@ -72,7 +65,7 @@ class AuthStartResult:
 class AuthCallbackResult:
     ok: bool
     next_path: str = "/admin"
-    session_payload: dict[str, Any] | None = None
+    identity_claims: dict[str, Any] | None = None
     admin_user_id: int = 0
     error_code: str = ""
     external_error_code: str = ""
@@ -191,7 +184,7 @@ def handle_callback(
         return AuthCallbackResult(ok=False, next_path=next_path, error_code="admin_user_disabled", admin_user_id=admin_user_id)
 
     roles = _admin_roles(repo, admin_user_id=admin_user_id, admin_level=normalize_text(admin_user.get("admin_level")))
-    session_payload = {
+    identity_claims = {
         "auth_source": "wecom_sso",
         "login_type": "wecom_sso",
         "admin_user_id": admin_user_id,
@@ -204,7 +197,7 @@ def handle_callback(
     }
     _record_login(repo, admin_user_id=admin_user_id, result="success", ip=ip, user_agent=user_agent)
     repo.update_admin_last_login(admin_user_id=admin_user_id)
-    return AuthCallbackResult(ok=True, next_path=next_path, session_payload=session_payload, admin_user_id=admin_user_id)
+    return AuthCallbackResult(ok=True, next_path=next_path, identity_claims=identity_claims, admin_user_id=admin_user_id)
 
 
 def sign_auth_state(payload: dict[str, Any]) -> str:
@@ -229,10 +222,6 @@ def verify_auth_state(value: str) -> dict[str, Any] | None:
     if issued_at <= 0 or time() - issued_at > STATE_MAX_AGE_SECONDS:
         return None
     return payload if isinstance(payload, dict) else None
-
-
-def signed_session_cookie(payload: dict[str, Any]) -> str:
-    return sign_session(payload)
 
 
 def auth_route_headers() -> dict[str, str]:

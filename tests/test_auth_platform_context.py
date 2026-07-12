@@ -35,6 +35,12 @@ def test_auth_context_normalizes_permissions_and_enforces_resource_constraints()
         capability="broadcast_execute",
         resource={"corp_id": "corp-2"},
     )
+    assert not context.permits(
+        audience="aicrm-internal",
+        capability="broadcast_execute",
+        scope="broadcast.write",
+        resource={},
+    )
 
 
 def test_auth_context_rejects_missing_identity_or_naive_timestamps() -> None:

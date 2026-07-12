@@ -12,7 +12,6 @@ from urllib.parse import parse_qs
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, Response
-from starlette.concurrency import run_in_threadpool
 
 from aicrm_next.shared.route_policy import RoutePolicy, RoutePolicyIndex, match_route_policy
 from aicrm_next.shared.internal_service_tokens import validate_internal_service_token
@@ -22,10 +21,17 @@ from aicrm_next.shared.signed_context import (
     validate_sidebar_owner_context,
 )
 
-from .capabilities import session_can, viewer_only
-from .guards import admin_auth_enforcement_enabled, admin_auth_required_response, admin_page_auth_redirect, current_admin_session
-from .session_state import validate_admin_session_state
-from .service import CSRF_COOKIE, csrf_token_from_session, normalize_text, route_headers
+from aicrm_next.platform_foundation.auth_platform.api import auth_session_service
+
+from .capabilities import context_can, viewer_only
+from .guards import (
+    admin_auth_enforcement_enabled,
+    admin_auth_required_response,
+    admin_page_auth_redirect,
+    current_admin_introspection,
+    current_auth_context,
+)
+from .service import CSRF_COOKIE, normalize_text, route_headers
 
 
 SIDEBAR_OWNER_TOKEN_HEADER = "x-aicrm-sidebar-owner-token"
@@ -115,41 +121,42 @@ async def route_policy_required_response(
     if enforcement_enabled and not _rate_limit_allows(request, policy):
         return _error("route_rate_limited", status_code=429)
 
-    if policy.auth_scheme == "admin_session":
-        return await _enforce_admin_session(request, policy)
+    if policy.auth_scheme == "oauth_session":
+        return await _enforce_oauth_session(request, policy)
     if policy.auth_scheme == "internal_bearer" and enforcement_enabled:
         return _enforce_internal_bearer(request, policy)
     if policy.auth_scheme == "scoped_bearer" and enforcement_enabled:
         return _enforce_scoped_bearer_presence(request)
     if policy.auth_scheme == "sidebar_signed_context" and enforcement_enabled:
         return await _enforce_sidebar_context(request, policy)
+    if policy.auth_scheme == "oauth_protocol":
+        return None
     return None
 
 
-async def _enforce_admin_session(request: Request, policy: RoutePolicy) -> Response | None:
+async def _enforce_oauth_session(request: Request, policy: RoutePolicy) -> Response | None:
     if not (admin_auth_enforcement_enabled() or route_policy_enforcement_enabled()):
         return None
-    session = current_admin_session(request)
-    if session is None:
+    introspection = current_admin_introspection(request)
+    context = introspection.context
+    if not introspection.active or context is None:
         if str(request.url.path).startswith(("/admin", "/setup")):
             return admin_page_auth_redirect(request)
-        return _error("admin_auth_required", status_code=401)
+        error = introspection.error if introspection.error != "session_required" else "admin_auth_required"
+        return _error(error or "admin_auth_required", status_code=401)
     _set_pii_principal(
         request,
-        actor_type="admin_session",
-        actor_id=normalize_text(session.get("admin_user_id") or session.get("username")) or "admin_session",
+        actor_type=context.principal_type.value,
+        actor_id=context.sub,
         policy_scope=policy.access_scope,
     )
-    session_state = await run_in_threadpool(validate_admin_session_state, session)
-    if not session_state.ok:
-        return _error(session_state.error or "admin_session_revoked", status_code=401)
-    request.state.admin_session = session
-    if policy.is_write and viewer_only(session):
+    request.state.auth_context = context
+    if policy.is_write and viewer_only(context):
         return _error("admin_capability_required", status_code=403, capability=policy.capability)
-    if policy.capability not in {"public", "health_read"} and not session_can(session, policy.capability):
+    if policy.capability not in {"public", "health_read"} and not context_can(context, policy.capability):
         return _error("admin_capability_required", status_code=403, capability=policy.capability)
     if policy.csrf:
-        csrf_error = await _csrf_error(request, session)
+        csrf_error = await _csrf_error(request, introspection)
         if csrf_error:
             return csrf_error
     return None
@@ -179,13 +186,8 @@ def _enforce_scoped_bearer_presence(request: Request) -> Response | None:
 
 async def _enforce_sidebar_context(request: Request, policy: RoutePolicy) -> Response | None:
     token = normalize_text(request.headers.get(SIDEBAR_OWNER_TOKEN_HEADER))
-    claimed_values = [
-        normalize_text(request.query_params.get(key))
-        for key in ("owner_userid", "current_userid", "bind_by_userid", "viewer_userid")
-    ]
-    target_external_userid = normalize_text(
-        request.query_params.get("external_userid") or request.query_params.get("user_id")
-    )
+    claimed_values = [normalize_text(request.query_params.get(key)) for key in ("owner_userid", "current_userid", "bind_by_userid", "viewer_userid")]
+    target_external_userid = normalize_text(request.query_params.get("external_userid") or request.query_params.get("user_id"))
     content_type = normalize_text(request.headers.get("content-type")).lower()
     if content_type.startswith("application/json"):
         try:
@@ -193,13 +195,8 @@ async def _enforce_sidebar_context(request: Request, policy: RoutePolicy) -> Res
         except (UnicodeDecodeError, json.JSONDecodeError):
             body = {}
         if isinstance(body, dict):
-            target_external_userid = target_external_userid or normalize_text(
-                body.get("external_userid") or body.get("user_id")
-            )
-            claimed_values.extend(
-                normalize_text(body.get(key))
-                for key in ("owner_userid", "current_userid", "bind_by_userid", "viewer_userid", "actor_id")
-            )
+            target_external_userid = target_external_userid or normalize_text(body.get("external_userid") or body.get("user_id"))
+            claimed_values.extend(normalize_text(body.get(key)) for key in ("owner_userid", "current_userid", "bind_by_userid", "viewer_userid", "actor_id"))
     result = validate_sidebar_owner_context(
         token=token,
         viewer_session_cookie=normalize_text(request.cookies.get(SIDEBAR_VIEWER_SESSION_COOKIE)),
@@ -235,8 +232,7 @@ def _set_pii_principal(
         request.state.pii_policy_scope = normalize_text(policy_scope)
 
 
-async def _csrf_error(request: Request, session: dict[str, Any]) -> JSONResponse | None:
-    expected = csrf_token_from_session(session)
+async def _csrf_error(request: Request, introspection) -> JSONResponse | None:
     cookie_token = normalize_text(request.cookies.get(CSRF_COOKIE))
     request_token = normalize_text(request.headers.get(CSRF_HEADER))
     if not request_token:
@@ -251,9 +247,8 @@ async def _csrf_error(request: Request, session: dict[str, Any]) -> JSONResponse
                 content_type=content_type,
                 field_name="csrf_token",
             )
-    if expected and cookie_token and request_token:
-        if hmac.compare_digest(expected, cookie_token) and hmac.compare_digest(expected, request_token):
-            return None
+    if auth_session_service(request).verify_csrf(introspection, cookie_token, request_token):
+        return None
     return _error("admin_csrf_required", status_code=403)
 
 
@@ -286,13 +281,10 @@ def _rate_limit_allows(request: Request, policy: RoutePolicy) -> bool:
 
 
 def _rate_limit_principal(request: Request, policy: RoutePolicy) -> str:
-    if policy.auth_scheme == "admin_session":
-        session = current_admin_session(request)
-        if session:
-            subject = normalize_text(session.get("admin_user_id") or session.get("username"))
-            session_id = normalize_text(session.get("sid"))
-            if subject:
-                return f"admin:{subject}:{session_id[:16]}"
+    if policy.auth_scheme == "oauth_session":
+        context = current_auth_context(request)
+        if context:
+            return f"admin:{context.sub}:{context.token_id[:16]}"
     if policy.auth_scheme in {"internal_bearer", "scoped_bearer"}:
         token = _bearer_token(request) or normalize_text(request.query_params.get("token"))
         if token:

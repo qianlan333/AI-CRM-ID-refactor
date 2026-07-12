@@ -13,12 +13,13 @@ from typing import Any
 
 from fastapi import Request
 
+from aicrm_next.platform_foundation.auth_platform.context import AuthContext
 from aicrm_next.shared.route_ownership import load_route_manifest
 from aicrm_next.shared.route_policy import DEFAULT_ROUTE_POLICY_MANIFEST
 from aicrm_next.shared.runtime import production_data_ready, production_environment, require_signing_secret
 
-from .capabilities import session_can
-from .guards import current_admin_session
+from .capabilities import context_can
+from .guards import current_auth_context
 from .service import normalize_text
 
 
@@ -47,7 +48,7 @@ class ActionTokenRoute:
 
 
 def issue_action_token(
-    session: dict[str, Any],
+    context: AuthContext,
     *,
     capability: str,
     method: str,
@@ -64,14 +65,14 @@ def issue_action_token(
         raise ValueError("action token binding is incomplete")
     if normalized_method in SAFE_METHODS:
         raise ValueError("action token cannot be issued for a safe method")
-    if not session_can(session, normalized_capability):
-        raise PermissionError(f"session lacks capability: {normalized_capability}")
+    if not context_can(context, normalized_capability):
+        raise PermissionError(f"auth context lacks capability: {normalized_capability}")
     issued_at = int(time.time()) if now is None else int(now)
     ttl = max(1, min(int(ttl_seconds), ACTION_TOKEN_TTL_SECONDS))
     claims = {
         "v": ACTION_TOKEN_VERSION,
-        "sub": _session_subject(session),
-        "sid": session_fingerprint(session),
+        "sub": context.sub,
+        "sid": session_fingerprint(context),
         "cap": normalized_capability,
         "m": normalized_method,
         "act": normalized_action,
@@ -87,7 +88,7 @@ def issue_action_token(
 
 def validate_action_token(
     token: str,
-    session: dict[str, Any],
+    context: AuthContext,
     *,
     capability: str,
     method: str,
@@ -114,8 +115,8 @@ def validate_action_token(
         return ActionTokenValidation(ok=False, error="expired")
 
     expected = {
-        "sub": _session_subject(session),
-        "sid": session_fingerprint(session),
+        "sub": context.sub,
+        "sid": session_fingerprint(context),
         "cap": normalize_text(capability),
         "m": normalize_text(method).upper(),
         "act": normalize_text(action),
@@ -124,7 +125,7 @@ def validate_action_token(
     for key, value in expected.items():
         if not value or not hmac.compare_digest(normalize_text(claims.get(key)), value):
             return ActionTokenValidation(ok=False, error=f"binding_mismatch:{key}")
-    if not session_can(session, expected["cap"]):
+    if not context_can(context, expected["cap"]):
         return ActionTokenValidation(ok=False, error="capability_revoked")
     if not normalize_text(claims.get("nonce")):
         return ActionTokenValidation(ok=False, error="invalid")
@@ -135,11 +136,11 @@ def issue_action_token_for_route(request: Request, *, method: str, target: str) 
     route = _route_by_key().get(f"{normalize_text(method).upper()} {_normalize_target(target)}")
     if route is None:
         raise ValueError(f"unsafe admin route is not registered: {method} {target}")
-    session = _request_session(request)
-    if session is None:
-        raise PermissionError("admin session is required")
+    context = _request_context(request)
+    if context is None:
+        raise PermissionError("admin auth context is required")
     return issue_action_token(
-        session,
+        context,
         capability=route.capability,
         method=route.method,
         action=route.action,
@@ -148,16 +149,16 @@ def issue_action_token_for_route(request: Request, *, method: str, target: str) 
 
 
 def validate_action_token_for_request(request: Request, token: str) -> ActionTokenValidation:
-    session = _request_session(request)
+    context = _request_context(request)
     policy = getattr(request.state, "route_policy", None)
-    if session is None or policy is None:
+    if context is None or policy is None:
         return ActionTokenValidation(ok=False, error="context_missing")
     method = normalize_text(request.method).upper()
     if method in SAFE_METHODS:
         return ActionTokenValidation(ok=False, error="safe_method")
     return validate_action_token(
         token,
-        session,
+        context,
         capability=normalize_text(policy.capability),
         method=method,
         action=normalize_text(policy.route_name),
@@ -166,15 +167,15 @@ def validate_action_token_for_request(request: Request, token: str) -> ActionTok
 
 
 def build_admin_action_token_bundle(request: Request) -> dict[str, str]:
-    session = _request_session(request)
-    if session is None:
+    context = _request_context(request)
+    if context is None:
         return {}
     tokens: dict[str, str] = {}
     for route in _unsafe_admin_routes():
-        if not session_can(session, route.capability):
+        if not context_can(context, route.capability):
             continue
         tokens[route.key] = issue_action_token(
-            session,
+            context,
             capability=route.capability,
             method=route.method,
             action=route.action,
@@ -190,44 +191,23 @@ def bound_action_tokens_required() -> bool:
     return production_environment() or production_data_ready()
 
 
-def session_fingerprint(session: dict[str, Any]) -> str:
-    session_id = normalize_text(session.get("sid"))
-    if session_id:
-        material = f"sid:{session_id}"
-    else:
-        material = json.dumps(
-            {
-                "sub": _session_subject(session),
-                "iat": int(session.get("iat") or 0),
-                "csrf": normalize_text(session.get("csrf_token")),
-                "version": int(session.get("session_version") or 0),
-            },
-            sort_keys=True,
-            separators=(",", ":"),
-        )
+def session_fingerprint(context: AuthContext) -> str:
+    material = f"token:{context.token_id}"
     return hmac.new(_secret(), material.encode("utf-8"), hashlib.sha256).hexdigest()
 
 
-def _request_session(request: Request) -> dict[str, Any] | None:
-    state_session = getattr(request.state, "admin_session", None)
-    if isinstance(state_session, dict):
-        return state_session
-    return current_admin_session(request)
-
-
-def _session_subject(session: dict[str, Any]) -> str:
-    admin_user_id = normalize_text(session.get("admin_user_id"))
-    if admin_user_id:
-        return f"admin_user:{admin_user_id}"
-    username = normalize_text(session.get("username") or session.get("wecom_userid"))
-    return f"admin_username:{username}" if username else ""
+def _request_context(request: Request) -> AuthContext | None:
+    state_context = getattr(request.state, "auth_context", None)
+    if isinstance(state_context, AuthContext):
+        return state_context
+    return current_auth_context(request)
 
 
 @lru_cache(maxsize=1)
 def _unsafe_admin_routes() -> tuple[ActionTokenRoute, ...]:
     routes: list[ActionTokenRoute] = []
     for entry in load_route_manifest(DEFAULT_ROUTE_POLICY_MANIFEST):
-        if normalize_text(entry.get("auth_scheme")) != "admin_session":
+        if normalize_text(entry.get("auth_scheme")) != "oauth_session":
             continue
         capability = normalize_text(entry.get("capability"))
         action = normalize_text(entry.get("route_name"))

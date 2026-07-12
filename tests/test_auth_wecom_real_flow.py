@@ -5,10 +5,11 @@ from urllib.parse import parse_qs, urlparse
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, text
 
-from aicrm_next.admin_auth.service import SESSION_COOKIE, verify_session
+from aicrm_next.admin_auth.service import SESSION_COOKIE
 from aicrm_next.auth_wecom.service import verify_auth_state
 from aicrm_next.main import create_app
 from aicrm_next.shared.db_session import reset_engine_cache_for_tests
+from tests.admin_auth_test_helpers import install_admin_auth_service
 
 
 class FakeWeComAdminAuthClient:
@@ -106,7 +107,9 @@ def _prepare_client(monkeypatch, tmp_path) -> tuple[TestClient, FakeWeComAdminAu
 
     fake_client = FakeWeComAdminAuthClient()
     monkeypatch.setattr("aicrm_next.auth_wecom.service.build_wecom_admin_auth_client", lambda: fake_client)
-    return TestClient(create_app(), raise_server_exceptions=False), fake_client
+    test_client = TestClient(create_app(), raise_server_exceptions=False)
+    install_admin_auth_service(test_client)
+    return test_client, fake_client
 
 
 def test_html_start_redirects_to_login_error_when_real_wecom_auth_is_disabled(monkeypatch) -> None:
@@ -121,13 +124,10 @@ def test_html_start_redirects_to_login_error_when_real_wecom_auth_is_disabled(mo
     )
 
     assert response.status_code == 302
-    assert (
-        response.headers["location"]
-        == "/login?next=%2Fadmin%2Fautomation-conversion&auth_error=wecom_admin_auth_not_enabled"
-    )
+    assert response.headers["location"] == "/login?next=%2Fadmin%2Fautomation-conversion&auth_error=wecom_admin_auth_not_enabled"
 
 
-def test_real_wecom_auth_start_and_callback_signs_admin_session(monkeypatch, tmp_path) -> None:
+def test_real_wecom_auth_start_and_callback_issues_opaque_admin_session(monkeypatch, tmp_path) -> None:
     client, fake_client = _prepare_client(monkeypatch, tmp_path)
 
     start = client.get("/auth/wecom/start?mode=qr&next=/admin/automation-conversion", follow_redirects=False)
@@ -136,10 +136,7 @@ def test_real_wecom_auth_start_and_callback_signs_admin_session(monkeypatch, tmp
     parsed = urlparse(location)
     params = parse_qs(parsed.query)
 
-    assert (
-        f"{parsed.scheme}://{parsed.netloc}{parsed.path}"
-        == "https://open.work.weixin.qq.com/wwopen/sso/qrConnect"
-    )
+    assert f"{parsed.scheme}://{parsed.netloc}{parsed.path}" == "https://open.work.weixin.qq.com/wwopen/sso/qrConnect"
     assert params["appid"] == ["ww-test-corp"]
     assert params["agentid"] == ["1000023"]
     assert params["redirect_uri"] == ["https://crm.example.test/auth/wecom/callback"]
@@ -156,9 +153,10 @@ def test_real_wecom_auth_start_and_callback_signs_admin_session(monkeypatch, tmp
     ]
 
     cookie_value = callback.headers["set-cookie"].split(f"{SESSION_COOKIE}=", 1)[1].split(";", 1)[0]
-    session = verify_session(cookie_value)
-    assert session["login_type"] == "wecom_sso"
-    assert session["admin_user_id"] == 1
-    assert session["session_version"] == 1
-    assert session["wecom_userid"] == "HuangYouCan"
-    assert session["roles"] == ["super_admin"]
+    introspection = client.app.state.auth_session_service.introspect(cookie_value)
+    assert cookie_value.startswith("ss_")
+    assert introspection.active
+    assert introspection.context is not None
+    assert introspection.context.sub == "admin:1"
+    assert introspection.context.acr == "wecom_sso"
+    assert "manage_admin" in introspection.context.capabilities

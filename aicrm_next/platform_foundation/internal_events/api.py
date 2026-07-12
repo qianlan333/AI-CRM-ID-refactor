@@ -13,6 +13,7 @@ from starlette.concurrency import run_in_threadpool
 
 from aicrm_next.admin_jobs.routes import ensure_admin_action_token, validate_admin_action_token
 from aicrm_next.admin_shell import admin_path_for, shell_context
+from aicrm_next.platform_foundation.auth_platform.context import AuthContext
 from aicrm_next.shared.runtime_settings import runtime_setting
 
 from .config import diagnostics_payload as config_diagnostics_payload, worker_batch_size
@@ -102,11 +103,9 @@ def _action_or_internal_token_error(request: Request, payload: dict[str, Any]) -
 
 
 def _manual_action_actor(request: Request, payload: dict[str, Any]) -> tuple[str, str]:
-    session = getattr(request.state, "admin_session", None)
-    if isinstance(session, dict):
-        actor_id = _text(session.get("admin_user_id") or session.get("username") or session.get("wecom_userid"))
-        if actor_id:
-            return actor_id, "admin_session"
+    context = getattr(request.state, "auth_context", None)
+    if isinstance(context, AuthContext):
+        return context.sub, context.principal_type.value
     service_account = _text(getattr(request.state, "service_account", ""))
     if service_account:
         return service_account, "service_account"

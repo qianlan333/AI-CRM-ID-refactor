@@ -1,11 +1,6 @@
 from __future__ import annotations
 
-import base64
-import hashlib
-import hmac
-import json
 import os
-import secrets
 from dataclasses import dataclass
 from time import time
 from typing import Any
@@ -14,14 +9,11 @@ from urllib.parse import quote
 from werkzeug.security import check_password_hash
 
 from aicrm_next.admin_shell import admin_path_for
-from aicrm_next.shared.runtime import require_signing_secret
 from aicrm_next.shared.runtime_settings import runtime_setting
 
 
 SESSION_COOKIE = "aicrm_next_admin_session"
 CSRF_COOKIE = "aicrm_next_csrf"
-CSRF_SESSION_KEY = "csrf_token"
-SESSION_ID_KEY = "sid"
 SESSION_MAX_AGE_SECONDS = 8 * 60 * 60
 DEFAULT_NEXT_PATH = "/admin"
 
@@ -31,7 +23,7 @@ class AuthResult:
     ok: bool
     error: str = ""
     username: str = ""
-    session_payload: dict[str, Any] | None = None
+    identity_claims: dict[str, Any] | None = None
 
 
 def reset_admin_auth_fixture_state() -> None:
@@ -164,18 +156,7 @@ def authenticate_break_glass(*, username: str, password: str) -> AuthResult:
         "roles": ["super_admin"],
         "iat": int(time()),
     }
-    return AuthResult(ok=True, username=expected_username, session_payload=payload)
-
-
-def session_payload_with_csrf(payload: dict[str, Any]) -> dict[str, Any]:
-    session_payload = dict(payload or {})
-    session_payload[CSRF_SESSION_KEY] = normalize_text(session_payload.get(CSRF_SESSION_KEY)) or secrets.token_urlsafe(32)
-    session_payload[SESSION_ID_KEY] = normalize_text(session_payload.get(SESSION_ID_KEY)) or secrets.token_urlsafe(24)
-    return session_payload
-
-
-def csrf_token_from_session(payload: dict[str, Any] | None) -> str:
-    return normalize_text((payload or {}).get(CSRF_SESSION_KEY))
+    return AuthResult(ok=True, username=expected_username, identity_claims=payload)
 
 
 def admin_cookie_secure() -> bool:
@@ -185,40 +166,3 @@ def admin_cookie_secure() -> bool:
     from aicrm_next.shared.runtime import production_environment
 
     return production_environment()
-
-
-def _secret() -> bytes:
-    return require_signing_secret("SECRET_KEY", local_fallback="aicrm-next-admin-auth-local-secret")
-
-
-def _b64(data: bytes) -> str:
-    return base64.urlsafe_b64encode(data).decode("ascii").rstrip("=")
-
-
-def _unb64(data: str) -> bytes:
-    padded = data + ("=" * (-len(data) % 4))
-    return base64.urlsafe_b64decode(padded.encode("ascii"))
-
-
-def sign_session(payload: dict[str, Any]) -> str:
-    body = _b64(json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8"))
-    signature = hmac.new(_secret(), body.encode("ascii"), hashlib.sha256).hexdigest()
-    return f"{body}.{signature}"
-
-
-def verify_session(cookie_value: str | None) -> dict[str, Any] | None:
-    value = normalize_text(cookie_value)
-    if "." not in value:
-        return None
-    body, signature = value.rsplit(".", 1)
-    expected = hmac.new(_secret(), body.encode("ascii"), hashlib.sha256).hexdigest()
-    if not hmac.compare_digest(signature, expected):
-        return None
-    try:
-        payload = json.loads(_unb64(body).decode("utf-8"))
-    except Exception:
-        return None
-    issued_at = int(payload.get("iat") or 0)
-    if issued_at <= 0 or time() - issued_at > SESSION_MAX_AGE_SECONDS:
-        return None
-    return payload

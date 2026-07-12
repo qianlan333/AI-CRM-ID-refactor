@@ -93,10 +93,24 @@ def _policy_for(entry: dict[str, Any]) -> dict[str, Any]:
     if path in {"/login", "/logout"}:
         return _policy("admin", "public", "public", "public", _pii_level(entry), False, "auth_strict")
 
+    if path in {"/.well-known/openid-configuration", "/.well-known/oauth-authorization-server", "/oauth/jwks"}:
+        return _policy("external_integration", "public", "oauth_metadata", "public", "none", False, "auth_strict")
+
+    if path.startswith("/oauth/"):
+        return _policy(
+            "admin" if path == "/oauth/authorize" else "external_integration",
+            "oauth_protocol",
+            "oauth_protocol",
+            "self" if path in {"/oauth/authorize", "/oauth/userinfo"} else "service",
+            "internal" if path == "/oauth/userinfo" else "none",
+            False,
+            "auth_strict",
+        )
+
     if _starts(path, "/admin", "/api/admin", "/setup"):
         return _policy(
             "admin",
-            "admin_session",
+            "oauth_session",
             _admin_capability(entry),
             "global",
             _pii_level(entry),
@@ -119,7 +133,7 @@ def _policy_for(entry: dict[str, Any]) -> dict[str, Any]:
     if path.startswith("/api/automation/group-ops/") and "/webhooks/" not in path:
         return _policy(
             "admin",
-            "admin_session",
+            "oauth_session",
             "manage_group_ops" if write else "admin_read",
             "global",
             _pii_level(entry),
@@ -235,7 +249,7 @@ def _policy_for(entry: dict[str, Any]) -> dict[str, Any]:
     if path.startswith(("/api/customers", "/api/users", "/api/messages")):
         return _policy(
             "external_integration",
-            "admin_session",
+            "oauth_session",
             "send_message" if write else "read_customer",
             "global",
             "sensitive",

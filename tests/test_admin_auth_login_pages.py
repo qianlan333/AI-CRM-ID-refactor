@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from fastapi.testclient import TestClient
 
-from aicrm_next.admin_auth.service import SESSION_COOKIE, sign_session
 from aicrm_next.main import create_app
+from tests.admin_auth_test_helpers import install_admin_session
 
 
 def _client(monkeypatch) -> TestClient:
@@ -41,7 +41,7 @@ def test_get_login_renders_wecom_auth_error(monkeypatch) -> None:
 
 def test_login_uses_safe_next_and_redirects_when_session_cookie_is_valid(monkeypatch) -> None:
     client = _client(monkeypatch)
-    client.cookies.set(SESSION_COOKIE, sign_session({"username": "bg-admin", "login_type": "break_glass", "iat": 4_102_444_800}))
+    install_admin_session(client, "super_admin", subject="admin:break-glass", principal_id="admin-break-glass")
 
     safe = client.get("/login?next=/admin/jobs", follow_redirects=False)
     unsafe = client.get("/login?next=https://evil.example.com", follow_redirects=False)

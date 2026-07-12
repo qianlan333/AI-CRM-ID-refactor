@@ -55,6 +55,7 @@ from .ops_enrollment.admin_pages import router as user_ops_admin_pages_router
 from .ops_enrollment.api import router as user_ops_router
 from .owner_migration.api import router as owner_migration_router
 from .platform_foundation.api import router as platform_router
+from .platform_foundation.auth_platform.api import router as auth_platform_router
 from .platform_foundation.external_effects.api import router as external_effects_router
 from .platform_foundation.internal_events.api import router as internal_events_router
 from .platform_foundation.legacy_cleanup.api import router as legacy_cleanup_router
@@ -80,6 +81,7 @@ class RouterSpec:
 
 ROUTER_SPECS: tuple[RouterSpec, ...] = (
     RouterSpec("platform_foundation", "platform", platform_router, "foundation health and shell contracts"),
+    RouterSpec("platform_foundation", "auth_platform", auth_platform_router, "unified OAuth 2.0 and OIDC platform"),
     RouterSpec("platform_foundation", "external_effects", external_effects_router, "external effects job/admin APIs"),
     RouterSpec("platform_foundation", "legacy_cleanup", legacy_cleanup_router, "legacy cleanup read/command APIs"),
     RouterSpec("platform_foundation", "internal_events", internal_events_router, "internal event center APIs"),

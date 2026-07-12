@@ -82,11 +82,19 @@ def upgrade() -> None:
             principal_id TEXT NOT NULL REFERENCES auth_principals(principal_id),
             client_id TEXT NOT NULL REFERENCES auth_clients(client_id),
             session_secret_hash TEXT NOT NULL,
+            csrf_token_hash TEXT NOT NULL,
             session_version BIGINT NOT NULL CHECK (session_version > 0),
+            audience TEXT NOT NULL,
+            scopes_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+            capabilities_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+            resource_constraints_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+            actor TEXT NOT NULL DEFAULT '',
             acr TEXT NOT NULL DEFAULT '',
             auth_time TIMESTAMPTZ NOT NULL,
             expires_at TIMESTAMPTZ NOT NULL,
             revoked_at TIMESTAMPTZ,
+            revoked_reason TEXT NOT NULL DEFAULT '',
+            last_seen_at TIMESTAMPTZ,
             created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
             CHECK (expires_at > auth_time)
         )
@@ -104,7 +112,7 @@ def upgrade() -> None:
             scopes_json JSONB NOT NULL DEFAULT '[]'::jsonb,
             code_challenge TEXT NOT NULL,
             code_challenge_method TEXT NOT NULL CHECK (code_challenge_method = 'S256'),
-            nonce_hash TEXT NOT NULL DEFAULT '',
+            nonce TEXT NOT NULL DEFAULT '',
             expires_at TIMESTAMPTZ NOT NULL,
             consumed_at TIMESTAMPTZ,
             created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -186,9 +194,42 @@ def upgrade() -> None:
         )
         """
     )
+    op.execute(
+        """
+        CREATE OR REPLACE FUNCTION sync_admin_auth_principal_state()
+        RETURNS trigger AS $$
+        BEGIN
+            UPDATE auth_principals
+            SET session_version = NEW.session_version,
+                status = CASE
+                    WHEN NEW.is_active AND NEW.login_enabled THEN 'active'
+                    ELSE 'disabled'
+                END,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE principal_id = 'admin-user:' || NEW.id::text;
+            RETURN NEW;
+        END;
+        $$ LANGUAGE plpgsql
+        """
+    )
+    op.execute(
+        """
+        DO $$
+        BEGIN
+            IF to_regclass('public.admin_users') IS NOT NULL THEN
+                DROP TRIGGER IF EXISTS trg_sync_admin_auth_principal_state ON admin_users;
+                CREATE TRIGGER trg_sync_admin_auth_principal_state
+                AFTER UPDATE OF session_version, is_active, login_enabled ON admin_users
+                FOR EACH ROW EXECUTE FUNCTION sync_admin_auth_principal_state();
+            END IF;
+        END $$
+        """
+    )
 
 
 def downgrade() -> None:
+    op.execute("DROP TRIGGER IF EXISTS trg_sync_admin_auth_principal_state ON admin_users")
+    op.execute("DROP FUNCTION IF EXISTS sync_admin_auth_principal_state()")
     op.execute("DROP TABLE IF EXISTS auth_security_events")
     op.execute("DROP TABLE IF EXISTS auth_replay_nonces")
     op.execute("DROP TABLE IF EXISTS auth_tokens")
