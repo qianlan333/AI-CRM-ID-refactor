@@ -84,14 +84,12 @@ HTTP_URL_SETTING_KEYS = {
     "ALIPAY_NOTIFY_URL",
     "ALIPAY_RETURN_URL",
     "WECHAT_SHOP_API_BASE",
+    "AICRM_AUTH_ISSUER",
 }
 JSON_SETTING_KEYS = {"WECHAT_PAY_PRODUCT_CATALOG_JSON"}
 PUSH_CAPABILITY_ADVANCED_KEYS = (
     ("OPENCLAW_WEBHOOK_URL", "OPENCLAW_WEBHOOK_URL", "OpenClaw Webhook 地址"),
-    ("openclaw_focus_message_credential", "OPENCLAW_FOCUS_MESSAGE_WEBHOOK_TOKEN", "OpenClaw Focus Message 凭据"),
     ("QUESTIONNAIRE_SUBMIT_WEBHOOK_URL", "QUESTIONNAIRE_SUBMIT_WEBHOOK_URL", "问卷提交 Webhook 地址"),
-    ("questionnaire_submit_credential", "QUESTIONNAIRE_SUBMIT_WEBHOOK_TOKEN", "问卷提交凭据"),
-    ("external_effect_webhook_signing_config", "AICRM_EXTERNAL_EFFECT_WEBHOOK_SIGNING_SECRET", "External Effect Webhook 签名配置"),
 )
 EXTRA_SETTING_DEFINITIONS: dict[str, dict[str, Any]] = {
     "SIDEBAR_PRODUCT_CONTEXT_TOKEN_TTL_SECONDS": {
@@ -324,14 +322,6 @@ EXTRA_SETTING_DEFINITIONS: dict[str, dict[str, Any]] = {
         "description": "External Effect Queue 调用 webhook 的超时时间（秒）。",
         "min": 1,
     },
-    "AICRM_EXTERNAL_EFFECT_WEBHOOK_SIGNING_SECRET": {
-        "key": "AICRM_EXTERNAL_EFFECT_WEBHOOK_SIGNING_SECRET",
-        "label": "Webhook 队列签名密钥",
-        "mode": "masked",
-        "input_type": "password",
-        "type": "secret",
-        "description": "用于 External Effect Queue webhook HMAC 签名；留空表示保持原值。",
-    },
     SCHEDULER_ENABLED_KEY: {
         "key": SCHEDULER_ENABLED_KEY,
         "label": "统一队列自动调度",
@@ -503,7 +493,6 @@ def _validate_known_setting(key: str, value: str) -> str:
         "AICRM_EXTERNAL_EFFECT_MEDIA_UPLOAD_EXECUTE",
         "AICRM_ENABLE_REAL_WECOM_PRIVATE_MESSAGE",
         "AICRM_ENABLE_REAL_WECOM_GROUP_MESSAGE",
-        "ADMIN_BREAK_GLASS_LOGIN_ENABLED",
     }:
         return "true" if normalized.lower() in {"1", "true", "yes", "y", "on"} else "false"
     if key == "AICRM_QUESTIONNAIRE_EXTERNAL_PUSH_MODE":
@@ -543,14 +532,19 @@ def _validate_known_setting(key: str, value: str) -> str:
         if hosts & blocked:
             raise ValueError("AICRM_EXTERNAL_EFFECT_ALLOWED_BASE_HOSTS 不允许使用本地、测试或通配域名")
         return normalized
-    if key in {
-        "WECOM_API_BASE",
-        "DEEPSEEK_BASE_URL",
-        "OPENCLAW_WEBHOOK_URL",
-        "QUESTIONNAIRE_SUBMIT_WEBHOOK_URL",
-        "WECHAT_PAY_NOTIFY_URL",
-        "WECHAT_PAY_API_BASE",
-    } and normalized and not normalized.startswith(("http://", "https://")):
+    if (
+        key
+        in {
+            "WECOM_API_BASE",
+            "DEEPSEEK_BASE_URL",
+            "OPENCLAW_WEBHOOK_URL",
+            "QUESTIONNAIRE_SUBMIT_WEBHOOK_URL",
+            "WECHAT_PAY_NOTIFY_URL",
+            "WECHAT_PAY_API_BASE",
+        }
+        and normalized
+        and not normalized.startswith(("http://", "https://"))
+    ):
         raise ValueError(f"{key} 必须以 http:// 或 https:// 开头")
     if key == "WECHAT_PAY_PRODUCT_CATALOG_JSON" and normalized:
         try:
@@ -811,15 +805,9 @@ def _effect_type_union_for_enabled_capabilities(read_service: "AdminConfigReadSe
 def _derived_gate_payload(effect_types: list[str], capabilities: list[PushCapability]) -> dict[str, Any]:
     enabled_keys = {capability.key for capability in capabilities}
     effect_type_set = set(effect_types)
-    channel_entry_realtime_types = [
-        effect_type
-        for effect_type in CHANNEL_ENTRY_REALTIME_EFFECT_TYPES
-        if effect_type in effect_type_set
-    ]
+    channel_entry_realtime_types = [effect_type for effect_type in CHANNEL_ENTRY_REALTIME_EFFECT_TYPES if effect_type in effect_type_set]
     webhook_execute = any(
-        capability.key in enabled_keys
-        and capability.supports_real_execution
-        and capability.adapter_family in {"webhook", "legacy_webhook", "mixed"}
+        capability.key in enabled_keys and capability.supports_real_execution and capability.adapter_family in {"webhook", "legacy_webhook", "mixed"}
         for capability in visible_push_capabilities(main_only=False)
     )
     wecom_execute = any(effect_type.startswith("wecom.") for effect_type in effect_types)
@@ -845,7 +833,8 @@ def _derived_gate_payload(effect_types: list[str], capabilities: list[PushCapabi
 def _capability_requires_webhook_gate(capability: PushCapability) -> bool:
     return capability.adapter_family in {"webhook", "legacy_webhook"} or any(
         effect_type.startswith("webhook.")
-        or effect_type in {
+        or effect_type
+        in {
             "ai_assist.campaign.message.loopback",
             "group_ops.message.loopback",
             "group_ops.webhook.action.loopback",
@@ -1063,10 +1052,7 @@ class AdminConfigReadService:
                 **self._serialize_category_summary(category),
                 "enabled_key": category.enabled_key,
             },
-            "blocks": [
-                {"title": title, "fields": fields}
-                for title, fields in blocks_by_title.items()
-            ],
+            "blocks": [{"title": title, "fields": fields} for title, fields in blocks_by_title.items()],
         }
 
     def _capability_enabled(self, capability: PushCapability, *, default: bool = False) -> bool:
@@ -1077,16 +1063,16 @@ class AdminConfigReadService:
         if not configured_enabled:
             return True, ""
         allowed_types = {
-            item.strip()
-            for item in _text(self._setting_value_source("AICRM_EXTERNAL_EFFECT_ALLOWED_TYPES")[0]).replace("\n", ",").split(",")
-            if item.strip()
+            item.strip() for item in _text(self._setting_value_source("AICRM_EXTERNAL_EFFECT_ALLOWED_TYPES")[0]).replace("\n", ",").split(",") if item.strip()
         }
         missing_types = [effect_type for effect_type in capability.effect_types if effect_type not in allowed_types]
         if missing_types:
             return False, "effect_type_allowlist_missing"
         if _capability_requires_webhook_gate(capability) and not self._capability_enabled_from_setting("AICRM_EXTERNAL_EFFECT_WEBHOOK_EXECUTE"):
             return False, "webhook_execute_disabled"
-        if any(effect_type.startswith("wecom.") for effect_type in capability.effect_types) and not self._capability_enabled_from_setting("AICRM_EXTERNAL_EFFECT_WECOM_EXECUTE"):
+        if any(effect_type.startswith("wecom.") for effect_type in capability.effect_types) and not self._capability_enabled_from_setting(
+            "AICRM_EXTERNAL_EFFECT_WECOM_EXECUTE"
+        ):
             return False, "wecom_execute_disabled"
         if capability.adapter_family == "payment" and not self._capability_enabled_from_setting("AICRM_EXTERNAL_EFFECT_PAYMENT_EXECUTE"):
             return False, "payment_execute_disabled"
@@ -1094,7 +1080,9 @@ class AdminConfigReadService:
             return False, "feishu_execute_disabled"
         if "openclaw.context.push" in set(capability.effect_types) and not self._capability_enabled_from_setting("AICRM_EXTERNAL_EFFECT_OPENCLAW_EXECUTE"):
             return False, "openclaw_execute_disabled"
-        if {"media.storage.upload", "wecom.media.upload"} & set(capability.effect_types) and not self._capability_enabled_from_setting("AICRM_EXTERNAL_EFFECT_MEDIA_UPLOAD_EXECUTE"):
+        if {"media.storage.upload", "wecom.media.upload"} & set(capability.effect_types) and not self._capability_enabled_from_setting(
+            "AICRM_EXTERNAL_EFFECT_MEDIA_UPLOAD_EXECUTE"
+        ):
             return False, "media_upload_execute_disabled"
         if capability.key == "test_receiver" and not self._capability_enabled_from_setting("AICRM_EXTERNAL_EFFECT_TEST_RECEIVER_ENABLED"):
             return False, "test_receiver_disabled"
@@ -1228,7 +1216,7 @@ class AdminConfigReadService:
             if not _filter_text_match(row, ["tool_name", "tool_group", "display_name", "description"], query):
                 continue
             rows.append(row)
-        auth_value, auth_source = self._setting_value_source("MCP_BEARER_TOKEN")
+        auth_value, auth_source = self._setting_value_source("AICRM_AUTH_MCP_CLIENT_ID")
         return {
             "rows": rows,
             "auth_configured": bool(auth_value),
@@ -1237,11 +1225,10 @@ class AdminConfigReadService:
                 {"label": "工具数量", "value": len(rows), "description": "当前可管理的 AI 工具数量"},
                 {"label": "已启用", "value": sum(1 for row in rows if row["enabled"]), "description": "当前允许调用的工具数量"},
                 {"label": "后台展示", "value": sum(1 for row in rows if row["visible_in_console"]), "description": "当前在后台显示的工具数量"},
-                {"label": "访问令牌", "value": "已配置" if auth_value else "未配置", "description": "AI 工具访问令牌状态"},
+                {"label": "OAuth 客户端", "value": "已配置" if auth_value else "未配置", "description": "AI 工具机器身份状态"},
             ],
             "audit_entries": [
-                {**item, "action_label": _audit_action_label(item["action_type"])}
-                for item in self._recent_audit_entries(TARGET_MCP_TOOL_SETTING, limit=8)
+                {**item, "action_label": _audit_action_label(item["action_type"])} for item in self._recent_audit_entries(TARGET_MCP_TOOL_SETTING, limit=8)
             ],
         }
 
@@ -1288,11 +1275,7 @@ class AdminConfigReadService:
         option_map: dict[int, dict[int, dict[str, Any]]],
     ) -> dict[str, Any]:
         question_id = int(row.get("question_id") or row.get("questionnaire_question_id") or 0)
-        hit_option_ids = [
-            int(item)
-            for item in _json_loads(row.get("answer_match_value_json") or row.get("hit_option_ids_json"), default=[])
-            if _text(item)
-        ]
+        hit_option_ids = [int(item) for item in _json_loads(row.get("answer_match_value_json") or row.get("hit_option_ids_json"), default=[]) if _text(item)]
         question = question_map.get(question_id, {})
         available_options = option_map.get(question_id, {})
         return {
@@ -1302,10 +1285,7 @@ class AdminConfigReadService:
             "question_title": _text(question.get("title")) or _text(row.get("rule_name")),
             "question_type": _text(question.get("type")),
             "hit_option_ids_json": hit_option_ids,
-            "hit_options": [
-                {"id": option_id, "option_text": _text(available_options.get(option_id, {}).get("option_text"))}
-                for option_id in hit_option_ids
-            ],
+            "hit_options": [{"id": option_id, "option_text": _text(available_options.get(option_id, {}).get("option_text"))} for option_id in hit_option_ids],
             "sort_order": int(row.get("sort_order") or 0),
         }
 
@@ -1367,10 +1347,7 @@ class AdminConfigReadService:
         return result
 
     def schema_groups(self) -> list[dict[str, Any]]:
-        return [
-            {"label": group["label"], "required": group.get("required", False), "fields": group["fields"]}
-            for group in CONFIG_SCHEMA.values()
-        ]
+        return [{"label": group["label"], "required": group.get("required", False), "fields": group["fields"]} for group in CONFIG_SCHEMA.values()]
 
     def masked_setting_values(self) -> dict[str, str]:
         return {key: mask_value(key, value) for key, value in self._current_setting_values().items()}
@@ -1409,7 +1386,6 @@ class AdminConfigReadService:
             "role_labels": dict(ROLE_LABELS),
             "admin_level_labels": dict(ADMIN_LEVEL_LABELS),
             "login_audit_rows": login_audit_rows,
-            "break_glass_enabled": self._setting_value_source("ADMIN_BREAK_GLASS_LOGIN_ENABLED")[0].lower() in {"1", "true", "yes", "on"},
             "auth_mode": self._setting_value_source("ADMIN_AUTH_MODE")[0] or "wecom_sso",
             "corp_id": corp_id,
         }

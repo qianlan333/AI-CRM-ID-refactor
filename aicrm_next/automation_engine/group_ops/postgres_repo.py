@@ -16,8 +16,6 @@ from .domain import (
     clean_text,
     derive_node_scheduled_time,
     generate_webhook_key,
-    generate_webhook_token,
-    hash_webhook_token,
     normalize_group_admin_userids,
     normalize_plan_payload,
 )
@@ -178,12 +176,8 @@ class PostgresGroupOpsRepository:
     def create_plan(self, payload: dict[str, Any]) -> dict[str, Any]:
         normalized = normalize_plan_payload(payload)
         webhook_key = ""
-        webhook_token_hash = ""
-        plaintext_token = ""
         if normalized["plan_type"] == "webhook":
             webhook_key = generate_webhook_key(normalized["plan_name"])
-            plaintext_token = generate_webhook_token()
-            webhook_token_hash = hash_webhook_token(plaintext_token)
         try:
             with self._engine.begin() as conn:
                 row = conn.execute(
@@ -191,11 +185,11 @@ class PostgresGroupOpsRepository:
                         """
                         INSERT INTO automation_group_ops_plans (
                             plan_code, plan_name, plan_type, owner_userid, status,
-                            webhook_key, webhook_token_hash, created_by, updated_by
+                            webhook_key, created_by, updated_by
                         )
                         VALUES (
                             :plan_code, :plan_name, :plan_type, :owner_userid, :status,
-                            :webhook_key, :webhook_token_hash, :created_by, :updated_by
+                            :webhook_key, :created_by, :updated_by
                         )
                         RETURNING id
                         """
@@ -203,7 +197,6 @@ class PostgresGroupOpsRepository:
                     {
                         **normalized,
                         "webhook_key": webhook_key,
-                        "webhook_token_hash": webhook_token_hash,
                     },
                 ).fetchone()
                 plan_id = int((_as_mapping(row) or {}).get("id") or 0)
@@ -213,10 +206,7 @@ class PostgresGroupOpsRepository:
                         {"plan_code": f"group_plan_{plan_id:03d}", "plan_id": plan_id},
                     )
                 self._update_plan_extra_fields(conn, plan_id, normalized)
-                result = self._get_plan_sql(conn, plan_id) or {}
-                if plaintext_token:
-                    result["plaintext_token"] = plaintext_token
-                return result
+                return self._get_plan_sql(conn, plan_id) or {}
         except IntegrityError as exc:
             raise ContractError("group ops plan code or webhook key already exists") from exc
         except SQLAlchemyError as exc:
@@ -554,11 +544,7 @@ class PostgresGroupOpsRepository:
                 ).fetchall()
         except SQLAlchemyError as exc:
             raise RepositoryProviderError(f"group ops repository unavailable: {exc}") from exc
-        return [
-            group
-            for row in rows
-            if (group := _legacy_group_chat_snapshot(_as_mapping(row) or {})).get("chat_id")
-        ]
+        return [group for row in rows if (group := _legacy_group_chat_snapshot(_as_mapping(row) or {})).get("chat_id")]
 
     def list_owners(self) -> list[dict[str, Any]]:
         try:
@@ -694,38 +680,6 @@ class PostgresGroupOpsRepository:
                     {"node_id": int(node_id), "plan_id": int(plan_id)},
                 )
                 return bool(result.rowcount)
-        except SQLAlchemyError as exc:
-            raise RepositoryProviderError(f"group ops repository unavailable: {exc}") from exc
-
-    def regenerate_webhook(self, plan_id: int) -> dict[str, Any]:
-        try:
-            with self._engine.begin() as conn:
-                plan = self._get_plan_sql(conn, int(plan_id))
-                if not plan:
-                    raise NotFoundError("group ops plan not found")
-                webhook_key = clean_text(plan.get("webhook_key")) or generate_webhook_key(plan["plan_name"])
-                plaintext_token = generate_webhook_token()
-                conn.execute(
-                    text(
-                        """
-                        UPDATE automation_group_ops_plans
-                        SET webhook_key = :webhook_key,
-                            webhook_token_hash = :webhook_token_hash,
-                            updated_at = CURRENT_TIMESTAMP
-                        WHERE id = :plan_id
-                        """
-                    ),
-                    {
-                        "plan_id": int(plan_id),
-                        "webhook_key": webhook_key,
-                        "webhook_token_hash": hash_webhook_token(plaintext_token),
-                    },
-                )
-                result = self._get_plan_sql(conn, int(plan_id)) or {}
-                result["plaintext_token"] = plaintext_token
-                return result
-        except NotFoundError:
-            raise
         except SQLAlchemyError as exc:
             raise RepositoryProviderError(f"group ops repository unavailable: {exc}") from exc
 
@@ -870,7 +824,7 @@ class PostgresGroupOpsRepository:
                         f"""
                         SELECT id, plan_id, scope_type, scope_ref_id, created_at
                         FROM automation_group_ops_plan_scope
-                        WHERE {' AND '.join(clauses)}
+                        WHERE {" AND ".join(clauses)}
                         ORDER BY id ASC
                         """
                     ),
@@ -908,8 +862,13 @@ class PostgresGroupOpsRepository:
         where = " AND ".join(clauses)
         try:
             with self._engine.connect() as conn:
-                rows = conn.execute(text(f"SELECT * FROM automation_group_ops_plan_member WHERE {where} ORDER BY id ASC LIMIT :limit OFFSET :offset"), params).fetchall()
-                total = conn.execute(text(f"SELECT COUNT(*) FROM automation_group_ops_plan_member WHERE {where}"), {k: v for k, v in params.items() if k not in {"limit", "offset"}}).scalar_one()
+                rows = conn.execute(
+                    text(f"SELECT * FROM automation_group_ops_plan_member WHERE {where} ORDER BY id ASC LIMIT :limit OFFSET :offset"), params
+                ).fetchall()
+                total = conn.execute(
+                    text(f"SELECT COUNT(*) FROM automation_group_ops_plan_member WHERE {where}"),
+                    {k: v for k, v in params.items() if k not in {"limit", "offset"}},
+                ).scalar_one()
                 return [self._row_to_plan_member(_as_mapping(row) or {}) for row in rows], int(total or 0)
         except SQLAlchemyError as exc:
             raise RepositoryProviderError(f"group ops repository unavailable: {exc}") from exc
@@ -963,7 +922,9 @@ class PostgresGroupOpsRepository:
     def get_segmentation(self, plan_id: int) -> dict[str, Any] | None:
         try:
             with self._engine.connect() as conn:
-                row = conn.execute(text("SELECT * FROM automation_group_ops_plan_segmentation WHERE plan_id = :plan_id LIMIT 1"), {"plan_id": int(plan_id)}).fetchone()
+                row = conn.execute(
+                    text("SELECT * FROM automation_group_ops_plan_segmentation WHERE plan_id = :plan_id LIMIT 1"), {"plan_id": int(plan_id)}
+                ).fetchone()
                 return self._row_to_segmentation(_as_mapping(row)) if row else None
         except SQLAlchemyError as exc:
             raise RepositoryProviderError(f"group ops repository unavailable: {exc}") from exc
@@ -1343,8 +1304,13 @@ class PostgresGroupOpsRepository:
         where = " AND ".join(clauses)
         try:
             with self._engine.connect() as conn:
-                rows = conn.execute(text(f"SELECT * FROM automation_group_ops_execution_log WHERE {where} ORDER BY id DESC LIMIT :limit OFFSET :offset"), params).fetchall()
-                total = conn.execute(text(f"SELECT COUNT(*) FROM automation_group_ops_execution_log WHERE {where}"), {k: v for k, v in params.items() if k not in {"limit", "offset"}}).scalar_one()
+                rows = conn.execute(
+                    text(f"SELECT * FROM automation_group_ops_execution_log WHERE {where} ORDER BY id DESC LIMIT :limit OFFSET :offset"), params
+                ).fetchall()
+                total = conn.execute(
+                    text(f"SELECT COUNT(*) FROM automation_group_ops_execution_log WHERE {where}"),
+                    {k: v for k, v in params.items() if k not in {"limit", "offset"}},
+                ).scalar_one()
                 return [self._row_to_execution_log(_as_mapping(row) or {}) for row in rows], int(total or 0)
         except SQLAlchemyError as exc:
             raise RepositoryProviderError(f"group ops repository unavailable: {exc}") from exc
@@ -1431,7 +1397,6 @@ class PostgresGroupOpsRepository:
             "allow_no_sop",
             "allow_external_recipients",
             "description",
-            "last_rotated_at",
         ]
         if not all(self._table_has_column(conn, "automation_group_ops_plans", column) for column in extra_columns):
             return
@@ -1442,11 +1407,7 @@ class PostgresGroupOpsRepository:
                 SET default_action_type = :default_action_type,
                     allow_no_sop = :allow_no_sop,
                     allow_external_recipients = :allow_external_recipients,
-                    description = :description,
-                    last_rotated_at = CASE
-                        WHEN webhook_token_hash <> '' THEN COALESCE(last_rotated_at, CURRENT_TIMESTAMP)
-                        ELSE last_rotated_at
-                    END
+                    description = :description
                 WHERE id = :plan_id
                 """
             ),
@@ -1471,14 +1432,13 @@ class PostgresGroupOpsRepository:
             "owner_userid": owner_userid,
             "owner_name": self._owner_name_for_userid(conn, owner_userid),
             "status": clean_text(row.get("status")),
-            "default_action_type": clean_text(row.get("default_action_type") or ("enqueue" if clean_text(row.get("plan_type")) == "webhook" else "record_only")),
+            "default_action_type": clean_text(
+                row.get("default_action_type") or ("enqueue" if clean_text(row.get("plan_type")) == "webhook" else "record_only")
+            ),
             "allow_no_sop": bool(row.get("allow_no_sop", True)),
             "allow_external_recipients": bool(row.get("allow_external_recipients", True)),
             "description": clean_text(row.get("description")),
-            "last_rotated_at": _iso(row.get("last_rotated_at") or row.get("updated_at")),
-            "signature_secret_hash": clean_text(row.get("signature_secret_hash")),
             "webhook_key": clean_text(row.get("webhook_key")),
-            "webhook_token_hash": clean_text(row.get("webhook_token_hash")),
             "created_by": clean_text(row.get("created_by")),
             "updated_by": clean_text(row.get("updated_by")),
             "created_at": _iso(row.get("created_at")),
@@ -1536,10 +1496,7 @@ class PostgresGroupOpsRepository:
             },
         )
         if isinstance(content_package, dict):
-            has_material_ids = any(
-                content_package.get(key)
-                for key in ("image_library_ids", "miniprogram_library_ids", "attachment_library_ids")
-            )
+            has_material_ids = any(content_package.get(key) for key in ("image_library_ids", "miniprogram_library_ids", "attachment_library_ids"))
             if text_content and not clean_text(content_package.get("content_text")) and not has_material_ids:
                 content_package = {**content_package, "content_text": text_content}
         else:

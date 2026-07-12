@@ -1,4 +1,4 @@
-"""add unified AI-CRM authorization platform schema.
+"""add the private-deployment authentication boundary.
 
 Revision ID: 0104_auth_platform
 Revises: 0103_broadcast_delivery_state_machine
@@ -18,224 +18,146 @@ depends_on = None
 def upgrade() -> None:
     op.execute(
         """
-        CREATE TABLE IF NOT EXISTS auth_principals (
-            id BIGSERIAL PRIMARY KEY,
-            principal_id TEXT NOT NULL UNIQUE,
-            principal_type TEXT NOT NULL CHECK (principal_type IN ('user','service','agent','partner')),
-            tenant_id TEXT NOT NULL,
-            subject TEXT NOT NULL,
+        CREATE TABLE auth_api_clients (
+            client_id TEXT PRIMARY KEY,
+            principal_id TEXT NOT NULL,
+            principal_type TEXT NOT NULL CHECK (principal_type IN ('api_client','service')),
+            purpose TEXT NOT NULL,
             display_name TEXT NOT NULL DEFAULT '',
-            status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','disabled','revoked')),
-            session_version BIGINT NOT NULL DEFAULT 1 CHECK (session_version > 0),
-            metadata_json JSONB NOT NULL DEFAULT '{}'::jsonb,
-            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            UNIQUE (tenant_id, subject, principal_type)
-        )
-        """
-    )
-    op.execute(
-        """
-        CREATE TABLE IF NOT EXISTS auth_clients (
-            id BIGSERIAL PRIMARY KEY,
-            client_id TEXT NOT NULL UNIQUE,
-            principal_id TEXT NOT NULL REFERENCES auth_principals(principal_id),
-            client_type TEXT NOT NULL CHECK (client_type IN ('confidential','public')),
-            client_secret_hash TEXT NOT NULL DEFAULT '',
-            token_endpoint_auth_method TEXT NOT NULL,
-            redirect_uris_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+            secret_hash TEXT NOT NULL,
             audiences_json JSONB NOT NULL DEFAULT '[]'::jsonb,
             scopes_json JSONB NOT NULL DEFAULT '[]'::jsonb,
             capabilities_json JSONB NOT NULL DEFAULT '[]'::jsonb,
-            resource_constraints_json JSONB NOT NULL DEFAULT '{}'::jsonb,
-            sender_constraint_type TEXT NOT NULL DEFAULT '' CHECK (sender_constraint_type IN ('','mtls','dpop')),
-            status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','disabled','revoked')),
+            allowed_cidrs_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+            corp_id TEXT NOT NULL DEFAULT '',
+            owner_scope_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+            auth_version BIGINT NOT NULL DEFAULT 1 CHECK (auth_version > 0),
+            token_ttl_seconds INTEGER NOT NULL DEFAULT 1800 CHECK (token_ttl_seconds BETWEEN 60 AND 3600),
+            enabled BOOLEAN NOT NULL DEFAULT TRUE,
+            last_rotated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
             created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            CHECK ((client_type = 'public' AND client_secret_hash = '') OR client_type = 'confidential')
+            CHECK (jsonb_typeof(audiences_json) = 'array'),
+            CHECK (jsonb_typeof(scopes_json) = 'array'),
+            CHECK (jsonb_typeof(capabilities_json) = 'array'),
+            CHECK (jsonb_typeof(allowed_cidrs_json) = 'array'),
+            CHECK (jsonb_typeof(owner_scope_json) = 'object')
         )
         """
     )
     op.execute(
+        "CREATE INDEX idx_auth_api_clients_enabled ON auth_api_clients (enabled, client_id)"
+    )
+    op.execute(
         """
-        CREATE TABLE IF NOT EXISTS auth_client_keys (
-            id BIGSERIAL PRIMARY KEY,
-            client_id TEXT NOT NULL REFERENCES auth_clients(client_id) ON DELETE CASCADE,
-            key_id TEXT NOT NULL,
-            algorithm TEXT NOT NULL,
-            public_jwk_json JSONB NOT NULL,
-            thumbprint TEXT NOT NULL,
-            status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','retiring','revoked')),
-            not_before TIMESTAMPTZ,
-            expires_at TIMESTAMPTZ,
+        CREATE TABLE auth_webhook_clients (
+            client_id TEXT PRIMARY KEY,
+            principal_id TEXT NOT NULL,
+            display_name TEXT NOT NULL DEFAULT '',
+            secret_reference TEXT NOT NULL CHECK (secret_reference LIKE 'secretref:file:%'),
+            capabilities_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+            allowed_cidrs_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+            corp_id TEXT NOT NULL DEFAULT '',
+            owner_scope_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+            auth_version BIGINT NOT NULL DEFAULT 1 CHECK (auth_version > 0),
+            enabled BOOLEAN NOT NULL DEFAULT TRUE,
+            last_rotated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
             created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            UNIQUE (client_id, key_id),
-            UNIQUE (client_id, thumbprint)
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            CHECK (jsonb_typeof(capabilities_json) = 'array'),
+            CHECK (jsonb_typeof(allowed_cidrs_json) = 'array'),
+            CHECK (jsonb_typeof(owner_scope_json) = 'object')
         )
         """
     )
     op.execute(
         """
-        CREATE TABLE IF NOT EXISTS auth_sessions (
-            id BIGSERIAL PRIMARY KEY,
-            session_id TEXT NOT NULL UNIQUE,
-            principal_id TEXT NOT NULL REFERENCES auth_principals(principal_id),
-            client_id TEXT NOT NULL REFERENCES auth_clients(client_id),
-            session_secret_hash TEXT NOT NULL,
-            csrf_token_hash TEXT NOT NULL,
+        CREATE TABLE auth_webhook_replay (
+            client_id TEXT NOT NULL REFERENCES auth_webhook_clients(client_id) ON DELETE CASCADE,
+            event_id_hash TEXT NOT NULL CHECK (length(event_id_hash) = 64),
+            expires_at TIMESTAMPTZ NOT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (client_id, event_id_hash)
+        )
+        """
+    )
+    op.execute("CREATE INDEX idx_auth_webhook_replay_expiry ON auth_webhook_replay (expires_at)")
+    op.execute(
+        """
+        CREATE TABLE auth_sessions (
+            session_id TEXT PRIMARY KEY,
+            session_secret_hash TEXT NOT NULL UNIQUE CHECK (length(session_secret_hash) = 64),
+            csrf_token_hash TEXT NOT NULL CHECK (length(csrf_token_hash) = 64),
+            principal_id TEXT NOT NULL,
+            admin_user_id BIGINT NOT NULL REFERENCES admin_users(id) ON DELETE CASCADE,
+            corp_id TEXT NOT NULL DEFAULT '',
             session_version BIGINT NOT NULL CHECK (session_version > 0),
-            audience TEXT NOT NULL,
             scopes_json JSONB NOT NULL DEFAULT '[]'::jsonb,
             capabilities_json JSONB NOT NULL DEFAULT '[]'::jsonb,
-            resource_constraints_json JSONB NOT NULL DEFAULT '{}'::jsonb,
-            actor TEXT NOT NULL DEFAULT '',
-            acr TEXT NOT NULL DEFAULT '',
+            owner_scope_json JSONB NOT NULL DEFAULT '{}'::jsonb,
             auth_time TIMESTAMPTZ NOT NULL,
             expires_at TIMESTAMPTZ NOT NULL,
             revoked_at TIMESTAMPTZ,
             revoked_reason TEXT NOT NULL DEFAULT '',
             last_seen_at TIMESTAMPTZ,
             created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            CHECK (expires_at > auth_time)
-        )
-        """
-    )
-    op.execute(
-        """
-        CREATE TABLE IF NOT EXISTS auth_authorization_codes (
-            id BIGSERIAL PRIMARY KEY,
-            code_hash TEXT NOT NULL UNIQUE,
-            principal_id TEXT NOT NULL REFERENCES auth_principals(principal_id),
-            client_id TEXT NOT NULL REFERENCES auth_clients(client_id),
-            redirect_uri TEXT NOT NULL,
-            audience TEXT NOT NULL,
-            scopes_json JSONB NOT NULL DEFAULT '[]'::jsonb,
-            code_challenge TEXT NOT NULL,
-            code_challenge_method TEXT NOT NULL CHECK (code_challenge_method = 'S256'),
-            nonce TEXT NOT NULL DEFAULT '',
-            expires_at TIMESTAMPTZ NOT NULL,
-            consumed_at TIMESTAMPTZ,
-            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
-        )
-        """
-    )
-    op.execute(
-        """
-        CREATE TABLE IF NOT EXISTS auth_token_families (
-            id BIGSERIAL PRIMARY KEY,
-            family_id TEXT NOT NULL UNIQUE,
-            principal_id TEXT NOT NULL REFERENCES auth_principals(principal_id),
-            client_id TEXT NOT NULL REFERENCES auth_clients(client_id),
-            status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','revoked','reuse_detected')),
-            revoked_at TIMESTAMPTZ,
-            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
-        )
-        """
-    )
-    op.execute(
-        """
-        CREATE TABLE IF NOT EXISTS auth_tokens (
-            id BIGSERIAL PRIMARY KEY,
-            token_id TEXT NOT NULL UNIQUE,
-            token_hash TEXT NOT NULL UNIQUE,
-            token_type TEXT NOT NULL CHECK (token_type IN ('access','refresh')),
-            family_id TEXT REFERENCES auth_token_families(family_id),
-            parent_token_id TEXT,
-            principal_id TEXT NOT NULL REFERENCES auth_principals(principal_id),
-            client_id TEXT NOT NULL REFERENCES auth_clients(client_id),
-            audience TEXT NOT NULL,
-            scopes_json JSONB NOT NULL DEFAULT '[]'::jsonb,
-            capabilities_json JSONB NOT NULL DEFAULT '[]'::jsonb,
-            resource_constraints_json JSONB NOT NULL DEFAULT '{}'::jsonb,
-            actor TEXT NOT NULL DEFAULT '',
-            acr TEXT NOT NULL DEFAULT '',
-            sender_constraint TEXT NOT NULL DEFAULT '',
-            auth_time TIMESTAMPTZ NOT NULL,
-            expires_at TIMESTAMPTZ NOT NULL,
-            revoked_at TIMESTAMPTZ,
-            consumed_at TIMESTAMPTZ,
-            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
             CHECK (expires_at > auth_time),
-            CHECK ((token_type = 'refresh' AND family_id IS NOT NULL) OR token_type = 'access')
+            CHECK (jsonb_typeof(scopes_json) = 'array'),
+            CHECK (jsonb_typeof(capabilities_json) = 'array'),
+            CHECK (jsonb_typeof(owner_scope_json) = 'object')
         )
         """
     )
-    op.execute("CREATE INDEX IF NOT EXISTS idx_auth_tokens_active_lookup ON auth_tokens (token_hash, expires_at) WHERE revoked_at IS NULL")
-    op.execute("CREATE INDEX IF NOT EXISTS idx_auth_tokens_family ON auth_tokens (family_id) WHERE family_id IS NOT NULL")
     op.execute(
-        """
-        CREATE TABLE IF NOT EXISTS auth_replay_nonces (
-            id BIGSERIAL PRIMARY KEY,
-            client_id TEXT NOT NULL REFERENCES auth_clients(client_id),
-            nonce_hash TEXT NOT NULL,
-            purpose TEXT NOT NULL,
-            expires_at TIMESTAMPTZ NOT NULL,
-            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            UNIQUE (client_id, nonce_hash, purpose)
-        )
-        """
+        "CREATE INDEX idx_auth_sessions_active_expiry ON auth_sessions (expires_at) WHERE revoked_at IS NULL"
     )
-    op.execute("CREATE INDEX IF NOT EXISTS idx_auth_replay_nonces_expiry ON auth_replay_nonces (expires_at)")
     op.execute(
         """
-        CREATE TABLE IF NOT EXISTS auth_security_events (
+        CREATE TABLE auth_security_events (
             id BIGSERIAL PRIMARY KEY,
-            event_id TEXT NOT NULL UNIQUE,
             event_type TEXT NOT NULL,
-            principal_id TEXT NOT NULL DEFAULT '',
             client_id TEXT NOT NULL DEFAULT '',
-            token_id TEXT NOT NULL DEFAULT '',
+            principal_id TEXT NOT NULL DEFAULT '',
             outcome TEXT NOT NULL CHECK (outcome IN ('allowed','denied','revoked','failed')),
             reason TEXT NOT NULL DEFAULT '',
-            request_fingerprint TEXT NOT NULL DEFAULT '',
-            metadata_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+            request_id TEXT NOT NULL DEFAULT '',
             created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
         )
         """
     )
     op.execute(
-        """
-        CREATE OR REPLACE FUNCTION sync_admin_auth_principal_state()
-        RETURNS trigger AS $$
-        BEGIN
-            UPDATE auth_principals
-            SET session_version = NEW.session_version,
-                status = CASE
-                    WHEN NEW.is_active AND NEW.login_enabled THEN 'active'
-                    ELSE 'disabled'
-                END,
-                updated_at = CURRENT_TIMESTAMP
-            WHERE principal_id = 'admin-user:' || NEW.id::text;
-            RETURN NEW;
-        END;
-        $$ LANGUAGE plpgsql
-        """
+        "CREATE INDEX idx_auth_security_events_lookup ON auth_security_events (created_at DESC, event_type)"
     )
-    op.execute(
-        """
-        DO $$
-        BEGIN
-            IF to_regclass('public.admin_users') IS NOT NULL THEN
-                DROP TRIGGER IF EXISTS trg_sync_admin_auth_principal_state ON admin_users;
-                CREATE TRIGGER trg_sync_admin_auth_principal_state
-                AFTER UPDATE OF session_version, is_active, login_enabled ON admin_users
-                FOR EACH ROW EXECUTE FUNCTION sync_admin_auth_principal_state();
-            END IF;
-        END $$
-        """
-    )
+
+    op.execute("DROP INDEX IF EXISTS idx_external_effect_test_receipt_token")
+    op.execute("ALTER TABLE IF EXISTS external_effect_test_receipt RENAME COLUMN receiver_token TO event_id")
+    op.execute("CREATE INDEX IF NOT EXISTS idx_external_effect_test_receipt_event ON external_effect_test_receipt (event_id)")
+
+    # Delete every route-local credential column after the centralized registries exist.
+    op.execute("ALTER TABLE IF EXISTS automation_agent_runtime_config DROP COLUMN IF EXISTS inbound_webhook_token")
+    op.execute("ALTER TABLE IF EXISTS automation_agent_runtime_config DROP COLUMN IF EXISTS inbound_webhook_secret")
+    op.execute("ALTER TABLE IF EXISTS ai_audience_package DROP COLUMN IF EXISTS inbound_webhook_secret")
+    op.execute("ALTER TABLE IF EXISTS ai_audience_outbound_subscription DROP COLUMN IF EXISTS signing_secret")
+    op.execute("ALTER TABLE IF EXISTS automation_group_ops_plans DROP COLUMN IF EXISTS webhook_token_hash")
+    op.execute("ALTER TABLE IF EXISTS automation_group_ops_plans DROP COLUMN IF EXISTS signature_secret_hash")
+    op.execute("ALTER TABLE IF EXISTS automation_group_ops_plans DROP COLUMN IF EXISTS last_rotated_at")
 
 
 def downgrade() -> None:
-    op.execute("DROP TRIGGER IF EXISTS trg_sync_admin_auth_principal_state ON admin_users")
-    op.execute("DROP FUNCTION IF EXISTS sync_admin_auth_principal_state()")
+    # Rollback restores only the historical column shapes; secret material is never reconstructed.
+    op.execute("ALTER TABLE IF EXISTS automation_agent_runtime_config ADD COLUMN IF NOT EXISTS inbound_webhook_token TEXT NOT NULL DEFAULT ''")
+    op.execute("ALTER TABLE IF EXISTS automation_agent_runtime_config ADD COLUMN IF NOT EXISTS inbound_webhook_secret TEXT NOT NULL DEFAULT ''")
+    op.execute("ALTER TABLE IF EXISTS ai_audience_package ADD COLUMN IF NOT EXISTS inbound_webhook_secret TEXT NOT NULL DEFAULT ''")
+    op.execute("ALTER TABLE IF EXISTS ai_audience_outbound_subscription ADD COLUMN IF NOT EXISTS signing_secret TEXT NOT NULL DEFAULT ''")
+    op.execute("ALTER TABLE IF EXISTS automation_group_ops_plans ADD COLUMN IF NOT EXISTS webhook_token_hash TEXT NOT NULL DEFAULT ''")
+    op.execute("ALTER TABLE IF EXISTS automation_group_ops_plans ADD COLUMN IF NOT EXISTS signature_secret_hash TEXT NOT NULL DEFAULT ''")
+    op.execute("ALTER TABLE IF EXISTS automation_group_ops_plans ADD COLUMN IF NOT EXISTS last_rotated_at TIMESTAMPTZ")
+    op.execute("DROP INDEX IF EXISTS idx_external_effect_test_receipt_event")
+    op.execute("ALTER TABLE IF EXISTS external_effect_test_receipt RENAME COLUMN event_id TO receiver_token")
+    op.execute("CREATE INDEX IF NOT EXISTS idx_external_effect_test_receipt_token ON external_effect_test_receipt (receiver_token)")
+
     op.execute("DROP TABLE IF EXISTS auth_security_events")
-    op.execute("DROP TABLE IF EXISTS auth_replay_nonces")
-    op.execute("DROP TABLE IF EXISTS auth_tokens")
-    op.execute("DROP TABLE IF EXISTS auth_token_families")
-    op.execute("DROP TABLE IF EXISTS auth_authorization_codes")
     op.execute("DROP TABLE IF EXISTS auth_sessions")
-    op.execute("DROP TABLE IF EXISTS auth_client_keys")
-    op.execute("DROP TABLE IF EXISTS auth_clients")
-    op.execute("DROP TABLE IF EXISTS auth_principals")
+    op.execute("DROP TABLE IF EXISTS auth_webhook_replay")
+    op.execute("DROP TABLE IF EXISTS auth_webhook_clients")
+    op.execute("DROP TABLE IF EXISTS auth_api_clients")

@@ -245,13 +245,13 @@ class ExternalEffectRepository:
     def record_attempt(self, *, job: ExternalEffectJob, status: str, adapter_mode: str, request_summary: dict[str, Any], response_summary: dict[str, Any], error_code: str = "", error_message: str = "") -> ExternalEffectAttempt:
         raise NotImplementedError
 
-    def get_job_by_receiver_token(self, receiver_token: str) -> ExternalEffectJob | None:
+    def get_job_by_event_id(self, event_id: str) -> ExternalEffectJob | None:
         raise NotImplementedError
 
     def create_test_receipt(
         self,
         *,
-        receiver_token: str,
+        event_id: str,
         job: ExternalEffectJob,
         request_method: str,
         request_path: str,
@@ -975,24 +975,24 @@ class SQLAlchemyExternalEffectRepository(ExternalEffectRepository):
             raise RuntimeError("external effect attempt insert failed")
         return attempt
 
-    def get_job_by_receiver_token(self, receiver_token: str) -> ExternalEffectJob | None:
+    def get_job_by_event_id(self, event_id: str) -> ExternalEffectJob | None:
         return _public_job(
             self._one(
                 """
                 SELECT *
                 FROM external_effect_job
-                WHERE payload_json->>'receiver_token' = :receiver_token
+                WHERE idempotency_key = :event_id
                   AND payload_json->>'execution_scope' = 'test_loopback'
                 LIMIT 1
                 """,
-                {"receiver_token": _text(receiver_token)},
+                {"event_id": _text(event_id)},
             )
         )
 
     def create_test_receipt(
         self,
         *,
-        receiver_token: str,
+        event_id: str,
         job: ExternalEffectJob,
         request_method: str,
         request_path: str,
@@ -1007,13 +1007,13 @@ class SQLAlchemyExternalEffectRepository(ExternalEffectRepository):
         row = self._write_one(
             """
             INSERT INTO external_effect_test_receipt (
-                receipt_id, receiver_token, job_id, effect_type, trace_id, idempotency_key,
+                receipt_id, event_id, job_id, effect_type, trace_id, idempotency_key,
                 target_type, target_id, business_type, business_id, request_method,
                 request_path, headers_summary_json, payload_summary_json, payload_hash,
                 body_json, signature_valid, response_status, received_at
             )
             VALUES (
-                :receipt_id, :receiver_token, :job_id, :effect_type, :trace_id, :idempotency_key,
+                :receipt_id, :event_id, :job_id, :effect_type, :trace_id, :idempotency_key,
                 :target_type, :target_id, :business_type, :business_id, :request_method,
                 :request_path, CAST(:headers_summary AS jsonb), CAST(:payload_summary AS jsonb),
                 :payload_hash, CAST(:body_json AS jsonb), :signature_valid, :response_status,
@@ -1023,7 +1023,7 @@ class SQLAlchemyExternalEffectRepository(ExternalEffectRepository):
             """,
             {
                 "receipt_id": receipt_id,
-                "receiver_token": _text(receiver_token),
+                "event_id": _text(event_id),
                 "job_id": int(job.id),
                 "effect_type": job.effect_type,
                 "trace_id": job.trace_id,
@@ -1051,7 +1051,7 @@ class SQLAlchemyExternalEffectRepository(ExternalEffectRepository):
         filters = dict(filters or {})
         clauses: list[str] = []
         params: dict[str, Any] = {}
-        for key in ("job_id", "effect_type", "trace_id", "receiver_token"):
+        for key in ("job_id", "effect_type", "trace_id", "event_id"):
             value = _text(filters.get(key))
             if value:
                 clauses.append(f"{key} = :{key}")
@@ -1689,18 +1689,18 @@ class InMemoryExternalEffectRepository(ExternalEffectRepository):
         assert attempt is not None
         return attempt
 
-    def get_job_by_receiver_token(self, receiver_token: str) -> ExternalEffectJob | None:
-        token = _text(receiver_token)
+    def get_job_by_event_id(self, event_id: str) -> ExternalEffectJob | None:
+        normalized_event_id = _text(event_id)
         for row in self._jobs:
             payload = row.get("payload_json") or {}
-            if payload.get("receiver_token") == token and payload.get("execution_scope") == "test_loopback":
+            if row.get("idempotency_key") == normalized_event_id and payload.get("execution_scope") == "test_loopback":
                 return _public_job(row)
         return None
 
     def create_test_receipt(
         self,
         *,
-        receiver_token: str,
+        event_id: str,
         job: ExternalEffectJob,
         request_method: str,
         request_path: str,
@@ -1715,7 +1715,7 @@ class InMemoryExternalEffectRepository(ExternalEffectRepository):
         row = {
             "id": self._next_receipt_id,
             "receipt_id": "eer_" + __import__("uuid").uuid4().hex,
-            "receiver_token": _text(receiver_token),
+            "event_id": _text(event_id),
             "job_id": int(job.id),
             "effect_type": job.effect_type,
             "trace_id": job.trace_id,
@@ -1743,7 +1743,7 @@ class InMemoryExternalEffectRepository(ExternalEffectRepository):
     def list_test_receipts(self, filters: dict[str, Any] | None = None, *, limit: int = 50, offset: int = 0) -> tuple[list[ExternalEffectTestReceipt], int]:
         filters = dict(filters or {})
         rows = list(self._receipts)
-        for key in ("job_id", "effect_type", "trace_id", "receiver_token"):
+        for key in ("job_id", "effect_type", "trace_id", "event_id"):
             value = _text(filters.get(key))
             if value:
                 rows = [row for row in rows if _text(row.get(key)) == value]

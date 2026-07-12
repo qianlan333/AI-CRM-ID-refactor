@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from aicrm_next.public_product.signed_context import build_sidebar_product_context_token
 from aicrm_next.public_product.sidebar_order_context import resolve_sidebar_order_context
+from aicrm_next.shared.signed_context import build_sidebar_product_context_token
 
 
 def _token(monkeypatch) -> str:

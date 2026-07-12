@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from urllib.parse import urlparse
 
 from fastapi.testclient import TestClient
@@ -20,6 +21,8 @@ from aicrm_next.platform_foundation.external_effects import (
 )
 from aicrm_next.platform_foundation.external_effects.adapters import DEFAULT_ADAPTER_REGISTRY, WebhookAdapter
 from aicrm_next.platform_foundation.external_effects.worker import ExternalEffectWorker
+from aicrm_next.platform_foundation.auth_platform.webhook_hmac import WebhookHmacSigner
+from tests.webhook_hmac_test_helpers import install_webhook_hmac_client
 
 
 def _reset_fixture_state() -> None:
@@ -30,14 +33,22 @@ def _reset_fixture_state() -> None:
 
 def _install_loopback_http_adapter(monkeypatch, client: TestClient) -> list[dict]:
     calls: list[dict] = []
+    credentials = install_webhook_hmac_client(
+        client,
+        capability="external_effect_receipt_receive",
+        client_id="pytest-aicrm-outbound",
+    )
+    signer = WebhookHmacSigner(client_id=credentials.client_id, secret=credentials.secret)
 
-    def loopback_post(url, *, json, headers, timeout):
-        calls.append({"url": url, "json": json, "headers": headers, "timeout": timeout})
+    def loopback_post(url, *, data, headers, timeout):
+        calls.append({"url": url, "json": json.loads(data.decode("utf-8")), "headers": headers, "timeout": timeout})
         parsed = urlparse(url)
-        return client.post(parsed.path, json=json, headers=headers)
+        with monkeypatch.context() as route_policy:
+            route_policy.setenv("AICRM_ROUTE_POLICY_ENFORCED", "true")
+            return client.post(parsed.path, content=data, headers=headers)
 
-    monkeypatch.setitem(DEFAULT_ADAPTER_REGISTRY._adapters, "outbound_webhook", WebhookAdapter(http_post=loopback_post))  # type: ignore[attr-defined]
-    monkeypatch.setitem(DEFAULT_ADAPTER_REGISTRY._adapters, "webhook", WebhookAdapter(http_post=loopback_post))  # type: ignore[attr-defined]
+    monkeypatch.setitem(DEFAULT_ADAPTER_REGISTRY._adapters, "outbound_webhook", WebhookAdapter(http_post=loopback_post, signer=signer))  # type: ignore[attr-defined]
+    monkeypatch.setitem(DEFAULT_ADAPTER_REGISTRY._adapters, "webhook", WebhookAdapter(http_post=loopback_post, signer=signer))  # type: ignore[attr-defined]
     return calls
 
 
@@ -120,7 +131,7 @@ def test_ai_assist_campaign_loopback_execute_succeeds_with_test_receiver(next_cl
     assert job.status == "queued"
     assert job.execution_mode == "execute"
     assert job.payload_json["execution_scope"] == "test_loopback"
-    assert job.payload_json["webhook_url"].startswith("https://crm.example.test/api/external-effects/test-receiver/")
+    assert job.payload_json["webhook_url"] == "https://crm.example.test/api/external-effects/test-receiver"
 
     preview = ExternalEffectWorker().preview_due(batch_size=1, effect_types=[AI_ASSIST_CAMPAIGN_MESSAGE_LOOPBACK], test_only=True)
     dry_run = ExternalEffectWorker().run_due(batch_size=1, dry_run=True, effect_types=[AI_ASSIST_CAMPAIGN_MESSAGE_LOOPBACK], test_only=True)
@@ -149,7 +160,6 @@ def test_ai_assist_campaign_loopback_execute_succeeds_with_test_receiver(next_cl
 
 def test_ai_assist_campaign_run_due_api_injects_current_host_loopback_url(next_client: TestClient, monkeypatch) -> None:
     _reset_fixture_state()
-    monkeypatch.setenv("AUTOMATION_INTERNAL_API_TOKEN", "timer-token")
     monkeypatch.setenv("AICRM_EXTERNAL_EFFECT_TEST_RECEIVER_ENABLED", "1")
     monkeypatch.setenv("AICRM_EXTERNAL_EFFECT_TEST_EXECUTION_ONLY", "1")
     monkeypatch.setenv("AICRM_EXTERNAL_EFFECT_WEBHOOK_EXECUTE", "1")
@@ -177,13 +187,12 @@ def test_ai_assist_campaign_run_due_api_injects_current_host_loopback_url(next_c
     assert body["real_external_call_executed"] is False
     assert body["wecom_send_executed"] is False
     assert job is not None
-    assert job.payload_json["webhook_url"].startswith("https://crm.example.test/api/external-effects/test-receiver/")
+    assert job.payload_json["webhook_url"] == "https://crm.example.test/api/external-effects/test-receiver"
     assert "attacker.example.com" not in job.payload_json["webhook_url"]
 
 
 def test_ai_assist_campaign_run_due_api_env_test_mode_injects_loopback_url(next_client: TestClient, monkeypatch) -> None:
     _reset_fixture_state()
-    monkeypatch.setenv("AUTOMATION_INTERNAL_API_TOKEN", "timer-token")
     monkeypatch.setenv("AI_ASSIST_EXTERNAL_EFFECT_TEST_MODE", "1")
 
     response = next_client.post(
@@ -206,7 +215,7 @@ def test_ai_assist_campaign_run_due_api_env_test_mode_injects_loopback_url(next_
     assert job.status == "queued"
     assert job.execution_mode == "execute"
     assert job.payload_json["execution_scope"] == "test_loopback"
-    assert job.payload_json["webhook_url"].startswith("https://crm.example.test/api/external-effects/test-receiver/")
+    assert job.payload_json["webhook_url"] == "https://crm.example.test/api/external-effects/test-receiver"
 
 
 def test_ai_assist_campaign_loopback_allowlist_miss_blocks_without_receipt(next_client: TestClient, monkeypatch) -> None:

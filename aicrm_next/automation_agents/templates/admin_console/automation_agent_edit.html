@@ -424,7 +424,6 @@
       <div class="automation-agent-url-row">
         <input class="automation-agent-input automation-agent-code" id="receiveUrl" value="" readonly>
         <button class="automation-agent-copy-btn" type="button" data-copy="#receiveUrl" aria-label="复制接收地址">⧉</button>
-        <button class="automation-agent-btn" id="resetToken" type="button">重置 token</button>
       </div>
 
       <label class="automation-agent-label" for="sendUrl">发送地址 <span class="automation-agent-method">POST</span></label>
@@ -529,7 +528,6 @@
   (() => {
     const agentApiUrl = {{ automation_agent_api_url | tojson }};
     const fixedContentApiUrl = {{ automation_agent_fixed_content_api_url | tojson }};
-    const resetTokenApiUrl = {{ automation_agent_reset_token_api_url | tojson }};
     const state = {
       agent: null,
       focusPrompt: null,
@@ -550,7 +548,6 @@
       statusBadge: document.getElementById("statusBadge"),
       receiveUrl: document.getElementById("receiveUrl"),
       sendUrl: document.getElementById("sendUrl"),
-      resetToken: document.getElementById("resetToken"),
       rolePrompt: document.getElementById("rolePrompt"),
       taskPrompt: document.getElementById("taskPrompt"),
       fixedScriptText: document.getElementById("fixedScriptText"),
@@ -814,14 +811,6 @@
       toast("固定素材已保存");
     };
 
-    const resetInboundToken = async () => {
-      if (!window.confirm("确认重置接收地址 token？重置后旧地址将失效。")) return;
-      const payload = await fetchJson(resetTokenApiUrl, { method: "POST" });
-      state.agent = payload.agent;
-      applyAgent(payload.agent);
-      toast("接收 token 已重置");
-    };
-
     const applyAgent = (agent) => {
       state.agent = agent || {};
       els.title.textContent = state.agent.agent_name || "编辑 Agent";
@@ -908,10 +897,6 @@
     els.automationType.addEventListener("change", renderMode);
     els.fixedScriptText.addEventListener("input", renderMode);
     els.agentStatus.addEventListener("change", renderStatus);
-    els.resetToken.addEventListener("click", () => {
-      resetInboundToken().catch((error) => window.alert(error.message || "重置失败"));
-    });
-
     loadAgent().catch((error) => window.alert(error.message || "加载失败"));
   })();
 </script>

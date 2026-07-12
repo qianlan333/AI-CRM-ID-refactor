@@ -24,7 +24,7 @@ def _resolved_identity(request) -> IdentityResolveResult:
     )
 
 
-def test_create_no_sop_webhook_receiver_returns_one_time_token(group_ops_api_client):  # noqa: F811
+def test_create_no_sop_webhook_receiver_uses_registered_message_signatures(group_ops_api_client):  # noqa: F811
     response = group_ops_api_client.post(
         "/api/admin/automation-conversion/group-ops/plans",
         json={
@@ -43,7 +43,8 @@ def test_create_no_sop_webhook_receiver_returns_one_time_token(group_ops_api_cli
     assert body["planId"].startswith("plan_")
     assert body["type"] == "webhook_receiver"
     assert body["webhook"]["endpointKey"]
-    assert body["webhook"]["token"]
+    assert body["webhook"]["authMode"] == "aicrm_hmac_sha256"
+    assert "token" not in body["webhook"]
 
     detail = group_ops_api_client.get(f"/api/admin/automation-conversion/group-ops/plans/{body['id']}")
     assert detail.status_code == 200
@@ -64,10 +65,9 @@ def test_webhook_direct_recipients_idempotency_and_disabled_guard(group_ops_api_
         },
     ).json()
     endpoint_key = created["webhook"]["endpointKey"]
-    token = created["webhook"]["token"]
     disabled = group_ops_api_client.post(
         f"/api/automation/group-ops/webhooks/{endpoint_key}",
-        headers={"Authorization": f"Bearer {token}", "X-Idempotency-Key": "pytest-disabled"},
+        headers={"X-Idempotency-Key": "pytest-disabled"},
         json={
             "event": "core_feature_activation",
             "recipients": [{"external_user_id": "wmbNXyCwAAXhagLBNjtlFj2jbQevWinQ"}],
@@ -82,7 +82,7 @@ def test_webhook_direct_recipients_idempotency_and_disabled_guard(group_ops_api_
 
     first = group_ops_api_client.post(
         f"/api/automation/group-ops/webhooks/{endpoint_key}",
-        headers={"Authorization": f"Bearer {token}", "X-Idempotency-Key": "pytest-direct-1"},
+        headers={"X-Idempotency-Key": "pytest-direct-1"},
         json={
             "event": "core_feature_activation",
             "source": "pytest",
@@ -93,7 +93,7 @@ def test_webhook_direct_recipients_idempotency_and_disabled_guard(group_ops_api_
     )
     duplicate = group_ops_api_client.post(
         f"/api/automation/group-ops/webhooks/{endpoint_key}",
-        headers={"Authorization": f"Bearer {token}", "X-Idempotency-Key": "pytest-direct-1"},
+        headers={"X-Idempotency-Key": "pytest-direct-1"},
         json={
             "event": "core_feature_activation",
             "recipients": [{"external_user_id": "wmbNXyCwAAXhagLBNjtlFj2jbQevWinQ"}],
@@ -140,7 +140,7 @@ def test_webhook_enqueue_action_routes_through_next_action_port(group_ops_api_cl
 
     response = group_ops_api_client.post(
         f"/api/automation/group-ops/webhooks/{created['webhook']['endpointKey']}",
-        headers={"Authorization": f"Bearer {created['webhook']['token']}", "X-Idempotency-Key": "pytest-enqueue-action"},
+        headers={"X-Idempotency-Key": "pytest-enqueue-action"},
         json={
             "event": "core_feature_activation",
             "source": "pytest",

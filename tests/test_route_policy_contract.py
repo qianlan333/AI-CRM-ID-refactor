@@ -30,7 +30,7 @@ def test_route_policy_inventory_covers_every_runtime_business_route() -> None:
     index = RoutePolicyIndex.from_manifest(MANIFEST)
     inventory = collect_route_inventory(app)
 
-    assert len(index) == len(inventory) == 687
+    assert len(index) == len(inventory) == 677
     for route in app.routes:
         if not isinstance(route, APIRoute) or route.path in FASTAPI_BUILTIN_ROUTE_PATHS:
             continue
@@ -56,19 +56,19 @@ def test_known_unsafe_routes_have_explicit_deny_by_default_policies() -> None:
         "POST",
         {
             "audience": "external_integration",
-            "auth_scheme": "internal_bearer",
-            "capability": "external_write",
+            "auth_scheme": "api_client_jwt",
+            "capability": "mcp_execute",
             "access_scope": "service",
             "pii_level": "sensitive",
             "csrf": False,
         },
     )
-    assert _entry("/api/identity/resolve", "GET")["auth_scheme"] == "internal_bearer"
+    assert _entry("/api/identity/resolve", "GET")["auth_scheme"] == "api_client_jwt"
     _assert_policy(
         "/api/sidebar/bind-mobile",
         "POST",
         {
-            "auth_scheme": "sidebar_signed_context",
+            "auth_scheme": "sidebar_grant",
             "capability": "sidebar_write",
             "access_scope": "owner",
         },
@@ -78,16 +78,16 @@ def test_known_unsafe_routes_have_explicit_deny_by_default_policies() -> None:
         "POST",
         {
             "audience": "admin",
-            "auth_scheme": "oauth_session",
+            "auth_scheme": "human_session",
             "capability": "manage_group_ops",
             "csrf": True,
         },
     )
     _assert_policy(
-        "/api/h5/questionnaires/{slug}/result/{submission_id}",
+        "/api/h5/questionnaires/{slug}/result",
         "GET",
         {
-            "auth_scheme": "signed_session_grant",
+            "auth_scheme": "public_result_grant",
             "access_scope": "single_resource",
             "pii_level": "sensitive",
             "requires_auth": True,
@@ -95,14 +95,14 @@ def test_known_unsafe_routes_have_explicit_deny_by_default_policies() -> None:
     )
 
 
-def test_oauth_session_writes_always_require_csrf() -> None:
+def test_human_session_writes_always_require_csrf() -> None:
     entries = load_route_manifest(MANIFEST)
     unsafe_methods = {"POST", "PUT", "PATCH", "DELETE"}
 
     violations = [
         f"{','.join(entry['methods'])} {entry['path']}"
         for entry in entries
-        if entry["auth_scheme"] == "oauth_session" and unsafe_methods.intersection(entry["methods"]) and entry["csrf"] is not True
+        if entry["auth_scheme"] == "human_session" and unsafe_methods.intersection(entry["methods"]) and entry["csrf"] is not True
     ]
 
     assert violations == []

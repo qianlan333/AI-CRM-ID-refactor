@@ -4,7 +4,6 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
-from aicrm_next.admin_jobs.routes import ensure_admin_action_token
 from aicrm_next.platform_foundation.command_bus import CommandContext
 from aicrm_next.platform_foundation.internal_events import (
     DEFAULT_INTERNAL_EVENT_CONSUMER_REGISTRY,
@@ -15,6 +14,7 @@ from aicrm_next.platform_foundation.internal_events import (
 )
 from aicrm_next.platform_foundation.internal_events.models import InternalEvent, InternalEventConsumerRun
 from aicrm_next.platform_foundation.internal_events.worker import InternalEventWorker
+from tests.admin_auth_test_helpers import install_admin_action_tokens
 
 
 EVENT_TYPE = "test.customer.activated"
@@ -222,7 +222,14 @@ def test_retry_consumer_run_only_allows_failed_retryable_terminal_and_blocked() 
 
 def test_diagnostics_and_admin_api_return_internal_event_metrics(next_client: TestClient, monkeypatch) -> None:
     DEFAULT_INTERNAL_EVENT_CONSUMER_REGISTRY.clear()
-    monkeypatch.setenv("AUTOMATION_INTERNAL_API_TOKEN", "internal-event-token")
+    del monkeypatch
+    tokens = install_admin_action_tokens(
+        next_client,
+        ("POST", "/api/admin/internal-events/run-due/preview"),
+        ("POST", "/api/admin/internal-events/run-due"),
+        ("POST", "/api/admin/internal-events/{event_id}/consumers/{consumer_name}/retry"),
+        ("POST", "/api/admin/internal-events/{event_id}/consumers/{consumer_name}/skip"),
+    )
     calls: list[str] = []
 
     def handler(event: InternalEvent, run: InternalEventConsumerRun) -> InternalEventConsumerResult:
@@ -240,22 +247,28 @@ def test_diagnostics_and_admin_api_return_internal_event_metrics(next_client: Te
         unauthorized_preview = next_client.post("/api/admin/internal-events/run-due/preview", json={"batch_size": 10})
         preview = next_client.post(
             "/api/admin/internal-events/run-due/preview",
-            headers={"Authorization": "Bearer internal-event-token"},
+            headers={"X-Admin-Action-Token": tokens[("POST", "/api/admin/internal-events/run-due/preview")]},
             json={"batch_size": 10, "event_types": [EVENT_TYPE]},
         )
         run_due = next_client.post(
             "/api/admin/internal-events/run-due",
-            headers={"Authorization": "Bearer internal-event-token"},
+            headers={"X-Admin-Action-Token": tokens[("POST", "/api/admin/internal-events/run-due")]},
             json={"batch_size": 10, "dry_run": False, "event_types": [EVENT_TYPE]},
         )
         diagnostics_after = next_client.get("/api/admin/internal-events/diagnostics")
         retry = next_client.post(
             f"/api/admin/internal-events/{emitted['event']['event_id']}/consumers/api_consumer/retry",
-            json={"admin_action_token": ensure_admin_action_token(), "reason": "approved operator retry"},
+            json={
+                "admin_action_token": tokens[("POST", "/api/admin/internal-events/{event_id}/consumers/{consumer_name}/retry")],
+                "reason": "approved operator retry",
+            },
         )
         skip = next_client.post(
             f"/api/admin/internal-events/{emitted['event']['event_id']}/consumers/api_consumer/skip",
-            json={"admin_action_token": ensure_admin_action_token(), "reason": "operator decided no-op"},
+            json={
+                "admin_action_token": tokens[("POST", "/api/admin/internal-events/{event_id}/consumers/{consumer_name}/skip")],
+                "reason": "operator decided no-op",
+            },
         )
 
         assert listed.status_code == 200

@@ -157,13 +157,13 @@ def test_shell_bundle_contains_independent_tokens_for_each_unsafe_route() -> Non
     assert tokens[retry_key] != tokens[cancel_key]
 
 
-def test_legacy_unbound_token_is_rejected_when_route_policy_is_enforced(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_legacy_unbound_token_generator_is_empty_and_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("AICRM_ROUTE_POLICY_ENFORCED", "true")
     request = _request(_context())
 
     error = validate_admin_action_token(ensure_admin_action_token(), request=request)
 
-    assert error == "admin_action_token 无效或与当前动作不匹配"
+    assert error == "缺少 admin_action_token"
 
 
 def test_rendered_admin_page_supplies_route_bound_token_used_by_backend(monkeypatch: pytest.MonkeyPatch) -> None:

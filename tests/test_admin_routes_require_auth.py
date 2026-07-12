@@ -93,7 +93,8 @@ def test_sidebar_routes_do_not_use_admin_session_when_enforced(monkeypatch) -> N
     )
     response = client.get("/api/sidebar/profile?external_userid=wx_ext_001", headers=headers)
 
-    assert admin_only.status_code == 403
+    assert admin_only.status_code == 401
+    assert admin_only.json()["error"] == "sidebar_context_required"
     assert response.status_code == 200
     assert response.json()["route_owner"] == "ai_crm_next"
 

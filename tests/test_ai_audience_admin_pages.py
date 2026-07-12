@@ -32,13 +32,13 @@ def _insert_package(
                 INSERT INTO ai_audience_package (
                     package_key, name, status, query_mode, identity_policy,
                     incremental_enabled, daily_enabled, incremental_interval_seconds,
-                    daily_refresh_time, timezone, lookback_seconds, inbound_webhook_secret,
+                    daily_refresh_time, timezone, lookback_seconds,
                     created_at, updated_at
                 )
                 VALUES (
                     :package_key, :name, :status, 'incremental_event', 'external_userid',
                     :incremental_enabled, :daily_enabled, :incremental_interval_seconds,
-                    :daily_refresh_time, 'Asia/Shanghai', 600, 'secret-not-for-browser',
+                    :daily_refresh_time, 'Asia/Shanghai', 600,
                     TIMESTAMPTZ '2026-06-24 08:50:00+08', CAST(:updated_at AS timestamptz)
                 )
                 RETURNING id
@@ -597,8 +597,7 @@ def test_admin_ai_audience_package_detail_requires_admin_and_redacts_sensitive_f
             text(
                 """
                 UPDATE ai_audience_package
-                SET natural_language_definition = '近 30 天提交问卷且已加微',
-                    inbound_webhook_secret = 'secret-hidden'
+                SET natural_language_definition = '近 30 天提交问卷且已加微'
                 WHERE id = :package_id
                 """
             ),
@@ -744,7 +743,7 @@ def test_admin_ai_audience_members_api_returns_active_safe_fields(next_client, n
         assert forbidden not in response_text
 
 
-def test_admin_ai_audience_webhook_api_redacts_and_rotates_secrets(next_client, next_pg_schema, monkeypatch) -> None:
+def test_admin_ai_audience_webhook_api_uses_platform_signature_auth(next_client, next_pg_schema, monkeypatch) -> None:
     del next_pg_schema
     monkeypatch.setenv("SECRET_KEY", "ai-audience-webhook-test")
     monkeypatch.setenv("AICRM_PUBLIC_BASE_URL", "https://www.youcangogogo.com")
@@ -759,25 +758,22 @@ def test_admin_ai_audience_webhook_api_redacts_and_rotates_secrets(next_client, 
         json={
             "outbound_enabled": True,
             "outbound_webhook_url": "https://agent.example.com/audience/entered",
-            "outbound_signing_secret": "outbound-secret",
         },
     )
     assert patch.status_code == 200
     webhook = patch.json()["webhook"]
     assert webhook["outbound_enabled"] is True
     assert webhook["outbound_webhook_url"] == "https://agent.example.com/audience/entered"
-    assert webhook["outbound_secret_configured"] is True
-    assert webhook["inbound_secret_configured"] is True
+    assert webhook["inbound_auth_mode"] == "aicrm_hmac_sha256"
+    assert webhook["outbound_auth_mode"] == "aicrm_hmac_sha256"
     assert webhook["inbound_webhook_url"] == "https://www.youcangogogo.com/api/ai/audience/packages/webhook_pkg/webhook"
-    assert "outbound-secret" not in json.dumps(patch.json(), ensure_ascii=False)
+    assert "signing_secret" not in json.dumps(patch.json(), ensure_ascii=False)
 
-    rotate = next_client.post(
+    removed_rotate = next_client.post(
         f"/api/admin/ai-audience/packages/{package_id}/webhooks/rotate-inbound-secret",
         cookies=_admin_cookies(next_client),
     )
-    assert rotate.status_code == 200
-    assert rotate.json()["webhook"]["inbound_secret_configured"] is True
-    assert "audsec_" not in json.dumps(rotate.json(), ensure_ascii=False)
+    assert removed_rotate.status_code == 404
 
 
 def test_admin_ai_audience_sender_whitelist_get_put(next_client, next_pg_schema, monkeypatch) -> None:

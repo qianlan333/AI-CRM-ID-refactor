@@ -7,6 +7,7 @@ Revises: 0101_commerce_fulfillment_invariants
 from __future__ import annotations
 
 from alembic import op
+from sqlalchemy import inspect
 
 
 revision = "0102_questionnaire_radar_invariants"
@@ -42,6 +43,8 @@ def _questionnaire_columns() -> None:
 
 
 def _radar_links_columns() -> None:
+    if not _has_table("radar_links"):
+        return
     statements = (
         "ALTER TABLE IF EXISTS radar_links ADD COLUMN IF NOT EXISTS original_url TEXT NOT NULL DEFAULT ''",
         "ALTER TABLE IF EXISTS radar_links ADD COLUMN IF NOT EXISTS preview_mode TEXT NOT NULL DEFAULT ''",
@@ -67,6 +70,8 @@ def _radar_links_columns() -> None:
 
 
 def _radar_click_events() -> None:
+    if not _has_table("radar_links"):
+        return
     op.execute(
         """
         CREATE TABLE IF NOT EXISTS radar_click_events (
@@ -151,6 +156,10 @@ def _radar_click_events() -> None:
     )
     op.execute("CREATE INDEX IF NOT EXISTS ix_radar_click_events_link_created ON radar_click_events (link_id, created_at DESC, id DESC)")
     op.execute("CREATE INDEX IF NOT EXISTS ix_radar_click_events_unionid_created ON radar_click_events (unionid, created_at DESC, id DESC) WHERE unionid <> ''")
+
+
+def _has_table(table_name: str) -> bool:
+    return inspect(op.get_bind()).has_table(table_name)
 
 
 def downgrade() -> None:

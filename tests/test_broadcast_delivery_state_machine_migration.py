@@ -35,6 +35,13 @@ def test_broadcast_delivery_state_machine_migration_is_chained_and_conservative(
     assert "WHERE status = 'claimed'" in source
     assert "SET status = 'unknown_after_dispatch'" in source
     assert "UPDATE broadcast_jobs SET status = 'blocked' WHERE status IN ('dispatching', 'unknown_after_dispatch')" in source
+    for table_name in (
+        "outbound_tasks",
+        "broadcast_jobs",
+        "cloud_broadcast_plan_recipients",
+        "cloud_broadcast_plan_recipient_messages",
+    ):
+        assert f'if _has_table("{table_name}")' in source
 
 
 def test_broadcast_delivery_state_machine_schema_is_available_after_upgrade(next_pg_schema) -> None:

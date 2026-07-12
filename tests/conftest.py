@@ -212,6 +212,11 @@ _TABLES_TO_TRUNCATE = [
     "alipay_pay_order_events",
     "alipay_pay_orders",
     # — admin / auth
+    "auth_webhook_replay",
+    "auth_sessions",
+    "auth_security_events",
+    "auth_webhook_clients",
+    "auth_api_clients",
     "admin_wecom_directory_members",
     "admin_users",
     "owner_role_map",

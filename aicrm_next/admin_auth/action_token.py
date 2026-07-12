@@ -4,7 +4,6 @@ import base64
 import hashlib
 import hmac
 import json
-import os
 import secrets
 import time
 from dataclasses import dataclass
@@ -16,7 +15,7 @@ from fastapi import Request
 from aicrm_next.platform_foundation.auth_platform.context import AuthContext
 from aicrm_next.shared.route_ownership import load_route_manifest
 from aicrm_next.shared.route_policy import DEFAULT_ROUTE_POLICY_MANIFEST
-from aicrm_next.shared.runtime import production_data_ready, production_environment, require_signing_secret
+from aicrm_next.shared.runtime import require_signing_secret
 
 from .capabilities import context_can
 from .guards import current_auth_context
@@ -56,6 +55,7 @@ def issue_action_token(
     target: str,
     now: int | None = None,
     ttl_seconds: int = ACTION_TOKEN_TTL_SECONDS,
+    session_binding: str = "",
 ) -> str:
     normalized_capability = normalize_text(capability)
     normalized_method = normalize_text(method).upper()
@@ -72,7 +72,7 @@ def issue_action_token(
     claims = {
         "v": ACTION_TOKEN_VERSION,
         "sub": context.sub,
-        "sid": session_fingerprint(context),
+        "sid": _session_fingerprint(context, session_binding),
         "cap": normalized_capability,
         "m": normalized_method,
         "act": normalized_action,
@@ -95,6 +95,7 @@ def validate_action_token(
     action: str,
     target: str,
     now: int | None = None,
+    session_binding: str = "",
 ) -> ActionTokenValidation:
     claims = _decode_claims(token)
     if claims is None:
@@ -116,7 +117,7 @@ def validate_action_token(
 
     expected = {
         "sub": context.sub,
-        "sid": session_fingerprint(context),
+        "sid": _session_fingerprint(context, session_binding),
         "cap": normalize_text(capability),
         "m": normalize_text(method).upper(),
         "act": normalize_text(action),
@@ -145,6 +146,7 @@ def issue_action_token_for_route(request: Request, *, method: str, target: str) 
         method=route.method,
         action=route.action,
         target=route.target,
+        session_binding=_request_session_binding(request, context),
     )
 
 
@@ -163,6 +165,7 @@ def validate_action_token_for_request(request: Request, token: str) -> ActionTok
         method=method,
         action=normalize_text(policy.route_name),
         target=normalize_text(policy.path),
+        session_binding=_request_session_binding(request, context),
     )
 
 
@@ -180,20 +183,18 @@ def build_admin_action_token_bundle(request: Request) -> dict[str, str]:
             method=route.method,
             action=route.action,
             target=route.target,
+            session_binding=_request_session_binding(request, context),
         )
     return tokens
 
 
-def bound_action_tokens_required() -> bool:
-    value = normalize_text(os.getenv("AICRM_ROUTE_POLICY_ENFORCED")).lower()
-    if value in {"1", "true", "yes", "on"}:
-        return True
-    return production_environment() or production_data_ready()
-
-
-def session_fingerprint(context: AuthContext) -> str:
-    material = f"token:{context.token_id}"
+def _session_fingerprint(context: AuthContext, session_binding: str = "") -> str:
+    material = f"session:{normalize_text(session_binding) or context.token_id}"
     return hmac.new(_secret(), material.encode("utf-8"), hashlib.sha256).hexdigest()
+
+
+def _request_session_binding(request: Request, context: AuthContext) -> str:
+    return normalize_text(getattr(request.state, "auth_session_id", "")) or context.token_id
 
 
 def _request_context(request: Request) -> AuthContext | None:
@@ -207,7 +208,7 @@ def _request_context(request: Request) -> AuthContext | None:
 def _unsafe_admin_routes() -> tuple[ActionTokenRoute, ...]:
     routes: list[ActionTokenRoute] = []
     for entry in load_route_manifest(DEFAULT_ROUTE_POLICY_MANIFEST):
-        if normalize_text(entry.get("auth_scheme")) != "oauth_session":
+        if normalize_text(entry.get("auth_scheme")) not in {"human_session", "human_or_service"}:
             continue
         capability = normalize_text(entry.get("capability"))
         action = normalize_text(entry.get("route_name"))

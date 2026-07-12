@@ -1,92 +1,96 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from dataclasses import dataclass, field, replace
 from enum import StrEnum
 from types import MappingProxyType
 from typing import Any, Mapping
 
 
 class PrincipalType(StrEnum):
-    USER = "user"
+    HUMAN = "human"
+    API_CLIENT = "api_client"
     SERVICE = "service"
-    AGENT = "agent"
-    PARTNER = "partner"
+    PUBLIC = "public"
+    PROVIDER_CALLBACK = "provider_callback"
 
 
-def _normalized_values(values: tuple[str, ...] | list[str] | set[str]) -> tuple[str, ...]:
+def _values(values: tuple[str, ...] | list[str] | set[str]) -> tuple[str, ...]:
     return tuple(sorted({str(value or "").strip() for value in values if str(value or "").strip()}))
 
 
 @dataclass(frozen=True)
 class AuthContext:
     principal_type: PrincipalType
-    sub: str
-    client_id: str
-    tenant_id: str
-    audience: str
-    scopes: tuple[str, ...]
+    principal_id: str
     capabilities: tuple[str, ...]
-    token_id: str
-    expires_at: datetime
-    auth_time: datetime
-    actor: str = ""
-    acr: str = ""
-    resource_constraints: Mapping[str, Any] = field(default_factory=dict)
-    sender_constraint: str = ""
+    scopes: tuple[str, ...]
+    client_id: str = ""
+    admin_user_id: str = ""
+    corp_id: str = ""
+    owner_scope: Mapping[str, Any] = field(default_factory=dict)
+    auth_version: int = 1
+    request_id: str = ""
 
     def __post_init__(self) -> None:
-        required = {
-            "sub": self.sub,
-            "client_id": self.client_id,
-            "tenant_id": self.tenant_id,
-            "audience": self.audience,
-            "token_id": self.token_id,
-        }
-        missing = [name for name, value in required.items() if not str(value or "").strip()]
-        if missing:
-            raise ValueError(f"auth context missing required values: {','.join(missing)}")
-        expires_at = _aware_utc(self.expires_at, "expires_at")
-        auth_time = _aware_utc(self.auth_time, "auth_time")
-        if expires_at <= auth_time:
-            raise ValueError("auth context expiry must be after auth_time")
-        object.__setattr__(self, "expires_at", expires_at)
-        object.__setattr__(self, "auth_time", auth_time)
-        object.__setattr__(self, "scopes", _normalized_values(self.scopes))
-        object.__setattr__(self, "capabilities", _normalized_values(self.capabilities))
-        object.__setattr__(self, "resource_constraints", MappingProxyType(dict(self.resource_constraints)))
+        principal_id = str(self.principal_id or "").strip()
+        client_id = str(self.client_id or "").strip()
+        if not principal_id:
+            raise ValueError("auth context principal_id is required")
+        if self.principal_type in {PrincipalType.API_CLIENT, PrincipalType.SERVICE} and not client_id:
+            raise ValueError("machine auth context client_id is required")
+        if int(self.auth_version or 0) < 1:
+            raise ValueError("auth context auth_version must be positive")
+        object.__setattr__(self, "principal_id", principal_id)
+        object.__setattr__(self, "client_id", client_id)
+        object.__setattr__(self, "admin_user_id", str(self.admin_user_id or "").strip())
+        object.__setattr__(self, "corp_id", str(self.corp_id or "").strip())
+        object.__setattr__(self, "request_id", str(self.request_id or "").strip())
+        object.__setattr__(self, "capabilities", _values(self.capabilities))
+        object.__setattr__(self, "scopes", _values(self.scopes))
+        object.__setattr__(self, "owner_scope", MappingProxyType(dict(self.owner_scope or {})))
+        object.__setattr__(self, "auth_version", int(self.auth_version))
 
-    def active(self, *, now: datetime | None = None) -> bool:
-        current = _aware_utc(now or datetime.now(timezone.utc), "now")
-        return current < self.expires_at
+    def with_request_id(self, request_id: str) -> "AuthContext":
+        return replace(self, request_id=str(request_id or "").strip())
 
     def permits(
         self,
         *,
-        audience: str,
         capability: str,
         scope: str = "",
         resource: Mapping[str, Any] | None = None,
+        audience: str = "",
     ) -> bool:
-        if not self.active() or self.audience != str(audience or "").strip():
+        del audience
+        required_capability = str(capability or "").strip()
+        if required_capability and required_capability not in self.capabilities:
             return False
-        if str(capability or "").strip() not in self.capabilities:
-            return False
-        if scope and str(scope).strip() not in self.scopes:
+        required_scope = str(scope or "").strip()
+        if required_scope and required_scope not in self.scopes:
             return False
         requested = dict(resource or {})
-        if not self.resource_constraints:
+        if not self.owner_scope:
             return True
-        return all(key in requested and _constraint_allows(allowed, requested[key]) for key, allowed in self.resource_constraints.items())
+        return all(key in requested and _allows(allowed, requested[key]) for key, allowed in self.owner_scope.items())
+
+    @property
+    def sub(self) -> str:
+        return self.principal_id
+
+    @property
+    def tenant_id(self) -> str:
+        return self.corp_id
+
+    @property
+    def token_id(self) -> str:
+        return self.request_id
+
+    @property
+    def resource_constraints(self) -> Mapping[str, Any]:
+        return self.owner_scope
 
 
-def _constraint_allows(allowed: Any, requested: Any) -> bool:
+def _allows(allowed: Any, requested: Any) -> bool:
     if isinstance(allowed, (list, tuple, set, frozenset)):
         return requested in allowed
     return allowed == requested
-
-
-def _aware_utc(value: datetime, field_name: str) -> datetime:
-    if not isinstance(value, datetime) or value.tzinfo is None:
-        raise ValueError(f"{field_name} must be timezone-aware")
-    return value.astimezone(timezone.utc)

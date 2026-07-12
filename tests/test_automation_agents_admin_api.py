@@ -41,8 +41,8 @@ def test_admin_automation_agent_crud_copy_pause_archive_contract(next_client, ne
     assert created.status_code == 200
     agent = created.json()["agent"]
     agent_id = agent["id"]
-    assert "/api/ai/agents/questionnaire_activation_agent/audience-webhook?token=agtok_" in agent["receive_webhook_url"]
-    assert agent["receive_webhook_token_configured"] is True
+    assert agent["receive_webhook_url"].endswith("/api/ai/agents/questionnaire_activation_agent/audience-webhook")
+    assert agent["receive_webhook_auth_mode"] == "aicrm_hmac_sha256"
     assert agent["send_webhook_url"].endswith("/api/ai/audience/packages/prod_channel_9p9_questionnaire_activation_hyc/webhook")
     assert agent["automation_type"] == "agent"
     assert agent["automation_type_label"] == "agent"
@@ -85,19 +85,16 @@ def test_admin_automation_agent_crud_copy_pause_archive_contract(next_client, ne
     assert invalid_send.status_code == 400
     assert invalid_send.json()["error"] == "invalid_send_webhook_url"
 
-    old_receive_url = patched.json()["agent"]["receive_webhook_url"]
-    reset = next_client.post(
+    removed_reset = next_client.post(
         f"/api/admin/automation-agents/{agent_id}/reset-token",
         cookies=_admin_cookies(next_client),
     )
-    assert reset.status_code == 200
-    assert reset.json()["agent"]["receive_webhook_url"] != old_receive_url
-    assert "?token=agtok_" in reset.json()["agent"]["receive_webhook_url"]
+    assert removed_reset.status_code == 404
 
     copied = next_client.post(f"/api/admin/automation-agents/{agent_id}/copy", cookies=_admin_cookies(next_client))
     assert copied.status_code == 200
     assert copied.json()["agent"]["agent_code"] == "questionnaire_activation_agent_copy_001"
-    assert copied.json()["agent"]["receive_webhook_url"] != reset.json()["agent"]["receive_webhook_url"]
+    assert copied.json()["agent"]["receive_webhook_url"] != patched.json()["agent"]["receive_webhook_url"]
 
     paused = next_client.post(f"/api/admin/automation-agents/{agent_id}/pause", cookies=_admin_cookies(next_client))
     assert paused.status_code == 200

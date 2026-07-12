@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from urllib.parse import urlparse
 
 from aicrm_next.platform_foundation.command_bus import CommandContext
@@ -10,20 +11,30 @@ from aicrm_next.platform_foundation.external_effects import (
 )
 from aicrm_next.platform_foundation.external_effects.adapters import DEFAULT_ADAPTER_REGISTRY, WebhookAdapter
 from aicrm_next.platform_foundation.external_effects.worker import ExternalEffectWorker
+from aicrm_next.platform_foundation.auth_platform.webhook_hmac import WebhookHmacSigner
+from tests.webhook_hmac_test_helpers import install_webhook_hmac_client, signed_headers
 
 pytest_plugins = ("tests.group_ops_test_helpers",)
 
 
 def _install_loopback_http_adapter(monkeypatch, client) -> list[dict]:
     calls: list[dict] = []
+    credentials = install_webhook_hmac_client(
+        client,
+        capability="external_effect_receipt_receive",
+        client_id="pytest-group-ops-outbound",
+    )
+    signer = WebhookHmacSigner(client_id=credentials.client_id, secret=credentials.secret)
 
-    def loopback_post(url, *, json, headers, timeout):
-        calls.append({"url": url, "json": json, "headers": headers, "timeout": timeout})
+    def loopback_post(url, *, data, headers, timeout):
+        calls.append({"url": url, "json": json.loads(data.decode("utf-8")), "headers": headers, "timeout": timeout})
         parsed = urlparse(url)
-        return client.post(parsed.path, json=json, headers=headers)
+        with monkeypatch.context() as route_policy:
+            route_policy.setenv("AICRM_ROUTE_POLICY_ENFORCED", "true")
+            return client.post(parsed.path, content=data, headers=headers)
 
-    monkeypatch.setitem(DEFAULT_ADAPTER_REGISTRY._adapters, "outbound_webhook", WebhookAdapter(http_post=loopback_post))  # type: ignore[attr-defined]
-    monkeypatch.setitem(DEFAULT_ADAPTER_REGISTRY._adapters, "webhook", WebhookAdapter(http_post=loopback_post))  # type: ignore[attr-defined]
+    monkeypatch.setitem(DEFAULT_ADAPTER_REGISTRY._adapters, "outbound_webhook", WebhookAdapter(http_post=loopback_post, signer=signer))  # type: ignore[attr-defined]
+    monkeypatch.setitem(DEFAULT_ADAPTER_REGISTRY._adapters, "webhook", WebhookAdapter(http_post=loopback_post, signer=signer))  # type: ignore[attr-defined]
     return calls
 
 
@@ -182,20 +193,33 @@ def test_group_ops_webhook_receive_logs_action_and_creates_wecom_group_effect(gr
     ).json()
     group_ops_api_client.post(f"/api/admin/automation-conversion/group-ops/plans/{created['id']}/enable")
 
-    response = group_ops_api_client.post(
-        f"/api/automation/group-ops/webhooks/{created['webhook']['endpointKey']}",
-        headers={"Authorization": f"Bearer {created['webhook']['token']}", "X-Idempotency-Key": "pytest-group-action-effect"},
-        json={
-            "event": "synthetic_group_event",
-            "source": "pytest",
-            "recipients": [{"group_id": "test_chat_group_ops_001", "external_user_id": "test_external_userid_group_ops_001"}],
-            "action": {"action_type": "send_group_message", "content": "synthetic group content"},
-        },
+    endpoint_key = created["webhook"]["endpointKey"]
+    payload = {
+        "event": "synthetic_group_event",
+        "source": "pytest",
+        "recipients": [{"group_id": "test_chat_group_ops_001", "external_user_id": "test_external_userid_group_ops_001"}],
+        "action": {"action_type": "send_group_message", "content": "synthetic group content"},
+    }
+    raw_body = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    credentials = install_webhook_hmac_client(
+        group_ops_api_client,
+        capability="group_ops_webhook_receive",
+        owner_scope={"webhook_key": [endpoint_key]},
+        client_id="pytest-group-ops-inbound",
     )
+    headers = signed_headers(credentials, body=raw_body, event_id="pytest-group-action-effect")
+    headers["X-Idempotency-Key"] = "pytest-group-action-effect"
+    with monkeypatch.context() as route_policy:
+        route_policy.setenv("AICRM_ROUTE_POLICY_ENFORCED", "true")
+        response = group_ops_api_client.post(
+            f"/api/automation/group-ops/webhooks/{endpoint_key}",
+            headers=headers,
+            content=raw_body,
+        )
     jobs = _jobs(WECOM_MESSAGE_GROUP_SEND)
     logs = group_ops_api_client.get(f"/api/admin/automation-conversion/group-ops/plans/{created['id']}/executions")
 
-    assert response.status_code == 202
+    assert response.status_code == 202, response.text
     assert response.json()["external_effect_job_ids"] == [jobs[0].id]
     assert response.json()["real_external_call_executed"] is False
     assert response.json()["wecom_send_executed"] is False
@@ -482,7 +506,7 @@ def test_group_ops_loopback_2xx_succeeds_with_receipt(group_ops_api_client, monk
 
     assert response.status_code == 202
     assert job is not None
-    assert job.payload_json["webhook_url"].startswith("https://crm.example.test/api/external-effects/test-receiver/")
+    assert job.payload_json["webhook_url"] == "https://crm.example.test/api/external-effects/test-receiver"
     assert preview["real_external_call_executed"] is False
     assert dry_run["real_external_call_executed"] is False
     assert executed["real_external_call_executed"] is True

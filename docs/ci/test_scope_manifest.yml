@@ -458,6 +458,7 @@
       "name": "admin_auth_security",
       "paths": [
         "aicrm_next/admin_auth/**",
+        "aicrm_next/auth_wecom/**",
         "aicrm_next/admin_jobs/routes.py",
         "aicrm_next/frontend_compat/static/admin_console/admin_api_client.js",
         "aicrm_next/frontend_compat/templates/admin_console/login.html",
@@ -466,6 +467,7 @@
         "tests/test_admin_auth_*.py",
         "tests/test_admin_action_token_binding.py",
         "tests/test_admin_session_revocation.py",
+        "tests/test_auth_wecom_real_flow.py",
         "tests/test_route_policy_*.py",
         "tests/frontend/admin_request_security.test.mjs",
         "tests/test_admin_routes_require_auth.py"
@@ -477,6 +479,7 @@
         "tests/test_admin_auth_logout.py",
         "tests/test_admin_action_token_binding.py",
         "tests/test_admin_session_revocation.py",
+        "tests/test_auth_wecom_real_flow.py",
         "tests/test_route_policy_contract.py",
         "tests/test_route_policy_enforcement.py",
         "tests/test_questionnaire_oauth_state_security.py"

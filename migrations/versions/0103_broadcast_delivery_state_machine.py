@@ -7,6 +7,7 @@ Revises: 0102_questionnaire_radar_invariants
 from __future__ import annotations
 
 from alembic import op
+from sqlalchemy import inspect
 
 
 revision = "0103_broadcast_delivery_state_machine"
@@ -35,87 +36,96 @@ _MESSAGE_STATUSES = """
 
 
 def upgrade() -> None:
-    op.execute("ALTER TABLE IF EXISTS outbound_tasks ADD COLUMN IF NOT EXISTS broadcast_job_id BIGINT")
-    op.execute("ALTER TABLE IF EXISTS outbound_tasks ADD COLUMN IF NOT EXISTS task_type TEXT NOT NULL DEFAULT 'outbound_task'")
-    op.execute("ALTER TABLE IF EXISTS outbound_tasks ADD COLUMN IF NOT EXISTS request_payload JSONB NOT NULL DEFAULT '{}'::jsonb")
-    op.execute("ALTER TABLE IF EXISTS outbound_tasks ADD COLUMN IF NOT EXISTS response_payload JSONB NOT NULL DEFAULT '{}'::jsonb")
-    op.execute("ALTER TABLE IF EXISTS outbound_tasks ADD COLUMN IF NOT EXISTS wecom_task_id TEXT NOT NULL DEFAULT ''")
-    op.execute("ALTER TABLE IF EXISTS outbound_tasks ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT ''")
-    op.execute(
-        "CREATE UNIQUE INDEX IF NOT EXISTS uq_outbound_tasks_broadcast_job "
-        "ON outbound_tasks (broadcast_job_id) WHERE broadcast_job_id IS NOT NULL"
-    )
-    op.execute("ALTER TABLE IF EXISTS broadcast_jobs ADD COLUMN IF NOT EXISTS dispatch_started_at TIMESTAMPTZ")
-    op.execute("ALTER TABLE IF EXISTS broadcast_jobs ADD COLUMN IF NOT EXISTS side_effect_executed BOOLEAN NOT NULL DEFAULT FALSE")
-    op.execute("ALTER TABLE IF EXISTS broadcast_jobs ADD COLUMN IF NOT EXISTS provider_result_received BOOLEAN NOT NULL DEFAULT FALSE")
-    op.execute("ALTER TABLE IF EXISTS broadcast_jobs ADD COLUMN IF NOT EXISTS result_summary_json JSONB NOT NULL DEFAULT '{}'::jsonb")
-    op.execute("ALTER TABLE IF EXISTS broadcast_jobs ADD COLUMN IF NOT EXISTS reconciliation_required BOOLEAN NOT NULL DEFAULT FALSE")
-    op.execute("ALTER TABLE IF EXISTS broadcast_jobs ADD COLUMN IF NOT EXISTS completed_at TIMESTAMPTZ")
+    if _has_table("outbound_tasks"):
+        op.execute("ALTER TABLE outbound_tasks ADD COLUMN IF NOT EXISTS broadcast_job_id BIGINT")
+        op.execute("ALTER TABLE outbound_tasks ADD COLUMN IF NOT EXISTS task_type TEXT NOT NULL DEFAULT 'outbound_task'")
+        op.execute("ALTER TABLE outbound_tasks ADD COLUMN IF NOT EXISTS request_payload JSONB NOT NULL DEFAULT '{}'::jsonb")
+        op.execute("ALTER TABLE outbound_tasks ADD COLUMN IF NOT EXISTS response_payload JSONB NOT NULL DEFAULT '{}'::jsonb")
+        op.execute("ALTER TABLE outbound_tasks ADD COLUMN IF NOT EXISTS wecom_task_id TEXT NOT NULL DEFAULT ''")
+        op.execute("ALTER TABLE outbound_tasks ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT ''")
+        op.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS uq_outbound_tasks_broadcast_job "
+            "ON outbound_tasks (broadcast_job_id) WHERE broadcast_job_id IS NOT NULL"
+        )
 
-    op.execute("ALTER TABLE IF EXISTS broadcast_jobs DROP CONSTRAINT IF EXISTS broadcast_jobs_status_check")
-    op.execute(
-        f"""
-        ALTER TABLE IF EXISTS broadcast_jobs
-        ADD CONSTRAINT broadcast_jobs_status_check
-        CHECK (status IN ({_BROADCAST_STATUSES}))
-        """
-    )
-    op.execute(
-        "ALTER TABLE IF EXISTS cloud_broadcast_plan_recipients "
-        "DROP CONSTRAINT IF EXISTS cloud_broadcast_plan_recipients_send_status_check"
-    )
-    op.execute(
-        f"""
-        ALTER TABLE IF EXISTS cloud_broadcast_plan_recipients
-        ADD CONSTRAINT cloud_broadcast_plan_recipients_send_status_check
-        CHECK (send_status IN ({_RECIPIENT_STATUSES}))
-        """
-    )
-    op.execute(
-        "ALTER TABLE IF EXISTS cloud_broadcast_plan_recipient_messages "
-        "DROP CONSTRAINT IF EXISTS cloud_broadcast_plan_recipient_messages_status_check"
-    )
-    op.execute(
-        f"""
-        ALTER TABLE IF EXISTS cloud_broadcast_plan_recipient_messages
-        ADD CONSTRAINT cloud_broadcast_plan_recipient_messages_status_check
-        CHECK (status IN ({_MESSAGE_STATUSES}))
-        """
-    )
+    if _has_table("broadcast_jobs"):
+        op.execute("ALTER TABLE broadcast_jobs ADD COLUMN IF NOT EXISTS dispatch_started_at TIMESTAMPTZ")
+        op.execute("ALTER TABLE broadcast_jobs ADD COLUMN IF NOT EXISTS side_effect_executed BOOLEAN NOT NULL DEFAULT FALSE")
+        op.execute("ALTER TABLE broadcast_jobs ADD COLUMN IF NOT EXISTS provider_result_received BOOLEAN NOT NULL DEFAULT FALSE")
+        op.execute("ALTER TABLE broadcast_jobs ADD COLUMN IF NOT EXISTS result_summary_json JSONB NOT NULL DEFAULT '{}'::jsonb")
+        op.execute("ALTER TABLE broadcast_jobs ADD COLUMN IF NOT EXISTS reconciliation_required BOOLEAN NOT NULL DEFAULT FALSE")
+        op.execute("ALTER TABLE broadcast_jobs ADD COLUMN IF NOT EXISTS completed_at TIMESTAMPTZ")
+        op.execute("ALTER TABLE broadcast_jobs DROP CONSTRAINT IF EXISTS broadcast_jobs_status_check")
+        op.execute(
+            f"""
+            ALTER TABLE broadcast_jobs
+            ADD CONSTRAINT broadcast_jobs_status_check
+            CHECK (status IN ({_BROADCAST_STATUSES}))
+            """
+        )
 
-    # A pre-R10 claim may have crossed the provider boundary. Conservatively
-    # stop it for reconciliation instead of allowing the new worker to resend.
-    op.execute(
-        """
-        UPDATE broadcast_jobs
-        SET status = 'unknown_after_dispatch',
-            reconciliation_required = TRUE,
-            provider_result_received = FALSE,
-            result_summary_json = jsonb_build_object('migration_reason', 'claimed_at_r10_cutover'),
-            claim_token = '',
-            lease_expires_at = NULL,
-            next_retry_at = NULL,
-            completed_at = CURRENT_TIMESTAMP,
-            updated_at = CURRENT_TIMESTAMP
-        WHERE status = 'claimed'
-        """
-    )
+        # A pre-R10 claim may have crossed the provider boundary. Conservatively
+        # stop it for reconciliation instead of allowing the new worker to resend.
+        op.execute(
+            """
+            UPDATE broadcast_jobs
+            SET status = 'unknown_after_dispatch',
+                reconciliation_required = TRUE,
+                provider_result_received = FALSE,
+                result_summary_json = jsonb_build_object('migration_reason', 'claimed_at_r10_cutover'),
+                claim_token = '',
+                lease_expires_at = NULL,
+                next_retry_at = NULL,
+                completed_at = CURRENT_TIMESTAMP,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE status = 'claimed'
+            """
+        )
+        op.execute("DROP INDEX IF EXISTS idx_broadcast_jobs_reclaim_due")
+        op.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_broadcast_jobs_reclaim_due
+            ON broadcast_jobs (status, next_retry_at, lease_expires_at, scheduled_for, priority, id ASC)
+            WHERE status IN ('queued', 'claimed', 'failed_retryable')
+            """
+        )
+        op.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_broadcast_jobs_reconciliation
+            ON broadcast_jobs (status, updated_at, id)
+            WHERE reconciliation_required = TRUE OR status = 'unknown_after_dispatch'
+            """
+        )
 
-    op.execute("DROP INDEX IF EXISTS idx_broadcast_jobs_reclaim_due")
-    op.execute(
-        """
-        CREATE INDEX IF NOT EXISTS idx_broadcast_jobs_reclaim_due
-        ON broadcast_jobs (status, next_retry_at, lease_expires_at, scheduled_for, priority, id ASC)
-        WHERE status IN ('queued', 'claimed', 'failed_retryable')
-        """
-    )
-    op.execute(
-        """
-        CREATE INDEX IF NOT EXISTS idx_broadcast_jobs_reconciliation
-        ON broadcast_jobs (status, updated_at, id)
-        WHERE reconciliation_required = TRUE OR status = 'unknown_after_dispatch'
-        """
-    )
+    if _has_table("cloud_broadcast_plan_recipients"):
+        op.execute(
+            "ALTER TABLE cloud_broadcast_plan_recipients "
+            "DROP CONSTRAINT IF EXISTS cloud_broadcast_plan_recipients_send_status_check"
+        )
+        op.execute(
+            f"""
+            ALTER TABLE cloud_broadcast_plan_recipients
+            ADD CONSTRAINT cloud_broadcast_plan_recipients_send_status_check
+            CHECK (send_status IN ({_RECIPIENT_STATUSES}))
+            """
+        )
+
+    if _has_table("cloud_broadcast_plan_recipient_messages"):
+        op.execute(
+            "ALTER TABLE cloud_broadcast_plan_recipient_messages "
+            "DROP CONSTRAINT IF EXISTS cloud_broadcast_plan_recipient_messages_status_check"
+        )
+        op.execute(
+            f"""
+            ALTER TABLE cloud_broadcast_plan_recipient_messages
+            ADD CONSTRAINT cloud_broadcast_plan_recipient_messages_status_check
+            CHECK (status IN ({_MESSAGE_STATUSES}))
+            """
+        )
+
+
+def _has_table(table_name: str) -> bool:
+    return inspect(op.get_bind()).has_table(table_name)
 
 
 def downgrade() -> None:

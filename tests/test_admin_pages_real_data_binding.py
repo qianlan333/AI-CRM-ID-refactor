@@ -338,8 +338,9 @@ def test_admin_login_route_is_next_owned_when_production_facade_is_enabled(monke
     assert response.headers["X-AICRM-Route-Owner"] == "ai_crm_next"
     assert "X-AICRM-Compatibility-Facade" not in response.headers
     assert "后台登录" in response.text
-    assert 'action="/login"' in response.text
     assert "/auth/wecom/start" in response.text
+    assert "不提供本地账密入口" in response.text
+    assert 'action="/login"' not in response.text
 
 
 def test_real_data_binding_checker_returns_ok(monkeypatch):

@@ -29,7 +29,7 @@ from aicrm_next.shared.runtime import production_data_ready
 from aicrm_next.shared.safe_logging import safe_log_exception, safe_log_fields
 
 from .repo import connect_h5_wechat_pay_db as _connect
-from .signed_context import append_ctx_query, load_sidebar_product_context_token
+from aicrm_next.shared.signed_context import SIDEBAR_PRODUCT_CONTEXT_COOKIE, load_sidebar_product_context_token
 from .sidebar_order_context import resolve_sidebar_order_context
 from .service import format_price, get_public_product, product_not_found_payload, route_headers
 
@@ -254,9 +254,9 @@ def checkout_page_state(product: dict[str, Any], request: Request) -> dict[str, 
     identity = _identity_from_request(request)
     code = _normalized_text(product.get("product_code"))
     paid_order = _existing_paid_order_for_checkout(product, identity) if identity.get("openid") else None
-    context_token = _normalized_text(request.query_params.get("ctx"))
+    context_token = _normalized_text(request.cookies.get(SIDEBAR_PRODUCT_CONTEXT_COOKIE))
     context_result = load_sidebar_product_context_token(context_token)
-    pay_path = append_ctx_query(f"/pay/{code}", context_token) if context_token else f"/pay/{code}"
+    pay_path = f"/pay/{code}"
     return {
         "product": {
             "product_code": code,
@@ -275,7 +275,6 @@ def checkout_page_state(product: dict[str, Any], request: Request) -> dict[str, 
         "completion_action": product.get("completion_action") or {"type": "default", "redirect_url": ""},
         "paid_order": paid_order,
         "price_display": format_price(product),
-        "context_token": context_token,
         "context_status": _normalized_text(context_result.get("status")) or "missing",
     }
 
@@ -884,7 +883,7 @@ def create_jsapi_order_response(
     except RuntimeError as exc:
         return JSONResponse({"ok": False, "error": str(exc)}, status_code=503, headers=route_headers())
     mobile = _normalized_text(payload.get("mobile"))
-    context_token = _normalized_text(payload.get("ctx") or payload.get("context_token"))
+    context_token = _normalized_text(request.cookies.get(SIDEBAR_PRODUCT_CONTEXT_COOKIE))
     resolved_context = resolve_sidebar_order_context(
         context_token=context_token,
         payment_identity=identity,

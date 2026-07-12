@@ -7,6 +7,94 @@ migration_guard:
   migration_file_prefix_after: "0073"
 
 tables:
+  auth_api_clients:
+    domain: auth_platform
+    lifecycle: config
+    write_owner: aicrm_next.platform_foundation.auth_platform
+    read_owners:
+      - centralized route authentication
+      - auth bootstrap and readiness
+    replacement: none; canonical registered machine identity state
+    drop_candidate: false
+    drop_after: ""
+    runtime_entrypoints:
+      - OAuth client credentials token issue
+      - local JWT status and auth_version verification
+    migration_source: 0104_auth_platform
+    pii_level: security_sensitive
+    guard_tests:
+      - tests/test_auth_platform_migration.py
+      - tests/test_data_table_lifecycle_guard.py
+
+  auth_security_events:
+    domain: auth_platform
+    lifecycle: audit
+    write_owner: aicrm_next.platform_foundation.auth_platform
+    read_owners:
+      - security operations
+    replacement: none; append-only authentication security evidence
+    drop_candidate: false
+    drop_after: ""
+    runtime_entrypoints:
+      - authentication allow deny revoke audit
+    migration_source: 0104_auth_platform
+    pii_level: security_sensitive
+    guard_tests:
+      - tests/test_auth_platform_migration.py
+      - tests/test_data_table_lifecycle_guard.py
+
+  auth_sessions:
+    domain: auth_platform
+    lifecycle: canonical
+    write_owner: aicrm_next.platform_foundation.auth_platform
+    read_owners:
+      - centralized human session authentication
+    replacement: none; server-side opaque browser session state
+    drop_candidate: false
+    drop_after: ""
+    runtime_entrypoints:
+      - WeCom admin browser session issue introspection revoke
+    migration_source: 0104_auth_platform
+    pii_level: security_sensitive
+    guard_tests:
+      - tests/test_auth_platform_migration.py
+      - tests/test_data_table_lifecycle_guard.py
+
+  auth_webhook_clients:
+    domain: auth_platform
+    lifecycle: config
+    write_owner: aicrm_next.platform_foundation.auth_platform
+    read_owners:
+      - centralized webhook HMAC verification
+      - auth bootstrap and readiness
+    replacement: none; registered AI-CRM webhook caller state
+    drop_candidate: false
+    drop_after: ""
+    runtime_entrypoints:
+      - AI-CRM webhook HMAC verification
+    migration_source: 0104_auth_platform
+    pii_level: security_sensitive
+    guard_tests:
+      - tests/test_auth_platform_migration.py
+      - tests/test_data_table_lifecycle_guard.py
+
+  auth_webhook_replay:
+    domain: auth_platform
+    lifecycle: audit
+    write_owner: aicrm_next.platform_foundation.auth_platform
+    read_owners:
+      - centralized webhook HMAC verification
+    replacement: none; persistent webhook replay prevention window
+    drop_candidate: false
+    drop_after: ""
+    runtime_entrypoints:
+      - AI-CRM webhook event replay consumption
+    migration_source: 0104_auth_platform
+    pii_level: security_sensitive
+    guard_tests:
+      - tests/test_auth_platform_migration.py
+      - tests/test_data_table_lifecycle_guard.py
+
   contact_tags:
     domain: customer_tags
     lifecycle: read_model

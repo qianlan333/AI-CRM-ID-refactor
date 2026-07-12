@@ -7,6 +7,7 @@ Revises: 0100_external_effect_delivery_lease
 from __future__ import annotations
 
 from alembic import op
+from sqlalchemy import inspect
 
 
 revision = "0101_commerce_fulfillment_invariants"
@@ -16,6 +17,11 @@ depends_on = None
 
 
 def upgrade() -> None:
+    # ``wechat_pay_refunds`` belongs to the imported pre-Alembic baseline.  A
+    # new empty deployment has no such optional commerce table, while existing
+    # deployments must still receive all three invariants.
+    if not inspect(op.get_bind()).has_table("wechat_pay_refunds"):
+        return
     op.execute(
         """
         CREATE UNIQUE INDEX IF NOT EXISTS uq_wechat_pay_refunds_out_refund_no

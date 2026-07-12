@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 from datetime import datetime, timedelta, timezone
 from typing import Any
-from uuid import uuid4
 
 from aicrm_next.platform_foundation.command_bus import CommandContext
 from aicrm_next.platform_foundation.external_effects import (
@@ -87,14 +86,10 @@ def _loopback_payload(
     response_status: int,
     body: dict[str, Any],
 ) -> dict[str, Any]:
-    token = "eert_" + uuid4().hex
-    secret = "eers_" + uuid4().hex
     payload_hash = canonical_payload_hash(body)
     return {
-        "webhook_url": f"{base_url.rstrip('/')}{TEST_RECEIVER_PATH_PREFIX}/{token}",
+        "webhook_url": f"{base_url.rstrip('/')}{TEST_RECEIVER_PATH_PREFIX}",
         "body": body,
-        "signature_secret": secret,
-        "receiver_token": token,
         "receiver_response_status": int(response_status or 200),
         "test_receiver_expires_at": public_datetime(utcnow() + timedelta(hours=12)),
         "execution_scope": "test_loopback",

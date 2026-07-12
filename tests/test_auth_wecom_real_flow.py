@@ -157,6 +157,7 @@ def test_real_wecom_auth_start_and_callback_issues_opaque_admin_session(monkeypa
     assert cookie_value.startswith("ss_")
     assert introspection.active
     assert introspection.context is not None
-    assert introspection.context.sub == "admin:1"
-    assert introspection.context.acr == "wecom_sso"
+    assert introspection.context.sub == "admin-user:1"
+    assert introspection.context.principal_type.value == "human"
+    assert introspection.context.corp_id == "ww-test-corp"
     assert "manage_admin" in introspection.context.capabilities

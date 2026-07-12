@@ -191,6 +191,7 @@ def handle_callback(
         "session_version": int(admin_user.get("session_version") or 1),
         "username": wecom_userid,
         "wecom_userid": wecom_userid,
+        "corp_id": normalize_text(admin_user.get("wecom_corpid")) or config.corp_id,
         "display_name": normalize_text(admin_user.get("display_name")) or wecom_userid,
         "roles": roles,
         "iat": int(time()),

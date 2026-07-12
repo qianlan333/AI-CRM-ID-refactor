@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import hmac
 from typing import Any
 
 from fastapi import APIRouter, Request
@@ -8,7 +7,6 @@ from fastapi.responses import JSONResponse
 from starlette.concurrency import run_in_threadpool
 
 from aicrm_next.admin_jobs.routes import validate_admin_action_token
-from aicrm_next.shared.runtime_settings import runtime_setting
 
 from .adapters import wecom_execution_settings
 from .repo import build_external_effect_repository
@@ -69,23 +67,7 @@ def _json(payload: dict[str, Any], *, status_code: int = 200) -> JSONResponse:
     return JSONResponse(payload, status_code=status_code, headers=headers)
 
 
-def _internal_token_error(request: Request) -> str:
-    header = _text(request.headers.get("Authorization"))
-    if not header.lower().startswith("bearer "):
-        return "internal_token_required"
-    expected = _text(runtime_setting("AUTOMATION_INTERNAL_API_TOKEN"))
-    if not expected:
-        return "automation_internal_token_not_configured"
-    actual = header.split(" ", 1)[1].strip()
-    if not hmac.compare_digest(actual, expected):
-        return "internal_token_required"
-    return ""
-
-
 def _action_or_internal_token_error(request: Request, payload: dict[str, Any]) -> str:
-    internal_error = _internal_token_error(request)
-    if not internal_error:
-        return ""
     token = _text(request.headers.get("X-Admin-Action-Token")) or _text(payload.get("admin_action_token"))
     return validate_admin_action_token(token, request=request)
 
@@ -242,7 +224,7 @@ def get_external_effect_job(job_id: int) -> JSONResponse:
 
 @router.post("/api/admin/external-effects/run-due/preview")
 async def preview_external_effect_run_due(request: Request) -> JSONResponse:
-    token_error = _internal_token_error(request)
+    token_error = _action_or_internal_token_error(request, {})
     if token_error:
         return _json({"ok": False, "error": token_error, "route_owner": ROUTE_OWNER, "real_external_call_executed": False}, status_code=401)
     payload = await _payload(request)
@@ -259,7 +241,7 @@ async def preview_external_effect_run_due(request: Request) -> JSONResponse:
 
 @router.post("/api/admin/external-effects/run-due")
 async def run_external_effect_due(request: Request) -> JSONResponse:
-    token_error = _internal_token_error(request)
+    token_error = _action_or_internal_token_error(request, {})
     if token_error:
         return _json({"ok": False, "error": token_error, "route_owner": ROUTE_OWNER, "real_external_call_executed": False}, status_code=401)
     payload = await _payload(request)
@@ -277,11 +259,10 @@ async def run_external_effect_due(request: Request) -> JSONResponse:
     return _json(redact_external_effect_admin_response(result))
 
 
-@router.post("/api/external-effects/test-receiver/{receiver_token}")
-async def external_effect_test_receiver(receiver_token: str, request: Request) -> JSONResponse:
+@router.post("/api/external-effects/test-receiver")
+async def external_effect_test_receiver(request: Request) -> JSONResponse:
     status_code, payload = await record_test_receiver_request(
         request=request,
-        receiver_token=receiver_token,
         repository=build_external_effect_repository(),
     )
     return _json(payload, status_code=status_code)
@@ -313,7 +294,7 @@ def list_external_effect_test_receipts(
     job_id: str = "",
     effect_type: str = "",
     trace_id: str = "",
-    receiver_token: str = "",
+    event_id: str = "",
     received_from: str = "",
     received_to: str = "",
     limit: int = 50,
@@ -323,7 +304,7 @@ def list_external_effect_test_receipts(
         "job_id": job_id,
         "effect_type": effect_type,
         "trace_id": trace_id,
-        "receiver_token": receiver_token,
+        "event_id": event_id,
         "received_from": received_from,
         "received_to": received_to,
     }

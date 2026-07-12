@@ -213,7 +213,7 @@ def external_effect_receipt_item(receipt: ExternalEffectTestReceipt) -> dict[str
     return {
         "id": receipt.id,
         "receipt_id": _safe_value(receipt.receipt_id, key="receipt_id"),
-        "receiver_token": REDACTED if receipt.receiver_token else "",
+        "event_id": _safe_value(receipt.event_id, key="event_id"),
         "job_id": receipt.job_id,
         "effect_type": receipt.effect_type,
         "trace_id": _safe_value(receipt.trace_id, key="trace_id"),

@@ -7,44 +7,13 @@ from uuid import uuid4
 
 from .context import AuthContext, PrincipalType
 from .credentials import CSRF_PREFIX, SESSION_PREFIX, CredentialHasher
-from .models import AuthSessionRecord, OAuthSubject
+from .models import AuthSessionRecord, SessionSubject
 
 
 SESSION_TTL = timedelta(hours=8)
 
 
 class SessionRepository(Protocol):
-    def upsert_principal(
-        self,
-        *,
-        principal_id: str,
-        principal_type: PrincipalType,
-        subject: str,
-        tenant_id: str,
-        display_name: str,
-        session_version: int = 1,
-    ) -> None: ...
-
-    def bootstrap_principal_and_client(
-        self,
-        *,
-        principal_id: str,
-        principal_type: PrincipalType,
-        subject: str,
-        tenant_id: str,
-        display_name: str,
-        client_id: str,
-        client_type: str,
-        token_endpoint_auth_method: str,
-        client_secret_hash: str,
-        redirect_uris: tuple[str, ...] = (),
-        audiences: tuple[str, ...],
-        scopes: tuple[str, ...],
-        capabilities: tuple[str, ...],
-        resource_constraints: dict[str, Any] | None = None,
-        sender_constraint_type: str = "",
-    ) -> None: ...
-
     def insert_auth_session(self, session: AuthSessionRecord) -> None: ...
 
     def auth_session_by_hash(self, session_hash: str) -> AuthSessionRecord | None: ...
@@ -77,67 +46,21 @@ class AuthSessionService:
     def repository(self) -> SessionRepository:
         return self._repository
 
-    def provision_principal(
-        self,
-        *,
-        principal_id: str,
-        principal_type: PrincipalType,
-        subject: str,
-        tenant_id: str,
-        display_name: str,
-        session_version: int,
-    ) -> None:
-        self._repository.upsert_principal(
-            principal_id=principal_id,
-            principal_type=principal_type,
-            subject=subject,
-            tenant_id=tenant_id,
-            display_name=display_name,
-            session_version=session_version,
-        )
-
-    def provision_browser_client(
-        self,
-        *,
-        principal_id: str,
-        subject: str,
-        tenant_id: str,
-        display_name: str,
-        client_id: str,
-        audience: str,
-        scopes: tuple[str, ...],
-        capabilities: tuple[str, ...],
-    ) -> None:
-        self._repository.bootstrap_principal_and_client(
-            principal_id=principal_id,
-            principal_type=PrincipalType.SERVICE,
-            subject=subject,
-            tenant_id=tenant_id,
-            display_name=display_name,
-            client_id=client_id,
-            client_type="public",
-            token_endpoint_auth_method="none",
-            client_secret_hash="",
-            audiences=(audience,),
-            scopes=scopes,
-            capabilities=capabilities,
-        )
-
     def issue(
         self,
         *,
-        subject: OAuthSubject,
-        client_id: str,
+        subject: SessionSubject,
         session_version: int,
-        audience: str,
         scopes: tuple[str, ...],
         capabilities: tuple[str, ...],
-        resource_constraints: dict[str, Any] | None = None,
+        owner_scope: dict[str, Any] | None = None,
         now: datetime | None = None,
     ) -> IssuedSession:
         issued_at = _utc(now or datetime.now(timezone.utc))
-        if session_version <= 0:
+        if int(session_version or 0) < 1:
             raise ValueError("session version must be positive")
+        if not str(subject.admin_user_id or "").strip():
+            raise ValueError("human session requires admin_user_id")
         session_credential = self._hasher.issue(SESSION_PREFIX)
         csrf_credential = self._hasher.issue(CSRF_PREFIX)
         session_id = f"session_{uuid4().hex}"
@@ -148,18 +71,13 @@ class AuthSessionService:
                 session_secret_hash=session_credential.digest,
                 csrf_token_hash=csrf_credential.digest,
                 principal_id=subject.principal_id,
-                principal_type=subject.principal_type,
-                subject=subject.subject,
-                tenant_id=subject.tenant_id,
-                client_id=client_id,
-                session_version=session_version,
-                audience=audience,
+                admin_user_id=subject.admin_user_id,
+                corp_id=subject.corp_id,
+                session_version=int(session_version),
                 scopes=tuple(sorted(set(scopes))),
                 capabilities=tuple(sorted(set(capabilities))),
-                resource_constraints=dict(resource_constraints or {}),
-                actor=subject.actor,
-                acr=subject.acr,
-                auth_time=subject.auth_time or issued_at,
+                owner_scope=dict(owner_scope or {}),
+                auth_time=issued_at,
                 expires_at=expires_at,
                 revoked_at=None,
                 revoked_reason="",
@@ -185,19 +103,15 @@ class AuthSessionService:
             active=True,
             record=record,
             context=AuthContext(
-                principal_type=record.principal_type,
-                sub=record.subject,
-                client_id=record.client_id,
-                tenant_id=record.tenant_id,
-                audience=record.audience,
+                principal_type=PrincipalType.HUMAN,
+                principal_id=record.principal_id,
+                admin_user_id=record.admin_user_id,
+                corp_id=record.corp_id,
                 scopes=record.scopes,
                 capabilities=record.capabilities,
-                resource_constraints=record.resource_constraints,
-                token_id=record.session_id,
-                actor=record.actor,
-                acr=record.acr,
-                auth_time=record.auth_time,
-                expires_at=record.expires_at,
+                owner_scope=record.owner_scope,
+                auth_version=record.session_version,
+                request_id=record.session_id,
             ),
         )
 
@@ -205,7 +119,10 @@ class AuthSessionService:
         record = introspection.record
         if not introspection.active or record is None or not cookie_token or not request_token:
             return False
-        return self._hasher.verify(cookie_token, record.csrf_token_hash) and self._hasher.verify(request_token, record.csrf_token_hash)
+        return self._hasher.verify(cookie_token, record.csrf_token_hash) and self._hasher.verify(
+            request_token,
+            record.csrf_token_hash,
+        )
 
     def revoke(self, session_cookie: str, *, reason: str, now: datetime | None = None) -> bool:
         try:

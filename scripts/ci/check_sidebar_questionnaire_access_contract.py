@@ -153,10 +153,17 @@ def check() -> list[str]:
             errors.append(f"sidebar read current-owner filter missing: {required}")
 
     result_source = _function_source("aicrm_next/questionnaire/api.py", "public_submission_result")
-    validator_position = result_source.find("validate_questionnaire_result_grant")
+    validator_position = result_source.find("questionnaire_result_access_token")
     read_position = result_source.find("GetSubmissionResultQuery")
     if validator_position < 0 or read_position < 0 or validator_position > read_position:
-        errors.append("questionnaire result must validate the session grant before reading the submission")
+        errors.append("questionnaire result must consume the middleware-validated session grant before reading the submission")
+    middleware_source = _function_source("aicrm_next/admin_auth/route_policy.py", "_enforce_public_result_grant")
+    if (
+        middleware_source.find("questionnaire_result_token_from_grant") < 0
+        or middleware_source.find("request.state.questionnaire_result_access_token")
+        < middleware_source.find("questionnaire_result_token_from_grant")
+    ):
+        errors.append("route middleware must validate the result cookie before installing questionnaire result authority")
     for required in (
         "issue_questionnaire_result_grant",
         "httponly=True",
@@ -168,9 +175,9 @@ def check() -> list[str]:
             errors.append(f"questionnaire result grant issuance missing: {required}")
     for required in (
         "RESULT_GRANT_PURPOSE",
-        "result_token_sha256",
+        "result_access_token",
         "exp",
-        "validate_questionnaire_result_grant",
+        "questionnaire_result_token_from_grant",
     ):
         if required not in result_access:
             errors.append(f"questionnaire result grant contract missing: {required}")

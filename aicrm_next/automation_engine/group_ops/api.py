@@ -3,6 +3,8 @@ from __future__ import annotations
 from fastapi import APIRouter, Header, HTTPException, Request
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
+
+from aicrm_next.platform_foundation.auth_platform.context import AuthContext
 from pydantic import ValidationError
 from starlette.datastructures import UploadFile as StarletteUploadFile
 
@@ -37,7 +39,6 @@ from .application import (
     PreviewAudienceRuleCommand,
     PreviewGroupOpsSegmentationCommand,
     ReceiveGroupOpsWebhookCommand,
-    RegenerateGroupOpsWebhookCommand,
     RefreshAudienceRuleCommand,
     RefreshGroupOpsMembersFromGroupsCommand,
     RemoveGroupOpsPlanGroupCommand,
@@ -54,7 +55,6 @@ from .broadcast import (
     MAX_IMAGE_BYTES,
     MAX_IMAGES,
     MAX_TOTAL_IMAGE_BYTES,
-    internal_broadcast_token_error,
 )
 from .dto import (
     AudienceRuleCreateRequest,
@@ -106,10 +106,6 @@ def _error_code_for(exc: Exception) -> str:
         return "plan_not_active"
     if "group ops plan is not active" in message:
         return "plan_not_active"
-    if "invalid webhook token" in message:
-        return "invalid_webhook_token"
-    if "invalid webhook signature" in message:
-        return "invalid_webhook_signature"
     if "allowlist" in message:
         return "allowlist_required"
     if "rate limit" in message:
@@ -438,14 +434,6 @@ def get_group_ops_webhook_config(plan_id: int | str) -> JSONResponse:
         _raise_http(exc)
 
 
-@router.post("/api/admin/automation-conversion/group-ops/plans/{plan_id}/webhook/regenerate")
-def regenerate_group_ops_webhook(plan_id: int | str) -> JSONResponse:
-    try:
-        return _json_result(RegenerateGroupOpsWebhookCommand()(_plan_id(plan_id)))
-    except Exception as exc:
-        _raise_http(exc)
-
-
 @router.get("/api/admin/automation-conversion/group-ops/plans/{plan_id}/members")
 def list_group_ops_members(
     plan_id: int | str,
@@ -608,9 +596,7 @@ def receive_group_ops_webhook(
     webhook_key: str,
     payload: GroupOpsWebhookReceiveRequest,
     request: Request,
-    authorization: str | None = Header(default=None),
     x_idempotency_key: str | None = Header(default=None),
-    x_signature: str | None = Header(default=None),
 ) -> JSONResponse:
     try:
         if payload.external_effect_test_loopback:
@@ -619,9 +605,7 @@ def receive_group_ops_webhook(
             ReceiveGroupOpsWebhookCommand()(
                 webhook_key,
                 payload,
-                authorization=authorization,
                 idempotency_key=x_idempotency_key or "",
-                signature=x_signature or "",
             )
         )
     except Exception as exc:
@@ -630,25 +614,14 @@ def receive_group_ops_webhook(
 
 @router.post("/api/automation/group-ops/broadcast")
 async def execute_group_ops_token_broadcast(request: Request) -> JSONResponse:
-    auth_error = internal_broadcast_token_error(request.headers)
-    if auth_error:
-        error, status_code = auth_error
-        return _broadcast_json(
-            {
-                "ok": False,
-                "error": error,
-                "route_owner": "ai_crm_next",
-                "real_external_call_executed": False,
-            },
-            status_code=status_code,
-        )
     try:
         payload, images = await _parse_token_broadcast_request(request)
+        context = getattr(request.state, "auth_context", None)
         result = ExecuteGroupOpsTokenBroadcastCommand()(
             payload,
             idempotency_key=str(request.headers.get("Idempotency-Key") or payload.idempotency_key or ""),
             images=images,
-            actor_id=str(request.headers.get("X-AICRM-Actor") or "external_group_ops_api"),
+            actor_id=context.sub if isinstance(context, AuthContext) else "external_group_ops_api",
         )
     except GroupOpsBroadcastError as exc:
         return _broadcast_json(

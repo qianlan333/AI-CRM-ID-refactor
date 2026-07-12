@@ -74,7 +74,6 @@ def production_probe_env():
     os.environ.setdefault("AICRM_NEXT_ENABLE_PRODUCTION_PROBE_DRY_RUN", "1")
     os.environ.setdefault("DATABASE_URL", "postgresql://probe:probe@127.0.0.1:1/aicrm_probe")
     os.environ.setdefault("SECRET_KEY", "next-production-runtime-gap-probe")
-    os.environ.setdefault("AUTOMATION_INTERNAL_API_TOKEN", "probe-token")
     try:
         yield
     finally:

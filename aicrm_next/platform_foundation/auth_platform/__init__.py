@@ -1,6 +1,6 @@
-"""Unified AI-CRM OAuth 2.0/OIDC authorization platform."""
+"""Private-deployment human, API-client and webhook authentication boundary."""
 
 from .context import AuthContext, PrincipalType
-from .service import AuthPlatformService
+from .service import ApiClientService, AuthServiceConfig
 
-__all__ = ["AuthContext", "AuthPlatformService", "PrincipalType"]
+__all__ = ["ApiClientService", "AuthContext", "AuthServiceConfig", "PrincipalType"]

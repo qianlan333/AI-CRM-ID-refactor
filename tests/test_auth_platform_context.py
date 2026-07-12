@@ -1,72 +1,65 @@
-from datetime import datetime, timedelta, timezone
-
 import pytest
 
 from aicrm_next.platform_foundation.auth_platform.context import AuthContext, PrincipalType
 
 
-NOW = datetime(2026, 7, 12, tzinfo=timezone.utc)
-
-
-def test_auth_context_normalizes_permissions_and_enforces_resource_constraints() -> None:
+def test_auth_context_normalizes_permissions_and_enforces_owner_scope() -> None:
     context = AuthContext(
         principal_type=PrincipalType.SERVICE,
-        sub="worker:broadcast",
+        principal_id="service:broadcast",
         client_id="broadcast-worker",
-        tenant_id="tenant-default",
-        audience="aicrm-internal",
-        scopes=("broadcast.write", "broadcast.write"),
+        corp_id="corp-1",
+        scopes=("write", "write"),
         capabilities=("broadcast_execute",),
-        token_id="tok-1",
-        expires_at=datetime(2099, 7, 12, tzinfo=timezone.utc),
-        auth_time=NOW,
-        resource_constraints={"corp_id": ["corp-1"], "channel": "wecom"},
-        sender_constraint="mtls:sha256:abc",
+        owner_scope={"owner_userid": ["owner-1"], "channel": "wecom"},
+        auth_version=2,
+        request_id="req-1",
     )
-    assert context.scopes == ("broadcast.write",)
+
+    assert context.scopes == ("write",)
     assert context.permits(
-        audience="aicrm-internal",
         capability="broadcast_execute",
-        scope="broadcast.write",
-        resource={"corp_id": "corp-1", "channel": "wecom"},
+        scope="write",
+        resource={"owner_userid": "owner-1", "channel": "wecom"},
     )
     assert not context.permits(
-        audience="aicrm-internal",
         capability="broadcast_execute",
-        resource={"corp_id": "corp-2"},
+        scope="write",
+        resource={"owner_userid": "owner-2", "channel": "wecom"},
     )
-    assert not context.permits(
-        audience="aicrm-internal",
-        capability="broadcast_execute",
-        scope="broadcast.write",
-        resource={},
-    )
+    assert context.sub == "service:broadcast"
+    assert dict(context.resource_constraints) == {"owner_userid": ["owner-1"], "channel": "wecom"}
 
 
-def test_auth_context_rejects_missing_identity_or_naive_timestamps() -> None:
+def test_machine_context_requires_client_id_but_human_context_does_not() -> None:
     with pytest.raises(ValueError, match="client_id"):
         AuthContext(
-            principal_type=PrincipalType.USER,
-            sub="user-1",
+            principal_type=PrincipalType.API_CLIENT,
+            principal_id="agent:campaign",
             client_id="",
-            tenant_id="tenant-default",
-            audience="aicrm-admin",
             scopes=(),
             capabilities=(),
-            token_id="tok-1",
-            expires_at=NOW + timedelta(minutes=10),
-            auth_time=NOW,
         )
-    with pytest.raises(ValueError, match="timezone-aware"):
+
+    human = AuthContext(
+        principal_type=PrincipalType.HUMAN,
+        principal_id="admin-user:1",
+        admin_user_id="1",
+        scopes=("admin.read",),
+        capabilities=("admin_read",),
+    )
+    assert human.client_id == ""
+    assert human.admin_user_id == "1"
+
+
+def test_auth_context_rejects_missing_identity_or_nonpositive_version() -> None:
+    with pytest.raises(ValueError, match="principal_id"):
+        AuthContext(principal_type=PrincipalType.PUBLIC, principal_id="", scopes=(), capabilities=())
+    with pytest.raises(ValueError, match="auth_version"):
         AuthContext(
-            principal_type=PrincipalType.USER,
-            sub="user-1",
-            client_id="admin-bff",
-            tenant_id="tenant-default",
-            audience="aicrm-admin",
+            principal_type=PrincipalType.HUMAN,
+            principal_id="admin-user:1",
             scopes=(),
             capabilities=(),
-            token_id="tok-1",
-            expires_at=datetime(2026, 7, 12, 1, 0),
-            auth_time=datetime(2026, 7, 12, 0, 0),
+            auth_version=0,
         )

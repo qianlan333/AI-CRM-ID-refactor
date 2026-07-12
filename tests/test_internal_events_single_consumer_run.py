@@ -10,6 +10,7 @@ from aicrm_next.platform_foundation.internal_events.repository import build_inte
 from aicrm_next.platform_foundation.internal_events.worker import InternalEventWorker
 from aicrm_next.public_product import h5_wechat_pay
 from aicrm_next.public_product.h5_wechat_pay import _apply_transaction
+from tests.admin_auth_test_helpers import install_admin_action_tokens
 
 
 PAYMENT_CONSUMERS = {
@@ -215,11 +216,14 @@ def test_single_consumer_run_requires_token(next_client: TestClient, monkeypatch
     assert response.status_code == 401
     assert response.json()["error"] in {"automation_internal_token_not_configured", "internal_token_required", "缺少 admin_action_token"}
 
-    monkeypatch.setenv("AUTOMATION_INTERNAL_API_TOKEN", "single-consumer-token")
+    token = install_admin_action_tokens(
+        next_client,
+        ("POST", "/api/admin/internal-events/{event_id}/consumers/{consumer_name}/run"),
+    )[("POST", "/api/admin/internal-events/{event_id}/consumers/{consumer_name}/run")]
     authorized = next_client.post(
         f"/api/admin/internal-events/{event.event_id}/consumers/order_projection_consumer/run",
         json={"reason": "production_gray_single_consumer"},
-        headers={"Authorization": "Bearer single-consumer-token"},
+        headers={"X-Admin-Action-Token": token},
     )
     attempts = InternalEventService().list_attempts(event_id=event.event_id)
 

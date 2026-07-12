@@ -363,7 +363,7 @@ def test_sidebar_products_include_service_period_products_with_signed_links(monk
     assert periodic["price_label"] == "¥999"
     assert periodic["duration_days"] == 90
     assert periodic["link_slug"] == "periodic-quarter"
-    assert periodic["product_url"].startswith("/s/periodic-quarter?ctx=")
+    assert periodic["product_url"].startswith("/s/periodic-quarter#aicrm_ctx=")
     assert periodic["context_status"] == "signed"
 
 

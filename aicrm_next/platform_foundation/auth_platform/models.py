@@ -8,63 +8,43 @@ from .context import PrincipalType
 
 
 @dataclass(frozen=True)
-class OAuthClientRecord:
+class ApiClientRecord:
     client_id: str
     principal_id: str
     principal_type: PrincipalType
-    subject: str
-    tenant_id: str
-    client_type: str
-    client_secret_hash: str
-    token_endpoint_auth_method: str
-    redirect_uris: tuple[str, ...]
+    purpose: str
+    display_name: str
+    secret_hash: str
     audiences: tuple[str, ...]
     scopes: tuple[str, ...]
     capabilities: tuple[str, ...]
-    resource_constraints: dict[str, Any]
-    sender_constraint_type: str
-    status: str
+    allowed_cidrs: tuple[str, ...]
+    corp_id: str
+    owner_scope: dict[str, Any]
+    auth_version: int
+    token_ttl_seconds: int
+    enabled: bool
 
 
 @dataclass(frozen=True)
-class OAuthSubject:
-    principal_id: str
-    principal_type: PrincipalType
-    subject: str
-    tenant_id: str
-    actor: str = ""
-    acr: str = ""
-    auth_time: datetime | None = None
-
-
-@dataclass(frozen=True)
-class AuthorizationCodeRecord:
-    code_hash: str
-    principal_id: str
-    principal_type: PrincipalType
-    subject: str
-    tenant_id: str
+class WebhookClientRecord:
     client_id: str
-    redirect_uri: str
-    audience: str
-    scopes: tuple[str, ...]
-    code_challenge: str
-    code_challenge_method: str
-    nonce: str
-    expires_at: datetime
-    consumed_at: datetime | None
+    principal_id: str
+    display_name: str
+    secret_reference: str
+    capabilities: tuple[str, ...]
+    allowed_cidrs: tuple[str, ...]
+    corp_id: str
+    owner_scope: dict[str, Any]
+    auth_version: int
+    enabled: bool
 
 
 @dataclass(frozen=True)
-class ClientKeyRecord:
-    client_id: str
-    key_id: str
-    algorithm: str
-    public_jwk: dict[str, Any]
-    thumbprint: str
-    status: str
-    not_before: datetime | None
-    expires_at: datetime | None
+class SessionSubject:
+    principal_id: str
+    admin_user_id: str
+    corp_id: str
 
 
 @dataclass(frozen=True)
@@ -73,18 +53,21 @@ class AuthSessionRecord:
     session_secret_hash: str
     csrf_token_hash: str
     principal_id: str
-    principal_type: PrincipalType
-    subject: str
-    tenant_id: str
-    client_id: str
+    admin_user_id: str
+    corp_id: str
     session_version: int
-    audience: str
     scopes: tuple[str, ...]
     capabilities: tuple[str, ...]
-    resource_constraints: dict[str, Any]
-    actor: str
-    acr: str
+    owner_scope: dict[str, Any]
     auth_time: datetime
     expires_at: datetime
     revoked_at: datetime | None
     revoked_reason: str
+
+
+@dataclass(frozen=True)
+class IssuedAccessToken:
+    access_token: str
+    token_type: str
+    expires_in: int
+    scope: str

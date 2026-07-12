@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 import hashlib
-import hmac
 import json
 from typing import Any, Protocol
 
 import requests
 
 from aicrm_next.integration_gateway.wecom_runtime import load_wecom_execution_config
+from aicrm_next.platform_foundation.auth_platform.webhook_hmac import (
+    WebhookHmacSigner,
+    runtime_outbound_webhook_signer,
+)
 
 from aicrm_next.external_push.https_transport import (
     CallableHttpsTransport,
@@ -60,8 +63,7 @@ WECOM_EFFECT_TYPES = (
 
 
 class ExternalEffectAdapter(Protocol):
-    def dispatch(self, job: ExternalEffectJob) -> ExternalEffectDispatchResult:
-        ...
+    def dispatch(self, job: ExternalEffectJob) -> ExternalEffectDispatchResult: ...
 
 
 def _enabled(name: str) -> bool:
@@ -248,11 +250,13 @@ class WebhookAdapter:
         *,
         transport: HttpsTransport | None = None,
         resolver: Resolver | None = None,
+        signer: WebhookHmacSigner | None = None,
     ) -> None:
         if http_post is not None and transport is not None:
             raise ValueError("provide either http_post or transport, not both")
         self._transport = transport or (CallableHttpsTransport(http_post) if http_post is not None else PinnedHttpsTransport())
         self._resolver = resolver or (self._injected_test_resolver if http_post is not None else None)
+        self._signer = signer
 
     @staticmethod
     def _injected_test_resolver(_hostname: str, _port: int) -> list[str]:
@@ -300,14 +304,15 @@ class WebhookAdapter:
                 real_external_call_executed=False,
             )
         timeout = float(runtime_setting("AICRM_EXTERNAL_EFFECT_WEBHOOK_TIMEOUT_SECONDS", "5") or "5")
-        headers, signature_configured = self._headers(payload=payload, body=body)
+        signer = self._signer or runtime_outbound_webhook_signer()
         request_summary = {
             "effect_type": job.effect_type,
             "operation": job.operation,
             "target_url_present": True,
             "timeout_seconds": timeout,
             "body_type": type(body).__name__,
-            "signature_configured": signature_configured,
+            "signature_configured": signer is not None,
+            "signature_scheme": "aicrm_hmac_sha256",
             "redirect_policy": "deny",
         }
         try:
@@ -322,11 +327,28 @@ class WebhookAdapter:
                 error_message="webhook target failed public HTTPS validation",
                 real_external_call_executed=False,
             )
+        if signer is None:
+            return ExternalEffectDispatchResult(
+                status="failed_terminal",
+                adapter_mode="execute",
+                request_summary=request_summary,
+                response_summary={"blocked": True, "real_external_call_executed": False},
+                error_code="auth_signature_config_missing",
+                error_message="registered outbound webhook HMAC credentials are required",
+                real_external_call_executed=False,
+            )
+        body_bytes = json.dumps(body, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+        headers = self._headers(
+            payload=payload,
+            body=body_bytes,
+            signer=signer,
+            event_id=_webhook_event_id(job.idempotency_key or f"external-effect-{job.id}"),
+        )
         request_summary["resolved_ip_count"] = len(target.ip_addresses)
         try:
             response = self._transport.post(
                 target,
-                json_body=body,
+                body=body_bytes,
                 headers=headers,
                 timeout=timeout,
             )
@@ -407,14 +429,17 @@ class WebhookAdapter:
         elif "payload" in payload:
             body = payload.get("payload")
         else:
-            body = {
-                key: value
-                for key, value in payload.items()
-                if key not in {"webhook_url", "target_url", "signature_secret", "signing_secret"}
-            }
+            body = {key: value for key, value in payload.items() if key not in {"webhook_url", "target_url"}}
         return body if isinstance(body, (dict, list)) else None
 
-    def _headers(self, *, payload: dict[str, Any], body: dict[str, Any] | list[Any]) -> tuple[dict[str, str], bool]:
+    def _headers(
+        self,
+        *,
+        payload: dict[str, Any],
+        body: bytes,
+        signer: WebhookHmacSigner,
+        event_id: str,
+    ) -> dict[str, str]:
         headers = {"Content-Type": "application/json"}
         extra_headers = payload.get("headers")
         if isinstance(extra_headers, dict):
@@ -423,19 +448,15 @@ class WebhookAdapter:
                 if not header_name or any(sensitive in header_name.lower() for sensitive in ("authorization", "token", "secret", "cookie")):
                     continue
                 headers[header_name] = str(value or "")
-        secret = str(
-            payload.get("signature_secret")
-            or payload.get("signing_secret")
-            or runtime_setting("AICRM_EXTERNAL_EFFECT_WEBHOOK_SIGNING_SECRET")
-            or ""
-        ).strip()
-        if not secret:
-            return headers, False
-        canonical_body = json.dumps(body, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
-        signature = hmac.new(secret.encode("utf-8"), canonical_body.encode("utf-8"), hashlib.sha256).hexdigest()
-        headers["X-AICRM-External-Effect-Signature"] = signature
-        headers["X-AICRM-External-Effect-Signature-Alg"] = "hmac-sha256"
-        return headers, True
+        headers.update(signer.sign_headers(body=body, event_id=event_id))
+        return headers
+
+
+def _webhook_event_id(value: str) -> str:
+    normalized = str(value or "").strip()
+    if 16 <= len(normalized) <= 256:
+        return normalized
+    return f"evt_{hashlib.sha256(normalized.encode('utf-8')).hexdigest()}"
 
 
 class WeComPrivateMessageAdapter:
@@ -623,8 +644,7 @@ class WeComGroupMessageExternalEffectAdapter:
                 response_summary=response_summary,
                 real_external_call_executed=bool(result.get("side_effect_executed")),
                 provider_result_received=bool(
-                    result.get("side_effect_executed")
-                    and (response_summary.get("wecom_msgid_present") or response_summary.get("audit_id"))
+                    result.get("side_effect_executed") and (response_summary.get("wecom_msgid_present") or response_summary.get("audit_id"))
                 ),
             )
         error_code = str(result.get("error_code") or "wecom_group_message_failed").strip()
@@ -678,9 +698,7 @@ class WeComGroupMessageExternalEffectAdapter:
     def _wecom_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
         content_payload = dict(payload.get("content_payload") or {})
         result = dict(content_payload)
-        result["sender"] = _configured_wecom_sender(
-            str(payload.get("owner_userid") or payload.get("sender") or content_payload.get("sender") or "").strip()
-        )
+        result["sender"] = _configured_wecom_sender(str(payload.get("owner_userid") or payload.get("sender") or content_payload.get("sender") or "").strip())
         result["chat_ids"] = self._chat_ids(payload)
         return result
 
@@ -759,9 +777,7 @@ class WeComWelcomeMessageAdapter:
             return "owner_userid_missing"
         if not str(payload.get("welcome_code") or "").strip():
             return "welcome_code_missing"
-        has_text = isinstance(payload.get("text"), dict) and bool(
-            str((payload.get("text") or {}).get("content") or "").strip()
-        )
+        has_text = isinstance(payload.get("text"), dict) and bool(str((payload.get("text") or {}).get("content") or "").strip())
         has_attachments = isinstance(payload.get("attachments"), list) and bool(payload.get("attachments"))
         if not has_text and not has_attachments:
             return "payload_invalid"

@@ -4,26 +4,32 @@ from fastapi.testclient import TestClient
 
 from aicrm_next.main import create_app
 from aicrm_next.questionnaire.repo import build_questionnaire_repository, reset_questionnaire_fixture_state
+from tests.admin_auth_test_helpers import access_token_headers, install_access_token
 
 
-TOKEN = "external-questionnaire-token"
-
-
-def _client(monkeypatch, *, token_configured: bool = True) -> TestClient:
+def _client(monkeypatch, *, authorized: bool = True) -> TestClient:
     reset_questionnaire_fixture_state()
     monkeypatch.delenv("DATABASE_URL", raising=False)
     monkeypatch.setenv("AICRM_NEXT_ENV", "test")
     monkeypatch.setenv("AICRM_NEXT_DISABLE_LEGACY_PRODUCTION_FACADE", "1")
     monkeypatch.setenv("SECRET_KEY", "external-questionnaire-api")
-    if token_configured:
-        monkeypatch.setenv("AUTOMATION_INTERNAL_API_TOKEN", TOKEN)
-    else:
-        monkeypatch.delenv("AUTOMATION_INTERNAL_API_TOKEN", raising=False)
-    return TestClient(create_app(), raise_server_exceptions=False)
+    monkeypatch.setenv("AICRM_ROUTE_POLICY_ENFORCED", "true")
+    client = TestClient(create_app(), raise_server_exceptions=False)
+    token = install_access_token(
+        client,
+        audience="external_integration",
+        capabilities=("external_read",),
+        scopes=("read",),
+        client_id="pytest-external-questionnaire",
+        purpose="external_agent",
+    )
+    if authorized:
+        client.headers.update(access_token_headers(token))
+    return client
 
 
 def _headers() -> dict[str, str]:
-    return {"Authorization": f"Bearer {TOKEN}"}
+    return {}
 
 
 def _submit_fixture(
@@ -51,22 +57,18 @@ def _submit_fixture(
     return response.json()["submission_id"]
 
 
-def test_external_questionnaire_submissions_requires_configured_bearer_token(monkeypatch) -> None:
-    unconfigured = _client(monkeypatch, token_configured=False).get("/api/external/questionnaire-submissions?mobile=13800138000")
-    assert unconfigured.status_code == 503
-    assert unconfigured.json()["error_code"] == "internal_token_not_configured"
-
-    client = _client(monkeypatch)
+def test_external_questionnaire_submissions_requires_registered_client_access_token(monkeypatch) -> None:
+    client = _client(monkeypatch, authorized=False)
     missing = client.get("/api/external/questionnaire-submissions?mobile=13800138000")
     assert missing.status_code == 401
-    assert missing.json()["error_code"] == "missing_internal_token"
+    assert missing.json()["error"] == "access_token_required"
 
     invalid = client.get(
         "/api/external/questionnaire-submissions?mobile=13800138000",
         headers={"Authorization": "Bearer wrong-token"},
     )
     assert invalid.status_code == 401
-    assert invalid.json()["error_code"] == "invalid_internal_token"
+    assert invalid.json()["error"] == "invalid_access_token"
 
 
 def test_external_questionnaire_submissions_requires_identity_key(monkeypatch) -> None:

@@ -190,7 +190,7 @@ class ExternalEffectAttempt:
 class ExternalEffectTestReceipt:
     id: int = 0
     receipt_id: str = field(default_factory=lambda: "eer_" + uuid4().hex)
-    receiver_token: str = ""
+    event_id: str = ""
     job_id: int = 0
     effect_type: str = ""
     trace_id: str = ""

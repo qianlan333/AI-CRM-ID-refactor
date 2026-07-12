@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import hashlib
-import hmac
 import json
 import secrets
 import re
@@ -140,10 +138,7 @@ def normalize_plan_payload(payload: dict[str, Any], *, existing: dict[str, Any] 
     if not plan_name:
         raise ContractError("plan_name is required")
     owner_userid = clean_text(
-        payload.get("owner_userid")
-        or payload.get("operator_member_id")
-        or payload.get("operatorMemberId")
-        or existing.get("owner_userid")
+        payload.get("owner_userid") or payload.get("operator_member_id") or payload.get("operatorMemberId") or existing.get("owner_userid")
     )
     if not owner_userid:
         raise ContractError("owner_userid is required")
@@ -202,12 +197,7 @@ def normalize_recipient(value: Any) -> dict[str, str]:
     if not isinstance(value, dict):
         raise ContractError("recipient entries must be objects")
     user_id = clean_text(value.get("userId") or value.get("user_id") or value.get("userId"))
-    external_user_id = clean_text(
-        value.get("external_user_id")
-        or value.get("externalUserId")
-        or value.get("external_userid")
-        or value.get("externalUserId")
-    )
+    external_user_id = clean_text(value.get("external_user_id") or value.get("externalUserId") or value.get("external_userid") or value.get("externalUserId"))
     wechat_user_id = clean_text(value.get("wechatUserId") or value.get("wechat_user_id") or value.get("openid"))
     group_id = clean_text(value.get("groupId") or value.get("group_id") or value.get("chat_id"))
     if not any((user_id, external_user_id, wechat_user_id, group_id)):
@@ -338,11 +328,7 @@ def normalize_node_payload(payload: dict[str, Any], *, existing: dict[str, Any] 
     day_index = int(payload.get("day_index", existing.get("day_index", 1)) or 1)
     if day_index < 1:
         raise ContractError("day_index must be >= 1")
-    scheduled_source = (
-        payload.get("scheduled_time")
-        or derive_node_scheduled_time(existing)
-        or extract_scheduled_time(payload.get("trigger_time_label"))
-    )
+    scheduled_source = payload.get("scheduled_time") or derive_node_scheduled_time(existing) or extract_scheduled_time(payload.get("trigger_time_label"))
     scheduled_time = normalize_scheduled_time(scheduled_source)
     trigger_time_label = scheduled_time
     action_title = clean_text(payload.get("action_title") or existing.get("action_title"))
@@ -463,44 +449,3 @@ def generate_webhook_key(plan_name: str) -> str:
     base = clean_text(plan_name).lower().replace(" ", "-")[:32] or "group-ops"
     safe = "".join(ch for ch in base if ch.isalnum() or ch == "-").strip("-") or "group-ops"
     return f"{safe}-{secrets.token_hex(3)}"
-
-
-def generate_webhook_token() -> str:
-    return secrets.token_urlsafe(32)
-
-
-def hash_webhook_token(token: str) -> str:
-    normalized = clean_text(token)
-    if not normalized:
-        raise ContractError("webhook token is required")
-    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
-
-
-def verify_webhook_token(*, provided_token: str, token_hash: str) -> bool:
-    if not provided_token or not token_hash:
-        return False
-    return hmac.compare_digest(hash_webhook_token(provided_token), token_hash)
-
-
-def verify_webhook_signature(*, body: bytes, signature: str, secret_hash: str, token: str = "") -> bool:
-    if not secret_hash:
-        return True
-    provided = clean_text(signature)
-    if not provided:
-        return False
-    # The current schema stores a hash rather than the raw signing secret. Use
-    # the bearer token as the HMAC key when no encrypted secret is available.
-    key = clean_text(token)
-    if not key:
-        return False
-    expected = hmac.new(key.encode("utf-8"), body or b"", hashlib.sha256).hexdigest()
-    normalized = provided.removeprefix("sha256=").strip()
-    return hmac.compare_digest(expected, normalized)
-
-
-def extract_bearer_token(authorization: str | None) -> str:
-    value = clean_text(authorization)
-    prefix = "Bearer "
-    if not value.startswith(prefix):
-        return ""
-    return value[len(prefix):].strip()

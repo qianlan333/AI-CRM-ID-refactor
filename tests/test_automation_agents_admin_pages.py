@@ -128,7 +128,6 @@ def test_automation_agent_edit_page_contract(next_client, monkeypatch) -> None:
         "fixed_script",
         "接收地址",
         "发送地址",
-        "重置 token",
         "receive_webhook_url",
         "role_prompt",
         "task_prompt",
@@ -150,7 +149,6 @@ def test_automation_agent_edit_page_contract(next_client, monkeypatch) -> None:
         "AICRMMaterialPicker.open",
         "/api/admin/automation-agents/123",
         "/api/admin/automation-agents/123/fixed-content",
-        "/api/admin/automation-agents/123/reset-token",
         "send_webhook_url: els.sendUrl.value.trim()",
         'id="sendUrl" value=""',
     ):
@@ -170,6 +168,8 @@ def test_automation_agent_edit_page_contract(next_client, monkeypatch) -> None:
         'id="agentCode"',
         'id="planName"',
         'id="packageKey"',
+        "重置 token",
+        "/api/admin/automation-agents/123/reset-token",
     ):
         assert forbidden not in html
     assert 'id="sendUrl" value="" readonly' not in html

@@ -4,7 +4,6 @@ import json
 from collections.abc import Callable
 from datetime import datetime, timezone
 from typing import Any
-from uuid import uuid4
 
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
@@ -129,9 +128,7 @@ class AutomationAgentRepository:
 
     def resolve_external_userid_for_unionid(self, unionid: str) -> str:
         with self._session_factory() as session:
-            resolution = SQLAlchemyIdentityResolver(session).resolve(
-                ResolvePersonIdentityRequest(unionid=_text(unionid) or None)
-            )
+            resolution = SQLAlchemyIdentityResolver(session).resolve(ResolvePersonIdentityRequest(unionid=_text(unionid) or None))
         identity = resolution.identity if resolution.status == "resolved" else None
         return _text(identity.external_userid if identity else "")
 
@@ -143,18 +140,22 @@ class AutomationAgentRepository:
             return {}
         try:
             with self._session_factory() as session:
-                batch_row = session.execute(
-                    text(
-                        """
+                batch_row = (
+                    session.execute(
+                        text(
+                            """
                         SELECT *
                         FROM automation_agent_webhook_batch
                         WHERE batch_id = :batch_id
                           AND (:agent_code = '' OR agent_code = :agent_code)
                         LIMIT 1
                         """
-                    ),
-                    {"batch_id": batch_id, "agent_code": agent_code},
-                ).mappings().fetchone()
+                        ),
+                        {"batch_id": batch_id, "agent_code": agent_code},
+                    )
+                    .mappings()
+                    .fetchone()
+                )
                 if not batch_row:
                     return {}
                 batch = _public_row(dict(batch_row)) or {}
@@ -162,9 +163,10 @@ class AutomationAgentRepository:
                 run_id = _text(batch.get("refresh_run_id"))
                 source_event_type = _text(batch.get("source_event_type"))
                 event_type = source_event_type.rsplit(".", 1)[-1] if source_event_type else ""
-                identity_row = session.execute(
-                    text(
-                        """
+                identity_row = (
+                    session.execute(
+                        text(
+                            """
                         SELECT unionid
                         FROM crm_user_identity
                         WHERE primary_external_userid = :external_userid
@@ -178,15 +180,19 @@ class AutomationAgentRepository:
                            )
                         LIMIT 1
                         """
-                    ),
-                    {"external_userid": external_userid},
-                ).mappings().fetchone()
+                        ),
+                        {"external_userid": external_userid},
+                    )
+                    .mappings()
+                    .fetchone()
+                )
                 unionid = _text((identity_row or {}).get("unionid"))
                 event_row = None
                 if package_key and unionid:
-                    event_row = session.execute(
-                        text(
-                            """
+                    event_row = (
+                        session.execute(
+                            text(
+                                """
                             SELECT e.*, p.package_key, p.name AS package_name
                             FROM ai_audience_package p
                             JOIN ai_audience_member_event e ON e.package_id = p.id
@@ -199,19 +205,23 @@ class AutomationAgentRepository:
                               e.id DESC
                             LIMIT 1
                             """
-                        ),
-                        {
-                            "package_key": package_key,
-                            "unionid": unionid,
-                            "event_type": event_type,
-                            "run_id": run_id,
-                        },
-                    ).mappings().fetchone()
+                            ),
+                            {
+                                "package_key": package_key,
+                                "unionid": unionid,
+                                "event_type": event_type,
+                                "run_id": run_id,
+                            },
+                        )
+                        .mappings()
+                        .fetchone()
+                    )
                 current_row = None
                 if package_key and unionid:
-                    current_row = session.execute(
-                        text(
-                            """
+                    current_row = (
+                        session.execute(
+                            text(
+                                """
                             SELECT c.*, p.package_key, p.name AS package_name
                             FROM ai_audience_package p
                             JOIN ai_audience_member_current c ON c.package_id = p.id
@@ -220,9 +230,12 @@ class AutomationAgentRepository:
                             ORDER BY c.updated_at DESC, c.id DESC
                             LIMIT 1
                             """
-                        ),
-                        {"package_key": package_key, "unionid": unionid},
-                    ).mappings().fetchone()
+                            ),
+                            {"package_key": package_key, "unionid": unionid},
+                        )
+                        .mappings()
+                        .fetchone()
+                    )
                 return {
                     "batch": batch,
                     "member_event": _public_row(dict(event_row)) if event_row else {},
@@ -302,14 +315,12 @@ class AutomationAgentRepository:
             INSERT INTO automation_agent_runtime_config (
                 agent_code, agent_name, automation_type, bound_package_key, status,
                 draft_role_prompt, draft_task_prompt, published_role_prompt, published_task_prompt,
-                draft_version, published_version, fixed_content_package_json, inbound_webhook_secret,
-                inbound_webhook_token, send_webhook_url,
+                draft_version, published_version, fixed_content_package_json, send_webhook_url,
                 created_at, updated_at
             ) VALUES (
                 :agent_code, :agent_name, :automation_type, :bound_package_key, :status,
                 :role_prompt, :task_prompt, :role_prompt, :task_prompt,
-                1, 1, CAST(:fixed_content_package_json AS jsonb), :inbound_webhook_secret,
-                :inbound_webhook_token, :send_webhook_url,
+                1, 1, CAST(:fixed_content_package_json AS jsonb), :send_webhook_url,
                 CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
             )
             RETURNING *
@@ -323,8 +334,6 @@ class AutomationAgentRepository:
                 "role_prompt": _text(payload.get("role_prompt")),
                 "task_prompt": _text(payload.get("task_prompt")),
                 "fixed_content_package_json": _json_dumps(payload.get("fixed_content_package") or {}),
-                "inbound_webhook_secret": _text(payload.get("inbound_webhook_secret")) or uuid4().hex,
-                "inbound_webhook_token": _text(payload.get("inbound_webhook_token")) or f"agtok_{uuid4().hex}",
                 "send_webhook_url": _text(payload.get("send_webhook_url")),
             },
         )
@@ -343,15 +352,9 @@ class AutomationAgentRepository:
             "status": _text(payload.get("status")) if "status" in payload else _text(existing.get("status")),
             "role_prompt": _text(payload.get("role_prompt")) if "role_prompt" in payload else _text(existing.get("draft_role_prompt")),
             "task_prompt": _text(payload.get("task_prompt")) if "task_prompt" in payload else _text(existing.get("draft_task_prompt")),
-            "send_webhook_url": (
-                _text(payload.get("send_webhook_url"))
-                if "send_webhook_url" in payload
-                else _text(existing.get("send_webhook_url"))
-            ),
+            "send_webhook_url": (_text(payload.get("send_webhook_url")) if "send_webhook_url" in payload else _text(existing.get("send_webhook_url"))),
             "fixed_content_package": (
-                payload.get("fixed_content_package")
-                if "fixed_content_package" in payload
-                else existing.get("fixed_content_package_json") or {}
+                payload.get("fixed_content_package") if "fixed_content_package" in payload else existing.get("fixed_content_package_json") or {}
             ),
         }
         return self._write_one(
@@ -385,19 +388,6 @@ class AutomationAgentRepository:
                 "send_webhook_url": merged["send_webhook_url"],
                 "fixed_content_package_json": _json_dumps(merged["fixed_content_package"]),
             },
-        )
-
-    def rotate_inbound_token(self, agent_id: int, token: str) -> dict[str, Any] | None:
-        return self._write_one(
-            """
-            UPDATE automation_agent_runtime_config
-            SET inbound_webhook_token = :token,
-                updated_at = CURRENT_TIMESTAMP
-            WHERE id = :agent_id
-              AND status <> 'archived'
-            RETURNING *
-            """,
-            {"agent_id": int(agent_id), "token": _text(token)},
         )
 
     def set_status(self, agent_id: int, status: str) -> dict[str, Any] | None:
@@ -446,9 +436,10 @@ class AutomationAgentRepository:
         with self._session_factory() as session:
             unionids = resolved_unionids_for_external_userids_with_sqlalchemy(session, external_userids)
             deduped_count = len(unionids)
-            row = session.execute(
-                text(
-                    """
+            row = (
+                session.execute(
+                    text(
+                        """
                     INSERT INTO automation_agent_webhook_batch (
                         batch_id, agent_code, bound_package_key, source_event_type, refresh_run_id,
                         idempotency_key, received_count, deduped_count, accepted_count, status,
@@ -462,28 +453,32 @@ class AutomationAgentRepository:
                     DO UPDATE SET updated_at = CURRENT_TIMESTAMP
                     RETURNING *
                     """
-                ),
-                {
-                    "batch_id": batch_id,
-                    "agent_code": _text(agent.get("agent_code")),
-                    "bound_package_key": _text(agent.get("bound_package_key")),
-                    "source_event_type": source_event_type,
-                    "refresh_run_id": refresh_run_id,
-                    "idempotency_key": idempotency_key,
-                    "received_count": int(received_count),
-                    "deduped_count": deduped_count,
-                    "accepted_count": deduped_count,
-                    "headers_json": _json_dumps(headers),
-                    "payload_json": _json_dumps(payload),
-                },
-            ).mappings().one()
+                    ),
+                    {
+                        "batch_id": batch_id,
+                        "agent_code": _text(agent.get("agent_code")),
+                        "bound_package_key": _text(agent.get("bound_package_key")),
+                        "source_event_type": source_event_type,
+                        "refresh_run_id": refresh_run_id,
+                        "idempotency_key": idempotency_key,
+                        "received_count": int(received_count),
+                        "deduped_count": deduped_count,
+                        "accepted_count": deduped_count,
+                        "headers_json": _json_dumps(headers),
+                        "payload_json": _json_dumps(payload),
+                    },
+                )
+                .mappings()
+                .one()
+            )
             batch = dict(row)
             rows: list[dict[str, Any]] = []
             for unionid in unionids:
                 external_event_id = f"agent:{agent['agent_code']}:{unionid}:{batch['batch_id']}"
-                item = session.execute(
-                    text(
-                        """
+                item = (
+                    session.execute(
+                        text(
+                            """
                         INSERT INTO automation_agent_webhook_item (
                             batch_id, agent_code, unionid, external_event_id, status, created_at
                         ) VALUES (
@@ -492,14 +487,17 @@ class AutomationAgentRepository:
                         ON CONFLICT (batch_id, unionid) WHERE unionid <> '' DO UPDATE SET updated_at = CURRENT_TIMESTAMP
                         RETURNING *
                         """
-                    ),
-                    {
-                        "batch_id": _text(batch["batch_id"]),
-                        "agent_code": _text(agent.get("agent_code")),
-                        "unionid": unionid,
-                        "external_event_id": external_event_id,
-                    },
-                ).mappings().one()
+                        ),
+                        {
+                            "batch_id": _text(batch["batch_id"]),
+                            "agent_code": _text(agent.get("agent_code")),
+                            "unionid": unionid,
+                            "external_event_id": external_event_id,
+                        },
+                    )
+                    .mappings()
+                    .one()
+                )
                 rows.append(_public_row(dict(item)) or {})
             session.commit()
         return _public_row(batch) or {}, rows
@@ -572,10 +570,13 @@ class AutomationAgentRepository:
                 assignments.append(f"{column} = :{name}")
                 params[name] = value
         assignments.append("updated_at = CURRENT_TIMESTAMP")
-        return self._write_one(
-            f"UPDATE automation_agent_webhook_item SET {', '.join(assignments)} WHERE id = :id RETURNING *",
-            params,
-        ) or {}
+        return (
+            self._write_one(
+                f"UPDATE automation_agent_webhook_item SET {', '.join(assignments)} WHERE id = :id RETURNING *",
+                params,
+            )
+            or {}
+        )
 
 
 def build_automation_agent_repository() -> AutomationAgentRepository:

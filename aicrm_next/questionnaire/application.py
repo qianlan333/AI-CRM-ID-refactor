@@ -453,7 +453,7 @@ class SubmitQuestionnaireCommand:
             "ok": True,
             "submission_id": submission["submission_id"],
             "result_access_token": submission["result_token"],
-            "result_url": f"/api/h5/questionnaires/{item['slug']}/result/{submission['result_token']}",
+            "result_url": f"/api/h5/questionnaires/{item['slug']}/result",
             "questionnaire_id": item["id"],
             "slug": item["slug"],
             "external_userid": submission.get("external_userid") or "",

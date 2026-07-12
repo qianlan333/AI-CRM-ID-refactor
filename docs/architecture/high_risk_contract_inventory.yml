@@ -9,8 +9,8 @@
       "ci_scope": "admin_auth_security",
       "real_external_call_expected": false,
       "contracts": {
-        "success": "tests/test_admin_auth_login_submit.py::test_break_glass_success_sets_next_cookie_and_redirects_safe_next",
-        "failure": "tests/test_admin_auth_login_submit.py::test_invalid_or_disabled_break_glass_login_is_controlled",
+        "success": "tests/test_auth_wecom_real_flow.py::test_real_wecom_auth_start_and_callback_issues_opaque_admin_session",
+        "failure": "tests/test_admin_auth_login_submit.py::test_local_password_login_route_is_absent_and_cannot_issue_session",
         "replay_or_concurrency": "tests/test_questionnaire_oauth_state_security.py::test_oauth_state_replay_is_rejected"
       }
     },

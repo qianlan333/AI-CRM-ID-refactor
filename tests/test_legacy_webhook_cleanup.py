@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 
 from aicrm_next.platform_foundation.legacy_cleanup.repo import build_legacy_cleanup_repository, reset_legacy_cleanup_fixture_state
 from aicrm_next.platform_foundation.legacy_cleanup.service import DEFAULT_LEGACY_DEPRECATIONS, LegacyWebhookCleanupService
+from tests.admin_auth_test_helpers import install_admin_action_tokens
 
 
 def _fixed_now() -> datetime:
@@ -198,25 +199,31 @@ def test_disabled_payload_marks_legacy_invocation_for_observation() -> None:
 
 def test_legacy_cleanup_api_requires_token_for_run_due(next_client: TestClient, monkeypatch) -> None:
     reset_legacy_cleanup_fixture_state()
-    monkeypatch.setenv("AUTOMATION_INTERNAL_API_TOKEN", "pytest-internal")
+    del monkeypatch
+    tokens = install_admin_action_tokens(
+        next_client,
+        ("POST", "/api/admin/legacy-webhook-cleanup/deprecations/mark"),
+        ("POST", "/api/admin/legacy-webhook-cleanup/run-due/preview"),
+        ("POST", "/api/admin/legacy-webhook-cleanup/deprecations/retire-now"),
+    )
 
     status = next_client.get("/api/admin/legacy-webhook-cleanup/status")
     rejected_mark = next_client.post("/api/admin/legacy-webhook-cleanup/deprecations/mark", json={"operator": "pytest"})
     marked = next_client.post(
         "/api/admin/legacy-webhook-cleanup/deprecations/mark",
-        headers={"Authorization": "Bearer pytest-internal"},
+        headers={"X-Admin-Action-Token": tokens[("POST", "/api/admin/legacy-webhook-cleanup/deprecations/mark")]},
         json={"operator": "pytest"},
     )
     rejected = next_client.post("/api/admin/legacy-webhook-cleanup/run-due/preview", json={"dry_run": True})
     accepted = next_client.post(
         "/api/admin/legacy-webhook-cleanup/run-due/preview",
-        headers={"Authorization": "Bearer pytest-internal"},
+        headers={"X-Admin-Action-Token": tokens[("POST", "/api/admin/legacy-webhook-cleanup/run-due/preview")]},
         json={"dry_run": True},
     )
     rejected_retire = next_client.post("/api/admin/legacy-webhook-cleanup/deprecations/retire-now", json={"dry_run": True})
     accepted_retire = next_client.post(
         "/api/admin/legacy-webhook-cleanup/deprecations/retire-now",
-        headers={"Authorization": "Bearer pytest-internal"},
+        headers={"X-Admin-Action-Token": tokens[("POST", "/api/admin/legacy-webhook-cleanup/deprecations/retire-now")]},
         json={"dry_run": True},
     )
 

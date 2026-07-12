@@ -295,4 +295,4 @@ def test_denied_admin_export_is_audited_with_admin_or_anonymous_principal(monkey
     assert viewer.status_code == 403
     statuses = [(event.actor_type, event.status_code) for event in repository.events]
     assert ("anonymous", 401) in statuses
-    assert ("user", 403) in statuses
+    assert ("human", 403) in statuses

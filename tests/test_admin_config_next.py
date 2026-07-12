@@ -481,7 +481,9 @@ def test_retired_reply_monitor_chat_settings_are_not_exposed(monkeypatch, tmp_pa
     fields = [field for block in response.json()["config"]["blocks"] for field in block["fields"]]
     keys = {field["key"] for field in fields}
     assert "DEEPSEEK_ENABLED" in keys
-    assert "AUTOMATION_INTERNAL_API_TOKEN" in keys
+    assert "AUTOMATION_INTERNAL_API_TOKEN" not in keys
+    assert "AICRM_AUTH_AUTOMATION_WORKER_CLIENT_ID" in keys
+    assert "AICRM_AUTH_AUTOMATION_WORKER_CLIENT_SECRET_REF" in keys
     assert not {key for key in keys if key.startswith("LAOHUANG_CHAT_")}
 
 
@@ -716,6 +718,26 @@ def test_config_category_check_and_invalid_category_are_controlled(monkeypatch, 
 
 
 def test_setup_wizard_saves_and_repeated_submit_is_noop(monkeypatch, tmp_path) -> None:
+    required_auth_settings = {
+        "AICRM_AUTH_ISSUER": "https://crm.example.test/oauth",
+        "AICRM_AUTH_SESSION_HASH_PEPPER": "secretref:file:AICRM_AUTH_SESSION_HASH_PEPPER:v1_test",
+        "AICRM_AUTH_JWT_SIGNING_KEY": "secretref:file:AICRM_AUTH_JWT_SIGNING_KEY:v1_test",
+        "AICRM_AUTH_OUTBOUND_WEBHOOK_CLIENT_ID": "aicrm-outbound-webhook",
+    }
+    for purpose in (
+        "AUTOMATION_WORKER",
+        "ARCHIVE_WORKER",
+        "CALLBACK_WORKER",
+        "GROUP_BROADCAST",
+        "IDENTITY",
+        "MCP",
+        "EXTERNAL_AGENT",
+        "CAMPAIGN_AGENT",
+    ):
+        required_auth_settings[f"AICRM_AUTH_{purpose}_CLIENT_ID"] = f"pytest-{purpose.lower().replace('_', '-')}"
+        required_auth_settings[f"AICRM_AUTH_{purpose}_CLIENT_SECRET_REF"] = f"secretref:file:AICRM_AUTH_{purpose}_CLIENT_SECRET:v1_test"
+    for key, value in required_auth_settings.items():
+        monkeypatch.setenv(key, value)
     client = _prepare_client(monkeypatch, tmp_path)
     token = _token(
         client.get("/setup/wizard").text,

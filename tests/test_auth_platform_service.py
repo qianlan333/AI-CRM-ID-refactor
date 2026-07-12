@@ -1,261 +1,185 @@
 from dataclasses import replace
-from datetime import datetime, timedelta, timezone
 
+import jwt
 import pytest
 
 from aicrm_next.platform_foundation.auth_platform.context import PrincipalType
-from aicrm_next.platform_foundation.auth_platform.credentials import CredentialHasher
-from aicrm_next.platform_foundation.auth_platform.service import (
-    AccessTokenRecord,
-    AuthPlatformService,
-    ClientGrant,
-    RefreshTokenRecord,
-)
+from aicrm_next.platform_foundation.auth_platform.credentials import hash_client_secret, issue_client_secret
+from aicrm_next.platform_foundation.auth_platform.models import ApiClientRecord
+from aicrm_next.platform_foundation.auth_platform.service import ApiClientService, AuthError, AuthServiceConfig
 
 
-NOW = datetime(2026, 7, 12, tzinfo=timezone.utc)
+SIGNING_KEY = "unit-test-jwt-signing-key-material-at-least-32-bytes"
+ISSUER = "https://crm.example.test/oauth"
 
 
 class _Repository:
     def __init__(self) -> None:
-        self.grants = {
-            "broadcast-worker": ClientGrant(
-                client_id="broadcast-worker",
-                principal_id="principal-broadcast",
-                principal_type=PrincipalType.SERVICE,
-                subject="worker:broadcast",
-                tenant_id="tenant-default",
-                audiences=("aicrm-internal",),
-                scopes=("broadcast.read", "broadcast.write"),
-                capabilities=("broadcast_execute",),
-                resource_constraints={"corp_id": ["corp-1"]},
-                sender_constraint_type="mtls",
-            ),
-            "admin-bff": ClientGrant(
-                client_id="admin-bff",
-                principal_id="principal-admin",
-                principal_type=PrincipalType.USER,
-                subject="admin:1",
-                tenant_id="tenant-default",
-                audiences=("aicrm-admin",),
-                scopes=("admin.read", "admin.write", "openid"),
-                capabilities=("admin_read", "admin_write"),
-                resource_constraints={},
-                sender_constraint_type="",
-            ),
-        }
-        self.tokens: dict[str, AccessTokenRecord] = {}
-        self.refresh_tokens: dict[str, RefreshTokenRecord] = {}
-        self.family_status: dict[str, str] = {}
+        self.clients: dict[str, ApiClientRecord] = {}
 
-    def client_grant(self, client_id: str):
-        return self.grants.get(client_id)
+    def api_client(self, client_id: str):
+        return self.clients.get(client_id)
 
-    def insert_access_token(self, token: AccessTokenRecord) -> None:
-        assert token.token_hash not in self.tokens
-        self.tokens[token.token_hash] = token
+    def insert_api_client(self, client: ApiClientRecord) -> None:
+        if client.client_id in self.clients:
+            raise ValueError("duplicate")
+        self.clients[client.client_id] = client
 
-    def access_token_by_hash(self, token_hash: str):
-        return self.tokens.get(token_hash)
-
-    def revoke_access_token(self, token_hash: str, *, revoked_at: datetime) -> bool:
-        token = self.tokens.get(token_hash)
-        if token is None:
+    def update_api_client_definition(self, client: ApiClientRecord) -> bool:
+        current = self.clients.get(client.client_id)
+        if current is None:
             return False
-        self.tokens[token_hash] = replace(token, revoked_at=revoked_at)
+        self.clients[client.client_id] = replace(client, secret_hash=current.secret_hash, auth_version=current.auth_version)
         return True
 
-    def insert_token_pair(self, *, family_id, access_token, refresh_token) -> None:
-        self.family_status[family_id] = "active"
-        self.tokens[access_token.token_hash] = access_token
-        self.refresh_tokens[refresh_token.token_hash] = refresh_token
-
-    def refresh_token_by_hash(self, token_hash: str):
-        token = self.refresh_tokens.get(token_hash)
-        if token is None or self.family_status.get(token.family_id) != "active":
+    def rotate_api_client_secret(self, client_id: str, secret_hash: str):
+        current = self.clients.get(client_id)
+        if current is None:
             return None
-        return token
+        updated = replace(current, secret_hash=secret_hash, auth_version=current.auth_version + 1)
+        self.clients[client_id] = updated
+        return updated.auth_version
 
-    def rotate_refresh_token(self, *, presented_hash, access_token, refresh_token, rotated_at) -> str:
-        token = self.refresh_tokens.get(presented_hash)
-        if token is None or self.family_status.get(token.family_id) != "active":
-            return "invalid"
-        if token.consumed_at is not None:
-            self.family_status[token.family_id] = "reuse_detected"
-            self.tokens = {
-                key: replace(value, revoked_at=rotated_at) if value.family_id == token.family_id else value
-                for key, value in self.tokens.items()
-            }
-            self.refresh_tokens = {
-                key: replace(value, revoked_at=rotated_at) if value.family_id == token.family_id else value
-                for key, value in self.refresh_tokens.items()
-            }
-            return "reuse_detected"
-        self.refresh_tokens[presented_hash] = replace(token, consumed_at=rotated_at)
-        self.tokens[access_token.token_hash] = access_token
-        self.refresh_tokens[refresh_token.token_hash] = refresh_token
-        return "rotated"
+    def set_api_client_enabled(self, client_id: str, enabled: bool):
+        current = self.clients.get(client_id)
+        if current is None:
+            return None
+        updated = replace(current, enabled=enabled, auth_version=current.auth_version + 1)
+        self.clients[client_id] = updated
+        return updated.auth_version
 
 
-def test_client_credentials_issues_five_minute_sender_bound_high_risk_token() -> None:
-    repo = _Repository()
-    service = AuthPlatformService(repo, CredentialHasher("p" * 32))
+def _service() -> tuple[ApiClientService, _Repository, str]:
+    repository = _Repository()
+    secret = issue_client_secret()
+    repository.clients["campaign-agent"] = ApiClientRecord(
+        client_id="campaign-agent",
+        principal_id="api_client:campaign_agent",
+        principal_type=PrincipalType.API_CLIENT,
+        purpose="campaign_agent",
+        display_name="Campaign Agent",
+        secret_hash=hash_client_secret(secret),
+        audiences=("external_integration",),
+        scopes=("read", "write"),
+        capabilities=("campaign_draft_create", "campaign_status_read"),
+        allowed_cidrs=("203.0.113.0/24",),
+        corp_id="corp-1",
+        owner_scope={"owner_userid": ["owner-1"]},
+        auth_version=1,
+        token_ttl_seconds=1800,
+        enabled=True,
+    )
+    return ApiClientService(repository, AuthServiceConfig(issuer=ISSUER, signing_key=SIGNING_KEY)), repository, secret
 
-    response = service.issue_client_credentials_access_token(
-        client_id="broadcast-worker",
-        audience="aicrm-internal",
-        requested_scopes=("broadcast.write",),
-        sender_constraint="mtls:sha256:worker-cert",
-        high_risk_write=True,
-        now=NOW,
+
+def test_client_credentials_issues_required_short_lived_signed_claims() -> None:
+    service, _repository, secret = _service()
+    issued = service.issue_client_credentials_token(
+        client_id="campaign-agent",
+        client_secret=secret,
+        audience="external_integration",
+        requested_scopes=("write",),
+        source_ip="203.0.113.8",
+    )
+    claims = jwt.decode(issued.access_token, SIGNING_KEY, algorithms=["HS256"], options={"verify_aud": False})
+
+    assert issued.token_type == "Bearer"
+    assert issued.expires_in == 1800
+    assert {"iss", "aud", "sub", "client_id", "scope", "iat", "exp", "jti", "auth_version"}.issubset(claims)
+    assert claims["client_id"] == "campaign-agent"
+    assert claims["auth_version"] == 1
+    assert claims["exp"] - claims["iat"] == 1800
+
+
+def test_local_verification_enforces_audience_purpose_scope_capability_and_owner_scope() -> None:
+    service, _repository, secret = _service()
+    token = service.issue_client_credentials_token(
+        client_id="campaign-agent",
+        client_secret=secret,
+        audience="external_integration",
+        requested_scopes=("read", "write"),
+        source_ip="203.0.113.9",
+    ).access_token
+    context = service.verify_access_token(
+        token,
+        audience="external_integration",
+        source_ip="203.0.113.9",
+        client_purpose="campaign_agent",
     )
 
-    assert response.token_type == "Bearer"
-    assert response.expires_in == 300
-    assert response.scope == "broadcast.write"
-    stored = next(iter(repo.tokens.values()))
-    assert response.access_token not in repr(stored)
-    assert stored.sender_constraint == "mtls:sha256:worker-cert"
-
-
-def test_introspection_returns_auth_context_only_for_bound_audience_and_sender() -> None:
-    repo = _Repository()
-    service = AuthPlatformService(repo, CredentialHasher("p" * 32))
-    response = service.issue_client_credentials_access_token(
-        client_id="broadcast-worker",
-        audience="aicrm-internal",
-        requested_scopes=("broadcast.read",),
-        sender_constraint="mtls:sha256:worker-cert",
-        now=NOW,
+    assert context.client_id == "campaign-agent"
+    assert context.permits(
+        capability="campaign_draft_create",
+        scope="write",
+        resource={"owner_userid": "owner-1"},
     )
-
-    valid = service.introspect_access_token(
-        response.access_token,
-        audience="aicrm-internal",
-        sender_constraint="mtls:sha256:worker-cert",
-        now=NOW + timedelta(minutes=1),
+    assert not context.permits(
+        capability="campaign_draft_create",
+        scope="write",
+        resource={"owner_userid": "owner-2"},
     )
-    assert valid.active
-    assert valid.context is not None
-    assert valid.context.sub == "worker:broadcast"
-    assert not service.introspect_access_token(
-        response.access_token,
-        audience="aicrm-admin",
-        sender_constraint="mtls:sha256:worker-cert",
-        now=NOW,
-    ).active
-    assert not service.introspect_access_token(
-        response.access_token,
-        audience="aicrm-internal",
-        sender_constraint="mtls:sha256:other-cert",
-        now=NOW,
-    ).active
-
-
-def test_revocation_is_immediate_and_expired_tokens_are_inactive() -> None:
-    repo = _Repository()
-    service = AuthPlatformService(repo, CredentialHasher("p" * 32))
-    response = service.issue_client_credentials_access_token(
-        client_id="broadcast-worker",
-        audience="aicrm-internal",
-        requested_scopes=("broadcast.read",),
-        sender_constraint="mtls:sha256:worker-cert",
-        now=NOW,
-    )
-
-    assert service.revoke_access_token(response.access_token, now=NOW + timedelta(minutes=1))
-    assert not service.introspect_access_token(
-        response.access_token,
-        audience="aicrm-internal",
-        sender_constraint="mtls:sha256:worker-cert",
-        now=NOW + timedelta(minutes=1),
-    ).active
-
-
-def test_user_refresh_token_rotates_and_reuse_revokes_the_entire_family() -> None:
-    repo = _Repository()
-    hasher = CredentialHasher("p" * 32)
-    service = AuthPlatformService(repo, hasher)
-    initial = service.issue_user_token_pair(
-        client_id="admin-bff",
-        audience="aicrm-admin",
-        requested_scopes=("openid", "admin.read"),
-        sender_constraint="",
-        now=NOW,
-    )
-
-    rotated = service.refresh_user_token_pair(
-        initial.refresh_token,
-        client_id="admin-bff",
-        requested_scopes=("admin.read",),
-        sender_constraint="",
-        now=NOW + timedelta(minutes=1),
-    )
-    assert rotated.refresh_token != initial.refresh_token
-    assert rotated.expires_in == 600
-    assert repo.family_status[next(iter(repo.family_status))] == "active"
-
-    with pytest.raises(PermissionError, match="refresh_token_reuse_detected"):
-        service.refresh_user_token_pair(
-            initial.refresh_token,
-            client_id="admin-bff",
-            requested_scopes=("admin.read",),
-            sender_constraint="",
-            now=NOW + timedelta(minutes=2),
+    with pytest.raises(AuthError, match="invalid_target") as wrong_audience:
+        service.verify_access_token(token, audience="internal_worker", source_ip="203.0.113.9")
+    assert wrong_audience.value.status_code == 403
+    with pytest.raises(AuthError, match="client_purpose_forbidden"):
+        service.verify_access_token(
+            token,
+            audience="external_integration",
+            source_ip="203.0.113.9",
+            client_purpose="identity",
         )
-    assert repo.family_status[next(iter(repo.family_status))] == "reuse_detected"
-    assert not service.introspect_access_token(
-        rotated.access_token,
-        audience="aicrm-admin",
-        sender_constraint="",
-        now=NOW + timedelta(minutes=2),
-    ).active
 
 
-def test_refresh_cannot_expand_original_scope_or_change_client() -> None:
-    repo = _Repository()
-    service = AuthPlatformService(repo, CredentialHasher("p" * 32))
-    initial = service.issue_user_token_pair(
-        client_id="admin-bff",
-        audience="aicrm-admin",
-        requested_scopes=("openid", "admin.read"),
-        sender_constraint="",
-        now=NOW,
-    )
-
-    with pytest.raises(PermissionError, match="invalid_scope"):
-        service.refresh_user_token_pair(
-            initial.refresh_token,
-            client_id="admin-bff",
+def test_wrong_secret_scope_target_or_cidr_is_rejected() -> None:
+    service, _repository, secret = _service()
+    with pytest.raises(AuthError, match="invalid_client"):
+        service.issue_client_credentials_token(
+            client_id="campaign-agent",
+            client_secret=issue_client_secret(),
+            audience="external_integration",
+            requested_scopes=("read",),
+            source_ip="203.0.113.8",
+        )
+    with pytest.raises(AuthError, match="invalid_scope"):
+        service.issue_client_credentials_token(
+            client_id="campaign-agent",
+            client_secret=secret,
+            audience="external_integration",
             requested_scopes=("admin.write",),
-            sender_constraint="",
-            now=NOW + timedelta(minutes=1),
+            source_ip="203.0.113.8",
         )
-    with pytest.raises(PermissionError, match="invalid_client"):
-        service.refresh_user_token_pair(
-            initial.refresh_token,
-            client_id="different-client",
-            requested_scopes=("admin.read",),
-            sender_constraint="",
-            now=NOW + timedelta(minutes=1),
+    with pytest.raises(AuthError, match="client_ip_not_allowed"):
+        service.issue_client_credentials_token(
+            client_id="campaign-agent",
+            client_secret=secret,
+            audience="external_integration",
+            requested_scopes=("read",),
+            source_ip="198.51.100.1",
         )
 
 
-@pytest.mark.parametrize(
-    ("audience", "scopes", "sender", "error"),
-    [
-        ("wrong", ("broadcast.read",), "mtls:sha256:worker-cert", "invalid_target"),
-        ("aicrm-internal", ("admin.write",), "mtls:sha256:worker-cert", "invalid_scope"),
-        ("aicrm-internal", ("broadcast.read",), "", "sender_constraint_required"),
-    ],
-)
-def test_issuance_rejects_privilege_or_sender_constraint_escalation(audience, scopes, sender, error) -> None:
-    service = AuthPlatformService(_Repository(), CredentialHasher("p" * 32))
-    with pytest.raises(PermissionError, match=error):
-        service.issue_client_credentials_access_token(
-            client_id="broadcast-worker",
-            audience=audience,
-            requested_scopes=scopes,
-            sender_constraint=sender,
-            now=NOW,
-        )
+def test_rotation_and_disable_invalidate_already_issued_jwt_by_auth_version() -> None:
+    service, _repository, secret = _service()
+    token = service.issue_client_credentials_token(
+        client_id="campaign-agent",
+        client_secret=secret,
+        audience="external_integration",
+        requested_scopes=("read",),
+        source_ip="203.0.113.8",
+    ).access_token
+
+    rotated = service.rotate_secret("campaign-agent")
+    assert rotated.client.auth_version == 2
+    with pytest.raises(AuthError, match="stale_auth_version"):
+        service.verify_access_token(token, audience="external_integration", source_ip="203.0.113.8")
+
+    replacement = service.issue_client_credentials_token(
+        client_id="campaign-agent",
+        client_secret=rotated.client_secret,
+        audience="external_integration",
+        requested_scopes=("read",),
+        source_ip="203.0.113.8",
+    ).access_token
+    assert service.set_enabled("campaign-agent", False) == 3
+    with pytest.raises(AuthError, match="client_disabled"):
+        service.verify_access_token(replacement, audience="external_integration", source_ip="203.0.113.8")

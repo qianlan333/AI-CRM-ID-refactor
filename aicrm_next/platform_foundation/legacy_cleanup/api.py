@@ -1,13 +1,11 @@
 from __future__ import annotations
 
-import hmac
 from typing import Any
 
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
 from aicrm_next.admin_jobs.routes import validate_admin_action_token
-from aicrm_next.shared.runtime_settings import runtime_setting
 
 from . import CAPABILITY_OWNER, ROUTE_OWNER
 from .service import LegacyWebhookCleanupService
@@ -55,23 +53,7 @@ def _bool(value: Any, *, default: bool = False) -> bool:
     return str(value).strip().lower() in {"1", "true", "yes", "on"}
 
 
-def _internal_token_error(request: Request) -> str:
-    header = _text(request.headers.get("Authorization"))
-    if not header.lower().startswith("bearer "):
-        return "internal_token_required"
-    expected = _text(runtime_setting("AUTOMATION_INTERNAL_API_TOKEN"))
-    if not expected:
-        return "automation_internal_token_not_configured"
-    actual = header.split(" ", 1)[1].strip()
-    if not hmac.compare_digest(actual, expected):
-        return "internal_token_required"
-    return ""
-
-
 def _action_or_internal_token_error(request: Request, payload: dict[str, Any]) -> str:
-    internal_error = _internal_token_error(request)
-    if not internal_error:
-        return ""
     token = _text(request.headers.get("X-Admin-Action-Token")) or _text(payload.get("admin_action_token"))
     return validate_admin_action_token(token, request=request)
 
