@@ -3,9 +3,10 @@ from __future__ import annotations
 from typing import Any
 
 from aicrm_next.platform_foundation.external_effects import ExternalEffectJob, ExternalEffectService, WEBHOOK_ORDER_PAID_PUSH
+from aicrm_next.platform_foundation.command_bus import CommandContext
 
 from .consumer_registry import DEFAULT_INTERNAL_EVENT_CONSUMER_REGISTRY, InternalEventConsumerRegistry
-from .models import InternalEvent, InternalEventConsumerResult, InternalEventConsumerRun
+from .models import InternalEvent, InternalEventConsumerResult, InternalEventConsumerRun, InternalEventCreateRequest
 from .repository import plan_order_paid_external_push_effect_from_db, read_wechat_pay_order_for_payment_event
 
 PAYMENT_SUCCEEDED_EVENT_TYPE = "payment.succeeded"
@@ -31,6 +32,69 @@ PAYMENT_SUCCEEDED_PRODUCTION_EVENT_CONSUMERS = tuple(
 
 def _text(value: Any) -> str:
     return str(value or "").strip()
+
+
+def _masked_mobile(value: Any) -> str:
+    digits = "".join(char for char in _text(value) if char.isdigit())
+    return f"{digits[:3]}****{digits[-4:]}" if len(digits) >= 7 else ""
+
+
+def build_payment_succeeded_event_request(
+    *,
+    order: dict[str, Any],
+    transaction: dict[str, Any],
+    domain_event_outbox_id: Any = None,
+    source_route: str = "",
+) -> InternalEventCreateRequest | None:
+    out_trade_no = _text(order.get("out_trade_no") or transaction.get("out_trade_no"))
+    aggregate_id = _text(order.get("id") or out_trade_no)
+    if not out_trade_no or not aggregate_id:
+        return None
+    subject_id = (
+        _text(order.get("unionid"))
+        or _text(order.get("external_userid"))
+        or _text(order.get("userid_snapshot"))
+        or _text(order.get("respondent_key"))
+    )
+    return InternalEventCreateRequest(
+        event_type=PAYMENT_SUCCEEDED_EVENT_TYPE,
+        event_version=1,
+        aggregate_type="wechat_pay_order",
+        aggregate_id=aggregate_id,
+        subject_type="customer",
+        subject_id=subject_id,
+        idempotency_key=f"payment.succeeded:{out_trade_no}",
+        source_module="public_product.h5_wechat_pay",
+        source_command_id=out_trade_no,
+        correlation_id=out_trade_no,
+        context=CommandContext(
+            actor_id="wechat_pay_notify",
+            actor_type="system",
+            trace_id=out_trade_no,
+            request_id=_text(transaction.get("transaction_id")),
+            source_route=source_route or "/api/h5/wechat-pay/notify",
+        ),
+        payload={
+            "order": dict(order),
+            "transaction": dict(transaction or {}),
+            "domain_event_outbox_id": domain_event_outbox_id,
+            "legacy_event_aliases": [TRANSACTION_PAID_EVENT_ALIAS, PAYMENT_SUCCEEDED_EVENT_ALIAS],
+        },
+        payload_summary={
+            "out_trade_no": out_trade_no,
+            "order_id": order.get("id"),
+            "aggregate_id": aggregate_id,
+            "subject_type": "customer",
+            "subject_id": subject_id,
+            "product_code": order.get("product_code"),
+            "amount_total": int(order.get("amount_total") or order.get("payer_total") or 0),
+            "status": order.get("status"),
+            "trade_state": order.get("trade_state"),
+            "paid_at": str(order.get("paid_at") or ""),
+            "mobile_masked": _masked_mobile(order.get("mobile_snapshot")),
+            "domain_event_outbox_id": domain_event_outbox_id,
+        },
+    )
 
 
 def _order_from_event(event: InternalEvent) -> dict[str, Any]:

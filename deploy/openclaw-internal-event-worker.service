@@ -1,5 +1,5 @@
 [Unit]
-Description=OpenClaw Internal Event Queue Worker - dispatch due internal event consumers
+Description=OpenClaw Internal Event Queue Worker - relay transactional outbox and dispatch due consumers
 After=network.target openclaw-wecom-postgres.service
 Requires=openclaw-wecom-postgres.service
 

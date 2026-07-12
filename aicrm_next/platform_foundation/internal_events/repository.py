@@ -13,13 +13,17 @@ from sqlalchemy.orm import Session
 from aicrm_next.platform_foundation.external_calls import scrub_summary
 from aicrm_next.shared.db_session import get_session_factory
 from aicrm_next.shared.runtime import fixture_mode, production_data_ready, raw_database_url
+from aicrm_next.shared.sensitive_data import redact_sensitive_text
 
 from .models import (
+    AUTOMATIC_PENDING_STATUSES,
     DEFAULT_TENANT_ID,
     InternalEvent,
     InternalEventConsumerAttempt,
     InternalEventConsumerRun,
+    InternalEventConsumerSpec,
     InternalEventCreateRequest,
+    InternalEventOutboxRecord,
     public_datetime,
     utcnow,
 )
@@ -33,6 +37,57 @@ EVENT_SECTION_EVENT_TYPES: dict[str, tuple[str, ...]] = {
     "customer": ("customer.phone_bound", "customer.tagged", "customer.untagged"),
     "owner_migration": ("owner_migration.executed",),
 }
+LEASE_TIMEOUT = timedelta(minutes=5)
+
+
+def automatic_due_predicate_sql(alias: str = "r") -> str:
+    return f"""
+        (
+            (
+                {alias}.status = 'pending'
+                AND ({alias}.locked_at IS NULL OR {alias}.locked_at <= CURRENT_TIMESTAMP - INTERVAL '5 minutes')
+            )
+            OR (
+                {alias}.status = 'failed_retryable'
+                AND ({alias}.next_retry_at IS NULL OR {alias}.next_retry_at <= CURRENT_TIMESTAMP)
+                AND ({alias}.locked_at IS NULL OR {alias}.locked_at <= CURRENT_TIMESTAMP - INTERVAL '5 minutes')
+            )
+            OR (
+                {alias}.status = 'running'
+                AND {alias}.locked_at IS NOT NULL
+                AND {alias}.locked_at <= CURRENT_TIMESTAMP - INTERVAL '5 minutes'
+            )
+        )
+    """
+
+
+def _run_is_automatically_due(row: dict[str, Any], *, now: datetime) -> bool:
+    status = _text(row.get("status"))
+    if status not in AUTOMATIC_PENDING_STATUSES and status != "running":
+        return False
+    locked_at = row.get("locked_at")
+    locked_dt = _coerce_datetime(locked_at) if locked_at else None
+    stale_or_unlocked = locked_dt is None or locked_dt <= now - LEASE_TIMEOUT
+    if status == "running":
+        return locked_dt is not None and locked_dt <= now - LEASE_TIMEOUT
+    if not stale_or_unlocked:
+        return False
+    if status == "failed_retryable" and row.get("next_retry_at"):
+        return _coerce_datetime(row.get("next_retry_at")) <= now
+    return True
+
+
+def _coerce_datetime(value: Any) -> datetime:
+    if isinstance(value, datetime):
+        dt = value
+    else:
+        text_value = _text(value)
+        if not text_value:
+            return datetime.min.replace(tzinfo=timezone.utc)
+        dt = datetime.fromisoformat(text_value.replace("Z", "+00:00"))
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
 
 
 def _text(value: Any) -> str:
@@ -44,6 +99,10 @@ def _hash_text(value: Any) -> str:
     if not text:
         return ""
     return hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
+
+
+def _audit_reason(value: Any) -> str:
+    return str(redact_sensitive_text(_text(value)) or "").strip()
 
 
 def _trace_hash_candidates(filters: dict[str, Any]) -> list[str]:
@@ -143,6 +202,33 @@ def _public_attempt(row: dict[str, Any] | None) -> InternalEventConsumerAttempt 
     return InternalEventConsumerAttempt(**payload)
 
 
+def _public_outbox(row: dict[str, Any] | None) -> InternalEventOutboxRecord | None:
+    if not row:
+        return None
+    payload = dict(row)
+    for key in ("payload_json", "payload_summary_json"):
+        payload[key] = _json_obj(payload.get(key))
+    for key in ("occurred_at", "next_retry_at", "locked_at", "created_at", "updated_at", "relayed_at"):
+        payload[key] = public_datetime(payload.get(key))
+    for key in ("id", "event_version", "attempt_count", "max_attempts"):
+        payload[key] = int(payload.get(key) or 0)
+    return InternalEventOutboxRecord(**payload)
+
+
+def _consumer_specs_payload(consumers: list[InternalEventConsumerSpec]) -> list[InternalEventConsumerSpec]:
+    unique: dict[str, InternalEventConsumerSpec] = {}
+    for consumer in consumers:
+        name = _text(consumer.consumer_name)
+        if not name:
+            continue
+        unique[name] = InternalEventConsumerSpec(
+            consumer_name=name,
+            consumer_type=_text(consumer.consumer_type) or "projection",
+            max_attempts=max(1, int(consumer.max_attempts or 5)),
+        )
+    return list(unique.values())
+
+
 def read_wechat_pay_order_for_payment_event(*, lookup: str, aggregate_id: str) -> dict[str, Any]:
     if not production_data_ready():
         return {}
@@ -195,6 +281,13 @@ def plan_order_paid_external_push_effect_from_db(
 
 class InternalEventRepository:
     def create_event(self, request: InternalEventCreateRequest) -> InternalEvent:
+        raise NotImplementedError
+
+    def create_event_with_consumer_runs(
+        self,
+        request: InternalEventCreateRequest,
+        consumers: list[InternalEventConsumerSpec],
+    ) -> tuple[InternalEvent, list[InternalEventConsumerRun]]:
         raise NotImplementedError
 
     def get_event(self, event_id: str) -> InternalEvent | None:
@@ -259,7 +352,13 @@ class InternalEventRepository:
     ) -> list[InternalEventConsumerRun]:
         raise NotImplementedError
 
-    def mark_running(self, run_id: int, *, locked_by: str) -> InternalEventConsumerRun | None:
+    def mark_running(
+        self,
+        run_id: int,
+        *,
+        locked_by: str,
+        expected_lease_token: str = "",
+    ) -> InternalEventConsumerRun | None:
         raise NotImplementedError
 
     def mark_result(
@@ -272,13 +371,44 @@ class InternalEventRepository:
         error_code: str = "",
         error_message: str = "",
         next_retry_at: datetime | None = None,
+        expected_lease_token: str = "",
     ) -> InternalEventConsumerRun | None:
         raise NotImplementedError
 
-    def retry_consumer_run(self, event_id: str, consumer_name: str) -> InternalEventConsumerRun | None:
+    def complete_consumer_attempt(
+        self,
+        *,
+        run: InternalEventConsumerRun,
+        status: str,
+        request_summary: dict[str, Any],
+        response_summary: dict[str, Any],
+        result_summary: dict[str, Any] | None = None,
+        error_code: str = "",
+        error_message: str = "",
+        next_retry_at: datetime | None = None,
+    ) -> tuple[InternalEventConsumerRun, InternalEventConsumerAttempt] | None:
         raise NotImplementedError
 
-    def skip_consumer_run(self, event_id: str, consumer_name: str, *, reason: str = "") -> tuple[InternalEventConsumerRun, InternalEventConsumerAttempt] | None:
+    def retry_consumer_run(
+        self,
+        event_id: str,
+        consumer_name: str,
+        *,
+        actor_id: str,
+        actor_type: str,
+        reason: str,
+    ) -> tuple[InternalEventConsumerRun, InternalEventConsumerAttempt] | None:
+        raise NotImplementedError
+
+    def skip_consumer_run(
+        self,
+        event_id: str,
+        consumer_name: str,
+        *,
+        actor_id: str = "",
+        actor_type: str = "",
+        reason: str = "",
+    ) -> tuple[InternalEventConsumerRun, InternalEventConsumerAttempt] | None:
         raise NotImplementedError
 
     def record_attempt(
@@ -291,6 +421,35 @@ class InternalEventRepository:
         error_code: str = "",
         error_message: str = "",
     ) -> InternalEventConsumerAttempt:
+        raise NotImplementedError
+
+    def enqueue_outbox(self, request: InternalEventCreateRequest) -> InternalEventOutboxRecord:
+        raise NotImplementedError
+
+    def list_due_outbox(self, *, limit: int = 50) -> list[InternalEventOutboxRecord]:
+        raise NotImplementedError
+
+    def acquire_due_outbox(self, *, limit: int = 50, locked_by: str) -> list[InternalEventOutboxRecord]:
+        raise NotImplementedError
+
+    def relay_outbox(
+        self,
+        outbox: InternalEventOutboxRecord,
+        consumers: list[InternalEventConsumerSpec],
+    ) -> tuple[InternalEventOutboxRecord, InternalEvent, list[InternalEventConsumerRun]] | None:
+        raise NotImplementedError
+
+    def mark_outbox_failure(
+        self,
+        outbox: InternalEventOutboxRecord,
+        *,
+        error_code: str,
+        error_message: str,
+        next_retry_at: datetime | None,
+    ) -> InternalEventOutboxRecord | None:
+        raise NotImplementedError
+
+    def outbox_metrics(self) -> dict[str, Any]:
         raise NotImplementedError
 
 
@@ -320,13 +479,14 @@ class SQLAlchemyInternalEventRepository(InternalEventRepository):
             session.commit()
             return [dict(row) for row in rows]
 
-    def create_event(self, request: InternalEventCreateRequest) -> InternalEvent:
+    def _create_event_in_session(self, session: Session, request: InternalEventCreateRequest) -> InternalEvent:
         key = _idempotency_key(request)
         occurred_at = request.occurred_at or utcnow()
         payload_summary = dict(request.payload_summary or {}) or _payload_summary(request.payload)
         tenant_id = _text(request.tenant_id) or DEFAULT_TENANT_ID
-        row = self._write_one(
-            """
+        row = session.execute(
+            text(
+                """
             INSERT INTO internal_event (
                 tenant_id, event_id, event_type, event_version, aggregate_type, aggregate_id,
                 subject_type, subject_id, idempotency_key, actor_id, actor_type,
@@ -342,7 +502,8 @@ class SQLAlchemyInternalEventRepository(InternalEventRepository):
             )
             ON CONFLICT (tenant_id, idempotency_key) DO NOTHING
             RETURNING *
-            """,
+            """
+            ),
             {
                 "tenant_id": tenant_id,
                 "event_id": "iev_" + uuid4().hex,
@@ -365,18 +526,41 @@ class SQLAlchemyInternalEventRepository(InternalEventRepository):
                 "payload_json": _json_dumps(request.payload),
                 "payload_summary_json": _json_dumps(payload_summary),
             },
-        )
-        event = _public_event(row)
+        ).mappings().fetchone()
+        event = _public_event(dict(row) if row else None)
         if event:
             return event
-        existing = self._one(
-            "SELECT * FROM internal_event WHERE tenant_id = :tenant_id AND idempotency_key = :idempotency_key LIMIT 1",
+        existing = session.execute(
+            text(
+                "SELECT * FROM internal_event "
+                "WHERE tenant_id = :tenant_id AND idempotency_key = :idempotency_key LIMIT 1"
+            ),
             {"tenant_id": tenant_id, "idempotency_key": key},
-        )
-        event = _public_event(existing)
+        ).mappings().fetchone()
+        event = _public_event(dict(existing) if existing else None)
         if event is None:
             raise RuntimeError("internal event idempotent create failed")
         return event
+
+    def create_event(self, request: InternalEventCreateRequest) -> InternalEvent:
+        with self._session_factory() as session:
+            event = self._create_event_in_session(session, request)
+            session.commit()
+            return event
+
+    def create_event_with_consumer_runs(
+        self,
+        request: InternalEventCreateRequest,
+        consumers: list[InternalEventConsumerSpec],
+    ) -> tuple[InternalEvent, list[InternalEventConsumerRun]]:
+        with self._session_factory() as session:
+            event = self._create_event_in_session(session, request)
+            runs = [
+                self._create_consumer_run_in_session(session, event=event, consumer=consumer)
+                for consumer in _consumer_specs_payload(consumers)
+            ]
+            session.commit()
+            return event, runs
 
     def get_event(self, event_id: str) -> InternalEvent | None:
         return _public_event(self._one("SELECT * FROM internal_event WHERE event_id = :event_id LIMIT 1", {"event_id": _text(event_id)}))
@@ -459,16 +643,16 @@ class SQLAlchemyInternalEventRepository(InternalEventRepository):
         )
         return [event for row in rows if (event := _public_event(row)) is not None], int((count_row or {}).get("total") or 0)
 
-    def create_consumer_run(
+    def _create_consumer_run_in_session(
         self,
+        session: Session,
         *,
         event: InternalEvent,
-        consumer_name: str,
-        consumer_type: str = "projection",
-        max_attempts: int = 5,
+        consumer: InternalEventConsumerSpec,
     ) -> InternalEventConsumerRun:
-        row = self._write_one(
-            """
+        row = session.execute(
+            text(
+                """
             INSERT INTO internal_event_consumer_run (
                 tenant_id, event_id, consumer_name, consumer_type, status,
                 attempt_count, max_attempts, created_at, updated_at
@@ -479,31 +663,59 @@ class SQLAlchemyInternalEventRepository(InternalEventRepository):
             )
             ON CONFLICT (tenant_id, event_id, consumer_name) DO NOTHING
             RETURNING *
-            """,
+            """
+            ),
             {
                 "tenant_id": event.tenant_id,
                 "event_id": event.event_id,
-                "consumer_name": _text(consumer_name),
-                "consumer_type": _text(consumer_type) or "projection",
-                "max_attempts": max(1, int(max_attempts or 5)),
+                "consumer_name": _text(consumer.consumer_name),
+                "consumer_type": _text(consumer.consumer_type) or "projection",
+                "max_attempts": max(1, int(consumer.max_attempts or 5)),
             },
-        )
-        run = _public_run(row)
+        ).mappings().fetchone()
+        run = _public_run(dict(row) if row else None)
         if run:
             return run
-        existing = self._one(
-            """
+        existing = session.execute(
+            text(
+                """
             SELECT *
             FROM internal_event_consumer_run
             WHERE tenant_id = :tenant_id AND event_id = :event_id AND consumer_name = :consumer_name
             LIMIT 1
-            """,
-            {"tenant_id": event.tenant_id, "event_id": event.event_id, "consumer_name": _text(consumer_name)},
-        )
-        run = _public_run(existing)
+            """
+            ),
+            {
+                "tenant_id": event.tenant_id,
+                "event_id": event.event_id,
+                "consumer_name": _text(consumer.consumer_name),
+            },
+        ).mappings().fetchone()
+        run = _public_run(dict(existing) if existing else None)
         if run is None:
             raise RuntimeError("internal event consumer run idempotent create failed")
         return run
+
+    def create_consumer_run(
+        self,
+        *,
+        event: InternalEvent,
+        consumer_name: str,
+        consumer_type: str = "projection",
+        max_attempts: int = 5,
+    ) -> InternalEventConsumerRun:
+        with self._session_factory() as session:
+            run = self._create_consumer_run_in_session(
+                session,
+                event=event,
+                consumer=InternalEventConsumerSpec(
+                    consumer_name=consumer_name,
+                    consumer_type=consumer_type,
+                    max_attempts=max_attempts,
+                ),
+            )
+            session.commit()
+            return run
 
     def list_consumer_runs(self, filters: dict[str, Any] | None = None, *, limit: int = 100, offset: int = 0) -> tuple[list[InternalEventConsumerRun], int]:
         filters = dict(filters or {})
@@ -560,16 +772,13 @@ class SQLAlchemyInternalEventRepository(InternalEventRepository):
         locked_by: str,
         force: bool = False,
     ) -> InternalEventConsumerRun | None:
-        allowed_statuses = (
-            "'pending','failed_retryable','failed_terminal','blocked','succeeded','skipped'"
+        executable = (
+            "r.status IN ('pending','failed_retryable','failed_terminal','blocked','succeeded','skipped') "
+            "AND (r.locked_at IS NULL OR r.locked_at <= CURRENT_TIMESTAMP - INTERVAL '5 minutes')"
             if force
-            else "'pending','failed_retryable','failed_terminal','blocked'"
+            else automatic_due_predicate_sql("r")
         )
-        retry_guard = (
-            ""
-            if force
-            else "AND (r.status <> 'failed_retryable' OR r.next_retry_at IS NULL OR r.next_retry_at <= CURRENT_TIMESTAMP)"
-        )
+        lease_token = "iel_" + uuid4().hex
         row = self._write_one(
             f"""
             WITH target AS (
@@ -577,16 +786,16 @@ class SQLAlchemyInternalEventRepository(InternalEventRepository):
                 FROM internal_event_consumer_run r
                 WHERE r.event_id = :event_id
                   AND r.consumer_name = :consumer_name
-                  AND r.status IN ({allowed_statuses})
-                  AND (r.locked_at IS NULL OR r.locked_at <= CURRENT_TIMESTAMP - INTERVAL '5 minutes')
-                  {retry_guard}
+                  AND ({executable})
                 ORDER BY r.created_at ASC, r.id ASC
                 LIMIT 1
                 FOR UPDATE SKIP LOCKED
             )
             UPDATE internal_event_consumer_run r
-            SET locked_at = CURRENT_TIMESTAMP,
+            SET status = 'running',
+                locked_at = CURRENT_TIMESTAMP,
                 locked_by = :locked_by,
+                lease_token = :lease_token,
                 updated_at = CURRENT_TIMESTAMP
             FROM target
             WHERE r.id = target.id
@@ -596,6 +805,7 @@ class SQLAlchemyInternalEventRepository(InternalEventRepository):
                 "event_id": _text(event_id),
                 "consumer_name": _text(consumer_name),
                 "locked_by": _text(locked_by),
+                "lease_token": lease_token,
             },
         )
         return _public_run(row)
@@ -645,11 +855,7 @@ class SQLAlchemyInternalEventRepository(InternalEventRepository):
         if pair_clause:
             clauses.append(pair_clause)
         where = "WHERE " + " AND ".join(clauses) if clauses else ""
-        due_predicate = """
-            r.status IN ('pending', 'failed_retryable', 'failed_terminal', 'blocked')
-            AND (r.status <> 'failed_retryable' OR r.next_retry_at IS NULL OR r.next_retry_at <= CURRENT_TIMESTAMP)
-            AND (r.locked_at IS NULL OR r.locked_at <= CURRENT_TIMESTAMP - INTERVAL '5 minutes')
-        """
+        due_predicate = automatic_due_predicate_sql("r")
         row = self._one(
             f"""
             SELECT
@@ -736,6 +942,7 @@ class SQLAlchemyInternalEventRepository(InternalEventRepository):
         event_consumers: list[tuple[str, str]] | None = None,
     ) -> list[InternalEventConsumerRun]:
         filters, params = self._due_filters(event_types=event_types, consumer_names=consumer_names, event_consumers=event_consumers)
+        lease_prefix = "iel_" + uuid4().hex
         rows = self._write_all(
             f"""
             WITH due AS (
@@ -748,19 +955,47 @@ class SQLAlchemyInternalEventRepository(InternalEventRepository):
                 FOR UPDATE SKIP LOCKED
             )
             UPDATE internal_event_consumer_run r
-            SET locked_at = CURRENT_TIMESTAMP,
+            SET status = 'running',
+                locked_at = CURRENT_TIMESTAMP,
                 locked_by = :locked_by,
+                lease_token = :lease_prefix || '-' || r.id::text,
                 updated_at = CURRENT_TIMESTAMP
             FROM due
             WHERE r.id = due.id
             RETURNING r.*
             """,
-            {**params, "limit": max(1, min(int(limit or 50), 200)), "locked_by": _text(locked_by)},
+            {
+                **params,
+                "limit": max(1, min(int(limit or 50), 200)),
+                "locked_by": _text(locked_by),
+                "lease_prefix": lease_prefix,
+            },
         )
         return [run for row in rows if (run := _public_run(row)) is not None]
 
-    def mark_running(self, run_id: int, *, locked_by: str) -> InternalEventConsumerRun | None:
-        return self._update(run_id, "status = 'running', locked_by = :locked_by, locked_at = CURRENT_TIMESTAMP", {"locked_by": _text(locked_by)})
+    def mark_running(
+        self,
+        run_id: int,
+        *,
+        locked_by: str,
+        expected_lease_token: str = "",
+    ) -> InternalEventConsumerRun | None:
+        lease_guard = "AND lease_token = :expected_lease_token" if _text(expected_lease_token) else ""
+        row = self._write_one(
+            f"""
+            UPDATE internal_event_consumer_run
+            SET status = 'running', locked_by = :locked_by,
+                locked_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+            WHERE id = :run_id {lease_guard}
+            RETURNING *
+            """,
+            {
+                "run_id": int(run_id),
+                "locked_by": _text(locked_by),
+                "expected_lease_token": _text(expected_lease_token),
+            },
+        )
+        return _public_run(row)
 
     def mark_result(
         self,
@@ -772,70 +1007,300 @@ class SQLAlchemyInternalEventRepository(InternalEventRepository):
         error_code: str = "",
         error_message: str = "",
         next_retry_at: datetime | None = None,
+        expected_lease_token: str = "",
     ) -> InternalEventConsumerRun | None:
         status = _text(status)
         if status not in {"succeeded", "failed_retryable", "failed_terminal", "blocked", "skipped"}:
             status = "blocked"
         finished_sql = ", finished_at = CURRENT_TIMESTAMP" if status in {"succeeded", "failed_terminal", "blocked", "skipped"} else ", finished_at = NULL"
         retry_sql = "next_retry_at = CAST(:next_retry_at AS timestamptz)," if status == "failed_retryable" and next_retry_at else "next_retry_at = NULL,"
-        return self._update(
-            run_id,
+        lease_guard = "AND lease_token = :expected_lease_token" if _text(expected_lease_token) else ""
+        row = self._write_one(
             f"""
+            UPDATE internal_event_consumer_run
+            SET
             status = :status,
             attempt_count = attempt_count + 1,
             {retry_sql}
             locked_by = '',
             locked_at = NULL,
+            lease_token = '',
             last_attempt_id = :attempt_id,
             last_error_code = :error_code,
             last_error_message = :error_message,
             result_summary_json = CAST(:result_summary AS jsonb)
-            {finished_sql}
+            {finished_sql},
+            updated_at = CURRENT_TIMESTAMP
+            WHERE id = :run_id {lease_guard}
+            RETURNING *
             """,
             {
+                "run_id": int(run_id),
                 "status": status,
                 "attempt_id": _text(attempt_id),
                 "error_code": _text(error_code),
                 "error_message": _text(error_message),
                 "next_retry_at": public_datetime(next_retry_at) if next_retry_at else None,
                 "result_summary": _json_dumps(scrub_summary(result_summary or {})),
+                "expected_lease_token": _text(expected_lease_token),
             },
         )
+        return _public_run(row)
 
-    def retry_consumer_run(self, event_id: str, consumer_name: str) -> InternalEventConsumerRun | None:
-        run = self.get_consumer_run(event_id, consumer_name)
-        if not run or run.status not in {"failed_retryable", "failed_terminal", "blocked"}:
+    def complete_consumer_attempt(
+        self,
+        *,
+        run: InternalEventConsumerRun,
+        status: str,
+        request_summary: dict[str, Any],
+        response_summary: dict[str, Any],
+        result_summary: dict[str, Any] | None = None,
+        error_code: str = "",
+        error_message: str = "",
+        next_retry_at: datetime | None = None,
+    ) -> tuple[InternalEventConsumerRun, InternalEventConsumerAttempt] | None:
+        status = _text(status)
+        if status not in {"succeeded", "failed_retryable", "failed_terminal", "blocked", "skipped"}:
+            status = "blocked"
+        lease_token = _text(run.lease_token)
+        if not lease_token:
             return None
-        return self._update(
-            run.id,
-            """
-            status = 'pending',
-            next_retry_at = CURRENT_TIMESTAMP,
-            locked_by = '',
-            locked_at = NULL,
-            last_error_code = '',
-            last_error_message = '',
-            finished_at = NULL
-            """,
-            {},
-        )
+        attempt_id = "iea_" + uuid4().hex
+        finished_at = status in {"succeeded", "failed_terminal", "blocked", "skipped"}
+        with self._session_factory() as session:
+            current = session.execute(
+                text(
+                    "SELECT * FROM internal_event_consumer_run "
+                    "WHERE id = :run_id AND status = 'running' AND lease_token = :lease_token "
+                    "FOR UPDATE"
+                ),
+                {"run_id": int(run.id), "lease_token": lease_token},
+            ).mappings().fetchone()
+            if not current:
+                session.rollback()
+                return None
+            attempt_row = session.execute(
+                text(
+                    """
+                    INSERT INTO internal_event_consumer_attempt (
+                        attempt_id, consumer_run_id, consumer_name, status,
+                        request_summary_json, response_summary_json, error_code, error_message,
+                        started_at, completed_at
+                    )
+                    VALUES (
+                        :attempt_id, :consumer_run_id, :consumer_name, :status,
+                        CAST(:request_summary AS jsonb), CAST(:response_summary AS jsonb),
+                        :error_code, :error_message, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+                    )
+                    RETURNING *
+                    """
+                ),
+                {
+                    "attempt_id": attempt_id,
+                    "consumer_run_id": int(run.id),
+                    "consumer_name": run.consumer_name,
+                    "status": status,
+                    "request_summary": _json_dumps(scrub_summary(request_summary or {})),
+                    "response_summary": _json_dumps(scrub_summary(response_summary or {})),
+                    "error_code": _text(error_code),
+                    "error_message": _text(error_message),
+                },
+            ).mappings().fetchone()
+            updated_row = session.execute(
+                text(
+                    """
+                    UPDATE internal_event_consumer_run
+                    SET status = :status,
+                        attempt_count = attempt_count + 1,
+                        next_retry_at = CAST(:next_retry_at AS timestamptz),
+                        locked_by = '', locked_at = NULL, lease_token = '',
+                        last_attempt_id = :attempt_id,
+                        last_error_code = :error_code,
+                        last_error_message = :error_message,
+                        result_summary_json = CAST(:result_summary AS jsonb),
+                        finished_at = CASE WHEN :finished_at THEN CURRENT_TIMESTAMP ELSE NULL END,
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE id = :run_id AND status = 'running' AND lease_token = :lease_token
+                    RETURNING *
+                    """
+                ),
+                {
+                    "run_id": int(run.id),
+                    "lease_token": lease_token,
+                    "status": status,
+                    "next_retry_at": public_datetime(next_retry_at) if status == "failed_retryable" and next_retry_at else None,
+                    "attempt_id": attempt_id,
+                    "error_code": _text(error_code),
+                    "error_message": _text(error_message),
+                    "result_summary": _json_dumps(scrub_summary(result_summary or {})),
+                    "finished_at": finished_at,
+                },
+            ).mappings().fetchone()
+            if not updated_row or not attempt_row:
+                session.rollback()
+                return None
+            session.commit()
+            updated = _public_run(dict(updated_row))
+            attempt = _public_attempt(dict(attempt_row))
+            return (updated, attempt) if updated and attempt else None
 
-    def skip_consumer_run(self, event_id: str, consumer_name: str, *, reason: str = "") -> tuple[InternalEventConsumerRun, InternalEventConsumerAttempt] | None:
-        run = self.get_consumer_run(event_id, consumer_name)
-        if not run or run.status in {"succeeded", "skipped"}:
+    def retry_consumer_run(
+        self,
+        event_id: str,
+        consumer_name: str,
+        *,
+        actor_id: str,
+        actor_type: str,
+        reason: str,
+    ) -> tuple[InternalEventConsumerRun, InternalEventConsumerAttempt] | None:
+        if not _text(actor_id) or not _text(reason):
             return None
-        attempt = self.record_attempt(
-            run=run,
-            status="skipped",
-            request_summary={"manual_skip": True, "event_id": event_id, "consumer_name": consumer_name},
-            response_summary={"skipped": True, "reason": _text(reason)},
-            error_code="manual_skip",
-            error_message=_text(reason),
-        )
-        updated = self.mark_result(run.id, status="skipped", attempt_id=attempt.attempt_id, result_summary={"skipped": True, "reason": _text(reason)})
-        if updated is None:
+        with self._session_factory() as session:
+            current = session.execute(
+                text(
+                    "SELECT * FROM internal_event_consumer_run "
+                    "WHERE event_id = :event_id AND consumer_name = :consumer_name "
+                    "AND status IN ('failed_retryable', 'failed_terminal', 'blocked') FOR UPDATE"
+                ),
+                {"event_id": _text(event_id), "consumer_name": _text(consumer_name)},
+            ).mappings().fetchone()
+            run = _public_run(dict(current) if current else None)
+            if run is None:
+                session.rollback()
+                return None
+            attempt_id = "iea_" + uuid4().hex
+            attempt_row = session.execute(
+                text(
+                    """
+                    INSERT INTO internal_event_consumer_attempt (
+                        attempt_id, consumer_run_id, consumer_name, status,
+                        request_summary_json, response_summary_json, error_code, error_message,
+                        started_at, completed_at
+                    ) VALUES (
+                        :attempt_id, :consumer_run_id, :consumer_name, 'manual_retry',
+                        CAST(:request_summary AS jsonb), CAST(:response_summary AS jsonb),
+                        'manual_retry', :reason, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+                    ) RETURNING *
+                    """
+                ),
+                {
+                    "attempt_id": attempt_id,
+                    "consumer_run_id": int(run.id),
+                    "consumer_name": run.consumer_name,
+                    "reason": _audit_reason(reason),
+                    "request_summary": _json_dumps(
+                        {
+                            "manual_retry": True,
+                            "actor_ref_hash": _hash_text(actor_id),
+                            "actor_type": _text(actor_type) or "operator",
+                            "reason": _audit_reason(reason),
+                            "from_status": run.status,
+                        }
+                    ),
+                    "response_summary": _json_dumps({"status": "pending"}),
+                },
+            ).mappings().fetchone()
+            updated_row = session.execute(
+                text(
+                    """
+                    UPDATE internal_event_consumer_run
+                    SET status = 'pending', next_retry_at = CURRENT_TIMESTAMP,
+                        locked_by = '', locked_at = NULL, lease_token = '',
+                        last_attempt_id = :attempt_id,
+                        last_error_code = '', last_error_message = '',
+                        finished_at = NULL, updated_at = CURRENT_TIMESTAMP
+                    WHERE id = :run_id
+                    RETURNING *
+                    """
+                ),
+                {"run_id": int(run.id), "attempt_id": attempt_id},
+            ).mappings().fetchone()
+            session.commit()
+            updated = _public_run(dict(updated_row) if updated_row else None)
+            attempt = _public_attempt(dict(attempt_row) if attempt_row else None)
+            return (updated, attempt) if updated and attempt else None
+
+    def skip_consumer_run(
+        self,
+        event_id: str,
+        consumer_name: str,
+        *,
+        actor_id: str = "",
+        actor_type: str = "",
+        reason: str = "",
+    ) -> tuple[InternalEventConsumerRun, InternalEventConsumerAttempt] | None:
+        if not _text(actor_id) or not _text(reason):
             return None
-        return updated, attempt
+        with self._session_factory() as session:
+            current = session.execute(
+                text(
+                    "SELECT * FROM internal_event_consumer_run "
+                    "WHERE event_id = :event_id AND consumer_name = :consumer_name "
+                    "AND status NOT IN ('succeeded', 'skipped') FOR UPDATE"
+                ),
+                {"event_id": _text(event_id), "consumer_name": _text(consumer_name)},
+            ).mappings().fetchone()
+            run = _public_run(dict(current) if current else None)
+            if run is None:
+                session.rollback()
+                return None
+            attempt_id = "iea_" + uuid4().hex
+            attempt_row = session.execute(
+                text(
+                    """
+                    INSERT INTO internal_event_consumer_attempt (
+                        attempt_id, consumer_run_id, consumer_name, status,
+                        request_summary_json, response_summary_json, error_code, error_message,
+                        started_at, completed_at
+                    ) VALUES (
+                        :attempt_id, :consumer_run_id, :consumer_name, 'skipped',
+                        CAST(:request_summary AS jsonb), CAST(:response_summary AS jsonb),
+                        'manual_skip', :reason, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+                    ) RETURNING *
+                    """
+                ),
+                {
+                    "attempt_id": attempt_id,
+                    "consumer_run_id": int(run.id),
+                    "consumer_name": run.consumer_name,
+                    "reason": _audit_reason(reason),
+                    "request_summary": _json_dumps(
+                        {
+                            "manual_skip": True,
+                            "actor_ref_hash": _hash_text(actor_id),
+                            "actor_type": _text(actor_type) or "operator",
+                            "reason": _audit_reason(reason),
+                            "from_status": run.status,
+                        }
+                    ),
+                    "response_summary": _json_dumps({"skipped": True, "reason": _audit_reason(reason)}),
+                },
+            ).mappings().fetchone()
+            updated_row = session.execute(
+                text(
+                    """
+                    UPDATE internal_event_consumer_run
+                    SET status = 'skipped', next_retry_at = NULL,
+                        locked_by = '', locked_at = NULL, lease_token = '',
+                        last_attempt_id = :attempt_id,
+                        last_error_code = 'manual_skip', last_error_message = :reason,
+                        result_summary_json = CAST(:result_summary AS jsonb),
+                        finished_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+                    WHERE id = :run_id
+                    RETURNING *
+                    """
+                ),
+                {
+                    "run_id": int(run.id),
+                    "attempt_id": attempt_id,
+                    "reason": _audit_reason(reason),
+                    "result_summary": _json_dumps({"skipped": True, "reason": _audit_reason(reason)}),
+                },
+            ).mappings().fetchone()
+            session.commit()
+            updated = _public_run(dict(updated_row) if updated_row else None)
+            attempt = _public_attempt(dict(attempt_row) if attempt_row else None)
+            return (updated, attempt) if updated and attempt else None
 
     def record_attempt(
         self,
@@ -878,6 +1343,213 @@ class SQLAlchemyInternalEventRepository(InternalEventRepository):
             raise RuntimeError("internal event consumer attempt insert failed")
         return attempt
 
+    def enqueue_outbox(self, request: InternalEventCreateRequest) -> InternalEventOutboxRecord:
+        params = self._outbox_insert_params(request)
+        row = self._write_one(
+            """
+            INSERT INTO internal_event_outbox (
+                tenant_id, outbox_id, event_type, event_version, aggregate_type, aggregate_id,
+                subject_type, subject_id, idempotency_key, actor_id, actor_type,
+                source_module, source_route, source_command_id, trace_id, request_id,
+                correlation_id, occurred_at, payload_json, payload_summary_json,
+                status, attempt_count, max_attempts, created_at, updated_at
+            ) VALUES (
+                :tenant_id, :outbox_id, :event_type, :event_version, :aggregate_type, :aggregate_id,
+                :subject_type, :subject_id, :idempotency_key, :actor_id, :actor_type,
+                :source_module, :source_route, :source_command_id, :trace_id, :request_id,
+                :correlation_id, CAST(:occurred_at AS timestamptz), CAST(:payload_json AS jsonb),
+                CAST(:payload_summary_json AS jsonb), 'pending', 0, 10,
+                CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+            )
+            ON CONFLICT (tenant_id, idempotency_key) DO NOTHING
+            RETURNING *
+            """,
+            params,
+        )
+        record = _public_outbox(row)
+        if record:
+            return record
+        existing = self._one(
+            "SELECT * FROM internal_event_outbox "
+            "WHERE tenant_id = :tenant_id AND idempotency_key = :idempotency_key LIMIT 1",
+            {"tenant_id": params["tenant_id"], "idempotency_key": params["idempotency_key"]},
+        )
+        record = _public_outbox(existing)
+        if record is None:
+            raise RuntimeError("internal event outbox idempotent create failed")
+        return record
+
+    def list_due_outbox(self, *, limit: int = 50) -> list[InternalEventOutboxRecord]:
+        rows = self._all(
+            f"""
+            SELECT * FROM internal_event_outbox o
+            WHERE {automatic_due_predicate_sql('o')}
+            ORDER BY COALESCE(next_retry_at, created_at) ASC, id ASC
+            LIMIT :limit
+            """,
+            {"limit": max(1, min(int(limit or 50), 200))},
+        )
+        return [record for row in rows if (record := _public_outbox(row)) is not None]
+
+    def acquire_due_outbox(self, *, limit: int = 50, locked_by: str) -> list[InternalEventOutboxRecord]:
+        lease_prefix = "ieol_" + uuid4().hex
+        rows = self._write_all(
+            f"""
+            WITH due AS (
+                SELECT id
+                FROM internal_event_outbox o
+                WHERE {automatic_due_predicate_sql('o')}
+                ORDER BY COALESCE(next_retry_at, created_at) ASC, id ASC
+                LIMIT :limit
+                FOR UPDATE SKIP LOCKED
+            )
+            UPDATE internal_event_outbox o
+            SET status = 'running', attempt_count = attempt_count + 1,
+                locked_at = CURRENT_TIMESTAMP, locked_by = :locked_by,
+                lease_token = :lease_prefix || '-' || o.id::text,
+                updated_at = CURRENT_TIMESTAMP
+            FROM due
+            WHERE o.id = due.id
+            RETURNING o.*
+            """,
+            {
+                "limit": max(1, min(int(limit or 50), 200)),
+                "locked_by": _text(locked_by),
+                "lease_prefix": lease_prefix,
+            },
+        )
+        return [record for row in rows if (record := _public_outbox(row)) is not None]
+
+    def relay_outbox(
+        self,
+        outbox: InternalEventOutboxRecord,
+        consumers: list[InternalEventConsumerSpec],
+    ) -> tuple[InternalEventOutboxRecord, InternalEvent, list[InternalEventConsumerRun]] | None:
+        if not _text(outbox.lease_token):
+            return None
+        with self._session_factory() as session:
+            current = session.execute(
+                text(
+                    "SELECT * FROM internal_event_outbox "
+                    "WHERE id = :outbox_id AND status = 'running' AND lease_token = :lease_token "
+                    "FOR UPDATE"
+                ),
+                {"outbox_id": int(outbox.id), "lease_token": _text(outbox.lease_token)},
+            ).mappings().fetchone()
+            current_outbox = _public_outbox(dict(current) if current else None)
+            if current_outbox is None:
+                session.rollback()
+                return None
+            event = self._create_event_in_session(session, current_outbox.to_create_request())
+            runs = [
+                self._create_consumer_run_in_session(session, event=event, consumer=consumer)
+                for consumer in _consumer_specs_payload(consumers)
+            ]
+            updated_row = session.execute(
+                text(
+                    """
+                    UPDATE internal_event_outbox
+                    SET status = 'relayed', internal_event_id = :internal_event_id,
+                        lease_token = '', locked_at = NULL, locked_by = '',
+                        next_retry_at = NULL, last_error_code = '', last_error_message = '',
+                        relayed_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+                    WHERE id = :outbox_id AND status = 'running' AND lease_token = :lease_token
+                    RETURNING *
+                    """
+                ),
+                {
+                    "outbox_id": int(outbox.id),
+                    "lease_token": _text(outbox.lease_token),
+                    "internal_event_id": event.event_id,
+                },
+            ).mappings().fetchone()
+            if not updated_row:
+                session.rollback()
+                return None
+            session.commit()
+            updated = _public_outbox(dict(updated_row))
+            return (updated, event, runs) if updated else None
+
+    def mark_outbox_failure(
+        self,
+        outbox: InternalEventOutboxRecord,
+        *,
+        error_code: str,
+        error_message: str,
+        next_retry_at: datetime | None,
+    ) -> InternalEventOutboxRecord | None:
+        if not _text(outbox.lease_token):
+            return None
+        status = "failed_terminal" if int(outbox.attempt_count or 0) >= int(outbox.max_attempts or 10) else "failed_retryable"
+        row = self._write_one(
+            """
+            UPDATE internal_event_outbox
+            SET status = :status,
+                next_retry_at = CAST(:next_retry_at AS timestamptz),
+                lease_token = '', locked_at = NULL, locked_by = '',
+                last_error_code = :error_code, last_error_message = :error_message,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = :outbox_id AND status = 'running' AND lease_token = :lease_token
+            RETURNING *
+            """,
+            {
+                "outbox_id": int(outbox.id),
+                "lease_token": _text(outbox.lease_token),
+                "status": status,
+                "next_retry_at": public_datetime(next_retry_at) if status == "failed_retryable" and next_retry_at else None,
+                "error_code": _text(error_code),
+                "error_message": _text(error_message),
+            },
+        )
+        return _public_outbox(row)
+
+    def outbox_metrics(self) -> dict[str, Any]:
+        row = self._one(
+            f"""
+            SELECT
+                COUNT(*) FILTER (WHERE {automatic_due_predicate_sql('o')}) AS due_count,
+                COUNT(*) FILTER (WHERE status = 'failed_retryable') AS failed_retryable_count,
+                COUNT(*) FILTER (WHERE status = 'failed_terminal') AS failed_terminal_count,
+                COUNT(*) FILTER (WHERE status = 'running') AS running_count,
+                COUNT(*) FILTER (WHERE status = 'relayed') AS relayed_count,
+                COALESCE(EXTRACT(EPOCH FROM CURRENT_TIMESTAMP - MIN(created_at)
+                    FILTER (WHERE status IN ('pending', 'failed_retryable'))), 0) AS oldest_unrelayed_age_seconds
+            FROM internal_event_outbox o
+            """
+        ) or {}
+        return {key: int(float(row.get(key) or 0)) for key in (
+            "due_count",
+            "failed_retryable_count",
+            "failed_terminal_count",
+            "running_count",
+            "relayed_count",
+            "oldest_unrelayed_age_seconds",
+        )}
+
+    def _outbox_insert_params(self, request: InternalEventCreateRequest) -> dict[str, Any]:
+        return {
+            "tenant_id": _text(request.tenant_id) or DEFAULT_TENANT_ID,
+            "outbox_id": "ieo_" + uuid4().hex,
+            "event_type": _text(request.event_type),
+            "event_version": int(request.event_version or 1),
+            "aggregate_type": _text(request.aggregate_type),
+            "aggregate_id": _text(request.aggregate_id),
+            "subject_type": _text(request.subject_type),
+            "subject_id": _text(request.subject_id),
+            "idempotency_key": _idempotency_key(request),
+            "actor_id": _text(request.context.actor_id),
+            "actor_type": _text(request.context.actor_type) or "system",
+            "source_module": _text(request.source_module),
+            "source_route": _text(request.context.source_route),
+            "source_command_id": _text(request.source_command_id),
+            "trace_id": _text(request.context.trace_id),
+            "request_id": _text(request.context.request_id),
+            "correlation_id": _text(request.correlation_id),
+            "occurred_at": public_datetime(request.occurred_at or utcnow()),
+            "payload_json": _json_dumps(request.payload),
+            "payload_summary_json": _json_dumps(dict(request.payload_summary or {}) or _payload_summary(request.payload)),
+        }
+
     def _due_filters(
         self,
         *,
@@ -885,11 +1557,7 @@ class SQLAlchemyInternalEventRepository(InternalEventRepository):
         consumer_names: list[str] | None,
         event_consumers: list[tuple[str, str]] | None = None,
     ) -> tuple[str, dict[str, Any]]:
-        filters = [
-            "r.status IN ('pending', 'failed_retryable', 'failed_terminal', 'blocked')",
-            "(r.status <> 'failed_retryable' OR r.next_retry_at IS NULL OR r.next_retry_at <= CURRENT_TIMESTAMP)",
-            "(r.locked_at IS NULL OR r.locked_at <= CURRENT_TIMESTAMP - INTERVAL '5 minutes')",
-        ]
+        filters = [automatic_due_predicate_sql("r")]
         params: dict[str, Any] = {}
         if event_types:
             filters.append("e.event_type = ANY(:event_types)")
@@ -943,9 +1611,11 @@ class InMemoryInternalEventRepository(InternalEventRepository):
         self._events: list[dict[str, Any]] = []
         self._runs: list[dict[str, Any]] = []
         self._attempts: list[dict[str, Any]] = []
+        self._outbox: list[dict[str, Any]] = []
         self._next_event_id = 1
         self._next_run_id = 1
         self._next_attempt_id = 1
+        self._next_outbox_id = 1
 
     def create_event(self, request: InternalEventCreateRequest) -> InternalEvent:
         tenant_id = _text(request.tenant_id) or DEFAULT_TENANT_ID
@@ -987,6 +1657,23 @@ class InMemoryInternalEventRepository(InternalEventRepository):
         assert event is not None
         return event
 
+    def create_event_with_consumer_runs(
+        self,
+        request: InternalEventCreateRequest,
+        consumers: list[InternalEventConsumerSpec],
+    ) -> tuple[InternalEvent, list[InternalEventConsumerRun]]:
+        event = self.create_event(request)
+        runs = [
+            self.create_consumer_run(
+                event=event,
+                consumer_name=consumer.consumer_name,
+                consumer_type=consumer.consumer_type,
+                max_attempts=consumer.max_attempts,
+            )
+            for consumer in _consumer_specs_payload(consumers)
+        ]
+        return event, runs
+
     def get_event(self, event_id: str) -> InternalEvent | None:
         for row in self._events:
             if row.get("event_id") == _text(event_id):
@@ -1027,6 +1714,7 @@ class InMemoryInternalEventRepository(InternalEventRepository):
             "next_retry_at": "",
             "locked_at": "",
             "locked_by": "",
+            "lease_token": "",
             "last_attempt_id": "",
             "last_error_code": "",
             "last_error_message": "",
@@ -1066,25 +1754,20 @@ class InMemoryInternalEventRepository(InternalEventRepository):
         force: bool = False,
     ) -> InternalEventConsumerRun | None:
         now = utcnow()
-        stale_cutoff = now - timedelta(minutes=5)
-        allowed_statuses = (
-            {"pending", "failed_retryable", "failed_terminal", "blocked", "succeeded", "skipped"}
-            if force
-            else {"pending", "failed_retryable", "failed_terminal", "blocked"}
-        )
         for row in self._runs:
             if row.get("event_id") != _text(event_id) or row.get("consumer_name") != _text(consumer_name):
                 continue
-            if row.get("status") not in allowed_statuses:
-                return None
-            locked_at = self._dt(row.get("locked_at")) if row.get("locked_at") else datetime.min.replace(tzinfo=timezone.utc)
-            if locked_at > stale_cutoff:
-                return None
-            if not force and row.get("status") == "failed_retryable" and row.get("next_retry_at"):
-                if self._dt(row.get("next_retry_at")) > now:
+            if force:
+                if row.get("status") not in {"pending", "failed_retryable", "failed_terminal", "blocked", "succeeded", "skipped"}:
                     return None
+                if row.get("locked_at") and self._dt(row.get("locked_at")) > now - LEASE_TIMEOUT:
+                    return None
+            elif not _run_is_automatically_due(row, now=now):
+                return None
+            row["status"] = "running"
             row["locked_at"] = public_datetime(now)
             row["locked_by"] = _text(locked_by)
+            row["lease_token"] = "iel_" + uuid4().hex
             row["updated_at"] = public_datetime(now)
             return _public_run(row)
         return None
@@ -1115,13 +1798,7 @@ class InMemoryInternalEventRepository(InternalEventRepository):
                 for row in rows
                 if ((self.get_event(row.get("event_id") or "") or InternalEvent()).event_type, _text(row.get("consumer_name"))) in pair_set
             ]
-        due_rows = [
-            row
-            for row in rows
-            if row.get("status") in {"pending", "failed_retryable", "failed_terminal", "blocked"}
-            and (row.get("status") != "failed_retryable" or not row.get("next_retry_at") or self._dt(row.get("next_retry_at")) <= now)
-            and (not row.get("locked_at") or self._dt(row.get("locked_at")) <= now - timedelta(minutes=5))
-        ]
+        due_rows = [row for row in rows if _run_is_automatically_due(row, now=now)]
         pending_due = [row for row in due_rows if row.get("status") == "pending"]
         oldest = min((self._dt(row.get("created_at")) for row in pending_due), default=None)
         by_event_type: dict[str, int] = {}
@@ -1155,12 +1832,10 @@ class InMemoryInternalEventRepository(InternalEventRepository):
         rows = [
             row
             for row in self._runs
-            if row.get("status") in {"pending", "failed_retryable", "failed_terminal", "blocked"}
+            if _run_is_automatically_due(row, now=now)
             and (not consumer_set or row.get("consumer_name") in consumer_set)
             and (not event_type_set or (self.get_event(row.get("event_id") or "") or InternalEvent()).event_type in event_type_set)
             and (not pair_set or ((self.get_event(row.get("event_id") or "") or InternalEvent()).event_type, _text(row.get("consumer_name"))) in pair_set)
-            and (row.get("status") != "failed_retryable" or not row.get("next_retry_at") or self._dt(row.get("next_retry_at")) <= now)
-            and (not row.get("locked_at") or self._dt(row.get("locked_at")) <= now - timedelta(minutes=5))
         ]
         rows.sort(key=lambda row: (row.get("next_retry_at") or row.get("created_at") or "", int(row.get("id") or 0)))
         return [run for row in rows[: max(1, min(int(limit or 50), 200))] if (run := _public_run(row)) is not None]
@@ -1179,12 +1854,23 @@ class InMemoryInternalEventRepository(InternalEventRepository):
         for run in runs:
             row = self._find_run(run.id)
             if row:
+                row["status"] = "running"
                 row["locked_at"] = now
                 row["locked_by"] = _text(locked_by)
+                row["lease_token"] = "iel_" + uuid4().hex
                 row["updated_at"] = now
         return [run for run_id in [run.id for run in runs] if (run := self.get_consumer_run_by_id(run_id)) is not None]
 
-    def mark_running(self, run_id: int, *, locked_by: str) -> InternalEventConsumerRun | None:
+    def mark_running(
+        self,
+        run_id: int,
+        *,
+        locked_by: str,
+        expected_lease_token: str = "",
+    ) -> InternalEventConsumerRun | None:
+        row = self._find_run(run_id)
+        if not row or (_text(expected_lease_token) and _text(row.get("lease_token")) != _text(expected_lease_token)):
+            return None
         return self._mutate(run_id, status="running", locked_by=_text(locked_by), locked_at=public_datetime(utcnow()))
 
     def mark_result(
@@ -1197,11 +1883,14 @@ class InMemoryInternalEventRepository(InternalEventRepository):
         error_code: str = "",
         error_message: str = "",
         next_retry_at: datetime | None = None,
+        expected_lease_token: str = "",
     ) -> InternalEventConsumerRun | None:
         status = _text(status)
         if status not in {"succeeded", "failed_retryable", "failed_terminal", "blocked", "skipped"}:
             status = "blocked"
         row = self._find_run(run_id)
+        if not row or (_text(expected_lease_token) and _text(row.get("lease_token")) != _text(expected_lease_token)):
+            return None
         if row:
             row["attempt_count"] = int(row.get("attempt_count") or 0) + 1
         finished_at = public_datetime(utcnow()) if status in {"succeeded", "failed_terminal", "blocked", "skipped"} else ""
@@ -1211,6 +1900,7 @@ class InMemoryInternalEventRepository(InternalEventRepository):
             next_retry_at=public_datetime(next_retry_at) if status == "failed_retryable" and next_retry_at else "",
             locked_by="",
             locked_at="",
+            lease_token="",
             last_attempt_id=_text(attempt_id),
             last_error_code=_text(error_code),
             last_error_message=_text(error_message),
@@ -1218,34 +1908,120 @@ class InMemoryInternalEventRepository(InternalEventRepository):
             finished_at=finished_at,
         )
 
-    def retry_consumer_run(self, event_id: str, consumer_name: str) -> InternalEventConsumerRun | None:
-        run = self.get_consumer_run(event_id, consumer_name)
-        if not run or run.status not in {"failed_retryable", "failed_terminal", "blocked"}:
+    def complete_consumer_attempt(
+        self,
+        *,
+        run: InternalEventConsumerRun,
+        status: str,
+        request_summary: dict[str, Any],
+        response_summary: dict[str, Any],
+        result_summary: dict[str, Any] | None = None,
+        error_code: str = "",
+        error_message: str = "",
+        next_retry_at: datetime | None = None,
+    ) -> tuple[InternalEventConsumerRun, InternalEventConsumerAttempt] | None:
+        row = self._find_run(run.id)
+        if not row or not _text(run.lease_token) or _text(row.get("lease_token")) != _text(run.lease_token) or row.get("status") != "running":
             return None
-        return self._mutate(
+        attempt = self.record_attempt(
+            run=run,
+            status=status,
+            request_summary=request_summary,
+            response_summary=response_summary,
+            error_code=error_code,
+            error_message=error_message,
+        )
+        updated = self.mark_result(
+            run.id,
+            status=status,
+            attempt_id=attempt.attempt_id,
+            result_summary=result_summary,
+            error_code=error_code,
+            error_message=error_message,
+            next_retry_at=next_retry_at,
+            expected_lease_token=run.lease_token,
+        )
+        return (updated, attempt) if updated else None
+
+    def retry_consumer_run(
+        self,
+        event_id: str,
+        consumer_name: str,
+        *,
+        actor_id: str,
+        actor_type: str,
+        reason: str,
+    ) -> tuple[InternalEventConsumerRun, InternalEventConsumerAttempt] | None:
+        run = self.get_consumer_run(event_id, consumer_name)
+        if not run or run.status not in {"failed_retryable", "failed_terminal", "blocked"} or not _text(actor_id) or not _text(reason):
+            return None
+        attempt = self.record_attempt(
+            run=run,
+            status="manual_retry",
+            request_summary={
+                "manual_retry": True,
+                "actor_ref_hash": _hash_text(actor_id),
+                "actor_type": _text(actor_type) or "operator",
+                "reason": _audit_reason(reason),
+                "from_status": run.status,
+            },
+            response_summary={"status": "pending"},
+            error_code="manual_retry",
+            error_message=_audit_reason(reason),
+        )
+        updated = self._mutate(
             run.id,
             status="pending",
             next_retry_at=public_datetime(utcnow()),
             locked_by="",
             locked_at="",
+            lease_token="",
+            last_attempt_id=attempt.attempt_id,
             last_error_code="",
             last_error_message="",
             finished_at="",
         )
+        return (updated, attempt) if updated else None
 
-    def skip_consumer_run(self, event_id: str, consumer_name: str, *, reason: str = "") -> tuple[InternalEventConsumerRun, InternalEventConsumerAttempt] | None:
+    def skip_consumer_run(
+        self,
+        event_id: str,
+        consumer_name: str,
+        *,
+        actor_id: str = "",
+        actor_type: str = "",
+        reason: str = "",
+    ) -> tuple[InternalEventConsumerRun, InternalEventConsumerAttempt] | None:
         run = self.get_consumer_run(event_id, consumer_name)
-        if not run or run.status in {"succeeded", "skipped"}:
+        if not run or run.status in {"succeeded", "skipped"} or not _text(actor_id) or not _text(reason):
             return None
         attempt = self.record_attempt(
             run=run,
             status="skipped",
-            request_summary={"manual_skip": True, "event_id": event_id, "consumer_name": consumer_name},
-            response_summary={"skipped": True, "reason": _text(reason)},
+            request_summary={
+                "manual_skip": True,
+                "actor_ref_hash": _hash_text(actor_id),
+                "actor_type": _text(actor_type) or "operator",
+                "reason": _audit_reason(reason),
+                "from_status": run.status,
+            },
+            response_summary={"skipped": True, "reason": _audit_reason(reason)},
             error_code="manual_skip",
-            error_message=_text(reason),
+            error_message=_audit_reason(reason),
         )
-        updated = self.mark_result(run.id, status="skipped", attempt_id=attempt.attempt_id, result_summary={"skipped": True, "reason": _text(reason)})
+        updated = self._mutate(
+            run.id,
+            status="skipped",
+            next_retry_at="",
+            locked_by="",
+            locked_at="",
+            lease_token="",
+            last_attempt_id=attempt.attempt_id,
+            last_error_code="manual_skip",
+            last_error_message=_audit_reason(reason),
+            result_summary_json={"skipped": True, "reason": _audit_reason(reason)},
+            finished_at=public_datetime(utcnow()),
+        )
         if updated is None:
             return None
         return updated, attempt
@@ -1279,6 +2055,153 @@ class InMemoryInternalEventRepository(InternalEventRepository):
         attempt = _public_attempt(row)
         assert attempt is not None
         return attempt
+
+    def enqueue_outbox(self, request: InternalEventCreateRequest) -> InternalEventOutboxRecord:
+        tenant_id = _text(request.tenant_id) or DEFAULT_TENANT_ID
+        key = _idempotency_key(request)
+        for row in self._outbox:
+            if row.get("tenant_id") == tenant_id and row.get("idempotency_key") == key:
+                record = _public_outbox(row)
+                assert record is not None
+                return record
+        now = public_datetime(utcnow())
+        row = {
+            "id": self._next_outbox_id,
+            "tenant_id": tenant_id,
+            "outbox_id": "ieo_" + uuid4().hex,
+            "event_type": _text(request.event_type),
+            "event_version": int(request.event_version or 1),
+            "aggregate_type": _text(request.aggregate_type),
+            "aggregate_id": _text(request.aggregate_id),
+            "subject_type": _text(request.subject_type),
+            "subject_id": _text(request.subject_id),
+            "idempotency_key": key,
+            "actor_id": _text(request.context.actor_id),
+            "actor_type": _text(request.context.actor_type) or "system",
+            "source_module": _text(request.source_module),
+            "source_route": _text(request.context.source_route),
+            "source_command_id": _text(request.source_command_id),
+            "trace_id": _text(request.context.trace_id),
+            "request_id": _text(request.context.request_id),
+            "correlation_id": _text(request.correlation_id),
+            "occurred_at": public_datetime(request.occurred_at or utcnow()),
+            "payload_json": dict(request.payload or {}),
+            "payload_summary_json": dict(request.payload_summary or {}) or _payload_summary(request.payload),
+            "status": "pending",
+            "attempt_count": 0,
+            "max_attempts": 10,
+            "next_retry_at": "",
+            "lease_token": "",
+            "locked_at": "",
+            "locked_by": "",
+            "internal_event_id": "",
+            "last_error_code": "",
+            "last_error_message": "",
+            "created_at": now,
+            "updated_at": now,
+            "relayed_at": "",
+        }
+        self._next_outbox_id += 1
+        self._outbox.append(row)
+        record = _public_outbox(row)
+        assert record is not None
+        return record
+
+    def list_due_outbox(self, *, limit: int = 50) -> list[InternalEventOutboxRecord]:
+        now = utcnow()
+        rows = [row for row in self._outbox if _run_is_automatically_due(row, now=now)]
+        rows.sort(key=lambda row: (row.get("next_retry_at") or row.get("created_at") or "", int(row.get("id") or 0)))
+        return [record for row in rows[: max(1, min(int(limit or 50), 200))] if (record := _public_outbox(row)) is not None]
+
+    def acquire_due_outbox(self, *, limit: int = 50, locked_by: str) -> list[InternalEventOutboxRecord]:
+        records = self.list_due_outbox(limit=limit)
+        now = public_datetime(utcnow())
+        acquired: list[InternalEventOutboxRecord] = []
+        for record in records:
+            row = self._find_outbox(record.id)
+            if not row:
+                continue
+            row.update(
+                {
+                    "status": "running",
+                    "attempt_count": int(row.get("attempt_count") or 0) + 1,
+                    "lease_token": "ieol_" + uuid4().hex,
+                    "locked_at": now,
+                    "locked_by": _text(locked_by),
+                    "updated_at": now,
+                }
+            )
+            current = _public_outbox(row)
+            if current:
+                acquired.append(current)
+        return acquired
+
+    def relay_outbox(
+        self,
+        outbox: InternalEventOutboxRecord,
+        consumers: list[InternalEventConsumerSpec],
+    ) -> tuple[InternalEventOutboxRecord, InternalEvent, list[InternalEventConsumerRun]] | None:
+        row = self._find_outbox(outbox.id)
+        if not row or row.get("status") != "running" or _text(row.get("lease_token")) != _text(outbox.lease_token):
+            return None
+        event, runs = self.create_event_with_consumer_runs(outbox.to_create_request(), consumers)
+        now = public_datetime(utcnow())
+        row.update(
+            {
+                "status": "relayed",
+                "internal_event_id": event.event_id,
+                "lease_token": "",
+                "locked_at": "",
+                "locked_by": "",
+                "next_retry_at": "",
+                "last_error_code": "",
+                "last_error_message": "",
+                "updated_at": now,
+                "relayed_at": now,
+            }
+        )
+        updated = _public_outbox(row)
+        return (updated, event, runs) if updated else None
+
+    def mark_outbox_failure(
+        self,
+        outbox: InternalEventOutboxRecord,
+        *,
+        error_code: str,
+        error_message: str,
+        next_retry_at: datetime | None,
+    ) -> InternalEventOutboxRecord | None:
+        row = self._find_outbox(outbox.id)
+        if not row or row.get("status") != "running" or _text(row.get("lease_token")) != _text(outbox.lease_token):
+            return None
+        status = "failed_terminal" if int(row.get("attempt_count") or 0) >= int(row.get("max_attempts") or 10) else "failed_retryable"
+        row.update(
+            {
+                "status": status,
+                "next_retry_at": public_datetime(next_retry_at) if status == "failed_retryable" and next_retry_at else "",
+                "lease_token": "",
+                "locked_at": "",
+                "locked_by": "",
+                "last_error_code": _text(error_code),
+                "last_error_message": _text(error_message),
+                "updated_at": public_datetime(utcnow()),
+            }
+        )
+        return _public_outbox(row)
+
+    def outbox_metrics(self) -> dict[str, Any]:
+        now = utcnow()
+        due = [row for row in self._outbox if _run_is_automatically_due(row, now=now)]
+        unrelayed = [row for row in self._outbox if row.get("status") in {"pending", "failed_retryable"}]
+        oldest = min((self._dt(row.get("created_at")) for row in unrelayed), default=None)
+        return {
+            "due_count": len(due),
+            "failed_retryable_count": len([row for row in self._outbox if row.get("status") == "failed_retryable"]),
+            "failed_terminal_count": len([row for row in self._outbox if row.get("status") == "failed_terminal"]),
+            "running_count": len([row for row in self._outbox if row.get("status") == "running"]),
+            "relayed_count": len([row for row in self._outbox if row.get("status") == "relayed"]),
+            "oldest_unrelayed_age_seconds": max(0, int((now - oldest).total_seconds())) if oldest else 0,
+        }
 
     def _filtered_events(self, filters: dict[str, Any]) -> list[dict[str, Any]]:
         rows = list(self._events)
@@ -1350,6 +2273,12 @@ class InMemoryInternalEventRepository(InternalEventRepository):
     def _find_run(self, run_id: int) -> dict[str, Any] | None:
         for row in self._runs:
             if int(row.get("id") or 0) == int(run_id):
+                return row
+        return None
+
+    def _find_outbox(self, outbox_id: int) -> dict[str, Any] | None:
+        for row in self._outbox:
+            if int(row.get("id") or 0) == int(outbox_id):
                 return row
         return None
 

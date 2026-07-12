@@ -24,10 +24,9 @@ from aicrm_next.identity_contact.dto import IdentityResolveResult, ResolvePerson
 from aicrm_next.identity_contact.resolver import resolve_identity_with_dbapi, resolved_unionid
 from aicrm_next.integration_gateway.wechat_pay_client import WeChatPayClient, WeChatPayClientConfig, WeChatPayClientError
 from aicrm_next.integration_gateway.wechat_oauth_client import WeChatOAuthClientError, build_wechat_oauth_client
-from aicrm_next.platform_foundation.command_bus import CommandContext
-from aicrm_next.platform_foundation.internal_events import InternalEventService, register_payment_succeeded_consumers
 from aicrm_next.platform_foundation.internal_events.config import event_type_allowed, payment_internal_events_enabled
-from aicrm_next.platform_foundation.internal_events.payment import PAYMENT_SUCCEEDED_EVENT_TYPE
+from aicrm_next.platform_foundation.internal_events.outbox import enqueue_transactional_internal_event_outbox
+from aicrm_next.platform_foundation.internal_events.payment import PAYMENT_SUCCEEDED_EVENT_TYPE, build_payment_succeeded_event_request
 from aicrm_next.questionnaire.oauth import questionnaire_h5_identity_from_cookies
 from aicrm_next.shared.runtime import production_data_ready
 from aicrm_next.shared.safe_logging import safe_log_exception, safe_log_fields
@@ -357,23 +356,8 @@ def _is_order_effectively_paid(row: dict[str, Any]) -> bool:
     return _normalized_text(row.get("status")) == "paid" or _normalized_text(row.get("trade_state")) == "SUCCESS"
 
 
-def _masked_mobile(value: Any) -> str:
-    text = _normalized_text(value)
-    digits = "".join(ch for ch in text if ch.isdigit())
-    if len(digits) >= 7:
-        return f"{digits[:3]}****{digits[-4:]}"
-    return ""
-
-
-def _payment_subject_id(order: dict[str, Any]) -> str:
-    return (
-        _normalized_text(order.get("external_userid"))
-        or _normalized_text(order.get("userid_snapshot"))
-        or _normalized_text(order.get("respondent_key"))
-    )
-
-
-def _emit_payment_succeeded_internal_event(
+def _enqueue_payment_succeeded_internal_event_outbox(
+    conn: Any,
     *,
     order: dict[str, Any],
     transaction: dict[str, Any],
@@ -382,68 +366,20 @@ def _emit_payment_succeeded_internal_event(
 ) -> dict[str, Any] | None:
     if not payment_internal_events_enabled() or not event_type_allowed(PAYMENT_SUCCEEDED_EVENT_TYPE):
         return None
-    out_trade_no = _normalized_text(order.get("out_trade_no") or transaction.get("out_trade_no"))
-    aggregate_id = _normalized_text(order.get("id") or out_trade_no)
-    if not out_trade_no or not aggregate_id:
+    request = build_payment_succeeded_event_request(
+        order=order,
+        transaction=transaction,
+        domain_event_outbox_id=(outbox or {}).get("id"),
+        source_route=source_route,
+    )
+    if request is None:
         return None
-    subject_id = _payment_subject_id(order)
-    try:
-        register_payment_succeeded_consumers()
-        result = InternalEventService().emit_event(
-            event_type=PAYMENT_SUCCEEDED_EVENT_TYPE,
-            event_version=1,
-            aggregate_type="wechat_pay_order",
-            aggregate_id=aggregate_id,
-            subject_type="customer",
-            subject_id=subject_id,
-            idempotency_key=f"payment.succeeded:{out_trade_no}",
-            source_module="public_product.h5_wechat_pay",
-            source_command_id=out_trade_no,
-            correlation_id=out_trade_no,
-            context=CommandContext(
-                actor_id="wechat_pay_notify",
-                actor_type="system",
-                trace_id=out_trade_no,
-                request_id=_normalized_text(transaction.get("transaction_id")),
-                source_route=source_route or "/api/h5/wechat-pay/notify",
-            ),
-            payload={
-                "order": dict(order),
-                "transaction": dict(transaction or {}),
-                "domain_event_outbox_id": (outbox or {}).get("id"),
-                "legacy_event_aliases": ["transaction.paid", "payment_succeeded"],
-            },
-            payload_summary={
-                "out_trade_no": out_trade_no,
-                "order_id": order.get("id"),
-                "aggregate_id": aggregate_id,
-                "subject_type": "customer",
-                "subject_id": subject_id,
-                "product_code": order.get("product_code"),
-                "amount_total": int(order.get("amount_total") or order.get("payer_total") or 0),
-                "status": order.get("status"),
-                "trade_state": order.get("trade_state"),
-                "paid_at": str(order.get("paid_at") or ""),
-                "mobile_masked": _masked_mobile(order.get("mobile_snapshot")),
-                "domain_event_outbox_id": (outbox or {}).get("id"),
-            },
-        )
-        LOGGER.info(
-            "payment_succeeded_internal_event_ensured",
-            extra=safe_log_fields(
-                out_trade_no=out_trade_no,
-                event_id=(result.get("event") or {}).get("event_id"),
-            ),
-        )
-        return result
-    except Exception as exc:
-        safe_log_exception(
-            LOGGER,
-            "payment_succeeded_internal_event_failed",
-            exc,
-            out_trade_no=out_trade_no,
-        )
-        return None
+    result = enqueue_transactional_internal_event_outbox(conn, request)
+    LOGGER.info(
+        "payment_succeeded_internal_event_outbox_ensured",
+        extra=safe_log_fields(source_command_id=request.source_command_id, outbox_id=result.get("outbox_id")),
+    )
+    return result
 
 
 def _completion_redirect_from_product(product: dict[str, Any]) -> dict[str, Any]:
@@ -901,7 +837,8 @@ def _apply_transaction(conn: Any, transaction: dict[str, Any], *, source_route: 
     if is_paid:
         mobile_projection = _safe_project_order_mobile_to_identity(conn, order_payload, source_route=source_route)
         outbox = enqueue_transaction_paid_outbox(conn, order_payload)
-        _emit_payment_succeeded_internal_event(
+        _enqueue_payment_succeeded_internal_event_outbox(
+            conn,
             order=order_payload,
             transaction=transaction,
             outbox=outbox,

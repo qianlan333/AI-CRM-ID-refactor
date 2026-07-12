@@ -53,6 +53,7 @@ def _emit(service: InternalEventService, *, idempotency_key: str = "event-same-k
 
 def test_internal_event_migration_contract_uses_current_head_and_required_tables() -> None:
     source = Path("migrations/versions/0043_internal_event_queue.py").read_text(encoding="utf-8")
+    r06_source = Path("migrations/versions/0099_internal_event_outbox_and_consumer_lease.py").read_text(encoding="utf-8")
 
     assert 'down_revision = "0042_legacy_webhook_deprecation_registry"' in source
     for table in [
@@ -65,6 +66,10 @@ def test_internal_event_migration_contract_uses_current_head_and_required_tables
     assert "UNIQUE (tenant_id, event_id, consumer_name)" in source
     assert "REFERENCES internal_event(event_id) ON DELETE CASCADE" in source
     assert "REFERENCES internal_event_consumer_run(id) ON DELETE CASCADE" in source
+    assert 'down_revision = "0098_admin_session_revocation"' in r06_source
+    assert "CREATE TABLE IF NOT EXISTS internal_event_outbox" in r06_source
+    assert "ADD COLUMN IF NOT EXISTS lease_token" in r06_source
+    assert "'manual_retry'" in r06_source
 
 
 def test_emit_event_is_idempotent_and_creates_multiple_consumer_runs_once() -> None:
@@ -182,17 +187,37 @@ def test_retry_consumer_run_only_allows_failed_retryable_terminal_and_blocked() 
     runs, _ = service.list_consumer_runs({"event_id": emitted["event"]["event_id"]})
     by_name = {run.consumer_name: run for run in runs}
 
-    assert service.retry_consumer_run(emitted["event"]["event_id"], "ok") is None
+    assert service.retry_consumer_run(
+        emitted["event"]["event_id"],
+        "ok",
+        actor_id="operator-1",
+        actor_type="test",
+        reason="not retryable",
+    ) is None
     InternalEventWorker(repo, registry).dispatch_one(by_name["ok"])
     InternalEventWorker(repo, registry).dispatch_one(by_name["retryable"])
     repo.mark_result(by_name["terminal"].id, status="failed_terminal", attempt_id="manual-terminal", error_code="bad_payload")
     repo.mark_result(by_name["blocked"].id, status="blocked", attempt_id="manual-blocked", error_code="missing_handler")
 
-    assert service.retry_consumer_run(emitted["event"]["event_id"], "ok") is None
+    assert service.retry_consumer_run(
+        emitted["event"]["event_id"],
+        "ok",
+        actor_id="operator-1",
+        actor_type="test",
+        reason="not retryable",
+    ) is None
     for name in ["retryable", "terminal", "blocked"]:
-        retried = service.retry_consumer_run(emitted["event"]["event_id"], name)
+        retried = service.retry_consumer_run(
+            emitted["event"]["event_id"],
+            name,
+            actor_id="operator-1",
+            actor_type="test",
+            reason=f"approved retry for {name}",
+        )
         assert retried is not None
-        assert retried.status == "pending"
+        run, audit = retried
+        assert run.status == "pending"
+        assert audit.status == "manual_retry"
 
 
 def test_diagnostics_and_admin_api_return_internal_event_metrics(next_client: TestClient, monkeypatch) -> None:
@@ -226,7 +251,7 @@ def test_diagnostics_and_admin_api_return_internal_event_metrics(next_client: Te
         diagnostics_after = next_client.get("/api/admin/internal-events/diagnostics")
         retry = next_client.post(
             f"/api/admin/internal-events/{emitted['event']['event_id']}/consumers/api_consumer/retry",
-            json={"admin_action_token": ensure_admin_action_token()},
+            json={"admin_action_token": ensure_admin_action_token(), "reason": "approved operator retry"},
         )
         skip = next_client.post(
             f"/api/admin/internal-events/{emitted['event']['event_id']}/consumers/api_consumer/skip",

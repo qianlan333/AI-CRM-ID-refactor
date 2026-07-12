@@ -101,6 +101,22 @@ def _action_or_internal_token_error(request: Request, payload: dict[str, Any]) -
     return validate_admin_action_token(token, request=request)
 
 
+def _manual_action_actor(request: Request, payload: dict[str, Any]) -> tuple[str, str]:
+    session = getattr(request.state, "admin_session", None)
+    if isinstance(session, dict):
+        actor_id = _text(session.get("admin_user_id") or session.get("username") or session.get("wecom_userid"))
+        if actor_id:
+            return actor_id, "admin_session"
+    service_account = _text(getattr(request.state, "service_account", ""))
+    if service_account:
+        return service_account, "service_account"
+    if not _internal_token_error(request):
+        return "automation_internal_api", "internal_service"
+    if _text(request.headers.get("X-Admin-Action-Token")) or _text(payload.get("admin_action_token")):
+        return "admin_action_token", "admin_action_token"
+    return "", ""
+
+
 def _service() -> InternalEventService:
     return InternalEventService(build_internal_event_repository())
 
@@ -263,10 +279,21 @@ async def retry_internal_event_consumer(event_id: str, consumer_name: str, reque
     token_error = _action_or_internal_token_error(request, payload)
     if token_error:
         return _json({"ok": False, "error": token_error}, status_code=401)
-    run = _service().retry_consumer_run(event_id, consumer_name)
-    if not run:
+    reason = _text(payload.get("reason"))
+    actor_id, actor_type = _manual_action_actor(request, payload)
+    if not reason or not actor_id:
+        return _json({"ok": False, "error": "manual_action_actor_and_reason_required"}, status_code=422)
+    retried = _service().retry_consumer_run(
+        event_id,
+        consumer_name,
+        actor_id=actor_id,
+        actor_type=actor_type,
+        reason=reason,
+    )
+    if not retried:
         return _json({"ok": False, "error": "internal_event_consumer_run_not_retryable"}, status_code=409)
-    return _json({"ok": True, "consumer_run": run.to_dict()})
+    run, attempt = retried
+    return _json({"ok": True, "consumer_run": run.to_dict(), "attempt": attempt.to_dict()})
 
 
 @router.post("/api/admin/internal-events/{event_id}/consumers/{consumer_name}/skip")
@@ -275,7 +302,17 @@ async def skip_internal_event_consumer(event_id: str, consumer_name: str, reques
     token_error = _action_or_internal_token_error(request, payload)
     if token_error:
         return _json({"ok": False, "error": token_error}, status_code=401)
-    skipped = _service().skip_consumer_run(event_id, consumer_name, reason=_text(payload.get("reason")))
+    reason = _text(payload.get("reason"))
+    actor_id, actor_type = _manual_action_actor(request, payload)
+    if not reason or not actor_id:
+        return _json({"ok": False, "error": "manual_action_actor_and_reason_required"}, status_code=422)
+    skipped = _service().skip_consumer_run(
+        event_id,
+        consumer_name,
+        actor_id=actor_id,
+        actor_type=actor_type,
+        reason=reason,
+    )
     if not skipped:
         return _json({"ok": False, "error": "internal_event_consumer_run_not_skippable"}, status_code=409)
     run, attempt = skipped

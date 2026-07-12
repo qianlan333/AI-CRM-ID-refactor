@@ -33,6 +33,7 @@ EVENT_EFFECT_TABLES = {
     "external_push_delivery",
     "outbound_webhook_deliveries",
     "outbound_event_outbox",
+    "internal_event_outbox",
     "internal_event",
     "internal_event_consumer_run",
     "internal_event_consumer_attempt",

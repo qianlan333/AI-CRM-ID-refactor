@@ -158,8 +158,8 @@ def test_apply_transaction_runs_mobile_projection_before_order_side_effects(monk
     )
     monkeypatch.setattr(
         h5_wechat_pay,
-        "_emit_payment_succeeded_internal_event",
-        lambda **kwargs: calls.append("event"),
+        "_enqueue_payment_succeeded_internal_event_outbox",
+        lambda conn, **kwargs: calls.append("event_outbox"),
     )
     monkeypatch.setattr(
         h5_wechat_pay,
@@ -178,7 +178,7 @@ def test_apply_transaction_runs_mobile_projection_before_order_side_effects(monk
     )
 
     assert order["status"] == "paid"
-    assert calls == ["project", "outbox", "event", "external_effect"]
+    assert calls == ["project", "outbox", "event_outbox", "external_effect"]
 
 
 def test_order_read_models_fallback_to_metadata_mobile_for_historical_orders() -> None:

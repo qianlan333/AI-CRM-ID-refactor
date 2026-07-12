@@ -65,7 +65,9 @@ def main(argv: list[str] | None = None) -> int:
         consumer_names=_csv(args.consumer_names),
     )
     print_json(payload)
-    return 0 if payload.get("ok") or payload.get("dry_run") else 1
+    if payload.get("dry_run"):
+        return 0
+    return int(payload.get("exit_code") or (0 if payload.get("ok") else 1))
 
 
 if __name__ == "__main__":
