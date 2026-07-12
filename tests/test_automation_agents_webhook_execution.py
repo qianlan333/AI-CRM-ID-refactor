@@ -7,6 +7,7 @@ from sqlalchemy import text
 
 from aicrm_next.automation_agents.context_builder import referenced_context_keys
 from aicrm_next.automation_agents.worker import AutomationAgentWorker
+from aicrm_next.external_effect_composition import build_external_effect_continuation_registry
 from aicrm_next.platform_foundation.command_bus.models import CommandContext
 from aicrm_next.platform_foundation.external_effects.adapters import ExternalEffectAdapterRegistry, WebhookAdapter
 from aicrm_next.platform_foundation.external_effects.models import WEBHOOK_GENERIC_PUSH
@@ -505,7 +506,10 @@ def test_external_effect_agent_webhook_continuation_enqueues_broadcast_job(next_
         status="queued",
     )
 
-    result = ExternalEffectWorker(adapter_registry=_registry_with_post(loopback_post, signer=signer)).run_due(
+    result = ExternalEffectWorker(
+        adapter_registry=_registry_with_post(loopback_post, signer=signer),
+        continuation_registry=build_external_effect_continuation_registry(),
+    ).run_due(
         batch_size=1,
         dry_run=False,
         effect_types=[WEBHOOK_GENERIC_PUSH],

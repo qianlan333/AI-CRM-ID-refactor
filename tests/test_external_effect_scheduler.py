@@ -105,15 +105,21 @@ def test_external_effect_scheduler_execute_requires_global_scheduler_switch(monk
 
 
 def test_external_effect_worker_script_returns_nonzero_for_blocked_or_unknown(monkeypatch, capsys) -> None:
-    monkeypatch.setattr(
-        worker_script,
-        "run_scheduled_external_effects",
-        lambda **kwargs: {
+    captured: dict = {}
+
+    def fake_run(**kwargs):
+        captured.update(kwargs)
+        return {
             "ok": False,
             "exit_code": 1,
             "counts": {"blocked_count": 1, "unknown_after_dispatch_count": 0},
             "real_external_call_executed": False,
-        },
+        }
+
+    monkeypatch.setattr(
+        worker_script,
+        "run_scheduled_external_effects",
+        fake_run,
     )
 
     exit_code = worker_script.main(["--execute", "--limit", "1", "--operator", "pytest"])
@@ -122,6 +128,10 @@ def test_external_effect_worker_script_returns_nonzero_for_blocked_or_unknown(mo
     assert exit_code == 1
     assert payload["ok"] is False
     assert payload["counts"]["blocked_count"] == 1
+    assert captured["continuation_registry"].names == (
+        "questionnaire_contact_tags",
+        "automation_agent_audience_webhook",
+    )
 
 
 def test_external_effect_scheduler_execute_scans_all_due_jobs_one_by_one(monkeypatch) -> None:

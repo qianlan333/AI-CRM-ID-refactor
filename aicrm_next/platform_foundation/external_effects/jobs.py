@@ -7,6 +7,7 @@ from typing import Any
 from aicrm_next.shared.runtime_settings import runtime_bool, runtime_setting
 
 from .adapters import ExternalEffectAdapterRegistry
+from .continuations import ExternalEffectContinuationRegistry
 from .repo import ExternalEffectRepository
 from .worker import ExternalEffectWorker
 
@@ -53,10 +54,16 @@ def run_scheduled_external_effects(
     operator: str = "external_effect_scheduler",
     repository: ExternalEffectRepository | None = None,
     adapter_registry: ExternalEffectAdapterRegistry | None = None,
+    continuation_registry: ExternalEffectContinuationRegistry | None = None,
 ) -> dict[str, Any]:
     scheduler = external_effect_scheduler_state()
     batch_size = _bounded_int(limit if limit is not None else scheduler["batch_size"], default=int(scheduler["batch_size"]), minimum=1, maximum=500)
-    worker = ExternalEffectWorker(repository, adapter_registry, locked_by=f"external-effect-scheduler-{operator or 'system'}")
+    worker = ExternalEffectWorker(
+        repository,
+        adapter_registry,
+        continuation_registry=continuation_registry,
+        locked_by=f"external-effect-scheduler-{operator or 'system'}",
+    )
     test_only = bool(scheduler["test_only"])
     scan_mode = "test_only_due_jobs" if test_only else "all_due_jobs"
     if dry_run:

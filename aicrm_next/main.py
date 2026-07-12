@@ -13,6 +13,7 @@ from .admin_auth.route_policy import route_policy_required_response
 from .admin_config.pii_audit_repository import AdminConfigPiiAuditRepository
 from .automation_engine.repo import reset_automation_fixture_state
 from .commerce.repo import reset_commerce_fixture_state
+from .external_effect_composition import build_external_effect_continuation_registry
 from .media_library.repo import reset_media_library_fixture_state
 from .ops_enrollment.application import reset_user_ops_fixture_state
 from .platform_foundation.internal_events import (
@@ -52,6 +53,7 @@ logger = logging.getLogger(__name__)
 def create_app(*, pii_audit_repository: PiiAuditRepository | None = None) -> FastAPI:
     assert_required_runtime_secrets()
     app = FastAPI(title="AI-CRM Next", version="0.1.0")
+    app.state.external_effect_continuation_registry = build_external_effect_continuation_registry()
     register_payment_succeeded_consumers()
     register_refund_succeeded_consumers()
     register_shadow_event_consumers()

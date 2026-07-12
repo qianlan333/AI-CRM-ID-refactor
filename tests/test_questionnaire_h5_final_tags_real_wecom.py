@@ -7,6 +7,7 @@ from aicrm_next.customer_tags.local_projection import (
     get_customer_tag_local_projection_fixture_rows,
     reset_customer_tag_local_projection_fixture_state,
 )
+from aicrm_next.external_effect_composition import build_external_effect_continuation_registry
 from aicrm_next.identity_contact.dto import IdentityResolution, IdentityResolveResult
 from aicrm_next.integration_gateway import wecom_channel_entry_client
 from aicrm_next.integration_gateway.wecom_channel_entry_client import WeComApiError
@@ -231,7 +232,11 @@ def test_provider_success_projects_tags_only_after_external_effect_success(monke
     registry._adapters["wecom_tag"] = WeComContactTagAdapter(  # type: ignore[attr-defined]
         adapter_factory=lambda: FakeWeComAdapter()
     )
-    executed = ExternalEffectWorker(build_external_effect_repository(), registry).run_due(
+    executed = ExternalEffectWorker(
+        build_external_effect_repository(),
+        registry,
+        continuation_registry=build_external_effect_continuation_registry(),
+    ).run_due(
         batch_size=1,
         dry_run=False,
         effect_types=[WECOM_CONTACT_TAG_MARK],
