@@ -253,6 +253,23 @@ def test_external_effect_continuation_composition_has_a_permanent_full_ci_scope(
     assert result["architecture_gate"] == "full"
 
 
+def test_ai_audience_e2e_composition_has_a_permanent_full_ci_scope() -> None:
+    result = _select(
+        "aicrm_next/ai_audience_e2e_composition.py",
+        "aicrm_next/ops_enrollment/ai_audience_e2e_gateway.py",
+        "tests/test_ai_audience_e2e_composition.py",
+    )
+
+    assert "ai_audience_e2e_composition" in result["matched_scopes"]
+    assert result["unmatched_files"] == []
+    assert "tests/test_ai_audience_e2e_composition.py" in result["python_tests"]
+    assert "tests/test_ai_audience_real_e2e_runner.py" in result["python_tests"]
+    assert "tests/test_ai_audience_external_api.py" in result["python_tests"]
+    assert result["needs_postgres"] is True
+    assert result["needs_full_ci"] is True
+    assert result["architecture_gate"] == "full"
+
+
 def test_r08_commerce_fulfillment_files_force_full_postgres_ci() -> None:
     result = _select(
         "aicrm_next/commerce/fulfillment_reconciliation.py",

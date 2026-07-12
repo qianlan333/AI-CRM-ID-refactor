@@ -7,7 +7,6 @@ from fastapi import APIRouter, Body, Request
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 
-from .e2e_runner import AudienceRealE2ERunner
 from .package_spec import package_payload_from_spec, parse_markdown_spec_text, validate_spec
 from .repository import build_audience_repository, _text
 from .schemas import SimpleSqlApplyRequest, SimpleSqlPreviewRequest
@@ -163,7 +162,16 @@ def external_ai_audience_package_archive(package_key: str, request: Request, pay
 @router.post("/api/external/ai-audience/e2e/run", name="api.external_ai_audience_e2e_run")
 def external_ai_audience_e2e_run(request: Request, payload: dict[str, Any] = Body(default_factory=dict)) -> JSONResponse:
     repo = build_audience_repository()
-    result = AudienceRealE2ERunner(repository=repo).run(payload)
+    runner_factory = getattr(request.app.state, "ai_audience_e2e_runner_factory", None)
+    if runner_factory is None:
+        result = {
+            "ok": False,
+            "error": "e2e_runner_composition_unavailable",
+            "status_code": 503,
+            "real_external_call_executed": False,
+        }
+    else:
+        result = runner_factory(repository=repo).run(payload)
     _audit(
         repo,
         operator=_operator(payload),

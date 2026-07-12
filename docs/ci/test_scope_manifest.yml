@@ -111,6 +111,25 @@
   ],
   "scopes": [
     {
+      "name": "ai_audience_e2e_composition",
+      "paths": [
+        "aicrm_next/ai_audience_e2e_composition.py",
+        "aicrm_next/ops_enrollment/ai_audience_e2e_gateway.py",
+        "tests/test_ai_audience_e2e_composition.py"
+      ],
+      "python_tests": [
+        "tests/test_ai_audience_e2e_composition.py",
+        "tests/test_ai_audience_real_e2e_runner.py",
+        "tests/test_ai_audience_external_api.py",
+        "tests/test_user_ops_application_contract.py",
+        "tests/test_import_graph_guard.py",
+        "tests/test_select_test_scope.py"
+      ],
+      "needs_postgres": true,
+      "needs_full_ci": true,
+      "architecture_gate": "full"
+    },
+    {
       "name": "external_effect_continuation_composition",
       "paths": [
         "aicrm_next/external_effect_composition.py",
