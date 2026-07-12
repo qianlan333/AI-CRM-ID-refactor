@@ -54,6 +54,24 @@ def test_ai_audience_e2e_composition_builds_isolated_factories() -> None:
     assert first_runner._user_ops_gateway is not second_runner._user_ops_gateway
 
 
+def test_ai_audience_e2e_factory_does_not_construct_commands_during_app_startup(monkeypatch) -> None:
+    from aicrm_next import ai_audience_e2e_composition as composition
+
+    calls: list[str] = []
+
+    class Gateway:
+        def __init__(self) -> None:
+            calls.append("constructed")
+
+    monkeypatch.setattr(composition, "OpsEnrollmentAudienceE2EGateway", Gateway)
+
+    factory = composition.build_ai_audience_e2e_runner_factory()
+
+    assert calls == []
+    factory(repository=object())
+    assert calls == ["constructed"]
+
+
 def test_web_apps_own_their_ai_audience_e2e_runner_factory() -> None:
     first_app = create_app()
     second_app = create_app()
