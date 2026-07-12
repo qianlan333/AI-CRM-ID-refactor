@@ -96,7 +96,7 @@ def test_channel_assignment_event_writes_unionid() -> None:
 
 
 def test_customer_external_userid_lookup_exact_jsonb_membership() -> None:
-    source = _read("aicrm_next/customer_read_model/repo.py")
+    source = _read("aicrm_next/customer_read_model/repo_live_source.py")
     section = _function_source(source, "_identity_by_external_userid")
     resolver = _read("aicrm_next/identity_contact/resolver.py")
 
@@ -180,7 +180,7 @@ def test_unionid_runtime_sql_guard_blocks_removed_identity_columns() -> None:
             ],
         ),
         "customer_exact_external_lookup": (
-            _function_source(_read("aicrm_next/customer_read_model/repo.py"), "_identity_by_external_userid"),
+            _function_source(_read("aicrm_next/customer_read_model/repo_live_source.py"), "_identity_by_external_userid"),
             [
             "CAST(external_userids_json AS TEXT) LIKE",
             ],
