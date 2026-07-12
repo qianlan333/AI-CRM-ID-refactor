@@ -340,12 +340,16 @@
     {
       "name": "broadcast_group_ops",
       "paths": [
+        "aicrm_next/admin_shell/routes.py",
+        "aicrm_next/admin_shell/templates/admin_shell/p1_group_ops_workspace.html",
         "aicrm_next/background_jobs/**",
         "aicrm_next/external_push/**",
         "aicrm_next/integration_gateway/**",
         "aicrm_next/platform_foundation/external_effects/**",
         "aicrm_next/automation_engine/group_ops/**",
+        "aicrm_next/frontend_compat/static/admin_console/p1/p1_group_ops_workspace/**",
         "migrations/versions/0103_broadcast_delivery_state_machine.py",
+        "scripts/diagnose_p1_group_ops_workspace_bridge_acceptance.py",
         "scripts/ops/reconcile_group_ops_broadcast.py",
         "deploy/production_runtime_units.json",
         ".github/workflows/deploy.yml",
@@ -357,7 +361,11 @@
         "docs/architecture/runtime_contract_inventory.json",
         "docs/ops/group_ops_broadcast_reconciliation.md",
         "tests/test_broadcast_*.py",
+        "tests/test_background_jobs_next_native.py",
         "tests/test_group_ops_*.py",
+        "tests/test_p1_group_ops_workspace_*.py",
+        "tests/test_run_broadcast_queue_worker.py",
+        "tests/test_send_task.py",
         "tests/test_external_effect*.py",
         "tests/test_external_push_*.py",
         "tests/test_push_center.py"
