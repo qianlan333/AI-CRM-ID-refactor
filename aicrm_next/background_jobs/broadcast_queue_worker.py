@@ -23,6 +23,7 @@ class BroadcastDispatcher(Protocol):
 class BroadcastQueueRepository(Protocol):
     def claim_due_jobs(self, *, limit: int, now: datetime, claim_token: str, lease_seconds: int) -> list[dict[str, Any]]: ...
     def mark_sent(self, job_id: int, *, outbound_task_id: Any = None, sent_count: int = 0, failed_count: int = 0, claim_token: str = "") -> None: ...
+    def mark_simulated(self, job_id: int, *, outbound_task_id: Any = None, claim_token: str = "") -> None: ...
     def mark_failed(self, job_id: int, *, error: str, failure_type: str = "handler_error", claim_token: str = "") -> None: ...
 
 
@@ -105,6 +106,77 @@ class PostgresBroadcastQueueRepository:
                   AND (%s = '' OR claim_token = %s)
                 """,
                 (outbound_task_id, int(sent_count), int(failed_count), int(job_id), token, token),
+            )
+
+    def mark_simulated(self, job_id: int, *, outbound_task_id: Any = None, claim_token: str = "") -> None:
+        """Persist a fake adapter result without projecting it as delivered."""
+
+        token = str(claim_token or "")
+        with connect() as conn:
+            claimed = conn.execute(
+                """
+                SELECT id
+                FROM broadcast_jobs
+                WHERE id = %s
+                  AND status = 'claimed'
+                  AND (%s = '' OR claim_token = %s)
+                FOR UPDATE
+                """,
+                (int(job_id), token, token),
+            ).fetchone()
+            if not claimed:
+                return
+            conn.execute(
+                """
+                UPDATE cloud_broadcast_plan_recipient_messages m
+                SET status = 'simulated',
+                    sent_at = NULL,
+                    last_error = '',
+                    updated_at = CURRENT_TIMESTAMP
+                FROM cloud_broadcast_plan_recipients r
+                JOIN broadcast_jobs j ON j.id = r.broadcast_job_id
+                WHERE j.id = %s
+                  AND j.source_type = 'cloud_plan'
+                  AND j.source_table = 'cloud_broadcast_plan_recipients'
+                  AND m.plan_id = r.plan_id
+                  AND m.recipient_id = r.id
+                  AND m.status IN ('pending', 'queued')
+                """,
+                (int(job_id),),
+            )
+            conn.execute(
+                """
+                UPDATE cloud_broadcast_plan_recipients r
+                SET send_status = 'simulated',
+                    last_error = '',
+                    updated_at = CURRENT_TIMESTAMP
+                FROM broadcast_jobs j
+                WHERE j.id = %s
+                  AND j.source_type = 'cloud_plan'
+                  AND j.source_table = 'cloud_broadcast_plan_recipients'
+                  AND r.broadcast_job_id = j.id
+                  AND r.send_status IN ('pending', 'queued', 'sending')
+                """,
+                (int(job_id),),
+            )
+            conn.execute(
+                """
+                UPDATE broadcast_jobs
+                SET status = 'simulated',
+                    outbound_task_id = %s,
+                    sent_count = 0,
+                    failed_count = 0,
+                    claim_token = '',
+                    lease_expires_at = NULL,
+                    next_retry_at = NULL,
+                    sent_at = NULL,
+                    last_error = '',
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = %s
+                  AND status = 'claimed'
+                  AND (%s = '' OR claim_token = %s)
+                """,
+                (outbound_task_id, int(job_id), token, token),
             )
 
     def mark_failed(self, job_id: int, *, error: str, failure_type: str = "handler_error", claim_token: str = "") -> None:
@@ -190,6 +262,7 @@ def _summary(*, limit: int, dry_run: bool) -> dict[str, Any]:
         "scanned_at": utcnow().isoformat(),
         "claimed": 0,
         "sent_ok": 0,
+        "simulated": 0,
         "sent_failed": 0,
         "skipped": 0,
         "results": [],
@@ -231,6 +304,11 @@ def _json_list(value: Any) -> list[Any]:
 
 def _text(value: Any) -> str:
     return str(value or "").strip()
+
+
+def _is_simulated_success(result: dict[str, Any]) -> bool:
+    mode = _text(result.get("mode") or result.get("adapter_mode")).lower()
+    return bool(result.get("ok")) and mode in {"fake", "fixture", "simulated", "test_fake"} and result.get("side_effect_executed") is False
 
 
 def _is_wecom_customer_group_job(job: dict[str, Any], payload: dict[str, Any]) -> bool:
@@ -536,11 +614,12 @@ def _dispatch_wecom_private(job: dict[str, Any], payload: dict[str, Any]) -> dic
         idempotency_key=_text(job.get("idempotency_key") or job.get("trace_id") or job.get("id")),
     )
     failure_type = _text(result.get("error_code")) or "handler_error"
+    simulated = _is_simulated_success(result)
     outbound_task_id = _record_outbound_task(
         job=job,
         request_payload=request_payload,
         response_payload=result,
-        status="created" if result.get("ok") else "failed",
+        status="simulated" if simulated else ("created" if result.get("ok") else "failed"),
         task_type="broadcast_job/wecom_private",
     )
     if not result.get("ok"):
@@ -552,6 +631,17 @@ def _dispatch_wecom_private(job: dict[str, Any], payload: dict[str, Any]) -> dic
         }
     if not outbound_task_id:
         return {"ok": False, "error": "outbound_task_record_missing", "failure_type": "handler_error"}
+    if simulated:
+        return {
+            "ok": True,
+            "status": "simulated",
+            "simulated": True,
+            "sent_count": 0,
+            "failed_count": 0,
+            "target_count": len(targets),
+            "outbound_task_id": outbound_task_id,
+            "side_effect_executed": False,
+        }
     _mark_cloud_plan_recipient_message_sent(payload, outbound_task_id=outbound_task_id)
     return {
         "ok": True,
@@ -587,15 +677,29 @@ def _dispatch_wecom_customer_group(job: dict[str, Any], payload: dict[str, Any])
     if result.get("ok") and result.get("exact_target_verified") is not True:
         chats = ",".join([str(item) for item in list(result.get("requested_chat_ids") or payload.get("chat_ids") or [])])
         return {"ok": False, "error": f"exact target not verified for requested chat ids: {chats}"}
+    simulated = _is_simulated_success(result)
     outbound_task_id = _record_outbound_task(
         job=job,
         request_payload=payload,
         response_payload=result,
-        status="created" if result.get("ok") else "failed",
+        status="simulated" if simulated else ("created" if result.get("ok") else "failed"),
     )
     if not result.get("ok"):
         error = str(result.get("error_message") or result.get("error_code") or "wecom group message dispatch failed")
         return {"ok": False, "error": error, "outbound_task_id": outbound_task_id}
+    if not outbound_task_id:
+        return {"ok": False, "error": "outbound_task_record_missing", "failure_type": "handler_error"}
+    if simulated:
+        return {
+            "ok": True,
+            "status": "simulated",
+            "simulated": True,
+            "sent_count": 0,
+            "failed_count": 0,
+            "target_count": len(list(payload.get("chat_ids") or [])),
+            "outbound_task_id": outbound_task_id,
+            "side_effect_executed": False,
+        }
     return {
         "ok": True,
         "sent_count": len(list(payload.get("chat_ids") or [])),
@@ -635,6 +739,22 @@ def run_broadcast_queue_worker(
             job_id = int(job.get("id") or 0)
             try:
                 outcome = dispatcher.dispatch(job)
+                if outcome.get("status") == "simulated":
+                    repo.mark_simulated(
+                        job_id,
+                        outbound_task_id=outcome.get("outbound_task_id") or outcome.get("task_id"),
+                        claim_token=claim_token,
+                    )
+                    summary["simulated"] += 1
+                    summary["results"].append(
+                        {
+                            "id": job_id,
+                            "status": "simulated",
+                            "target_count": int_value(outcome.get("target_count")) or _count_targets(job),
+                            "side_effect_executed": False,
+                        }
+                    )
+                    continue
                 if outcome.get("ok"):
                     sent_count = int_value(outcome.get("sent_count")) or _count_targets(job)
                     repo.mark_sent(

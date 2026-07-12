@@ -166,6 +166,8 @@ def test_push_center_jobs_filters_and_payload_redaction(next_client: TestClient)
         "pending",
         "running",
         "sent",
+        "simulated",
+        "unknown_after_dispatch",
         "failed",
         "sent_with_shadow_warning",
         "shadow_failed_not_business_failed",

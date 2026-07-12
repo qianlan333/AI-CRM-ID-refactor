@@ -76,28 +76,51 @@ def run_scheduled_external_effects(
             "operator": operator,
             "dry_run": False,
             "items": [],
-            "counts": {"candidate_count": 0, "processed_count": 0, "succeeded_count": 0, "failed_count": 0, "blocked_count": 0},
+            "counts": {
+                "candidate_count": 0,
+                "processed_count": 0,
+                "succeeded_count": 0,
+                "simulated_count": 0,
+                "skipped_count": 0,
+                "unknown_after_dispatch_count": 0,
+                "failed_count": 0,
+                "blocked_count": 0,
+                "lost_lease_count": 0,
+            },
             "real_external_call_executed": False,
         }
 
     items: list[dict[str, Any]] = []
-    counts = {"candidate_count": 0, "processed_count": 0, "succeeded_count": 0, "failed_count": 0, "blocked_count": 0}
+    counts = {
+        "candidate_count": 0,
+        "processed_count": 0,
+        "succeeded_count": 0,
+        "simulated_count": 0,
+        "skipped_count": 0,
+        "unknown_after_dispatch_count": 0,
+        "failed_count": 0,
+        "blocked_count": 0,
+        "lost_lease_count": 0,
+    }
     real_external_call_executed = False
+    ok = True
     for _index in range(batch_size):
         result = worker.run_due(batch_size=1, dry_run=False, effect_types=None, test_only=False)
         current = list(result.get("items") or [])
-        if not current:
-            break
-        items.extend(current)
         current_counts = dict(result.get("counts") or {})
         for key in counts:
             counts[key] += int(current_counts.get(key) or 0)
+        ok = bool(ok and result.get("ok"))
         real_external_call_executed = real_external_call_executed or bool(result.get("real_external_call_executed"))
+        if not current:
+            break
+        items.extend(current)
 
     return {
-        "ok": True,
+        "ok": ok,
+        "exit_code": 0 if ok else 1,
         "job": "external_effect_queue_run_due",
-        "status": "ok",
+        "status": "ok" if ok else "failed",
         "scheduler": scheduler,
         "operator": operator,
         "dry_run": False,

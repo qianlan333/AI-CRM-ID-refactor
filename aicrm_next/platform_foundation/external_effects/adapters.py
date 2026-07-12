@@ -382,6 +382,7 @@ class WebhookAdapter:
             error_code="" if status == "succeeded" else http_error_code(status_code),
             error_message="" if status == "succeeded" else _safe_error_message(response.text),
             real_external_call_executed=True,
+            provider_result_received=True,
         )
 
     def _execution_gate_error(self, job: ExternalEffectJob) -> str:
@@ -514,6 +515,7 @@ class WeComPrivateMessageAdapter:
                 request_summary=request_summary,
                 response_summary=response_summary,
                 real_external_call_executed=side_effect_executed,
+                provider_result_received=bool(side_effect_executed and response_summary.get("wecom_msgid_present")),
             )
         if not side_effect_executed:
             return ExternalEffectDispatchResult(
@@ -620,6 +622,10 @@ class WeComGroupMessageExternalEffectAdapter:
                 request_summary=request_summary,
                 response_summary=response_summary,
                 real_external_call_executed=bool(result.get("side_effect_executed")),
+                provider_result_received=bool(
+                    result.get("side_effect_executed")
+                    and (response_summary.get("wecom_msgid_present") or response_summary.get("audit_id"))
+                ),
             )
         error_code = str(result.get("error_code") or "wecom_group_message_failed").strip()
         return ExternalEffectDispatchResult(
@@ -721,6 +727,7 @@ class WeComWelcomeMessageAdapter:
                 "wecom_send_executed": True,
             },
             real_external_call_executed=True,
+            provider_result_received=True,
         )
 
     def _request_summary(self, job: ExternalEffectJob, payload: dict[str, Any]) -> dict[str, Any]:
@@ -844,6 +851,7 @@ class WeComContactTagAdapter:
                 "wecom_tag_executed": True,
             },
             real_external_call_executed=True,
+            provider_result_received=True,
         )
 
     def _request_summary(self, job: ExternalEffectJob, payload: dict[str, Any]) -> dict[str, Any]:
@@ -978,6 +986,7 @@ class WeComProfileUpdateAdapter:
                 "wecom_profile_update_executed": True,
             },
             real_external_call_executed=True,
+            provider_result_received=True,
         )
 
     def _request_summary(self, job: ExternalEffectJob, payload: dict[str, Any]) -> dict[str, Any]:
@@ -1118,6 +1127,7 @@ class WeChatPaymentAdapter:
                 "order_refund_status": str(sync_result.get("order_refund_status") or "") if isinstance(sync_result, dict) else "",
             },
             real_external_call_executed=True,
+            provider_result_received=True,
         )
 
     def _request_summary(self, job: ExternalEffectJob, payload: dict[str, Any], request_payload: dict[str, Any]) -> dict[str, Any]:

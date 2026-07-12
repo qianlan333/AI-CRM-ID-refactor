@@ -166,6 +166,37 @@ def test_r06_internal_event_outbox_files_force_full_postgres_ci() -> None:
     assert result["needs_full_ci"] is True
 
 
+def test_r07_external_effect_delivery_files_force_full_postgres_ci() -> None:
+    result = _select(
+        "aicrm_next/platform_foundation/external_effects/worker.py",
+        "aicrm_next/platform_foundation/external_effects/reconciliation.py",
+        "aicrm_next/background_jobs/broadcast_queue_worker.py",
+        "aicrm_next/external_push/service.py",
+        "aicrm_next/delivery_lineage/application.py",
+        "aicrm_next/integration_gateway/wecom_private_adapter.py",
+        "migrations/versions/0100_external_effect_delivery_lease.py",
+        "scripts/run_external_effect_queue_worker.py",
+        "scripts/ops/reconcile_external_effect_dispatch.py",
+        "deploy/openclaw-external-effect-worker.timer",
+        "docs/architecture/external_effect_delivery_state_machine.md",
+        "docs/runbooks/external_effect_delivery_reconciliation.md",
+        "tests/test_external_effect_delivery_lease.py",
+        "tests/test_external_effect_reconciliation.py",
+        "tests/test_broadcast_jobs_wecom_private_dispatch.py",
+    )
+
+    assert "external_effect_delivery_reliability" in result["matched_scopes"]
+    assert result["unmatched_files"] == []
+    assert "tests/test_external_effect_delivery_lease.py" in result["python_tests"]
+    assert "tests/test_external_effect_reconciliation.py" in result["python_tests"]
+    assert "tests/test_broadcast_jobs_wecom_private_dispatch.py" in result["python_tests"]
+    assert "tests/test_external_push_next_native_service.py" in result["python_tests"]
+    assert "tests/test_delivery_lineage_api.py" in result["python_tests"]
+    assert result["needs_postgres"] is True
+    assert result["architecture_gate"] == "full"
+    assert result["needs_full_ci"] is True
+
+
 def test_unionid_identity_cutover_changes_force_pg_full_ci_without_unmapped_files() -> None:
     result = _select(
         "aicrm_next/automation_agents/repository.py",

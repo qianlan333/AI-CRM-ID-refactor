@@ -17,6 +17,7 @@ class FakeRepo:
     def __init__(self, jobs: list[dict[str, Any]]) -> None:
         self.jobs = jobs
         self.sent: list[dict[str, Any]] = []
+        self.simulated: list[dict[str, Any]] = []
         self.failed: list[dict[str, Any]] = []
 
     def claim_due_jobs(self, *, limit: int, now: datetime, claim_token: str, lease_seconds: int) -> list[dict[str, Any]]:
@@ -24,6 +25,9 @@ class FakeRepo:
 
     def mark_sent(self, job_id: int, *, outbound_task_id: Any = None, sent_count: int = 0, failed_count: int = 0, claim_token: str = "") -> None:
         self.sent.append({"job_id": job_id, "outbound_task_id": outbound_task_id, "sent_count": sent_count, "failed_count": failed_count, "claim_token": claim_token})
+
+    def mark_simulated(self, job_id: int, *, outbound_task_id: Any = None, claim_token: str = "") -> None:
+        self.simulated.append({"job_id": job_id, "outbound_task_id": outbound_task_id, "claim_token": claim_token})
 
     def mark_failed(self, job_id: int, *, error: str, failure_type: str = "handler_error", claim_token: str = "") -> None:
         self.failed.append({"job_id": job_id, "error": error, "failure_type": failure_type, "claim_token": claim_token})
@@ -100,6 +104,82 @@ def test_wecom_private_job_is_dispatched_and_marked_sent(monkeypatch) -> None:
     assert repo.sent[0]["claim_token"]
     assert adapter.payload["sender"] == "HuangYouCan"
     assert adapter.payload["external_userids"] == ["wm_test"]
+
+
+def test_wecom_private_fake_success_is_simulated_and_never_projected_as_sent(monkeypatch) -> None:
+    adapter = Adapter(
+        {
+            "ok": True,
+            "mode": "fake",
+            "side_effect_executed": False,
+            "wecom_msgid": "fake-msg-1",
+            "result": {"msgid": "fake-msg-1"},
+        }
+    )
+    recorded: dict[str, Any] = {}
+
+    def record_outbound_task(**kwargs: Any) -> int:
+        recorded.update(kwargs)
+        return 889
+
+    monkeypatch.setattr("aicrm_next.integration_gateway.wecom_private_adapter.build_wecom_private_message_adapter", lambda: adapter)
+    monkeypatch.setattr(worker, "_record_outbound_task", record_outbound_task)
+    monkeypatch.setattr(
+        worker,
+        "_mark_cloud_plan_recipient_message_sent",
+        lambda *args, **kwargs: pytest.fail("simulated dispatch must not update sent projections"),
+    )
+    repo = FakeRepo([_job()])
+
+    summary = run_broadcast_queue_worker(repo=repo, dispatcher=SafeSkippedBroadcastDispatcher())
+
+    assert summary["simulated"] == 1
+    assert summary["sent_ok"] == 0
+    assert repo.sent == []
+    assert repo.simulated[0]["outbound_task_id"] == 889
+    assert recorded["status"] == "simulated"
+    assert summary["results"][0]["side_effect_executed"] is False
+
+
+def test_wecom_group_fake_success_is_simulated_and_never_marked_sent(monkeypatch) -> None:
+    class FakeGroupAdapter:
+        def create_group_message_task(self, payload: dict[str, Any], *, idempotency_key: str = "") -> dict[str, Any]:
+            return {
+                "ok": True,
+                "mode": "fake",
+                "side_effect_executed": False,
+                "exact_target_verified": True,
+                "requested_chat_ids": list(payload.get("chat_ids") or []),
+                "wecom_msgid": "fake-group-msg",
+            }
+
+    recorded: dict[str, Any] = {}
+    monkeypatch.setenv("AICRM_WECOM_EXECUTION_MODE", "execute")
+    monkeypatch.setattr(
+        "aicrm_next.integration_gateway.wecom_group_adapter.build_wecom_group_message_adapter",
+        lambda: FakeGroupAdapter(),
+    )
+    monkeypatch.setattr(worker, "_record_outbound_task", lambda **kwargs: recorded.update(kwargs) or 890)
+    repo = FakeRepo(
+        [
+            _job(
+                channel="wecom_customer_group",
+                content_type="wecom_customer_group",
+                target_kind="chat_id",
+                target_unionids_json="[]",
+                target_count=1,
+                payload={"channel": "wecom_customer_group", "chat_ids": ["chat-1"], "text": {"content": "hello"}},
+            )
+        ]
+    )
+
+    summary = run_broadcast_queue_worker(repo=repo, dispatcher=SafeSkippedBroadcastDispatcher())
+
+    assert summary["simulated"] == 1
+    assert summary["sent_ok"] == 0
+    assert repo.sent == []
+    assert repo.simulated[0]["outbound_task_id"] == 890
+    assert recorded["status"] == "simulated"
 
 
 def test_wecom_private_global_execution_mode_disabled_blocks_before_adapter(monkeypatch) -> None:
@@ -297,6 +377,99 @@ def test_cloud_plan_failure_marks_recipient_and_message_failed(next_pg_schema) -
     assert "not external contact" in recipient_row["last_error"]
     assert message_row["status"] == "failed"
     assert "not external contact" in message_row["last_error"]
+
+
+def test_cloud_plan_simulation_updates_all_projections_without_sent_timestamp(next_pg_schema) -> None:
+    del next_pg_schema
+    plan_id = "plan_simulation_sync_1"
+    claim_token = "claim-simulation-1"
+    with get_session_factory()() as session:
+        session.execute(
+            text(
+                """
+                INSERT INTO cloud_broadcast_plans (plan_id, trace_id, session_id, operator, intent)
+                VALUES (:plan_id, :plan_id, 'test-session', 'tester', 'simulation sync')
+                """
+            ),
+            {"plan_id": plan_id},
+        )
+        recipient_id = int(
+            session.execute(
+                text(
+                    """
+                    INSERT INTO cloud_broadcast_plan_recipients (
+                        plan_id, unionid, owner_userid, display_name,
+                        planned_message_count, approval_status, send_status
+                    )
+                    VALUES (:plan_id, 'union_simulated', 'HuangYouCan', '模拟客户', 1, 'approved', 'queued')
+                    RETURNING id
+                    """
+                ),
+                {"plan_id": plan_id},
+            ).scalar_one()
+        )
+        session.execute(
+            text(
+                """
+                INSERT INTO cloud_broadcast_plan_recipient_messages (
+                    plan_id, recipient_id, unionid, content_text, status
+                )
+                VALUES (:plan_id, :recipient_id, 'union_simulated', 'hello', 'queued')
+                """
+            ),
+            {"plan_id": plan_id, "recipient_id": recipient_id},
+        )
+        job_id = int(
+            session.execute(
+                text(
+                    """
+                    INSERT INTO broadcast_jobs (
+                        source_type, source_id, source_table, status,
+                        business_domain, idempotency_key, channel, target_kind,
+                        target_unionids_json, target_count, content_type, content_payload,
+                        claim_token, lease_expires_at
+                    )
+                    VALUES (
+                        'cloud_plan', :source_id, 'cloud_broadcast_plan_recipients', 'claimed',
+                        'ai_assistant', :idempotency_key, 'wecom_private', 'unionid',
+                        '["union_simulated"]'::jsonb, 1, 'cloud_plan', '{}'::jsonb,
+                        :claim_token, CURRENT_TIMESTAMP + INTERVAL '5 minutes'
+                    )
+                    RETURNING id
+                    """
+                ),
+                {
+                    "source_id": f"{plan_id}:{recipient_id}",
+                    "idempotency_key": f"cloud_plan_recipient:{plan_id}:{recipient_id}",
+                    "claim_token": claim_token,
+                },
+            ).scalar_one()
+        )
+        session.execute(
+            text("UPDATE cloud_broadcast_plan_recipients SET broadcast_job_id = :job_id WHERE id = :recipient_id"),
+            {"job_id": job_id, "recipient_id": recipient_id},
+        )
+        session.commit()
+
+    PostgresBroadcastQueueRepository().mark_simulated(job_id, claim_token=claim_token)
+
+    with get_session_factory()() as session:
+        job_row = session.execute(
+            text("SELECT status, sent_count, sent_at, claim_token FROM broadcast_jobs WHERE id = :job_id"),
+            {"job_id": job_id},
+        ).mappings().one()
+        recipient_row = session.execute(
+            text("SELECT send_status FROM cloud_broadcast_plan_recipients WHERE id = :recipient_id"),
+            {"recipient_id": recipient_id},
+        ).mappings().one()
+        message_row = session.execute(
+            text("SELECT status, sent_at FROM cloud_broadcast_plan_recipient_messages WHERE recipient_id = :recipient_id"),
+            {"recipient_id": recipient_id},
+        ).mappings().one()
+
+    assert dict(job_row) == {"status": "simulated", "sent_count": 0, "sent_at": None, "claim_token": ""}
+    assert recipient_row["send_status"] == "simulated"
+    assert dict(message_row) == {"status": "simulated", "sent_at": None}
 
 
 def test_wecom_private_adapter_canonicalizes_miniprogram_attachment(monkeypatch) -> None:

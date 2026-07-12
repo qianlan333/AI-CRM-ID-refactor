@@ -23,6 +23,8 @@ from .status_mapper import standard_push_status
 EFFECTIVE_PENDING = "pending"
 EFFECTIVE_RUNNING = "running"
 EFFECTIVE_SENT = "sent"
+EFFECTIVE_SIMULATED = "simulated"
+EFFECTIVE_UNKNOWN_AFTER_DISPATCH = "unknown_after_dispatch"
 EFFECTIVE_FAILED = "failed"
 EFFECTIVE_SENT_WITH_SHADOW_WARNING = "sent_with_shadow_warning"
 EFFECTIVE_SHADOW_FAILED_NOT_BUSINESS_FAILED = "shadow_failed_not_business_failed"
@@ -31,6 +33,8 @@ EFFECTIVE_STATUS_LABELS = {
     EFFECTIVE_PENDING: "待执行",
     EFFECTIVE_RUNNING: "执行中",
     EFFECTIVE_SENT: "已发送",
+    EFFECTIVE_SIMULATED: "模拟执行",
+    EFFECTIVE_UNKNOWN_AFTER_DISPATCH: "结果待核对",
     EFFECTIVE_FAILED: "发送失败",
     EFFECTIVE_SENT_WITH_SHADOW_WARNING: "已发送 · 影子链路异常",
     EFFECTIVE_SHADOW_FAILED_NOT_BUSINESS_FAILED: "影子链路失败，未发现主发送记录",
@@ -609,11 +613,18 @@ class PushCenterProjectionService:
 
     def _effective_status(self, group: ProjectionGroup) -> str:
         primary_sent = any(job.get("raw_status") == "sent" for job in group.broadcast_jobs)
-        primary_failed = any(job.get("raw_status") in {"failed", "cancelled"} for job in group.broadcast_jobs)
+        primary_simulated = any(job.get("raw_status") == "simulated" for job in group.broadcast_jobs)
+        primary_unknown = any(job.get("raw_status") == "unknown_after_dispatch" for job in group.broadcast_jobs)
+        primary_failed = any(
+            job.get("raw_status") in {"failed", "failed_retryable", "failed_terminal", "blocked", "cancelled"}
+            for job in group.broadcast_jobs
+        )
         primary_running = any(job.get("raw_status") in {"claimed", "running", "dispatching"} for job in group.broadcast_jobs)
         primary_pending = any(job.get("raw_status") in {"queued", "waiting_approval", "pending"} for job in group.broadcast_jobs)
         shadow_failed = any(self._is_shadow_failed(job) for job in group.external_effect_jobs)
         external_sent = any(job.get("raw_status") == "succeeded" and not self._is_shadow_job(job) for job in group.external_effect_jobs)
+        external_simulated = any(job.get("raw_status") == "simulated" for job in group.external_effect_jobs)
+        external_unknown = any(job.get("raw_status") == "unknown_after_dispatch" for job in group.external_effect_jobs)
         external_failed = any(standard_push_status(job.get("raw_status")) == "failed" and not self._is_shadow_job(job) for job in group.external_effect_jobs)
         external_running = any(standard_push_status(job.get("raw_status")) == "running" for job in group.external_effect_jobs)
         external_pending = any(standard_push_status(job.get("raw_status")) == "pending" for job in group.external_effect_jobs)
@@ -621,6 +632,10 @@ class PushCenterProjectionService:
             return EFFECTIVE_SENT_WITH_SHADOW_WARNING
         if primary_sent or external_sent:
             return EFFECTIVE_SENT
+        if primary_unknown or external_unknown:
+            return EFFECTIVE_UNKNOWN_AFTER_DISPATCH
+        if primary_simulated or external_simulated:
+            return EFFECTIVE_SIMULATED
         if primary_failed or external_failed:
             return EFFECTIVE_FAILED
         if shadow_failed:

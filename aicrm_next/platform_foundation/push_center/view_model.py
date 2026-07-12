@@ -222,6 +222,20 @@ def _reconciliation_decision(job: dict[str, Any], attempts: list[dict[str, Any]]
             "operator_action_required": True,
             "next_action_label": "检查影子链路",
         }
+    if effective_status == "simulated":
+        return {
+            "business_explanation": "任务仅完成模拟执行，没有发生真实外部发送。",
+            "retryable": False,
+            "operator_action_required": False,
+            "next_action_label": "无需操作",
+        }
+    if effective_status == "unknown_after_dispatch":
+        return {
+            "business_explanation": "外部调用结果不确定；必须先核对服务商回执，禁止自动重试。",
+            "retryable": False,
+            "operator_action_required": True,
+            "next_action_label": "核对服务商结果",
+        }
     if effective_status == "shadow_failed_not_business_failed":
         return {
             "business_explanation": "仅发现影子链路失败，尚未发现对应主发送记录；需要确认主发送是否由其他链路完成。",

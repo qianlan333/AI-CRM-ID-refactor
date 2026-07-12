@@ -604,11 +604,13 @@ tables:
     write_owners:
       - aicrm_next.ai_assist.external_campaigns_repo
       - aicrm_next.admin_jobs.repository
+      - aicrm_next.background_jobs.broadcast_queue_worker
       - aicrm_next.cloud_orchestrator.repository
     read_owners:
       - aicrm_next.admin_jobs.repository
       - aicrm_next.admin_read_model.repo
       - aicrm_next.ai_assist.external_campaigns_repo
+      - aicrm_next.background_jobs.broadcast_queue_worker
       - aicrm_next.cloud_orchestrator.repository
     replacement: outbound_tasks or external_effect_job after broadcast worker convergence is designed
     drop_candidate: false
@@ -617,14 +619,14 @@ tables:
       - admin broadcast job diagnostics
       - AI Assist direct WeCom private send queue
       - cloud-orchestrator private broadcast scheduling
-    migration_source: 0008_broadcast_jobs, hardened by 0021/0066 and direct source types by 0080
+    migration_source: 0008_broadcast_jobs, hardened by 0021/0066/0089 and truthful simulated delivery by 0100
     pii_level: internal_contact
     status_enum:
       column: status
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_repository_ownership_guard.py
-    notes: Broadcast queue and audit ledger. AI Assist external token sends create direct one-recipient jobs here by default instead of using pool allocation or campaign_members.
+    notes: Broadcast queue and audit ledger. Fake provider success is simulated, never sent; claim-token CAS protects final projection updates.
 
   campaigns:
     domain: campaign
@@ -1651,6 +1653,7 @@ tables:
       column: status
     read_owners:
       - aicrm_next.platform_foundation.external_effects.worker
+      - aicrm_next.platform_foundation.external_effects.reconciliation
       - push center projection
       - admin external effect APIs
     replacement: none; canonical external side-effect queue
@@ -1660,12 +1663,12 @@ tables:
       - external effect service enqueue
       - external effect worker
       - push center reconciliation
-    migration_source: 0039_external_effect_queue
+    migration_source: 0039_external_effect_queue, hardened by 0100_external_effect_delivery_lease
     pii_level: internal_contact
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_event_effect_table_lineage.py
-    notes: Canonical queue for real external side effects.
+    notes: Canonical queue for real external side effects. Scheduler, realtime, and manual dispatch share lease-token CAS; uncertain outcomes are quarantined for reconciliation and fake outcomes are simulated.
 
   external_effect_attempt:
     domain: external_effects
@@ -1683,7 +1686,7 @@ tables:
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_event_effect_table_lineage.py
-    notes: Attempt audit for external_effect_job execution.
+    notes: Append-only attempt audit for external_effect_job execution. Provider result and job state are committed atomically under the active lease.
 
   owner_migration_import_sessions:
     domain: owner_migration
@@ -2484,6 +2487,9 @@ tables:
     domain: cloud_orchestrator
     lifecycle: canonical
     write_owner: aicrm_next.cloud_orchestrator
+    write_owners:
+      - aicrm_next.background_jobs.broadcast_queue_worker
+      - aicrm_next.cloud_orchestrator
     read_owners:
       - aicrm_next.cloud_orchestrator
       - aicrm_next.send_content
@@ -2497,12 +2503,15 @@ tables:
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
-    notes: Registered from the id-dev public schema so schema_drift_guard can fail closed on future unmanaged table changes.
+    notes: Cloud-plan message projection. Broadcast fake execution is recorded as simulated without sent_at.
 
   cloud_broadcast_plan_recipients:
     domain: cloud_orchestrator
     lifecycle: canonical
     write_owner: aicrm_next.cloud_orchestrator
+    write_owners:
+      - aicrm_next.background_jobs.broadcast_queue_worker
+      - aicrm_next.cloud_orchestrator
     read_owners:
       - aicrm_next.cloud_orchestrator
       - aicrm_next.growth_orchestration
@@ -2516,7 +2525,7 @@ tables:
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
-    notes: Registered from the id-dev public schema so schema_drift_guard can fail closed on future unmanaged table changes.
+    notes: Cloud-plan recipient projection. Broadcast fake execution is recorded as simulated, never sent.
 
   cloud_broadcast_plans:
     domain: cloud_orchestrator
@@ -2981,6 +2990,9 @@ tables:
     domain: admin_jobs
     lifecycle: canonical
     write_owner: aicrm_next.admin_jobs
+    write_owners:
+      - aicrm_next.admin_jobs
+      - aicrm_next.background_jobs.broadcast_queue_worker
     read_owners:
       - aicrm_next.admin_jobs
       - aicrm_next.admin_read_model
@@ -2995,7 +3007,7 @@ tables:
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
-    notes: Registered from the id-dev public schema so schema_drift_guard can fail closed on future unmanaged table changes.
+    notes: Outbound provider-task audit. Fake adapter results use simulated instead of created/sent semantics.
 
   radar_links:
     domain: radar
