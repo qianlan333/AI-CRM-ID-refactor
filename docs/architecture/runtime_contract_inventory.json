@@ -491,7 +491,7 @@
       "accessor": "os.getenv",
       "file": "aicrm_next/admin_config/application.py",
       "key": "AICRM_NEXT_ALIPAY_MODE",
-      "line": 1745
+      "line": 968
     },
     {
       "accessor": "os.getenv",
@@ -689,7 +689,7 @@
       "accessor": "os.getenv",
       "file": "aicrm_next/admin_config/application.py",
       "key": "AICRM_NEXT_WECHAT_PAY_MODE",
-      "line": 1739
+      "line": 962
     },
     {
       "accessor": "os.getenv",

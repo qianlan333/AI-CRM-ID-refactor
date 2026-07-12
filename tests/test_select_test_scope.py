@@ -270,6 +270,26 @@ def test_ai_audience_e2e_composition_has_a_permanent_full_ci_scope() -> None:
     assert result["architecture_gate"] == "full"
 
 
+def test_runtime_module_size_governance_has_a_permanent_full_ci_scope() -> None:
+    result = _select(
+        "tools/check_runtime_module_sizes.py",
+        "docs/architecture/runtime_module_size_baseline.yml",
+        "tests/test_runtime_module_size_guard.py",
+        "tests/test_runtime_module_split_contract.py",
+    )
+
+    assert "runtime_module_size_governance" in result["matched_scopes"]
+    assert result["unmatched_files"] == []
+    assert "tests/test_runtime_module_size_guard.py" in result["python_tests"]
+    assert "tests/test_runtime_module_split_contract.py" in result["python_tests"]
+    assert "tests/test_internal_events_mvp.py" in result["python_tests"]
+    assert "tests/test_questionnaire_application_contract.py" in result["python_tests"]
+    assert "tests/test_admin_config_next.py" in result["python_tests"]
+    assert result["needs_postgres"] is True
+    assert result["needs_full_ci"] is True
+    assert result["architecture_gate"] == "full"
+
+
 def test_r08_commerce_fulfillment_files_force_full_postgres_ci() -> None:
     result = _select(
         "aicrm_next/commerce/fulfillment_reconciliation.py",
