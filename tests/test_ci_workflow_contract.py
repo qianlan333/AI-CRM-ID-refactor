@@ -121,10 +121,15 @@ def test_test_deploy_waits_for_successful_ci_fast_on_main() -> None:
     assert "https://id-dev.youcangogogo.com/health" in source
     assert 'if [ "$deploy_target" = "production" ]; then' in source
     assert "set -o pipefail" in source
-    assert (
-        "python scripts/ops/check_admin_read_pages_smoke.py --base-url http://127.0.0.1:5001 --require-admin-cookie "
-        "| tee /tmp/aicrm-admin-read-pages-smoke.json"
-    ) in source
+    session_issue_index = source.index("python3 scripts/ops/create_deploy_smoke_session.py issue")
+    admin_smoke_index = source.index("python scripts/ops/check_admin_read_pages_smoke.py", session_issue_index)
+    session_revoke_index = source.index(
+        "python3 scripts/ops/create_deploy_smoke_session.py revoke",
+        admin_smoke_index,
+    )
+    assert session_issue_index < admin_smoke_index < session_revoke_index
+    assert '--admin-cookie-file "$deploy_smoke_session_file"' in source
+    assert "tee /tmp/aicrm-admin-read-pages-smoke.json" in source
 
 
 def test_production_promotion_is_manual_test_verified_and_environment_approved() -> None:
