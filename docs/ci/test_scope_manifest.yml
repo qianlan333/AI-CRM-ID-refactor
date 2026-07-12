@@ -8,6 +8,7 @@
     "requirements.lock",
     ".github/**",
     "scripts/ci/**",
+    "scripts/ops/create_deploy_smoke_session.py",
     "scripts/ops/ensure_production_public_release_route.py",
     "scripts/ops/reconcile_wecom_callback_runtime.py",
     "scripts/run_wecom_callback_inbox_worker.py",
@@ -688,6 +689,7 @@
         "aicrm_next/platform_foundation/push_center/view_model.py",
         "aicrm_next/shared/admin_read_fallback.py",
         "scripts/ops/check_admin_read_pages_smoke.py",
+        "scripts/ops/create_deploy_smoke_session.py",
         "tests/test_admin_read_pages_smoke.py",
         "tests/test_automation_admin_pages_next_native.py",
         "tests/test_automation_agents_admin_pages.py",
@@ -1005,6 +1007,7 @@
       "paths": [
         ".github/**",
         "scripts/ci/**",
+        "scripts/ops/create_deploy_smoke_session.py",
         "scripts/ops/ensure_production_public_release_route.py",
         "scripts/ops/manage_production_runtime_units.py",
         "scripts/diagnose_external_orders_blockers.py",
