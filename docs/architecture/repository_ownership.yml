@@ -153,14 +153,6 @@ repositories:
       - automation_channel_assignee
       - automation_channel_assignment_event
       - automation_channel_qrcode_asset
-  aicrm_next/automation_engine/group_ops/draft_repository.py:
-    capability_owner: aicrm_next.automation_engine.group_ops
-    table_reads: []
-    table_writes: []
-  aicrm_next/automation_engine/group_ops/governance_repository.py:
-    capability_owner: aicrm_next.automation_engine.group_ops
-    table_reads: []
-    table_writes: []
   aicrm_next/automation_engine/group_ops/postgres_repo.py:
     capability_owner: aicrm_next.automation_engine.group_ops
     table_reads:
@@ -201,8 +193,19 @@ repositories:
     table_writes: []
   aicrm_next/background_jobs/repository.py:
     capability_owner: aicrm_next.background_jobs
-    table_reads: []
-    table_writes: []
+    table_reads:
+      - broadcast_job_events
+      - broadcast_jobs
+      - cloud_broadcast_plan_recipient_messages
+      - cloud_broadcast_plan_recipients
+      - crm_user_identity
+      - outbound_tasks
+    table_writes:
+      - broadcast_job_events
+      - broadcast_jobs
+      - cloud_broadcast_plan_recipient_messages
+      - cloud_broadcast_plan_recipients
+      - outbound_tasks
   aicrm_next/channel_entry/identity_bridge_repo.py:
     capability_owner: aicrm_next.channel_entry
     table_reads:

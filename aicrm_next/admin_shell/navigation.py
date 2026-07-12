@@ -15,10 +15,6 @@ class AdminRoute:
 
 ADMIN_ROUTE_REGISTRY: dict[str, AdminRoute] = {
     "api.admin_console_dashboard": AdminRoute("api.admin_console_dashboard", "/admin"),
-    "api.admin_p1_group_ops_workspace": AdminRoute(
-        "api.admin_p1_group_ops_workspace",
-        "/admin/p1/group-ops-workspace",
-    ),
     "api.admin_console_customers": AdminRoute("api.admin_console_customers", "/admin/customers"),
     "api.admin_owner_migration_page": AdminRoute("api.admin_owner_migration_page", "/admin/owner-migration"),
     "api.admin_owner_migration_action": AdminRoute("api.admin_owner_migration_action", "/admin/owner-migration"),

@@ -30,7 +30,7 @@ def test_route_policy_inventory_covers_every_runtime_business_route() -> None:
     index = RoutePolicyIndex.from_manifest(MANIFEST)
     inventory = collect_route_inventory(app)
 
-    assert len(index) == len(inventory) == 704
+    assert len(index) == len(inventory) == 679
     for route in app.routes:
         if not isinstance(route, APIRoute) or route.path in FASTAPI_BUILTIN_ROUTE_PATHS:
             continue
@@ -74,7 +74,7 @@ def test_known_unsafe_routes_have_explicit_deny_by_default_policies() -> None:
         },
     )
     _assert_policy(
-        "/api/automation/group-ops/plans",
+        "/api/admin/automation-conversion/group-ops/plans",
         "POST",
         {
             "audience": "admin",

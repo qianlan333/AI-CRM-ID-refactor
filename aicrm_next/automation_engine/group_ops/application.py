@@ -50,8 +50,6 @@ from .external_effects import (
     GROUP_OPS_MESSAGE_LOOPBACK,
     external_effect_response_defaults,
     group_ops_effect_action_type,
-    group_ops_external_effect_send_mode,
-    group_ops_outbound_mode,
     parse_external_effect_scheduled_at,
     plan_group_ops_action_effect,
     plan_group_ops_external_effect,
@@ -779,7 +777,6 @@ class RunGroupOpsPlanDueCommand:
                 source_route="/api/admin/automation-conversion/group-ops/plans/{plan_id}/run-due",
                 source_command_id=source_id,
                 idempotency_key=f"group-ops-run-due:{plan_id}:node:{candidate['node_id']}:{clean_text(request.scheduled_at)}",
-                outbound_mode=outbound_mode,
                 test_loopback=bool(request.external_effect_test_loopback),
                 test_receiver_base_url=clean_text(request.test_receiver_base_url),
                 test_receiver_response_status=int(request.test_receiver_response_status or 200),
@@ -1194,7 +1191,7 @@ class ReceiveGroupOpsWebhookCommand:
             executed = 0
             skipped = 0
             failed = 0
-            outbound_mode = group_ops_outbound_mode()
+            outbound_mode = "external_effect"
             external_effect_job_ids: list[int] = []
             port = self._action_port
             if port is None:
@@ -1236,7 +1233,6 @@ class ReceiveGroupOpsWebhookCommand:
                             idempotency_key=idem,
                             owner_userid=clean_text(plan.get("owner_userid")),
                             webhook_key=clean_text(plan.get("webhook_key")),
-                            outbound_mode=outbound_mode,
                             test_loopback=bool(request.external_effect_test_loopback),
                             test_receiver_base_url=clean_text(request.test_receiver_base_url),
                             test_receiver_response_status=int(request.test_receiver_response_status or 200),
@@ -1335,7 +1331,7 @@ class ReceiveGroupOpsWebhookCommand:
             broadcast_ids = duplicate.get("broadcast_job_ids", [])
             return _response(
                 {
-                    **external_effect_response_defaults(outbound_mode="external_effect"),
+                    **external_effect_response_defaults(),
                     "status": "duplicate",
                     "event": duplicate,
                     "broadcast_job_ids": broadcast_ids,
@@ -1387,8 +1383,6 @@ class ReceiveGroupOpsWebhookCommand:
             source_event_id=str(event["id"]),
             source_command_id=f"{plan['id']}:webhook:{event['id']}",
             idempotency_key=f"group-ops-legacy-bundle:{plan['id']}:{event['id']}:{request_idempotency}",
-            outbound_mode=outbound_mode,
-            force_shadow=False,
             test_loopback=bool(request.external_effect_test_loopback),
             test_receiver_base_url=clean_text(request.test_receiver_base_url),
             test_receiver_response_status=int(request.test_receiver_response_status or 200),
@@ -1404,7 +1398,7 @@ class ReceiveGroupOpsWebhookCommand:
                 "legacy_broadcast_job_ids": [],
                 "external_effect_job_ids": external_effect_job_ids,
                 "outbound_mode": outbound_mode,
-                "external_effect_send_mode": group_ops_external_effect_send_mode(),
+                "external_effect_send_mode": "wecom_group",
                 "legacy_outbound_disabled": outbound_mode == "external_effect",
                 "external_effect_required": outbound_mode == "external_effect",
                 "real_external_call_executed": False,

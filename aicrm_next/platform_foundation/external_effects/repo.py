@@ -80,6 +80,7 @@ def _public_job(row: dict[str, Any] | None) -> ExternalEffectJob | None:
     ):
         payload[key] = public_datetime(payload.get(key))
     payload["id"] = int(payload.get("id") or 0)
+    payload["created_on_plan"] = bool(payload.get("created_on_plan"))
     payload["priority"] = int(payload.get("priority") or 0)
     payload["attempt_count"] = int(payload.get("attempt_count") or 0)
     payload["max_attempts"] = int(payload.get("max_attempts") or 0)
@@ -326,7 +327,7 @@ class SQLAlchemyExternalEffectRepository(ExternalEffectRepository):
                 CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
             )
             ON CONFLICT (tenant_id, idempotency_key) DO NOTHING
-            RETURNING *
+            RETURNING *, TRUE AS created_on_plan
             """,
             {
                 "tenant_id": _text(request.tenant_id) or DEFAULT_TENANT_ID,
@@ -363,7 +364,7 @@ class SQLAlchemyExternalEffectRepository(ExternalEffectRepository):
             assert job is not None
             return job
         existing = self._one(
-            "SELECT * FROM external_effect_job WHERE tenant_id = :tenant_id AND idempotency_key = :idempotency_key LIMIT 1",
+            "SELECT *, FALSE AS created_on_plan FROM external_effect_job WHERE tenant_id = :tenant_id AND idempotency_key = :idempotency_key LIMIT 1",
             {"tenant_id": _text(request.tenant_id) or DEFAULT_TENANT_ID, "idempotency_key": key},
         )
         job = _public_job(existing)
@@ -1158,7 +1159,7 @@ class InMemoryExternalEffectRepository(ExternalEffectRepository):
         tenant_id = _text(request.tenant_id) or DEFAULT_TENANT_ID
         for row in self._jobs:
             if row["tenant_id"] == tenant_id and row["idempotency_key"] == key:
-                job = _public_job(row)
+                job = _public_job({**row, "created_on_plan": False})
                 assert job is not None
                 return job
         now = utcnow()
@@ -1215,7 +1216,7 @@ class InMemoryExternalEffectRepository(ExternalEffectRepository):
         }
         self._next_id += 1
         self._jobs.append(row)
-        job = _public_job(row)
+        job = _public_job({**row, "created_on_plan": True})
         assert job is not None
         return job
 
