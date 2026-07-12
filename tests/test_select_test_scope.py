@@ -347,6 +347,14 @@ def test_sidebar_write_change_selects_write_command_regression() -> None:
     assert result["needs_full_ci"] is True
 
 
+def test_db_session_runtime_audit_keeps_customer_repository_scope() -> None:
+    result = _select("tests/test_db_session_runtime_audit.py")
+
+    assert result["unmatched_files"] == []
+    assert "customer_read_model_sidebar" in result["matched_scopes"]
+    assert "tests/test_db_session_runtime_audit.py" in result["python_tests"]
+
+
 def test_signed_session_change_selects_sidebar_shared_runtime_slice() -> None:
     result = _select("aicrm_next/shared/signed_session.py")
 

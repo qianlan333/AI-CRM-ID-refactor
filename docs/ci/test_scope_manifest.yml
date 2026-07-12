@@ -300,12 +300,14 @@
         "aicrm_next/frontend_compat/static/sidebar_workbench/**",
         "tests/test_sidebar_*.py",
         "tests/test_customer_*read_model*.py",
+        "tests/test_db_session_runtime_audit.py",
         "tests/test_next_sidebar_workbench_routes.py"
       ],
       "python_tests": [
         "tests/test_sidebar_v2_api.py",
         "tests/test_sidebar_write_commands.py",
         "tests/test_customer_read_model_request_scope.py",
+        "tests/test_db_session_runtime_audit.py",
         "tests/test_sidebar_workbench_frontend.py",
         "tests/test_sidebar_jssdk_frontend_contract.py"
       ],
