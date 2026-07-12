@@ -278,9 +278,25 @@ jobs:
               --secret-store-dir "$AICRM_SECRET_STORE_DIR" \
               --environment-file /home/ubuntu/.openclaw-wecom-pg.env \
               | tee /tmp/aicrm-secret-migration.json
+            if [ "$deploy_target" = "production" ]; then
+              auth_issuer="https://www.youcangogogo.com"
+            else
+              auth_issuer="https://id-dev.youcangogogo.com"
+            fi
+            python3 scripts/ops/bootstrap_auth_clients.py \
+              --apply \
+              --issuer "$auth_issuer" \
+              --secret-store-dir "$AICRM_SECRET_STORE_DIR" \
+              --environment-file /home/ubuntu/.openclaw-wecom-pg.env \
+              | tee /tmp/aicrm-auth-client-bootstrap.json
             set -a
             source /home/ubuntu/.openclaw-wecom-pg.env
             set +a
+            python3 scripts/ops/check_auth_readiness.py \
+              --issuer "$auth_issuer" \
+              --secret-store-dir "$AICRM_SECRET_STORE_DIR" \
+              --environment-file /home/ubuntu/.openclaw-wecom-pg.env \
+              | tee /tmp/aicrm-auth-readiness.json
             python3 scripts/ops/check_secret_reference_cutover.py \
               --secret-store-dir "$AICRM_SECRET_STORE_DIR" \
               --environment-file /home/ubuntu/.openclaw-wecom-pg.env \
