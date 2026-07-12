@@ -235,6 +235,12 @@ def test_baseline_requires_owned_time_bounded_scc_entries(tmp_path: Path) -> Non
         load_baseline(baseline)
 
 
+def test_admin_read_model_does_not_reverse_import_admin_config() -> None:
+    report = scan_import_graph(ROOT)
+
+    assert ("admin_read_model", "admin_config") not in _edge_pairs(report)
+
+
 def test_repository_import_graph_matches_registered_r12_baseline() -> None:
     report, violations = check_import_graph(
         root=ROOT,
@@ -243,15 +249,12 @@ def test_repository_import_graph_matches_registered_r12_baseline() -> None:
 
     assert violations == []
     assert len(report.contexts) == 40
-    assert len(report.edges) == 194
+    assert len(report.edges) == 193
     assert report.cyclic_components == (
         (
             "admin_auth",
-            "admin_config",
             "admin_jobs",
-            "admin_read_model",
             "admin_shell",
-            "ai_assist",
             "ai_audience_ops",
             "automation_agents",
             "automation_engine",
@@ -270,7 +273,6 @@ def test_repository_import_graph_matches_registered_r12_baseline() -> None:
             "public_product",
             "questionnaire",
             "send_content",
-            "send_targets",
             "service_period",
         ),
     )
