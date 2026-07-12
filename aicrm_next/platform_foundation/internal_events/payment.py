@@ -210,7 +210,26 @@ def webhook_order_paid_consumer(event: InternalEvent, run: InternalEventConsumer
                 "effect_type": WEBHOOK_ORDER_PAID_PUSH,
             },
         )
-    planned = _plan_order_paid_external_push_from_db(order=order, transaction=transaction, event=event)
+    try:
+        planned = _plan_order_paid_external_push_from_db(order=order, transaction=transaction, event=event)
+    except Exception as exc:
+        return InternalEventConsumerResult(
+            status="failed_retryable",
+            request_summary={"event_id": event.event_id, "out_trade_no": out_trade_no},
+            response_summary={"external_effect_job_created": False, "effect_type": WEBHOOK_ORDER_PAID_PUSH},
+            error_code="external_push_plan_failed",
+            error_message=str(exc)[:500],
+            retry_after_seconds=300,
+        )
+    if planned and not planned.get("ok", True):
+        return InternalEventConsumerResult(
+            status="failed_retryable",
+            request_summary={"event_id": event.event_id, "out_trade_no": out_trade_no},
+            response_summary={"external_effect_job_created": False, "effect_type": WEBHOOK_ORDER_PAID_PUSH},
+            error_code="external_push_plan_failed",
+            error_message=_text(planned.get("reason") or "external push planner returned a failed result"),
+            retry_after_seconds=300,
+        )
     if not planned or planned.get("skipped"):
         return InternalEventConsumerResult(
             status="succeeded",

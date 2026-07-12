@@ -15,16 +15,13 @@ from fastapi import Request
 from fastapi.responses import JSONResponse, RedirectResponse
 
 from aicrm_next.commerce.domain import completion_redirect_projection, safe_completion_redirect_url
-from aicrm_next.commerce.external_push_admin import plan_order_paid_external_push_effect
 from aicrm_next.navigation_target import completion_action_for_target, completion_target_projection
-from aicrm_next.commerce.external_push_outbox import enqueue_transaction_paid_outbox
 from aicrm_next.commerce.order_expiration import close_expired_wechat_pay_orders, pending_order_expires_at_text
 from aicrm_next.commerce.product_code_aliases import product_code_filter_values
 from aicrm_next.identity_contact.dto import IdentityResolveResult, ResolvePersonIdentityRequest
 from aicrm_next.identity_contact.resolver import resolve_identity_with_dbapi, resolved_unionid
 from aicrm_next.integration_gateway.wechat_pay_client import WeChatPayClient, WeChatPayClientConfig, WeChatPayClientError
 from aicrm_next.integration_gateway.wechat_oauth_client import WeChatOAuthClientError, build_wechat_oauth_client
-from aicrm_next.platform_foundation.internal_events.config import event_type_allowed, payment_internal_events_enabled
 from aicrm_next.platform_foundation.internal_events.outbox import enqueue_transactional_internal_event_outbox
 from aicrm_next.platform_foundation.internal_events.payment import PAYMENT_SUCCEEDED_EVENT_TYPE, build_payment_succeeded_event_request
 from aicrm_next.questionnaire.oauth import questionnaire_h5_identity_from_cookies
@@ -361,15 +358,12 @@ def _enqueue_payment_succeeded_internal_event_outbox(
     *,
     order: dict[str, Any],
     transaction: dict[str, Any],
-    outbox: dict[str, Any] | None,
     source_route: str,
 ) -> dict[str, Any] | None:
-    if not payment_internal_events_enabled() or not event_type_allowed(PAYMENT_SUCCEEDED_EVENT_TYPE):
-        return None
     request = build_payment_succeeded_event_request(
         order=order,
         transaction=transaction,
-        domain_event_outbox_id=(outbox or {}).get("id"),
+        domain_event_outbox_id=None,
         source_route=source_route,
     )
     if request is None:
@@ -836,48 +830,25 @@ def _apply_transaction(conn: Any, transaction: dict[str, Any], *, source_route: 
     is_paid = _normalized_text(order_payload.get("status")) == "paid" or _normalized_text(order_payload.get("trade_state")) == "SUCCESS"
     if is_paid:
         mobile_projection = _safe_project_order_mobile_to_identity(conn, order_payload, source_route=source_route)
-        outbox = enqueue_transaction_paid_outbox(conn, order_payload)
-        _enqueue_payment_succeeded_internal_event_outbox(
+        internal_event_outbox = _enqueue_payment_succeeded_internal_event_outbox(
             conn,
             order=order_payload,
             transaction=transaction,
-            outbox=outbox,
             source_route=source_route,
         )
-        _plan_order_paid_external_effect_job(conn, order=order_payload, transaction=transaction, outbox=outbox)
         LOGGER.info(
-            "wechat_pay_transaction_paid_outbox_ensured",
+            "wechat_pay_payment_succeeded_outbox_ensured",
             extra=safe_log_fields(
                 order_id=order_payload.get("id"),
                 out_trade_no=_normalized_text(order_payload.get("out_trade_no")),
-                event_type="transaction.paid",
-                outbox_created=bool(outbox),
+                event_type=PAYMENT_SUCCEEDED_EVENT_TYPE,
+                internal_event_outbox_id=(internal_event_outbox or {}).get("outbox_id"),
                 was_paid=was_paid,
                 mobile_projected=bool(mobile_projection.get("projected")),
                 mobile_projection_reason=_normalized_text(mobile_projection.get("reason")),
             ),
         )
     return order_payload
-
-
-def _plan_order_paid_external_effect_job(conn: Any, *, order: dict[str, Any], transaction: dict[str, Any], outbox: dict[str, Any] | None) -> None:
-    out_trade_no = _normalized_text(order.get("out_trade_no"))
-    try:
-        result = plan_order_paid_external_push_effect(
-            conn,
-            order=order,
-            transaction=transaction,
-            outbox=outbox,
-            source_module="public_product.h5_wechat_pay",
-            source_route="/api/h5/wechat-pay/notify",
-        )
-        if result.get("skipped"):
-            LOGGER.info(
-                "wechat_pay_order_external_push_skipped",
-                extra=safe_log_fields(out_trade_no=out_trade_no, reason=result.get("reason")),
-            )
-    except Exception as exc:
-        safe_log_exception(LOGGER, "wechat_pay_external_effect_job_failed", exc, out_trade_no=out_trade_no)
 
 
 def create_jsapi_order_response(

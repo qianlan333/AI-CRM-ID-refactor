@@ -274,6 +274,9 @@ jobs:
             # Count-only R06 reconciliation. This command never repairs rows or executes consumers/providers.
             python scripts/ops/reconcile_internal_event_outbox.py \
               | tee /tmp/aicrm-internal-event-outbox-reconciliation.json
+            # Count-only R08 commerce fulfillment reconciliation. Never repairs or calls providers.
+            python scripts/ops/reconcile_commerce_fulfillment.py \
+              | tee /tmp/aicrm-commerce-fulfillment-reconciliation.json
             if [ "$deploy_target" = "production" ]; then
               sudo /home/ubuntu/venvs/openclaw/bin/python \
                 scripts/ops/ensure_production_public_release_route.py --execute \

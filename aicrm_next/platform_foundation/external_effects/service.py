@@ -43,6 +43,7 @@ class ExternalEffectService:
         max_attempts: int = 5,
         idempotency_key: str = "",
         status: str = "queued",
+        connection: Any | None = None,
     ) -> dict[str, Any]:
         initial_status = str(status or "queued").strip() or "queued"
         if requires_approval and initial_status in {"queued", "approved"}:
@@ -82,6 +83,10 @@ class ExternalEffectService:
             idempotency_key=idempotency_key,
             status=initial_status,
         )
+        if connection is not None:
+            from .transactional import enqueue_transactional_external_effect_job
+
+            return enqueue_transactional_external_effect_job(connection, request).to_dict()
         return self._repo.create_job(request).to_dict()
 
     def get(self, job_id: int) -> ExternalEffectJob | None:

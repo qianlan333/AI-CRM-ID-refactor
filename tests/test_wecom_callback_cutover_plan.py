@@ -110,12 +110,13 @@ def test_wecom_callback_cutover_plan_covers_install_cutover_pressure_and_rollbac
     assert any("tee /tmp/wecom-callback-worker-isolation.json" in item for item in commands["worker_isolation_canary"])
     assert "sudo systemctl start openclaw-wecom-callback-inbox-worker.service || true" in commands["worker_isolation_canary"]
     assert "downstream_worker_isolation_canary" in commands
-    assert "sudo systemctl stop openclaw-external-push-worker.service || true" in commands["downstream_worker_isolation_canary"]
+    assert "sudo systemctl disable --now openclaw-external-push-worker.timer || true" in commands["downstream_worker_isolation_canary"]
+    assert "sudo systemctl disable --now openclaw-external-push-worker.service || true" in commands["downstream_worker_isolation_canary"]
     assert any("--total-requests 1" in item for item in commands["downstream_worker_isolation_canary"])
     assert any("--require-valid-callback-sample" in item for item in commands["downstream_worker_isolation_canary"])
     assert any("--callback-url \"$(cat /tmp/wecom-callback-sample.url)\"" in item for item in commands["downstream_worker_isolation_canary"])
     assert any("tee /tmp/wecom-callback-downstream-worker-isolation.json" in item for item in commands["downstream_worker_isolation_canary"])
-    assert "sudo systemctl start openclaw-external-push-worker.service || true" in commands["downstream_worker_isolation_canary"]
+    assert not any("systemctl start openclaw-external-push-worker" in item for item in commands["downstream_worker_isolation_canary"])
     assert "internal_event_worker_isolation_canary" in commands
     assert "sudo systemctl stop openclaw-internal-event-worker.timer" in commands["internal_event_worker_isolation_canary"]
     assert "sudo systemctl stop openclaw-internal-event-worker.service || true" in commands["internal_event_worker_isolation_canary"]

@@ -197,6 +197,29 @@ def test_r07_external_effect_delivery_files_force_full_postgres_ci() -> None:
     assert result["needs_full_ci"] is True
 
 
+def test_r08_commerce_fulfillment_files_force_full_postgres_ci() -> None:
+    result = _select(
+        "aicrm_next/commerce/fulfillment_reconciliation.py",
+        "aicrm_next/platform_foundation/external_effects/transactional.py",
+        "aicrm_next/platform_foundation/internal_events/refund.py",
+        "aicrm_next/service_period/refund_consumer.py",
+        "migrations/versions/0101_commerce_fulfillment_invariants.py",
+        "scripts/run_external_push_worker.py",
+        "scripts/ops/reconcile_commerce_fulfillment.py",
+        "deploy/production_runtime_units.json",
+        "tests/test_r08_commerce_fulfillment_postgres.py",
+    )
+
+    assert "commerce_fulfillment_reliability" in result["matched_scopes"]
+    assert result["unmatched_files"] == []
+    assert "tests/test_r08_commerce_fulfillment_postgres.py" in result["python_tests"]
+    assert "tests/test_commerce_fulfillment_reconciliation.py" in result["python_tests"]
+    assert "tests/test_internal_events_refund_slice.py" in result["python_tests"]
+    assert result["needs_postgres"] is True
+    assert result["architecture_gate"] == "full"
+    assert result["needs_full_ci"] is True
+
+
 def test_unionid_identity_cutover_changes_force_pg_full_ci_without_unmapped_files() -> None:
     result = _select(
         "aicrm_next/automation_agents/repository.py",
@@ -423,11 +446,12 @@ def test_runtime_units_change_selects_deploy_contract_tests() -> None:
     )
 
     assert "ci_deploy" in result["matched_scopes"]
+    assert "commerce_fulfillment_reliability" in result["matched_scopes"]
     assert "tests/test_deploy_workflow_contract.py" in result["python_tests"]
     assert "tests/test_runtime_units_autostart.py" in result["python_tests"]
     assert "tests/test_retired_runtime_gap_timer_report.py" in result["python_tests"]
     assert result["unmatched_files"] == []
-    assert result["needs_postgres"] is False
+    assert result["needs_postgres"] is True
     assert result["architecture_gate"] == "full"
     assert result["needs_full_ci"] is True
 
