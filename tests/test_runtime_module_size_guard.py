@@ -71,7 +71,7 @@ def test_repository_runtime_module_size_baseline_matches_current_tree() -> None:
 
     assert violations == []
     assert oversized == {item.path for item in baseline.allowed}
-    assert len(oversized) == 7
+    assert len(oversized) == 4
 
 
 def test_runtime_module_size_scan_is_deterministic() -> None:

@@ -359,6 +359,15 @@ repositories:
       - wechat_pay_products
   aicrm_next/customer_read_model/repo.py:
     capability_owner: aicrm_next.customer_read_model
+    non_literal_table_reads:
+      - archived_messages
+      - automation_channel_contact
+      - class_user_status_current
+      - contact_tags
+      - crm_user_identity
+      - owner_role_map
+      - questionnaire_submissions
+      - wechat_pay_orders
     table_reads:
       - archived_messages
       - automation_channel_contact

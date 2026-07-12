@@ -1007,13 +1007,13 @@
       "accessor": "_env_flag",
       "file": "aicrm_next/customer_read_model/application.py",
       "key": "CUSTOMER_READ_MODEL_LIVE_SOURCE_FALLBACK_ENABLED",
-      "line": 42
+      "line": 43
     },
     {
       "accessor": "_env_flag",
       "file": "aicrm_next/customer_read_model/application.py",
       "key": "CUSTOMER_READ_MODEL_NEXT_PRIMARY",
-      "line": 38
+      "line": 39
     },
     {
       "accessor": "os.getenv",
@@ -1025,7 +1025,7 @@
       "accessor": "os.getenv",
       "file": "aicrm_next/customer_read_model/repo.py",
       "key": "CUSTOMER_READ_MODEL_REPO_BACKEND",
-      "line": 1520
+      "line": 567
     },
     {
       "accessor": "os.getenv",
