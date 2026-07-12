@@ -453,6 +453,27 @@ def test_runtime_units_change_selects_deploy_contract_tests() -> None:
     assert result["unmatched_files"] == []
     assert result["needs_postgres"] is True
     assert result["architecture_gate"] == "full"
+
+
+def test_database_baseline_and_ownership_change_selects_required_postgres_slice() -> None:
+    result = _select(
+        "migrations/baselines/0001_post_legacy.sql",
+        "scripts/ops/bootstrap_database.py",
+        "tools/check_repository_ownership.py",
+        "docs/architecture/data_table_lifecycle_manifest.yml",
+        "docs/architecture/repository_ownership.yml",
+        "tests/test_database_bootstrap.py",
+        "tests/test_repository_ownership_guard.py",
+    )
+
+    assert "migration_db" in result["matched_scopes"]
+    assert "tests/test_database_bootstrap.py" in result["python_tests"]
+    assert "tests/test_data_table_lifecycle_guard.py" in result["python_tests"]
+    assert "tests/test_repository_ownership_guard.py" in result["python_tests"]
+    assert result["needs_postgres"] is True
+    assert result["needs_full_ci"] is True
+    assert result["architecture_gate"] == "full"
+    assert result["unmatched_files"] == []
     assert result["needs_full_ci"] is True
 
 

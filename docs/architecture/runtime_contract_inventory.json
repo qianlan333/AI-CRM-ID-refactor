@@ -1124,6 +1124,30 @@
       "line": 271
     },
     {
+      "accessor": "os.environ.get",
+      "file": "scripts/ops/bootstrap_database.py",
+      "key": "DATABASE_URL",
+      "line": 98
+    },
+    {
+      "accessor": "os.environ[]",
+      "file": "scripts/ops/bootstrap_database.py",
+      "key": "DATABASE_URL",
+      "line": 99
+    },
+    {
+      "accessor": "os.environ[]",
+      "file": "scripts/ops/bootstrap_database.py",
+      "key": "DATABASE_URL",
+      "line": 106
+    },
+    {
+      "accessor": "os.getenv",
+      "file": "scripts/ops/bootstrap_database.py",
+      "key": "DATABASE_URL",
+      "line": 162
+    },
+    {
       "accessor": "os.getenv",
       "file": "scripts/ops/check_auth_readiness.py",
       "key": "DATABASE_URL",
@@ -40008,7 +40032,7 @@
       "domain": "admin_config",
       "drop_candidate": false,
       "lifecycle": "audit",
-      "migration_source": "pre-Alembic baseline, registered by 0083 schema drift closeout",
+      "migration_source": "0085_admin_config_audit_baseline",
       "pii_level": "internal_contact",
       "read_owners": [
         "aicrm_next.admin_config"
@@ -40037,7 +40061,7 @@
       "domain": "admin_config",
       "drop_candidate": false,
       "lifecycle": "canonical",
-      "migration_source": "pre-Alembic baseline, registered by 0083 schema drift closeout",
+      "migration_source": "0085_admin_config_audit_baseline",
       "pii_level": "internal_contact",
       "read_owners": [
         "aicrm_next.admin_config"
@@ -40049,7 +40073,7 @@
       "domain": "admin_config",
       "drop_candidate": false,
       "lifecycle": "canonical",
-      "migration_source": "pre-Alembic baseline, registered by 0083 schema drift closeout",
+      "migration_source": "0085_admin_config_audit_baseline",
       "pii_level": "internal_contact",
       "read_owners": [
         "aicrm_next.admin_config"
@@ -40074,7 +40098,7 @@
       "domain": "ai_audience_ops",
       "drop_candidate": false,
       "lifecycle": "audit",
-      "migration_source": "pre-Alembic baseline, registered by 0083 schema drift closeout",
+      "migration_source": "0045_ai_audience_ops",
       "pii_level": "internal_contact",
       "read_owners": [
         "historical schema drift guard"
@@ -40086,7 +40110,7 @@
       "domain": "ai_audience_ops",
       "drop_candidate": false,
       "lifecycle": "read_model",
-      "migration_source": "pre-Alembic baseline, registered by 0083 schema drift closeout",
+      "migration_source": "0045_ai_audience_ops",
       "pii_level": "internal_contact",
       "read_owners": [
         "aicrm_next.admin_read_model",
@@ -40100,7 +40124,7 @@
       "domain": "ai_audience_ops",
       "drop_candidate": false,
       "lifecycle": "audit",
-      "migration_source": "pre-Alembic baseline, registered by 0083 schema drift closeout",
+      "migration_source": "0045_ai_audience_ops",
       "pii_level": "internal_contact",
       "read_owners": [
         "aicrm_next.ai_audience_ops"
@@ -40112,7 +40136,7 @@
       "domain": "ai_audience_ops",
       "drop_candidate": false,
       "lifecycle": "canonical",
-      "migration_source": "pre-Alembic baseline, registered by 0083 schema drift closeout",
+      "migration_source": "0045_ai_audience_ops",
       "pii_level": "internal_contact",
       "read_owners": [
         "aicrm_next.ai_audience_ops"
@@ -40124,7 +40148,7 @@
       "domain": "ai_audience_ops",
       "drop_candidate": false,
       "lifecycle": "canonical",
-      "migration_source": "pre-Alembic baseline, registered by 0083 schema drift closeout",
+      "migration_source": "0045_ai_audience_ops",
       "pii_level": "internal_contact",
       "read_owners": [
         "aicrm_next.ai_audience_ops",
@@ -40137,7 +40161,7 @@
       "domain": "ai_audience_ops",
       "drop_candidate": false,
       "lifecycle": "canonical",
-      "migration_source": "pre-Alembic baseline, registered by 0083 schema drift closeout",
+      "migration_source": "0045_ai_audience_ops",
       "pii_level": "internal_contact",
       "read_owners": [
         "aicrm_next.ai_audience_ops"
@@ -40149,7 +40173,7 @@
       "domain": "ai_audience_ops",
       "drop_candidate": false,
       "lifecycle": "canonical",
-      "migration_source": "pre-Alembic baseline, registered by 0083 schema drift closeout",
+      "migration_source": "0045_ai_audience_ops",
       "pii_level": "internal_contact",
       "read_owners": [
         "aicrm_next.ai_audience_ops"
@@ -40161,7 +40185,7 @@
       "domain": "ai_audience_ops",
       "drop_candidate": false,
       "lifecycle": "canonical",
-      "migration_source": "pre-Alembic baseline, registered by 0083 schema drift closeout",
+      "migration_source": "0051_ai_audience_sender_whitelist",
       "pii_level": "internal_contact",
       "read_owners": [
         "aicrm_next.ai_audience_ops"
@@ -40173,7 +40197,7 @@
       "domain": "ai_audience_ops",
       "drop_candidate": false,
       "lifecycle": "canonical",
-      "migration_source": "pre-Alembic baseline, registered by 0083 schema drift closeout",
+      "migration_source": "0045_ai_audience_ops",
       "pii_level": "internal_contact",
       "read_owners": [
         "aicrm_next.ai_audience_ops"
@@ -40185,7 +40209,7 @@
       "domain": "schema_migration",
       "drop_candidate": false,
       "lifecycle": "config",
-      "migration_source": "pre-Alembic baseline, registered by 0083 schema drift closeout",
+      "migration_source": "Alembic runtime metadata",
       "pii_level": "internal_contact",
       "read_owners": [
         "historical schema drift guard"
@@ -40197,7 +40221,7 @@
       "domain": "commerce",
       "drop_candidate": false,
       "lifecycle": "audit",
-      "migration_source": "pre-Alembic baseline, registered by 0083 schema drift closeout",
+      "migration_source": "0014_alipay_pay",
       "pii_level": "internal_contact",
       "read_owners": [
         "historical schema drift guard"
@@ -40209,7 +40233,7 @@
       "domain": "commerce",
       "drop_candidate": false,
       "lifecycle": "canonical",
-      "migration_source": "pre-Alembic baseline, registered by 0083 schema drift closeout",
+      "migration_source": "0014_alipay_pay",
       "pii_level": "internal_contact",
       "read_owners": [
         "historical schema drift guard"
@@ -40236,7 +40260,7 @@
       "domain": "messaging",
       "drop_candidate": false,
       "lifecycle": "config",
-      "migration_source": "pre-Alembic baseline, hardened by 0077_id_dev_runtime_baseline",
+      "migration_source": "0077_id_dev_runtime_baseline",
       "pii_level": "",
       "read_owners": [
         "aicrm_next.message_archive.repo"
@@ -40248,7 +40272,7 @@
       "domain": "messaging",
       "drop_candidate": false,
       "lifecycle": "read_model",
-      "migration_source": "pre-Alembic baseline, hardened by 0077_id_dev_runtime_baseline",
+      "migration_source": "0077_id_dev_runtime_baseline",
       "pii_level": "internal_contact",
       "read_owners": [
         "aicrm_next.admin_read_model.repo",
@@ -40263,7 +40287,7 @@
       "domain": "media_library",
       "drop_candidate": false,
       "lifecycle": "canonical",
-      "migration_source": "pre-Alembic baseline",
+      "migration_source": "0076_create_missing_baseline_runtime_tables",
       "pii_level": "",
       "read_owners": [
         "aicrm_next.admin_read_model.projections",
@@ -40378,7 +40402,7 @@
       "domain": "automation_agents",
       "drop_candidate": false,
       "lifecycle": "audit",
-      "migration_source": "pre-Alembic baseline, registered by 0083 schema drift closeout",
+      "migration_source": "0022_next_automation_agents",
       "pii_level": "internal_contact",
       "read_owners": [
         "historical schema drift guard"
@@ -40390,7 +40414,7 @@
       "domain": "automation_agents",
       "drop_candidate": false,
       "lifecycle": "config",
-      "migration_source": "pre-Alembic baseline, registered by 0083 schema drift closeout",
+      "migration_source": "migrations/baselines/0001_post_legacy.sql",
       "pii_level": "internal_contact",
       "read_owners": [
         "aicrm_next.admin_read_model"
@@ -40402,7 +40426,7 @@
       "domain": "automation_agents",
       "drop_candidate": false,
       "lifecycle": "canonical",
-      "migration_source": "pre-Alembic baseline, registered by 0083 schema drift closeout",
+      "migration_source": "0022_next_automation_agents",
       "pii_level": "internal_contact",
       "read_owners": [
         "historical schema drift guard"
@@ -40411,10 +40435,34 @@
       "write_owner": "aicrm_next.automation_agents"
     },
     {
+      "domain": "ai_audience_ops",
+      "drop_candidate": false,
+      "lifecycle": "audit",
+      "migration_source": "migrations/baselines/0001_post_legacy.sql",
+      "pii_level": "internal_contact",
+      "read_owners": [
+        "aicrm_next.admin_read_model"
+      ],
+      "table": "automation_agent_llm_call_log",
+      "write_owner": "aicrm_next.ai_audience_ops"
+    },
+    {
+      "domain": "ai_audience_ops",
+      "drop_candidate": false,
+      "lifecycle": "audit",
+      "migration_source": "migrations/baselines/0001_post_legacy.sql",
+      "pii_level": "internal_contact",
+      "read_owners": [
+        "aicrm_next.admin_read_model"
+      ],
+      "table": "automation_agent_output",
+      "write_owner": "aicrm_next.ai_audience_ops"
+    },
+    {
       "domain": "automation_agents",
       "drop_candidate": false,
       "lifecycle": "canonical",
-      "migration_source": "pre-Alembic baseline, registered by 0083 schema drift closeout",
+      "migration_source": "migrations/baselines/0001_post_legacy.sql",
       "pii_level": "internal_contact",
       "read_owners": [
         "aicrm_next.admin_read_model"
@@ -40426,7 +40474,7 @@
       "domain": "automation_agents",
       "drop_candidate": false,
       "lifecycle": "config",
-      "migration_source": "pre-Alembic baseline, registered by 0083 schema drift closeout",
+      "migration_source": "0054_automation_agent_runtime_config",
       "pii_level": "internal_contact",
       "read_owners": [
         "historical schema drift guard"
@@ -40438,7 +40486,7 @@
       "domain": "automation_agents",
       "drop_candidate": false,
       "lifecycle": "audit",
-      "migration_source": "pre-Alembic baseline, registered by 0083 schema drift closeout",
+      "migration_source": "0054_automation_agent_runtime_config",
       "pii_level": "internal_contact",
       "read_owners": [
         "historical schema drift guard"
@@ -40450,7 +40498,7 @@
       "domain": "automation_agents",
       "drop_candidate": false,
       "lifecycle": "audit",
-      "migration_source": "pre-Alembic baseline, registered by 0083 schema drift closeout",
+      "migration_source": "0054_automation_agent_runtime_config",
       "pii_level": "internal_contact",
       "read_owners": [
         "historical schema drift guard"
@@ -40462,7 +40510,7 @@
       "domain": "automation_agents",
       "drop_candidate": false,
       "lifecycle": "canonical",
-      "migration_source": "pre-Alembic baseline, registered by 0083 schema drift closeout",
+      "migration_source": "0022_next_automation_agents",
       "pii_level": "internal_contact",
       "read_owners": [
         "historical schema drift guard"
@@ -40474,7 +40522,7 @@
       "domain": "automation_engine",
       "drop_candidate": false,
       "lifecycle": "audit",
-      "migration_source": "pre-Alembic baseline, registered by 0083 schema drift closeout",
+      "migration_source": "migrations/baselines/0001_post_legacy.sql",
       "pii_level": "internal_contact",
       "read_owners": [
         "historical schema drift guard"
@@ -40486,7 +40534,7 @@
       "domain": "channel_entry",
       "drop_candidate": false,
       "lifecycle": "canonical",
-      "migration_source": "pre-Alembic baseline, registered by 0083 schema drift closeout",
+      "migration_source": "migrations/baselines/0001_post_legacy.sql",
       "pii_level": "internal_contact",
       "read_owners": [
         "historical schema drift guard"
@@ -40498,7 +40546,7 @@
       "domain": "channel_entry",
       "drop_candidate": false,
       "lifecycle": "canonical",
-      "migration_source": "pre-Alembic baseline, registered by 0083 schema drift closeout",
+      "migration_source": "0036_channel_multi_staff_assignment",
       "pii_level": "internal_contact",
       "read_owners": [
         "historical schema drift guard"
@@ -40510,7 +40558,7 @@
       "domain": "channel_entry",
       "drop_candidate": false,
       "lifecycle": "audit",
-      "migration_source": "pre-Alembic baseline, registered by 0083 schema drift closeout",
+      "migration_source": "0036_channel_multi_staff_assignment",
       "pii_level": "internal_contact",
       "read_owners": [
         "historical schema drift guard"
@@ -40522,7 +40570,7 @@
       "domain": "channel_entry",
       "drop_candidate": false,
       "lifecycle": "canonical",
-      "migration_source": "pre-Alembic baseline, registered by 0083 schema drift closeout",
+      "migration_source": "migrations/baselines/0001_post_legacy.sql",
       "pii_level": "internal_contact",
       "read_owners": [
         "historical schema drift guard"
@@ -40534,7 +40582,7 @@
       "domain": "channel_entry",
       "drop_candidate": false,
       "lifecycle": "event",
-      "migration_source": "pre-Alembic baseline, hardened by 0078_final_legacy_identity_column_cleanup",
+      "migration_source": "0078_final_legacy_identity_column_cleanup",
       "pii_level": "internal_contact",
       "read_owners": [
         "aicrm_next.channel_entry.repo"
@@ -40558,7 +40606,7 @@
       "domain": "channel_entry",
       "drop_candidate": false,
       "lifecycle": "canonical",
-      "migration_source": "pre-Alembic baseline, registered by 0083 schema drift closeout",
+      "migration_source": "migrations/baselines/0001_post_legacy.sql",
       "pii_level": "internal_contact",
       "read_owners": [
         "historical schema drift guard"
@@ -40570,7 +40618,7 @@
       "domain": "channel_entry",
       "drop_candidate": false,
       "lifecycle": "canonical",
-      "migration_source": "pre-Alembic baseline, registered by 0083 schema drift closeout",
+      "migration_source": "migrations/baselines/0001_post_legacy.sql",
       "pii_level": "internal_contact",
       "read_owners": [
         "historical schema drift guard"
@@ -40612,7 +40660,7 @@
       "domain": "automation_engine",
       "drop_candidate": false,
       "lifecycle": "canonical",
-      "migration_source": "pre-Alembic baseline, registered by 0083 schema drift closeout",
+      "migration_source": "0004_cloud_orchestrator",
       "pii_level": "internal_contact",
       "read_owners": [
         "historical schema drift guard"
@@ -40624,7 +40672,7 @@
       "domain": "automation_engine",
       "drop_candidate": false,
       "lifecycle": "canonical",
-      "migration_source": "pre-Alembic baseline, registered by 0083 schema drift closeout",
+      "migration_source": "0004_cloud_orchestrator",
       "pii_level": "internal_contact",
       "read_owners": [
         "historical schema drift guard"
@@ -40846,7 +40894,7 @@
       "domain": "automation_engine",
       "drop_candidate": false,
       "lifecycle": "config",
-      "migration_source": "pre-Alembic baseline, registered by 0083 schema drift closeout",
+      "migration_source": "migrations/baselines/0001_post_legacy.sql",
       "pii_level": "internal_contact",
       "read_owners": [
         "historical schema drift guard"
@@ -40878,7 +40926,7 @@
       "domain": "automation_engine",
       "drop_candidate": false,
       "lifecycle": "audit",
-      "migration_source": "pre-Alembic baseline, registered by 0083 schema drift closeout",
+      "migration_source": "migrations/baselines/0001_post_legacy.sql",
       "pii_level": "internal_contact",
       "read_owners": [
         "historical schema drift guard"
@@ -40970,7 +41018,7 @@
       "domain": "broadcast_jobs",
       "drop_candidate": false,
       "lifecycle": "audit",
-      "migration_source": "pre-Alembic baseline, registered by 0083 and used by the 0103 broadcast finalizer",
+      "migration_source": "0021_broadcast_queue_platform_hardening",
       "pii_level": "internal_contact",
       "read_owners": [
         "aicrm_next.admin_jobs",
@@ -40984,7 +41032,7 @@
       "domain": "broadcast_jobs",
       "drop_candidate": false,
       "lifecycle": "canonical",
-      "migration_source": "pre-Alembic baseline, registered by 0083 schema drift closeout",
+      "migration_source": "0020_broadcast_job_hourly_reports",
       "pii_level": "internal_contact",
       "read_owners": [
         "historical schema drift guard"
@@ -41012,7 +41060,7 @@
       "domain": "broadcast_jobs",
       "drop_candidate": false,
       "lifecycle": "config",
-      "migration_source": "pre-Alembic baseline, registered by 0083 schema drift closeout",
+      "migration_source": "0019_broadcast_queue_notification_settings",
       "pii_level": "internal_contact",
       "read_owners": [
         "aicrm_next.admin_jobs"
@@ -41105,7 +41153,7 @@
       "domain": "cloud_orchestrator",
       "drop_candidate": false,
       "lifecycle": "audit",
-      "migration_source": "pre-Alembic baseline, registered by 0083 schema drift closeout",
+      "migration_source": "0004_cloud_orchestrator",
       "pii_level": "internal_contact",
       "read_owners": [
         "historical schema drift guard"
@@ -41117,7 +41165,7 @@
       "domain": "cloud_orchestrator",
       "drop_candidate": false,
       "lifecycle": "config",
-      "migration_source": "pre-Alembic baseline, registered by 0083 schema drift closeout",
+      "migration_source": "0004_cloud_orchestrator",
       "pii_level": "internal_contact",
       "read_owners": [
         "historical schema drift guard"
@@ -41129,7 +41177,7 @@
       "domain": "cloud_orchestrator",
       "drop_candidate": false,
       "lifecycle": "canonical",
-      "migration_source": "pre-Alembic baseline, registered by 0083 and state-aligned by 0103",
+      "migration_source": "0024_cloud_plan_recipient_approval",
       "pii_level": "internal_contact",
       "read_owners": [
         "aicrm_next.background_jobs",
@@ -41143,7 +41191,7 @@
       "domain": "cloud_orchestrator",
       "drop_candidate": false,
       "lifecycle": "canonical",
-      "migration_source": "pre-Alembic baseline, registered by 0083 and state-aligned by 0103",
+      "migration_source": "0024_cloud_plan_recipient_approval",
       "pii_level": "internal_contact",
       "read_owners": [
         "aicrm_next.background_jobs",
@@ -41157,7 +41205,7 @@
       "domain": "cloud_orchestrator",
       "drop_candidate": false,
       "lifecycle": "canonical",
-      "migration_source": "pre-Alembic baseline, registered by 0083 schema drift closeout",
+      "migration_source": "0004_cloud_orchestrator",
       "pii_level": "internal_contact",
       "read_owners": [
         "aicrm_next.cloud_orchestrator",
@@ -41184,7 +41232,7 @@
       "domain": "contacts",
       "drop_candidate": false,
       "lifecycle": "canonical",
-      "migration_source": "pre-Alembic baseline, registered by 0083 schema drift closeout",
+      "migration_source": "migrations/baselines/0001_post_legacy.sql",
       "pii_level": "internal_contact",
       "read_owners": [
         "historical schema drift guard"
@@ -41206,7 +41254,7 @@
       "domain": "identity_contact",
       "drop_candidate": false,
       "lifecycle": "canonical",
-      "migration_source": "pre-Alembic baseline, registered by 0083 schema drift closeout",
+      "migration_source": "migrations/baselines/0001_post_legacy.sql",
       "pii_level": "internal_contact",
       "read_owners": [
         "aicrm_next.ai_assist",
@@ -41227,7 +41275,7 @@
       "domain": "identity_contact",
       "drop_candidate": false,
       "lifecycle": "canonical",
-      "migration_source": "pre-Alembic baseline, registered by 0083 schema drift closeout",
+      "migration_source": "0062_unionid_identity_refactor",
       "pii_level": "internal_contact",
       "read_owners": [
         "historical schema drift guard"
@@ -41239,7 +41287,7 @@
       "domain": "identity_contact",
       "drop_candidate": false,
       "lifecycle": "audit",
-      "migration_source": "pre-Alembic baseline, registered by 0083 schema drift closeout",
+      "migration_source": "0062_unionid_identity_refactor",
       "pii_level": "internal_contact",
       "read_owners": [
         "historical schema drift guard"
@@ -41251,7 +41299,7 @@
       "domain": "identity_contact",
       "drop_candidate": false,
       "lifecycle": "queue",
-      "migration_source": "pre-Alembic baseline, registered by 0083 schema drift closeout",
+      "migration_source": "migrations/baselines/0001_post_legacy.sql",
       "pii_level": "internal_contact",
       "read_owners": [
         "aicrm_next.channel_entry"
@@ -41263,7 +41311,7 @@
       "domain": "customer_read_model",
       "drop_candidate": false,
       "lifecycle": "read_model",
-      "migration_source": "pre-Alembic baseline, registered by 0083 schema drift closeout",
+      "migration_source": "0026_customer_read_model_next",
       "pii_level": "internal_contact",
       "read_owners": [
         "aicrm_next.owner_migration"
@@ -41275,7 +41323,7 @@
       "domain": "customer_read_model",
       "drop_candidate": false,
       "lifecycle": "read_model",
-      "migration_source": "pre-Alembic baseline, registered by 0083 schema drift closeout",
+      "migration_source": "0026_customer_read_model_next",
       "pii_level": "internal_contact",
       "read_owners": [
         "aicrm_next.owner_migration"
@@ -41287,7 +41335,7 @@
       "domain": "customer_read_model",
       "drop_candidate": false,
       "lifecycle": "canonical",
-      "migration_source": "pre-Alembic baseline, registered by 0083 schema drift closeout",
+      "migration_source": "0026_customer_read_model_next",
       "pii_level": "internal_contact",
       "read_owners": [
         "historical schema drift guard"
@@ -41299,7 +41347,7 @@
       "domain": "customer_read_model",
       "drop_candidate": false,
       "lifecycle": "canonical",
-      "migration_source": "pre-Alembic baseline, registered by 0083 schema drift closeout",
+      "migration_source": "0026_customer_read_model_next",
       "pii_level": "internal_contact",
       "read_owners": [
         "historical schema drift guard"
@@ -41324,7 +41372,7 @@
       "domain": "identity_contact",
       "drop_candidate": false,
       "lifecycle": "read_model",
-      "migration_source": "pre-Alembic baseline, registered by 0083 schema drift closeout",
+      "migration_source": "migrations/baselines/0001_post_legacy.sql",
       "pii_level": "internal_contact",
       "read_owners": [
         "aicrm_next.identity_contact",
@@ -41365,7 +41413,7 @@
       "domain": "external",
       "drop_candidate": false,
       "lifecycle": "audit",
-      "migration_source": "pre-Alembic baseline, registered by 0083 schema drift closeout",
+      "migration_source": "0040_external_effect_test_receiver",
       "pii_level": "internal_contact",
       "read_owners": [
         "historical schema drift guard"
@@ -41377,7 +41425,7 @@
       "domain": "external",
       "drop_candidate": false,
       "lifecycle": "config",
-      "migration_source": "pre-Alembic baseline, registered by 0083 schema drift closeout",
+      "migration_source": "0023_product_external_push",
       "pii_level": "internal_contact",
       "read_owners": [
         "aicrm_next.external_push"
@@ -41403,7 +41451,7 @@
       "domain": "group_ops",
       "drop_candidate": false,
       "lifecycle": "canonical",
-      "migration_source": "pre-Alembic baseline, registered by 0083 schema drift closeout",
+      "migration_source": "migrations/baselines/0001_post_legacy.sql",
       "pii_level": "internal_contact",
       "read_owners": [
         "historical schema drift guard"
@@ -41499,7 +41547,7 @@
       "domain": "user_ops",
       "drop_candidate": false,
       "lifecycle": "canonical",
-      "migration_source": "pre-Alembic baseline, registered by 0083 schema drift closeout",
+      "migration_source": "0018_hxc_dashboard_broadcast_tasks",
       "pii_level": "internal_contact",
       "read_owners": [
         "historical schema drift guard"
@@ -41592,7 +41640,7 @@
       "domain": "legacy_webhook_cleanup",
       "drop_candidate": false,
       "lifecycle": "audit",
-      "migration_source": "pre-Alembic baseline, registered by 0083 schema drift closeout",
+      "migration_source": "0042_legacy_webhook_deprecation_registry",
       "pii_level": "internal_contact",
       "read_owners": [
         "historical schema drift guard"
@@ -41604,7 +41652,7 @@
       "domain": "legacy_webhook_cleanup",
       "drop_candidate": false,
       "lifecycle": "config",
-      "migration_source": "pre-Alembic baseline, registered by 0083 schema drift closeout",
+      "migration_source": "0042_legacy_webhook_deprecation_registry",
       "pii_level": "internal_contact",
       "read_owners": [
         "historical schema drift guard"
@@ -41616,7 +41664,7 @@
       "domain": "admin_config",
       "drop_candidate": true,
       "lifecycle": "config",
-      "migration_source": "pre-Alembic baseline",
+      "migration_source": "0083_create_marketing_automation_config_tables",
       "pii_level": "",
       "read_owners": [
         "aicrm_next.admin_config.application",
@@ -41629,7 +41677,7 @@
       "domain": "admin_config",
       "drop_candidate": true,
       "lifecycle": "config",
-      "migration_source": "pre-Alembic baseline",
+      "migration_source": "0083_create_marketing_automation_config_tables",
       "pii_level": "",
       "read_owners": [
         "aicrm_next.admin_config.application",
@@ -41701,7 +41749,7 @@
       "domain": "admin_jobs",
       "drop_candidate": false,
       "lifecycle": "canonical",
-      "migration_source": "pre-Alembic baseline, registered by 0083 and linked one-to-one to broadcast_jobs by 0103",
+      "migration_source": "migrations/baselines/0001_post_legacy.sql",
       "pii_level": "internal_contact",
       "read_owners": [
         "aicrm_next.admin_jobs",
@@ -41716,7 +41764,7 @@
       "domain": "outbound_webhook",
       "drop_candidate": true,
       "lifecycle": "queue",
-      "migration_source": "pre-Alembic baseline",
+      "migration_source": "0076_create_missing_baseline_runtime_tables",
       "pii_level": "",
       "read_owners": [
         "aicrm_next.admin_jobs.repository"
@@ -41780,7 +41828,7 @@
       "domain": "questionnaire",
       "drop_candidate": true,
       "lifecycle": "audit",
-      "migration_source": "pre-Alembic baseline",
+      "migration_source": "0076_create_missing_baseline_runtime_tables",
       "pii_level": "",
       "read_owners": [
         "aicrm_next.questionnaire.reconciliation",
@@ -41794,7 +41842,7 @@
       "domain": "questionnaire",
       "drop_candidate": false,
       "lifecycle": "canonical",
-      "migration_source": "pre-Alembic baseline",
+      "migration_source": "0076_create_missing_baseline_runtime_tables",
       "pii_level": "",
       "read_owners": [
         "aicrm_next.questionnaire.repo"
@@ -41806,7 +41854,7 @@
       "domain": "questionnaire",
       "drop_candidate": false,
       "lifecycle": "canonical",
-      "migration_source": "pre-Alembic baseline",
+      "migration_source": "migrations/baselines/0001_post_legacy.sql",
       "pii_level": "",
       "read_owners": [
         "aicrm_next.questionnaire.repo"
@@ -41818,7 +41866,7 @@
       "domain": "questionnaire",
       "drop_candidate": false,
       "lifecycle": "canonical",
-      "migration_source": "pre-Alembic baseline",
+      "migration_source": "0076_create_missing_baseline_runtime_tables",
       "pii_level": "",
       "read_owners": [
         "aicrm_next.questionnaire.repo"
@@ -41830,7 +41878,7 @@
       "domain": "questionnaire",
       "drop_candidate": false,
       "lifecycle": "event",
-      "migration_source": "pre-Alembic baseline",
+      "migration_source": "migrations/baselines/0001_post_legacy.sql",
       "pii_level": "",
       "read_owners": [
         "aicrm_next.automation_agents.repository",
@@ -41843,7 +41891,7 @@
       "domain": "questionnaire",
       "drop_candidate": false,
       "lifecycle": "event",
-      "migration_source": "pre-Alembic baseline",
+      "migration_source": "migrations/baselines/0001_post_legacy.sql",
       "pii_level": "internal_contact",
       "read_owners": [
         "aicrm_next.automation_agents.repository",
@@ -41857,7 +41905,7 @@
       "domain": "questionnaire",
       "drop_candidate": false,
       "lifecycle": "canonical",
-      "migration_source": "pre-Alembic baseline",
+      "migration_source": "migrations/baselines/0001_post_legacy.sql",
       "pii_level": "",
       "read_owners": [
         "aicrm_next.questionnaire.api",
@@ -41882,7 +41930,7 @@
       "domain": "radar",
       "drop_candidate": false,
       "lifecycle": "canonical",
-      "migration_source": "pre-Alembic baseline, hardened by 0102_questionnaire_radar_invariants",
+      "migration_source": "migrations/baselines/0001_post_legacy.sql",
       "pii_level": "internal_contact",
       "read_owners": [
         "aicrm_next.send_content"
@@ -41894,7 +41942,7 @@
       "domain": "radar",
       "drop_candidate": false,
       "lifecycle": "read_model",
-      "migration_source": "pre-Alembic baseline, registered by 0083 schema drift closeout",
+      "migration_source": "0025_radar_pdf_preview_assets",
       "pii_level": "internal_contact",
       "read_owners": [
         "historical schema drift guard"
@@ -41973,7 +42021,7 @@
       "domain": "customer_read_model",
       "drop_candidate": false,
       "lifecycle": "read_model",
-      "migration_source": "pre-Alembic baseline, hardened by 0077_id_dev_runtime_baseline",
+      "migration_source": "0077_id_dev_runtime_baseline",
       "pii_level": "internal_contact",
       "read_owners": [
         "aicrm_next.customer_read_model.sidebar_v2"
@@ -41985,7 +42033,7 @@
       "domain": "admin_jobs",
       "drop_candidate": false,
       "lifecycle": "canonical",
-      "migration_source": "pre-Alembic baseline, registered by 0083 schema drift closeout",
+      "migration_source": "migrations/baselines/0001_post_legacy.sql",
       "pii_level": "internal_contact",
       "read_owners": [
         "aicrm_next.admin_jobs",
@@ -42022,7 +42070,7 @@
       "domain": "user_ops",
       "drop_candidate": false,
       "lifecycle": "read_model",
-      "migration_source": "pre-Alembic baseline, registered by 0083 schema drift closeout",
+      "migration_source": "0010_user_ops_hxc_dashboard_snapshot",
       "pii_level": "internal_contact",
       "read_owners": [
         "historical schema drift guard"
@@ -42034,7 +42082,7 @@
       "domain": "user_ops",
       "drop_candidate": false,
       "lifecycle": "read_model",
-      "migration_source": "pre-Alembic baseline, registered by 0083 schema drift closeout",
+      "migration_source": "0010_user_ops_hxc_dashboard_snapshot",
       "pii_level": "internal_contact",
       "read_owners": [
         "historical schema drift guard"
@@ -42046,7 +42094,7 @@
       "domain": "user_ops",
       "drop_candidate": false,
       "lifecycle": "config",
-      "migration_source": "pre-Alembic baseline, registered by 0083 schema drift closeout",
+      "migration_source": "0011_user_ops_hxc_send_config",
       "pii_level": "internal_contact",
       "read_owners": [
         "historical schema drift guard"
@@ -42132,7 +42180,7 @@
       "domain": "webhook_ingress",
       "drop_candidate": false,
       "lifecycle": "canonical",
-      "migration_source": "pre-Alembic baseline, registered by 0083 schema drift closeout",
+      "migration_source": "0054_webhook_inbox",
       "pii_level": "internal_contact",
       "read_owners": [
         "historical schema drift guard"
@@ -42144,7 +42192,7 @@
       "domain": "commerce",
       "drop_candidate": false,
       "lifecycle": "audit",
-      "migration_source": "pre-Alembic baseline, registered by 0083 schema drift closeout",
+      "migration_source": "migrations/baselines/0001_post_legacy.sql",
       "pii_level": "internal_contact",
       "read_owners": [
         "historical schema drift guard"
@@ -42166,7 +42214,7 @@
       "domain": "commerce",
       "drop_candidate": false,
       "lifecycle": "canonical",
-      "migration_source": "pre-Alembic baseline, registered by 0083 schema drift closeout",
+      "migration_source": "migrations/baselines/0001_post_legacy.sql",
       "pii_level": "internal_contact",
       "read_owners": [
         "aicrm_next.admin_read_model",
@@ -42183,7 +42231,7 @@
       "domain": "commerce",
       "drop_candidate": false,
       "lifecycle": "read_model",
-      "migration_source": "pre-Alembic baseline, registered by 0083 schema drift closeout",
+      "migration_source": "0012_wechat_pay_products",
       "pii_level": "internal_contact",
       "read_owners": [
         "aicrm_next.send_content"
@@ -42195,7 +42243,7 @@
       "domain": "commerce",
       "drop_candidate": false,
       "lifecycle": "canonical",
-      "migration_source": "pre-Alembic baseline, registered by 0083 schema drift closeout",
+      "migration_source": "migrations/baselines/0001_post_legacy.sql",
       "pii_level": "internal_contact",
       "read_owners": [
         "aicrm_next.customer_read_model.sidebar_v2",
@@ -42209,7 +42257,7 @@
       "domain": "commerce",
       "drop_candidate": false,
       "lifecycle": "canonical",
-      "migration_source": "pre-Alembic baseline, registered by 0083 schema drift closeout; idempotency indexes added by 0101_commerce_fulfillment_invariants",
+      "migration_source": "migrations/baselines/0001_post_legacy.sql",
       "pii_level": "internal_contact",
       "read_owners": [
         "aicrm_next.commerce.fulfillment_reconciliation",
@@ -42235,7 +42283,7 @@
       "domain": "commerce",
       "drop_candidate": false,
       "lifecycle": "canonical",
-      "migration_source": "pre-Alembic baseline, hardened by 0077_id_dev_runtime_baseline",
+      "migration_source": "0077_id_dev_runtime_baseline",
       "pii_level": "internal_contact",
       "read_owners": [
         "aicrm_next.commerce.admin_transaction_detail",
@@ -42249,7 +42297,7 @@
       "domain": "commerce",
       "drop_candidate": false,
       "lifecycle": "canonical",
-      "migration_source": "pre-Alembic baseline, registered by 0083 schema drift closeout",
+      "migration_source": "0035_wechat_shop_refunds",
       "pii_level": "internal_contact",
       "read_owners": [
         "historical schema drift guard"
@@ -42261,7 +42309,7 @@
       "domain": "commerce",
       "drop_candidate": false,
       "lifecycle": "canonical",
-      "migration_source": "pre-Alembic baseline, registered by 0083 schema drift closeout",
+      "migration_source": "0036_wechat_shop_sync_runs",
       "pii_level": "internal_contact",
       "read_owners": [
         "historical schema drift guard"
@@ -42273,7 +42321,7 @@
       "domain": "customer_tags",
       "drop_candidate": false,
       "lifecycle": "canonical",
-      "migration_source": "pre-Alembic baseline, registered by 0083 schema drift closeout",
+      "migration_source": "0016_wecom_corp_tag_catalog",
       "pii_level": "internal_contact",
       "read_owners": [
         "historical schema drift guard"
@@ -42285,7 +42333,7 @@
       "domain": "customer_tags",
       "drop_candidate": false,
       "lifecycle": "canonical",
-      "migration_source": "pre-Alembic baseline, registered by 0083 schema drift closeout",
+      "migration_source": "0016_wecom_corp_tag_catalog",
       "pii_level": "internal_contact",
       "read_owners": [
         "historical schema drift guard"
@@ -42297,7 +42345,7 @@
       "domain": "channel_entry",
       "drop_candidate": false,
       "lifecycle": "read_model",
-      "migration_source": "pre-Alembic baseline, hardened by 0077_id_dev_runtime_baseline",
+      "migration_source": "0077_id_dev_runtime_baseline",
       "pii_level": "",
       "read_owners": [
         "aicrm_next.automation_engine.channels_api",
@@ -42310,7 +42358,7 @@
       "domain": "identity_contact",
       "drop_candidate": false,
       "lifecycle": "audit",
-      "migration_source": "pre-Alembic baseline, registered by 0083 schema drift closeout",
+      "migration_source": "migrations/baselines/0001_post_legacy.sql",
       "pii_level": "internal_contact",
       "read_owners": [
         "aicrm_next.admin_jobs",
@@ -42323,7 +42371,7 @@
       "domain": "identity_contact",
       "drop_candidate": false,
       "lifecycle": "canonical",
-      "migration_source": "pre-Alembic baseline, registered by 0083 schema drift closeout",
+      "migration_source": "migrations/baselines/0001_post_legacy.sql",
       "pii_level": "internal_contact",
       "read_owners": [
         "aicrm_next.admin_read_model",
@@ -42338,7 +42386,7 @@
       "domain": "identity_contact",
       "drop_candidate": false,
       "lifecycle": "canonical",
-      "migration_source": "pre-Alembic baseline, registered by 0083 schema drift closeout",
+      "migration_source": "migrations/baselines/0001_post_legacy.sql",
       "pii_level": "internal_contact",
       "read_owners": [
         "aicrm_next.admin_read_model",
@@ -42353,7 +42401,7 @@
       "domain": "group_ops",
       "drop_candidate": false,
       "lifecycle": "read_model",
-      "migration_source": "pre-Alembic baseline, registered by 0083 schema drift closeout",
+      "migration_source": "0015_group_ops_plans",
       "pii_level": "internal_contact",
       "read_owners": [
         "aicrm_next.automation_engine.group_ops"

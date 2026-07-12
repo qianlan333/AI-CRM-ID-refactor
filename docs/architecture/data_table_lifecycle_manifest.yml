@@ -437,7 +437,7 @@ tables:
       - message archive sync
       - customer message timeline
       - sidebar other staff messages
-    migration_source: pre-Alembic baseline, hardened by 0077_id_dev_runtime_baseline
+    migration_source: 0077_id_dev_runtime_baseline
     pii_level: internal_contact
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
@@ -454,7 +454,7 @@ tables:
     drop_candidate: false
     runtime_entrypoints:
       - message archive sync cursor
-    migration_source: pre-Alembic baseline, hardened by 0077_id_dev_runtime_baseline
+    migration_source: 0077_id_dev_runtime_baseline
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
     notes: Stores the global WeCom archive last_seq cursor.
@@ -471,7 +471,7 @@ tables:
     drop_after: "after marketing automation config is reconciled with automation_program/workflow"
     runtime_entrypoints:
       - admin config marketing automation settings
-    migration_source: pre-Alembic baseline
+    migration_source: 0083_create_marketing_automation_config_tables
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
     notes: Still actively read/written by admin config code.
@@ -488,7 +488,7 @@ tables:
     drop_after: "after marketing automation config is reconciled with automation_program/workflow"
     runtime_entrypoints:
       - admin config marketing automation settings
-    migration_source: pre-Alembic baseline
+    migration_source: 0083_create_marketing_automation_config_tables
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
     notes: Still actively read/written by admin config code.
@@ -539,13 +539,16 @@ tables:
     domain: customer_read_model
     lifecycle: read_model
     write_owner: aicrm_next.customer_read_model.sidebar_v2
+    write_owners:
+      - aicrm_next.customer_read_model.sidebar_v2
+      - aicrm_next.sidebar_write
     read_owners:
       - aicrm_next.customer_read_model.sidebar_v2
     replacement: ""
     drop_candidate: false
     runtime_entrypoints:
       - sidebar customer profile fields
-    migration_source: pre-Alembic baseline, hardened by 0077_id_dev_runtime_baseline
+    migration_source: 0077_id_dev_runtime_baseline
     pii_level: internal_contact
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
@@ -565,7 +568,7 @@ tables:
       - automation channel list/detail
       - sidebar workflow title
       - WeCom customer acquisition links API
-    migration_source: pre-Alembic baseline, hardened by 0077_id_dev_runtime_baseline
+    migration_source: 0077_id_dev_runtime_baseline
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_unionid_runtime_breakage_hotfix.py
@@ -582,7 +585,7 @@ tables:
     runtime_entrypoints:
       - channel entry callback effect diagnostics
       - channel qrcode generation diagnostics
-    migration_source: pre-Alembic baseline, hardened by 0078_final_legacy_identity_column_cleanup
+    migration_source: 0078_final_legacy_identity_column_cleanup
     pii_level: internal_contact
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
@@ -621,7 +624,7 @@ tables:
       - WeChat Shop sync
       - payment transaction admin
       - sidebar order list
-    migration_source: pre-Alembic baseline, hardened by 0077_id_dev_runtime_baseline
+    migration_source: 0077_id_dev_runtime_baseline
     pii_level: internal_contact
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
@@ -763,6 +766,9 @@ tables:
     domain: campaign
     lifecycle: canonical
     write_owner: aicrm_next.cloud_orchestrator.repository
+    write_owners:
+      - aicrm_next.cloud_orchestrator.repository
+      - aicrm_next.media_library
     read_owners:
       - aicrm_next.cloud_orchestrator.repository
       - aicrm_next.cloud_orchestrator.campaigns_read
@@ -1425,7 +1431,7 @@ tables:
       - SendContentPackage attachment resolution
       - group-ops material resolution
       - channel welcome material resolution
-    migration_source: pre-Alembic baseline
+    migration_source: 0076_create_missing_baseline_runtime_tables
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_material_library_table_boundary.py
@@ -1444,7 +1450,7 @@ tables:
     runtime_entrypoints:
       - questionnaire admin API
       - questionnaire H5 read/submit
-    migration_source: pre-Alembic baseline
+    migration_source: migrations/baselines/0001_post_legacy.sql
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_repository_ownership_guard.py
@@ -1462,7 +1468,7 @@ tables:
     runtime_entrypoints:
       - questionnaire admin API
       - questionnaire H5 read/submit
-    migration_source: pre-Alembic baseline
+    migration_source: migrations/baselines/0001_post_legacy.sql
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_repository_ownership_guard.py
@@ -1480,7 +1486,7 @@ tables:
     runtime_entrypoints:
       - questionnaire admin API
       - questionnaire H5 read/submit
-    migration_source: pre-Alembic baseline
+    migration_source: 0076_create_missing_baseline_runtime_tables
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_repository_ownership_guard.py
@@ -1498,7 +1504,7 @@ tables:
     runtime_entrypoints:
       - questionnaire admin API
       - questionnaire H5 submit
-    migration_source: pre-Alembic baseline
+    migration_source: 0076_create_missing_baseline_runtime_tables
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_repository_ownership_guard.py
@@ -1520,7 +1526,7 @@ tables:
       - questionnaire admin submissions
       - external questionnaire submissions API
       - automation agents prompt hydration
-    migration_source: pre-Alembic baseline
+    migration_source: migrations/baselines/0001_post_legacy.sql
     pii_level: internal_contact
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
@@ -1542,7 +1548,7 @@ tables:
       - questionnaire admin submissions
       - external questionnaire submissions API
       - automation agents prompt hydration
-    migration_source: pre-Alembic baseline
+    migration_source: migrations/baselines/0001_post_legacy.sql
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_repository_ownership_guard.py
@@ -1562,7 +1568,7 @@ tables:
     runtime_entrypoints:
       - read-only questionnaire external push history
       - R09 count-only stale legacy residue diagnosis
-    migration_source: pre-Alembic baseline
+    migration_source: 0076_create_missing_baseline_runtime_tables
     status_enum:
       column: status
     guard_tests:
@@ -1632,7 +1638,7 @@ tables:
     runtime_entrypoints:
       - admin jobs webhook deliveries tab
       - webhook retry/update diagnostics
-    migration_source: pre-Alembic baseline
+    migration_source: 0076_create_missing_baseline_runtime_tables
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_event_effect_table_lineage.py
@@ -1857,7 +1863,7 @@ tables:
     drop_after: ""
     runtime_entrypoints:
       - existing production runtime
-    migration_source: pre-Alembic baseline, registered by 0083 schema drift closeout
+    migration_source: 0085_admin_config_audit_baseline
     pii_level: internal_contact
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
@@ -1908,7 +1914,7 @@ tables:
     drop_after: ""
     runtime_entrypoints:
       - existing production runtime
-    migration_source: pre-Alembic baseline, registered by 0083 schema drift closeout
+    migration_source: 0085_admin_config_audit_baseline
     pii_level: internal_contact
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
@@ -1926,7 +1932,7 @@ tables:
     drop_after: ""
     runtime_entrypoints:
       - existing production runtime
-    migration_source: pre-Alembic baseline, registered by 0083 schema drift closeout
+    migration_source: 0085_admin_config_audit_baseline
     pii_level: internal_contact
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
@@ -1944,7 +1950,7 @@ tables:
     drop_after: ""
     runtime_entrypoints:
       - existing production runtime
-    migration_source: pre-Alembic baseline, registered by 0083 schema drift closeout
+    migration_source: 0045_ai_audience_ops
     pii_level: internal_contact
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
@@ -1964,7 +1970,7 @@ tables:
     drop_after: ""
     runtime_entrypoints:
       - existing production runtime
-    migration_source: pre-Alembic baseline, registered by 0083 schema drift closeout
+    migration_source: 0045_ai_audience_ops
     pii_level: internal_contact
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
@@ -1982,7 +1988,7 @@ tables:
     drop_after: ""
     runtime_entrypoints:
       - existing production runtime
-    migration_source: pre-Alembic baseline, registered by 0083 schema drift closeout
+    migration_source: 0045_ai_audience_ops
     pii_level: internal_contact
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
@@ -2000,7 +2006,7 @@ tables:
     drop_after: ""
     runtime_entrypoints:
       - existing production runtime
-    migration_source: pre-Alembic baseline, registered by 0083 schema drift closeout
+    migration_source: 0045_ai_audience_ops
     pii_level: internal_contact
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
@@ -2019,7 +2025,7 @@ tables:
     drop_after: ""
     runtime_entrypoints:
       - existing production runtime
-    migration_source: pre-Alembic baseline, registered by 0083 schema drift closeout
+    migration_source: 0045_ai_audience_ops
     pii_level: internal_contact
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
@@ -2037,7 +2043,7 @@ tables:
     drop_after: ""
     runtime_entrypoints:
       - existing production runtime
-    migration_source: pre-Alembic baseline, registered by 0083 schema drift closeout
+    migration_source: 0045_ai_audience_ops
     pii_level: internal_contact
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
@@ -2055,7 +2061,7 @@ tables:
     drop_after: ""
     runtime_entrypoints:
       - existing production runtime
-    migration_source: pre-Alembic baseline, registered by 0083 schema drift closeout
+    migration_source: 0045_ai_audience_ops
     pii_level: internal_contact
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
@@ -2073,7 +2079,7 @@ tables:
     drop_after: ""
     runtime_entrypoints:
       - existing production runtime
-    migration_source: pre-Alembic baseline, registered by 0083 schema drift closeout
+    migration_source: 0051_ai_audience_sender_whitelist
     pii_level: internal_contact
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
@@ -2091,7 +2097,7 @@ tables:
     drop_after: ""
     runtime_entrypoints:
       - existing production runtime
-    migration_source: pre-Alembic baseline, registered by 0083 schema drift closeout
+    migration_source: 0045_ai_audience_ops
     pii_level: internal_contact
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
@@ -2109,7 +2115,7 @@ tables:
     drop_after: ""
     runtime_entrypoints:
       - existing production runtime
-    migration_source: pre-Alembic baseline, registered by 0083 schema drift closeout
+    migration_source: Alembic runtime metadata
     pii_level: internal_contact
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
@@ -2127,7 +2133,7 @@ tables:
     drop_after: ""
     runtime_entrypoints:
       - existing production runtime
-    migration_source: pre-Alembic baseline, registered by 0083 schema drift closeout
+    migration_source: 0014_alipay_pay
     pii_level: internal_contact
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
@@ -2145,7 +2151,7 @@ tables:
     drop_after: ""
     runtime_entrypoints:
       - existing production runtime
-    migration_source: pre-Alembic baseline, registered by 0083 schema drift closeout
+    migration_source: 0014_alipay_pay
     pii_level: internal_contact
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
@@ -2156,6 +2162,9 @@ tables:
     domain: automation_agents
     lifecycle: audit
     write_owner: aicrm_next.automation_agents
+    write_owners:
+      - aicrm_next.automation_agents
+      - aicrm_next.automation_engine
     read_owners:
       - historical schema drift guard
     replacement: none; active production schema table registered during schema drift closeout
@@ -2163,7 +2172,7 @@ tables:
     drop_after: ""
     runtime_entrypoints:
       - existing production runtime
-    migration_source: pre-Alembic baseline, registered by 0083 schema drift closeout
+    migration_source: 0022_next_automation_agents
     pii_level: internal_contact
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
@@ -2181,7 +2190,7 @@ tables:
     drop_after: ""
     runtime_entrypoints:
       - existing production runtime
-    migration_source: pre-Alembic baseline, registered by 0083 schema drift closeout
+    migration_source: migrations/baselines/0001_post_legacy.sql
     pii_level: internal_contact
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
@@ -2192,6 +2201,9 @@ tables:
     domain: automation_agents
     lifecycle: canonical
     write_owner: aicrm_next.automation_agents
+    write_owners:
+      - aicrm_next.automation_agents
+      - aicrm_next.automation_engine
     read_owners:
       - historical schema drift guard
     replacement: none; active production schema table registered during schema drift closeout
@@ -2199,12 +2211,48 @@ tables:
     drop_after: ""
     runtime_entrypoints:
       - existing production runtime
-    migration_source: pre-Alembic baseline, registered by 0083 schema drift closeout
+    migration_source: 0022_next_automation_agents
     pii_level: internal_contact
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
     notes: Registered from the id-dev public schema so schema_drift_guard can fail closed on future unmanaged table changes.
+
+  automation_agent_llm_call_log:
+    domain: ai_audience_ops
+    lifecycle: audit
+    write_owner: aicrm_next.ai_audience_ops
+    read_owners:
+      - aicrm_next.admin_read_model
+    replacement: none; canonical AI agent provider-call audit log
+    drop_candidate: false
+    drop_after: ""
+    runtime_entrypoints:
+      - AI audience agent execution
+      - admin AI assistant diagnostics
+    migration_source: migrations/baselines/0001_post_legacy.sql
+    pii_level: internal_contact
+    guard_tests:
+      - tests/test_ai_audience_agent_copywriting.py
+      - tests/test_database_bootstrap.py
+
+  automation_agent_output:
+    domain: ai_audience_ops
+    lifecycle: audit
+    write_owner: aicrm_next.ai_audience_ops
+    read_owners:
+      - aicrm_next.admin_read_model
+    replacement: none; canonical AI agent output and adoption evidence
+    drop_candidate: false
+    drop_after: ""
+    runtime_entrypoints:
+      - AI audience agent execution
+      - admin AI assistant diagnostics
+    migration_source: migrations/baselines/0001_post_legacy.sql
+    pii_level: internal_contact
+    guard_tests:
+      - tests/test_ai_audience_agent_copywriting.py
+      - tests/test_database_bootstrap.py
 
   automation_agent_run:
     domain: automation_agents
@@ -2217,7 +2265,7 @@ tables:
     drop_after: ""
     runtime_entrypoints:
       - existing production runtime
-    migration_source: pre-Alembic baseline, registered by 0083 schema drift closeout
+    migration_source: migrations/baselines/0001_post_legacy.sql
     pii_level: internal_contact
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
@@ -2235,7 +2283,7 @@ tables:
     drop_after: ""
     runtime_entrypoints:
       - existing production runtime
-    migration_source: pre-Alembic baseline, registered by 0083 schema drift closeout
+    migration_source: 0054_automation_agent_runtime_config
     pii_level: internal_contact
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
@@ -2253,7 +2301,7 @@ tables:
     drop_after: ""
     runtime_entrypoints:
       - existing production runtime
-    migration_source: pre-Alembic baseline, registered by 0083 schema drift closeout
+    migration_source: 0054_automation_agent_runtime_config
     pii_level: internal_contact
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
@@ -2271,7 +2319,7 @@ tables:
     drop_after: ""
     runtime_entrypoints:
       - existing production runtime
-    migration_source: pre-Alembic baseline, registered by 0083 schema drift closeout
+    migration_source: 0054_automation_agent_runtime_config
     pii_level: internal_contact
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
@@ -2282,6 +2330,9 @@ tables:
     domain: automation_agents
     lifecycle: canonical
     write_owner: aicrm_next.automation_agents
+    write_owners:
+      - aicrm_next.automation_agents
+      - aicrm_next.automation_engine
     read_owners:
       - historical schema drift guard
     replacement: none; active production schema table registered during schema drift closeout
@@ -2289,7 +2340,7 @@ tables:
     drop_after: ""
     runtime_entrypoints:
       - existing production runtime
-    migration_source: pre-Alembic baseline, registered by 0083 schema drift closeout
+    migration_source: 0022_next_automation_agents
     pii_level: internal_contact
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
@@ -2307,7 +2358,7 @@ tables:
     drop_after: ""
     runtime_entrypoints:
       - existing production runtime
-    migration_source: pre-Alembic baseline, registered by 0083 schema drift closeout
+    migration_source: migrations/baselines/0001_post_legacy.sql
     pii_level: internal_contact
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
@@ -2318,6 +2369,9 @@ tables:
     domain: channel_entry
     lifecycle: canonical
     write_owner: aicrm_next.automation_engine.channels_api
+    write_owners:
+      - aicrm_next.automation_engine.channels_api
+      - aicrm_next.channel_entry
     read_owners:
       - historical schema drift guard
     replacement: none; active production schema table registered during schema drift closeout
@@ -2325,7 +2379,7 @@ tables:
     drop_after: ""
     runtime_entrypoints:
       - existing production runtime
-    migration_source: pre-Alembic baseline, registered by 0083 schema drift closeout
+    migration_source: migrations/baselines/0001_post_legacy.sql
     pii_level: internal_contact
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
@@ -2336,6 +2390,9 @@ tables:
     domain: channel_entry
     lifecycle: canonical
     write_owner: aicrm_next.automation_engine.channels_api
+    write_owners:
+      - aicrm_next.automation_engine.channels_api
+      - aicrm_next.channel_entry
     read_owners:
       - historical schema drift guard
     replacement: none; active production schema table registered during schema drift closeout
@@ -2343,7 +2400,7 @@ tables:
     drop_after: ""
     runtime_entrypoints:
       - existing production runtime
-    migration_source: pre-Alembic baseline, registered by 0083 schema drift closeout
+    migration_source: 0036_channel_multi_staff_assignment
     pii_level: internal_contact
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
@@ -2354,6 +2411,9 @@ tables:
     domain: channel_entry
     lifecycle: audit
     write_owner: aicrm_next.automation_engine.channels_api
+    write_owners:
+      - aicrm_next.automation_engine.channels_api
+      - aicrm_next.channel_entry
     read_owners:
       - historical schema drift guard
     replacement: none; active production schema table registered during schema drift closeout
@@ -2361,7 +2421,7 @@ tables:
     drop_after: ""
     runtime_entrypoints:
       - existing production runtime
-    migration_source: pre-Alembic baseline, registered by 0083 schema drift closeout
+    migration_source: 0036_channel_multi_staff_assignment
     pii_level: internal_contact
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
@@ -2372,6 +2432,9 @@ tables:
     domain: channel_entry
     lifecycle: canonical
     write_owner: aicrm_next.automation_engine.channels_api
+    write_owners:
+      - aicrm_next.automation_engine.channels_api
+      - aicrm_next.channel_entry
     read_owners:
       - historical schema drift guard
     replacement: none; active production schema table registered during schema drift closeout
@@ -2379,7 +2442,7 @@ tables:
     drop_after: ""
     runtime_entrypoints:
       - existing production runtime
-    migration_source: pre-Alembic baseline, registered by 0083 schema drift closeout
+    migration_source: migrations/baselines/0001_post_legacy.sql
     pii_level: internal_contact
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
@@ -2390,6 +2453,9 @@ tables:
     domain: channel_entry
     lifecycle: canonical
     write_owner: aicrm_next.automation_engine.channels_api
+    write_owners:
+      - aicrm_next.automation_engine.channels_api
+      - aicrm_next.channel_entry
     read_owners:
       - historical schema drift guard
     replacement: none; active production schema table registered during schema drift closeout
@@ -2397,7 +2463,7 @@ tables:
     drop_after: ""
     runtime_entrypoints:
       - existing production runtime
-    migration_source: pre-Alembic baseline, registered by 0083 schema drift closeout
+    migration_source: migrations/baselines/0001_post_legacy.sql
     pii_level: internal_contact
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
@@ -2408,6 +2474,9 @@ tables:
     domain: channel_entry
     lifecycle: canonical
     write_owner: aicrm_next.automation_engine.channels_api
+    write_owners:
+      - aicrm_next.automation_engine.channels_api
+      - aicrm_next.channel_entry
     read_owners:
       - historical schema drift guard
     replacement: none; active production schema table registered during schema drift closeout
@@ -2415,7 +2484,7 @@ tables:
     drop_after: ""
     runtime_entrypoints:
       - existing production runtime
-    migration_source: pre-Alembic baseline, registered by 0083 schema drift closeout
+    migration_source: migrations/baselines/0001_post_legacy.sql
     pii_level: internal_contact
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
@@ -2433,7 +2502,7 @@ tables:
     drop_after: ""
     runtime_entrypoints:
       - existing production runtime
-    migration_source: pre-Alembic baseline, registered by 0083 schema drift closeout
+    migration_source: 0004_cloud_orchestrator
     pii_level: internal_contact
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
@@ -2451,7 +2520,7 @@ tables:
     drop_after: ""
     runtime_entrypoints:
       - existing production runtime
-    migration_source: pre-Alembic baseline, registered by 0083 schema drift closeout
+    migration_source: 0004_cloud_orchestrator
     pii_level: internal_contact
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
@@ -2469,7 +2538,7 @@ tables:
     drop_after: ""
     runtime_entrypoints:
       - existing production runtime
-    migration_source: pre-Alembic baseline, registered by 0083 schema drift closeout
+    migration_source: migrations/baselines/0001_post_legacy.sql
     pii_level: internal_contact
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
@@ -2487,7 +2556,7 @@ tables:
     drop_after: ""
     runtime_entrypoints:
       - existing production runtime
-    migration_source: pre-Alembic baseline, registered by 0083 schema drift closeout
+    migration_source: migrations/baselines/0001_post_legacy.sql
     pii_level: internal_contact
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
@@ -2510,7 +2579,7 @@ tables:
     drop_after: ""
     runtime_entrypoints:
       - existing production runtime
-    migration_source: pre-Alembic baseline, registered by 0083 and used by the 0103 broadcast finalizer
+    migration_source: 0021_broadcast_queue_platform_hardening
     pii_level: internal_contact
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
@@ -2528,7 +2597,7 @@ tables:
     drop_after: ""
     runtime_entrypoints:
       - existing production runtime
-    migration_source: pre-Alembic baseline, registered by 0083 schema drift closeout
+    migration_source: 0020_broadcast_job_hourly_reports
     pii_level: internal_contact
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
@@ -2546,7 +2615,7 @@ tables:
     drop_after: ""
     runtime_entrypoints:
       - existing production runtime
-    migration_source: pre-Alembic baseline, registered by 0083 schema drift closeout
+    migration_source: 0019_broadcast_queue_notification_settings
     pii_level: internal_contact
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
@@ -2564,7 +2633,7 @@ tables:
     drop_after: ""
     runtime_entrypoints:
       - existing production runtime
-    migration_source: pre-Alembic baseline, registered by 0083 schema drift closeout
+    migration_source: 0004_cloud_orchestrator
     pii_level: internal_contact
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
@@ -2582,7 +2651,7 @@ tables:
     drop_after: ""
     runtime_entrypoints:
       - existing production runtime
-    migration_source: pre-Alembic baseline, registered by 0083 schema drift closeout
+    migration_source: 0004_cloud_orchestrator
     pii_level: internal_contact
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
@@ -2605,7 +2674,7 @@ tables:
     drop_after: ""
     runtime_entrypoints:
       - existing production runtime
-    migration_source: pre-Alembic baseline, registered by 0083 and state-aligned by 0103
+    migration_source: 0024_cloud_plan_recipient_approval
     pii_level: internal_contact
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
@@ -2628,7 +2697,7 @@ tables:
     drop_after: ""
     runtime_entrypoints:
       - existing production runtime
-    migration_source: pre-Alembic baseline, registered by 0083 and state-aligned by 0103
+    migration_source: 0024_cloud_plan_recipient_approval
     pii_level: internal_contact
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
@@ -2647,7 +2716,7 @@ tables:
     drop_after: ""
     runtime_entrypoints:
       - existing production runtime
-    migration_source: pre-Alembic baseline, registered by 0083 schema drift closeout
+    migration_source: 0004_cloud_orchestrator
     pii_level: internal_contact
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
@@ -2665,7 +2734,7 @@ tables:
     drop_after: ""
     runtime_entrypoints:
       - existing production runtime
-    migration_source: pre-Alembic baseline, registered by 0083 schema drift closeout
+    migration_source: migrations/baselines/0001_post_legacy.sql
     pii_level: internal_contact
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
@@ -2697,7 +2766,7 @@ tables:
     drop_after: ""
     runtime_entrypoints:
       - existing production runtime
-    migration_source: pre-Alembic baseline, registered by 0083 schema drift closeout
+    migration_source: migrations/baselines/0001_post_legacy.sql
     pii_level: internal_contact
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
@@ -2718,7 +2787,7 @@ tables:
     drop_after: ""
     runtime_entrypoints:
       - existing production runtime
-    migration_source: pre-Alembic baseline, registered by 0083 schema drift closeout
+    migration_source: 0062_unionid_identity_refactor
     pii_level: internal_contact
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
@@ -2736,7 +2805,7 @@ tables:
     drop_after: ""
     runtime_entrypoints:
       - existing production runtime
-    migration_source: pre-Alembic baseline, registered by 0083 schema drift closeout
+    migration_source: 0062_unionid_identity_refactor
     pii_level: internal_contact
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
@@ -2761,7 +2830,7 @@ tables:
     drop_after: ""
     runtime_entrypoints:
       - existing production runtime
-    migration_source: pre-Alembic baseline, registered by 0083 schema drift closeout
+    migration_source: migrations/baselines/0001_post_legacy.sql
     pii_level: internal_contact
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
@@ -2779,7 +2848,7 @@ tables:
     drop_after: ""
     runtime_entrypoints:
       - existing production runtime
-    migration_source: pre-Alembic baseline, registered by 0083 schema drift closeout
+    migration_source: 0026_customer_read_model_next
     pii_level: internal_contact
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
@@ -2797,7 +2866,7 @@ tables:
     drop_after: ""
     runtime_entrypoints:
       - existing production runtime
-    migration_source: pre-Alembic baseline, registered by 0083 schema drift closeout
+    migration_source: 0026_customer_read_model_next
     pii_level: internal_contact
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
@@ -2815,7 +2884,7 @@ tables:
     drop_after: ""
     runtime_entrypoints:
       - existing production runtime
-    migration_source: pre-Alembic baseline, registered by 0083 schema drift closeout
+    migration_source: 0026_customer_read_model_next
     pii_level: internal_contact
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
@@ -2833,7 +2902,7 @@ tables:
     drop_after: ""
     runtime_entrypoints:
       - existing production runtime
-    migration_source: pre-Alembic baseline, registered by 0083 schema drift closeout
+    migration_source: 0026_customer_read_model_next
     pii_level: internal_contact
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
@@ -2854,7 +2923,7 @@ tables:
     drop_after: ""
     runtime_entrypoints:
       - existing production runtime
-    migration_source: pre-Alembic baseline, registered by 0083 schema drift closeout
+    migration_source: migrations/baselines/0001_post_legacy.sql
     pii_level: internal_contact
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
@@ -2865,6 +2934,9 @@ tables:
     domain: external
     lifecycle: audit
     write_owner: aicrm_next.external_effect
+    write_owners:
+      - aicrm_next.external_effect
+      - aicrm_next.platform_foundation.external_effects
     read_owners:
       - historical schema drift guard
     replacement: none; active production schema table registered during schema drift closeout
@@ -2872,7 +2944,7 @@ tables:
     drop_after: ""
     runtime_entrypoints:
       - existing production runtime
-    migration_source: pre-Alembic baseline, registered by 0083 schema drift closeout
+    migration_source: 0040_external_effect_test_receiver
     pii_level: internal_contact
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
@@ -2883,6 +2955,9 @@ tables:
     domain: external
     lifecycle: config
     write_owner: aicrm_next.external_push
+    write_owners:
+      - aicrm_next.commerce
+      - aicrm_next.external_push
     read_owners:
       - aicrm_next.external_push
     replacement: none; active production schema table registered during schema drift closeout
@@ -2890,7 +2965,7 @@ tables:
     drop_after: ""
     runtime_entrypoints:
       - existing production runtime
-    migration_source: pre-Alembic baseline, registered by 0083 schema drift closeout
+    migration_source: 0023_product_external_push
     pii_level: internal_contact
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
@@ -2908,7 +2983,7 @@ tables:
     drop_after: ""
     runtime_entrypoints:
       - existing production runtime
-    migration_source: pre-Alembic baseline, registered by 0083 schema drift closeout
+    migration_source: migrations/baselines/0001_post_legacy.sql
     pii_level: internal_contact
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
@@ -3052,6 +3127,9 @@ tables:
     domain: user_ops
     lifecycle: canonical
     write_owner: aicrm_next.user_ops
+    write_owners:
+      - aicrm_next.hxc_dashboard
+      - aicrm_next.user_ops
     read_owners:
       - historical schema drift guard
     replacement: none; active production schema table registered during schema drift closeout
@@ -3059,7 +3137,7 @@ tables:
     drop_after: ""
     runtime_entrypoints:
       - existing production runtime
-    migration_source: pre-Alembic baseline, registered by 0083 schema drift closeout
+    migration_source: 0018_hxc_dashboard_broadcast_tasks
     pii_level: internal_contact
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
@@ -3070,6 +3148,9 @@ tables:
     domain: legacy_webhook_cleanup
     lifecycle: audit
     write_owner: aicrm_next.legacy_webhook_cleanup
+    write_owners:
+      - aicrm_next.legacy_webhook_cleanup
+      - aicrm_next.platform_foundation.legacy_cleanup
     read_owners:
       - historical schema drift guard
     replacement: none; active production schema table registered during schema drift closeout
@@ -3077,7 +3158,7 @@ tables:
     drop_after: ""
     runtime_entrypoints:
       - existing production runtime
-    migration_source: pre-Alembic baseline, registered by 0083 schema drift closeout
+    migration_source: 0042_legacy_webhook_deprecation_registry
     pii_level: internal_contact
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
@@ -3088,6 +3169,9 @@ tables:
     domain: legacy_webhook_cleanup
     lifecycle: config
     write_owner: aicrm_next.legacy_webhook_cleanup
+    write_owners:
+      - aicrm_next.legacy_webhook_cleanup
+      - aicrm_next.platform_foundation.legacy_cleanup
     read_owners:
       - historical schema drift guard
     replacement: none; active production schema table registered during schema drift closeout
@@ -3095,7 +3179,7 @@ tables:
     drop_after: ""
     runtime_entrypoints:
       - existing production runtime
-    migration_source: pre-Alembic baseline, registered by 0083 schema drift closeout
+    migration_source: 0042_legacy_webhook_deprecation_registry
     pii_level: internal_contact
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
@@ -3119,7 +3203,7 @@ tables:
     drop_after: ""
     runtime_entrypoints:
       - existing production runtime
-    migration_source: pre-Alembic baseline, registered by 0083 and linked one-to-one to broadcast_jobs by 0103
+    migration_source: migrations/baselines/0001_post_legacy.sql
     pii_level: internal_contact
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
@@ -3157,7 +3241,7 @@ tables:
     drop_after: ""
     runtime_entrypoints:
       - existing production runtime
-    migration_source: pre-Alembic baseline, hardened by 0102_questionnaire_radar_invariants
+    migration_source: migrations/baselines/0001_post_legacy.sql
     pii_level: internal_contact
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
@@ -3175,7 +3259,7 @@ tables:
     drop_after: ""
     runtime_entrypoints:
       - existing production runtime
-    migration_source: pre-Alembic baseline, registered by 0083 schema drift closeout
+    migration_source: 0025_radar_pdf_preview_assets
     pii_level: internal_contact
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
@@ -3186,6 +3270,10 @@ tables:
     domain: admin_jobs
     lifecycle: canonical
     write_owner: aicrm_next.admin_jobs
+    write_owners:
+      - aicrm_next.admin_jobs
+      - aicrm_next.customer_tags
+      - aicrm_next.message_archive
     read_owners:
       - aicrm_next.admin_jobs
       - aicrm_next.admin_read_model
@@ -3194,7 +3282,7 @@ tables:
     drop_after: ""
     runtime_entrypoints:
       - existing production runtime
-    migration_source: pre-Alembic baseline, registered by 0083 schema drift closeout
+    migration_source: migrations/baselines/0001_post_legacy.sql
     pii_level: internal_contact
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
@@ -3212,7 +3300,7 @@ tables:
     drop_after: ""
     runtime_entrypoints:
       - existing production runtime
-    migration_source: pre-Alembic baseline, registered by 0083 schema drift closeout
+    migration_source: 0010_user_ops_hxc_dashboard_snapshot
     pii_level: internal_contact
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
@@ -3230,7 +3318,7 @@ tables:
     drop_after: ""
     runtime_entrypoints:
       - existing production runtime
-    migration_source: pre-Alembic baseline, registered by 0083 schema drift closeout
+    migration_source: 0010_user_ops_hxc_dashboard_snapshot
     pii_level: internal_contact
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
@@ -3248,7 +3336,7 @@ tables:
     drop_after: ""
     runtime_entrypoints:
       - existing production runtime
-    migration_source: pre-Alembic baseline, registered by 0083 schema drift closeout
+    migration_source: 0011_user_ops_hxc_send_config
     pii_level: internal_contact
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
@@ -3259,6 +3347,9 @@ tables:
     domain: webhook_ingress
     lifecycle: canonical
     write_owner: aicrm_next.webhook_ingress
+    write_owners:
+      - aicrm_next.platform_foundation.webhook_inbox
+      - aicrm_next.webhook_ingress
     read_owners:
       - historical schema drift guard
     replacement: none; active production schema table registered during schema drift closeout
@@ -3266,7 +3357,7 @@ tables:
     drop_after: ""
     runtime_entrypoints:
       - existing production runtime
-    migration_source: pre-Alembic baseline, registered by 0083 schema drift closeout
+    migration_source: 0054_webhook_inbox
     pii_level: internal_contact
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
@@ -3284,7 +3375,7 @@ tables:
     drop_after: ""
     runtime_entrypoints:
       - existing production runtime
-    migration_source: pre-Alembic baseline, registered by 0083 schema drift closeout
+    migration_source: migrations/baselines/0001_post_legacy.sql
     pii_level: internal_contact
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
@@ -3393,7 +3484,7 @@ tables:
     drop_after: ""
     runtime_entrypoints:
       - existing production runtime
-    migration_source: pre-Alembic baseline, registered by 0083 schema drift closeout
+    migration_source: migrations/baselines/0001_post_legacy.sql
     pii_level: internal_contact
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
@@ -3411,7 +3502,7 @@ tables:
     drop_after: ""
     runtime_entrypoints:
       - existing production runtime
-    migration_source: pre-Alembic baseline, registered by 0083 schema drift closeout
+    migration_source: 0012_wechat_pay_products
     pii_level: internal_contact
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
@@ -3432,7 +3523,7 @@ tables:
     runtime_entrypoints:
       - existing production runtime
       - aicrm_next.customer_read_model.sidebar_v2
-    migration_source: pre-Alembic baseline, registered by 0083 schema drift closeout
+    migration_source: migrations/baselines/0001_post_legacy.sql
     pii_level: internal_contact
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
@@ -3451,7 +3542,7 @@ tables:
     drop_after: ""
     runtime_entrypoints:
       - existing production runtime
-    migration_source: pre-Alembic baseline, registered by 0083 schema drift closeout; idempotency indexes added by 0101_commerce_fulfillment_invariants
+    migration_source: migrations/baselines/0001_post_legacy.sql
     pii_level: internal_contact
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
@@ -3469,7 +3560,7 @@ tables:
     drop_after: ""
     runtime_entrypoints:
       - existing production runtime
-    migration_source: pre-Alembic baseline, registered by 0083 schema drift closeout
+    migration_source: 0035_wechat_shop_refunds
     pii_level: internal_contact
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
@@ -3487,7 +3578,7 @@ tables:
     drop_after: ""
     runtime_entrypoints:
       - existing production runtime
-    migration_source: pre-Alembic baseline, registered by 0083 schema drift closeout
+    migration_source: 0036_wechat_shop_sync_runs
     pii_level: internal_contact
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
@@ -3505,7 +3596,7 @@ tables:
     drop_after: ""
     runtime_entrypoints:
       - existing production runtime
-    migration_source: pre-Alembic baseline, registered by 0083 schema drift closeout
+    migration_source: 0016_wecom_corp_tag_catalog
     pii_level: internal_contact
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
@@ -3523,7 +3614,7 @@ tables:
     drop_after: ""
     runtime_entrypoints:
       - existing production runtime
-    migration_source: pre-Alembic baseline, registered by 0083 schema drift closeout
+    migration_source: 0016_wecom_corp_tag_catalog
     pii_level: internal_contact
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
@@ -3534,6 +3625,9 @@ tables:
     domain: identity_contact
     lifecycle: audit
     write_owner: aicrm_next.identity_contact
+    write_owners:
+      - aicrm_next.channel_entry
+      - aicrm_next.identity_contact
     read_owners:
       - aicrm_next.admin_jobs
       - aicrm_next.admin_read_model
@@ -3542,7 +3636,7 @@ tables:
     drop_after: ""
     runtime_entrypoints:
       - existing production runtime
-    migration_source: pre-Alembic baseline, registered by 0083 schema drift closeout
+    migration_source: migrations/baselines/0001_post_legacy.sql
     pii_level: internal_contact
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
@@ -3563,7 +3657,7 @@ tables:
     drop_after: ""
     runtime_entrypoints:
       - existing production runtime
-    migration_source: pre-Alembic baseline, registered by 0083 schema drift closeout
+    migration_source: migrations/baselines/0001_post_legacy.sql
     pii_level: internal_contact
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
@@ -3584,7 +3678,7 @@ tables:
     drop_after: ""
     runtime_entrypoints:
       - existing production runtime
-    migration_source: pre-Alembic baseline, registered by 0083 schema drift closeout
+    migration_source: migrations/baselines/0001_post_legacy.sql
     pii_level: internal_contact
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
@@ -3602,7 +3696,7 @@ tables:
     drop_after: ""
     runtime_entrypoints:
       - existing production runtime
-    migration_source: pre-Alembic baseline, registered by 0083 schema drift closeout
+    migration_source: 0015_group_ops_plans
     pii_level: internal_contact
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
