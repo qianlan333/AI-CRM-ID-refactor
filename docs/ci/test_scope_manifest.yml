@@ -111,6 +111,29 @@
   ],
   "scopes": [
     {
+      "name": "runtime_module_size_governance",
+      "paths": [
+        "tools/check_runtime_module_sizes.py",
+        "docs/architecture/runtime_module_size_baseline.yml",
+        "tests/test_runtime_module_size_guard.py",
+        "tests/test_runtime_module_split_contract.py"
+      ],
+      "python_tests": [
+        "tests/test_runtime_module_size_guard.py",
+        "tests/test_runtime_module_split_contract.py",
+        "tests/test_internal_events_mvp.py",
+        "tests/test_internal_event_outbox.py",
+        "tests/test_questionnaire_application_contract.py",
+        "tests/test_questionnaire_postgres_submit_repository.py",
+        "tests/test_admin_config_next.py",
+        "tests/test_admin_config_secret_references.py",
+        "tests/test_select_test_scope.py"
+      ],
+      "needs_postgres": true,
+      "needs_full_ci": true,
+      "architecture_gate": "full"
+    },
+    {
       "name": "ai_audience_e2e_composition",
       "paths": [
         "aicrm_next/ai_audience_e2e_composition.py",

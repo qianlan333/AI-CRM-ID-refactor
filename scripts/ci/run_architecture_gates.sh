@@ -21,6 +21,7 @@ fi
 
 run_fast() {
 "$PYTHON" tools/check_import_graph.py
+"$PYTHON" tools/check_runtime_module_sizes.py
 "$PYTHON" scripts/ci/check_auth_credential_boundaries.py
 "$PYTHON" tools/check_route_ownership_manifest.py
 "$PYTHON" scripts/ci/update_route_policy_manifest.py --check
