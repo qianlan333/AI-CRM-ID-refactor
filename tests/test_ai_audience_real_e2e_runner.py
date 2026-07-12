@@ -39,7 +39,15 @@ def test_external_e2e_route_is_removed(next_client, next_pg_schema, monkeypatch)
 
 def test_e2e_runner_hard_guards(monkeypatch) -> None:
     monkeypatch.setenv("AICRM_AI_AUDIENCE_E2E_RUNNER_ENABLED", "true")
-    runner = AudienceRealE2ERunner(repository=object(), package_service=object(), refresh_service=object(), outbound_service=object(), external_effects=object(), worker=object(), preview_command=object(), execute_command=object())
+    runner = AudienceRealE2ERunner(
+        repository=object(),
+        package_service=object(),
+        refresh_service=object(),
+        outbound_service=object(),
+        external_effects=object(),
+        worker=object(),
+        user_ops_gateway=object(),
+    )
 
     base = {
         "run_id": "e2e_guard",

@@ -8,6 +8,7 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from .ai_audience_ops import register_ai_audience_event_consumers
+from .ai_audience_e2e_composition import build_ai_audience_e2e_runner_factory
 from . import fixture_reset_registry
 from .admin_auth.route_policy import route_policy_required_response
 from .admin_config.pii_audit_repository import AdminConfigPiiAuditRepository
@@ -54,6 +55,7 @@ def create_app(*, pii_audit_repository: PiiAuditRepository | None = None) -> Fas
     assert_required_runtime_secrets()
     app = FastAPI(title="AI-CRM Next", version="0.1.0")
     app.state.external_effect_continuation_registry = build_external_effect_continuation_registry()
+    app.state.ai_audience_e2e_runner_factory = build_ai_audience_e2e_runner_factory()
     register_payment_succeeded_consumers()
     register_refund_succeeded_consumers()
     register_shadow_event_consumers()

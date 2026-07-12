@@ -248,6 +248,12 @@ def test_platform_foundation_does_not_reverse_import_external_effect_business_co
     assert ("platform_foundation", "customer_tags") not in _edge_pairs(report)
 
 
+def test_ai_audience_ops_does_not_import_ops_enrollment_runtime() -> None:
+    report = scan_import_graph(ROOT)
+
+    assert ("ai_audience_ops", "ops_enrollment") not in _edge_pairs(report)
+
+
 def test_repository_import_graph_matches_registered_r12_baseline() -> None:
     report, violations = check_import_graph(
         root=ROOT,
@@ -256,7 +262,7 @@ def test_repository_import_graph_matches_registered_r12_baseline() -> None:
 
     assert violations == []
     assert len(report.contexts) == 40
-    assert len(report.edges) == 192
+    assert len(report.edges) == 191
     assert report.cyclic_components == (
         (
             "admin_auth",
@@ -278,9 +284,5 @@ def test_repository_import_graph_matches_registered_r12_baseline() -> None:
             "questionnaire",
             "send_content",
             "service_period",
-        ),
-        (
-            "ai_audience_ops",
-            "ops_enrollment",
         ),
     )

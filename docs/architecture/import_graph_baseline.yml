@@ -3,8 +3,8 @@ package: aicrm_next
 
 limits:
   max_contexts: 40
-  max_cross_context_edges: 192
-  max_cyclic_contexts: 21
+  max_cross_context_edges: 191
+  max_cyclic_contexts: 19
 
 allowed_cyclic_components:
   - id: legacy_cross_context_runtime_scc
@@ -31,10 +31,3 @@ allowed_cyclic_components:
       - questionnaire
       - send_content
       - service_period
-  - id: ai_audience_ops_ops_enrollment_scc
-    owner: architecture
-    reason: The remaining audience enrollment query dependency will be inverted in the next R12 slice.
-    remove_by: "2026-08-31"
-    contexts:
-      - ai_audience_ops
-      - ops_enrollment
