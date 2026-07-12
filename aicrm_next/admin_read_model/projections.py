@@ -290,23 +290,5 @@ def config_payload(repo: AdminReadRepository) -> dict[str, Any]:
     )
 
 
-def api_docs_payload(repo: AdminReadRepository) -> dict[str, Any]:
-    from aicrm_next.admin_config.api_docs_view_model import build_api_docs_view_model
-
-    view_model = build_api_docs_view_model()
-    routes = [
-        [item["group_title"], item["method"], item["path"], item["summary"], item["auth"]]
-        for item in view_model["quick_reference"]
-    ]
-    return _base_payload(
-        repo,
-        {
-            "source_status": view_model["source_status"],
-            "cards": [{"label": "API 路由", "value": len(routes), "description": "Next route registry"}],
-            "sections": [{"title": "API 分组", "headers": ["分组", "方法", "路径", "说明", "认证"], "rows": routes}],
-        },
-    )
-
-
 def page_row_count(payload: dict[str, Any]) -> int:
     return sum(len(section.get("rows") or []) for section in payload.get("sections") or [])
