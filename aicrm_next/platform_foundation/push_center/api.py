@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import hmac
 from pathlib import Path
 from typing import Any
 
@@ -11,7 +10,6 @@ from fastapi.templating import Jinja2Templates
 from aicrm_next.admin_jobs.routes import ensure_admin_action_token, validate_admin_action_token
 from aicrm_next.admin_shell import admin_path_for, shell_context
 from aicrm_next.platform_foundation.external_effects.service import ExternalEffectService
-from aicrm_next.shared.runtime_settings import runtime_setting
 
 from . import CAPABILITY_OWNER, ROUTE_OWNER
 from .repository import PushCenterRepository
@@ -62,23 +60,7 @@ def _json(payload: dict[str, Any], *, status_code: int = 200) -> JSONResponse:
     )
 
 
-def _internal_token_error(request: Request) -> str:
-    header = _text(request.headers.get("Authorization"))
-    if not header.lower().startswith("bearer "):
-        return "internal_token_required"
-    expected = _text(runtime_setting("AUTOMATION_INTERNAL_API_TOKEN"))
-    if not expected:
-        return "automation_internal_token_not_configured"
-    actual = header.split(" ", 1)[1].strip()
-    if not hmac.compare_digest(actual, expected):
-        return "internal_token_required"
-    return ""
-
-
 def _action_or_internal_token_error(request: Request, payload: dict[str, Any]) -> str:
-    internal_error = _internal_token_error(request)
-    if not internal_error:
-        return ""
     token = _text(request.headers.get("X-Admin-Action-Token")) or _text(payload.get("admin_action_token"))
     return validate_admin_action_token(token, request=request)
 

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import json
 import inspect
+import json
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from typing import Any, Protocol
@@ -38,7 +38,7 @@ class HttpsTransport(Protocol):
         self,
         target: ValidatedHttpsTarget,
         *,
-        json_body: dict[str, Any] | list[Any],
+        body: bytes,
         headers: Mapping[str, str],
         timeout: float,
     ) -> HttpsTransportResponse: ...
@@ -52,13 +52,13 @@ class PinnedHttpsTransport:
         self,
         target: ValidatedHttpsTarget,
         *,
-        json_body: dict[str, Any] | list[Any],
+        body: bytes,
         headers: Mapping[str, str],
         timeout: float,
     ) -> HttpsTransportResponse:
         request_headers = {str(key): str(value) for key, value in headers.items()}
         request_headers["Host"] = target.host_header
-        body = json.dumps(json_body, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+        request_body = bytes(body or b"")
         pool = self._pool_factory(
             target.selected_ip,
             port=target.port,
@@ -69,7 +69,7 @@ class PinnedHttpsTransport:
             response = pool.request(
                 "POST",
                 target.request_target,
-                body=body,
+                body=request_body,
                 headers=request_headers,
                 timeout=urllib3.Timeout(total=float(timeout)),
                 redirect=False,
@@ -109,7 +109,7 @@ class CallableHttpsTransport:
         self,
         target: ValidatedHttpsTarget,
         *,
-        json_body: dict[str, Any] | list[Any],
+        body: bytes,
         headers: Mapping[str, str],
         timeout: float,
     ) -> HttpsTransportResponse:
@@ -117,7 +117,7 @@ class CallableHttpsTransport:
             request_headers = {str(key): str(value) for key, value in headers.items()}
             request_headers["Host"] = target.host_header
             kwargs: dict[str, Any] = {
-                "json": json_body,
+                "data": bytes(body or b""),
                 "headers": request_headers,
                 "timeout": timeout,
             }

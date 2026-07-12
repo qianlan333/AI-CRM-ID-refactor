@@ -27,7 +27,8 @@ def _assert_next_command(body: dict, command_name: str) -> None:
     assert body["command_id"]
 
 
-def test_h5_submit_executes_next_commandbus_and_writes_submission_projection(client: TestClient) -> None:
+def test_h5_submit_executes_next_commandbus_and_writes_submission_projection(client: TestClient, monkeypatch) -> None:
+    monkeypatch.setenv("AICRM_ROUTE_POLICY_ENFORCED", "true")
     response = client.post(
         "/api/h5/questionnaires/hxc-activation-v1/submit",
         json={
@@ -59,21 +60,20 @@ def test_h5_submit_executes_next_commandbus_and_writes_submission_projection(cli
     assert body["mobile"] == "13800138000"
     assert body["mobile_binding"]["ok"] is True
     assert body["mobile_binding"]["real_external_call_executed"] is False
+    assert "result_access_token" not in body
 
     sequential = client.get(f"/api/h5/questionnaires/hxc-activation-v1/result/{body['submission_id']}")
-    assert sequential.status_code == 403
+    assert sequential.status_code == 404
 
-    result = client.get(f"/api/h5/questionnaires/hxc-activation-v1/result/{body['result_access_token']}")
+    result = client.get("/api/h5/questionnaires/hxc-activation-v1/result")
     assert result.status_code == 200
     assert result.json()["result"]["answers"]["q_activation"] == "activated"
     assert "result_token" not in result.json()["result"]
 
     copied_link_client = TestClient(client.app, raise_server_exceptions=False)
-    copied_link = copied_link_client.get(
-        f"/api/h5/questionnaires/hxc-activation-v1/result/{body['result_access_token']}"
-    )
+    copied_link = copied_link_client.get("/api/h5/questionnaires/hxc-activation-v1/result")
     assert copied_link.status_code == 403
-    assert copied_link.json()["error_code"] == "questionnaire_result_access_forbidden"
+    assert copied_link.json()["error"] == "questionnaire_result_access_forbidden"
     assert "result" not in copied_link.json()
 
     audit_events = get_questionnaire_h5_write_audit_events()

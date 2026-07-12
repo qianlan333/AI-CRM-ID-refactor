@@ -20,6 +20,7 @@ else
 fi
 
 run_fast() {
+"$PYTHON" scripts/ci/check_auth_credential_boundaries.py
 "$PYTHON" tools/check_route_ownership_manifest.py
 "$PYTHON" scripts/ci/update_route_policy_manifest.py --check
 "$PYTHON" tools/check_admin_route_auth.py

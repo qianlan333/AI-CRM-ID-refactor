@@ -17,7 +17,6 @@ from .domain import (
     binding_stats,
     clean_text,
     clamp_limit,
-    extract_bearer_token,
     group_manageable_by_userid,
     mask_sensitive_payload,
     normalize_message_content,
@@ -26,7 +25,6 @@ from .domain import (
     normalize_node_payload,
     normalize_plan_type,
     normalize_recipients,
-    verify_webhook_token,
 )
 from .dto import (
     AudienceRuleCreateRequest,
@@ -56,10 +54,6 @@ from .external_effects import (
 )
 from .projections import group_asset_item, plan_list_item, plan_public_payload
 from .repo import GroupOpsRepository, build_group_ops_repository, plan_binding_summary
-
-
-class UnauthorizedError(ApplicationError):
-    status_code = 401
 
 
 class ConflictError(ApplicationError):
@@ -201,10 +195,7 @@ class ListGroupOpsPlansQuery:
                     "offset": max(0, int(request.offset or 0)),
                 }
             )
-            items = [
-                plan_list_item(plan, groups=repo.list_bound_groups(int(plan["id"])), owner_name=clean_text(plan.get("owner_name")))
-                for plan in rows
-            ]
+            items = [plan_list_item(plan, groups=repo.list_bound_groups(int(plan["id"])), owner_name=clean_text(plan.get("owner_name"))) for plan in rows]
         except RepositoryProviderError as exc:
             return _read_production_unavailable(exc)
         return _response({"items": items, "total": total, "queue_count": _queue_count()}, repo=repo)
@@ -439,8 +430,7 @@ class ListGroupOpsGroupsQuery:
                 }
             )
             items = [
-                group_asset_item(row, plan_name=clean_text(row.get("plan_name")), bind_status=clean_text(row.get("bind_status") or "unbound"))
-                for row in rows
+                group_asset_item(row, plan_name=clean_text(row.get("plan_name")), bind_status=clean_text(row.get("bind_status") or "unbound")) for row in rows
             ]
         except RepositoryProviderError as exc:
             return _read_production_unavailable(exc)
@@ -828,46 +818,11 @@ class GetGroupOpsWebhookConfigQuery:
                 "method": "POST",
                 "url": _webhook_path(webhook_key),
                 "webhook_url": _webhook_url(webhook_key),
-                "token_status": "generated" if plan.get("webhook_token_hash") else "missing",
-                "tokenStatus": "generated" if plan.get("webhook_token_hash") else "missing",
-                "signatureEnabled": bool(plan.get("signature_secret_hash")),
-                "lastRotatedAt": clean_text(plan.get("last_rotated_at") or plan.get("updated_at")),
+                "auth_mode": "aicrm_hmac_sha256",
+                "authMode": "aicrm_hmac_sha256",
             },
             repo=repo,
         )
-
-
-class RegenerateGroupOpsWebhookCommand:
-    def __init__(self, repo: GroupOpsRepository | None = None) -> None:
-        self._repo = repo
-
-    def __call__(self, plan_id: int) -> dict[str, Any]:
-        repo = _repo_or_block(self._repo)
-        if repo is None:
-            return _production_unavailable()
-        plan = _plan_or_404(repo, plan_id)
-        if plan.get("plan_type") != "webhook":
-            raise ContractError("webhook config is only available for webhook plans")
-        updated = repo.regenerate_webhook(int(plan_id))
-        try:
-            from aicrm_next.integration_gateway.audit import record_audit_event
-
-            record_audit_event(
-                adapter="GroupOpsWebhook",
-                operation="reset_token",
-                mode="server",
-                idempotency_key=f"group_ops_webhook_reset:{int(plan_id)}:{clean_text(updated.get('updated_at'))}",
-                side_effect_executed=False,
-                status="ok",
-            )
-        except Exception:
-            pass
-        config = GetGroupOpsWebhookConfigQuery(repo)(int(plan_id))
-        config["plaintext_token"] = clean_text(updated.get("plaintext_token"))
-        config["token"] = clean_text(updated.get("plaintext_token"))
-        config["token_status"] = "generated"
-        config["tokenStatus"] = "generated"
-        return config
 
 
 class ListGroupOpsMembersQuery:
@@ -1126,9 +1081,7 @@ class ReceiveGroupOpsWebhookCommand:
         webhook_key: str,
         request: GroupOpsWebhookReceiveRequest,
         *,
-        authorization: str | None = None,
         idempotency_key: str = "",
-        signature: str = "",
     ) -> dict[str, Any]:
         repo = _repo_or_block(self._repo)
         if repo is None:
@@ -1140,11 +1093,6 @@ class ReceiveGroupOpsWebhookCommand:
             raise NotFoundError("group ops webhook not found")
         if plan.get("status") != "active":
             raise ConflictError("group ops webhook plan is not active")
-        bearer = extract_bearer_token(authorization)
-        if not verify_webhook_token(provided_token=bearer, token_hash=clean_text(plan.get("webhook_token_hash"))):
-            raise UnauthorizedError("invalid webhook token")
-        if plan.get("signature_secret_hash") and not clean_text(signature):
-            raise UnauthorizedError("invalid webhook signature")
         _assert_webhook_rate_limit(webhook_key)
         if self._is_legacy_group_bundle_request(request):
             return self._receive_legacy_group_bundle(repo, plan, request, idempotency_key=idempotency_key)
@@ -1184,8 +1132,7 @@ class ReceiveGroupOpsWebhookCommand:
             operator_account = clean_text(sender.get("operatorAccount") or sender.get("operator_account"))
             default_action = clean_text(plan.get("default_action_type") or "record_only")
             action_by_layer = {
-                clean_text(key): normalize_action_payload(value, default_action_type=default_action)
-                for key, value in dict(request.actions or {}).items()
+                clean_text(key): normalize_action_payload(value, default_action_type=default_action) for key, value in dict(request.actions or {}).items()
             }
             default_payload = request.action or {}
             executed = 0

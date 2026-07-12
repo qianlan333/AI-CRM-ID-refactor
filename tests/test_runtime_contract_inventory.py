@@ -30,7 +30,7 @@ def test_runtime_contract_inventory_covers_r00_behavior_surfaces() -> None:
     assert all(route["capability_owner"] for route in routes)
     assert all("responses" in route["contract"] for route in routes)
 
-    assert inventory["migration_heads"] == ["0103_broadcast_delivery_state_machine"]
+    assert inventory["migration_heads"] == ["0104_auth_platform"]
     assert len(inventory["tables"]) >= 150
     owned_lifecycles = {"canonical", "read_model", "event", "queue", "config"}
     assert all(table["write_owner"] for table in inventory["tables"] if table["lifecycle"] in owned_lifecycles)
@@ -39,14 +39,14 @@ def test_runtime_contract_inventory_covers_r00_behavior_surfaces() -> None:
     assert any(unit["unit"] == "openclaw-wecom-callback-ingress.service" for unit in inventory["runtime_units"])
     assert "DATABASE_URL" in inventory["environment_variables"]
     assert {
-        "AICRM_LEGACY_INTERNAL_TOKEN_FALLBACK_ENABLED",
-        "ARCHIVE_INTERNAL_API_TOKEN",
-        "AUTOMATION_INTERNAL_API_TOKEN",
-        "CALLBACK_INTERNAL_API_TOKEN",
-        "GROUP_BROADCAST_INTERNAL_API_TOKEN",
-        "IDENTITY_INTERNAL_API_TOKEN",
-        "MCP_BEARER_TOKEN",
+        "AICRM_AUTH_ARCHIVE_WORKER_CLIENT_ID",
+        "AICRM_AUTH_ARCHIVE_WORKER_CLIENT_SECRET_REF",
+        "AICRM_AUTH_AUTOMATION_WORKER_CLIENT_ID",
+        "AICRM_AUTH_AUTOMATION_WORKER_CLIENT_SECRET_REF",
+        "AICRM_AUTH_ISSUER",
+        "AICRM_AUTH_JWT_SIGNING_KEY",
     } <= set(inventory["environment_variables"])
+    assert "AUTOMATION_INTERNAL_API_TOKEN" not in inventory["environment_variables"]
     assert all("value" not in item for item in inventory["environment_variable_references"])
 
 

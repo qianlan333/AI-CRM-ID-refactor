@@ -127,9 +127,9 @@
       context_status: payload && payload.diagnostics ? payload.diagnostics.context_status : "",
       product_url_has_context: products.some((item) => {
         try {
-          return new URL(item.product_url || "", window.location.origin).searchParams.has("ctx");
+          return new URL(item.product_url || "", window.location.origin).hash.indexOf("aicrm_ctx=") >= 0;
         } catch (_error) {
-          return String(item.product_url || "").indexOf("ctx=") !== -1;
+          return String(item.product_url || "").indexOf("#aicrm_ctx=") !== -1;
         }
       }),
     };

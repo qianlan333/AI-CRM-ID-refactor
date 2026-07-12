@@ -32,6 +32,7 @@ def test_radar_click_events_has_an_alembic_create_and_upgrade_path() -> None:
     assert "ALTER TABLE IF EXISTS radar_click_events ADD COLUMN IF NOT EXISTS" in migration
     assert "ix_radar_click_events_link_created" in migration
     assert "ix_radar_click_events_unionid_created" in migration
+    assert 'if not _has_table("radar_links")' in migration
 
 
 def test_radar_public_source_does_not_read_plain_identity_query_or_cookies() -> None:

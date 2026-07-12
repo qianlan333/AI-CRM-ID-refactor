@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import hmac
 from datetime import date, datetime, time
 from decimal import Decimal
 from pathlib import Path
@@ -13,7 +12,7 @@ from starlette.concurrency import run_in_threadpool
 
 from aicrm_next.admin_jobs.routes import ensure_admin_action_token, validate_admin_action_token
 from aicrm_next.admin_shell import admin_path_for, shell_context
-from aicrm_next.shared.runtime_settings import runtime_setting
+from aicrm_next.platform_foundation.auth_platform.context import AuthContext
 
 from .config import diagnostics_payload as config_diagnostics_payload, worker_batch_size
 from .repository import build_internal_event_repository
@@ -80,38 +79,15 @@ def _json_safe(value: Any) -> Any:
     return value
 
 
-def _internal_token_error(request: Request) -> str:
-    header = _text(request.headers.get("Authorization"))
-    if not header.lower().startswith("bearer "):
-        return "internal_token_required"
-    expected = _text(runtime_setting("AUTOMATION_INTERNAL_API_TOKEN"))
-    if not expected:
-        return "automation_internal_token_not_configured"
-    actual = header.split(" ", 1)[1].strip()
-    if not hmac.compare_digest(actual, expected):
-        return "internal_token_required"
-    return ""
-
-
 def _action_or_internal_token_error(request: Request, payload: dict[str, Any]) -> str:
-    internal_error = _internal_token_error(request)
-    if not internal_error:
-        return ""
     token = _text(request.headers.get("X-Admin-Action-Token")) or _text(payload.get("admin_action_token"))
     return validate_admin_action_token(token, request=request)
 
 
 def _manual_action_actor(request: Request, payload: dict[str, Any]) -> tuple[str, str]:
-    session = getattr(request.state, "admin_session", None)
-    if isinstance(session, dict):
-        actor_id = _text(session.get("admin_user_id") or session.get("username") or session.get("wecom_userid"))
-        if actor_id:
-            return actor_id, "admin_session"
-    service_account = _text(getattr(request.state, "service_account", ""))
-    if service_account:
-        return service_account, "service_account"
-    if not _internal_token_error(request):
-        return "automation_internal_api", "internal_service"
+    context = getattr(request.state, "auth_context", None)
+    if isinstance(context, AuthContext):
+        return context.sub, context.principal_type.value
     if _text(request.headers.get("X-Admin-Action-Token")) or _text(payload.get("admin_action_token")):
         return "admin_action_token", "admin_action_token"
     return "", ""
@@ -200,7 +176,7 @@ def internal_events_diagnostics(
 
 @router.post("/api/admin/internal-events/run-due/preview")
 async def preview_internal_event_run_due(request: Request) -> JSONResponse:
-    token_error = _internal_token_error(request)
+    token_error = _action_or_internal_token_error(request, {})
     if token_error:
         return _json({"ok": False, "error": token_error}, status_code=401)
     payload = await _payload(request)
@@ -215,7 +191,7 @@ async def preview_internal_event_run_due(request: Request) -> JSONResponse:
 
 @router.post("/api/admin/internal-events/run-due")
 async def run_internal_event_due(request: Request) -> JSONResponse:
-    token_error = _internal_token_error(request)
+    token_error = _action_or_internal_token_error(request, {})
     if token_error:
         return _json({"ok": False, "error": token_error}, status_code=401)
     payload = await _payload(request)

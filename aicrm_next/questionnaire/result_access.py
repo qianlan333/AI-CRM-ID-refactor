@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import hashlib
 import os
 from dataclasses import dataclass
 from time import time
@@ -12,7 +11,7 @@ from aicrm_next.shared.signed_session import sign_session_payload, verify_sessio
 
 DEFAULT_RESULT_GRANT_TTL_SECONDS = 60 * 60
 MAX_RESULT_GRANT_TTL_SECONDS = 24 * 60 * 60
-RESULT_GRANT_COOKIE_PREFIX = "aicrm_qr_"
+RESULT_GRANT_COOKIE_NAME = "aicrm_questionnaire_result"
 RESULT_GRANT_PURPOSE = "questionnaire_submission_result"
 
 
@@ -40,49 +39,45 @@ def issue_questionnaire_result_grant(
     payload = {
         "purpose": RESULT_GRANT_PURPOSE,
         "slug": normalized_slug,
-        "result_token_sha256": _token_digest(normalized_token),
+        "result_access_token": normalized_token,
         "grant_id": uuid4().hex,
         "iat": issued_at,
         "exp": issued_at + ttl,
     }
     return QuestionnaireResultGrant(
-        cookie_name=result_grant_cookie_name(normalized_token),
+        cookie_name=RESULT_GRANT_COOKIE_NAME,
         cookie_value=sign_session_payload(payload),
         max_age_seconds=ttl,
         cookie_path=result_grant_cookie_path(normalized_slug),
     )
 
 
-def validate_questionnaire_result_grant(
+def questionnaire_result_token_from_grant(
     cookie_value: str | None,
     *,
     slug: str,
-    result_access_token: str,
     now: int | None = None,
     ttl_seconds: int | None = None,
-) -> bool:
+) -> str | None:
     ttl = _grant_ttl_seconds(ttl_seconds)
     payload = verify_session_payload(cookie_value, max_age_seconds=ttl)
     if not payload:
-        return False
+        return None
     current_time = int(time()) if now is None else int(now)
-    return bool(
+    valid = bool(
         payload.get("purpose") == RESULT_GRANT_PURPOSE
         and _text(payload.get("slug")) == _text(slug)
-        and _text(payload.get("result_token_sha256")) == _token_digest(result_access_token)
+        and _text(payload.get("result_access_token"))
         and _int(payload.get("iat")) > 0
         and _int(payload.get("iat")) <= current_time
         and _int(payload.get("exp")) >= current_time
         and _int(payload.get("exp")) - _int(payload.get("iat")) <= ttl
     )
-
-
-def result_grant_cookie_name(result_access_token: str) -> str:
-    return f"{RESULT_GRANT_COOKIE_PREFIX}{_token_digest(result_access_token)[:24]}"
+    return _text(payload.get("result_access_token")) if valid else None
 
 
 def result_grant_cookie_path(slug: str) -> str:
-    return f"/api/h5/questionnaires/{_text(slug)}/result/"
+    return f"/api/h5/questionnaires/{_text(slug)}/result"
 
 
 def _grant_ttl_seconds(override: int | None = None) -> int:
@@ -94,10 +89,6 @@ def _grant_ttl_seconds(override: int | None = None) -> int:
     except (TypeError, ValueError):
         value = DEFAULT_RESULT_GRANT_TTL_SECONDS
     return max(60, min(value, MAX_RESULT_GRANT_TTL_SECONDS))
-
-
-def _token_digest(value: Any) -> str:
-    return hashlib.sha256(_text(value).encode("utf-8")).hexdigest()
 
 
 def _text(value: Any) -> str:

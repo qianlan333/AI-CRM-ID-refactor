@@ -25,7 +25,7 @@ from aicrm_next.service_period.domain import (
 from aicrm_next.shared.db_session import get_engine
 from aicrm_next.shared.errors import ContractError, NotFoundError
 from aicrm_next.shared.runtime import raw_database_url
-from aicrm_next.shared.signed_context import append_ctx_query, build_sidebar_product_context_token
+from aicrm_next.shared.signed_context import append_ctx_fragment, build_sidebar_product_context_token
 
 MODULES = ["profile", "questionnaires", "products", "orders", "periodic_orders", "materials", "other_staff_messages"]
 ORDER_STATUS_LABELS = {
@@ -1382,8 +1382,8 @@ class SidebarCommerceReadModel:
         product_id = _text(item.get("id"))
         public_path = f"/p/{product_code}" if product_code else ""
         checkout_path = f"/pay/{product_code}" if product_code else ""
-        product_url = append_ctx_query(public_path, context_token) if context_token else public_path
-        checkout_url = append_ctx_query(checkout_path, context_token) if context_token else checkout_path
+        product_url = append_ctx_fragment(public_path, context_token) if context_token else public_path
+        checkout_url = append_ctx_fragment(checkout_path, context_token) if context_token else checkout_path
         return {
             "id": product_code or product_id,
             "title": _text(item.get("title") or item.get("name")) or product_code or "未命名商品",
@@ -1404,7 +1404,7 @@ class SidebarCommerceReadModel:
         service_product_id = _text(item.get("id") or item.get("service_product_id"))
         link_slug = _text(item.get("link_slug"))
         public_path = f"/s/{link_slug}" if link_slug else ""
-        product_url = append_ctx_query(public_path, context_token) if context_token else public_path
+        product_url = append_ctx_fragment(public_path, context_token) if context_token else public_path
         return {
             "id": service_product_id,
             "service_product_id": service_product_id,

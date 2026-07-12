@@ -3,6 +3,7 @@ from __future__ import annotations
 from fastapi.testclient import TestClient
 
 from aicrm_next.message_archive.sync_service import execute_archive_sync
+from tests.admin_auth_test_helpers import access_token_headers, install_access_token
 
 
 class FakeArchiveClient:
@@ -89,8 +90,8 @@ def test_execute_archive_sync_fetches_from_last_seq_and_only_persists_archive(mo
     assert client.closed is True
 
 
-def test_archive_sync_route_requires_internal_token_when_configured(monkeypatch) -> None:
-    monkeypatch.setenv("ARCHIVE_INTERNAL_API_TOKEN", "archive-token")
+def test_archive_sync_route_requires_registered_archive_client(monkeypatch) -> None:
+    monkeypatch.setenv("AICRM_ROUTE_POLICY_ENFORCED", "true")
     monkeypatch.delenv("DATABASE_URL", raising=False)
     from aicrm_next.main import create_app
 
@@ -98,11 +99,11 @@ def test_archive_sync_route_requires_internal_token_when_configured(monkeypatch)
 
     missing = client.post("/api/archive/sync", json={"owner_userid": "HuangYouCan"})
     assert missing.status_code == 401
-    assert missing.json()["error_code"] == "missing_internal_token"
+    assert missing.json()["error"] == "access_token_required"
 
 
 def test_archive_sync_route_passes_archive_request_without_reply_queue(monkeypatch) -> None:
-    monkeypatch.setenv("ARCHIVE_INTERNAL_API_TOKEN", "archive-token")
+    monkeypatch.setenv("AICRM_ROUTE_POLICY_ENFORCED", "true")
     monkeypatch.setenv("AICRM_ENABLE_IN_PROCESS_ARCHIVE_SYNC", "1")
     monkeypatch.delenv("DATABASE_URL", raising=False)
     captured: dict = {}
@@ -123,10 +124,18 @@ def test_archive_sync_route_passes_archive_request_without_reply_queue(monkeypat
     from aicrm_next.main import create_app
 
     client = TestClient(create_app(), raise_server_exceptions=False)
+    token = install_access_token(
+        client,
+        audience="internal_worker",
+        capabilities=("archive_execute",),
+        scopes=("write",),
+        client_id="pytest-archive-worker",
+        purpose="archive",
+    )
     response = client.post(
         "/api/archive/sync",
         json={"owner_userid": "HuangYouCan", "cursor": "30651", "limit": 50, "max_pages": 2},
-        headers={"Authorization": "Bearer archive-token"},
+        headers=access_token_headers(token),
     )
 
     assert response.status_code == 200
@@ -140,16 +149,24 @@ def test_archive_sync_route_passes_archive_request_without_reply_queue(monkeypat
 
 
 def test_archive_sync_route_defaults_to_runner_only(monkeypatch) -> None:
-    monkeypatch.setenv("ARCHIVE_INTERNAL_API_TOKEN", "archive-token")
+    monkeypatch.setenv("AICRM_ROUTE_POLICY_ENFORCED", "true")
     monkeypatch.delenv("AICRM_ENABLE_IN_PROCESS_ARCHIVE_SYNC", raising=False)
     monkeypatch.delenv("DATABASE_URL", raising=False)
     from aicrm_next.main import create_app
 
     client = TestClient(create_app(), raise_server_exceptions=False)
+    token = install_access_token(
+        client,
+        audience="internal_worker",
+        capabilities=("archive_execute",),
+        scopes=("write",),
+        client_id="pytest-archive-worker",
+        purpose="archive",
+    )
     response = client.post(
         "/api/archive/sync",
         json={"owner_userid": "HuangYouCan", "cursor": "30651"},
-        headers={"Authorization": "Bearer archive-token"},
+        headers=access_token_headers(token),
     )
 
     assert response.status_code == 409

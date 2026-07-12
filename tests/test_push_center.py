@@ -23,6 +23,7 @@ from aicrm_next.platform_foundation.push_center.view_model import (
     build_jobs_payload,
     build_stats_payload,
 )
+from tests.admin_auth_test_helpers import install_admin_action_tokens
 
 pytest_plugins = ("tests.group_ops_test_helpers",)
 
@@ -348,7 +349,11 @@ def test_push_center_sections_stats_retry_cancel_auth(next_client: TestClient, m
         payload={"owner_userid": "HuangYouCan", "webhook_key": "测试运营计划-ce2519", "chat_ids": ["chat_1"]},
         payload_summary={"owner_userid": "HuangYouCan", "webhook_key": "测试运营计划-ce2519", "chat_count": 1},
     )
-    monkeypatch.setenv("AUTOMATION_INTERNAL_API_TOKEN", "pytest-internal-token")
+    tokens = install_admin_action_tokens(
+        next_client,
+        ("POST", "/api/admin/push-center/jobs/{job_id}/retry"),
+        ("POST", "/api/admin/push-center/jobs/{job_id}/cancel"),
+    )
 
     sections = next_client.get("/api/admin/push-center/sections").json()
     stats = next_client.get("/api/admin/push-center/stats").json()
@@ -356,12 +361,12 @@ def test_push_center_sections_stats_retry_cancel_auth(next_client: TestClient, m
     rejected = next_client.post(f"/api/admin/push-center/jobs/{failed['id']}/retry", json={})
     retried = next_client.post(
         f"/api/admin/push-center/jobs/{failed['id']}/retry",
-        headers={"Authorization": "Bearer pytest-internal-token"},
+        headers={"X-Admin-Action-Token": tokens[("POST", "/api/admin/push-center/jobs/{job_id}/retry")]},
         json={},
     )
     cancelled = next_client.post(
         f"/api/admin/push-center/jobs/{queued['id']}/cancel",
-        headers={"Authorization": "Bearer pytest-internal-token"},
+        headers={"X-Admin-Action-Token": tokens[("POST", "/api/admin/push-center/jobs/{job_id}/cancel")]},
         json={},
     )
 

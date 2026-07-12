@@ -1,12 +1,11 @@
 from __future__ import annotations
 
 from pathlib import Path
-from time import time
 
 from fastapi.testclient import TestClient
 
-from aicrm_next.admin_auth.service import SESSION_COOKIE, sign_session
 from aicrm_next.main import create_app
+from tests.admin_auth_test_helpers import admin_session_cookies
 from tools import check_admin_pages_real_data_binding as checker
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -20,19 +19,8 @@ def _client(monkeypatch) -> TestClient:
     return TestClient(create_app())
 
 
-def _admin_cookies() -> dict[str, str]:
-    return {
-        SESSION_COOKIE: sign_session(
-            {
-                "auth_source": "break_glass",
-                "login_type": "break_glass",
-                "username": "admin",
-                "display_name": "admin",
-                "roles": ["super_admin"],
-                "iat": int(time()),
-            }
-        )
-    }
+def _admin_cookies(client: TestClient) -> dict[str, str]:
+    return admin_session_cookies(client, "super_admin")
 
 
 def test_admin_pages_do_not_render_forbidden_state_markers(monkeypatch):
@@ -260,8 +248,9 @@ def test_questionnaire_new_page_renders_editor_shell(monkeypatch):
 
 def test_automation_conversion_page_is_ai_audience_native_page(monkeypatch):
     monkeypatch.setenv("SECRET_KEY", "admin-pages-real-data-binding-test")
+    client = TestClient(create_app(), raise_server_exceptions=False)
 
-    response = TestClient(create_app(), raise_server_exceptions=False).get("/admin/automation-conversion", cookies=_admin_cookies())
+    response = client.get("/admin/automation-conversion", cookies=_admin_cookies(client))
 
     assert response.status_code == 200
     assert "AI 自动化运营" in response.text
@@ -274,8 +263,9 @@ def test_automation_conversion_page_is_ai_audience_native_page(monkeypatch):
 
 def test_automation_conversion_legacy_page_is_retired(monkeypatch):
     monkeypatch.setenv("SECRET_KEY", "admin-pages-real-data-binding-test")
+    client = TestClient(create_app(), raise_server_exceptions=False)
 
-    response = TestClient(create_app(), raise_server_exceptions=False).get("/admin/automation-conversion/legacy", cookies=_admin_cookies())
+    response = client.get("/admin/automation-conversion/legacy", cookies=_admin_cookies(client))
 
     assert response.status_code == 404
 
@@ -290,7 +280,7 @@ def test_automation_program_pages_are_retired(monkeypatch):
         "/admin/automation-conversion/programs/7/copy",
         "/admin/automation-conversion/programs/7/entry-channels",
     ]:
-        response = client.get(path, cookies=_admin_cookies())
+        response = client.get(path, cookies=_admin_cookies(client))
         assert response.status_code == 410, path
         assert "旧自动化运营方案页面已下架，请使用 AI 自动化运营人群包" in response.text
 
@@ -304,7 +294,7 @@ def test_automation_program_api_routes_are_retired(monkeypatch):
         ("post", "/api/admin/automation-conversion/programs/7/channel-bindings"),
     ]
     for method, path in retired_program_paths:
-        response = getattr(client, method)(path, cookies=_admin_cookies())
+        response = getattr(client, method)(path, cookies=_admin_cookies(client))
         if "/programs" in path:
             assert response.status_code == 404, path
             continue
@@ -323,7 +313,7 @@ def test_automation_program_api_routes_are_retired(monkeypatch):
         ("post", "/api/admin/automation-conversion/jobs/run-due"),
     ]
     for method, path in removed_action_paths:
-        response = getattr(client, method)(path, cookies=_admin_cookies())
+        response = getattr(client, method)(path, cookies=_admin_cookies(client))
         assert response.status_code == 404, path
 
 
@@ -348,8 +338,9 @@ def test_admin_login_route_is_next_owned_when_production_facade_is_enabled(monke
     assert response.headers["X-AICRM-Route-Owner"] == "ai_crm_next"
     assert "X-AICRM-Compatibility-Facade" not in response.headers
     assert "后台登录" in response.text
-    assert 'action="/login"' in response.text
     assert "/auth/wecom/start" in response.text
+    assert "不提供本地账密入口" in response.text
+    assert 'action="/login"' not in response.text
 
 
 def test_real_data_binding_checker_returns_ok(monkeypatch):

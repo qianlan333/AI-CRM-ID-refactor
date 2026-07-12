@@ -375,6 +375,18 @@ repositories:
       - admin_wecom_directory_members
     table_writes:
       - admin_wecom_directory_members
+  aicrm_next/platform_foundation/auth_platform/repository.py:
+    capability_owner: aicrm_next.platform_foundation.auth_platform
+    table_reads:
+      - auth_api_clients
+      - auth_sessions
+      - auth_webhook_clients
+    table_writes:
+      - auth_api_clients
+      - auth_security_events
+      - auth_sessions
+      - auth_webhook_clients
+      - auth_webhook_replay
   aicrm_next/platform_foundation/external_effects/repo.py:
     capability_owner: aicrm_next.platform_foundation.external_effects
     table_reads:

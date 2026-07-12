@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+from pathlib import Path
 import time
 from concurrent.futures import ThreadPoolExecutor
 from threading import Event
@@ -605,3 +606,10 @@ def test_r08_migration_adds_refund_uniqueness_and_active_lookup_indexes(next_pg_
     assert "WHERE (out_refund_no <> ''::text)" in indexes["uq_wechat_pay_refunds_out_refund_no"]
     assert "uq_wechat_pay_refunds_refund_id" in indexes
     assert "idx_wechat_pay_refunds_order_active" in indexes
+
+
+def test_r08_migration_is_safe_without_optional_pre_alembic_refund_table() -> None:
+    source = Path("migrations/versions/0101_commerce_fulfillment_invariants.py").read_text(encoding="utf-8")
+
+    assert 'inspect(op.get_bind()).has_table("wechat_pay_refunds")' in source
+    assert "return" in source.split('has_table("wechat_pay_refunds")', 1)[1].split("op.execute", 1)[0]

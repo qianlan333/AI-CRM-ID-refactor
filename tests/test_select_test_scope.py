@@ -542,6 +542,61 @@ def test_retired_group_ops_workspace_paths_remain_mapped_to_broadcast_scope() ->
         assert "broadcast_group_ops" in result["matched_scopes"]
 
 
+def test_private_auth_cutover_maps_every_runtime_caller_and_regression_file() -> None:
+    changed_paths = (
+        "aicrm_next/automation_agents/admin_pages.py",
+        "aicrm_next/automation_agents/api.py",
+        "aicrm_next/automation_agents/templates/admin_console/automation_agent_edit.html",
+        "aicrm_next/automation_agents/worker.py",
+        "aicrm_next/cloud_orchestrator/run_due.py",
+        "aicrm_next/platform_foundation/auth_platform/service.py",
+        "scripts/ai_audience_apply_package_spec.py",
+        "scripts/diagnose_business_closure_acceptance.py",
+        "scripts/diagnose_ops_plan_broadcast_blocker.py",
+        "scripts/ops/bootstrap_auth_clients.py",
+        "scripts/ops/check_auth_readiness.py",
+        "scripts/ops/manage_auth_clients.py",
+        "scripts/run_message_activity_sync.py",
+        "tests/admin_auth_test_helpers.py",
+        "tests/test_active_automation_run_due_guardrails.py",
+        "tests/test_active_automation_scheduled_safe_mode.py",
+        "tests/test_auth_client_bootstrap_readiness.py",
+        "tests/test_auth_client_ops.py",
+        "tests/test_auth_platform_client_authentication.py",
+        "tests/test_auth_platform_context.py",
+        "tests/test_auth_platform_credentials.py",
+        "tests/test_auth_platform_fastapi_protocol.py",
+        "tests/test_auth_platform_postgres_repository.py",
+        "tests/test_auth_platform_postgres_sessions.py",
+        "tests/test_auth_platform_service.py",
+        "tests/test_auth_platform_sessions.py",
+        "tests/test_auth_platform_webhook_hmac.py",
+        "tests/test_auth_platform_webhook_routes.py",
+        "tests/test_business_closure_acceptance_diagnostics.py",
+        "tests/test_cloud_orchestrator_plan_recipients.py",
+        "tests/test_cloud_orchestrator_run_due_commands.py",
+        "tests/test_cloud_orchestrator_run_due_idempotency.py",
+        "tests/test_cloud_orchestrator_run_due_no_real_side_effects.py",
+        "tests/test_cloud_orchestrator_run_due_preview.py",
+        "tests/test_external_orders_api.py",
+        "tests/test_internal_oauth_client_purpose.py",
+        "tests/test_internal_service_token_purpose.py",
+        "tests/test_legacy_webhook_cleanup.py",
+        "tests/test_next_admin_jobs_native.py",
+        "tests/test_run_message_activity_sync_script.py",
+        "tests/test_wecom_tag_read_selectors.py",
+        "tests/webhook_hmac_test_helpers.py",
+    )
+
+    result = _select(*changed_paths)
+
+    assert result["unmatched_files"] == []
+    assert "private_auth_cutover" in result["matched_scopes"]
+    assert result["needs_postgres"] is True
+    assert result["architecture_gate"] == "full"
+    assert result["needs_full_ci"] is True
+
+
 def test_unmapped_path_fails_instead_of_falling_back_to_full_regression() -> None:
     completed = subprocess.run(
         [sys.executable, str(SELECTOR), "--changed-file", "aicrm_next/new_context/api.py"],

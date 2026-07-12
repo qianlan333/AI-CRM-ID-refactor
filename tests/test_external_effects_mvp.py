@@ -10,10 +10,10 @@ import requests
 import pytest
 from fastapi.testclient import TestClient
 
-from aicrm_next.admin_jobs.routes import ensure_admin_action_token
 from aicrm_next.customer_tags.live_mutation import execute_wecom_tag_mutation, reset_wecom_tag_live_mutation_fixture_state
 from aicrm_next.customer_tags.mutation_commands import PlanWeComTagMarkCommand, PlanWeComTagUnmarkCommand
 from aicrm_next.platform_foundation.command_bus import CommandContext
+from aicrm_next.platform_foundation.auth_platform.webhook_hmac import WebhookHmacSigner
 from aicrm_next.platform_foundation.external_effects import (
     ExternalEffectDispatchResult,
     ExternalEffectService,
@@ -45,6 +45,21 @@ from aicrm_next.public_product import h5_wechat_pay
 from aicrm_next.public_product.h5_wechat_pay import _apply_transaction
 from aicrm_next.questionnaire import external_push
 from aicrm_next.questionnaire.repo import build_questionnaire_repository
+from tests.webhook_hmac_test_helpers import install_webhook_hmac_client, outbound_webhook_hmac_signer
+from tests.admin_auth_test_helpers import install_admin_action_tokens
+
+
+RUN_DUE_ROUTE = "/api/admin/external-effects/run-due"
+PREVIEW_DUE_ROUTE = "/api/admin/external-effects/run-due/preview"
+RETRY_JOB_ROUTE = "/api/admin/external-effects/jobs/{job_id}/retry"
+CANCEL_JOB_ROUTE = "/api/admin/external-effects/jobs/{job_id}/cancel"
+CREATE_LOOPBACK_ROUTE = "/api/admin/external-effects/test-loopback/jobs"
+
+
+def _external_effect_admin_tokens(client: TestClient, monkeypatch, *routes: str) -> dict[str, str]:
+    monkeypatch.setenv("AICRM_ROUTE_POLICY_ENFORCED", "true")
+    issued = install_admin_action_tokens(client, *(("POST", route) for route in routes))
+    return {route: issued[("POST", route)] for route in routes}
 
 
 class _ExternalPushResponse:
@@ -188,21 +203,30 @@ def _sample_context(trace_id: str = "trace-external-effect") -> CommandContext:
 
 def _registry_with_post(fake_post) -> ExternalEffectAdapterRegistry:
     registry = ExternalEffectAdapterRegistry()
-    registry._adapters["outbound_webhook"] = WebhookAdapter(http_post=fake_post)  # type: ignore[attr-defined]
-    registry._adapters["webhook"] = WebhookAdapter(http_post=fake_post)  # type: ignore[attr-defined]
+    signer = outbound_webhook_hmac_signer()
+    registry._adapters["outbound_webhook"] = WebhookAdapter(http_post=fake_post, signer=signer)  # type: ignore[attr-defined]
+    registry._adapters["webhook"] = WebhookAdapter(http_post=fake_post, signer=signer)  # type: ignore[attr-defined]
     return registry
 
 
 def _install_loopback_http_adapter(monkeypatch, client: TestClient) -> list[dict]:
     calls: list[dict] = []
+    credentials = install_webhook_hmac_client(
+        client,
+        capability="external_effect_receipt_receive",
+        client_id="pytest-aicrm-outbound",
+    )
+    signer = WebhookHmacSigner(client_id=credentials.client_id, secret=credentials.secret)
 
-    def loopback_post(url, *, json, headers, timeout):
-        calls.append({"url": url, "json": json, "headers": headers, "timeout": timeout})
+    def loopback_post(url, *, data, headers, timeout):
+        calls.append({"url": url, "json": json.loads(data.decode("utf-8")), "headers": headers, "timeout": timeout})
         parsed = urlparse(url)
-        return client.post(parsed.path, json=json, headers=headers)
+        with monkeypatch.context() as route_policy:
+            route_policy.setenv("AICRM_ROUTE_POLICY_ENFORCED", "true")
+            return client.post(parsed.path, content=data, headers=headers)
 
-    monkeypatch.setitem(DEFAULT_ADAPTER_REGISTRY._adapters, "outbound_webhook", WebhookAdapter(http_post=loopback_post))  # type: ignore[attr-defined]
-    monkeypatch.setitem(DEFAULT_ADAPTER_REGISTRY._adapters, "webhook", WebhookAdapter(http_post=loopback_post))  # type: ignore[attr-defined]
+    monkeypatch.setitem(DEFAULT_ADAPTER_REGISTRY._adapters, "outbound_webhook", WebhookAdapter(http_post=loopback_post, signer=signer))  # type: ignore[attr-defined]
+    monkeypatch.setitem(DEFAULT_ADAPTER_REGISTRY._adapters, "webhook", WebhookAdapter(http_post=loopback_post, signer=signer))  # type: ignore[attr-defined]
     return calls
 
 
@@ -265,7 +289,6 @@ def _submit_questionnaire_queue_loopback_job(
     *,
     idempotency_key: str,
     phone: str,
-    receiver_token: str,
     response_status: int,
     external_userid: str = "wx_ext_001",
 ) -> dict:
@@ -273,8 +296,8 @@ def _submit_questionnaire_queue_loopback_job(
         monkeypatch,
         {
             "enabled": True,
-            "webhook_url": f"https://crm.example.test/api/external-effects/test-receiver/{receiver_token}",
-            "receiver_token": receiver_token,
+            "webhook_url": "https://crm.example.test/api/external-effects/test-receiver",
+            "test_loopback_enabled": True,
             "receiver_response_status": response_status,
         },
     )
@@ -313,7 +336,8 @@ def _submit_questionnaire_queue_loopback_job(
     assert job["status"] == "queued"
     assert job["execution_mode"] == "execute"
     assert job["payload_json"]["execution_scope"] == "test_loopback"
-    assert job["payload_json"]["receiver_token"] == receiver_token
+    assert job["payload_json"]["webhook_url"] == "https://crm.example.test/api/external-effects/test-receiver"
+    assert job["payload_json"]["receiver_response_status"] == response_status
     return job
 
 
@@ -648,13 +672,12 @@ def test_webhook_adapter_enabled_allowlisted_2xx_succeeds_and_records_attempt(mo
         payload={
             "webhook_url": "https://hooks.example.test/success",
             "body": {"event": "ok"},
-            "signature_secret": "test-secret",
         },
     )
     calls: list[dict] = []
 
-    def fake_post(url, *, json, headers, timeout):
-        calls.append({"url": url, "json": json, "headers": headers, "timeout": timeout})
+    def fake_post(url, *, data, headers, timeout):
+        calls.append({"url": url, "data": data, "json": json.loads(data.decode("utf-8")), "headers": headers, "timeout": timeout})
         return _AdapterResponse(204, "")
 
     monkeypatch.setenv("AICRM_EXTERNAL_EFFECT_WEBHOOK_EXECUTE", "1")
@@ -669,7 +692,10 @@ def test_webhook_adapter_enabled_allowlisted_2xx_succeeds_and_records_attempt(mo
     assert len(calls) == 1
     assert calls[0]["url"] == "https://hooks.example.test/success"
     assert calls[0]["json"] == {"event": "ok"}
-    assert calls[0]["headers"]["X-AICRM-External-Effect-Signature"]
+    assert calls[0]["data"] == b'{"event":"ok"}'
+    assert calls[0]["headers"]["X-AICRM-Client-Id"] == "pytest-aicrm-outbound"
+    assert calls[0]["headers"]["X-AICRM-Signature"].startswith("sha256=")
+    assert calls[0]["headers"]["X-AICRM-Event-Id"].startswith("evt_")
     assert attempts[0].status == "succeeded"
     assert attempts[0].request_summary_json["signature_configured"] is True
     assert attempts[0].response_summary_json["real_external_call_executed"] is True
@@ -729,7 +755,7 @@ def test_webhook_adapter_retryable_statuses_and_timeout_set_next_retry(monkeypat
         service = _service(repo)
         job = _queued_webhook_job(service, idempotency_key=f"webhook-retryable-{status_code}")
 
-        def fake_post(url, *, json, headers, timeout, _status_code=status_code):
+        def fake_post(url, *, data, headers, timeout, _status_code=status_code):
             return _AdapterResponse(_status_code, "retry later")
 
         monkeypatch.setenv("AICRM_EXTERNAL_EFFECT_WEBHOOK_EXECUTE", "1")
@@ -749,7 +775,7 @@ def test_webhook_adapter_retryable_statuses_and_timeout_set_next_retry(monkeypat
     service = _service(repo)
     job = _queued_webhook_job(service, idempotency_key="webhook-timeout")
 
-    def timeout_post(url, *, json, headers, timeout):
+    def timeout_post(url, *, data, headers, timeout):
         raise requests.Timeout("slow hook")
 
     ExternalEffectWorker(repo, _registry_with_post(timeout_post)).run_due(batch_size=10, dry_run=False)
@@ -771,7 +797,7 @@ def test_webhook_adapter_terminal_statuses_and_max_attempts(monkeypatch) -> None
         service = _service(repo)
         job = _queued_webhook_job(service, idempotency_key=f"webhook-terminal-{status_code}")
 
-        def fake_post(url, *, json, headers, timeout, _status_code=status_code):
+        def fake_post(url, *, data, headers, timeout, _status_code=status_code):
             return _AdapterResponse(_status_code, "terminal")
 
         ExternalEffectWorker(repo, _registry_with_post(fake_post)).run_due(batch_size=10, dry_run=False)
@@ -786,7 +812,7 @@ def test_webhook_adapter_terminal_statuses_and_max_attempts(monkeypatch) -> None
     service = _service(repo)
     job = _queued_webhook_job(service, idempotency_key="webhook-max-attempts", max_attempts=1)
 
-    def retryable_post(url, *, json, headers, timeout):
+    def retryable_post(url, *, data, headers, timeout):
         return _AdapterResponse(500, "final retry")
 
     ExternalEffectWorker(repo, _registry_with_post(retryable_post)).run_due(batch_size=10, dry_run=False)
@@ -810,7 +836,14 @@ def test_cancelled_job_is_not_scanned_by_run_due_preview() -> None:
 
 
 def test_external_effect_admin_api_lists_previews_retries_and_cancels(next_client: TestClient, monkeypatch) -> None:
-    monkeypatch.setenv("AUTOMATION_INTERNAL_API_TOKEN", "effect-token")
+    tokens = _external_effect_admin_tokens(
+        next_client,
+        monkeypatch,
+        PREVIEW_DUE_ROUTE,
+        RUN_DUE_ROUTE,
+        RETRY_JOB_ROUTE,
+        CANCEL_JOB_ROUTE,
+    )
     service = ExternalEffectService()
     job = service.plan_effect(
         effect_type=WEBHOOK_QUESTIONNAIRE_SUBMISSION_PUSH,
@@ -830,22 +863,22 @@ def test_external_effect_admin_api_lists_previews_retries_and_cancels(next_clien
     detail = next_client.get(f"/api/admin/external-effects/jobs/{job['id']}")
     unauthorized = next_client.post("/api/admin/external-effects/run-due/preview", json={"batch_size": 10})
     preview = next_client.post(
-        "/api/admin/external-effects/run-due/preview",
-        headers={"Authorization": "Bearer effect-token"},
+        PREVIEW_DUE_ROUTE,
+        headers={"X-Admin-Action-Token": tokens[PREVIEW_DUE_ROUTE]},
         json={"batch_size": 10},
     )
     dry_run = next_client.post(
-        "/api/admin/external-effects/run-due",
-        headers={"Authorization": "Bearer effect-token"},
+        RUN_DUE_ROUTE,
+        headers={"X-Admin-Action-Token": tokens[RUN_DUE_ROUTE]},
         json={"batch_size": 10},
     )
     retried = next_client.post(
         f"/api/admin/external-effects/jobs/{job['id']}/retry",
-        json={"admin_action_token": ensure_admin_action_token()},
+        json={"admin_action_token": tokens[RETRY_JOB_ROUTE]},
     )
     cancelled = next_client.post(
         f"/api/admin/external-effects/jobs/{job['id']}/cancel",
-        json={"admin_action_token": ensure_admin_action_token()},
+        json={"admin_action_token": tokens[CANCEL_JOB_ROUTE]},
     )
     unauthorized_cancel = next_client.post(f"/api/admin/external-effects/jobs/{job['id']}/cancel", json={})
     diagnostics = next_client.get("/api/admin/external-effects/diagnostics")
@@ -874,7 +907,7 @@ def test_external_effect_admin_api_lists_previews_retries_and_cancels(next_clien
     assert diagnostics.json()["wecom_execution"]["execution_mode"] == "disabled"
 
 
-def test_unknown_external_effect_api_retry_requires_duplicate_risk_confirmation(next_client: TestClient) -> None:
+def test_unknown_external_effect_api_retry_requires_duplicate_risk_confirmation(next_client: TestClient, monkeypatch) -> None:
     reset_external_effect_fixture_state()
     repo = build_external_effect_repository()
     job = _queued_webhook_job(ExternalEffectService(repo), idempotency_key="api-unknown-retry")
@@ -889,7 +922,7 @@ def test_unknown_external_effect_api_retry_requires_duplicate_risk_confirmation(
         )
         is not None
     )
-    token = ensure_admin_action_token()
+    token = _external_effect_admin_tokens(next_client, monkeypatch, RETRY_JOB_ROUTE)[RETRY_JOB_ROUTE]
 
     missing_confirmation = next_client.post(
         f"/api/admin/external-effects/jobs/{job['id']}/retry",
@@ -1204,14 +1237,14 @@ def test_external_effect_gray_runbook_documents_disabled_preview_dry_run_real_ba
 def test_external_effect_test_receiver_disabled_returns_404(next_client: TestClient, monkeypatch) -> None:
     monkeypatch.delenv("AICRM_EXTERNAL_EFFECT_TEST_RECEIVER_ENABLED", raising=False)
 
-    response = next_client.post("/api/external-effects/test-receiver/missing", json={"synthetic": True})
+    response = next_client.post("/api/external-effects/test-receiver", json={"synthetic": True})
 
     assert response.status_code == 404
     assert response.json()["error"] == "test_receiver_disabled"
 
 
-def test_external_effect_test_loopback_job_uses_current_host_and_rejects_unsafe_inputs(next_client: TestClient) -> None:
-    token = ensure_admin_action_token()
+def test_external_effect_test_loopback_job_uses_current_host_and_rejects_unsafe_inputs(next_client: TestClient, monkeypatch) -> None:
+    token = _external_effect_admin_tokens(next_client, monkeypatch, CREATE_LOOPBACK_ROUTE)[CREATE_LOOPBACK_ROUTE]
     created = next_client.post(
         "/api/admin/external-effects/test-loopback/jobs",
         headers={"X-Forwarded-Proto": "https", "X-Forwarded-Host": "crm.example.test"},
@@ -1220,13 +1253,13 @@ def test_external_effect_test_loopback_job_uses_current_host_and_rejects_unsafe_
     blocked_host = next_client.post(
         "/api/admin/external-effects/test-loopback/jobs",
         headers={"X-Forwarded-Proto": "https", "X-Forwarded-Host": "127.0.0.1"},
-        json={"admin_action_token": ensure_admin_action_token(), "scenario": "questionnaire_submission_push_success", "response_status": 200},
+        json={"admin_action_token": token, "scenario": "questionnaire_submission_push_success", "response_status": 200},
     )
     arbitrary_url = next_client.post(
         "/api/admin/external-effects/test-loopback/jobs",
         headers={"X-Forwarded-Proto": "https", "X-Forwarded-Host": "crm.example.test"},
         json={
-            "admin_action_token": ensure_admin_action_token(),
+            "admin_action_token": token,
             "scenario": "questionnaire_submission_push_success",
             "response_status": 200,
             "webhook_url": "https://attacker.example/hook",
@@ -1235,7 +1268,7 @@ def test_external_effect_test_loopback_job_uses_current_host_and_rejects_unsafe_
 
     body = created.json()
     assert created.status_code == 200
-    assert body["receiver_url"].startswith("https://crm.example.test/api/external-effects/test-receiver/")
+    assert body["receiver_url"] == "https://crm.example.test/api/external-effects/test-receiver"
     assert body["job"]["payload_json"]["execution_scope"] == "test_loopback"
     assert body["job"]["payload_json"]["is_test"] is True
     assert "webhook_url" not in body["runbook_next_steps"][0]
@@ -1247,31 +1280,33 @@ def test_external_effect_test_loopback_job_uses_current_host_and_rejects_unsafe_
 
 def test_external_effect_loopback_allowed_base_hosts_accepts_configured_hosts(next_client: TestClient, monkeypatch) -> None:
     monkeypatch.setenv("AICRM_EXTERNAL_EFFECT_ALLOWED_BASE_HOSTS", "www.youcangogogo.com")
+    token = _external_effect_admin_tokens(next_client, monkeypatch, CREATE_LOOPBACK_ROUTE)[CREATE_LOOPBACK_ROUTE]
 
     forwarded = next_client.post(
         "/api/admin/external-effects/test-loopback/jobs",
         headers={"X-Forwarded-Proto": "https", "X-Forwarded-Host": "www.youcangogogo.com"},
-        json={"admin_action_token": ensure_admin_action_token(), "scenario": "questionnaire_submission_push_success", "response_status": 200},
+        json={"admin_action_token": token, "scenario": "questionnaire_submission_push_success", "response_status": 200},
     )
     host_fallback = next_client.post(
         "/api/admin/external-effects/test-loopback/jobs",
         headers={"X-Forwarded-Proto": "https", "Host": "www.youcangogogo.com"},
-        json={"admin_action_token": ensure_admin_action_token(), "scenario": "questionnaire_submission_push_success", "response_status": 200},
+        json={"admin_action_token": token, "scenario": "questionnaire_submission_push_success", "response_status": 200},
     )
 
     assert forwarded.status_code == 200
-    assert forwarded.json()["receiver_url"].startswith("https://www.youcangogogo.com/api/external-effects/test-receiver/")
+    assert forwarded.json()["receiver_url"] == "https://www.youcangogogo.com/api/external-effects/test-receiver"
     assert host_fallback.status_code == 200
-    assert host_fallback.json()["receiver_url"].startswith("https://www.youcangogogo.com/api/external-effects/test-receiver/")
+    assert host_fallback.json()["receiver_url"] == "https://www.youcangogogo.com/api/external-effects/test-receiver"
 
 
 def test_external_effect_loopback_allowed_base_hosts_rejects_forged_forwarded_host(next_client: TestClient, monkeypatch) -> None:
     monkeypatch.setenv("AICRM_EXTERNAL_EFFECT_ALLOWED_BASE_HOSTS", "www.youcangogogo.com")
+    token = _external_effect_admin_tokens(next_client, monkeypatch, CREATE_LOOPBACK_ROUTE)[CREATE_LOOPBACK_ROUTE]
 
     created = next_client.post(
         "/api/admin/external-effects/test-loopback/jobs",
         headers={"X-Forwarded-Proto": "https", "X-Forwarded-Host": "attacker.example.com"},
-        json={"admin_action_token": ensure_admin_action_token(), "scenario": "questionnaire_submission_push_success", "response_status": 200},
+        json={"admin_action_token": token, "scenario": "questionnaire_submission_push_success", "response_status": 200},
     )
     diagnostics = next_client.get(
         "/api/admin/external-effects/diagnostics",
@@ -1289,25 +1324,42 @@ def test_external_effect_loopback_allowed_base_hosts_rejects_forged_forwarded_ho
 
 def test_external_effect_receiver_enabled_records_receipt(next_client: TestClient, monkeypatch) -> None:
     monkeypatch.setenv("AICRM_EXTERNAL_EFFECT_TEST_RECEIVER_ENABLED", "1")
+    token = _external_effect_admin_tokens(next_client, monkeypatch, CREATE_LOOPBACK_ROUTE)[CREATE_LOOPBACK_ROUTE]
     created = next_client.post(
         "/api/admin/external-effects/test-loopback/jobs",
         headers={"X-Forwarded-Proto": "https", "X-Forwarded-Host": "crm.example.test"},
-        json={"admin_action_token": ensure_admin_action_token(), "scenario": "questionnaire_submission_push_success", "response_status": 200},
+        json={"admin_action_token": token, "scenario": "questionnaire_submission_push_success", "response_status": 200},
     ).json()
-    token = created["job"]["payload_json"]["receiver_token"]
-
-    response = next_client.post(
-        f"/api/external-effects/test-receiver/{token}", json=created["job"]["payload_json"]["body"], headers={"Authorization": "Bearer secret"}
+    credentials = install_webhook_hmac_client(
+        next_client,
+        capability="external_effect_receipt_receive",
+        client_id="pytest-direct-test-receiver",
     )
+    body_bytes = json.dumps(
+        created["job"]["payload_json"]["body"],
+        ensure_ascii=False,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    headers = WebhookHmacSigner(client_id=credentials.client_id, secret=credentials.secret).sign_headers(
+        body=body_bytes,
+        event_id=created["job"]["idempotency_key"],
+    )
+    with monkeypatch.context() as route_policy:
+        route_policy.setenv("AICRM_ROUTE_POLICY_ENFORCED", "true")
+        response = next_client.post(
+            "/api/external-effects/test-receiver",
+            content=body_bytes,
+            headers={"Content-Type": "application/json", **headers},
+        )
     receipts = next_client.get("/api/admin/external-effects/test-receipts", params={"job_id": created["job"]["id"]})
 
     assert response.status_code == 200
     assert response.json()["received"] is True
     assert receipts.json()["total"] == 1
     receipt = receipts.json()["items"][0]
-    assert receipt["headers_summary_json"]["authorization"] == "[redacted]"
+    assert "authorization" not in receipt["headers_summary_json"]
     assert receipt["payload_hash"] == created["job"]["payload_json"]["expected_payload_hash"]
-    assert receipt["signature_valid"] is False
+    assert receipt["signature_valid"] is True
 
 
 def test_external_effect_loopback_questionnaire_and_order_success_create_receipts(next_client: TestClient, monkeypatch) -> None:
@@ -1316,13 +1368,14 @@ def test_external_effect_loopback_questionnaire_and_order_success_create_receipt
     monkeypatch.setenv("AICRM_EXTERNAL_EFFECT_WEBHOOK_EXECUTE", "1")
     monkeypatch.setenv("AICRM_EXTERNAL_EFFECT_ALLOWED_TYPES", f"{WEBHOOK_QUESTIONNAIRE_SUBMISSION_PUSH},{WEBHOOK_ORDER_PAID_PUSH}")
     calls = _install_loopback_http_adapter(monkeypatch, next_client)
+    token = _external_effect_admin_tokens(next_client, monkeypatch, CREATE_LOOPBACK_ROUTE)[CREATE_LOOPBACK_ROUTE]
 
     created_jobs = []
     for scenario in ("questionnaire_submission_push_success", "order_paid_push_success"):
         created = next_client.post(
             "/api/admin/external-effects/test-loopback/jobs",
             headers={"X-Forwarded-Proto": "https", "X-Forwarded-Host": "crm.example.test"},
-            json={"admin_action_token": ensure_admin_action_token(), "scenario": scenario, "response_status": 200},
+            json={"admin_action_token": token, "scenario": scenario, "response_status": 200},
         ).json()
         created_jobs.append(created["job"])
         preview = next_client.post(
@@ -1356,16 +1409,17 @@ def test_external_effect_loopback_500_retryable_and_400_terminal(next_client: Te
     monkeypatch.setenv("AICRM_EXTERNAL_EFFECT_WEBHOOK_EXECUTE", "1")
     monkeypatch.setenv("AICRM_EXTERNAL_EFFECT_ALLOWED_TYPES", f"{WEBHOOK_QUESTIONNAIRE_SUBMISSION_PUSH},{WEBHOOK_ORDER_PAID_PUSH}")
     _install_loopback_http_adapter(monkeypatch, next_client)
+    token = _external_effect_admin_tokens(next_client, monkeypatch, CREATE_LOOPBACK_ROUTE)[CREATE_LOOPBACK_ROUTE]
 
     retry_job = next_client.post(
         "/api/admin/external-effects/test-loopback/jobs",
         headers={"X-Forwarded-Proto": "https", "X-Forwarded-Host": "crm.example.test"},
-        json={"admin_action_token": ensure_admin_action_token(), "scenario": "questionnaire_submission_push_retry_500", "response_status": 500},
+        json={"admin_action_token": token, "scenario": "questionnaire_submission_push_retry_500", "response_status": 500},
     ).json()["job"]
     terminal_job = next_client.post(
         "/api/admin/external-effects/test-loopback/jobs",
         headers={"X-Forwarded-Proto": "https", "X-Forwarded-Host": "crm.example.test"},
-        json={"admin_action_token": ensure_admin_action_token(), "scenario": "order_paid_push_terminal_400", "response_status": 400},
+        json={"admin_action_token": token, "scenario": "order_paid_push_terminal_400", "response_status": 400},
     ).json()["job"]
 
     retry_result = ExternalEffectWorker().run_due(batch_size=1, dry_run=False, effect_types=[retry_job["effect_type"]], test_only=True)
@@ -1393,11 +1447,12 @@ def test_external_effect_loopback_dry_run_allowlist_miss_and_test_only_gate(next
     monkeypatch.setenv("AICRM_EXTERNAL_EFFECT_WEBHOOK_EXECUTE", "1")
     monkeypatch.setenv("AICRM_EXTERNAL_EFFECT_ALLOWED_TYPES", WEBHOOK_ORDER_PAID_PUSH)
     calls = _install_loopback_http_adapter(monkeypatch, next_client)
+    token = _external_effect_admin_tokens(next_client, monkeypatch, CREATE_LOOPBACK_ROUTE)[CREATE_LOOPBACK_ROUTE]
 
     created = next_client.post(
         "/api/admin/external-effects/test-loopback/jobs",
         headers={"X-Forwarded-Proto": "https", "X-Forwarded-Host": "crm.example.test"},
-        json={"admin_action_token": ensure_admin_action_token(), "scenario": "questionnaire_submission_push_success", "response_status": 200},
+        json={"admin_action_token": token, "scenario": "questionnaire_submission_push_success", "response_status": 200},
     ).json()["job"]
 
     dry_run = ExternalEffectWorker().run_due(batch_size=1, dry_run=True, effect_types=[created["effect_type"]], test_only=True)
@@ -1536,7 +1591,6 @@ def test_questionnaire_queue_mode_preview_dry_run_and_loopback_execute_2xx(next_
         monkeypatch,
         idempotency_key="questionnaire-queue-loopback-2xx",
         phone="13770938682",
-        receiver_token="eert_questionnaire_queue_2xx",
         response_status=200,
     )
 
@@ -1579,7 +1633,6 @@ def test_questionnaire_queue_mode_loopback_500_retryable_and_400_terminal(next_c
         monkeypatch,
         idempotency_key="questionnaire-queue-loopback-500",
         phone="13770938683",
-        receiver_token="eert_questionnaire_queue_500",
         response_status=500,
     )
     terminal_job = _submit_questionnaire_queue_loopback_job(
@@ -1587,7 +1640,6 @@ def test_questionnaire_queue_mode_loopback_500_retryable_and_400_terminal(next_c
         monkeypatch,
         idempotency_key="questionnaire-queue-loopback-400",
         phone="13770938684",
-        receiver_token="eert_questionnaire_queue_400",
         response_status=400,
         external_userid="wx_ext_002",
     )

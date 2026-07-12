@@ -7,7 +7,6 @@ import pytest
 from fastapi.testclient import TestClient
 
 from aicrm_next.admin_config.repository import AdminConfigRepository
-from aicrm_next.admin_jobs.routes import ensure_admin_action_token
 from aicrm_next.platform_foundation.command_bus import CommandContext
 from aicrm_next.platform_foundation.external_effects import (
     FEISHU_WEBHOOK_NOTIFY,
@@ -27,6 +26,7 @@ from aicrm_next.platform_foundation.external_effects.adapters import ExternalEff
 from aicrm_next.platform_foundation.external_effects.worker import ExternalEffectWorker
 from aicrm_next.platform_foundation.push_center.capability_registry import PUSH_CAPABILITIES
 from aicrm_next.platform_foundation.push_center.section_mapper import all_sections, effect_types_for_section, label_for_section
+from tests.admin_auth_test_helpers import install_admin_action_tokens
 
 
 class _SucceedingAdapter:
@@ -186,7 +186,10 @@ def test_push_capabilities_get_hides_raw_engineering_settings_and_sensitive_valu
 
 
 def test_push_capability_toggle_updates_business_setting_and_derived_gates(next_client: TestClient) -> None:
-    token = ensure_admin_action_token()
+    token = install_admin_action_tokens(
+        next_client,
+        ("PATCH", "/api/admin/config/push-capabilities/{capability_key}"),
+    )[("PATCH", "/api/admin/config/push-capabilities/{capability_key}")]
     disabled = next_client.patch(
         "/api/admin/config/push-capabilities/questionnaire_external_push",
         headers={"X-Admin-Action-Token": token},
@@ -220,7 +223,10 @@ def test_push_capability_toggle_updates_business_setting_and_derived_gates(next_
 
 
 def test_push_capability_toggle_derives_all_external_effect_execution_gates(next_client: TestClient) -> None:
-    token = ensure_admin_action_token()
+    token = install_admin_action_tokens(
+        next_client,
+        ("PATCH", "/api/admin/config/push-capabilities/{capability_key}"),
+    )[("PATCH", "/api/admin/config/push-capabilities/{capability_key}")]
 
     payment = next_client.patch(
         "/api/admin/config/push-capabilities/payment_query",
@@ -269,7 +275,10 @@ def test_push_capability_toggle_derives_all_external_effect_execution_gates(next
 
 
 def test_push_capability_scheduler_toggle_is_global_not_per_capability(next_client: TestClient) -> None:
-    token = ensure_admin_action_token()
+    token = install_admin_action_tokens(
+        next_client,
+        ("PATCH", "/api/admin/config/push-capabilities/scheduler"),
+    )[("PATCH", "/api/admin/config/push-capabilities/scheduler")]
     AdminConfigRepository().upsert_app_setting(key=SCHEDULER_ENABLED_KEY, value="false")
     initial = next_client.get("/api/admin/config/push-capabilities")
     assert initial.status_code == 200

@@ -6,7 +6,6 @@ from datetime import datetime, timedelta
 from typing import Any
 
 from aicrm_next.platform_foundation.external_effects.models import public_datetime, utcnow
-from aicrm_next.shared.runtime_settings import runtime_setting
 
 QUESTIONNAIRE_EXTERNAL_PUSH_MODE = "queue"
 
@@ -29,9 +28,8 @@ def build_questionnaire_external_effect_payload(
         "webhook_url": target_url,
         "body": request_body,
         "signature": {
-            "enabled": bool(runtime_setting("AICRM_EXTERNAL_EFFECT_WEBHOOK_SIGNING_SECRET")),
-            "alg": "hmac-sha256",
-            "header": "X-AICRM-External-Effect-Signature",
+            "mode": "aicrm_hmac_sha256",
+            "credential_source": "registered_webhook_client",
         },
     }
     _copy_test_loopback_config(payload, config, request_body)
@@ -75,10 +73,10 @@ def build_questionnaire_external_push_payload(
 
 
 def _copy_test_loopback_config(payload: dict[str, Any], config: dict[str, Any], body: dict[str, Any]) -> None:
-    receiver_token = _text(config.get("receiver_token") or config.get("test_receiver_token"))
-    if not receiver_token:
+    execution_scope = _text(config.get("execution_scope"))
+    loopback_enabled = execution_scope == "test_loopback" or bool(config.get("test_loopback_enabled"))
+    if not loopback_enabled:
         return
-    payload["receiver_token"] = receiver_token
     payload["receiver_response_status"] = int(config.get("receiver_response_status") or config.get("test_receiver_response_status") or 200)
     payload["execution_scope"] = "test_loopback"
     payload["is_test"] = True

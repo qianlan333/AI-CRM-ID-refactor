@@ -72,14 +72,19 @@ def _public_row(row: dict[str, Any] | None) -> dict[str, Any] | None:
     for key, value in list(payload.items()):
         if key.endswith("_jsons") or key in {"dependencies_json", "sample_rows_json", "validation_errors_json"}:
             payload[key] = _json_list(value)
-        elif key.endswith("_json") or key.endswith("_jsonb") or key in {
-            "payload_json",
-            "message_json",
-            "action_json",
-            "headers_json",
-            "payload_template_json",
-            "explain_json",
-        }:
+        elif (
+            key.endswith("_json")
+            or key.endswith("_jsonb")
+            or key
+            in {
+                "payload_json",
+                "message_json",
+                "action_json",
+                "headers_json",
+                "payload_template_json",
+                "explain_json",
+            }
+        ):
             payload[key] = _json_obj(value)
         elif isinstance(value, datetime):
             payload[key] = _public_datetime(value)
@@ -110,9 +115,6 @@ class AudienceRepository:
         raise NotImplementedError
 
     def list_admin_members(self, package_id: int, *, limit: int = 50, offset: int = 0) -> tuple[list[dict[str, Any]], int]:
-        raise NotImplementedError
-
-    def rotate_inbound_secret(self, package_id: int, secret: str) -> dict[str, Any] | None:
         raise NotImplementedError
 
     def list_senders(self, package_id: int) -> list[dict[str, Any]]:
@@ -253,10 +255,13 @@ class SQLAlchemyAudienceRepository(AudienceRepository):
         params = {f"p{i}": values[column] for i, column in enumerate(columns)}
         placeholders = ", ".join(f":p{i}" for i, _column in enumerate(columns))
         column_sql = ", ".join(columns)
-        return self._write_one(
-            f"INSERT INTO {table} ({column_sql}) VALUES ({placeholders}) RETURNING *",
-            params,
-        ) or {}
+        return (
+            self._write_one(
+                f"INSERT INTO {table} ({column_sql}) VALUES ({placeholders}) RETURNING *",
+                params,
+            )
+            or {}
+        )
 
     def _update_available(self, table: str, row_id: int, values: dict[str, Any]) -> dict[str, Any]:
         available_columns = self._table_columns(table)
@@ -268,10 +273,13 @@ class SQLAlchemyAudienceRepository(AudienceRepository):
         assignments = ", ".join(f"{column} = :p{i}" for i, column in enumerate(columns))
         if "updated_at" in available_columns:
             assignments = f"{assignments}, updated_at = CURRENT_TIMESTAMP"
-        return self._write_one(
-            f"UPDATE {table} SET {assignments} WHERE id = :row_id RETURNING *",
-            params,
-        ) or {}
+        return (
+            self._write_one(
+                f"UPDATE {table} SET {assignments} WHERE id = :row_id RETURNING *",
+                params,
+            )
+            or {}
+        )
 
     def list_packages(self) -> list[dict[str, Any]]:
         return self._all(
@@ -404,42 +412,47 @@ class SQLAlchemyAudienceRepository(AudienceRepository):
 
     def copy_package(self, package_id: int, *, package_key: str, name: str) -> dict[str, Any] | None:
         with self._session_factory() as session:
-            source = session.execute(text("SELECT * FROM ai_audience_package WHERE id = :package_id LIMIT 1"), {"package_id": int(package_id)}).mappings().fetchone()
+            source = (
+                session.execute(text("SELECT * FROM ai_audience_package WHERE id = :package_id LIMIT 1"), {"package_id": int(package_id)}).mappings().fetchone()
+            )
             if not source:
                 return None
-            row = session.execute(
-                text(
-                    """
+            row = (
+                session.execute(
+                    text(
+                        """
                     INSERT INTO ai_audience_package (
                         package_key, name, natural_language_definition, status, query_mode, identity_policy,
                         incremental_enabled, daily_enabled, incremental_interval_seconds, daily_refresh_time,
-                        timezone, lookback_seconds, inbound_webhook_secret,
+                        timezone, lookback_seconds,
                         next_incremental_refresh_at, next_daily_refresh_at, created_at, updated_at
                     )
                     VALUES (
                         :package_key, :name, :natural_language_definition, 'draft', :query_mode, :identity_policy,
                         :incremental_enabled, :daily_enabled, :incremental_interval_seconds, :daily_refresh_time,
-                        :timezone, :lookback_seconds, :inbound_webhook_secret,
+                        :timezone, :lookback_seconds,
                         NULL, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
                     )
                     RETURNING *
                     """
-                ),
-                {
-                    "package_key": _text(package_key),
-                    "name": _text(name),
-                    "natural_language_definition": _text(source.get("natural_language_definition")),
-                    "query_mode": _text(source.get("query_mode")) or "hybrid",
-                    "identity_policy": _text(source.get("identity_policy")) or "external_userid",
-                    "incremental_enabled": bool(source.get("incremental_enabled")),
-                    "daily_enabled": bool(source.get("daily_enabled")),
-                    "incremental_interval_seconds": int(source.get("incremental_interval_seconds") or 180),
-                    "daily_refresh_time": _text(source.get("daily_refresh_time")) or "02:00",
-                    "timezone": _text(source.get("timezone")) or "Asia/Shanghai",
-                    "lookback_seconds": int(source.get("lookback_seconds") or 600),
-                    "inbound_webhook_secret": _text(source.get("inbound_webhook_secret")),
-                },
-            ).mappings().one()
+                    ),
+                    {
+                        "package_key": _text(package_key),
+                        "name": _text(name),
+                        "natural_language_definition": _text(source.get("natural_language_definition")),
+                        "query_mode": _text(source.get("query_mode")) or "hybrid",
+                        "identity_policy": _text(source.get("identity_policy")) or "external_userid",
+                        "incremental_enabled": bool(source.get("incremental_enabled")),
+                        "daily_enabled": bool(source.get("daily_enabled")),
+                        "incremental_interval_seconds": int(source.get("incremental_interval_seconds") or 180),
+                        "daily_refresh_time": _text(source.get("daily_refresh_time")) or "02:00",
+                        "timezone": _text(source.get("timezone")) or "Asia/Shanghai",
+                        "lookback_seconds": int(source.get("lookback_seconds") or 600),
+                    },
+                )
+                .mappings()
+                .one()
+            )
             new_package_id = int(row["id"])
             version = session.execute(
                 text(
@@ -518,12 +531,12 @@ class SQLAlchemyAudienceRepository(AudienceRepository):
                     """
                     INSERT INTO ai_audience_outbound_subscription (
                         package_id, status, trigger_event_type, dispatch_mode, target_type, webhook_url,
-                        signing_secret, headers_json, payload_template_json, execution_mode,
+                        headers_json, payload_template_json, execution_mode,
                         requires_approval, max_attempts, created_at, updated_at
                     )
                     SELECT
                         :new_package_id, status, trigger_event_type, dispatch_mode, target_type, webhook_url,
-                        signing_secret, headers_json, payload_template_json, execution_mode,
+                        headers_json, payload_template_json, execution_mode,
                         requires_approval, max_attempts, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
                     FROM ai_audience_outbound_subscription
                     WHERE package_id = :package_id
@@ -587,13 +600,13 @@ class SQLAlchemyAudienceRepository(AudienceRepository):
             INSERT INTO ai_audience_package (
                 package_key, name, natural_language_definition, status, query_mode, identity_policy,
                 incremental_enabled, daily_enabled, incremental_interval_seconds, daily_refresh_time,
-                timezone, lookback_seconds, inbound_webhook_secret,
+                timezone, lookback_seconds,
                 next_incremental_refresh_at, next_daily_refresh_at, created_at, updated_at
             )
             VALUES (
                 :package_key, :name, :natural_language_definition, :status, :query_mode, :identity_policy,
                 :incremental_enabled, :daily_enabled, :incremental_interval_seconds, :daily_refresh_time,
-                :timezone, :lookback_seconds, :inbound_webhook_secret,
+                :timezone, :lookback_seconds,
                 :next_incremental_refresh_at, :next_daily_refresh_at,
                 CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
             )
@@ -612,7 +625,6 @@ class SQLAlchemyAudienceRepository(AudienceRepository):
                 "daily_refresh_time": daily_refresh_time,
                 "timezone": timezone_name,
                 "lookback_seconds": max(0, int(payload.get("lookback_seconds") or 600)),
-                "inbound_webhook_secret": _text(payload.get("inbound_webhook_secret")),
                 "next_incremental_refresh_at": default_refresh_started_at() if status == "active" and bool(payload.get("incremental_enabled", True)) else None,
                 "next_daily_refresh_at": next_daily_refresh_at(daily_refresh_time, timezone_name) if status == "active" and daily_enabled else None,
             },
@@ -1406,18 +1418,6 @@ class SQLAlchemyAudienceRepository(AudienceRepository):
         total = int(rows[0].get("total_count") or 0) if rows else 0
         return rows, total
 
-    def rotate_inbound_secret(self, package_id: int, secret: str) -> dict[str, Any] | None:
-        return self._write_one(
-            """
-            UPDATE ai_audience_package
-            SET inbound_webhook_secret = :secret,
-                updated_at = CURRENT_TIMESTAMP
-            WHERE id = :package_id
-            RETURNING *
-            """,
-            {"package_id": int(package_id), "secret": _text(secret)},
-        )
-
     def list_senders(self, package_id: int) -> list[dict[str, Any]]:
         return self._all(
             """
@@ -1599,7 +1599,6 @@ class SQLAlchemyAudienceRepository(AudienceRepository):
             "dispatch_mode": dispatch_mode,
             "target_type": target_type,
             "webhook_url": webhook_url,
-            "signing_secret": _text(payload.get("signing_secret")),
             "headers_json": _json_dumps(payload.get("headers") or {}),
             "payload_template_json": _json_dumps(payload.get("payload_template") or {}),
             "execution_mode": _text(payload.get("execution_mode")) or "execute",
@@ -1617,7 +1616,6 @@ class SQLAlchemyAudienceRepository(AudienceRepository):
                 """
                 UPDATE ai_audience_outbound_subscription
                 SET dispatch_mode = :dispatch_mode,
-                    signing_secret = :signing_secret,
                     headers_json = CAST(:headers_json AS jsonb),
                     payload_template_json = CAST(:payload_template_json AS jsonb),
                     execution_mode = :execution_mode,
@@ -1637,12 +1635,12 @@ class SQLAlchemyAudienceRepository(AudienceRepository):
             """
             INSERT INTO ai_audience_outbound_subscription (
                 package_id, status, trigger_event_type, dispatch_mode, target_type, webhook_url,
-                signing_secret, headers_json, payload_template_json, execution_mode,
+                headers_json, payload_template_json, execution_mode,
                 requires_approval, max_attempts, created_at, updated_at
             )
             VALUES (
                 :package_id, 'active', :trigger_event_type, :dispatch_mode, :target_type, :webhook_url,
-                :signing_secret, CAST(:headers_json AS jsonb), CAST(:payload_template_json AS jsonb),
+                CAST(:headers_json AS jsonb), CAST(:payload_template_json AS jsonb),
                 :execution_mode, :requires_approval, :max_attempts, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
             )
             RETURNING *, FALSE AS deduplicated
@@ -1665,7 +1663,7 @@ class SQLAlchemyAudienceRepository(AudienceRepository):
             f"""
             SELECT *
             FROM ai_audience_outbound_subscription
-            WHERE {' AND '.join(clauses)}
+            WHERE {" AND ".join(clauses)}
             ORDER BY id DESC
             """,
             params,
@@ -1678,7 +1676,6 @@ class SQLAlchemyAudienceRepository(AudienceRepository):
         merged = {
             "status": payload.get("status", current.get("status")),
             "webhook_url": payload.get("webhook_url", current.get("webhook_url")),
-            "signing_secret": payload.get("signing_secret", current.get("signing_secret")),
             "headers_json": payload.get("headers", current.get("headers_json") or {}),
             "payload_template_json": payload.get("payload_template", current.get("payload_template_json") or {}),
             "execution_mode": payload.get("execution_mode", current.get("execution_mode")),
@@ -1690,7 +1687,6 @@ class SQLAlchemyAudienceRepository(AudienceRepository):
             UPDATE ai_audience_outbound_subscription
             SET status = :status,
                 webhook_url = :webhook_url,
-                signing_secret = :signing_secret,
                 headers_json = CAST(:headers_json AS jsonb),
                 payload_template_json = CAST(:payload_template_json AS jsonb),
                 execution_mode = :execution_mode,
@@ -1704,7 +1700,6 @@ class SQLAlchemyAudienceRepository(AudienceRepository):
                 "subscription_id": int(subscription_id),
                 "status": _text(merged["status"]) or "active",
                 "webhook_url": _text(merged["webhook_url"]),
-                "signing_secret": _text(merged["signing_secret"]),
                 "headers_json": _json_dumps(merged["headers_json"]),
                 "payload_template_json": _json_dumps(merged["payload_template_json"]),
                 "execution_mode": _text(merged["execution_mode"]) or "execute",

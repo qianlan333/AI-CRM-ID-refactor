@@ -13,6 +13,7 @@ from aicrm_next.shared.signed_session import verify_session_payload
 SIDEBAR_PRODUCT_CONTEXT_SOURCE = "sidebar_product_link"
 SIDEBAR_PRODUCT_CONTEXT_RESOLVED_SOURCE = "signed_sidebar_product_link"
 SIDEBAR_PRODUCT_CONTEXT_SALT = "aicrm-sidebar-product-context-v1"
+SIDEBAR_PRODUCT_CONTEXT_COOKIE = "aicrm_sidebar_product_context"
 DEFAULT_SIDEBAR_PRODUCT_CONTEXT_TTL_SECONDS = 30 * 86400
 SIDEBAR_VIEWER_SESSION_COOKIE = "aicrm_sidebar_viewer_session"
 SIDEBAR_OWNER_CONTEXT_SOURCE = "sidebar_owner_context_v2"
@@ -238,10 +239,35 @@ def validate_sidebar_owner_context(
     return {"ok": True, "status": "valid", "context": context}
 
 
-def append_ctx_query(path: str, token: str) -> str:
+def append_ctx_fragment(path: str, token: str) -> str:
     normalized_path = _text(path)
     normalized_token = _text(token)
     if not normalized_path or not normalized_token:
         return normalized_path
-    separator = "&" if "?" in normalized_path else "?"
-    return f"{normalized_path}{separator}ctx={quote(normalized_token, safe='')}"
+    return f"{normalized_path}#aicrm_ctx={quote(normalized_token, safe='')}"
+
+
+def product_context_fragment_bootstrap_script() -> str:
+    """Exchange a URL-fragment credential for an HttpOnly cookie without server-log exposure."""
+
+    return """
+<script>
+(async function () {
+  const params = new URLSearchParams(window.location.hash.replace(/^#/, ""));
+  const contextToken = String(params.get("aicrm_ctx") || "").trim();
+  if (!contextToken) return;
+  window.history.replaceState({}, document.title, window.location.pathname + window.location.search);
+  try {
+    const response = await fetch("/api/h5/product-context/session", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({context_token: contextToken})
+    });
+    if (response.ok) window.location.reload();
+  } catch (_error) {
+    // The page remains usable without owner attribution; payment never trusts an invalid context.
+  }
+})();
+</script>
+""".strip()

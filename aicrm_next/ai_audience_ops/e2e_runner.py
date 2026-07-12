@@ -196,7 +196,6 @@ class AudienceRealE2ERunner:
                 {
                     "outbound_enabled": scenario in AUTO_SCENARIOS,
                     "outbound_webhook_url": _test_agent_url(),
-                    "outbound_signing_secret": "e2e_" + secrets.token_urlsafe(32),
                 },
             )
             self._package_service.replace_admin_senders(
@@ -247,7 +246,9 @@ class AudienceRealE2ERunner:
         private_ok = bool(private_dispatch.get("ok"))
         return {
             "ok": private_ok,
-            "error": "" if private_ok else _text(private_dispatch.get("error")) or _text((private_dispatch.get("job") or {}).get("last_error_code")) or "private_dispatch_failed",
+            "error": ""
+            if private_ok
+            else _text(private_dispatch.get("error")) or _text((private_dispatch.get("job") or {}).get("last_error_code")) or "private_dispatch_failed",
             "package_key": package.package_key,
             "package_id": package.package_id,
             "version_id": package.version_id,
@@ -653,7 +654,13 @@ def _execute_guard(execute: dict[str, Any]) -> str:
 
 
 def _owner_userids(preview: dict[str, Any]) -> list[str]:
-    return sorted({_text(item.get("owner_userid") or item.get("sender_userid")) for item in preview.get("owner_buckets") or [] if _text(item.get("owner_userid") or item.get("sender_userid"))})
+    return sorted(
+        {
+            _text(item.get("owner_userid") or item.get("sender_userid"))
+            for item in preview.get("owner_buckets") or []
+            if _text(item.get("owner_userid") or item.get("sender_userid"))
+        }
+    )
 
 
 def _skipped_count(summary: Any, reason: str) -> int:
