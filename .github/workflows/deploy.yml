@@ -142,7 +142,56 @@ jobs:
             release_bundle_dir="/tmp/aicrm-release-$verified_sha"
             release_bundle="/tmp/aicrm-release-$verified_sha/aicrm-release.bundle"
             release_bundle_checksum="/tmp/aicrm-release-$verified_sha/aicrm-release.bundle.sha256"
-            trap 'rm -rf -- "$release_bundle_dir"' EXIT
+            deploy_smoke_session_file=""
+            runtime_units_stopped=0
+            cleanup_deploy() {
+              exit_status=$?
+              trap - EXIT
+              set +e
+              cleanup_failed=0
+              if [ -n "${deploy_smoke_session_file:-}" ] && [ -e "$deploy_smoke_session_file" ]; then
+                if ! python3 scripts/ops/create_deploy_smoke_session.py revoke \
+                  --cookie-file "$deploy_smoke_session_file" \
+                  | tee /tmp/aicrm-deploy-smoke-session-cleanup.json; then
+                  echo "failed to revoke temporary deploy smoke session"
+                  cleanup_failed=1
+                fi
+                rm -f -- "$deploy_smoke_session_file"
+              fi
+              if [ "${runtime_units_stopped:-0}" = "1" ]; then
+                echo "deployment exited during migration window; restoring runtime units"
+                sudo systemctl reset-failed \
+                  openclaw-wecom-postgres.service || true
+                sudo systemctl start openclaw-wecom-postgres.service
+                restored_web_ready=0
+                for _ in $(seq 1 30); do
+                  if curl -sSf http://127.0.0.1:5001/health >/tmp/aicrm_cleanup_health.json; then
+                    restored_web_ready=1
+                    break
+                  fi
+                  sleep 1
+                done
+                if [ "$restored_web_ready" = "1" ]; then
+                  if ! python3 scripts/ops/manage_production_runtime_units.py \
+                    --phase install-enable-after-web-health --execute; then
+                    cleanup_failed=1
+                  fi
+                  if ! python3 scripts/ops/manage_production_runtime_units.py \
+                    --phase verify --execute; then
+                    cleanup_failed=1
+                  fi
+                else
+                  echo "web health unavailable; runtime units could not be safely restored"
+                  cleanup_failed=1
+                fi
+              fi
+              rm -rf -- "$release_bundle_dir"
+              if [ "$exit_status" -eq 0 ] && [ "$cleanup_failed" -ne 0 ]; then
+                exit_status=1
+              fi
+              exit "$exit_status"
+            }
+            trap cleanup_deploy EXIT
             if [ ! -r "$release_bundle" ] || [ ! -r "$release_bundle_checksum" ]; then
               echo "verified release bundle or checksum is missing"
               exit 1
@@ -195,6 +244,7 @@ jobs:
               | tee /tmp/aicrm-identity-preflight.json
             # 1) AI-CRM Next schema migrations
             python3 scripts/ops/manage_production_runtime_units.py --phase stop-for-migration --execute
+            runtime_units_stopped=1
             python3 -m alembic upgrade head
             # Production currently uses the openclaw-* compatible 5001 web unit.
             # Stop the canonical alias if it exists so both units cannot bind 5001.
@@ -263,14 +313,28 @@ jobs:
               --phase post-deploy \
               --expected-release-sha "$after_sha" \
               | tee /tmp/aicrm-identity-reconciliation.json
-            if ! python scripts/ops/check_admin_read_pages_smoke.py --base-url http://127.0.0.1:5001 --require-admin-cookie | tee /tmp/aicrm-admin-read-pages-smoke.json; then
+            deploy_smoke_session_file="$(mktemp /tmp/aicrm-deploy-smoke-session.XXXXXX)"
+            python3 scripts/ops/create_deploy_smoke_session.py issue \
+              --output-file "$deploy_smoke_session_file" \
+              --ttl-seconds 300 \
+              | tee /tmp/aicrm-deploy-smoke-session-issue.json
+            if ! python scripts/ops/check_admin_read_pages_smoke.py \
+              --base-url http://127.0.0.1:5001 \
+              --require-admin-cookie \
+              --admin-cookie-file "$deploy_smoke_session_file" \
+              | tee /tmp/aicrm-admin-read-pages-smoke.json; then
               sudo systemctl status openclaw-wecom-postgres.service --no-pager || true
               sudo journalctl -u openclaw-wecom-postgres.service -n 120 --no-pager || true
               exit 1
             fi
+            python3 scripts/ops/create_deploy_smoke_session.py revoke \
+              --cookie-file "$deploy_smoke_session_file" \
+              | tee /tmp/aicrm-deploy-smoke-session-revoke.json
+            deploy_smoke_session_file=""
             python3 scripts/ops/manage_production_runtime_units.py --phase install-enable-after-web-health --execute
             python scripts/ops/check_wecom_callback_deploy_smoke.py | tee /tmp/wecom-callback-deploy-smoke.json
             python3 scripts/ops/manage_production_runtime_units.py --phase verify --execute
+            runtime_units_stopped=0
             # Count-only R06 reconciliation. This command never repairs rows or executes consumers/providers.
             python scripts/ops/reconcile_internal_event_outbox.py \
               | tee /tmp/aicrm-internal-event-outbox-reconciliation.json

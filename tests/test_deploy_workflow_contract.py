@@ -272,6 +272,45 @@ def test_production_deploy_polls_health_after_restart_instead_of_fixed_sleep():
     assert "sleep 3" not in workflow
 
 
+def test_deploy_admin_smoke_uses_short_lived_server_session_without_logging_cookie():
+    workflow = TEST_DEPLOY_WORKFLOW.read_text(encoding="utf-8")
+
+    issue_index = workflow.index("python3 scripts/ops/create_deploy_smoke_session.py issue")
+    smoke_index = workflow.index("python scripts/ops/check_admin_read_pages_smoke.py", issue_index)
+    revoke_index = workflow.index("python3 scripts/ops/create_deploy_smoke_session.py revoke", smoke_index)
+    install_index = workflow.index(_runtime_units_phase("install-enable-after-web-health"))
+
+    assert issue_index < smoke_index < revoke_index < install_index
+    assert 'deploy_smoke_session_file="$(mktemp /tmp/aicrm-deploy-smoke-session.XXXXXX)"' in workflow
+    assert '--output-file "$deploy_smoke_session_file"' in workflow
+    assert "--ttl-seconds 300" in workflow
+    assert '--admin-cookie-file "$deploy_smoke_session_file"' in workflow
+    assert '--cookie-file "$deploy_smoke_session_file"' in workflow
+    assert "aicrm_next_admin_session=" not in workflow
+    assert 'cat "$deploy_smoke_session_file"' not in workflow
+    assert 'echo "$deploy_smoke_session_file"' not in workflow
+
+
+def test_deploy_exit_trap_revokes_smoke_session_and_restores_runtime_units():
+    workflow = TEST_DEPLOY_WORKFLOW.read_text(encoding="utf-8")
+
+    cleanup_index = workflow.index("cleanup_deploy() {")
+    trap_index = workflow.index("trap cleanup_deploy EXIT", cleanup_index)
+    stop_index = workflow.index(_runtime_units_phase("stop-for-migration"))
+    stopped_flag_index = workflow.index("runtime_units_stopped=1", stop_index)
+    verify_index = workflow.index(_runtime_units_phase("verify"), stopped_flag_index)
+    restored_flag_index = workflow.index("runtime_units_stopped=0", verify_index)
+
+    assert cleanup_index < trap_index < stop_index < stopped_flag_index < verify_index < restored_flag_index
+    cleanup = workflow[cleanup_index:trap_index]
+    assert "create_deploy_smoke_session.py revoke" in cleanup
+    assert 'if [ "${runtime_units_stopped:-0}" = "1" ]; then' in cleanup
+    assert "deployment exited during migration window; restoring runtime units" in cleanup
+    assert "--phase install-enable-after-web-health --execute" in cleanup
+    assert "--phase verify --execute" in cleanup
+    assert "restored_web_ready" in cleanup
+
+
 def test_production_deploy_retires_legacy_external_push_worker():
     manifest = json.loads((ROOT / "deploy" / "production_runtime_units.json").read_text(encoding="utf-8"))
     active_timers = {item["timer"] for item in manifest["active_autostart"]}

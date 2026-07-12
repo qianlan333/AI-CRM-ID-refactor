@@ -456,6 +456,17 @@ def test_runtime_units_change_selects_deploy_contract_tests() -> None:
     assert result["needs_full_ci"] is True
 
 
+def test_deploy_smoke_session_change_selects_admin_and_deploy_contracts() -> None:
+    result = _select("scripts/ops/create_deploy_smoke_session.py")
+
+    assert result["matched_scopes"] == ["admin_read_pages", "ci_deploy"]
+    assert "tests/test_admin_read_pages_smoke.py" in result["python_tests"]
+    assert "tests/test_deploy_workflow_contract.py" in result["python_tests"]
+    assert result["unmatched_files"] == []
+    assert result["architecture_gate"] == "full"
+    assert result["needs_full_ci"] is True
+
+
 def test_ci_manifest_change_selects_lightweight_selector_scope() -> None:
     result = _select("docs/ci/test_scope_manifest.yml", "tests/test_select_test_scope.py")
 

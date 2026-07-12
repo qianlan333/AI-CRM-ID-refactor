@@ -1,10 +1,24 @@
 from __future__ import annotations
 
+import json
+import os
+
+from sqlalchemy import text
+
+from aicrm_next.platform_foundation.auth_platform.credentials import CredentialHasher
+from aicrm_next.platform_foundation.auth_platform.repository import PostgresAuthRepository
+from aicrm_next.platform_foundation.auth_platform.sessions import AuthSessionService
+from aicrm_next.shared.db_session import get_session_factory
 from scripts.ops import check_admin_read_pages_smoke as smoke
+from scripts.ops import create_deploy_smoke_session as deploy_session
 
 
 def test_run_fails_when_required_admin_cookie_is_missing(monkeypatch) -> None:
-    monkeypatch.setattr(smoke, "_admin_cookie_header", lambda: ("", "admin_cookie_sign_failed:RuntimeError"))
+    monkeypatch.setattr(
+        smoke,
+        "_admin_cookie_header",
+        lambda _path: ("", "admin_cookie_file_failed:FileNotFoundError"),
+    )
     monkeypatch.setattr(smoke, "_openapi_paths", lambda *args, **kwargs: set(smoke.REQUIRED_OPENAPI_PATHS))
     monkeypatch.setattr(
         smoke,
@@ -23,8 +37,98 @@ def test_run_fails_when_required_admin_cookie_is_missing(monkeypatch) -> None:
     assert payload["ok"] is False
     assert payload["admin_cookie_supplied"] is False
     assert payload["admin_cookie_required"] is True
-    assert payload["admin_cookie_error"] == "admin_cookie_sign_failed:RuntimeError"
+    assert payload["admin_cookie_error"] == "admin_cookie_file_failed:FileNotFoundError"
     assert ":admin_cookie_missing" in payload["failed_paths"]
+
+
+def test_admin_cookie_file_must_be_private(tmp_path) -> None:
+    cookie_file = tmp_path / "admin-cookie"
+    cookie_file.write_text("aicrm_next_admin_session=ss_fake", encoding="utf-8")
+    cookie_file.chmod(0o644)
+
+    header, error = smoke._admin_cookie_header(cookie_file)
+
+    assert header == ""
+    assert error == "admin_cookie_file_failed:PermissionError"
+
+
+def test_deploy_smoke_session_issue_use_and_revoke_chain(tmp_path, next_pg_schema, monkeypatch) -> None:
+    database_url = os.environ["DATABASE_URL"]
+    pepper = "deploy-smoke-test-pepper-at-least-32-bytes"
+    with get_session_factory().begin() as session:
+        admin_user_id = int(
+            session.execute(
+                text(
+                    """
+                    INSERT INTO admin_users (
+                        wecom_userid, wecom_corpid, display_name, is_active,
+                        login_enabled, admin_level, session_version
+                    ) VALUES (
+                        'pytest-deploy-smoke', 'corp-pytest', 'Deploy smoke', TRUE,
+                        TRUE, 'super_admin', 3
+                    )
+                    RETURNING id
+                    """
+                )
+            ).scalar_one()
+        )
+    cookie_file = tmp_path / "deploy-smoke-cookie"
+
+    issue_report = deploy_session.issue_deploy_smoke_session(
+        database_url=database_url,
+        pepper=pepper,
+        output_file=cookie_file,
+        ttl_seconds=60,
+    )
+    cookie_header, cookie_error = smoke._admin_cookie_header(cookie_file)
+    session_cookie = deploy_session._read_session_cookie(cookie_file)
+    service = AuthSessionService(PostgresAuthRepository(database_url=database_url), CredentialHasher(pepper))
+    introspection = service.introspect(session_cookie)
+
+    assert issue_report["ok"] is True
+    assert issue_report["ttl_seconds"] == 60
+    assert "ss_" not in json.dumps(issue_report)
+    assert cookie_error == ""
+    assert cookie_header.startswith("aicrm_next_admin_session=ss_")
+    assert introspection.active is True
+    assert introspection.context is not None
+    assert introspection.context.admin_user_id == str(admin_user_id)
+    captured_headers: list[str] = []
+    monkeypatch.setattr(smoke, "_openapi_paths", lambda *args, **kwargs: set(smoke.REQUIRED_OPENAPI_PATHS))
+
+    def _healthy_probe(*args, **kwargs):
+        captured_headers.append(str(kwargs.get("cookie_header") or ""))
+        return smoke.ProbeResult(
+            path=str(args[1]),
+            status_code=200,
+            ok=True,
+            duration_ms=1,
+            body_prefix="{}",
+        )
+
+    monkeypatch.setattr(smoke, "_probe", _healthy_probe)
+    smoke_report = smoke.run(
+        "http://127.0.0.1:5001",
+        timeout=1,
+        require_admin_cookie=True,
+        admin_cookie_file=cookie_file,
+    )
+
+    assert smoke_report["ok"] is True
+    assert captured_headers == [cookie_header] * len(smoke.SMOKE_PATHS)
+    revoke_report = deploy_session.revoke_deploy_smoke_session(
+        database_url=database_url,
+        pepper=pepper,
+        cookie_file=cookie_file,
+    )
+    assert revoke_report == {
+        "ok": True,
+        "action": "revoke",
+        "revoked": True,
+        "credential_printed": False,
+    }
+    assert not cookie_file.exists()
+    assert service.introspect(session_cookie).active is False
 
 
 def test_probe_rejects_protected_api_unauthorized_when_cookie_supplied(monkeypatch) -> None:

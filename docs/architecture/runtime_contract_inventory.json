@@ -296,6 +296,12 @@
       "line": 41
     },
     {
+      "accessor": "runtime_setting",
+      "file": "scripts/ops/create_deploy_smoke_session.py",
+      "key": "AICRM_AUTH_SESSION_HASH_PEPPER",
+      "line": 227
+    },
+    {
       "accessor": "os.getenv",
       "file": "aicrm_next/navigation_target/resolver.py",
       "key": "AICRM_COMPLETION_URL_LINK_API_PATH_PREFIXES",
@@ -1164,6 +1170,12 @@
       "file": "scripts/ops/check_wecom_callback_processing_evidence.py",
       "key": "DATABASE_URL",
       "line": 198
+    },
+    {
+      "accessor": "os.getenv",
+      "file": "scripts/ops/create_deploy_smoke_session.py",
+      "key": "DATABASE_URL",
+      "line": 211
     },
     {
       "accessor": "os.getenv",
