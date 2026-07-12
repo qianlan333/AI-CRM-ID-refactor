@@ -212,15 +212,32 @@ def test_production_deploy_migrates_and_reconciles_secret_references_before_web_
 
     alembic_upgrade_index = workflow.index("python3 -m alembic upgrade head")
     migration_index = workflow.index("python3 scripts/ops/migrate_app_setting_secrets.py --execute")
+    auth_bootstrap_index = workflow.index("python3 scripts/ops/bootstrap_auth_clients.py", migration_index)
     refreshed_env_index = workflow.index("source /home/ubuntu/.openclaw-wecom-pg.env", migration_index)
+    auth_readiness_index = workflow.index("python3 scripts/ops/check_auth_readiness.py", refreshed_env_index)
     reconciliation_index = workflow.index("python3 scripts/ops/check_secret_reference_cutover.py")
     stop_web_index = workflow.index("sudo systemctl stop aicrm-web.service || true")
     start_web_index = workflow.index("if ! sudo systemctl start openclaw-wecom-postgres.service; then")
 
-    assert alembic_upgrade_index < stop_web_index < migration_index < refreshed_env_index < reconciliation_index < start_web_index
+    assert (
+        alembic_upgrade_index
+        < stop_web_index
+        < migration_index
+        < auth_bootstrap_index
+        < refreshed_env_index
+        < auth_readiness_index
+        < reconciliation_index
+        < start_web_index
+    )
     assert "--secret-store-dir \"$AICRM_SECRET_STORE_DIR\"" in workflow
     assert "--environment-file /home/ubuntu/.openclaw-wecom-pg.env" in workflow
     assert "tee /tmp/aicrm-secret-migration.json" in workflow
+    assert "--apply" in workflow[auth_bootstrap_index:refreshed_env_index]
+    assert '--issuer "$auth_issuer"' in workflow[auth_bootstrap_index:reconciliation_index]
+    assert 'auth_issuer="https://www.youcangogogo.com"' in workflow
+    assert 'auth_issuer="https://id-dev.youcangogogo.com"' in workflow
+    assert "tee /tmp/aicrm-auth-client-bootstrap.json" in workflow
+    assert "tee /tmp/aicrm-auth-readiness.json" in workflow
     assert "tee /tmp/aicrm-secret-reconciliation.json" in workflow
     assert "set -x" not in workflow
 
