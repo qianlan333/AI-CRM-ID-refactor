@@ -9,6 +9,7 @@
     ".github/**",
     "scripts/ci/**",
     "scripts/ops/create_deploy_smoke_session.py",
+    "scripts/ops/bootstrap_database.py",
     "scripts/ops/ensure_production_public_release_route.py",
     "scripts/ops/reconcile_wecom_callback_runtime.py",
     "scripts/run_wecom_callback_inbox_worker.py",
@@ -976,14 +977,24 @@
       "name": "migration_db",
       "paths": [
         "migrations/**",
+        "scripts/ops/bootstrap_database.py",
+        "tools/check_repository_ownership.py",
+        "docs/architecture/data_table_lifecycle_manifest.yml",
+        "docs/architecture/repository_ownership.yml",
         "aicrm_next/**/repo.py",
         "aicrm_next/**/postgres_repo.py",
         "tests/test_alembic_revision_chain.py",
+        "tests/test_database_bootstrap.py",
+        "tests/test_data_table_lifecycle_guard.py",
+        "tests/test_repository_ownership_guard.py",
         "tests/test_*migration*.py",
         "tests/test_sql_static_guard.py"
       ],
       "python_tests": [
         "tests/test_alembic_revision_chain.py",
+        "tests/test_database_bootstrap.py",
+        "tests/test_data_table_lifecycle_guard.py",
+        "tests/test_repository_ownership_guard.py",
         "tests/test_sql_static_guard.py"
       ],
       "needs_postgres": true,

@@ -31,6 +31,7 @@ ALLOWED_FINAL_LEGACY_IDENTITY_COLUMNS = {
     "radar_click_events.external_userid",
     "radar_click_events.openid",
     "radar_click_events.person_id",
+    "wecom_external_contact_event_logs.external_userid",
     "wecom_external_contact_follow_users.external_userid",
     "wecom_external_contact_identity_map.external_userid",
     "wecom_external_contact_identity_map.openid",
