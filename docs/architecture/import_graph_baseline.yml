@@ -1,0 +1,40 @@
+schema_version: 1
+package: aicrm_next
+
+limits:
+  max_contexts: 40
+  max_cross_context_edges: 194
+  max_cyclic_contexts: 26
+
+allowed_cyclic_components:
+  - id: legacy_cross_context_runtime_scc
+    owner: architecture
+    reason: Existing modular-monolith reverse imports must be removed incrementally by the remaining R12 slices.
+    remove_by: "2026-08-31"
+    contexts:
+      - admin_auth
+      - admin_config
+      - admin_jobs
+      - admin_read_model
+      - admin_shell
+      - ai_assist
+      - ai_audience_ops
+      - automation_agents
+      - automation_engine
+      - channel_entry
+      - cloud_orchestrator
+      - commerce
+      - customer_read_model
+      - customer_tags
+      - external_push
+      - identity_contact
+      - integration_gateway
+      - media_library
+      - message_archive
+      - ops_enrollment
+      - platform_foundation
+      - public_product
+      - questionnaire
+      - send_content
+      - send_targets
+      - service_period

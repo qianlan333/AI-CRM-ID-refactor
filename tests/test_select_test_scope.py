@@ -45,6 +45,28 @@ def test_media_library_change_runs_small_no_pg_slice() -> None:
     assert result["needs_full_ci"] is False
 
 
+def test_every_runtime_python_change_runs_import_graph_architecture_gate() -> None:
+    result = _select("aicrm_next/media_library/variants.py")
+
+    assert result["matched_scopes"] == ["media_library"]
+    assert result["architecture_gate"] == "fast"
+    assert result["needs_full_ci"] is False
+
+
+def test_import_graph_governance_changes_force_mapped_full_ci() -> None:
+    result = _select(
+        "tools/check_import_graph.py",
+        "docs/architecture/import_graph_baseline.yml",
+        "tests/test_import_graph_guard.py",
+    )
+
+    assert "import_graph_governance" in result["matched_scopes"]
+    assert result["unmatched_files"] == []
+    assert "tests/test_import_graph_guard.py" in result["python_tests"]
+    assert result["architecture_gate"] == "full"
+    assert result["needs_full_ci"] is True
+
+
 def test_h5_wechat_pay_mobile_projection_test_selects_commerce_scope() -> None:
     result = _select("tests/test_h5_wechat_pay_mobile_projection.py")
 
