@@ -519,6 +519,11 @@ def test_signed_viewer_session_is_the_only_identity_source_for_content_events(cl
     assert events[0]["unionid_masked"] == "unioni...ewer"
 
     viewer_cookie = client.cookies.get("aicrm_radar_viewer")
+    # The callback cookie is scoped to the test-server domain. Adding an
+    # unscoped cookie with the same name leaves two candidates in httpx's jar,
+    # whose header order differs across Python versions. Send exactly one
+    # tampered credential so this remains an identity-boundary test.
+    client.cookies.clear()
     client.cookies.set("aicrm_radar_viewer", f"{viewer_cookie}tampered")
     rejected = client.get(f"/radar/view/{link['code']}")
     assert rejected.status_code == 400
