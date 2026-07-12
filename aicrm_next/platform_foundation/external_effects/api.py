@@ -9,6 +9,7 @@ from starlette.concurrency import run_in_threadpool
 from aicrm_next.admin_jobs.routes import validate_admin_action_token
 
 from .adapters import wecom_execution_settings
+from .continuations import EMPTY_EXTERNAL_EFFECT_CONTINUATION_REGISTRY, ExternalEffectContinuationRegistry
 from .repo import build_external_effect_repository
 from .service import ExternalEffectService
 from .test_receiver import create_loopback_job, record_test_receiver_request, safe_current_base_url
@@ -74,6 +75,14 @@ def _action_or_internal_token_error(request: Request, payload: dict[str, Any]) -
 
 def _service() -> ExternalEffectService:
     return ExternalEffectService(build_external_effect_repository())
+
+
+def _continuation_registry(request: Request) -> ExternalEffectContinuationRegistry:
+    return getattr(
+        request.app.state,
+        "external_effect_continuation_registry",
+        EMPTY_EXTERNAL_EFFECT_CONTINUATION_REGISTRY,
+    )
 
 
 @router.get("/api/admin/external-effects/jobs")
@@ -248,7 +257,10 @@ async def run_external_effect_due(request: Request) -> JSONResponse:
     dry_run = _bool(payload.get("dry_run"), default=True)
     repo = build_external_effect_repository()
     result = await run_in_threadpool(
-        ExternalEffectWorker(repo).run_due,
+        ExternalEffectWorker(
+            repo,
+            continuation_registry=_continuation_registry(request),
+        ).run_due,
         batch_size=_int(payload.get("batch_size") or payload.get("limit"), default=10, minimum=1),
         dry_run=dry_run,
         effect_types=[_text(item) for item in payload.get("effect_types") or [] if _text(item)] or None,

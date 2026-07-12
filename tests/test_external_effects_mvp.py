@@ -10,6 +10,7 @@ import requests
 import pytest
 from fastapi.testclient import TestClient
 
+from aicrm_next.external_effect_composition import build_external_effect_continuation_registry
 from aicrm_next.customer_tags.live_mutation import execute_wecom_tag_mutation, reset_wecom_tag_live_mutation_fixture_state
 from aicrm_next.customer_tags.mutation_commands import PlanWeComTagMarkCommand, PlanWeComTagUnmarkCommand
 from aicrm_next.platform_foundation.command_bus import CommandContext
@@ -734,7 +735,11 @@ def test_external_effect_worker_continues_automation_agent_webhook_batch(monkeyp
     registry = ExternalEffectAdapterRegistry()
     registry._adapters["unit_agent_webhook"] = _SucceededAgentWebhookAdapter()  # type: ignore[attr-defined]
 
-    result = ExternalEffectWorker(repo, registry).run_due(batch_size=1, dry_run=False, effect_types=[WEBHOOK_GENERIC_PUSH])
+    result = ExternalEffectWorker(
+        repo,
+        registry,
+        continuation_registry=build_external_effect_continuation_registry(),
+    ).run_due(batch_size=1, dry_run=False, effect_types=[WEBHOOK_GENERIC_PUSH])
     attempts = repo.list_attempts(job["id"])
 
     assert seen == {"batch_id": "agent_batch_unit_001", "operator": "external_effect_agent_continuation"}

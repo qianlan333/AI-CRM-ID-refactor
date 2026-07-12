@@ -241,6 +241,13 @@ def test_admin_read_model_does_not_reverse_import_admin_config() -> None:
     assert ("admin_read_model", "admin_config") not in _edge_pairs(report)
 
 
+def test_platform_foundation_does_not_reverse_import_external_effect_business_continuations() -> None:
+    report = scan_import_graph(ROOT)
+
+    assert ("platform_foundation", "automation_agents") not in _edge_pairs(report)
+    assert ("platform_foundation", "customer_tags") not in _edge_pairs(report)
+
+
 def test_repository_import_graph_matches_registered_r12_baseline() -> None:
     report, violations = check_import_graph(
         root=ROOT,
@@ -249,14 +256,12 @@ def test_repository_import_graph_matches_registered_r12_baseline() -> None:
 
     assert violations == []
     assert len(report.contexts) == 40
-    assert len(report.edges) == 193
+    assert len(report.edges) == 192
     assert report.cyclic_components == (
         (
             "admin_auth",
             "admin_jobs",
             "admin_shell",
-            "ai_audience_ops",
-            "automation_agents",
             "automation_engine",
             "channel_entry",
             "cloud_orchestrator",
@@ -268,11 +273,14 @@ def test_repository_import_graph_matches_registered_r12_baseline() -> None:
             "integration_gateway",
             "media_library",
             "message_archive",
-            "ops_enrollment",
             "platform_foundation",
             "public_product",
             "questionnaire",
             "send_content",
             "service_period",
+        ),
+        (
+            "ai_audience_ops",
+            "ops_enrollment",
         ),
     )
