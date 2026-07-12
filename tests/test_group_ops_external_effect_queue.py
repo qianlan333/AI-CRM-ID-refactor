@@ -5,7 +5,6 @@ from urllib.parse import urlparse
 from aicrm_next.platform_foundation.command_bus import CommandContext
 from aicrm_next.platform_foundation.external_effects import (
     GROUP_OPS_MESSAGE_LOOPBACK,
-    GROUP_OPS_WEBHOOK_ACTION_LOOPBACK,
     WECOM_MESSAGE_GROUP_SEND,
     ExternalEffectService,
 )
@@ -157,7 +156,7 @@ def test_group_ops_loopback_without_test_receiver_is_blocked_before_webhook_url_
     assert attempts[0].status == "blocked"
 
 
-def test_group_ops_webhook_receive_shadow_logs_action_and_creates_external_effect_job(group_ops_api_client, monkeypatch):
+def test_group_ops_webhook_receive_logs_action_and_creates_wecom_group_effect(group_ops_api_client, monkeypatch):
     monkeypatch.setenv("AICRM_GROUP_OPS_OUTBOUND_MODE", "shadow")
     calls: list[dict] = []
 
@@ -171,7 +170,7 @@ def test_group_ops_webhook_receive_shadow_logs_action_and_creates_external_effec
         lambda: FakeActionPort(),
     )
     created = group_ops_api_client.post(
-        "/api/automation/group-ops/plans",
+        "/api/admin/automation-conversion/group-ops/plans",
         json={
             "name": "Webhook external effect plan",
             "type": "webhook_receiver",
@@ -181,7 +180,7 @@ def test_group_ops_webhook_receive_shadow_logs_action_and_creates_external_effec
             "allowNoSop": True,
         },
     ).json()
-    group_ops_api_client.post(f"/api/automation/group-ops/plans/{created['id']}/enable")
+    group_ops_api_client.post(f"/api/admin/automation-conversion/group-ops/plans/{created['id']}/enable")
 
     response = group_ops_api_client.post(
         f"/api/automation/group-ops/webhooks/{created['webhook']['endpointKey']}",
@@ -193,8 +192,8 @@ def test_group_ops_webhook_receive_shadow_logs_action_and_creates_external_effec
             "action": {"action_type": "send_group_message", "content": "synthetic group content"},
         },
     )
-    jobs = _jobs(GROUP_OPS_WEBHOOK_ACTION_LOOPBACK)
-    logs = group_ops_api_client.get(f"/api/automation/group-ops/plans/{created['id']}/executions")
+    jobs = _jobs(WECOM_MESSAGE_GROUP_SEND)
+    logs = group_ops_api_client.get(f"/api/admin/automation-conversion/group-ops/plans/{created['id']}/executions")
 
     assert response.status_code == 202
     assert response.json()["external_effect_job_ids"] == [jobs[0].id]
@@ -203,6 +202,7 @@ def test_group_ops_webhook_receive_shadow_logs_action_and_creates_external_effec
     assert calls[0]["action"]["action_type"] == "send_group_message"
     assert logs.json()["total"] == 1
     assert jobs[0].status == "queued"
+    assert jobs[0].adapter_name == "wecom_group_message"
     assert jobs[0].payload_summary_json["chat_count"] == 1
 
 

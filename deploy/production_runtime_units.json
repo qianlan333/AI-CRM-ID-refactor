@@ -42,11 +42,14 @@
     {
       "timer": "openclaw-identity-resolution-worker.timer",
       "service": "openclaw-identity-resolution-worker.service"
+    },
+    {
+      "timer": "openclaw-automation-ops-scheduler.timer",
+      "service": "openclaw-automation-ops-scheduler.service"
     }
   ],
   "approval_required": [
     "aicrm-archive-sync.timer",
-    "openclaw-automation-ops-scheduler.timer",
     "openclaw-broadcast-hourly-feishu-report.timer",
     "openclaw-external-contact-full-sync.timer",
     "openclaw-external-contact-sync.timer"

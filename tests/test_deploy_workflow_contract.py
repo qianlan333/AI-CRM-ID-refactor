@@ -328,6 +328,21 @@ def test_production_deploy_runs_commerce_fulfillment_reconciliation_count_only()
     assert "python scripts/ops/reconcile_commerce_fulfillment.py --repair" not in workflow
 
 
+def test_production_deploy_runs_r09_and_r10_reconciliation_count_only():
+    workflow = (ROOT / ".github" / "workflows" / "deploy.yml").read_text(encoding="utf-8")
+
+    verify_index = workflow.index(_runtime_units_phase("verify"))
+    commerce_index = workflow.index("python scripts/ops/reconcile_commerce_fulfillment.py")
+    questionnaire_index = workflow.index("python scripts/ops/reconcile_questionnaire_radar.py")
+    group_ops_index = workflow.index("python scripts/ops/reconcile_group_ops_broadcast.py")
+
+    assert verify_index < commerce_index < questionnaire_index < group_ops_index
+    assert "python scripts/ops/reconcile_questionnaire_radar.py --repair" not in workflow
+    assert "python scripts/ops/reconcile_group_ops_broadcast.py --repair" not in workflow
+    assert "tee /tmp/aicrm-questionnaire-radar-reconciliation.json" in workflow
+    assert "tee /tmp/aicrm-group-ops-broadcast-reconciliation.json" in workflow
+
+
 def test_external_push_worker_systemd_units_are_not_deployable():
     assert not (ROOT / "deploy" / "openclaw-external-push-worker.service").exists()
     assert not (ROOT / "deploy" / "openclaw-external-push-worker.timer").exists()

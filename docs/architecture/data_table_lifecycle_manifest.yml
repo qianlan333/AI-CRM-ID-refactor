@@ -600,7 +600,7 @@ tables:
   broadcast_jobs:
     domain: broadcast
     lifecycle: queue
-    write_owner: aicrm_next.cloud_orchestrator.repository
+    write_owner: aicrm_next.background_jobs
     write_owners:
       - aicrm_next.ai_assist.external_campaigns_repo
       - aicrm_next.admin_jobs.repository
@@ -612,21 +612,21 @@ tables:
       - aicrm_next.ai_assist.external_campaigns_repo
       - aicrm_next.background_jobs.broadcast_queue_worker
       - aicrm_next.cloud_orchestrator.repository
-    replacement: outbound_tasks or external_effect_job after broadcast worker convergence is designed
+    replacement: none; this is the canonical private-broadcast command and delivery ledger
     drop_candidate: false
     drop_after: ""
     runtime_entrypoints:
       - admin broadcast job diagnostics
       - AI Assist direct WeCom private send queue
       - cloud-orchestrator private broadcast scheduling
-    migration_source: 0008_broadcast_jobs, hardened by 0021/0066/0089 and truthful simulated delivery by 0100
+    migration_source: 0008_broadcast_jobs, hardened by 0021/0066/0089/0100 and crash-safe finalization by 0103
     pii_level: internal_contact
     status_enum:
       column: status
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_repository_ownership_guard.py
-    notes: Broadcast queue and audit ledger. Fake provider success is simulated, never sent; claim-token CAS protects final projection updates.
+    notes: Background jobs owns claim, dispatching, evidence, and terminal finalization. Planning writers may insert queued rows only. Fake provider success is simulated; ambiguous post-provider outcomes stop at unknown_after_dispatch and are never lease-reclaimed.
 
   campaigns:
     domain: campaign
@@ -2410,20 +2410,24 @@ tables:
     domain: broadcast_jobs
     lifecycle: audit
     write_owner: aicrm_next.admin_jobs
+    write_owners:
+      - aicrm_next.admin_jobs
+      - aicrm_next.background_jobs.broadcast_queue_worker
     read_owners:
       - aicrm_next.admin_jobs
+      - aicrm_next.background_jobs
       - aicrm_next.delivery_lineage
     replacement: none; active production schema table registered during schema drift closeout
     drop_candidate: false
     drop_after: ""
     runtime_entrypoints:
       - existing production runtime
-    migration_source: pre-Alembic baseline, registered by 0083 schema drift closeout
+    migration_source: pre-Alembic baseline, registered by 0083 and used by the 0103 broadcast finalizer
     pii_level: internal_contact
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
-    notes: Registered from the id-dev public schema so schema_drift_guard can fail closed on future unmanaged table changes.
+    notes: Append-only broadcast state transition evidence. R10 dispatch start, terminal finalization, and reconciliation-required events are written in the owning background-job transaction.
 
   broadcast_job_hourly_reports:
     domain: broadcast_jobs
@@ -2505,6 +2509,7 @@ tables:
       - aicrm_next.background_jobs.broadcast_queue_worker
       - aicrm_next.cloud_orchestrator
     read_owners:
+      - aicrm_next.background_jobs
       - aicrm_next.cloud_orchestrator
       - aicrm_next.send_content
     replacement: none; active production schema table registered during schema drift closeout
@@ -2512,12 +2517,12 @@ tables:
     drop_after: ""
     runtime_entrypoints:
       - existing production runtime
-    migration_source: pre-Alembic baseline, registered by 0083 schema drift closeout
+    migration_source: pre-Alembic baseline, registered by 0083 and state-aligned by 0103
     pii_level: internal_contact
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
-    notes: Cloud-plan message projection. Broadcast fake execution is recorded as simulated without sent_at.
+    notes: Cloud-plan message projection finalized atomically with broadcast_jobs and outbound_tasks. Fake execution is simulated without sent_at; ambiguous execution is unknown_after_dispatch.
 
   cloud_broadcast_plan_recipients:
     domain: cloud_orchestrator
@@ -2527,6 +2532,7 @@ tables:
       - aicrm_next.background_jobs.broadcast_queue_worker
       - aicrm_next.cloud_orchestrator
     read_owners:
+      - aicrm_next.background_jobs
       - aicrm_next.cloud_orchestrator
       - aicrm_next.growth_orchestration
     replacement: none; active production schema table registered during schema drift closeout
@@ -2534,12 +2540,12 @@ tables:
     drop_after: ""
     runtime_entrypoints:
       - existing production runtime
-    migration_source: pre-Alembic baseline, registered by 0083 schema drift closeout
+    migration_source: pre-Alembic baseline, registered by 0083 and state-aligned by 0103
     pii_level: internal_contact
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
-    notes: Cloud-plan recipient projection. Broadcast fake execution is recorded as simulated, never sent.
+    notes: Cloud-plan recipient projection finalized atomically with broadcast_jobs and outbound_tasks. Fake execution is simulated; ambiguous execution is unknown_after_dispatch.
 
   cloud_broadcast_plans:
     domain: cloud_orchestrator
@@ -2590,6 +2596,7 @@ tables:
     read_owners:
       - aicrm_next.ai_assist
       - aicrm_next.ai_audience_ops
+      - aicrm_next.background_jobs
       - aicrm_next.channel_entry
       - aicrm_next.cloud_orchestrator
       - aicrm_next.customer_read_model
@@ -2822,129 +2829,136 @@ tables:
 
   group_ops_workspace_allowlist_snapshots:
     domain: group_ops
-    lifecycle: read_model
-    write_owner: aicrm_next.automation_engine.group_ops
+    lifecycle: retired
+    write_owner: ""
     read_owners:
       - historical schema drift guard
-    replacement: none; active production schema table registered during schema drift closeout
-    drop_candidate: false
-    drop_after: ""
-    runtime_entrypoints:
-      - existing production runtime
-    migration_source: pre-Alembic baseline, registered by 0083 schema drift closeout
+    replacement: automation_group_ops_plan_scope and audience_rule_result
+    drop_candidate: true
+    drop_after: "after an observed zero-read/write window confirms no historical audit consumer"
+    runtime_entrypoints: []
+    migration_source: 0049_group_ops_workspace_governance
+    test_fixture_policy: historical_retired_table_preserved_for_migration_coverage
     pii_level: internal_contact
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
-    notes: Registered from the id-dev public schema so schema_drift_guard can fail closed on future unmanaged table changes.
+      - tests/test_group_ops_control_plane_retirement.py
+    notes: Historical P1 audit table retained read-only for rollback evidence; no active runtime route or writer remains.
 
   group_ops_workspace_draft_audit_logs:
     domain: group_ops
-    lifecycle: audit
-    write_owner: aicrm_next.automation_engine.group_ops
+    lifecycle: retired
+    write_owner: ""
     read_owners:
       - historical schema drift guard
-    replacement: none; active production schema table registered during schema drift closeout
-    drop_candidate: false
-    drop_after: ""
-    runtime_entrypoints:
-      - existing production runtime
-    migration_source: pre-Alembic baseline, registered by 0083 schema drift closeout
+    replacement: automation_group_ops_execution_log and broadcast_job_events
+    drop_candidate: true
+    drop_after: "after an observed zero-read/write window confirms no historical audit consumer"
+    runtime_entrypoints: []
+    migration_source: 0047_group_ops_workspace_drafts
+    test_fixture_policy: historical_retired_table_preserved_for_migration_coverage
     pii_level: internal_contact
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
-    notes: Registered from the id-dev public schema so schema_drift_guard can fail closed on future unmanaged table changes.
+      - tests/test_group_ops_control_plane_retirement.py
+    notes: Historical P1 audit table retained read-only for rollback evidence; no active runtime route or writer remains.
 
   group_ops_workspace_draft_items:
     domain: group_ops
-    lifecycle: canonical
-    write_owner: aicrm_next.automation_engine.group_ops
+    lifecycle: retired
+    write_owner: ""
     read_owners:
       - historical schema drift guard
-    replacement: none; active production schema table registered during schema drift closeout
-    drop_candidate: false
-    drop_after: ""
-    runtime_entrypoints:
-      - existing production runtime
-    migration_source: pre-Alembic baseline, registered by 0083 schema drift closeout
+    replacement: automation_group_ops_plan_nodes
+    drop_candidate: true
+    drop_after: "after an observed zero-read/write window confirms no historical audit consumer"
+    runtime_entrypoints: []
+    migration_source: 0047_group_ops_workspace_drafts
+    test_fixture_policy: historical_retired_table_preserved_for_migration_coverage
     pii_level: internal_contact
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
-    notes: Registered from the id-dev public schema so schema_drift_guard can fail closed on future unmanaged table changes.
+      - tests/test_group_ops_control_plane_retirement.py
+    notes: Historical P1 draft item table retained read-only for rollback evidence; no active runtime route or writer remains.
 
   group_ops_workspace_drafts:
     domain: group_ops
-    lifecycle: canonical
-    write_owner: aicrm_next.automation_engine.group_ops
+    lifecycle: retired
+    write_owner: ""
     read_owners:
       - historical schema drift guard
-    replacement: none; active production schema table registered during schema drift closeout
-    drop_candidate: false
-    drop_after: ""
-    runtime_entrypoints:
-      - existing production runtime
-    migration_source: pre-Alembic baseline, registered by 0083 schema drift closeout
+    replacement: automation_group_ops_plans
+    drop_candidate: true
+    drop_after: "after an observed zero-read/write window confirms no historical audit consumer"
+    runtime_entrypoints: []
+    migration_source: 0047_group_ops_workspace_drafts
+    test_fixture_policy: historical_retired_table_preserved_for_migration_coverage
     pii_level: internal_contact
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
-    notes: Registered from the id-dev public schema so schema_drift_guard can fail closed on future unmanaged table changes.
+      - tests/test_group_ops_control_plane_retirement.py
+    notes: Historical P1 draft table retained read-only for rollback evidence; no active runtime route or writer remains.
 
   group_ops_workspace_governance_review_steps:
     domain: group_ops
-    lifecycle: canonical
-    write_owner: aicrm_next.automation_engine.group_ops
+    lifecycle: retired
+    write_owner: ""
     read_owners:
       - historical schema drift guard
-    replacement: none; active production schema table registered during schema drift closeout
-    drop_candidate: false
-    drop_after: ""
-    runtime_entrypoints:
-      - existing production runtime
-    migration_source: pre-Alembic baseline, registered by 0083 schema drift closeout
+    replacement: automation_group_ops_execution_log
+    drop_candidate: true
+    drop_after: "after an observed zero-read/write window confirms no historical audit consumer"
+    runtime_entrypoints: []
+    migration_source: 0049_group_ops_workspace_governance
+    test_fixture_policy: historical_retired_table_preserved_for_migration_coverage
     pii_level: internal_contact
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
-    notes: Registered from the id-dev public schema so schema_drift_guard can fail closed on future unmanaged table changes.
+      - tests/test_group_ops_control_plane_retirement.py
+    notes: Historical P1 governance step table retained read-only for rollback evidence; no active runtime route or writer remains.
 
   group_ops_workspace_governance_reviews:
     domain: group_ops
-    lifecycle: canonical
-    write_owner: aicrm_next.automation_engine.group_ops
+    lifecycle: retired
+    write_owner: ""
     read_owners:
       - historical schema drift guard
-    replacement: none; active production schema table registered during schema drift closeout
-    drop_candidate: false
-    drop_after: ""
-    runtime_entrypoints:
-      - existing production runtime
-    migration_source: pre-Alembic baseline, registered by 0083 schema drift closeout
+    replacement: automation_group_ops_execution_log and push_center audit projections
+    drop_candidate: true
+    drop_after: "after an observed zero-read/write window confirms no historical audit consumer"
+    runtime_entrypoints: []
+    migration_source: 0049_group_ops_workspace_governance
+    test_fixture_policy: historical_retired_table_preserved_for_migration_coverage
     pii_level: internal_contact
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
-    notes: Registered from the id-dev public schema so schema_drift_guard can fail closed on future unmanaged table changes.
+      - tests/test_group_ops_control_plane_retirement.py
+    notes: Historical P1 governance review table retained read-only for rollback evidence; no active runtime route or writer remains.
 
   group_ops_workspace_gray_window_approvals:
     domain: group_ops
-    lifecycle: canonical
-    write_owner: aicrm_next.automation_engine.group_ops
+    lifecycle: retired
+    write_owner: ""
     read_owners:
       - historical schema drift guard
-    replacement: none; active production schema table registered during schema drift closeout
-    drop_candidate: false
-    drop_after: ""
-    runtime_entrypoints:
-      - existing production runtime
-    migration_source: pre-Alembic baseline, registered by 0083 schema drift closeout
+    replacement: explicit runtime execution gates and external effect approvals
+    drop_candidate: true
+    drop_after: "after an observed zero-read/write window confirms no historical audit consumer"
+    runtime_entrypoints: []
+    migration_source: 0049_group_ops_workspace_governance
+    test_fixture_policy: historical_retired_table_preserved_for_migration_coverage
     pii_level: internal_contact
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
-    notes: Registered from the id-dev public schema so schema_drift_guard can fail closed on future unmanaged table changes.
+      - tests/test_group_ops_control_plane_retirement.py
+    notes: Historical P1 gray-window table retained read-only for rollback evidence; no active runtime route or writer remains.
 
   hxc_dashboard_broadcast_tasks:
     domain: user_ops
@@ -3010,18 +3024,19 @@ tables:
     read_owners:
       - aicrm_next.admin_jobs
       - aicrm_next.admin_read_model
+      - aicrm_next.background_jobs
       - aicrm_next.growth_orchestration
     replacement: none; active production schema table registered during schema drift closeout
     drop_candidate: false
     drop_after: ""
     runtime_entrypoints:
       - existing production runtime
-    migration_source: pre-Alembic baseline, registered by 0083 schema drift closeout
+    migration_source: pre-Alembic baseline, registered by 0083 and linked one-to-one to broadcast_jobs by 0103
     pii_level: internal_contact
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
-    notes: Outbound provider-task audit. Fake adapter results use simulated instead of created/sent semantics.
+    notes: Outbound provider-task evidence is inserted or reused inside the broadcast terminal finalizer transaction. Fake adapter results use simulated; one broadcast_job_id may have at most one row.
 
   radar_click_events:
     domain: radar

@@ -64,9 +64,20 @@
       "ci_scope": "broadcast_group_ops",
       "real_external_call_expected": false,
       "contracts": {
-        "success": "tests/test_group_ops_token_broadcast_api.py::test_group_ops_broadcast_sends_text_only",
-        "failure": "tests/test_group_ops_token_broadcast_api.py::test_group_ops_broadcast_requires_internal_bearer_token",
-        "replay_or_concurrency": "tests/test_group_ops_token_broadcast_api.py::test_group_ops_broadcast_idempotency_does_not_send_twice"
+        "success": "tests/test_group_ops_single_path_planning.py::test_send_message_enqueues_one_private_broadcast_job",
+        "failure": "tests/test_group_ops_single_path_planning.py::test_scheduler_planner_failure_produces_non_success_summary",
+        "replay_or_concurrency": "tests/test_group_ops_scheduler_postgres_concurrency.py::test_concurrent_group_ops_schedulers_create_exactly_one_external_effect"
+      }
+    },
+    {
+      "domain": "broadcast_delivery",
+      "owner": "background_jobs",
+      "ci_scope": "broadcast_group_ops",
+      "real_external_call_expected": false,
+      "contracts": {
+        "success": "tests/test_broadcast_queue_worker_postgres_state_machine.py::test_claim_begin_and_atomic_success_finalization_keep_all_projections_aligned",
+        "failure": "tests/test_broadcast_queue_worker_postgres_faults.py::test_finalization_fault_rolls_back_outbound_evidence_and_terminal_projections",
+        "replay_or_concurrency": "tests/test_broadcast_queue_worker_postgres_faults.py::test_worker_marks_post_provider_finalization_failure_unknown_and_never_resends"
       }
     },
     {

@@ -46,3 +46,29 @@ The authorization is appended to `external_effect_attempt` before the job is que
 Fake WeCom private/group broadcast responses use `simulated` in `broadcast_jobs`,
 `outbound_tasks`, and cloud-plan recipient/message projections. They never set `sent`,
 increment `sent_count`, or populate `sent_at`.
+
+## Broadcast delivery boundary
+
+Private broadcast jobs use an equivalent but separate R10 state machine because
+`broadcast_jobs` is also the durable scheduling ledger:
+
+1. Claim only `queued`, expired `claimed`, or due `failed_retryable` rows with a
+   claim token.
+2. Commit `claimed -> dispatching` and align the current cloud recipient/message
+   before calling WeCom.
+3. Let the dispatcher return redacted request/response evidence without writing
+   any delivery table.
+4. In one transaction, lock by `id + dispatching + claim_token`, upsert the
+   one-to-one `outbound_tasks` evidence, align recipient/message projections,
+   append a `broadcast_job_events` row, update the terminal job state, and only
+   then clear the token.
+
+`dispatching` and `unknown_after_dispatch` are excluded from automatic reclaim.
+If provider execution may have occurred and terminal persistence fails, the
+worker changes every available projection to `unknown_after_dispatch` and sets
+`reconciliation_required=true`. It never resends that job automatically.
+
+Migration `0103_broadcast_delivery_state_machine` adds the state/evidence
+columns and the one-to-one outbound-task link. The count-only command
+`scripts/ops/reconcile_group_ops_broadcast.py` reports gaps but cannot repair or
+call a provider.

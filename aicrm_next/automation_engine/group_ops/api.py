@@ -208,7 +208,6 @@ async def _parse_token_broadcast_request(request: Request) -> tuple[GroupOpsToke
 
 
 @router.get("/api/admin/automation-conversion/group-ops/plans")
-@router.get("/api/automation/group-ops/plans")
 def list_group_ops_plans(
     keyword: str = "",
     plan_type: str = "",
@@ -271,7 +270,6 @@ def list_group_ops_owners() -> JSONResponse:
 
 
 @router.post("/api/admin/automation-conversion/group-ops/plans")
-@router.post("/api/automation/group-ops/plans")
 def create_group_ops_plan(payload: GroupOpsPlanCreateRequest) -> JSONResponse:
     try:
         return _json_result(CreateGroupOpsPlanCommand()(payload))
@@ -280,7 +278,6 @@ def create_group_ops_plan(payload: GroupOpsPlanCreateRequest) -> JSONResponse:
 
 
 @router.get("/api/admin/automation-conversion/group-ops/plans/{plan_id}")
-@router.get("/api/automation/group-ops/plans/{plan_id}")
 def get_group_ops_plan(plan_id: int | str) -> JSONResponse:
     try:
         return _json_result(GetGroupOpsPlanQuery()(_plan_id(plan_id)))
@@ -289,8 +286,6 @@ def get_group_ops_plan(plan_id: int | str) -> JSONResponse:
 
 
 @router.put("/api/admin/automation-conversion/group-ops/plans/{plan_id}")
-@router.patch("/api/automation/group-ops/plans/{plan_id}")
-@router.put("/api/automation/group-ops/plans/{plan_id}")
 def update_group_ops_plan(plan_id: int | str, payload: GroupOpsPlanUpdateRequest) -> JSONResponse:
     try:
         return _json_result(UpdateGroupOpsPlanCommand()(_plan_id(plan_id), payload))
@@ -299,7 +294,6 @@ def update_group_ops_plan(plan_id: int | str, payload: GroupOpsPlanUpdateRequest
 
 
 @router.post("/api/admin/automation-conversion/group-ops/plans/{plan_id}/enable")
-@router.post("/api/automation/group-ops/plans/{plan_id}/enable")
 def enable_group_ops_plan(plan_id: int | str) -> JSONResponse:
     try:
         return _json_result(EnableGroupOpsPlanCommand()(_plan_id(plan_id)))
@@ -308,7 +302,6 @@ def enable_group_ops_plan(plan_id: int | str) -> JSONResponse:
 
 
 @router.post("/api/admin/automation-conversion/group-ops/plans/{plan_id}/disable")
-@router.post("/api/automation/group-ops/plans/{plan_id}/disable")
 def disable_group_ops_plan(plan_id: int | str) -> JSONResponse:
     try:
         return _json_result(DisableGroupOpsPlanCommand()(_plan_id(plan_id)))
@@ -317,7 +310,6 @@ def disable_group_ops_plan(plan_id: int | str) -> JSONResponse:
 
 
 @router.delete("/api/admin/automation-conversion/group-ops/plans/{plan_id}")
-@router.delete("/api/automation/group-ops/plans/{plan_id}")
 def archive_group_ops_plan(plan_id: int | str) -> JSONResponse:
     try:
         return _json_result(ArchiveGroupOpsPlanCommand()(_plan_id(plan_id)))
@@ -439,7 +431,6 @@ def run_group_ops_plan_due(plan_id: int, payload: GroupOpsRunDueRequest, request
 
 
 @router.get("/api/admin/automation-conversion/group-ops/plans/{plan_id}/webhook")
-@router.get("/api/automation/group-ops/plans/{plan_id}/webhook")
 def get_group_ops_webhook_config(plan_id: int | str) -> JSONResponse:
     try:
         return _json_result(GetGroupOpsWebhookConfigQuery()(_plan_id(plan_id)))
@@ -448,7 +439,6 @@ def get_group_ops_webhook_config(plan_id: int | str) -> JSONResponse:
 
 
 @router.post("/api/admin/automation-conversion/group-ops/plans/{plan_id}/webhook/regenerate")
-@router.post("/api/automation/group-ops/plans/{plan_id}/webhook/reset-token")
 def regenerate_group_ops_webhook(plan_id: int | str) -> JSONResponse:
     try:
         return _json_result(RegenerateGroupOpsWebhookCommand()(_plan_id(plan_id)))
@@ -456,7 +446,7 @@ def regenerate_group_ops_webhook(plan_id: int | str) -> JSONResponse:
         _raise_http(exc)
 
 
-@router.get("/api/automation/group-ops/plans/{plan_id}/members")
+@router.get("/api/admin/automation-conversion/group-ops/plans/{plan_id}/members")
 def list_group_ops_members(
     plan_id: int | str,
     layerKey: str = "",
@@ -489,7 +479,7 @@ def list_group_ops_members(
         _raise_http(exc)
 
 
-@router.post("/api/automation/group-ops/plans/{plan_id}/members/import")
+@router.post("/api/admin/automation-conversion/group-ops/plans/{plan_id}/members/import")
 def import_group_ops_members(plan_id: int | str, payload: GroupOpsMemberImportRequest) -> JSONResponse:
     try:
         return _json_result(ImportGroupOpsMembersCommand()(_plan_id(plan_id), payload))
@@ -497,7 +487,7 @@ def import_group_ops_members(plan_id: int | str, payload: GroupOpsMemberImportRe
         _raise_http(exc)
 
 
-@router.post("/api/automation/group-ops/plans/{plan_id}/members/refresh-from-groups")
+@router.post("/api/admin/automation-conversion/group-ops/plans/{plan_id}/members/refresh-from-groups")
 def refresh_group_ops_members_from_groups(plan_id: int | str) -> JSONResponse:
     try:
         return _json_result(RefreshGroupOpsMembersFromGroupsCommand()(_plan_id(plan_id)))
@@ -505,7 +495,7 @@ def refresh_group_ops_members_from_groups(plan_id: int | str) -> JSONResponse:
         _raise_http(exc)
 
 
-@router.get("/api/automation/group-ops/audience-rules")
+@router.get("/api/admin/automation-conversion/group-ops/audience-rules")
 def list_audience_rules() -> JSONResponse:
     try:
         return _json_result(ListAudienceRulesQuery()())
@@ -513,7 +503,7 @@ def list_audience_rules() -> JSONResponse:
         _raise_http(exc)
 
 
-@router.post("/api/automation/group-ops/audience-rules")
+@router.post("/api/admin/automation-conversion/group-ops/audience-rules")
 def create_audience_rule(payload: AudienceRuleCreateRequest) -> JSONResponse:
     try:
         return _json_result(CreateAudienceRuleCommand()(payload))
@@ -521,7 +511,7 @@ def create_audience_rule(payload: AudienceRuleCreateRequest) -> JSONResponse:
         _raise_http(exc)
 
 
-@router.post("/api/automation/group-ops/audience-rules/{rule_key}/versions")
+@router.post("/api/admin/automation-conversion/group-ops/audience-rules/{rule_key}/versions")
 def create_audience_rule_version(rule_key: str, payload: AudienceRuleVersionCreateRequest) -> JSONResponse:
     try:
         return _json_result(CreateAudienceRuleVersionCommand()(rule_key, payload))
@@ -529,7 +519,7 @@ def create_audience_rule_version(rule_key: str, payload: AudienceRuleVersionCrea
         _raise_http(exc)
 
 
-@router.post("/api/automation/group-ops/audience-rules/{rule_key}/preview")
+@router.post("/api/admin/automation-conversion/group-ops/audience-rules/{rule_key}/preview")
 def preview_audience_rule(rule_key: str, payload: AudienceRuleRunRequest) -> JSONResponse:
     try:
         return _json_result(PreviewAudienceRuleCommand()(rule_key, payload))
@@ -537,7 +527,7 @@ def preview_audience_rule(rule_key: str, payload: AudienceRuleRunRequest) -> JSO
         _raise_http(exc)
 
 
-@router.post("/api/automation/group-ops/audience-rules/{rule_key}/refresh")
+@router.post("/api/admin/automation-conversion/group-ops/audience-rules/{rule_key}/refresh")
 def refresh_audience_rule(rule_key: str, payload: AudienceRuleRunRequest) -> JSONResponse:
     try:
         return _json_result(RefreshAudienceRuleCommand()(rule_key, payload))
@@ -545,7 +535,7 @@ def refresh_audience_rule(rule_key: str, payload: AudienceRuleRunRequest) -> JSO
         _raise_http(exc)
 
 
-@router.get("/api/automation/group-ops/audience-rules/{rule_key}/results")
+@router.get("/api/admin/automation-conversion/group-ops/audience-rules/{rule_key}/results")
 def get_audience_rule_results(rule_key: str, planId: int | str = 0, plan_id: int | str = 0, version: int = 1) -> JSONResponse:
     try:
         return _json_result(GetAudienceRuleResultsQuery()(rule_key, plan_id=_plan_id(planId or plan_id), version=version))
@@ -553,7 +543,7 @@ def get_audience_rule_results(rule_key: str, planId: int | str = 0, plan_id: int
         _raise_http(exc)
 
 
-@router.put("/api/automation/group-ops/plans/{plan_id}/segmentation")
+@router.put("/api/admin/automation-conversion/group-ops/plans/{plan_id}/segmentation")
 def save_group_ops_segmentation(plan_id: int | str, payload: GroupOpsSegmentationRequest) -> JSONResponse:
     try:
         return _json_result(SaveGroupOpsSegmentationCommand()(_plan_id(plan_id), payload))
@@ -561,7 +551,7 @@ def save_group_ops_segmentation(plan_id: int | str, payload: GroupOpsSegmentatio
         _raise_http(exc)
 
 
-@router.post("/api/automation/group-ops/plans/{plan_id}/segmentation/preview")
+@router.post("/api/admin/automation-conversion/group-ops/plans/{plan_id}/segmentation/preview")
 def preview_group_ops_segmentation(plan_id: int | str) -> JSONResponse:
     try:
         return _json_result(PreviewGroupOpsSegmentationCommand()(_plan_id(plan_id)))
@@ -569,7 +559,7 @@ def preview_group_ops_segmentation(plan_id: int | str) -> JSONResponse:
         _raise_http(exc)
 
 
-@router.get("/api/automation/group-ops/plans/{plan_id}/executions")
+@router.get("/api/admin/automation-conversion/group-ops/plans/{plan_id}/executions")
 def list_group_ops_executions(
     plan_id: int | str,
     triggerEventId: str = "",

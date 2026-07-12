@@ -277,6 +277,12 @@ jobs:
             # Count-only R08 commerce fulfillment reconciliation. Never repairs or calls providers.
             python scripts/ops/reconcile_commerce_fulfillment.py \
               | tee /tmp/aicrm-commerce-fulfillment-reconciliation.json
+            # Count-only R09 questionnaire/radar reconciliation. Never repairs or executes consumers/providers.
+            python scripts/ops/reconcile_questionnaire_radar.py \
+              | tee /tmp/aicrm-questionnaire-radar-reconciliation.json
+            # Count-only R10 Group Ops/broadcast reconciliation. Never repairs, resends, or calls providers.
+            python scripts/ops/reconcile_group_ops_broadcast.py \
+              | tee /tmp/aicrm-group-ops-broadcast-reconciliation.json
             if [ "$deploy_target" = "production" ]; then
               sudo /home/ubuntu/venvs/openclaw/bin/python \
                 scripts/ops/ensure_production_public_release_route.py --execute \

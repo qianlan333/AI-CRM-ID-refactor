@@ -111,6 +111,7 @@ class ExternalEffectCreateRequest:
 @dataclass(frozen=True)
 class ExternalEffectJob:
     id: int = 0
+    created_on_plan: bool = False
     tenant_id: str = DEFAULT_TENANT_ID
     effect_type: str = ""
     adapter_name: str = ""

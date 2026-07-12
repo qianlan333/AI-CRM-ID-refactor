@@ -528,6 +528,20 @@ def test_group_ops_change_selects_broadcast_contracts_and_full_regression() -> N
     assert result["needs_full_ci"] is True
 
 
+def test_retired_group_ops_workspace_paths_remain_mapped_to_broadcast_scope() -> None:
+    changed_paths = (
+        "aicrm_next/admin_shell/routes.py",
+        "aicrm_next/admin_shell/templates/admin_shell/p1_group_ops_workspace.html",
+        "aicrm_next/frontend_compat/static/admin_console/p1/p1_group_ops_workspace/workspace_api.js",
+        "tests/test_p1_group_ops_workspace_final_closeout.py",
+    )
+
+    for changed_path in changed_paths:
+        result = _select(changed_path)
+        assert result["unmatched_files"] == []
+        assert "broadcast_group_ops" in result["matched_scopes"]
+
+
 def test_unmapped_path_fails_instead_of_falling_back_to_full_regression() -> None:
     completed = subprocess.run(
         [sys.executable, str(SELECTOR), "--changed-file", "aicrm_next/new_context/api.py"],

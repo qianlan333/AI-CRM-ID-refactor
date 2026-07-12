@@ -212,12 +212,12 @@ def test_customer_detail_aliases_require_admin_capability_before_pii_resolution(
     assert [viewer.get(route).status_code for route in routes] == [200, 200, 200]
 
 
-def test_viewer_can_read_but_cannot_write_group_ops_alias(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_viewer_can_read_but_cannot_write_group_ops_control_plane(monkeypatch: pytest.MonkeyPatch) -> None:
     client = _admin_client(monkeypatch, "viewer")
 
-    listed = client.get("/api/automation/group-ops/plans")
+    listed = client.get("/api/admin/automation-conversion/group-ops/plans")
     created = client.post(
-        "/api/automation/group-ops/plans",
+        "/api/admin/automation-conversion/group-ops/plans",
         json={"name": "viewer must not create", "type": "standard"},
     )
 
@@ -227,20 +227,20 @@ def test_viewer_can_read_but_cannot_write_group_ops_alias(monkeypatch: pytest.Mo
     assert created.json()["required_capability"] == "manage_group_ops"
 
 
-def test_automation_admin_can_use_authenticated_group_ops_alias(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_automation_admin_can_use_authenticated_group_ops_control_plane(monkeypatch: pytest.MonkeyPatch) -> None:
     client = _admin_client(monkeypatch, "automation_admin")
 
     response = client.post(
-        "/api/automation/group-ops/plans",
+        "/api/admin/automation-conversion/group-ops/plans",
         json={
-            "name": "authenticated compatibility plan",
+            "name": "authenticated formal plan",
             "type": "standard",
             "operatorMemberId": "HuangYouCan",
         },
     )
 
     assert response.status_code == 201
-    assert response.json()["name"] == "authenticated compatibility plan"
+    assert response.json()["name"] == "authenticated formal plan"
 
 
 def test_five_principal_permission_matrix(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -257,18 +257,18 @@ def test_five_principal_permission_matrix(monkeypatch: pytest.MonkeyPatch) -> No
     service = TestClient(create_app(), raise_server_exceptions=False)
 
     matrix = {
-        "anonymous_admin_read": anonymous.get("/api/automation/group-ops/plans").status_code,
-        "viewer_admin_read": viewer.get("/api/automation/group-ops/plans").status_code,
+        "anonymous_admin_read": anonymous.get("/api/admin/automation-conversion/group-ops/plans").status_code,
+        "viewer_admin_read": viewer.get("/api/admin/automation-conversion/group-ops/plans").status_code,
         "viewer_admin_write": viewer.post(
-            "/api/automation/group-ops/plans",
+            "/api/admin/automation-conversion/group-ops/plans",
             json={"name": "viewer denied", "type": "standard"},
         ).status_code,
         "operator_scoped_write": operator.post(
-            "/api/automation/group-ops/plans",
+            "/api/admin/automation-conversion/group-ops/plans",
             json={"name": "operator allowed", "type": "standard", "operatorMemberId": "HuangYouCan"},
         ).status_code,
         "admin_write": admin.post(
-            "/api/automation/group-ops/plans",
+            "/api/admin/automation-conversion/group-ops/plans",
             json={"name": "admin allowed", "type": "standard", "operatorMemberId": "HuangYouCan"},
         ).status_code,
         "service_internal_read": service.get(
@@ -276,7 +276,7 @@ def test_five_principal_permission_matrix(monkeypatch: pytest.MonkeyPatch) -> No
             headers={"Authorization": "Bearer principal-matrix-identity-token"},
         ).status_code,
         "service_admin_read": service.get(
-            "/api/automation/group-ops/plans",
+            "/api/admin/automation-conversion/group-ops/plans",
             headers={"Authorization": "Bearer principal-matrix-service-token"},
         ).status_code,
     }
@@ -297,7 +297,7 @@ def test_admin_write_requires_request_csrf_not_cookie_only(monkeypatch: pytest.M
     del client.headers["X-CSRF-Token"]
 
     rejected = client.post(
-        "/api/automation/group-ops/plans",
+        "/api/admin/automation-conversion/group-ops/plans",
         json={"name": "csrf rejected", "type": "standard"},
     )
 
@@ -352,7 +352,7 @@ def test_revoked_session_is_rejected_before_endpoint(monkeypatch: pytest.MonkeyP
     )
     client = _admin_client(monkeypatch, "automation_admin")
 
-    response = client.get("/api/automation/group-ops/plans")
+    response = client.get("/api/admin/automation-conversion/group-ops/plans")
 
     assert response.status_code == 401
     assert response.json()["error"] == "admin_session_revoked"

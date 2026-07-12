@@ -239,7 +239,7 @@
       "accessor": "runtime_setting",
       "file": "aicrm_next/background_jobs/broadcast_queue_worker.py",
       "key": "AICRM_EXTERNAL_EFFECT_ALLOWED_OWNER_USERIDS",
-      "line": 409
+      "line": 634
     },
     {
       "accessor": "declared_runtime_environment_key",
@@ -303,12 +303,6 @@
     },
     {
       "accessor": "os.getenv",
-      "file": "aicrm_next/automation_engine/group_ops/external_effects.py",
-      "key": "AICRM_GROUP_OPS_EXTERNAL_EFFECT_SEND_MODE",
-      "line": 43
-    },
-    {
-      "accessor": "os.getenv",
       "file": "aicrm_next/automation_engine/group_ops/material_resolver.py",
       "key": "AICRM_GROUP_OPS_MATERIAL_UPLOAD_MODE",
       "line": 392
@@ -321,21 +315,9 @@
     },
     {
       "accessor": "os.getenv",
-      "file": "aicrm_next/automation_engine/group_ops/external_effects.py",
-      "key": "AICRM_GROUP_OPS_OUTBOUND_MODE",
-      "line": 38
-    },
-    {
-      "accessor": "os.getenv",
-      "file": "aicrm_next/automation_engine/group_ops/action_dispatcher.py",
-      "key": "AICRM_GROUP_OPS_PRIVATE_MESSAGE_MODE",
-      "line": 255
-    },
-    {
-      "accessor": "os.getenv",
       "file": "aicrm_next/automation_engine/group_ops/scheduler.py",
       "key": "AICRM_GROUP_OPS_TIMEZONE",
-      "line": 24
+      "line": 23
     },
     {
       "accessor": "os.getenv",
@@ -971,13 +953,13 @@
       "accessor": "os.getenv",
       "file": "aicrm_next/background_jobs/broadcast_queue_worker.py",
       "key": "BROADCAST_QUEUE_LEASE_SECONDS",
-      "line": 733
+      "line": 998
     },
     {
       "accessor": "os.getenv",
       "file": "aicrm_next/background_jobs/broadcast_queue_worker.py",
       "key": "BROADCAST_QUEUE_RETRY_DELAY_SECONDS",
-      "line": 186
+      "line": 198
     },
     {
       "accessor": "declared_runtime_environment_key",
@@ -1882,11 +1864,8 @@
     "AICRM_EXTERNAL_EFFECT_WECOM_EXECUTE",
     "AICRM_FORCE_FULL_CI",
     "AICRM_GROUP_OPS_BROADCAST_PLAN_ID",
-    "AICRM_GROUP_OPS_EXTERNAL_EFFECT_SEND_MODE",
     "AICRM_GROUP_OPS_MATERIAL_UPLOAD_MODE",
     "AICRM_GROUP_OPS_MINIPROGRAM_APPID",
-    "AICRM_GROUP_OPS_OUTBOUND_MODE",
-    "AICRM_GROUP_OPS_PRIVATE_MESSAGE_MODE",
     "AICRM_GROUP_OPS_TIMEZONE",
     "AICRM_INTERNAL_EVENTS_ALLOWED_CONSUMERS",
     "AICRM_INTERNAL_EVENTS_ALLOWED_EVENT_CONSUMERS",
@@ -2670,7 +2649,7 @@
     }
   ],
   "migration_heads": [
-    "0102_questionnaire_radar_invariants"
+    "0103_broadcast_delivery_state_machine"
   ],
   "openapi_components": {
     "schemas": {
@@ -6920,33 +6899,6 @@
       "route_group": "owner_migration"
     },
     {
-      "capability_owner": "admin_shell",
-      "contract": {
-        "parameters": [],
-        "request_body": null,
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          }
-        }
-      },
-      "endpoint": "aicrm_next.admin_shell.routes.admin_p1_group_ops_workspace",
-      "include_in_schema": true,
-      "kind": "page",
-      "methods": [
-        "GET"
-      ],
-      "name": "api.admin_p1_group_ops_workspace",
-      "operation_id": "api.admin_p1_group_ops_workspace:GET:/admin/p1/group-ops-workspace",
-      "path": "/admin/p1/group-ops-workspace",
-      "route_group": "admin_shell"
-    },
-    {
       "capability_owner": "platform_foundation",
       "contract": {
         "parameters": [],
@@ -10530,6 +10482,338 @@
     {
       "capability_owner": "unregistered",
       "contract": {
+        "parameters": [],
+        "request_body": null,
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        }
+      },
+      "endpoint": "aicrm_next.automation_engine.group_ops.api.list_audience_rules",
+      "include_in_schema": true,
+      "kind": "api",
+      "methods": [
+        "GET"
+      ],
+      "name": "list_audience_rules",
+      "operation_id": "list_audience_rules:GET:/api/admin/automation-conversion/group-ops/audience-rules",
+      "path": "/api/admin/automation-conversion/group-ops/audience-rules",
+      "route_group": "unregistered"
+    },
+    {
+      "capability_owner": "unregistered",
+      "contract": {
+        "parameters": [],
+        "request_body": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AudienceRuleCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        }
+      },
+      "endpoint": "aicrm_next.automation_engine.group_ops.api.create_audience_rule",
+      "include_in_schema": true,
+      "kind": "api",
+      "methods": [
+        "POST"
+      ],
+      "name": "create_audience_rule",
+      "operation_id": "create_audience_rule:POST:/api/admin/automation-conversion/group-ops/audience-rules",
+      "path": "/api/admin/automation-conversion/group-ops/audience-rules",
+      "route_group": "unregistered"
+    },
+    {
+      "capability_owner": "unregistered",
+      "contract": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "rule_key",
+            "required": true,
+            "schema": {
+              "title": "Rule Key",
+              "type": "string"
+            }
+          }
+        ],
+        "request_body": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AudienceRuleRunRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        }
+      },
+      "endpoint": "aicrm_next.automation_engine.group_ops.api.preview_audience_rule",
+      "include_in_schema": true,
+      "kind": "api",
+      "methods": [
+        "POST"
+      ],
+      "name": "preview_audience_rule",
+      "operation_id": "preview_audience_rule:POST:/api/admin/automation-conversion/group-ops/audience-rules/{rule_key}/preview",
+      "path": "/api/admin/automation-conversion/group-ops/audience-rules/{rule_key}/preview",
+      "route_group": "unregistered"
+    },
+    {
+      "capability_owner": "unregistered",
+      "contract": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "rule_key",
+            "required": true,
+            "schema": {
+              "title": "Rule Key",
+              "type": "string"
+            }
+          }
+        ],
+        "request_body": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AudienceRuleRunRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        }
+      },
+      "endpoint": "aicrm_next.automation_engine.group_ops.api.refresh_audience_rule",
+      "include_in_schema": true,
+      "kind": "api",
+      "methods": [
+        "POST"
+      ],
+      "name": "refresh_audience_rule",
+      "operation_id": "refresh_audience_rule:POST:/api/admin/automation-conversion/group-ops/audience-rules/{rule_key}/refresh",
+      "path": "/api/admin/automation-conversion/group-ops/audience-rules/{rule_key}/refresh",
+      "route_group": "unregistered"
+    },
+    {
+      "capability_owner": "unregistered",
+      "contract": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "rule_key",
+            "required": true,
+            "schema": {
+              "title": "Rule Key",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "planId",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "string"
+                }
+              ],
+              "default": 0,
+              "title": "Planid"
+            }
+          },
+          {
+            "in": "query",
+            "name": "plan_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "string"
+                }
+              ],
+              "default": 0,
+              "title": "Plan Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "version",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "title": "Version",
+              "type": "integer"
+            }
+          }
+        ],
+        "request_body": null,
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        }
+      },
+      "endpoint": "aicrm_next.automation_engine.group_ops.api.get_audience_rule_results",
+      "include_in_schema": true,
+      "kind": "api",
+      "methods": [
+        "GET"
+      ],
+      "name": "get_audience_rule_results",
+      "operation_id": "get_audience_rule_results:GET:/api/admin/automation-conversion/group-ops/audience-rules/{rule_key}/results",
+      "path": "/api/admin/automation-conversion/group-ops/audience-rules/{rule_key}/results",
+      "route_group": "unregistered"
+    },
+    {
+      "capability_owner": "unregistered",
+      "contract": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "rule_key",
+            "required": true,
+            "schema": {
+              "title": "Rule Key",
+              "type": "string"
+            }
+          }
+        ],
+        "request_body": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AudienceRuleVersionCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        }
+      },
+      "endpoint": "aicrm_next.automation_engine.group_ops.api.create_audience_rule_version",
+      "include_in_schema": true,
+      "kind": "api",
+      "methods": [
+        "POST"
+      ],
+      "name": "create_audience_rule_version",
+      "operation_id": "create_audience_rule_version:POST:/api/admin/automation-conversion/group-ops/audience-rules/{rule_key}/versions",
+      "path": "/api/admin/automation-conversion/group-ops/audience-rules/{rule_key}/versions",
+      "route_group": "unregistered"
+    },
+    {
+      "capability_owner": "unregistered",
+      "contract": {
         "parameters": [
           {
             "in": "query",
@@ -11222,6 +11506,220 @@
             "name": "plan_id",
             "required": true,
             "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "string"
+                }
+              ],
+              "title": "Plan Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "triggerEventId",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "Triggereventid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "trigger_event_id",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "Trigger Event Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "Status",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "actionType",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "Actiontype",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "action_type",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "Action Type",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "layerKey",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "Layerkey",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "layer_key",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "Layer Key",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "recipient",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "Recipient",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "startAt",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "Startat",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "start_at",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "Start At",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "endAt",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "Endat",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "end_at",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "End At",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "title": "Page",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "pageSize",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "title": "Pagesize",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "request_body": null,
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        }
+      },
+      "endpoint": "aicrm_next.automation_engine.group_ops.api.list_group_ops_executions",
+      "include_in_schema": true,
+      "kind": "api",
+      "methods": [
+        "GET"
+      ],
+      "name": "list_group_ops_executions",
+      "operation_id": "list_group_ops_executions:GET:/api/admin/automation-conversion/group-ops/plans/{plan_id}/executions",
+      "path": "/api/admin/automation-conversion/group-ops/plans/{plan_id}/executions",
+      "route_group": "unregistered"
+    },
+    {
+      "capability_owner": "unregistered",
+      "contract": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "plan_id",
+            "required": true,
+            "schema": {
               "title": "Plan Id",
               "type": "integer"
             }
@@ -11370,6 +11868,267 @@
       "name": "remove_group_ops_plan_group",
       "operation_id": "remove_group_ops_plan_group:DELETE:/api/admin/automation-conversion/group-ops/plans/{plan_id}/groups/{chat_id}",
       "path": "/api/admin/automation-conversion/group-ops/plans/{plan_id}/groups/{chat_id}",
+      "route_group": "unregistered"
+    },
+    {
+      "capability_owner": "unregistered",
+      "contract": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "plan_id",
+            "required": true,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "string"
+                }
+              ],
+              "title": "Plan Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "layerKey",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "Layerkey",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "layer_key",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "Layer Key",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sourceType",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "Sourcetype",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "source_type",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "Source Type",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "keyword",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "Keyword",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "title": "Page",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "pageSize",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "title": "Pagesize",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "request_body": null,
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        }
+      },
+      "endpoint": "aicrm_next.automation_engine.group_ops.api.list_group_ops_members",
+      "include_in_schema": true,
+      "kind": "api",
+      "methods": [
+        "GET"
+      ],
+      "name": "list_group_ops_members",
+      "operation_id": "list_group_ops_members:GET:/api/admin/automation-conversion/group-ops/plans/{plan_id}/members",
+      "path": "/api/admin/automation-conversion/group-ops/plans/{plan_id}/members",
+      "route_group": "unregistered"
+    },
+    {
+      "capability_owner": "unregistered",
+      "contract": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "plan_id",
+            "required": true,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "string"
+                }
+              ],
+              "title": "Plan Id"
+            }
+          }
+        ],
+        "request_body": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GroupOpsMemberImportRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        }
+      },
+      "endpoint": "aicrm_next.automation_engine.group_ops.api.import_group_ops_members",
+      "include_in_schema": true,
+      "kind": "api",
+      "methods": [
+        "POST"
+      ],
+      "name": "import_group_ops_members",
+      "operation_id": "import_group_ops_members:POST:/api/admin/automation-conversion/group-ops/plans/{plan_id}/members/import",
+      "path": "/api/admin/automation-conversion/group-ops/plans/{plan_id}/members/import",
+      "route_group": "unregistered"
+    },
+    {
+      "capability_owner": "unregistered",
+      "contract": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "plan_id",
+            "required": true,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "string"
+                }
+              ],
+              "title": "Plan Id"
+            }
+          }
+        ],
+        "request_body": null,
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        }
+      },
+      "endpoint": "aicrm_next.automation_engine.group_ops.api.refresh_group_ops_members_from_groups",
+      "include_in_schema": true,
+      "kind": "api",
+      "methods": [
+        "POST"
+      ],
+      "name": "refresh_group_ops_members_from_groups",
+      "operation_id": "refresh_group_ops_members_from_groups:POST:/api/admin/automation-conversion/group-ops/plans/{plan_id}/members/refresh-from-groups",
+      "path": "/api/admin/automation-conversion/group-ops/plans/{plan_id}/members/refresh-from-groups",
       "route_group": "unregistered"
     },
     {
@@ -11706,6 +12465,123 @@
       "name": "preview_group_ops_plan_run_due",
       "operation_id": "preview_group_ops_plan_run_due:POST:/api/admin/automation-conversion/group-ops/plans/{plan_id}/run-due/preview",
       "path": "/api/admin/automation-conversion/group-ops/plans/{plan_id}/run-due/preview",
+      "route_group": "unregistered"
+    },
+    {
+      "capability_owner": "unregistered",
+      "contract": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "plan_id",
+            "required": true,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "string"
+                }
+              ],
+              "title": "Plan Id"
+            }
+          }
+        ],
+        "request_body": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GroupOpsSegmentationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        }
+      },
+      "endpoint": "aicrm_next.automation_engine.group_ops.api.save_group_ops_segmentation",
+      "include_in_schema": true,
+      "kind": "api",
+      "methods": [
+        "PUT"
+      ],
+      "name": "save_group_ops_segmentation",
+      "operation_id": "save_group_ops_segmentation:PUT:/api/admin/automation-conversion/group-ops/plans/{plan_id}/segmentation",
+      "path": "/api/admin/automation-conversion/group-ops/plans/{plan_id}/segmentation",
+      "route_group": "unregistered"
+    },
+    {
+      "capability_owner": "unregistered",
+      "contract": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "plan_id",
+            "required": true,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "string"
+                }
+              ],
+              "title": "Plan Id"
+            }
+          }
+        ],
+        "request_body": null,
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        }
+      },
+      "endpoint": "aicrm_next.automation_engine.group_ops.api.preview_group_ops_segmentation",
+      "include_in_schema": true,
+      "kind": "api",
+      "methods": [
+        "POST"
+      ],
+      "name": "preview_group_ops_segmentation",
+      "operation_id": "preview_group_ops_segmentation:POST:/api/admin/automation-conversion/group-ops/plans/{plan_id}/segmentation/preview",
+      "path": "/api/admin/automation-conversion/group-ops/plans/{plan_id}/segmentation/preview",
       "route_group": "unregistered"
     },
     {
@@ -21404,693 +22280,6 @@
       "operation_id": "owner_migration_transfer_result:POST:/api/admin/owner-migration/transfer-result",
       "path": "/api/admin/owner-migration/transfer-result",
       "route_group": "owner_migration"
-    },
-    {
-      "capability_owner": "automation_engine",
-      "contract": {
-        "parameters": [
-          {
-            "in": "query",
-            "name": "status",
-            "required": false,
-            "schema": {
-              "default": "",
-              "title": "Status",
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "source_plan_id",
-            "required": false,
-            "schema": {
-              "default": "",
-              "title": "Source Plan Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "limit",
-            "required": false,
-            "schema": {
-              "default": 50,
-              "title": "Limit",
-              "type": "integer"
-            }
-          },
-          {
-            "in": "query",
-            "name": "offset",
-            "required": false,
-            "schema": {
-              "default": 0,
-              "title": "Offset",
-              "type": "integer"
-            }
-          }
-        ],
-        "request_body": null,
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        }
-      },
-      "endpoint": "aicrm_next.automation_engine.group_ops.draft_api.list_group_ops_workspace_drafts",
-      "include_in_schema": true,
-      "kind": "api",
-      "methods": [
-        "GET"
-      ],
-      "name": "api.admin_p1_group_ops_workspace_drafts",
-      "operation_id": "api.admin_p1_group_ops_workspace_drafts:GET:/api/admin/p1/group-ops-workspace/drafts",
-      "path": "/api/admin/p1/group-ops-workspace/drafts",
-      "route_group": "group_ops_draft_api"
-    },
-    {
-      "capability_owner": "automation_engine",
-      "contract": {
-        "parameters": [],
-        "request_body": null,
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          }
-        }
-      },
-      "endpoint": "aicrm_next.automation_engine.group_ops.draft_api.create_group_ops_workspace_draft",
-      "include_in_schema": true,
-      "kind": "api",
-      "methods": [
-        "POST"
-      ],
-      "name": "api.admin_p1_group_ops_workspace_draft_create",
-      "operation_id": "api.admin_p1_group_ops_workspace_draft_create:POST:/api/admin/p1/group-ops-workspace/drafts",
-      "path": "/api/admin/p1/group-ops-workspace/drafts",
-      "route_group": "group_ops_draft_api"
-    },
-    {
-      "capability_owner": "automation_engine",
-      "contract": {
-        "parameters": [
-          {
-            "in": "path",
-            "name": "draft_id",
-            "required": true,
-            "schema": {
-              "title": "Draft Id",
-              "type": "string"
-            }
-          }
-        ],
-        "request_body": null,
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        }
-      },
-      "endpoint": "aicrm_next.automation_engine.group_ops.draft_api.get_group_ops_workspace_draft",
-      "include_in_schema": true,
-      "kind": "api",
-      "methods": [
-        "GET"
-      ],
-      "name": "api.admin_p1_group_ops_workspace_draft_detail",
-      "operation_id": "api.admin_p1_group_ops_workspace_draft_detail:GET:/api/admin/p1/group-ops-workspace/drafts/{draft_id}",
-      "path": "/api/admin/p1/group-ops-workspace/drafts/{draft_id}",
-      "route_group": "group_ops_draft_api"
-    },
-    {
-      "capability_owner": "automation_engine",
-      "contract": {
-        "parameters": [
-          {
-            "in": "path",
-            "name": "draft_id",
-            "required": true,
-            "schema": {
-              "title": "Draft Id",
-              "type": "string"
-            }
-          }
-        ],
-        "request_body": null,
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        }
-      },
-      "endpoint": "aicrm_next.automation_engine.group_ops.draft_api.update_group_ops_workspace_draft",
-      "include_in_schema": true,
-      "kind": "api",
-      "methods": [
-        "PATCH"
-      ],
-      "name": "api.admin_p1_group_ops_workspace_draft_update",
-      "operation_id": "api.admin_p1_group_ops_workspace_draft_update:PATCH:/api/admin/p1/group-ops-workspace/drafts/{draft_id}",
-      "path": "/api/admin/p1/group-ops-workspace/drafts/{draft_id}",
-      "route_group": "group_ops_draft_api"
-    },
-    {
-      "capability_owner": "automation_engine",
-      "contract": {
-        "parameters": [
-          {
-            "in": "path",
-            "name": "draft_id",
-            "required": true,
-            "schema": {
-              "title": "Draft Id",
-              "type": "string"
-            }
-          }
-        ],
-        "request_body": null,
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        }
-      },
-      "endpoint": "aicrm_next.automation_engine.group_ops.draft_api.archive_group_ops_workspace_draft",
-      "include_in_schema": true,
-      "kind": "api",
-      "methods": [
-        "POST"
-      ],
-      "name": "api.admin_p1_group_ops_workspace_draft_archive",
-      "operation_id": "api.admin_p1_group_ops_workspace_draft_archive:POST:/api/admin/p1/group-ops-workspace/drafts/{draft_id}/archive",
-      "path": "/api/admin/p1/group-ops-workspace/drafts/{draft_id}/archive",
-      "route_group": "group_ops_draft_api"
-    },
-    {
-      "capability_owner": "automation_engine",
-      "contract": {
-        "parameters": [
-          {
-            "in": "path",
-            "name": "draft_id",
-            "required": true,
-            "schema": {
-              "title": "Draft Id",
-              "type": "string"
-            }
-          }
-        ],
-        "request_body": null,
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        }
-      },
-      "endpoint": "aicrm_next.automation_engine.group_ops.governance_api.list_group_ops_workspace_draft_governance",
-      "include_in_schema": true,
-      "kind": "api",
-      "methods": [
-        "GET"
-      ],
-      "name": "api.admin_p1_group_ops_workspace_draft_governance_list",
-      "operation_id": "api.admin_p1_group_ops_workspace_draft_governance_list:GET:/api/admin/p1/group-ops-workspace/drafts/{draft_id}/governance",
-      "path": "/api/admin/p1/group-ops-workspace/drafts/{draft_id}/governance",
-      "route_group": "group_ops_governance_api"
-    },
-    {
-      "capability_owner": "automation_engine",
-      "contract": {
-        "parameters": [
-          {
-            "in": "path",
-            "name": "draft_id",
-            "required": true,
-            "schema": {
-              "title": "Draft Id",
-              "type": "string"
-            }
-          }
-        ],
-        "request_body": null,
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        }
-      },
-      "endpoint": "aicrm_next.automation_engine.group_ops.governance_api.request_group_ops_workspace_governance",
-      "include_in_schema": true,
-      "kind": "api",
-      "methods": [
-        "POST"
-      ],
-      "name": "api.admin_p1_group_ops_workspace_governance_request",
-      "operation_id": "api.admin_p1_group_ops_workspace_governance_request:POST:/api/admin/p1/group-ops-workspace/drafts/{draft_id}/governance/request",
-      "path": "/api/admin/p1/group-ops-workspace/drafts/{draft_id}/governance/request",
-      "route_group": "group_ops_governance_api"
-    },
-    {
-      "capability_owner": "automation_engine",
-      "contract": {
-        "parameters": [
-          {
-            "in": "path",
-            "name": "draft_id",
-            "required": true,
-            "schema": {
-              "title": "Draft Id",
-              "type": "string"
-            }
-          }
-        ],
-        "request_body": null,
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        }
-      },
-      "endpoint": "aicrm_next.automation_engine.group_ops.draft_api.request_review_group_ops_workspace_draft",
-      "include_in_schema": true,
-      "kind": "api",
-      "methods": [
-        "POST"
-      ],
-      "name": "api.admin_p1_group_ops_workspace_draft_request_review",
-      "operation_id": "api.admin_p1_group_ops_workspace_draft_request_review:POST:/api/admin/p1/group-ops-workspace/drafts/{draft_id}/request-review",
-      "path": "/api/admin/p1/group-ops-workspace/drafts/{draft_id}/request-review",
-      "route_group": "group_ops_draft_api"
-    },
-    {
-      "capability_owner": "automation_engine",
-      "contract": {
-        "parameters": [
-          {
-            "in": "path",
-            "name": "review_id",
-            "required": true,
-            "schema": {
-              "title": "Review Id",
-              "type": "string"
-            }
-          }
-        ],
-        "request_body": null,
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        }
-      },
-      "endpoint": "aicrm_next.automation_engine.group_ops.governance_api.get_group_ops_workspace_governance",
-      "include_in_schema": true,
-      "kind": "api",
-      "methods": [
-        "GET"
-      ],
-      "name": "api.admin_p1_group_ops_workspace_governance_detail",
-      "operation_id": "api.admin_p1_group_ops_workspace_governance_detail:GET:/api/admin/p1/group-ops-workspace/governance/{review_id}",
-      "path": "/api/admin/p1/group-ops-workspace/governance/{review_id}",
-      "route_group": "group_ops_governance_api"
-    },
-    {
-      "capability_owner": "automation_engine",
-      "contract": {
-        "parameters": [
-          {
-            "in": "path",
-            "name": "review_id",
-            "required": true,
-            "schema": {
-              "title": "Review Id",
-              "type": "string"
-            }
-          }
-        ],
-        "request_body": null,
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        }
-      },
-      "endpoint": "aicrm_next.automation_engine.group_ops.governance_api.bridge_group_ops_workspace_governance_push_center",
-      "include_in_schema": true,
-      "kind": "api",
-      "methods": [
-        "POST"
-      ],
-      "name": "api.admin_p1_group_ops_workspace_governance_bridge_push_center",
-      "operation_id": "api.admin_p1_group_ops_workspace_governance_bridge_push_center:POST:/api/admin/p1/group-ops-workspace/governance/{review_id}/bridge-push-center",
-      "path": "/api/admin/p1/group-ops-workspace/governance/{review_id}/bridge-push-center",
-      "route_group": "group_ops_governance_api"
-    },
-    {
-      "capability_owner": "automation_engine",
-      "contract": {
-        "parameters": [
-          {
-            "in": "path",
-            "name": "review_id",
-            "required": true,
-            "schema": {
-              "title": "Review Id",
-              "type": "string"
-            }
-          }
-        ],
-        "request_body": null,
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        }
-      },
-      "endpoint": "aicrm_next.automation_engine.group_ops.governance_api.expire_group_ops_workspace_governance",
-      "include_in_schema": true,
-      "kind": "api",
-      "methods": [
-        "POST"
-      ],
-      "name": "api.admin_p1_group_ops_workspace_governance_expire",
-      "operation_id": "api.admin_p1_group_ops_workspace_governance_expire:POST:/api/admin/p1/group-ops-workspace/governance/{review_id}/expire",
-      "path": "/api/admin/p1/group-ops-workspace/governance/{review_id}/expire",
-      "route_group": "group_ops_governance_api"
-    },
-    {
-      "capability_owner": "automation_engine",
-      "contract": {
-        "parameters": [
-          {
-            "in": "path",
-            "name": "review_id",
-            "required": true,
-            "schema": {
-              "title": "Review Id",
-              "type": "string"
-            }
-          }
-        ],
-        "request_body": null,
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        }
-      },
-      "endpoint": "aicrm_next.automation_engine.group_ops.governance_api.get_group_ops_workspace_governance_push_center_bridge",
-      "include_in_schema": true,
-      "kind": "api",
-      "methods": [
-        "GET"
-      ],
-      "name": "api.admin_p1_group_ops_workspace_governance_push_center_bridge_detail",
-      "operation_id": "api.admin_p1_group_ops_workspace_governance_push_center_bridge_detail:GET:/api/admin/p1/group-ops-workspace/governance/{review_id}/push-center-bridge",
-      "path": "/api/admin/p1/group-ops-workspace/governance/{review_id}/push-center-bridge",
-      "route_group": "group_ops_governance_api"
-    },
-    {
-      "capability_owner": "automation_engine",
-      "contract": {
-        "parameters": [
-          {
-            "in": "path",
-            "name": "review_id",
-            "required": true,
-            "schema": {
-              "title": "Review Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "path",
-            "name": "step_id",
-            "required": true,
-            "schema": {
-              "title": "Step Id",
-              "type": "string"
-            }
-          }
-        ],
-        "request_body": null,
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        }
-      },
-      "endpoint": "aicrm_next.automation_engine.group_ops.governance_api.approve_group_ops_workspace_governance_step",
-      "include_in_schema": true,
-      "kind": "api",
-      "methods": [
-        "POST"
-      ],
-      "name": "api.admin_p1_group_ops_workspace_governance_step_approve",
-      "operation_id": "api.admin_p1_group_ops_workspace_governance_step_approve:POST:/api/admin/p1/group-ops-workspace/governance/{review_id}/steps/{step_id}/approve",
-      "path": "/api/admin/p1/group-ops-workspace/governance/{review_id}/steps/{step_id}/approve",
-      "route_group": "group_ops_governance_api"
-    },
-    {
-      "capability_owner": "automation_engine",
-      "contract": {
-        "parameters": [
-          {
-            "in": "path",
-            "name": "review_id",
-            "required": true,
-            "schema": {
-              "title": "Review Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "path",
-            "name": "step_id",
-            "required": true,
-            "schema": {
-              "title": "Step Id",
-              "type": "string"
-            }
-          }
-        ],
-        "request_body": null,
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        }
-      },
-      "endpoint": "aicrm_next.automation_engine.group_ops.governance_api.reject_group_ops_workspace_governance_step",
-      "include_in_schema": true,
-      "kind": "api",
-      "methods": [
-        "POST"
-      ],
-      "name": "api.admin_p1_group_ops_workspace_governance_step_reject",
-      "operation_id": "api.admin_p1_group_ops_workspace_governance_step_reject:POST:/api/admin/p1/group-ops-workspace/governance/{review_id}/steps/{step_id}/reject",
-      "path": "/api/admin/p1/group-ops-workspace/governance/{review_id}/steps/{step_id}/reject",
-      "route_group": "group_ops_governance_api"
     },
     {
       "capability_owner": "commerce",
@@ -31966,338 +32155,6 @@
           }
         }
       },
-      "endpoint": "aicrm_next.automation_engine.group_ops.api.list_audience_rules",
-      "include_in_schema": true,
-      "kind": "api",
-      "methods": [
-        "GET"
-      ],
-      "name": "list_audience_rules",
-      "operation_id": "list_audience_rules:GET:/api/automation/group-ops/audience-rules",
-      "path": "/api/automation/group-ops/audience-rules",
-      "route_group": "unregistered"
-    },
-    {
-      "capability_owner": "unregistered",
-      "contract": {
-        "parameters": [],
-        "request_body": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/AudienceRuleCreateRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        }
-      },
-      "endpoint": "aicrm_next.automation_engine.group_ops.api.create_audience_rule",
-      "include_in_schema": true,
-      "kind": "api",
-      "methods": [
-        "POST"
-      ],
-      "name": "create_audience_rule",
-      "operation_id": "create_audience_rule:POST:/api/automation/group-ops/audience-rules",
-      "path": "/api/automation/group-ops/audience-rules",
-      "route_group": "unregistered"
-    },
-    {
-      "capability_owner": "unregistered",
-      "contract": {
-        "parameters": [
-          {
-            "in": "path",
-            "name": "rule_key",
-            "required": true,
-            "schema": {
-              "title": "Rule Key",
-              "type": "string"
-            }
-          }
-        ],
-        "request_body": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/AudienceRuleRunRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        }
-      },
-      "endpoint": "aicrm_next.automation_engine.group_ops.api.preview_audience_rule",
-      "include_in_schema": true,
-      "kind": "api",
-      "methods": [
-        "POST"
-      ],
-      "name": "preview_audience_rule",
-      "operation_id": "preview_audience_rule:POST:/api/automation/group-ops/audience-rules/{rule_key}/preview",
-      "path": "/api/automation/group-ops/audience-rules/{rule_key}/preview",
-      "route_group": "unregistered"
-    },
-    {
-      "capability_owner": "unregistered",
-      "contract": {
-        "parameters": [
-          {
-            "in": "path",
-            "name": "rule_key",
-            "required": true,
-            "schema": {
-              "title": "Rule Key",
-              "type": "string"
-            }
-          }
-        ],
-        "request_body": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/AudienceRuleRunRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        }
-      },
-      "endpoint": "aicrm_next.automation_engine.group_ops.api.refresh_audience_rule",
-      "include_in_schema": true,
-      "kind": "api",
-      "methods": [
-        "POST"
-      ],
-      "name": "refresh_audience_rule",
-      "operation_id": "refresh_audience_rule:POST:/api/automation/group-ops/audience-rules/{rule_key}/refresh",
-      "path": "/api/automation/group-ops/audience-rules/{rule_key}/refresh",
-      "route_group": "unregistered"
-    },
-    {
-      "capability_owner": "unregistered",
-      "contract": {
-        "parameters": [
-          {
-            "in": "path",
-            "name": "rule_key",
-            "required": true,
-            "schema": {
-              "title": "Rule Key",
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "planId",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "integer"
-                },
-                {
-                  "type": "string"
-                }
-              ],
-              "default": 0,
-              "title": "Planid"
-            }
-          },
-          {
-            "in": "query",
-            "name": "plan_id",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "integer"
-                },
-                {
-                  "type": "string"
-                }
-              ],
-              "default": 0,
-              "title": "Plan Id"
-            }
-          },
-          {
-            "in": "query",
-            "name": "version",
-            "required": false,
-            "schema": {
-              "default": 1,
-              "title": "Version",
-              "type": "integer"
-            }
-          }
-        ],
-        "request_body": null,
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        }
-      },
-      "endpoint": "aicrm_next.automation_engine.group_ops.api.get_audience_rule_results",
-      "include_in_schema": true,
-      "kind": "api",
-      "methods": [
-        "GET"
-      ],
-      "name": "get_audience_rule_results",
-      "operation_id": "get_audience_rule_results:GET:/api/automation/group-ops/audience-rules/{rule_key}/results",
-      "path": "/api/automation/group-ops/audience-rules/{rule_key}/results",
-      "route_group": "unregistered"
-    },
-    {
-      "capability_owner": "unregistered",
-      "contract": {
-        "parameters": [
-          {
-            "in": "path",
-            "name": "rule_key",
-            "required": true,
-            "schema": {
-              "title": "Rule Key",
-              "type": "string"
-            }
-          }
-        ],
-        "request_body": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/AudienceRuleVersionCreateRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        }
-      },
-      "endpoint": "aicrm_next.automation_engine.group_ops.api.create_audience_rule_version",
-      "include_in_schema": true,
-      "kind": "api",
-      "methods": [
-        "POST"
-      ],
-      "name": "create_audience_rule_version",
-      "operation_id": "create_audience_rule_version:POST:/api/automation/group-ops/audience-rules/{rule_key}/versions",
-      "path": "/api/automation/group-ops/audience-rules/{rule_key}/versions",
-      "route_group": "unregistered"
-    },
-    {
-      "capability_owner": "unregistered",
-      "contract": {
-        "parameters": [],
-        "request_body": null,
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          }
-        }
-      },
       "endpoint": "aicrm_next.automation_engine.group_ops.api.execute_group_ops_token_broadcast",
       "include_in_schema": true,
       "kind": "api",
@@ -32307,1232 +32164,6 @@
       "name": "execute_group_ops_token_broadcast",
       "operation_id": "execute_group_ops_token_broadcast:POST:/api/automation/group-ops/broadcast",
       "path": "/api/automation/group-ops/broadcast",
-      "route_group": "unregistered"
-    },
-    {
-      "capability_owner": "unregistered",
-      "contract": {
-        "parameters": [
-          {
-            "in": "query",
-            "name": "keyword",
-            "required": false,
-            "schema": {
-              "default": "",
-              "title": "Keyword",
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "plan_type",
-            "required": false,
-            "schema": {
-              "default": "",
-              "title": "Plan Type",
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "type",
-            "required": false,
-            "schema": {
-              "default": "",
-              "title": "Type",
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "status",
-            "required": false,
-            "schema": {
-              "default": "",
-              "title": "Status",
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "operatorMemberId",
-            "required": false,
-            "schema": {
-              "default": "",
-              "title": "Operatormemberid",
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "operator_member_id",
-            "required": false,
-            "schema": {
-              "default": "",
-              "title": "Operator Member Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "page",
-            "required": false,
-            "schema": {
-              "default": 1,
-              "title": "Page",
-              "type": "integer"
-            }
-          },
-          {
-            "in": "query",
-            "name": "pageSize",
-            "required": false,
-            "schema": {
-              "default": 0,
-              "title": "Pagesize",
-              "type": "integer"
-            }
-          },
-          {
-            "in": "query",
-            "name": "limit",
-            "required": false,
-            "schema": {
-              "default": 50,
-              "title": "Limit",
-              "type": "integer"
-            }
-          },
-          {
-            "in": "query",
-            "name": "offset",
-            "required": false,
-            "schema": {
-              "default": 0,
-              "title": "Offset",
-              "type": "integer"
-            }
-          }
-        ],
-        "request_body": null,
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        }
-      },
-      "endpoint": "aicrm_next.automation_engine.group_ops.api.list_group_ops_plans",
-      "include_in_schema": true,
-      "kind": "api",
-      "methods": [
-        "GET"
-      ],
-      "name": "list_group_ops_plans",
-      "operation_id": "list_group_ops_plans:GET:/api/automation/group-ops/plans",
-      "path": "/api/automation/group-ops/plans",
-      "route_group": "unregistered"
-    },
-    {
-      "capability_owner": "unregistered",
-      "contract": {
-        "parameters": [],
-        "request_body": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/GroupOpsPlanCreateRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        }
-      },
-      "endpoint": "aicrm_next.automation_engine.group_ops.api.create_group_ops_plan",
-      "include_in_schema": true,
-      "kind": "api",
-      "methods": [
-        "POST"
-      ],
-      "name": "create_group_ops_plan",
-      "operation_id": "create_group_ops_plan:POST:/api/automation/group-ops/plans",
-      "path": "/api/automation/group-ops/plans",
-      "route_group": "unregistered"
-    },
-    {
-      "capability_owner": "unregistered",
-      "contract": {
-        "parameters": [
-          {
-            "in": "path",
-            "name": "plan_id",
-            "required": true,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "integer"
-                },
-                {
-                  "type": "string"
-                }
-              ],
-              "title": "Plan Id"
-            }
-          }
-        ],
-        "request_body": null,
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        }
-      },
-      "endpoint": "aicrm_next.automation_engine.group_ops.api.archive_group_ops_plan",
-      "include_in_schema": true,
-      "kind": "api",
-      "methods": [
-        "DELETE"
-      ],
-      "name": "archive_group_ops_plan",
-      "operation_id": "archive_group_ops_plan:DELETE:/api/automation/group-ops/plans/{plan_id}",
-      "path": "/api/automation/group-ops/plans/{plan_id}",
-      "route_group": "unregistered"
-    },
-    {
-      "capability_owner": "unregistered",
-      "contract": {
-        "parameters": [
-          {
-            "in": "path",
-            "name": "plan_id",
-            "required": true,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "integer"
-                },
-                {
-                  "type": "string"
-                }
-              ],
-              "title": "Plan Id"
-            }
-          }
-        ],
-        "request_body": null,
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        }
-      },
-      "endpoint": "aicrm_next.automation_engine.group_ops.api.get_group_ops_plan",
-      "include_in_schema": true,
-      "kind": "api",
-      "methods": [
-        "GET"
-      ],
-      "name": "get_group_ops_plan",
-      "operation_id": "get_group_ops_plan:GET:/api/automation/group-ops/plans/{plan_id}",
-      "path": "/api/automation/group-ops/plans/{plan_id}",
-      "route_group": "unregistered"
-    },
-    {
-      "capability_owner": "unregistered",
-      "contract": {
-        "parameters": [
-          {
-            "in": "path",
-            "name": "plan_id",
-            "required": true,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "integer"
-                },
-                {
-                  "type": "string"
-                }
-              ],
-              "title": "Plan Id"
-            }
-          }
-        ],
-        "request_body": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/GroupOpsPlanUpdateRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        }
-      },
-      "endpoint": "aicrm_next.automation_engine.group_ops.api.update_group_ops_plan",
-      "include_in_schema": true,
-      "kind": "api",
-      "methods": [
-        "PATCH"
-      ],
-      "name": "update_group_ops_plan",
-      "operation_id": "update_group_ops_plan:PATCH:/api/automation/group-ops/plans/{plan_id}",
-      "path": "/api/automation/group-ops/plans/{plan_id}",
-      "route_group": "unregistered"
-    },
-    {
-      "capability_owner": "unregistered",
-      "contract": {
-        "parameters": [
-          {
-            "in": "path",
-            "name": "plan_id",
-            "required": true,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "integer"
-                },
-                {
-                  "type": "string"
-                }
-              ],
-              "title": "Plan Id"
-            }
-          }
-        ],
-        "request_body": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/GroupOpsPlanUpdateRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        }
-      },
-      "endpoint": "aicrm_next.automation_engine.group_ops.api.update_group_ops_plan",
-      "include_in_schema": true,
-      "kind": "api",
-      "methods": [
-        "PUT"
-      ],
-      "name": "update_group_ops_plan",
-      "operation_id": "update_group_ops_plan:PUT:/api/automation/group-ops/plans/{plan_id}",
-      "path": "/api/automation/group-ops/plans/{plan_id}",
-      "route_group": "unregistered"
-    },
-    {
-      "capability_owner": "unregistered",
-      "contract": {
-        "parameters": [
-          {
-            "in": "path",
-            "name": "plan_id",
-            "required": true,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "integer"
-                },
-                {
-                  "type": "string"
-                }
-              ],
-              "title": "Plan Id"
-            }
-          }
-        ],
-        "request_body": null,
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        }
-      },
-      "endpoint": "aicrm_next.automation_engine.group_ops.api.disable_group_ops_plan",
-      "include_in_schema": true,
-      "kind": "api",
-      "methods": [
-        "POST"
-      ],
-      "name": "disable_group_ops_plan",
-      "operation_id": "disable_group_ops_plan:POST:/api/automation/group-ops/plans/{plan_id}/disable",
-      "path": "/api/automation/group-ops/plans/{plan_id}/disable",
-      "route_group": "unregistered"
-    },
-    {
-      "capability_owner": "unregistered",
-      "contract": {
-        "parameters": [
-          {
-            "in": "path",
-            "name": "plan_id",
-            "required": true,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "integer"
-                },
-                {
-                  "type": "string"
-                }
-              ],
-              "title": "Plan Id"
-            }
-          }
-        ],
-        "request_body": null,
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        }
-      },
-      "endpoint": "aicrm_next.automation_engine.group_ops.api.enable_group_ops_plan",
-      "include_in_schema": true,
-      "kind": "api",
-      "methods": [
-        "POST"
-      ],
-      "name": "enable_group_ops_plan",
-      "operation_id": "enable_group_ops_plan:POST:/api/automation/group-ops/plans/{plan_id}/enable",
-      "path": "/api/automation/group-ops/plans/{plan_id}/enable",
-      "route_group": "unregistered"
-    },
-    {
-      "capability_owner": "unregistered",
-      "contract": {
-        "parameters": [
-          {
-            "in": "path",
-            "name": "plan_id",
-            "required": true,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "integer"
-                },
-                {
-                  "type": "string"
-                }
-              ],
-              "title": "Plan Id"
-            }
-          },
-          {
-            "in": "query",
-            "name": "triggerEventId",
-            "required": false,
-            "schema": {
-              "default": "",
-              "title": "Triggereventid",
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "trigger_event_id",
-            "required": false,
-            "schema": {
-              "default": "",
-              "title": "Trigger Event Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "status",
-            "required": false,
-            "schema": {
-              "default": "",
-              "title": "Status",
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "actionType",
-            "required": false,
-            "schema": {
-              "default": "",
-              "title": "Actiontype",
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "action_type",
-            "required": false,
-            "schema": {
-              "default": "",
-              "title": "Action Type",
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "layerKey",
-            "required": false,
-            "schema": {
-              "default": "",
-              "title": "Layerkey",
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "layer_key",
-            "required": false,
-            "schema": {
-              "default": "",
-              "title": "Layer Key",
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "recipient",
-            "required": false,
-            "schema": {
-              "default": "",
-              "title": "Recipient",
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "startAt",
-            "required": false,
-            "schema": {
-              "default": "",
-              "title": "Startat",
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "start_at",
-            "required": false,
-            "schema": {
-              "default": "",
-              "title": "Start At",
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "endAt",
-            "required": false,
-            "schema": {
-              "default": "",
-              "title": "Endat",
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "end_at",
-            "required": false,
-            "schema": {
-              "default": "",
-              "title": "End At",
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "page",
-            "required": false,
-            "schema": {
-              "default": 1,
-              "title": "Page",
-              "type": "integer"
-            }
-          },
-          {
-            "in": "query",
-            "name": "pageSize",
-            "required": false,
-            "schema": {
-              "default": 0,
-              "title": "Pagesize",
-              "type": "integer"
-            }
-          },
-          {
-            "in": "query",
-            "name": "limit",
-            "required": false,
-            "schema": {
-              "default": 50,
-              "title": "Limit",
-              "type": "integer"
-            }
-          },
-          {
-            "in": "query",
-            "name": "offset",
-            "required": false,
-            "schema": {
-              "default": 0,
-              "title": "Offset",
-              "type": "integer"
-            }
-          }
-        ],
-        "request_body": null,
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        }
-      },
-      "endpoint": "aicrm_next.automation_engine.group_ops.api.list_group_ops_executions",
-      "include_in_schema": true,
-      "kind": "api",
-      "methods": [
-        "GET"
-      ],
-      "name": "list_group_ops_executions",
-      "operation_id": "list_group_ops_executions:GET:/api/automation/group-ops/plans/{plan_id}/executions",
-      "path": "/api/automation/group-ops/plans/{plan_id}/executions",
-      "route_group": "unregistered"
-    },
-    {
-      "capability_owner": "unregistered",
-      "contract": {
-        "parameters": [
-          {
-            "in": "path",
-            "name": "plan_id",
-            "required": true,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "integer"
-                },
-                {
-                  "type": "string"
-                }
-              ],
-              "title": "Plan Id"
-            }
-          },
-          {
-            "in": "query",
-            "name": "layerKey",
-            "required": false,
-            "schema": {
-              "default": "",
-              "title": "Layerkey",
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "layer_key",
-            "required": false,
-            "schema": {
-              "default": "",
-              "title": "Layer Key",
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "sourceType",
-            "required": false,
-            "schema": {
-              "default": "",
-              "title": "Sourcetype",
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "source_type",
-            "required": false,
-            "schema": {
-              "default": "",
-              "title": "Source Type",
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "keyword",
-            "required": false,
-            "schema": {
-              "default": "",
-              "title": "Keyword",
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "page",
-            "required": false,
-            "schema": {
-              "default": 1,
-              "title": "Page",
-              "type": "integer"
-            }
-          },
-          {
-            "in": "query",
-            "name": "pageSize",
-            "required": false,
-            "schema": {
-              "default": 0,
-              "title": "Pagesize",
-              "type": "integer"
-            }
-          },
-          {
-            "in": "query",
-            "name": "limit",
-            "required": false,
-            "schema": {
-              "default": 50,
-              "title": "Limit",
-              "type": "integer"
-            }
-          },
-          {
-            "in": "query",
-            "name": "offset",
-            "required": false,
-            "schema": {
-              "default": 0,
-              "title": "Offset",
-              "type": "integer"
-            }
-          }
-        ],
-        "request_body": null,
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        }
-      },
-      "endpoint": "aicrm_next.automation_engine.group_ops.api.list_group_ops_members",
-      "include_in_schema": true,
-      "kind": "api",
-      "methods": [
-        "GET"
-      ],
-      "name": "list_group_ops_members",
-      "operation_id": "list_group_ops_members:GET:/api/automation/group-ops/plans/{plan_id}/members",
-      "path": "/api/automation/group-ops/plans/{plan_id}/members",
-      "route_group": "unregistered"
-    },
-    {
-      "capability_owner": "unregistered",
-      "contract": {
-        "parameters": [
-          {
-            "in": "path",
-            "name": "plan_id",
-            "required": true,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "integer"
-                },
-                {
-                  "type": "string"
-                }
-              ],
-              "title": "Plan Id"
-            }
-          }
-        ],
-        "request_body": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/GroupOpsMemberImportRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        }
-      },
-      "endpoint": "aicrm_next.automation_engine.group_ops.api.import_group_ops_members",
-      "include_in_schema": true,
-      "kind": "api",
-      "methods": [
-        "POST"
-      ],
-      "name": "import_group_ops_members",
-      "operation_id": "import_group_ops_members:POST:/api/automation/group-ops/plans/{plan_id}/members/import",
-      "path": "/api/automation/group-ops/plans/{plan_id}/members/import",
-      "route_group": "unregistered"
-    },
-    {
-      "capability_owner": "unregistered",
-      "contract": {
-        "parameters": [
-          {
-            "in": "path",
-            "name": "plan_id",
-            "required": true,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "integer"
-                },
-                {
-                  "type": "string"
-                }
-              ],
-              "title": "Plan Id"
-            }
-          }
-        ],
-        "request_body": null,
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        }
-      },
-      "endpoint": "aicrm_next.automation_engine.group_ops.api.refresh_group_ops_members_from_groups",
-      "include_in_schema": true,
-      "kind": "api",
-      "methods": [
-        "POST"
-      ],
-      "name": "refresh_group_ops_members_from_groups",
-      "operation_id": "refresh_group_ops_members_from_groups:POST:/api/automation/group-ops/plans/{plan_id}/members/refresh-from-groups",
-      "path": "/api/automation/group-ops/plans/{plan_id}/members/refresh-from-groups",
-      "route_group": "unregistered"
-    },
-    {
-      "capability_owner": "unregistered",
-      "contract": {
-        "parameters": [
-          {
-            "in": "path",
-            "name": "plan_id",
-            "required": true,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "integer"
-                },
-                {
-                  "type": "string"
-                }
-              ],
-              "title": "Plan Id"
-            }
-          }
-        ],
-        "request_body": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/GroupOpsSegmentationRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        }
-      },
-      "endpoint": "aicrm_next.automation_engine.group_ops.api.save_group_ops_segmentation",
-      "include_in_schema": true,
-      "kind": "api",
-      "methods": [
-        "PUT"
-      ],
-      "name": "save_group_ops_segmentation",
-      "operation_id": "save_group_ops_segmentation:PUT:/api/automation/group-ops/plans/{plan_id}/segmentation",
-      "path": "/api/automation/group-ops/plans/{plan_id}/segmentation",
-      "route_group": "unregistered"
-    },
-    {
-      "capability_owner": "unregistered",
-      "contract": {
-        "parameters": [
-          {
-            "in": "path",
-            "name": "plan_id",
-            "required": true,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "integer"
-                },
-                {
-                  "type": "string"
-                }
-              ],
-              "title": "Plan Id"
-            }
-          }
-        ],
-        "request_body": null,
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        }
-      },
-      "endpoint": "aicrm_next.automation_engine.group_ops.api.preview_group_ops_segmentation",
-      "include_in_schema": true,
-      "kind": "api",
-      "methods": [
-        "POST"
-      ],
-      "name": "preview_group_ops_segmentation",
-      "operation_id": "preview_group_ops_segmentation:POST:/api/automation/group-ops/plans/{plan_id}/segmentation/preview",
-      "path": "/api/automation/group-ops/plans/{plan_id}/segmentation/preview",
-      "route_group": "unregistered"
-    },
-    {
-      "capability_owner": "unregistered",
-      "contract": {
-        "parameters": [
-          {
-            "in": "path",
-            "name": "plan_id",
-            "required": true,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "integer"
-                },
-                {
-                  "type": "string"
-                }
-              ],
-              "title": "Plan Id"
-            }
-          }
-        ],
-        "request_body": null,
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        }
-      },
-      "endpoint": "aicrm_next.automation_engine.group_ops.api.get_group_ops_webhook_config",
-      "include_in_schema": true,
-      "kind": "api",
-      "methods": [
-        "GET"
-      ],
-      "name": "get_group_ops_webhook_config",
-      "operation_id": "get_group_ops_webhook_config:GET:/api/automation/group-ops/plans/{plan_id}/webhook",
-      "path": "/api/automation/group-ops/plans/{plan_id}/webhook",
-      "route_group": "unregistered"
-    },
-    {
-      "capability_owner": "unregistered",
-      "contract": {
-        "parameters": [
-          {
-            "in": "path",
-            "name": "plan_id",
-            "required": true,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "integer"
-                },
-                {
-                  "type": "string"
-                }
-              ],
-              "title": "Plan Id"
-            }
-          }
-        ],
-        "request_body": null,
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        }
-      },
-      "endpoint": "aicrm_next.automation_engine.group_ops.api.regenerate_group_ops_webhook",
-      "include_in_schema": true,
-      "kind": "api",
-      "methods": [
-        "POST"
-      ],
-      "name": "regenerate_group_ops_webhook",
-      "operation_id": "regenerate_group_ops_webhook:POST:/api/automation/group-ops/plans/{plan_id}/webhook/reset-token",
-      "path": "/api/automation/group-ops/plans/{plan_id}/webhook/reset-token",
       "route_group": "unregistered"
     },
     {
@@ -41432,8 +40063,11 @@
       "unit": "openclaw-ai-audience-scheduler.timer"
     },
     {
+      "kick_after_timer_restart": false,
+      "kick_failure_fatal": false,
       "kind": "timer",
-      "state": "approval_required",
+      "service": "openclaw-automation-ops-scheduler.service",
+      "state": "active_autostart",
       "unit": "openclaw-automation-ops-scheduler.timer"
     },
     {
@@ -42425,10 +41059,11 @@
       "domain": "broadcast_jobs",
       "drop_candidate": false,
       "lifecycle": "audit",
-      "migration_source": "pre-Alembic baseline, registered by 0083 schema drift closeout",
+      "migration_source": "pre-Alembic baseline, registered by 0083 and used by the 0103 broadcast finalizer",
       "pii_level": "internal_contact",
       "read_owners": [
         "aicrm_next.admin_jobs",
+        "aicrm_next.background_jobs",
         "aicrm_next.delivery_lineage"
       ],
       "table": "broadcast_job_events",
@@ -42450,7 +41085,7 @@
       "domain": "broadcast",
       "drop_candidate": false,
       "lifecycle": "queue",
-      "migration_source": "0008_broadcast_jobs, hardened by 0021/0066/0089 and truthful simulated delivery by 0100",
+      "migration_source": "0008_broadcast_jobs, hardened by 0021/0066/0089/0100 and crash-safe finalization by 0103",
       "pii_level": "internal_contact",
       "read_owners": [
         "aicrm_next.admin_jobs.repository",
@@ -42460,7 +41095,7 @@
         "aicrm_next.cloud_orchestrator.repository"
       ],
       "table": "broadcast_jobs",
-      "write_owner": "aicrm_next.cloud_orchestrator.repository"
+      "write_owner": "aicrm_next.background_jobs"
     },
     {
       "domain": "broadcast_jobs",
@@ -42583,9 +41218,10 @@
       "domain": "cloud_orchestrator",
       "drop_candidate": false,
       "lifecycle": "canonical",
-      "migration_source": "pre-Alembic baseline, registered by 0083 schema drift closeout",
+      "migration_source": "pre-Alembic baseline, registered by 0083 and state-aligned by 0103",
       "pii_level": "internal_contact",
       "read_owners": [
+        "aicrm_next.background_jobs",
         "aicrm_next.cloud_orchestrator",
         "aicrm_next.send_content"
       ],
@@ -42596,9 +41232,10 @@
       "domain": "cloud_orchestrator",
       "drop_candidate": false,
       "lifecycle": "canonical",
-      "migration_source": "pre-Alembic baseline, registered by 0083 schema drift closeout",
+      "migration_source": "pre-Alembic baseline, registered by 0083 and state-aligned by 0103",
       "pii_level": "internal_contact",
       "read_owners": [
+        "aicrm_next.background_jobs",
         "aicrm_next.cloud_orchestrator",
         "aicrm_next.growth_orchestration"
       ],
@@ -42663,6 +41300,7 @@
       "read_owners": [
         "aicrm_next.ai_assist",
         "aicrm_next.ai_audience_ops",
+        "aicrm_next.background_jobs",
         "aicrm_next.channel_entry",
         "aicrm_next.cloud_orchestrator",
         "aicrm_next.customer_read_model",
@@ -42864,87 +41502,87 @@
     },
     {
       "domain": "group_ops",
-      "drop_candidate": false,
-      "lifecycle": "read_model",
-      "migration_source": "pre-Alembic baseline, registered by 0083 schema drift closeout",
+      "drop_candidate": true,
+      "lifecycle": "retired",
+      "migration_source": "0049_group_ops_workspace_governance",
       "pii_level": "internal_contact",
       "read_owners": [
         "historical schema drift guard"
       ],
       "table": "group_ops_workspace_allowlist_snapshots",
-      "write_owner": "aicrm_next.automation_engine.group_ops"
+      "write_owner": ""
     },
     {
       "domain": "group_ops",
-      "drop_candidate": false,
-      "lifecycle": "audit",
-      "migration_source": "pre-Alembic baseline, registered by 0083 schema drift closeout",
+      "drop_candidate": true,
+      "lifecycle": "retired",
+      "migration_source": "0047_group_ops_workspace_drafts",
       "pii_level": "internal_contact",
       "read_owners": [
         "historical schema drift guard"
       ],
       "table": "group_ops_workspace_draft_audit_logs",
-      "write_owner": "aicrm_next.automation_engine.group_ops"
+      "write_owner": ""
     },
     {
       "domain": "group_ops",
-      "drop_candidate": false,
-      "lifecycle": "canonical",
-      "migration_source": "pre-Alembic baseline, registered by 0083 schema drift closeout",
+      "drop_candidate": true,
+      "lifecycle": "retired",
+      "migration_source": "0047_group_ops_workspace_drafts",
       "pii_level": "internal_contact",
       "read_owners": [
         "historical schema drift guard"
       ],
       "table": "group_ops_workspace_draft_items",
-      "write_owner": "aicrm_next.automation_engine.group_ops"
+      "write_owner": ""
     },
     {
       "domain": "group_ops",
-      "drop_candidate": false,
-      "lifecycle": "canonical",
-      "migration_source": "pre-Alembic baseline, registered by 0083 schema drift closeout",
+      "drop_candidate": true,
+      "lifecycle": "retired",
+      "migration_source": "0047_group_ops_workspace_drafts",
       "pii_level": "internal_contact",
       "read_owners": [
         "historical schema drift guard"
       ],
       "table": "group_ops_workspace_drafts",
-      "write_owner": "aicrm_next.automation_engine.group_ops"
+      "write_owner": ""
     },
     {
       "domain": "group_ops",
-      "drop_candidate": false,
-      "lifecycle": "canonical",
-      "migration_source": "pre-Alembic baseline, registered by 0083 schema drift closeout",
+      "drop_candidate": true,
+      "lifecycle": "retired",
+      "migration_source": "0049_group_ops_workspace_governance",
       "pii_level": "internal_contact",
       "read_owners": [
         "historical schema drift guard"
       ],
       "table": "group_ops_workspace_governance_review_steps",
-      "write_owner": "aicrm_next.automation_engine.group_ops"
+      "write_owner": ""
     },
     {
       "domain": "group_ops",
-      "drop_candidate": false,
-      "lifecycle": "canonical",
-      "migration_source": "pre-Alembic baseline, registered by 0083 schema drift closeout",
+      "drop_candidate": true,
+      "lifecycle": "retired",
+      "migration_source": "0049_group_ops_workspace_governance",
       "pii_level": "internal_contact",
       "read_owners": [
         "historical schema drift guard"
       ],
       "table": "group_ops_workspace_governance_reviews",
-      "write_owner": "aicrm_next.automation_engine.group_ops"
+      "write_owner": ""
     },
     {
       "domain": "group_ops",
-      "drop_candidate": false,
-      "lifecycle": "canonical",
-      "migration_source": "pre-Alembic baseline, registered by 0083 schema drift closeout",
+      "drop_candidate": true,
+      "lifecycle": "retired",
+      "migration_source": "0049_group_ops_workspace_governance",
       "pii_level": "internal_contact",
       "read_owners": [
         "historical schema drift guard"
       ],
       "table": "group_ops_workspace_gray_window_approvals",
-      "write_owner": "aicrm_next.automation_engine.group_ops"
+      "write_owner": ""
     },
     {
       "domain": "user_ops",
@@ -43152,11 +41790,12 @@
       "domain": "admin_jobs",
       "drop_candidate": false,
       "lifecycle": "canonical",
-      "migration_source": "pre-Alembic baseline, registered by 0083 schema drift closeout",
+      "migration_source": "pre-Alembic baseline, registered by 0083 and linked one-to-one to broadcast_jobs by 0103",
       "pii_level": "internal_contact",
       "read_owners": [
         "aicrm_next.admin_jobs",
         "aicrm_next.admin_read_model",
+        "aicrm_next.background_jobs",
         "aicrm_next.growth_orchestration"
       ],
       "table": "outbound_tasks",

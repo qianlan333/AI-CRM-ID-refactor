@@ -1063,25 +1063,6 @@ routes:
   csrf: false
   rate_limit: authenticated
   token_purpose: none
-- path: /admin/p1/group-ops-workspace
-  methods:
-  - GET
-  route_name: api.admin_p1_group_ops_workspace
-  capability_owner: automation_engine
-  runtime_owner: ai_crm_next
-  layer: admin_page
-  external_effects: none
-  data_source: read_model
-  requires_auth: true
-  rollback: previous_release
-  audience: admin
-  auth_scheme: admin_session
-  capability: admin_read
-  access_scope: global
-  pii_level: internal
-  csrf: false
-  rate_limit: authenticated
-  token_purpose: none
 - path: /api/admin/dashboard/shell-context
   methods:
   - GET
@@ -6875,272 +6856,6 @@ routes:
   csrf: false
   rate_limit: authenticated
   token_purpose: none
-- path: /api/admin/p1/group-ops-workspace/drafts
-  methods:
-  - GET
-  route_name: api.admin_p1_group_ops_workspace_drafts
-  capability_owner: automation_engine
-  runtime_owner: ai_crm_next
-  layer: api
-  external_effects: none
-  data_source: read_model
-  requires_auth: true
-  rollback: previous_release
-  audience: admin
-  auth_scheme: admin_session
-  capability: admin_read
-  access_scope: global
-  pii_level: internal
-  csrf: false
-  rate_limit: authenticated
-  token_purpose: none
-- path: /api/admin/p1/group-ops-workspace/drafts/{draft_id}
-  methods:
-  - GET
-  route_name: api.admin_p1_group_ops_workspace_draft_detail
-  capability_owner: automation_engine
-  runtime_owner: ai_crm_next
-  layer: api
-  external_effects: none
-  data_source: read_model
-  requires_auth: true
-  rollback: previous_release
-  audience: admin
-  auth_scheme: admin_session
-  capability: admin_read
-  access_scope: global
-  pii_level: internal
-  csrf: false
-  rate_limit: authenticated
-  token_purpose: none
-- path: /api/admin/p1/group-ops-workspace/drafts
-  methods:
-  - POST
-  route_name: api.admin_p1_group_ops_workspace_draft_create
-  capability_owner: automation_engine
-  runtime_owner: ai_crm_next
-  layer: api
-  external_effects: none
-  data_source: command
-  requires_auth: true
-  rollback: previous_release
-  audience: admin
-  auth_scheme: admin_session
-  capability: manage_group_ops
-  access_scope: global
-  pii_level: internal
-  csrf: true
-  rate_limit: authenticated
-  token_purpose: none
-- path: /api/admin/p1/group-ops-workspace/drafts/{draft_id}
-  methods:
-  - PATCH
-  route_name: api.admin_p1_group_ops_workspace_draft_update
-  capability_owner: automation_engine
-  runtime_owner: ai_crm_next
-  layer: api
-  external_effects: none
-  data_source: command
-  requires_auth: true
-  rollback: previous_release
-  audience: admin
-  auth_scheme: admin_session
-  capability: manage_group_ops
-  access_scope: global
-  pii_level: internal
-  csrf: true
-  rate_limit: authenticated
-  token_purpose: none
-- path: /api/admin/p1/group-ops-workspace/drafts/{draft_id}/archive
-  methods:
-  - POST
-  route_name: api.admin_p1_group_ops_workspace_draft_archive
-  capability_owner: automation_engine
-  runtime_owner: ai_crm_next
-  layer: api
-  external_effects: none
-  data_source: command
-  requires_auth: true
-  rollback: previous_release
-  audience: admin
-  auth_scheme: admin_session
-  capability: manage_group_ops
-  access_scope: global
-  pii_level: sensitive
-  csrf: true
-  rate_limit: authenticated
-  token_purpose: none
-- path: /api/admin/p1/group-ops-workspace/drafts/{draft_id}/request-review
-  methods:
-  - POST
-  route_name: api.admin_p1_group_ops_workspace_draft_request_review
-  capability_owner: automation_engine
-  runtime_owner: ai_crm_next
-  layer: api
-  external_effects: none
-  data_source: command
-  requires_auth: true
-  rollback: previous_release
-  audience: admin
-  auth_scheme: admin_session
-  capability: manage_group_ops
-  access_scope: global
-  pii_level: internal
-  csrf: true
-  rate_limit: authenticated
-  token_purpose: none
-- path: /api/admin/p1/group-ops-workspace/drafts/{draft_id}/governance/request
-  methods:
-  - POST
-  route_name: api.admin_p1_group_ops_workspace_governance_request
-  capability_owner: automation_engine
-  runtime_owner: ai_crm_next
-  layer: api
-  external_effects: none
-  data_source: command
-  requires_auth: true
-  rollback: previous_release
-  audience: admin
-  auth_scheme: admin_session
-  capability: manage_group_ops
-  access_scope: global
-  pii_level: internal
-  csrf: true
-  rate_limit: authenticated
-  token_purpose: none
-- path: /api/admin/p1/group-ops-workspace/governance/{review_id}
-  methods:
-  - GET
-  route_name: api.admin_p1_group_ops_workspace_governance_detail
-  capability_owner: automation_engine
-  runtime_owner: ai_crm_next
-  layer: api
-  external_effects: none
-  data_source: read_model
-  requires_auth: true
-  rollback: previous_release
-  audience: admin
-  auth_scheme: admin_session
-  capability: admin_read
-  access_scope: global
-  pii_level: internal
-  csrf: false
-  rate_limit: authenticated
-  token_purpose: none
-- path: /api/admin/p1/group-ops-workspace/drafts/{draft_id}/governance
-  methods:
-  - GET
-  route_name: api.admin_p1_group_ops_workspace_draft_governance_list
-  capability_owner: automation_engine
-  runtime_owner: ai_crm_next
-  layer: api
-  external_effects: none
-  data_source: read_model
-  requires_auth: true
-  rollback: previous_release
-  audience: admin
-  auth_scheme: admin_session
-  capability: admin_read
-  access_scope: global
-  pii_level: internal
-  csrf: false
-  rate_limit: authenticated
-  token_purpose: none
-- path: /api/admin/p1/group-ops-workspace/governance/{review_id}/steps/{step_id}/approve
-  methods:
-  - POST
-  route_name: api.admin_p1_group_ops_workspace_governance_step_approve
-  capability_owner: automation_engine
-  runtime_owner: ai_crm_next
-  layer: api
-  external_effects: none
-  data_source: command
-  requires_auth: true
-  rollback: previous_release
-  audience: admin
-  auth_scheme: admin_session
-  capability: manage_group_ops
-  access_scope: global
-  pii_level: internal
-  csrf: true
-  rate_limit: authenticated
-  token_purpose: none
-- path: /api/admin/p1/group-ops-workspace/governance/{review_id}/steps/{step_id}/reject
-  methods:
-  - POST
-  route_name: api.admin_p1_group_ops_workspace_governance_step_reject
-  capability_owner: automation_engine
-  runtime_owner: ai_crm_next
-  layer: api
-  external_effects: none
-  data_source: command
-  requires_auth: true
-  rollback: previous_release
-  audience: admin
-  auth_scheme: admin_session
-  capability: manage_group_ops
-  access_scope: global
-  pii_level: internal
-  csrf: true
-  rate_limit: authenticated
-  token_purpose: none
-- path: /api/admin/p1/group-ops-workspace/governance/{review_id}/expire
-  methods:
-  - POST
-  route_name: api.admin_p1_group_ops_workspace_governance_expire
-  capability_owner: automation_engine
-  runtime_owner: ai_crm_next
-  layer: api
-  external_effects: none
-  data_source: command
-  requires_auth: true
-  rollback: previous_release
-  audience: admin
-  auth_scheme: admin_session
-  capability: manage_group_ops
-  access_scope: global
-  pii_level: internal
-  csrf: true
-  rate_limit: authenticated
-  token_purpose: none
-- path: /api/admin/p1/group-ops-workspace/governance/{review_id}/bridge-push-center
-  methods:
-  - POST
-  route_name: api.admin_p1_group_ops_workspace_governance_bridge_push_center
-  capability_owner: automation_engine
-  runtime_owner: ai_crm_next
-  layer: api
-  external_effects: none
-  data_source: command
-  requires_auth: true
-  rollback: previous_release
-  audience: admin
-  auth_scheme: admin_session
-  capability: manage_group_ops
-  access_scope: global
-  pii_level: internal
-  csrf: true
-  rate_limit: authenticated
-  token_purpose: none
-- path: /api/admin/p1/group-ops-workspace/governance/{review_id}/push-center-bridge
-  methods:
-  - GET
-  route_name: api.admin_p1_group_ops_workspace_governance_push_center_bridge_detail
-  capability_owner: automation_engine
-  runtime_owner: ai_crm_next
-  layer: api
-  external_effects: none
-  data_source: read_model
-  requires_auth: true
-  rollback: previous_release
-  audience: admin
-  auth_scheme: admin_session
-  capability: admin_read
-  access_scope: global
-  pii_level: internal
-  csrf: false
-  rate_limit: authenticated
-  token_purpose: none
 - path: /admin/automation-conversion
   methods:
   - GET
@@ -7768,25 +7483,6 @@ routes:
   csrf: false
   rate_limit: authenticated
   token_purpose: none
-- path: /api/automation/group-ops/plans
-  methods:
-  - GET
-  route_name: list_group_ops_plans
-  capability_owner: automation_engine
-  runtime_owner: ai_crm_next
-  layer: api
-  external_effects: none
-  data_source: read_model
-  requires_auth: true
-  rollback: previous_release
-  audience: admin
-  auth_scheme: admin_session
-  capability: admin_read
-  access_scope: global
-  pii_level: none
-  csrf: false
-  rate_limit: authenticated
-  token_purpose: none
 - path: /api/admin/automation-conversion/group-ops/plans
   methods:
   - GET
@@ -7825,25 +7521,6 @@ routes:
   csrf: false
   rate_limit: authenticated
   token_purpose: none
-- path: /api/automation/group-ops/plans
-  methods:
-  - POST
-  route_name: create_group_ops_plan
-  capability_owner: automation_engine
-  runtime_owner: ai_crm_next
-  layer: api
-  external_effects: none
-  data_source: command
-  requires_auth: true
-  rollback: previous_release
-  audience: admin
-  auth_scheme: admin_session
-  capability: manage_group_ops
-  access_scope: global
-  pii_level: none
-  csrf: true
-  rate_limit: authenticated
-  token_purpose: none
 - path: /api/admin/automation-conversion/group-ops/plans
   methods:
   - POST
@@ -7863,25 +7540,6 @@ routes:
   csrf: true
   rate_limit: authenticated
   token_purpose: none
-- path: /api/automation/group-ops/plans/{plan_id}
-  methods:
-  - GET
-  route_name: get_group_ops_plan
-  capability_owner: automation_engine
-  runtime_owner: ai_crm_next
-  layer: api
-  external_effects: none
-  data_source: read_model
-  requires_auth: true
-  rollback: previous_release
-  audience: admin
-  auth_scheme: admin_session
-  capability: admin_read
-  access_scope: global
-  pii_level: none
-  csrf: false
-  rate_limit: authenticated
-  token_purpose: none
 - path: /api/admin/automation-conversion/group-ops/plans/{plan_id}
   methods:
   - GET
@@ -7901,44 +7559,6 @@ routes:
   csrf: false
   rate_limit: authenticated
   token_purpose: none
-- path: /api/automation/group-ops/plans/{plan_id}
-  methods:
-  - PUT
-  route_name: update_group_ops_plan
-  capability_owner: automation_engine
-  runtime_owner: ai_crm_next
-  layer: api
-  external_effects: none
-  data_source: command
-  requires_auth: true
-  rollback: previous_release
-  audience: admin
-  auth_scheme: admin_session
-  capability: manage_group_ops
-  access_scope: global
-  pii_level: none
-  csrf: true
-  rate_limit: authenticated
-  token_purpose: none
-- path: /api/automation/group-ops/plans/{plan_id}
-  methods:
-  - PATCH
-  route_name: update_group_ops_plan
-  capability_owner: automation_engine
-  runtime_owner: ai_crm_next
-  layer: api
-  external_effects: none
-  data_source: command
-  requires_auth: true
-  rollback: previous_release
-  audience: admin
-  auth_scheme: admin_session
-  capability: manage_group_ops
-  access_scope: global
-  pii_level: none
-  csrf: true
-  rate_limit: authenticated
-  token_purpose: none
 - path: /api/admin/automation-conversion/group-ops/plans/{plan_id}
   methods:
   - PUT
@@ -7955,25 +7575,6 @@ routes:
   capability: manage_group_ops
   access_scope: global
   pii_level: internal
-  csrf: true
-  rate_limit: authenticated
-  token_purpose: none
-- path: /api/automation/group-ops/plans/{plan_id}/enable
-  methods:
-  - POST
-  route_name: enable_group_ops_plan
-  capability_owner: automation_engine
-  runtime_owner: ai_crm_next
-  layer: api
-  external_effects: none
-  data_source: command
-  requires_auth: true
-  rollback: previous_release
-  audience: admin
-  auth_scheme: admin_session
-  capability: manage_group_ops
-  access_scope: global
-  pii_level: none
   csrf: true
   rate_limit: authenticated
   token_purpose: none
@@ -7996,25 +7597,6 @@ routes:
   csrf: true
   rate_limit: authenticated
   token_purpose: none
-- path: /api/automation/group-ops/plans/{plan_id}/disable
-  methods:
-  - POST
-  route_name: disable_group_ops_plan
-  capability_owner: automation_engine
-  runtime_owner: ai_crm_next
-  layer: api
-  external_effects: none
-  data_source: command
-  requires_auth: true
-  rollback: previous_release
-  audience: admin
-  auth_scheme: admin_session
-  capability: manage_group_ops
-  access_scope: global
-  pii_level: none
-  csrf: true
-  rate_limit: authenticated
-  token_purpose: none
 - path: /api/admin/automation-conversion/group-ops/plans/{plan_id}/disable
   methods:
   - POST
@@ -8031,25 +7613,6 @@ routes:
   capability: manage_group_ops
   access_scope: global
   pii_level: internal
-  csrf: true
-  rate_limit: authenticated
-  token_purpose: none
-- path: /api/automation/group-ops/plans/{plan_id}
-  methods:
-  - DELETE
-  route_name: archive_group_ops_plan
-  capability_owner: automation_engine
-  runtime_owner: ai_crm_next
-  layer: api
-  external_effects: none
-  data_source: command
-  requires_auth: true
-  rollback: previous_release
-  audience: admin
-  auth_scheme: admin_session
-  capability: manage_group_ops
-  access_scope: global
-  pii_level: none
   csrf: true
   rate_limit: authenticated
   token_purpose: none
@@ -8300,25 +7863,6 @@ routes:
   csrf: true
   rate_limit: authenticated
   token_purpose: none
-- path: /api/automation/group-ops/plans/{plan_id}/webhook
-  methods:
-  - GET
-  route_name: get_group_ops_webhook_config
-  capability_owner: automation_engine
-  runtime_owner: ai_crm_next
-  layer: webhook
-  external_effects: none
-  data_source: read_model
-  requires_auth: true
-  rollback: previous_release
-  audience: admin
-  auth_scheme: admin_session
-  capability: admin_read
-  access_scope: global
-  pii_level: none
-  csrf: false
-  rate_limit: authenticated
-  token_purpose: none
 - path: /api/admin/automation-conversion/group-ops/plans/{plan_id}/webhook
   methods:
   - GET
@@ -8336,25 +7880,6 @@ routes:
   access_scope: global
   pii_level: internal
   csrf: false
-  rate_limit: authenticated
-  token_purpose: none
-- path: /api/automation/group-ops/plans/{plan_id}/webhook/reset-token
-  methods:
-  - POST
-  route_name: regenerate_group_ops_webhook
-  capability_owner: automation_engine
-  runtime_owner: ai_crm_next
-  layer: webhook
-  external_effects: none
-  data_source: command
-  requires_auth: true
-  rollback: previous_release
-  audience: admin
-  auth_scheme: admin_session
-  capability: manage_group_ops
-  access_scope: global
-  pii_level: none
-  csrf: true
   rate_limit: authenticated
   token_purpose: none
 - path: /api/admin/automation-conversion/group-ops/plans/{plan_id}/webhook/regenerate
@@ -8376,7 +7901,7 @@ routes:
   csrf: true
   rate_limit: authenticated
   token_purpose: none
-- path: /api/automation/group-ops/plans/{plan_id}/members
+- path: /api/admin/automation-conversion/group-ops/plans/{plan_id}/members
   methods:
   - GET
   route_name: list_group_ops_members
@@ -8391,11 +7916,11 @@ routes:
   auth_scheme: admin_session
   capability: admin_read
   access_scope: global
-  pii_level: none
+  pii_level: internal
   csrf: false
   rate_limit: authenticated
   token_purpose: none
-- path: /api/automation/group-ops/plans/{plan_id}/members/import
+- path: /api/admin/automation-conversion/group-ops/plans/{plan_id}/members/import
   methods:
   - POST
   route_name: import_group_ops_members
@@ -8410,11 +7935,11 @@ routes:
   auth_scheme: admin_session
   capability: manage_group_ops
   access_scope: global
-  pii_level: none
+  pii_level: internal
   csrf: true
   rate_limit: authenticated
   token_purpose: none
-- path: /api/automation/group-ops/plans/{plan_id}/members/refresh-from-groups
+- path: /api/admin/automation-conversion/group-ops/plans/{plan_id}/members/refresh-from-groups
   methods:
   - POST
   route_name: refresh_group_ops_members_from_groups
@@ -8429,11 +7954,11 @@ routes:
   auth_scheme: admin_session
   capability: manage_group_ops
   access_scope: global
-  pii_level: none
+  pii_level: internal
   csrf: true
   rate_limit: authenticated
   token_purpose: none
-- path: /api/automation/group-ops/audience-rules
+- path: /api/admin/automation-conversion/group-ops/audience-rules
   methods:
   - GET
   route_name: list_audience_rules
@@ -8448,11 +7973,11 @@ routes:
   auth_scheme: admin_session
   capability: admin_read
   access_scope: global
-  pii_level: none
+  pii_level: internal
   csrf: false
   rate_limit: authenticated
   token_purpose: none
-- path: /api/automation/group-ops/audience-rules
+- path: /api/admin/automation-conversion/group-ops/audience-rules
   methods:
   - POST
   route_name: create_audience_rule
@@ -8467,11 +7992,11 @@ routes:
   auth_scheme: admin_session
   capability: manage_group_ops
   access_scope: global
-  pii_level: none
+  pii_level: internal
   csrf: true
   rate_limit: authenticated
   token_purpose: none
-- path: /api/automation/group-ops/audience-rules/{rule_key}/versions
+- path: /api/admin/automation-conversion/group-ops/audience-rules/{rule_key}/versions
   methods:
   - POST
   route_name: create_audience_rule_version
@@ -8486,11 +8011,11 @@ routes:
   auth_scheme: admin_session
   capability: manage_group_ops
   access_scope: global
-  pii_level: none
+  pii_level: internal
   csrf: true
   rate_limit: authenticated
   token_purpose: none
-- path: /api/automation/group-ops/audience-rules/{rule_key}/preview
+- path: /api/admin/automation-conversion/group-ops/audience-rules/{rule_key}/preview
   methods:
   - POST
   route_name: preview_audience_rule
@@ -8505,11 +8030,11 @@ routes:
   auth_scheme: admin_session
   capability: manage_group_ops
   access_scope: global
-  pii_level: none
+  pii_level: internal
   csrf: true
   rate_limit: authenticated
   token_purpose: none
-- path: /api/automation/group-ops/audience-rules/{rule_key}/refresh
+- path: /api/admin/automation-conversion/group-ops/audience-rules/{rule_key}/refresh
   methods:
   - POST
   route_name: refresh_audience_rule
@@ -8524,11 +8049,11 @@ routes:
   auth_scheme: admin_session
   capability: manage_group_ops
   access_scope: global
-  pii_level: none
+  pii_level: internal
   csrf: true
   rate_limit: authenticated
   token_purpose: none
-- path: /api/automation/group-ops/audience-rules/{rule_key}/results
+- path: /api/admin/automation-conversion/group-ops/audience-rules/{rule_key}/results
   methods:
   - GET
   route_name: get_audience_rule_results
@@ -8543,11 +8068,11 @@ routes:
   auth_scheme: admin_session
   capability: admin_read
   access_scope: global
-  pii_level: none
+  pii_level: internal
   csrf: false
   rate_limit: authenticated
   token_purpose: none
-- path: /api/automation/group-ops/plans/{plan_id}/segmentation
+- path: /api/admin/automation-conversion/group-ops/plans/{plan_id}/segmentation
   methods:
   - PUT
   route_name: save_group_ops_segmentation
@@ -8562,11 +8087,11 @@ routes:
   auth_scheme: admin_session
   capability: manage_group_ops
   access_scope: global
-  pii_level: none
+  pii_level: internal
   csrf: true
   rate_limit: authenticated
   token_purpose: none
-- path: /api/automation/group-ops/plans/{plan_id}/segmentation/preview
+- path: /api/admin/automation-conversion/group-ops/plans/{plan_id}/segmentation/preview
   methods:
   - POST
   route_name: preview_group_ops_segmentation
@@ -8581,11 +8106,11 @@ routes:
   auth_scheme: admin_session
   capability: manage_group_ops
   access_scope: global
-  pii_level: none
+  pii_level: internal
   csrf: true
   rate_limit: authenticated
   token_purpose: none
-- path: /api/automation/group-ops/plans/{plan_id}/executions
+- path: /api/admin/automation-conversion/group-ops/plans/{plan_id}/executions
   methods:
   - GET
   route_name: list_group_ops_executions
@@ -8600,7 +8125,7 @@ routes:
   auth_scheme: admin_session
   capability: admin_read
   access_scope: global
-  pii_level: none
+  pii_level: internal
   csrf: false
   rate_limit: authenticated
   token_purpose: none
