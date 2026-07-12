@@ -614,7 +614,7 @@ def test_questionnaire_and_wechat_pay_facts_drop_legacy_identity_columns() -> No
 
 def test_customer_fact_read_sources_drop_legacy_identity_columns() -> None:
     cleanup_source = _read("migrations/versions/0068_unionid_customer_fact_cleanup.py")
-    customer_repo_source = _read("aicrm_next/customer_read_model/repo.py")
+    customer_repo_source = _read("aicrm_next/customer_read_model/repo_live_source.py")
     message_archive_source = _read("aicrm_next/message_archive/repo.py")
     channel_entry_repo_source = _read("aicrm_next/channel_entry/repo.py")
 
