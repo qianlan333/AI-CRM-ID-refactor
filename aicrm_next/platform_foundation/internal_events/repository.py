@@ -245,8 +245,8 @@ def read_wechat_pay_order_for_payment_event(*, lookup: str, aggregate_id: str) -
                 row = conn.execute("SELECT * FROM wechat_pay_orders WHERE id::text = %s OR out_trade_no = %s LIMIT 1", (aggregate_id, aggregate_id)).fetchone()
                 if row:
                     return dict(row)
-    except Exception:
-        return {}
+    except Exception as exc:
+        raise RuntimeError("authoritative payment order read failed") from exc
     return {}
 
 
@@ -257,26 +257,23 @@ def plan_order_paid_external_push_effect_from_db(
     domain_event_outbox_id: Any,
 ) -> dict[str, Any] | None:
     if not production_data_ready():
-        return None
-    try:
-        import psycopg
-        from psycopg.rows import dict_row
+        raise RuntimeError("production database is required for order-paid external push planning")
+    import psycopg
+    from psycopg.rows import dict_row
 
-        from aicrm_next.commerce.external_push_admin import plan_order_paid_external_push_effect
+    from aicrm_next.commerce.external_push_admin import plan_order_paid_external_push_effect
 
-        with psycopg.connect(raw_database_url(), row_factory=dict_row) as conn:
-            result = plan_order_paid_external_push_effect(
-                conn,
-                order=order,
-                transaction=transaction,
-                outbox={"id": domain_event_outbox_id},
-                source_module="platform_foundation.internal_events.payment",
-                source_route="/internal-events/payment.succeeded/webhook_order_paid_consumer",
-            )
-            conn.commit()
-            return result
-    except Exception:
-        return None
+    with psycopg.connect(raw_database_url(), row_factory=dict_row) as conn:
+        result = plan_order_paid_external_push_effect(
+            conn,
+            order=order,
+            transaction=transaction,
+            outbox={"id": domain_event_outbox_id},
+            source_module="platform_foundation.internal_events.payment",
+            source_route="/internal-events/payment.succeeded/webhook_order_paid_consumer",
+        )
+        conn.commit()
+        return result
 
 
 class InternalEventRepository:

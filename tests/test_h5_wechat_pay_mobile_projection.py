@@ -126,7 +126,7 @@ def test_project_order_mobile_to_identity_does_not_overwrite_conflicting_mobile(
     }
 
 
-def test_apply_transaction_runs_mobile_projection_before_order_side_effects(monkeypatch) -> None:
+def test_apply_transaction_runs_mobile_projection_before_canonical_internal_event(monkeypatch) -> None:
     calls: list[str] = []
 
     class Conn:
@@ -153,18 +153,8 @@ def test_apply_transaction_runs_mobile_projection_before_order_side_effects(monk
     )
     monkeypatch.setattr(
         h5_wechat_pay,
-        "enqueue_transaction_paid_outbox",
-        lambda conn, order: calls.append("outbox") or {"id": 1},
-    )
-    monkeypatch.setattr(
-        h5_wechat_pay,
         "_enqueue_payment_succeeded_internal_event_outbox",
         lambda conn, **kwargs: calls.append("event_outbox"),
-    )
-    monkeypatch.setattr(
-        h5_wechat_pay,
-        "_plan_order_paid_external_effect_job",
-        lambda conn, *, order, transaction, outbox: calls.append("external_effect"),
     )
 
     order = h5_wechat_pay._apply_transaction(
@@ -178,7 +168,7 @@ def test_apply_transaction_runs_mobile_projection_before_order_side_effects(monk
     )
 
     assert order["status"] == "paid"
-    assert calls == ["project", "outbox", "event_outbox", "external_effect"]
+    assert calls == ["project", "event_outbox"]
 
 
 def test_order_read_models_fallback_to_metadata_mobile_for_historical_orders() -> None:

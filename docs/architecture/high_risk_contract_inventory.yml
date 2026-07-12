@@ -28,23 +28,23 @@
     {
       "domain": "payment",
       "owner": "commerce/platform_foundation",
-      "ci_scope": "ci_deploy",
+      "ci_scope": "commerce_fulfillment_reliability",
       "real_external_call_expected": false,
       "contracts": {
-        "success": "tests/test_internal_events_payment_slice.py::test_payment_success_emits_payment_succeeded_and_duplicate_notify_is_idempotent",
-        "failure": "tests/test_internal_events_payment_slice.py::test_webhook_order_paid_consumer_skips_when_no_configured_job_or_production_config",
+        "success": "tests/test_r08_commerce_fulfillment_postgres.py::test_payment_state_and_unique_outbox_share_one_postgres_transaction",
+        "failure": "tests/test_r08_commerce_fulfillment_postgres.py::test_external_push_delivery_and_effect_job_are_atomic_and_idempotent",
         "replay_or_concurrency": "tests/test_internal_events_single_consumer_run.py::test_repeated_webhook_single_consumer_does_not_duplicate_external_effect_job"
       }
     },
     {
       "domain": "refund_entitlement",
       "owner": "commerce/service_period",
-      "ci_scope": "commerce",
+      "ci_scope": "commerce_fulfillment_reliability",
       "real_external_call_expected": false,
       "contracts": {
-        "success": "tests/test_next_wechat_pay_refunds.py::test_next_postgres_refund_result_updates_order_once",
-        "failure": "tests/test_next_wechat_pay_refunds.py::test_next_postgres_refund_does_not_call_wechat_pay_when_client_would_reject",
-        "replay_or_concurrency": "tests/test_next_wechat_pay_refunds.py::test_next_postgres_refund_result_is_idempotent_when_already_success"
+        "success": "tests/test_r08_commerce_fulfillment_postgres.py::test_entitlement_recovers_after_unionid_backfill_and_refund_retry_is_idempotent",
+        "failure": "tests/test_r08_commerce_fulfillment_postgres.py::test_refund_success_and_outbox_are_atomic_and_duplicate_notify_does_not_double_count",
+        "replay_or_concurrency": "tests/test_r08_commerce_fulfillment_postgres.py::test_refund_request_rolls_back_on_effect_fault_and_concurrent_requests_cannot_overspend"
       }
     },
     {

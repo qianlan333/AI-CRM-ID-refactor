@@ -150,15 +150,28 @@ def _reset_state() -> None:
     reset_external_effect_fixture_state()
 
 
-def _patch_legacy_outbox(monkeypatch, outbox_id: int = 9001) -> list[dict]:
-    calls: list[dict] = []
+def _patch_canonical_external_push_planner(monkeypatch, *, configured: bool = True) -> None:
+    def fake_plan(*, order, transaction, domain_event_outbox_id):
+        del transaction, domain_event_outbox_id
+        if not configured:
+            return {"ok": True, "skipped": True, "reason": "external_push_config_unavailable"}
+        job = ExternalEffectService().plan_effect(
+            effect_type=WEBHOOK_ORDER_PAID_PUSH,
+            adapter_name="webhook",
+            operation="order_paid_push",
+            target_type="external_push_delivery",
+            target_id="deliv_internal_payment",
+            business_type="commerce_order",
+            business_id=str(order["id"]),
+            payload={"webhook_url": "https://example.com/order-paid"},
+            idempotency_key="commerce-external-push:deliv_internal_payment",
+        )
+        return {"ok": True, "external_effect_job_id": job["id"]}
 
-    def fake_enqueue(conn, order):
-        calls.append(dict(order))
-        return {"id": outbox_id, "event_type": "transaction.paid"}
-
-    monkeypatch.setattr(h5_wechat_pay, "enqueue_transaction_paid_outbox", fake_enqueue)
-    return calls
+    monkeypatch.setattr(
+        "aicrm_next.platform_foundation.internal_events.payment.plan_order_paid_external_push_effect_from_db",
+        fake_plan,
+    )
 
 
 def _delete_order_paid_external_effect_jobs(business_id: str) -> None:
@@ -169,7 +182,6 @@ def _delete_order_paid_external_effect_jobs(business_id: str) -> None:
 def test_payment_success_emits_payment_succeeded_and_duplicate_notify_is_idempotent(monkeypatch) -> None:
     _reset_state()
     _enable_payment_events(monkeypatch)
-    _patch_legacy_outbox(monkeypatch)
 
     conn = _PaymentConn()
     first = _apply_and_relay(conn, _transaction())
@@ -215,38 +227,36 @@ def test_payment_success_emits_payment_succeeded_and_duplicate_notify_is_idempot
 def test_webhook_order_paid_consumer_creates_external_effect_job_without_external_call(monkeypatch) -> None:
     _reset_state()
     _enable_payment_events(monkeypatch)
-    _patch_legacy_outbox(monkeypatch)
+    _patch_canonical_external_push_planner(monkeypatch)
     conn = _PaymentConn()
     _apply_and_relay(conn, _transaction())
     event = InternalEventService().list_events({"event_type": PAYMENT_SUCCEEDED_EVENT_TYPE})[0][0]
-    legacy_jobs, legacy_total = ExternalEffectService().list_jobs({"effect_type": WEBHOOK_ORDER_PAID_PUSH, "business_id": "77"})
-    legacy_job = legacy_jobs[0]
+    jobs_before, total_before = ExternalEffectService().list_jobs({"effect_type": WEBHOOK_ORDER_PAID_PUSH, "business_id": "77"})
 
     result = InternalEventWorker().run_due(batch_size=1, dry_run=False, consumer_names=["webhook_order_paid_consumer"])
     jobs, total = ExternalEffectService().list_jobs({"effect_type": WEBHOOK_ORDER_PAID_PUSH, "business_id": "77"})
-    attempts = ExternalEffectService().list_attempts(legacy_job.id)
+    attempts = ExternalEffectService().list_attempts(jobs[0].id)
     response_summary = result["items"][0]["attempt"]["response_summary_json"]
 
-    assert legacy_total == 1
+    assert jobs_before == []
+    assert total_before == 0
     assert result["counts"]["succeeded_count"] == 1
     assert result["real_external_call_executed"] is False
     assert total == 1
-    assert jobs[0].id == legacy_job.id
     assert jobs[0].idempotency_key.startswith("commerce-external-push:")
     assert jobs[0].execution_mode == "execute"
     assert jobs[0].status == "queued"
     assert jobs[0].payload_json["webhook_url"] == "https://example.com/order-paid"
     assert attempts == []
-    assert response_summary["external_effect_job_reused"] is True
-    assert response_summary["external_effect_job_created"] is False
-    assert response_summary["external_effect_job_id"] == legacy_job.id
+    assert response_summary["external_effect_job_reused"] is False
+    assert response_summary["external_effect_job_created"] is True
+    assert response_summary["external_effect_job_id"] == jobs[0].id
     assert event.event_id
 
 
 def test_retired_automation_payment_consumer_is_not_registered(monkeypatch) -> None:
     _reset_state()
     _enable_payment_events(monkeypatch)
-    _patch_legacy_outbox(monkeypatch)
     _apply_and_relay(_PaymentConn(), _transaction())
     event = InternalEventService().list_events({"event_type": PAYMENT_SUCCEEDED_EVENT_TYPE})[0][0]
 
@@ -263,7 +273,7 @@ def test_retired_automation_payment_consumer_is_not_registered(monkeypatch) -> N
 def test_webhook_order_paid_consumer_skips_when_no_configured_job_or_production_config(monkeypatch) -> None:
     _reset_state()
     _enable_payment_events(monkeypatch)
-    _patch_legacy_outbox(monkeypatch)
+    _patch_canonical_external_push_planner(monkeypatch, configured=False)
     _apply_and_relay(_PaymentConn(), _transaction())
     reset_external_effect_fixture_state()
     _delete_order_paid_external_effect_jobs("WXP_INTERNAL_PAYMENT")
@@ -284,7 +294,6 @@ def test_webhook_order_paid_consumer_skips_when_no_configured_job_or_production_
 def test_dnd_consumer_is_skipped_with_visible_reason(monkeypatch) -> None:
     _reset_state()
     _enable_payment_events(monkeypatch)
-    _patch_legacy_outbox(monkeypatch)
     _apply_and_relay(_PaymentConn(), _transaction())
     event = InternalEventService().list_events({"event_type": PAYMENT_SUCCEEDED_EVENT_TYPE})[0][0]
 
@@ -302,7 +311,6 @@ def test_dnd_consumer_is_skipped_with_visible_reason(monkeypatch) -> None:
 def test_retired_automation_consumer_absence_does_not_affect_payment_apply_result(monkeypatch) -> None:
     _reset_state()
     _enable_payment_events(monkeypatch)
-    _patch_legacy_outbox(monkeypatch)
 
     order = _apply_and_relay(_PaymentConn(), _transaction())
     event = InternalEventService().list_events({"event_type": PAYMENT_SUCCEEDED_EVENT_TYPE})[0][0]

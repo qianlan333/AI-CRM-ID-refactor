@@ -25,6 +25,9 @@ def test_runtime_units_manifest_classifies_every_deploy_timer() -> None:
     assert approval_required.isdisjoint(retired_forbidden)
     assert "aicrm-archive-sync.timer" in approval_required
     assert "openclaw-external-effect-worker.timer" in active
+    assert "openclaw-external-push-worker.timer" in retired_forbidden
+    assert "openclaw-external-push-worker.service" in retired_forbidden
+    assert "openclaw-external-push-worker.timer" not in deploy_timers
     assert "openclaw-wecom-callback-inbox-worker.timer" in retired_forbidden
     assert "openclaw-wecom-callback-inbox-worker.timer" not in deploy_timers
     assert "aicrm-automation-jobs-run-due.timer" in retired_forbidden
@@ -50,6 +53,8 @@ def test_runtime_units_install_dry_run_copies_and_enables_only_active_units(caps
     assert "sudo systemctl enable openclaw-wecom-callback-inbox-worker.service" in output
     assert "sudo systemctl restart openclaw-wecom-callback-inbox-worker.service" in output
     assert "sudo systemctl disable --now openclaw-wecom-callback-inbox-worker.timer" in output
+    assert "sudo systemctl disable --now openclaw-external-push-worker.timer" in output
+    assert "sudo systemctl disable --now openclaw-external-push-worker.service" in output
 
 
 def test_runtime_units_stop_and_verify_dry_runs_are_manifest_driven(capsys) -> None:
@@ -68,4 +73,6 @@ def test_runtime_units_stop_and_verify_dry_runs_are_manifest_driven(capsys) -> N
     assert "sudo systemctl is-active openclaw-wecom-callback-ingress.service" in verify_output
     assert "sudo systemctl is-active openclaw-wecom-callback-inbox-worker.service" in verify_output
     assert "sudo systemctl is-active openclaw-wecom-callback-inbox-worker.timer" in verify_output
+    assert "sudo systemctl is-active openclaw-external-push-worker.timer" in verify_output
+    assert "sudo systemctl is-active openclaw-external-push-worker.service" in verify_output
     assert "approval_required_timers=aicrm-archive-sync.timer" in verify_output

@@ -192,7 +192,9 @@ def build_plan(args: argparse.Namespace) -> dict[str, Any]:
         f"cd {remote_repo}",
         source_venv,
         source_env,
-        "sudo systemctl stop openclaw-external-push-worker.service || true",
+        "sudo systemctl disable --now openclaw-external-push-worker.timer || true",
+        "sudo systemctl disable --now openclaw-external-push-worker.service || true",
+        "systemctl is-active openclaw-external-push-worker.timer || true",
         "systemctl is-active openclaw-external-push-worker.service || true",
         "set -o pipefail; python scripts/ops/probe_wecom_callback_pressure.py "
         "--callback-url \"$(cat /tmp/wecom-callback-sample.url)\" "
@@ -204,7 +206,6 @@ def build_plan(args: argparse.Namespace) -> dict[str, Any]:
         "--callback-target-p95-ms 200 "
         "--callback-target-p99-ms 500 "
         "| tee /tmp/wecom-callback-downstream-worker-isolation.json",
-        "sudo systemctl start openclaw-external-push-worker.service || true",
     ]
     internal_event_worker_isolation_canary = [
         f"cd {remote_repo}",

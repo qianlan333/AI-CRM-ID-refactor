@@ -300,6 +300,10 @@ def test_webhook_payment_consumer_skips_without_configured_external_effect(monke
     reset_internal_event_fixture_state()
     reset_external_effect_fixture_state()
     _enable_auto_execute(monkeypatch, consumers=["webhook_order_paid_consumer"])
+    monkeypatch.setattr(
+        "aicrm_next.platform_foundation.internal_events.payment.plan_order_paid_external_push_effect_from_db",
+        lambda **kwargs: {"ok": True, "skipped": True, "reason": "external_push_config_unavailable"},
+    )
     service, repo, registry = _payment_service()
     _emit_payment(service)
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ast
+import json
 from pathlib import Path
 
 
@@ -271,14 +272,14 @@ def test_production_deploy_polls_health_after_restart_instead_of_fixed_sleep():
     assert "sleep 3" not in workflow
 
 
-def test_production_deploy_installs_and_runs_external_push_worker_timer():
-    workflow = (ROOT / ".github" / "workflows" / "deploy.yml").read_text(encoding="utf-8")
+def test_production_deploy_retires_legacy_external_push_worker():
+    manifest = json.loads((ROOT / "deploy" / "production_runtime_units.json").read_text(encoding="utf-8"))
+    active_timers = {item["timer"] for item in manifest["active_autostart"]}
+    retired = set(manifest["retired_forbidden"])
 
-    health_index = workflow.index("curl -sSf -D /tmp/aicrm_health_headers.txt http://127.0.0.1:5001/health", workflow.index("for _ in $(seq 1 60); do"))
-    install_index = workflow.index(_runtime_units_phase("install-enable-after-web-health"))
-    verify_index = workflow.index(_runtime_units_phase("verify"))
-
-    assert health_index < install_index < verify_index
+    assert "openclaw-external-push-worker.timer" not in active_timers
+    assert "openclaw-external-push-worker.timer" in retired
+    assert "openclaw-external-push-worker.service" in retired
 
 
 def test_production_deploy_installs_external_effect_queue_worker_timer_without_manual_execute():
@@ -316,18 +317,20 @@ def test_production_deploy_installs_and_runs_internal_event_worker_timer():
     assert "python scripts/ops/reconcile_internal_event_outbox.py --repair" not in workflow
 
 
-def test_external_push_worker_systemd_units_are_deployable():
-    service = (ROOT / "deploy" / "openclaw-external-push-worker.service").read_text(encoding="utf-8")
-    timer = (ROOT / "deploy" / "openclaw-external-push-worker.timer").read_text(encoding="utf-8")
+def test_production_deploy_runs_commerce_fulfillment_reconciliation_count_only():
+    workflow = (ROOT / ".github" / "workflows" / "deploy.yml").read_text(encoding="utf-8")
 
-    assert "After=network.target openclaw-wecom-postgres.service" in service
-    assert "Requires=openclaw-wecom-postgres.service" in service
-    assert "EnvironmentFile=/home/ubuntu/.openclaw-wecom-pg.env" in service
-    assert "WorkingDirectory=/home/ubuntu/极简 crm" in service
-    assert "python scripts/run_external_push_worker.py" in service
-    assert "OnCalendar=*-*-* *:*:20" in timer
-    assert "Persistent=true" in timer
-    assert "Unit=openclaw-external-push-worker.service" in timer
+    verify_index = workflow.index(_runtime_units_phase("verify"))
+    internal_event_index = workflow.index("python scripts/ops/reconcile_internal_event_outbox.py")
+    commerce_index = workflow.index("python scripts/ops/reconcile_commerce_fulfillment.py")
+
+    assert verify_index < internal_event_index < commerce_index
+    assert "python scripts/ops/reconcile_commerce_fulfillment.py --repair" not in workflow
+
+
+def test_external_push_worker_systemd_units_are_not_deployable():
+    assert not (ROOT / "deploy" / "openclaw-external-push-worker.service").exists()
+    assert not (ROOT / "deploy" / "openclaw-external-push-worker.timer").exists()
 
 
 def test_external_effect_queue_worker_systemd_units_are_deployable():
@@ -604,6 +607,9 @@ def test_due_runner_scripts_share_int_env_reader():
 
     assert not (ROOT / "scripts" / "run_automation_sop.py").exists()
     assert 'read_int_env("EXTERNAL_PUSH_WORKER_BATCH_SIZE", DEFAULT_BATCH_SIZE)' in external_push_worker
+    assert "CommerceFulfillmentReconciliationService().diagnose()" in external_push_worker
+    assert "run_due_external_push_events" not in external_push_worker
+    assert "run_due_external_push_retries" not in external_push_worker
     assert 'read_int_env("AICRM_INTERNAL_EVENT_WORKER_BATCH_SIZE", DEFAULT_WORKER_BATCH_SIZE)' in internal_event_worker
     assert "register_payment_succeeded_consumers()" in internal_event_worker
     assert "register_shadow_event_consumers()" in internal_event_worker

@@ -1049,7 +1049,7 @@
       "accessor": "os.getenv",
       "file": "aicrm_next/commerce/admin_transactions.py",
       "key": "DATABASE_URL",
-      "line": 83
+      "line": 85
     },
     {
       "accessor": "os.getenv",
@@ -1469,7 +1469,7 @@
       "accessor": "os.getenv",
       "file": "aicrm_next/commerce/admin_transactions.py",
       "key": "WECHAT_PAY_REFUND_NOTIFY_URL",
-      "line": 521
+      "line": 568
     },
     {
       "accessor": "os.getenv",
@@ -2613,6 +2613,13 @@
       "max_attempts": 5
     },
     {
+      "consumer_name": "service_period_refund_consumer",
+      "consumer_type": "projection",
+      "event_type": "refund.succeeded",
+      "handler_registered": true,
+      "max_attempts": 5
+    },
+    {
       "consumer_name": "ai_assist_notify_consumer",
       "consumer_type": "orchestration",
       "event_type": "transaction.paid",
@@ -2663,7 +2670,7 @@
     }
   ],
   "migration_heads": [
-    "0100_external_effect_delivery_lease"
+    "0101_commerce_fulfillment_invariants"
   ],
   "openapi_components": {
     "schemas": {
@@ -41542,11 +41549,13 @@
       "unit": "openclaw-external-effect-worker.timer"
     },
     {
-      "kick_after_timer_restart": true,
-      "kick_failure_fatal": true,
       "kind": "timer",
-      "service": "openclaw-external-push-worker.service",
-      "state": "active_autostart",
+      "state": "retired_forbidden",
+      "unit": "openclaw-external-push-worker.service"
+    },
+    {
+      "kind": "timer",
+      "state": "retired_forbidden",
       "unit": "openclaw-external-push-worker.timer"
     },
     {
@@ -42873,7 +42882,7 @@
       "domain": "external_effects",
       "drop_candidate": false,
       "lifecycle": "queue",
-      "migration_source": "0039_external_effect_queue, hardened by 0100_external_effect_delivery_lease",
+      "migration_source": "0039_external_effect_queue, hardened by 0100_external_effect_delivery_lease and R08 transactional producers",
       "pii_level": "internal_contact",
       "read_owners": [
         "admin external effect APIs",
@@ -43104,6 +43113,7 @@
       "migration_source": "0099_internal_event_outbox_and_consumer_lease",
       "pii_level": "restricted_business_payload",
       "read_owners": [
+        "aicrm_next.commerce.fulfillment_reconciliation",
         "aicrm_next.platform_foundation.internal_events.reconciliation",
         "aicrm_next.platform_foundation.internal_events.worker"
       ],
@@ -43442,6 +43452,7 @@
       "migration_source": "0097_service_period_unionid_cleanup",
       "pii_level": "direct_contact",
       "read_owners": [
+        "aicrm_next.commerce.fulfillment_reconciliation",
         "aicrm_next.customer_read_model.sidebar_v2",
         "aicrm_next.service_period"
       ],
@@ -43455,6 +43466,7 @@
       "migration_source": "0095_service_period_products",
       "pii_level": "direct_contact",
       "read_owners": [
+        "aicrm_next.commerce.fulfillment_reconciliation",
         "aicrm_next.service_period"
       ],
       "table": "service_period_events",
@@ -43468,6 +43480,7 @@
       "pii_level": "internal_contact",
       "read_owners": [
         "aicrm_next.commerce",
+        "aicrm_next.commerce.fulfillment_reconciliation",
         "aicrm_next.customer_read_model.sidebar_v2",
         "aicrm_next.service_period"
       ],
@@ -43675,6 +43688,7 @@
       "pii_level": "internal_contact",
       "read_owners": [
         "aicrm_next.admin_read_model",
+        "aicrm_next.commerce.fulfillment_reconciliation",
         "aicrm_next.customer_read_model",
         "aicrm_next.external_push",
         "aicrm_next.platform_foundation.internal_events",
@@ -43713,9 +43727,10 @@
       "domain": "commerce",
       "drop_candidate": false,
       "lifecycle": "canonical",
-      "migration_source": "pre-Alembic baseline, registered by 0083 schema drift closeout",
+      "migration_source": "pre-Alembic baseline, registered by 0083 schema drift closeout; idempotency indexes added by 0101_commerce_fulfillment_invariants",
       "pii_level": "internal_contact",
       "read_owners": [
+        "aicrm_next.commerce.fulfillment_reconciliation",
         "historical schema drift guard"
       ],
       "table": "wechat_pay_refunds",

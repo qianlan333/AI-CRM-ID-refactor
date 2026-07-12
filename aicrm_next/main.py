@@ -15,7 +15,11 @@ from .automation_engine.repo import reset_automation_fixture_state
 from .commerce.repo import reset_commerce_fixture_state
 from .media_library.repo import reset_media_library_fixture_state
 from .ops_enrollment.application import reset_user_ops_fixture_state
-from .platform_foundation.internal_events import register_payment_succeeded_consumers, register_shadow_event_consumers
+from .platform_foundation.internal_events import (
+    register_payment_succeeded_consumers,
+    register_refund_succeeded_consumers,
+    register_shadow_event_consumers,
+)
 from .questionnaire.repo import reset_questionnaire_fixture_state
 from .radar_links.repo import reset_radar_links_fixture_state
 from .router_registry import register_routers
@@ -49,6 +53,7 @@ def create_app(*, pii_audit_repository: PiiAuditRepository | None = None) -> Fas
     assert_required_runtime_secrets()
     app = FastAPI(title="AI-CRM Next", version="0.1.0")
     register_payment_succeeded_consumers()
+    register_refund_succeeded_consumers()
     register_shadow_event_consumers()
     register_ai_audience_event_consumers()
 

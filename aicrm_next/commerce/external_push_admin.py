@@ -11,13 +11,11 @@ from aicrm_next.external_push.service import (
     build_external_push_payload as _build_external_push_payload,
     redact_sensitive_fields as _redact_sensitive_fields,
     sign_webhook_payload as _sign_webhook_payload,
-    truncate_body as _truncate_body,
 )
 from aicrm_next.platform_foundation.command_bus import CommandContext
 from aicrm_next.platform_foundation.external_effects import ExternalEffectService, WEBHOOK_GENERIC_PUSH, WEBHOOK_ORDER_PAID_PUSH
 from aicrm_next.platform_foundation.legacy_cleanup.service import LegacyWebhookCleanupService
 from aicrm_next.shared.runtime import production_data_ready
-from aicrm_next.shared.sensitive_data import redact_sensitive_text
 
 from .external_push_outbox import DEFAULT_TENANT_ID, EVENT_TRANSACTION_PAID, resolve_product_for_order as _resolve_product_for_order
 from .repo import connect_commerce_db
@@ -390,13 +388,14 @@ def plan_order_paid_external_push_effect(
     if not webhook_url:
         return {"ok": True, "queued": False, "skipped": True, "reason": "external_push_webhook_url_missing", "config_id": config.get("id")}
     delivery = _create_order_delivery_once(conn, config=config, order=order_payload, product=product, request_url=webhook_url)
-    if int(delivery.get("attempt_count") or 0) > 0:
+    existing_job_id = _extract_external_effect_job_id(delivery)
+    if existing_job_id:
         return {
             "ok": True,
             "queued": True,
             "deduped": True,
             "delivery": _public_delivery(delivery),
-            "external_effect_job_id": _extract_external_effect_job_id(delivery),
+            "external_effect_job_id": existing_job_id,
             "real_external_call_executed": False,
         }
     payload = _build_external_push_payload(
@@ -479,9 +478,10 @@ def _attempt_delivery(
             source_module=source_module,
             source_event_id=delivery_id,
             source_command_id=delivery_id,
-            idempotency_key=f"commerce-external-push:{delivery_id}:{next_attempt}",
+            idempotency_key=f"commerce-external-push:{delivery_id}",
             execution_mode="execute",
             status="queued",
+            connection=conn,
         )
         updated = _update_delivery_result(
             conn,
@@ -504,21 +504,11 @@ def _attempt_delivery(
             "real_external_call_executed": False,
             "reason": "queued_external_effect_job",
         }
-    except Exception as exc:
-        updated = _update_delivery_result(
-            conn,
-            delivery_id,
-            status="gave_up",
-            attempt_count=next_attempt,
-            request_url=request_url,
-            request_headers=_redact_sensitive_fields(headers),
-            request_body=_redact_sensitive_fields(payload),
-            response_status=None,
-            response_body="",
-            error_message=_truncate_body(redact_sensitive_text(exc), 1000),
-            next_retry_at="",
-        )
-        return {"ok": False, "delivery": _public_delivery(updated), "reason": redact_sensitive_text(exc)}
+    except Exception:
+        # The caller owns the transaction. Raising rolls back both the delivery
+        # projection and the External Effect job, so a consumer retry starts
+        # from a clean durability boundary.
+        raise
 
 
 def list_order_external_push_state(order_id: int) -> dict[str, Any]:

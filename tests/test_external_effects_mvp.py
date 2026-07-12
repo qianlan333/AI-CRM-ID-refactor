@@ -30,7 +30,6 @@ from aicrm_next.platform_foundation.external_effects.repo import InMemoryExterna
 from aicrm_next.platform_foundation.external_effects.retry_policy import classify_error_code, retry_delay_seconds
 from aicrm_next.platform_foundation.external_effects.worker import ExternalEffectWorker
 from aicrm_next.platform_foundation.external_effects.adapters import DEFAULT_ADAPTER_REGISTRY, ExternalEffectAdapterRegistry, WeChatPaymentAdapter, WeComContactTagAdapter, WeComProfileUpdateAdapter, WebhookAdapter
-from aicrm_next.commerce import external_push_admin
 from aicrm_next.integration_gateway.wechat_pay_client import WeChatPayClientError
 from aicrm_next.public_product import h5_wechat_pay
 from aicrm_next.public_product.h5_wechat_pay import _apply_transaction
@@ -1597,16 +1596,14 @@ def test_questionnaire_queue_mode_job_creation_failure_does_not_fail_submission(
     assert body["external_effect_job_id"] is None
 
 
-def test_payment_paid_keeps_outbox_and_creates_configured_order_paid_job(monkeypatch) -> None:
+def test_payment_paid_enqueues_only_canonical_internal_event(monkeypatch) -> None:
     reset_external_effect_fixture_state()
-    outbox_calls: list[dict] = []
-
-    def fake_enqueue(conn, order):
-        outbox_calls.append(dict(order))
-        return {"id": 9}
-
-    monkeypatch.setattr(h5_wechat_pay, "enqueue_transaction_paid_outbox", fake_enqueue)
-    monkeypatch.setattr(external_push_admin, "resolve_and_validate_public_https_url", lambda url: url)
+    event_requests: list[object] = []
+    monkeypatch.setattr(
+        h5_wechat_pay,
+        "enqueue_transactional_internal_event_outbox",
+        lambda conn, request: event_requests.append(request) or {"outbox_id": "ieo_payment_001"},
+    )
 
     order = _apply_transaction(
         _ApplyTransactionConn(),
@@ -1622,15 +1619,11 @@ def test_payment_paid_keeps_outbox_and_creates_configured_order_paid_job(monkeyp
 
     items, total = ExternalEffectService().list_jobs({"effect_type": WEBHOOK_ORDER_PAID_PUSH, "business_id": "7"})
     assert order["status"] == "paid"
-    assert len(outbox_calls) == 1
-    assert total == 1
-    assert items[0].target_type == "external_push_delivery"
-    assert items[0].execution_mode == "execute"
-    assert items[0].status == "queued"
-    assert items[0].payload_json["webhook_url"] == "https://example.com/order-paid"
-    assert items[0].payload_json["body"]["event"] == "transaction.paid"
-    assert items[0].payload_json["body"]["order"]["out_trade_no"] == "WXP_SHADOW_PAID"
-    assert items[0].payload_json["headers"]["X-AICRM-Event"] == "transaction.paid"
+    assert len(event_requests) == 1
+    assert event_requests[0].event_type == "payment.succeeded"
+    assert event_requests[0].idempotency_key == "payment.succeeded:WXP_SHADOW_PAID"
+    assert items == []
+    assert total == 0
 
 def test_wecom_tag_adapter_registry_dispatches_contact_tag_mark_and_unmark(monkeypatch) -> None:
     calls: list[dict] = []
