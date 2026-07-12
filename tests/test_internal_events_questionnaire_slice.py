@@ -76,17 +76,16 @@ def _submit(client: TestClient, *, key: str = "q-submit") -> dict:
     return response.json()
 
 
-def test_flag_off_skips_questionnaire_internal_event(monkeypatch) -> None:
+def test_questionnaire_internal_event_is_durable_even_when_legacy_feature_flag_is_off(monkeypatch) -> None:
     client = _client(monkeypatch, questionnaire_enabled=False)
 
     body = _submit(client, key="flag-off")
     events, total = InternalEventService().list_events({"event_type": QUESTIONNAIRE_SUBMITTED_EVENT_TYPE})
 
     assert body["success"] is True
-    assert body["internal_event_status"] == "skipped"
-    assert body["internal_event_id"] == ""
-    assert events == []
-    assert total == 0
+    assert body["internal_event_status"] == "emitted"
+    assert body["internal_event_id"] == events[0].event_id
+    assert total == 1
 
 
 def test_questionnaire_submit_emits_single_event_and_expected_consumer_runs(monkeypatch) -> None:
@@ -143,7 +142,7 @@ def test_questionnaire_projection_consumer_succeeds() -> None:
     )
     runs, _ = service.list_consumer_runs({"event_id": emitted["event"]["event_id"], "consumer_name": "questionnaire_projection_consumer"})
 
-    assert result["counts"]["succeeded_count"] == 1
+    assert result["counts"]["succeeded_count"] == 1, result.get("items")
     assert runs[0].status == "succeeded"
     assert runs[0].result_summary_json["questionnaire_projection"] == "submitted_confirmed"
 
@@ -163,11 +162,9 @@ def test_webhook_consumer_creates_shadow_external_effect_job_without_attempt(mon
         event_types=[QUESTIONNAIRE_SUBMITTED_EVENT_TYPE],
         consumer_names=["questionnaire_webhook_consumer"],
     )
-    jobs, total = ExternalEffectService().list_jobs(
-        {"effect_type": WEBHOOK_QUESTIONNAIRE_SUBMISSION_PUSH, "target_id": "sub_webhook_create"}
-    )
+    jobs, total = ExternalEffectService().list_jobs({"effect_type": WEBHOOK_QUESTIONNAIRE_SUBMISSION_PUSH, "target_id": "sub_webhook_create"})
 
-    assert result["counts"]["succeeded_count"] == 1
+    assert result["counts"]["succeeded_count"] == 1, result
     assert result["real_external_call_executed"] is False
     assert total == 1
     assert jobs[0].execution_mode == "execute"
@@ -209,8 +206,8 @@ def test_questionnaire_event_detail_reconciles_submit_path_external_effect(monke
     effect = next(item for item in reconciliation["external_effects"] if item["effect_type"] == WEBHOOK_QUESTIONNAIRE_SUBMISSION_PUSH)
 
     assert detail["derived_status"] == "effect_planned"
-    assert detail["reconciliation_summary"]["unresolved_consumer_count"] == 2
-    assert detail["reconciliation_summary"]["placeholder_consumer_count"] == 3
+    assert detail["reconciliation_summary"]["unresolved_consumer_count"] == 3
+    assert detail["reconciliation_summary"]["placeholder_consumer_count"] == 2
     assert reconciliation["derived_status"] == "effect_planned"
     assert effect["effect_type"] == WEBHOOK_QUESTIONNAIRE_SUBMISSION_PUSH
     assert effect["job_status"] == "queued"
@@ -249,7 +246,10 @@ def _emit_questionnaire_event_to_service(service: InternalEventService, *, key: 
                 "slug": "hxc-activation-v1",
                 "respondent_key": "respondent_masked",
                 "external_userid": "wm_questionnaire_consumer",
+                "follow_user_userid": "owner_questionnaire_consumer",
+                "unionid": "union_questionnaire_consumer",
                 "unionid_present": True,
+                "final_tags": [],
                 "submitted_at": "2026-06-14T12:00:00Z",
                 "answer_count": 1,
             },
@@ -297,9 +297,7 @@ def test_webhook_consumer_reuses_existing_external_effect_job(monkeypatch) -> No
         event_types=[QUESTIONNAIRE_SUBMITTED_EVENT_TYPE],
         consumer_names=["questionnaire_webhook_consumer"],
     )
-    jobs, total = ExternalEffectService().list_jobs(
-        {"effect_type": WEBHOOK_QUESTIONNAIRE_SUBMISSION_PUSH, "target_id": "sub_webhook_reuse"}
-    )
+    jobs, total = ExternalEffectService().list_jobs({"effect_type": WEBHOOK_QUESTIONNAIRE_SUBMISSION_PUSH, "target_id": "sub_webhook_reuse"})
     response_summary = result["items"][0]["attempt"]["response_summary_json"]
 
     assert result["counts"]["succeeded_count"] == 1
@@ -315,7 +313,7 @@ def test_webhook_consumer_reuses_existing_external_effect_job(monkeypatch) -> No
     assert reconciliation["external_effects"][0]["job_id"] == existing["id"]
 
 
-def test_noop_questionnaire_consumers_are_skipped_with_reasons() -> None:
+def test_unconfigured_questionnaire_consumers_are_skipped_with_reasons() -> None:
     registry = InternalEventConsumerRegistry()
     register_questionnaire_event_consumers(registry)
     repo = InMemoryInternalEventRepository()
@@ -324,7 +322,6 @@ def test_noop_questionnaire_consumers_are_skipped_with_reasons() -> None:
     worker = InternalEventWorker(repo, registry)
 
     for consumer_name, reason in {
-        "questionnaire_tag_consumer": "questionnaire_tag_side_effect_already_planned_or_not_configured",
         "automation_questionnaire_consumer": "automation_questionnaire_not_configured",
         "customer_summary_consumer": "customer_summary_not_configured",
     }.items():
@@ -334,11 +331,7 @@ def test_noop_questionnaire_consumers_are_skipped_with_reasons() -> None:
             event_types=[QUESTIONNAIRE_SUBMITTED_EVENT_TYPE],
             consumer_names=[consumer_name],
         )
-        attempts = [
-            attempt
-            for attempt in service.list_attempts(event_id=emitted["event"]["event_id"])
-            if attempt.consumer_name == consumer_name
-        ]
+        attempts = [attempt for attempt in service.list_attempts(event_id=emitted["event"]["event_id"]) if attempt.consumer_name == consumer_name]
         assert result["counts"]["skipped_count"] == 1
         assert attempts[0].status == "skipped"
         assert attempts[0].response_summary_json["reason"] == reason
@@ -357,7 +350,7 @@ def test_reconciliation_explains_placeholder_and_allowlist_pending(monkeypatch) 
 
     assert by_consumer["questionnaire_projection_consumer"]["why_pending"]["category"] == "allowlist_blocked"
     assert by_consumer["questionnaire_projection_consumer"]["why_pending"]["actionable"] is True
-    assert by_consumer["questionnaire_tag_consumer"]["why_pending"]["category"] == "placeholder_not_configured"
+    assert by_consumer["questionnaire_tag_consumer"]["why_pending"]["category"] == "allowlist_blocked"
     assert by_consumer["automation_questionnaire_consumer"]["why_pending"]["category"] == "placeholder_not_configured"
     assert by_consumer["customer_summary_consumer"]["why_pending"]["actionable"] is False
 

@@ -167,17 +167,20 @@ def _project_fixture(
     inserted_count = 0
     for tag_id in tag_ids:
         existing = next(
-            (
-                row
-                for row in _fixture_rows
-                if row.get("unionid") == effective_unionid
-                and row.get("userid") == owner_userid
-                and row.get("tag_id") == tag_id
-            ),
+            (row for row in _fixture_rows if row.get("unionid") == effective_unionid and row.get("userid") == owner_userid and row.get("tag_id") == tag_id),
             None,
         )
         if existing:
-            existing.update({"tag_name": tag_names.get(tag_id) or tag_id, "created_at": now})
+            existing.update(
+                {
+                    "tag_name": tag_names.get(tag_id) or tag_id,
+                    "source": source,
+                    "questionnaire_id": _text(questionnaire_id),
+                    "submission_id": _text(submission_id),
+                    "idempotency_key": idempotency_key,
+                    "updated_at": now,
+                }
+            )
             updated_count += 1
         else:
             _fixture_rows.append(
@@ -188,6 +191,7 @@ def _project_fixture(
                     "tag_id": tag_id,
                     "tag_name": tag_names.get(tag_id) or tag_id,
                     "created_at": now,
+                    "updated_at": now,
                     "source": source,
                     "questionnaire_id": _text(questionnaire_id),
                     "submission_id": _text(submission_id),
@@ -261,7 +265,11 @@ def _project_postgres(
                     """
                     UPDATE contact_tags
                     SET tag_name = :tag_name,
-                        created_at = CURRENT_TIMESTAMP
+                        source = :source,
+                        questionnaire_id = :questionnaire_id,
+                        submission_id = :submission_id,
+                        idempotency_key = :idempotency_key,
+                        updated_at = CURRENT_TIMESTAMP
                     WHERE unionid = :unionid
                       AND userid = :userid
                       AND tag_id = :tag_id
@@ -269,6 +277,10 @@ def _project_postgres(
                 ),
                 {
                     "tag_name": tag_names.get(tag_id) or tag_id,
+                    "source": source,
+                    "questionnaire_id": _text(questionnaire_id),
+                    "submission_id": _text(submission_id),
+                    "idempotency_key": idempotency_key,
                     "unionid": effective_unionid,
                     "userid": owner_userid,
                     "tag_id": tag_id,
@@ -280,8 +292,16 @@ def _project_postgres(
             connection.execute(
                 text(
                     """
-                    INSERT INTO contact_tags (unionid, userid, tag_id, tag_name, created_at)
-                    VALUES (:unionid, :userid, :tag_id, :tag_name, CURRENT_TIMESTAMP)
+                    INSERT INTO contact_tags (
+                        unionid, userid, tag_id, tag_name, source,
+                        questionnaire_id, submission_id, idempotency_key,
+                        created_at, updated_at
+                    )
+                    VALUES (
+                        :unionid, :userid, :tag_id, :tag_name, :source,
+                        :questionnaire_id, :submission_id, :idempotency_key,
+                        CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+                    )
                     """
                 ),
                 {
@@ -289,6 +309,10 @@ def _project_postgres(
                     "userid": owner_userid,
                     "tag_id": tag_id,
                     "tag_name": tag_names.get(tag_id) or tag_id,
+                    "source": source,
+                    "questionnaire_id": _text(questionnaire_id),
+                    "submission_id": _text(submission_id),
+                    "idempotency_key": idempotency_key,
                 },
             )
             inserted_count += 1

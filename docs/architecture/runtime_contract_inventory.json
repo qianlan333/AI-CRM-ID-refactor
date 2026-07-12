@@ -275,7 +275,7 @@
       "accessor": "runtime_setting",
       "file": "aicrm_next/questionnaire/external_push.py",
       "key": "AICRM_EXTERNAL_EFFECT_WEBHOOK_SIGNING_SECRET",
-      "line": 101
+      "line": 32
     },
     {
       "accessor": "runtime_setting",
@@ -341,25 +341,25 @@
       "accessor": "os.getenv",
       "file": "aicrm_next/platform_foundation/internal_events/config.py",
       "key": "AICRM_INTERNAL_EVENTS_ALLOWED_CONSUMERS",
-      "line": 104
-    },
-    {
-      "accessor": "os.getenv",
-      "file": "aicrm_next/platform_foundation/internal_events/config.py",
-      "key": "AICRM_INTERNAL_EVENTS_ALLOWED_EVENT_CONSUMERS",
-      "line": 109
-    },
-    {
-      "accessor": "os.getenv",
-      "file": "aicrm_next/platform_foundation/internal_events/config.py",
-      "key": "AICRM_INTERNAL_EVENTS_ALLOWED_EVENT_TYPES",
       "line": 99
     },
     {
       "accessor": "os.getenv",
       "file": "aicrm_next/platform_foundation/internal_events/config.py",
+      "key": "AICRM_INTERNAL_EVENTS_ALLOWED_EVENT_CONSUMERS",
+      "line": 104
+    },
+    {
+      "accessor": "os.getenv",
+      "file": "aicrm_next/platform_foundation/internal_events/config.py",
+      "key": "AICRM_INTERNAL_EVENTS_ALLOWED_EVENT_TYPES",
+      "line": 94
+    },
+    {
+      "accessor": "os.getenv",
+      "file": "aicrm_next/platform_foundation/internal_events/config.py",
       "key": "AICRM_INTERNAL_EVENTS_AUTO_EXECUTE_MAX_BATCH_SIZE",
-      "line": 173
+      "line": 164
     },
     {
       "accessor": "os.getenv",
@@ -371,19 +371,19 @@
       "accessor": "os.getenv",
       "file": "aicrm_next/platform_foundation/internal_events/config.py",
       "key": "AICRM_INTERNAL_EVENTS_LEGACY_PATH_RETIRE_AFTER_DAYS",
-      "line": 82
+      "line": 77
     },
     {
       "accessor": "os.getenv",
       "file": "aicrm_next/platform_foundation/internal_events/config.py",
       "key": "AICRM_INTERNAL_EVENTS_WORKER_BATCH_SIZE",
-      "line": 164
+      "line": 155
     },
     {
       "accessor": "os.getenv",
       "file": "aicrm_next/platform_foundation/internal_events/config.py",
       "key": "AICRM_INTERNAL_EVENT_WORKER_BATCH_SIZE",
-      "line": 164
+      "line": 155
     },
     {
       "accessor": "declared_runtime_environment_key",
@@ -1325,13 +1325,13 @@
       "accessor": "runtime_setting",
       "file": "aicrm_next/radar_links/api.py",
       "key": "SECRET_KEY",
-      "line": 111
+      "line": 104
     },
     {
       "accessor": "runtime_setting",
       "file": "aicrm_next/radar_links/application.py",
       "key": "SECRET_KEY",
-      "line": 39
+      "line": 40
     },
     {
       "accessor": "runtime_setting",
@@ -2600,7 +2600,7 @@
     },
     {
       "consumer_name": "questionnaire_tag_consumer",
-      "consumer_type": "orchestration",
+      "consumer_type": "external_effect_planner",
       "event_type": "questionnaire.submitted",
       "handler_registered": true,
       "max_attempts": 5
@@ -2670,7 +2670,7 @@
     }
   ],
   "migration_heads": [
-    "0101_commerce_fulfillment_invariants"
+    "0102_questionnaire_radar_invariants"
   ],
   "openapi_components": {
     "schemas": {
@@ -7045,51 +7045,6 @@
           }
         }
       },
-      "endpoint": "aicrm_next.questionnaire.admin_pages.admin_questionnaire_external_push_logs",
-      "include_in_schema": true,
-      "kind": "api",
-      "methods": [
-        "POST"
-      ],
-      "name": "api.admin_console_global_questionnaire_external_push_logs_retry_batch",
-      "operation_id": "api.admin_console_global_questionnaire_external_push_logs_retry_batch:POST:/admin/questionnaires/external-push-logs/retry-batch",
-      "path": "/admin/questionnaires/external-push-logs/retry-batch",
-      "route_group": "questionnaire_admin_pages"
-    },
-    {
-      "capability_owner": "questionnaire",
-      "contract": {
-        "parameters": [],
-        "request_body": null,
-        "responses": {}
-      },
-      "endpoint": "aicrm_next.questionnaire.admin_pages.admin_questionnaire_external_push_logs",
-      "include_in_schema": true,
-      "kind": "api",
-      "methods": [
-        "POST"
-      ],
-      "name": "api.admin_console_global_questionnaire_external_push_logs_retry",
-      "operation_id": "api.admin_console_global_questionnaire_external_push_logs_retry:POST:/admin/questionnaires/external-push-logs/{push_log_id:int}/retry",
-      "path": "/admin/questionnaires/external-push-logs/{push_log_id:int}/retry",
-      "route_group": "questionnaire_admin_pages"
-    },
-    {
-      "capability_owner": "questionnaire",
-      "contract": {
-        "parameters": [],
-        "request_body": null,
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          }
-        }
-      },
       "endpoint": "aicrm_next.questionnaire.admin_pages.admin_questionnaire_new",
       "include_in_schema": true,
       "kind": "page",
@@ -7162,42 +7117,6 @@
       "name": "api.admin_console_questionnaire_external_push_logs",
       "operation_id": "api.admin_console_questionnaire_external_push_logs:GET:/admin/questionnaires/{questionnaire_id:int}/external-push-logs",
       "path": "/admin/questionnaires/{questionnaire_id:int}/external-push-logs",
-      "route_group": "questionnaire_admin_pages"
-    },
-    {
-      "capability_owner": "questionnaire",
-      "contract": {
-        "parameters": [],
-        "request_body": null,
-        "responses": {}
-      },
-      "endpoint": "aicrm_next.questionnaire.admin_pages.admin_questionnaire_external_push_logs",
-      "include_in_schema": true,
-      "kind": "api",
-      "methods": [
-        "POST"
-      ],
-      "name": "api.admin_console_questionnaire_external_push_logs_retry_batch",
-      "operation_id": "api.admin_console_questionnaire_external_push_logs_retry_batch:POST:/admin/questionnaires/{questionnaire_id:int}/external-push-logs/retry-batch",
-      "path": "/admin/questionnaires/{questionnaire_id:int}/external-push-logs/retry-batch",
-      "route_group": "questionnaire_admin_pages"
-    },
-    {
-      "capability_owner": "questionnaire",
-      "contract": {
-        "parameters": [],
-        "request_body": null,
-        "responses": {}
-      },
-      "endpoint": "aicrm_next.questionnaire.admin_pages.admin_questionnaire_external_push_logs",
-      "include_in_schema": true,
-      "kind": "api",
-      "methods": [
-        "POST"
-      ],
-      "name": "api.admin_console_questionnaire_external_push_logs_retry",
-      "operation_id": "api.admin_console_questionnaire_external_push_logs_retry:POST:/admin/questionnaires/{questionnaire_id:int}/external-push-logs/{push_log_id:int}/retry",
-      "path": "/admin/questionnaires/{questionnaire_id:int}/external-push-logs/{push_log_id:int}/retry",
       "route_group": "questionnaire_admin_pages"
     },
     {
@@ -43310,15 +43229,16 @@
     {
       "domain": "questionnaire",
       "drop_candidate": true,
-      "lifecycle": "queue",
+      "lifecycle": "audit",
       "migration_source": "pre-Alembic baseline",
       "pii_level": "",
       "read_owners": [
+        "aicrm_next.questionnaire.reconciliation",
         "aicrm_next.questionnaire.repo",
         "questionnaire external push admin pages"
       ],
       "table": "questionnaire_external_push_logs",
-      "write_owner": "aicrm_next.questionnaire.repo"
+      "write_owner": ""
     },
     {
       "domain": "questionnaire",
@@ -43399,14 +43319,26 @@
     {
       "domain": "radar",
       "drop_candidate": false,
+      "lifecycle": "event",
+      "migration_source": "0102_questionnaire_radar_invariants",
+      "pii_level": "direct_contact",
+      "read_owners": [
+        "radar admin event list, export, and aggregate statistics"
+      ],
+      "table": "radar_click_events",
+      "write_owner": "aicrm_next.radar_links"
+    },
+    {
+      "domain": "radar",
+      "drop_candidate": false,
       "lifecycle": "canonical",
-      "migration_source": "pre-Alembic baseline, registered by 0083 schema drift closeout",
+      "migration_source": "pre-Alembic baseline, hardened by 0102_questionnaire_radar_invariants",
       "pii_level": "internal_contact",
       "read_owners": [
         "aicrm_next.send_content"
       ],
       "table": "radar_links",
-      "write_owner": "aicrm_next.radar"
+      "write_owner": "aicrm_next.radar_links"
     },
     {
       "domain": "radar",
@@ -43418,7 +43350,7 @@
         "historical schema drift guard"
       ],
       "table": "radar_pdf_preview_assets",
-      "write_owner": "aicrm_next.radar"
+      "write_owner": "aicrm_next.radar_links"
     },
     {
       "domain": "campaign",

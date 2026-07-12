@@ -19,6 +19,7 @@ from .execution_gates import (
 )
 from .execution_policy import normalize_dispatch_result
 from .models import (
+    WECOM_CONTACT_TAG_MARK,
     WECOM_MESSAGE_GROUP_SEND,
     WEBHOOK_GENERIC_PUSH,
     ExternalEffectDispatchResult,
@@ -162,10 +163,7 @@ class ExternalEffectWorker:
             if result.get("error") == "lost_lease":
                 counts["lost_lease_count"] += 1
             real_external_call_executed = real_external_call_executed or bool(result.get("real_external_call_executed"))
-        ok = not any(
-            counts[key]
-            for key in ("unknown_after_dispatch_count", "failed_count", "blocked_count", "lost_lease_count")
-        )
+        ok = not any(counts[key] for key in ("unknown_after_dispatch_count", "failed_count", "blocked_count", "lost_lease_count"))
         return {
             "ok": ok,
             "exit_code": 0 if ok else 1,
@@ -282,11 +280,15 @@ class ExternalEffectWorker:
                     error_message=str(continuation.get("error") or "Post-success continuation did not complete."),
                 )
 
-        if dispatch_result.status == "failed_retryable" and status_for_failure(
-            error_code=dispatch_result.error_code,
-            attempt_count=int(job.attempt_count or 0) + 1,
-            max_attempts=int(job.max_attempts or 5),
-        ) != "failed_retryable":
+        if (
+            dispatch_result.status == "failed_retryable"
+            and status_for_failure(
+                error_code=dispatch_result.error_code,
+                attempt_count=int(job.attempt_count or 0) + 1,
+                max_attempts=int(job.max_attempts or 5),
+            )
+            != "failed_retryable"
+        ):
             dispatch_result = replace(dispatch_result, status="failed_terminal")
 
         retry_at = None
@@ -377,6 +379,8 @@ class ExternalEffectWorker:
     def _run_post_success_continuations(self, job: ExternalEffectJob, dispatch_result) -> dict[str, Any]:
         if dispatch_result.status != "succeeded":
             return {"applicable": False, "reason": "dispatch_not_succeeded"}
+        if _is_questionnaire_tag_projection_job(job):
+            return _run_questionnaire_tag_projection(job)
         if not _is_automation_agent_audience_webhook_job(job):
             return {"applicable": False, "reason": "not_automation_agent_audience_webhook"}
         batch_id = _automation_agent_batch_id(dispatch_result.response_summary)
@@ -399,6 +403,59 @@ class ExternalEffectWorker:
             )
             return {"applicable": True, "ok": False, "batch_id": batch_id, "error": str(exc)[:500]}
         return {"applicable": True, **result}
+
+
+def _is_questionnaire_tag_projection_job(job: ExternalEffectJob) -> bool:
+    if job.effect_type != WECOM_CONTACT_TAG_MARK or job.business_type != "questionnaire_submission":
+        return False
+    projection = dict((job.payload_json or {}).get("projection") or {})
+    return projection.get("type") == "questionnaire_contact_tags"
+
+
+def _run_questionnaire_tag_projection(job: ExternalEffectJob) -> dict[str, Any]:
+    payload = dict(job.payload_json or {})
+    try:
+        from aicrm_next.customer_tags.local_projection import project_questionnaire_tags
+
+        result = project_questionnaire_tags(
+            unionid=str(payload.get("target_unionid") or job.target_id or "").strip(),
+            external_userid=str(payload.get("external_userid") or "").strip(),
+            owner_userid=str(payload.get("follow_user_userid") or "").strip(),
+            tag_ids=[str(item or "").strip() for item in payload.get("tag_ids") or [] if str(item or "").strip()],
+            source="questionnaire_external_effect_success",
+            questionnaire_id=payload.get("questionnaire_id"),
+            submission_id=str(payload.get("submission_id") or job.business_id or "").strip(),
+            idempotency_key=job.idempotency_key,
+        )
+    except Exception as exc:
+        safe_log_exception(
+            LOGGER,
+            "questionnaire tag post-success projection failed",
+            exc,
+            external_effect_job_id=int(job.id or 0),
+        )
+        return {
+            "applicable": True,
+            "ok": False,
+            "projection_type": "questionnaire_contact_tags",
+            "error": str(exc)[:500],
+        }
+    if not result.get("ok") or not result.get("local_projection_updated"):
+        return {
+            "applicable": True,
+            "ok": False,
+            "projection_type": "questionnaire_contact_tags",
+            "error": str(result.get("reason") or "questionnaire tag projection did not update"),
+            "local_projection_status": str(result.get("local_projection_status") or ""),
+        }
+    return {
+        "applicable": True,
+        "ok": True,
+        "projection_type": "questionnaire_contact_tags",
+        "local_projection_status": "updated",
+        "inserted_count": int(result.get("inserted_count") or 0),
+        "updated_count": int(result.get("updated_count") or 0),
+    }
 
 
 def _is_automation_agent_audience_webhook_job(job: ExternalEffectJob) -> bool:

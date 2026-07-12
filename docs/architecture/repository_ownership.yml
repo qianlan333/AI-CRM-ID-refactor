@@ -427,7 +427,6 @@ repositories:
       - questionnaires
     table_writes:
       - crm_user_identity_resolution_queue
-      - questionnaire_external_push_logs
       - questionnaire_options
       - questionnaire_questions
       - questionnaire_score_rules
@@ -436,8 +435,14 @@ repositories:
       - questionnaires
   aicrm_next/radar_links/repo.py:
     capability_owner: aicrm_next.radar_links
-    table_reads: []
-    table_writes: []
+    table_reads:
+      - radar_click_events
+      - radar_links
+      - radar_pdf_preview_assets
+    table_writes:
+      - radar_click_events
+      - radar_links
+      - radar_pdf_preview_assets
   aicrm_next/send_content/postgres_repo.py:
     capability_owner: aicrm_next.send_content
     table_reads:

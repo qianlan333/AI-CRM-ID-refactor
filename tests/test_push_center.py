@@ -297,7 +297,9 @@ def test_push_center_group_ops_shadow_failed_without_primary_is_not_business_fai
 
 def test_push_center_detail_includes_attempts_without_full_payload(next_client: TestClient) -> None:
     reset_external_effect_fixture_state()
-    job = _plan_job(effect_type=AI_ASSIST_CAMPAIGN_MESSAGE_LOOPBACK, business_type="ai_assist_campaign", business_id="camp_loop", status="blocked", execution_mode="shadow")
+    job = _plan_job(
+        effect_type=AI_ASSIST_CAMPAIGN_MESSAGE_LOOPBACK, business_type="ai_assist_campaign", business_id="camp_loop", status="blocked", execution_mode="shadow"
+    )
     repo = build_external_effect_repository()
     job_obj = repo.get_job(job["id"])
     assert job_obj is not None
@@ -382,7 +384,13 @@ def test_push_center_sections_stats_retry_cancel_auth(next_client: TestClient, m
 
 def test_push_center_page_smoke(next_client: TestClient) -> None:
     reset_external_effect_fixture_state()
-    _plan_job(effect_type=WEBHOOK_QUESTIONNAIRE_SUBMISSION_PUSH, business_type="questionnaire", business_id="q_page", target_type="questionnaire_submission", target_id="sub_page")
+    _plan_job(
+        effect_type=WEBHOOK_QUESTIONNAIRE_SUBMISSION_PUSH,
+        business_type="questionnaire",
+        business_id="q_page",
+        target_type="questionnaire_submission",
+        target_id="sub_page",
+    )
 
     response = next_client.get("/admin/push-center")
 
@@ -394,7 +402,7 @@ def test_push_center_page_smoke(next_client: TestClient) -> None:
     assert 'id="pushCenterTable"' in response.text
     assert 'id="detailModal"' in response.text
     assert 'id="detailPanel"' in response.text
-    assert 'data-close-detail' in response.text
+    assert "data-close-detail" in response.text
     assert 'role="dialog"' in response.text
     assert 'aria-modal="true"' in response.text
     assert 'aria-hidden="true"' in response.text
@@ -460,9 +468,7 @@ def test_push_center_page_shell_does_not_query_projection(monkeypatch, next_clie
 def test_push_center_list_and_stats_reuse_one_projection_snapshot() -> None:
     external = _CountingExternalAdapter()
     broadcast = _CountingBroadcastAdapter()
-    repository = PushCenterRepository(
-        service=PushCenterProjectionService(external_adapter=external, broadcast_adapter=broadcast)
-    )
+    repository = PushCenterRepository(service=PushCenterProjectionService(external_adapter=external, broadcast_adapter=broadcast))
 
     jobs = build_jobs_payload({"limit": 1}, repository=repository)
 
@@ -536,7 +542,9 @@ def test_questionnaire_default_external_push_is_queue_first(client: TestClient, 
     assert body["external_push"]["status"] == "queued"
     assert body["external_push"]["attempted"] is False
     assert body["real_external_call_executed"] is False
-    assert body["external_effect_job_status"] == "queued"
+    assert body["durable_continuation_queued"] is True
+    assert body["external_effect_job_status"] == "not_planned"
+    assert body["external_effect_job"] is None
 
 
 def test_group_ops_default_webhook_uses_external_effect_not_legacy_gateway(group_ops_api_client, monkeypatch) -> None:

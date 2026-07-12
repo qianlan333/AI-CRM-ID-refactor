@@ -4,12 +4,13 @@ from copy import deepcopy
 from datetime import datetime, timezone
 import json
 import re
-from typing import Any, Protocol
+from typing import Any, Callable, Protocol
 from uuid import uuid4
 
 from aicrm_next.identity_contact.dto import ResolvePersonIdentityRequest
 from aicrm_next.identity_contact.resolver import resolve_identity_with_dbapi, resolved_unionid
 from aicrm_next.navigation_target.service import normalize_completion_target_for_storage
+from aicrm_next.platform_foundation.internal_events.outbox import enqueue_transactional_internal_event_outbox
 from aicrm_next.shared.errors import ContractError
 from aicrm_next.shared.repository_provider import RepositoryProviderError, assert_repository_allowed
 from aicrm_next.shared.runtime import production_data_ready, raw_database_url
@@ -38,13 +39,18 @@ class QuestionnaireRepository(Protocol):
     def save_questionnaire(self, payload: dict[str, Any], questionnaire_id: int | None = None) -> dict[str, Any]: ...
     def set_enabled(self, questionnaire_id: int, enabled: bool) -> dict[str, Any] | None: ...
     def delete_questionnaire(self, questionnaire_id: int) -> bool: ...
-    def create_submission(self, payload: dict[str, Any]) -> dict[str, Any]: ...
+    def create_submission(
+        self,
+        payload: dict[str, Any],
+        *,
+        internal_event_factory: Callable[[dict[str, Any]], Any] | None = None,
+    ) -> dict[str, Any]: ...
     def get_submission(self, submission_id: str) -> dict[str, Any] | None: ...
+    def get_submission_by_record_id(self, submission_id: str) -> dict[str, Any] | None: ...
     def find_submission_for_identity(self, questionnaire_id: int, identity: dict[str, Any]) -> dict[str, Any] | None: ...
     def latest_submission(self, questionnaire_id: int) -> dict[str, Any] | None: ...
     def export_submissions(self, questionnaire_id: int) -> dict[str, Any] | None: ...
     def get_app_setting(self, key: str) -> str | None: ...
-    def create_external_push_log(self, **kwargs: Any) -> dict[str, Any]: ...
     def list_external_push_log_threads(
         self,
         questionnaire_id: int | None = None,
@@ -66,8 +72,6 @@ class QuestionnaireRepository(Protocol):
         created_at_gte: str = "",
     ) -> int: ...
     def summarize_external_push_logs(self, questionnaire_id: int) -> dict[str, Any]: ...
-    def get_external_push_log(self, log_id: int) -> dict[str, Any] | None: ...
-    def count_external_push_retry_logs(self, root_log_id: int) -> int: ...
 
 
 def _now() -> str:
@@ -597,7 +601,9 @@ class InMemoryQuestionnaireRepository:
             row = deepcopy(item)
             row.setdefault("submitted_at", row.get("created_at"))
             row.setdefault("mobile", row.get("mobile_snapshot") or row.get("mobile"))
-            row.setdefault("assessment_result_snapshot", (row.get("result_json") or {}).get("assessment_result") if isinstance(row.get("result_json"), dict) else {})
+            row.setdefault(
+                "assessment_result_snapshot", (row.get("result_json") or {}).get("assessment_result") if isinstance(row.get("result_json"), dict) else {}
+            )
             row["questionnaire_title"] = _text(questionnaire.get("title") or questionnaire.get("name"))
             if "answer_snapshots" not in row:
                 row["answer_snapshots"] = _answer_snapshots(questionnaire.get("questions") or [], dict(row.get("answers") or {}))
@@ -631,8 +637,7 @@ class InMemoryQuestionnaireRepository:
                 "enabled": bool(payload.get("enabled", item.get("enabled", True))),
                 "redirect_url": str(payload.get("redirect_url") or ""),
                 "completion_target_json": deepcopy(
-                    payload.get("completion_target_json")
-                    or normalize_completion_target_for_storage(payload, legacy_url_key="redirect_url")
+                    payload.get("completion_target_json") or normalize_completion_target_for_storage(payload, legacy_url_key="redirect_url")
                 ),
                 "submit_button_text": str(payload.get("submit_button_text") or "提交"),
                 "answer_display_mode": str(payload.get("answer_display_mode") or item.get("answer_display_mode") or "all_in_one"),
@@ -661,7 +666,12 @@ class InMemoryQuestionnaireRepository:
         self._questionnaires = [item for item in self._questionnaires if int(item["id"]) != int(questionnaire_id)]
         return len(self._questionnaires) < before
 
-    def create_submission(self, payload: dict[str, Any]) -> dict[str, Any]:
+    def create_submission(
+        self,
+        payload: dict[str, Any],
+        *,
+        internal_event_factory: Callable[[dict[str, Any]], Any] | None = None,
+    ) -> dict[str, Any]:
         submission = deepcopy(payload)
         submission["submission_id"] = submission.get("submission_id") or f"sub_next_{self._next_submission:03d}"
         submission["created_at"] = submission.get("created_at") or _now()
@@ -674,6 +684,32 @@ class InMemoryQuestionnaireRepository:
             if int(item["id"]) == int(submission["questionnaire_id"]):
                 item["submission_count"] = int(item.get("submission_count") or 0) + 1
                 item["updated_at"] = _now()
+        if internal_event_factory is not None:
+            request = internal_event_factory(deepcopy(submission))
+            if request is None:
+                raise RepositoryProviderError("questionnaire.submitted event identity is incomplete")
+            from aicrm_next.platform_foundation.internal_events.service import InternalEventService
+
+            emitted = InternalEventService().emit_event(
+                event_type=request.event_type,
+                aggregate_type=request.aggregate_type,
+                aggregate_id=request.aggregate_id,
+                payload=request.payload,
+                payload_summary=request.payload_summary,
+                context=request.context,
+                event_version=request.event_version,
+                subject_type=request.subject_type,
+                subject_id=request.subject_id,
+                idempotency_key=request.idempotency_key,
+                source_module=request.source_module,
+                source_command_id=request.source_command_id,
+                correlation_id=request.correlation_id,
+                occurred_at=request.occurred_at,
+                tenant_id=request.tenant_id,
+            )
+            submission["internal_event"] = dict(emitted.get("event") or {})
+            submission["internal_event_consumer_runs"] = list(emitted.get("consumer_runs") or [])
+            self._submissions[-1] = deepcopy(submission)
         return deepcopy(submission)
 
     def get_submission(self, submission_id: str) -> dict[str, Any] | None:
@@ -684,6 +720,15 @@ class InMemoryQuestionnaireRepository:
                     payload["answers"] = _answers_from_snapshots(payload["answer_snapshots"])
                     payload["answers_json"] = payload["answers"]
                 return payload
+        return None
+
+    def get_submission_by_record_id(self, submission_id: str) -> dict[str, Any] | None:
+        normalized_id = _text(submission_id).strip()
+        if not normalized_id:
+            return None
+        for item in self._submissions:
+            if _text(item.get("submission_id") or item.get("id")) == normalized_id:
+                return deepcopy(item)
         return None
 
     def find_submission_for_identity(self, questionnaire_id: int, identity: dict[str, Any]) -> dict[str, Any] | None:
@@ -720,15 +765,6 @@ class InMemoryQuestionnaireRepository:
 
     def get_app_setting(self, key: str) -> str | None:
         return None
-
-    def create_external_push_log(self, **kwargs: Any) -> dict[str, Any]:
-        row = dict(kwargs)
-        row["id"] = self._next_external_push_log
-        row["created_at"] = _now()
-        row["updated_at"] = row["created_at"]
-        self._next_external_push_log += 1
-        self._external_push_logs.append(row)
-        return deepcopy(row)
 
     def list_external_push_log_threads(
         self,
@@ -791,9 +827,7 @@ class InMemoryQuestionnaireRepository:
 
     def summarize_external_push_logs(self, questionnaire_id: int) -> dict[str, Any]:
         rows = [
-            _normalized_external_push_log(deepcopy(row))
-            for row in self._external_push_logs
-            if int(row.get("questionnaire_id") or 0) == int(questionnaire_id)
+            _normalized_external_push_log(deepcopy(row)) for row in self._external_push_logs if int(row.get("questionnaire_id") or 0) == int(questionnaire_id)
         ]
         return {
             "total_count": len(rows),
@@ -801,15 +835,6 @@ class InMemoryQuestionnaireRepository:
             "failed_count": sum(1 for row in rows if row.get("status") == "failed"),
             "last_created_at": max((_text(row.get("created_at")) for row in rows), default=""),
         }
-
-    def get_external_push_log(self, log_id: int) -> dict[str, Any] | None:
-        for row in self._external_push_logs:
-            if int(row.get("id") or 0) == int(log_id):
-                return _normalized_external_push_log(deepcopy(row))
-        return None
-
-    def count_external_push_retry_logs(self, root_log_id: int) -> int:
-        return sum(1 for row in self._external_push_logs if int(row.get("retry_from_log_id") or 0) == int(root_log_id))
 
 
 class PostgresQuestionnaireReadRepository:
@@ -1019,7 +1044,10 @@ class PostgresQuestionnaireReadRepository:
             return None
         with self._connect() as conn:
             total = int(
-                (conn.execute("SELECT COUNT(*) AS total FROM questionnaire_submissions WHERE questionnaire_id = %s", (int(questionnaire_id),)).fetchone() or {}).get("total")
+                (
+                    conn.execute("SELECT COUNT(*) AS total FROM questionnaire_submissions WHERE questionnaire_id = %s", (int(questionnaire_id),)).fetchone()
+                    or {}
+                ).get("total")
                 or 0
             )
             rows = conn.execute(
@@ -1172,10 +1200,7 @@ class PostgresQuestionnaireReadRepository:
         answers_by_submission: dict[int, list[dict[str, Any]]] = {}
         for answer in answer_rows:
             answers_by_submission.setdefault(int(answer.get("submission_id") or 0), []).append(dict(answer))
-        items = [
-            _external_submission_projection(dict(row), answers_by_submission.get(int(row.get("id") or 0), []))
-            for row in rows
-        ]
+        items = [_external_submission_projection(dict(row), answers_by_submission.get(int(row.get("id") or 0), [])) for row in rows]
         return items, total
 
     def _exists(self, questionnaire_id: int) -> bool:
@@ -1432,7 +1457,12 @@ class PostgresQuestionnaireReadRepository:
                 ),
             )
 
-    def create_submission(self, payload: dict[str, Any]) -> dict[str, Any]:
+    def create_submission(
+        self,
+        payload: dict[str, Any],
+        *,
+        internal_event_factory: Callable[[dict[str, Any]], Any] | None = None,
+    ) -> dict[str, Any]:
         questionnaire_id = int(payload.get("questionnaire_id") or 0)
         if not questionnaire_id:
             raise RepositoryProviderError("questionnaire_id is required for questionnaire submit")
@@ -1484,8 +1514,26 @@ class PostgresQuestionnaireReadRepository:
             ):
                 resolution_queue_payload = None
 
+        submission: dict[str, Any] = {}
         with self._connect() as conn:
             with conn.transaction():
+                if unionid:
+                    lock_key = f"questionnaire_submission:{questionnaire_id}:{unionid}"
+                    conn.execute(
+                        "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))",
+                        (lock_key,),
+                    )
+                    existing = conn.execute(
+                        """
+                        SELECT id
+                        FROM questionnaire_submissions
+                        WHERE questionnaire_id = %s AND unionid = %s
+                        LIMIT 1
+                        """,
+                        (questionnaire_id, unionid),
+                    ).fetchone()
+                    if existing:
+                        raise ContractError("already_submitted")
                 if resolution_queue_payload is not None:
                     enqueue_questionnaire_identity_resolution(
                         conn,
@@ -1503,7 +1551,7 @@ class PostgresQuestionnaireReadRepository:
                     """,
                     (
                         questionnaire_id,
-                        unionid,
+                        unionid or "",
                         _text(payload.get("follow_user_userid")),
                         _text(source.get("source_channel")),
                         _text(source.get("campaign_id")),
@@ -1538,55 +1586,94 @@ class PostgresQuestionnaireReadRepository:
                             float(item.get("score_contribution") or 0),
                         ),
                     )
-        submitted_at = _timestamp(row.get("submitted_at"))
-        return {
-            "id": submission_id,
-            "submission_id": str(submission_id),
-            "result_token": _text(payload.get("result_token")),
-            "questionnaire_id": questionnaire_id,
-            "slug": _text(payload.get("slug")),
-            "answers": answers,
-            "answers_json": answers,
-            "result_json": _json_dict(payload.get("result_json")),
-            "source_json": source,
-            "diagnostics_json": _json_dict(payload.get("diagnostics_json")),
-            "respondent_identity": respondent_identity,
-            "person_id": payload.get("person_id"),
-            "identity_map_id": payload.get("identity_map_id"),
-            "external_userid": _text(payload.get("external_userid") or respondent_identity.get("external_userid")),
-            "follow_user_userid": _text(payload.get("follow_user_userid")),
-            "matched_by": _text(payload.get("matched_by")),
-            "openid": _text(payload.get("openid") or respondent_identity.get("openid")),
-            "unionid": unionid,
-            "mobile": mobile_snapshot,
-            "mobile_snapshot": mobile_snapshot,
-            "source_channel": _text(source.get("source_channel")),
-            "campaign_id": _text(source.get("campaign_id")),
-            "staff_id": _text(source.get("staff_id")),
-            "binding_status": _text(payload.get("binding_status") or "unresolved"),
-            "score": score,
-            "total_score": score,
-            "final_tags": final_tags,
-            "status": _text(payload.get("status") or "submitted"),
-            "created_at": submitted_at,
-            "submitted_at": submitted_at,
-            "updated_at": _text(payload.get("updated_at") or submitted_at),
-            "answer_snapshots": answer_snapshots,
-        }
+                submitted_at = _timestamp(row.get("submitted_at"))
+                submission = {
+                    "id": submission_id,
+                    "submission_id": str(submission_id),
+                    "result_token": _text(payload.get("result_token")),
+                    "questionnaire_id": questionnaire_id,
+                    "slug": _text(payload.get("slug")),
+                    "answers": answers,
+                    "answers_json": answers,
+                    "result_json": _json_dict(payload.get("result_json")),
+                    "source_json": source,
+                    "diagnostics_json": _json_dict(payload.get("diagnostics_json")),
+                    "respondent_identity": respondent_identity,
+                    "person_id": payload.get("person_id"),
+                    "identity_map_id": payload.get("identity_map_id"),
+                    "respondent_key": _text(payload.get("respondent_key") or respondent_identity.get("respondent_key")),
+                    "external_userid": _text(payload.get("external_userid") or respondent_identity.get("external_userid")),
+                    "follow_user_userid": _text(payload.get("follow_user_userid")),
+                    "matched_by": _text(payload.get("matched_by")),
+                    "openid": _text(payload.get("openid") or respondent_identity.get("openid")),
+                    "unionid": unionid,
+                    "mobile": mobile_snapshot,
+                    "mobile_snapshot": mobile_snapshot,
+                    "source_channel": _text(source.get("source_channel")),
+                    "campaign_id": _text(source.get("campaign_id")),
+                    "staff_id": _text(source.get("staff_id")),
+                    "binding_status": _text(payload.get("binding_status") or "unresolved"),
+                    "score": score,
+                    "total_score": score,
+                    "final_tags": final_tags,
+                    "status": _text(payload.get("status") or "submitted"),
+                    "created_at": submitted_at,
+                    "submitted_at": submitted_at,
+                    "updated_at": _text(payload.get("updated_at") or submitted_at),
+                    "answer_snapshots": answer_snapshots,
+                }
+                if internal_event_factory is not None:
+                    request = internal_event_factory(dict(submission))
+                    if request is None:
+                        raise RepositoryProviderError("questionnaire.submitted event identity is incomplete")
+                    submission["internal_event_outbox"] = enqueue_transactional_internal_event_outbox(conn, request)
+        return submission
 
     def get_submission(self, submission_id: str) -> dict[str, Any] | None:
         normalized_id = str(submission_id or "").strip()
         if not normalized_id:
             return None
-        with self._connect() as conn:
-            row = conn.execute(
-                """
-                SELECT qs.*, q.slug
+        return self._get_submission_by("result_token", normalized_id)
+
+    def get_submission_by_record_id(self, submission_id: str) -> dict[str, Any] | None:
+        normalized_id = str(submission_id or "").strip()
+        if not normalized_id or not normalized_id.isdigit():
+            return None
+        return self._get_submission_by("record_id", int(normalized_id))
+
+    def _get_submission_by(self, lookup: str, value: Any) -> dict[str, Any] | None:
+        if lookup == "result_token":
+            query = """
+                SELECT qs.*, q.slug,
+                       COALESCE(identity.primary_external_userid, '') AS canonical_external_userid,
+                       COALESCE(identity.primary_openid, '') AS canonical_openid,
+                       COALESCE(identity.mobile, '') AS canonical_mobile,
+                       COALESCE(identity.primary_owner_userid, '') AS canonical_owner_userid
                 FROM questionnaire_submissions qs
                 JOIN questionnaires q ON q.id = qs.questionnaire_id
-                WHERE qs.result_token = %s LIMIT 1
-                """,
-                (normalized_id,),
+                LEFT JOIN crm_user_identity identity ON identity.unionid = qs.unionid
+                WHERE qs.result_token = %s
+                LIMIT 1
+            """
+        elif lookup == "record_id":
+            query = """
+                SELECT qs.*, q.slug,
+                       COALESCE(identity.primary_external_userid, '') AS canonical_external_userid,
+                       COALESCE(identity.primary_openid, '') AS canonical_openid,
+                       COALESCE(identity.mobile, '') AS canonical_mobile,
+                       COALESCE(identity.primary_owner_userid, '') AS canonical_owner_userid
+                FROM questionnaire_submissions qs
+                JOIN questionnaires q ON q.id = qs.questionnaire_id
+                LEFT JOIN crm_user_identity identity ON identity.unionid = qs.unionid
+                WHERE qs.id = %s
+                LIMIT 1
+            """
+        else:
+            raise ValueError(f"unsupported questionnaire submission lookup: {lookup}")
+        with self._connect() as conn:
+            row = conn.execute(
+                query,
+                (value,),
             ).fetchone()
             if not row:
                 return None
@@ -1622,7 +1709,10 @@ class PostgresQuestionnaireReadRepository:
             "answers": answers,
             "score": float(row.get("total_score") or 0),
             "final_tags": _json_list(row.get("final_tags")),
-            "mobile": _text(row.get("mobile_snapshot")),
+            "external_userid": _text(row.get("canonical_external_userid")),
+            "openid": _text(row.get("canonical_openid")),
+            "follow_user_userid": _text(row.get("follow_user_userid") or row.get("canonical_owner_userid")),
+            "mobile": _text(row.get("canonical_mobile")),
             "created_at": _timestamp(row.get("submitted_at")),
             "submitted_at": _timestamp(row.get("submitted_at")),
             "answer_snapshots": answer_snapshots,
@@ -1682,38 +1772,6 @@ class PostgresQuestionnaireReadRepository:
 
     def get_app_setting(self, key: str) -> str | None:
         return runtime_setting(key, "") or None
-
-    def create_external_push_log(self, **kwargs: Any) -> dict[str, Any]:
-        with self._connect() as conn:
-            row = conn.execute(
-                """
-                INSERT INTO questionnaire_external_push_logs (
-                    questionnaire_id, questionnaire_title_snapshot, submission_record_id, retry_from_log_id,
-                    retry_attempt, user_id, target_url, request_payload, response_status_code, response_body,
-                    status, failure_reason, created_at, updated_at
-                )
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW(), NOW())
-                RETURNING id, questionnaire_id, questionnaire_title_snapshot, submission_record_id,
-                          retry_from_log_id, retry_attempt, user_id, target_url, request_payload,
-                          response_status_code, response_body, status, failure_reason, created_at, updated_at
-                """,
-                (
-                    int(kwargs["questionnaire_id"]),
-                    _text(kwargs.get("questionnaire_title_snapshot")),
-                    int(kwargs["submission_record_id"]),
-                    int(kwargs["retry_from_log_id"]) if kwargs.get("retry_from_log_id") else None,
-                    max(0, int(kwargs.get("retry_attempt") or 0)),
-                    _text(kwargs.get("user_id")),
-                    _text(kwargs.get("target_url")),
-                    _jsonb(_json_dict(kwargs.get("request_payload"))),
-                    kwargs.get("response_status_code"),
-                    _text(kwargs.get("response_body")),
-                    _text(kwargs.get("status")),
-                    _text(kwargs.get("failure_reason")),
-                ),
-            ).fetchone()
-            conn.commit()
-        return dict(row)
 
     def list_external_push_log_threads(
         self,
@@ -1786,8 +1844,9 @@ class PostgresQuestionnaireReadRepository:
 
     def summarize_external_push_logs(self, questionnaire_id: int) -> dict[str, Any]:
         with self._connect() as conn:
-            row = conn.execute(
-                """
+            row = (
+                conn.execute(
+                    """
                 SELECT COUNT(*) AS total_count,
                        SUM(CASE WHEN status = 'success' THEN 1 ELSE 0 END) AS success_count,
                        SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) AS failed_count,
@@ -1795,37 +1854,16 @@ class PostgresQuestionnaireReadRepository:
                 FROM questionnaire_external_push_logs
                 WHERE questionnaire_id = %s
                 """,
-                (int(questionnaire_id),),
-            ).fetchone() or {}
+                    (int(questionnaire_id),),
+                ).fetchone()
+                or {}
+            )
         return {
             "total_count": int(row.get("total_count") or 0),
             "success_count": int(row.get("success_count") or 0),
             "failed_count": int(row.get("failed_count") or 0),
             "last_created_at": _timestamp(row.get("last_created_at")),
         }
-
-    def get_external_push_log(self, log_id: int) -> dict[str, Any] | None:
-        with self._connect() as conn:
-            row = conn.execute(
-                """
-                SELECT id, questionnaire_id, questionnaire_title_snapshot, submission_record_id,
-                       retry_from_log_id, retry_attempt, user_id, target_url, request_payload,
-                       response_status_code, response_body, status, failure_reason, created_at, updated_at
-                FROM questionnaire_external_push_logs
-                WHERE id = %s
-                LIMIT 1
-                """,
-                (int(log_id),),
-            ).fetchone()
-        return _normalized_external_push_log(dict(row)) if row else None
-
-    def count_external_push_retry_logs(self, root_log_id: int) -> int:
-        with self._connect() as conn:
-            row = conn.execute(
-                "SELECT COUNT(*) AS total FROM questionnaire_external_push_logs WHERE retry_from_log_id = %s",
-                (int(root_log_id),),
-            ).fetchone() or {}
-        return int(row.get("total") or 0)
 
 
 _DEFAULT_REPO = InMemoryQuestionnaireRepository()

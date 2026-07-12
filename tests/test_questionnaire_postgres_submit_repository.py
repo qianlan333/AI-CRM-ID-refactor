@@ -101,9 +101,11 @@ def test_postgres_questionnaire_submit_writes_submission_and_answer_snapshots(mo
     assert submission["matched_by"] == "unionid"
     assert submission["mobile"] == "13770938680"
     assert submission["score"] == 10
-    assert len(connection.calls) == 4
+    assert len(connection.calls) == 6
+    assert "pg_advisory_xact_lock" in connection.calls[1][0]
+    assert "FROM questionnaire_submissions" in connection.calls[2][0]
 
-    submission_params = connection.calls[1][1]
+    submission_params = connection.calls[3][1]
     assert submission_params[0] == 499
     assert submission_params[1] == "union_questionnaire_submit_499"
     assert submission_params[2] == "LinKaiYan"
@@ -111,12 +113,12 @@ def test_postgres_questionnaire_submit_writes_submission_and_answer_snapshots(mo
     assert submission_params[7] == ["activated"]
     assert submission_params[9] == "result_grant_postgres_contract_001"
 
-    mobile_answer_params = connection.calls[2][1]
+    mobile_answer_params = connection.calls[4][1]
     assert mobile_answer_params[1] == 11
     assert mobile_answer_params[2] == "mobile"
     assert mobile_answer_params[8] == "13770938680"
 
-    choice_answer_params = connection.calls[3][1]
+    choice_answer_params = connection.calls[5][1]
     assert choice_answer_params[1] == 12
     assert choice_answer_params[4] == [31]
     assert choice_answer_params[5] == ["已激活"]
