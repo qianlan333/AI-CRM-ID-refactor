@@ -53,6 +53,20 @@ def test_every_runtime_python_change_runs_import_graph_architecture_gate() -> No
     assert result["needs_full_ci"] is False
 
 
+def test_import_graph_governance_changes_force_mapped_full_ci() -> None:
+    result = _select(
+        "tools/check_import_graph.py",
+        "docs/architecture/import_graph_baseline.yml",
+        "tests/test_import_graph_guard.py",
+    )
+
+    assert "import_graph_governance" in result["matched_scopes"]
+    assert result["unmatched_files"] == []
+    assert "tests/test_import_graph_guard.py" in result["python_tests"]
+    assert result["architecture_gate"] == "full"
+    assert result["needs_full_ci"] is True
+
+
 def test_h5_wechat_pay_mobile_projection_test_selects_commerce_scope() -> None:
     result = _select("tests/test_h5_wechat_pay_mobile_projection.py")
 

@@ -1010,6 +1010,23 @@
       "architecture_gate": "db"
     },
     {
+      "name": "import_graph_governance",
+      "paths": [
+        "tools/check_import_graph.py",
+        "docs/architecture/import_graph_baseline.yml",
+        "tests/test_import_graph_guard.py"
+      ],
+      "python_tests": [
+        "tests/test_import_graph_guard.py",
+        "tests/test_architecture_boundaries.py",
+        "tests/test_select_test_scope.py",
+        "tests/test_ci_workflow_contract.py"
+      ],
+      "needs_postgres": false,
+      "needs_full_ci": true,
+      "architecture_gate": "full"
+    },
+    {
       "name": "ci_scope_selector",
       "paths": [
         "docs/ci/test_scope_manifest.yml",
