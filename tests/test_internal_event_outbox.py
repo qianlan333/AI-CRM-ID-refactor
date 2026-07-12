@@ -3,6 +3,8 @@ from __future__ import annotations
 import ast
 import os
 from pathlib import Path
+import subprocess
+import sys
 
 import pytest
 from psycopg.rows import dict_row
@@ -66,6 +68,22 @@ def _registry(*names: str) -> InternalEventConsumerRegistry:
 
 def _database_url() -> str:
     return str(os.getenv("AICRM_TEST_DATABASE_URL") or os.getenv("DATABASE_URL") or "").strip()
+
+
+def test_reconciliation_script_supports_direct_file_entrypoint() -> None:
+    environment = dict(os.environ)
+    environment.pop("PYTHONPATH", None)
+    result = subprocess.run(
+        [sys.executable, "scripts/ops/reconcile_internal_event_outbox.py", "--help"],
+        cwd=ROOT,
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "Diagnose or repair internal event outbox gaps" in result.stdout
 
 
 def test_outbox_relay_is_idempotent_and_creates_all_registered_runs() -> None:

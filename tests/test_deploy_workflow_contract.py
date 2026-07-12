@@ -301,7 +301,6 @@ def test_production_deploy_installs_and_runs_broadcast_queue_worker_timer():
     health_index = workflow.index("curl -sSf -D /tmp/aicrm_health_headers.txt http://127.0.0.1:5001/health", workflow.index("for _ in $(seq 1 60); do"))
     install_index = workflow.index(_runtime_units_phase("install-enable-after-web-health"))
     verify_index = workflow.index(_runtime_units_phase("verify"))
-
     assert health_index < install_index < verify_index
 
 
@@ -311,8 +310,10 @@ def test_production_deploy_installs_and_runs_internal_event_worker_timer():
     health_index = workflow.index("curl -sSf -D /tmp/aicrm_health_headers.txt http://127.0.0.1:5001/health", workflow.index("for _ in $(seq 1 60); do"))
     install_index = workflow.index(_runtime_units_phase("install-enable-after-web-health"))
     verify_index = workflow.index(_runtime_units_phase("verify"))
+    reconciliation_index = workflow.index("python scripts/ops/reconcile_internal_event_outbox.py")
 
-    assert health_index < install_index < verify_index
+    assert health_index < install_index < verify_index < reconciliation_index
+    assert "python scripts/ops/reconcile_internal_event_outbox.py --repair" not in workflow
 
 
 def test_external_push_worker_systemd_units_are_deployable():
