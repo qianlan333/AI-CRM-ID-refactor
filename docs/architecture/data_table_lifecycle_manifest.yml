@@ -1462,24 +1462,25 @@ tables:
 
   questionnaire_external_push_logs:
     domain: questionnaire
-    lifecycle: queue
-    write_owner: aicrm_next.questionnaire.repo
+    lifecycle: audit
+    write_owner: ""
     read_owners:
       - aicrm_next.questionnaire.repo
       - questionnaire external push admin pages
-    replacement: external_effect_job, external_effect_attempt after questionnaire push convergence
+      - aicrm_next.questionnaire.reconciliation
+    replacement: internal_event, internal_event_consumer_run, external_effect_job, external_effect_attempt
     drop_candidate: true
-    drop_after: "after questionnaire external push history is represented by external_effect"
+    drop_after: "after historical rows are exported or their retention window expires"
     runtime_entrypoints:
-      - questionnaire external push
-      - questionnaire external push retry admin
+      - read-only questionnaire external push history
+      - R09 count-only stale legacy residue diagnosis
     migration_source: pre-Alembic baseline
     status_enum:
       column: status
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_repository_ownership_guard.py
-    notes: Active questionnaire webhook delivery ledger; future work should converge retries and status to external_effect.
+    notes: Retired append/status/retry ledger retained read-only for historical diagnosis. No production runtime may insert or update rows; all new delivery truth lives in Internal Event and External Effect tables.
 
   domain_event_outbox:
     domain: commerce_events
@@ -3022,10 +3023,30 @@ tables:
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
     notes: Outbound provider-task audit. Fake adapter results use simulated instead of created/sent semantics.
 
+  radar_click_events:
+    domain: radar
+    lifecycle: event
+    write_owner: aicrm_next.radar_links
+    read_owners:
+      - radar admin event list, export, and aggregate statistics
+    replacement: none; append-only Radar access event ledger
+    drop_candidate: false
+    drop_after: ""
+    runtime_entrypoints:
+      - Radar landing and trusted OAuth callback
+      - signed Radar viewer-session content events
+    migration_source: 0102_questionnaire_radar_invariants
+    pii_level: direct_contact
+    retention_policy: retained with the owning radar link and deleted by the link foreign-key cascade
+    guard_tests:
+      - tests/test_data_table_lifecycle_guard.py
+      - tests/test_r09_radar_ownership.py
+    notes: Raw identity columns may only be populated from validated OAuth results or a verified signed viewer session; query parameters and ordinary cookies are never identity sources.
+
   radar_links:
     domain: radar
     lifecycle: canonical
-    write_owner: aicrm_next.radar
+    write_owner: aicrm_next.radar_links
     read_owners:
       - aicrm_next.send_content
     replacement: none; active production schema table registered during schema drift closeout
@@ -3033,7 +3054,7 @@ tables:
     drop_after: ""
     runtime_entrypoints:
       - existing production runtime
-    migration_source: pre-Alembic baseline, registered by 0083 schema drift closeout
+    migration_source: pre-Alembic baseline, hardened by 0102_questionnaire_radar_invariants
     pii_level: internal_contact
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
@@ -3043,7 +3064,7 @@ tables:
   radar_pdf_preview_assets:
     domain: radar
     lifecycle: read_model
-    write_owner: aicrm_next.radar
+    write_owner: aicrm_next.radar_links
     read_owners:
       - historical schema drift guard
     replacement: none; active production schema table registered during schema drift closeout

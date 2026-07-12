@@ -115,9 +115,7 @@ def check() -> list[str]:
     if unexpected_writers:
         errors.append("unexpected crm_user_identity write owners: " + ", ".join(map(str, unexpected_writers)))
 
-    postgres_binding_source = _read(Path("aicrm_next/identity_contact/repo.py")).split(
-        "class PostgresIdentityBindingRepository:", 1
-    )[1]
+    postgres_binding_source = _read(Path("aicrm_next/identity_contact/repo.py")).split("class PostgresIdentityBindingRepository:", 1)[1]
     for forbidden in ("INSERT INTO people", "UPDATE people", "INSERT INTO external_contact_bindings", "UPDATE external_contact_bindings"):
         if forbidden in postgres_binding_source:
             errors.append(f"production identity binding still writes legacy canonical path: {forbidden}")
@@ -130,28 +128,30 @@ def check() -> list[str]:
         errors.append("service period missing_unionid must be failed_retryable with an explicit error code")
 
     questionnaire_h5 = _read(Path("aicrm_next/questionnaire/h5_write.py"))
-    if "if not unionid:" not in questionnaire_h5 or '"error_code": "identity_pending_unionid"' not in questionnaire_h5:
-        errors.append("questionnaire tag execution must block unresolved canonical identity")
-    questionnaire_push = _read(Path("aicrm_next/questionnaire/external_push.py"))
-    if 'not _text(submission.get("unionid"))' not in questionnaire_push:
-        errors.append("questionnaire external push must require canonical unionid")
-    questionnaire_consumer = _read(Path("aicrm_next/platform_foundation/internal_events/questionnaire.py"))
     if (
-        'if not bool(submission.get("unionid_present"))' not in questionnaire_consumer
+        '"error_code": "identity_pending_unionid" if not unionid else ""' not in questionnaire_h5
+        or '"identity_pending": not bool(unionid and external_userid and follow_user_userid)' not in questionnaire_h5
+    ):
+        errors.append("questionnaire H5 must expose unresolved canonical identity as queued continuation state")
+    questionnaire_consumer = _read(Path("aicrm_next/questionnaire/event_consumers.py"))
+    if (
+        'if not _text(submission.get("unionid"))' not in questionnaire_consumer
         or 'status="failed_retryable"' not in questionnaire_consumer
         or 'error_code="missing_unionid"' not in questionnaire_consumer
     ):
         errors.append("questionnaire webhook consumer must keep missing unionid retryable and unsent")
+    if (
+        "def questionnaire_tag_consumer(" not in questionnaire_consumer
+        or 'error_code="identity_pending_unionid" if "unionid" in missing' not in questionnaire_consumer
+        or 'target_type="unionid"' not in questionnaire_consumer
+    ):
+        errors.append("questionnaire tag consumer must require canonical unionid before planning an effect")
 
     payment_source = _read(Path("aicrm_next/public_product/h5_wechat_pay.py"))
-    payment_resolver_source = payment_source.split("def _resolve_payment_identity(", 1)[1].split(
-        "\ndef _paid_order_for_product_identity(", 1
-    )[0]
+    payment_resolver_source = payment_source.split("def _resolve_payment_identity(", 1)[1].split("\ndef _paid_order_for_product_identity(", 1)[0]
     if "external_userid" in payment_resolver_source or "mobile=" in payment_resolver_source:
         errors.append("payment identity resolver must not mix sidebar customer context into payer identity")
-    payment_create_source = payment_source.split("def create_jsapi_order_response(", 1)[1].split(
-        "\ndef order_status_response(", 1
-    )[0]
+    payment_create_source = payment_source.split("def create_jsapi_order_response(", 1)[1].split("\ndef order_status_response(", 1)[0]
     required_payment_tokens = (
         "_resolve_payment_identity(conn, identity, for_update=True)",
         'order_identity["unionid"] = canonical_unionid',
@@ -163,9 +163,7 @@ def check() -> list[str]:
     resolver_position = payment_create_source.find("_resolve_payment_identity(conn, identity, for_update=True)")
     insert_position = payment_create_source.find("_insert_order(")
     wechat_position = payment_create_source.find("client = WeChatPayClient(config)")
-    if min(resolver_position, insert_position, wechat_position) < 0 or not (
-        resolver_position < wechat_position < insert_position
-    ):
+    if min(resolver_position, insert_position, wechat_position) < 0 or not (resolver_position < wechat_position < insert_position):
         errors.append("payment identity resolution must happen before order insert and WeChat Pay call")
 
     bridge_service = _read(Path("aicrm_next/channel_entry/identity_bridge_service.py"))

@@ -203,7 +203,8 @@ def test_questionnaire_external_push_log_routes_use_next_native_handlers(monkeyp
     assert "forward_to_legacy_flask" not in source
     assert '"/admin/questionnaires/external-push-logs"' in source
     assert "QuestionnaireExternalPushLogReadService" in source
-    assert "QuestionnaireExternalPushRetryService" in source
+    assert "QuestionnaireExternalPushRetryService" not in source
+    assert "external-push-logs/retry-batch" not in source
     assert not (ROOT / "aicrm_next/frontend_compat/legacy_routes.py").exists()
 
 
@@ -341,9 +342,7 @@ def test_admin_login_route_is_next_owned_when_production_facade_is_enabled(monke
             headers={"X-AICRM-Compatibility-Facade": "legacy_flask_facade"},
         )
 
-    response = TestClient(create_app(), raise_server_exceptions=False).get(
-        "/login?next=/admin/automation-conversion/programs/7/entry-channels"
-    )
+    response = TestClient(create_app(), raise_server_exceptions=False).get("/login?next=/admin/automation-conversion/programs/7/entry-channels")
 
     assert response.status_code == 200
     assert response.headers["X-AICRM-Route-Owner"] == "ai_crm_next"

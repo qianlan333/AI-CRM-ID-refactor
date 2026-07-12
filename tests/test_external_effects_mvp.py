@@ -7,6 +7,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 import requests
+import pytest
 from fastapi.testclient import TestClient
 
 from aicrm_next.admin_jobs.routes import ensure_admin_action_token
@@ -29,7 +30,16 @@ from aicrm_next.platform_foundation.external_effects import (
 from aicrm_next.platform_foundation.external_effects.repo import InMemoryExternalEffectRepository, _public_job, build_external_effect_repository
 from aicrm_next.platform_foundation.external_effects.retry_policy import classify_error_code, retry_delay_seconds
 from aicrm_next.platform_foundation.external_effects.worker import ExternalEffectWorker
-from aicrm_next.platform_foundation.external_effects.adapters import DEFAULT_ADAPTER_REGISTRY, ExternalEffectAdapterRegistry, WeChatPaymentAdapter, WeComContactTagAdapter, WeComProfileUpdateAdapter, WebhookAdapter
+from aicrm_next.platform_foundation.external_effects.adapters import (
+    DEFAULT_ADAPTER_REGISTRY,
+    ExternalEffectAdapterRegistry,
+    WeChatPaymentAdapter,
+    WeComContactTagAdapter,
+    WeComProfileUpdateAdapter,
+    WebhookAdapter,
+)
+from aicrm_next.platform_foundation.internal_events import QUESTIONNAIRE_SUBMITTED_EVENT_TYPE
+from aicrm_next.platform_foundation.internal_events.worker import InternalEventWorker
 from aicrm_next.integration_gateway.wechat_pay_client import WeChatPayClientError
 from aicrm_next.public_product import h5_wechat_pay
 from aicrm_next.public_product.h5_wechat_pay import _apply_transaction
@@ -282,11 +292,29 @@ def _submit_questionnaire_queue_loopback_job(
     assert body["external_push_mode"] == "queue"
     assert body["external_push"]["attempted"] is False
     assert body["real_external_call_executed"] is False
-    assert body["external_effect_job"]["status"] == "queued"
-    assert body["external_effect_job"]["execution_mode"] == "execute"
-    assert body["external_effect_job"]["payload_json"]["execution_scope"] == "test_loopback"
-    assert body["external_effect_job"]["payload_json"]["receiver_token"] == receiver_token
-    return body["external_effect_job"]
+    assert body["external_effect_job"] is None
+    assert body["external_effect_job_status"] == "not_planned"
+
+    planned = InternalEventWorker().run_due(
+        batch_size=1,
+        dry_run=False,
+        event_types=[QUESTIONNAIRE_SUBMITTED_EVENT_TYPE],
+        consumer_names=["questionnaire_webhook_consumer"],
+    )
+    assert planned["counts"]["succeeded_count"] == 1, planned
+    jobs, total = ExternalEffectService().list_jobs(
+        {
+            "effect_type": WEBHOOK_QUESTIONNAIRE_SUBMISSION_PUSH,
+            "target_id": body["submission_id"],
+        }
+    )
+    assert total == 1
+    job = jobs[0].to_dict()
+    assert job["status"] == "queued"
+    assert job["execution_mode"] == "execute"
+    assert job["payload_json"]["execution_scope"] == "test_loopback"
+    assert job["payload_json"]["receiver_token"] == receiver_token
+    return job
 
 
 def test_external_effect_service_idempotency_filters_retry_and_cancel() -> None:
@@ -852,12 +880,15 @@ def test_unknown_external_effect_api_retry_requires_duplicate_risk_confirmation(
     job = _queued_webhook_job(ExternalEffectService(repo), idempotency_key="api-unknown-retry")
     claimed = repo.acquire_job(job["id"], locked_by="worker-api-unknown")
     assert claimed is not None
-    assert repo.mark_dispatch_unknown(
-        job=claimed,
-        error_code="timeout",
-        error_message="provider response unknown",
-        side_effect_executed=True,
-    ) is not None
+    assert (
+        repo.mark_dispatch_unknown(
+            job=claimed,
+            error_code="timeout",
+            error_message="provider response unknown",
+            side_effect_executed=True,
+        )
+        is not None
+    )
     token = ensure_admin_action_token()
 
     missing_confirmation = next_client.post(
@@ -1265,7 +1296,9 @@ def test_external_effect_receiver_enabled_records_receipt(next_client: TestClien
     ).json()
     token = created["job"]["payload_json"]["receiver_token"]
 
-    response = next_client.post(f"/api/external-effects/test-receiver/{token}", json=created["job"]["payload_json"]["body"], headers={"Authorization": "Bearer secret"})
+    response = next_client.post(
+        f"/api/external-effects/test-receiver/{token}", json=created["job"]["payload_json"]["body"], headers={"Authorization": "Bearer secret"}
+    )
     receipts = next_client.get("/api/admin/external-effects/test-receipts", params={"job_id": created["job"]["id"]})
 
     assert response.status_code == 200
@@ -1438,10 +1471,19 @@ def test_questionnaire_submit_queues_external_push_without_legacy_call(client: T
     assert body["external_push_mode"] == "queue"
     assert body["external_push"]["status"] == "queued"
     assert body["real_external_call_executed"] is False
-    assert body["external_effect_job"]["effect_type"] == WEBHOOK_QUESTIONNAIRE_SUBMISSION_PUSH
-    assert body["external_effect_job"]["execution_mode"] == "execute"
-    assert body["external_effect_job"]["status"] == "queued"
-    assert body["external_effect_job_id"]
+    assert body["external_effect_job"] is None
+    assert body["external_effect_job_id"] is None
+
+    planned = InternalEventWorker().run_due(
+        batch_size=1,
+        dry_run=False,
+        event_types=[QUESTIONNAIRE_SUBMITTED_EVENT_TYPE],
+        consumer_names=["questionnaire_webhook_consumer"],
+    )
+    jobs, total = ExternalEffectService().list_jobs({"effect_type": WEBHOOK_QUESTIONNAIRE_SUBMISSION_PUSH, "target_id": body["submission_id"]})
+    assert planned["counts"]["succeeded_count"] == 1, planned
+    assert total == 1
+    assert jobs[0].status == "queued"
 
 
 def test_questionnaire_external_push_is_queue_only(client: TestClient, monkeypatch) -> None:
@@ -1463,14 +1505,21 @@ def test_questionnaire_external_push_is_queue_only(client: TestClient, monkeypat
     assert external_push.QUESTIONNAIRE_EXTERNAL_PUSH_MODE == "queue"
     assert response.status_code == 200
     assert body["external_push_mode"] == "queue"
-    assert body["external_effect_job_id"]
-    assert body["external_effect_job_status"] == "queued"
-    assert body["external_effect_job"]["execution_mode"] == "execute"
-    assert body["external_effect_job"]["status"] == "queued"
+    assert body["external_effect_job_id"] is None
+    assert body["external_effect_job_status"] == "not_planned"
+    assert body["external_effect_job"] is None
     assert body["real_external_call_executed"] is False
     assert body["external_push"]["attempted"] is False
     assert body["external_push"]["status"] == "queued"
     assert "external_push.queued" in body["side_effect_plan"]["payload"]["planned_effects"]
+
+    planned = InternalEventWorker().run_due(
+        batch_size=1,
+        dry_run=False,
+        event_types=[QUESTIONNAIRE_SUBMITTED_EVENT_TYPE],
+        consumer_names=["questionnaire_webhook_consumer"],
+    )
+    assert planned["counts"]["succeeded_count"] == 1, planned
 
 
 def test_questionnaire_queue_mode_preview_dry_run_and_loopback_execute_2xx(next_client: TestClient, monkeypatch) -> None:
@@ -1566,7 +1615,12 @@ def test_questionnaire_queue_mode_loopback_500_retryable_and_400_terminal(next_c
     assert {receipt.job_id for receipt in receipts} >= {retry_job["id"], terminal_job["id"]}
 
 
-def test_questionnaire_queue_mode_job_creation_failure_does_not_fail_submission(client: TestClient, monkeypatch) -> None:
+@pytest.mark.parametrize("failure_stage", ["find", "plan"])
+def test_questionnaire_queue_mode_job_creation_failure_is_retryable_after_submission(
+    client: TestClient,
+    monkeypatch,
+    failure_stage: str,
+) -> None:
     monkeypatch.setenv("AICRM_QUESTIONNAIRE_EXTERNAL_PUSH_MODE", "queue")
     _questionnaire, phone_question_id = _seed_hxc_questionnaire(
         monkeypatch,
@@ -1574,10 +1628,19 @@ def test_questionnaire_queue_mode_job_creation_failure_does_not_fail_submission(
     )
 
     class _BrokenExternalEffectService:
+        def find_existing_job(self, **_kwargs):
+            if failure_stage == "find":
+                raise RuntimeError("external effect lookup unavailable")
+            return None
+
         def plan_effect(self, **_kwargs):
+            if failure_stage != "plan":
+                raise AssertionError("planner must not run after lookup failure")
             raise RuntimeError("external effect unavailable")
 
-    monkeypatch.setattr(external_push, "ExternalEffectService", _BrokenExternalEffectService)
+    from aicrm_next.questionnaire import event_consumers
+
+    monkeypatch.setattr(event_consumers, "ExternalEffectService", _BrokenExternalEffectService)
 
     response = client.post(
         "/api/h5/questionnaires/hxc-activation-v1/submit",
@@ -1585,7 +1648,7 @@ def test_questionnaire_queue_mode_job_creation_failure_does_not_fail_submission(
             "answers": {phone_question_id: "13770938685"},
             "identity": {"external_userid": "wx_ext_001"},
         },
-        headers={"Idempotency-Key": "questionnaire-queue-plan-failure"},
+        headers={"Idempotency-Key": f"questionnaire-queue-{failure_stage}-failure"},
     )
     body = response.json()
 
@@ -1594,6 +1657,13 @@ def test_questionnaire_queue_mode_job_creation_failure_does_not_fail_submission(
     assert body["external_push_mode"] == "queue"
     assert body["real_external_call_executed"] is False
     assert body["external_effect_job_id"] is None
+    planned = InternalEventWorker().run_due(
+        batch_size=1,
+        dry_run=False,
+        event_types=[QUESTIONNAIRE_SUBMITTED_EVENT_TYPE],
+        consumer_names=["questionnaire_webhook_consumer"],
+    )
+    assert planned["counts"]["failed_retryable_count"] == 1, planned
 
 
 def test_payment_paid_enqueues_only_canonical_internal_event(monkeypatch) -> None:
@@ -1624,6 +1694,7 @@ def test_payment_paid_enqueues_only_canonical_internal_event(monkeypatch) -> Non
     assert event_requests[0].idempotency_key == "payment.succeeded:WXP_SHADOW_PAID"
     assert items == []
     assert total == 0
+
 
 def test_wecom_tag_adapter_registry_dispatches_contact_tag_mark_and_unmark(monkeypatch) -> None:
     calls: list[dict] = []
@@ -1694,7 +1765,7 @@ def test_wecom_tag_adapter_registry_dispatches_contact_tag_mark_and_unmark(monke
             "follow_user_userid": "owner-a",
             "add_tags": [],
             "remove_tags": ["tag_b"],
-        }
+        },
     ]
     assert mark_job["adapter_name"] == "wecom_tag"
     assert unmark_job["adapter_name"] == "wecom_tag"

@@ -30,7 +30,7 @@ def test_route_policy_inventory_covers_every_runtime_business_route() -> None:
     index = RoutePolicyIndex.from_manifest(MANIFEST)
     inventory = collect_route_inventory(app)
 
-    assert len(index) == len(inventory) == 708
+    assert len(index) == len(inventory) == 704
     for route in app.routes:
         if not isinstance(route, APIRoute) or route.path in FASTAPI_BUILTIN_ROUTE_PATHS:
             continue
@@ -51,32 +51,48 @@ def test_route_policy_inventory_uses_all_required_audiences() -> None:
 
 
 def test_known_unsafe_routes_have_explicit_deny_by_default_policies() -> None:
-    _assert_policy("/mcp", "POST", {
-        "audience": "external_integration",
-        "auth_scheme": "internal_bearer",
-        "capability": "external_write",
-        "access_scope": "service",
-        "pii_level": "sensitive",
-        "csrf": False,
-    })
+    _assert_policy(
+        "/mcp",
+        "POST",
+        {
+            "audience": "external_integration",
+            "auth_scheme": "internal_bearer",
+            "capability": "external_write",
+            "access_scope": "service",
+            "pii_level": "sensitive",
+            "csrf": False,
+        },
+    )
     assert _entry("/api/identity/resolve", "GET")["auth_scheme"] == "internal_bearer"
-    _assert_policy("/api/sidebar/bind-mobile", "POST", {
-        "auth_scheme": "sidebar_signed_context",
-        "capability": "sidebar_write",
-        "access_scope": "owner",
-    })
-    _assert_policy("/api/automation/group-ops/plans", "POST", {
-        "audience": "admin",
-        "auth_scheme": "admin_session",
-        "capability": "manage_group_ops",
-        "csrf": True,
-    })
-    _assert_policy("/api/h5/questionnaires/{slug}/result/{submission_id}", "GET", {
-        "auth_scheme": "signed_session_grant",
-        "access_scope": "single_resource",
-        "pii_level": "sensitive",
-        "requires_auth": True,
-    })
+    _assert_policy(
+        "/api/sidebar/bind-mobile",
+        "POST",
+        {
+            "auth_scheme": "sidebar_signed_context",
+            "capability": "sidebar_write",
+            "access_scope": "owner",
+        },
+    )
+    _assert_policy(
+        "/api/automation/group-ops/plans",
+        "POST",
+        {
+            "audience": "admin",
+            "auth_scheme": "admin_session",
+            "capability": "manage_group_ops",
+            "csrf": True,
+        },
+    )
+    _assert_policy(
+        "/api/h5/questionnaires/{slug}/result/{submission_id}",
+        "GET",
+        {
+            "auth_scheme": "signed_session_grant",
+            "access_scope": "single_resource",
+            "pii_level": "sensitive",
+            "requires_auth": True,
+        },
+    )
 
 
 def test_admin_session_writes_always_require_csrf() -> None:
@@ -86,9 +102,7 @@ def test_admin_session_writes_always_require_csrf() -> None:
     violations = [
         f"{','.join(entry['methods'])} {entry['path']}"
         for entry in entries
-        if entry["auth_scheme"] == "admin_session"
-        and unsafe_methods.intersection(entry["methods"])
-        and entry["csrf"] is not True
+        if entry["auth_scheme"] == "admin_session" and unsafe_methods.intersection(entry["methods"]) and entry["csrf"] is not True
     ]
 
     assert violations == []
