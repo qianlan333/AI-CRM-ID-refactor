@@ -401,7 +401,7 @@
       "accessor": "os.getenv",
       "file": "aicrm_next/automation_engine/group_ops/broadcast.py",
       "key": "AICRM_GROUP_OPS_BROADCAST_PLAN_ID",
-      "line": 258
+      "line": 261
     },
     {
       "accessor": "os.getenv",
@@ -413,7 +413,7 @@
       "accessor": "os.getenv",
       "file": "aicrm_next/automation_engine/group_ops/broadcast.py",
       "key": "AICRM_GROUP_OPS_MINIPROGRAM_APPID",
-      "line": 266
+      "line": 269
     },
     {
       "accessor": "os.getenv",
@@ -1643,7 +1643,7 @@
       "accessor": "runtime_setting",
       "file": "aicrm_next/channel_entry/application.py",
       "key": "WECOM_CALLBACK_AES_KEY",
-      "line": 53
+      "line": 54
     },
     {
       "accessor": "os.getenv",
@@ -1673,7 +1673,7 @@
       "accessor": "runtime_setting",
       "file": "aicrm_next/channel_entry/application.py",
       "key": "WECOM_CALLBACK_TOKEN",
-      "line": 52
+      "line": 53
     },
     {
       "accessor": "os.getenv",
@@ -1727,7 +1727,7 @@
       "accessor": "os.getenv",
       "file": "aicrm_next/channel_entry/application.py",
       "key": "WECOM_CORP_ID",
-      "line": 51
+      "line": 52
     },
     {
       "accessor": "os.getenv",
@@ -1859,13 +1859,13 @@
       "accessor": "os.getenv",
       "file": "aicrm_next/channel_entry/application.py",
       "key": "WORKER_RELEASE_SHA",
-      "line": 912
+      "line": 953
     },
     {
       "accessor": "os.getenv",
       "file": "aicrm_next/channel_entry/application.py",
       "key": "WORKER_RELEASE_SHA",
-      "line": 1130
+      "line": 1171
     },
     {
       "accessor": "os.getenv",

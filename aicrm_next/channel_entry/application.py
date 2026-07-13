@@ -41,6 +41,7 @@ from aicrm_next.platform_foundation.external_effects import (
 )
 from aicrm_next.platform_foundation.internal_events import InternalEventService
 from aicrm_next.platform_foundation.external_effects.realtime import wake_external_effect_job
+from aicrm_next.platform_foundation.external_effects.adapters import ExternalEffectAdapterRegistry
 
 CUSTOMER_NAME_PLACEHOLDER_RE = re.compile(r"\{\{\s*客户名\s*\}\}")
 LOGGER = logging.getLogger(__name__)
@@ -191,11 +192,18 @@ def _plan_channel_entry_effect(
     )
 
 
-def _wake_channel_entry_external_effect_job(job_id: Any, *, effect_type: str, reason: str) -> bool:
+def _wake_channel_entry_external_effect_job(
+    job_id: Any,
+    *,
+    effect_type: str,
+    reason: str,
+    adapter_registry: ExternalEffectAdapterRegistry | None = None,
+) -> bool:
     return wake_external_effect_job(
         job_id,
         reason=reason,
         effect_type=effect_type,
+        adapter_registry=adapter_registry,
     )
 
 
@@ -562,7 +570,13 @@ def _render_welcome_message_template(message: Any, command: ProcessChannelEntryC
     return CUSTOMER_NAME_PLACEHOLDER_RE.sub(_resolve_welcome_customer_name(command), rendered)
 
 
-def _send_welcome(command: ProcessChannelEntryCommand, *, channel: dict[str, Any], scene: str) -> dict[str, Any]:
+def _send_welcome(
+    command: ProcessChannelEntryCommand,
+    *,
+    channel: dict[str, Any],
+    scene: str,
+    adapter_registry: ExternalEffectAdapterRegistry | None = None,
+) -> dict[str, Any]:
     channel_id = int(channel.get("id") or 0)
     welcome_code = extract_welcome_code(command.payload_json)
     key = f"{extract_corp_id(command.payload_json)}:{command.external_contact_id}:{command.follow_user_userid}:{welcome_code}:welcome"
@@ -633,6 +647,7 @@ def _send_welcome(command: ProcessChannelEntryCommand, *, channel: dict[str, Any
         job.get("id"),
         effect_type=WECOM_WELCOME_MESSAGE_SEND,
         reason="channel_entry_welcome_message",
+        adapter_registry=adapter_registry,
     )
     result = {
         "attempted": True,
@@ -652,7 +667,13 @@ def _send_welcome(command: ProcessChannelEntryCommand, *, channel: dict[str, Any
     return result
 
 
-def _apply_tag(command: ProcessChannelEntryCommand, *, channel: dict[str, Any], scene: str) -> dict[str, Any]:
+def _apply_tag(
+    command: ProcessChannelEntryCommand,
+    *,
+    channel: dict[str, Any],
+    scene: str,
+    adapter_registry: ExternalEffectAdapterRegistry | None = None,
+) -> dict[str, Any]:
     channel_id = int(channel.get("id") or 0)
     tag_id = text(channel.get("entry_tag_id"))
     key = f"{extract_corp_id(command.payload_json)}:{command.external_contact_id}:{command.follow_user_userid}:{tag_id}:{channel_id}:tag"
@@ -711,6 +732,7 @@ def _apply_tag(command: ProcessChannelEntryCommand, *, channel: dict[str, Any], 
             job.get("id"),
             effect_type=WECOM_CONTACT_TAG_MARK,
             reason="channel_entry_tag_mark",
+            adapter_registry=adapter_registry,
         ),
         "real_external_call_executed": False,
     }
@@ -718,7 +740,11 @@ def _apply_tag(command: ProcessChannelEntryCommand, *, channel: dict[str, Any], 
     return result
 
 
-def process_channel_entry(command: ProcessChannelEntryCommand) -> dict[str, Any]:
+def process_channel_entry(
+    command: ProcessChannelEntryCommand,
+    *,
+    external_effect_adapter_registry: ExternalEffectAdapterRegistry | None = None,
+) -> dict[str, Any]:
     scene = extract_scene(command.payload_json)
     corp_id = extract_corp_id(command.payload_json)
     channel, match = resolve_channel_for_scene(scene_value=scene, corp_id=corp_id, persist_alias=not command.dry_run)
@@ -804,8 +830,18 @@ def process_channel_entry(command: ProcessChannelEntryCommand) -> dict[str, Any]
             response_json=channel_contact,
         )
 
-    welcome = _send_welcome(command, channel=channel, scene=scene)
-    tag = _apply_tag(command, channel=channel, scene=scene)
+    welcome = _send_welcome(
+        command,
+        channel=channel,
+        scene=scene,
+        adapter_registry=external_effect_adapter_registry,
+    )
+    tag = _apply_tag(
+        command,
+        channel=channel,
+        scene=scene,
+        adapter_registry=external_effect_adapter_registry,
+    )
     mode = "channel_baseline_only" if has_unionid else "channel_runtime_only"
     reason = "channel_entry_baseline_recorded" if has_unionid else "channel_entry_runtime_recorded"
     return {
@@ -824,7 +860,11 @@ def process_channel_entry(command: ProcessChannelEntryCommand) -> dict[str, Any]
     }
 
 
-def process_wecom_external_contact_event(command: ProcessWeComExternalContactEventCommand) -> dict[str, Any]:
+def process_wecom_external_contact_event(
+    command: ProcessWeComExternalContactEventCommand,
+    *,
+    external_effect_adapter_registry: ExternalEffectAdapterRegistry | None = None,
+) -> dict[str, Any]:
     event = command.event_data
     logged = repo.log_external_contact_event(
         corp_id=command.corp_id,
@@ -850,7 +890,8 @@ def process_wecom_external_contact_event(command: ProcessWeComExternalContactEve
                         event_action=text(event.get("ChangeType")),
                         send_welcome_message=bool(text(event.get("WelcomeCode"))),
                         event_log_id=int(logged.get("id") or 0) or None,
-                    )
+                    ),
+                    external_effect_adapter_registry=external_effect_adapter_registry,
                 )
                 result.update({"handled": bool(entry.get("handled")), "entry_result": entry})
             else:

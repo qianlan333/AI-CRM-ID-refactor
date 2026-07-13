@@ -43,3 +43,20 @@ def test_web_apps_do_not_share_external_effect_adapter_instances() -> None:
         for name in first._adapters  # type: ignore[attr-defined]
     )
     assert first_app.state.external_effect_adapter_registry is not second_app.state.external_effect_adapter_registry
+
+
+def test_callback_workers_use_their_own_app_effect_registry() -> None:
+    first_app = create_app()
+    second_app = create_app()
+    first_worker = first_app.state.wecom_callback_inbox_worker_factory()
+    second_worker = second_app.state.wecom_callback_inbox_worker_factory()
+
+    assert first_worker is not second_worker
+    assert (
+        first_worker._processor.keywords["external_effect_adapter_registry"]  # type: ignore[attr-defined]
+        is first_app.state.external_effect_adapter_registry
+    )
+    assert (
+        second_worker._processor.keywords["external_effect_adapter_registry"]  # type: ignore[attr-defined]
+        is second_app.state.external_effect_adapter_registry
+    )

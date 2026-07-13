@@ -16,6 +16,8 @@ except ModuleNotFoundError:  # pragma: no cover - direct script execution
 ensure_repo_root_on_path()
 
 from aicrm_next.channel_entry.callback_worker import WeComCallbackWorker
+from aicrm_next.channel_entry_composition import build_wecom_callback_inbox_worker_factory
+from aicrm_next.external_effect_composition import build_external_effect_adapter_registry
 
 
 EXECUTE_ENV = "AICRM_WECOM_CALLBACK_INBOX_WORKER_EXECUTE"
@@ -81,7 +83,14 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 
 def run(*, limit: int | None = None, dry_run: bool = True) -> dict:
-    return WeComCallbackWorker().run_due(limit=int(limit or _default_limit()), dry_run=bool(dry_run))
+    return _build_worker().run_due(limit=int(limit or _default_limit()), dry_run=bool(dry_run))
+
+
+def _build_worker() -> WeComCallbackWorker:
+    factory = build_wecom_callback_inbox_worker_factory(
+        external_effect_adapter_registry=build_external_effect_adapter_registry(),
+    )
+    return factory()
 
 
 def run_loop(
@@ -91,7 +100,7 @@ def run_loop(
     stop_event: threading.Event,
     worker: Any | None = None,
 ) -> dict[str, Any]:
-    callback_worker = worker or WeComCallbackWorker()
+    callback_worker = worker or _build_worker()
     totals = {
         "batch_count": 0,
         "claimed_count": 0,

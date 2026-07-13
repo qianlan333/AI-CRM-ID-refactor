@@ -13,7 +13,7 @@ from .admin_auth.route_policy import route_policy_required_response
 from .admin_auth.action_token import build_admin_action_token_bundle, validate_action_token_for_request
 from .admin_config.pii_audit_repository import AdminConfigPiiAuditRepository
 from .automation_engine.repo import reset_automation_fixture_state
-from .channel_entry.inbox import WeComCallbackInboxWorker
+from .channel_entry_composition import build_wecom_callback_inbox_worker_factory
 from .commerce.repo import reset_commerce_fixture_state
 from .external_effect_composition import (
     build_external_effect_adapter_registry,
@@ -60,11 +60,15 @@ def create_app(*, pii_audit_repository: PiiAuditRepository | None = None) -> Fas
     app = FastAPI(title="AI-CRM Next", version="0.1.0")
     app.state.admin_action_token_bundle_builder = build_admin_action_token_bundle
     app.state.admin_action_token_validator = validate_action_token_for_request
-    app.state.wecom_callback_inbox_worker_factory = WeComCallbackInboxWorker
     app.state.mcp_jsonrpc_application = build_mcp_jsonrpc_application()
     app.state.external_effect_adapter_registry = build_external_effect_adapter_registry()
+    app.state.wecom_callback_inbox_worker_factory = build_wecom_callback_inbox_worker_factory(
+        external_effect_adapter_registry=app.state.external_effect_adapter_registry,
+    )
     app.state.external_effect_continuation_registry = build_external_effect_continuation_registry()
-    app.state.ai_audience_e2e_runner_factory = build_ai_audience_e2e_runner_factory()
+    app.state.ai_audience_e2e_runner_factory = build_ai_audience_e2e_runner_factory(
+        external_effect_adapter_registry=app.state.external_effect_adapter_registry,
+    )
     app.state.internal_event_consumer_registry = build_internal_event_consumer_registry()
     app.state.sidebar_contact_binding_status_query_factory = build_sidebar_contact_binding_status_query
     app.state.external_customer_detail_query = get_customer_detail
