@@ -7,9 +7,9 @@ from aicrm_next.platform_foundation.external_effects import ExternalEffectJob, E
 from aicrm_next.platform_foundation.command_bus import CommandContext
 
 from .consumer_registry import (
-    DEFAULT_INTERNAL_EVENT_CONSUMER_REGISTRY,
     InternalEventConsumerHandler,
     InternalEventConsumerRegistry,
+    current_internal_event_consumer_registry,
 )
 from .models import InternalEvent, InternalEventConsumerResult, InternalEventConsumerRun, InternalEventCreateRequest
 from .repository import read_wechat_pay_order_for_payment_event
@@ -310,7 +310,7 @@ def register_payment_succeeded_consumers(
     service_period_consumer: InternalEventConsumerHandler | None = None,
     webhook_order_paid_handler: InternalEventConsumerHandler | None = None,
 ) -> None:
-    registry = registry or DEFAULT_INTERNAL_EVENT_CONSUMER_REGISTRY
+    registry = registry or current_internal_event_consumer_registry()
 
     for event_type in PAYMENT_SUCCEEDED_EVENT_TYPES:
         registry.register(event_type, "order_projection_consumer", order_projection_consumer, consumer_type="projection")

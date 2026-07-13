@@ -6,9 +6,9 @@ from typing import Any
 from aicrm_next.platform_foundation.command_bus import CommandContext
 
 from .consumer_registry import (
-    DEFAULT_INTERNAL_EVENT_CONSUMER_REGISTRY,
     InternalEventConsumerHandler,
     InternalEventConsumerRegistry,
+    current_internal_event_consumer_registry,
 )
 from .models import InternalEventCreateRequest
 
@@ -109,7 +109,7 @@ def register_questionnaire_event_consumers(
     *,
     handlers: Mapping[str, InternalEventConsumerHandler] | None = None,
 ) -> None:
-    registry = registry or DEFAULT_INTERNAL_EVENT_CONSUMER_REGISTRY
+    registry = registry or current_internal_event_consumer_registry()
     handlers = dict(handlers or {})
     required = {
         "questionnaire_projection_consumer",

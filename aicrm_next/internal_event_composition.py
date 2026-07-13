@@ -39,8 +39,8 @@ def _plan_order_paid_external_push_effect_from_db(
         )
     return execute_commerce_transaction(_plan)
 from .platform_foundation.internal_events import (
-    DEFAULT_INTERNAL_EVENT_CONSUMER_REGISTRY,
     InternalEventConsumerRegistry,
+    current_internal_event_consumer_registry,
     register_payment_succeeded_consumers as _register_payment_succeeded_consumers,
     register_questionnaire_event_consumers as _register_questionnaire_event_consumers,
     register_refund_succeeded_consumers as _register_refund_succeeded_consumers,
@@ -49,7 +49,7 @@ from .platform_foundation.internal_events import (
 
 
 def register_payment_succeeded_consumers(registry: InternalEventConsumerRegistry | None = None) -> None:
-    registry = registry or DEFAULT_INTERNAL_EVENT_CONSUMER_REGISTRY
+    registry = registry or current_internal_event_consumer_registry()
     _register_payment_succeeded_consumers(
         registry,
         service_period_consumer=service_period_entitlement_consumer,
@@ -61,7 +61,7 @@ def register_payment_succeeded_consumers(registry: InternalEventConsumerRegistry
 
 
 def register_refund_succeeded_consumers(registry: InternalEventConsumerRegistry | None = None) -> None:
-    registry = registry or DEFAULT_INTERNAL_EVENT_CONSUMER_REGISTRY
+    registry = registry or current_internal_event_consumer_registry()
     _register_refund_succeeded_consumers(
         registry,
         service_period_consumer=service_period_refund_consumer,
@@ -69,7 +69,7 @@ def register_refund_succeeded_consumers(registry: InternalEventConsumerRegistry 
 
 
 def register_questionnaire_event_consumers(registry: InternalEventConsumerRegistry | None = None) -> None:
-    registry = registry or DEFAULT_INTERNAL_EVENT_CONSUMER_REGISTRY
+    registry = registry or current_internal_event_consumer_registry()
     _register_questionnaire_event_consumers(
         registry,
         handlers={
@@ -83,7 +83,7 @@ def register_questionnaire_event_consumers(registry: InternalEventConsumerRegist
 
 
 def register_shadow_event_consumers(registry: InternalEventConsumerRegistry | None = None) -> None:
-    registry = registry or DEFAULT_INTERNAL_EVENT_CONSUMER_REGISTRY
+    registry = registry or current_internal_event_consumer_registry()
     _register_shadow_event_consumers(
         registry,
         broadcast_task_planner_handler=partial(

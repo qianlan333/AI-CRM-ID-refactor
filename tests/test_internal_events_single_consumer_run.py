@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import pytest
+
+pytestmark = pytest.mark.usefixtures("composed_internal_event_registry")
+
 from fastapi.testclient import TestClient
 
 from aicrm_next.ai_audience_ops import register_ai_audience_event_consumers

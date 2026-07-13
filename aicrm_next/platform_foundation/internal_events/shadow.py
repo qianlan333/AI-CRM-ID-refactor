@@ -18,7 +18,7 @@ from .config import (
     owner_migration_internal_events_enabled,
     questionnaire_internal_events_enabled,
 )
-from .consumer_registry import DEFAULT_INTERNAL_EVENT_CONSUMER_REGISTRY, InternalEventConsumerRegistry
+from .consumer_registry import InternalEventConsumerRegistry, current_internal_event_consumer_registry
 from .legacy_path_markers import mark_legacy_path_invoked
 from .models import InternalEvent, InternalEventConsumerResult, InternalEventConsumerRun
 from .customer_identity import register_customer_identity_event_consumers
@@ -659,7 +659,7 @@ def register_shadow_event_consumers(
     *,
     broadcast_task_planner_handler: Any | None = None,
 ) -> None:
-    registry = registry or DEFAULT_INTERNAL_EVENT_CONSUMER_REGISTRY
+    registry = registry or current_internal_event_consumer_registry()
     register_customer_identity_event_consumers(registry)
 
     for event_type in (CUSTOMER_TAGGED_EVENT_TYPE, CUSTOMER_UNTAGGED_EVENT_TYPE):
