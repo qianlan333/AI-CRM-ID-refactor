@@ -111,6 +111,22 @@
   ],
   "scopes": [
     {
+      "name": "runtime_readiness",
+      "paths": [
+        "aicrm_next/platform_foundation/readiness.py",
+        "tests/test_runtime_readiness.py"
+      ],
+      "python_tests": [
+        "tests/test_runtime_readiness.py",
+        "tests/test_deploy_workflow_contract.py",
+        "tests/test_p1_runtime_security.py",
+        "tests/test_select_test_scope.py"
+      ],
+      "needs_postgres": true,
+      "needs_full_ci": true,
+      "architecture_gate": "full"
+    },
+    {
       "name": "questionnaire_editor_asset_split",
       "paths": [
         "aicrm_next/questionnaire/templates/admin_questionnaires.html",

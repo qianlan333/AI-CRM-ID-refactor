@@ -396,6 +396,8 @@ jobs:
             python3 scripts/ops/manage_production_runtime_units.py --phase install-enable-after-web-health --execute
             python scripts/ops/check_wecom_callback_deploy_smoke.py | tee /tmp/wecom-callback-deploy-smoke.json
             python3 scripts/ops/manage_production_runtime_units.py --phase verify --execute
+            curl -sSf http://127.0.0.1:5001/api/system/health \
+              | tee /tmp/aicrm-runtime-readiness.json
             runtime_units_stopped=0
             # Count-only R06 reconciliation. This command never repairs rows or executes consumers/providers.
             python scripts/ops/reconcile_internal_event_outbox.py \

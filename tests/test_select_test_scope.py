@@ -372,6 +372,21 @@ def test_questionnaire_editor_asset_split_has_permanent_full_ci_scope() -> None:
     assert result["architecture_gate"] == "full"
 
 
+def test_runtime_readiness_has_permanent_full_ci_scope() -> None:
+    result = _select(
+        "aicrm_next/platform_foundation/readiness.py",
+        "tests/test_runtime_readiness.py",
+    )
+
+    assert result["unmatched_files"] == []
+    assert "runtime_readiness" in result["matched_scopes"]
+    assert "tests/test_deploy_workflow_contract.py" in result["python_tests"]
+    assert "tests/test_p1_runtime_security.py" in result["python_tests"]
+    assert result["needs_postgres"] is True
+    assert result["needs_full_ci"] is True
+    assert result["architecture_gate"] == "full"
+
+
 def test_cloud_repository_split_modules_keep_permanent_postgres_coverage() -> None:
     result = _select(
         "aicrm_next/cloud_orchestrator/repository_legacy.py",
