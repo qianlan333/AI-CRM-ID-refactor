@@ -700,6 +700,8 @@ def test_sidebar_periodic_order_sql_reuses_service_period_member_remark_contract
     assert "metadata_json->>'admin_remark'" in source
     assert "metadata_json->>'remark'" in source
     assert "metadata_json->>'admin_remark'" in target_source
+    assert "e.mobile_snapshot" not in source
+    assert "e.mobile_snapshot" not in target_source
 
 
 def test_sidebar_periodic_order_remark_route_writes_service_period_member_remark(monkeypatch) -> None:
