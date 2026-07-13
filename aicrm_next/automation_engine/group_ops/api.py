@@ -617,7 +617,13 @@ async def execute_group_ops_token_broadcast(request: Request) -> JSONResponse:
     try:
         payload, images = await _parse_token_broadcast_request(request)
         context = getattr(request.state, "auth_context", None)
-        result = ExecuteGroupOpsTokenBroadcastCommand()(
+        result = ExecuteGroupOpsTokenBroadcastCommand(
+            external_effect_adapter_registry=getattr(
+                request.app.state,
+                "external_effect_adapter_registry",
+                None,
+            )
+        )(
             payload,
             idempotency_key=str(request.headers.get("Idempotency-Key") or payload.idempotency_key or ""),
             images=images,

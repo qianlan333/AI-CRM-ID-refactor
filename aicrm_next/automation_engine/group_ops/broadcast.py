@@ -17,6 +17,7 @@ from aicrm_next.integration_gateway.lesson_card_cover_client import (
     build_lesson_card_cover_client,
 )
 from aicrm_next.platform_foundation.external_effects import WECOM_MESSAGE_GROUP_SEND
+from aicrm_next.platform_foundation.external_effects.adapters import ExternalEffectAdapterRegistry
 from aicrm_next.platform_foundation.external_effects.models import utcnow
 from aicrm_next.platform_foundation.external_effects.repo import (
     ExternalEffectRepository,
@@ -142,10 +143,12 @@ class ExecuteGroupOpsTokenBroadcastCommand:
         *,
         group_repo: GroupOpsRepository | None = None,
         external_effect_repo: ExternalEffectRepository | None = None,
+        external_effect_adapter_registry: ExternalEffectAdapterRegistry | None = None,
     ) -> None:
         self._group_repo = group_repo or build_group_ops_repository()
         self._external_effect_repo = external_effect_repo or build_external_effect_repository()
         self._external_effect_service = ExternalEffectService(self._external_effect_repo)
+        self._external_effect_adapter_registry = external_effect_adapter_registry
 
     def __call__(
         self,
@@ -326,6 +329,7 @@ class ExecuteGroupOpsTokenBroadcastCommand:
     ) -> dict[str, Any]:
         ExternalEffectWorker(
             self._external_effect_repo,
+            self._external_effect_adapter_registry,
             locked_by=f"group-ops-broadcast-{job_id}",
         ).dispatch_one(job_id)
         return self._job_result(
