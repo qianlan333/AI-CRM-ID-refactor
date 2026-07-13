@@ -7,19 +7,13 @@
     {
       "service": "openclaw-wecom-callback-ingress.service",
       "health_url": "http://127.0.0.1:5002/health"
+    },
+    {
+      "service": "openclaw-wecom-callback-inbox-worker.service",
+      "stop_for_migration": true
     }
   ],
   "active_autostart": [
-    {
-      "timer": "openclaw-wecom-callback-inbox-worker.timer",
-      "service": "openclaw-wecom-callback-inbox-worker.service"
-    },
-    {
-      "timer": "openclaw-external-push-worker.timer",
-      "service": "openclaw-external-push-worker.service",
-      "kick_after_timer_restart": true,
-      "kick_failure_fatal": true
-    },
     {
       "timer": "aicrm-wechat-shop-order-sync.timer",
       "service": "aicrm-wechat-shop-order-sync.service",
@@ -51,16 +45,16 @@
     {
       "timer": "openclaw-identity-resolution-worker.timer",
       "service": "openclaw-identity-resolution-worker.service"
+    },
+    {
+      "timer": "openclaw-automation-ops-scheduler.timer",
+      "service": "openclaw-automation-ops-scheduler.service"
     }
   ],
   "approval_required": [
     {
       "timer": "aicrm-archive-sync.timer",
       "service": "aicrm-archive-sync.service"
-    },
-    {
-      "timer": "openclaw-automation-ops-scheduler.timer",
-      "service": "openclaw-automation-ops-scheduler.service"
     },
     {
       "timer": "openclaw-broadcast-hourly-feishu-report.timer",
@@ -77,6 +71,9 @@
   ],
   "retired_forbidden": [
     "aicrm-web.service",
+    "openclaw-wecom-callback-inbox-worker.timer",
+    "openclaw-external-push-worker.timer",
+    "openclaw-external-push-worker.service",
     "aicrm-reply-monitor-run-due.timer",
     "aicrm-reply-monitor-run-due.service",
     "aicrm-reply-monitor-capture.timer",
@@ -89,6 +86,9 @@
   ],
   "retired_unit_files": [
     "aicrm-web.service",
+    "openclaw-wecom-callback-inbox-worker.timer",
+    "openclaw-external-push-worker.timer",
+    "openclaw-external-push-worker.service",
     "aicrm-reply-monitor-run-due.timer",
     "aicrm-reply-monitor-run-due.service",
     "aicrm-reply-monitor-capture.timer",

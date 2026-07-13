@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import stat
 import sys
 import time
 from dataclasses import dataclass
@@ -62,23 +64,34 @@ class ProbeResult:
     body_prefix: str = ""
 
 
-def _admin_cookie_header() -> tuple[str, str]:
+def _admin_cookie_header(cookie_file: Path | None) -> tuple[str, str]:
+    if cookie_file is None:
+        return "", "admin_cookie_file_required"
     try:
-        from aicrm_next.admin_auth.service import SESSION_COOKIE, sign_session
+        flags = os.O_RDONLY
+        if hasattr(os, "O_NOFOLLOW"):
+            flags |= os.O_NOFOLLOW
+        fd = os.open(cookie_file, flags)
+        try:
+            metadata = os.fstat(fd)
+            if not stat.S_ISREG(metadata.st_mode):
+                raise ValueError("cookie file must be regular")
+            if metadata.st_uid != os.getuid() or stat.S_IMODE(metadata.st_mode) & 0o077:
+                raise PermissionError("cookie file permissions are not private")
+            raw_header = os.read(fd, 4097)
+            if len(raw_header) > 4096:
+                raise ValueError("cookie file is invalid")
+            header = raw_header.decode("utf-8")
+        finally:
+            os.close(fd)
+        if "\n" in header or "\r" in header or ";" in header or "=" not in header:
+            raise ValueError("cookie file is invalid")
+        name, value = header.split("=", 1)
+        if name != "aicrm_next_admin_session" or not value.startswith("ss_"):
+            raise ValueError("cookie file is invalid")
+        return header, ""
     except Exception as exc:
-        return "", f"admin_cookie_import_failed:{exc.__class__.__name__}"
-    payload = {
-        "auth_source": "deploy_smoke",
-        "login_type": "deploy_smoke",
-        "username": "deploy-smoke",
-        "display_name": "deploy-smoke",
-        "roles": ["super_admin"],
-        "iat": int(time.time()),
-    }
-    try:
-        return f"{SESSION_COOKIE}={sign_session(payload)}", ""
-    except Exception as exc:
-        return "", f"admin_cookie_sign_failed:{exc.__class__.__name__}"
+        return "", f"admin_cookie_file_failed:{exc.__class__.__name__}"
 
 
 def _fetch(
@@ -171,8 +184,14 @@ def _openapi_paths(base_url: str, *, timeout: float, cookie_header: str = "") ->
     return set(paths)
 
 
-def run(base_url: str, *, timeout: float, require_admin_cookie: bool = False) -> dict[str, Any]:
-    cookie_header, cookie_error = _admin_cookie_header() if require_admin_cookie else ("", "")
+def run(
+    base_url: str,
+    *,
+    timeout: float,
+    require_admin_cookie: bool = False,
+    admin_cookie_file: Path | None = None,
+) -> dict[str, Any]:
+    cookie_header, cookie_error = _admin_cookie_header(admin_cookie_file) if require_admin_cookie else ("", "")
     paths = _openapi_paths(base_url, timeout=timeout, cookie_header=cookie_header)
     missing_paths = [path for path in REQUIRED_OPENAPI_PATHS if path not in paths]
     probes = [_probe(base_url, path, timeout=timeout, cookie_header=cookie_header) for path in SMOKE_PATHS]
@@ -198,10 +217,20 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--require-admin-cookie",
         action="store_true",
-        help="Fail when a signed admin smoke cookie cannot be generated or protected routes reject it.",
+        help="Fail when a private admin smoke cookie file is missing or protected routes reject it.",
+    )
+    parser.add_argument(
+        "--admin-cookie-file",
+        type=Path,
+        help="Private mode-0600 file containing the temporary admin Cookie header.",
     )
     args = parser.parse_args(argv)
-    payload = run(args.base_url, timeout=max(1.0, float(args.timeout)), require_admin_cookie=args.require_admin_cookie)
+    payload = run(
+        args.base_url,
+        timeout=max(1.0, float(args.timeout)),
+        require_admin_cookie=args.require_admin_cookie,
+        admin_cookie_file=args.admin_cookie_file,
+    )
     print_json(payload, indent=2, sort_keys=True)
     return 0 if payload["ok"] else 1
 

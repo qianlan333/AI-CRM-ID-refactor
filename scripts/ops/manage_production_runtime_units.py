@@ -36,6 +36,7 @@ class TimerUnit:
 class ServiceUnit:
     service: str
     health_url: str | None = None
+    stop_for_migration: bool = False
 
 
 @dataclass(frozen=True)
@@ -65,7 +66,13 @@ def active_timers(manifest: dict[str, Any]) -> list[TimerUnit]:
 def active_services(manifest: dict[str, Any]) -> list[ServiceUnit]:
     services: list[ServiceUnit] = []
     for item in manifest.get("active_services") or []:
-        services.append(ServiceUnit(service=str(item["service"]), health_url=item.get("health_url") or None))
+        services.append(
+            ServiceUnit(
+                service=str(item["service"]),
+                health_url=item.get("health_url") or None,
+                stop_for_migration=bool(item.get("stop_for_migration", False)),
+            )
+        )
     return services
 
 

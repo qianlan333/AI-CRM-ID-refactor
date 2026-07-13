@@ -28,19 +28,14 @@ def test_runtime_units_manifest_classifies_every_deploy_timer() -> None:
     assert approval_required.isdisjoint(retired_forbidden)
     assert "aicrm-archive-sync.timer" in approval_required
     assert "openclaw-external-effect-worker.timer" in active
-    assert retired_forbidden == {
-        "aicrm-web.service",
-        "aicrm-reply-monitor-run-due.timer",
-        "aicrm-reply-monitor-run-due.service",
-        "aicrm-reply-monitor-capture.timer",
-        "aicrm-reply-monitor-capture.service",
-        "aicrm-automation-jobs-run-due.timer",
-        "aicrm-automation-jobs-run-due.service",
-        "aicrm-campaign-run-due.timer",
-        "aicrm-campaign-run-due.service",
-        "openclaw-automation-conversion-due-runner.service",
-    }
-    assert manifest["retired_unit_files"] == manifest["retired_forbidden"]
+    assert "openclaw-external-push-worker.timer" in retired_forbidden
+    assert "openclaw-external-push-worker.service" in retired_forbidden
+    assert "openclaw-external-push-worker.timer" not in deploy_timers
+    assert "openclaw-wecom-callback-inbox-worker.timer" in retired_forbidden
+    assert "openclaw-wecom-callback-inbox-worker.timer" not in deploy_timers
+    assert "aicrm-automation-jobs-run-due.timer" in retired_forbidden
+    assert "aicrm-web.service" in retired_forbidden
+    assert set(manifest["retired_unit_files"]) == retired_forbidden
 
 
 def test_runtime_units_manifest_declares_primary_web_service() -> None:
@@ -166,6 +161,9 @@ def test_runtime_units_install_dry_run_copies_and_enables_only_active_units(caps
     assert "sudo cp deploy/aicrm-archive-sync.service /etc/systemd/system/" in output
     assert "sudo cp deploy/aicrm-archive-sync.timer /etc/systemd/system/" in output
     assert "curl -sSf http://127.0.0.1:5002/health" in output
+    assert "sudo cp deploy/openclaw-wecom-callback-inbox-worker.service /etc/systemd/system/" in output
+    assert "sudo systemctl enable openclaw-wecom-callback-inbox-worker.service" in output
+    assert "sudo systemctl restart openclaw-wecom-callback-inbox-worker.service" in output
 
 
 class _RecordingRunner:
@@ -301,6 +299,7 @@ def test_runtime_units_stop_and_verify_dry_runs_are_manifest_driven(capsys) -> N
     assert "sudo test -e /home/ubuntu/.aicrm-production-deploy-in-progress" in stop_output
     assert "sudo systemctl stop openclaw-external-effect-worker.timer" in stop_output
     assert "sudo systemctl stop openclaw-external-effect-worker.service" in stop_output
+    assert "sudo systemctl stop openclaw-wecom-callback-inbox-worker.service" in stop_output
     assert "sudo systemctl stop aicrm-archive-sync.timer" in stop_output
     assert "sudo systemctl stop aicrm-archive-sync.service" in stop_output
     assert "sudo systemctl stop openclaw-automation-ops-scheduler.timer" in stop_output
@@ -321,6 +320,10 @@ def test_runtime_units_stop_and_verify_dry_runs_are_manifest_driven(capsys) -> N
     assert "sudo systemctl is-enabled openclaw-external-effect-worker.timer" in verify_output
     assert "sudo systemctl is-active openclaw-external-effect-worker.timer" in verify_output
     assert "sudo systemctl is-active openclaw-wecom-callback-ingress.service" in verify_output
+    assert "sudo systemctl is-active openclaw-wecom-callback-inbox-worker.service" in verify_output
+    assert "sudo systemctl is-active openclaw-wecom-callback-inbox-worker.timer" in verify_output
+    assert "sudo systemctl is-active openclaw-external-push-worker.timer" in verify_output
+    assert "sudo systemctl is-active openclaw-external-push-worker.service" in verify_output
     assert "sudo systemctl is-enabled aicrm-archive-sync.timer" in verify_output
     assert "sudo systemctl is-active aicrm-archive-sync.timer" in verify_output
     for unit in _manifest()["retired_forbidden"]:
