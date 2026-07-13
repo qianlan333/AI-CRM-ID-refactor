@@ -30,6 +30,8 @@ def test_route_policy_inventory_covers_every_runtime_business_route() -> None:
     index = RoutePolicyIndex.from_manifest(MANIFEST)
     inventory = collect_route_inventory(app)
 
+    # Legacy Cleanup retirement removes five business routes; static mounts are
+    # counted separately by the router-registry contract.
     assert len(index) == len(inventory) == 672
     for route in app.routes:
         if not isinstance(route, APIRoute) or route.path in FASTAPI_BUILTIN_ROUTE_PATHS:
