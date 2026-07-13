@@ -60,9 +60,10 @@ def test_service_period_h5_order_allows_repeat_paid_order(monkeypatch) -> None:
             queries.append((query, tuple(params)))
             if "FROM crm_user_identity identity" in query:
                 external_userid, unionid, openid, mobile = tuple(params)
+                canonical_unionid = unionid or ("union_h5_repeat" if openid == "op_h5" else "")
                 return Cursor(
                     {
-                        "unionid": unionid,
+                        "unionid": canonical_unionid,
                         "external_userid": external_userid,
                         "openid": openid,
                         "mobile": mobile,

@@ -51,6 +51,111 @@ def test_public_product_frontend_redirects_empty_material_and_keeps_checkout_con
     assert "showLeadQr(order" in pay.text
     assert "支付暂不可用" not in pay.text
     assert "不会创建订单" not in pay.text
+    assert "微信身份正在同步，请稍后重试。" in pay.text
+    assert "当前微信身份存在冲突，请联系客服处理。" in pay.text
+
+
+def test_payment_identity_accepts_canonical_unionid_before_openid_projection() -> None:
+    from aicrm_next.public_product.h5_wechat_pay import _resolve_payment_identity
+
+    class Cursor:
+        def __init__(self, rows):
+            self.rows = rows
+
+        def fetchall(self):
+            return self.rows
+
+        def fetchone(self):
+            return self.rows[0] if self.rows else None
+
+    class FakeConn:
+        def execute(self, query, params=()):
+            if "FROM crm_user_identity identity" in query:
+                external_userid, unionid, openid, mobile = tuple(params)
+                if unionid == "un_canonical" and not openid:
+                    return Cursor(
+                        [
+                            {
+                                "unionid": "un_canonical",
+                                "external_userid": "ext_canonical",
+                                "openid": "",
+                                "mobile": "",
+                                "mobile_normalized": "",
+                                "status": "active",
+                                "matched_unionid": True,
+                                "matched_external_userid": False,
+                                "matched_openid": False,
+                                "matched_mobile": False,
+                            }
+                        ]
+                    )
+                return Cursor([])
+            if "FROM crm_user_identity_resolution_queue" in query:
+                return Cursor([{"pending_count": 1}])
+            raise AssertionError(query)
+
+    result = _resolve_payment_identity(
+        FakeConn(),
+        {"unionid": "un_canonical", "openid": "op_not_projected_yet"},
+        for_update=True,
+    )
+
+    assert result.status == "resolved"
+    assert result.identity is not None
+    assert result.identity.unionid == "un_canonical"
+
+
+def test_payment_identity_blocks_openid_resolved_to_another_unionid() -> None:
+    from aicrm_next.public_product.h5_wechat_pay import _resolve_payment_identity
+
+    class Cursor:
+        def __init__(self, rows):
+            self.rows = rows
+
+        def fetchall(self):
+            return self.rows
+
+        def fetchone(self):
+            return self.rows[0] if self.rows else None
+
+    class FakeConn:
+        def execute(self, query, params=()):
+            if "FROM crm_user_identity identity" not in query:
+                raise AssertionError(query)
+            _external_userid, unionid, openid, _mobile = tuple(params)
+            if unionid:
+                resolved_unionid = unionid
+                matched_unionid = True
+                matched_openid = False
+            else:
+                resolved_unionid = "un_other"
+                matched_unionid = False
+                matched_openid = bool(openid)
+            return Cursor(
+                [
+                    {
+                        "unionid": resolved_unionid,
+                        "external_userid": "",
+                        "openid": openid,
+                        "mobile": "",
+                        "mobile_normalized": "",
+                        "status": "active",
+                        "matched_unionid": matched_unionid,
+                        "matched_external_userid": False,
+                        "matched_openid": matched_openid,
+                        "matched_mobile": False,
+                    }
+                ]
+            )
+
+    result = _resolve_payment_identity(
+        FakeConn(),
+        {"unionid": "un_canonical", "openid": "op_other"},
+        for_update=True,
+    )
+
+    assert result.status == "conflict"
+    assert result.reason == "identity_inputs_disagree"
 
 
 def test_public_pay_landing_hides_mobile_before_oauth_for_mobile_required_product(monkeypatch) -> None:
