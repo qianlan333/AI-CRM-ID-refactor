@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import secrets
 import re
 from datetime import datetime, timezone
@@ -8,6 +7,7 @@ from typing import Any
 
 from aicrm_next.send_content.application import NormalizeSendContentPackageCommand
 from aicrm_next.shared.errors import ContractError
+from aicrm_next.shared.wecom_payload_contract import normalize_group_admin_userids
 
 from .message_content import build_group_ops_private_message_request_payload
 
@@ -41,24 +41,6 @@ def utc_now_iso() -> str:
 
 def clean_text(value: Any) -> str:
     return str(value or "").strip()
-
-
-def normalize_group_admin_userids(value: Any) -> list[str]:
-    if isinstance(value, str):
-        try:
-            value = json.loads(value)
-        except ValueError:
-            value = [value]
-    if isinstance(value, dict):
-        value = [value]
-    if not isinstance(value, list):
-        value = [value] if clean_text(value) else []
-    result: list[str] = []
-    for item in list(value or []):
-        userid = clean_text(item.get("userid") if isinstance(item, dict) else item)
-        if userid and userid not in result:
-            result.append(userid)
-    return result
 
 
 def group_manageable_by_userid(group: dict[str, Any], userid: str) -> bool:
