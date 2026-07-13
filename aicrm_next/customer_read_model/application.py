@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import logging
 import os
+from collections.abc import Callable
 
 from aicrm_next.shared.errors import NotFoundError
 from aicrm_next.shared.safe_logging import safe_log_exception
@@ -1070,9 +1071,42 @@ def _normalized_admin_profile_tags(tags: object) -> list[str]:
 
 
 class GetCustomerContextQuery:
-    def __init__(self, repo: CustomerReadRepository | None = None, live_source_repo: CustomerReadRepository | None = None) -> None:
+    def __init__(
+        self,
+        repo: CustomerReadRepository | None = None,
+        live_source_repo: CustomerReadRepository | None = None,
+        owner_scope_verifier: Callable[[str, str], None] | None = None,
+    ) -> None:
         self._repo = repo
         self._live_source_repo = live_source_repo
+        self._owner_scope_verifier = owner_scope_verifier
+
+    def _assert_owner_scope(self, customer: JsonDict, query: CustomerContextRequest) -> None:
+        try:
+            _assert_customer_owner_scope(
+                customer,
+                query.owner_userid,
+                require_owner=query.require_owner_scope,
+                owner_verified=query.owner_verified,
+            )
+        except CustomerScopeForbiddenError:
+            # Sidebar projections can temporarily omit owner relations. Only an
+            # injected verifier backed by the current identity relation may
+            # authorize that empty-projection case; explicit mismatches remain
+            # fail-closed.
+            if _customer_owner_candidates(customer) or self._owner_scope_verifier is None:
+                raise
+            external_userid = str(
+                customer.get("external_userid")
+                or customer.get("user_id")
+                or query.external_userid
+                or query.user_id
+                or ""
+            ).strip()
+            owner_userid = str(query.owner_userid or "").strip()
+            if not external_userid or not owner_userid:
+                raise
+            self._owner_scope_verifier(external_userid, owner_userid)
 
     def _resolve_fixture_external_userid(self, query: CustomerContextRequest, repo: CustomerReadRepository) -> str:
         external_userid = str(query.external_userid or query.user_id or "").strip()
@@ -1125,7 +1159,7 @@ class GetCustomerContextQuery:
                 if not detail.get("ok"):
                     raise RuntimeError(str(detail.get("page_error") or detail.get("error_code") or "customer detail unavailable"))
                 customer = dict(detail.get("customer") or {})
-                _assert_customer_owner_scope(customer, query.owner_userid, require_owner=query.require_owner_scope, owner_verified=query.owner_verified)
+                self._assert_owner_scope(customer, query)
                 unionid = unionid or str(customer.get("unionid") or "").strip()
                 external_userid = external_userid or str(customer.get("external_userid") or customer.get("user_id") or "").strip()
                 timeline_payload = GetCustomerTimelineQuery(repo, live_source_repo=self._live_source_repo)(
@@ -1173,7 +1207,7 @@ class GetCustomerContextQuery:
                 CustomerDetailRequest(unionid=unionid or None, external_userid=external_userid or None)
             )
             customer = dict(detail.get("customer") or {})
-            _assert_customer_owner_scope(customer, query.owner_userid, require_owner=query.require_owner_scope, owner_verified=query.owner_verified)
+            self._assert_owner_scope(customer, query)
             unionid = unionid or str(customer.get("unionid") or "").strip()
             external_userid = external_userid or str(customer.get("external_userid") or customer.get("user_id") or "").strip()
             timeline = GetCustomerTimelineQuery(repo, live_source_repo=self._live_source_repo)(

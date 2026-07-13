@@ -1007,13 +1007,13 @@
       "accessor": "_env_flag",
       "file": "aicrm_next/customer_read_model/application.py",
       "key": "CUSTOMER_READ_MODEL_LIVE_SOURCE_FALLBACK_ENABLED",
-      "line": 43
+      "line": 44
     },
     {
       "accessor": "_env_flag",
       "file": "aicrm_next/customer_read_model/application.py",
       "key": "CUSTOMER_READ_MODEL_NEXT_PRIMARY",
-      "line": 39
+      "line": 40
     },
     {
       "accessor": "os.getenv",
@@ -1739,7 +1739,7 @@
       "accessor": "os.getenv",
       "file": "aicrm_next/customer_read_model/api.py",
       "key": "WECOM_CORP_ID",
-      "line": 369
+      "line": 383
     },
     {
       "accessor": "os.getenv",

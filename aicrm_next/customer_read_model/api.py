@@ -73,7 +73,21 @@ def _request_scoped_customer_repositories(db: Session) -> tuple[CustomerReadRepo
 
 def _request_scoped_customer_context_query(db: Session) -> tuple[GetCustomerContextQuery, CustomerReadRepository | None]:
     customer_repo, live_source_repo = _request_scoped_customer_repositories(db)
-    return GetCustomerContextQuery(customer_repo, live_source_repo=live_source_repo), live_source_repo
+    return _sidebar_customer_context_query(customer_repo, live_source_repo), live_source_repo
+
+
+def _sidebar_customer_context_query(
+    customer_repo: CustomerReadRepository | None,
+    live_source_repo: CustomerReadRepository | None,
+) -> GetCustomerContextQuery:
+    return GetCustomerContextQuery(
+        customer_repo,
+        live_source_repo=live_source_repo,
+        owner_scope_verifier=lambda external_userid, owner_userid: verify_sidebar_identity_snapshot_owner_scope(
+            external_userid=external_userid,
+            owner_userid=owner_userid,
+        ),
+    )
 
 
 def _input_error(message: str) -> JSONResponse:
@@ -261,7 +275,7 @@ def _context_for_external_userid(
     customer_repo: CustomerReadRepository | None = None,
     live_source_repo: CustomerReadRepository | None = None,
 ) -> dict:
-    return GetCustomerContextQuery(customer_repo, live_source_repo=live_source_repo)(
+    return _sidebar_customer_context_query(customer_repo, live_source_repo)(
         CustomerContextRequest(
             external_userid=external_userid,
             owner_userid=owner_userid or None,
@@ -636,7 +650,7 @@ def get_sidebar_profile(
         owner_userid=owner_userid,
     )
     try:
-        result = GetAdminCustomerProfileQuery(GetCustomerContextQuery(customer_repo, live_source_repo=live_source_repo))(
+        result = GetAdminCustomerProfileQuery(_sidebar_customer_context_query(customer_repo, live_source_repo))(
             external_userid=resolved_external_userid,
             owner_userid=str(owner_context.get("owner_userid") or "").strip(),
             require_owner_scope=True,
@@ -662,7 +676,7 @@ def get_sidebar_tags(
         owner_userid=owner_userid,
     )
     try:
-        result = GetAdminCustomerProfileTagsQuery(GetCustomerContextQuery(customer_repo, live_source_repo=live_source_repo))(
+        result = GetAdminCustomerProfileTagsQuery(_sidebar_customer_context_query(customer_repo, live_source_repo))(
             external_userid=resolved_external_userid,
             owner_userid=str(owner_context.get("owner_userid") or "").strip(),
             require_owner_scope=True,

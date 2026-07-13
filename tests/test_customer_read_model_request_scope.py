@@ -6,6 +6,7 @@ from typing import Iterator
 from fastapi.testclient import TestClient
 
 from aicrm_next.main import create_app
+from aicrm_next.customer_read_model.errors import CustomerScopeForbiddenError
 from aicrm_next.shared.db_session import get_db
 from tests.sidebar_auth_test_helpers import install_sidebar_auth
 
@@ -220,6 +221,68 @@ def test_sidebar_customer_context_rejects_resolved_customer_outside_staff_scope_
     assert session.closed is True
     assert len(read_repos) == 1
     assert len(live_repos) == 1
+
+
+def test_sidebar_customer_context_rechecks_current_owner_when_projection_scope_is_empty(monkeypatch) -> None:
+    client, session, read_repos, live_repos = _client_with_request_scope(monkeypatch)
+    customer = _customer()
+    customer["identity"] = {"person_id": "person_001", "external_userid": "wx_ext_001"}
+    customer["follow_users"] = []
+    verifier_calls: list[tuple[str, str]] = []
+
+    monkeypatch.setattr(f"{__name__}._customer", lambda: customer)
+    monkeypatch.setattr(
+        "aicrm_next.customer_read_model.api.verify_sidebar_identity_snapshot_owner_scope",
+        lambda *, external_userid, owner_userid: verifier_calls.append((external_userid, owner_userid)),
+    )
+    headers = install_sidebar_auth(
+        client,
+        viewer_userid="owner-a",
+        external_userid="wx_ext_001",
+    )
+
+    response = client.get(
+        "/api/sidebar/customer-context?external_userid=wx_ext_001&owner_userid=owner-a",
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+    assert verifier_calls == [("wx_ext_001", "owner-a")]
+    assert session.closed is True
+    assert len(read_repos) == 1
+    assert len(live_repos) == 1
+
+
+def test_sidebar_customer_context_keeps_empty_projection_scope_fail_closed(monkeypatch) -> None:
+    client, _session, _read_repos, _live_repos = _client_with_request_scope(monkeypatch)
+    customer = _customer()
+    customer["identity"] = {"person_id": "person_001", "external_userid": "wx_ext_001"}
+    customer["follow_users"] = []
+
+    monkeypatch.setattr(f"{__name__}._customer", lambda: customer)
+
+    def reject_current_scope(*, external_userid: str, owner_userid: str) -> None:
+        del external_userid, owner_userid
+        raise CustomerScopeForbiddenError("customer scope forbidden")
+
+    monkeypatch.setattr(
+        "aicrm_next.customer_read_model.api.verify_sidebar_identity_snapshot_owner_scope",
+        reject_current_scope,
+    )
+    headers = install_sidebar_auth(
+        client,
+        viewer_userid="owner-b",
+        external_userid="wx_ext_001",
+    )
+
+    response = client.get(
+        "/api/sidebar/customer-context?external_userid=wx_ext_001&owner_userid=owner-b",
+        headers=headers,
+    )
+
+    assert response.status_code == 403
+    assert response.json()["source_status"] == "forbidden"
+    assert all(value not in response.text for value in ("13800138000", "重点跟进", "客户问候"))
 
 
 def test_customer_read_model_api_has_no_naked_high_frequency_query_calls() -> None:
