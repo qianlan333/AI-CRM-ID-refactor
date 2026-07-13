@@ -272,7 +272,6 @@ def config_payload(repo: AdminReadRepository) -> dict[str, Any]:
         ["database_mode", db_label],
         ["production_data_ready", health.get("production_data_ready")],
         ["release_sha", current_release_sha()],
-        ["callback_fallback", "5013 retained until observation completes"],
         ["wechat_callback_token", "configured" if runtime_setting("WECOM_CALLBACK_TOKEN") else "missing"],
         ["wechat_pay_config", "configured" if os.getenv("WECHAT_PAY_MCH_ID") else "missing"],
         ["oauth_config", "configured" if os.getenv("WECHAT_OAUTH_APPID") or os.getenv("WECHAT_MP_APPID") else "missing"],
@@ -283,7 +282,6 @@ def config_payload(repo: AdminReadRepository) -> dict[str, Any]:
             "cards": [
                 {"label": "数据库", "value": db_label, "description": "runtime health"},
                 {"label": "生产数据", "value": str(health.get("production_data_ready")), "description": "production_data_ready"},
-                {"label": "回调兜底", "value": "retained", "description": "5013 fallback observation"},
             ],
             "sections": [{"title": "运行配置", "headers": ["项目", "状态"], "rows": rows}],
         },

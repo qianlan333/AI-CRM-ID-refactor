@@ -1379,7 +1379,7 @@
       "accessor": "os.getenv",
       "file": "aicrm_next/admin_read_model/projections.py",
       "key": "WECHAT_MP_APPID",
-      "line": 278
+      "line": 277
     },
     {
       "accessor": "os.getenv",
@@ -1421,7 +1421,7 @@
       "accessor": "os.getenv",
       "file": "aicrm_next/admin_read_model/projections.py",
       "key": "WECHAT_OAUTH_APPID",
-      "line": 278
+      "line": 277
     },
     {
       "accessor": "os.getenv",
@@ -1457,7 +1457,7 @@
       "accessor": "os.getenv",
       "file": "aicrm_next/admin_read_model/projections.py",
       "key": "WECHAT_PAY_MCH_ID",
-      "line": 277
+      "line": 276
     },
     {
       "accessor": "os.getenv",
@@ -1667,7 +1667,7 @@
       "accessor": "runtime_setting",
       "file": "aicrm_next/admin_read_model/projections.py",
       "key": "WECOM_CALLBACK_TOKEN",
-      "line": 276
+      "line": 275
     },
     {
       "accessor": "runtime_setting",
