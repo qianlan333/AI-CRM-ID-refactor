@@ -157,6 +157,9 @@ def test_production_promotion_is_manual_test_verified_and_environment_approved()
     assert "test release sha does not match requested production release" in source
     assert "git merge-base --is-ancestor" in source
     assert "secrets.DEPLOY_HOST" in deploy_source
+    assert "github.event_name == 'workflow_call'" not in deploy_source
+    assert "inputs.target_environment == 'production'" in deploy_source
+    assert "inputs.release_sha != ''" in deploy_source
     assert "scripts/ops/ensure_production_public_release_route.py --execute" in deploy_source
     assert "--public-health-url https://www.youcangogogo.com/health" in deploy_source
 
