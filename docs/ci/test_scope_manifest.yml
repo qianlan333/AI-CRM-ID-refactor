@@ -111,6 +111,26 @@
   ],
   "scopes": [
     {
+      "name": "internal_event_registry_composition",
+      "paths": [
+        "aicrm_next/internal_event_composition.py",
+        "aicrm_next/platform_foundation/internal_events/consumer_registry.py",
+        "scripts/ci/runtime_contract_inventory.py",
+        "tests/test_internal_event_registry_composition.py"
+      ],
+      "python_tests": [
+        "tests/test_internal_event_registry_composition.py",
+        "tests/test_runtime_contract_inventory.py",
+        "tests/test_internal_events_mvp.py",
+        "tests/test_internal_events_single_consumer_run.py",
+        "tests/test_internal_event_worker_exit.py",
+        "tests/test_select_test_scope.py"
+      ],
+      "needs_postgres": true,
+      "needs_full_ci": true,
+      "architecture_gate": "full"
+    },
+    {
       "name": "send_content_media_gateway",
       "paths": [
         "aicrm_next/send_content_media_repository_gateway.py",

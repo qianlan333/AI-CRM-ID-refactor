@@ -335,6 +335,24 @@ def test_send_content_media_gateway_has_permanent_full_ci_scope() -> None:
     assert result["architecture_gate"] == "full"
 
 
+def test_internal_event_registry_composition_has_permanent_full_ci_scope() -> None:
+    result = _select(
+        "aicrm_next/internal_event_composition.py",
+        "aicrm_next/platform_foundation/internal_events/consumer_registry.py",
+        "scripts/ci/runtime_contract_inventory.py",
+        "tests/test_internal_event_registry_composition.py",
+    )
+
+    assert result["unmatched_files"] == []
+    assert "internal_event_registry_composition" in result["matched_scopes"]
+    assert "tests/test_internal_events_mvp.py" in result["python_tests"]
+    assert "tests/test_internal_event_worker_exit.py" in result["python_tests"]
+    assert "tests/test_runtime_contract_inventory.py" in result["python_tests"]
+    assert result["needs_postgres"] is True
+    assert result["needs_full_ci"] is True
+    assert result["architecture_gate"] == "full"
+
+
 def test_cloud_repository_split_modules_keep_permanent_postgres_coverage() -> None:
     result = _select(
         "aicrm_next/cloud_orchestrator/repository_legacy.py",

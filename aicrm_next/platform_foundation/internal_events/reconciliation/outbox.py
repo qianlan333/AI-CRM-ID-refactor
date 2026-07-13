@@ -9,7 +9,7 @@ from aicrm_next.platform_foundation.command_bus.models import CommandContext
 from aicrm_next.shared.db_session import connect_raw_postgres, get_session_factory
 from aicrm_next.shared.runtime import raw_database_url
 
-from ..consumer_registry import DEFAULT_INTERNAL_EVENT_CONSUMER_REGISTRY, InternalEventConsumerRegistry
+from ..consumer_registry import InternalEventConsumerRegistry, current_internal_event_consumer_registry
 from ..models import InternalEvent, InternalEventConsumerSpec, InternalEventCreateRequest
 from ..outbox import InternalEventOutboxRelay, enqueue_transactional_internal_event_outbox
 from ..payment import PAYMENT_SUCCEEDED_EVENT_TYPE, build_payment_succeeded_event_request
@@ -73,7 +73,7 @@ class InternalEventOutboxReconciliationService:
     ) -> None:
         self._database_url = _text(database_url) or raw_database_url()
         self._repo = repository or build_internal_event_repository()
-        self._registry = consumer_registry or DEFAULT_INTERNAL_EVENT_CONSUMER_REGISTRY
+        self._registry = consumer_registry or current_internal_event_consumer_registry()
         self._session_factory = get_session_factory(self._database_url) if self._database_url else None
 
     def _payment_specs(self) -> list[InternalEventConsumerSpec]:

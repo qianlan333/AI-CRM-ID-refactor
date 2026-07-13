@@ -319,7 +319,9 @@ def _submit_questionnaire_queue_loopback_job(
     assert body["external_effect_job"] is None
     assert body["external_effect_job_status"] == "not_planned"
 
-    planned = InternalEventWorker().run_due(
+    planned = InternalEventWorker(
+        consumer_registry=client.app.state.internal_event_consumer_registry,
+    ).run_due(
         batch_size=1,
         dry_run=False,
         event_types=[QUESTIONNAIRE_SUBMITTED_EVENT_TYPE],
@@ -1534,7 +1536,9 @@ def test_questionnaire_submit_queues_external_push_without_legacy_call(client: T
     assert body["external_effect_job"] is None
     assert body["external_effect_job_id"] is None
 
-    planned = InternalEventWorker().run_due(
+    planned = InternalEventWorker(
+        consumer_registry=client.app.state.internal_event_consumer_registry,
+    ).run_due(
         batch_size=1,
         dry_run=False,
         event_types=[QUESTIONNAIRE_SUBMITTED_EVENT_TYPE],
@@ -1573,7 +1577,9 @@ def test_questionnaire_external_push_is_queue_only(client: TestClient, monkeypat
     assert body["external_push"]["status"] == "queued"
     assert "external_push.queued" in body["side_effect_plan"]["payload"]["planned_effects"]
 
-    planned = InternalEventWorker().run_due(
+    planned = InternalEventWorker(
+        consumer_registry=client.app.state.internal_event_consumer_registry,
+    ).run_due(
         batch_size=1,
         dry_run=False,
         event_types=[QUESTIONNAIRE_SUBMITTED_EVENT_TYPE],
@@ -1714,7 +1720,9 @@ def test_questionnaire_queue_mode_job_creation_failure_is_retryable_after_submis
     assert body["external_push_mode"] == "queue"
     assert body["real_external_call_executed"] is False
     assert body["external_effect_job_id"] is None
-    planned = InternalEventWorker().run_due(
+    planned = InternalEventWorker(
+        consumer_registry=client.app.state.internal_event_consumer_registry,
+    ).run_due(
         batch_size=1,
         dry_run=False,
         event_types=[QUESTIONNAIRE_SUBMITTED_EVENT_TYPE],

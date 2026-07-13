@@ -6,7 +6,6 @@ from fastapi.testclient import TestClient
 
 from aicrm_next.platform_foundation.command_bus import CommandContext
 from aicrm_next.platform_foundation.internal_events import (
-    DEFAULT_INTERNAL_EVENT_CONSUMER_REGISTRY,
     InMemoryInternalEventRepository,
     InternalEventConsumerRegistry,
     InternalEventConsumerResult,
@@ -221,8 +220,9 @@ def test_retry_consumer_run_only_allows_failed_retryable_terminal_and_blocked() 
 
 
 def test_diagnostics_and_admin_api_return_internal_event_metrics(next_client: TestClient, monkeypatch) -> None:
-    DEFAULT_INTERNAL_EVENT_CONSUMER_REGISTRY.clear()
     del monkeypatch
+    registry = next_client.app.state.internal_event_consumer_registry
+    registry.clear()
     tokens = install_admin_action_tokens(
         next_client,
         ("POST", "/api/admin/internal-events/run-due/preview"),
@@ -237,8 +237,8 @@ def test_diagnostics_and_admin_api_return_internal_event_metrics(next_client: Te
         return InternalEventConsumerResult(status="failed_retryable", error_code="retry_me")
 
     try:
-        DEFAULT_INTERNAL_EVENT_CONSUMER_REGISTRY.register(EVENT_TYPE, "api_consumer", handler)
-        service = InternalEventService()
+        registry.register(EVENT_TYPE, "api_consumer", handler)
+        service = InternalEventService(consumer_registry=registry)
         emitted = _emit(service, idempotency_key="api-diagnostics")
 
         listed = next_client.get("/api/admin/internal-events", params={"event_type": EVENT_TYPE})
@@ -295,4 +295,4 @@ def test_diagnostics_and_admin_api_return_internal_event_metrics(next_client: Te
         assert skip.json()["consumer_run"]["status"] == "skipped"
         assert skip.json()["attempt"]["status"] == "skipped"
     finally:
-        DEFAULT_INTERNAL_EVENT_CONSUMER_REGISTRY.clear()
+        registry.clear()
