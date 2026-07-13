@@ -79,7 +79,7 @@ def _seed_identity_mobile_candidate(db, *, unionid: str, external_userid: str, m
 def test_next_external_contact_callback_syncs_identity_and_binds_orphan_mobile(app, monkeypatch, next_pg_schema):
     monkeypatch.setattr(
         "aicrm_next.channel_entry.application.process_channel_entry",
-        lambda command: {"handled": False, "reason": "channel_entry_not_under_test"},
+        lambda command, **kwargs: {"handled": False, "reason": "channel_entry_not_under_test"},
     )
     monkeypatch.setattr(
         "aicrm_next.channel_entry.application.repo.log_external_contact_event",
@@ -191,7 +191,7 @@ def test_next_external_contact_callback_keeps_entry_success_when_identity_sync_f
     )
     monkeypatch.setattr(
         "aicrm_next.channel_entry.application.process_channel_entry",
-        lambda command: calls.append("channel_entry") or {"handled": True, "reason": "channel_entry_baseline_recorded"},
+        lambda command, **kwargs: calls.append("channel_entry") or {"handled": True, "reason": "channel_entry_baseline_recorded"},
     )
     monkeypatch.setattr(
         "aicrm_next.channel_entry.application.repo.record_identity_sync_result",
@@ -269,7 +269,7 @@ def test_next_external_contact_callback_canonicalizes_channel_entry_after_identi
     )
     monkeypatch.setattr(
         "aicrm_next.channel_entry.application.process_channel_entry",
-        lambda command: calls.append("runtime_entry") or {"handled": True, "mode": "channel_runtime_only", "reason": "channel_entry_runtime_recorded"},
+        lambda command, **kwargs: calls.append("runtime_entry") or {"handled": True, "mode": "channel_runtime_only", "reason": "channel_entry_runtime_recorded"},
     )
     monkeypatch.setattr(
         "aicrm_next.channel_entry.application.resolve_channel_for_scene",
@@ -376,7 +376,7 @@ def test_next_external_contact_callback_records_runtime_entry_when_identity_pend
     )
     monkeypatch.setattr(
         "aicrm_next.channel_entry.application.process_channel_entry",
-        lambda command: calls.append("channel_entry") or {"handled": True, "mode": "channel_runtime_only", "reason": "channel_entry_runtime_recorded"},
+        lambda command, **kwargs: calls.append("channel_entry") or {"handled": True, "mode": "channel_runtime_only", "reason": "channel_entry_runtime_recorded"},
     )
     monkeypatch.setattr(
         "aicrm_next.channel_entry.application.repo.mark_channel_entry_runtime_identity",
