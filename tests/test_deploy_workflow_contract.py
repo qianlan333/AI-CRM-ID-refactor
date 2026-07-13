@@ -759,12 +759,10 @@ def test_due_runner_scripts_share_int_env_reader():
     assert "run_due_external_push_events" not in external_push_worker
     assert "run_due_external_push_retries" not in external_push_worker
     assert 'read_int_env("AICRM_INTERNAL_EVENT_WORKER_BATCH_SIZE", DEFAULT_WORKER_BATCH_SIZE)' in internal_event_worker
-    assert "register_payment_succeeded_consumers()" in internal_event_worker
-    assert "register_shadow_event_consumers()" in internal_event_worker
-    assert "register_ai_audience_event_consumers()" in internal_event_worker
+    assert "build_internal_event_consumer_registry" in internal_event_worker
     assert 'read_int_env("AICRM_AI_AUDIENCE_SCHEDULER_BATCH_SIZE", 20)' in ai_audience_scheduler
     assert "--execute" in internal_event_worker
-    assert "InternalEventWorker().run_due" in internal_event_worker
+    assert "InternalEventWorker(consumer_registry=build_internal_event_consumer_registry()).run_due" in internal_event_worker
     assert "int(os.environ.get" not in external_push_worker
     assert "int(os.environ.get" not in internal_event_worker
     assert "int(os.environ.get" not in ai_audience_scheduler

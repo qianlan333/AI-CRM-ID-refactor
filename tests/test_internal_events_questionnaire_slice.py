@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from fastapi.testclient import TestClient
 
+from aicrm_next.internal_event_composition import register_questionnaire_event_consumers
 from aicrm_next.main import create_app
 from aicrm_next.platform_foundation.command_bus import CommandContext
 from aicrm_next.platform_foundation.external_effects import (
@@ -12,7 +13,6 @@ from aicrm_next.platform_foundation.external_effects import (
 from aicrm_next.platform_foundation.internal_events import (
     InternalEventService,
     QUESTIONNAIRE_SUBMITTED_EVENT_TYPE,
-    register_questionnaire_event_consumers,
     reset_internal_event_fixture_state,
 )
 from aicrm_next.platform_foundation.internal_events.consumer_registry import InternalEventConsumerRegistry

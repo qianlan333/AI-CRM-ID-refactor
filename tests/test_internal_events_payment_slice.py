@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 from aicrm_next.platform_foundation.external_effects import WEBHOOK_ORDER_PAID_PUSH, ExternalEffectService, reset_external_effect_fixture_state
-from aicrm_next.platform_foundation.internal_events import InternalEventService, register_payment_succeeded_consumers, reset_internal_event_fixture_state
+from aicrm_next.internal_event_composition import register_payment_succeeded_consumers
+from aicrm_next.platform_foundation.internal_events import InternalEventService, reset_internal_event_fixture_state
 from aicrm_next.platform_foundation.internal_events.outbox import InternalEventOutboxRelay
 from aicrm_next.platform_foundation.internal_events.payment import PAYMENT_SUCCEEDED_EVENT_TYPE
 from aicrm_next.platform_foundation.internal_events.repository import build_internal_event_repository
@@ -169,7 +170,7 @@ def _patch_canonical_external_push_planner(monkeypatch, *, configured: bool = Tr
         return {"ok": True, "external_effect_job_id": job["id"]}
 
     monkeypatch.setattr(
-        "aicrm_next.platform_foundation.internal_events.payment.plan_order_paid_external_push_effect_from_db",
+        "aicrm_next.internal_event_composition._plan_order_paid_external_push_effect_from_db",
         fake_plan,
     )
 

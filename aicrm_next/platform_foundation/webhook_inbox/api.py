@@ -10,10 +10,8 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 from starlette.concurrency import run_in_threadpool
 
-from aicrm_next.admin_jobs.routes import validate_admin_action_token
-from aicrm_next.admin_jobs.routes import ensure_admin_action_token
+from aicrm_next.shared.admin_action_runtime import ensure_admin_action_token, validate_admin_action_token
 from aicrm_next.admin_shell import admin_path_for, shell_context
-from aicrm_next.channel_entry.inbox import WeComCallbackInboxWorker
 from aicrm_next.platform_foundation.external_effects import ExternalEffectService
 from aicrm_next.platform_foundation.internal_events import InternalEventService
 
@@ -86,6 +84,13 @@ def _action_or_internal_token_error(request: Request, payload: dict[str, Any]) -
 
 def _repo():
     return build_webhook_inbox_repository()
+
+
+def _worker(request: Request, repository: Any) -> Any:
+    factory = getattr(request.app.state, "wecom_callback_inbox_worker_factory", None)
+    if not callable(factory):
+        raise RuntimeError("WeCom callback inbox worker composition is unavailable")
+    return factory(repository)
 
 
 def _filters(**kwargs: Any) -> dict[str, Any]:
@@ -324,7 +329,7 @@ async def dispatch_webhook_inbox_item(inbox_id: int, request: Request) -> JSONRe
     repo = _repo()
     dry_run = _bool(payload.get("dry_run"), default=True)
     result = await run_in_threadpool(
-        WeComCallbackInboxWorker(repo).dispatch_one,
+        _worker(request, repo).dispatch_one,
         int(inbox_id),
         dry_run=dry_run,
         reason=_text(payload.get("reason")) or "admin_dispatch_one",
@@ -347,7 +352,7 @@ async def run_webhook_inbox_due(request: Request) -> JSONResponse:
     repo = _repo()
     dry_run = _bool(payload.get("dry_run"), default=True)
     result = await run_in_threadpool(
-        WeComCallbackInboxWorker(repo).run_due,
+        _worker(request, repo).run_due,
         limit=_int(payload.get("batch_size") or payload.get("limit"), default=20, minimum=1),
         dry_run=dry_run,
     )

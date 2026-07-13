@@ -10,8 +10,10 @@ from fastapi.staticfiles import StaticFiles
 from .ai_audience_e2e_composition import build_ai_audience_e2e_runner_factory
 from . import fixture_reset_registry
 from .admin_auth.route_policy import route_policy_required_response
+from .admin_auth.action_token import build_admin_action_token_bundle, validate_action_token_for_request
 from .admin_config.pii_audit_repository import AdminConfigPiiAuditRepository
 from .automation_engine.repo import reset_automation_fixture_state
+from .channel_entry.inbox import WeComCallbackInboxWorker
 from .commerce.repo import reset_commerce_fixture_state
 from .external_effect_composition import build_external_effect_continuation_registry
 from .internal_event_composition import build_internal_event_consumer_registry
@@ -51,6 +53,9 @@ logger = logging.getLogger(__name__)
 def create_app(*, pii_audit_repository: PiiAuditRepository | None = None) -> FastAPI:
     assert_required_runtime_secrets()
     app = FastAPI(title="AI-CRM Next", version="0.1.0")
+    app.state.admin_action_token_bundle_builder = build_admin_action_token_bundle
+    app.state.admin_action_token_validator = validate_action_token_for_request
+    app.state.wecom_callback_inbox_worker_factory = WeComCallbackInboxWorker
     app.state.external_effect_continuation_registry = build_external_effect_continuation_registry()
     app.state.ai_audience_e2e_runner_factory = build_ai_audience_e2e_runner_factory()
     app.state.internal_event_consumer_registry = build_internal_event_consumer_registry()

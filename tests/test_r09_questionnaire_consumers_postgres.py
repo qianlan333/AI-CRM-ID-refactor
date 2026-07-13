@@ -5,13 +5,13 @@ import os
 import pytest
 
 from aicrm_next.customer_tags.local_projection import project_questionnaire_tags
+from aicrm_next.internal_event_composition import register_questionnaire_event_consumers
 from aicrm_next.platform_foundation.command_bus import CommandContext
 from aicrm_next.platform_foundation.internal_events.consumer_registry import (
     InternalEventConsumerRegistry,
 )
 from aicrm_next.platform_foundation.internal_events.questionnaire import (
     QUESTIONNAIRE_SUBMITTED_EVENT_TYPE,
-    register_questionnaire_event_consumers,
 )
 from aicrm_next.platform_foundation.internal_events.repository import (
     SQLAlchemyInternalEventRepository,

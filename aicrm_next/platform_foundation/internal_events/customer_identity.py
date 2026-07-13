@@ -1,9 +1,8 @@
 from __future__ import annotations
 
 import hashlib
-from typing import Any
+from typing import Any, Protocol
 
-from aicrm_next.identity_contact.dto import BindMobileToExternalContactRequest
 from aicrm_next.platform_foundation.command_bus import CommandContext
 
 from .config import customer_identity_internal_events_enabled, event_type_allowed
@@ -13,6 +12,13 @@ from .models import InternalEvent, InternalEventConsumerResult, InternalEventCon
 from .service import InternalEventService
 
 CUSTOMER_PHONE_BOUND_EVENT_TYPE = "customer.phone_bound"
+
+
+class BindMobileRequest(Protocol):
+    external_userid: str | None
+    mobile: str | None
+    owner_userid: str | None
+    bind_by_userid: str | None
 
 
 def _text(value: Any) -> str:
@@ -173,7 +179,7 @@ def register_customer_identity_event_consumers(registry: InternalEventConsumerRe
 
 def emit_customer_phone_bound_event(
     *,
-    request: BindMobileToExternalContactRequest,
+    request: BindMobileRequest,
     binding_result: dict[str, Any],
     source_module: str = "identity_contact.application",
     source_route: str = "identity_contact.bind_mobile",

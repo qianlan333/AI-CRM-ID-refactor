@@ -3,10 +3,11 @@ from __future__ import annotations
 from fastapi.testclient import TestClient
 
 from aicrm_next.commerce.wechat_pay_client import WeChatPayClientConfig
+from aicrm_next.internal_event_composition import register_payment_succeeded_consumers
 from aicrm_next.main import create_app
 from aicrm_next.platform_foundation.internal_events.consumer_registry import InternalEventConsumerRegistry
 from aicrm_next.platform_foundation.internal_events.models import InternalEvent, InternalEventConsumerRun
-from aicrm_next.platform_foundation.internal_events.payment import PAYMENT_SUCCEEDED_EVENT_TYPE, register_payment_succeeded_consumers
+from aicrm_next.platform_foundation.internal_events.payment import PAYMENT_SUCCEEDED_EVENT_TYPE
 from aicrm_next.public_product import h5_wechat_pay
 from aicrm_next.service_period.application import CreateServicePeriodProductCommand
 from aicrm_next.service_period.dto import ServicePeriodProductCreateRequest

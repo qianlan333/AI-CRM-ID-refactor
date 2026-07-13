@@ -1,13 +1,18 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Any
 
 from aicrm_next.platform_foundation.external_effects import ExternalEffectJob, ExternalEffectService, WEBHOOK_ORDER_PAID_PUSH
 from aicrm_next.platform_foundation.command_bus import CommandContext
 
-from .consumer_registry import DEFAULT_INTERNAL_EVENT_CONSUMER_REGISTRY, InternalEventConsumerRegistry
+from .consumer_registry import (
+    DEFAULT_INTERNAL_EVENT_CONSUMER_REGISTRY,
+    InternalEventConsumerHandler,
+    InternalEventConsumerRegistry,
+)
 from .models import InternalEvent, InternalEventConsumerResult, InternalEventConsumerRun, InternalEventCreateRequest
-from .repository import plan_order_paid_external_push_effect_from_db, read_wechat_pay_order_for_payment_event
+from .repository import read_wechat_pay_order_for_payment_event
 
 PAYMENT_SUCCEEDED_EVENT_TYPE = "payment.succeeded"
 TRANSACTION_PAID_EVENT_ALIAS = "transaction.paid"
@@ -142,8 +147,11 @@ def _plan_order_paid_external_push_from_db(
     order: dict[str, Any],
     transaction: dict[str, Any],
     event: InternalEvent,
+    planner: Callable[..., dict[str, Any] | None] | None,
 ) -> dict[str, Any] | None:
-    return plan_order_paid_external_push_effect_from_db(
+    if planner is None:
+        raise RuntimeError("order-paid external push planner composition is required")
+    return planner(
         order=order,
         transaction=transaction,
         domain_event_outbox_id=(event.payload_json or {}).get("domain_event_outbox_id"),
@@ -177,7 +185,12 @@ def order_projection_consumer(event: InternalEvent, run: InternalEventConsumerRu
     )
 
 
-def webhook_order_paid_consumer(event: InternalEvent, run: InternalEventConsumerRun) -> InternalEventConsumerResult:
+def webhook_order_paid_consumer(
+    event: InternalEvent,
+    run: InternalEventConsumerRun,
+    *,
+    external_push_planner: Callable[..., dict[str, Any] | None] | None = None,
+) -> InternalEventConsumerResult:
     order = _order_from_event(event)
     transaction = _transaction_from_event(event)
     out_trade_no = _text(order.get("out_trade_no") or transaction.get("out_trade_no") or event.aggregate_id)
@@ -211,7 +224,12 @@ def webhook_order_paid_consumer(event: InternalEvent, run: InternalEventConsumer
             },
         )
     try:
-        planned = _plan_order_paid_external_push_from_db(order=order, transaction=transaction, event=event)
+        planned = _plan_order_paid_external_push_from_db(
+            order=order,
+            transaction=transaction,
+            event=event,
+            planner=external_push_planner,
+        )
     except Exception as exc:
         return InternalEventConsumerResult(
             status="failed_retryable",
@@ -286,14 +304,29 @@ def ai_assist_notify_consumer(event: InternalEvent, run: InternalEventConsumerRu
     )
 
 
-def register_payment_succeeded_consumers(registry: InternalEventConsumerRegistry | None = None) -> None:
+def register_payment_succeeded_consumers(
+    registry: InternalEventConsumerRegistry | None = None,
+    *,
+    service_period_consumer: InternalEventConsumerHandler | None = None,
+    webhook_order_paid_handler: InternalEventConsumerHandler | None = None,
+) -> None:
     registry = registry or DEFAULT_INTERNAL_EVENT_CONSUMER_REGISTRY
-    from aicrm_next.service_period.payment_consumer import service_period_entitlement_consumer
 
     for event_type in PAYMENT_SUCCEEDED_EVENT_TYPES:
         registry.register(event_type, "order_projection_consumer", order_projection_consumer, consumer_type="projection")
-        registry.register(event_type, "service_period_entitlement_consumer", service_period_entitlement_consumer, consumer_type="projection")
-        registry.register(event_type, "webhook_order_paid_consumer", webhook_order_paid_consumer, consumer_type="external_effect_planner")
+        if service_period_consumer is not None:
+            registry.register(
+                event_type,
+                "service_period_entitlement_consumer",
+                service_period_consumer,
+                consumer_type="projection",
+            )
+        registry.register(
+            event_type,
+            "webhook_order_paid_consumer",
+            webhook_order_paid_handler or webhook_order_paid_consumer,
+            consumer_type="external_effect_planner",
+        )
         registry.register(event_type, "customer_business_summary_consumer", customer_business_summary_consumer, consumer_type="projection")
         registry.register(event_type, "dnd_policy_consumer", dnd_policy_consumer, consumer_type="orchestration")
         registry.register(event_type, "ai_assist_notify_consumer", ai_assist_notify_consumer, consumer_type="orchestration")

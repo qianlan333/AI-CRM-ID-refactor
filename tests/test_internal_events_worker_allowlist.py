@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from aicrm_next.internal_event_composition import register_payment_succeeded_consumers
 from aicrm_next.platform_foundation.command_bus import CommandContext
 from aicrm_next.platform_foundation.external_effects import WEBHOOK_ORDER_PAID_PUSH, ExternalEffectService, reset_external_effect_fixture_state
 from aicrm_next.platform_foundation.internal_events import (
@@ -7,7 +8,6 @@ from aicrm_next.platform_foundation.internal_events import (
     InternalEventConsumerRegistry,
     InternalEventConsumerResult,
     InternalEventService,
-    register_payment_succeeded_consumers,
     reset_internal_event_fixture_state,
 )
 from aicrm_next.platform_foundation.internal_events.models import InternalEvent, InternalEventConsumerRun
@@ -301,7 +301,7 @@ def test_webhook_payment_consumer_skips_without_configured_external_effect(monke
     reset_external_effect_fixture_state()
     _enable_auto_execute(monkeypatch, consumers=["webhook_order_paid_consumer"])
     monkeypatch.setattr(
-        "aicrm_next.platform_foundation.internal_events.payment.plan_order_paid_external_push_effect_from_db",
+        "aicrm_next.internal_event_composition._plan_order_paid_external_push_effect_from_db",
         lambda **kwargs: {"ok": True, "skipped": True, "reason": "external_push_config_unavailable"},
     )
     service, repo, registry = _payment_service()

@@ -8,7 +8,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 
-from aicrm_next.platform_foundation.auth_platform.context import AuthContext, PrincipalType
+from aicrm_next.shared.admin_action_runtime import ensure_admin_action_token, validate_admin_action_token
 
 from .application import (
     approve_broadcast_job,
@@ -35,34 +35,11 @@ from .notification_settings import (
     validate_feishu_webhook,
 )
 from aicrm_next.admin_shell import admin_path_for, shell_context
-from aicrm_next.admin_auth.action_token import validate_action_token_for_request
 
 router = APIRouter()
 
 _ADMIN_JOBS_TEMPLATE_DIR = Path(__file__).resolve().parent / "templates"
 templates = Jinja2Templates(directory=_ADMIN_JOBS_TEMPLATE_DIR)
-
-
-def ensure_admin_action_token() -> str:
-    """Compatibility placeholder; route-bound grants are emitted by the admin shell."""
-
-    return ""
-
-
-def validate_admin_action_token(token: str, *, request: Request | None = None) -> str:
-    if request is not None:
-        context = getattr(request.state, "auth_context", None)
-        if isinstance(context, AuthContext) and context.principal_type is not PrincipalType.HUMAN:
-            return ""
-    token = normalized_text(token)
-    if not token:
-        return "缺少 admin_action_token"
-    if request is not None:
-        result = validate_action_token_for_request(request, token)
-        if result.ok:
-            return ""
-        return "admin_action_token 已过期" if result.error == "expired" else "admin_action_token 无效或与当前动作不匹配"
-    return "admin auth context is required"
 
 
 def _operator_from_request(request: Request, payload: dict[str, Any] | None = None, form: Any | None = None) -> str:

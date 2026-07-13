@@ -6,7 +6,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 from starlette.concurrency import run_in_threadpool
 
-from aicrm_next.admin_jobs.routes import validate_admin_action_token
+from aicrm_next.shared.admin_action_runtime import validate_admin_action_token
 
 from .adapters import wecom_execution_settings
 from .continuations import EMPTY_EXTERNAL_EFFECT_CONTINUATION_REGISTRY, ExternalEffectContinuationRegistry
