@@ -121,13 +121,15 @@ def test_archive_sync_service_runs_as_secret_store_owner() -> None:
     assert "WorkingDirectory=/home/ubuntu/极简 crm" in service
 
 
-def test_runtime_units_manifest_retires_callback_hotfix_overlay_dropins() -> None:
+def test_runtime_units_manifest_retires_legacy_overlay_dropins() -> None:
     retired = {(item["unit"], item["dropin"]) for item in _manifest()["retired_dropins"]}
 
     assert retired == {
         ("openclaw-wecom-postgres.service", "10-aicrm-callback-hotfix-runtime.conf"),
         ("openclaw-wecom-callback-ingress.service", "10-aicrm-callback-hotfix-runtime.conf"),
         ("openclaw-wecom-callback-inbox-worker.service", "10-aicrm-callback-hotfix-runtime.conf"),
+        ("openclaw-internal-event-worker.service", "p0-2-payment-shadow.conf"),
+        ("openclaw-internal-event-worker.service", "zz-service-period-payment-consumer.conf"),
     }
 
 
@@ -135,12 +137,14 @@ def test_runtime_units_retire_legacy_overlays_is_idempotent_and_verified(capsys)
     assert runtime_units.main(["--phase", "retire-legacy-overlays", "--dry-run"]) == 0
     output = capsys.readouterr().out
 
-    for unit in (
-        "openclaw-wecom-postgres.service",
-        "openclaw-wecom-callback-ingress.service",
-        "openclaw-wecom-callback-inbox-worker.service",
+    for unit, dropin in (
+        ("openclaw-wecom-postgres.service", "10-aicrm-callback-hotfix-runtime.conf"),
+        ("openclaw-wecom-callback-ingress.service", "10-aicrm-callback-hotfix-runtime.conf"),
+        ("openclaw-wecom-callback-inbox-worker.service", "10-aicrm-callback-hotfix-runtime.conf"),
+        ("openclaw-internal-event-worker.service", "p0-2-payment-shadow.conf"),
+        ("openclaw-internal-event-worker.service", "zz-service-period-payment-consumer.conf"),
     ):
-        path = f"/etc/systemd/system/{unit}.d/10-aicrm-callback-hotfix-runtime.conf"
+        path = f"/etc/systemd/system/{unit}.d/{dropin}"
         assert f"sudo rm -f {path}" in output
         assert f"sudo test '!' -e {path}" in output
     assert output.index("sudo rm -f") < output.index("sudo systemctl daemon-reload") < output.index("sudo test '!' -e")

@@ -111,6 +111,14 @@
     {
       "unit": "openclaw-wecom-callback-inbox-worker.service",
       "dropin": "10-aicrm-callback-hotfix-runtime.conf"
+    },
+    {
+      "unit": "openclaw-internal-event-worker.service",
+      "dropin": "p0-2-payment-shadow.conf"
+    },
+    {
+      "unit": "openclaw-internal-event-worker.service",
+      "dropin": "zz-service-period-payment-consumer.conf"
     }
   ]
 }
