@@ -204,6 +204,15 @@ def test_sidebar_customer_context_reuses_one_request_scoped_repo(monkeypatch) ->
 
 def test_sidebar_customer_context_rejects_resolved_customer_outside_staff_scope_without_pii(monkeypatch) -> None:
     client, session, read_repos, live_repos = _client_with_request_scope(monkeypatch)
+
+    def reject_current_scope(*, external_userid: str, owner_userid: str) -> None:
+        del external_userid, owner_userid
+        raise CustomerScopeForbiddenError("customer scope forbidden")
+
+    monkeypatch.setattr(
+        "aicrm_next.customer_read_model.api.verify_sidebar_identity_snapshot_owner_scope",
+        reject_current_scope,
+    )
     headers = install_sidebar_auth(
         client,
         viewer_userid="owner-b",
@@ -218,6 +227,32 @@ def test_sidebar_customer_context_rejects_resolved_customer_outside_staff_scope_
     assert response.status_code == 403
     assert response.json()["source_status"] == "forbidden"
     assert all(value not in response.text for value in ("13800138000", "重点跟进", "客户问候"))
+    assert session.closed is True
+    assert len(read_repos) == 1
+    assert len(live_repos) == 1
+
+
+def test_sidebar_customer_context_prefers_current_owner_when_projection_scope_is_stale(monkeypatch) -> None:
+    client, session, read_repos, live_repos = _client_with_request_scope(monkeypatch)
+    verifier_calls: list[tuple[str, str]] = []
+
+    monkeypatch.setattr(
+        "aicrm_next.customer_read_model.api.verify_sidebar_identity_snapshot_owner_scope",
+        lambda *, external_userid, owner_userid: verifier_calls.append((external_userid, owner_userid)),
+    )
+    headers = install_sidebar_auth(
+        client,
+        viewer_userid="owner-b",
+        external_userid="wx_ext_001",
+    )
+
+    response = client.get(
+        "/api/sidebar/customer-context?external_userid=wx_ext_001&owner_userid=owner-b",
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+    assert verifier_calls == [("wx_ext_001", "owner-b")]
     assert session.closed is True
     assert len(read_repos) == 1
     assert len(live_repos) == 1

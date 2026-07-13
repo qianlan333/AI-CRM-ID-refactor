@@ -1090,11 +1090,11 @@ class GetCustomerContextQuery:
                 owner_verified=query.owner_verified,
             )
         except CustomerScopeForbiddenError:
-            # Sidebar projections can temporarily omit owner relations. Only an
-            # injected verifier backed by the current identity relation may
-            # authorize that empty-projection case; explicit mismatches remain
-            # fail-closed.
-            if _customer_owner_candidates(customer) or self._owner_scope_verifier is None:
+            # Sidebar projections and live-source fallbacks can lag the current
+            # WeCom owner relation. Only an injected verifier backed by that
+            # current relation may override the projection mismatch; callers
+            # without one remain fail-closed.
+            if self._owner_scope_verifier is None:
                 raise
             external_userid = str(
                 customer.get("external_userid")
