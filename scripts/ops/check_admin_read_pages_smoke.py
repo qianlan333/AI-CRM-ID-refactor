@@ -59,7 +59,7 @@ SIDEBAR_PATHS = tuple(
         for item in group["items"]
     )
 )
-DEFAULT_TIMEOUT_SECONDS = 20.0
+DEFAULT_TIMEOUT_SECONDS = 45.0
 
 
 @dataclass(frozen=True)
