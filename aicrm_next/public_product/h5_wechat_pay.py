@@ -488,14 +488,45 @@ def _resolve_payment_identity(
 ) -> IdentityResolveResult:
     """Resolve only payer-owned aliases; sidebar customer context is not payer identity."""
 
-    return resolve_identity_with_dbapi(
+    unionid = _normalized_text(identity.get("unionid"))
+    openid = _normalized_text(identity.get("openid"))
+    if not unionid:
+        return resolve_identity_with_dbapi(
+            conn,
+            ResolvePersonIdentityRequest(openid=openid or None),
+            for_update=for_update,
+        )
+
+    unionid_result = resolve_identity_with_dbapi(
         conn,
-        ResolvePersonIdentityRequest(
-            unionid=_normalized_text(identity.get("unionid")) or None,
-            openid=_normalized_text(identity.get("openid")) or None,
-        ),
+        ResolvePersonIdentityRequest(unionid=unionid),
         for_update=for_update,
     )
+    if unionid_result.status != "resolved" or not openid:
+        return unionid_result
+
+    # OAuth can return a valid unionid before the public-account openid alias has
+    # been projected into crm_user_identity.  A missing/pending openid must not
+    # block that canonical unionid, but an openid that resolves elsewhere still
+    # represents a real payer-identity conflict and remains blocked.
+    openid_result = resolve_identity_with_dbapi(
+        conn,
+        ResolvePersonIdentityRequest(openid=openid),
+        for_update=for_update,
+    )
+    if openid_result.status == "conflict":
+        return openid_result
+    canonical_unionid = resolved_unionid(unionid_result)
+    openid_unionid = resolved_unionid(openid_result)
+    if openid_unionid and openid_unionid != canonical_unionid:
+        return IdentityResolveResult(
+            status="conflict",
+            reason="identity_inputs_disagree",
+            matched_fields=["unionid", "openid"],
+            candidate_count=2,
+            pending_count=max(0, int(openid_result.pending_count)),
+        )
+    return unionid_result
 
 
 def _paid_order_for_product_identity(

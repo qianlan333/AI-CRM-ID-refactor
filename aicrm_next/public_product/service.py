@@ -613,7 +613,11 @@ def _pay_page_script(state_json: str) -> str:
             window.location.href = payload.oauth_start_url;
             return null;
           }}
-          throw new Error(payload.error || "下单失败");
+          const friendlyErrors = {{
+            identity_resolution_required: "微信身份正在同步，请稍后重试。",
+            identity_conflict: "当前微信身份存在冲突，请联系客服处理。"
+          }};
+          throw new Error(friendlyErrors[payload.error] || payload.error || "下单失败");
         }}
         return payload;
       }}
