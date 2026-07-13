@@ -111,6 +111,29 @@
   ],
   "scopes": [
     {
+      "name": "live_runtime_readiness",
+      "paths": [
+        "tools/check_live_runtime_readiness.py",
+        "tools/check_next_production_runtime_gaps.py",
+        "tools/check_next_production_cutover_readiness.py",
+        "aicrm_next/admin_read_model/projections.py",
+        "tests/test_live_runtime_readiness.py",
+        "tests/test_retired_runtime_gap_timer_report.py",
+        "tests/test_retired_timer_readiness_cleanup.py"
+      ],
+      "python_tests": [
+        "tests/test_live_runtime_readiness.py",
+        "tests/test_runtime_readiness.py",
+        "tests/test_admin_read_model_boundary.py",
+        "tests/test_support_admin_pages_native.py",
+        "tests/test_repo_hygiene_audit.py",
+        "tests/test_select_test_scope.py"
+      ],
+      "needs_postgres": false,
+      "needs_full_ci": true,
+      "architecture_gate": "full"
+    },
+    {
       "name": "runtime_readiness",
       "paths": [
         "aicrm_next/platform_foundation/readiness.py",

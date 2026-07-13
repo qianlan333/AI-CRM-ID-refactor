@@ -81,6 +81,25 @@ def test_admin_read_model_runtime_files_have_a_permanent_ci_scope() -> None:
     assert result["needs_full_ci"] is False
 
 
+def test_live_runtime_readiness_replacement_has_permanent_full_ci_scope() -> None:
+    result = _select(
+        "tools/check_live_runtime_readiness.py",
+        "tools/check_next_production_runtime_gaps.py",
+        "tools/check_next_production_cutover_readiness.py",
+        "aicrm_next/admin_read_model/projections.py",
+        "tests/test_live_runtime_readiness.py",
+        "tests/test_retired_runtime_gap_timer_report.py",
+        "tests/test_retired_timer_readiness_cleanup.py",
+    )
+
+    assert result["unmatched_files"] == []
+    assert "live_runtime_readiness" in result["matched_scopes"]
+    assert "tests/test_runtime_readiness.py" in result["python_tests"]
+    assert "tests/test_admin_read_model_boundary.py" in result["python_tests"]
+    assert result["needs_full_ci"] is True
+    assert result["architecture_gate"] == "full"
+
+
 def test_h5_wechat_pay_mobile_projection_test_selects_commerce_scope() -> None:
     result = _select("tests/test_h5_wechat_pay_mobile_projection.py")
 
