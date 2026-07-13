@@ -1032,7 +1032,9 @@ def test_package_refresh_uses_internal_event_and_external_effect_queue(next_clie
     member_event = member_events[0]
     assert member_event["internal_event_id"]
 
-    worker = InternalEventWorker()
+    worker = InternalEventWorker(
+        consumer_registry=next_client.app.state.internal_event_consumer_registry,
+    )
     dry_run = worker.dispatch_one_consumer(
         run_event_id,
         OUTBOUND_EFFECT_CONSUMER,

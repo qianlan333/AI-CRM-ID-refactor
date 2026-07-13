@@ -100,8 +100,10 @@ def _submit(client: TestClient, *, identity: dict, idempotency_key: str):
     )
 
 
-def _run_tag_consumer() -> dict:
-    return InternalEventWorker().run_due(
+def _run_tag_consumer(client: TestClient) -> dict:
+    return InternalEventWorker(
+        consumer_registry=client.app.state.internal_event_consumer_registry,
+    ).run_due(
         batch_size=1,
         dry_run=False,
         event_types=[QUESTIONNAIRE_SUBMITTED_EVENT_TYPE],
@@ -161,7 +163,7 @@ def test_tag_consumer_waits_retryably_for_canonical_identity(
         idempotency_key=f"questionnaire-r09-missing-{expected_missing}",
     )
 
-    result = _run_tag_consumer()
+    result = _run_tag_consumer(client)
 
     assert response.status_code == 200
     assert response.json()["tag_apply"]["status"] == "queued"
@@ -185,7 +187,7 @@ def test_tag_consumer_plans_one_job_and_reuses_the_same_lineage(monkeypatch: pyt
         idempotency_key="questionnaire-r09-tag-reuse",
     )
 
-    first = _run_tag_consumer()
+    first = _run_tag_consumer(client)
     events, _ = InternalEventService().list_events({"event_type": QUESTIONNAIRE_SUBMITTED_EVENT_TYPE})
     runs, _ = InternalEventService().list_consumer_runs({"event_id": events[0].event_id, "consumer_name": "questionnaire_tag_consumer"})
     from aicrm_next.questionnaire.event_consumers import questionnaire_tag_consumer
@@ -224,7 +226,7 @@ def test_provider_success_projects_tags_only_after_external_effect_success(monke
         },
         idempotency_key="questionnaire-r09-project-after-provider",
     )
-    planned = _run_tag_consumer()
+    planned = _run_tag_consumer(client)
     assert planned["counts"]["succeeded_count"] == 1, planned
     assert get_customer_tag_local_projection_fixture_rows() == []
 
@@ -295,7 +297,7 @@ def test_provider_429_and_timeout_keep_durable_recovery_truth_without_projection
         },
         idempotency_key=f"questionnaire-r09-{provider_error.error_code}",
     )
-    assert _run_tag_consumer()["counts"]["succeeded_count"] == 1
+    assert _run_tag_consumer(client)["counts"]["succeeded_count"] == 1
 
     registry = ExternalEffectAdapterRegistry()
     registry._adapters["wecom_tag"] = WeComContactTagAdapter(  # type: ignore[attr-defined]

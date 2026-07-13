@@ -69,7 +69,9 @@ def test_h5_submit_executes_configured_questionnaire_external_push(client: TestC
     assert jobs == []
     assert total == 0
 
-    planned = InternalEventWorker().run_due(
+    planned = InternalEventWorker(
+        consumer_registry=client.app.state.internal_event_consumer_registry,
+    ).run_due(
         batch_size=1,
         dry_run=False,
         event_types=[QUESTIONNAIRE_SUBMITTED_EVENT_TYPE],
