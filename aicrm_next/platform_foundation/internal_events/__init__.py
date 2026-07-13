@@ -1,6 +1,11 @@
 from __future__ import annotations
 
-from .consumer_registry import DEFAULT_INTERNAL_EVENT_CONSUMER_REGISTRY, InternalEventConsumerRegistry
+from .consumer_registry import (
+    DEFAULT_INTERNAL_EVENT_CONSUMER_REGISTRY,
+    InternalEventConsumerRegistry,
+    current_internal_event_consumer_registry,
+    internal_event_consumer_registry_scope,
+)
 from .models import (
     InternalEvent,
     InternalEventConsumerAttempt,
@@ -26,6 +31,8 @@ __all__ = [
     "InternalEvent",
     "InternalEventConsumerAttempt",
     "InternalEventConsumerRegistry",
+    "current_internal_event_consumer_registry",
+    "internal_event_consumer_registry_scope",
     "InternalEventConsumerResult",
     "InternalEventConsumerRun",
     "InternalEventService",

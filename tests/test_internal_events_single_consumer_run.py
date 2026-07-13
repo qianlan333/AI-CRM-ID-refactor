@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from fastapi.testclient import TestClient
 
+from aicrm_next.ai_audience_ops import register_ai_audience_event_consumers
 from aicrm_next.platform_foundation.external_effects import WEBHOOK_ORDER_PAID_PUSH, ExternalEffectService, reset_external_effect_fixture_state
 from aicrm_next.platform_foundation.internal_events import InternalEventService, register_payment_succeeded_consumers, reset_internal_event_fixture_state
 from aicrm_next.platform_foundation.internal_events.outbox import InternalEventOutboxRelay
@@ -182,6 +183,7 @@ def _emit_payment(monkeypatch, *, out_trade_no: str = "WXP_SINGLE_CONSUMER"):
     )
     _apply_transaction(_PaymentConn(out_trade_no=out_trade_no), _transaction(out_trade_no))
     register_payment_succeeded_consumers()
+    register_ai_audience_event_consumers()
     assert InternalEventOutboxRelay().relay_due(limit=10)["ok"] is True
     event = InternalEventService().list_events({"event_type": PAYMENT_SUCCEEDED_EVENT_TYPE})[0][0]
     runs, total = InternalEventService().list_consumer_runs({"event_id": event.event_id})

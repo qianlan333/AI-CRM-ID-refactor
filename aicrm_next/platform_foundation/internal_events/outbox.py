@@ -5,7 +5,7 @@ from datetime import timedelta
 from typing import Any
 from uuid import uuid4
 
-from .consumer_registry import DEFAULT_INTERNAL_EVENT_CONSUMER_REGISTRY, InternalEventConsumerRegistry
+from .consumer_registry import InternalEventConsumerRegistry, current_internal_event_consumer_registry
 from .models import (
     DEFAULT_TENANT_ID,
     InternalEventConsumerSpec,
@@ -124,7 +124,7 @@ class InternalEventOutboxRelay:
         locked_by: str = "",
     ) -> None:
         self._repo = repository or build_internal_event_repository()
-        self._registry = consumer_registry or DEFAULT_INTERNAL_EVENT_CONSUMER_REGISTRY
+        self._registry = consumer_registry or current_internal_event_consumer_registry()
         self._locked_by = locked_by or f"internal-event-relay-{uuid4().hex[:8]}"
 
     def _consumer_specs(self, event_type: str) -> list[InternalEventConsumerSpec]:

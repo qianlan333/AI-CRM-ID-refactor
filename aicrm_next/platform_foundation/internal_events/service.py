@@ -12,7 +12,7 @@ from .config import (
     allowed_event_types,
     diagnostics_payload as config_diagnostics_payload,
 )
-from .consumer_registry import DEFAULT_INTERNAL_EVENT_CONSUMER_REGISTRY, InternalEventConsumerRegistry
+from .consumer_registry import InternalEventConsumerRegistry, current_internal_event_consumer_registry
 from .models import InternalEvent, InternalEventConsumerRun, InternalEventConsumerSpec, InternalEventCreateRequest
 from .repository import InternalEventRepository, build_internal_event_repository
 
@@ -24,7 +24,7 @@ class InternalEventService:
         consumer_registry: InternalEventConsumerRegistry | None = None,
     ):
         self._repo = repository or build_internal_event_repository()
-        self._registry = consumer_registry or DEFAULT_INTERNAL_EVENT_CONSUMER_REGISTRY
+        self._registry = consumer_registry or current_internal_event_consumer_registry()
 
     def emit_event(
         self,

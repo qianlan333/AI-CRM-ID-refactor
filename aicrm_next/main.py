@@ -7,7 +7,6 @@ from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from .ai_audience_ops import register_ai_audience_event_consumers
 from .ai_audience_e2e_composition import build_ai_audience_e2e_runner_factory
 from . import fixture_reset_registry
 from .admin_auth.route_policy import route_policy_required_response
@@ -15,13 +14,10 @@ from .admin_config.pii_audit_repository import AdminConfigPiiAuditRepository
 from .automation_engine.repo import reset_automation_fixture_state
 from .commerce.repo import reset_commerce_fixture_state
 from .external_effect_composition import build_external_effect_continuation_registry
+from .internal_event_composition import build_internal_event_consumer_registry
 from .media_library.repo import reset_media_library_fixture_state
 from .ops_enrollment.application import reset_user_ops_fixture_state
-from .platform_foundation.internal_events import (
-    register_payment_succeeded_consumers,
-    register_refund_succeeded_consumers,
-    register_shadow_event_consumers,
-)
+from .platform_foundation.internal_events import internal_event_consumer_registry_scope
 from .questionnaire.repo import reset_questionnaire_fixture_state
 from .radar_links.repo import reset_radar_links_fixture_state
 from .router_registry import register_routers
@@ -56,10 +52,7 @@ def create_app(*, pii_audit_repository: PiiAuditRepository | None = None) -> Fas
     app = FastAPI(title="AI-CRM Next", version="0.1.0")
     app.state.external_effect_continuation_registry = build_external_effect_continuation_registry()
     app.state.ai_audience_e2e_runner_factory = build_ai_audience_e2e_runner_factory()
-    register_payment_succeeded_consumers()
-    register_refund_succeeded_consumers()
-    register_shadow_event_consumers()
-    register_ai_audience_event_consumers()
+    app.state.internal_event_consumer_registry = build_internal_event_consumer_registry()
 
     if fixture_mode():
         fixture_reset_registry.reset_fixture_state()
@@ -105,11 +98,12 @@ def create_app(*, pii_audit_repository: PiiAuditRepository | None = None) -> Fas
 
     @app.middleware("http")
     async def write_route_owner_headers(request, call_next):
-        auth_response = await route_policy_required_response(request, app=app, index=route_policy_index)
-        if auth_response is not None:
-            response = auth_response
-        else:
-            response = await call_next(request)
+        with internal_event_consumer_registry_scope(app.state.internal_event_consumer_registry):
+            auth_response = await route_policy_required_response(request, app=app, index=route_policy_index)
+            if auth_response is not None:
+                response = auth_response
+            else:
+                response = await call_next(request)
         if pii_audit_enabled():
             response = apply_pii_audit(
                 request=request,

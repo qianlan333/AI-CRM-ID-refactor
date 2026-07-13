@@ -17,7 +17,7 @@ from .config import (
     diagnostics_payload,
     internal_events_enabled,
 )
-from .consumer_registry import DEFAULT_INTERNAL_EVENT_CONSUMER_REGISTRY, InternalEventConsumerRegistry
+from .consumer_registry import InternalEventConsumerRegistry, current_internal_event_consumer_registry
 from .models import (
     AUTOMATIC_RECOVERABLE_STATUSES,
     MANUAL_ONLY_STATUSES,
@@ -90,7 +90,7 @@ class InternalEventWorker:
         locked_by: str = "",
     ):
         self._repo = repository or build_internal_event_repository()
-        self._registry = consumer_registry or DEFAULT_INTERNAL_EVENT_CONSUMER_REGISTRY
+        self._registry = consumer_registry or current_internal_event_consumer_registry()
         self._locked_by = locked_by or f"internal-event-worker-{uuid4().hex[:8]}"
         self._outbox_relay = InternalEventOutboxRelay(
             self._repo,
