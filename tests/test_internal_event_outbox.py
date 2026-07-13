@@ -22,6 +22,7 @@ from aicrm_next.platform_foundation.internal_events.outbox import (
 )
 from aicrm_next.platform_foundation.internal_events.payment import PAYMENT_SUCCEEDED_EVENT_TYPE
 from aicrm_next.platform_foundation.internal_events.reconciliation import InternalEventOutboxReconciliationService
+from aicrm_next.platform_foundation.internal_events.reconciliation import outbox as outbox_reconciliation
 from aicrm_next.platform_foundation.internal_events.repository import (
     InMemoryInternalEventRepository,
     SQLAlchemyInternalEventRepository,
@@ -84,6 +85,70 @@ def test_reconciliation_script_supports_direct_file_entrypoint() -> None:
 
     assert result.returncode == 0, result.stderr
     assert "Diagnose or repair internal event outbox gaps" in result.stdout
+
+
+def test_reconciliation_scopes_actionable_payment_gaps_to_r08_cutover(monkeypatch) -> None:
+    class ScalarResult:
+        def scalar_one(self):
+            return 0
+
+    class Session:
+        def __init__(self):
+            self.queries: list[str] = []
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def execute(self, statement, params=None):
+            self.queries.append(str(statement))
+            return ScalarResult()
+
+    class RowsResult:
+        def fetchall(self):
+            return []
+
+    class Connection:
+        def __init__(self):
+            self.queries: list[str] = []
+            self.row_factory = None
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def execute(self, query, params=()):
+            self.queries.append(str(query))
+            return RowsResult()
+
+        def commit(self):
+            return None
+
+    session = Session()
+    connection = Connection()
+    registry = InternalEventConsumerRegistry()
+    registry.register(PAYMENT_SUCCEEDED_EVENT_TYPE, "projection-a", lambda event, run: InternalEventConsumerResult(status="succeeded"))
+    service = InternalEventOutboxReconciliationService(
+        InMemoryInternalEventRepository(),
+        registry,
+    )
+    service._session_factory = lambda: session
+    service._database_url = "postgresql://test"
+    monkeypatch.setattr(outbox_reconciliation, "connect_raw_postgres", lambda database_url: connection)
+
+    result = service.diagnose()
+    repaired_count = service._repair_paid_without_outbox(limit=10)
+
+    assert outbox_reconciliation._INTERNAL_EVENT_RECONCILIATION_CUTOVER_AT == "2026-07-13T09:46:09Z"
+    assert result["actionable_cutover_at"] == "2026-07-13T09:46:09Z"
+    assert any("COALESCE(p.paid_at, p.created_at) >= TIMESTAMPTZ '2026-07-13 09:46:09+00'" in query for query in session.queries)
+    assert any("e.created_at >= TIMESTAMPTZ '2026-07-13 09:46:09+00'" in query for query in session.queries)
+    assert repaired_count == 0
+    assert "COALESCE(p.paid_at, p.created_at) >= TIMESTAMPTZ '2026-07-13 09:46:09+00'" in connection.queries[0]
 
 
 def test_outbox_relay_is_idempotent_and_creates_all_registered_runs() -> None:
@@ -317,6 +382,8 @@ def test_postgres_event_and_consumer_runs_rollback_together_and_lease_cas_is_ato
 
 @pytest.mark.skipif(not _database_url(), reason="PostgreSQL integration database is not configured")
 def test_postgres_count_only_reconciliation_repairs_missing_consumer_runs_without_execution() -> None:
+    import psycopg
+
     database_url = _database_url()
     repo = SQLAlchemyInternalEventRepository(get_session_factory(database_url))
     registry = InternalEventConsumerRegistry()
@@ -332,6 +399,23 @@ def test_postgres_count_only_reconciliation_repairs_missing_consumer_runs_withou
         payload_summary={"order_id": 991, "status": "paid"},
     )
     event = repo.create_event(request)
+    legacy_event = repo.create_event(
+        InternalEventCreateRequest(
+            event_type=PAYMENT_SUCCEEDED_EVENT_TYPE,
+            aggregate_type="wechat_pay_order",
+            aggregate_id="990",
+            idempotency_key="payment.succeeded:RECONCILE_LEGACY_990",
+            source_module="tests.test_internal_event_outbox",
+            payload={"order": {"id": 990, "out_trade_no": "RECONCILE_LEGACY_990", "status": "paid"}},
+            payload_summary={"order_id": 990, "status": "paid"},
+        )
+    )
+    with psycopg.connect(database_url) as conn:
+        conn.execute(
+            "UPDATE internal_event SET created_at = TIMESTAMPTZ '2026-07-01 00:00:00+00' WHERE event_id = %s",
+            (legacy_event.event_id,),
+        )
+        conn.commit()
     service = InternalEventOutboxReconciliationService(repo, registry, database_url=database_url)
 
     before = service.diagnose()
@@ -341,6 +425,9 @@ def test_postgres_count_only_reconciliation_repairs_missing_consumer_runs_withou
     runs, total = repo.list_consumer_runs({"event_id": event.event_id})
 
     assert before["event_missing_consumer_run_count"] == 2
+    assert before["legacy_event_missing_consumer_run_count"] == 2
+    assert before["legacy_paid_without_outbox_count"] >= 0
+    assert before["actionable_cutover_at"] == "2026-07-13T09:46:09Z"
     assert before["pii_in_output"] is False
     assert dry_run["dry_run"] is True
     assert still_missing == []
@@ -348,5 +435,8 @@ def test_postgres_count_only_reconciliation_repairs_missing_consumer_runs_withou
     assert repaired["repaired"]["consumer_run_count"] == 2
     assert repaired["after"]["event_missing_consumer_run_count"] == 0
     assert total == 2
+    legacy_runs, legacy_total = repo.list_consumer_runs({"event_id": legacy_event.event_id})
+    assert legacy_runs == []
+    assert legacy_total == 0
     assert {run.consumer_name for run in runs} == {"projection-a", "projection-b"}
     assert all(run.attempt_count == 0 for run in runs)

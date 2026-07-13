@@ -15,12 +15,19 @@ python scripts/ops/reconcile_internal_event_outbox.py
 重点字段：
 
 - `paid_without_outbox_count`
+- `legacy_paid_without_outbox_count`（只作历史库存展示，不修复）
 - `relayed_outbox_without_event_count`
 - `event_missing_consumer_run_count`
+- `legacy_event_missing_consumer_run_count`（只作历史库存展示，不修复）
 - `manual_only_in_automatic_due_count`（必须为 0）
 - `stale_running_consumer_count`
 - `stale_running_outbox_count`
 - `outbox_metrics.failed_terminal_count`
+
+支付 outbox 与 consumer-run 缺口只在 R08 生产切换点
+`2026-07-13T09:46:09Z` 之后视为可执行异常。切换前订单与事件保留为
+`legacy_*` 计数，`--repair` 不会为其创建 outbox 或 consumer-run，避免历史订单
+被批量重放。
 
 ## Dry-run 修复预览
 

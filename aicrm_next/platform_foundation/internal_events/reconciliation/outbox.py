@@ -16,6 +16,10 @@ from ..payment import PAYMENT_SUCCEEDED_EVENT_TYPE, build_payment_succeeded_even
 from ..repository import InternalEventRepository, automatic_due_predicate_sql, build_internal_event_repository
 
 
+_INTERNAL_EVENT_RECONCILIATION_CUTOVER_AT = "2026-07-13T09:46:09Z"
+_INTERNAL_EVENT_RECONCILIATION_CUTOVER_AT_SQL = "TIMESTAMPTZ '2026-07-13 09:46:09+00'"
+
+
 def _text(value: Any) -> str:
     return str(value or "").strip()
 
@@ -98,10 +102,28 @@ class InternalEventOutboxReconciliationService:
             paid_without_outbox = int(
                 session.execute(
                     text(
-                        """
+                        f"""
                         SELECT COUNT(*)
                         FROM wechat_pay_orders p
                         WHERE (p.status = 'paid' OR p.trade_state = 'SUCCESS')
+                          AND COALESCE(p.paid_at, p.created_at) >= {_INTERNAL_EVENT_RECONCILIATION_CUTOVER_AT_SQL}
+                          AND NOT EXISTS (
+                              SELECT 1 FROM internal_event_outbox o
+                              WHERE o.tenant_id = 'aicrm'
+                                AND o.idempotency_key = 'payment.succeeded:' || p.out_trade_no
+                          )
+                        """
+                    )
+                ).scalar_one()
+            )
+            legacy_paid_without_outbox = int(
+                session.execute(
+                    text(
+                        f"""
+                        SELECT COUNT(*)
+                        FROM wechat_pay_orders p
+                        WHERE (p.status = 'paid' OR p.trade_state = 'SUCCESS')
+                          AND COALESCE(p.paid_at, p.created_at) < {_INTERNAL_EVENT_RECONCILIATION_CUTOVER_AT_SQL}
                           AND NOT EXISTS (
                               SELECT 1 FROM internal_event_outbox o
                               WHERE o.tenant_id = 'aicrm'
@@ -154,14 +176,33 @@ class InternalEventOutboxReconciliationService:
                 ).scalar_one()
             )
             missing_by_consumer: dict[str, int] = {}
+            legacy_missing_by_consumer: dict[str, int] = {}
             for spec in self._payment_specs():
                 missing_by_consumer[spec.consumer_name] = int(
                     session.execute(
                         text(
-                            """
+                            f"""
                             SELECT COUNT(*)
                             FROM internal_event e
                             WHERE e.event_type = :event_type
+                              AND e.created_at >= {_INTERNAL_EVENT_RECONCILIATION_CUTOVER_AT_SQL}
+                              AND NOT EXISTS (
+                                  SELECT 1 FROM internal_event_consumer_run r
+                                  WHERE r.event_id = e.event_id AND r.consumer_name = :consumer_name
+                              )
+                            """
+                        ),
+                        {"event_type": PAYMENT_SUCCEEDED_EVENT_TYPE, "consumer_name": spec.consumer_name},
+                    ).scalar_one()
+                )
+                legacy_missing_by_consumer[spec.consumer_name] = int(
+                    session.execute(
+                        text(
+                            f"""
+                            SELECT COUNT(*)
+                            FROM internal_event e
+                            WHERE e.event_type = :event_type
+                              AND e.created_at < {_INTERNAL_EVENT_RECONCILIATION_CUTOVER_AT_SQL}
                               AND NOT EXISTS (
                                   SELECT 1 FROM internal_event_consumer_run r
                                   WHERE r.event_id = e.event_id AND r.consumer_name = :consumer_name
@@ -176,9 +217,13 @@ class InternalEventOutboxReconciliationService:
         return {
             "ok": True,
             "paid_without_outbox_count": paid_without_outbox,
+            "legacy_paid_without_outbox_count": legacy_paid_without_outbox,
             "relayed_outbox_without_event_count": relayed_outbox_without_event,
             "event_missing_consumer_run_count": sum(missing_by_consumer.values()),
             "event_missing_consumer_run_by_consumer": missing_by_consumer,
+            "legacy_event_missing_consumer_run_count": sum(legacy_missing_by_consumer.values()),
+            "legacy_event_missing_consumer_run_by_consumer": legacy_missing_by_consumer,
+            "actionable_cutover_at": _INTERNAL_EVENT_RECONCILIATION_CUTOVER_AT,
             "manual_only_consumer_count": manual_only_count,
             "manual_only_in_automatic_due_count": manual_only_in_automatic_due_count,
             "stale_running_consumer_count": stale_running_consumer_count,
@@ -245,10 +290,11 @@ class InternalEventOutboxReconciliationService:
         with connect_raw_postgres(self._database_url) as conn:
             conn.row_factory = dict_row
             rows = conn.execute(
-                """
+                f"""
                 SELECT p.*
                 FROM wechat_pay_orders p
                 WHERE (p.status = 'paid' OR p.trade_state = 'SUCCESS')
+                  AND COALESCE(p.paid_at, p.created_at) >= {_INTERNAL_EVENT_RECONCILIATION_CUTOVER_AT_SQL}
                   AND NOT EXISTS (
                       SELECT 1 FROM internal_event_outbox o
                       WHERE o.tenant_id = 'aicrm'
@@ -277,7 +323,13 @@ class InternalEventOutboxReconciliationService:
         return repaired
 
     def _repair_missing_consumer_runs(self, *, limit: int) -> int:
-        events, _ = self._repo.list_events({"event_type": PAYMENT_SUCCEEDED_EVENT_TYPE}, limit=max(1, min(int(limit or 100), 200)))
+        events, _ = self._repo.list_events(
+            {
+                "event_type": PAYMENT_SUCCEEDED_EVENT_TYPE,
+                "created_from": _INTERNAL_EVENT_RECONCILIATION_CUTOVER_AT,
+            },
+            limit=max(1, min(int(limit or 100), 200)),
+        )
         repaired = 0
         specs = self._payment_specs()
         for event in events:
