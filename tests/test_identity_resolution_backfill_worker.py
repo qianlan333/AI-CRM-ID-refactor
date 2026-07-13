@@ -12,6 +12,9 @@ class _Cursor:
     def fetchall(self):
         return self._rows
 
+    def fetchone(self):
+        return self._rows[0] if self._rows else None
+
 
 class _FakeConn:
     def __init__(self, queue_rows=None, runtime_rows=None):
@@ -25,6 +28,8 @@ class _FakeConn:
     def execute(self, query, params=()):
         self.queries.append((query, tuple(params)))
         normalized = " ".join(query.split())
+        if "SELECT EXISTS" in normalized and "automation_channel_entry_runtime" in normalized:
+            return _Cursor([{"runtime_due": bool(self.runtime_rows)}])
         if "UPDATE crm_user_identity_resolution_queue q" in normalized:
             return _Cursor(self.queue_rows)
         if "UPDATE automation_channel_entry_runtime runtime" in normalized:
@@ -65,7 +70,7 @@ def test_identity_resolution_worker_resolves_queue_row() -> None:
 
     assert result["resolved_count"] == 1
     assert any("SET status = 'resolved'" in query for query, _ in conn.queries)
-    claim_query = conn.queries[0][0]
+    claim_query = next(query for query, _ in conn.queries if "UPDATE crm_user_identity_resolution_queue q" in query)
     assert "SET status = 'polling'" not in claim_query
     assert "next_attempt_at = CURRENT_TIMESTAMP + make_interval" in claim_query
     assert conn.commit_count == 3
@@ -120,6 +125,54 @@ def test_identity_resolution_worker_updates_runtime_row() -> None:
     assert conn.commit_count == 3
 
 
+def test_identity_resolution_worker_reserves_runtime_capacity_during_queue_backlog() -> None:
+    queue_rows = [
+        {
+            "id": row_id,
+            "external_userid": f"external_queue_{row_id}",
+            "payload_json": {},
+            "attempts": 1,
+            "attempt_count": 1,
+        }
+        for row_id in range(1, 16)
+    ]
+    runtime_row = {
+        "id": 99,
+        "event_log_id": 199,
+        "corp_id": "corp",
+        "external_userid": "external_runtime",
+        "follow_user_userid": "user_runtime",
+        "payload_json": {},
+    }
+    conn = _FakeConn(queue_rows=queue_rows, runtime_rows=[runtime_row])
+
+    result = IdentityResolutionBackfillWorker(
+        connection_factory=lambda: conn,
+        sync_func=lambda event, corp_id, event_log_id: {"status": "success", "unionid": "union_resolved"},
+    ).run_due(dry_run=False, limit=20)
+
+    queue_claim = next(params for query, params in conn.queries if "UPDATE crm_user_identity_resolution_queue q" in query)
+    runtime_claim = next(params for query, params in conn.queries if "UPDATE automation_channel_entry_runtime runtime" in query)
+    assert queue_claim[0] == 15
+    assert runtime_claim[1] == 5
+    assert result["runtime_reserved_count"] == 5
+    assert result["processed_count"] == 15
+    assert result["runtime_processed_count"] == 1
+
+
+def test_identity_resolution_worker_uses_full_limit_without_due_runtime_rows() -> None:
+    conn = _FakeConn(queue_rows=[])
+
+    result = IdentityResolutionBackfillWorker(
+        connection_factory=lambda: conn,
+        sync_func=lambda event, corp_id, event_log_id: {"status": "success"},
+    ).run_due(dry_run=True, limit=20)
+
+    queue_claim = next(params for query, params in conn.queries if "UPDATE crm_user_identity_resolution_queue q" in query)
+    assert queue_claim[0] == 20
+    assert result["runtime_reserved_count"] == 0
+
+
 def test_identity_resolution_worker_runtime_rows_use_backoff_and_terminal_limit() -> None:
     retry_conn = _FakeConn(
         runtime_rows=[
@@ -162,7 +215,9 @@ def test_identity_resolution_worker_runtime_rows_use_backoff_and_terminal_limit(
 
     assert retry_result["retryable_count"] == 1
     assert retry_result["terminal_count"] == 0
-    claim_query = retry_conn.queries[1][0]
+    claim_query = next(
+        query for query, _ in retry_conn.queries if "UPDATE automation_channel_entry_runtime runtime" in query
+    )
     assert "COALESCE(identity_attempt_count, 0) < %s" in claim_query
     assert "identity_next_attempt_at IS NULL OR identity_next_attempt_at <= CURRENT_TIMESTAMP" in claim_query
     update_query = retry_conn.queries[-1][0]

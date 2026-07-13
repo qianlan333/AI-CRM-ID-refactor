@@ -28,6 +28,8 @@ class IdentityResolutionBackfillWorker:
 
     def run_due(self, *, limit: int = 100, max_attempts: int = 5, dry_run: bool = True) -> dict[str, Any]:
         conn = self.connection_factory()
+        bounded_limit = max(1, min(int(limit or 100), 500))
+        runtime_reserve = 0
         processed = 0
         resolved = 0
         retryable = 0
@@ -35,16 +37,26 @@ class IdentityResolutionBackfillWorker:
         runtime_processed = 0
         details: list[dict[str, Any]] = []
         try:
-            queue_rows = _claim_queue_rows(
+            runtime_reserve = _runtime_reserve(
                 conn,
-                limit=limit,
-                locked_by=self.locked_by,
-                lease_seconds=self.claim_lease_seconds,
+                limit=bounded_limit,
+                max_attempts=max_attempts,
+            )
+            queue_limit = max(0, bounded_limit - runtime_reserve)
+            queue_rows = (
+                _claim_queue_rows(
+                    conn,
+                    limit=queue_limit,
+                    locked_by=self.locked_by,
+                    lease_seconds=self.claim_lease_seconds,
+                )
+                if queue_limit > 0
+                else []
             )
             if dry_run:
                 runtime_rows = _claim_runtime_rows(
                     conn,
-                    limit=max(0, int(limit or 100) - len(queue_rows)),
+                    limit=max(0, bounded_limit - len(queue_rows)),
                     max_attempts=max_attempts,
                     locked_by=self.locked_by,
                     lease_seconds=self.claim_lease_seconds,
@@ -53,6 +65,7 @@ class IdentityResolutionBackfillWorker:
                 return {
                     "ok": True,
                     "dry_run": True,
+                    "runtime_reserved_count": runtime_reserve,
                     "claimed_count": len(queue_rows),
                     "runtime_claimed_count": len(runtime_rows),
                     "resolved_count": 0,
@@ -102,7 +115,7 @@ class IdentityResolutionBackfillWorker:
             # second time from a stale pre-queue snapshot.
             runtime_rows = _claim_runtime_rows(
                 conn,
-                limit=max(0, int(limit or 100) - len(queue_rows)),
+                limit=max(0, bounded_limit - len(queue_rows)),
                 max_attempts=max_attempts,
                 locked_by=self.locked_by,
                 lease_seconds=self.claim_lease_seconds,
@@ -137,6 +150,7 @@ class IdentityResolutionBackfillWorker:
         return {
             "ok": terminal == 0,
             "dry_run": False,
+            "runtime_reserved_count": runtime_reserve,
             "processed_count": processed,
             "runtime_processed_count": runtime_processed,
             "resolved_count": resolved,
@@ -162,6 +176,34 @@ class IdentityResolutionBackfillWorker:
             event_log_id=event_log_id,
             persist_runtime_identity=persist_runtime_identity,
         )
+
+
+def _runtime_reserve(conn: Any, *, limit: int, max_attempts: int) -> int:
+    """Reserve bounded capacity when runtime identity work is already due.
+
+    Queue rows are intentionally synchronized first so they can resolve matching
+    runtime rows before those rows are claimed. Without a small reservation, a
+    perpetually due queue backlog can consume the whole batch and starve runtime
+    rows forever.
+    """
+
+    row = conn.execute(
+        """
+        SELECT EXISTS (
+            SELECT 1
+            FROM automation_channel_entry_runtime
+            WHERE identity_status IN ('pending', 'pending_identity', 'failed')
+              AND COALESCE(identity_attempt_count, 0) < %s
+              AND (identity_next_attempt_at IS NULL OR identity_next_attempt_at <= CURRENT_TIMESTAMP)
+        ) AS runtime_due
+        """,
+        (max(1, int(max_attempts or 5)),),
+    ).fetchone()
+    runtime_due = bool((row or {}).get("runtime_due"))
+    if not runtime_due:
+        return 0
+    bounded_limit = max(1, min(int(limit or 1), 500))
+    return min(bounded_limit, 5, max(1, bounded_limit // 4))
 
 
 def _claim_queue_rows(conn: Any, *, limit: int, locked_by: str, lease_seconds: int) -> list[dict[str, Any]]:
