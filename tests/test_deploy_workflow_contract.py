@@ -74,6 +74,21 @@ def test_success_marks_release_committed_only_after_public_exact_sha_verificatio
     assert switch_index < local_exact_sha_index < production_exact_sha_index < test_exact_sha_index < committed_index
 
 
+def test_deploy_requires_runtime_units_and_application_readiness_before_commit() -> None:
+    workflow = TEST_DEPLOY_WORKFLOW.read_text(encoding="utf-8")
+
+    verify_units_index = workflow.index(_runtime_units_phase("verify"))
+    readiness_index = workflow.index(
+        "curl -sSf http://127.0.0.1:5001/api/system/health",
+        verify_units_index,
+    )
+    restored_flag_index = workflow.index("runtime_units_stopped=0", readiness_index)
+    committed_index = workflow.index("release_committed=1", restored_flag_index)
+
+    assert verify_units_index < readiness_index < restored_flag_index < committed_index
+    assert "tee /tmp/aicrm-runtime-readiness.json" in workflow
+
+
 def test_production_deploy_loads_postgres_env_before_alembic_upgrade():
     workflow = (ROOT / ".github" / "workflows" / "deploy.yml").read_text(encoding="utf-8")
 

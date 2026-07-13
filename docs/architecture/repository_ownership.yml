@@ -591,7 +591,11 @@ repositories:
     table_writes: []
   aicrm_next/platform_foundation/repository.py:
     capability_owner: aicrm_next.platform_foundation
-    table_reads: []
+    table_reads:
+      - alembic_version
+      - external_effect_job
+      - internal_event_consumer_run
+      - webhook_inbox
     table_writes: []
   aicrm_next/platform_foundation/webhook_inbox/repository.py:
     capability_owner: aicrm_next.platform_foundation.webhook_inbox
