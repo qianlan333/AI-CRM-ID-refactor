@@ -20,6 +20,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: aicrm-deploy-${{ inputs.target_environment || 'test' }}
+  cancel-in-progress: false
+
 jobs:
   deploy:
     if: >-
@@ -127,10 +131,16 @@ jobs:
             set -e
             set -o pipefail
             cd '/home/ubuntu/极简 crm'
+            deploy_target="${{ inputs.target_environment || 'test' }}"
+            deploy_lock_file="/tmp/aicrm-deploy-${deploy_target}.lock"
+            exec 9>"$deploy_lock_file"
+            if ! flock -n 9; then
+              echo "another $deploy_target deployment holds $deploy_lock_file"
+              exit 1
+            fi
             before_sha="$(git rev-parse HEAD)"
             verified_sha="${{ inputs.release_sha || github.event.workflow_run.head_sha }}"
             base_sha="${{ steps.release.outputs.base_sha }}"
-            deploy_target="${{ inputs.target_environment || 'test' }}"
             if ! printf '%s' "$verified_sha" | grep -Eq '^[0-9a-f]{40}$'; then
               echo "invalid verified workflow sha"
               exit 1

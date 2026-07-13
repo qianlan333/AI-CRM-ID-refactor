@@ -16,6 +16,30 @@ def _runtime_units_phase(phase: str) -> str:
     return f"{RUNTIME_UNITS_HELPER} --phase {phase} --execute"
 
 
+def test_deploy_workflows_serialize_without_cancelling_active_release() -> None:
+    deploy = TEST_DEPLOY_WORKFLOW.read_text(encoding="utf-8")
+    promotion = PRODUCTION_PROMOTION_WORKFLOW.read_text(encoding="utf-8")
+
+    assert "group: aicrm-deploy-${{ inputs.target_environment || 'test' }}" in deploy
+    assert "group: aicrm-production-promotion" in promotion
+    assert "cancel-in-progress: false" in deploy
+    assert "cancel-in-progress: false" in promotion
+
+
+def test_remote_deploy_holds_target_specific_server_lock_before_sha_checks() -> None:
+    workflow = TEST_DEPLOY_WORKFLOW.read_text(encoding="utf-8")
+
+    target_index = workflow.index('deploy_target="${{ inputs.target_environment || \'test\' }}"', workflow.index("Deploy via SSH"))
+    lock_file_index = workflow.index('deploy_lock_file="/tmp/aicrm-deploy-${deploy_target}.lock"', target_index)
+    lock_fd_index = workflow.index('exec 9>"$deploy_lock_file"', lock_file_index)
+    flock_index = workflow.index("if ! flock -n 9; then", lock_fd_index)
+    before_sha_index = workflow.index('before_sha="$(git rev-parse HEAD)"', flock_index)
+    migration_index = workflow.index("python3 -m alembic upgrade head", before_sha_index)
+
+    assert target_index < lock_file_index < lock_fd_index < flock_index < before_sha_index < migration_index
+    assert 'echo "another $deploy_target deployment holds $deploy_lock_file"' in workflow
+
+
 def test_production_deploy_loads_postgres_env_before_alembic_upgrade():
     workflow = (ROOT / ".github" / "workflows" / "deploy.yml").read_text(encoding="utf-8")
 

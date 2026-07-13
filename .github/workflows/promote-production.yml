@@ -15,6 +15,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: aicrm-production-promotion
+  cancel-in-progress: false
+
 jobs:
   validate:
     runs-on: ubuntu-latest
