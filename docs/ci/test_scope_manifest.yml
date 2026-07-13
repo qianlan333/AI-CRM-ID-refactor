@@ -111,6 +111,24 @@
   ],
   "scopes": [
     {
+      "name": "wecom_payload_contract",
+      "paths": [
+        "aicrm_next/shared/wecom_payload_contract.py",
+        "tests/test_wecom_payload_contract.py"
+      ],
+      "python_tests": [
+        "tests/test_wecom_payload_contract.py",
+        "tests/test_group_ops_domain.py",
+        "tests/test_group_ops_external_effect_queue.py",
+        "tests/test_ai_assist_external_effect_queue.py",
+        "tests/test_import_graph_guard.py",
+        "tests/test_select_test_scope.py"
+      ],
+      "needs_postgres": true,
+      "needs_full_ci": true,
+      "architecture_gate": "full"
+    },
+    {
       "name": "admin_jobs_archive_sync_gateway",
       "paths": [
         "aicrm_next/admin_jobs_archive_sync_gateway.py",
