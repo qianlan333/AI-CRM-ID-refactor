@@ -17,6 +17,11 @@ mismatches, sent jobs missing delivery evidence, duplicate idempotency keys,
 retired P1 runtime artifacts, and retired P1 tables that still declare an
 active writer or runtime entrypoint.
 
+Delivery-state checks are scoped to the first completed production deployment
+of R10 (`2026-07-13 05:42:30 UTC`). Earlier rows predate the atomic delivery
+state machine and remain historical data rather than actionable R10 gaps.
+Duplicate idempotency keys remain a global invariant and are not cutover-scoped.
+
 There is intentionally no repair flag. Any repair or resend requires a separate
 issue, explicit authorization, and provider-side evidence proving that a retry
 cannot duplicate delivery.
