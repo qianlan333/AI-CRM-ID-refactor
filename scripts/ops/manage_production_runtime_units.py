@@ -611,10 +611,12 @@ def phase_install_enable_after_web_health(manifest: dict[str, Any], runner: Runn
         runner.systemctl("enable", unit.timer)
         runner.systemctl("restart", unit.timer)
         if unit.kick_after_timer_restart:
-            proc = runner.systemctl("start", unit.service, check=unit.kick_failure_fatal)
+            proc = runner.systemctl("start", unit.service, check=False)
             if runner.execute and proc is not None and proc.returncode != 0:
                 runner.systemctl("status", unit.service, "--no-pager", check=False)
                 runner.run(["sudo", "journalctl", "-u", unit.service, "-n", "80", "--no-pager"], check=False)
+                if unit.kick_failure_fatal:
+                    raise RuntimeError(f"fatal runtime kick failed: {unit.service}")
         runner.systemctl("status", unit.timer, "--no-pager")
     for unit in approval:
         if unit.timer not in enabled_approval_timers:

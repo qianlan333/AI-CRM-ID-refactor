@@ -464,11 +464,13 @@ def test_customer_read_model_refresh_has_permanent_full_postgres_scope() -> None
         "deploy/openclaw-customer-read-model-refresh.service",
         "deploy/openclaw-customer-read-model-refresh.timer",
         "migrations/versions/0108_customer_read_model_refresh_and_retired_workspace_drop.py",
+        "tests/test_customer_live_source_repository.py",
         "tests/test_customer_read_model_refresh.py",
     )
 
     assert result["unmatched_files"] == []
     assert "customer_read_model_refresh" in result["matched_scopes"]
+    assert "tests/test_customer_live_source_repository.py" in result["python_tests"]
     assert "tests/test_customer_read_model_refresh.py" in result["python_tests"]
     assert "tests/test_database_bootstrap.py" in result["python_tests"]
     assert result["needs_postgres"] is True

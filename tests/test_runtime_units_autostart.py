@@ -181,12 +181,14 @@ class _RecordingRunner:
         active_units: set[str] | None = None,
         failed_units: set[str] | None = None,
         static_units: set[str] | None = None,
+        failed_starts: set[str] | None = None,
     ) -> None:
         self.execute = True
         self.enabled_units = enabled_units
         self.active_units = active_units or set()
         self.failed_units = failed_units or set()
         self.static_units = static_units or set()
+        self.failed_starts = failed_starts or set()
         self.commands: list[tuple[str, ...]] = []
 
     def run(self, command: list[str], *, check: bool = True) -> subprocess.CompletedProcess[str]:
@@ -215,6 +217,8 @@ class _RecordingRunner:
         if args and args[0] == "show" and "--property=ActiveState" in args:
             state = "activating" if args[1] in self.active_units else "inactive"
             return subprocess.CompletedProcess(command, 0, stdout=f"{state}\n", stderr="")
+        if args and args[0] == "start" and args[1] in self.failed_starts:
+            return subprocess.CompletedProcess(command, 1, stdout="", stderr="failed")
         return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
 
 
@@ -240,6 +244,30 @@ def test_runtime_units_install_restores_only_previously_enabled_approval_timer()
     assert ("sudo", "cp", "deploy/openclaw-automation-ops-scheduler.timer", "/etc/systemd/system/") in runner.commands
     assert ("sudo", "systemctl", "restart", "aicrm-archive-sync.timer") in runner.commands
     assert ("sudo", "systemctl", "restart", "openclaw-automation-ops-scheduler.timer") not in runner.commands
+
+
+def test_runtime_units_fatal_kick_logs_diagnostics_before_failing() -> None:
+    service = "openclaw-customer-read-model-refresh.service"
+    manifest = {
+        "active_services": [],
+        "active_autostart": [
+            {
+                "timer": "openclaw-customer-read-model-refresh.timer",
+                "service": service,
+                "kick_after_timer_restart": True,
+                "kick_failure_fatal": True,
+            }
+        ],
+        "approval_required": [],
+    }
+    runner = _RecordingRunner(enabled_units=set(), failed_starts={service})
+
+    with pytest.raises(RuntimeError, match=f"fatal runtime kick failed: {service}"):
+        runtime_units.phase_install_enable_after_web_health(manifest, runner)
+
+    assert ("sudo", "systemctl", "start", service) in runner.commands
+    assert ("sudo", "systemctl", "status", service, "--no-pager") in runner.commands
+    assert ("sudo", "journalctl", "-u", service, "-n", "80", "--no-pager") in runner.commands
 
 
 def test_runtime_units_install_primary_web_dry_run_copies_before_start(capsys) -> None:

@@ -177,9 +177,16 @@ class LiveSourceCustomerReadRepository:
             """
             WITH ranked AS (
                 SELECT id, msgid, chat_type, unionid, owner_userid, msgtype, content,
-                       COALESCE(send_time, created_at) AS send_time,
+                       COALESCE(
+                           NULLIF(CAST(send_time AS TEXT), ''),
+                           CAST(created_at AS TEXT)
+                       ) AS send_time,
                        ROW_NUMBER() OVER (
-                           PARTITION BY unionid ORDER BY send_time DESC, id DESC
+                           PARTITION BY unionid
+                           ORDER BY COALESCE(
+                               NULLIF(CAST(send_time AS TEXT), ''),
+                               CAST(created_at AS TEXT)
+                           ) DESC, id DESC
                        ) AS row_number
                 FROM archived_messages
                 WHERE unionid IN :external_userids
