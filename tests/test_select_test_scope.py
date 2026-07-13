@@ -733,6 +733,7 @@ def test_runtime_units_change_selects_deploy_contract_tests() -> None:
     assert "commerce_fulfillment_reliability" in result["matched_scopes"]
     assert "tests/test_architecture_size_budgets.py" in result["python_tests"]
     assert "tests/test_deploy_workflow_contract.py" in result["python_tests"]
+    assert "tests/test_identity_cutover_reconciliation_contract.py" in result["python_tests"]
     assert "tests/test_runtime_secret_readiness.py" in result["python_tests"]
     assert "tests/test_runtime_units_autostart.py" in result["python_tests"]
     assert "tests/test_retired_runtime_gap_timer_report.py" in result["python_tests"]

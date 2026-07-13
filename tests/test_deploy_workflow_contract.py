@@ -137,7 +137,7 @@ def test_production_deploy_stashes_dirty_worktree_before_remote_update():
     reset_index = workflow.index('git reset --hard "$verified_sha"')
     stop_index = _deploy_runtime_phase_index(workflow, "stop-for-migration")
 
-    assert before_sha_index < verified_sha_index < stash_index < fetch_index < stop_index < reset_index
+    assert before_sha_index < verified_sha_index < stash_index < fetch_index < reset_index < stop_index
     assert 'release_bundle="/tmp/aicrm-release-$verified_sha/aicrm-release.bundle"' in workflow
     assert "git@github.com" not in workflow
     assert "GIT_SSH_COMMAND" not in workflow
@@ -154,7 +154,7 @@ def test_production_deploy_retires_callback_hotfix_overlay_before_migration_and_
     web_start_index = workflow.index("if ! sudo systemctl start openclaw-wecom-postgres.service; then")
     install_index = workflow.index(_runtime_units_phase("install-enable-after-web-health"))
 
-    assert stop_runtime_units_index < reset_index < marker_index < retire_index < alembic_upgrade_index < web_start_index < install_index
+    assert reset_index < marker_index < retire_index < stop_runtime_units_index < alembic_upgrade_index < web_start_index < install_index
 
 
 def test_production_deploy_installs_dependencies_only_when_hashed_lock_changes():
@@ -187,7 +187,7 @@ def test_production_deploy_fails_closed_unless_checkout_matches_verified_workflo
     checkout_guard_index = workflow.index('if [ "$after_sha" != "$verified_sha" ]; then')
     stop_index = _deploy_runtime_phase_index(workflow, "stop-for-migration")
 
-    assert verified_sha_index < release_head_index < head_guard_index < stop_index < reset_index < after_sha_index < checkout_guard_index
+    assert verified_sha_index < release_head_index < head_guard_index < reset_index < after_sha_index < checkout_guard_index < stop_index
     assert "invalid verified workflow sha" in workflow
     assert "verified workflow sha is no longer the AI-CRM main head" in workflow
     assert "deployed checkout does not match verified workflow sha" in workflow
@@ -341,31 +341,33 @@ def test_production_deploy_quiesces_web_before_alembic_and_service_restart():
 
     env_source_index = workflow.index("source /home/ubuntu/.openclaw-wecom-pg.env")
     database_url_guard_index = workflow.index('test -n "${DATABASE_URL:-}"')
-    pip_install_index = workflow.index("python -m pip install --require-hashes -r requirements.lock")
     begin_transaction_index = workflow.index("--phase begin-transaction --execute", workflow.index("runtime_mutation_started=1"))
     stop_runtime_units_index = _deploy_runtime_phase_index(workflow, "stop-for-migration")
-    stash_index = workflow.index("git stash push --include-untracked", stop_runtime_units_index)
+    stash_index = workflow.index("git stash push --include-untracked")
     reset_index = workflow.index('git reset --hard "$verified_sha"', stash_index)
+    pip_install_index = workflow.index("python -m pip install --require-hashes -r requirements.lock", reset_index)
+    preflight_index = workflow.index("--phase preflight", reset_index)
     alembic_upgrade_index = workflow.index("python3 -m alembic upgrade head")
     stale_listener_index = workflow.index("if sudo fuser -s 5001/tcp; then", stop_runtime_units_index)
     term_kill_index = workflow.index("sudo fuser -k -TERM 5001/tcp || true")
     force_kill_index = workflow.index("sudo fuser -k -KILL 5001/tcp || true")
     wait_for_free_index = workflow.index('echo "waiting for stale 5001 listener to exit"')
-    reset_failed_index = workflow.index("sudo systemctl reset-failed openclaw-wecom-postgres.service || true")
+    reset_failed_index = workflow.index("sudo systemctl reset-failed openclaw-wecom-postgres.service || true", alembic_upgrade_index)
     start_index = workflow.index("if ! sudo systemctl start openclaw-wecom-postgres.service; then")
     alembic_table = "alembic_" + "version"
 
     assert env_source_index < database_url_guard_index < alembic_upgrade_index
     assert (
-        begin_transaction_index
+        stash_index
+        < reset_index
+        < pip_install_index
+        < preflight_index
+        < begin_transaction_index
         < stop_runtime_units_index
         < stale_listener_index
         < term_kill_index
         < force_kill_index
         < wait_for_free_index
-        < stash_index
-        < reset_index
-        < pip_install_index
         < alembic_upgrade_index
         < reset_failed_index
         < start_index
@@ -437,7 +439,7 @@ def test_production_deploy_failure_after_quiesce_is_fail_closed():
     cleanup_stop_runtime_index = workflow.index("--phase stop-for-migration --execute", cleanup_begin_index)
     cleanup_stop_web_index = workflow.index("sudo systemctl stop openclaw-wecom-postgres.service || true", cleanup_guard_index)
     deploy_stop_index = _deploy_runtime_phase_index(workflow, "stop-for-migration")
-    reset_index = workflow.index('git reset --hard "$verified_sha"', deploy_stop_index)
+    reset_index = workflow.index('git reset --hard "$verified_sha"')
     install_web_index = workflow.index(_runtime_units_phase("install-primary-web"), reset_index)
     authorize_web_index = workflow.index(_runtime_units_phase("authorize-web-start"), install_web_index)
     start_web_index = workflow.index("if ! sudo systemctl start openclaw-wecom-postgres.service; then", authorize_web_index)
@@ -450,7 +452,7 @@ def test_production_deploy_failure_after_quiesce_is_fail_closed():
 
     assert cleanup_index < trap_index < mutation_flag_index < begin_runtime_index < stop_runtime_index
     assert cleanup_guard_index < cleanup_begin_index < cleanup_stop_runtime_index < cleanup_stop_web_index
-    assert deploy_stop_index < reset_index < install_web_index < authorize_web_index < start_web_index
+    assert reset_index < deploy_stop_index < install_web_index < authorize_web_index < start_web_index
     assert start_web_index < readiness_index < authorize_runtime_index < staged_verify_index < public_route_index
     assert public_route_index < release_guard_index < commit_index
     assert release_guard_index < workflow.index("runtime_committed=1", release_guard_index)

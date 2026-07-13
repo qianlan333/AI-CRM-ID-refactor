@@ -298,6 +298,35 @@ jobs:
               | tar -x -C "$release_control_dir"
             release_control_manager="$release_control_dir/scripts/ops/manage_production_runtime_units.py"
             release_control_manifest="$release_control_dir/deploy/production_runtime_units.json"
+            git reset --hard "$verified_sha"
+            release_switched=1
+            after_sha="$(git rev-parse HEAD)"
+            if [ "$after_sha" != "$verified_sha" ]; then
+              echo "deployed checkout does not match verified workflow sha"
+              exit 1
+            fi
+            printf '%s\n' "$after_sha" > .release-sha
+            python3 scripts/ops/manage_production_runtime_units.py --phase retire-legacy-overlays --execute
+            set -a
+            source /home/ubuntu/.openclaw-wecom-pg.env
+            set +a
+            test -n "${DATABASE_URL:-}"
+            source /home/ubuntu/venvs/openclaw/bin/activate
+            if [ "$before_sha" = "$after_sha" ] || git diff --quiet "$before_sha" "$after_sha" -- requirements.lock; then
+              echo "requirements.lock unchanged; skipping pip install"
+            else
+              python -m pip install --require-hashes -r requirements.lock
+            fi
+            python3 scripts/ops/ensure_ai_audience_external_api_env.py /home/ubuntu/.openclaw-wecom-pg.env
+            set -a
+            source /home/ubuntu/.openclaw-wecom-pg.env
+            set +a
+            # Identity preflight must fail before any runtime unit is stopped.
+            python3 scripts/ops/check_unionid_identity_cutover.py \
+              --phase preflight \
+              --register-existing-conflicts \
+              --expected-release-sha "$after_sha" \
+              | tee /tmp/aicrm-identity-preflight.json
             runtime_mutation_started=1
             python3 "$release_control_manager" \
               --manifest "$release_control_manifest" \
@@ -329,38 +358,6 @@ jobs:
               sudo ss -ltnp 'sport = :5001' || true
               exit 1
             fi
-            if ! git diff --quiet || ! git diff --cached --quiet || [ -n "$(git ls-files --others --exclude-standard)" ]; then
-              git stash push --include-untracked -m "deploy-backup-$(date -u +%Y%m%dT%H%M%SZ)"
-            fi
-            git reset --hard "$verified_sha"
-            release_switched=1
-            after_sha="$(git rev-parse HEAD)"
-            if [ "$after_sha" != "$verified_sha" ]; then
-              echo "deployed checkout does not match verified workflow sha"
-              exit 1
-            fi
-            printf '%s\n' "$after_sha" > .release-sha
-            python3 scripts/ops/manage_production_runtime_units.py --phase retire-legacy-overlays --execute
-            set -a
-            source /home/ubuntu/.openclaw-wecom-pg.env
-            set +a
-            test -n "${DATABASE_URL:-}"
-            source /home/ubuntu/venvs/openclaw/bin/activate
-            if [ "$before_sha" = "$after_sha" ] || git diff --quiet "$before_sha" "$after_sha" -- requirements.lock; then
-              echo "requirements.lock unchanged; skipping pip install"
-            else
-              python -m pip install --require-hashes -r requirements.lock
-            fi
-            python3 scripts/ops/ensure_ai_audience_external_api_env.py /home/ubuntu/.openclaw-wecom-pg.env
-            set -a
-            source /home/ubuntu/.openclaw-wecom-pg.env
-            set +a
-            # Identity preflight must fail before any runtime unit is stopped.
-            python3 scripts/ops/check_unionid_identity_cutover.py \
-              --phase preflight \
-              --register-existing-conflicts \
-              --expected-release-sha "$after_sha" \
-              | tee /tmp/aicrm-identity-preflight.json
             # 1) AI-CRM Next schema migrations
             python3 -m alembic upgrade head
             export AICRM_SECRET_STORE_DIR="${AICRM_SECRET_STORE_DIR:-/home/ubuntu/.aicrm-secrets}"
