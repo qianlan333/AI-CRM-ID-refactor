@@ -79,6 +79,10 @@ def test_full_regression_owns_full_pytest_and_full_frontend() -> None:
     assert "python scripts/ci/check_dependency_security.py" in source
     assert "python -m pip_audit -r requirements.lock --require-hashes --progress-spinner=off" in source
     assert "python -m pip install --require-hashes -r requirements.lock" in source
+    assert "performance-regression:" in source
+    assert "python scripts/ops/bootstrap_database.py" in source
+    assert "python tools/check_critical_read_performance.py" in source
+    assert "critical-read-performance.json" in source
     assert "npm audit --audit-level=high" in source
     assert "npm run typecheck" in source
     assert "npm run build:frontend" in source

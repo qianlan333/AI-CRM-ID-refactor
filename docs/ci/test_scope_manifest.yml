@@ -111,6 +111,41 @@
   ],
   "scopes": [
     {
+      "name": "critical_read_performance",
+      "paths": [
+        "aicrm_next/platform_foundation/performance_contracts.py",
+        "aicrm_next/customer_read_model/repo.py",
+        "aicrm_next/customer_read_model/sidebar_v2.py",
+        "aicrm_next/identity_contact/resolver.py",
+        "aicrm_next/questionnaire/repo.py",
+        "aicrm_next/admin_jobs/repository.py",
+        "aicrm_next/admin_jobs/application.py",
+        "docs/performance/critical_read_path_baselines.json",
+        "tools/check_critical_read_performance.py",
+        "migrations/versions/0106_critical_read_path_indexes.py",
+        ".github/workflows/full-regression.yml",
+        "tests/test_critical_read_performance_contracts.py",
+        "tests/test_critical_read_performance_runner.py"
+      ],
+      "python_tests": [
+        "tests/test_critical_read_performance_contracts.py",
+        "tests/test_critical_read_performance_runner.py",
+        "tests/test_customer_read_model_list_pagination.py",
+        "tests/test_questionnaire_admin_pages_next_native.py",
+        "tests/test_next_admin_jobs_native.py",
+        "tests/test_sidebar_v2_api.py",
+        "tests/test_unionid_identity_refactor_schema.py",
+        "tests/test_unionid_runtime_breakage_hotfix.py",
+        "tests/test_alembic_revision_chain.py",
+        "tests/test_database_bootstrap.py",
+        "tests/test_runtime_contract_inventory.py",
+        "tests/test_select_test_scope.py"
+      ],
+      "needs_postgres": true,
+      "needs_full_ci": true,
+      "architecture_gate": "full"
+    },
+    {
       "name": "retired_runtime_physical_cleanup",
       "paths": [
         "aicrm_next/platform_foundation/legacy_cleanup/**",

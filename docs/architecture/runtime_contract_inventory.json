@@ -2704,7 +2704,7 @@
     }
   ],
   "migration_heads": [
-    "0105_drop_legacy_cleanup_tables"
+    "0106_critical_read_path_indexes"
   ],
   "openapi_components": {
     "schemas": {
@@ -41705,7 +41705,7 @@
       "domain": "questionnaire",
       "drop_candidate": false,
       "lifecycle": "canonical",
-      "migration_source": "migrations/baselines/0001_post_legacy.sql",
+      "migration_source": "migrations/baselines/0001_post_legacy.sql; list index added by 0106_critical_read_path_indexes",
       "pii_level": "",
       "read_owners": [
         "aicrm_next.questionnaire.api",
@@ -42171,7 +42171,7 @@
       "domain": "identity_contact",
       "drop_candidate": false,
       "lifecycle": "canonical",
-      "migration_source": "migrations/baselines/0001_post_legacy.sql",
+      "migration_source": "migrations/baselines/0001_post_legacy.sql; canonical mirror columns and indexes repaired by 0106_critical_read_path_indexes",
       "pii_level": "internal_contact",
       "read_owners": [
         "aicrm_next.admin_read_model",
@@ -42186,7 +42186,7 @@
       "domain": "identity_contact",
       "drop_candidate": false,
       "lifecycle": "canonical",
-      "migration_source": "migrations/baselines/0001_post_legacy.sql",
+      "migration_source": "migrations/baselines/0001_post_legacy.sql; canonical mirror columns and indexes repaired by 0106_critical_read_path_indexes",
       "pii_level": "internal_contact",
       "read_owners": [
         "aicrm_next.admin_read_model",

@@ -66,6 +66,58 @@ jobs:
           DATABASE_URL: postgresql://test:test@localhost:5432/test
         run: bash scripts/ci/run_architecture_gates.sh --mode full
 
+  performance-regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10.5"
+          cache: pip
+          cache-dependency-path: requirements.lock
+
+      - name: Install dependencies
+        run: python -m pip install --require-hashes -r requirements.lock
+
+      - name: Install migrated benchmark database
+        env:
+          DATABASE_URL: postgresql://test:test@localhost:5432/test
+        run: python scripts/ops/bootstrap_database.py
+
+      - name: Run critical read-path performance regression
+        env:
+          DATABASE_URL: postgresql://test:test@localhost:5432/test
+        run: >-
+          python tools/check_critical_read_performance.py
+          --report test-results/critical-read-performance.json
+
+      - name: Upload critical read-path evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: critical-read-performance
+          path: test-results/critical-read-performance.json
+          if-no-files-found: error
+          retention-days: 14
+
   full-python-shard:
     name: full-python shard ${{ matrix.shard_label }}
     runs-on: ubuntu-latest

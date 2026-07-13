@@ -203,8 +203,35 @@ def classify_identity_candidates(
     )
 
 
-def _candidate_sql(placeholder: str | tuple[str, str, str, str]) -> str:
+def _candidate_sql(
+    placeholder: str | tuple[str, str, str, str],
+    *,
+    fields: Iterable[str] = _FIELDS,
+) -> str:
     placeholders = (placeholder,) * 4 if isinstance(placeholder, str) else placeholder
+    requested_fields = tuple(dict.fromkeys(str(field) for field in fields))
+    invalid_fields = sorted(set(requested_fields) - set(_FIELDS))
+    if invalid_fields:
+        raise ValueError(f"unsupported identity candidate fields: {', '.join(invalid_fields)}")
+    conditions = {
+        "unionid": "identity.unionid = input.unionid",
+        "external_userid": """(
+                identity.primary_external_userid = input.external_userid
+                OR identity.external_userids_json ? input.external_userid
+                OR identity.external_userids_json @> jsonb_build_array(
+                    jsonb_build_object('external_userid', input.external_userid)
+                )
+            )""",
+        "openid": """(
+                identity.primary_openid = input.openid
+                OR identity.openids_json ? input.openid
+                OR identity.openids_json @> jsonb_build_array(
+                    jsonb_build_object('openid', input.openid)
+                )
+            )""",
+        "mobile": "identity.mobile_normalized = input.mobile",
+    }
+    where_clause = "\n           OR ".join(conditions[field] for field in requested_fields) or "FALSE"
     return f"""
         WITH identity_input AS (
             SELECT CAST({placeholders[0]} AS text) AS external_userid,
@@ -229,49 +256,22 @@ def _candidate_sql(placeholder: str | tuple[str, str, str, str]) -> str:
                (input.unionid <> '' AND identity.unionid = input.unionid) AS matched_unionid,
                (input.external_userid <> '' AND (
                     identity.primary_external_userid = input.external_userid
-                    OR jsonb_exists(identity.external_userids_json, input.external_userid)
-                    OR EXISTS (
-                        SELECT 1
-                        FROM jsonb_array_elements(identity.external_userids_json) AS alias(value)
-                        WHERE jsonb_typeof(alias.value) = 'object'
-                          AND alias.value ->> 'external_userid' = input.external_userid
+                    OR identity.external_userids_json ? input.external_userid
+                    OR identity.external_userids_json @> jsonb_build_array(
+                        jsonb_build_object('external_userid', input.external_userid)
                     )
                )) AS matched_external_userid,
                (input.openid <> '' AND (
                     identity.primary_openid = input.openid
-                    OR jsonb_exists(identity.openids_json, input.openid)
-                    OR EXISTS (
-                        SELECT 1
-                        FROM jsonb_array_elements(identity.openids_json) AS alias(value)
-                        WHERE jsonb_typeof(alias.value) = 'object'
-                          AND alias.value ->> 'openid' = input.openid
+                    OR identity.openids_json ? input.openid
+                    OR identity.openids_json @> jsonb_build_array(
+                        jsonb_build_object('openid', input.openid)
                     )
                )) AS matched_openid,
                (input.mobile <> '' AND identity.mobile_normalized = input.mobile) AS matched_mobile
         FROM crm_user_identity identity
         CROSS JOIN identity_input input
-        WHERE (input.unionid <> '' AND identity.unionid = input.unionid)
-           OR (input.external_userid <> '' AND (
-                identity.primary_external_userid = input.external_userid
-                OR jsonb_exists(identity.external_userids_json, input.external_userid)
-                OR EXISTS (
-                    SELECT 1
-                    FROM jsonb_array_elements(identity.external_userids_json) AS alias(value)
-                    WHERE jsonb_typeof(alias.value) = 'object'
-                      AND alias.value ->> 'external_userid' = input.external_userid
-                )
-           ))
-           OR (input.openid <> '' AND (
-                identity.primary_openid = input.openid
-                OR jsonb_exists(identity.openids_json, input.openid)
-                OR EXISTS (
-                    SELECT 1
-                    FROM jsonb_array_elements(identity.openids_json) AS alias(value)
-                    WHERE jsonb_typeof(alias.value) = 'object'
-                      AND alias.value ->> 'openid' = input.openid
-                )
-           ))
-           OR (input.mobile <> '' AND identity.mobile_normalized = input.mobile)
+        WHERE {where_clause}
         ORDER BY identity.unionid
     """
 
@@ -322,13 +322,14 @@ class DBAPIIdentityResolver:
 
     def resolve(self, query: ResolvePersonIdentityRequest) -> IdentityResolveResult:
         normalized = normalize_identity_request(query)
+        fields = _provided_fields(normalized)
         params = (
             _text(normalized.external_userid),
             _text(normalized.unionid),
             _text(normalized.openid),
             _text(normalized.mobile),
         )
-        candidate_sql = _candidate_sql(self._placeholder)
+        candidate_sql = _candidate_sql(self._placeholder, fields=fields)
         if self._for_update:
             candidate_sql += "\n        FOR UPDATE OF identity"
         rows = _fetchall(self._executor, candidate_sql, params)
@@ -364,9 +365,15 @@ class SQLAlchemyIdentityResolver:
         from sqlalchemy import text
 
         normalized = normalize_identity_request(query)
+        fields = _provided_fields(normalized)
         params = {field: _text(getattr(normalized, field)) for field in _FIELDS}
         rows = self._executor.execute(
-            text(_candidate_sql((":external_userid", ":unionid", ":openid", ":mobile"))),
+            text(
+                _candidate_sql(
+                    (":external_userid", ":unionid", ":openid", ":mobile"),
+                    fields=fields,
+                )
+            ),
             params,
         ).mappings().all()
         provisional = classify_identity_candidates(normalized, rows)
@@ -417,12 +424,9 @@ def resolve_external_userids_with_sqlalchemy(
             FROM identity_input input
             JOIN crm_user_identity identity
               ON identity.primary_external_userid = input.external_userid
-              OR jsonb_exists(identity.external_userids_json, input.external_userid)
-              OR EXISTS (
-                    SELECT 1
-                    FROM jsonb_array_elements(identity.external_userids_json) AS alias(value)
-                    WHERE jsonb_typeof(alias.value) = 'object'
-                      AND alias.value ->> 'external_userid' = input.external_userid
+              OR identity.external_userids_json ? input.external_userid
+              OR identity.external_userids_json @> jsonb_build_array(
+                    jsonb_build_object('external_userid', input.external_userid)
               )
             ORDER BY input.external_userid, identity.unionid
             """
