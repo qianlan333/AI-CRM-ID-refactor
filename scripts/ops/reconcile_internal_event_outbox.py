@@ -13,7 +13,7 @@ from scripts.script_runtime import ensure_repo_root_on_path, print_json
 
 ensure_repo_root_on_path()
 
-from aicrm_next.platform_foundation.internal_events import register_payment_succeeded_consumers, register_refund_succeeded_consumers
+from aicrm_next.internal_event_composition import build_internal_event_consumer_registry
 from aicrm_next.platform_foundation.internal_events.reconciliation import InternalEventOutboxReconciliationService
 
 
@@ -28,9 +28,9 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 
 def run(*, repair: bool = False, limit: int = 100) -> dict:
-    register_payment_succeeded_consumers()
-    register_refund_succeeded_consumers()
-    service = InternalEventOutboxReconciliationService()
+    service = InternalEventOutboxReconciliationService(
+        consumer_registry=build_internal_event_consumer_registry(),
+    )
     return service.repair(dry_run=not repair, limit=limit) if repair else service.diagnose()
 
 

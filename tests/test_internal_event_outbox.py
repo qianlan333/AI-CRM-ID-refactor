@@ -20,7 +20,10 @@ from aicrm_next.platform_foundation.internal_events.outbox import (
     InternalEventOutboxRelay,
     enqueue_transactional_internal_event_outbox,
 )
-from aicrm_next.platform_foundation.internal_events.payment import PAYMENT_SUCCEEDED_EVENT_TYPE
+from aicrm_next.platform_foundation.internal_events.payment import (
+    PAYMENT_SUCCEEDED_CORE_CONSUMERS,
+    PAYMENT_SUCCEEDED_EVENT_TYPE,
+)
 from aicrm_next.platform_foundation.internal_events.reconciliation import InternalEventOutboxReconciliationService
 from aicrm_next.platform_foundation.internal_events.reconciliation import outbox as outbox_reconciliation
 from aicrm_next.platform_foundation.internal_events.repository import (
@@ -30,6 +33,7 @@ from aicrm_next.platform_foundation.internal_events.repository import (
 from aicrm_next.platform_foundation.internal_events.service import InternalEventService
 from aicrm_next.platform_foundation.internal_events.worker import InternalEventWorker
 from aicrm_next.shared.db_session import get_session_factory
+from scripts.ops import reconcile_internal_event_outbox
 
 
 EVENT_TYPE = "test.transactional_event"
@@ -85,6 +89,30 @@ def test_reconciliation_script_supports_direct_file_entrypoint() -> None:
 
     assert result.returncode == 0, result.stderr
     assert "Diagnose or repair internal event outbox gaps" in result.stdout
+
+
+def test_reconciliation_script_uses_the_complete_production_consumer_registry(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    class FakeService:
+        def __init__(self, *, consumer_registry):
+            captured["consumer_registry"] = consumer_registry
+
+        def diagnose(self):
+            return {"ok": True}
+
+    monkeypatch.setattr(reconcile_internal_event_outbox, "InternalEventOutboxReconciliationService", FakeService)
+
+    assert reconcile_internal_event_outbox.run() == {"ok": True}
+    registry = captured["consumer_registry"]
+    consumer_names = {
+        item.consumer_name
+        for item in registry.list_for_event_type(PAYMENT_SUCCEEDED_EVENT_TYPE)
+    }
+
+    assert set(PAYMENT_SUCCEEDED_CORE_CONSUMERS).issubset(consumer_names)
+    assert "service_period_entitlement_consumer" in consumer_names
+    assert "ai_audience_source_poke_consumer" in consumer_names
 
 
 def test_reconciliation_scopes_actionable_payment_gaps_to_r08_cutover(monkeypatch) -> None:
