@@ -554,6 +554,21 @@ def test_reconciliation_count_only_and_repair_only_add_durable_continuation(next
             code="r08_reconciliation",
             out_trade_no="WXP_R08_RECONCILIATION",
         )
+        historical_order = _seed_order(
+            conn,
+            code="r08_reconciliation",
+            out_trade_no="WXP_R08_RECONCILIATION_HISTORICAL",
+        )
+        conn.execute(
+            """
+            UPDATE wechat_pay_orders
+            SET paid_at = TIMESTAMPTZ '2026-07-13 09:46:08+00',
+                created_at = TIMESTAMPTZ '2026-07-13 09:46:08+00',
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = %s
+            """,
+            (historical_order["id"],),
+        )
         conn.execute(
             """
             INSERT INTO domain_event_outbox (

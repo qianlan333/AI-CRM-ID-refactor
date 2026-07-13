@@ -60,6 +60,22 @@ def test_count_only_reconciliation_has_seven_pii_free_read_only_counts(monkeypat
     assert "DELETE FROM" not in statements
 
 
+def test_reconciliation_only_flags_post_rollout_actionable_gaps() -> None:
+    payment_query = fulfillment_reconciliation._ANOMALY_QUERIES["paid_without_payment_outbox"]
+    refund_query = fulfillment_reconciliation._ANOMALY_QUERIES["refund_request_without_effect"]
+    cutover = fulfillment_reconciliation._FULFILLMENT_RECONCILIATION_CUTOVER_AT_SQL
+
+    assert cutover in payment_query
+    assert "SELECT MIN(rollout.created_at)" not in payment_query
+    assert "COALESCE(o.paid_at, o.created_at)" in payment_query
+    assert "o.updated_at" not in payment_query
+    assert "LOWER(COALESCE(r.status, '')) IN ('requested', 'queued')" in refund_query
+    assert "COALESCE(r.refund_id, '') = ''" in refund_query
+    assert cutover in refund_query
+    assert "SELECT MIN(rollout.created_at)" not in refund_query
+    assert "job.effect_type = 'payment.wechat.refund.request'" in refund_query
+
+
 def test_repair_requires_auditable_actor_and_reason_without_connecting(monkeypatch) -> None:
     monkeypatch.setattr(
         fulfillment_reconciliation,

@@ -15,11 +15,17 @@ from aicrm_next.shared.runtime import raw_database_url
 
 _OPEN_CONTINUATION_STATUSES = "'pending', 'running', 'failed_retryable'"
 
+# The count-only reconciliation became a production release gate when promotion
+# run 29240024773 completed.  Keep the boundary explicit: deriving it from the
+# first successful outbox/effect row hides the first real gap on a fresh tenant.
+_FULFILLMENT_RECONCILIATION_CUTOVER_AT_SQL = "TIMESTAMPTZ '2026-07-13 09:46:09+00'"
+
 _ANOMALY_QUERIES = {
-    "paid_without_payment_outbox": """
+    "paid_without_payment_outbox": f"""
         SELECT o.id
         FROM wechat_pay_orders o
         WHERE (o.status = 'paid' OR o.trade_state = 'SUCCESS')
+          AND COALESCE(o.paid_at, o.created_at) >= {_FULFILLMENT_RECONCILIATION_CUTOVER_AT_SQL}
           AND NOT EXISTS (
               SELECT 1 FROM internal_event_outbox ieo
               WHERE ieo.tenant_id = 'aicrm'
@@ -74,10 +80,12 @@ _ANOMALY_QUERIES = {
                 AND spe.event_type IN ('activated', 'renewed')
           )
     """,
-    "refund_request_without_effect": """
+    "refund_request_without_effect": f"""
         SELECT r.id
         FROM wechat_pay_refunds r
-        WHERE LOWER(COALESCE(r.status, '')) NOT IN ('failed', 'closed', 'abnormal')
+        WHERE LOWER(COALESCE(r.status, '')) IN ('requested', 'queued')
+          AND COALESCE(r.refund_id, '') = ''
+          AND r.created_at >= {_FULFILLMENT_RECONCILIATION_CUTOVER_AT_SQL}
           AND NOT EXISTS (
               SELECT 1 FROM external_effect_job job
               WHERE job.tenant_id = 'aicrm'

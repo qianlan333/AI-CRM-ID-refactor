@@ -18,6 +18,8 @@ Deployment runs exactly this count-only form. It reports:
 
 Output contains counts and at most 20 numeric internal IDs per class. It does not include mobile, unionid, openid, external_userid, webhook payloads, questionnaire answers, or messages. Confirm `database_mutation_performed=false`, `consumer_executed=false`, `real_external_call_executed=false`, and `pii_in_output=false`.
 
+Payment-outbox and refund-request gaps are actionable only at or after the explicit production cutover `2026-07-13T09:46:09Z` (production promotion run `29240024773`). The checker does not infer this boundary from the first existing outbox or effect row, because that would hide the first missing row on a fresh tenant. For orders without `paid_at`, it uses immutable `created_at`; a later unrelated `updated_at` must not turn historical data into a post-cutover alert.
+
 ## Safe continuation repair
 
 Repair requires an auditable actor and reason:
