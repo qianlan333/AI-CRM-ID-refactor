@@ -4,7 +4,11 @@ from typing import Any
 
 from aicrm_next.platform_foundation.command_bus import CommandContext
 
-from .consumer_registry import DEFAULT_INTERNAL_EVENT_CONSUMER_REGISTRY, InternalEventConsumerRegistry
+from .consumer_registry import (
+    InternalEventConsumerHandler,
+    InternalEventConsumerRegistry,
+    current_internal_event_consumer_registry,
+)
 from .models import InternalEventCreateRequest
 
 REFUND_SUCCEEDED_EVENT_TYPE = "refund.succeeded"
@@ -72,16 +76,19 @@ def build_refund_succeeded_event_request(
     )
 
 
-def register_refund_succeeded_consumers(registry: InternalEventConsumerRegistry | None = None) -> None:
-    registry = registry or DEFAULT_INTERNAL_EVENT_CONSUMER_REGISTRY
-    from aicrm_next.service_period.refund_consumer import service_period_refund_consumer
-
-    registry.register(
-        REFUND_SUCCEEDED_EVENT_TYPE,
-        REFUND_SUCCEEDED_CONSUMER,
-        service_period_refund_consumer,
-        consumer_type="projection",
-    )
+def register_refund_succeeded_consumers(
+    registry: InternalEventConsumerRegistry | None = None,
+    *,
+    service_period_consumer: InternalEventConsumerHandler | None = None,
+) -> None:
+    registry = registry or current_internal_event_consumer_registry()
+    if service_period_consumer is not None:
+        registry.register(
+            REFUND_SUCCEEDED_EVENT_TYPE,
+            REFUND_SUCCEEDED_CONSUMER,
+            service_period_consumer,
+            consumer_type="projection",
+        )
 
 
 __all__ = [

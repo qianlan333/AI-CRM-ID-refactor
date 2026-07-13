@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from aicrm_next.customer_read_model.application import GetCustomerDetailQuery
-from aicrm_next.customer_read_model.dto import CustomerDetailRequest
 from aicrm_next.integration_gateway.customer_sync_adapters import build_identity_mapping_adapter
 from aicrm_next.platform_foundation.internal_events.customer_identity import emit_customer_phone_bound_event
 from aicrm_next.platform_foundation.internal_events.shadow import safe_emit
@@ -248,7 +246,7 @@ class GetSidebarContactBindingStatusQuery:
         customer_detail_query=None,
     ) -> None:
         self._identity_query = identity_query or ResolvePersonIdentityQuery()
-        self._customer_detail_query = customer_detail_query or GetCustomerDetailQuery()
+        self._customer_detail_query = customer_detail_query
 
     def execute(
         self,
@@ -284,7 +282,9 @@ class GetSidebarContactBindingStatusQuery:
 
         if production_data_ready():
             try:
-                payload = self._customer_detail_query(CustomerDetailRequest(external_userid=resolved_external_userid))
+                if self._customer_detail_query is None:
+                    raise RuntimeError("customer detail composition unavailable")
+                payload = self._customer_detail_query(resolved_external_userid)
                 if not payload.get("ok"):
                     raise RuntimeError(str(payload.get("page_error") or payload.get("error_code") or "customer detail unavailable"))
                 customer = dict(payload.get("customer") or {})

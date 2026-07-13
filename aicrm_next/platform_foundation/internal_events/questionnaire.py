@@ -1,10 +1,15 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Any
 
 from aicrm_next.platform_foundation.command_bus import CommandContext
 
-from .consumer_registry import DEFAULT_INTERNAL_EVENT_CONSUMER_REGISTRY, InternalEventConsumerRegistry
+from .consumer_registry import (
+    InternalEventConsumerHandler,
+    InternalEventConsumerRegistry,
+    current_internal_event_consumer_registry,
+)
 from .models import InternalEventCreateRequest
 
 QUESTIONNAIRE_SUBMITTED_EVENT_TYPE = "questionnaire.submitted"
@@ -99,44 +104,51 @@ def _bool(value: Any) -> bool:
     return str(value if value is not None else "").strip().lower() in {"1", "true", "yes", "on", "t"}
 
 
-def register_questionnaire_event_consumers(registry: InternalEventConsumerRegistry | None = None) -> None:
-    from aicrm_next.questionnaire.event_consumers import (
-        automation_questionnaire_consumer,
-        customer_summary_consumer,
-        questionnaire_projection_consumer,
-        questionnaire_tag_consumer,
-        questionnaire_webhook_consumer,
-    )
-
-    registry = registry or DEFAULT_INTERNAL_EVENT_CONSUMER_REGISTRY
+def register_questionnaire_event_consumers(
+    registry: InternalEventConsumerRegistry | None = None,
+    *,
+    handlers: Mapping[str, InternalEventConsumerHandler] | None = None,
+) -> None:
+    registry = registry or current_internal_event_consumer_registry()
+    handlers = dict(handlers or {})
+    required = {
+        "questionnaire_projection_consumer",
+        "questionnaire_webhook_consumer",
+        "questionnaire_tag_consumer",
+        "automation_questionnaire_consumer",
+        "customer_summary_consumer",
+    }
+    missing = sorted(required - set(handlers))
+    if missing:
+        raise ValueError(f"questionnaire consumer handlers are required: {', '.join(missing)}")
     registry.register(
         QUESTIONNAIRE_SUBMITTED_EVENT_TYPE,
         "questionnaire_projection_consumer",
-        questionnaire_projection_consumer,
+        handlers["questionnaire_projection_consumer"],
         consumer_type="projection",
     )
     registry.register(
         QUESTIONNAIRE_SUBMITTED_EVENT_TYPE,
         "questionnaire_webhook_consumer",
-        questionnaire_webhook_consumer,
+        handlers["questionnaire_webhook_consumer"],
         consumer_type="external_effect_planner",
     )
     registry.register(
         QUESTIONNAIRE_SUBMITTED_EVENT_TYPE,
         "questionnaire_tag_consumer",
-        questionnaire_tag_consumer,
+        handlers["questionnaire_tag_consumer"],
         consumer_type="external_effect_planner",
     )
     registry.register(
         QUESTIONNAIRE_SUBMITTED_EVENT_TYPE,
         "automation_questionnaire_consumer",
-        automation_questionnaire_consumer,
+        handlers["automation_questionnaire_consumer"],
         consumer_type="orchestration",
     )
     registry.register(
         QUESTIONNAIRE_SUBMITTED_EVENT_TYPE,
         "customer_summary_consumer",
-        customer_summary_consumer,
+        handlers["customer_summary_consumer"],
         consumer_type="projection",
     )
 

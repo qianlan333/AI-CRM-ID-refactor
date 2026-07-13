@@ -180,8 +180,8 @@ def test_webhook_inbox_admin_dispatch_one_requires_token_and_supports_execute(mo
             return {"ok": True, "id": int(inbox_id), "status": "succeeded", "dry_run": bool(dry_run)}
 
     monkeypatch.setattr("aicrm_next.platform_foundation.webhook_inbox.api._repo", lambda: repo)
-    monkeypatch.setattr("aicrm_next.platform_foundation.webhook_inbox.api.WeComCallbackInboxWorker", FakeWorker)
     client = TestClient(create_app(), raise_server_exceptions=False)
+    client.app.state.wecom_callback_inbox_worker_factory = FakeWorker
     token = install_admin_action_tokens(
         client,
         ("POST", "/api/admin/webhook-inbox/{inbox_id}/dispatch"),

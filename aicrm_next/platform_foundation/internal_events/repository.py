@@ -78,32 +78,6 @@ def read_wechat_pay_order_for_payment_event(*, lookup: str, aggregate_id: str) -
     return {}
 
 
-def plan_order_paid_external_push_effect_from_db(
-    *,
-    order: dict[str, Any],
-    transaction: dict[str, Any],
-    domain_event_outbox_id: Any,
-) -> dict[str, Any] | None:
-    if not production_data_ready():
-        raise RuntimeError("production database is required for order-paid external push planning")
-    import psycopg
-    from psycopg.rows import dict_row
-
-    from aicrm_next.commerce.external_push_admin import plan_order_paid_external_push_effect
-
-    with psycopg.connect(raw_database_url(), row_factory=dict_row) as conn:
-        result = plan_order_paid_external_push_effect(
-            conn,
-            order=order,
-            transaction=transaction,
-            outbox={"id": domain_event_outbox_id},
-            source_module="platform_foundation.internal_events.payment",
-            source_route="/internal-events/payment.succeeded/webhook_order_paid_consumer",
-        )
-        conn.commit()
-        return result
-
-
 class SQLAlchemyInternalEventRepository(InternalEventRepository):
     def __init__(self, session_factory: Callable[[], Session] | None = None):
         self._session_factory = session_factory or get_session_factory()

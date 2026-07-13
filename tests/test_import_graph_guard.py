@@ -273,24 +273,6 @@ def test_repository_import_graph_matches_registered_r12_baseline() -> None:
 
     assert violations == []
     assert len(report.contexts) == 40
-    assert len(report.edges) == 186
-    assert report.cyclic_components == (
-        (
-            "admin_auth",
-            "admin_jobs",
-            "admin_shell",
-            "channel_entry",
-            "cloud_orchestrator",
-            "commerce",
-            "customer_read_model",
-            "customer_tags",
-            "external_push",
-            "identity_contact",
-            "integration_gateway",
-            "media_library",
-            "platform_foundation",
-            "public_product",
-            "questionnaire",
-            "service_period",
-        ),
-    )
+    assert len(report.edges) == 168
+    assert report.cyclic_components == ()
+    assert report.cyclic_context_count == 0

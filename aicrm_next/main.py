@@ -10,15 +10,22 @@ from fastapi.staticfiles import StaticFiles
 from .ai_audience_e2e_composition import build_ai_audience_e2e_runner_factory
 from . import fixture_reset_registry
 from .admin_auth.route_policy import route_policy_required_response
+from .admin_auth.action_token import build_admin_action_token_bundle, validate_action_token_for_request
 from .admin_config.pii_audit_repository import AdminConfigPiiAuditRepository
 from .automation_engine.repo import reset_automation_fixture_state
+from .channel_entry_composition import build_wecom_callback_inbox_worker_factory
 from .commerce.repo import reset_commerce_fixture_state
-from .external_effect_composition import build_external_effect_continuation_registry
+from .external_effect_composition import (
+    build_external_effect_adapter_registry,
+    build_external_effect_continuation_registry,
+)
 from .internal_event_composition import build_internal_event_consumer_registry
 from .media_library.repo import reset_media_library_fixture_state
+from .mcp_composition import build_mcp_jsonrpc_application
 from .ops_enrollment.application import reset_user_ops_fixture_state
 from .platform_foundation.internal_events import internal_event_consumer_registry_scope
 from .questionnaire.repo import reset_questionnaire_fixture_state
+from .read_model_composition import build_sidebar_contact_binding_status_query, get_customer_detail
 from .radar_links.repo import reset_radar_links_fixture_state
 from .router_registry import register_routers
 from .shared.errors import ApplicationError
@@ -51,9 +58,20 @@ logger = logging.getLogger(__name__)
 def create_app(*, pii_audit_repository: PiiAuditRepository | None = None) -> FastAPI:
     assert_required_runtime_secrets()
     app = FastAPI(title="AI-CRM Next", version="0.1.0")
+    app.state.admin_action_token_bundle_builder = build_admin_action_token_bundle
+    app.state.admin_action_token_validator = validate_action_token_for_request
+    app.state.mcp_jsonrpc_application = build_mcp_jsonrpc_application()
+    app.state.external_effect_adapter_registry = build_external_effect_adapter_registry()
+    app.state.wecom_callback_inbox_worker_factory = build_wecom_callback_inbox_worker_factory(
+        external_effect_adapter_registry=app.state.external_effect_adapter_registry,
+    )
     app.state.external_effect_continuation_registry = build_external_effect_continuation_registry()
-    app.state.ai_audience_e2e_runner_factory = build_ai_audience_e2e_runner_factory()
+    app.state.ai_audience_e2e_runner_factory = build_ai_audience_e2e_runner_factory(
+        external_effect_adapter_registry=app.state.external_effect_adapter_registry,
+    )
     app.state.internal_event_consumer_registry = build_internal_event_consumer_registry()
+    app.state.sidebar_contact_binding_status_query_factory = build_sidebar_contact_binding_status_query
+    app.state.external_customer_detail_query = get_customer_detail
 
     if fixture_mode():
         fixture_reset_registry.reset_fixture_state()

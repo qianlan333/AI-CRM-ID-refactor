@@ -4,7 +4,7 @@ import re
 from pathlib import Path
 from typing import Any
 
-from aicrm_next.integration_gateway.wecom_runtime import load_wecom_execution_config
+from aicrm_next.shared.wecom_runtime import load_wecom_execution_config
 from aicrm_next.shared.release import current_release_sha
 from aicrm_next.shared.runtime import production_environment, raw_database_url, runtime_setting
 

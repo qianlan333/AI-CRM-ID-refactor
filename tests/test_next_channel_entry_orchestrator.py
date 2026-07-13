@@ -41,7 +41,8 @@ def test_active_channel_baseline_emits_only_channel_entry_without_program_admiss
     calls, previous = _patch_repo(monkeypatch, bindings=[{"id": 20, "program_id": 30, "program_status": "active"}])
     wakeups: list[tuple[int, str, str]] = []
 
-    def fake_wake(job_id, *, reason, effect_type):
+    def fake_wake(job_id, *, reason, effect_type, adapter_registry=None):
+        del adapter_registry
         wakeups.append((int(job_id or 0), reason, effect_type))
         return False
 

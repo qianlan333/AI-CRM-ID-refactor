@@ -8,7 +8,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 
 from aicrm_next.commerce.domain import has_product_page_material
-from aicrm_next.commerce.product_code_aliases import canonical_product_code
+from aicrm_next.shared.product_code_aliases import canonical_product_code
 from aicrm_next.navigation_target.resolver import url_link_resolver_response
 from aicrm_next.shared.errors import NotFoundError
 from aicrm_next.shared.sync_request import read_request_body

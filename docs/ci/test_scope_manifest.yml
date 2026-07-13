@@ -247,6 +247,39 @@
       "architecture_gate": "full"
     },
     {
+      "name": "zero_scc_runtime_composition",
+      "paths": [
+        "aicrm_next/channel_entry_composition.py",
+        "aicrm_next/mcp_composition.py",
+        "aicrm_next/read_model_composition.py",
+        "aicrm_next/shared/admin_action_runtime.py",
+        "aicrm_next/shared/outbound_https/**",
+        "aicrm_next/shared/product_code_aliases.py",
+        "aicrm_next/shared/wecom_runtime.py",
+        "scripts/run_wechat_pay_order_reconciliation_worker.py",
+        "tests/test_internal_events_ai_campaign_slice.py",
+        "tests/test_internal_events_customer_tags_slice.py",
+        "tests/test_internal_events_ops_plan_slice.py",
+        "tests/test_internal_events_ops_shadow.py"
+      ],
+      "python_tests": [
+        "tests/test_zero_runtime_import_scc.py",
+        "tests/test_import_graph_guard.py",
+        "tests/test_internal_event_registry_composition.py",
+        "tests/test_internal_events_single_consumer_run.py",
+        "tests/test_external_effect_continuation_composition.py",
+        "tests/test_ai_assist_external_effect_queue.py",
+        "tests/test_next_channel_entry_orchestrator.py",
+        "tests/test_mcp_business_tools.py",
+        "tests/test_customer_context_read_model_unification.py",
+        "tests/test_order_reconciliation_worker.py",
+        "tests/test_select_test_scope.py"
+      ],
+      "needs_postgres": true,
+      "needs_full_ci": true,
+      "architecture_gate": "full"
+    },
+    {
       "name": "internal_event_registry_composition",
       "paths": [
         "aicrm_next/internal_event_composition.py",
@@ -1320,10 +1353,12 @@
       "paths": [
         "tools/check_import_graph.py",
         "docs/architecture/import_graph_baseline.yml",
-        "tests/test_import_graph_guard.py"
+        "tests/test_import_graph_guard.py",
+        "tests/test_zero_runtime_import_scc.py"
       ],
       "python_tests": [
         "tests/test_import_graph_guard.py",
+        "tests/test_zero_runtime_import_scc.py",
         "tests/test_architecture_boundaries.py",
         "tests/test_select_test_scope.py",
         "tests/test_ci_workflow_contract.py"

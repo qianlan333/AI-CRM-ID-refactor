@@ -141,8 +141,6 @@ def test_admin_customer_profile_route_json_encodes_legacy_scalar_values(monkeypa
 
 
 def test_mcp_get_customer_context_reuses_customer_context_query(monkeypatch):
-    from aicrm_next.integration_gateway import dispatch as dispatch_module
-
     calls: list[CustomerContextRequest] = []
 
     class FakeGetCustomerContextQuery:
@@ -150,9 +148,15 @@ def test_mcp_get_customer_context_reuses_customer_context_query(monkeypatch):
             calls.append(request)
             return _context_payload(request.external_userid)
 
-    monkeypatch.setattr(dispatch_module, "GetCustomerContextQuery", FakeGetCustomerContextQuery)
-
-    payload = McpToolDispatcher().dispatch("get_customer_context", {"external_userid": "wx_ext_001", "request_id": "req_001"})
+    payload = McpToolDispatcher(
+        customer_context_query=lambda external_userid, recent_limit, timeline_limit: FakeGetCustomerContextQuery()(
+            CustomerContextRequest(
+                external_userid=external_userid,
+                recent_message_limit=recent_limit,
+                timeline_limit=timeline_limit,
+            )
+        )
+    ).dispatch("get_customer_context", {"external_userid": "wx_ext_001", "request_id": "req_001"})
 
     assert payload["customer"]["external_userid"] == "wx_ext_001"
     assert payload["recent_messages"] == [{"msgid": "msg_001"}]

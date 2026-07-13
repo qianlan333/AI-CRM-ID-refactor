@@ -6,9 +6,9 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 from starlette.concurrency import run_in_threadpool
 
-from aicrm_next.admin_jobs.routes import validate_admin_action_token
+from aicrm_next.shared.admin_action_runtime import validate_admin_action_token
 
-from .adapters import wecom_execution_settings
+from .adapters import DEFAULT_ADAPTER_REGISTRY, ExternalEffectAdapterRegistry, wecom_execution_settings
 from .continuations import EMPTY_EXTERNAL_EFFECT_CONTINUATION_REGISTRY, ExternalEffectContinuationRegistry
 from .repo import build_external_effect_repository
 from .service import ExternalEffectService
@@ -83,6 +83,10 @@ def _continuation_registry(request: Request) -> ExternalEffectContinuationRegist
         "external_effect_continuation_registry",
         EMPTY_EXTERNAL_EFFECT_CONTINUATION_REGISTRY,
     )
+
+
+def _adapter_registry(request: Request) -> ExternalEffectAdapterRegistry:
+    return getattr(request.app.state, "external_effect_adapter_registry", DEFAULT_ADAPTER_REGISTRY)
 
 
 @router.get("/api/admin/external-effects/jobs")
@@ -239,7 +243,7 @@ async def preview_external_effect_run_due(request: Request) -> JSONResponse:
     payload = await _payload(request)
     repo = build_external_effect_repository()
     result = await run_in_threadpool(
-        ExternalEffectWorker(repo).preview_due,
+        ExternalEffectWorker(repo, _adapter_registry(request)).preview_due,
         batch_size=_int(payload.get("batch_size") or payload.get("limit"), default=10, minimum=1),
         effect_types=[_text(item) for item in payload.get("effect_types") or [] if _text(item)] or None,
         test_only=_bool(payload.get("test_only"), default=False),
@@ -259,6 +263,7 @@ async def run_external_effect_due(request: Request) -> JSONResponse:
     result = await run_in_threadpool(
         ExternalEffectWorker(
             repo,
+            _adapter_registry(request),
             continuation_registry=_continuation_registry(request),
         ).run_due,
         batch_size=_int(payload.get("batch_size") or payload.get("limit"), default=10, minimum=1),

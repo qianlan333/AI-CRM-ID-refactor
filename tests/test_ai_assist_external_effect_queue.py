@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from aicrm_next.external_effect_composition import build_external_effect_adapter_registry
 import json
 from urllib.parse import urlparse
 
@@ -360,9 +361,10 @@ def test_wecom_private_external_effect_allowlisted_execute_succeeds(monkeypatch)
     job_id = plan["external_effect_job_ids"][0]
     ExternalEffectService().approve(job_id)
 
-    preview = ExternalEffectWorker().preview_due(batch_size=1, effect_types=[WECOM_MESSAGE_PRIVATE_SEND], test_only=False)
-    dry_run = ExternalEffectWorker().run_due(batch_size=1, dry_run=True, effect_types=[WECOM_MESSAGE_PRIVATE_SEND], test_only=False)
-    result = ExternalEffectWorker().run_due(batch_size=1, dry_run=False, effect_types=[WECOM_MESSAGE_PRIVATE_SEND], test_only=False)
+    worker = ExternalEffectWorker(adapter_registry=build_external_effect_adapter_registry())
+    preview = worker.preview_due(batch_size=1, effect_types=[WECOM_MESSAGE_PRIVATE_SEND], test_only=False)
+    dry_run = worker.run_due(batch_size=1, dry_run=True, effect_types=[WECOM_MESSAGE_PRIVATE_SEND], test_only=False)
+    result = worker.run_due(batch_size=1, dry_run=False, effect_types=[WECOM_MESSAGE_PRIVATE_SEND], test_only=False)
     updated = ExternalEffectService().get(job_id)
     attempts = ExternalEffectService().list_attempts(job_id)
 
@@ -411,7 +413,9 @@ def test_wecom_private_external_effect_ignores_target_allowlist_miss(monkeypatch
     job_id = plan["external_effect_job_ids"][0]
     ExternalEffectService().approve(job_id)
 
-    result = ExternalEffectWorker().run_due(batch_size=1, dry_run=False, effect_types=[WECOM_MESSAGE_PRIVATE_SEND], test_only=False)
+    result = ExternalEffectWorker(
+        adapter_registry=build_external_effect_adapter_registry()
+    ).run_due(batch_size=1, dry_run=False, effect_types=[WECOM_MESSAGE_PRIVATE_SEND], test_only=False)
     updated = ExternalEffectService().get(job_id)
     attempts = ExternalEffectService().list_attempts(job_id)
 

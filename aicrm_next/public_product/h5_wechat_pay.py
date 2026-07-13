@@ -17,7 +17,7 @@ from fastapi.responses import JSONResponse, RedirectResponse
 from aicrm_next.commerce.domain import completion_redirect_projection, safe_completion_redirect_url
 from aicrm_next.navigation_target import completion_action_for_target, completion_target_projection
 from aicrm_next.commerce.order_expiration import close_expired_wechat_pay_orders, pending_order_expires_at_text
-from aicrm_next.commerce.product_code_aliases import product_code_filter_values
+from aicrm_next.shared.product_code_aliases import product_code_filter_values
 from aicrm_next.identity_contact.dto import IdentityResolveResult, ResolvePersonIdentityRequest
 from aicrm_next.identity_contact.resolver import resolve_identity_with_dbapi, resolved_unionid
 from aicrm_next.integration_gateway.wechat_pay_client import WeChatPayClient, WeChatPayClientConfig, WeChatPayClientError
