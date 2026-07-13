@@ -28,6 +28,7 @@ run_fast() {
 "$PYTHON" tools/check_admin_route_auth.py
 "$PYTHON" tools/check_repository_ownership.py
 "$PYTHON" tools/check_retired_runtime_references.py
+"$PYTHON" scripts/ci/check_github_action_pins.py
 }
 
 run_db() {
