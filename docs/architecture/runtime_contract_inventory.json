@@ -1209,6 +1209,12 @@
     },
     {
       "accessor": "os.getenv",
+      "file": "scripts/ops/recover_identity_resolution_worker_deadlock.py",
+      "key": "DATABASE_URL",
+      "line": 49
+    },
+    {
+      "accessor": "os.getenv",
       "file": "scripts/precheck_retired_automation_tables.py",
       "key": "DATABASE_URL",
       "line": 326
@@ -1859,13 +1865,13 @@
       "accessor": "os.getenv",
       "file": "aicrm_next/channel_entry/application.py",
       "key": "WORKER_RELEASE_SHA",
-      "line": 953
+      "line": 969
     },
     {
       "accessor": "os.getenv",
       "file": "aicrm_next/channel_entry/application.py",
       "key": "WORKER_RELEASE_SHA",
-      "line": 1171
+      "line": 1187
     },
     {
       "accessor": "os.getenv",

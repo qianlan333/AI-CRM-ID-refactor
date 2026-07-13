@@ -234,6 +234,18 @@ def test_wecom_callback_ops_change_selects_identity_contact_slice() -> None:
     assert result["architecture_gate"] == "db"
 
 
+def test_identity_worker_deadlock_recovery_has_permanent_deploy_and_identity_scope() -> None:
+    result = _select("scripts/ops/recover_identity_resolution_worker_deadlock.py")
+
+    assert {"ci_deploy", "identity_contact"} <= set(result["matched_scopes"])
+    assert result["unmatched_files"] == []
+    assert "tests/test_identity_resolution_backfill_worker.py" in result["python_tests"]
+    assert "tests/test_deploy_workflow_contract.py" in result["python_tests"]
+    assert result["needs_postgres"] is True
+    assert result["architecture_gate"] == "full"
+    assert result["needs_full_ci"] is True
+
+
 def test_r05_callback_runtime_files_are_mapped_to_full_pg_ci() -> None:
     result = _select(
         "scripts/ops/reconcile_wecom_callback_runtime.py",

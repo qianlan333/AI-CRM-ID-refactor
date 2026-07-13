@@ -390,6 +390,12 @@ jobs:
             python3 "$release_control_manager" \
               --manifest "$release_control_manifest" \
               --phase begin-transaction --execute
+            # The previous identity worker held its claim transaction open while
+            # re-enqueueing the same source from another connection. Recover only
+            # that exact, aged self-deadlock while the deploy guard blocks restarts.
+            python3 scripts/ops/recover_identity_resolution_worker_deadlock.py \
+              --execute \
+              | tee /tmp/aicrm-identity-worker-deadlock-recovery.json
             python3 "$release_control_manager" \
               --manifest "$release_control_manifest" \
               --phase stop-for-migration --execute

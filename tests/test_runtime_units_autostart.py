@@ -40,7 +40,7 @@ def test_runtime_units_manifest_classifies_every_deploy_timer() -> None:
 
 def test_runtime_units_manifest_declares_primary_web_service() -> None:
     assert _manifest()["primary_web"] == {"service": "openclaw-wecom-postgres.service"}
-    assert _manifest()["timer_service_drain_timeout_seconds"] == 120
+    assert _manifest()["timer_service_drain_timeout_seconds"] == 600
 
 
 def test_primary_web_has_a_persistent_systemd_transaction_guard() -> None:

@@ -1,6 +1,6 @@
 {
   "schema_version": 2,
-  "timer_service_drain_timeout_seconds": 120,
+  "timer_service_drain_timeout_seconds": 600,
   "primary_web": {
     "service": "openclaw-wecom-postgres.service"
   },

@@ -94,6 +94,19 @@ def test_failed_deploy_drain_restores_timers_without_killing_active_oneshots() -
     assert cleanup_index < preserve_index < conditional_web_stop < rollback_index < restore_index < install_index < release_index
 
 
+def test_deploy_recovers_only_exact_identity_worker_self_deadlock_under_transaction_guard() -> None:
+    workflow = TEST_DEPLOY_WORKFLOW.read_text(encoding="utf-8")
+
+    mutation_index = workflow.index("runtime_mutation_started=1")
+    begin_index = workflow.index("--phase begin-transaction --execute", mutation_index)
+    recovery_index = workflow.index("scripts/ops/recover_identity_resolution_worker_deadlock.py", begin_index)
+    execute_index = workflow.index("--execute", recovery_index)
+    evidence_index = workflow.index("/tmp/aicrm-identity-worker-deadlock-recovery.json", execute_index)
+    stop_index = workflow.index("--phase stop-for-migration --execute", evidence_index)
+
+    assert mutation_index < begin_index < recovery_index < execute_index < evidence_index < stop_index
+
+
 def test_success_marks_release_committed_only_after_public_exact_sha_verification() -> None:
     workflow = TEST_DEPLOY_WORKFLOW.read_text(encoding="utf-8")
 
@@ -718,7 +731,7 @@ def test_payment_reconciliation_and_identity_worker_units_are_deployable():
     assert "Persistent=true" in payment_timer
     assert "Unit=openclaw-wechat-pay-order-reconciliation-worker.service" in payment_timer
 
-    assert "python scripts/run_identity_resolution_backfill_worker.py --execute" in identity_service
+    assert "python scripts/run_identity_resolution_backfill_worker.py --execute --limit 20" in identity_service
     assert "OnCalendar=*-*-* *:0/2:20" in identity_timer
     assert "Persistent=true" in identity_timer
     assert "Unit=openclaw-identity-resolution-worker.service" in identity_timer

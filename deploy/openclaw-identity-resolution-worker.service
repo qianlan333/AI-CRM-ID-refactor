@@ -9,4 +9,4 @@ User=ubuntu
 WorkingDirectory=/home/ubuntu/极简 crm
 EnvironmentFile=/home/ubuntu/.openclaw-wecom-pg.env
 Environment=PYTHONUNBUFFERED=1
-ExecStart=/bin/bash -lc 'source /home/ubuntu/venvs/openclaw/bin/activate && python scripts/run_identity_resolution_backfill_worker.py --execute'
+ExecStart=/bin/bash -lc 'source /home/ubuntu/venvs/openclaw/bin/activate && python scripts/run_identity_resolution_backfill_worker.py --execute --limit 20'
