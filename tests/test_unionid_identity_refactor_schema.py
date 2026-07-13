@@ -233,8 +233,9 @@ def test_runtime_jsonb_membership_avoids_placeholder_collision() -> None:
     source = _read("aicrm_next/identity_contact/resolver.py")
 
     assert "external_userids_json ? ?" not in source
-    assert "identity.external_userids_json ? input.external_userid" in source
-    assert "identity.external_userids_json @> jsonb_build_array(" in source
+    assert "identity.external_userids_json ? input.external_userid" not in source
+    assert "identity.external_userids_json @> jsonb_build_array(input.external_userid)" in source
+    assert "identity.openids_json @> jsonb_build_array(input.openid)" in source
     assert 'candidate_sql = _candidate_sql(self._placeholder, fields=fields)' in source
 
 
