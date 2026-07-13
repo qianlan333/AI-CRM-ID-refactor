@@ -6,20 +6,20 @@ from typing import Any, Protocol
 
 import requests
 
-from aicrm_next.integration_gateway.wecom_runtime import load_wecom_execution_config
+from aicrm_next.shared.wecom_runtime import load_wecom_execution_config
 from aicrm_next.platform_foundation.auth_platform.webhook_hmac import (
     WebhookHmacSigner,
     runtime_outbound_webhook_signer,
 )
 
-from aicrm_next.external_push.https_transport import (
+from aicrm_next.shared.outbound_https.transport import (
     CallableHttpsTransport,
     HttpsTransport,
     HttpsTransportError,
     HttpsTransportTimeout,
     PinnedHttpsTransport,
 )
-from aicrm_next.external_push.security import Resolver, WebhookUrlValidationError, resolve_and_validate_public_https_target
+from aicrm_next.shared.outbound_https.security import Resolver, WebhookUrlValidationError, resolve_and_validate_public_https_target
 from aicrm_next.shared.runtime_settings import runtime_bool, runtime_csv, runtime_setting
 from aicrm_next.shared.sensitive_data import redact_sensitive_data, redact_sensitive_text
 

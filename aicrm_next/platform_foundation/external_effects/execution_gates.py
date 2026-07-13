@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from aicrm_next.integration_gateway.wecom_runtime import load_wecom_execution_config
+from aicrm_next.shared.wecom_runtime import load_wecom_execution_config
 
 WECOM_EXECUTION_MODE_KEY = "AICRM_WECOM_EXECUTION_MODE"
 WECOM_EXECUTION_DISABLED_CODE = "wecom_execution_disabled"

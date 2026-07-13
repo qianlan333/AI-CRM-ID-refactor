@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from aicrm_next.integration_gateway.wecom_runtime import load_wecom_execution_config
+from aicrm_next.shared.wecom_runtime import load_wecom_execution_config
 from aicrm_next.shared.runtime_settings import runtime_bool, runtime_csv, runtime_setting
 from aicrm_next.shared.safe_logging import safe_log_exception
 
