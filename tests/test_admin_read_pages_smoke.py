@@ -14,7 +14,7 @@ from scripts.ops import create_deploy_smoke_session as deploy_session
 
 
 def test_production_smoke_timeout_covers_observed_cold_admin_reads() -> None:
-    assert smoke.DEFAULT_TIMEOUT_SECONDS == 20.0
+    assert smoke.DEFAULT_TIMEOUT_SECONDS == 45.0
 
 
 def test_full_sidebar_smoke_covers_every_registered_navigation_destination(monkeypatch) -> None:
