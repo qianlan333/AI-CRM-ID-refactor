@@ -28,4 +28,7 @@ def test_identity_reconciliation_outputs_counts_only_and_runs_before_service_sto
     assert "--phase preflight" in deploy
     assert "--register-existing-conflicts" in deploy
     assert "--phase post-deploy" in deploy
-    assert deploy.index("--phase preflight") < deploy.index("--phase stop-for-migration")
+    deploy_execution = deploy[deploy.index("# Identity preflight must fail before any runtime unit is stopped.") :]
+    preflight_index = deploy_execution.index("--phase preflight")
+    migration_stop_index = deploy_execution.index("--phase stop-for-migration")
+    assert preflight_index < migration_stop_index

@@ -154,6 +154,9 @@ jobs:
             release_bundle_checksum="/tmp/aicrm-release-$verified_sha/aicrm-release.bundle.sha256"
             deploy_smoke_session_file=""
             runtime_units_stopped=0
+            release_switched=0
+            release_committed=0
+            restore_expected_sha="$before_sha"
             cleanup_deploy() {
               exit_status=$?
               trap - EXIT
@@ -168,14 +171,46 @@ jobs:
                 fi
                 rm -f -- "$deploy_smoke_session_file"
               fi
+              if [ "$exit_status" -ne 0 ] \
+                && [ "${release_switched:-0}" = "1" ] \
+                && [ "${release_committed:-0}" != "1" ]; then
+                echo "deployment failed before commit; rolling back to $before_sha"
+                if [ "${runtime_units_stopped:-0}" != "1" ]; then
+                  if ! /home/ubuntu/venvs/openclaw/bin/python \
+                    scripts/ops/manage_production_runtime_units.py \
+                    --phase stop-for-migration --execute; then
+                    cleanup_failed=1
+                  fi
+                  runtime_units_stopped=1
+                fi
+                sudo systemctl stop aicrm-web.service || true
+                sudo systemctl stop openclaw-wecom-postgres.service || true
+                if git reset --hard "$before_sha"; then
+                  printf '%s\n' "$before_sha" > .release-sha
+                  if ! git diff --quiet "$before_sha" "$verified_sha" -- requirements.lock; then
+                    if ! /home/ubuntu/venvs/openclaw/bin/python -m pip install \
+                      --require-hashes -r requirements.lock; then
+                      echo "failed to restore dependencies for $before_sha"
+                      cleanup_failed=1
+                    fi
+                  fi
+                else
+                  echo "failed to restore checkout to $before_sha"
+                  cleanup_failed=1
+                fi
+              fi
               if [ "${runtime_units_stopped:-0}" = "1" ]; then
-                echo "deployment exited during migration window; restoring runtime units"
+                echo "restoring runtime units for $restore_expected_sha"
                 sudo systemctl reset-failed \
                   openclaw-wecom-postgres.service || true
                 sudo systemctl start openclaw-wecom-postgres.service
                 restored_web_ready=0
                 for _ in $(seq 1 30); do
-                  if curl -sSf http://127.0.0.1:5001/health >/tmp/aicrm_cleanup_health.json; then
+                  if curl -sSf -D /tmp/aicrm_cleanup_health_headers.txt \
+                    http://127.0.0.1:5001/health \
+                    -o /tmp/aicrm_cleanup_health.json \
+                    && grep -i "x-aicrm-release-sha: $restore_expected_sha" \
+                      /tmp/aicrm_cleanup_health_headers.txt; then
                     restored_web_ready=1
                     break
                   fi
@@ -226,6 +261,7 @@ jobs:
               exit 1
             fi
             git reset --hard "$verified_sha"
+            release_switched=1
             after_sha="$(git rev-parse HEAD)"
             if [ "$after_sha" != "$verified_sha" ]; then
               echo "deployed checkout does not match verified workflow sha"
@@ -403,3 +439,4 @@ jobs:
               fi
               cat /tmp/aicrm_test_public_health.json
             fi
+            release_committed=1

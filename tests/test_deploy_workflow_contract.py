@@ -40,6 +40,40 @@ def test_remote_deploy_holds_target_specific_server_lock_before_sha_checks() -> 
     assert 'echo "another $deploy_target deployment holds $deploy_lock_file"' in workflow
 
 
+def test_failed_uncommitted_deploy_restores_previous_exact_sha_and_dependencies() -> None:
+    workflow = TEST_DEPLOY_WORKFLOW.read_text(encoding="utf-8")
+
+    switched_init = workflow.index("release_switched=0")
+    committed_init = workflow.index("release_committed=0", switched_init)
+    cleanup_index = workflow.index("cleanup_deploy()", committed_init)
+    rollback_guard = workflow.index('[ "${release_switched:-0}" = "1" ]', cleanup_index)
+    stop_index = workflow.index("--phase stop-for-migration --execute", rollback_guard)
+    reset_index = workflow.index('git reset --hard "$before_sha"', stop_index)
+    release_file_index = workflow.index("printf '%s\\n' \"$before_sha\" > .release-sha", reset_index)
+    dependency_guard = workflow.index('git diff --quiet "$before_sha" "$verified_sha" -- requirements.lock', release_file_index)
+    dependency_restore = workflow.index("--require-hashes -r requirements.lock", dependency_guard)
+    exact_health = workflow.index('grep -i "x-aicrm-release-sha: $restore_expected_sha"', dependency_restore)
+    restore_units = workflow.index("--phase install-enable-after-web-health --execute", exact_health)
+
+    assert switched_init < committed_init < cleanup_index < rollback_guard
+    assert rollback_guard < stop_index < reset_index < release_file_index
+    assert release_file_index < dependency_guard < dependency_restore < exact_health < restore_units
+    assert 'restore_expected_sha="$before_sha"' in workflow
+    assert "alembic downgrade" not in workflow
+
+
+def test_success_marks_release_committed_only_after_public_exact_sha_verification() -> None:
+    workflow = TEST_DEPLOY_WORKFLOW.read_text(encoding="utf-8")
+
+    switch_index = workflow.index("release_switched=1")
+    local_exact_sha_index = workflow.index('grep -i "x-aicrm-release-sha: $after_sha"', switch_index)
+    production_exact_sha_index = workflow.index('--expected-sha "$after_sha"', local_exact_sha_index)
+    test_exact_sha_index = workflow.index('grep -i "x-aicrm-release-sha: $after_sha"', production_exact_sha_index)
+    committed_index = workflow.index("release_committed=1", test_exact_sha_index)
+
+    assert switch_index < local_exact_sha_index < production_exact_sha_index < test_exact_sha_index < committed_index
+
+
 def test_production_deploy_loads_postgres_env_before_alembic_upgrade():
     workflow = (ROOT / ".github" / "workflows" / "deploy.yml").read_text(encoding="utf-8")
 
@@ -198,8 +232,10 @@ def test_production_deploy_runs_alembic_upgrade_before_service_restart():
     pip_install_index = workflow.index("python -m pip install --require-hashes -r requirements.lock")
     stop_runtime_units_index = workflow.index(_runtime_units_phase("stop-for-migration"))
     alembic_upgrade_index = workflow.index("python3 -m alembic upgrade head")
-    stop_canonical_web_index = workflow.index("sudo systemctl stop aicrm-web.service || true")
-    stop_compatible_web_index = workflow.index("sudo systemctl stop openclaw-wecom-postgres.service || true")
+    stop_canonical_web_index = workflow.index("sudo systemctl stop aicrm-web.service || true", alembic_upgrade_index)
+    stop_compatible_web_index = workflow.index(
+        "sudo systemctl stop openclaw-wecom-postgres.service || true", stop_canonical_web_index
+    )
     stale_listener_index = workflow.index('if sudo fuser -s 5001/tcp; then')
     term_kill_index = workflow.index("sudo fuser -k -TERM 5001/tcp || true")
     force_kill_index = workflow.index("sudo fuser -k -KILL 5001/tcp || true")
@@ -240,7 +276,7 @@ def test_production_deploy_migrates_and_reconciles_secret_references_before_web_
     refreshed_env_index = workflow.index("source /home/ubuntu/.openclaw-wecom-pg.env", migration_index)
     auth_readiness_index = workflow.index("python3 scripts/ops/check_auth_readiness.py", refreshed_env_index)
     reconciliation_index = workflow.index("python3 scripts/ops/check_secret_reference_cutover.py")
-    stop_web_index = workflow.index("sudo systemctl stop aicrm-web.service || true")
+    stop_web_index = workflow.index("sudo systemctl stop aicrm-web.service || true", alembic_upgrade_index)
     start_web_index = workflow.index("if ! sudo systemctl start openclaw-wecom-postgres.service; then")
 
     assert (
@@ -346,7 +382,9 @@ def test_deploy_exit_trap_revokes_smoke_session_and_restores_runtime_units():
     cleanup = workflow[cleanup_index:trap_index]
     assert "create_deploy_smoke_session.py revoke" in cleanup
     assert 'if [ "${runtime_units_stopped:-0}" = "1" ]; then' in cleanup
-    assert "deployment exited during migration window; restoring runtime units" in cleanup
+    assert 'echo "restoring runtime units for $restore_expected_sha"' in cleanup
+    assert 'git reset --hard "$before_sha"' in cleanup
+    assert 'grep -i "x-aicrm-release-sha: $restore_expected_sha"' in cleanup
     assert "--phase install-enable-after-web-health --execute" in cleanup
     assert "--phase verify --execute" in cleanup
     assert "restored_web_ready" in cleanup
