@@ -40,6 +40,7 @@ def test_runtime_units_manifest_classifies_every_deploy_timer() -> None:
 
 def test_runtime_units_manifest_declares_primary_web_service() -> None:
     assert _manifest()["primary_web"] == {"service": "openclaw-wecom-postgres.service"}
+    assert _manifest()["timer_service_drain_timeout_seconds"] == 120
 
 
 def test_primary_web_has_a_persistent_systemd_transaction_guard() -> None:
@@ -209,6 +210,9 @@ class _RecordingRunner:
         if args and args[0] == "is-failed":
             failed = args[1] in self.failed_units
             return subprocess.CompletedProcess(command, 0 if failed else 1, stdout="failed\n" if failed else "inactive\n", stderr="")
+        if args and args[0] == "show" and "--property=ActiveState" in args:
+            state = "activating" if args[1] in self.active_units else "inactive"
+            return subprocess.CompletedProcess(command, 0, stdout=f"{state}\n", stderr="")
         return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
 
 
@@ -308,6 +312,9 @@ def test_runtime_units_stop_and_verify_dry_runs_are_manifest_driven(capsys) -> N
     assert "sudo systemctl stop aicrm-archive-sync.service" in stop_output
     assert "sudo systemctl stop openclaw-automation-ops-scheduler.timer" in stop_output
     assert "sudo systemctl stop openclaw-automation-ops-scheduler.service" in stop_output
+    drain_probe = "sudo systemctl show openclaw-broadcast-queue-worker.service --property=ActiveState --value"
+    assert drain_probe in stop_output
+    assert stop_output.index(drain_probe) < stop_output.index("sudo systemctl stop openclaw-broadcast-queue-worker.service")
     for unit in _manifest()["retired_forbidden"]:
         assert f"sudo systemctl disable --now {unit}" in stop_output
         assert f"sudo systemctl stop {unit}" in stop_output
@@ -503,6 +510,45 @@ def test_runtime_units_stop_fails_when_a_timer_remains_active() -> None:
 
     with pytest.raises(RuntimeError, match="runtime timer did not stop: openclaw-external-effect-worker.timer"):
         runtime_units.phase_stop_for_migration(manifest, runner)
+
+
+def test_runtime_units_stop_never_signals_an_active_oneshot_before_drain_timeout(monkeypatch) -> None:
+    service = "openclaw-broadcast-queue-worker.service"
+    manifest = {
+        "timer_service_drain_timeout_seconds": 1,
+        "primary_web": {"service": "openclaw-wecom-postgres.service"},
+        "active_services": [],
+        "active_autostart": [
+            {
+                "timer": "openclaw-broadcast-queue-worker.timer",
+                "service": service,
+            }
+        ],
+        "approval_required": [],
+        "retired_forbidden": [],
+    }
+    runner = _RecordingRunner(enabled_units=set(), active_units={service})
+    monotonic_values = iter((0.0, 2.0))
+    monkeypatch.setattr(runtime_units.time, "monotonic", lambda: next(monotonic_values))
+    monkeypatch.setattr(runtime_units.time, "sleep", lambda _seconds: None)
+
+    with pytest.raises(RuntimeError, match="timer services did not drain within 1s"):
+        runtime_units.phase_stop_for_migration(manifest, runner)
+
+    assert ("sudo", "systemctl", "stop", "openclaw-broadcast-queue-worker.timer") in runner.commands
+    assert ("sudo", "systemctl", "show", service, "--property=ActiveState", "--value") in runner.commands
+    assert ("sudo", "systemctl", "stop", service) not in runner.commands
+    assert ("sudo", "systemctl", "stop", "openclaw-wecom-postgres.service") not in runner.commands
+
+
+def test_runtime_restore_authorization_does_not_require_web_restart(capsys) -> None:
+    assert runtime_units.main(["--phase", "authorize-runtime-restore", "--dry-run"]) == 0
+    output = capsys.readouterr().out
+
+    assert "sudo test -e /home/ubuntu/.aicrm-production-deploy-in-progress" in output
+    assert "sudo systemctl is-active openclaw-wecom-postgres.service" in output
+    assert "sudo touch /run/aicrm-production-runtime-start-authorized" in output
+    assert "sudo test -e /run/aicrm-production-web-start-authorized" not in output
 
 
 def test_runtime_guard_cannot_authorize_an_already_running_web() -> None:

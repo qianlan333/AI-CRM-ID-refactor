@@ -160,6 +160,7 @@ jobs:
             release_bundle_checksum="/tmp/aicrm-release-$verified_sha/aicrm-release.bundle.sha256"
             deploy_smoke_session_file=""
             runtime_units_stopped=0
+            runtime_transaction_partial=0
             release_switched=0
             release_committed=0
             restore_expected_sha="$before_sha"
@@ -180,24 +181,32 @@ jobs:
               if [ "$exit_status" -ne 0 ] \
                 && [ "${runtime_mutation_started:-0}" = "1" ] \
                 && [ "${runtime_committed:-0}" != "1" ]; then
-                if ! python3 "$release_control_manager" \
-                  --manifest "$release_control_manifest" \
-                  --phase begin-transaction --execute; then
-                  cleanup_failed=1
+                if [ "${runtime_units_stopped:-0}" = "1" ]; then
+                  if ! python3 "$release_control_manager" \
+                    --manifest "$release_control_manifest" \
+                    --phase begin-transaction --execute; then
+                    cleanup_failed=1
+                  fi
+                  if ! python3 "$release_control_manager" \
+                    --manifest "$release_control_manifest" \
+                    --phase stop-for-migration --execute; then
+                    cleanup_failed=1
+                  fi
+                else
+                  echo "runtime stop did not complete; preserving active one-shot workers during rollback"
+                  runtime_transaction_partial=1
                 fi
-                if ! python3 "$release_control_manager" \
-                  --manifest "$release_control_manifest" \
-                  --phase stop-for-migration --execute; then
-                  cleanup_failed=1
-                fi
-                runtime_units_stopped=1
               fi
               if [ "$exit_status" -ne 0 ] \
                 && [ "${release_switched:-0}" = "1" ] \
                 && [ "${release_committed:-0}" != "1" ]; then
                 echo "deployment failed before commit; rolling back to $before_sha"
-                sudo systemctl stop aicrm-web.service || true
-                sudo systemctl stop openclaw-wecom-postgres.service || true
+                if [ "${runtime_units_stopped:-0}" = "1" ]; then
+                  sudo systemctl stop aicrm-web.service || true
+                  sudo systemctl stop openclaw-wecom-postgres.service || true
+                else
+                  echo "primary Web remains active while the partial runtime transaction is rolled back"
+                fi
                 if git reset --hard "$before_sha"; then
                   printf '%s\n' "$before_sha" > .release-sha
                   if ! git diff --quiet "$before_sha" "$verified_sha" -- requirements.lock; then
@@ -255,6 +264,46 @@ jobs:
                   fi
                 else
                   echo "web health unavailable; runtime units could not be safely restored"
+                  cleanup_failed=1
+                fi
+              fi
+              if [ "${runtime_transaction_partial:-0}" = "1" ] \
+                && [ "${runtime_units_stopped:-0}" != "1" ]; then
+                echo "restoring timers after a partial runtime stop for $restore_expected_sha"
+                partial_web_ready=0
+                for _ in $(seq 1 10); do
+                  if curl -sSf -D /tmp/aicrm_cleanup_partial_health_headers.txt \
+                    http://127.0.0.1:5001/health \
+                    -o /tmp/aicrm_cleanup_partial_health.json \
+                    && grep -i "x-aicrm-release-sha: $restore_expected_sha" \
+                      /tmp/aicrm_cleanup_partial_health_headers.txt; then
+                    partial_web_ready=1
+                    break
+                  fi
+                  sleep 1
+                done
+                if [ "$partial_web_ready" = "1" ]; then
+                  if ! python3 "$release_control_manager" \
+                    --manifest "$release_control_manifest" \
+                    --phase authorize-runtime-restore --execute; then
+                    cleanup_failed=1
+                  fi
+                  if ! python3 scripts/ops/manage_production_runtime_units.py \
+                    --phase install-enable-after-web-health --execute; then
+                    cleanup_failed=1
+                  fi
+                  if ! python3 scripts/ops/manage_production_runtime_units.py \
+                    --phase verify-staged-runtime --execute; then
+                    cleanup_failed=1
+                  fi
+                  if ! python3 "$release_control_manager" \
+                    --manifest "$release_control_manifest" \
+                    --phase release-runtime-guard --execute; then
+                    cleanup_failed=1
+                  fi
+                  runtime_transaction_partial=0
+                else
+                  echo "existing Web health unavailable; partially stopped timers could not be restored"
                   cleanup_failed=1
                 fi
               fi
@@ -337,6 +386,7 @@ jobs:
               --expected-release-sha "$after_sha" \
               | tee /tmp/aicrm-identity-preflight.json
             runtime_mutation_started=1
+            runtime_transaction_partial=1
             python3 "$release_control_manager" \
               --manifest "$release_control_manifest" \
               --phase begin-transaction --execute
@@ -344,6 +394,7 @@ jobs:
               --manifest "$release_control_manifest" \
               --phase stop-for-migration --execute
             runtime_units_stopped=1
+            runtime_transaction_partial=0
             if sudo fuser -s 5001/tcp; then
               echo "5001 is still occupied before release mutation; terminating stale listener"
               sudo ss -ltnp 'sport = :5001' || true

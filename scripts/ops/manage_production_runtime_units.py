@@ -22,6 +22,8 @@ RUNTIME_START_AUTHORIZATION_FILE = Path("/run/aicrm-production-runtime-start-aut
 DEPLOY_GUARD_DROPIN = "00-aicrm-deploy-transaction-guard.conf"
 DEPLOY_GUARD_SOURCE = ROOT / "deploy" / "systemd" / DEPLOY_GUARD_DROPIN
 PRIMARY_WEB_GUARD_SOURCE = ROOT / "deploy" / "systemd" / "00-aicrm-primary-web-transaction-guard.conf"
+DEFAULT_TIMER_SERVICE_DRAIN_TIMEOUT_SECONDS = 120
+TIMER_SERVICE_DRAIN_POLL_INTERVAL_SECONDS = 1.0
 
 
 @dataclass(frozen=True)
@@ -234,6 +236,9 @@ def _validate_deploy_guards() -> None:
 def validate_manifest(manifest: dict[str, Any], *, validate_unit_files: bool = True) -> None:
     if manifest.get("schema_version") != 2:
         raise ValueError("production runtime units manifest schema_version must be 2")
+    drain_timeout = int(manifest.get("timer_service_drain_timeout_seconds") or DEFAULT_TIMER_SERVICE_DRAIN_TIMEOUT_SECONDS)
+    if drain_timeout < 1 or drain_timeout > 900:
+        raise ValueError("timer_service_drain_timeout_seconds must be between 1 and 900")
     primary_web = primary_web_service(manifest)
     timers = active_timers(manifest)
     services = active_services(manifest)
@@ -379,6 +384,24 @@ def phase_authorize_runtime_start(manifest: dict[str, Any], runner: Runner) -> N
     _verify_deploy_guard_installed(manifest, runner)
 
 
+def phase_authorize_runtime_restore(manifest: dict[str, Any], runner: Runner) -> None:
+    """Resume timers after a stop transaction aborts before Web is stopped."""
+
+    runner.run(["sudo", "test", "-e", str(DEPLOY_GUARD_FILE)])
+    _require_active(
+        runner,
+        primary_web_service(manifest).service,
+        error_prefix="primary Web must remain active for partial runtime restore",
+    )
+    runner.run(["sudo", "touch", str(RUNTIME_START_AUTHORIZATION_FILE)])
+    runner.run(["sudo", "chmod", "0644", str(RUNTIME_START_AUTHORIZATION_FILE)])
+    runner.run(["sudo", "rm", "-f", str(WEB_START_AUTHORIZATION_FILE)])
+    runner.systemctl("daemon-reload")
+    runner.run(["sudo", "test", "-e", str(RUNTIME_START_AUTHORIZATION_FILE)])
+    runner.run(["sudo", "test", "!", "-e", str(WEB_START_AUTHORIZATION_FILE)])
+    _verify_deploy_guard_installed(manifest, runner)
+
+
 def phase_release_runtime_guard(manifest: dict[str, Any], runner: Runner) -> None:
     runner.run(["sudo", "test", "-e", str(DEPLOY_GUARD_FILE)])
     runner.run(["sudo", "test", "-e", str(RUNTIME_START_AUTHORIZATION_FILE)])
@@ -414,11 +437,41 @@ def phase_retire_legacy_overlays(manifest: dict[str, Any], runner: Runner) -> No
     _verify_retired_dropins_absent(manifest, runner)
 
 
+def _timer_service_active_state(runner: Runner, service: str) -> str:
+    proc = runner.systemctl(
+        "show",
+        service,
+        "--property=ActiveState",
+        "--value",
+        check=False,
+        capture_output=True,
+    )
+    if not runner.execute or proc is None:
+        return "inactive"
+    return (proc.stdout or "").strip().lower() or "unknown"
+
+
+def _wait_for_timer_services_to_drain(manifest: dict[str, Any], runner: Runner, services: list[str]) -> None:
+    unique_services = list(dict.fromkeys(services))
+    timeout_seconds = int(manifest.get("timer_service_drain_timeout_seconds") or DEFAULT_TIMER_SERVICE_DRAIN_TIMEOUT_SECONDS)
+    deadline = time.monotonic() + timeout_seconds
+    while True:
+        pending = {service: state for service in unique_services if (state := _timer_service_active_state(runner, service)) not in {"inactive", "failed"}}
+        if not runner.execute or not pending:
+            return
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            detail = ", ".join(f"{service}={state}" for service, state in sorted(pending.items()))
+            raise RuntimeError(f"timer services did not drain within {timeout_seconds}s: {detail}")
+        time.sleep(min(TIMER_SERVICE_DRAIN_POLL_INTERVAL_SECONDS, remaining))
+
+
 def phase_stop_for_migration(manifest: dict[str, Any], runner: Runner) -> None:
     runner.run(["sudo", "test", "-e", str(DEPLOY_GUARD_FILE)])
     timers = [*active_timers(manifest), *approval_timers(manifest)]
     for unit in timers:
         runner.systemctl("stop", unit.timer, check=False)
+    _wait_for_timer_services_to_drain(manifest, runner, [unit.service for unit in timers])
     for unit in timers:
         runner.systemctl("stop", unit.service, check=False)
     for unit in timers:
@@ -619,6 +672,7 @@ def main(argv: list[str] | None = None) -> int:
         required=True,
         choices=(
             "authorize-runtime-start",
+            "authorize-runtime-restore",
             "authorize-web-start",
             "begin-transaction",
             "retire-legacy-overlays",
@@ -641,6 +695,7 @@ def main(argv: list[str] | None = None) -> int:
         validate_unit_files=args.phase
         not in {
             "authorize-runtime-start",
+            "authorize-runtime-restore",
             "authorize-web-start",
             "begin-transaction",
             "stop-for-migration",
@@ -650,6 +705,8 @@ def main(argv: list[str] | None = None) -> int:
     runner = Runner(execute=bool(args.execute and not args.dry_run))
     if args.phase == "authorize-runtime-start":
         phase_authorize_runtime_start(manifest, runner)
+    elif args.phase == "authorize-runtime-restore":
+        phase_authorize_runtime_restore(manifest, runner)
     elif args.phase == "authorize-web-start":
         phase_authorize_web_start(manifest, runner)
     elif args.phase == "begin-transaction":
