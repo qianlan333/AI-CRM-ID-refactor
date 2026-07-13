@@ -6,6 +6,23 @@ migration_guard:
   new_table_registration_after: "0073_drop_hxc_snapshot_external_userid"
   migration_file_prefix_after: "0073"
 
+legacy_production_table_defaults: &legacy_production_table_defaults
+  lifecycle: legacy
+  write_owner: legacy.production_runtime
+  read_owners:
+    - production compatibility and historical audit
+  replacement: canonical Next owner must be assigned before mutation or retirement
+  drop_candidate: false
+  drop_after: ""
+  runtime_entrypoints:
+    - preserved production compatibility data
+  migration_source: pre-convergence production schema
+  pii_level: internal_contact
+  guard_tests:
+    - tests/test_data_table_lifecycle_guard.py
+    - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
+  notes: Explicitly registered production relation outside the converged Next schema. It may remain present or be removed by a separately reviewed migration, but it is no longer unmanaged drift.
+
 tables:
   auth_api_clients:
     domain: auth_platform
@@ -1868,7 +1885,7 @@ tables:
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
-    notes: Registered from the id-dev public schema so schema_drift_guard can fail closed on future unmanaged table changes.
+    notes: Registered from the formal production public schema so schema_drift_guard can fail closed on future unmanaged table changes.
 
   admin_operation_logs:
     domain: admin_config
@@ -1919,7 +1936,7 @@ tables:
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
-    notes: Registered from the id-dev public schema so schema_drift_guard can fail closed on future unmanaged table changes.
+    notes: Registered from the formal production public schema so schema_drift_guard can fail closed on future unmanaged table changes.
 
   admin_users:
     domain: admin_config
@@ -1937,7 +1954,7 @@ tables:
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
-    notes: Registered from the id-dev public schema so schema_drift_guard can fail closed on future unmanaged table changes.
+    notes: Registered from the formal production public schema so schema_drift_guard can fail closed on future unmanaged table changes.
 
   ai_audience_inbound_webhook_event:
     domain: ai_audience_ops
@@ -1955,7 +1972,7 @@ tables:
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
-    notes: Registered from the id-dev public schema so schema_drift_guard can fail closed on future unmanaged table changes.
+    notes: Registered from the formal production public schema so schema_drift_guard can fail closed on future unmanaged table changes.
 
   ai_audience_member_current:
     domain: ai_audience_ops
@@ -1975,7 +1992,7 @@ tables:
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
-    notes: Registered from the id-dev public schema so schema_drift_guard can fail closed on future unmanaged table changes.
+    notes: Registered from the formal production public schema so schema_drift_guard can fail closed on future unmanaged table changes.
 
   ai_audience_member_event:
     domain: ai_audience_ops
@@ -1993,7 +2010,7 @@ tables:
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
-    notes: Registered from the id-dev public schema so schema_drift_guard can fail closed on future unmanaged table changes.
+    notes: Registered from the formal production public schema so schema_drift_guard can fail closed on future unmanaged table changes.
 
   ai_audience_outbound_subscription:
     domain: ai_audience_ops
@@ -2011,7 +2028,7 @@ tables:
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
-    notes: Registered from the id-dev public schema so schema_drift_guard can fail closed on future unmanaged table changes.
+    notes: Registered from the formal production public schema so schema_drift_guard can fail closed on future unmanaged table changes.
 
   ai_audience_package:
     domain: ai_audience_ops
@@ -2030,7 +2047,7 @@ tables:
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
-    notes: Registered from the id-dev public schema so schema_drift_guard can fail closed on future unmanaged table changes.
+    notes: Registered from the formal production public schema so schema_drift_guard can fail closed on future unmanaged table changes.
 
   ai_audience_package_dependency:
     domain: ai_audience_ops
@@ -2048,7 +2065,7 @@ tables:
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
-    notes: Registered from the id-dev public schema so schema_drift_guard can fail closed on future unmanaged table changes.
+    notes: Registered from the formal production public schema so schema_drift_guard can fail closed on future unmanaged table changes.
 
   ai_audience_package_run:
     domain: ai_audience_ops
@@ -2066,7 +2083,7 @@ tables:
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
-    notes: Registered from the id-dev public schema so schema_drift_guard can fail closed on future unmanaged table changes.
+    notes: Registered from the formal production public schema so schema_drift_guard can fail closed on future unmanaged table changes.
 
   ai_audience_package_sender:
     domain: ai_audience_ops
@@ -2084,7 +2101,7 @@ tables:
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
-    notes: Registered from the id-dev public schema so schema_drift_guard can fail closed on future unmanaged table changes.
+    notes: Registered from the formal production public schema so schema_drift_guard can fail closed on future unmanaged table changes.
 
   ai_audience_package_version:
     domain: ai_audience_ops
@@ -2102,7 +2119,7 @@ tables:
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
-    notes: Registered from the id-dev public schema so schema_drift_guard can fail closed on future unmanaged table changes.
+    notes: Registered from the formal production public schema so schema_drift_guard can fail closed on future unmanaged table changes.
 
   alembic_version:
     domain: schema_migration
@@ -2120,7 +2137,7 @@ tables:
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
-    notes: Registered from the id-dev public schema so schema_drift_guard can fail closed on future unmanaged table changes.
+    notes: Registered from the formal production public schema so schema_drift_guard can fail closed on future unmanaged table changes.
 
   alipay_pay_order_events:
     domain: commerce
@@ -2138,7 +2155,7 @@ tables:
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
-    notes: Registered from the id-dev public schema so schema_drift_guard can fail closed on future unmanaged table changes.
+    notes: Registered from the formal production public schema so schema_drift_guard can fail closed on future unmanaged table changes.
 
   alipay_pay_orders:
     domain: commerce
@@ -2156,7 +2173,7 @@ tables:
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
-    notes: Registered from the id-dev public schema so schema_drift_guard can fail closed on future unmanaged table changes.
+    notes: Registered from the formal production public schema so schema_drift_guard can fail closed on future unmanaged table changes.
 
   automation_agent_audit_log:
     domain: automation_agents
@@ -2177,7 +2194,7 @@ tables:
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
-    notes: Registered from the id-dev public schema so schema_drift_guard can fail closed on future unmanaged table changes.
+    notes: Registered from the formal production public schema so schema_drift_guard can fail closed on future unmanaged table changes.
 
   automation_agent_config:
     domain: automation_agents
@@ -2195,7 +2212,7 @@ tables:
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
-    notes: Registered from the id-dev public schema so schema_drift_guard can fail closed on future unmanaged table changes.
+    notes: Registered from the formal production public schema so schema_drift_guard can fail closed on future unmanaged table changes.
 
   automation_agent_idempotency:
     domain: automation_agents
@@ -2216,7 +2233,7 @@ tables:
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
-    notes: Registered from the id-dev public schema so schema_drift_guard can fail closed on future unmanaged table changes.
+    notes: Registered from the formal production public schema so schema_drift_guard can fail closed on future unmanaged table changes.
 
   automation_agent_llm_call_log:
     domain: ai_audience_ops
@@ -2270,7 +2287,7 @@ tables:
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
-    notes: Registered from the id-dev public schema so schema_drift_guard can fail closed on future unmanaged table changes.
+    notes: Registered from the formal production public schema so schema_drift_guard can fail closed on future unmanaged table changes.
 
   automation_agent_runtime_config:
     domain: automation_agents
@@ -2288,7 +2305,7 @@ tables:
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
-    notes: Registered from the id-dev public schema so schema_drift_guard can fail closed on future unmanaged table changes.
+    notes: Registered from the formal production public schema so schema_drift_guard can fail closed on future unmanaged table changes.
 
   automation_agent_webhook_batch:
     domain: automation_agents
@@ -2306,7 +2323,7 @@ tables:
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
-    notes: Registered from the id-dev public schema so schema_drift_guard can fail closed on future unmanaged table changes.
+    notes: Registered from the formal production public schema so schema_drift_guard can fail closed on future unmanaged table changes.
 
   automation_agent_webhook_item:
     domain: automation_agents
@@ -2324,7 +2341,7 @@ tables:
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
-    notes: Registered from the id-dev public schema so schema_drift_guard can fail closed on future unmanaged table changes.
+    notes: Registered from the formal production public schema so schema_drift_guard can fail closed on future unmanaged table changes.
 
   automation_agents:
     domain: automation_agents
@@ -2345,7 +2362,7 @@ tables:
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
-    notes: Registered from the id-dev public schema so schema_drift_guard can fail closed on future unmanaged table changes.
+    notes: Registered from the formal production public schema so schema_drift_guard can fail closed on future unmanaged table changes.
 
   automation_ai_push_log:
     domain: automation_engine
@@ -2363,7 +2380,7 @@ tables:
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
-    notes: Registered from the id-dev public schema so schema_drift_guard can fail closed on future unmanaged table changes.
+    notes: Registered from the formal production public schema so schema_drift_guard can fail closed on future unmanaged table changes.
 
   automation_channel:
     domain: channel_entry
@@ -2384,7 +2401,7 @@ tables:
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
-    notes: Registered from the id-dev public schema so schema_drift_guard can fail closed on future unmanaged table changes.
+    notes: Registered from the formal production public schema so schema_drift_guard can fail closed on future unmanaged table changes.
 
   automation_channel_assignee:
     domain: channel_entry
@@ -2405,7 +2422,7 @@ tables:
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
-    notes: Registered from the id-dev public schema so schema_drift_guard can fail closed on future unmanaged table changes.
+    notes: Registered from the formal production public schema so schema_drift_guard can fail closed on future unmanaged table changes.
 
   automation_channel_assignment_event:
     domain: channel_entry
@@ -2426,7 +2443,7 @@ tables:
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
-    notes: Registered from the id-dev public schema so schema_drift_guard can fail closed on future unmanaged table changes.
+    notes: Registered from the formal production public schema so schema_drift_guard can fail closed on future unmanaged table changes.
 
   automation_channel_contact:
     domain: channel_entry
@@ -2447,7 +2464,7 @@ tables:
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
-    notes: Registered from the id-dev public schema so schema_drift_guard can fail closed on future unmanaged table changes.
+    notes: Registered from the formal production public schema so schema_drift_guard can fail closed on future unmanaged table changes.
 
   automation_channel_qrcode_asset:
     domain: channel_entry
@@ -2468,7 +2485,7 @@ tables:
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
-    notes: Registered from the id-dev public schema so schema_drift_guard can fail closed on future unmanaged table changes.
+    notes: Registered from the formal production public schema so schema_drift_guard can fail closed on future unmanaged table changes.
 
   automation_channel_scene_alias:
     domain: channel_entry
@@ -2489,7 +2506,7 @@ tables:
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
-    notes: Registered from the id-dev public schema so schema_drift_guard can fail closed on future unmanaged table changes.
+    notes: Registered from the formal production public schema so schema_drift_guard can fail closed on future unmanaged table changes.
 
   automation_frequency_budget:
     domain: automation_engine
@@ -2507,7 +2524,7 @@ tables:
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
-    notes: Registered from the id-dev public schema so schema_drift_guard can fail closed on future unmanaged table changes.
+    notes: Registered from the formal production public schema so schema_drift_guard can fail closed on future unmanaged table changes.
 
   automation_frequency_consumption:
     domain: automation_engine
@@ -2525,7 +2542,7 @@ tables:
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
-    notes: Registered from the id-dev public schema so schema_drift_guard can fail closed on future unmanaged table changes.
+    notes: Registered from the formal production public schema so schema_drift_guard can fail closed on future unmanaged table changes.
 
   automation_sop_template:
     domain: automation_engine
@@ -2543,7 +2560,7 @@ tables:
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
-    notes: Registered from the id-dev public schema so schema_drift_guard can fail closed on future unmanaged table changes.
+    notes: Registered from the formal production public schema so schema_drift_guard can fail closed on future unmanaged table changes.
 
   automation_touch_delivery_log:
     domain: automation_engine
@@ -2561,7 +2578,7 @@ tables:
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
-    notes: Registered from the id-dev public schema so schema_drift_guard can fail closed on future unmanaged table changes.
+    notes: Registered from the formal production public schema so schema_drift_guard can fail closed on future unmanaged table changes.
 
   broadcast_job_events:
     domain: broadcast_jobs
@@ -2602,7 +2619,7 @@ tables:
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
-    notes: Registered from the id-dev public schema so schema_drift_guard can fail closed on future unmanaged table changes.
+    notes: Registered from the formal production public schema so schema_drift_guard can fail closed on future unmanaged table changes.
 
   broadcast_queue_notification_settings:
     domain: broadcast_jobs
@@ -2620,7 +2637,7 @@ tables:
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
-    notes: Registered from the id-dev public schema so schema_drift_guard can fail closed on future unmanaged table changes.
+    notes: Registered from the formal production public schema so schema_drift_guard can fail closed on future unmanaged table changes.
 
   cloud_agent_audit_log:
     domain: cloud_orchestrator
@@ -2638,7 +2655,7 @@ tables:
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
-    notes: Registered from the id-dev public schema so schema_drift_guard can fail closed on future unmanaged table changes.
+    notes: Registered from the formal production public schema so schema_drift_guard can fail closed on future unmanaged table changes.
 
   cloud_approval_tokens:
     domain: cloud_orchestrator
@@ -2656,7 +2673,7 @@ tables:
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
-    notes: Registered from the id-dev public schema so schema_drift_guard can fail closed on future unmanaged table changes.
+    notes: Registered from the formal production public schema so schema_drift_guard can fail closed on future unmanaged table changes.
 
   cloud_broadcast_plan_recipient_messages:
     domain: cloud_orchestrator
@@ -2721,7 +2738,7 @@ tables:
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
-    notes: Registered from the id-dev public schema so schema_drift_guard can fail closed on future unmanaged table changes.
+    notes: Registered from the formal production public schema so schema_drift_guard can fail closed on future unmanaged table changes.
 
   contacts:
     domain: contacts
@@ -2739,7 +2756,7 @@ tables:
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
-    notes: Registered from the id-dev public schema so schema_drift_guard can fail closed on future unmanaged table changes.
+    notes: Registered from the formal production public schema so schema_drift_guard can fail closed on future unmanaged table changes.
 
   crm_user_identity:
     domain: identity_contact
@@ -2810,7 +2827,7 @@ tables:
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
-    notes: Registered from the id-dev public schema so schema_drift_guard can fail closed on future unmanaged table changes.
+    notes: Registered from the formal production public schema so schema_drift_guard can fail closed on future unmanaged table changes.
 
   crm_user_identity_resolution_queue:
     domain: identity_contact
@@ -2832,6 +2849,8 @@ tables:
       - existing production runtime
     migration_source: migrations/baselines/0001_post_legacy.sql
     pii_level: internal_contact
+    status_enum:
+      column: status
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
@@ -2853,7 +2872,7 @@ tables:
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
-    notes: Registered from the id-dev public schema so schema_drift_guard can fail closed on future unmanaged table changes.
+    notes: Registered from the formal production public schema so schema_drift_guard can fail closed on future unmanaged table changes.
 
   customer_list_index_next:
     domain: customer_read_model
@@ -2871,7 +2890,7 @@ tables:
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
-    notes: Registered from the id-dev public schema so schema_drift_guard can fail closed on future unmanaged table changes.
+    notes: Registered from the formal production public schema so schema_drift_guard can fail closed on future unmanaged table changes.
 
   customer_recent_message_next:
     domain: customer_read_model
@@ -2889,7 +2908,7 @@ tables:
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
-    notes: Registered from the id-dev public schema so schema_drift_guard can fail closed on future unmanaged table changes.
+    notes: Registered from the formal production public schema so schema_drift_guard can fail closed on future unmanaged table changes.
 
   customer_timeline_event_next:
     domain: customer_read_model
@@ -2907,7 +2926,7 @@ tables:
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
-    notes: Registered from the id-dev public schema so schema_drift_guard can fail closed on future unmanaged table changes.
+    notes: Registered from the formal production public schema so schema_drift_guard can fail closed on future unmanaged table changes.
 
   external_contact_bindings:
     domain: identity_contact
@@ -2949,7 +2968,7 @@ tables:
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
-    notes: Registered from the id-dev public schema so schema_drift_guard can fail closed on future unmanaged table changes.
+    notes: Registered from the formal production public schema so schema_drift_guard can fail closed on future unmanaged table changes.
 
   external_push_config:
     domain: external
@@ -2970,7 +2989,7 @@ tables:
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
-    notes: Registered from the id-dev public schema so schema_drift_guard can fail closed on future unmanaged table changes.
+    notes: Registered from the formal production public schema so schema_drift_guard can fail closed on future unmanaged table changes.
 
   group_chats:
     domain: group_ops
@@ -2988,7 +3007,7 @@ tables:
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
-    notes: Registered from the id-dev public schema so schema_drift_guard can fail closed on future unmanaged table changes.
+    notes: Registered from the formal production public schema so schema_drift_guard can fail closed on future unmanaged table changes.
 
   group_ops_workspace_allowlist_snapshots:
     domain: group_ops
@@ -3142,7 +3161,7 @@ tables:
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
-    notes: Registered from the id-dev public schema so schema_drift_guard can fail closed on future unmanaged table changes.
+    notes: Registered from the formal production public schema so schema_drift_guard can fail closed on future unmanaged table changes.
 
   legacy_webhook_cleanup_audit:
     domain: legacy_webhook_cleanup
@@ -3236,7 +3255,7 @@ tables:
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
-    notes: Registered from the id-dev public schema so schema_drift_guard can fail closed on future unmanaged table changes.
+    notes: Registered from the formal production public schema so schema_drift_guard can fail closed on future unmanaged table changes.
 
   radar_pdf_preview_assets:
     domain: radar
@@ -3254,7 +3273,7 @@ tables:
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
-    notes: Registered from the id-dev public schema so schema_drift_guard can fail closed on future unmanaged table changes.
+    notes: Registered from the formal production public schema so schema_drift_guard can fail closed on future unmanaged table changes.
 
   sync_runs:
     domain: admin_jobs
@@ -3277,7 +3296,7 @@ tables:
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
-    notes: Registered from the id-dev public schema so schema_drift_guard can fail closed on future unmanaged table changes.
+    notes: Registered from the formal production public schema so schema_drift_guard can fail closed on future unmanaged table changes.
 
   user_ops_hxc_dashboard_meta:
     domain: user_ops
@@ -3295,7 +3314,7 @@ tables:
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
-    notes: Registered from the id-dev public schema so schema_drift_guard can fail closed on future unmanaged table changes.
+    notes: Registered from the formal production public schema so schema_drift_guard can fail closed on future unmanaged table changes.
 
   user_ops_hxc_dashboard_snapshot:
     domain: user_ops
@@ -3313,7 +3332,7 @@ tables:
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
-    notes: Registered from the id-dev public schema so schema_drift_guard can fail closed on future unmanaged table changes.
+    notes: Registered from the formal production public schema so schema_drift_guard can fail closed on future unmanaged table changes.
 
   user_ops_hxc_send_config:
     domain: user_ops
@@ -3331,7 +3350,7 @@ tables:
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
-    notes: Registered from the id-dev public schema so schema_drift_guard can fail closed on future unmanaged table changes.
+    notes: Registered from the formal production public schema so schema_drift_guard can fail closed on future unmanaged table changes.
 
   webhook_inbox:
     domain: webhook_ingress
@@ -3352,7 +3371,7 @@ tables:
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
-    notes: Registered from the id-dev public schema so schema_drift_guard can fail closed on future unmanaged table changes.
+    notes: Registered from the formal production public schema so schema_drift_guard can fail closed on future unmanaged table changes.
 
   wechat_pay_order_events:
     domain: commerce
@@ -3370,7 +3389,7 @@ tables:
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
-    notes: Registered from the id-dev public schema so schema_drift_guard can fail closed on future unmanaged table changes.
+    notes: Registered from the formal production public schema so schema_drift_guard can fail closed on future unmanaged table changes.
 
   wechat_pay_order_identity_repair:
     domain: commerce
@@ -3520,7 +3539,7 @@ tables:
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
-    notes: Registered from the id-dev public schema so schema_drift_guard can fail closed on future unmanaged table changes.
+    notes: Registered from the formal production public schema so schema_drift_guard can fail closed on future unmanaged table changes.
 
   wechat_pay_product_page_slices:
     domain: commerce
@@ -3538,7 +3557,7 @@ tables:
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
-    notes: Registered from the id-dev public schema so schema_drift_guard can fail closed on future unmanaged table changes.
+    notes: Registered from the formal production public schema so schema_drift_guard can fail closed on future unmanaged table changes.
 
   wechat_pay_products:
     domain: commerce
@@ -3559,7 +3578,7 @@ tables:
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
-    notes: Registered from the id-dev public schema so schema_drift_guard can fail closed on future unmanaged table changes.
+    notes: Registered from the formal production public schema so schema_drift_guard can fail closed on future unmanaged table changes.
 
   wechat_pay_refunds:
     domain: commerce
@@ -3596,7 +3615,7 @@ tables:
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
-    notes: Registered from the id-dev public schema so schema_drift_guard can fail closed on future unmanaged table changes.
+    notes: Registered from the formal production public schema so schema_drift_guard can fail closed on future unmanaged table changes.
 
   wechat_shop_sync_runs:
     domain: commerce
@@ -3614,7 +3633,7 @@ tables:
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
-    notes: Registered from the id-dev public schema so schema_drift_guard can fail closed on future unmanaged table changes.
+    notes: Registered from the formal production public schema so schema_drift_guard can fail closed on future unmanaged table changes.
 
   wecom_corp_tag_groups:
     domain: customer_tags
@@ -3632,7 +3651,7 @@ tables:
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
-    notes: Registered from the id-dev public schema so schema_drift_guard can fail closed on future unmanaged table changes.
+    notes: Registered from the formal production public schema so schema_drift_guard can fail closed on future unmanaged table changes.
 
   wecom_corp_tags:
     domain: customer_tags
@@ -3650,7 +3669,7 @@ tables:
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
-    notes: Registered from the id-dev public schema so schema_drift_guard can fail closed on future unmanaged table changes.
+    notes: Registered from the formal production public schema so schema_drift_guard can fail closed on future unmanaged table changes.
 
   wecom_external_contact_event_logs:
     domain: identity_contact
@@ -3672,7 +3691,7 @@ tables:
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
-    notes: Registered from the id-dev public schema so schema_drift_guard can fail closed on future unmanaged table changes.
+    notes: Registered from the formal production public schema so schema_drift_guard can fail closed on future unmanaged table changes.
 
   wecom_external_contact_follow_users:
     domain: identity_contact
@@ -3693,7 +3712,7 @@ tables:
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
-    notes: Registered from the id-dev public schema so schema_drift_guard can fail closed on future unmanaged table changes.
+    notes: Registered from the formal production public schema so schema_drift_guard can fail closed on future unmanaged table changes.
 
   wecom_external_contact_identity_map:
     domain: identity_contact
@@ -3714,7 +3733,7 @@ tables:
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
-    notes: Registered from the id-dev public schema so schema_drift_guard can fail closed on future unmanaged table changes.
+    notes: Registered from the formal production public schema so schema_drift_guard can fail closed on future unmanaged table changes.
 
   wecom_group_chat_snapshots:
     domain: group_ops
@@ -3732,4 +3751,248 @@ tables:
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
-    notes: Registered from the id-dev public schema so schema_drift_guard can fail closed on future unmanaged table changes.
+    notes: Registered from the formal production public schema so schema_drift_guard can fail closed on future unmanaged table changes.
+
+  customer_read_model_refresh_state:
+    domain: customer_read_model
+    lifecycle: read_model
+    write_owner: aicrm_next.customer_read_model.refresh
+    read_owners:
+      - aicrm_next.data_health
+    replacement: none; singleton evidence for the managed customer projection refresh
+    drop_candidate: false
+    drop_after: ""
+    runtime_entrypoints:
+      - openclaw-customer-read-model-refresh.service
+      - data health projection freshness probe
+    migration_source: 0108_customer_read_model_refresh
+    pii_level: aggregate_only
+    guard_tests:
+      - tests/test_customer_read_model_refresh.py
+      - tests/test_data_health_checks.py
+      - tests/test_data_table_lifecycle_guard.py
+    notes: Count-only refresh evidence. It contains no customer identifiers or payloads.
+
+  admin_sso_states:
+    <<: *legacy_production_table_defaults
+    domain: legacy_auth
+
+  automation_agent_output_export_job:
+    <<: *legacy_production_table_defaults
+    domain: legacy_automation_agent
+
+  automation_agent_prompt_registry:
+    <<: *legacy_production_table_defaults
+    domain: legacy_automation_agent
+
+  automation_agent_router_config:
+    <<: *legacy_production_table_defaults
+    domain: legacy_automation_agent
+
+  automation_agent_skill_call_audit:
+    <<: *legacy_production_table_defaults
+    domain: legacy_automation_agent
+
+  automation_agent_skill_registry:
+    <<: *legacy_production_table_defaults
+    domain: legacy_automation_agent
+
+  automation_focus_send_batch:
+    <<: *legacy_production_table_defaults
+    domain: legacy_automation
+
+  automation_focus_send_batch_item:
+    <<: *legacy_production_table_defaults
+    domain: legacy_automation
+
+  automation_laohuang_chat_job:
+    <<: *legacy_production_table_defaults
+    domain: legacy_automation
+
+  automation_message_activity_sync_item:
+    <<: *legacy_production_table_defaults
+    domain: legacy_automation
+
+  automation_message_activity_sync_run:
+    <<: *legacy_production_table_defaults
+    domain: legacy_automation
+
+  automation_operation_task_execution:
+    <<: *legacy_production_table_defaults
+    domain: legacy_automation
+
+  automation_operation_task_execution_item:
+    <<: *legacy_production_table_defaults
+    domain: legacy_automation
+
+  automation_operation_task_group:
+    <<: *legacy_production_table_defaults
+    domain: legacy_automation
+
+  automation_operation_template_audit_log:
+    <<: *legacy_production_table_defaults
+    domain: legacy_automation
+
+  automation_operation_template_idempotency:
+    <<: *legacy_production_table_defaults
+    domain: legacy_automation
+
+  automation_operation_templates:
+    <<: *legacy_production_table_defaults
+    domain: legacy_automation
+
+  automation_profile_segment_category:
+    <<: *legacy_production_table_defaults
+    domain: legacy_automation_profile
+
+  automation_profile_segment_option_mapping:
+    <<: *legacy_production_table_defaults
+    domain: legacy_automation_profile
+
+  automation_profile_segment_template:
+    <<: *legacy_production_table_defaults
+    domain: legacy_automation_profile
+
+  automation_profile_segment_template_audit_log:
+    <<: *legacy_production_table_defaults
+    domain: legacy_automation_profile
+
+  automation_profile_segment_template_idempotency:
+    <<: *legacy_production_table_defaults
+    domain: legacy_automation_profile
+
+  automation_reply_monitor_config:
+    <<: *legacy_production_table_defaults
+    domain: legacy_automation
+
+  automation_reply_monitor_queue:
+    <<: *legacy_production_table_defaults
+    domain: legacy_automation
+
+  automation_sop_batch:
+    <<: *legacy_production_table_defaults
+    domain: legacy_automation
+
+  automation_sop_batch_item:
+    <<: *legacy_production_table_defaults
+    domain: legacy_automation
+
+  automation_sop_pool_config:
+    <<: *legacy_production_table_defaults
+    domain: legacy_automation
+
+  automation_sop_progress:
+    <<: *legacy_production_table_defaults
+    domain: legacy_automation
+
+  automation_workflow_agent_binding:
+    <<: *legacy_production_table_defaults
+    domain: legacy_automation
+
+  automation_workflow_audience:
+    <<: *legacy_production_table_defaults
+    domain: legacy_automation
+
+  callback_jobs:
+    <<: *legacy_production_table_defaults
+    domain: legacy_callback
+
+  class_term_tag_mapping:
+    <<: *legacy_production_table_defaults
+    domain: legacy_customer_tags
+
+  codex_schema_backups:
+    <<: *legacy_production_table_defaults
+    domain: legacy_schema_audit
+
+  conversion_feedback:
+    <<: *legacy_production_table_defaults
+    domain: legacy_conversion
+
+  customer_marketing_state_current:
+    <<: *legacy_production_table_defaults
+    domain: legacy_customer_projection
+
+  customer_marketing_state_history:
+    <<: *legacy_production_table_defaults
+    domain: legacy_customer_projection
+
+  customer_read_model_current:
+    <<: *legacy_production_table_defaults
+    domain: legacy_customer_projection
+
+  customer_value_segment_current:
+    <<: *legacy_production_table_defaults
+    domain: legacy_customer_projection
+
+  customer_value_segment_history:
+    <<: *legacy_production_table_defaults
+    domain: legacy_customer_projection
+
+  marketing_state_current:
+    <<: *legacy_production_table_defaults
+    domain: legacy_customer_projection
+
+  marketing_value_segment_current:
+    <<: *legacy_production_table_defaults
+    domain: legacy_customer_projection
+
+  people:
+    <<: *legacy_production_table_defaults
+    domain: legacy_identity
+
+  prod_fix_backup_ai_audience_regression_20260624:
+    <<: *legacy_production_table_defaults
+    domain: legacy_schema_backup
+
+  prod_test_backup_ai_audience_20260623:
+    <<: *legacy_production_table_defaults
+    domain: legacy_schema_backup
+
+  prod_test_backup_ai_audience_full_20260623:
+    <<: *legacy_production_table_defaults
+    domain: legacy_schema_backup
+
+  questionnaire_scrm_apply_logs:
+    <<: *legacy_production_table_defaults
+    domain: legacy_questionnaire
+
+  routing_rule_config:
+    <<: *legacy_production_table_defaults
+    domain: legacy_routing
+
+  schema_migrations:
+    <<: *legacy_production_table_defaults
+    domain: legacy_schema_audit
+
+  signup_tag_rules:
+    <<: *legacy_production_table_defaults
+    domain: legacy_customer_tags
+
+  user_ops_activation_status_source:
+    <<: *legacy_production_table_defaults
+    domain: legacy_user_ops
+
+  user_ops_do_not_disturb:
+    <<: *legacy_production_table_defaults
+    domain: legacy_user_ops
+
+  user_ops_experience_leads:
+    <<: *legacy_production_table_defaults
+    domain: legacy_user_ops
+
+  user_ops_huangxiaocan_activation_source:
+    <<: *legacy_production_table_defaults
+    domain: legacy_user_ops
+
+  user_ops_import_batches:
+    <<: *legacy_production_table_defaults
+    domain: legacy_user_ops
+
+  wechat_pay_order_export_jobs:
+    <<: *legacy_production_table_defaults
+    domain: legacy_commerce
+
+  wechat_shop_tokens:
+    <<: *legacy_production_table_defaults
+    domain: legacy_commerce

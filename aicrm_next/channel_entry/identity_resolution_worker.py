@@ -148,7 +148,11 @@ class IdentityResolutionBackfillWorker:
         finally:
             conn.close()
         return {
-            "ok": terminal == 0,
+            # A terminal row is a successfully classified business outcome,
+            # not a worker-process failure. Keeping the process green lets the
+            # timer continue draining the remaining queue while the count-only
+            # result still exposes terminal outcomes to operators.
+            "ok": True,
             "dry_run": False,
             "runtime_reserved_count": runtime_reserve,
             "processed_count": processed,
@@ -156,6 +160,7 @@ class IdentityResolutionBackfillWorker:
             "resolved_count": resolved,
             "retryable_count": retryable,
             "terminal_count": terminal,
+            "terminal_results_present": terminal > 0,
             "details": details,
             "source_status": "identity_resolution_backfill_worker",
         }

@@ -29,6 +29,7 @@ def test_runtime_units_manifest_classifies_every_deploy_timer() -> None:
     assert "aicrm-archive-sync.timer" in approval_required
     assert "aicrm-huangyoucan-usage-sync.timer" in approval_required
     assert "openclaw-external-effect-worker.timer" in active
+    assert "openclaw-customer-read-model-refresh.timer" in active
     assert "openclaw-external-push-worker.timer" in retired_forbidden
     assert "openclaw-external-push-worker.service" in retired_forbidden
     assert "openclaw-external-push-worker.timer" not in deploy_timers

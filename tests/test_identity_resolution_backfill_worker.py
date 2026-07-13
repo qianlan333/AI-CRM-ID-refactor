@@ -96,6 +96,8 @@ def test_identity_resolution_worker_retries_then_terminal_fails_queue_row() -> N
     assert retry_result["retryable_count"] == 1
     assert any("SET status = 'pending'" in query for query, _ in retry_conn.queries)
     assert terminal_result["terminal_count"] == 1
+    assert terminal_result["ok"] is True
+    assert terminal_result["terminal_results_present"] is True
     assert any("SET status = 'failed'" in query for query, _ in terminal_conn.queries)
 
 

@@ -218,6 +218,27 @@ def test_projection_freshness_probe_uses_live_projection_counts(monkeypatch) -> 
     assert "external_userid_value" not in str(result.evidence)
 
 
+def test_projection_freshness_probe_accepts_managed_fresh_parity(monkeypatch) -> None:
+    from aicrm_next.data_health import checks
+
+    _patch_health_db(
+        monkeypatch,
+        {
+            "list_count": 12,
+            "detail_count": 12,
+            "refresh_state_present": True,
+            "refresh_source_count": 12,
+            "refresh_target_count": 12,
+            "refresh_age_minutes": 5,
+        },
+    )
+
+    result = checks._projection_freshness_customer_read_model()
+
+    assert result.status == "ok"
+    assert result.evidence["refresh_state_present"] is True
+
+
 def test_broadcast_backlog_probe_counts_blocked_and_retryable(monkeypatch) -> None:
     from aicrm_next.data_health import checks
 
@@ -237,6 +258,69 @@ def test_broadcast_backlog_probe_counts_blocked_and_retryable(monkeypatch) -> No
     assert result.evidence["blocked_count"] == 1
     assert result.evidence["due_retryable_count"] == 2
     assert any("FROM broadcast_jobs" in sql for sql in calls)
+
+
+def test_broadcast_backlog_probe_keeps_historical_terminal_evidence_without_permanent_failure(monkeypatch) -> None:
+    from aicrm_next.data_health import checks
+
+    _patch_health_db(
+        monkeypatch,
+        {
+            "recent_blocked_count": 0,
+            "recent_failed_terminal_count": 0,
+            "historical_blocked_count": 8,
+            "historical_failed_terminal_count": 6,
+            "due_retryable_count": 0,
+            "oldest_terminal_hours": 72,
+        },
+    )
+
+    result = checks._broadcast_job_blocked_backlog()
+
+    assert result.status == "ok"
+    assert result.evidence["blocked_count"] == 0
+    assert result.evidence["historical_blocked_count"] == 8
+    assert result.evidence["historical_failed_terminal_count"] == 6
+
+
+def test_previously_placeholder_probes_are_live_and_green_with_zero_actionable_counts(monkeypatch) -> None:
+    from aicrm_next.data_health import checks
+
+    _patch_health_db(
+        monkeypatch,
+        {
+            "questionnaire_orphan_count": 0,
+            "wechat_pay_orphan_count": 0,
+            "alipay_pay_orphan_count": 0,
+            "wechat_shop_orphan_count": 0,
+            "broadcast_orphan_count": 0,
+            "approved_not_runnable_count": 0,
+            "approved_job_count": 4,
+            "missing_unionid_count": 0,
+            "missing_identity_count": 0,
+            "historical_pre_cutover_count": 48,
+            "wechat_pay_missing_user_count": 0,
+            "alipay_pay_missing_user_count": 0,
+            "wechat_shop_missing_user_count": 0,
+            "refresh_state_present": True,
+            "refresh_age_minutes": 5,
+            "identity_lag_minutes": 2,
+            "order_lag_minutes": -10,
+            "questionnaire_lag_minutes": 1,
+            "message_lag_minutes": 3,
+        },
+    )
+
+    results = [
+        checks._unionid_orphan_fact_guard(),
+        checks._external_effect_approved_not_queued(),
+        checks._questionnaire_submission_without_user_guard(),
+        checks._payment_order_without_user_guard(),
+        checks._customer_360_freshness_guard(),
+    ]
+
+    assert [result.status for result in results] == ["ok"] * 5
+    assert all(result.status != "not_applicable" for result in results)
 
 
 def test_external_effect_backlog_probe_accepts_small_retryable_queue(monkeypatch) -> None:

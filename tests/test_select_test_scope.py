@@ -457,6 +457,25 @@ def test_send_content_media_gateway_has_permanent_full_ci_scope() -> None:
     assert result["architecture_gate"] == "full"
 
 
+def test_customer_read_model_refresh_has_permanent_full_postgres_scope() -> None:
+    result = _select(
+        "aicrm_next/customer_read_model/refresh.py",
+        "scripts/run_customer_read_model_refresh.py",
+        "deploy/openclaw-customer-read-model-refresh.service",
+        "deploy/openclaw-customer-read-model-refresh.timer",
+        "migrations/versions/0108_customer_read_model_refresh_and_retired_workspace_drop.py",
+        "tests/test_customer_read_model_refresh.py",
+    )
+
+    assert result["unmatched_files"] == []
+    assert "customer_read_model_refresh" in result["matched_scopes"]
+    assert "tests/test_customer_read_model_refresh.py" in result["python_tests"]
+    assert "tests/test_database_bootstrap.py" in result["python_tests"]
+    assert result["needs_postgres"] is True
+    assert result["needs_full_ci"] is True
+    assert result["architecture_gate"] == "full"
+
+
 def test_internal_event_registry_composition_has_permanent_full_ci_scope() -> None:
     result = _select(
         "aicrm_next/internal_event_composition.py",

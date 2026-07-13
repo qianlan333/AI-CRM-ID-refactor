@@ -48,6 +48,12 @@
       "service": "openclaw-identity-resolution-worker.service"
     },
     {
+      "timer": "openclaw-customer-read-model-refresh.timer",
+      "service": "openclaw-customer-read-model-refresh.service",
+      "kick_after_timer_restart": true,
+      "kick_failure_fatal": true
+    },
+    {
       "timer": "openclaw-automation-ops-scheduler.timer",
       "service": "openclaw-automation-ops-scheduler.service"
     }

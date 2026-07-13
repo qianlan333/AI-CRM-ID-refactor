@@ -32,7 +32,15 @@ def test_https_public_origin_cannot_be_downgraded_by_cookie_override(monkeypatch
 
 def test_deploy_runtime_environment_persists_secure_non_secret_defaults(tmp_path: Path) -> None:
     environment_file = tmp_path / "runtime.env"
-    environment_file.write_text("EXISTING='kept'\nAICRM_NEXT_ENV='old'\n", encoding="utf-8")
+    environment_file.write_text(
+        "EXISTING='kept'\n"
+        "AICRM_NEXT_ENV='old'\n"
+        "AICRM_QUESTIONNAIRE_EXTERNAL_PUSH_MODE='queue'\n"
+        "AICRM_EXTERNAL_EFFECT_WECOM_EXECUTE='1'\n"
+        "AICRM_EXTERNAL_EFFECT_ALLOWED_TYPES='wecom.contact.tag.mark'\n"
+        "AICRM_EXTERNAL_EFFECT_ALLOWED_OWNER_USERIDS='legacy-owner'\n",
+        encoding="utf-8",
+    )
     environment_file.chmod(0o600)
 
     values = ensure_runtime_environment(
@@ -50,3 +58,7 @@ def test_deploy_runtime_environment_persists_secure_non_secret_defaults(tmp_path
     assert "AICRM_NEXT_ENV='production'" in body
     assert "AICRM_ADMIN_SESSION_COOKIE_SECURE='1'" in body
     assert "AICRM_PUBLIC_BASE_URL='https://www.youcangogogo.com'" in body
+    assert "AICRM_QUESTIONNAIRE_EXTERNAL_PUSH_MODE" not in body
+    assert "AICRM_EXTERNAL_EFFECT_WECOM_EXECUTE" not in body
+    assert "AICRM_EXTERNAL_EFFECT_ALLOWED_TYPES" not in body
+    assert "AICRM_EXTERNAL_EFFECT_ALLOWED_OWNER_USERIDS" not in body

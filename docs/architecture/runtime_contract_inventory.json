@@ -328,8 +328,14 @@
     {
       "accessor": "os.getenv",
       "file": "aicrm_next/data_health/checks.py",
+      "key": "AICRM_DATA_HEALTH_BROADCAST_TERMINAL_LOOKBACK_HOURS",
+      "line": 28
+    },
+    {
+      "accessor": "os.getenv",
+      "file": "aicrm_next/data_health/checks.py",
       "key": "AICRM_DATA_HEALTH_EXTERNAL_EFFECT_RETRYABLE_DUE_MAX_COUNT",
-      "line": 26
+      "line": 30
     },
     {
       "accessor": "os.getenv",
@@ -1059,6 +1065,12 @@
     },
     {
       "accessor": "os.getenv",
+      "file": "aicrm_next/customer_read_model/refresh.py",
+      "key": "CUSTOMER_READ_MODEL_REFRESH_MAX_CUSTOMERS",
+      "line": 63
+    },
+    {
+      "accessor": "os.getenv",
       "file": "aicrm_next/customer_read_model/api.py",
       "key": "CUSTOMER_READ_MODEL_REPO_BACKEND",
       "line": 58
@@ -1067,7 +1079,7 @@
       "accessor": "os.getenv",
       "file": "aicrm_next/customer_read_model/repo.py",
       "key": "CUSTOMER_READ_MODEL_REPO_BACKEND",
-      "line": 567
+      "line": 580
     },
     {
       "accessor": "os.getenv",
@@ -1962,6 +1974,7 @@
     "AICRM_COMPLETION_URL_LINK_TIMEOUT_SECONDS",
     "AICRM_DATA_HEALTH_BROADCAST_BLOCKED_MAX_COUNT",
     "AICRM_DATA_HEALTH_BROADCAST_RETRYABLE_DUE_MAX_COUNT",
+    "AICRM_DATA_HEALTH_BROADCAST_TERMINAL_LOOKBACK_HOURS",
     "AICRM_DATA_HEALTH_EXTERNAL_EFFECT_RETRYABLE_DUE_MAX_COUNT",
     "AICRM_DATA_HEALTH_PROJECTION_FRESHNESS_MAX_MINUTES",
     "AICRM_ENABLE_IN_PROCESS_ARCHIVE_SYNC",
@@ -2061,6 +2074,7 @@
     "BROADCAST_QUEUE_RETRY_DELAY_SECONDS",
     "CUSTOMER_READ_MODEL_LIVE_SOURCE_FALLBACK_ENABLED",
     "CUSTOMER_READ_MODEL_NEXT_PRIMARY",
+    "CUSTOMER_READ_MODEL_REFRESH_MAX_CUSTOMERS",
     "CUSTOMER_READ_MODEL_REPO_BACKEND",
     "DATABASE_URL",
     "DATA_QUALITY_SNAPSHOT_OPERATOR",
@@ -2759,7 +2773,7 @@
     }
   ],
   "migration_heads": [
-    "0107_hyc_usage_snapshot"
+    "0108_customer_read_model_refresh"
   ],
   "openapi_components": {
     "schemas": {
@@ -39933,6 +39947,14 @@
       "unit": "openclaw-broadcast-queue-worker.timer"
     },
     {
+      "kick_after_timer_restart": true,
+      "kick_failure_fatal": true,
+      "kind": "timer",
+      "service": "openclaw-customer-read-model-refresh.service",
+      "state": "active_autostart",
+      "unit": "openclaw-customer-read-model-refresh.timer"
+    },
+    {
       "kind": "timer",
       "service": "openclaw-external-contact-full-sync.service",
       "state": "approval_required",
@@ -40039,6 +40061,18 @@
       ],
       "table": "admin_operation_logs",
       "write_owner": "aicrm_next.admin_config"
+    },
+    {
+      "domain": "legacy_auth",
+      "drop_candidate": false,
+      "lifecycle": "legacy",
+      "migration_source": "pre-convergence production schema",
+      "pii_level": "internal_contact",
+      "read_owners": [
+        "production compatibility and historical audit"
+      ],
+      "table": "admin_sso_states",
+      "write_owner": "legacy.production_runtime"
     },
     {
       "domain": "admin_config",
@@ -40442,6 +40476,42 @@
       "write_owner": "aicrm_next.ai_audience_ops"
     },
     {
+      "domain": "legacy_automation_agent",
+      "drop_candidate": false,
+      "lifecycle": "legacy",
+      "migration_source": "pre-convergence production schema",
+      "pii_level": "internal_contact",
+      "read_owners": [
+        "production compatibility and historical audit"
+      ],
+      "table": "automation_agent_output_export_job",
+      "write_owner": "legacy.production_runtime"
+    },
+    {
+      "domain": "legacy_automation_agent",
+      "drop_candidate": false,
+      "lifecycle": "legacy",
+      "migration_source": "pre-convergence production schema",
+      "pii_level": "internal_contact",
+      "read_owners": [
+        "production compatibility and historical audit"
+      ],
+      "table": "automation_agent_prompt_registry",
+      "write_owner": "legacy.production_runtime"
+    },
+    {
+      "domain": "legacy_automation_agent",
+      "drop_candidate": false,
+      "lifecycle": "legacy",
+      "migration_source": "pre-convergence production schema",
+      "pii_level": "internal_contact",
+      "read_owners": [
+        "production compatibility and historical audit"
+      ],
+      "table": "automation_agent_router_config",
+      "write_owner": "legacy.production_runtime"
+    },
+    {
       "domain": "automation_agents",
       "drop_candidate": false,
       "lifecycle": "canonical",
@@ -40464,6 +40534,30 @@
       ],
       "table": "automation_agent_runtime_config",
       "write_owner": "aicrm_next.automation_agents"
+    },
+    {
+      "domain": "legacy_automation_agent",
+      "drop_candidate": false,
+      "lifecycle": "legacy",
+      "migration_source": "pre-convergence production schema",
+      "pii_level": "internal_contact",
+      "read_owners": [
+        "production compatibility and historical audit"
+      ],
+      "table": "automation_agent_skill_call_audit",
+      "write_owner": "legacy.production_runtime"
+    },
+    {
+      "domain": "legacy_automation_agent",
+      "drop_candidate": false,
+      "lifecycle": "legacy",
+      "migration_source": "pre-convergence production schema",
+      "pii_level": "internal_contact",
+      "read_owners": [
+        "production compatibility and historical audit"
+      ],
+      "table": "automation_agent_skill_registry",
+      "write_owner": "legacy.production_runtime"
     },
     {
       "domain": "automation_agents",
@@ -40640,6 +40734,30 @@
       "write_owner": ""
     },
     {
+      "domain": "legacy_automation",
+      "drop_candidate": false,
+      "lifecycle": "legacy",
+      "migration_source": "pre-convergence production schema",
+      "pii_level": "internal_contact",
+      "read_owners": [
+        "production compatibility and historical audit"
+      ],
+      "table": "automation_focus_send_batch",
+      "write_owner": "legacy.production_runtime"
+    },
+    {
+      "domain": "legacy_automation",
+      "drop_candidate": false,
+      "lifecycle": "legacy",
+      "migration_source": "pre-convergence production schema",
+      "pii_level": "internal_contact",
+      "read_owners": [
+        "production compatibility and historical audit"
+      ],
+      "table": "automation_focus_send_batch_item",
+      "write_owner": "legacy.production_runtime"
+    },
+    {
       "domain": "automation_engine",
       "drop_candidate": false,
       "lifecycle": "canonical",
@@ -40774,6 +40892,18 @@
       "write_owner": "aicrm_next.automation_engine.group_ops.postgres_repo"
     },
     {
+      "domain": "legacy_automation",
+      "drop_candidate": false,
+      "lifecycle": "legacy",
+      "migration_source": "pre-convergence production schema",
+      "pii_level": "internal_contact",
+      "read_owners": [
+        "production compatibility and historical audit"
+      ],
+      "table": "automation_laohuang_chat_job",
+      "write_owner": "legacy.production_runtime"
+    },
+    {
       "domain": "automation",
       "drop_candidate": false,
       "lifecycle": "retired",
@@ -40804,6 +40934,30 @@
       "write_owner": ""
     },
     {
+      "domain": "legacy_automation",
+      "drop_candidate": false,
+      "lifecycle": "legacy",
+      "migration_source": "pre-convergence production schema",
+      "pii_level": "internal_contact",
+      "read_owners": [
+        "production compatibility and historical audit"
+      ],
+      "table": "automation_message_activity_sync_item",
+      "write_owner": "legacy.production_runtime"
+    },
+    {
+      "domain": "legacy_automation",
+      "drop_candidate": false,
+      "lifecycle": "legacy",
+      "migration_source": "pre-convergence production schema",
+      "pii_level": "internal_contact",
+      "read_owners": [
+        "production compatibility and historical audit"
+      ],
+      "table": "automation_message_activity_sync_run",
+      "write_owner": "legacy.production_runtime"
+    },
+    {
       "domain": "automation_legacy",
       "drop_candidate": false,
       "lifecycle": "retired",
@@ -40812,6 +40966,138 @@
       "read_owners": [],
       "table": "automation_operation_task",
       "write_owner": ""
+    },
+    {
+      "domain": "legacy_automation",
+      "drop_candidate": false,
+      "lifecycle": "legacy",
+      "migration_source": "pre-convergence production schema",
+      "pii_level": "internal_contact",
+      "read_owners": [
+        "production compatibility and historical audit"
+      ],
+      "table": "automation_operation_task_execution",
+      "write_owner": "legacy.production_runtime"
+    },
+    {
+      "domain": "legacy_automation",
+      "drop_candidate": false,
+      "lifecycle": "legacy",
+      "migration_source": "pre-convergence production schema",
+      "pii_level": "internal_contact",
+      "read_owners": [
+        "production compatibility and historical audit"
+      ],
+      "table": "automation_operation_task_execution_item",
+      "write_owner": "legacy.production_runtime"
+    },
+    {
+      "domain": "legacy_automation",
+      "drop_candidate": false,
+      "lifecycle": "legacy",
+      "migration_source": "pre-convergence production schema",
+      "pii_level": "internal_contact",
+      "read_owners": [
+        "production compatibility and historical audit"
+      ],
+      "table": "automation_operation_task_group",
+      "write_owner": "legacy.production_runtime"
+    },
+    {
+      "domain": "legacy_automation",
+      "drop_candidate": false,
+      "lifecycle": "legacy",
+      "migration_source": "pre-convergence production schema",
+      "pii_level": "internal_contact",
+      "read_owners": [
+        "production compatibility and historical audit"
+      ],
+      "table": "automation_operation_template_audit_log",
+      "write_owner": "legacy.production_runtime"
+    },
+    {
+      "domain": "legacy_automation",
+      "drop_candidate": false,
+      "lifecycle": "legacy",
+      "migration_source": "pre-convergence production schema",
+      "pii_level": "internal_contact",
+      "read_owners": [
+        "production compatibility and historical audit"
+      ],
+      "table": "automation_operation_template_idempotency",
+      "write_owner": "legacy.production_runtime"
+    },
+    {
+      "domain": "legacy_automation",
+      "drop_candidate": false,
+      "lifecycle": "legacy",
+      "migration_source": "pre-convergence production schema",
+      "pii_level": "internal_contact",
+      "read_owners": [
+        "production compatibility and historical audit"
+      ],
+      "table": "automation_operation_templates",
+      "write_owner": "legacy.production_runtime"
+    },
+    {
+      "domain": "legacy_automation_profile",
+      "drop_candidate": false,
+      "lifecycle": "legacy",
+      "migration_source": "pre-convergence production schema",
+      "pii_level": "internal_contact",
+      "read_owners": [
+        "production compatibility and historical audit"
+      ],
+      "table": "automation_profile_segment_category",
+      "write_owner": "legacy.production_runtime"
+    },
+    {
+      "domain": "legacy_automation_profile",
+      "drop_candidate": false,
+      "lifecycle": "legacy",
+      "migration_source": "pre-convergence production schema",
+      "pii_level": "internal_contact",
+      "read_owners": [
+        "production compatibility and historical audit"
+      ],
+      "table": "automation_profile_segment_option_mapping",
+      "write_owner": "legacy.production_runtime"
+    },
+    {
+      "domain": "legacy_automation_profile",
+      "drop_candidate": false,
+      "lifecycle": "legacy",
+      "migration_source": "pre-convergence production schema",
+      "pii_level": "internal_contact",
+      "read_owners": [
+        "production compatibility and historical audit"
+      ],
+      "table": "automation_profile_segment_template",
+      "write_owner": "legacy.production_runtime"
+    },
+    {
+      "domain": "legacy_automation_profile",
+      "drop_candidate": false,
+      "lifecycle": "legacy",
+      "migration_source": "pre-convergence production schema",
+      "pii_level": "internal_contact",
+      "read_owners": [
+        "production compatibility and historical audit"
+      ],
+      "table": "automation_profile_segment_template_audit_log",
+      "write_owner": "legacy.production_runtime"
+    },
+    {
+      "domain": "legacy_automation_profile",
+      "drop_candidate": false,
+      "lifecycle": "legacy",
+      "migration_source": "pre-convergence production schema",
+      "pii_level": "internal_contact",
+      "read_owners": [
+        "production compatibility and historical audit"
+      ],
+      "table": "automation_profile_segment_template_idempotency",
+      "write_owner": "legacy.production_runtime"
     },
     {
       "domain": "automation_legacy",
@@ -40874,6 +41160,78 @@
       "write_owner": ""
     },
     {
+      "domain": "legacy_automation",
+      "drop_candidate": false,
+      "lifecycle": "legacy",
+      "migration_source": "pre-convergence production schema",
+      "pii_level": "internal_contact",
+      "read_owners": [
+        "production compatibility and historical audit"
+      ],
+      "table": "automation_reply_monitor_config",
+      "write_owner": "legacy.production_runtime"
+    },
+    {
+      "domain": "legacy_automation",
+      "drop_candidate": false,
+      "lifecycle": "legacy",
+      "migration_source": "pre-convergence production schema",
+      "pii_level": "internal_contact",
+      "read_owners": [
+        "production compatibility and historical audit"
+      ],
+      "table": "automation_reply_monitor_queue",
+      "write_owner": "legacy.production_runtime"
+    },
+    {
+      "domain": "legacy_automation",
+      "drop_candidate": false,
+      "lifecycle": "legacy",
+      "migration_source": "pre-convergence production schema",
+      "pii_level": "internal_contact",
+      "read_owners": [
+        "production compatibility and historical audit"
+      ],
+      "table": "automation_sop_batch",
+      "write_owner": "legacy.production_runtime"
+    },
+    {
+      "domain": "legacy_automation",
+      "drop_candidate": false,
+      "lifecycle": "legacy",
+      "migration_source": "pre-convergence production schema",
+      "pii_level": "internal_contact",
+      "read_owners": [
+        "production compatibility and historical audit"
+      ],
+      "table": "automation_sop_batch_item",
+      "write_owner": "legacy.production_runtime"
+    },
+    {
+      "domain": "legacy_automation",
+      "drop_candidate": false,
+      "lifecycle": "legacy",
+      "migration_source": "pre-convergence production schema",
+      "pii_level": "internal_contact",
+      "read_owners": [
+        "production compatibility and historical audit"
+      ],
+      "table": "automation_sop_pool_config",
+      "write_owner": "legacy.production_runtime"
+    },
+    {
+      "domain": "legacy_automation",
+      "drop_candidate": false,
+      "lifecycle": "legacy",
+      "migration_source": "pre-convergence production schema",
+      "pii_level": "internal_contact",
+      "read_owners": [
+        "production compatibility and historical audit"
+      ],
+      "table": "automation_sop_progress",
+      "write_owner": "legacy.production_runtime"
+    },
+    {
       "domain": "automation_engine",
       "drop_candidate": false,
       "lifecycle": "config",
@@ -40926,6 +41284,30 @@
       "read_owners": [],
       "table": "automation_workflow",
       "write_owner": ""
+    },
+    {
+      "domain": "legacy_automation",
+      "drop_candidate": false,
+      "lifecycle": "legacy",
+      "migration_source": "pre-convergence production schema",
+      "pii_level": "internal_contact",
+      "read_owners": [
+        "production compatibility and historical audit"
+      ],
+      "table": "automation_workflow_agent_binding",
+      "write_owner": "legacy.production_runtime"
+    },
+    {
+      "domain": "legacy_automation",
+      "drop_candidate": false,
+      "lifecycle": "legacy",
+      "migration_source": "pre-convergence production schema",
+      "pii_level": "internal_contact",
+      "read_owners": [
+        "production compatibility and historical audit"
+      ],
+      "table": "automation_workflow_audience",
+      "write_owner": "legacy.production_runtime"
     },
     {
       "domain": "automation_legacy",
@@ -41052,6 +41434,18 @@
       "write_owner": "aicrm_next.admin_jobs"
     },
     {
+      "domain": "legacy_callback",
+      "drop_candidate": false,
+      "lifecycle": "legacy",
+      "migration_source": "pre-convergence production schema",
+      "pii_level": "internal_contact",
+      "read_owners": [
+        "production compatibility and historical audit"
+      ],
+      "table": "callback_jobs",
+      "write_owner": "legacy.production_runtime"
+    },
+    {
       "domain": "campaign",
       "drop_candidate": false,
       "lifecycle": "queue",
@@ -41104,6 +41498,18 @@
       ],
       "table": "campaigns",
       "write_owner": "aicrm_next.cloud_orchestrator.repository"
+    },
+    {
+      "domain": "legacy_customer_tags",
+      "drop_candidate": false,
+      "lifecycle": "legacy",
+      "migration_source": "pre-convergence production schema",
+      "pii_level": "internal_contact",
+      "read_owners": [
+        "production compatibility and historical audit"
+      ],
+      "table": "class_term_tag_mapping",
+      "write_owner": "legacy.production_runtime"
     },
     {
       "domain": "customer_read_model",
@@ -41198,6 +41604,18 @@
       "write_owner": "aicrm_next.cloud_orchestrator"
     },
     {
+      "domain": "legacy_schema_audit",
+      "drop_candidate": false,
+      "lifecycle": "legacy",
+      "migration_source": "pre-convergence production schema",
+      "pii_level": "internal_contact",
+      "read_owners": [
+        "production compatibility and historical audit"
+      ],
+      "table": "codex_schema_backups",
+      "write_owner": "legacy.production_runtime"
+    },
+    {
       "domain": "customer_tags",
       "drop_candidate": false,
       "lifecycle": "read_model",
@@ -41232,6 +41650,18 @@
       "read_owners": [],
       "table": "conversion_dispatch_log",
       "write_owner": ""
+    },
+    {
+      "domain": "legacy_conversion",
+      "drop_candidate": false,
+      "lifecycle": "legacy",
+      "migration_source": "pre-convergence production schema",
+      "pii_level": "internal_contact",
+      "read_owners": [
+        "production compatibility and historical audit"
+      ],
+      "table": "conversion_feedback",
+      "write_owner": "legacy.production_runtime"
     },
     {
       "domain": "identity_contact",
@@ -41315,6 +41745,54 @@
       "write_owner": "aicrm_next.owner_migration"
     },
     {
+      "domain": "legacy_customer_projection",
+      "drop_candidate": false,
+      "lifecycle": "legacy",
+      "migration_source": "pre-convergence production schema",
+      "pii_level": "internal_contact",
+      "read_owners": [
+        "production compatibility and historical audit"
+      ],
+      "table": "customer_marketing_state_current",
+      "write_owner": "legacy.production_runtime"
+    },
+    {
+      "domain": "legacy_customer_projection",
+      "drop_candidate": false,
+      "lifecycle": "legacy",
+      "migration_source": "pre-convergence production schema",
+      "pii_level": "internal_contact",
+      "read_owners": [
+        "production compatibility and historical audit"
+      ],
+      "table": "customer_marketing_state_history",
+      "write_owner": "legacy.production_runtime"
+    },
+    {
+      "domain": "legacy_customer_projection",
+      "drop_candidate": false,
+      "lifecycle": "legacy",
+      "migration_source": "pre-convergence production schema",
+      "pii_level": "internal_contact",
+      "read_owners": [
+        "production compatibility and historical audit"
+      ],
+      "table": "customer_read_model_current",
+      "write_owner": "legacy.production_runtime"
+    },
+    {
+      "domain": "customer_read_model",
+      "drop_candidate": false,
+      "lifecycle": "read_model",
+      "migration_source": "0108_customer_read_model_refresh",
+      "pii_level": "aggregate_only",
+      "read_owners": [
+        "aicrm_next.data_health"
+      ],
+      "table": "customer_read_model_refresh_state",
+      "write_owner": "aicrm_next.customer_read_model.refresh"
+    },
+    {
       "domain": "customer_read_model",
       "drop_candidate": false,
       "lifecycle": "canonical",
@@ -41337,6 +41815,30 @@
       ],
       "table": "customer_timeline_event_next",
       "write_owner": "aicrm_next.customer_read_model"
+    },
+    {
+      "domain": "legacy_customer_projection",
+      "drop_candidate": false,
+      "lifecycle": "legacy",
+      "migration_source": "pre-convergence production schema",
+      "pii_level": "internal_contact",
+      "read_owners": [
+        "production compatibility and historical audit"
+      ],
+      "table": "customer_value_segment_current",
+      "write_owner": "legacy.production_runtime"
+    },
+    {
+      "domain": "legacy_customer_projection",
+      "drop_candidate": false,
+      "lifecycle": "legacy",
+      "migration_source": "pre-convergence production schema",
+      "pii_level": "internal_contact",
+      "read_owners": [
+        "production compatibility and historical audit"
+      ],
+      "table": "customer_value_segment_history",
+      "write_owner": "legacy.production_runtime"
     },
     {
       "domain": "commerce_events",
@@ -41666,6 +42168,30 @@
       "write_owner": "aicrm_next.admin_config.repository"
     },
     {
+      "domain": "legacy_customer_projection",
+      "drop_candidate": false,
+      "lifecycle": "legacy",
+      "migration_source": "pre-convergence production schema",
+      "pii_level": "internal_contact",
+      "read_owners": [
+        "production compatibility and historical audit"
+      ],
+      "table": "marketing_state_current",
+      "write_owner": "legacy.production_runtime"
+    },
+    {
+      "domain": "legacy_customer_projection",
+      "drop_candidate": false,
+      "lifecycle": "legacy",
+      "migration_source": "pre-convergence production schema",
+      "pii_level": "internal_contact",
+      "read_owners": [
+        "production compatibility and historical audit"
+      ],
+      "table": "marketing_value_segment_current",
+      "write_owner": "legacy.production_runtime"
+    },
+    {
       "domain": "admin_config",
       "drop_candidate": false,
       "lifecycle": "config",
@@ -41804,6 +42330,54 @@
       "write_owner": "admin owner directory sync"
     },
     {
+      "domain": "legacy_identity",
+      "drop_candidate": false,
+      "lifecycle": "legacy",
+      "migration_source": "pre-convergence production schema",
+      "pii_level": "internal_contact",
+      "read_owners": [
+        "production compatibility and historical audit"
+      ],
+      "table": "people",
+      "write_owner": "legacy.production_runtime"
+    },
+    {
+      "domain": "legacy_schema_backup",
+      "drop_candidate": false,
+      "lifecycle": "legacy",
+      "migration_source": "pre-convergence production schema",
+      "pii_level": "internal_contact",
+      "read_owners": [
+        "production compatibility and historical audit"
+      ],
+      "table": "prod_fix_backup_ai_audience_regression_20260624",
+      "write_owner": "legacy.production_runtime"
+    },
+    {
+      "domain": "legacy_schema_backup",
+      "drop_candidate": false,
+      "lifecycle": "legacy",
+      "migration_source": "pre-convergence production schema",
+      "pii_level": "internal_contact",
+      "read_owners": [
+        "production compatibility and historical audit"
+      ],
+      "table": "prod_test_backup_ai_audience_20260623",
+      "write_owner": "legacy.production_runtime"
+    },
+    {
+      "domain": "legacy_schema_backup",
+      "drop_candidate": false,
+      "lifecycle": "legacy",
+      "migration_source": "pre-convergence production schema",
+      "pii_level": "internal_contact",
+      "read_owners": [
+        "production compatibility and historical audit"
+      ],
+      "table": "prod_test_backup_ai_audience_full_20260623",
+      "write_owner": "legacy.production_runtime"
+    },
+    {
       "domain": "questionnaire",
       "drop_candidate": true,
       "lifecycle": "audit",
@@ -41852,6 +42426,18 @@
       ],
       "table": "questionnaire_score_rules",
       "write_owner": "aicrm_next.questionnaire.repo"
+    },
+    {
+      "domain": "legacy_questionnaire",
+      "drop_candidate": false,
+      "lifecycle": "legacy",
+      "migration_source": "pre-convergence production schema",
+      "pii_level": "internal_contact",
+      "read_owners": [
+        "production compatibility and historical audit"
+      ],
+      "table": "questionnaire_scrm_apply_logs",
+      "write_owner": "legacy.production_runtime"
     },
     {
       "domain": "questionnaire",
@@ -41928,6 +42514,30 @@
       ],
       "table": "radar_pdf_preview_assets",
       "write_owner": "aicrm_next.radar_links"
+    },
+    {
+      "domain": "legacy_routing",
+      "drop_candidate": false,
+      "lifecycle": "legacy",
+      "migration_source": "pre-convergence production schema",
+      "pii_level": "internal_contact",
+      "read_owners": [
+        "production compatibility and historical audit"
+      ],
+      "table": "routing_rule_config",
+      "write_owner": "legacy.production_runtime"
+    },
+    {
+      "domain": "legacy_schema_audit",
+      "drop_candidate": false,
+      "lifecycle": "legacy",
+      "migration_source": "pre-convergence production schema",
+      "pii_level": "internal_contact",
+      "read_owners": [
+        "production compatibility and historical audit"
+      ],
+      "table": "schema_migrations",
+      "write_owner": "legacy.production_runtime"
     },
     {
       "domain": "campaign",
@@ -42034,6 +42644,18 @@
       "write_owner": "aicrm_next.customer_read_model.sidebar_v2"
     },
     {
+      "domain": "legacy_customer_tags",
+      "drop_candidate": false,
+      "lifecycle": "legacy",
+      "migration_source": "pre-convergence production schema",
+      "pii_level": "internal_contact",
+      "read_owners": [
+        "production compatibility and historical audit"
+      ],
+      "table": "signup_tag_rules",
+      "write_owner": "legacy.production_runtime"
+    },
+    {
       "domain": "admin_jobs",
       "drop_candidate": false,
       "lifecycle": "canonical",
@@ -42047,6 +42669,18 @@
       "write_owner": "aicrm_next.admin_jobs"
     },
     {
+      "domain": "legacy_user_ops",
+      "drop_candidate": false,
+      "lifecycle": "legacy",
+      "migration_source": "pre-convergence production schema",
+      "pii_level": "internal_contact",
+      "read_owners": [
+        "production compatibility and historical audit"
+      ],
+      "table": "user_ops_activation_status_source",
+      "write_owner": "legacy.production_runtime"
+    },
+    {
       "domain": "user_ops",
       "drop_candidate": false,
       "lifecycle": "retired",
@@ -42055,6 +42689,18 @@
       "read_owners": [],
       "table": "user_ops_deferred_jobs",
       "write_owner": ""
+    },
+    {
+      "domain": "legacy_user_ops",
+      "drop_candidate": false,
+      "lifecycle": "legacy",
+      "migration_source": "pre-convergence production schema",
+      "pii_level": "internal_contact",
+      "read_owners": [
+        "production compatibility and historical audit"
+      ],
+      "table": "user_ops_do_not_disturb",
+      "write_owner": "legacy.production_runtime"
     },
     {
       "domain": "user_ops",
@@ -42069,6 +42715,30 @@
       ],
       "table": "user_ops_do_not_disturb_next",
       "write_owner": "aicrm_next.ops_enrollment.repo"
+    },
+    {
+      "domain": "legacy_user_ops",
+      "drop_candidate": false,
+      "lifecycle": "legacy",
+      "migration_source": "pre-convergence production schema",
+      "pii_level": "internal_contact",
+      "read_owners": [
+        "production compatibility and historical audit"
+      ],
+      "table": "user_ops_experience_leads",
+      "write_owner": "legacy.production_runtime"
+    },
+    {
+      "domain": "legacy_user_ops",
+      "drop_candidate": false,
+      "lifecycle": "legacy",
+      "migration_source": "pre-convergence production schema",
+      "pii_level": "internal_contact",
+      "read_owners": [
+        "production compatibility and historical audit"
+      ],
+      "table": "user_ops_huangxiaocan_activation_source",
+      "write_owner": "legacy.production_runtime"
     },
     {
       "domain": "user_ops",
@@ -42105,6 +42775,18 @@
       ],
       "table": "user_ops_hxc_send_config",
       "write_owner": "aicrm_next.user_ops"
+    },
+    {
+      "domain": "legacy_user_ops",
+      "drop_candidate": false,
+      "lifecycle": "legacy",
+      "migration_source": "pre-convergence production schema",
+      "pii_level": "internal_contact",
+      "read_owners": [
+        "production compatibility and historical audit"
+      ],
+      "table": "user_ops_import_batches",
+      "write_owner": "legacy.production_runtime"
     },
     {
       "domain": "user_ops",
@@ -42203,6 +42885,18 @@
       ],
       "table": "wechat_pay_order_events",
       "write_owner": "aicrm_next.commerce.wechat_pay_service"
+    },
+    {
+      "domain": "legacy_commerce",
+      "drop_candidate": false,
+      "lifecycle": "legacy",
+      "migration_source": "pre-convergence production schema",
+      "pii_level": "internal_contact",
+      "read_owners": [
+        "production compatibility and historical audit"
+      ],
+      "table": "wechat_pay_order_export_jobs",
+      "write_owner": "legacy.production_runtime"
     },
     {
       "domain": "commerce",
@@ -42320,6 +43014,18 @@
       ],
       "table": "wechat_shop_sync_runs",
       "write_owner": "aicrm_next.commerce.wechat_shop_service"
+    },
+    {
+      "domain": "legacy_commerce",
+      "drop_candidate": false,
+      "lifecycle": "legacy",
+      "migration_source": "pre-convergence production schema",
+      "pii_level": "internal_contact",
+      "read_owners": [
+        "production compatibility and historical audit"
+      ],
+      "table": "wechat_shop_tokens",
+      "write_owner": "legacy.production_runtime"
     },
     {
       "domain": "customer_tags",

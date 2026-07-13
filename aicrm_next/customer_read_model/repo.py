@@ -142,6 +142,10 @@ class SqlAlchemyCustomerReadModelRepository:
     ) -> None:
         timeline_by_external_userid = timeline_by_external_userid or {}
         messages_by_external_userid = messages_by_external_userid or {}
+        list_rows: list[dict] = []
+        detail_rows: list[dict] = []
+        timeline_rows: list[dict] = []
+        message_rows: list[dict] = []
         for index, customer in enumerate(customers, start=1):
             external_userid = str(customer.get("external_userid") or "")
             identity = dict(customer.get("identity") or {})
@@ -149,74 +153,83 @@ class SqlAlchemyCustomerReadModelRepository:
             created_at = _coerce_datetime(customer.get("created_at") or customer.get("updated_at"))
             updated_at = _coerce_datetime(customer.get("updated_at"))
             binding = dict(customer.get("binding") or {})
-            self._session.execute(
-                insert(customer_list_index_next).values(
-                    id=index,
-                    unionid=unionid,
-                    customer_name=customer.get("customer_name") or "",
-                    owner_userid=customer.get("owner_userid") or "",
-                    owner_display_name=customer.get("owner_display_name") or "",
-                    remark=customer.get("remark") or "",
-                    description=customer.get("description") or "",
-                    mobile=customer.get("mobile") or "",
-                    is_bound=bool(binding.get("is_bound")),
-                    binding_status=binding.get("binding_status") or customer.get("binding_status") or "unbound",
-                    tags_json=list(customer.get("tags") or []),
-                    class_user_status_json=dict(customer.get("class_user_status") or {}),
-                    last_message_at=_coerce_optional_datetime(customer.get("last_message_at")),
-                    last_touch_at=_coerce_optional_datetime(customer.get("last_touch_at")),
-                    updated_at=updated_at,
-                    created_at=created_at,
-                )
+            projection_key = external_userid or unionid
+            list_rows.append(
+                {
+                    "id": index,
+                    "unionid": unionid,
+                    "customer_name": customer.get("customer_name") or "",
+                    "owner_userid": customer.get("owner_userid") or "",
+                    "owner_display_name": customer.get("owner_display_name") or "",
+                    "remark": customer.get("remark") or "",
+                    "description": customer.get("description") or "",
+                    "mobile": customer.get("mobile") or "",
+                    "is_bound": bool(binding.get("is_bound")),
+                    "binding_status": binding.get("binding_status") or customer.get("binding_status") or "unbound",
+                    "tags_json": list(customer.get("tags") or []),
+                    "class_user_status_json": dict(customer.get("class_user_status") or {}),
+                    "last_message_at": _coerce_optional_datetime(customer.get("last_message_at")),
+                    "last_touch_at": _coerce_optional_datetime(customer.get("last_touch_at")),
+                    "updated_at": updated_at,
+                    "created_at": created_at,
+                }
             )
-            self._session.execute(
-                insert(customer_detail_snapshot_next).values(
-                    id=index,
-                    unionid=unionid,
-                    customer_json=dict(customer),
-                    binding_json=dict(customer.get("binding") or {}),
-                    identity_json=dict(customer.get("identity") or {}),
-                    follow_users_json=list(customer.get("follow_users") or []),
-                    marketing_summary_json=dict(customer.get("marketing_summary") or {}),
-                    marketing_profile_json=dict(customer.get("marketing_profile") or {}),
-                    contact_json=dict(customer.get("contact") or {}),
-                    sidebar_context_json=dict(customer.get("sidebar_context") or {}),
-                    updated_at=updated_at,
-                    created_at=created_at,
-                )
+            detail_rows.append(
+                {
+                    "id": index,
+                    "unionid": unionid,
+                    "customer_json": dict(customer),
+                    "binding_json": dict(customer.get("binding") or {}),
+                    "identity_json": dict(customer.get("identity") or {}),
+                    "follow_users_json": list(customer.get("follow_users") or []),
+                    "marketing_summary_json": dict(customer.get("marketing_summary") or {}),
+                    "marketing_profile_json": dict(customer.get("marketing_profile") or {}),
+                    "contact_json": dict(customer.get("contact") or {}),
+                    "sidebar_context_json": dict(customer.get("sidebar_context") or {}),
+                    "updated_at": updated_at,
+                    "created_at": created_at,
+                }
             )
-            for event_index, item in enumerate(timeline_by_external_userid.get(external_userid, []), start=1):
-                self._session.execute(
-                    insert(customer_timeline_event_next).values(
-                        id=index * 1000 + event_index,
-                        event_id=item.get("event_id") or f"evt_{index}_{event_index}",
-                        unionid=str(item.get("unionid") or unionid or "").strip(),
-                        event_type=item.get("event_type") or "",
-                        event_time=_coerce_datetime(item.get("event_time")),
-                        title=item.get("title") or "",
-                        summary=item.get("summary") or "",
-                        source_table=item.get("source_table") or "",
-                        source_id=item.get("source_id") or "",
-                        metadata_json=dict(item.get("metadata") or {}),
-                        created_at=created_at,
-                    )
+            for event_index, item in enumerate(timeline_by_external_userid.get(projection_key, []), start=1):
+                timeline_rows.append(
+                    {
+                        "id": index * 1000 + event_index,
+                        "event_id": item.get("event_id") or f"evt_{index}_{event_index}",
+                        "unionid": str(item.get("unionid") or unionid or "").strip(),
+                        "event_type": item.get("event_type") or "",
+                        "event_time": _coerce_datetime(item.get("event_time")),
+                        "title": item.get("title") or "",
+                        "summary": item.get("summary") or "",
+                        "source_table": item.get("source_table") or "",
+                        "source_id": item.get("source_id") or "",
+                        "metadata_json": dict(item.get("metadata") or {}),
+                        "created_at": created_at,
+                    }
                 )
-            for message_index, item in enumerate(messages_by_external_userid.get(external_userid, []), start=1):
+            for message_index, item in enumerate(messages_by_external_userid.get(projection_key, []), start=1):
                 metadata = {key: value for key, value in item.items() if key not in {"msgid", "external_userid", "msgtype", "content", "send_time", "owner_userid", "chat_type"}}
-                self._session.execute(
-                    insert(customer_recent_message_next).values(
-                        id=index * 1000 + message_index,
-                        msgid=item.get("msgid") or f"msg_{index}_{message_index}",
-                        unionid=str(item.get("unionid") or unionid or "").strip(),
-                        msgtype=item.get("msgtype") or "text",
-                        content=item.get("content") or "",
-                        send_time=_coerce_datetime(item.get("send_time")),
-                        owner_userid=item.get("owner_userid") or "",
-                        chat_type=item.get("chat_type") or "single",
-                        metadata_json=metadata,
-                        created_at=created_at,
-                    )
+                message_rows.append(
+                    {
+                        "id": index * 1000 + message_index,
+                        "msgid": item.get("msgid") or f"msg_{index}_{message_index}",
+                        "unionid": str(item.get("unionid") or unionid or "").strip(),
+                        "msgtype": item.get("msgtype") or "text",
+                        "content": item.get("content") or "",
+                        "send_time": _coerce_datetime(item.get("send_time")),
+                        "owner_userid": item.get("owner_userid") or "",
+                        "chat_type": item.get("chat_type") or "single",
+                        "metadata_json": metadata,
+                        "created_at": created_at,
+                    }
                 )
+        if list_rows:
+            self._session.execute(insert(customer_list_index_next), list_rows)
+        if detail_rows:
+            self._session.execute(insert(customer_detail_snapshot_next), detail_rows)
+        if timeline_rows:
+            self._session.execute(insert(customer_timeline_event_next), timeline_rows)
+        if message_rows:
+            self._session.execute(insert(customer_recent_message_next), message_rows)
 
     def list_customers(
         self,

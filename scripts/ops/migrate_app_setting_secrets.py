@@ -191,7 +191,12 @@ def _write_all(file_descriptor: int, data: bytes) -> None:
         offset += written
 
 
-def _persist_environment_values(path: Path, values: Mapping[str, str]) -> None:
+def _persist_environment_values(
+    path: Path,
+    values: Mapping[str, str],
+    *,
+    remove_keys: set[str] | frozenset[str] = frozenset(),
+) -> None:
     target = path.expanduser()
     if not target.is_absolute():
         raise ValueError("runtime environment file path must be absolute")
@@ -209,12 +214,17 @@ def _persist_environment_values(path: Path, values: Mapping[str, str]) -> None:
         mode = 0o600
 
     managed = {str(key): str(value) for key, value in values.items()}
+    removed = {str(key) for key in remove_keys}
+    if set(managed) & removed:
+        raise ValueError("environment key cannot be managed and removed together")
     pending = dict(managed)
     persisted: set[str] = set()
     lines: list[str] = []
     for line in body.splitlines():
         match = _ENV_ASSIGNMENT.match(line)
         key = str(match.group("key")) if match else ""
+        if key in removed:
+            continue
         if key in managed:
             if key in persisted:
                 continue

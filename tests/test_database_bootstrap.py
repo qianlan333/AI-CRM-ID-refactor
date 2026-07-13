@@ -13,6 +13,7 @@ import yaml
 from alembic import command
 from alembic.config import Config
 from psycopg import sql
+from sqlalchemy.exc import SQLAlchemyError
 
 from scripts.ops.bootstrap_database import (
     BASELINE_PATH,
@@ -51,13 +52,15 @@ def test_every_active_manifest_table_has_a_versioned_create_source() -> None:
         created_tables.update(CREATE_TABLE_PATTERN.findall(migration.read_text(encoding="utf-8")))
 
     active_tables = {
-        table for table, entry in manifest.items() if entry.get("lifecycle") != "retired"
+        table
+        for table, entry in manifest.items()
+        if entry.get("lifecycle") not in {"retired", "legacy"}
     }
     assert active_tables - created_tables == {"alembic_version"}
     assert not [
         table
         for table, entry in manifest.items()
-        if entry.get("lifecycle") != "retired"
+        if entry.get("lifecycle") not in {"retired", "legacy"}
         and str(entry.get("migration_source") or "").startswith("pre-Alembic baseline")
     ]
 
@@ -79,7 +82,7 @@ def test_empty_postgres_database_installs_and_reuses_alembic_head() -> None:
 
         assert first.baseline_applied is True
         assert first.revision_before is None
-        assert first.revision_after == "0107_hyc_usage_snapshot"
+        assert first.revision_after == "0108_customer_read_model_refresh"
         assert second.baseline_applied is False
         assert second.revision_before == first.revision_after
         assert second.revision_after == first.revision_after
@@ -130,7 +133,7 @@ def test_production_shape_alembic_database_upgrades_without_reapplying_baseline(
 
         assert result.baseline_applied is False
         assert result.revision_before == "0098_admin_session_revocation"
-        assert result.revision_after == "0107_hyc_usage_snapshot"
+        assert result.revision_after == "0108_customer_read_model_refresh"
         with psycopg.connect(database_url) as connection:
             preserved = connection.execute(
                 "SELECT wecom_userid, session_version FROM admin_users WHERE id = %s",
@@ -141,6 +144,36 @@ def test_production_shape_alembic_database_upgrades_without_reapplying_baseline(
             ).fetchone()
         assert preserved == ("production-shape-upgrade", 7)
         assert auth_table == ("auth_sessions",)
+
+
+def test_retired_workspace_drop_fails_closed_when_any_table_contains_data() -> None:
+    with _isolated_database("retired_workspace_nonempty") as database_url:
+        with psycopg.connect(database_url, autocommit=True) as connection:
+            connection.execute(BASELINE_PATH.read_text(encoding="utf-8"))
+        _upgrade_database_to(database_url, "0107_hyc_usage_snapshot")
+        with psycopg.connect(database_url) as connection:
+            connection.execute(
+                """
+                INSERT INTO group_ops_workspace_drafts (draft_id, idempotency_key)
+                VALUES ('preserve_nonempty_draft', 'preserve_nonempty_draft')
+                """
+            )
+            connection.commit()
+
+        with pytest.raises(SQLAlchemyError, match="retired workspace table group_ops_workspace_drafts is not empty"):
+            _upgrade_database_to(database_url, "head")
+
+        with psycopg.connect(database_url) as connection:
+            revision = connection.execute("SELECT version_num FROM alembic_version").fetchone()
+            preserved = connection.execute(
+                "SELECT COUNT(*) FROM group_ops_workspace_drafts"
+            ).fetchone()
+            refresh_state = connection.execute(
+                "SELECT to_regclass('public.customer_read_model_refresh_state')"
+            ).fetchone()
+        assert revision == ("0107_hyc_usage_snapshot",)
+        assert preserved == (1,)
+        assert refresh_state == (None,)
 
 
 def test_nonempty_database_without_alembic_state_is_rejected() -> None:

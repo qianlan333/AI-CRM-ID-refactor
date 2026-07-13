@@ -162,6 +162,60 @@ class LiveSourceCustomerReadRepository:
             for row in rows
         ]
 
+    def snapshot_recent_messages_by_unionid(
+        self,
+        unionids: list[str],
+        *,
+        per_customer_limit: int = 100,
+    ) -> dict[str, list[JsonDict]]:
+        """Read a bounded recent-message snapshot in one production-safe query."""
+
+        normalized = [str(value or "").strip() for value in unionids if str(value or "").strip()]
+        if not normalized:
+            return {}
+        stmt = text(
+            """
+            WITH ranked AS (
+                SELECT id, msgid, chat_type, unionid, owner_userid, msgtype, content,
+                       COALESCE(send_time, created_at) AS send_time,
+                       ROW_NUMBER() OVER (
+                           PARTITION BY unionid ORDER BY send_time DESC, id DESC
+                       ) AS row_number
+                FROM archived_messages
+                WHERE unionid IN :external_userids
+            )
+            SELECT id, msgid, chat_type, unionid, owner_userid, msgtype, content, send_time
+            FROM ranked
+            WHERE row_number <= :per_customer_limit
+            ORDER BY unionid ASC, send_time DESC, id DESC
+            """
+        ).bindparams(bindparam("external_userids", expanding=True))
+        rows = self._session.execute(
+            stmt,
+            {
+                "external_userids": normalized,
+                "per_customer_limit": max(1, min(int(per_customer_limit or 100), 500)),
+            },
+        ).mappings()
+        result: dict[str, list[JsonDict]] = {}
+        for row in rows:
+            unionid = str(row.get("unionid") or "").strip()
+            if not unionid:
+                continue
+            result.setdefault(unionid, []).append(
+                {
+                    "msgid": row.get("msgid") or "",
+                    "unionid": unionid,
+                    "msgtype": row.get("msgtype") or "text",
+                    "content": row.get("content") or "",
+                    "send_time": _iso(row.get("send_time")),
+                    "owner_userid": row.get("owner_userid") or "",
+                    "chat_type": row.get("chat_type") or "single",
+                    "source_id": str(row.get("id") or ""),
+                }
+            )
+        return result
+
     def customer_exists(self, external_userid: str) -> bool:
         return self.get_customer(external_userid) is not None
 
