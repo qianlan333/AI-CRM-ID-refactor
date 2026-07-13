@@ -122,6 +122,17 @@ def test_package_root_composition_imports_are_not_a_business_context(tmp_path: P
     assert _edge_pairs(report) == {("alpha", "beta")}
 
 
+def test_business_context_import_of_package_root_composition_is_not_a_context_edge(tmp_path: Path) -> None:
+    _write_module(tmp_path, "composition.py", "from aicrm_next.beta.service import Beta\n")
+    _write_module(tmp_path, "alpha/service.py", "from aicrm_next.composition import build\n")
+    _write_module(tmp_path, "beta/service.py")
+
+    report = scan_import_graph(tmp_path)
+
+    assert report.contexts == ("alpha", "beta")
+    assert _edge_pairs(report) == set()
+
+
 def test_existing_registered_scc_is_allowed(tmp_path: Path) -> None:
     _write_module(tmp_path, "alpha/service.py", "from aicrm_next.beta.service import Beta\n")
     _write_module(tmp_path, "beta/service.py", "from aicrm_next.alpha.service import Alpha\n")
@@ -262,7 +273,7 @@ def test_repository_import_graph_matches_registered_r12_baseline() -> None:
 
     assert violations == []
     assert len(report.contexts) == 40
-    assert len(report.edges) == 191
+    assert len(report.edges) == 188
     assert report.cyclic_components == (
         (
             "admin_auth",
@@ -278,7 +289,6 @@ def test_repository_import_graph_matches_registered_r12_baseline() -> None:
             "identity_contact",
             "integration_gateway",
             "media_library",
-            "message_archive",
             "platform_foundation",
             "public_product",
             "questionnaire",

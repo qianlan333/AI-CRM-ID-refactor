@@ -146,7 +146,7 @@ def scan_import_graph(root: Path = ROOT, *, package: str = "aicrm_next") -> Impo
         for node in runtime_nodes:
             for module_name, kind in _imported_modules(node, path=path, package_dir=package_dir, package=package):
                 target_context = _target_context(module_name, package)
-                if not target_context or target_context == source_context:
+                if not target_context or target_context == source_context or target_context not in contexts:
                     continue
                 evidence = ImportEvidence(
                     source_context=source_context,
