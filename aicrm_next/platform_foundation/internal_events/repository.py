@@ -52,6 +52,9 @@ from .repository_support import (
 from .repository_memory import InMemoryInternalEventRepository
 
 
+_fixture_repo = InMemoryInternalEventRepository()
+
+
 def read_wechat_pay_order_for_payment_event(*, lookup: str, aggregate_id: str) -> dict[str, Any]:
     if not production_data_ready():
         return {}

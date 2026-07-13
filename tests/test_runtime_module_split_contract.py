@@ -1,5 +1,10 @@
 from __future__ import annotations
 
+import os
+import subprocess
+import sys
+from pathlib import Path
+
 from aicrm_next.admin_config import application as admin_application
 from aicrm_next.admin_config import application_support as admin_support
 from aicrm_next.ai_audience_ops import repository as audience_repository
@@ -29,6 +34,28 @@ def test_internal_event_repository_facade_preserves_public_imports() -> None:
     assert event_repository.SQLAlchemyInternalEventRepository.__module__ == event_repository.__name__
     assert callable(event_repository.build_internal_event_repository)
     assert callable(event_repository.reset_internal_event_fixture_state)
+
+
+def test_internal_event_repository_facade_initializes_fixture_before_any_reset() -> None:
+    script = """
+from aicrm_next.platform_foundation.internal_events.repository import (
+    InMemoryInternalEventRepository,
+    build_internal_event_repository,
+)
+
+assert isinstance(build_internal_event_repository(), InMemoryInternalEventRepository)
+"""
+    env = dict(os.environ)
+    env["DATABASE_URL"] = ""
+    result = subprocess.run(
+        [sys.executable, "-c", script],
+        cwd=Path(__file__).resolve().parents[1],
+        env=env,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
 
 
 def test_questionnaire_repository_facade_preserves_public_imports_and_patch_seams() -> None:
