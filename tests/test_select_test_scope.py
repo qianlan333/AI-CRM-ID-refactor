@@ -290,6 +290,20 @@ def test_runtime_module_size_governance_has_a_permanent_full_ci_scope() -> None:
     assert result["architecture_gate"] == "full"
 
 
+def test_cloud_repository_split_modules_keep_permanent_postgres_coverage() -> None:
+    result = _select(
+        "aicrm_next/cloud_orchestrator/repository_legacy.py",
+        "aicrm_next/cloud_orchestrator/repository_memory.py",
+    )
+
+    assert result["unmatched_files"] == []
+    assert "cloud_plan_repository_split" in result["matched_scopes"]
+    assert "tests/test_ops_plan_broadcast_planner_consumer.py" in result["python_tests"]
+    assert result["needs_full_ci"] is True
+    assert result["needs_postgres"] is True
+    assert result["architecture_gate"] == "full"
+
+
 def test_r08_commerce_fulfillment_files_force_full_postgres_ci() -> None:
     result = _select(
         "aicrm_next/commerce/fulfillment_reconciliation.py",
