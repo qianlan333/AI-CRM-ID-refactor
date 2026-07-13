@@ -197,7 +197,7 @@ def sidebar_contact_binding_status(
         external_userid=external_userid,
         owner_userid=owner_userid,
     )
-    result = GetSidebarContactBindingStatusQuery()(
+    result = _binding_status_query(request)(
         external_userid=external_userid,
         owner_userid=resolved_owner_userid,
         require_owner_scope=True,
@@ -217,13 +217,18 @@ def sidebar_binding_status(
         external_userid=external_userid,
         owner_userid=owner_userid,
     )
-    result = GetSidebarContactBindingStatusQuery()(
+    result = _binding_status_query(request)(
         external_userid=external_userid,
         owner_userid=resolved_owner_userid,
         require_owner_scope=True,
     )
     status_code = int(result.pop("status_code", 200) or 200)
     return JSONResponse(result, status_code=status_code)
+
+
+def _binding_status_query(request: Request) -> GetSidebarContactBindingStatusQuery:
+    factory = getattr(request.app.state, "sidebar_contact_binding_status_query_factory", None)
+    return factory() if callable(factory) else GetSidebarContactBindingStatusQuery()
 
 
 def _sidebar_owner_userid_from_request(

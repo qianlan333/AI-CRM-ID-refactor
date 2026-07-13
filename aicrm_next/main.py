@@ -15,13 +15,17 @@ from .admin_config.pii_audit_repository import AdminConfigPiiAuditRepository
 from .automation_engine.repo import reset_automation_fixture_state
 from .channel_entry.inbox import WeComCallbackInboxWorker
 from .commerce.repo import reset_commerce_fixture_state
-from .external_effect_composition import build_external_effect_continuation_registry
+from .external_effect_composition import (
+    build_external_effect_adapter_registry,
+    build_external_effect_continuation_registry,
+)
 from .internal_event_composition import build_internal_event_consumer_registry
 from .media_library.repo import reset_media_library_fixture_state
 from .mcp_composition import build_mcp_jsonrpc_application
 from .ops_enrollment.application import reset_user_ops_fixture_state
 from .platform_foundation.internal_events import internal_event_consumer_registry_scope
 from .questionnaire.repo import reset_questionnaire_fixture_state
+from .read_model_composition import build_sidebar_contact_binding_status_query, get_customer_detail
 from .radar_links.repo import reset_radar_links_fixture_state
 from .router_registry import register_routers
 from .shared.errors import ApplicationError
@@ -58,9 +62,12 @@ def create_app(*, pii_audit_repository: PiiAuditRepository | None = None) -> Fas
     app.state.admin_action_token_validator = validate_action_token_for_request
     app.state.wecom_callback_inbox_worker_factory = WeComCallbackInboxWorker
     app.state.mcp_jsonrpc_application = build_mcp_jsonrpc_application()
+    app.state.external_effect_adapter_registry = build_external_effect_adapter_registry()
     app.state.external_effect_continuation_registry = build_external_effect_continuation_registry()
     app.state.ai_audience_e2e_runner_factory = build_ai_audience_e2e_runner_factory()
     app.state.internal_event_consumer_registry = build_internal_event_consumer_registry()
+    app.state.sidebar_contact_binding_status_query_factory = build_sidebar_contact_binding_status_query
+    app.state.external_customer_detail_query = get_customer_detail
 
     if fixture_mode():
         fixture_reset_registry.reset_fixture_state()

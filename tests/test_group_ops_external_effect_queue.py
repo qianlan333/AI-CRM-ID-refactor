@@ -9,7 +9,11 @@ from aicrm_next.platform_foundation.external_effects import (
     WECOM_MESSAGE_GROUP_SEND,
     ExternalEffectService,
 )
-from aicrm_next.platform_foundation.external_effects.adapters import DEFAULT_ADAPTER_REGISTRY, WebhookAdapter
+from aicrm_next.platform_foundation.external_effects.adapters import (
+    DEFAULT_ADAPTER_REGISTRY,
+    WeComGroupMessageExternalEffectAdapter,
+    WebhookAdapter,
+)
 from aicrm_next.platform_foundation.external_effects.worker import ExternalEffectWorker
 from aicrm_next.platform_foundation.auth_platform.webhook_hmac import WebhookHmacSigner
 from tests.webhook_hmac_test_helpers import install_webhook_hmac_client, signed_headers
@@ -64,9 +68,13 @@ def _install_fake_wecom_group_message_adapter(monkeypatch) -> list[dict]:
                 "error_message": "",
             }
 
-    from aicrm_next.integration_gateway import wecom_group_adapter
-
-    monkeypatch.setattr(wecom_group_adapter, "build_wecom_group_message_adapter", lambda: FakeWeComGroupMessageAdapter())
+    monkeypatch.setitem(
+        DEFAULT_ADAPTER_REGISTRY._adapters,  # type: ignore[attr-defined]
+        "wecom_group_message",
+        WeComGroupMessageExternalEffectAdapter(
+            adapter_factory=lambda: FakeWeComGroupMessageAdapter()
+        ),
+    )
     return calls
 
 

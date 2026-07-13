@@ -10,8 +10,6 @@ from fastapi import APIRouter, Path, Query, Request
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 
-from aicrm_next.customer_read_model.application import GetCustomerDetailQuery
-from aicrm_next.customer_read_model.dto import CustomerDetailRequest
 from aicrm_next.identity_contact.application import ResolvePersonIdentityQuery
 from aicrm_next.identity_contact.dto import ResolvePersonIdentityRequest
 from aicrm_next.shared.errors import NotFoundError
@@ -228,11 +226,14 @@ def _model_dump(value: Any) -> dict[str, Any]:
     return dict(value)
 
 
-def _customer_detail(external_userid: str) -> dict[str, Any]:
+def _customer_detail(request: Request, external_userid: str) -> dict[str, Any]:
     if not external_userid:
         return {}
+    query = getattr(request.app.state, "external_customer_detail_query", None)
+    if not callable(query):
+        return {}
     try:
-        payload = GetCustomerDetailQuery()(CustomerDetailRequest(external_userid=external_userid))
+        payload = query(external_userid)
     except NotFoundError:
         return {}
     if not payload.get("ok"):
@@ -318,7 +319,7 @@ def resolve_external_user_basic(
             mobile=mobile,
             openid=openid,
         )
-    customer = _customer_detail(_text(identity.get("external_userid") or external_userid))
+    customer = _customer_detail(request, _text(identity.get("external_userid") or external_userid))
     if not identity and not customer:
         return _error(error_code="not_found", message="user not found", status_code=404, source_status=SOURCE_STATUS_USER_BASIC)
 

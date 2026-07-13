@@ -3,6 +3,7 @@ from __future__ import annotations
 from functools import partial
 
 from .commerce.external_push_admin import plan_order_paid_external_push_effect
+from .commerce.repo import execute_commerce_transaction
 from .ai_audience_ops import register_ai_audience_event_consumers
 from .cloud_orchestrator.repository import build_cloud_plan_repository
 from .questionnaire.event_consumers import (
@@ -16,7 +17,7 @@ from .service_period.payment_consumer import service_period_entitlement_consumer
 from .service_period.refund_consumer import service_period_refund_consumer
 from .platform_foundation.internal_events.shadow import broadcast_task_planner_consumer
 from .platform_foundation.internal_events.payment import webhook_order_paid_consumer
-from .shared.runtime import production_data_ready, raw_database_url
+from .shared.runtime import production_data_ready
 
 
 def _plan_order_paid_external_push_effect_from_db(
@@ -27,11 +28,8 @@ def _plan_order_paid_external_push_effect_from_db(
 ) -> dict | None:
     if not production_data_ready():
         raise RuntimeError("production database is required for order-paid external push planning")
-    import psycopg
-    from psycopg.rows import dict_row
-
-    with psycopg.connect(raw_database_url(), row_factory=dict_row) as conn:
-        result = plan_order_paid_external_push_effect(
+    def _plan(conn):
+        return plan_order_paid_external_push_effect(
             conn,
             order=order,
             transaction=transaction,
@@ -39,8 +37,7 @@ def _plan_order_paid_external_push_effect_from_db(
             source_module="platform_foundation.internal_events.payment",
             source_route="/internal-events/payment.succeeded/webhook_order_paid_consumer",
         )
-        conn.commit()
-        return result
+    return execute_commerce_transaction(_plan)
 from .platform_foundation.internal_events import (
     DEFAULT_INTERNAL_EVENT_CONSUMER_REGISTRY,
     InternalEventConsumerRegistry,

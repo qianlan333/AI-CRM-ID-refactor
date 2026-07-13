@@ -8,7 +8,7 @@ from typing import Any
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from aicrm_next.commerce.product_code_aliases import product_code_filter_values
+from aicrm_next.shared.product_code_aliases import product_code_filter_values
 from aicrm_next.shared.config import Settings, get_settings
 from aicrm_next.shared.db_session import get_session_factory
 

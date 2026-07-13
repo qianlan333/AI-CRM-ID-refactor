@@ -58,11 +58,13 @@ def test_import_graph_governance_changes_force_mapped_full_ci() -> None:
         "tools/check_import_graph.py",
         "docs/architecture/import_graph_baseline.yml",
         "tests/test_import_graph_guard.py",
+        "tests/test_zero_runtime_import_scc.py",
     )
 
     assert "import_graph_governance" in result["matched_scopes"]
     assert result["unmatched_files"] == []
     assert "tests/test_import_graph_guard.py" in result["python_tests"]
+    assert "tests/test_zero_runtime_import_scc.py" in result["python_tests"]
     assert result["architecture_gate"] == "full"
     assert result["needs_full_ci"] is True
 

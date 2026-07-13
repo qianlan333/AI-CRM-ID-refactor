@@ -1320,10 +1320,12 @@
       "paths": [
         "tools/check_import_graph.py",
         "docs/architecture/import_graph_baseline.yml",
-        "tests/test_import_graph_guard.py"
+        "tests/test_import_graph_guard.py",
+        "tests/test_zero_runtime_import_scc.py"
       ],
       "python_tests": [
         "tests/test_import_graph_guard.py",
+        "tests/test_zero_runtime_import_scc.py",
         "tests/test_architecture_boundaries.py",
         "tests/test_select_test_scope.py",
         "tests/test_ci_workflow_contract.py"

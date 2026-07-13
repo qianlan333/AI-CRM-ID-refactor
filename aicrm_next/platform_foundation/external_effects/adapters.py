@@ -142,23 +142,21 @@ def _wecom_provider_failure(
     retryable = False
     response_summary: dict[str, Any] = {"real_external_call_executed": True, executed_key: False}
     try:
-        from aicrm_next.integration_gateway.wecom_channel_entry_client import WeComApiError
-
-        if isinstance(exc, WeComApiError):
-            payload = dict(exc.payload or {})
+        if hasattr(exc, "classification") and hasattr(exc, "error_code"):
+            payload = dict(getattr(exc, "payload", {}) or {})
             response_summary.update(
                 {
-                    "errcode": int(payload.get("errcode") or exc.provider_errcode or 0),
+                    "errcode": int(payload.get("errcode") or getattr(exc, "provider_errcode", 0) or 0),
                     "errmsg_present": bool(str(payload.get("errmsg") or "").strip()),
-                    "provider_error_classification": exc.classification,
-                    "http_status": exc.status_code,
-                    "retry_after_seconds": exc.retry_after_seconds,
-                    "real_external_call_executed": exc.real_external_call_executed,
+                    "provider_error_classification": getattr(exc, "classification", ""),
+                    "http_status": getattr(exc, "status_code", None),
+                    "retry_after_seconds": getattr(exc, "retry_after_seconds", None),
+                    "real_external_call_executed": bool(getattr(exc, "real_external_call_executed", True)),
                 }
             )
-            error_code = exc.error_code
-            error_message = _safe_error_message(payload.get("errmsg") or exc.message or exc)
-            retryable = exc.retryable
+            error_code = str(getattr(exc, "error_code", default_error_code) or default_error_code)
+            error_message = _safe_error_message(payload.get("errmsg") or getattr(exc, "message", "") or exc)
+            retryable = bool(getattr(exc, "retryable", False))
     except Exception:
         pass
     if error_message.startswith("missing_wecom_config:"):
@@ -460,6 +458,9 @@ def _webhook_event_id(value: str) -> str:
 
 
 class WeComPrivateMessageAdapter:
+    def __init__(self, adapter_factory=None) -> None:
+        self._adapter_factory = adapter_factory
+
     def dispatch(self, job: ExternalEffectJob) -> ExternalEffectDispatchResult:
         payload = dict(job.payload_json or {})
         external_userids = [str(item or "").strip() for item in list(payload.get("external_userids") or []) if str(item or "").strip()]
@@ -502,9 +503,9 @@ class WeComPrivateMessageAdapter:
         if isinstance(attachments, list) and attachments:
             adapter_payload["attachments"] = attachments
         try:
-            from aicrm_next.integration_gateway.wecom_private_adapter import build_wecom_private_message_adapter
-
-            result = build_wecom_private_message_adapter().create_private_message_task(
+            if self._adapter_factory is None:
+                raise RuntimeError("wecom_private_adapter_composition_missing")
+            result = self._adapter_factory().create_private_message_task(
                 adapter_payload,
                 idempotency_key=job.idempotency_key or str(job.id),
             )
@@ -585,6 +586,9 @@ class WeComPrivateMessageAdapter:
 
 
 class WeComGroupMessageExternalEffectAdapter:
+    def __init__(self, adapter_factory=None) -> None:
+        self._adapter_factory = adapter_factory
+
     def dispatch(self, job: ExternalEffectJob) -> ExternalEffectDispatchResult:
         payload = dict(job.payload_json or {})
         gate_error = self._execution_gate_error(job, payload)
@@ -607,9 +611,9 @@ class WeComGroupMessageExternalEffectAdapter:
 
         wecom_payload = self._wecom_payload(payload)
         try:
-            from aicrm_next.integration_gateway.wecom_group_adapter import build_wecom_group_message_adapter
-
-            result = build_wecom_group_message_adapter().create_group_message_task(
+            if self._adapter_factory is None:
+                raise RuntimeError("wecom_group_adapter_composition_missing")
+            result = self._adapter_factory().create_group_message_task(
                 wecom_payload,
                 idempotency_key=job.idempotency_key or job.trace_id or str(job.id),
             )
@@ -792,17 +796,9 @@ class WeComWelcomeMessageAdapter:
         return result
 
     def _build_adapter(self):
-        if self._adapter_factory is not None:
-            return self._adapter_factory()
-        from aicrm_next.integration_gateway.wecom_channel_entry_client import (
-            ProductionWeComAdapter,
-            missing_wecom_config,
-        )
-
-        missing = missing_wecom_config()
-        if missing:
-            raise RuntimeError("missing_wecom_config:" + ",".join(missing))
-        return ProductionWeComAdapter()
+        if self._adapter_factory is None:
+            raise RuntimeError("wecom_welcome_adapter_composition_missing")
+        return self._adapter_factory()
 
     def _failure_result(self, exc: Exception, *, request_summary: dict[str, Any]) -> ExternalEffectDispatchResult:
         error_code, error_message, retryable, response_summary = _wecom_provider_failure(
@@ -907,17 +903,9 @@ class WeComContactTagAdapter:
         return ""
 
     def _build_adapter(self):
-        if self._adapter_factory is not None:
-            return self._adapter_factory()
-        from aicrm_next.integration_gateway.wecom_channel_entry_client import (
-            ProductionWeComAdapter,
-            missing_wecom_config,
-        )
-
-        missing = missing_wecom_config()
-        if missing:
-            raise RuntimeError("missing_wecom_config:" + ",".join(missing))
-        return ProductionWeComAdapter()
+        if self._adapter_factory is None:
+            raise RuntimeError("wecom_tag_adapter_composition_missing")
+        return self._adapter_factory()
 
     def _failure_result(self, exc: Exception, *, request_summary: dict[str, Any]) -> ExternalEffectDispatchResult:
         error_code, error_message, retryable, response_summary = _wecom_provider_failure(
@@ -1034,17 +1022,9 @@ class WeComProfileUpdateAdapter:
         return ""
 
     def _build_adapter(self):
-        if self._adapter_factory is not None:
-            return self._adapter_factory()
-        from aicrm_next.integration_gateway.wecom_channel_entry_client import (
-            ProductionWeComAdapter,
-            missing_wecom_config,
-        )
-
-        missing = missing_wecom_config()
-        if missing:
-            raise RuntimeError("missing_wecom_config:" + ",".join(missing))
-        return ProductionWeComAdapter()
+        if self._adapter_factory is None:
+            raise RuntimeError("wecom_profile_adapter_composition_missing")
+        return self._adapter_factory()
 
     def _failure_result(self, exc: Exception, *, request_summary: dict[str, Any]) -> ExternalEffectDispatchResult:
         error_code, error_message, retryable, response_summary = _wecom_provider_failure(
@@ -1193,37 +1173,23 @@ class WeChatPaymentAdapter:
         return ""
 
     def _build_client(self):
-        if self._client_factory is not None:
-            return self._client_factory()
-        from aicrm_next.integration_gateway.wechat_pay_client import WeChatPayClient, wechat_pay_client_config_from_env
-
-        return WeChatPayClient(wechat_pay_client_config_from_env())
+        if self._client_factory is None:
+            raise RuntimeError("wechat_pay_adapter_composition_missing")
+        return self._client_factory()
 
     def _apply_refund_result(self, refund_payload: dict[str, Any]) -> dict[str, Any]:
-        if self._refund_result_sync is not None:
-            return dict(self._refund_result_sync(refund_payload) or {})
-        from aicrm_next.commerce.admin_transactions import apply_wechat_refund_result
-
-        return dict(apply_wechat_refund_result(refund_payload) or {})
+        if self._refund_result_sync is None:
+            raise RuntimeError("refund_result_sync_composition_missing")
+        return dict(self._refund_result_sync(refund_payload) or {})
 
     def _mark_refund_failed(self, out_refund_no: str, *, error_code: str, error_message: str, response_payload: dict[str, Any]) -> dict[str, Any]:
         if not out_refund_no:
             return {"ok": False, "reason": "out_refund_no_missing"}
         try:
-            if self._refund_failure_sync is not None:
-                return dict(
-                    self._refund_failure_sync(
-                        out_refund_no,
-                        error_code=error_code,
-                        error_message=error_message,
-                        response_payload=response_payload,
-                    )
-                    or {}
-                )
-            from aicrm_next.commerce.admin_transactions import mark_wechat_refund_request_failed
-
+            if self._refund_failure_sync is None:
+                return {"ok": False, "reason": "refund_failure_sync_composition_missing"}
             return dict(
-                mark_wechat_refund_request_failed(
+                self._refund_failure_sync(
                     out_refund_no,
                     error_code=error_code,
                     error_message=error_message,
@@ -1274,8 +1240,8 @@ class WeChatPaymentAdapter:
 
 
 class ExternalEffectAdapterRegistry:
-    def __init__(self) -> None:
-        self._adapters: dict[str, ExternalEffectAdapter] = {
+    def __init__(self, adapters: dict[str, ExternalEffectAdapter] | None = None) -> None:
+        self._adapters: dict[str, ExternalEffectAdapter] = adapters or {
             "outbound_webhook": WebhookAdapter(),
             "webhook": WebhookAdapter(),
             "wechat_payment": WeChatPaymentAdapter(),

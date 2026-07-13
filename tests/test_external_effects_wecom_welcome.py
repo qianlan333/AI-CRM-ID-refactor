@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from aicrm_next.external_effect_composition import build_external_effect_adapter_registry
 from aicrm_next.platform_foundation.command_bus import CommandContext
 from aicrm_next.platform_foundation.external_effects import (
     ExternalEffectService,
@@ -166,7 +167,7 @@ def test_channel_entry_welcome_fallback_private_message_preserves_exact_target(m
         execution_mode="execute",
     )
 
-    result = ExternalEffectWorker(repo).dispatch_one(job["id"])
+    result = ExternalEffectWorker(repo, build_external_effect_adapter_registry()).dispatch_one(job["id"])
 
     assert result["job"]["status"] == "simulated"
     assert result["attempt"]["status"] == "simulated"
