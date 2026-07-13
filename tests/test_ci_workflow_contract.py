@@ -73,7 +73,7 @@ def test_full_regression_owns_full_pytest_and_full_frontend() -> None:
     assert "mapfile" not in source
     assert 'python -m pytest "${pytest_files[@]}" -n auto --dist=loadfile -q' in source
     assert "--junitxml=" in source
-    assert "actions/upload-artifact@v4" in source
+    assert "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a" in source
     assert "timeout-minutes: 25" in source
     assert "bash scripts/ci/run_architecture_gates.sh --mode full" in source
     assert "python scripts/ci/check_dependency_security.py" in source

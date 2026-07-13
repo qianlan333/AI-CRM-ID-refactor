@@ -1384,6 +1384,7 @@
       "name": "ci_deploy",
       "paths": [
         ".github/**",
+        "alembic.ini",
         "scripts/ci/**",
         "scripts/ops/create_deploy_smoke_session.py",
         "scripts/ops/ensure_production_public_release_route.py",
@@ -1395,6 +1396,7 @@
         "docs/ci/**",
         "docs/development/**",
         "docs/architecture/*manifest*",
+        "docs/architecture/epic_67_acceptance_audit.md",
         "docs/architecture/runtime_contract_inventory.json",
         "docs/architecture/repository_ownership.yml",
         "aicrm_next/admin_config/api_docs_view_model.py",
@@ -1404,6 +1406,7 @@
         "tests/conftest.py",
         "tests/test_ci_workflow_contract.py",
         "tests/test_deploy_workflow_contract.py",
+        "tests/test_github_action_pins.py",
         "tests/test_pytest_duration_baseline_builder.py",
         "tests/test_pytest_shard_selector.py",
         "tests/test_production_public_release_route.py",
@@ -1430,6 +1433,7 @@
       "python_tests": [
         "tests/test_ci_workflow_contract.py",
         "tests/test_deploy_workflow_contract.py",
+        "tests/test_github_action_pins.py",
         "tests/test_pytest_duration_baseline_builder.py",
         "tests/test_pytest_shard_selector.py",
         "tests/test_production_public_release_route.py",

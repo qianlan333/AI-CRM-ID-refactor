@@ -142,7 +142,7 @@ def test_production_deploy_installs_dependencies_only_when_hashed_lock_changes()
 def test_production_deploy_fails_closed_unless_checkout_matches_verified_workflow_sha():
     workflow = (ROOT / ".github" / "workflows" / "deploy.yml").read_text(encoding="utf-8")
 
-    remote_deploy_index = workflow.index("uses: appleboy/ssh-action@v1.2.0")
+    remote_deploy_index = workflow.index("uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2")
     verified_sha_index = workflow.index(
         'verified_sha="${{ inputs.release_sha || github.event.workflow_run.head_sha }}"', remote_deploy_index
     )
@@ -180,13 +180,13 @@ def test_production_deploy_verifies_local_bundle_before_fetch_and_stopping_servi
 def test_production_deploy_builds_and_transfers_incremental_exact_sha_bundle_before_remote_deploy():
     workflow = (ROOT / ".github" / "workflows" / "deploy.yml").read_text(encoding="utf-8")
 
-    checkout_index = workflow.index("uses: actions/checkout@v4")
+    checkout_index = workflow.index("uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0")
     discover_index = workflow.index('public_health_url="https://id-dev.youcangogogo.com/health"')
     build_index = workflow.index(
         'git bundle create release/aicrm-release.bundle refs/deploy/release ^refs/deploy/base'
     )
     transfer_index = workflow.index("uses: appleboy/scp-action@ff85246acaad7bdce478db94a363cd2bf7c90345")
-    remote_deploy_index = workflow.index("uses: appleboy/ssh-action@v1.2.0")
+    remote_deploy_index = workflow.index("uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2")
 
     assert checkout_index < discover_index < build_index < transfer_index < remote_deploy_index
     assert "permissions:\n  contents: read" in workflow
