@@ -44,6 +44,7 @@ _FRONTEND_COMPAT_DIR = Path(__file__).resolve().parent / "frontend_compat"
 _GROUP_OPS_DIR = Path(__file__).resolve().parent / "automation_engine" / "group_ops"
 _AUTOMATION_ENGINE_DIR = Path(__file__).resolve().parent / "automation_engine"
 _CUSTOMER_TAGS_DIR = Path(__file__).resolve().parent / "customer_tags"
+_QUESTIONNAIRE_DIR = Path(__file__).resolve().parent / "questionnaire"
 logger = logging.getLogger(__name__)
 
 
@@ -135,6 +136,11 @@ def create_app(*, pii_audit_repository: PiiAuditRepository | None = None) -> Fas
         "/static/customer-tags",
         StaticFiles(directory=_CUSTOMER_TAGS_DIR / "static"),
         name="customer_tags_static",
+    )
+    app.mount(
+        "/static/questionnaire",
+        StaticFiles(directory=_QUESTIONNAIRE_DIR / "static"),
+        name="questionnaire_static",
     )
     app.mount(
         "/static",
