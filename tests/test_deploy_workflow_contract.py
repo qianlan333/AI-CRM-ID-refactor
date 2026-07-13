@@ -560,6 +560,8 @@ def test_deploy_admin_smoke_uses_short_lived_server_session_without_logging_cook
     assert '--output-file "$deploy_smoke_session_file"' in workflow
     assert "--ttl-seconds 300" in workflow
     assert '--admin-cookie-file "$deploy_smoke_session_file"' in workflow
+    assert 'admin_smoke_sidebar_args=(--include-all-sidebar --require-all-data-health-green)' in workflow
+    assert 'if [ "$deploy_target" = "production" ]; then' in workflow[:smoke_index]
     assert '--cookie-file "$deploy_smoke_session_file"' in workflow
     assert "aicrm_next_admin_session=" not in workflow
     assert 'cat "$deploy_smoke_session_file"' not in workflow

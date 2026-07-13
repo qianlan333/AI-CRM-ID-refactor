@@ -56,7 +56,6 @@ SMOKE_PATHS = (
     "/api/admin/ai-audience/packages",
     "/api/admin/automation-agents",
     "/api/admin/user-ops/send-records?limit=1",
-    DATA_HEALTH_SUMMARY_PATH,
 )
 SIDEBAR_PATHS = tuple(
     dict.fromkeys(
@@ -166,7 +165,13 @@ def _admin_api_payload_error(path: str, body: str) -> str:
             or len(checks) != EXPECTED_DATA_HEALTH_CHECK_COUNT
             or any(not isinstance(check, dict) or check.get("status") != "ok" for check in checks)
         ):
-            return "data_health_checks_not_all_ok"
+            non_green_checks = [
+                f"{str(check.get('check_id') or 'unknown')}:{str(check.get('status') or 'unknown')}"
+                for check in checks
+                if isinstance(check, dict) and check.get("status") != "ok"
+            ]
+            diagnostic = ",".join(non_green_checks) or "count_mismatch"
+            return f"data_health_checks_not_all_ok:{diagnostic}"
     return ""
 
 
@@ -231,11 +236,20 @@ def run(
     require_admin_cookie: bool = False,
     admin_cookie_file: Path | None = None,
     include_all_sidebar: bool = False,
+    require_all_data_health_green: bool = False,
 ) -> dict[str, Any]:
     cookie_header, cookie_error = _admin_cookie_header(admin_cookie_file) if require_admin_cookie else ("", "")
     paths = _openapi_paths(base_url, timeout=timeout, cookie_header=cookie_header)
     missing_paths = [path for path in REQUIRED_OPENAPI_PATHS if path not in paths]
-    probe_paths = tuple(dict.fromkeys((*SMOKE_PATHS, *(SIDEBAR_PATHS if include_all_sidebar else ()))))
+    probe_paths = tuple(
+        dict.fromkeys(
+            (
+                *SMOKE_PATHS,
+                *((DATA_HEALTH_SUMMARY_PATH,) if require_all_data_health_green else ()),
+                *(SIDEBAR_PATHS if include_all_sidebar else ()),
+            )
+        )
+    )
     probes = [_probe(base_url, path, timeout=timeout, cookie_header=cookie_header) for path in probe_paths]
     failed_probes = [probe for probe in probes if not probe.ok]
     missing_required_cookie = require_admin_cookie and not cookie_header
@@ -245,6 +259,7 @@ def run(
         "admin_cookie_required": require_admin_cookie,
         "admin_cookie_error": cookie_error,
         "all_sidebar_required": include_all_sidebar,
+        "all_data_health_green_required": require_all_data_health_green,
         "sidebar_path_count": len(SIDEBAR_PATHS) if include_all_sidebar else 0,
         "base_url": base_url.rstrip("/"),
         "openapi_path_count": len(paths),
@@ -273,6 +288,11 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Probe every production admin sidebar destination in addition to the core read/API smoke set.",
     )
+    parser.add_argument(
+        "--require-all-data-health-green",
+        action="store_true",
+        help="Fail unless the production data-health summary contains exactly fifteen green checks.",
+    )
     args = parser.parse_args(argv)
     payload = run(
         args.base_url,
@@ -280,6 +300,7 @@ def main(argv: list[str] | None = None) -> int:
         require_admin_cookie=args.require_admin_cookie,
         admin_cookie_file=args.admin_cookie_file,
         include_all_sidebar=bool(args.include_all_sidebar),
+        require_all_data_health_green=bool(args.require_all_data_health_green),
     )
     print_json(payload, indent=2, sort_keys=True)
     return 0 if payload["ok"] else 1

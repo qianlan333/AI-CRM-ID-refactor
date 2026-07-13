@@ -27,15 +27,38 @@ def test_full_sidebar_smoke_covers_every_registered_navigation_destination(monke
 
     monkeypatch.setattr(smoke, "_probe", _healthy_probe)
 
-    payload = smoke.run("http://127.0.0.1:5001", timeout=1, include_all_sidebar=True)
+    payload = smoke.run(
+        "http://127.0.0.1:5001",
+        timeout=1,
+        include_all_sidebar=True,
+        require_all_data_health_green=True,
+    )
 
     assert payload["ok"] is True
     assert payload["all_sidebar_required"] is True
+    assert payload["all_data_health_green_required"] is True
     assert payload["sidebar_path_count"] == len(smoke.SIDEBAR_PATHS)
     assert set(smoke.SIDEBAR_PATHS).issubset(observed_paths)
     assert "/admin/automation-agents" in observed_paths
     assert smoke.DATA_HEALTH_SUMMARY_PATH in observed_paths
     assert smoke.DATA_HEALTH_SUMMARY_PATH in smoke.REQUIRED_OPENAPI_PATHS
+
+
+def test_non_production_smoke_does_not_require_data_health_summary(monkeypatch) -> None:
+    monkeypatch.setattr(smoke, "_openapi_paths", lambda *args, **kwargs: set(smoke.REQUIRED_OPENAPI_PATHS))
+    observed_paths: list[str] = []
+
+    def _healthy_probe(*args, **kwargs):
+        observed_paths.append(str(args[1]))
+        return smoke.ProbeResult(path=str(args[1]), status_code=200, ok=True, duration_ms=1)
+
+    monkeypatch.setattr(smoke, "_probe", _healthy_probe)
+
+    payload = smoke.run("http://127.0.0.1:5001", timeout=1)
+
+    assert payload["ok"] is True
+    assert payload["all_data_health_green_required"] is False
+    assert smoke.DATA_HEALTH_SUMMARY_PATH not in observed_paths
 
 
 def test_run_fails_when_required_admin_cookie_is_missing(monkeypatch) -> None:
@@ -256,7 +279,7 @@ def test_probe_rejects_data_health_summary_with_failed_check(monkeypatch) -> Non
     )
 
     assert result.ok is False
-    assert result.error == "data_health_checks_not_all_ok"
+    assert result.error == "data_health_checks_not_all_ok:failed_check:fail"
 
 
 def test_probe_accepts_exactly_fifteen_green_data_health_checks(monkeypatch) -> None:

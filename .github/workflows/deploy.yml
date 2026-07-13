@@ -491,7 +491,7 @@ jobs:
               | tee /tmp/aicrm-deploy-smoke-session-issue.json
             admin_smoke_sidebar_args=()
             if [ "$deploy_target" = "production" ]; then
-              admin_smoke_sidebar_args=(--include-all-sidebar)
+              admin_smoke_sidebar_args=(--include-all-sidebar --require-all-data-health-green)
             fi
             if ! python scripts/ops/check_admin_read_pages_smoke.py \
               --base-url http://127.0.0.1:5001 \

@@ -133,6 +133,7 @@ def test_test_deploy_waits_for_successful_ci_fast_on_main() -> None:
     )
     assert session_issue_index < admin_smoke_index < session_revoke_index
     assert '--admin-cookie-file "$deploy_smoke_session_file"' in source
+    assert 'admin_smoke_sidebar_args=(--include-all-sidebar --require-all-data-health-green)' in source
     assert "tee /tmp/aicrm-admin-read-pages-smoke.json" in source
 
 
