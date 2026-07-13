@@ -4,6 +4,7 @@ from aicrm_next.automation_agents.internal_webhook_adapter import (
     AutomationAgentRoutingWebhookAdapter,
     automation_agent_code_from_webhook_url,
 )
+from aicrm_next.platform_foundation.external_effects.execution_policy import normalize_dispatch_result
 from aicrm_next.platform_foundation.external_effects.models import (
     WEBHOOK_GENERIC_PUSH,
     ExternalEffectDispatchResult,
@@ -72,10 +73,20 @@ def test_exact_automation_agent_webhook_is_dispatched_in_process() -> None:
     assert result.status == "succeeded"
     assert result.real_external_call_executed is False
     assert result.response_summary["internal_service_call_executed"] is True
+    assert result.response_summary["internal_side_effect_executed"] is True
     assert result.response_summary["automation_agent_batch_id"] == "agent_batch_internal_001"
     assert service.calls[0]["agent_code"] == "activation_agent"
     assert service.calls[0]["payload"] == ["wm_masked"]
     assert fallback.calls == []
+
+    normalized = normalize_dispatch_result(
+        _job("http://127.0.0.1:5001/api/ai/agents/activation_agent/audience-webhook"),
+        result,
+    )
+    assert normalized.status == "succeeded"
+    assert normalized.real_external_call_executed is False
+    assert normalized.provider_result_received is True
+    assert normalized.response_summary["internal_side_effect_executed"] is True
 
 
 def test_non_agent_or_ambiguous_loopback_url_keeps_public_webhook_ssrf_policy() -> None:
@@ -96,3 +107,20 @@ def test_non_agent_or_ambiguous_loopback_url_keeps_public_webhook_ssrf_policy() 
     assert service.calls == []
     assert encoded_slash == ""
     assert third_party == ""
+
+
+def test_internal_side_effect_without_completion_evidence_remains_blocked() -> None:
+    normalized = normalize_dispatch_result(
+        _job("http://127.0.0.1:5001/api/ai/agents/activation_agent/audience-webhook"),
+        ExternalEffectDispatchResult(
+            status="succeeded",
+            adapter_mode="execute",
+            response_summary={"internal_side_effect_executed": True},
+            real_external_call_executed=False,
+            provider_result_received=False,
+        ),
+    )
+
+    assert normalized.status == "blocked"
+    assert normalized.error_code == "success_without_side_effect"
+    assert normalized.real_external_call_executed is False

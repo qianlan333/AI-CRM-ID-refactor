@@ -152,6 +152,7 @@ class AutomationAgentRoutingWebhookAdapter:
             {
                 "http_status": int(status_code),
                 "internal_service_call_executed": True,
+                "internal_side_effect_executed": True,
                 "real_external_call_executed": False,
             }
         )

@@ -76,6 +76,7 @@ def normalize_dispatch_result(
     status = _text(result.status)
     response = dict(result.response_summary or {})
     side_effect_executed = bool(result.real_external_call_executed)
+    internal_side_effect_executed = response.get("internal_side_effect_executed") is True
     provider_result_received = _provider_evidence(result)
     adapter_mode = _adapter_mode(result)
 
@@ -85,6 +86,13 @@ def normalize_dispatch_result(
                 result,
                 status="succeeded",
                 side_effect_executed=True,
+                provider_result_received=True,
+            )
+        if internal_side_effect_executed and provider_result_received:
+            return _with_standard_evidence(
+                result,
+                status="succeeded",
+                side_effect_executed=False,
                 provider_result_received=True,
             )
         if not side_effect_executed and (
