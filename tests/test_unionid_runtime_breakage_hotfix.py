@@ -101,8 +101,10 @@ def test_customer_external_userid_lookup_exact_jsonb_membership() -> None:
     resolver = _read("aicrm_next/identity_contact/resolver.py")
 
     assert "SQLAlchemyIdentityResolver" in section
-    assert "jsonb_exists(identity.external_userids_json, input.external_userid)" in resolver
-    assert "jsonb_array_elements(identity.external_userids_json)" in resolver
+    assert "identity.external_userids_json ? input.external_userid" not in resolver
+    assert "identity.external_userids_json @> jsonb_build_array(input.external_userid)" in resolver
+    assert "identity.openids_json @> jsonb_build_array(input.openid)" in resolver
+    assert "jsonb_array_elements(identity.external_userids_json)" not in resolver
     assert "CAST(external_userids_json AS TEXT) LIKE" not in section
     assert "external_userid_like" not in section
 

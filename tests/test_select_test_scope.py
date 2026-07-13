@@ -880,6 +880,24 @@ def test_retired_runtime_physical_cleanup_has_permanent_full_ci_scope() -> None:
     assert result["architecture_gate"] == "full"
 
 
+def test_critical_read_performance_changes_force_postgres_full_ci() -> None:
+    result = _select(
+        "aicrm_next/platform_foundation/performance_contracts.py",
+        "docs/performance/critical_read_path_baselines.json",
+        "tools/check_critical_read_performance.py",
+        "migrations/versions/0106_critical_read_path_indexes.py",
+        "tests/test_critical_read_performance_runner.py",
+    )
+
+    assert result["unmatched_files"] == []
+    assert "critical_read_performance" in result["matched_scopes"]
+    assert "tests/test_critical_read_performance_contracts.py" in result["python_tests"]
+    assert "tests/test_database_bootstrap.py" in result["python_tests"]
+    assert result["needs_postgres"] is True
+    assert result["needs_full_ci"] is True
+    assert result["architecture_gate"] == "full"
+
+
 def test_unmapped_path_fails_instead_of_falling_back_to_full_regression() -> None:
     completed = subprocess.run(
         [sys.executable, str(SELECTOR), "--changed-file", "aicrm_next/new_context/api.py"],

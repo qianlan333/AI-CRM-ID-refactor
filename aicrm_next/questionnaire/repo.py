@@ -144,12 +144,42 @@ class PostgresQuestionnaireReadRepository:
             ) submission_counts ON submission_counts.questionnaire_id = q.id
         """
 
+    def _paged_select(self) -> str:
+        return """
+            WITH questionnaire_page AS (
+                SELECT *
+                FROM questionnaires
+                ORDER BY updated_at DESC, id DESC
+                LIMIT %s OFFSET %s
+            )
+            SELECT
+                q.*,
+                1 AS version,
+                COALESCE(question_counts.question_count, 0) AS question_count,
+                COALESCE(submission_counts.submission_count, 0) AS submission_count,
+                submission_counts.last_submitted_at AS last_submitted_at
+            FROM questionnaire_page q
+            LEFT JOIN LATERAL (
+                SELECT COUNT(*) AS question_count
+                FROM questionnaire_questions question
+                WHERE question.questionnaire_id = q.id
+            ) question_counts ON TRUE
+            LEFT JOIN LATERAL (
+                SELECT COUNT(*) AS submission_count, MAX(submitted_at) AS last_submitted_at
+                FROM questionnaire_submissions submission
+                WHERE submission.questionnaire_id = q.id
+            ) submission_counts ON TRUE
+            ORDER BY q.updated_at DESC, q.id DESC
+        """
+
     def list_questionnaires(self, *, limit: int = 50, offset: int = 0) -> tuple[list[dict[str, Any]], int]:
+        safe_limit = max(1, min(int(limit), 100))
+        safe_offset = max(0, int(offset))
         with self._connect() as conn:
             total = int((conn.execute("SELECT COUNT(*) AS total FROM questionnaires").fetchone() or {}).get("total") or 0)
             rows = conn.execute(
-                self._base_select() + " ORDER BY q.updated_at DESC, q.id DESC LIMIT %s OFFSET %s",
-                (int(limit), int(offset)),
+                self._paged_select(),
+                (safe_limit, safe_offset),
             ).fetchall()
         return [self._questionnaire_from_row(dict(row)) for row in rows], total
 
