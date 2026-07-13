@@ -163,6 +163,10 @@ def _wecom_provider_failure(
         error_code = "config_missing"
         retryable = False
         response_summary["real_external_call_executed"] = False
+    elif error_message.endswith("_adapter_composition_missing"):
+        error_code = "adapter_composition_missing"
+        retryable = False
+        response_summary["real_external_call_executed"] = False
     return error_code, error_message, retryable, response_summary
 
 

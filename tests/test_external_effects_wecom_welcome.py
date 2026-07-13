@@ -100,6 +100,26 @@ def test_wecom_welcome_disabled_execution_mode_blocks_real_send(monkeypatch) -> 
     assert fake.payloads == []
 
 
+def test_wecom_welcome_missing_composition_never_claims_external_call(monkeypatch) -> None:
+    reset_external_effect_fixture_state()
+    monkeypatch.setenv("AICRM_WECOM_EXECUTION_MODE", "execute")
+    monkeypatch.setenv("AICRM_WECOM_ENABLED_EFFECT_TYPES", WECOM_WELCOME_MESSAGE_SEND)
+    monkeypatch.setattr("aicrm_next.platform_foundation.external_effects.worker._capability_gate_error", lambda job: "")
+    repo = build_external_effect_repository()
+    job = _plan_welcome_job(repo=repo, key="welcome-missing-composition")
+
+    result = ExternalEffectWorker(
+        repo,
+        adapter_registry=_registry(WeComWelcomeMessageAdapter()),
+    ).dispatch_one(job["id"])
+
+    assert result["job"]["status"] == "failed_terminal"
+    assert result["attempt"]["error_code"] == "adapter_composition_missing"
+    assert result["attempt"]["response_summary_json"]["wecom_send_executed"] is False
+    assert result["attempt"]["response_summary_json"]["real_external_call_executed"] is False
+    assert result["real_external_call_executed"] is False
+
+
 def test_wecom_welcome_executes_through_external_effect_worker(monkeypatch) -> None:
     reset_external_effect_fixture_state()
     monkeypatch.setenv("AICRM_WECOM_EXECUTION_MODE", "execute")
