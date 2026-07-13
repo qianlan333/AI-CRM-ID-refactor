@@ -710,8 +710,11 @@ def test_internal_event_worker_systemd_units_are_deployable():
     assert "Environment=AICRM_INTERNAL_EVENTS_WORKER_BATCH_SIZE=50" in service
     assert "Environment=AICRM_INTERNAL_EVENTS_AUTO_EXECUTE_MAX_BATCH_SIZE=50" in service
     assert "payment.succeeded:service_period_entitlement_consumer" in service
+    assert "payment.succeeded:webhook_order_paid_consumer" in service
     assert "WorkingDirectory=/home/ubuntu/极简 crm" in service
-    assert "python scripts/run_internal_event_worker.py --execute --limit ${AICRM_INTERNAL_EVENTS_WORKER_BATCH_SIZE:-50}" in service
+    assert "ExecStart=/usr/bin/env" in service
+    assert "/home/ubuntu/venvs/openclaw/bin/python scripts/run_internal_event_worker.py --execute --limit 50" in service
+    assert "/bin/bash -lc" not in service
     assert "wecom_ability_service" not in service
     assert "legacy_flask_app" not in service
     assert "run-legacy" not in service

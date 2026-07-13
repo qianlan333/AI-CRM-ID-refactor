@@ -451,10 +451,31 @@ def test_entitlement_recovers_after_unionid_backfill_and_refund_retry_is_idempot
 
     with _connect() as conn:
         conn.execute(
-            "INSERT INTO crm_user_identity (unionid, identity_status) VALUES ('union_r08_backfilled', 'active')"
+            """
+            INSERT INTO crm_user_identity (
+                unionid, primary_external_userid, external_userids_json,
+                mobile, mobile_normalized, identity_status
+            ) VALUES (
+                'union_r08_backfilled', 'external_r08_backfilled',
+                '["external_r08_backfilled"]'::jsonb,
+                '13800138000', '13800138000', 'active'
+            )
+            """
         )
         conn.execute(
-            "UPDATE wechat_pay_orders SET unionid = 'union_r08_backfilled' WHERE id = %s",
+            """
+            UPDATE wechat_pay_orders
+            SET unionid = 'union_r08_backfilled',
+                metadata_json = jsonb_build_object(
+                    'payer_identity',
+                    jsonb_build_object(
+                        'external_userid', 'external_r08_backfilled',
+                        'mobile', '13800138000',
+                        'openid', 'openid_r08_not_projected_yet'
+                    )
+                )
+            WHERE id = %s
+            """,
             (order["id"],),
         )
         conn.commit()

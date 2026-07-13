@@ -4,6 +4,8 @@ import inspect
 from datetime import datetime, timezone
 
 from aicrm_next.commerce.repo import PostgresCommerceRepository, reset_commerce_fixture_state
+from aicrm_next.identity_contact.dto import IdentityResolution, IdentityResolveResult
+from aicrm_next.service_period import repo as service_period_repo
 from aicrm_next.service_period.application import (
     ApplyServicePeriodRefundCommand,
     CreateServicePeriodProductCommand,
@@ -34,6 +36,41 @@ def _payload(**overrides):
     }
     payload.update(overrides)
     return payload
+
+
+def test_service_period_prefers_canonical_order_unionid_over_unprojected_openid(monkeypatch) -> None:
+    captured = []
+
+    def resolve(_conn, query):
+        captured.append(query)
+        return IdentityResolveResult(
+            status="resolved",
+            identity=IdentityResolution(
+                person_id=None,
+                external_userid="external_service_period",
+                mobile="13800138000",
+                openid=None,
+                unionid="union_service_period",
+            ),
+        )
+
+    monkeypatch.setattr(service_period_repo, "resolve_identity_with_dbapi", resolve)
+
+    unionid = service_period_repo._resolve_paid_order_unionid(
+        object(),
+        {
+            "unionid": "union_service_period",
+            "external_userid": "external_service_period",
+            "mobile": "13800138000",
+            "openid": "openid_not_projected_yet",
+        },
+    )
+
+    assert unionid == "union_service_period"
+    assert captured[0].unionid == "union_service_period"
+    assert captured[0].external_userid is None
+    assert captured[0].mobile is None
+    assert captured[0].openid is None
 
 
 def _paid_order(out_trade_no: str, *, product_code: str = "sp_course_001", unionid: str = "union_sp_001", paid_at: str = "2099-01-01T00:00:00+00:00") -> dict:

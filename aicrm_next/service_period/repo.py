@@ -66,6 +66,19 @@ def _order_identity(order: dict[str, Any]) -> dict[str, str]:
     }
 
 
+def _resolve_paid_order_unionid(conn: Any, identity: dict[str, str]) -> str:
+    canonical_unionid = text(identity.get("unionid"))
+    if canonical_unionid:
+        query = ResolvePersonIdentityRequest(unionid=canonical_unionid)
+    else:
+        query = ResolvePersonIdentityRequest(
+            external_userid=text(identity.get("external_userid")) or None,
+            openid=text(identity.get("openid")) or None,
+            mobile=text(identity.get("mobile")) or None,
+        )
+    return resolved_unionid(resolve_identity_with_dbapi(conn, query))
+
+
 def _order_paid_at(order: dict[str, Any], transaction: dict[str, Any] | None = None) -> datetime:
     transaction = transaction or {}
     return parse_datetime(order.get("paid_at")) or parse_datetime(transaction.get("success_time")) or utcnow()
@@ -1053,17 +1066,7 @@ class PostgresServicePeriodRepository:
             if self._event_exists(conn, out_trade_no, {"activated", "renewed"}):
                 return {"ok": True, "idempotent": True, "skipped": True, "reason": "event_already_applied"}
             identity = _order_identity(order)
-            unionid = resolved_unionid(
-                resolve_identity_with_dbapi(
-                    conn,
-                    ResolvePersonIdentityRequest(
-                        unionid=identity["unionid"] or None,
-                        external_userid=identity["external_userid"] or None,
-                        openid=identity["openid"] or None,
-                        mobile=identity["mobile"] or None,
-                    ),
-                )
-            )
+            unionid = _resolve_paid_order_unionid(conn, identity)
             if not unionid:
                 event = self._insert_event(
                     conn,
