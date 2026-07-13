@@ -61,6 +61,16 @@ def test_count_only_reconciliation_has_pii_free_read_only_lineage_counts(monkeyp
     assert "INSERT INTO" not in statements
     assert "UPDATE " not in statements
     assert "DELETE FROM" not in statements
+    submission_query = reconciliation._ANOMALY_QUERIES["submission_without_outbox"]
+    assert "TIMESTAMPTZ '2026-07-13 05:42:30+00'" in submission_query
+    assert "FROM internal_event_outbox outbox" in submission_query
+    assert "FROM internal_event event" in submission_query
+    planner_query = reconciliation._ANOMALY_QUERIES["effect_without_succeeded_planner"]
+    assert "JOIN internal_event event" in planner_query
+    assert "event.event_type = 'questionnaire.submitted'" in planner_query
+    residue_query = reconciliation._ANOMALY_QUERIES["stale_legacy_retry_residue"]
+    assert "log.status IN ('planned', 'pending', 'queued')" in residue_query
+    assert "log.retry_from_log_id IS NOT NULL OR" not in residue_query
 
 
 def test_repair_requires_auditable_actor_and_reason_without_connecting(monkeypatch) -> None:

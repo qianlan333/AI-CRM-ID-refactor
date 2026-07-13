@@ -15,16 +15,27 @@ from aicrm_next.shared.db_session import connect_raw_postgres
 from aicrm_next.shared.runtime import raw_database_url
 
 
+_QUESTIONNAIRE_R09_PRODUCTION_CUTOVER_SQL = "TIMESTAMPTZ '2026-07-13 05:42:30+00'"
+
+
 _ANOMALY_QUERIES = {
-    "submission_without_outbox": """
+    "submission_without_outbox": f"""
         SELECT qs.id
         FROM questionnaire_submissions qs
-        WHERE NOT EXISTS (
+        WHERE qs.submitted_at >= {_QUESTIONNAIRE_R09_PRODUCTION_CUTOVER_SQL}
+          AND NOT EXISTS (
             SELECT 1
             FROM internal_event_outbox outbox
             WHERE outbox.tenant_id = 'aicrm'
               AND outbox.idempotency_key = 'questionnaire.submitted:' || qs.id::text
         )
+          AND NOT EXISTS (
+              SELECT 1
+              FROM internal_event event
+              WHERE event.tenant_id = 'aicrm'
+                AND event.event_type = 'questionnaire.submitted'
+                AND event.idempotency_key = 'questionnaire.submitted:' || qs.id::text
+          )
     """,
     "relayed_outbox_without_event": """
         SELECT outbox.id
@@ -89,6 +100,10 @@ _ANOMALY_QUERIES = {
     "effect_without_succeeded_planner": """
         SELECT job.id
         FROM external_effect_job job
+        JOIN internal_event event
+          ON event.tenant_id = job.tenant_id
+         AND event.event_id = job.source_event_id
+         AND event.event_type = 'questionnaire.submitted'
         WHERE job.effect_type IN (
             'webhook.questionnaire_submission.push',
             'wecom.contact.tag.mark'
@@ -149,7 +164,7 @@ _ANOMALY_QUERIES = {
     "stale_legacy_retry_residue": """
         SELECT log.id
         FROM questionnaire_external_push_logs log
-        WHERE log.retry_from_log_id IS NOT NULL OR log.status = 'planned'
+        WHERE log.status IN ('planned', 'pending', 'queued')
         UNION ALL
         SELECT job.id
         FROM external_effect_job job

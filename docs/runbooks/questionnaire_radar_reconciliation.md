@@ -8,6 +8,8 @@ python scripts/ops/reconcile_questionnaire_radar.py
 
 The command reports only aggregate counts for missing outbox/event/effect lineage, duplicate effects, effect/attempt/planner inconsistencies, successful tag effects missing local projection, and retired retry residue. It returns no questionnaire answers, webhook payloads, mobile, openid, unionid, or external_userid. It never relays an outbox, runs a consumer, dispatches a provider, or updates Radar events.
 
+Submission continuity is scoped to the first completed production deployment of R09 (`2026-07-13 05:42:30 UTC`). A retained canonical `questionnaire.submitted` Internal Event is sufficient evidence after its transactional outbox envelope has been relayed and later removed. Planner consistency applies only to effects linked to that canonical event type; legacy effects and completed legacy retry logs are not actionable R09 gaps.
+
 Confirm these flags on every run:
 
 ```text
