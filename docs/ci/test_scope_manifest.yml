@@ -116,7 +116,8 @@
         "aicrm_next/questionnaire/templates/admin_questionnaires.html",
         "aicrm_next/questionnaire/static/admin_questionnaire_editor.css",
         "aicrm_next/questionnaire/static/admin_questionnaire_editor.js",
-        "tests/test_questionnaire_editor_asset_split.py"
+        "tests/test_questionnaire_editor_asset_split.py",
+        "tests/test_architecture_size_budgets.py"
       ],
       "python_tests": [
         "tests/test_questionnaire_editor_asset_split.py",

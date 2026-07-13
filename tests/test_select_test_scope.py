@@ -359,6 +359,7 @@ def test_questionnaire_editor_asset_split_has_permanent_full_ci_scope() -> None:
         "aicrm_next/questionnaire/static/admin_questionnaire_editor.css",
         "aicrm_next/questionnaire/static/admin_questionnaire_editor.js",
         "tests/test_questionnaire_editor_asset_split.py",
+        "tests/test_architecture_size_budgets.py",
     )
 
     assert result["unmatched_files"] == []
