@@ -577,14 +577,6 @@ repositories:
       - internal_event_consumer_attempt
       - internal_event_consumer_run
       - internal_event_outbox
-  aicrm_next/platform_foundation/legacy_cleanup/repo.py:
-    capability_owner: aicrm_next.platform_foundation.legacy_cleanup
-    table_reads:
-      - legacy_webhook_cleanup_audit
-      - legacy_webhook_deprecation_registry
-    table_writes:
-      - legacy_webhook_cleanup_audit
-      - legacy_webhook_deprecation_registry
   aicrm_next/platform_foundation/push_center/repository.py:
     capability_owner: aicrm_next.platform_foundation.push_center
     table_reads: []

@@ -844,7 +844,6 @@ def test_private_auth_cutover_maps_every_runtime_caller_and_regression_file() ->
         "tests/test_external_orders_api.py",
         "tests/test_internal_oauth_client_purpose.py",
         "tests/test_internal_service_token_purpose.py",
-        "tests/test_legacy_webhook_cleanup.py",
         "tests/test_next_admin_jobs_native.py",
         "tests/test_run_message_activity_sync_script.py",
         "tests/test_wecom_tag_read_selectors.py",
@@ -858,6 +857,27 @@ def test_private_auth_cutover_maps_every_runtime_caller_and_regression_file() ->
     assert result["needs_postgres"] is True
     assert result["architecture_gate"] == "full"
     assert result["needs_full_ci"] is True
+
+
+def test_retired_runtime_physical_cleanup_has_permanent_full_ci_scope() -> None:
+    result = _select(
+        "aicrm_next/platform_foundation/legacy_cleanup/service.py",
+        "aicrm_next/shared/retired_contracts.py",
+        "migrations/versions/0105_drop_legacy_cleanup_tables.py",
+        "docs/architecture/retired_runtime_registry.yml",
+        "tools/check_retired_runtime_references.py",
+        "tests/test_retired_runtime_contract.py",
+        "tests/test_retired_runtime_reference_scanner.py",
+        "tests/test_legacy_webhook_cleanup.py",
+    )
+
+    assert result["unmatched_files"] == []
+    assert "retired_runtime_physical_cleanup" in result["matched_scopes"]
+    assert "tests/test_database_bootstrap.py" in result["python_tests"]
+    assert "tests/test_repository_ownership_guard.py" in result["python_tests"]
+    assert result["needs_postgres"] is True
+    assert result["needs_full_ci"] is True
+    assert result["architecture_gate"] == "full"
 
 
 def test_unmapped_path_fails_instead_of_falling_back_to_full_regression() -> None:

@@ -67,7 +67,6 @@ API_CLIENT_PROFILES = (
             "internal_event_execute",
             "internal_execute",
             "jobs_execute",
-            "legacy_cleanup_execute",
             "push_queue_execute",
             "runtime_route_read",
             "webhook_inbox_execute",

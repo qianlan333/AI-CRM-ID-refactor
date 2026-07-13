@@ -42,10 +42,6 @@ _HYBRID_ADMIN_EXACT_PATHS = {
     "/api/admin/internal-events/{event_id}/consumers/{consumer_name}/skip",
     "/api/admin/internal-events/run-due",
     "/api/admin/internal-events/run-due/preview",
-    "/api/admin/legacy-webhook-cleanup/deprecations/mark",
-    "/api/admin/legacy-webhook-cleanup/deprecations/retire-now",
-    "/api/admin/legacy-webhook-cleanup/run-due",
-    "/api/admin/legacy-webhook-cleanup/run-due/preview",
 }
 
 
@@ -121,8 +117,6 @@ def _machine_capability(path: str) -> str:
         return "external_effect_execute"
     if "/internal-events/" in path:
         return "internal_event_execute"
-    if "/legacy-webhook-cleanup/" in path:
-        return "legacy_cleanup_execute"
     return "jobs_execute"
 
 

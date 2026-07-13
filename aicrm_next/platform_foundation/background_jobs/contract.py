@@ -195,46 +195,6 @@ def enqueue_webhook_job(
 def webhook_route_contracts() -> tuple[WebhookRouteContract, ...]:
     W = WebhookRouteContract
     return (
-        W(
-            "/api/admin/legacy-webhook-cleanup/status",
-            ("GET",),
-            "legacy_webhook_cleanup_status",
-            "none",
-            "read_model",
-            "admin read-only webhook cleanup inventory",
-        ),
-        W(
-            "/api/admin/legacy-webhook-cleanup/deprecations/mark",
-            ("POST",),
-            "legacy_webhook_cleanup_mark_deprecated",
-            "none",
-            "command",
-            "admin command records cleanup state only",
-        ),
-        W(
-            "/api/admin/legacy-webhook-cleanup/run-due/preview",
-            ("POST",),
-            "legacy_webhook_cleanup_preview",
-            "none",
-            "command",
-            "admin preview does not execute external effects",
-        ),
-        W(
-            "/api/admin/legacy-webhook-cleanup/run-due",
-            ("POST",),
-            "legacy_webhook_cleanup_run_due",
-            "none",
-            "command",
-            "admin cleanup command does not execute external effects",
-        ),
-        W(
-            "/api/admin/legacy-webhook-cleanup/deprecations/retire-now",
-            ("POST",),
-            "legacy_webhook_cleanup_retire_now",
-            "none",
-            "command",
-            "admin cleanup command does not execute external effects",
-        ),
         W("/admin/webhook-inbox", ("GET",), "api.admin_webhook_inbox_page", "none", "read_model", "admin page renders webhook inbox queue state only"),
         W("/api/admin/webhook-inbox/metrics", ("GET",), "webhook_inbox_metrics", "none", "read_model", "read-only webhook inbox queue metrics"),
         W("/api/admin/webhook-inbox/items", ("GET",), "list_webhook_inbox_items", "none", "read_model", "read-only webhook inbox queue items"),

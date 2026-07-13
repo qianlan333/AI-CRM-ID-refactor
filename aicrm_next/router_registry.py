@@ -58,7 +58,6 @@ from .platform_foundation.api import router as platform_router
 from .platform_foundation.auth_platform.api import router as auth_platform_router
 from .platform_foundation.external_effects.api import router as external_effects_router
 from .platform_foundation.internal_events.api import router as internal_events_router
-from .platform_foundation.legacy_cleanup.api import router as legacy_cleanup_router
 from .platform_foundation.push_center.api import router as push_center_router
 from .platform_foundation.webhook_inbox.api import router as webhook_inbox_router
 from .public_product.api import router as public_product_router
@@ -83,7 +82,6 @@ ROUTER_SPECS: tuple[RouterSpec, ...] = (
     RouterSpec("platform_foundation", "platform", platform_router, "foundation health and shell contracts"),
     RouterSpec("platform_foundation", "auth_platform", auth_platform_router, "unified OAuth 2.0 and OIDC platform"),
     RouterSpec("platform_foundation", "external_effects", external_effects_router, "external effects job/admin APIs"),
-    RouterSpec("platform_foundation", "legacy_cleanup", legacy_cleanup_router, "legacy cleanup read/command APIs"),
     RouterSpec("platform_foundation", "internal_events", internal_events_router, "internal event center APIs"),
     RouterSpec("platform_foundation", "push_center", push_center_router, "push center APIs"),
     RouterSpec("platform_foundation", "webhook_inbox", webhook_inbox_router, "webhook inbox metrics and operations APIs"),

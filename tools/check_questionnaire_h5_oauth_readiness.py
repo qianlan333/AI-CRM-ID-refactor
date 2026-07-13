@@ -102,7 +102,6 @@ def local_fixture_env():
         {
             "AICRM_NEXT_ENV": None,
             "DATABASE_URL": None,
-            "AICRM_NEXT_ENABLE_LEGACY_PRODUCTION_FACADE": None,
             "AICRM_NEXT_WECHAT_OAUTH_MODE": "fake",
             "SECRET_KEY": "questionnaire-h5-oauth-readiness-local",
         }
@@ -115,7 +114,6 @@ def production_probe_env():
     with _patched_env(
         {
             "AICRM_NEXT_ENV": "production",
-            "AICRM_NEXT_ENABLE_LEGACY_PRODUCTION_FACADE": "1",
             "AICRM_NEXT_WECHAT_OAUTH_MODE": "fake",
             "DATABASE_URL": "postgresql://probe:probe@127.0.0.1:1/aicrm_probe",
             "SECRET_KEY": "questionnaire-h5-oauth-readiness-production",

@@ -269,7 +269,7 @@
       "accessor": "runtime_setting",
       "file": "aicrm_next/admin_jobs/application.py",
       "key": "AICRM_AUTH_MCP_CLIENT_ID",
-      "line": 294
+      "line": 281
     },
     {
       "accessor": "declared_runtime_environment_key",
@@ -341,7 +341,7 @@
       "accessor": "os.getenv",
       "file": "aicrm_next/admin_jobs/application.py",
       "key": "AICRM_ENABLE_IN_PROCESS_ARCHIVE_SYNC",
-      "line": 409
+      "line": 396
     },
     {
       "accessor": "os.getenv",
@@ -1241,7 +1241,7 @@
       "accessor": "os.getenv",
       "file": "aicrm_next/external_push/service.py",
       "key": "EXTERNAL_PUSH_WEBHOOK_TIMEOUT_SECONDS",
-      "line": 293
+      "line": 279
     },
     {
       "accessor": "os.getenv",
@@ -1805,7 +1805,7 @@
       "accessor": "os.getenv",
       "file": "aicrm_next/admin_jobs/application.py",
       "key": "WECOM_DEFAULT_OWNER_USERID",
-      "line": 95
+      "line": 82
     },
     {
       "accessor": "os.getenv",
@@ -2704,7 +2704,7 @@
     }
   ],
   "migration_heads": [
-    "0104_auth_platform"
+    "0105_drop_legacy_cleanup_tables"
   ],
   "openapi_components": {
     "schemas": {
@@ -20650,202 +20650,6 @@
       "operation_id": "api_admin_jobs_webhook_delivery_retry:POST:/api/admin/jobs/webhook-deliveries/{delivery_id}/retry",
       "path": "/api/admin/jobs/webhook-deliveries/{delivery_id}/retry",
       "route_group": "admin_jobs"
-    },
-    {
-      "capability_owner": "platform_foundation",
-      "contract": {
-        "parameters": [],
-        "request_body": null,
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          }
-        }
-      },
-      "endpoint": "aicrm_next.platform_foundation.legacy_cleanup.api.legacy_webhook_cleanup_mark_deprecated",
-      "include_in_schema": true,
-      "kind": "api",
-      "methods": [
-        "POST"
-      ],
-      "name": "legacy_webhook_cleanup_mark_deprecated",
-      "operation_id": "legacy_webhook_cleanup_mark_deprecated:POST:/api/admin/legacy-webhook-cleanup/deprecations/mark",
-      "path": "/api/admin/legacy-webhook-cleanup/deprecations/mark",
-      "route_group": "legacy_cleanup"
-    },
-    {
-      "capability_owner": "platform_foundation",
-      "contract": {
-        "parameters": [],
-        "request_body": null,
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          }
-        }
-      },
-      "endpoint": "aicrm_next.platform_foundation.legacy_cleanup.api.legacy_webhook_cleanup_retire_now",
-      "include_in_schema": true,
-      "kind": "api",
-      "methods": [
-        "POST"
-      ],
-      "name": "legacy_webhook_cleanup_retire_now",
-      "operation_id": "legacy_webhook_cleanup_retire_now:POST:/api/admin/legacy-webhook-cleanup/deprecations/retire-now",
-      "path": "/api/admin/legacy-webhook-cleanup/deprecations/retire-now",
-      "route_group": "legacy_cleanup"
-    },
-    {
-      "capability_owner": "platform_foundation",
-      "contract": {
-        "parameters": [],
-        "request_body": null,
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          }
-        }
-      },
-      "endpoint": "aicrm_next.platform_foundation.legacy_cleanup.api.legacy_webhook_cleanup_run_due",
-      "include_in_schema": true,
-      "kind": "api",
-      "methods": [
-        "POST"
-      ],
-      "name": "legacy_webhook_cleanup_run_due",
-      "operation_id": "legacy_webhook_cleanup_run_due:POST:/api/admin/legacy-webhook-cleanup/run-due",
-      "path": "/api/admin/legacy-webhook-cleanup/run-due",
-      "route_group": "legacy_cleanup"
-    },
-    {
-      "capability_owner": "platform_foundation",
-      "contract": {
-        "parameters": [],
-        "request_body": null,
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          }
-        }
-      },
-      "endpoint": "aicrm_next.platform_foundation.legacy_cleanup.api.legacy_webhook_cleanup_preview",
-      "include_in_schema": true,
-      "kind": "api",
-      "methods": [
-        "POST"
-      ],
-      "name": "legacy_webhook_cleanup_preview",
-      "operation_id": "legacy_webhook_cleanup_preview:POST:/api/admin/legacy-webhook-cleanup/run-due/preview",
-      "path": "/api/admin/legacy-webhook-cleanup/run-due/preview",
-      "route_group": "legacy_cleanup"
-    },
-    {
-      "capability_owner": "platform_foundation",
-      "contract": {
-        "parameters": [
-          {
-            "in": "query",
-            "name": "legacy_key",
-            "required": false,
-            "schema": {
-              "default": "",
-              "title": "Legacy Key",
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "legacy_type",
-            "required": false,
-            "schema": {
-              "default": "",
-              "title": "Legacy Type",
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "legacy_module",
-            "required": false,
-            "schema": {
-              "default": "",
-              "title": "Legacy Module",
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "status",
-            "required": false,
-            "schema": {
-              "default": "",
-              "title": "Status",
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "delete_status",
-            "required": false,
-            "schema": {
-              "default": "",
-              "title": "Delete Status",
-              "type": "string"
-            }
-          }
-        ],
-        "request_body": null,
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        }
-      },
-      "endpoint": "aicrm_next.platform_foundation.legacy_cleanup.api.legacy_webhook_cleanup_status",
-      "include_in_schema": true,
-      "kind": "api",
-      "methods": [
-        "GET"
-      ],
-      "name": "legacy_webhook_cleanup_status",
-      "operation_id": "legacy_webhook_cleanup_status:GET:/api/admin/legacy-webhook-cleanup/status",
-      "path": "/api/admin/legacy-webhook-cleanup/status",
-      "route_group": "legacy_cleanup"
     },
     {
       "capability_owner": "send_content",
@@ -41639,26 +41443,22 @@
     {
       "domain": "legacy_webhook_cleanup",
       "drop_candidate": false,
-      "lifecycle": "audit",
-      "migration_source": "0042_legacy_webhook_deprecation_registry",
+      "lifecycle": "retired",
+      "migration_source": "0042_legacy_webhook_deprecation_registry, removed by 0105_drop_legacy_cleanup_tables",
       "pii_level": "internal_contact",
-      "read_owners": [
-        "historical schema drift guard"
-      ],
+      "read_owners": [],
       "table": "legacy_webhook_cleanup_audit",
-      "write_owner": "aicrm_next.legacy_webhook_cleanup"
+      "write_owner": ""
     },
     {
       "domain": "legacy_webhook_cleanup",
       "drop_candidate": false,
-      "lifecycle": "config",
-      "migration_source": "0042_legacy_webhook_deprecation_registry",
+      "lifecycle": "retired",
+      "migration_source": "0042_legacy_webhook_deprecation_registry, removed by 0105_drop_legacy_cleanup_tables",
       "pii_level": "internal_contact",
-      "read_owners": [
-        "historical schema drift guard"
-      ],
+      "read_owners": [],
       "table": "legacy_webhook_deprecation_registry",
-      "write_owner": "aicrm_next.legacy_webhook_cleanup"
+      "write_owner": ""
     },
     {
       "domain": "admin_config",
