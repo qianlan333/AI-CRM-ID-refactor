@@ -31,7 +31,12 @@ REQUIRED_OPENAPI_PATHS = (
     "/api/admin/ai-audience/packages",
     "/api/admin/automation-agents",
     "/api/admin/user-ops/send-records",
+    "/api/admin/data-health/summary",
 )
+
+DATA_HEALTH_SUMMARY_PATH = "/api/admin/data-health/summary"
+EXPECTED_DATA_HEALTH_CHECK_COUNT = 15
+DATA_HEALTH_RESPONSE_MAX_BYTES = 65536
 
 SMOKE_PATHS = (
     "/admin/customers",
@@ -51,6 +56,7 @@ SMOKE_PATHS = (
     "/api/admin/ai-audience/packages",
     "/api/admin/automation-agents",
     "/api/admin/user-ops/send-records?limit=1",
+    DATA_HEALTH_SUMMARY_PATH,
 )
 SIDEBAR_PATHS = tuple(
     dict.fromkeys(
@@ -142,13 +148,39 @@ def _admin_api_payload_error(path: str, body: str) -> str:
         return "admin_api_read_model_unavailable"
     if payload.get("source_status") == "production_unavailable":
         return "admin_api_production_unavailable"
+    if path.split("?", 1)[0] == DATA_HEALTH_SUMMARY_PATH:
+        counts = payload.get("counts")
+        checks = payload.get("checks")
+        if not isinstance(counts, dict) or not isinstance(checks, list):
+            return "data_health_summary_invalid"
+        expected_counts = {
+            "ok": EXPECTED_DATA_HEALTH_CHECK_COUNT,
+            "warn": 0,
+            "fail": 0,
+            "not_applicable": 0,
+        }
+        if (
+            payload.get("ok") is not True
+            or payload.get("overall_status") != "ok"
+            or counts != expected_counts
+            or len(checks) != EXPECTED_DATA_HEALTH_CHECK_COUNT
+            or any(not isinstance(check, dict) or check.get("status") != "ok" for check in checks)
+        ):
+            return "data_health_checks_not_all_ok"
     return ""
 
 
 def _probe(base_url: str, path: str, *, timeout: float, cookie_header: str = "") -> ProbeResult:
     started = time.monotonic()
     try:
-        status_code, _headers, body = _fetch(base_url, path, timeout=timeout, cookie_header=cookie_header)
+        max_bytes = DATA_HEALTH_RESPONSE_MAX_BYTES if path.split("?", 1)[0] == DATA_HEALTH_SUMMARY_PATH else 4096
+        status_code, _headers, body = _fetch(
+            base_url,
+            path,
+            timeout=timeout,
+            max_bytes=max_bytes,
+            cookie_header=cookie_header,
+        )
     except (URLError, TimeoutError, OSError) as exc:
         return ProbeResult(
             path=path,

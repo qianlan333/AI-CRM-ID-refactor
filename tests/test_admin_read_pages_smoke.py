@@ -34,6 +34,8 @@ def test_full_sidebar_smoke_covers_every_registered_navigation_destination(monke
     assert payload["sidebar_path_count"] == len(smoke.SIDEBAR_PATHS)
     assert set(smoke.SIDEBAR_PATHS).issubset(observed_paths)
     assert "/admin/automation-agents" in observed_paths
+    assert smoke.DATA_HEALTH_SUMMARY_PATH in observed_paths
+    assert smoke.DATA_HEALTH_SUMMARY_PATH in smoke.REQUIRED_OPENAPI_PATHS
 
 
 def test_run_fails_when_required_admin_cookie_is_missing(monkeypatch) -> None:
@@ -224,3 +226,70 @@ def test_probe_accepts_healthy_empty_admin_api_payload(monkeypatch) -> None:
 
     assert result.ok is True
     assert result.error == ""
+
+
+def test_probe_rejects_data_health_summary_with_failed_check(monkeypatch) -> None:
+    checks = [{"check_id": f"check_{index}", "status": "ok"} for index in range(14)]
+    checks.append({"check_id": "failed_check", "status": "fail"})
+    monkeypatch.setattr(
+        smoke,
+        "_fetch",
+        lambda *args, **kwargs: (
+            200,
+            {},
+            json.dumps(
+                {
+                    "ok": False,
+                    "overall_status": "fail",
+                    "counts": {"ok": 14, "warn": 0, "fail": 1, "not_applicable": 0},
+                    "checks": checks,
+                }
+            ),
+        ),
+    )
+
+    result = smoke._probe(
+        "http://127.0.0.1:5001",
+        smoke.DATA_HEALTH_SUMMARY_PATH,
+        timeout=1,
+        cookie_header="aicrm_next_admin_session=fake",
+    )
+
+    assert result.ok is False
+    assert result.error == "data_health_checks_not_all_ok"
+
+
+def test_probe_accepts_exactly_fifteen_green_data_health_checks(monkeypatch) -> None:
+    observed_max_bytes: list[int] = []
+    checks = [
+        {"check_id": f"check_{index}", "status": "ok"}
+        for index in range(smoke.EXPECTED_DATA_HEALTH_CHECK_COUNT)
+    ]
+
+    def _healthy_data_health(*args, **kwargs):
+        observed_max_bytes.append(int(kwargs["max_bytes"]))
+        return (
+            200,
+            {},
+            json.dumps(
+                {
+                    "ok": True,
+                    "overall_status": "ok",
+                    "counts": {"ok": 15, "warn": 0, "fail": 0, "not_applicable": 0},
+                    "checks": checks,
+                }
+            ),
+        )
+
+    monkeypatch.setattr(smoke, "_fetch", _healthy_data_health)
+
+    result = smoke._probe(
+        "http://127.0.0.1:5001",
+        smoke.DATA_HEALTH_SUMMARY_PATH,
+        timeout=1,
+        cookie_header="aicrm_next_admin_session=fake",
+    )
+
+    assert result.ok is True
+    assert result.error == ""
+    assert observed_max_bytes == [smoke.DATA_HEALTH_RESPONSE_MAX_BYTES]
