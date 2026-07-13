@@ -3458,6 +3458,47 @@ tables:
       - tests/test_service_period_schema.py
     notes: Idempotent activation, renewal, expiry, refund/disable/admin-adjustment and failure event log for service period changes.
 
+  service_period_huangyoucan_usage_snapshot:
+    domain: service_period
+    lifecycle: projection
+    write_owner: aicrm_next.service_period
+    read_owners:
+      - aicrm_next.service_period
+      - aicrm_next.customer_read_model
+    replacement: none; local readonly HuangYouCan usage projection for service period views
+    drop_candidate: false
+    drop_after: ""
+    runtime_entrypoints:
+      - scripts.run_huangyoucan_usage_sync
+      - aicrm_next.service_period.api
+      - aicrm_next.customer_read_model.sidebar_v2
+    migration_source: 0107_hyc_usage_snapshot
+    pii_level: internal_contact
+    guard_tests:
+      - tests/test_data_table_lifecycle_guard.py
+      - tests/test_service_period_schema.py
+      - tests/test_huangyoucan_usage_sync.py
+    notes: Transactionally replaced last-known-good projection. Stores HuangYouCan user ID, unionid, mobile MD5, usage metrics, and refresh time; never stores plaintext phone or message content.
+
+  service_period_huangyoucan_usage_sync_runs:
+    domain: service_period
+    lifecycle: event
+    write_owner: aicrm_next.service_period
+    read_owners:
+      - aicrm_next.service_period
+    replacement: none; HuangYouCan usage projection sync audit trail
+    drop_candidate: false
+    drop_after: ""
+    runtime_entrypoints:
+      - scripts.run_huangyoucan_usage_sync
+    migration_source: 0107_hyc_usage_snapshot
+    pii_level: none
+    guard_tests:
+      - tests/test_data_table_lifecycle_guard.py
+      - tests/test_service_period_schema.py
+      - tests/test_huangyoucan_usage_sync.py
+    notes: Records terminal success or failure for each non-dry-run sync while failed refreshes preserve the previous successful snapshot.
+
   wechat_pay_orders:
     domain: commerce
     lifecycle: canonical

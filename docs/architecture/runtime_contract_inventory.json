@@ -423,6 +423,48 @@
     },
     {
       "accessor": "os.getenv",
+      "file": "aicrm_next/integration_gateway/huangyoucan_usage_client.py",
+      "key": "AICRM_HUANGYOUCAN_DB_CONNECT_TIMEOUT_SECONDS",
+      "line": 106
+    },
+    {
+      "accessor": "os.getenv",
+      "file": "aicrm_next/integration_gateway/huangyoucan_usage_client.py",
+      "key": "AICRM_HUANGYOUCAN_DB_HOST",
+      "line": 92
+    },
+    {
+      "accessor": "os.getenv",
+      "file": "aicrm_next/integration_gateway/huangyoucan_usage_client.py",
+      "key": "AICRM_HUANGYOUCAN_DB_NAME",
+      "line": 93
+    },
+    {
+      "accessor": "os.getenv",
+      "file": "aicrm_next/integration_gateway/huangyoucan_usage_client.py",
+      "key": "AICRM_HUANGYOUCAN_DB_PASSWORD",
+      "line": 95
+    },
+    {
+      "accessor": "os.getenv",
+      "file": "aicrm_next/integration_gateway/huangyoucan_usage_client.py",
+      "key": "AICRM_HUANGYOUCAN_DB_PORT",
+      "line": 102
+    },
+    {
+      "accessor": "os.getenv",
+      "file": "aicrm_next/integration_gateway/huangyoucan_usage_client.py",
+      "key": "AICRM_HUANGYOUCAN_DB_READ_TIMEOUT_SECONDS",
+      "line": 107
+    },
+    {
+      "accessor": "os.getenv",
+      "file": "aicrm_next/integration_gateway/huangyoucan_usage_client.py",
+      "key": "AICRM_HUANGYOUCAN_DB_USER",
+      "line": 94
+    },
+    {
+      "accessor": "os.getenv",
       "file": "scripts/script_runtime.py",
       "key": "AICRM_INTERNAL_API_BASE_URL",
       "line": 52
@@ -1934,6 +1976,13 @@
     "AICRM_GROUP_OPS_MATERIAL_UPLOAD_MODE",
     "AICRM_GROUP_OPS_MINIPROGRAM_APPID",
     "AICRM_GROUP_OPS_TIMEZONE",
+    "AICRM_HUANGYOUCAN_DB_CONNECT_TIMEOUT_SECONDS",
+    "AICRM_HUANGYOUCAN_DB_HOST",
+    "AICRM_HUANGYOUCAN_DB_NAME",
+    "AICRM_HUANGYOUCAN_DB_PASSWORD",
+    "AICRM_HUANGYOUCAN_DB_PORT",
+    "AICRM_HUANGYOUCAN_DB_READ_TIMEOUT_SECONDS",
+    "AICRM_HUANGYOUCAN_DB_USER",
     "AICRM_INTERNAL_API_BASE_URL",
     "AICRM_INTERNAL_EVENTS_ALLOWED_CONSUMERS",
     "AICRM_INTERNAL_EVENTS_ALLOWED_EVENT_CONSUMERS",
@@ -2710,7 +2759,7 @@
     }
   ],
   "migration_heads": [
-    "0106_critical_read_path_indexes"
+    "0107_hyc_usage_snapshot"
   ],
   "openapi_components": {
     "schemas": {
@@ -39810,6 +39859,12 @@
       "unit": "aicrm-campaign-run-due.timer"
     },
     {
+      "kind": "timer",
+      "service": "aicrm-huangyoucan-usage-sync.service",
+      "state": "approval_required",
+      "unit": "aicrm-huangyoucan-usage-sync.timer"
+    },
+    {
       "kind": "service",
       "state": "retired_forbidden",
       "unit": "aicrm-reply-monitor-capture.service"
@@ -41924,6 +41979,31 @@
         "aicrm_next.service_period"
       ],
       "table": "service_period_events",
+      "write_owner": "aicrm_next.service_period"
+    },
+    {
+      "domain": "service_period",
+      "drop_candidate": false,
+      "lifecycle": "projection",
+      "migration_source": "0107_hyc_usage_snapshot",
+      "pii_level": "internal_contact",
+      "read_owners": [
+        "aicrm_next.customer_read_model",
+        "aicrm_next.service_period"
+      ],
+      "table": "service_period_huangyoucan_usage_snapshot",
+      "write_owner": "aicrm_next.service_period"
+    },
+    {
+      "domain": "service_period",
+      "drop_candidate": false,
+      "lifecycle": "event",
+      "migration_source": "0107_hyc_usage_snapshot",
+      "pii_level": "none",
+      "read_owners": [
+        "aicrm_next.service_period"
+      ],
+      "table": "service_period_huangyoucan_usage_sync_runs",
       "write_owner": "aicrm_next.service_period"
     },
     {

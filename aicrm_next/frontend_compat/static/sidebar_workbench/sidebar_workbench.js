@@ -96,6 +96,26 @@
       .replace(/'/g, "&#39;");
   }
 
+  function huangyoucanMatched(item) {
+    return ["matched_unionid", "matched_mobile"].indexOf(String((item && item.huangyoucan_match_status) || "")) >= 0;
+  }
+
+  function huangyoucanBoolean(item, key, truthy, falsy) {
+    return huangyoucanMatched(item) ? (item[key] ? truthy : falsy) : "—";
+  }
+
+  function huangyoucanProgress(item) {
+    if (!huangyoucanMatched(item)) return "—";
+    const progress = item.huangyoucan_learning_plan_progress;
+    return progress ? String(Number(progress.current || 0)) + "/" + String(Number(progress.total || 0)) : "无";
+  }
+
+  function huangyoucanLastOpen(item) {
+    if (!huangyoucanMatched(item)) return "—";
+    const value = item.huangyoucan_last_open_at;
+    return value ? String(value).replace("T", " ").slice(0, 16) : "无";
+  }
+
   function safeJsonParse(text) {
     try {
       return JSON.parse(text);
@@ -702,10 +722,13 @@
           return (
             '<article class="card periodic-order-card"><div class="card-title"><div><h3>' + escapeHtml(item.title || "未命名周期商品") + "</h3>" +
             '<div class="mini">' + escapeHtml(lastOrder || item.product_code || "") + '</div></div><div class="price">' + escapeHtml(item.amount_label || "") + "</div></div>" +
-            '<div class="kv"><span>状态</span><strong>' + escapeHtml(item.status_label || "") + "</strong>" +
-            '<span>剩余天数</span><strong>' + escapeHtml(String(item.remaining_days || 0)) + " 天</strong>" +
-            '<span>到期时间</span><strong>' + escapeHtml(item.end_at || "") + "</strong>" +
-            '<span>周期</span><strong>' + escapeHtml(String(item.duration_days || 0)) + " 天</strong></div>" +
+            '<div class="kv"><span>剩余有效期</span><strong>' + escapeHtml(String(item.remaining_days || 0)) + " 天</strong>" +
+            '<span>周期</span><strong>' + escapeHtml(String(item.duration_days || 0)) + " 天</strong>" +
+            '<span>正式登录</span><strong>' + escapeHtml(huangyoucanBoolean(item, "huangyoucan_formally_logged_in", "是", "否")) + "</strong>" +
+            '<span>token 消耗</span><strong>' + escapeHtml(huangyoucanBoolean(item, "huangyoucan_has_token_usage", "有", "无")) + "</strong>" +
+            '<span>学习计划进度</span><strong>' + escapeHtml(huangyoucanProgress(item)) + "</strong>" +
+            '<span>近 7 天打开次数</span><strong>' + escapeHtml(huangyoucanMatched(item) ? String(Number(item.huangyoucan_open_count_7d || 0)) : "—") + "</strong>" +
+            '<span>最后打开时间</span><strong>' + escapeHtml(huangyoucanLastOpen(item)) + "</strong></div>" +
             '<div class="field periodic-remark"><div class="field-title">备注</div>' +
             '<textarea class="textarea periodic-remark-textarea" data-periodic-order-remark="' + escapeHtml(item.id || "") + '">' + escapeHtml(item.remark || "") + "</textarea></div>" +
             detailAction + "</article>"

@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from aicrm_next.commerce.repo import PostgresCommerceRepository, reset_commerce_fixture_state
 from aicrm_next.identity_contact.dto import IdentityResolution, IdentityResolveResult
 from aicrm_next.service_period import repo as service_period_repo
+from aicrm_next.service_period.huangyoucan_usage import huangyoucan_usage_match_joins
 from aicrm_next.service_period.application import (
     ApplyServicePeriodRefundCommand,
     CreateServicePeriodProductCommand,
@@ -290,6 +291,9 @@ def test_member_list_exposes_external_userid_and_preserves_admin_remark(next_cli
     member = members.json()["items"][0]
     assert member["external_userid"] == "wm_sp_001"
     assert member["remark"] == ""
+    assert member["huangyoucan_match_status"] == "not_found"
+    assert member["huangyoucan_formally_logged_in"] is None
+    assert member["huangyoucan_learning_plan_progress"] is None
 
     updated = next_client.put(
         f"/api/admin/service-period-products/{product['id']}/members/union_sp_001/remark",
@@ -315,6 +319,11 @@ def test_member_list_postgres_uses_existing_identity_and_contact_fallbacks() -> 
     assert repo_source.index("NULLIF(wfu.remark, '')") < repo_source.index("NULLIF(NULLIF(c.customer_name, ''), '问卷提交用户')")
     assert "NULLIF(NULLIF(c.customer_name, ''), '问卷提交用户')" in repo_source
     assert "NULLIF(wim.name, '')" in repo_source
+    assert "service_period_huangyoucan_usage_snapshot" in huangyoucan_usage_match_joins(
+        unionid_sql="e.unionid",
+        mobile_sql="c.mobile",
+    )
+    assert "public_huangyoucan_usage_fields" in repo_source
 
 
 def test_service_period_refund_rolls_back_first_order_and_renewal_idempotently() -> None:
@@ -356,7 +365,7 @@ def test_member_remark_command_rejects_unknown_entitlement() -> None:
 
 def test_expired_reactivation_missing_unionid_and_due_expiry() -> None:
     _reset()
-    product = CreateServicePeriodProductCommand()(ServicePeriodProductCreateRequest(**_payload(product_code="sp_expire_001")))["product"]
+    CreateServicePeriodProductCommand()(ServicePeriodProductCreateRequest(**_payload(product_code="sp_expire_001")))
     grant = GrantOrRenewEntitlementCommand()
 
     old = grant(order=_paid_order("SP_OLD", product_code="sp_expire_001", paid_at="2000-01-01T00:00:00+00:00"))

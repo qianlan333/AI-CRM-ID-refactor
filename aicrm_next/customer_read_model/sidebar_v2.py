@@ -22,6 +22,11 @@ from aicrm_next.service_period.domain import (
     isoformat as service_period_isoformat,
     remaining_days as service_period_remaining_days,
 )
+from aicrm_next.service_period.huangyoucan_usage import (
+    huangyoucan_usage_match_joins,
+    huangyoucan_usage_select_fields,
+    public_huangyoucan_usage_fields,
+)
 from aicrm_next.shared.db_session import get_engine
 from aicrm_next.shared.errors import ContractError, NotFoundError
 from aicrm_next.shared.runtime import raw_database_url
@@ -487,8 +492,8 @@ class SidebarV2SqlRepository:
         if identity is None:
             return []
         return self._all(
-            """
-            WITH identity_scope(unionid) AS (VALUES (:unionid))
+            f"""
+            WITH identity_scope(unionid, mobile) AS (VALUES (:unionid, :mobile))
             SELECT
                 e.id::text AS entitlement_id,
                 e.service_product_id::text AS service_product_id,
@@ -510,12 +515,14 @@ class SidebarV2SqlRepository:
                 o.id::text AS order_id,
                 o.amount_total AS last_order_amount,
                 o.paid_at AS last_order_paid_at,
-                o.created_at AS last_order_created_at
+                o.created_at AS last_order_created_at,
+                {huangyoucan_usage_select_fields()}
             FROM service_period_entitlements e
             JOIN service_period_products sp ON sp.id = e.service_product_id
             JOIN wechat_pay_products p ON p.id = e.trade_product_id
             LEFT JOIN wechat_pay_orders o ON o.id = e.last_order_id
             LEFT JOIN identity_scope identity ON identity.unionid = e.unionid
+            {huangyoucan_usage_match_joins(unionid_sql="identity.unionid", mobile_sql="identity.mobile")}
             WHERE e.tenant_id = 'aicrm'
               AND e.status IN ('active', 'expired')
               AND identity.unionid IS NOT NULL
@@ -525,7 +532,7 @@ class SidebarV2SqlRepository:
                 e.id DESC
             LIMIT :limit
             """,
-            {"unionid": _text(identity.unionid), "limit": safe_limit},
+            {"unionid": _text(identity.unionid), "mobile": _text(identity.mobile), "limit": safe_limit},
         )
 
     def get_customer_service_period_order(self, *, external_userid: str, entitlement_id: str, mobile: str = "") -> dict[str, Any] | None:
@@ -533,8 +540,8 @@ class SidebarV2SqlRepository:
         if identity is None:
             return None
         rows = self._all(
-            """
-            WITH identity_scope(unionid) AS (VALUES (:unionid))
+            f"""
+            WITH identity_scope(unionid, mobile) AS (VALUES (:unionid, :mobile))
             SELECT
                 e.id::text AS entitlement_id,
                 e.service_product_id::text AS service_product_id,
@@ -556,19 +563,25 @@ class SidebarV2SqlRepository:
                 o.id::text AS order_id,
                 o.amount_total AS last_order_amount,
                 o.paid_at AS last_order_paid_at,
-                o.created_at AS last_order_created_at
+                o.created_at AS last_order_created_at,
+                {huangyoucan_usage_select_fields()}
             FROM service_period_entitlements e
             JOIN service_period_products sp ON sp.id = e.service_product_id
             JOIN wechat_pay_products p ON p.id = e.trade_product_id
             LEFT JOIN wechat_pay_orders o ON o.id = e.last_order_id
             LEFT JOIN identity_scope identity ON identity.unionid = e.unionid
+            {huangyoucan_usage_match_joins(unionid_sql="identity.unionid", mobile_sql="identity.mobile")}
             WHERE e.tenant_id = 'aicrm'
               AND e.id::text = :entitlement_id
               AND e.status IN ('active', 'expired')
               AND identity.unionid IS NOT NULL
             LIMIT 1
             """,
-            {"unionid": _text(identity.unionid), "entitlement_id": entitlement_id},
+            {
+                "unionid": _text(identity.unionid),
+                "mobile": _text(identity.mobile),
+                "entitlement_id": entitlement_id,
+            },
         )
         return rows[0] if rows else None
 
@@ -1463,6 +1476,7 @@ class SidebarCommerceReadModel:
             "last_order_paid_at": _format_time(row.get("last_order_paid_at") or row.get("last_order_created_at")),
             "remark": _text(row.get("remark")),
             "detail_url": f"/admin/wechat-pay/transactions/{order_id}" if order_id else "",
+            **public_huangyoucan_usage_fields(row),
         }
 
     def _order_status(self, order: dict[str, Any]) -> str:

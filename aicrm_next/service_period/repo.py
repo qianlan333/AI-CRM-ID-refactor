@@ -27,6 +27,7 @@ from .domain import (
     utcnow,
     validate_duration_days,
 )
+from .huangyoucan_usage import huangyoucan_usage_match_joins, huangyoucan_usage_select_fields, public_huangyoucan_usage_fields
 
 
 LOGGER = logging.getLogger(__name__)
@@ -80,8 +81,7 @@ def _resolve_paid_order_unionid(conn: Any, identity: dict[str, str]) -> str:
 
 
 def _order_paid_at(order: dict[str, Any], transaction: dict[str, Any] | None = None) -> datetime:
-    transaction = transaction or {}
-    return parse_datetime(order.get("paid_at")) or parse_datetime(transaction.get("success_time")) or utcnow()
+    return parse_datetime(order.get("paid_at")) or parse_datetime((transaction or {}).get("success_time")) or utcnow()
 
 
 def _duration_end(start: datetime, duration_days: int) -> datetime:
@@ -90,10 +90,6 @@ def _duration_end(start: datetime, duration_days: int) -> datetime:
 
 def _duration_start(end: datetime, duration_days: int) -> datetime:
     return end - timedelta(days=duration_days)
-
-
-def _to_service_id(value: Any) -> str:
-    return text(value)
 
 
 def _compact_trade_product_payload(product: dict[str, Any], *, product_id: Any | None = None) -> dict[str, Any]:
@@ -609,6 +605,7 @@ class InMemoryServicePeriodRepository:
             "last_order_amount": int(last_order.get("amount_total") or 0),
             "last_order_duration_days": int((self._find_product(row.get("service_product_id")) or {}).get("duration_days") or 0),
             "remark": text(metadata.get("admin_remark") or metadata.get("remark")),
+            **public_huangyoucan_usage_fields({}),
         }
 
 
@@ -907,7 +904,8 @@ class PostgresServicePeriodRepository:
                         NULLIF(wim.external_userid, '')
                     ) AS external_userid,
                     COALESCE(NULLIF(c.mobile, ''), NULLIF(c.mobile_normalized, '')) AS mobile,
-                    COALESCE(NULLIF(e.metadata_json->>'admin_remark', ''), NULLIF(e.metadata_json->>'remark', '')) AS remark
+                    COALESCE(NULLIF(e.metadata_json->>'admin_remark', ''), NULLIF(e.metadata_json->>'remark', '')) AS remark,
+                    {huangyoucan_usage_select_fields()}
                 FROM service_period_entitlements e
                 JOIN service_period_products p ON p.id = e.service_product_id
                 LEFT JOIN wechat_pay_orders o ON o.id = e.last_order_id
@@ -927,6 +925,7 @@ class PostgresServicePeriodRepository:
                     ORDER BY fu.is_primary DESC NULLS LAST, fu.updated_at DESC NULLS LAST, fu.id DESC
                     LIMIT 1
                 ) wfu ON TRUE
+                {huangyoucan_usage_match_joins(unionid_sql="e.unionid", mobile_sql="COALESCE(NULLIF(c.mobile, ''), NULLIF(c.mobile_normalized, ''))")}
                 WHERE {" AND ".join(where)}
                 ORDER BY e.end_at DESC, e.id DESC
                 LIMIT %s OFFSET %s
@@ -950,6 +949,7 @@ class PostgresServicePeriodRepository:
                 "last_order_amount": int(row.get("last_order_amount") or 0),
                 "last_order_duration_days": int(row.get("last_order_duration_days") or 0),
                 "remark": text(row.get("remark")),
+                **public_huangyoucan_usage_fields(dict(row)),
             }
             for row in rows
         ]

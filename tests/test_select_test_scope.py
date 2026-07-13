@@ -179,6 +179,21 @@ def test_service_period_change_selects_service_period_slice() -> None:
     assert result["needs_full_ci"] is False
 
 
+def test_huangyoucan_usage_projection_has_permanent_full_pg_scope() -> None:
+    result = _select(
+        "scripts/run_huangyoucan_usage_sync.py",
+        "tests/test_huangyoucan_usage_sync.py",
+    )
+
+    assert result["matched_scopes"] == ["huangyoucan_usage_projection"]
+    assert result["unmatched_files"] == []
+    assert "tests/test_huangyoucan_usage_sync.py" in result["python_tests"]
+    assert "tests/test_sidebar_v2_api.py" in result["python_tests"]
+    assert result["needs_postgres"] is True
+    assert result["architecture_gate"] == "full"
+    assert result["needs_full_ci"] is True
+
+
 def test_questionnaire_mobile_change_selects_questionnaire_and_commerce_slices() -> None:
     result = _select(
         "aicrm_next/questionnaire/domain.py",

@@ -198,6 +198,8 @@ _TABLES_TO_TRUNCATE = [
     "external_effect_job",
     "external_push_config",
     "domain_event_outbox",
+    "service_period_huangyoucan_usage_sync_runs",
+    "service_period_huangyoucan_usage_snapshot",
     "service_period_events",
     "service_period_entitlements",
     "service_period_products",

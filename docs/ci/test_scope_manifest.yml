@@ -508,6 +508,35 @@
       "architecture_gate": "fast"
     },
     {
+      "name": "huangyoucan_usage_projection",
+      "paths": [
+        "aicrm_next/integration_gateway/huangyoucan_usage_client.py",
+        "aicrm_next/service_period/huangyoucan_usage.py",
+        "aicrm_next/service_period/huangyoucan_usage_sync.py",
+        "scripts/run_huangyoucan_usage_sync.py",
+        "deploy/aicrm-huangyoucan-usage-sync.service",
+        "deploy/aicrm-huangyoucan-usage-sync.timer",
+        "migrations/versions/0107_service_period_huangyoucan_usage_snapshot.py",
+        "docs/runbooks/huangyoucan_usage_sync.md",
+        "tests/test_huangyoucan_usage_sync.py"
+      ],
+      "python_tests": [
+        "tests/test_huangyoucan_usage_sync.py",
+        "tests/test_service_period_application.py",
+        "tests/test_service_period_frontend_contract.py",
+        "tests/test_service_period_schema.py",
+        "tests/test_sidebar_v2_api.py",
+        "tests/test_sidebar_workbench_frontend.py",
+        "tests/test_runtime_units_autostart.py",
+        "tests/test_runtime_contract_inventory.py",
+        "tests/test_alembic_revision_chain.py",
+        "tests/test_data_table_lifecycle_guard.py"
+      ],
+      "needs_postgres": true,
+      "needs_full_ci": true,
+      "architecture_gate": "full"
+    },
+    {
       "name": "media_library",
       "paths": [
         "aicrm_next/media_library/**",

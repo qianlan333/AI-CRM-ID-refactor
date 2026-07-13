@@ -54,6 +54,10 @@
   ],
   "approval_required": [
     {
+      "timer": "aicrm-huangyoucan-usage-sync.timer",
+      "service": "aicrm-huangyoucan-usage-sync.service"
+    },
+    {
       "timer": "aicrm-archive-sync.timer",
       "service": "aicrm-archive-sync.service"
     },

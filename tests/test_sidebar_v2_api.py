@@ -561,6 +561,14 @@ def test_sidebar_periodic_orders_include_active_and_expired_with_member_remark()
                     "last_order_paid_at": "2026-07-09 07:47:00+08:00",
                     "remark": "高意向，提醒续费",
                     "unionid": "union_periodic",
+                    "huangyoucan_match_status": "matched_unionid",
+                    "huangyoucan_formally_logged_in": True,
+                    "huangyoucan_has_token_usage": True,
+                    "huangyoucan_learning_plan_current": 4,
+                    "huangyoucan_learning_plan_total": 8,
+                    "huangyoucan_open_count_7d": 6,
+                    "huangyoucan_last_open_at": "2026-07-13T01:30:00+00:00",
+                    "huangyoucan_data_refreshed_at": "2026-07-13T01:00:00+00:00",
                 },
                 {
                     "entitlement_id": "ent_expired",
@@ -608,9 +616,17 @@ def test_sidebar_periodic_orders_include_active_and_expired_with_member_remark()
     assert active["remaining_days"] > 0
     assert active["remark"] == "高意向，提醒续费"
     assert active["detail_url"] == "/admin/wechat-pay/transactions/order_active"
+    assert active["huangyoucan_formally_logged_in"] is True
+    assert active["huangyoucan_has_token_usage"] is True
+    assert active["huangyoucan_learning_plan_progress"] == {"current": 4, "total": 8}
+    assert active["huangyoucan_open_count_7d"] == 6
+    assert active["huangyoucan_last_open_at"] == "2026-07-13T01:30:00+00:00"
+    assert active["huangyoucan_match_status"] == "matched_unionid"
     assert expired["status_label"] == "已过期"
     assert expired["remaining_days"] == 0
     assert expired["remark"] == "已过期，待跟进"
+    assert expired["huangyoucan_match_status"] == "not_found"
+    assert expired["huangyoucan_open_count_7d"] is None
 
 
 def test_sidebar_periodic_order_remark_target_keeps_customer_scope() -> None:
