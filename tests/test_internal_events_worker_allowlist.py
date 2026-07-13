@@ -11,6 +11,7 @@ from aicrm_next.platform_foundation.internal_events import (
     reset_internal_event_fixture_state,
 )
 from aicrm_next.platform_foundation.internal_events.models import InternalEvent, InternalEventConsumerRun
+from aicrm_next.platform_foundation.internal_events.config import worker_allows
 from aicrm_next.platform_foundation.internal_events.payment import PAYMENT_SUCCEEDED_EVENT_TYPE
 from aicrm_next.platform_foundation.internal_events.worker import InternalEventWorker
 
@@ -31,6 +32,23 @@ PAYMENT_CONSUMERS = [
     "ai_assist_notify_consumer",
     "webhook_order_paid_consumer",
 ]
+
+
+def test_shared_worker_allowlist_intersects_event_type_and_pair_filters() -> None:
+    pairs = ((PAYMENT_SUCCEEDED_EVENT_TYPE, "order_projection_consumer"), (OTHER_EVENT_TYPE, "allowed_consumer"))
+
+    assert worker_allows(
+        PAYMENT_SUCCEEDED_EVENT_TYPE,
+        "order_projection_consumer",
+        configured_pairs=pairs,
+        configured_event_types=(PAYMENT_SUCCEEDED_EVENT_TYPE,),
+    ) is True
+    assert worker_allows(
+        OTHER_EVENT_TYPE,
+        "allowed_consumer",
+        configured_pairs=pairs,
+        configured_event_types=(PAYMENT_SUCCEEDED_EVENT_TYPE,),
+    ) is False
 
 
 def _context(trace_id: str) -> CommandContext:

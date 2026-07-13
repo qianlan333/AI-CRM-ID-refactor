@@ -467,6 +467,7 @@ def test_external_effect_agent_webhook_continuation_enqueues_broadcast_job(next_
     )
     monkeypatch.setenv("AICRM_EXTERNAL_EFFECT_WEBHOOK_EXECUTE", "1")
     monkeypatch.setenv("AICRM_EXTERNAL_EFFECT_ALLOWED_TYPES", WEBHOOK_GENERIC_PUSH)
+    monkeypatch.setenv("AICRM_PUBLIC_BASE_URL", "https://testserver")
 
     calls: list[dict] = []
     credentials = install_webhook_hmac_client(

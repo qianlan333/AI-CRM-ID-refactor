@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from .commerce.admin_transactions import apply_wechat_refund_result, mark_wechat_refund_request_failed
 from .automation_agents.external_effect_continuation import AUTOMATION_AGENT_AUDIENCE_WEBHOOK_CONTINUATION
+from .automation_agents.internal_webhook_adapter import AutomationAgentRoutingWebhookAdapter
+from .external_push.external_effect_continuation import EXTERNAL_PUSH_DELIVERY_CONTINUATION
 from .integration_gateway import (
     wechat_pay_client,
     wecom_channel_entry_client,
@@ -26,6 +28,7 @@ def build_external_effect_continuation_registry() -> ExternalEffectContinuationR
     return ExternalEffectContinuationRegistry(
         (
             QUESTIONNAIRE_CONTACT_TAGS_CONTINUATION,
+            EXTERNAL_PUSH_DELIVERY_CONTINUATION,
             AUTOMATION_AGENT_AUDIENCE_WEBHOOK_CONTINUATION,
         )
     )
@@ -33,10 +36,11 @@ def build_external_effect_continuation_registry() -> ExternalEffectContinuationR
 
 def build_external_effect_adapter_registry() -> ExternalEffectAdapterRegistry:
     provider_factory = _build_production_wecom_adapter
+    generic_webhook_adapter = WebhookAdapter()
     return ExternalEffectAdapterRegistry(
         {
             "outbound_webhook": WebhookAdapter(),
-            "webhook": WebhookAdapter(),
+            "webhook": AutomationAgentRoutingWebhookAdapter(generic_webhook_adapter),
             "wechat_payment": WeChatPaymentAdapter(
                 client_factory=_build_wechat_pay_client,
                 refund_result_sync=apply_wechat_refund_result,

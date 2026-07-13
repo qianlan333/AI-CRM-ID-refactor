@@ -33,7 +33,7 @@ from .shared.repository_provider import RepositoryProviderError
 from .shared.release import current_release_sha
 from .shared.pii_audit import PiiAuditRepository, apply_pii_audit, pii_audit_enabled
 from .shared.route_policy import RoutePolicyIndex
-from .shared.runtime import assert_required_runtime_secrets, fixture_mode, require_signing_secret
+from .shared.runtime import assert_required_runtime_secrets, fixture_mode, public_https_environment, require_signing_secret
 from .shared.safe_logging import safe_log_exception
 
 __all__ = [
@@ -134,6 +134,8 @@ def create_app(*, pii_audit_repository: PiiAuditRepository | None = None) -> Fas
         response.headers.setdefault("X-AICRM-Fallback-Used", "false")
         response.headers.setdefault("X-AICRM-App", "ai_crm_next")
         response.headers.setdefault("X-AICRM-Release-SHA", current_release_sha())
+        if public_https_environment():
+            response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
         if request.url.path == "/sidebar/bind-mobile" or request.url.path.startswith("/api/sidebar/"):
             response.headers.setdefault("Cache-Control", "no-store, max-age=0")
             response.headers.setdefault("Pragma", "no-cache")

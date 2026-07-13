@@ -145,6 +145,11 @@ def _agent_payload(row: dict[str, Any], *, request_base_url: str = "", include_d
                 "published_task_prompt": _text(row.get("published_task_prompt")),
                 "draft_version": int(row.get("draft_version") or 0),
                 "published_version": int(row.get("published_version") or 0),
+                "has_unpublished_changes": (
+                    int(row.get("draft_version") or 0) != int(row.get("published_version") or 0)
+                    or _text(row.get("draft_role_prompt")) != _text(row.get("published_role_prompt"))
+                    or _text(row.get("draft_task_prompt")) != _text(row.get("published_task_prompt"))
+                ),
                 "fixed_content_package": content_package,
                 "fixed_content_package_preview": preview.get("preview", {}),
             }
@@ -256,6 +261,16 @@ class AutomationAgentAdminService:
             }
         )
         detail = self._repo.get_agent(int(copied["id"])) or copied
+        return {"ok": True, "agent": _agent_payload(detail, request_base_url=request_base_url, include_detail=True)}
+
+    def publish_agent(self, agent_id: int, *, request_base_url: str = "") -> dict[str, Any]:
+        existing = self._repo.get_agent(agent_id)
+        if not existing or _text(existing.get("status")) == "archived":
+            return {"ok": False, "error": "agent_not_found"}
+        row = self._repo.publish_agent(agent_id)
+        if not row:
+            return {"ok": False, "error": "agent_not_found"}
+        detail = self._repo.get_agent(agent_id) or row
         return {"ok": True, "agent": _agent_payload(detail, request_base_url=request_base_url, include_detail=True)}
 
     def set_status(self, agent_id: int, status: str, *, request_base_url: str = "") -> dict[str, Any]:

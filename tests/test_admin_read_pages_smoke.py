@@ -17,6 +17,25 @@ def test_production_smoke_timeout_covers_observed_cold_admin_reads() -> None:
     assert smoke.DEFAULT_TIMEOUT_SECONDS == 20.0
 
 
+def test_full_sidebar_smoke_covers_every_registered_navigation_destination(monkeypatch) -> None:
+    monkeypatch.setattr(smoke, "_openapi_paths", lambda *args, **kwargs: set(smoke.REQUIRED_OPENAPI_PATHS))
+    observed_paths: list[str] = []
+
+    def _healthy_probe(*args, **kwargs):
+        observed_paths.append(str(args[1]))
+        return smoke.ProbeResult(path=str(args[1]), status_code=200, ok=True, duration_ms=1)
+
+    monkeypatch.setattr(smoke, "_probe", _healthy_probe)
+
+    payload = smoke.run("http://127.0.0.1:5001", timeout=1, include_all_sidebar=True)
+
+    assert payload["ok"] is True
+    assert payload["all_sidebar_required"] is True
+    assert payload["sidebar_path_count"] == len(smoke.SIDEBAR_PATHS)
+    assert set(smoke.SIDEBAR_PATHS).issubset(observed_paths)
+    assert "/admin/automation-agents" in observed_paths
+
+
 def test_run_fails_when_required_admin_cookie_is_missing(monkeypatch) -> None:
     monkeypatch.setattr(
         smoke,

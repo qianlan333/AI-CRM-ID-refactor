@@ -399,8 +399,10 @@
       "paths": [
         "aicrm_next/external_effect_composition.py",
         "aicrm_next/automation_agents/external_effect_continuation.py",
+        "aicrm_next/automation_agents/internal_webhook_adapter.py",
         "aicrm_next/questionnaire/external_effect_continuation.py",
         "aicrm_next/platform_foundation/external_effects/continuations.py",
+        "tests/test_automation_agent_internal_webhook_adapter.py",
         "tests/test_external_effect_continuation_composition.py"
       ],
       "python_tests": [
@@ -408,6 +410,7 @@
         "tests/test_external_effects_mvp.py",
         "tests/test_questionnaire_h5_final_tags_real_wecom.py",
         "tests/test_automation_agents_webhook_execution.py",
+        "tests/test_automation_agent_internal_webhook_adapter.py",
         "tests/test_external_effect_scheduler.py",
         "tests/test_import_graph_guard.py",
         "tests/test_select_test_scope.py"
@@ -884,6 +887,8 @@
         "aicrm_next/admin_read_model/projections.py",
         "aicrm_next/automation_agents/application.py",
         "aicrm_next/message_archive/api.py",
+        "aicrm_next/message_archive/archive_sdk.py",
+        "aicrm_next/message_archive/sdk_subprocess.py",
         "aicrm_next/message_archive/sync_service.py",
         "aicrm_next/radar_links/api.py",
         "aicrm_next/radar_links/application.py",
@@ -906,6 +911,7 @@
         "scripts/script_runtime.py",
         "scripts/ops/migrate_app_setting_secrets.py",
         "scripts/ops/check_secret_reference_cutover.py",
+        "scripts/ops/ensure_runtime_environment.py",
         "tests/test_r02_sensitive_data_inventory.py",
         "tests/test_sensitive_data_redaction.py",
         "tests/test_secret_store.py",
@@ -918,6 +924,8 @@
         "tests/test_external_push_ssrf_transport.py",
         "tests/test_internal_service_token_purpose.py",
         "tests/test_archive_sync_next.py",
+        "tests/test_archive_sdk_isolation.py",
+        "tests/test_runtime_browser_security.py",
         "tests/test_external_chat_records_api.py",
         "tests/test_run_incremental_archive_sync_script.py",
         "tests/test_webhook_inbox_admin_api.py"
@@ -937,6 +945,8 @@
         "tests/test_external_push_ssrf_transport.py",
         "tests/test_internal_service_token_purpose.py",
         "tests/test_archive_sync_next.py",
+        "tests/test_archive_sdk_isolation.py",
+        "tests/test_runtime_browser_security.py",
         "tests/test_external_chat_records_api.py",
         "tests/test_run_incremental_archive_sync_script.py",
         "tests/test_webhook_inbox_admin_api.py",
@@ -993,12 +1003,16 @@
         "aicrm_next/frontend_compat/static/admin_console/config_center.js",
         "aicrm_next/frontend_compat/static/admin_console/operation_member_picker.js",
         "aicrm_next/frontend_compat/templates/admin_console/config_*.html",
+        "aicrm_next/customer_tags/templates/admin_console/config_wecom_tags.html",
+        "aicrm_next/frontend_compat/templates/admin_console/hxc_send_config.html",
+        "aicrm_next/frontend_compat/templates/admin_console/setup_wizard.html",
         "tests/test_admin_config_next.py",
         "tests/test_push_capabilities_config.py",
         "tests/test_operation_member_picker_frontend.py",
         "tests/test_channel_multi_staff_frontend_contract.py",
         "tests/test_wecom_operation_members_sync.py",
-        "tests/test_admin_pages_real_data_binding.py"
+        "tests/test_admin_pages_real_data_binding.py",
+        "tests/test_admin_heading_deduplication.py"
       ],
       "python_tests": [
         "tests/test_admin_config_next.py",
@@ -1007,7 +1021,8 @@
         "tests/test_channel_multi_staff_frontend_contract.py",
         "tests/test_wecom_operation_members_sync.py",
         "tests/test_admin_auth_login_pages.py",
-        "tests/test_admin_pages_real_data_binding.py"
+        "tests/test_admin_pages_real_data_binding.py",
+        "tests/test_admin_heading_deduplication.py"
       ],
       "needs_postgres": false,
       "architecture_gate": "fast"
@@ -1058,6 +1073,7 @@
       "paths": [
         "aicrm_next/ai_audience_ops/admin_api.py",
         "aicrm_next/automation_agents/admin_api.py",
+        "aicrm_next/automation_agents/templates/admin_console/automation_agent_list.html",
         "aicrm_next/automation_engine/group_ops/api.py",
         "aicrm_next/automation_engine/group_ops/application.py",
         "aicrm_next/customer_tags/api.py",

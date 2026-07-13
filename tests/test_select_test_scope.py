@@ -306,8 +306,10 @@ def test_external_effect_continuation_composition_has_a_permanent_full_ci_scope(
     result = _select(
         "aicrm_next/external_effect_composition.py",
         "aicrm_next/automation_agents/external_effect_continuation.py",
+        "aicrm_next/automation_agents/internal_webhook_adapter.py",
         "aicrm_next/questionnaire/external_effect_continuation.py",
         "aicrm_next/platform_foundation/external_effects/continuations.py",
+        "tests/test_automation_agent_internal_webhook_adapter.py",
         "tests/test_external_effect_continuation_composition.py",
     )
 
@@ -317,9 +319,33 @@ def test_external_effect_continuation_composition_has_a_permanent_full_ci_scope(
     assert "tests/test_external_effects_mvp.py" in result["python_tests"]
     assert "tests/test_questionnaire_h5_final_tags_real_wecom.py" in result["python_tests"]
     assert "tests/test_automation_agents_webhook_execution.py" in result["python_tests"]
+    assert "tests/test_automation_agent_internal_webhook_adapter.py" in result["python_tests"]
     assert result["needs_postgres"] is True
     assert result["needs_full_ci"] is True
     assert result["architecture_gate"] == "full"
+
+
+def test_prod_remediation_security_and_heading_files_have_permanent_scopes() -> None:
+    result = _select(
+        "aicrm_next/automation_agents/templates/admin_console/automation_agent_list.html",
+        "aicrm_next/customer_tags/templates/admin_console/config_wecom_tags.html",
+        "aicrm_next/frontend_compat/templates/admin_console/hxc_send_config.html",
+        "aicrm_next/frontend_compat/templates/admin_console/setup_wizard.html",
+        "aicrm_next/message_archive/archive_sdk.py",
+        "aicrm_next/message_archive/sdk_subprocess.py",
+        "scripts/ops/ensure_runtime_environment.py",
+        "tests/test_admin_heading_deduplication.py",
+        "tests/test_archive_sdk_isolation.py",
+        "tests/test_runtime_browser_security.py",
+    )
+
+    assert result["unmatched_files"] == []
+    assert {"admin_config", "admin_read_pages", "security_hardening"} <= set(result["matched_scopes"])
+    assert "tests/test_admin_heading_deduplication.py" in result["python_tests"]
+    assert "tests/test_archive_sdk_isolation.py" in result["python_tests"]
+    assert "tests/test_runtime_browser_security.py" in result["python_tests"]
+    assert result["architecture_gate"] == "full"
+    assert result["needs_full_ci"] is True
 
 
 def test_ai_audience_e2e_composition_has_a_permanent_full_ci_scope() -> None:

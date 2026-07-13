@@ -391,14 +391,14 @@
   <div class="automation-agent-page-head">
     <div>
       <div class="automation-agent-crumb">客户管理后台 / 配置及后台 / Agent / 编辑</div>
-      <h1 class="automation-agent-title" id="editTitle">编辑 Agent</h1>
+      <div class="automation-agent-title" id="editTitle">编辑 Agent</div>
     </div>
   </div>
 
   <div class="automation-agent-grid">
     <section class="automation-agent-card automation-agent-section" aria-label="编辑 Agent">
       <div class="automation-agent-section-head">
-        <h2 class="automation-agent-subtitle">编辑 Agent</h2>
+        <h2 class="automation-agent-subtitle">基本信息</h2>
         <span class="automation-agent-pill green" id="statusBadge">启用中</span>
       </div>
       <div class="automation-agent-form-grid">
@@ -811,6 +811,17 @@
       toast("固定素材已保存");
     };
 
+    const publishAgent = async () => {
+      await saveAgent("草稿已保存");
+      const payload = await fetchJson(`${agentApiUrl}/publish`, {
+        method: "POST",
+        body: {},
+      });
+      state.agent = payload.agent;
+      applyAgent(payload.agent);
+      toast("已发布");
+    };
+
     const applyAgent = (agent) => {
       state.agent = agent || {};
       els.title.textContent = state.agent.agent_name || "编辑 Agent";
@@ -887,7 +898,7 @@
     });
     document.getElementById("saveCurrent").addEventListener("click", () => saveAgent("已保存").catch((error) => window.alert(error.message || "保存失败")));
     document.getElementById("saveDraft").addEventListener("click", () => saveAgent("草稿已保存").catch((error) => window.alert(error.message || "保存失败")));
-    document.getElementById("publishAgent").addEventListener("click", () => saveAgent("已发布").catch((error) => window.alert(error.message || "发布失败")));
+    document.getElementById("publishAgent").addEventListener("click", () => publishAgent().catch((error) => window.alert(error.message || "发布失败")));
     document.getElementById("loadPublished").addEventListener("click", () => {
       els.rolePrompt.value = state.agent.published_role_prompt || "";
       els.taskPrompt.value = state.agent.published_task_prompt || "";

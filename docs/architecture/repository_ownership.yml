@@ -586,6 +586,7 @@ repositories:
     table_reads:
       - alembic_version
       - external_effect_job
+      - internal_event
       - internal_event_consumer_run
       - webhook_inbox
     table_writes: []

@@ -50,7 +50,7 @@ class _Connection:
     def __exit__(self, exc_type, exc, traceback):
         return False
 
-    def execute(self, sql: str):
+    def execute(self, sql: str, params: dict | None = None):
         normalized = " ".join(sql.split())
         if normalized == "SELECT 1 AS ok":
             return _Result([{"ok": 1}])
@@ -151,6 +151,38 @@ def test_queue_thresholds_are_visible_warnings_not_hidden_success(monkeypatch) -
         "terminal_or_dead_letter_count_exceeded",
     ]
     assert payload["warning_components"] == ["queues"]
+
+
+def test_rollout_gated_internal_event_history_does_not_raise_business_backlog_warning(monkeypatch) -> None:
+    monkeypatch.setenv("AICRM_READINESS_MAX_QUEUE_AGE_SECONDS", "60")
+    monkeypatch.setenv("AICRM_INTERNAL_EVENTS_ALLOWED_EVENT_CONSUMERS", "payment.succeeded:order_projection_consumer")
+    metrics = dict(_Connection().queue_metrics)
+    metrics.update(
+        {
+            "internal_event_pending_count": 900,
+            "internal_event_oldest_pending_age_seconds": 86400,
+            "internal_event_actionable_pending_count": 0,
+            "internal_event_actionable_oldest_pending_age_seconds": 0,
+            "internal_event_rollout_gated_pending_count": 900,
+            "internal_event_rollout_gated_oldest_pending_age_seconds": 86400,
+            "internal_event_actionable_terminal_count": 0,
+            "internal_event_rollout_gated_terminal_count": 0,
+        }
+    )
+
+    payload = runtime_readiness_payload(
+        database_url="postgresql://readiness",
+        connection_factory=_factory(_Connection(queue_metrics=metrics)),
+        expected_heads=("0104_auth_platform",),
+        wecom_diagnostics=WECOM_OK,
+        release_sha=FULL_SHA,
+        production=True,
+    )
+
+    queues = payload["components"]["queues"]
+    assert queues["status"] == "ok"
+    assert queues["warnings"] == []
+    assert queues["metrics"]["internal_event_rollout_gated_pending_count"] == 900
 
 
 def test_system_health_returns_readiness_http_status(monkeypatch) -> None:

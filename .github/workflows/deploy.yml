@@ -318,6 +318,15 @@ jobs:
               python -m pip install --require-hashes -r requirements.lock
             fi
             python3 scripts/ops/ensure_ai_audience_external_api_env.py /home/ubuntu/.openclaw-wecom-pg.env
+            if [ "$deploy_target" = "production" ]; then
+              auth_issuer="https://www.youcangogogo.com"
+            else
+              auth_issuer="https://id-dev.youcangogogo.com"
+            fi
+            python3 scripts/ops/ensure_runtime_environment.py \
+              --environment-file /home/ubuntu/.openclaw-wecom-pg.env \
+              --target-environment "$deploy_target" \
+              --public-base-url "$auth_issuer"
             set -a
             source /home/ubuntu/.openclaw-wecom-pg.env
             set +a
@@ -365,11 +374,6 @@ jobs:
               --secret-store-dir "$AICRM_SECRET_STORE_DIR" \
               --environment-file /home/ubuntu/.openclaw-wecom-pg.env \
               | tee /tmp/aicrm-secret-migration.json
-            if [ "$deploy_target" = "production" ]; then
-              auth_issuer="https://www.youcangogogo.com"
-            else
-              auth_issuer="https://id-dev.youcangogogo.com"
-            fi
             python3 scripts/ops/bootstrap_auth_clients.py \
               --apply \
               --issuer "$auth_issuer" \
@@ -428,10 +432,15 @@ jobs:
               --output-file "$deploy_smoke_session_file" \
               --ttl-seconds 300 \
               | tee /tmp/aicrm-deploy-smoke-session-issue.json
+            admin_smoke_sidebar_args=()
+            if [ "$deploy_target" = "production" ]; then
+              admin_smoke_sidebar_args=(--include-all-sidebar)
+            fi
             if ! python scripts/ops/check_admin_read_pages_smoke.py \
               --base-url http://127.0.0.1:5001 \
               --require-admin-cookie \
               --admin-cookie-file "$deploy_smoke_session_file" \
+              "${admin_smoke_sidebar_args[@]}" \
               | tee /tmp/aicrm-admin-read-pages-smoke.json; then
               sudo systemctl status openclaw-wecom-postgres.service --no-pager || true
               sudo journalctl -u openclaw-wecom-postgres.service -n 120 --no-pager || true

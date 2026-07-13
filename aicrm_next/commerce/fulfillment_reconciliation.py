@@ -96,6 +96,22 @@ _ANOMALY_QUERIES = {
         WHERE d.order_id > 0
         GROUP BY d.order_id
         HAVING COUNT(job.id) > 1
+           AND COUNT(job.id) FILTER (
+               WHERE job.status IN ('planned', 'approved', 'queued', 'dispatching', 'failed_retryable', 'unknown_after_dispatch')
+           ) > 0
+    """,
+    "stale_succeeded_external_push_delivery_projection": """
+        SELECT d.id
+        FROM external_push_delivery d
+        WHERE d.status <> 'success'
+          AND EXISTS (
+              SELECT 1
+              FROM external_effect_job job
+              WHERE job.target_type = 'external_push_delivery'
+                AND job.target_id = d.delivery_id
+                AND job.effect_type IN ('webhook.order_paid.push', 'webhook.generic.push')
+                AND job.status = 'succeeded'
+          )
     """,
     "legacy_domain_outbox_pending": """
         SELECT outbox.id
@@ -196,7 +212,14 @@ class CommerceFulfillmentReconciliationService:
             "pii_in_output": False,
         }
 
-    def repair(self, *, actor: str, reason: str, limit: int = 100) -> dict[str, Any]:
+    def repair(
+        self,
+        *,
+        actor: str,
+        reason: str,
+        limit: int = 100,
+        projection_only: bool = False,
+    ) -> dict[str, Any]:
         normalized_actor = _text(actor)
         normalized_reason = _text(reason)
         if not normalized_actor or not normalized_reason:
@@ -210,17 +233,22 @@ class CommerceFulfillmentReconciliationService:
 
         repaired_payment_outbox = 0
         repaired_refund_outbox = 0
+        repaired_external_push_delivery_projection = 0
         with connect_raw_postgres(self._database_url) as conn:
             conn.row_factory = dict_row
-            paid_rows = conn.execute(
-                f"""
-                {_ANOMALY_QUERIES['paid_without_payment_outbox']}
-                ORDER BY o.id
-                LIMIT %s
-                FOR UPDATE OF o SKIP LOCKED
-                """,
-                (bounded_limit,),
-            ).fetchall()
+            paid_rows = (
+                []
+                if projection_only
+                else conn.execute(
+                    f"""
+                    {_ANOMALY_QUERIES['paid_without_payment_outbox']}
+                    ORDER BY o.id
+                    LIMIT %s
+                    FOR UPDATE OF o SKIP LOCKED
+                    """,
+                    (bounded_limit,),
+                ).fetchall()
+            )
             for row in paid_rows:
                 order = dict(
                     conn.execute("SELECT * FROM wechat_pay_orders WHERE id = %s", (int(row["id"]),)).fetchone()
@@ -240,15 +268,19 @@ class CommerceFulfillmentReconciliationService:
                 )
                 repaired_payment_outbox += 1
 
-            refund_rows = conn.execute(
-                f"""
-                {_ANOMALY_QUERIES['successful_full_refund_with_active_entitlement']}
-                ORDER BY o.id
-                LIMIT %s
-                FOR UPDATE OF o SKIP LOCKED
-                """,
-                (bounded_limit,),
-            ).fetchall()
+            refund_rows = (
+                []
+                if projection_only
+                else conn.execute(
+                    f"""
+                    {_ANOMALY_QUERIES['successful_full_refund_with_active_entitlement']}
+                    ORDER BY o.id
+                    LIMIT %s
+                    FOR UPDATE OF o SKIP LOCKED
+                    """,
+                    (bounded_limit,),
+                ).fetchall()
+            )
             for row in refund_rows:
                 order = dict(
                     conn.execute("SELECT * FROM wechat_pay_orders WHERE id = %s", (int(row["id"]),)).fetchone()
@@ -281,17 +313,81 @@ class CommerceFulfillmentReconciliationService:
                     _audited_request(request, actor_hash=actor_hash, reason=normalized_reason),
                 )
                 repaired_refund_outbox += 1
+
+            stale_deliveries = conn.execute(
+                """
+                SELECT d.delivery_id, job.id AS external_effect_job_id,
+                       CASE
+                           WHEN COALESCE(job.result_summary_json->>'status_code', '') ~ '^[0-9]{3}$'
+                           THEN (job.result_summary_json->>'status_code')::integer
+                           ELSE NULL
+                       END AS response_status
+                FROM external_push_delivery d
+                JOIN LATERAL (
+                    SELECT candidate.id, candidate.result_summary_json
+                    FROM external_effect_job candidate
+                    WHERE candidate.target_type = 'external_push_delivery'
+                      AND candidate.target_id = d.delivery_id
+                      AND candidate.effect_type IN ('webhook.order_paid.push', 'webhook.generic.push')
+                      AND candidate.status = 'succeeded'
+                    ORDER BY candidate.completed_at DESC NULLS LAST, candidate.id DESC
+                    LIMIT 1
+                ) job ON TRUE
+                WHERE d.status <> 'success'
+                ORDER BY d.id
+                LIMIT %s
+                FOR UPDATE OF d SKIP LOCKED
+                """,
+                (bounded_limit,),
+            ).fetchall()
+            for row in stale_deliveries:
+                updated = conn.execute(
+                    """
+                    UPDATE external_push_delivery
+                    SET status = 'success',
+                        attempt_count = GREATEST(attempt_count, 1),
+                        response_status = COALESCE(%s, response_status),
+                        response_body = %s,
+                        error_message = '',
+                        next_retry_at = NULL,
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE delivery_id = %s
+                      AND status <> 'success'
+                    RETURNING id
+                    """,
+                    (
+                        row.get("response_status"),
+                        json.dumps(
+                            {
+                                "external_effect_job_id": int(row["external_effect_job_id"]),
+                                "external_effect_status": "succeeded",
+                                "reconciled": True,
+                                "repair_actor_hash": actor_hash,
+                                "repair_reason_hash": _reason_hash(normalized_reason),
+                            },
+                            ensure_ascii=False,
+                        ),
+                        row["delivery_id"],
+                    ),
+                ).fetchone()
+                if updated:
+                    repaired_external_push_delivery_projection += 1
             conn.commit()
         after = self.diagnose()
-        repaired_total = repaired_payment_outbox + repaired_refund_outbox
+        repaired_total = (
+            repaired_payment_outbox
+            + repaired_refund_outbox
+            + repaired_external_push_delivery_projection
+        )
         return {
             "ok": bool(before.get("ok")) and bool(after.get("ok")),
-            "mode": "repair_continuation_only",
+            "mode": "repair_external_push_projection_only" if projection_only else "repair_continuation_only",
             "before": before,
             "after": after,
             "repaired": {
                 "payment_succeeded_outbox_count": repaired_payment_outbox,
                 "refund_succeeded_outbox_count": repaired_refund_outbox,
+                "external_push_delivery_projection_count": repaired_external_push_delivery_projection,
             },
             "repair_actor_hash": actor_hash,
             "repair_reason_hash": _reason_hash(normalized_reason),

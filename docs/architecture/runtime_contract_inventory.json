@@ -29,13 +29,13 @@
       "accessor": "os.getenv",
       "file": "aicrm_next/admin_auth/service.py",
       "key": "AICRM_ADMIN_SESSION_COOKIE_SECURE",
-      "line": 123
+      "line": 127
     },
     {
       "accessor": "os.getenv",
       "file": "aicrm_next/shared/signed_session.py",
       "key": "AICRM_ADMIN_SESSION_COOKIE_SECURE",
-      "line": 46
+      "line": 48
     },
     {
       "accessor": "os.getenv",
@@ -431,25 +431,25 @@
       "accessor": "os.getenv",
       "file": "aicrm_next/platform_foundation/internal_events/config.py",
       "key": "AICRM_INTERNAL_EVENTS_ALLOWED_CONSUMERS",
-      "line": 99
+      "line": 100
     },
     {
       "accessor": "os.getenv",
       "file": "aicrm_next/platform_foundation/internal_events/config.py",
       "key": "AICRM_INTERNAL_EVENTS_ALLOWED_EVENT_CONSUMERS",
-      "line": 104
+      "line": 105
     },
     {
       "accessor": "os.getenv",
       "file": "aicrm_next/platform_foundation/internal_events/config.py",
       "key": "AICRM_INTERNAL_EVENTS_ALLOWED_EVENT_TYPES",
-      "line": 94
+      "line": 95
     },
     {
       "accessor": "os.getenv",
       "file": "aicrm_next/platform_foundation/internal_events/config.py",
       "key": "AICRM_INTERNAL_EVENTS_AUTO_EXECUTE_MAX_BATCH_SIZE",
-      "line": 164
+      "line": 195
     },
     {
       "accessor": "os.getenv",
@@ -461,19 +461,19 @@
       "accessor": "os.getenv",
       "file": "aicrm_next/platform_foundation/internal_events/config.py",
       "key": "AICRM_INTERNAL_EVENTS_LEGACY_PATH_RETIRE_AFTER_DAYS",
-      "line": 77
+      "line": 78
     },
     {
       "accessor": "os.getenv",
       "file": "aicrm_next/platform_foundation/internal_events/config.py",
       "key": "AICRM_INTERNAL_EVENTS_WORKER_BATCH_SIZE",
-      "line": 155
+      "line": 186
     },
     {
       "accessor": "os.getenv",
       "file": "aicrm_next/platform_foundation/internal_events/config.py",
       "key": "AICRM_INTERNAL_EVENT_WORKER_BATCH_SIZE",
-      "line": 155
+      "line": 186
     },
     {
       "accessor": "runtime_setting",
@@ -1331,7 +1331,7 @@
       "accessor": "os.getenv",
       "file": "aicrm_next/shared/runtime.py",
       "key": "REDIS_URL",
-      "line": 121
+      "line": 139
     },
     {
       "accessor": "os.getenv",
@@ -1367,7 +1367,7 @@
       "accessor": "runtime_setting",
       "file": "aicrm_next/shared/runtime.py",
       "key": "SECRET_KEY",
-      "line": 94
+      "line": 112
     },
     {
       "accessor": "os.getenv",
@@ -1559,7 +1559,7 @@
       "accessor": "runtime_setting",
       "file": "aicrm_next/shared/runtime.py",
       "key": "WECHAT_SHOP_CALLBACK_TOKEN",
-      "line": 95
+      "line": 113
     },
     {
       "accessor": "os.getenv",
@@ -1871,7 +1871,7 @@
       "accessor": "os.getenv",
       "file": "aicrm_next/shared/runtime.py",
       "key": "WORKER_RELEASE_SHA",
-      "line": 115
+      "line": 133
     }
   ],
   "environment_variables": [
@@ -9752,6 +9752,53 @@
       "name": "api.admin_automation_agent_pause",
       "operation_id": "api.admin_automation_agent_pause:POST:/api/admin/automation-agents/{agent_id}/pause",
       "path": "/api/admin/automation-agents/{agent_id}/pause",
+      "route_group": "automation_agents_admin_api"
+    },
+    {
+      "capability_owner": "automation_agents",
+      "contract": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "agent_id",
+            "required": true,
+            "schema": {
+              "title": "Agent Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "request_body": null,
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        }
+      },
+      "endpoint": "aicrm_next.automation_agents.admin_api.publish_automation_agent",
+      "include_in_schema": true,
+      "kind": "api",
+      "methods": [
+        "POST"
+      ],
+      "name": "api.admin_automation_agent_publish",
+      "operation_id": "api.admin_automation_agent_publish:POST:/api/admin/automation-agents/{agent_id}/publish",
+      "path": "/api/admin/automation-agents/{agent_id}/publish",
       "route_group": "automation_agents_admin_api"
     },
     {
