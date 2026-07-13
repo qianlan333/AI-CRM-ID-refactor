@@ -217,14 +217,14 @@ def _candidate_sql(
         "unionid": "identity.unionid = input.unionid",
         "external_userid": """(
                 identity.primary_external_userid = input.external_userid
-                OR identity.external_userids_json ? input.external_userid
+                OR identity.external_userids_json @> jsonb_build_array(input.external_userid)
                 OR identity.external_userids_json @> jsonb_build_array(
                     jsonb_build_object('external_userid', input.external_userid)
                 )
             )""",
         "openid": """(
                 identity.primary_openid = input.openid
-                OR identity.openids_json ? input.openid
+                OR identity.openids_json @> jsonb_build_array(input.openid)
                 OR identity.openids_json @> jsonb_build_array(
                     jsonb_build_object('openid', input.openid)
                 )
@@ -256,14 +256,14 @@ def _candidate_sql(
                (input.unionid <> '' AND identity.unionid = input.unionid) AS matched_unionid,
                (input.external_userid <> '' AND (
                     identity.primary_external_userid = input.external_userid
-                    OR identity.external_userids_json ? input.external_userid
+                    OR identity.external_userids_json @> jsonb_build_array(input.external_userid)
                     OR identity.external_userids_json @> jsonb_build_array(
                         jsonb_build_object('external_userid', input.external_userid)
                     )
                )) AS matched_external_userid,
                (input.openid <> '' AND (
                     identity.primary_openid = input.openid
-                    OR identity.openids_json ? input.openid
+                    OR identity.openids_json @> jsonb_build_array(input.openid)
                     OR identity.openids_json @> jsonb_build_array(
                         jsonb_build_object('openid', input.openid)
                     )
@@ -424,7 +424,7 @@ def resolve_external_userids_with_sqlalchemy(
             FROM identity_input input
             JOIN crm_user_identity identity
               ON identity.primary_external_userid = input.external_userid
-              OR identity.external_userids_json ? input.external_userid
+              OR identity.external_userids_json @> jsonb_build_array(input.external_userid)
               OR identity.external_userids_json @> jsonb_build_array(
                     jsonb_build_object('external_userid', input.external_userid)
               )
