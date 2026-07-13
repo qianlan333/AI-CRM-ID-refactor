@@ -320,6 +320,21 @@ def test_wecom_payload_contract_has_permanent_full_ci_scope() -> None:
     assert result["architecture_gate"] == "full"
 
 
+def test_send_content_media_gateway_has_permanent_full_ci_scope() -> None:
+    result = _select(
+        "aicrm_next/send_content_media_repository_gateway.py",
+        "tests/test_send_content_media_gateway.py",
+    )
+
+    assert result["unmatched_files"] == []
+    assert "send_content_media_gateway" in result["matched_scopes"]
+    assert "tests/test_next_material_picker_api.py" in result["python_tests"]
+    assert "tests/test_import_graph_guard.py" in result["python_tests"]
+    assert result["needs_postgres"] is True
+    assert result["needs_full_ci"] is True
+    assert result["architecture_gate"] == "full"
+
+
 def test_cloud_repository_split_modules_keep_permanent_postgres_coverage() -> None:
     result = _select(
         "aicrm_next/cloud_orchestrator/repository_legacy.py",
