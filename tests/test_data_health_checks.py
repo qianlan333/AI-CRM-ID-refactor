@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 
@@ -257,3 +259,30 @@ def test_external_effect_backlog_probe_accepts_small_retryable_queue(monkeypatch
     assert result.evidence["failed_retryable_count"] == 2
     assert result.evidence["oldest_failed_retryable_age_seconds"] == 120
     assert any("FROM external_effect_job" in sql for sql in calls)
+
+
+def test_retired_runtime_reference_scan_reads_each_source_once(tmp_path, monkeypatch) -> None:
+    from tools import check_data_table_lifecycle as lifecycle
+
+    runtime_root = tmp_path / "aicrm_next"
+    runtime_root.mkdir()
+    first = runtime_root / "first.py"
+    second = runtime_root / "second.py"
+    first.write_text("SELECT * FROM RETIRED_1\n", encoding="utf-8")
+    second.write_text("SELECT 1\n", encoding="utf-8")
+    tables = {f"retired_{index}": {"lifecycle": "retired"} for index in range(1, 51)}
+
+    original_read_text = Path.read_text
+    read_counts: dict[Path, int] = {}
+
+    def tracked_read_text(path: Path, *args, **kwargs) -> str:
+        if path.parent == runtime_root:
+            read_counts[path] = read_counts.get(path, 0) + 1
+        return original_read_text(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", tracked_read_text)
+
+    violations = lifecycle._retired_runtime_reference_violations(tmp_path, tables)
+
+    assert violations == ["aicrm_next/first.py references retired table retired_1"]
+    assert read_counts == {first: 1, second: 1}
