@@ -3146,45 +3146,35 @@ tables:
 
   legacy_webhook_cleanup_audit:
     domain: legacy_webhook_cleanup
-    lifecycle: audit
-    write_owner: aicrm_next.legacy_webhook_cleanup
-    write_owners:
-      - aicrm_next.legacy_webhook_cleanup
-      - aicrm_next.platform_foundation.legacy_cleanup
-    read_owners:
-      - historical schema drift guard
-    replacement: none; active production schema table registered during schema drift closeout
+    lifecycle: retired
+    write_owner: ""
+    read_owners: []
+    replacement: external_effect_attempt and canonical business audit tables
     drop_candidate: false
-    drop_after: ""
-    runtime_entrypoints:
-      - existing production runtime
-    migration_source: 0042_legacy_webhook_deprecation_registry
+    drop_after: "0105_drop_legacy_cleanup_tables"
+    runtime_entrypoints: []
+    migration_source: "0042_legacy_webhook_deprecation_registry, removed by 0105_drop_legacy_cleanup_tables"
     pii_level: internal_contact
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
-      - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
-    notes: Registered from the id-dev public schema so schema_drift_guard can fail closed on future unmanaged table changes.
+      - tests/test_retired_runtime_contract.py::test_migration_0105_physically_drops_legacy_cleanup_tables
+    notes: Physically removed after all runtime marker writers and the cleanup control plane were deleted.
 
   legacy_webhook_deprecation_registry:
     domain: legacy_webhook_cleanup
-    lifecycle: config
-    write_owner: aicrm_next.legacy_webhook_cleanup
-    write_owners:
-      - aicrm_next.legacy_webhook_cleanup
-      - aicrm_next.platform_foundation.legacy_cleanup
-    read_owners:
-      - historical schema drift guard
-    replacement: none; active production schema table registered during schema drift closeout
+    lifecycle: retired
+    write_owner: ""
+    read_owners: []
+    replacement: docs/architecture/retired_runtime_registry.yml
     drop_candidate: false
-    drop_after: ""
-    runtime_entrypoints:
-      - existing production runtime
-    migration_source: 0042_legacy_webhook_deprecation_registry
+    drop_after: "0105_drop_legacy_cleanup_tables"
+    runtime_entrypoints: []
+    migration_source: "0042_legacy_webhook_deprecation_registry, removed by 0105_drop_legacy_cleanup_tables"
     pii_level: internal_contact
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
-      - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
-    notes: Registered from the id-dev public schema so schema_drift_guard can fail closed on future unmanaged table changes.
+      - tests/test_retired_runtime_contract.py::test_migration_0105_physically_drops_legacy_cleanup_tables
+    notes: Physically removed; the versioned source registry is now the only retirement evidence.
 
   outbound_tasks:
     domain: admin_jobs

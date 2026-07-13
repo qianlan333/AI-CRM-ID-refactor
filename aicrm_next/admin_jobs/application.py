@@ -7,7 +7,7 @@ from zoneinfo import ZoneInfo
 from typing import Any
 
 from aicrm_next.admin_jobs_archive_sync_gateway import execute_archive_sync
-from aicrm_next.platform_foundation.legacy_cleanup.service import LegacyWebhookCleanupService
+from aicrm_next.shared.retired_contracts import retired_external_effect_payload
 from aicrm_next.shared.runtime_settings import runtime_setting
 
 from .domain import (
@@ -31,21 +31,8 @@ TARGET_JOBS_ACTION = "jobs_console_action"
 TARGET_BROADCAST_JOB = "broadcast_job"
 
 
-def _record_legacy_marker(legacy_key: str, *, marker: str = "legacy_path_invoked", metadata: dict[str, Any] | None = None) -> None:
-    try:
-        LegacyWebhookCleanupService().record_runtime_marker(
-            legacy_key,
-            marker=marker,
-            operator="admin_jobs.application",
-            metadata=metadata or {},
-            real_external_call_executed=False,
-        )
-    except Exception:
-        pass
-
-
 def build_legacy_disabled_payload(legacy_key: str, *, error: str, extra: dict[str, Any] | None = None) -> dict[str, Any]:
-    payload = LegacyWebhookCleanupService().disabled_payload(legacy_key, error=error)
+    payload = retired_external_effect_payload(legacy_key, error=error)
     payload.update(extra or {})
     return payload
 
@@ -447,11 +434,11 @@ def execute_jobs_action(*, action: str, form: Any, operator: str, repo: AdminJob
         )
         return result
     if action == "run-deferred-jobs":
-        return LegacyWebhookCleanupService().disabled_payload("old_admin_jobs_deferred_run", error="legacy_deferred_jobs_runner_disabled")
+        return retired_external_effect_payload("old_admin_jobs_deferred_run", error="legacy_deferred_jobs_runner_disabled")
     if action == "retry-webhook-delivery":
-        return LegacyWebhookCleanupService().disabled_payload("old_customer_webhook_delivery_retry", error="legacy_webhook_retry_disabled")
+        return retired_external_effect_payload("old_customer_webhook_delivery_retry", error="legacy_webhook_retry_disabled")
     if action == "run-webhook-retries":
-        return LegacyWebhookCleanupService().disabled_payload("old_customer_webhook_delivery_retry", error="legacy_webhook_retry_disabled")
+        return retired_external_effect_payload("old_customer_webhook_delivery_retry", error="legacy_webhook_retry_disabled")
     raise ValueError("不支持的同步任务操作")
 
 
@@ -549,7 +536,6 @@ def _broadcast_job_view(row: dict[str, Any]) -> dict[str, Any]:
 def approve_broadcast_job(job_id: int, *, operator: str, repo: AdminJobsRepository | None = None) -> dict[str, Any]:
     repo = repo or build_admin_jobs_repository()
     before = repo.get_broadcast_job(job_id) or {}
-    _record_legacy_marker("old_broadcast_jobs_direct_approve_cancel", metadata={"operation": "approve_broadcast_job", "job_id_present": bool(job_id)})
     after = repo.approve_broadcast_job(job_id, approved_by=_operator(operator))
     if not after:
         raise ValueError("job not approvable (not waiting_approval)")
@@ -561,7 +547,6 @@ def approve_broadcast_job(job_id: int, *, operator: str, repo: AdminJobsReposito
 def cancel_broadcast_job(job_id: int, *, operator: str, reason: str = "", repo: AdminJobsRepository | None = None) -> dict[str, Any]:
     repo = repo or build_admin_jobs_repository()
     before = repo.get_broadcast_job(job_id) or {}
-    _record_legacy_marker("old_broadcast_jobs_direct_approve_cancel", metadata={"operation": "cancel_broadcast_job", "job_id_present": bool(job_id)})
     after = repo.cancel_broadcast_job(job_id, cancelled_by=_operator(operator), reason=normalized_text(reason))
     if not after:
         raise ValueError("job not cancelable (not queued or waiting_approval)")

@@ -14,7 +14,6 @@ from aicrm_next.external_push.service import (
 )
 from aicrm_next.platform_foundation.command_bus import CommandContext
 from aicrm_next.platform_foundation.external_effects import ExternalEffectService, WEBHOOK_GENERIC_PUSH, WEBHOOK_ORDER_PAID_PUSH
-from aicrm_next.platform_foundation.legacy_cleanup.service import LegacyWebhookCleanupService
 from aicrm_next.shared.runtime import production_data_ready
 
 from .external_push_outbox import DEFAULT_TENANT_ID, EVENT_TRANSACTION_PAID, resolve_product_for_order as _resolve_product_for_order
@@ -31,18 +30,6 @@ class ExternalPushAdminError(ValueError):
 def _text(value: Any) -> str:
     return str(value or "").strip()
 
-
-def _record_legacy_marker(legacy_key: str, *, metadata: dict[str, Any] | None = None) -> None:
-    try:
-        LegacyWebhookCleanupService().record_runtime_marker(
-            legacy_key,
-            marker="legacy_path_invoked",
-            operator="commerce.external_push_admin",
-            metadata=metadata or {},
-            real_external_call_executed=False,
-        )
-    except Exception:
-        pass
 
 def _json_object(value: Any) -> dict[str, Any]:
     if isinstance(value, dict):
@@ -547,7 +534,6 @@ def list_order_external_push_state(order_id: int) -> dict[str, Any]:
 
 
 def send_product_external_push_test(product_id: int) -> dict[str, Any]:
-    _record_legacy_marker("old_external_push_delivery_retry", metadata={"operation": "send_product_external_push_test", "product_id_present": bool(product_id)})
     with _connect() as conn:
         product = _get_product(conn, int(product_id))
         if not product:
@@ -569,7 +555,6 @@ def send_product_external_push_test(product_id: int) -> dict[str, Any]:
 
 
 def retry_order_delivery(order_id: int, delivery_id: str) -> dict[str, Any]:
-    _record_legacy_marker("old_external_push_delivery_retry", metadata={"operation": "retry_order_delivery", "order_id_present": bool(order_id), "delivery_id_present": bool(delivery_id)})
     with _connect() as conn:
         order = _get_order(conn, int(order_id))
         if not order:

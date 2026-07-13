@@ -42,12 +42,10 @@ PRODUCTION_CONFIG_PATTERNS = ("nginx", "systemd", ".service", ".timer", "deploy/
 def guardrail_probe_env():
     keys = {
         "AICRM_NEXT_ENV": os.environ.get("AICRM_NEXT_ENV"),
-        "AICRM_NEXT_ENABLE_LEGACY_PRODUCTION_FACADE": os.environ.get("AICRM_NEXT_ENABLE_LEGACY_PRODUCTION_FACADE"),
         "DATABASE_URL": os.environ.get("DATABASE_URL"),
         "SECRET_KEY": os.environ.get("SECRET_KEY"),
     }
     os.environ.setdefault("AICRM_NEXT_ENV", "production")
-    os.environ.setdefault("AICRM_NEXT_ENABLE_LEGACY_PRODUCTION_FACADE", "1")
     os.environ.setdefault("DATABASE_URL", "postgresql://probe:probe@127.0.0.1:1/aicrm_probe")
     os.environ.setdefault("SECRET_KEY", "active-automation-run-due-guardrails")
     try:

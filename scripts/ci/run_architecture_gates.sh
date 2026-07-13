@@ -27,6 +27,7 @@ run_fast() {
 "$PYTHON" scripts/ci/update_route_policy_manifest.py --check
 "$PYTHON" tools/check_admin_route_auth.py
 "$PYTHON" tools/check_repository_ownership.py
+"$PYTHON" tools/check_retired_runtime_references.py
 }
 
 run_db() {

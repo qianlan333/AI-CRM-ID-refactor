@@ -111,6 +111,47 @@
   ],
   "scopes": [
     {
+      "name": "retired_runtime_physical_cleanup",
+      "paths": [
+        "aicrm_next/platform_foundation/legacy_cleanup/**",
+        "aicrm_next/shared/retired_contracts.py",
+        "aicrm_next/router_registry.py",
+        "aicrm_next/fixture_reset_registry.py",
+        "aicrm_next/platform_foundation/background_jobs/contract.py",
+        "aicrm_next/platform_foundation/auth_platform/profiles.py",
+        "aicrm_next/admin_jobs/application.py",
+        "aicrm_next/admin_jobs/notification_settings.py",
+        "aicrm_next/commerce/admin_refunds.py",
+        "aicrm_next/commerce/external_push_admin.py",
+        "aicrm_next/external_push/service.py",
+        "aicrm_next/owner_migration/application.py",
+        "migrations/versions/0105_drop_legacy_cleanup_tables.py",
+        "docs/architecture/retired_runtime_registry.yml",
+        "tools/check_retired_runtime_references.py",
+        "scripts/ci/run_architecture_gates.sh",
+        "tests/test_retired_runtime_contract.py",
+        "tests/test_retired_runtime_reference_scanner.py",
+        "tests/test_legacy_webhook_cleanup.py"
+      ],
+      "python_tests": [
+        "tests/test_retired_runtime_contract.py",
+        "tests/test_retired_runtime_reference_scanner.py",
+        "tests/test_router_registry_contract.py",
+        "tests/test_fixture_reset_registry.py",
+        "tests/test_background_job_contract.py",
+        "tests/test_next_admin_jobs_native.py",
+        "tests/test_external_push_next_native_service.py",
+        "tests/test_alembic_revision_chain.py",
+        "tests/test_database_bootstrap.py",
+        "tests/test_data_table_lifecycle_guard.py",
+        "tests/test_repository_ownership_guard.py",
+        "tests/test_select_test_scope.py"
+      ],
+      "needs_postgres": true,
+      "needs_full_ci": true,
+      "architecture_gate": "full"
+    },
+    {
       "name": "live_runtime_readiness",
       "paths": [
         "tools/check_live_runtime_readiness.py",
@@ -1176,7 +1217,6 @@
         "tests/test_external_orders_api.py",
         "tests/test_internal_oauth_client_purpose.py",
         "tests/test_internal_service_token_purpose.py",
-        "tests/test_legacy_webhook_cleanup.py",
         "tests/test_next_admin_jobs_native.py",
         "tests/test_run_message_activity_sync_script.py",
         "tests/test_wecom_tag_read_selectors.py",
@@ -1206,7 +1246,6 @@
         "tests/test_route_policy_contract.py",
         "tests/test_route_policy_enforcement.py",
         "tests/test_external_orders_api.py",
-        "tests/test_legacy_webhook_cleanup.py",
         "tests/test_next_admin_jobs_native.py",
         "tests/test_run_message_activity_sync_script.py"
       ],
