@@ -478,6 +478,24 @@ def test_customer_read_model_refresh_has_permanent_full_postgres_scope() -> None
     assert result["architecture_gate"] == "full"
 
 
+def test_questionnaire_auto_execute_cutover_has_permanent_full_postgres_scope() -> None:
+    result = _select(
+        "aicrm_next/shared/release_cutovers.py",
+        "migrations/versions/0109_questionnaire_continuation_auto_execute.py",
+        "deploy/openclaw-internal-event-worker.service",
+        "tests/test_questionnaire_auto_execute_cutover.py",
+    )
+
+    assert result["unmatched_files"] == []
+    assert "questionnaire_radar_reliability" in result["matched_scopes"]
+    assert "tests/test_questionnaire_auto_execute_cutover.py" in result["python_tests"]
+    assert "tests/test_questionnaire_radar_reconciliation.py" in result["python_tests"]
+    assert "tests/test_database_bootstrap.py" in result["python_tests"]
+    assert result["needs_postgres"] is True
+    assert result["needs_full_ci"] is True
+    assert result["architecture_gate"] == "full"
+
+
 def test_internal_event_registry_composition_has_permanent_full_ci_scope() -> None:
     result = _select(
         "aicrm_next/internal_event_composition.py",

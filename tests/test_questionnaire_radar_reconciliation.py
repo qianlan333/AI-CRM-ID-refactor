@@ -52,6 +52,11 @@ def test_count_only_reconciliation_has_pii_free_read_only_lineage_counts(monkeyp
         "stale_legacy_retry_residue",
     }
     assert set(result["counts"].values()) == {1}
+    assert result["historical_counts"] == {
+        "event_without_required_webhook_effect": 1,
+        "event_without_required_tag_effect": 1,
+    }
+    assert result["actionable_cutover_at"] == "2026-07-13T16:20:00Z"
     assert result["database_mutation_performed"] is False
     assert result["consumer_executed"] is False
     assert result["provider_executed"] is False
@@ -62,7 +67,7 @@ def test_count_only_reconciliation_has_pii_free_read_only_lineage_counts(monkeyp
     assert "UPDATE " not in statements
     assert "DELETE FROM" not in statements
     submission_query = reconciliation._ANOMALY_QUERIES["submission_without_outbox"]
-    assert "TIMESTAMPTZ '2026-07-13 05:42:30+00'" in submission_query
+    assert "TIMESTAMPTZ '2026-07-13 16:20:00+00'" in submission_query
     assert "FROM internal_event_outbox outbox" in submission_query
     assert "FROM internal_event event" in submission_query
     planner_query = reconciliation._ANOMALY_QUERIES["effect_without_succeeded_planner"]

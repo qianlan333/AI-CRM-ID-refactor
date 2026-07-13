@@ -14,8 +14,10 @@ from aicrm_next.platform_foundation.internal_events.questionnaire import (
 from aicrm_next.shared.db_session import connect_raw_postgres
 from aicrm_next.shared.runtime import raw_database_url
 
+from aicrm_next.shared.release_cutovers import QUESTIONNAIRE_AUTO_EXECUTE_CUTOVER_AT, QUESTIONNAIRE_AUTO_EXECUTE_CUTOVER_SQL
 
-_QUESTIONNAIRE_R09_PRODUCTION_CUTOVER_SQL = "TIMESTAMPTZ '2026-07-13 05:42:30+00'"
+
+_QUESTIONNAIRE_R09_PRODUCTION_CUTOVER_SQL = QUESTIONNAIRE_AUTO_EXECUTE_CUTOVER_SQL
 
 
 _ANOMALY_QUERIES = {
@@ -49,7 +51,7 @@ _ANOMALY_QUERIES = {
                 AND event.idempotency_key = outbox.idempotency_key
           )
     """,
-    "event_without_required_webhook_effect": """
+    "event_without_required_webhook_effect": f"""
         SELECT event.id
         FROM internal_event event
         JOIN questionnaire_submissions submission
@@ -57,6 +59,7 @@ _ANOMALY_QUERIES = {
          AND submission.id = event.aggregate_id::bigint
         JOIN questionnaires questionnaire ON questionnaire.id = submission.questionnaire_id
         WHERE event.event_type = 'questionnaire.submitted'
+          AND submission.submitted_at >= {_QUESTIONNAIRE_R09_PRODUCTION_CUTOVER_SQL}
           AND questionnaire.external_push_enabled = TRUE
           AND questionnaire.external_push_url <> ''
           AND NOT EXISTS (
@@ -67,13 +70,14 @@ _ANOMALY_QUERIES = {
                 AND job.target_id = submission.id::text
           )
     """,
-    "event_without_required_tag_effect": """
+    "event_without_required_tag_effect": f"""
         SELECT event.id
         FROM internal_event event
         JOIN questionnaire_submissions submission
           ON event.aggregate_id ~ '^[0-9]+$'
          AND submission.id = event.aggregate_id::bigint
         WHERE event.event_type = 'questionnaire.submitted'
+          AND submission.submitted_at >= {_QUESTIONNAIRE_R09_PRODUCTION_CUTOVER_SQL}
           AND jsonb_array_length(COALESCE(submission.final_tags, '[]'::jsonb)) > 0
           AND NOT EXISTS (
               SELECT 1
@@ -174,6 +178,18 @@ _ANOMALY_QUERIES = {
 }
 
 
+_HISTORICAL_ANOMALY_QUERIES = {
+    "event_without_required_webhook_effect": _ANOMALY_QUERIES["event_without_required_webhook_effect"].replace(
+        f"submission.submitted_at >= {_QUESTIONNAIRE_R09_PRODUCTION_CUTOVER_SQL}",
+        f"submission.submitted_at < {_QUESTIONNAIRE_R09_PRODUCTION_CUTOVER_SQL}",
+    ),
+    "event_without_required_tag_effect": _ANOMALY_QUERIES["event_without_required_tag_effect"].replace(
+        f"submission.submitted_at >= {_QUESTIONNAIRE_R09_PRODUCTION_CUTOVER_SQL}",
+        f"submission.submitted_at < {_QUESTIONNAIRE_R09_PRODUCTION_CUTOVER_SQL}",
+    ),
+}
+
+
 def _text(value: Any) -> str:
     return str(value or "").strip()
 
@@ -195,17 +211,23 @@ class QuestionnaireRadarReconciliationService:
         from psycopg.rows import dict_row
 
         counts: dict[str, int] = {}
+        historical_counts: dict[str, int] = {}
         with connect_raw_postgres(self._database_url) as conn:
             conn.row_factory = dict_row
             for name, query in _ANOMALY_QUERIES.items():
                 row = conn.execute(f"WITH anomalies AS ({query}) SELECT COUNT(*)::integer AS anomaly_count FROM anomalies").fetchone()
                 counts[name] = int((row or {}).get("anomaly_count") or 0)
+            for name, query in _HISTORICAL_ANOMALY_QUERIES.items():
+                row = conn.execute(f"WITH anomalies AS ({query}) SELECT COUNT(*)::integer AS anomaly_count FROM anomalies").fetchone()
+                historical_counts[name] = int((row or {}).get("anomaly_count") or 0)
         return {
             "ok": True,
             "mode": "count_only",
             "repair_supported": True,
             "has_anomalies": any(counts.values()),
             "counts": counts,
+            "historical_counts": historical_counts,
+            "actionable_cutover_at": QUESTIONNAIRE_AUTO_EXECUTE_CUTOVER_AT,
             "database_mutation_performed": False,
             "consumer_executed": False,
             "provider_executed": False,

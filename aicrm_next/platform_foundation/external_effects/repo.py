@@ -243,7 +243,17 @@ class ExternalEffectRepository:
     def approve_job(self, job_id: int) -> ExternalEffectJob | None:
         raise NotImplementedError
 
-    def record_attempt(self, *, job: ExternalEffectJob, status: str, adapter_mode: str, request_summary: dict[str, Any], response_summary: dict[str, Any], error_code: str = "", error_message: str = "") -> ExternalEffectAttempt:
+    def record_attempt(
+        self,
+        *,
+        job: ExternalEffectJob,
+        status: str,
+        adapter_mode: str,
+        request_summary: dict[str, Any],
+        response_summary: dict[str, Any],
+        error_code: str = "",
+        error_message: str = "",
+    ) -> ExternalEffectAttempt:
         raise NotImplementedError
 
     def get_job_by_event_id(self, event_id: str) -> ExternalEffectJob | None:
@@ -496,9 +506,14 @@ class SQLAlchemyExternalEffectRepository(ExternalEffectRepository):
             if value:
                 clauses.append(f"{key} = :{key}")
                 params[key] = value
+        completed_from = _text(filters.get("completed_from"))
+        if completed_from:
+            clauses.append("completed_at >= CAST(:completed_from AS timestamptz)")
+            params["completed_from"] = completed_from
         where = "WHERE " + " AND ".join(clauses) if clauses else ""
-        row = self._one(
-            f"""
+        row = (
+            self._one(
+                f"""
             SELECT
                 COUNT(*) FILTER (
                     WHERE status IN ('queued', 'failed_retryable')
@@ -525,7 +540,16 @@ class SQLAlchemyExternalEffectRepository(ExternalEffectRepository):
                 ) AS lease_on_non_dispatching_count,
                 COUNT(*) FILTER (
                     WHERE status = 'succeeded'
-                      AND (side_effect_executed = FALSE OR provider_result_received = FALSE)
+                      AND (
+                          (
+                              side_effect_executed = FALSE
+                              AND LOWER(COALESCE(
+                                  result_summary_json->>'internal_side_effect_executed',
+                                  'false'
+                              )) <> 'true'
+                          )
+                          OR provider_result_received = FALSE
+                      )
                 ) AS succeeded_without_evidence_count,
                 COUNT(*) FILTER (
                     WHERE status = 'succeeded'
@@ -555,8 +579,10 @@ class SQLAlchemyExternalEffectRepository(ExternalEffectRepository):
             FROM external_effect_job
             {where}
             """,
-            params,
-        ) or {}
+                params,
+            )
+            or {}
+        )
         return {
             "eligible_due_count": int(row.get("eligible_due_count") or 0),
             "dispatching_count": int(row.get("dispatching_count") or 0),
@@ -737,20 +763,21 @@ class SQLAlchemyExternalEffectRepository(ExternalEffectRepository):
             }
         )
         with self._session_factory() as session:
-            current = session.execute(
-                text(
-                    "SELECT * FROM external_effect_job "
-                    "WHERE id = :job_id AND status = 'dispatching' AND lease_token = :lease_token "
-                    "FOR UPDATE"
-                ),
-                {"job_id": int(job.id), "lease_token": _text(job.lease_token)},
-            ).mappings().fetchone()
+            current = (
+                session.execute(
+                    text("SELECT * FROM external_effect_job WHERE id = :job_id AND status = 'dispatching' AND lease_token = :lease_token FOR UPDATE"),
+                    {"job_id": int(job.id), "lease_token": _text(job.lease_token)},
+                )
+                .mappings()
+                .fetchone()
+            )
             if not current:
                 session.rollback()
                 return None
-            attempt_row = session.execute(
-                text(
-                    """
+            attempt_row = (
+                session.execute(
+                    text(
+                        """
                     INSERT INTO external_effect_attempt (
                         attempt_id, job_id, adapter_name, adapter_mode, operation, trace_id,
                         request_id, status, request_summary_json, response_summary_json,
@@ -763,25 +790,29 @@ class SQLAlchemyExternalEffectRepository(ExternalEffectRepository):
                     )
                     RETURNING *
                     """
-                ),
-                {
-                    "attempt_id": attempt_id,
-                    "job_id": int(job.id),
-                    "adapter_name": job.adapter_name,
-                    "adapter_mode": _text(result.adapter_mode) or "none",
-                    "operation": job.operation,
-                    "trace_id": job.trace_id,
-                    "request_id": job.request_id,
-                    "status": status,
-                    "request_summary": _json_dumps(request_summary),
-                    "response_summary": _json_dumps(response_summary),
-                    "error_code": _text(result.error_code),
-                    "error_message": _safe_error_message(result.error_message),
-                },
-            ).mappings().fetchone()
-            updated_row = session.execute(
-                text(
-                    """
+                    ),
+                    {
+                        "attempt_id": attempt_id,
+                        "job_id": int(job.id),
+                        "adapter_name": job.adapter_name,
+                        "adapter_mode": _text(result.adapter_mode) or "none",
+                        "operation": job.operation,
+                        "trace_id": job.trace_id,
+                        "request_id": job.request_id,
+                        "status": status,
+                        "request_summary": _json_dumps(request_summary),
+                        "response_summary": _json_dumps(response_summary),
+                        "error_code": _text(result.error_code),
+                        "error_message": _safe_error_message(result.error_message),
+                    },
+                )
+                .mappings()
+                .fetchone()
+            )
+            updated_row = (
+                session.execute(
+                    text(
+                        """
                     UPDATE external_effect_job
                     SET status = :status,
                         attempt_count = attempt_count + 1,
@@ -806,21 +837,24 @@ class SQLAlchemyExternalEffectRepository(ExternalEffectRepository):
                       AND lease_token = :lease_token
                     RETURNING *
                     """
-                ),
-                {
-                    "job_id": int(job.id),
-                    "lease_token": _text(job.lease_token),
-                    "status": status,
-                    "next_retry_at": public_datetime(next_retry_at) if status == "failed_retryable" and next_retry_at else None,
-                    "attempt_id": attempt_id,
-                    "error_code": _text(result.error_code),
-                    "error_message": _safe_error_message(result.error_message),
-                    "side_effect_executed": bool(result.real_external_call_executed),
-                    "provider_result_received": bool(result.provider_result_received),
-                    "result_summary": _json_dumps(response_summary),
-                    "reconciliation_required": status == "unknown_after_dispatch",
-                },
-            ).mappings().fetchone()
+                    ),
+                    {
+                        "job_id": int(job.id),
+                        "lease_token": _text(job.lease_token),
+                        "status": status,
+                        "next_retry_at": public_datetime(next_retry_at) if status == "failed_retryable" and next_retry_at else None,
+                        "attempt_id": attempt_id,
+                        "error_code": _text(result.error_code),
+                        "error_message": _safe_error_message(result.error_message),
+                        "side_effect_executed": bool(result.real_external_call_executed),
+                        "provider_result_received": bool(result.provider_result_received),
+                        "result_summary": _json_dumps(response_summary),
+                        "reconciliation_required": status == "unknown_after_dispatch",
+                    },
+                )
+                .mappings()
+                .fetchone()
+            )
             if not updated_row or not attempt_row:
                 session.rollback()
                 return None
@@ -911,7 +945,11 @@ class SQLAlchemyExternalEffectRepository(ExternalEffectRepository):
         )
 
     def cancel_job(self, job_id: int) -> ExternalEffectJob | None:
-        return self._update(job_id, "status = 'cancelled', locked_by = '', locked_at = NULL, lease_token = '', lease_expires_at = NULL, cancelled_at = CURRENT_TIMESTAMP, completed_at = CURRENT_TIMESTAMP", {})
+        return self._update(
+            job_id,
+            "status = 'cancelled', locked_by = '', locked_at = NULL, lease_token = '', lease_expires_at = NULL, cancelled_at = CURRENT_TIMESTAMP, completed_at = CURRENT_TIMESTAMP",
+            {},
+        )
 
     def enqueue_job(self, job_id: int, *, allow_unknown_after_dispatch: bool = False) -> ExternalEffectJob | None:
         unknown_clause = "OR status = 'unknown_after_dispatch'" if allow_unknown_after_dispatch else ""
@@ -938,9 +976,23 @@ class SQLAlchemyExternalEffectRepository(ExternalEffectRepository):
         )
 
     def approve_job(self, job_id: int) -> ExternalEffectJob | None:
-        return self._update(job_id, "status = 'queued', approved_at = CURRENT_TIMESTAMP, locked_by = '', locked_at = NULL, lease_token = '', lease_expires_at = NULL, next_retry_at = CURRENT_TIMESTAMP, reconciliation_required = FALSE", {})
+        return self._update(
+            job_id,
+            "status = 'queued', approved_at = CURRENT_TIMESTAMP, locked_by = '', locked_at = NULL, lease_token = '', lease_expires_at = NULL, next_retry_at = CURRENT_TIMESTAMP, reconciliation_required = FALSE",
+            {},
+        )
 
-    def record_attempt(self, *, job: ExternalEffectJob, status: str, adapter_mode: str, request_summary: dict[str, Any], response_summary: dict[str, Any], error_code: str = "", error_message: str = "") -> ExternalEffectAttempt:
+    def record_attempt(
+        self,
+        *,
+        job: ExternalEffectJob,
+        status: str,
+        adapter_mode: str,
+        request_summary: dict[str, Any],
+        response_summary: dict[str, Any],
+        error_code: str = "",
+        error_message: str = "",
+    ) -> ExternalEffectAttempt:
         attempt_id = "eea_" + __import__("uuid").uuid4().hex
         row = self._write_one(
             """
@@ -1078,11 +1130,14 @@ class SQLAlchemyExternalEffectRepository(ExternalEffectRepository):
         return [receipt for row in rows if (receipt := _public_receipt(row)) is not None], int((count_row or {}).get("total") or 0)
 
     def get_test_receipt(self, receipt_id: str) -> ExternalEffectTestReceipt | None:
-        return _public_receipt(self._one("SELECT * FROM external_effect_test_receipt WHERE receipt_id = :receipt_id LIMIT 1", {"receipt_id": _text(receipt_id)}))
+        return _public_receipt(
+            self._one("SELECT * FROM external_effect_test_receipt WHERE receipt_id = :receipt_id LIMIT 1", {"receipt_id": _text(receipt_id)})
+        )
 
     def test_receipt_metrics(self) -> dict[str, Any]:
-        row = self._one(
-            """
+        row = (
+            self._one(
+                """
             SELECT
                 COUNT(*) FILTER (WHERE received_at >= CURRENT_TIMESTAMP - INTERVAL '24 hours') AS test_receipt_count_24h,
                 MAX(received_at) AS latest_test_receipt_at,
@@ -1092,10 +1147,13 @@ class SQLAlchemyExternalEffectRepository(ExternalEffectRepository):
                 ) AS real_external_call_executed_to_test_receiver_count
             FROM external_effect_test_receipt
             """
-        ) or {}
+            )
+            or {}
+        )
         blocked = self._one("SELECT COUNT(*) AS count FROM external_effect_job WHERE last_error_code = 'test_execution_only_required'") or {}
-        loopback_due = self._one(
-            """
+        loopback_due = (
+            self._one(
+                """
             SELECT COUNT(*) AS count
             FROM external_effect_job
             WHERE payload_json->>'execution_scope' = 'test_loopback'
@@ -1104,7 +1162,9 @@ class SQLAlchemyExternalEffectRepository(ExternalEffectRepository):
               AND (next_retry_at IS NULL OR next_retry_at <= CURRENT_TIMESTAMP)
               AND (locked_at IS NULL OR locked_at <= CURRENT_TIMESTAMP - INTERVAL '5 minutes')
             """
-        ) or {}
+            )
+            or {}
+        )
         return {
             "test_receipt_count_24h": int(row.get("test_receipt_count_24h") or 0),
             "latest_test_receipt_at": public_datetime(row.get("latest_test_receipt_at")),

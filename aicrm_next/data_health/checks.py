@@ -7,6 +7,10 @@ from typing import Callable
 
 from sqlalchemy import text
 
+from aicrm_next.shared.release_cutovers import (
+    QUESTIONNAIRE_AUTO_EXECUTE_CUTOVER_AT,
+    QUESTIONNAIRE_AUTO_EXECUTE_CUTOVER_SQL,
+)
 from aicrm_next.shared.db_session import get_session_factory
 from tools.check_data_table_lifecycle import check_data_table_lifecycle
 
@@ -28,7 +32,7 @@ BROADCAST_TERMINAL_LOOKBACK_HOURS = max(
     int(os.getenv("AICRM_DATA_HEALTH_BROADCAST_TERMINAL_LOOKBACK_HOURS", "24") or 24),
 )
 EXTERNAL_EFFECT_RETRYABLE_DUE_MAX_COUNT = int(os.getenv("AICRM_DATA_HEALTH_EXTERNAL_EFFECT_RETRYABLE_DUE_MAX_COUNT", "100") or 100)
-QUESTIONNAIRE_CONTINUATION_CUTOVER_SQL = "TIMESTAMPTZ '2026-07-13 05:42:30+00'"
+QUESTIONNAIRE_CONTINUATION_CUTOVER_SQL = QUESTIONNAIRE_AUTO_EXECUTE_CUTOVER_SQL
 COMMERCE_CONTINUATION_CUTOVER_SQL = "TIMESTAMPTZ '2026-07-13 09:46:09+00'"
 
 
@@ -56,11 +60,7 @@ def _table_lifecycle_manifest_guard() -> DataHealthCheckResult:
 
 
 def _retired_table_runtime_reference_guard() -> DataHealthCheckResult:
-    violations = [
-        violation
-        for violation in _lifecycle_violations()
-        if "references retired table" in violation
-    ]
+    violations = [violation for violation in _lifecycle_violations() if "references retired table" in violation]
     return _static_guard_result(
         check_id="retired_table_runtime_reference_guard",
         title="Retired table runtime reference guard",
@@ -802,7 +802,7 @@ def _questionnaire_submission_without_user_guard() -> DataHealthCheckResult:
         "missing_unionid_count": int(row.get("missing_unionid_count") or 0),
         "missing_identity_count": int(row.get("missing_identity_count") or 0),
         "historical_pre_cutover_count": int(row.get("historical_pre_cutover_count") or 0),
-        "cutover_at": "2026-07-13T05:42:30Z",
+        "cutover_at": QUESTIONNAIRE_AUTO_EXECUTE_CUTOVER_AT,
     }
     actionable = evidence["missing_unionid_count"] + evidence["missing_identity_count"]
     if actionable:
@@ -1065,9 +1065,7 @@ def _customer_360_freshness_guard() -> DataHealthCheckResult:
         "message_lag_minutes",
     ):
         if evidence[key] > PROJECTION_FRESHNESS_MAX_MINUTES:
-            violations.append(
-                f"{key}={evidence[key]:.1f} exceeds {PROJECTION_FRESHNESS_MAX_MINUTES}"
-            )
+            violations.append(f"{key}={evidence[key]:.1f} exceeds {PROJECTION_FRESHNESS_MAX_MINUTES}")
     if violations:
         return DataHealthCheckResult(
             check_id=check_id,

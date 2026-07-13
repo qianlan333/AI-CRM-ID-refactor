@@ -55,6 +55,11 @@ questionnaire, and message source timestamps with the most recent managed
 customer read-model refresh. Evidence contains only aggregate lag minutes and
 never raw identity values or payloads.
 
+Questionnaire identity and continuation health uses the production auto-execute
+cutover (`2026-07-13 16:20:00 UTC`). Shadow-only rows before that instant stay in
+historical evidence; only submissions accepted after the worker became the runtime
+owner can fail the current continuation guard.
+
 ## Status Semantics
 
 - `ok`: check passed with current evidence.
