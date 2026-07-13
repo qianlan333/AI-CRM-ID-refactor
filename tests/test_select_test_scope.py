@@ -69,6 +69,30 @@ def test_import_graph_governance_changes_force_mapped_full_ci() -> None:
     assert result["needs_full_ci"] is True
 
 
+def test_zero_scc_runtime_composition_files_force_full_postgres_ci() -> None:
+    result = _select(
+        "aicrm_next/channel_entry_composition.py",
+        "aicrm_next/mcp_composition.py",
+        "aicrm_next/read_model_composition.py",
+        "aicrm_next/shared/admin_action_runtime.py",
+        "aicrm_next/shared/outbound_https/security.py",
+        "aicrm_next/shared/outbound_https/transport.py",
+        "aicrm_next/shared/product_code_aliases.py",
+        "aicrm_next/shared/wecom_runtime.py",
+        "scripts/run_wechat_pay_order_reconciliation_worker.py",
+        "tests/test_internal_events_ops_shadow.py",
+    )
+
+    assert "zero_scc_runtime_composition" in result["matched_scopes"]
+    assert result["unmatched_files"] == []
+    assert "tests/test_zero_runtime_import_scc.py" in result["python_tests"]
+    assert "tests/test_internal_event_registry_composition.py" in result["python_tests"]
+    assert "tests/test_order_reconciliation_worker.py" in result["python_tests"]
+    assert result["needs_postgres"] is True
+    assert result["architecture_gate"] == "full"
+    assert result["needs_full_ci"] is True
+
+
 def test_admin_read_model_runtime_files_have_a_permanent_ci_scope() -> None:
     result = _select(
         "aicrm_next/admin_read_model/application.py",
