@@ -111,6 +111,23 @@
   ],
   "scopes": [
     {
+      "name": "send_content_media_gateway",
+      "paths": [
+        "aicrm_next/send_content_media_repository_gateway.py",
+        "tests/test_send_content_media_gateway.py"
+      ],
+      "python_tests": [
+        "tests/test_send_content_media_gateway.py",
+        "tests/test_next_material_picker_api.py",
+        "tests/test_material_library_table_boundary.py",
+        "tests/test_import_graph_guard.py",
+        "tests/test_select_test_scope.py"
+      ],
+      "needs_postgres": true,
+      "needs_full_ci": true,
+      "architecture_gate": "full"
+    },
+    {
       "name": "wecom_payload_contract",
       "paths": [
         "aicrm_next/shared/wecom_payload_contract.py",

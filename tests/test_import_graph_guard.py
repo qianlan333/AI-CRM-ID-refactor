@@ -273,7 +273,7 @@ def test_repository_import_graph_matches_registered_r12_baseline() -> None:
 
     assert violations == []
     assert len(report.contexts) == 40
-    assert len(report.edges) == 187
+    assert len(report.edges) == 186
     assert report.cyclic_components == (
         (
             "admin_auth",
@@ -291,7 +291,6 @@ def test_repository_import_graph_matches_registered_r12_baseline() -> None:
             "platform_foundation",
             "public_product",
             "questionnaire",
-            "send_content",
             "service_period",
         ),
     )
