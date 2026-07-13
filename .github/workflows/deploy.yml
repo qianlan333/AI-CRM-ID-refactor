@@ -323,7 +323,7 @@ jobs:
             else
               auth_issuer="https://id-dev.youcangogogo.com"
             fi
-            python3 scripts/ops/ensure_runtime_environment.py \
+            python3 -m scripts.ops.ensure_runtime_environment \
               --environment-file /home/ubuntu/.openclaw-wecom-pg.env \
               --target-environment "$deploy_target" \
               --public-base-url "$auth_issuer"

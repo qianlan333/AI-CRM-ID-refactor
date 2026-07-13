@@ -1065,3 +1065,10 @@ def test_alembic_0009_is_pg_only():
     assert "TEXT NOT NULL DEFAULT '[]'" not in migration
     assert "JSONB NOT NULL DEFAULT '[]'::jsonb" in migration
     assert "USING GIN (tags)" in migration
+
+
+def test_deploy_runs_runtime_environment_as_repository_module():
+    workflow = TEST_DEPLOY_WORKFLOW.read_text(encoding="utf-8")
+
+    assert "python3 -m scripts.ops.ensure_runtime_environment" in workflow
+    assert "python3 scripts/ops/ensure_runtime_environment.py" not in workflow
