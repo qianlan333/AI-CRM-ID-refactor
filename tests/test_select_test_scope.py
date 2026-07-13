@@ -353,6 +353,24 @@ def test_internal_event_registry_composition_has_permanent_full_ci_scope() -> No
     assert result["architecture_gate"] == "full"
 
 
+def test_questionnaire_editor_asset_split_has_permanent_full_ci_scope() -> None:
+    result = _select(
+        "aicrm_next/questionnaire/templates/admin_questionnaires.html",
+        "aicrm_next/questionnaire/static/admin_questionnaire_editor.css",
+        "aicrm_next/questionnaire/static/admin_questionnaire_editor.js",
+        "tests/test_questionnaire_editor_asset_split.py",
+    )
+
+    assert result["unmatched_files"] == []
+    assert "questionnaire_editor_asset_split" in result["matched_scopes"]
+    assert "tests/test_questionnaire_admin_pages_next_native.py" in result["python_tests"]
+    assert "tests/test_admin_pages_real_data_binding.py" in result["python_tests"]
+    assert "tests/test_architecture_size_budgets.py" in result["python_tests"]
+    assert result["needs_postgres"] is True
+    assert result["needs_full_ci"] is True
+    assert result["architecture_gate"] == "full"
+
+
 def test_cloud_repository_split_modules_keep_permanent_postgres_coverage() -> None:
     result = _select(
         "aicrm_next/cloud_orchestrator/repository_legacy.py",

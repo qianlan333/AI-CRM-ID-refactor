@@ -176,13 +176,16 @@ def test_questionnaire_page_uses_next_native_admin_pages(monkeypatch):
 
 
 def test_questionnaire_editor_uses_next_native_admin_pages(monkeypatch):
-    response = _client(monkeypatch).get("/admin/questionnaires/1")
+    client = _client(monkeypatch)
+    response = client.get("/admin/questionnaires/1")
+    script = client.get("/static/questionnaire/admin_questionnaire_editor.js")
 
     assert response.status_code == 200
+    assert script.status_code == 200
     assert "X-AICRM-Compatibility-Facade" not in response.headers
-    assert "侧边栏核心画像映射" in response.text
-    assert "/admin/questionnaires/external-push-logs" in response.text
-    assert "/admin/questionnaires/${state.currentId}/external-push-logs" in response.text
+    assert "侧边栏核心画像映射" in script.text
+    assert "/admin/questionnaires/external-push-logs" in script.text
+    assert "/admin/questionnaires/${state.currentId}/external-push-logs" in script.text
 
 
 def test_questionnaire_external_push_log_routes_use_next_native_handlers(monkeypatch):
@@ -233,7 +236,7 @@ def test_questionnaire_detail_page_stays_native_after_frontend_compat_closeout(m
 
     assert response.status_code == 200
     assert "X-AICRM-Compatibility-Facade" not in response.headers
-    assert "initialQuestionnaireId: 1" in response.text
+    assert '"initialQuestionnaireId": 1' in response.text
     assert "Not Found" not in response.text
 
 
@@ -242,7 +245,7 @@ def test_questionnaire_new_page_renders_editor_shell(monkeypatch):
 
     assert response.status_code == 200
     assert "新建问卷" in response.text
-    assert 'mode: "new"' in response.text
+    assert '"mode": "new"' in response.text
     assert "Not Found" not in response.text
 
 

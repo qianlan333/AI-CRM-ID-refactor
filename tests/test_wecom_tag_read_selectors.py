@@ -17,7 +17,9 @@ def _admin_cookies(client: TestClient) -> dict[str, str]:
 
 
 def test_questionnaire_and_adjacent_selectors_read_unified_tag_catalog_source() -> None:
-    questionnaire = _read("aicrm_next/questionnaire/templates/admin_questionnaires.html")
+    questionnaire = _read("aicrm_next/questionnaire/templates/admin_questionnaires.html") + _read(
+        "aicrm_next/questionnaire/static/admin_questionnaire_editor.js"
+    )
     tag_management_template = _read("aicrm_next/customer_tags/templates/admin_console/config_wecom_tags.html")
     tag_management = _read("aicrm_next/customer_tags/static/admin_console/wecom_tag_management.js")
     automation_picker = _read("aicrm_next/frontend_compat/static/admin_console/automation_agent_config_tag_picker.js")
@@ -40,7 +42,7 @@ def test_questionnaire_and_adjacent_selectors_read_unified_tag_catalog_source() 
 
 
 def test_questionnaire_tag_selector_treats_degraded_empty_catalog_as_warning() -> None:
-    questionnaire = _read("aicrm_next/questionnaire/templates/admin_questionnaires.html")
+    questionnaire = _read("aicrm_next/questionnaire/static/admin_questionnaire_editor.js")
 
     assert "data.degraded || !state.availableTags.length" in questionnaire
     assert "data.page_error || '当前未获取到企微标签，可稍后重试'" in questionnaire
@@ -78,18 +80,19 @@ def test_channel_entry_tag_uses_unified_single_picker_and_hidden_save_fields() -
 
 def test_questionnaire_tags_use_unified_multiple_picker_without_flat_modal() -> None:
     template = _read("aicrm_next/questionnaire/templates/admin_questionnaires.html")
+    script = _read("aicrm_next/questionnaire/static/admin_questionnaire_editor.js")
 
     assert "wecom_tag_picker.css" in template
     assert "wecom_tag_picker.js" in template
-    assert "AICRMWeComTagPicker.open" in template
-    assert "mode: 'multiple'" in template
-    assert "applyTagSelection(target" in template
-    assert "tag_codes" in template
-    assert "tag-modal-overlay" not in template
-    assert "tag-selected-panel" not in template
-    assert "tag-chip-grid" not in template
-    assert "保存 tag_id" not in template
-    assert "实际保存 tag_id" not in template
+    assert "AICRMWeComTagPicker.open" in script
+    assert "mode: 'multiple'" in script
+    assert "applyTagSelection(target" in script
+    assert "tag_codes" in script
+    assert "tag-modal-overlay" not in script
+    assert "tag-selected-panel" not in script
+    assert "tag-chip-grid" not in script
+    assert "保存 tag_id" not in script
+    assert "实际保存 tag_id" not in script
 
 
 def test_automation_default_entry_tag_uses_unified_single_picker() -> None:
@@ -149,7 +152,10 @@ def test_frontend_entry_pages_expose_tag_api_urls_without_legacy_facade(monkeypa
 
     assert 'data-api-tags="/api/admin/wecom/tags"' in wecom_page.text
     assert 'data-api-groups="/api/admin/wecom/tag-groups"' in wecom_page.text
-    assert "fetchJson('/api/admin/wecom/tags')" in questionnaire_new.text
+    assert "/static/questionnaire/admin_questionnaire_editor.js?v=20260713" in questionnaire_new.text
+    questionnaire_script = client.get("/static/questionnaire/admin_questionnaire_editor.js")
+    assert questionnaire_script.status_code == 200
+    assert "fetchJson('/api/admin/wecom/tags')" in questionnaire_script.text
     assert "/api/admin/channels?limit=300" in channels_page.text
     assert "自动化运营" in automation_page.text
 
