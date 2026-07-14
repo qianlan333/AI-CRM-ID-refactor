@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-import base64
 from datetime import datetime, timezone
-import hashlib
 import hmac
 import json
 import logging
@@ -39,9 +37,12 @@ from aicrm_next.shared.wechat_h5_session import (
     WECHAT_PAYMENT_IDENTITY_COOKIE,
     WECHAT_PAYMENT_IDENTITY_TTL_SECONDS,
     is_wechat_browser,
+    load_signed_payment_session_payload as _load_signed_blob,
     payment_identity_from_request,
     payment_oauth_start_url as shared_payment_oauth_start_url,
+    payment_session_signing_available,
     safe_local_return_url,
+    sign_payment_session_payload as _signed_blob,
 )
 
 from .repo import connect_h5_wechat_pay_db as _connect
@@ -100,60 +101,6 @@ def _oauth_client():
     return _OAUTH_CLIENT_FACTORY()
 
 
-def _secret() -> str:
-    configured = (
-        _sensitive_setting("AICRM_NEXT_ACTION_TOKEN_SECRET")
-        or _sensitive_setting("SECRET_KEY")
-    )
-    if configured:
-        return configured
-    if production_environment():
-        return ""
-    return "aicrm-next-h5-wechat-pay-dev-secret"
-
-
-def _b64encode(payload: bytes) -> str:
-    return base64.urlsafe_b64encode(payload).decode("ascii").rstrip("=")
-
-
-def _b64decode(value: str) -> bytes:
-    padding = "=" * (-len(value) % 4)
-    return base64.urlsafe_b64decode((value + padding).encode("ascii"))
-
-
-def _sign(message: str) -> str:
-    secret = _secret()
-    if not secret:
-        raise RuntimeError("h5_payment_session_secret_required")
-    return hmac.new(secret.encode("utf-8"), message.encode("utf-8"), hashlib.sha256).hexdigest()
-
-
-def _signed_blob(payload: dict[str, Any]) -> str:
-    effective_payload = dict(payload)
-    if _normalized_text(effective_payload.get("openid")):
-        issued_at = int(effective_payload.get("iat") or datetime.now(timezone.utc).timestamp())
-        effective_payload["iat"] = issued_at
-        effective_payload.setdefault("exp", issued_at + WECHAT_PAYMENT_IDENTITY_TTL_SECONDS)
-    encoded = _b64encode(json.dumps(effective_payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8"))
-    return f"{encoded}.{_sign(encoded)}"
-
-
-def _load_signed_blob(value: str) -> dict[str, Any]:
-    try:
-        encoded, signature = value.split(".", 1)
-    except ValueError:
-        return {}
-    if not _secret():
-        return {}
-    if not hmac.compare_digest(_sign(encoded), signature):
-        return {}
-    try:
-        payload = json.loads(_b64decode(encoded).decode("utf-8"))
-    except Exception:
-        return {}
-    return payload if isinstance(payload, dict) else {}
-
-
 def _safe_return_url(value: Any) -> str:
     return safe_local_return_url(value)
 
@@ -188,7 +135,11 @@ def _external_base_url(request: Request) -> str:
 
 
 def _oauth_configured() -> bool:
-    return bool(_env("WECHAT_MP_APP_ID") and _sensitive_setting("WECHAT_MP_APP_SECRET") and _secret())
+    return bool(
+        _env("WECHAT_MP_APP_ID")
+        and _sensitive_setting("WECHAT_MP_APP_SECRET")
+        and payment_session_signing_available()
+    )
 
 
 def _wechat_oauth_scope() -> str:
@@ -437,7 +388,8 @@ def checkout_page_state(product: dict[str, Any], request: Request) -> dict[str, 
     context_token = _normalized_text(request.cookies.get(SIDEBAR_PRODUCT_CONTEXT_COOKIE))
     context_result = load_sidebar_product_context_token(context_token)
     pay_path = f"/pay/{code}"
-    coupon_target_ref = target_ref_for_product_id(product.get("id"))
+    product_id = product.get("id")
+    coupon_target_ref = target_ref_for_product_id(product_id) if _normalized_text(product_id) else ""
     return {
         "product": {
             "product_code": code,
@@ -458,7 +410,11 @@ def checkout_page_state(product: dict[str, Any], request: Request) -> dict[str, 
         "price_display": format_price(product),
         "context_status": _normalized_text(context_result.get("status")) or "missing",
         "coupon_target_ref": coupon_target_ref,
-        "available_coupon_url": f"/api/h5/coupons/available?{urlencode({'target_ref': coupon_target_ref})}",
+        "available_coupon_url": (
+            f"/api/h5/coupons/available?{urlencode({'target_ref': coupon_target_ref})}"
+            if coupon_target_ref
+            else ""
+        ),
     }
 
 

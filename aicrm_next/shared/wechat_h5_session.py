@@ -39,7 +39,36 @@ def _decode(value: str) -> bytes:
     return base64.urlsafe_b64decode((value + padding).encode("ascii"))
 
 
-def _load_signed_identity(value: str) -> dict[str, Any]:
+def payment_session_signing_available() -> bool:
+    return bool(_secret())
+
+
+def sign_payment_session_payload(payload: dict[str, Any]) -> str:
+    effective_payload = dict(payload)
+    if _text(effective_payload.get("openid")):
+        issued_at = int(effective_payload.get("iat") or time.time())
+        effective_payload["iat"] = issued_at
+        effective_payload.setdefault("exp", issued_at + WECHAT_PAYMENT_IDENTITY_TTL_SECONDS)
+    encoded = base64.urlsafe_b64encode(
+        json.dumps(
+            effective_payload,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    ).decode("ascii").rstrip("=")
+    secret = _secret()
+    if not secret:
+        raise RuntimeError("h5_payment_session_secret_required")
+    signature = hmac.new(
+        secret.encode("utf-8"),
+        encoded.encode("ascii"),
+        hashlib.sha256,
+    ).hexdigest()
+    return f"{encoded}.{signature}"
+
+
+def load_signed_payment_session_payload(value: str) -> dict[str, Any]:
     try:
         encoded, supplied_signature = _text(value).split(".", 1)
     except ValueError:
@@ -58,7 +87,12 @@ def _load_signed_identity(value: str) -> dict[str, Any]:
         payload = json.loads(_decode(encoded).decode("utf-8"))
     except (ValueError, UnicodeDecodeError, json.JSONDecodeError):
         return {}
-    if not isinstance(payload, dict):
+    return payload if isinstance(payload, dict) else {}
+
+
+def _load_signed_identity(value: str) -> dict[str, Any]:
+    payload = load_signed_payment_session_payload(value)
+    if not payload:
         return {}
     try:
         issued_at = int(payload.get("iat"))
@@ -106,7 +140,10 @@ __all__ = [
     "WECHAT_PAYMENT_IDENTITY_COOKIE",
     "WECHAT_PAYMENT_IDENTITY_TTL_SECONDS",
     "is_wechat_browser",
+    "load_signed_payment_session_payload",
     "payment_identity_from_request",
     "payment_oauth_start_url",
+    "payment_session_signing_available",
     "safe_local_return_url",
+    "sign_payment_session_payload",
 ]

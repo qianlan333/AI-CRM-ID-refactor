@@ -851,7 +851,7 @@
       "accessor": "runtime_setting",
       "file": "aicrm_next/public_product/h5_wechat_pay.py",
       "key": "AICRM_PUBLIC_BASE_URL",
-      "line": 165
+      "line": 115
     },
     {
       "accessor": "os.getenv",
@@ -1061,7 +1061,7 @@
       "accessor": "runtime_setting",
       "file": "aicrm_next/public_product/h5_wechat_pay.py",
       "key": "APP_BASE_URL",
-      "line": 167
+      "line": 117
     },
     {
       "accessor": "os.getenv",
@@ -1445,7 +1445,7 @@
       "accessor": "runtime_setting",
       "file": "aicrm_next/public_product/h5_wechat_pay.py",
       "key": "PUBLIC_BASE_URL",
-      "line": 166
+      "line": 116
     },
     {
       "accessor": "os.getenv",
