@@ -33,14 +33,21 @@ def _start_state(client: TestClient, return_url: str = "/pay/demo") -> str:
     return parse_qs(urlparse(response.headers["location"]).query)["state"][0]
 
 
-def _signed_state(*, nonce: str = "native-oauth-test", return_url: str = "/pay/demo") -> str:
+def _state_cookie(
+    *,
+    nonce: str,
+    return_url: str = "/pay/demo",
+    issued_at: int | None = None,
+    expires_at: int | None = None,
+) -> str:
     now = int(datetime.now(timezone.utc).timestamp())
+    issued = now if issued_at is None else issued_at
     return h5_wechat_pay._signed_blob(
         {
             "return_url": return_url,
             "nonce": nonce,
-            "iat": now,
-            "exp": now + h5_wechat_pay.STATE_TTL_SECONDS,
+            "iat": issued,
+            "exp": issued + h5_wechat_pay.STATE_TTL_SECONDS if expires_at is None else expires_at,
         }
     )
 
@@ -73,6 +80,8 @@ def test_h5_pay_oauth_start_preserves_userinfo_scope(monkeypatch) -> None:
     assert query["appid"] == ["wx-pay-oauth-app"]
     assert query["redirect_uri"] == ["https://pay.example.test/api/h5/wechat-pay/oauth/callback"]
     assert query["state"][0]
+    assert len(query["state"][0].encode("ascii")) <= 128
+    assert query["state"][0].isalnum()
     state_cookie = response.headers["set-cookie"]
     assert f"{h5_wechat_pay.OAUTH_STATE_COOKIE_NAME}=" in state_cookie
     assert "HttpOnly" in state_cookie
@@ -84,10 +93,11 @@ def test_h5_pay_oauth_start_preserves_userinfo_scope(monkeypatch) -> None:
 
 def test_h5_pay_oauth_callback_rejects_state_without_browser_cookie(monkeypatch) -> None:
     client = _client(monkeypatch)
+    nonce = "a" * 48
 
     response = client.get(
         "/api/h5/wechat-pay/oauth/callback",
-        params={"state": _signed_state(), "code": "must-not-be-exchanged"},
+        params={"state": nonce, "code": "must-not-be-exchanged"},
         follow_redirects=False,
     )
 
@@ -103,20 +113,68 @@ def test_h5_pay_oauth_callback_rejects_state_cookie_mismatch_before_exchange(mon
 
     h5_wechat_pay.set_h5_wechat_pay_oauth_client_factory(lambda: OAuthClientMustNotRun())
     client = _client(monkeypatch)
+    cookie_nonce = "b" * 48
+    query_nonce = "c" * 48
     client.cookies.set(
         h5_wechat_pay.OAUTH_STATE_COOKIE_NAME,
-        "different-browser-nonce",
+        _state_cookie(nonce=cookie_nonce),
         path=h5_wechat_pay.OAUTH_STATE_COOKIE_PATH,
     )
 
     response = client.get(
         "/api/h5/wechat-pay/oauth/callback",
-        params={"state": _signed_state(nonce="signed-state-nonce"), "code": "must-not-be-exchanged"},
+        params={"state": query_nonce, "code": "must-not-be-exchanged"},
         follow_redirects=False,
     )
 
     assert response.status_code == 400
     assert response.json()["error"] == "oauth_state_cookie_mismatch"
+
+
+def test_h5_pay_oauth_callback_rejects_tampered_state_cookie(monkeypatch) -> None:
+    nonce = "d" * 48
+    signed_cookie = _state_cookie(nonce=nonce)
+    client = _client(monkeypatch)
+    client.cookies.set(
+        h5_wechat_pay.OAUTH_STATE_COOKIE_NAME,
+        signed_cookie[:-1] + ("0" if signed_cookie[-1] != "0" else "1"),
+        path=h5_wechat_pay.OAUTH_STATE_COOKIE_PATH,
+    )
+
+    response = client.get(
+        "/api/h5/wechat-pay/oauth/callback",
+        params={"state": nonce, "code": "must-not-be-exchanged"},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 400
+    assert response.json()["error"] == "oauth_state_cookie_invalid"
+
+
+def test_h5_pay_oauth_callback_rejects_expired_state_cookie_and_clears_it(monkeypatch) -> None:
+    now = int(datetime.now(timezone.utc).timestamp())
+    nonce = "e" * 48
+    client = _client(monkeypatch)
+    client.cookies.set(
+        h5_wechat_pay.OAUTH_STATE_COOKIE_NAME,
+        _state_cookie(
+            nonce=nonce,
+            issued_at=now - h5_wechat_pay.STATE_TTL_SECONDS,
+            expires_at=now - 1,
+        ),
+        path=h5_wechat_pay.OAUTH_STATE_COOKIE_PATH,
+    )
+
+    response = client.get(
+        "/api/h5/wechat-pay/oauth/callback",
+        params={"state": nonce, "code": "must-not-be-exchanged"},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 400
+    assert response.json()["error"] == "state_expired"
+    assert h5_wechat_pay.OAUTH_STATE_COOKIE_NAME in response.headers.get("set-cookie", "")
+    assert "Max-Age=0" in response.headers.get("set-cookie", "")
 
 
 def test_h5_pay_oauth_callback_uses_native_client_and_sets_cookie(monkeypatch) -> None:

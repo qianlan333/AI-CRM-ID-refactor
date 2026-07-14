@@ -7,6 +7,7 @@ import hmac
 import json
 import logging
 import os
+import re
 import secrets
 from typing import Any
 from urllib.parse import urlencode, urlsplit
@@ -53,6 +54,8 @@ COOKIE_NAME = WECHAT_PAYMENT_IDENTITY_COOKIE
 OAUTH_STATE_COOKIE_NAME = "wechat_pay_h5_oauth_state"
 OAUTH_STATE_COOKIE_PATH = "/api/h5/wechat-pay/oauth"
 STATE_TTL_SECONDS = 600
+_OAUTH_STATE_CLOCK_SKEW_SECONDS = 300
+_OAUTH_STATE_PATTERN = re.compile(r"^[a-f0-9]{48}$")
 LOGGER = logging.getLogger(__name__)
 _OAUTH_CLIENT_FACTORY = build_wechat_oauth_client
 
@@ -239,18 +242,25 @@ def payment_oauth_start(request: Request) -> RedirectResponse | JSONResponse:
             headers=route_headers(),
         )
     now = int(datetime.now(timezone.utc).timestamp())
-    nonce = secrets.token_urlsafe(32)
-    state = _signed_blob({"return_url": return_url, "nonce": nonce, "iat": now, "exp": now + STATE_TTL_SECONDS})
+    nonce = secrets.token_hex(24)
+    state_cookie = _signed_blob(
+        {
+            "return_url": return_url,
+            "nonce": nonce,
+            "iat": now,
+            "exp": now + STATE_TTL_SECONDS,
+        }
+    )
     authorize_url = _wechat_oauth_authorize_url(
         app_id=_env("WECHAT_MP_APP_ID"),
         redirect_uri=f"{public_base_url}/api/h5/wechat-pay/oauth/callback",
         scope=_wechat_oauth_scope(),
-        state=state,
+        state=nonce,
     )
     response = RedirectResponse(authorize_url, status_code=302, headers=route_headers())
     response.set_cookie(
         OAUTH_STATE_COOKIE_NAME,
-        nonce,
+        state_cookie,
         max_age=STATE_TTL_SECONDS,
         httponly=True,
         secure=secure_cookie_environment() or public_base_url.startswith("https://"),
@@ -280,13 +290,18 @@ def payment_oauth_callback(request: Request) -> RedirectResponse | JSONResponse:
             status_code=503,
             headers=route_headers(),
         )
-    state_payload = _load_signed_blob(_normalized_text(request.query_params.get("state")))
-    if not state_payload:
+    state_nonce = _normalized_text(request.query_params.get("state"))
+    if not _OAUTH_STATE_PATTERN.fullmatch(state_nonce):
         return JSONResponse({"ok": False, "error": "state_invalid"}, status_code=400, headers=route_headers())
-    state_nonce = _normalized_text(state_payload.get("nonce"))
-    cookie_nonce = _normalized_text(request.cookies.get(OAUTH_STATE_COOKIE_NAME))
-    if not state_nonce or not cookie_nonce:
+    state_cookie = _normalized_text(request.cookies.get(OAUTH_STATE_COOKIE_NAME))
+    if not state_cookie:
         return JSONResponse({"ok": False, "error": "oauth_state_cookie_missing"}, status_code=400, headers=route_headers())
+    state_payload = _load_signed_blob(state_cookie)
+    if not state_payload:
+        return JSONResponse({"ok": False, "error": "oauth_state_cookie_invalid"}, status_code=400, headers=route_headers())
+    cookie_nonce = _normalized_text(state_payload.get("nonce"))
+    if not _OAUTH_STATE_PATTERN.fullmatch(cookie_nonce):
+        return JSONResponse({"ok": False, "error": "oauth_state_cookie_invalid"}, status_code=400, headers=route_headers())
     if not hmac.compare_digest(state_nonce, cookie_nonce):
         return JSONResponse({"ok": False, "error": "oauth_state_cookie_mismatch"}, status_code=400, headers=route_headers())
     secure_cookie = secure_cookie_environment() or public_base_url.startswith("https://")
@@ -294,7 +309,24 @@ def payment_oauth_callback(request: Request) -> RedirectResponse | JSONResponse:
     def attributed_response(response: JSONResponse | RedirectResponse) -> JSONResponse | RedirectResponse:
         return _clear_oauth_state_cookie(response, secure=secure_cookie)
 
-    if int(state_payload.get("exp") or 0) < int(datetime.now(timezone.utc).timestamp()):
+    try:
+        issued_at = int(state_payload.get("iat"))
+        expires_at = int(state_payload.get("exp"))
+    except (TypeError, ValueError):
+        return attributed_response(
+            JSONResponse({"ok": False, "error": "state_invalid"}, status_code=400, headers=route_headers())
+        )
+    now = int(datetime.now(timezone.utc).timestamp())
+    if (
+        issued_at <= 0
+        or issued_at > now + _OAUTH_STATE_CLOCK_SKEW_SECONDS
+        or expires_at <= issued_at
+        or expires_at - issued_at > STATE_TTL_SECONDS
+    ):
+        return attributed_response(
+            JSONResponse({"ok": False, "error": "state_invalid"}, status_code=400, headers=route_headers())
+        )
+    if expires_at <= now:
         return attributed_response(
             JSONResponse({"ok": False, "error": "state_expired"}, status_code=400, headers=route_headers())
         )
