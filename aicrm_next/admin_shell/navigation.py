@@ -7,6 +7,7 @@ from urllib.parse import quote, urlencode
 from fastapi import Request
 
 from aicrm_next.shared.admin_action_runtime import admin_action_token_bundle
+from aicrm_next.shared.capability_flags import commerce_coupons_new_activity_enabled
 
 
 @dataclass(frozen=True)
@@ -76,6 +77,7 @@ ADMIN_ROUTE_REGISTRY: dict[str, AdminRoute] = {
         "api.admin_service_period_products_page",
         "/admin/service-period-products",
     ),
+    "api.admin_coupons_page": AdminRoute("api.admin_coupons_page", "/admin/coupons"),
     "api.admin_alipay_transactions_page": AdminRoute("api.admin_alipay_transactions_page", "/admin/alipay/transactions"),
     "api.admin_image_library_workspace": AdminRoute("api.admin_image_library_workspace", "/admin/image-library"),
     "api.admin_miniprogram_library_workspace": AdminRoute(
@@ -171,6 +173,7 @@ ADMIN_NAV_GROUPS: list[dict[str, Any]] = [
             {"key": "wechat_pay_transactions", "label": "交易管理", "endpoint": "api.admin_orders_page"},
             {"key": "wechat_pay_products", "label": "商品管理", "endpoint": "api.admin_wechat_pay_products_page"},
             {"key": "service_period_products", "label": "周期商品管理", "endpoint": "api.admin_service_period_products_page"},
+            {"key": "coupons", "label": "优惠券", "endpoint": "api.admin_coupons_page"},
         ],
     },
     {
@@ -211,6 +214,7 @@ def nav_items(active_endpoint: str) -> list[dict[str, Any]]:
                 "href": admin_path_for(str(item["endpoint"])),
             }
             for item in group["items"]
+            if item["key"] != "coupons" or commerce_coupons_new_activity_enabled()
         ]
         groups.append({**group, "items": items, "active": any(item["active"] for item in items)})
     return groups
