@@ -200,6 +200,85 @@ def render_product_page(product: dict[str, Any], *, context_status: str = "") ->
 </html>"""
 
 
+def render_lead_qr_modal() -> str:
+    return """
+  <div class="qr-modal" id="leadQrModal" aria-hidden="true">
+    <div class="qr-panel" role="dialog" aria-modal="true" aria-labelledby="leadQrModalTitle">
+      <div class="modal-title" id="leadQrModalTitle">报名成功</div>
+      <div class="modal-desc">扫码添加企微领取后续资料</div>
+      <img class="qr-img" id="leadQrImage" alt="报名后企微渠道二维码">
+      <button class="close-button" id="closeQrButton" type="button">关闭</button>
+    </div>
+  </div>"""
+
+
+def lead_qr_modal_styles() -> str:
+    return """
+    .qr-modal {
+      position: fixed; inset: 0; background: rgba(16, 32, 58, .48); backdrop-filter: blur(4px);
+      z-index: 40; display: none; align-items: center; justify-content: center; padding: 22px;
+    }
+    .qr-modal.show { display: flex; }
+    .qr-panel {
+      width: min(100%, 360px); border-radius: 8px; background: #fff; padding: 26px 22px;
+      text-align: center; box-shadow: 0 20px 60px rgba(16, 32, 58, .25);
+    }
+    .qr-img {
+      width: min(258px, 100%); aspect-ratio: 1; margin: 18px auto; border-radius: 8px;
+      border: 1px solid #dae4f3; padding: 12px; object-fit: contain; display: block; background: #fff;
+    }
+    .modal-title { color: var(--text, #10203a); font-size: 24px; font-weight: 950; }
+    .modal-desc { color: var(--muted, #687891); font-size: 15px; }
+    .close-button {
+      width: 100%; height: 42px; border: 0; border-radius: 8px; background: var(--blue, #2f6df6); color: #fff;
+      font: inherit; font-weight: 900; margin-top: 14px; cursor: pointer;
+    }
+    """
+
+
+def lead_qr_modal_controller_script() -> str:
+    return """<script>
+    (function () {
+      window.createLeadQrModalController = function (options) {
+        const modal = options && options.modal;
+        const image = options && options.image;
+        const closeButton = options && options.closeButton;
+
+        function close() {
+          if (!modal) return;
+          modal.classList.remove("show");
+          modal.setAttribute("aria-hidden", "true");
+        }
+
+        function clear() {
+          close();
+          if (image) image.removeAttribute("src");
+        }
+
+        function open(source) {
+          const normalizedSource = String(source || "").trim();
+          if (!normalizedSource || !modal || !image) return;
+          image.src = normalizedSource;
+          modal.classList.add("show");
+          modal.setAttribute("aria-hidden", "false");
+        }
+
+        if (closeButton) closeButton.addEventListener("click", close);
+        if (modal) {
+          modal.addEventListener("click", function (event) {
+            if (event.target === modal) close();
+          });
+        }
+        document.addEventListener("keydown", function (event) {
+          if (event.key === "Escape" && modal && modal.getAttribute("aria-hidden") === "false") close();
+        });
+
+        return { open: open, close: close, clear: clear };
+      };
+    })();
+  </script>"""
+
+
 def render_pay_landing(product: dict[str, Any], page_state: dict[str, Any]) -> str:
     title = escape(str(product.get("title") or "支付入口"))
     state_json = json.dumps(page_state, ensure_ascii=False).replace("</", "<\\/")
@@ -276,14 +355,8 @@ def render_pay_landing(product: dict[str, Any], page_state: dict[str, Any]) -> s
     </section>
   </main>
 
-  <div class="qr-modal" id="leadQrModal" aria-hidden="true">
-    <div class="qr-panel">
-      <div class="modal-title">报名成功</div>
-      <div class="modal-desc">扫码添加企微领取后续资料</div>
-      <img class="qr-img" id="leadQrImage" alt="">
-      <button class="close-button" id="closeQrButton" type="button">关闭</button>
-    </div>
-  </div>
+  {render_lead_qr_modal()}
+  {lead_qr_modal_controller_script()}
   {_pay_page_script(state_json)}
   {product_context_fragment_bootstrap_script()}
 </body>
@@ -483,25 +556,7 @@ def _pay_page_styles() -> str:
     .weapp-launch-title { color: var(--text); font-size: 15px; font-weight: 900; }
     .weapp-launch-desc { color: var(--muted); font-size: 13px; line-height: 1.6; }
     .fallback-link { display: inline-flex; color: #3370ff; font-size: 14px; font-weight: 800; text-decoration: none; }
-    .qr-modal {
-      position: fixed; inset: 0; background: rgba(16, 32, 58, .48); backdrop-filter: blur(4px);
-      z-index: 40; display: none; align-items: center; justify-content: center; padding: 22px;
-    }
-    .qr-modal.show { display: flex; }
-    .qr-panel {
-      width: min(100%, 360px); border-radius: 8px; background: #fff; padding: 26px 22px;
-      text-align: center; box-shadow: 0 20px 60px rgba(16, 32, 58, .25);
-    }
-    .qr-img {
-      width: min(258px, 100%); aspect-ratio: 1; margin: 18px auto; border-radius: 8px;
-      border: 1px solid #dae4f3; padding: 12px; object-fit: contain; display: block; background: #fff;
-    }
-    .modal-title { font-size: 24px; font-weight: 950; }
-    .modal-desc { color: var(--muted); font-size: 15px; }
-    .close-button {
-      width: 100%; height: 42px; border: 0; border-radius: 8px; background: var(--blue); color: #fff;
-      font: inherit; font-weight: 900; margin-top: 14px; cursor: pointer;
-    }
+    """ + lead_qr_modal_styles() + """
   </style>"""
 
 
@@ -516,10 +571,12 @@ def _pay_page_script(state_json: str) -> str:
       const checkoutCard = document.getElementById("checkoutCard");
       const successBox = document.getElementById("successBox");
       const successDesc = document.getElementById("successDesc");
-      const leadQrModal = document.getElementById("leadQrModal");
-      const leadQrImage = document.getElementById("leadQrImage");
       const showLeadQrButton = document.getElementById("showLeadQrButton");
-      const closeQrButton = document.getElementById("closeQrButton");
+      const leadQrController = window.createLeadQrModalController ? window.createLeadQrModalController({{
+        modal: document.getElementById("leadQrModal"),
+        image: document.getElementById("leadQrImage"),
+        closeButton: document.getElementById("closeQrButton")
+      }}) : null;
       const weappLaunchPanel = document.getElementById("weappLaunchPanel");
       const weappLaunchHost = document.getElementById("weappLaunchHost");
       const weappLaunchDesc = document.getElementById("weappLaunchDesc");
@@ -759,10 +816,8 @@ def _pay_page_script(state_json: str) -> str:
 
       function showLeadQr(order) {{
         const leadQr = leadQrFromOrder(order);
-        if (!leadQr.qr_url || !leadQrModal || !leadQrImage) return;
-        leadQrImage.src = leadQr.qr_url;
-        leadQrModal.classList.add("show");
-        leadQrModal.setAttribute("aria-hidden", "false");
+        if (!leadQr.qr_url || !leadQrController) return;
+        leadQrController.open(leadQr.qr_url);
       }}
 
       function syncLeadQrButton(order) {{
@@ -859,13 +914,6 @@ def _pay_page_script(state_json: str) -> str:
       if (mobileInput) {{
         mobileInput.addEventListener("input", function () {{
           if (mobileError) mobileError.textContent = "";
-        }});
-      }}
-      if (closeQrButton) {{
-        closeQrButton.addEventListener("click", function () {{
-          if (!leadQrModal) return;
-          leadQrModal.classList.remove("show");
-          leadQrModal.setAttribute("aria-hidden", "true");
         }});
       }}
       if (showLeadQrButton) {{
