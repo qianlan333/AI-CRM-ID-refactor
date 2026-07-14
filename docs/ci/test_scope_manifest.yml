@@ -1138,6 +1138,39 @@
       "architecture_gate": "none"
     },
     {
+      "name": "operation_cycles",
+      "paths": [
+        "aicrm_next/operation_cycles/**",
+        "aicrm_next/admin_shell/templates/admin_shell/operation_cycles_*.html",
+        "fixtures/operation_cycles/**",
+        "migrations/versions/0113_operation_cycles.py",
+        "scripts/build_hxc_monday_operation_cycle_snapshot.py",
+        "tests/test_operation_cycles_*.py"
+      ],
+      "python_tests": [
+        "tests/test_operation_cycles_api.py",
+        "tests/test_operation_cycles_domain.py",
+        "tests/test_operation_cycles_frontend_contract.py",
+        "tests/test_operation_cycles_hxc_backfill.py",
+        "tests/test_operation_cycles_migration.py",
+        "tests/test_operation_cycles_repository.py",
+        "tests/test_admin_read_pages_smoke.py",
+        "tests/test_admin_shell_native.py",
+        "tests/test_database_bootstrap.py",
+        "tests/test_internal_oauth_client_purpose.py",
+        "tests/test_route_policy_contract.py",
+        "tests/test_router_registry_contract.py",
+        "tests/test_runtime_contract_inventory.py",
+        "tests/test_import_graph_guard.py",
+        "tests/test_data_table_lifecycle_guard.py",
+        "tests/test_repository_ownership_guard.py",
+        "tests/test_select_test_scope.py"
+      ],
+      "needs_postgres": true,
+      "needs_full_ci": true,
+      "architecture_gate": "full"
+    },
+    {
       "name": "admin_read_pages",
       "paths": [
         "aicrm_next/ai_audience_ops/admin_api.py",

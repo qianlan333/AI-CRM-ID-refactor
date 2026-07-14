@@ -325,6 +325,18 @@ def _policy_for(entry: dict[str, Any]) -> dict[str, Any]:
             client_purpose="identity",
         )
 
+    if path == "/api/operation-cycles/reports":
+        return _policy(
+            "external_integration",
+            "api_client_jwt",
+            "operation_cycle_report_write",
+            "service",
+            "internal",
+            False,
+            "integration",
+            client_purpose="ops_reporter",
+        )
+
     if path.startswith(("/api/customers", "/api/users", "/api/messages")):
         return _policy(
             "external_integration",

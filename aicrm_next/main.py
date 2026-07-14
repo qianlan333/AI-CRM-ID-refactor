@@ -48,6 +48,7 @@ __all__ = [
 ]
 
 _FRONTEND_COMPAT_DIR = Path(__file__).resolve().parent / "frontend_compat"
+_OPERATION_CYCLES_DIR = Path(__file__).resolve().parent / "operation_cycles"
 _GROUP_OPS_DIR = Path(__file__).resolve().parent / "automation_engine" / "group_ops"
 _AUTOMATION_ENGINE_DIR = Path(__file__).resolve().parent / "automation_engine"
 _CUSTOMER_TAGS_DIR = Path(__file__).resolve().parent / "customer_tags"
@@ -161,6 +162,11 @@ def create_app(*, pii_audit_repository: PiiAuditRepository | None = None) -> Fas
         "/static/questionnaire",
         StaticFiles(directory=_QUESTIONNAIRE_DIR / "static"),
         name="questionnaire_static",
+    )
+    app.mount(
+        "/static/operation-cycles",
+        StaticFiles(directory=_OPERATION_CYCLES_DIR / "static"),
+        name="operation_cycles_static",
     )
     app.mount(
         "/static",

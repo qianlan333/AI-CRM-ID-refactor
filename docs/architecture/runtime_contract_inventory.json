@@ -125,19 +125,19 @@
       "accessor": "declared_runtime_environment_key",
       "file": "aicrm_next/platform_foundation/auth_platform/access_client.py",
       "key": "AICRM_AUTH_ARCHIVE_WORKER_CLIENT_ID",
-      "line": 32
+      "line": 33
     },
     {
       "accessor": "declared_runtime_environment_key",
       "file": "aicrm_next/platform_foundation/auth_platform/access_client.py",
       "key": "AICRM_AUTH_ARCHIVE_WORKER_CLIENT_SECRET_REF",
-      "line": 32
+      "line": 33
     },
     {
       "accessor": "declared_runtime_environment_key",
       "file": "aicrm_next/platform_foundation/auth_platform/access_client.py",
       "key": "AICRM_AUTH_AUTOMATION_WORKER_CLIENT_ID",
-      "line": 32
+      "line": 33
     },
     {
       "accessor": "os.getenv",
@@ -167,31 +167,31 @@
       "accessor": "declared_runtime_environment_key",
       "file": "aicrm_next/platform_foundation/auth_platform/access_client.py",
       "key": "AICRM_AUTH_AUTOMATION_WORKER_CLIENT_SECRET_REF",
-      "line": 32
+      "line": 33
     },
     {
       "accessor": "declared_runtime_environment_key",
       "file": "aicrm_next/platform_foundation/auth_platform/access_client.py",
       "key": "AICRM_AUTH_CALLBACK_WORKER_CLIENT_ID",
-      "line": 32
+      "line": 33
     },
     {
       "accessor": "declared_runtime_environment_key",
       "file": "aicrm_next/platform_foundation/auth_platform/access_client.py",
       "key": "AICRM_AUTH_CALLBACK_WORKER_CLIENT_SECRET_REF",
-      "line": 32
+      "line": 33
     },
     {
       "accessor": "declared_runtime_environment_key",
       "file": "aicrm_next/platform_foundation/auth_platform/access_client.py",
       "key": "AICRM_AUTH_CAMPAIGN_AGENT_CLIENT_ID",
-      "line": 32
+      "line": 33
     },
     {
       "accessor": "declared_runtime_environment_key",
       "file": "aicrm_next/platform_foundation/auth_platform/access_client.py",
       "key": "AICRM_AUTH_CAMPAIGN_AGENT_CLIENT_SECRET_REF",
-      "line": 32
+      "line": 33
     },
     {
       "accessor": "os.getenv",
@@ -203,43 +203,43 @@
       "accessor": "declared_runtime_environment_key",
       "file": "aicrm_next/platform_foundation/auth_platform/access_client.py",
       "key": "AICRM_AUTH_EXTERNAL_AGENT_CLIENT_ID",
-      "line": 32
+      "line": 33
     },
     {
       "accessor": "declared_runtime_environment_key",
       "file": "aicrm_next/platform_foundation/auth_platform/access_client.py",
       "key": "AICRM_AUTH_EXTERNAL_AGENT_CLIENT_SECRET_REF",
-      "line": 32
+      "line": 33
     },
     {
       "accessor": "declared_runtime_environment_key",
       "file": "aicrm_next/platform_foundation/auth_platform/access_client.py",
       "key": "AICRM_AUTH_GROUP_BROADCAST_CLIENT_ID",
-      "line": 32
+      "line": 33
     },
     {
       "accessor": "declared_runtime_environment_key",
       "file": "aicrm_next/platform_foundation/auth_platform/access_client.py",
       "key": "AICRM_AUTH_GROUP_BROADCAST_CLIENT_SECRET_REF",
-      "line": 32
+      "line": 33
     },
     {
       "accessor": "declared_runtime_environment_key",
       "file": "aicrm_next/platform_foundation/auth_platform/access_client.py",
       "key": "AICRM_AUTH_IDENTITY_CLIENT_ID",
-      "line": 32
+      "line": 33
     },
     {
       "accessor": "declared_runtime_environment_key",
       "file": "aicrm_next/platform_foundation/auth_platform/access_client.py",
       "key": "AICRM_AUTH_IDENTITY_CLIENT_SECRET_REF",
-      "line": 32
+      "line": 33
     },
     {
       "accessor": "declared_runtime_environment_key",
       "file": "aicrm_next/platform_foundation/auth_platform/access_client.py",
       "key": "AICRM_AUTH_ISSUER",
-      "line": 32
+      "line": 33
     },
     {
       "accessor": "runtime_setting",
@@ -275,13 +275,25 @@
       "accessor": "declared_runtime_environment_key",
       "file": "aicrm_next/platform_foundation/auth_platform/access_client.py",
       "key": "AICRM_AUTH_MCP_CLIENT_ID",
-      "line": 32
+      "line": 33
     },
     {
       "accessor": "declared_runtime_environment_key",
       "file": "aicrm_next/platform_foundation/auth_platform/access_client.py",
       "key": "AICRM_AUTH_MCP_CLIENT_SECRET_REF",
-      "line": 32
+      "line": 33
+    },
+    {
+      "accessor": "declared_runtime_environment_key",
+      "file": "aicrm_next/platform_foundation/auth_platform/access_client.py",
+      "key": "AICRM_AUTH_OPS_REPORTER_CLIENT_ID",
+      "line": 33
+    },
+    {
+      "accessor": "declared_runtime_environment_key",
+      "file": "aicrm_next/platform_foundation/auth_platform/access_client.py",
+      "key": "AICRM_AUTH_OPS_REPORTER_CLIENT_SECRET_REF",
+      "line": 33
     },
     {
       "accessor": "runtime_setting",
@@ -1137,6 +1149,12 @@
     },
     {
       "accessor": "os.getenv",
+      "file": "aicrm_next/operation_cycles/repository.py",
+      "key": "DATABASE_URL",
+      "line": 1045
+    },
+    {
+      "accessor": "os.getenv",
       "file": "aicrm_next/owner_migration/repo.py",
       "key": "DATABASE_URL",
       "line": 206
@@ -1968,6 +1986,8 @@
     "AICRM_AUTH_JWT_SIGNING_KEY",
     "AICRM_AUTH_MCP_CLIENT_ID",
     "AICRM_AUTH_MCP_CLIENT_SECRET_REF",
+    "AICRM_AUTH_OPS_REPORTER_CLIENT_ID",
+    "AICRM_AUTH_OPS_REPORTER_CLIENT_SECRET_REF",
     "AICRM_AUTH_OUTBOUND_WEBHOOK_CLIENT_ID",
     "AICRM_AUTH_SESSION_HASH_PEPPER",
     "AICRM_COMPLETION_URL_LINK_API_PATH_PREFIXES",
@@ -2773,7 +2793,7 @@
     }
   ],
   "migration_heads": [
-    "0112_sync_fde_quarter_members"
+    "0113_operation_cycles"
   ],
   "openapi_components": {
     "schemas": {
@@ -6938,6 +6958,142 @@
       "operation_id": "api.admin_miniprogram_library_workspace:GET:/admin/miniprogram-library",
       "path": "/admin/miniprogram-library",
       "route_group": "media_library_admin_pages"
+    },
+    {
+      "capability_owner": "operation_cycles",
+      "contract": {
+        "parameters": [],
+        "request_body": null,
+        "responses": {
+          "200": {
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        }
+      },
+      "endpoint": "aicrm_next.operation_cycles.admin_pages.admin_operation_cycles_page",
+      "include_in_schema": true,
+      "kind": "page",
+      "methods": [
+        "GET"
+      ],
+      "name": "api.admin_operation_cycles_page",
+      "operation_id": "api.admin_operation_cycles_page:GET:/admin/operation-cycles",
+      "path": "/admin/operation-cycles",
+      "route_group": "operation_cycles_admin_pages"
+    },
+    {
+      "capability_owner": "operation_cycles",
+      "contract": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "strategy_key",
+            "required": true,
+            "schema": {
+              "title": "Strategy Key",
+              "type": "string"
+            }
+          }
+        ],
+        "request_body": null,
+        "responses": {
+          "200": {
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        }
+      },
+      "endpoint": "aicrm_next.operation_cycles.admin_pages.admin_operation_cycle_strategy_page",
+      "include_in_schema": true,
+      "kind": "page",
+      "methods": [
+        "GET"
+      ],
+      "name": "api.admin_operation_cycle_strategy_page",
+      "operation_id": "api.admin_operation_cycle_strategy_page:GET:/admin/operation-cycles/{strategy_key}",
+      "path": "/admin/operation-cycles/{strategy_key}",
+      "route_group": "operation_cycles_admin_pages"
+    },
+    {
+      "capability_owner": "operation_cycles",
+      "contract": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "strategy_key",
+            "required": true,
+            "schema": {
+              "title": "Strategy Key",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "run_key",
+            "required": true,
+            "schema": {
+              "title": "Run Key",
+              "type": "string"
+            }
+          }
+        ],
+        "request_body": null,
+        "responses": {
+          "200": {
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        }
+      },
+      "endpoint": "aicrm_next.operation_cycles.admin_pages.admin_operation_cycle_run_page",
+      "include_in_schema": true,
+      "kind": "page",
+      "methods": [
+        "GET"
+      ],
+      "name": "api.admin_operation_cycle_run_page",
+      "operation_id": "api.admin_operation_cycle_run_page:GET:/admin/operation-cycles/{strategy_key}/runs/{run_key}",
+      "path": "/admin/operation-cycles/{strategy_key}/runs/{run_key}",
+      "route_group": "operation_cycles_admin_pages"
     },
     {
       "capability_owner": "commerce",
@@ -21434,6 +21590,225 @@
       "operation_id": "test_resolve_miniprogram:POST:/api/admin/miniprogram-library/{item_id}/test-resolve",
       "path": "/api/admin/miniprogram-library/{item_id}/test-resolve",
       "route_group": "media_library"
+    },
+    {
+      "capability_owner": "operation_cycles",
+      "contract": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_key",
+            "required": true,
+            "schema": {
+              "title": "Run Key",
+              "type": "string"
+            }
+          }
+        ],
+        "request_body": null,
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        }
+      },
+      "endpoint": "aicrm_next.operation_cycles.api.get_operation_cycle_run",
+      "include_in_schema": true,
+      "kind": "api",
+      "methods": [
+        "GET"
+      ],
+      "name": "get_operation_cycle_run",
+      "operation_id": "get_operation_cycle_run:GET:/api/admin/operation-cycles/runs/{run_key}",
+      "path": "/api/admin/operation-cycles/runs/{run_key}",
+      "route_group": "operation_cycles"
+    },
+    {
+      "capability_owner": "operation_cycles",
+      "contract": {
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "request_body": null,
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        }
+      },
+      "endpoint": "aicrm_next.operation_cycles.api.list_operation_cycle_strategies",
+      "include_in_schema": true,
+      "kind": "api",
+      "methods": [
+        "GET"
+      ],
+      "name": "list_operation_cycle_strategies",
+      "operation_id": "list_operation_cycle_strategies:GET:/api/admin/operation-cycles/strategies",
+      "path": "/api/admin/operation-cycles/strategies",
+      "route_group": "operation_cycles"
+    },
+    {
+      "capability_owner": "operation_cycles",
+      "contract": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "strategy_key",
+            "required": true,
+            "schema": {
+              "title": "Strategy Key",
+              "type": "string"
+            }
+          }
+        ],
+        "request_body": null,
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        }
+      },
+      "endpoint": "aicrm_next.operation_cycles.api.get_operation_cycle_strategy",
+      "include_in_schema": true,
+      "kind": "api",
+      "methods": [
+        "GET"
+      ],
+      "name": "get_operation_cycle_strategy",
+      "operation_id": "get_operation_cycle_strategy:GET:/api/admin/operation-cycles/strategies/{strategy_key}",
+      "path": "/api/admin/operation-cycles/strategies/{strategy_key}",
+      "route_group": "operation_cycles"
+    },
+    {
+      "capability_owner": "operation_cycles",
+      "contract": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "strategy_key",
+            "required": true,
+            "schema": {
+              "title": "Strategy Key",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "request_body": null,
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        }
+      },
+      "endpoint": "aicrm_next.operation_cycles.api.list_operation_cycle_strategy_runs",
+      "include_in_schema": true,
+      "kind": "api",
+      "methods": [
+        "GET"
+      ],
+      "name": "list_operation_cycle_strategy_runs",
+      "operation_id": "list_operation_cycle_strategy_runs:GET:/api/admin/operation-cycles/strategies/{strategy_key}/runs",
+      "path": "/api/admin/operation-cycles/strategies/{strategy_key}/runs",
+      "route_group": "operation_cycles"
     },
     {
       "capability_owner": "commerce",
@@ -36674,6 +37049,962 @@
       "route_group": "customer_read_model"
     },
     {
+      "capability_owner": "operation_cycles",
+      "contract": {
+        "parameters": [],
+        "request_body": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$defs": {
+                  "AttemptSnapshot": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "attempt_key": {
+                        "maxLength": 160,
+                        "minLength": 1,
+                        "title": "Attempt Key",
+                        "type": "string"
+                      },
+                      "blocked_reason": {
+                        "default": "",
+                        "maxLength": 2000,
+                        "title": "Blocked Reason",
+                        "type": "string"
+                      },
+                      "ended_at": {
+                        "anyOf": [
+                          {
+                            "format": "date-time",
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ],
+                        "title": "Ended At"
+                      },
+                      "parent_attempt_key": {
+                        "anyOf": [
+                          {
+                            "maxLength": 160,
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ],
+                        "title": "Parent Attempt Key"
+                      },
+                      "started_at": {
+                        "anyOf": [
+                          {
+                            "format": "date-time",
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ],
+                        "title": "Started At"
+                      },
+                      "status": {
+                        "enum": [
+                          "running",
+                          "completed",
+                          "blocked"
+                        ],
+                        "title": "Status",
+                        "type": "string"
+                      },
+                      "summary": {
+                        "additionalProperties": true,
+                        "title": "Summary",
+                        "type": "object"
+                      }
+                    },
+                    "required": [
+                      "attempt_key",
+                      "status"
+                    ],
+                    "title": "AttemptSnapshot",
+                    "type": "object"
+                  },
+                  "FunnelSnapshot": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "audited_count": {
+                        "$ref": "#/$defs/FunnelValue"
+                      },
+                      "candidate_count": {
+                        "$ref": "#/$defs/FunnelValue"
+                      },
+                      "effective_sent_count": {
+                        "$ref": "#/$defs/FunnelValue"
+                      },
+                      "failed_count": {
+                        "$ref": "#/$defs/FunnelValue"
+                      },
+                      "planned_target_count": {
+                        "$ref": "#/$defs/FunnelValue"
+                      },
+                      "recommended_send_count": {
+                        "$ref": "#/$defs/FunnelValue"
+                      }
+                    },
+                    "title": "FunnelSnapshot",
+                    "type": "object"
+                  },
+                  "FunnelValue": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "classification": {
+                        "default": "",
+                        "maxLength": 80,
+                        "title": "Classification",
+                        "type": "string"
+                      },
+                      "data_source": {
+                        "default": "",
+                        "maxLength": 240,
+                        "title": "Data Source",
+                        "type": "string"
+                      },
+                      "limitation": {
+                        "default": "",
+                        "maxLength": 2000,
+                        "title": "Limitation",
+                        "type": "string"
+                      },
+                      "status": {
+                        "default": "unknown",
+                        "enum": [
+                          "observed",
+                          "not_started",
+                          "not_due",
+                          "unknown",
+                          "not_applicable",
+                          "blocked",
+                          "instrumentation_missing",
+                          "partial_lower_bound"
+                        ],
+                        "title": "Status",
+                        "type": "string"
+                      },
+                      "value": {
+                        "anyOf": [
+                          {
+                            "minimum": 0.0,
+                            "type": "integer"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ],
+                        "title": "Value"
+                      }
+                    },
+                    "title": "FunnelValue",
+                    "type": "object"
+                  },
+                  "MetricSnapshot": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "data_quality": {
+                        "maxLength": 120,
+                        "minLength": 1,
+                        "title": "Data Quality",
+                        "type": "string"
+                      },
+                      "data_source": {
+                        "maxLength": 240,
+                        "minLength": 1,
+                        "title": "Data Source",
+                        "type": "string"
+                      },
+                      "denominator": {
+                        "anyOf": [
+                          {
+                            "minimum": 0.0,
+                            "type": "number"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ],
+                        "title": "Denominator"
+                      },
+                      "is_causal": {
+                        "const": false,
+                        "default": false,
+                        "title": "Is Causal",
+                        "type": "boolean"
+                      },
+                      "label": {
+                        "maxLength": 200,
+                        "minLength": 1,
+                        "title": "Label",
+                        "type": "string"
+                      },
+                      "limitations": {
+                        "items": {
+                          "type": "string"
+                        },
+                        "maxItems": 30,
+                        "minItems": 1,
+                        "title": "Limitations",
+                        "type": "array"
+                      },
+                      "metric_key": {
+                        "maxLength": 160,
+                        "minLength": 1,
+                        "title": "Metric Key",
+                        "type": "string"
+                      },
+                      "numerator": {
+                        "anyOf": [
+                          {
+                            "minimum": 0.0,
+                            "type": "number"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ],
+                        "title": "Numerator"
+                      },
+                      "observation_window": {
+                        "maxLength": 120,
+                        "minLength": 1,
+                        "title": "Observation Window",
+                        "type": "string"
+                      },
+                      "unit": {
+                        "default": "count",
+                        "maxLength": 40,
+                        "title": "Unit",
+                        "type": "string"
+                      },
+                      "value": {
+                        "anyOf": [
+                          {
+                            "type": "number"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ],
+                        "title": "Value"
+                      },
+                      "value_status": {
+                        "default": "unknown",
+                        "enum": [
+                          "observed",
+                          "not_started",
+                          "not_due",
+                          "unknown",
+                          "not_applicable",
+                          "blocked",
+                          "instrumentation_missing",
+                          "partial_lower_bound"
+                        ],
+                        "title": "Value Status",
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "metric_key",
+                      "label",
+                      "numerator",
+                      "denominator",
+                      "observation_window",
+                      "data_source",
+                      "data_quality",
+                      "limitations"
+                    ],
+                    "title": "MetricSnapshot",
+                    "type": "object"
+                  },
+                  "NextIterationSnapshot": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "actions": {
+                        "items": {
+                          "type": "string"
+                        },
+                        "maxItems": 50,
+                        "title": "Actions",
+                        "type": "array"
+                      },
+                      "applied_strategy_version": {
+                        "anyOf": [
+                          {
+                            "minimum": 1.0,
+                            "type": "integer"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ],
+                        "title": "Applied Strategy Version"
+                      },
+                      "confirmation_note": {
+                        "default": "",
+                        "maxLength": 2000,
+                        "title": "Confirmation Note",
+                        "type": "string"
+                      },
+                      "hypothesis": {
+                        "default": "",
+                        "maxLength": 4000,
+                        "title": "Hypothesis",
+                        "type": "string"
+                      },
+                      "status": {
+                        "default": "none",
+                        "enum": [
+                          "none",
+                          "draft",
+                          "pending_confirmation",
+                          "accepted",
+                          "rejected",
+                          "applied"
+                        ],
+                        "title": "Status",
+                        "type": "string"
+                      },
+                      "summary": {
+                        "default": "",
+                        "maxLength": 6000,
+                        "title": "Summary",
+                        "type": "string"
+                      }
+                    },
+                    "title": "NextIterationSnapshot",
+                    "type": "object"
+                  },
+                  "ReferenceSnapshot": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "data_status": {
+                        "default": "unknown",
+                        "enum": [
+                          "observed",
+                          "not_started",
+                          "not_due",
+                          "unknown",
+                          "not_applicable",
+                          "blocked",
+                          "instrumentation_missing",
+                          "partial_lower_bound"
+                        ],
+                        "title": "Data Status",
+                        "type": "string"
+                      },
+                      "evidence_hash": {
+                        "default": "",
+                        "maxLength": 128,
+                        "title": "Evidence Hash",
+                        "type": "string"
+                      },
+                      "href": {
+                        "default": "",
+                        "maxLength": 1000,
+                        "title": "Href",
+                        "type": "string"
+                      },
+                      "label": {
+                        "default": "",
+                        "maxLength": 240,
+                        "title": "Label",
+                        "type": "string"
+                      },
+                      "reference_key": {
+                        "maxLength": 160,
+                        "minLength": 1,
+                        "title": "Reference Key",
+                        "type": "string"
+                      },
+                      "reference_type": {
+                        "enum": [
+                          "broadcast_job",
+                          "push_center",
+                          "delivery_lineage",
+                          "report",
+                          "artifact",
+                          "other"
+                        ],
+                        "title": "Reference Type",
+                        "type": "string"
+                      },
+                      "source_id": {
+                        "default": "",
+                        "maxLength": 240,
+                        "title": "Source Id",
+                        "type": "string"
+                      },
+                      "source_system": {
+                        "default": "",
+                        "maxLength": 120,
+                        "title": "Source System",
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "reference_key",
+                      "reference_type"
+                    ],
+                    "title": "ReferenceSnapshot",
+                    "type": "object"
+                  },
+                  "RetrospectiveSnapshot": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "conclusion": {
+                        "default": "",
+                        "maxLength": 6000,
+                        "title": "Conclusion",
+                        "type": "string"
+                      },
+                      "data_conflicts": {
+                        "items": {
+                          "type": "string"
+                        },
+                        "maxItems": 50,
+                        "title": "Data Conflicts",
+                        "type": "array"
+                      },
+                      "generated_at": {
+                        "anyOf": [
+                          {
+                            "format": "date-time",
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ],
+                        "title": "Generated At"
+                      },
+                      "limitations": {
+                        "items": {
+                          "type": "string"
+                        },
+                        "maxItems": 50,
+                        "title": "Limitations",
+                        "type": "array"
+                      },
+                      "observations": {
+                        "items": {
+                          "type": "string"
+                        },
+                        "maxItems": 50,
+                        "title": "Observations",
+                        "type": "array"
+                      }
+                    },
+                    "title": "RetrospectiveSnapshot",
+                    "type": "object"
+                  },
+                  "RunSnapshot": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "completed_at": {
+                        "anyOf": [
+                          {
+                            "format": "date-time",
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ],
+                        "title": "Completed At"
+                      },
+                      "first_sent_at": {
+                        "anyOf": [
+                          {
+                            "format": "date-time",
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ],
+                        "title": "First Sent At"
+                      },
+                      "intended_send_at": {
+                        "anyOf": [
+                          {
+                            "format": "date-time",
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ],
+                        "title": "Intended Send At"
+                      },
+                      "label": {
+                        "default": "",
+                        "maxLength": 200,
+                        "title": "Label",
+                        "type": "string"
+                      },
+                      "last_sent_at": {
+                        "anyOf": [
+                          {
+                            "format": "date-time",
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ],
+                        "title": "Last Sent At"
+                      },
+                      "objective": {
+                        "default": "",
+                        "maxLength": 2000,
+                        "title": "Objective",
+                        "type": "string"
+                      },
+                      "plan_scheduled_for": {
+                        "anyOf": [
+                          {
+                            "format": "date-time",
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ],
+                        "title": "Plan Scheduled For"
+                      },
+                      "plan_source": {
+                        "default": "",
+                        "maxLength": 240,
+                        "title": "Plan Source",
+                        "type": "string"
+                      },
+                      "plan_status": {
+                        "default": "",
+                        "maxLength": 80,
+                        "title": "Plan Status",
+                        "type": "string"
+                      },
+                      "plan_version": {
+                        "default": "",
+                        "maxLength": 120,
+                        "title": "Plan Version",
+                        "type": "string"
+                      },
+                      "run_key": {
+                        "maxLength": 160,
+                        "minLength": 1,
+                        "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]*$",
+                        "title": "Run Key",
+                        "type": "string"
+                      },
+                      "started_at": {
+                        "anyOf": [
+                          {
+                            "format": "date-time",
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ],
+                        "title": "Started At"
+                      }
+                    },
+                    "required": [
+                      "run_key"
+                    ],
+                    "title": "RunSnapshot",
+                    "type": "object"
+                  },
+                  "StageSnapshot": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "attempt_key": {
+                        "maxLength": 160,
+                        "minLength": 1,
+                        "title": "Attempt Key",
+                        "type": "string"
+                      },
+                      "blocked_reason": {
+                        "default": "",
+                        "maxLength": 2000,
+                        "title": "Blocked Reason",
+                        "type": "string"
+                      },
+                      "ended_at": {
+                        "anyOf": [
+                          {
+                            "format": "date-time",
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ],
+                        "title": "Ended At"
+                      },
+                      "stage": {
+                        "enum": [
+                          "scheduled",
+                          "preflight",
+                          "decisioning",
+                          "dry_run",
+                          "review",
+                          "delivery",
+                          "observing",
+                          "postmortem",
+                          "closed"
+                        ],
+                        "title": "Stage",
+                        "type": "string"
+                      },
+                      "stage_key": {
+                        "maxLength": 160,
+                        "minLength": 1,
+                        "title": "Stage Key",
+                        "type": "string"
+                      },
+                      "started_at": {
+                        "anyOf": [
+                          {
+                            "format": "date-time",
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ],
+                        "title": "Started At"
+                      },
+                      "status": {
+                        "enum": [
+                          "running",
+                          "completed",
+                          "blocked"
+                        ],
+                        "title": "Status",
+                        "type": "string"
+                      },
+                      "summary": {
+                        "additionalProperties": true,
+                        "title": "Summary",
+                        "type": "object"
+                      }
+                    },
+                    "required": [
+                      "stage_key",
+                      "attempt_key",
+                      "stage",
+                      "status"
+                    ],
+                    "title": "StageSnapshot",
+                    "type": "object"
+                  },
+                  "StrategySnapshot": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "cadence": {
+                        "default": "",
+                        "maxLength": 120,
+                        "title": "Cadence",
+                        "type": "string"
+                      },
+                      "definition": {
+                        "additionalProperties": true,
+                        "title": "Definition",
+                        "type": "object"
+                      },
+                      "description": {
+                        "default": "",
+                        "maxLength": 2000,
+                        "title": "Description",
+                        "type": "string"
+                      },
+                      "objective": {
+                        "default": "",
+                        "maxLength": 2000,
+                        "title": "Objective",
+                        "type": "string"
+                      },
+                      "status": {
+                        "default": "active",
+                        "enum": [
+                          "active",
+                          "paused",
+                          "archived",
+                          "draft"
+                        ],
+                        "title": "Status",
+                        "type": "string"
+                      },
+                      "strategy_key": {
+                        "maxLength": 120,
+                        "minLength": 1,
+                        "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]*$",
+                        "title": "Strategy Key",
+                        "type": "string"
+                      },
+                      "timezone": {
+                        "default": "Asia/Shanghai",
+                        "maxLength": 80,
+                        "minLength": 1,
+                        "title": "Timezone",
+                        "type": "string"
+                      },
+                      "title": {
+                        "maxLength": 200,
+                        "minLength": 1,
+                        "title": "Title",
+                        "type": "string"
+                      },
+                      "version": {
+                        "default": 1,
+                        "minimum": 1.0,
+                        "title": "Version",
+                        "type": "integer"
+                      },
+                      "version_effective_from": {
+                        "anyOf": [
+                          {
+                            "format": "date-time",
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ],
+                        "title": "Version Effective From"
+                      },
+                      "version_label": {
+                        "default": "",
+                        "maxLength": 120,
+                        "title": "Version Label",
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "strategy_key",
+                      "title"
+                    ],
+                    "title": "StrategySnapshot",
+                    "type": "object"
+                  }
+                },
+                "additionalProperties": false,
+                "properties": {
+                  "artifact_status": {
+                    "enum": [
+                      "complete",
+                      "partial",
+                      "source_missing",
+                      "snapshot_only"
+                    ],
+                    "title": "Artifact Status",
+                    "type": "string"
+                  },
+                  "attempts": {
+                    "items": {
+                      "$ref": "#/$defs/AttemptSnapshot"
+                    },
+                    "maxItems": 100,
+                    "title": "Attempts",
+                    "type": "array"
+                  },
+                  "data_status": {
+                    "enum": [
+                      "unavailable",
+                      "collecting",
+                      "early",
+                      "mature",
+                      "partial",
+                      "attribution_gap"
+                    ],
+                    "title": "Data Status",
+                    "type": "string"
+                  },
+                  "delivery_status": {
+                    "enum": [
+                      "not_started",
+                      "waiting_window",
+                      "dispatching",
+                      "partial",
+                      "completed",
+                      "failed",
+                      "cancelled"
+                    ],
+                    "title": "Delivery Status",
+                    "type": "string"
+                  },
+                  "execution_stage": {
+                    "enum": [
+                      "scheduled",
+                      "preflight",
+                      "decisioning",
+                      "dry_run",
+                      "review",
+                      "delivery",
+                      "observing",
+                      "postmortem",
+                      "closed"
+                    ],
+                    "title": "Execution Stage",
+                    "type": "string"
+                  },
+                  "external_effects": {
+                    "const": "none",
+                    "default": "none",
+                    "title": "External Effects",
+                    "type": "string"
+                  },
+                  "funnel": {
+                    "$ref": "#/$defs/FunnelSnapshot"
+                  },
+                  "metrics": {
+                    "items": {
+                      "$ref": "#/$defs/MetricSnapshot"
+                    },
+                    "maxItems": 200,
+                    "title": "Metrics",
+                    "type": "array"
+                  },
+                  "next_iteration": {
+                    "$ref": "#/$defs/NextIterationSnapshot"
+                  },
+                  "optimization_status": {
+                    "enum": [
+                      "none",
+                      "draft",
+                      "pending_confirmation",
+                      "accepted",
+                      "rejected",
+                      "applied"
+                    ],
+                    "title": "Optimization Status",
+                    "type": "string"
+                  },
+                  "references": {
+                    "items": {
+                      "$ref": "#/$defs/ReferenceSnapshot"
+                    },
+                    "maxItems": 200,
+                    "title": "References",
+                    "type": "array"
+                  },
+                  "report_id": {
+                    "maxLength": 200,
+                    "minLength": 1,
+                    "title": "Report Id",
+                    "type": "string"
+                  },
+                  "reported_at": {
+                    "anyOf": [
+                      {
+                        "format": "date-time",
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "title": "Reported At"
+                  },
+                  "retrospective": {
+                    "$ref": "#/$defs/RetrospectiveSnapshot"
+                  },
+                  "review_status": {
+                    "enum": [
+                      "not_created",
+                      "pending",
+                      "approved",
+                      "rejected",
+                      "cancelled"
+                    ],
+                    "title": "Review Status",
+                    "type": "string"
+                  },
+                  "run": {
+                    "$ref": "#/$defs/RunSnapshot"
+                  },
+                  "schema_version": {
+                    "const": "operation_cycle_snapshot.v1",
+                    "default": "operation_cycle_snapshot.v1",
+                    "title": "Schema Version",
+                    "type": "string"
+                  },
+                  "snapshot_revision": {
+                    "minimum": 1.0,
+                    "title": "Snapshot Revision",
+                    "type": "integer"
+                  },
+                  "stages": {
+                    "items": {
+                      "$ref": "#/$defs/StageSnapshot"
+                    },
+                    "maxItems": 200,
+                    "title": "Stages",
+                    "type": "array"
+                  },
+                  "strategy": {
+                    "$ref": "#/$defs/StrategySnapshot"
+                  },
+                  "tenant_id": {
+                    "const": "aicrm",
+                    "default": "aicrm",
+                    "title": "Tenant Id",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "report_id",
+                  "snapshot_revision",
+                  "strategy",
+                  "run",
+                  "execution_stage",
+                  "review_status",
+                  "delivery_status",
+                  "data_status",
+                  "optimization_status",
+                  "artifact_status"
+                ],
+                "title": "OperationCycleSnapshotV1",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        }
+      },
+      "endpoint": "aicrm_next.operation_cycles.api.report_operation_cycle_snapshot",
+      "include_in_schema": true,
+      "kind": "api",
+      "methods": [
+        "POST"
+      ],
+      "name": "report_operation_cycle_snapshot",
+      "operation_id": "report_operation_cycle_snapshot:POST:/api/operation-cycles/reports",
+      "path": "/api/operation-cycles/reports",
+      "route_group": "operation_cycles"
+    },
+    {
       "capability_owner": "commerce",
       "contract": {
         "parameters": [
@@ -42239,6 +43570,104 @@
       ],
       "table": "miniprogram_library",
       "write_owner": "aicrm_next.media_library.postgres_repo"
+    },
+    {
+      "domain": "operation_cycles",
+      "drop_candidate": false,
+      "lifecycle": "canonical",
+      "migration_source": "0113_operation_cycles",
+      "pii_level": "none",
+      "read_owners": [
+        "operation cycle admin read model",
+        "operation cycle report projection"
+      ],
+      "table": "operation_cycle_attempts",
+      "write_owner": "aicrm_next.operation_cycles"
+    },
+    {
+      "domain": "operation_cycles",
+      "drop_candidate": false,
+      "lifecycle": "read_model",
+      "migration_source": "0113_operation_cycles",
+      "pii_level": "none",
+      "read_owners": [
+        "operation cycle admin read model"
+      ],
+      "table": "operation_cycle_metrics",
+      "write_owner": "aicrm_next.operation_cycles"
+    },
+    {
+      "domain": "operation_cycles",
+      "drop_candidate": false,
+      "lifecycle": "read_model",
+      "migration_source": "0113_operation_cycles",
+      "pii_level": "none",
+      "read_owners": [
+        "operation cycle admin evidence links"
+      ],
+      "table": "operation_cycle_references",
+      "write_owner": "aicrm_next.operation_cycles"
+    },
+    {
+      "domain": "operation_cycles",
+      "drop_candidate": false,
+      "lifecycle": "canonical",
+      "migration_source": "0113_operation_cycles",
+      "pii_level": "none",
+      "read_owners": [
+        "operation cycle admin read model"
+      ],
+      "table": "operation_cycle_runs",
+      "write_owner": "aicrm_next.operation_cycles"
+    },
+    {
+      "domain": "operation_cycles",
+      "drop_candidate": false,
+      "lifecycle": "event",
+      "migration_source": "0113_operation_cycles",
+      "pii_level": "none",
+      "read_owners": [
+        "operation cycle audit",
+        "operation cycle projection rebuild"
+      ],
+      "table": "operation_cycle_snapshots",
+      "write_owner": "aicrm_next.operation_cycles"
+    },
+    {
+      "domain": "operation_cycles",
+      "drop_candidate": false,
+      "lifecycle": "canonical",
+      "migration_source": "0113_operation_cycles",
+      "pii_level": "none",
+      "read_owners": [
+        "operation cycle admin read model"
+      ],
+      "table": "operation_cycle_stages",
+      "write_owner": "aicrm_next.operation_cycles"
+    },
+    {
+      "domain": "operation_cycles",
+      "drop_candidate": false,
+      "lifecycle": "canonical",
+      "migration_source": "0113_operation_cycles",
+      "pii_level": "none",
+      "read_owners": [
+        "operation cycle admin read model"
+      ],
+      "table": "operation_cycle_strategies",
+      "write_owner": "aicrm_next.operation_cycles"
+    },
+    {
+      "domain": "operation_cycles",
+      "drop_candidate": false,
+      "lifecycle": "canonical",
+      "migration_source": "0113_operation_cycles",
+      "pii_level": "none",
+      "read_owners": [
+        "operation cycle admin read model"
+      ],
+      "table": "operation_cycle_strategy_versions",
+      "write_owner": "aicrm_next.operation_cycles"
     },
     {
       "domain": "outbound_webhook",

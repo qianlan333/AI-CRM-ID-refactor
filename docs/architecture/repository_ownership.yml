@@ -678,3 +678,19 @@ repositories:
       - sidebar_customer_profile_fields
     non_literal_table_reads:
       - crm_user_identity
+  aicrm_next/operation_cycles/repository.py:
+    capability_owner: aicrm_next.operation_cycles
+    table_reads:
+      - operation_cycle_runs
+      - operation_cycle_snapshots
+      - operation_cycle_strategies
+      - operation_cycle_strategy_versions
+    table_writes:
+      - operation_cycle_attempts
+      - operation_cycle_metrics
+      - operation_cycle_references
+      - operation_cycle_runs
+      - operation_cycle_snapshots
+      - operation_cycle_stages
+      - operation_cycle_strategies
+      - operation_cycle_strategy_versions
