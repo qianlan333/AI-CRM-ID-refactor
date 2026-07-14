@@ -196,7 +196,6 @@
         "tools/check_next_production_cutover_readiness.py",
         "aicrm_next/admin_read_model/projections.py",
         "tests/test_live_runtime_readiness.py",
-        "tests/test_retired_runtime_gap_timer_report.py",
         "tests/test_retired_timer_readiness_cleanup.py"
       ],
       "python_tests": [
@@ -1599,7 +1598,6 @@
         "tests/test_production_public_release_route.py",
         "tests/test_external_orders_blocker_diagnostics.py",
         "tests/test_external_orders_consumer_run_due_diagnostics.py",
-        "tests/test_retired_runtime_gap_timer_report.py",
         "tests/test_runtime_secret_readiness.py",
         "tests/test_runtime_units_autostart.py",
         "tests/test_select_test_scope.py",
@@ -1629,7 +1627,6 @@
         "tests/test_production_public_release_route.py",
         "tests/test_external_orders_blocker_diagnostics.py",
         "tests/test_external_orders_consumer_run_due_diagnostics.py",
-        "tests/test_retired_runtime_gap_timer_report.py",
         "tests/test_runtime_secret_readiness.py",
         "tests/test_runtime_units_autostart.py",
         "tests/test_select_test_scope.py",
