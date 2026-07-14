@@ -207,6 +207,20 @@ class ReferenceSnapshot(OperationCycleModel):
         return self
 
 
+class MarkdownDocumentSnapshot(OperationCycleModel):
+    """Opaque Agent-authored Markdown with only transport metadata."""
+
+    markdown: str = Field(default="", max_length=200_000)
+    generated_at: datetime | None = None
+
+
+class OperationCycleDocumentsSnapshot(OperationCycleModel):
+    """The two read-only document slots exposed by the strategy detail page."""
+
+    broadcast_details: MarkdownDocumentSnapshot = Field(default_factory=MarkdownDocumentSnapshot)
+    execution_strategy: MarkdownDocumentSnapshot = Field(default_factory=MarkdownDocumentSnapshot)
+
+
 class OperationCycleSnapshotV1(OperationCycleModel):
     schema_version: Literal["operation_cycle_snapshot.v1"] = "operation_cycle_snapshot.v1"
     external_effects: Literal["none"] = "none"
@@ -229,6 +243,7 @@ class OperationCycleSnapshotV1(OperationCycleModel):
     retrospective: RetrospectiveSnapshot = Field(default_factory=RetrospectiveSnapshot)
     next_iteration: NextIterationSnapshot = Field(default_factory=NextIterationSnapshot)
     references: list[ReferenceSnapshot] = Field(default_factory=list, max_length=200)
+    documents: OperationCycleDocumentsSnapshot = Field(default_factory=OperationCycleDocumentsSnapshot)
 
     @model_validator(mode="after")
     def validate_complete_snapshot(self) -> "OperationCycleSnapshotV1":
@@ -355,6 +370,8 @@ class StrategyDetailView(OperationCycleModel):
     versions: list[StrategyVersionView] = Field(default_factory=list)
     trend: list[RunSummary] = Field(default_factory=list)
     sources: list[ReferenceSnapshot] = Field(default_factory=list)
+    documents: OperationCycleDocumentsSnapshot = Field(default_factory=OperationCycleDocumentsSnapshot)
+    assistant_plans: list[ReferenceSnapshot] = Field(default_factory=list)
 
 
 class RunListView(OperationCycleModel):
@@ -374,4 +391,5 @@ class RunDetailView(OperationCycleModel):
     retrospective: RetrospectiveSnapshot = Field(default_factory=RetrospectiveSnapshot)
     next_iteration: NextIterationSnapshot = Field(default_factory=NextIterationSnapshot)
     references: list[ReferenceSnapshot] = Field(default_factory=list)
+    documents: OperationCycleDocumentsSnapshot = Field(default_factory=OperationCycleDocumentsSnapshot)
     snapshot: SnapshotInfo

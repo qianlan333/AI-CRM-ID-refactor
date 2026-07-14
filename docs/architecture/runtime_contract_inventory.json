@@ -1151,7 +1151,7 @@
       "accessor": "os.getenv",
       "file": "aicrm_next/operation_cycles/repository.py",
       "key": "DATABASE_URL",
-      "line": 1045
+      "line": 1112
     },
     {
       "accessor": "os.getenv",
@@ -37207,6 +37207,32 @@
                     "title": "FunnelValue",
                     "type": "object"
                   },
+                  "MarkdownDocumentSnapshot": {
+                    "additionalProperties": false,
+                    "description": "Opaque Agent-authored Markdown with only transport metadata.",
+                    "properties": {
+                      "generated_at": {
+                        "anyOf": [
+                          {
+                            "format": "date-time",
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ],
+                        "title": "Generated At"
+                      },
+                      "markdown": {
+                        "default": "",
+                        "maxLength": 200000,
+                        "title": "Markdown",
+                        "type": "string"
+                      }
+                    },
+                    "title": "MarkdownDocumentSnapshot",
+                    "type": "object"
+                  },
                   "MetricSnapshot": {
                     "additionalProperties": false,
                     "properties": {
@@ -37381,6 +37407,20 @@
                       }
                     },
                     "title": "NextIterationSnapshot",
+                    "type": "object"
+                  },
+                  "OperationCycleDocumentsSnapshot": {
+                    "additionalProperties": false,
+                    "description": "The two read-only document slots exposed by the strategy detail page.",
+                    "properties": {
+                      "broadcast_details": {
+                        "$ref": "#/$defs/MarkdownDocumentSnapshot"
+                      },
+                      "execution_strategy": {
+                        "$ref": "#/$defs/MarkdownDocumentSnapshot"
+                      }
+                    },
+                    "title": "OperationCycleDocumentsSnapshot",
                     "type": "object"
                   },
                   "ReferenceSnapshot": {
@@ -37843,6 +37883,9 @@
                     ],
                     "title": "Delivery Status",
                     "type": "string"
+                  },
+                  "documents": {
+                    "$ref": "#/$defs/OperationCycleDocumentsSnapshot"
                   },
                   "execution_stage": {
                     "enum": [

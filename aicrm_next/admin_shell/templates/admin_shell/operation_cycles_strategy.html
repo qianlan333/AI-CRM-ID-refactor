@@ -1,204 +1,75 @@
 {% extends "admin_shell/operation_cycles_base.html" %}
-{% import "admin_shell/operation_cycles_macros.html" as cycles %}
 
 {% block content %}
-{% set history = trend_windows if trend_windows is defined else (trend if trend is defined else []) %}
-<div class="operation-cycle operation-cycle--strategy" data-operation-cycle-surface="strategy-detail" data-readonly="true">
-  <section class="operation-cycle-brief">
-    <div class="operation-cycle-brief__statement">
-      <span class="operation-cycle-kicker">LATEST CONCLUSION · 最新判断</span>
-      <h2>{{ strategy.get("conclusion") or strategy.get("latest_conclusion") or "等待首个成熟观察窗口" }}</h2>
-      <p>{{ strategy.get("conclusion_detail") or strategy.get("objective") or strategy.get("description") or strategy.get("summary") or "策略目标尚未记录。" }}</p>
+<div
+  class="operation-cycle operation-cycle--strategy-simple"
+  data-operation-cycle-surface="strategy-detail"
+  data-readonly="true"
+  data-active-section="{{ active_section }}"
+>
+  <section class="operation-cycle-summary-strip" aria-label="循环状态">
+    <div class="operation-cycle-summary-strip__count">
+      <span>已循环轮次</span>
+      <strong>{{ strategy.get("run_count") or 0 }}</strong>
     </div>
-    <dl class="operation-cycle-brief__facts">
-      <div><dt>策略编号</dt><dd>{{ strategy.get("strategy_key") or "未记录" }}</dd></div>
-      <div><dt>运行节奏</dt><dd>{{ strategy.get("cadence_label") or strategy.get("cadence") or "未记录" }}</dd></div>
-      <div><dt>最近运行</dt><dd>{{ strategy.get("latest_run_label") or strategy.get("latest_run_key") or "尚未运行" }}</dd></div>
-      <div><dt>负责人视角</dt><dd>{{ strategy.get("owner_scope") or "项目负责人" }}</dd></div>
-    </dl>
-    {{ cycles.readonly_stamp() }}
-  </section>
-
-  <section class="operation-cycle-ledger">
-    <div class="operation-cycle-section-head">
-      <div>
-        <span class="operation-cycle-kicker">CURRENT RUN · 当前运行</span>
-        <h2>状态与核心漏斗</h2>
-      </div>
-      <p>六条状态轴并行展示，避免用单一“成功 / 失败”掩盖执行与归因差异。</p>
-    </div>
-    {% if strategy.get("status_axes") %}{{ cycles.axis_strip(strategy.get("status_axes")) }}{% else %}{{ cycles.model_axis_strip(strategy) }}{% endif %}
-    {{ cycles.funnel(strategy.get("funnel")) }}
-  </section>
-
-  <section class="operation-cycle-split">
-    <article class="operation-cycle-ledger operation-cycle-ledger--trend">
-      <div class="operation-cycle-section-head">
-        <div>
-          <span class="operation-cycle-kicker">HISTORY · 趋势</span>
-          <h2>历次运行对照</h2>
-        </div>
-        <span class="operation-cycle-count">{{ history|length }} 个窗口</span>
-      </div>
-      {% if history %}
-      <div class="operation-cycle-trend" role="list" aria-label="历次运行趋势">
-        {% for point in history %}
-        {% set point_funnel = point.get("funnel") or {} %}
-        {% set planned_entry = point_funnel.get("planned_target_count") or {} %}
-        {% set sent_entry = point_funnel.get("effective_sent_count") or {} %}
-        {% set planned_value = point.get("planned_count") if point.get("planned_count") is not none else planned_entry.get("value") %}
-        {% set sent_value = point.get("effective_sent_count") if point.get("effective_sent_count") is not none else sent_entry.get("value") %}
-        <div class="operation-cycle-trend__row" role="listitem">
-          <div class="operation-cycle-trend__period">
-            <strong>{{ point.get("label") or point.get("run_label") or point.get("run_key") }}</strong>
-            <span>{{ point.get("window_label") or point.get("observed_at") or "窗口未标注" }}</span>
-          </div>
-          <div class="operation-cycle-trend__bar" aria-label="有效发送占计划目标比例">
-            <i style="--operation-cycle-progress: {{ point.get('progress_percent') or (sent_value * 100 / planned_value if planned_value and sent_value is not none else 0) }}%"></i>
-          </div>
-          <div class="operation-cycle-trend__numbers">
-            <span>计划 {{ planned_value if planned_value is not none else "—" }}</span>
-            <strong>有效 {{ sent_value if sent_value is not none else "—" }}</strong>
-          </div>
-          <div class="operation-cycle-trend__result">
-            <strong>{{ point.get("result_value") if point.get("result_value") is not none else point.get("conclusion") or cycles.state_label(point.get("value_state") or "unknown") }}</strong>
-            <span>{{ point.get("result_label") or "观察结论" }}</span>
-          </div>
+    <div class="operation-cycle-summary-strip__progress">
+      <span class="operation-cycle-summary-strip__label">本次循环进度</span>
+      <div class="operation-cycle-week-progress operation-cycle-week-progress--detail" aria-label="本次循环进度">
+        {% for step in weekly_progress.get("steps") or [] %}
+        <div class="operation-cycle-week-progress__step is-{{ step.get('state') }}">
+          <i aria-hidden="true"></i>
+          <span>{{ step.get("label") }}</span>
         </div>
         {% endfor %}
       </div>
+    </div>
+  </section>
+
+  <section class="operation-cycle-detail-shell">
+    <nav class="operation-cycle-detail-nav" aria-label="任务明细维度">
+      {% for item in detail_nav %}
+      <a
+        class="operation-cycle-detail-nav__item{% if item.get('key') == active_section %} is-active{% endif %}"
+        href="{{ item.get('href') }}"
+        {% if item.get('key') == active_section %}aria-current="page"{% endif %}
+      >
+        <span>{{ loop.index }}</span>
+        <strong>{{ item.get("label") }}</strong>
+      </a>
+      {% endfor %}
+    </nav>
+
+    <article class="operation-cycle-detail-content">
+      <header class="operation-cycle-detail-content__head">
+        <h2>{{ active_label }}</h2>
+        {% if active_section != "history" %}
+        <span>Agent 上报 · 只读</span>
+        {% endif %}
+      </header>
+
+      {% if active_section in ["broadcast_details", "execution_strategy"] %}
+        {% if active_document.get("markdown") %}
+        <div class="operation-cycle-markdown" data-operation-cycle-markdown="{{ active_section }}">
+          {{ rendered_document }}
+        </div>
+        {% else %}
+        <div class="operation-cycle-document-empty">
+          <strong>暂时没有内容</strong>
+          <span>Agent 上报该维度的 Markdown 后会直接显示在这里。</span>
+        </div>
+        {% endif %}
       {% else %}
-      <div class="operation-cycle-empty operation-cycle-empty--inline">
-        <strong>暂无可比较的历史窗口</strong>
-        <span>至少两次运行形成同口径结果后，趋势才具有比较意义。</span>
+      <script id="operationCycleAssistantPlans" type="application/json">{{ assistant_plans | tojson }}</script>
+      <div class="operation-cycle-plan-history" data-operation-cycle-plan-history>
+        <div class="operation-cycle-document-empty">AI 助手记录加载中</div>
       </div>
       {% endif %}
     </article>
-
-    <aside class="operation-cycle-ledger operation-cycle-ledger--source">
-      <div class="operation-cycle-section-head">
-        <div>
-          <span class="operation-cycle-kicker">DATA CONTRACT · 数据口径</span>
-          <h2>来源与完整性</h2>
-        </div>
-      </div>
-      {% if sources is defined and sources %}
-      <div class="operation-cycle-source-list">
-        {% for source in sources %}
-        <div class="operation-cycle-source">
-          <span class="operation-cycle-source__signal operation-cycle-source__signal--{{ source.get('tone') or 'neutral' }}"></span>
-          <div>
-            <strong>{{ source.get("label") or source.get("source_system") or source.get("reference_type") or "数据来源" }}</strong>
-            <p>{{ source.get("source_system") or "来源未声明" }} · {{ source.get("reference_type") or "类型未记录" }} · {{ cycles.state_label(source.get("data_status") or "unknown") }}</p>
-            {% if source.get("href") %}<small><a href="{{ source.get('href') }}">查看证据 ↗</a></small>{% endif %}
-          </div>
-        </div>
-        {% endfor %}
-      </div>
-      {% elif strategy.get("funnel") %}
-      <div class="operation-cycle-source-list">
-        {% set source_definitions = [
-          ("candidate_count", "候选人数"),
-          ("audited_count", "完成审计"),
-          ("recommended_send_count", "建议发送"),
-          ("planned_target_count", "计划目标"),
-          ("effective_sent_count", "有效发送"),
-          ("failed_count", "发送失败")
-        ] %}
-        {% for key, label in source_definitions %}
-        {% set entry = strategy.get("funnel").get(key) or {} %}
-        <div class="operation-cycle-source">
-          <span class="operation-cycle-source__signal operation-cycle-source__signal--{% if entry.get('data_source') %}ok{% else %}warn{% endif %}"></span>
-          <div>
-            <strong>{{ label }}</strong>
-            <p>{{ entry.get("data_source") or "来源未声明" }}</p>
-            <small>{{ cycles.state_label(entry.get("status") or "unknown") }}</small>
-          </div>
-        </div>
-        {% endfor %}
-      </div>
-      {% else %}
-      <div class="operation-cycle-empty operation-cycle-empty--inline">
-        <strong>来源说明缺失</strong>
-        <span>页面不会把未声明来源的数据视为可靠事实。</span>
-      </div>
-      {% endif %}
-    </aside>
-  </section>
-
-  <section class="operation-cycle-ledger">
-    <div class="operation-cycle-section-head">
-      <div>
-        <span class="operation-cycle-kicker">RUN ARCHIVE · 运行档案</span>
-        <h2>每一次执行</h2>
-      </div>
-      <span class="operation-cycle-count">{{ runs|length }} 次</span>
-    </div>
-    {% if runs %}
-    <div class="operation-cycle-run-table-wrap">
-      <table class="operation-cycle-run-table">
-        <thead>
-          <tr>
-            <th>运行</th>
-            <th>复合状态</th>
-            <th>计划发送</th>
-            <th>有效发送</th>
-            <th>观察结论</th>
-            <th>产物</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for run in runs %}
-          {% set run_funnel = run.get("funnel") or {} %}
-          {% set planned_entry = run_funnel.get("planned_target_count") or {} %}
-          {% set sent_entry = run_funnel.get("effective_sent_count") or {} %}
-          <tr>
-            <td>
-              {% if run.get("detail_href") %}<a href="{{ run.get('detail_href') }}"><strong>{{ run.get("label") or run.get("run_key") }}</strong></a>{% else %}<strong>{{ run.get("label") or run.get("run_key") }}</strong>{% endif %}
-              <small>{{ run.get("intended_send_at") or "计划时间未记录" }}</small>
-            </td>
-            <td>{% if run.get("status_axes") %}{{ cycles.axis_strip(run.get("status_axes")) }}{% else %}{{ cycles.model_axis_strip(run) }}{% endif %}</td>
-            <td>{% if planned_entry.get("status") in ["observed", "partial_lower_bound"] and planned_entry.get("value") is not none %}{{ planned_entry.get("value") }}{% else %}{{ cycles.state_label(planned_entry.get("status") or "unknown") }}{% endif %}</td>
-            <td>{% if sent_entry.get("status") in ["observed", "partial_lower_bound"] and sent_entry.get("value") is not none %}{{ sent_entry.get("value") }}{% else %}{{ cycles.state_label(sent_entry.get("status") or "unknown") }}{% endif %}</td>
-            <td><strong>{{ run.get("conclusion") or run.get("result_summary") or "等待观察" }}</strong></td>
-            <td>{{ cycles.status_chip(run.get("artifact_label") or run.get("artifact_status") or "未知", "", run.get("artifact_tone") or ("ok" if run.get("artifact_status") == "complete" else "warn" if run.get("artifact_status") in ["partial", "source_missing"] else "neutral")) }}</td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-    {% else %}
-    <div class="operation-cycle-empty operation-cycle-empty--inline">
-      <strong>还没有周期运行</strong>
-      <span>首个执行阶段快照到达后，会生成一条不可变运行档案。</span>
-    </div>
-    {% endif %}
-  </section>
-
-  <section class="operation-cycle-ledger">
-    <div class="operation-cycle-section-head">
-      <div>
-        <span class="operation-cycle-kicker">STRATEGY LOG · 策略变更</span>
-        <h2>版本记录</h2>
-      </div>
-    </div>
-    {% if strategy_versions %}
-    <ol class="operation-cycle-version-log">
-      {% for version in strategy_versions %}
-      <li>
-        <span>{{ version.get("effective_from") or version.get("created_at") or "时间未知" }}</span>
-        <strong>{{ version.get("label") or version.get("version_label") or version.get("version") or version.get("version_key") or "未命名版本" }}</strong>
-        <p>{{ version.get("change_summary") or version.get("objective") or ("策略定义已存档" if version.get("definition") else "本版本未记录变更说明。") }}</p>
-        <small>{{ version.get("source") or "来源未声明" }}</small>
-      </li>
-      {% endfor %}
-    </ol>
-    {% else %}
-    <div class="operation-cycle-empty operation-cycle-empty--inline">
-      <strong>暂无版本变更</strong>
-      <span>策略优化被确认并应用后，会在这里保留历史版本。</span>
-    </div>
-    {% endif %}
   </section>
 </div>
+{% endblock %}
+
+{% block scripts_extra %}
+{{ super() }}
+<script defer src="/static/operation-cycles/operation_cycles_detail.js?v=20260714-v1"></script>
 {% endblock %}

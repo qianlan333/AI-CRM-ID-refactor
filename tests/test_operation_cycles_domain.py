@@ -98,6 +98,37 @@ def test_complete_snapshot_validates_and_hash_is_canonical() -> None:
     assert compute_snapshot_hash(left) == compute_snapshot_hash(right)
     assert left.external_effects == "none"
     assert left.funnel.failed_count.value == 3
+    assert left.documents.broadcast_details.markdown == ""
+
+
+def test_snapshot_accepts_two_opaque_markdown_documents() -> None:
+    payload = snapshot_payload()
+    payload["documents"] = {
+        "broadcast_details": {
+            "markdown": "# 群发数据\n\n```chart\n{\"type\":\"bar\"}\n```",
+            "generated_at": "2026-07-14T09:00:00+08:00",
+        },
+        "execution_strategy": {
+            "markdown": "# 执行策略\n\n只保存 Markdown，不拆业务字段。",
+            "generated_at": "2026-07-14T09:10:00+08:00",
+        },
+    }
+
+    snapshot = OperationCycleSnapshotV1.model_validate(payload)
+
+    assert snapshot.documents.broadcast_details.markdown.startswith("# 群发数据")
+    assert snapshot.documents.execution_strategy.generated_at is not None
+
+
+def test_markdown_documents_use_existing_recursive_privacy_guard() -> None:
+    payload = snapshot_payload()
+    payload["documents"] = {
+        "broadcast_details": {"markdown": "请联系 13800138000"},
+        "execution_strategy": {"markdown": ""},
+    }
+
+    with pytest.raises(ValidationError, match="phone number is forbidden"):
+        OperationCycleSnapshotV1.model_validate(payload)
 
 
 @pytest.mark.parametrize(

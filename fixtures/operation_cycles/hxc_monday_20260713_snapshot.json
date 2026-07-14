@@ -26,6 +26,16 @@
   ],
   "data_status": "attribution_gap",
   "delivery_status": "partial",
+  "documents": {
+    "broadcast_details": {
+      "generated_at": "2026-07-14T00:00:00+08:00",
+      "markdown": "# 2026-07-13 群发数据明细\n\n> 本页记录聚合发送事实与观察边界，不展示逐人名单，也不将观察信号包装为因果提升。\n\n## 核心漏斗\n\n| 阶段 | 人数 | 数据口径 |\n| --- | ---: | --- |\n| 候选用户 | 1,275 | campaign_input.aggregate |\n| 完成审计 | 895 | send_summary.aggregate |\n| 建议发送 | 848 | send_summary.aggregate |\n| 计划目标 | 848 | create_response.aggregate |\n| 有效发送 | 845 | broadcast_jobs.production_readonly_aggregate |\n| 可重试失败 | 3 | broadcast_jobs.production_readonly_aggregate |\n\n```chart\n{\"type\":\"funnel\",\"title\":\"本轮发送漏斗\",\"unit\":\"人\",\"labels\":[\"候选用户\",\"完成审计\",\"建议发送\",\"计划目标\",\"有效发送\"],\"series\":[{\"name\":\"人数\",\"data\":[1275,895,848,848,845]}]}\n```\n\n## 当前结论\n\n- 845 个有效发送和 3 个可重试失败已经过生产只读聚合核验。\n- 计划状态仍显示 draft，与实际发送事实存在冲突。\n- 分窗口行为数据缺失，当前不能得出激活提升结论。"
+    },
+    "execution_strategy": {
+      "generated_at": "2026-07-14T00:00:00+08:00",
+      "markdown": "# 每周一全量用户激活策略\n\n## 目标\n\n让每位可触达用户获得与当前状态匹配的下一步服务，并保留可复核结果。\n\n## 本轮执行流程\n\n```mermaid\nflowchart LR\nA[全量候选] --> B[身份与触达审计]\nB --> C[ABCD 分层判断]\nC --> D[AI 助手人审]\nD --> E[发送执行]\nE --> F[结果复盘]\n```\n\n## 执行边界\n\n- [x] 所有发送先经过 AI 助手审阅。\n- [x] CRM 只保存与展示 Agent 快照，不在本页触发发送。\n- [ ] 补齐 T+2h、24h、48h、72h 行为聚合。\n- [ ] 修复计划状态与发送事实的关联口径。\n\n## 下一轮优化\n\n先补齐归因与计划状态一致性，再扩大效果判断。"
+    }
+  },
   "execution_stage": "postmortem",
   "external_effects": "none",
   "funnel": {
@@ -202,6 +212,16 @@
       "reference_type": "artifact",
       "source_id": "hxc-monday-abcd-20260713-1600-final-848-weekly-cover-v1",
       "source_system": "ai_crm_production_readonly"
+    },
+    {
+      "data_status": "unknown",
+      "evidence_hash": "",
+      "href": "/admin/cloud-orchestrator/plans/hxc-monday-abcd-20260713-1600-final-848-weekly-cover-v1",
+      "label": "2026-07-13 周一全量激活计划",
+      "reference_key": "ai-assistant-plan:hxc-monday-20260713",
+      "reference_type": "other",
+      "source_id": "hxc-monday-abcd-20260713-1600-final-848-weekly-cover-v1",
+      "source_system": "cloud_orchestrator_plan"
     }
   ],
   "report_id": "hxc_monday_20260713_backfill_v1",

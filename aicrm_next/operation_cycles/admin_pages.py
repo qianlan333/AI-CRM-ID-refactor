@@ -12,7 +12,8 @@ from fastapi.templating import Jinja2Templates
 
 from aicrm_next.admin_shell.navigation import admin_path_for, shell_context
 
-from .application import get_run, get_strategy, list_strategies, list_strategy_runs
+from .application import get_run, get_strategy, list_strategies
+from .markdown_renderer import render_markdown
 
 
 router = APIRouter()
@@ -317,11 +318,31 @@ def admin_operation_cycle_strategy_page(request: Request, strategy_key: str):
     if not payload:
         return _not_found(request, "未找到这个运营策略")
     strategy = payload.get("strategy") or {}
-    runs_payload = _plain(list_strategy_runs(strategy_key, limit=100, offset=0))
+    section = str(request.query_params.get("section") or "broadcast_details").strip()
+    allowed_sections = {
+        "broadcast_details": "群发数据明细",
+        "execution_strategy": "执行策略文档",
+        "history": "历史群发记录",
+    }
+    if section not in allowed_sections:
+        section = "broadcast_details"
+    detail_href = _detail_href(strategy_key)
+    detail_nav = [
+        {
+            "key": key,
+            "label": label,
+            "href": detail_href if key == "broadcast_details" else f"{detail_href}?section={key}",
+        }
+        for key, label in allowed_sections.items()
+    ]
+    documents = payload.get("documents") or {}
+    active_document = documents.get(section) if section != "history" else {}
+    if not isinstance(active_document, dict):
+        active_document = {}
     context = shell_context(
         request=request,
         page_title=str(strategy.get("title") or strategy_key),
-        page_summary="先看本轮结论和核心漏斗，再追溯历史运行、策略版本、口径与数据源。",
+        page_summary="查看本次循环进度、Agent 文档与关联的 AI 助手记录。",
         active_endpoint="api.admin_operation_cycles_page",
     )
     context.update(
@@ -332,10 +353,15 @@ def admin_operation_cycle_strategy_page(request: Request, strategy_key: str):
                 {"label": str(strategy.get("title") or strategy_key), "href": ""},
             ],
             "strategy": {**strategy, "detail_href": _detail_href(strategy_key)},
-            "runs": _run_summaries(runs_payload, strategy_key),
-            "strategy_versions": payload.get("versions") or [],
-            "trend_windows": payload.get("trend") or [],
-            "sources": payload.get("sources") or [],
+            "weekly_progress": _weekly_progress(strategy, now=_utc_now()),
+            "detail_nav": detail_nav,
+            "active_section": section,
+            "active_label": allowed_sections[section],
+            "active_document": active_document,
+            "rendered_document": render_markdown(str(active_document.get("markdown") or "")),
+            "assistant_plans": [
+                item for item in payload.get("assistant_plans") or [] if isinstance(item, dict)
+            ],
         }
     )
     return templates.TemplateResponse(request, "admin_shell/operation_cycles_strategy.html", context)
