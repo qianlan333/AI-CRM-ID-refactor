@@ -1181,6 +1181,7 @@
         "tests/test_operation_cycles_domain.py",
         "tests/test_operation_cycles_frontend_contract.py",
         "tests/test_operation_cycles_hxc_backfill.py",
+        "tests/test_operation_cycles_markdown.py",
         "tests/test_operation_cycles_migration.py",
         "tests/test_operation_cycles_repository.py",
         "tests/test_admin_read_pages_smoke.py",

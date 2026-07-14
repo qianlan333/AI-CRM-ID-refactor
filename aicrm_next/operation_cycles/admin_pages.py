@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 from collections import OrderedDict
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse
@@ -10,12 +12,20 @@ from fastapi.templating import Jinja2Templates
 
 from aicrm_next.admin_shell.navigation import admin_path_for, shell_context
 
-from .application import get_run, get_strategy, list_strategies, list_strategy_runs
+from .application import get_run, get_strategy, list_strategies
+from .markdown_renderer import render_markdown
 
 
 router = APIRouter()
 _TEMPLATES_DIR = Path(__file__).resolve().parents[1] / "admin_shell" / "templates"
 templates = Jinja2Templates(directory=_TEMPLATES_DIR)
+
+_WEEKLY_PROGRESS_STEPS = (
+    ("planning", "任务准备"),
+    ("delivery", "发送执行"),
+    ("review", "结果复盘"),
+    ("optimization", "优化确认"),
+)
 
 
 def _plain(value: Any) -> Any:
@@ -35,9 +45,94 @@ def _detail_href(strategy_key: object, run_key: object | None = None) -> str:
     return admin_path_for("api.admin_operation_cycle_run_page", run_key=str(run_key or ""), **params)
 
 
-def _strategy_summaries(payload: dict[str, Any]) -> list[dict[str, Any]]:
+def _utc_now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def _parse_datetime(value: object) -> datetime | None:
+    if isinstance(value, datetime):
+        return value if value.tzinfo is not None else value.replace(tzinfo=timezone.utc)
+    raw = str(value or "").strip()
+    if not raw:
+        return None
+    try:
+        parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=timezone.utc)
+
+
+def _business_timezone(name: object) -> ZoneInfo:
+    try:
+        return ZoneInfo(str(name or "Asia/Shanghai"))
+    except (ZoneInfoNotFoundError, ValueError):
+        return ZoneInfo("Asia/Shanghai")
+
+
+def _weekly_progress(item: dict[str, Any], *, now: datetime) -> dict[str, Any]:
+    business_tz = _business_timezone(item.get("timezone"))
+    local_now = now.astimezone(business_tz)
+    week_start = local_now.date() - timedelta(days=local_now.weekday())
+    week_end = week_start + timedelta(days=6)
+    latest_run_at = _parse_datetime(item.get("latest_run_at"))
+    has_current_week_run = bool(
+        latest_run_at
+        and week_start <= latest_run_at.astimezone(business_tz).date() <= week_end
+    )
+    states = {key: "pending" for key, _label in _WEEKLY_PROGRESS_STEPS}
+
+    if has_current_week_run:
+        execution_stage = str(item.get("execution_stage") or "scheduled").strip().lower()
+        review_status = str(item.get("review_status") or "not_created").strip().lower()
+        delivery_status = str(item.get("delivery_status") or "not_started").strip().lower()
+        optimization_status = str(item.get("optimization_status") or "none").strip().lower()
+
+        planning_done = (
+            review_status == "approved"
+            or execution_stage in {"delivery", "observing", "postmortem", "closed"}
+            or delivery_status in {"dispatching", "partial", "completed", "failed", "cancelled"}
+        )
+        if not planning_done:
+            states["planning"] = "active"
+        else:
+            states["planning"] = "completed"
+            delivery_done = delivery_status in {"partial", "completed"}
+            if not delivery_done:
+                states["delivery"] = "active"
+            else:
+                states["delivery"] = "completed"
+                review_done = execution_stage in {"postmortem", "closed"}
+                if not review_done:
+                    states["review"] = "active"
+                else:
+                    states["review"] = "completed"
+                    optimization_done = execution_stage == "closed" or optimization_status in {
+                        "accepted",
+                        "rejected",
+                        "applied",
+                    }
+                    if optimization_done:
+                        states["optimization"] = "completed"
+                    else:
+                        states["optimization"] = "active"
+
+    return {
+        "has_current_week_run": has_current_week_run,
+        "steps": [
+            {"key": key, "label": label, "state": states[key]}
+            for key, label in _WEEKLY_PROGRESS_STEPS
+        ],
+    }
+
+
+def _strategy_summaries(payload: dict[str, Any], *, now: datetime | None = None) -> list[dict[str, Any]]:
+    effective_now = now or _utc_now()
     return [
-        {**item, "detail_href": _detail_href(item.get("strategy_key"))}
+        {
+            **item,
+            "detail_href": _detail_href(item.get("strategy_key")),
+            "weekly_progress": _weekly_progress(item, now=effective_now),
+        }
         for item in _plain(payload.get("items") or [])
         if isinstance(item, dict)
     ]
@@ -154,7 +249,7 @@ def admin_operation_cycles_page(request: Request):
     context = shell_context(
         request=request,
         page_title="运营闭环",
-        page_summary="按策略查看每一次真实执行、结果复盘与下一轮优化。页面只读，不触发任何外部动作。",
+        page_summary="查看每项运营任务的本周进度。任务由 Agent 创建。",
         active_endpoint="api.admin_operation_cycles_page",
     )
     context.update(
@@ -223,11 +318,31 @@ def admin_operation_cycle_strategy_page(request: Request, strategy_key: str):
     if not payload:
         return _not_found(request, "未找到这个运营策略")
     strategy = payload.get("strategy") or {}
-    runs_payload = _plain(list_strategy_runs(strategy_key, limit=100, offset=0))
+    section = str(request.query_params.get("section") or "broadcast_details").strip()
+    allowed_sections = {
+        "broadcast_details": "群发数据明细",
+        "execution_strategy": "执行策略文档",
+        "history": "历史群发记录",
+    }
+    if section not in allowed_sections:
+        section = "broadcast_details"
+    detail_href = _detail_href(strategy_key)
+    detail_nav = [
+        {
+            "key": key,
+            "label": label,
+            "href": detail_href if key == "broadcast_details" else f"{detail_href}?section={key}",
+        }
+        for key, label in allowed_sections.items()
+    ]
+    documents = payload.get("documents") or {}
+    active_document = documents.get(section) if section != "history" else {}
+    if not isinstance(active_document, dict):
+        active_document = {}
     context = shell_context(
         request=request,
         page_title=str(strategy.get("title") or strategy_key),
-        page_summary="先看本轮结论和核心漏斗，再追溯历史运行、策略版本、口径与数据源。",
+        page_summary="查看本次循环进度、Agent 文档与关联的 AI 助手记录。",
         active_endpoint="api.admin_operation_cycles_page",
     )
     context.update(
@@ -238,10 +353,15 @@ def admin_operation_cycle_strategy_page(request: Request, strategy_key: str):
                 {"label": str(strategy.get("title") or strategy_key), "href": ""},
             ],
             "strategy": {**strategy, "detail_href": _detail_href(strategy_key)},
-            "runs": _run_summaries(runs_payload, strategy_key),
-            "strategy_versions": payload.get("versions") or [],
-            "trend_windows": payload.get("trend") or [],
-            "sources": payload.get("sources") or [],
+            "weekly_progress": _weekly_progress(strategy, now=_utc_now()),
+            "detail_nav": detail_nav,
+            "active_section": section,
+            "active_label": allowed_sections[section],
+            "active_document": active_document,
+            "rendered_document": render_markdown(str(active_document.get("markdown") or "")),
+            "assistant_plans": [
+                item for item in payload.get("assistant_plans") or [] if isinstance(item, dict)
+            ],
         }
     )
     return templates.TemplateResponse(request, "admin_shell/operation_cycles_strategy.html", context)
