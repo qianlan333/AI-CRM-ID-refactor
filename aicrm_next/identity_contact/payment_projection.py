@@ -46,15 +46,69 @@ def project_payment_order_mobile(
     """
 
     identity = _order_identity(order)
-    mobile = "".join(char for char in _text(identity.get("mobile")) if char.isdigit())
+    return _project_order_identity_mobile(
+        conn,
+        unionid=_text(order.get("unionid") or identity.get("unionid")),
+        mobile=_text(identity.get("mobile")),
+        external_userid=_text(identity.get("external_userid")),
+        openid=_text(identity.get("openid")),
+        owner_userid=_text(identity.get("owner_userid")),
+        customer_name=_text(order.get("payer_name_snapshot") or identity.get("payer_name")),
+        mobile_source="wechat_pay_order",
+        audit_key="wechat_pay_mobile_projection",
+        reference_key="out_trade_no",
+        reference_value=_text(order.get("out_trade_no")),
+        source_route=source_route,
+    )
+
+
+def project_wechat_shop_order_mobile(
+    conn: Any,
+    order: dict[str, Any],
+    *,
+    source_route: str,
+) -> dict[str, Any]:
+    """Persist a paid WeChat Shop buyer mobile into canonical identity."""
+
+    if not order.get("paid_at"):
+        return {"ok": True, "projected": False, "reason": "order_not_paid"}
+    return _project_order_identity_mobile(
+        conn,
+        unionid=_text(order.get("unionid")),
+        mobile=_text(order.get("buyer_mobile")),
+        openid=_text(order.get("openid")),
+        mobile_source="wechat_shop_order",
+        audit_key="wechat_shop_mobile_projection",
+        reference_key="order_id",
+        reference_value=_text(order.get("order_id")),
+        source_route=source_route,
+    )
+
+
+def _project_order_identity_mobile(
+    conn: Any,
+    *,
+    unionid: str,
+    mobile: str,
+    mobile_source: str,
+    audit_key: str,
+    reference_key: str,
+    reference_value: str,
+    source_route: str,
+    external_userid: str = "",
+    openid: str = "",
+    owner_userid: str = "",
+    customer_name: str = "",
+) -> dict[str, Any]:
+    mobile = "".join(char for char in _text(mobile) if char.isdigit())
     if not mobile:
         return {"ok": True, "projected": False, "reason": "missing_mobile"}
     if not (len(mobile) == 11 and mobile.startswith("1")):
         return {"ok": True, "projected": False, "reason": "invalid_mobile"}
 
-    explicit_unionid = _text(order.get("unionid") or identity.get("unionid"))
-    external_userid = _text(identity.get("external_userid"))
-    openid = _text(identity.get("openid"))
+    explicit_unionid = _text(unionid)
+    external_userid = _text(external_userid)
+    openid = _text(openid)
     base_resolution = resolve_identity_with_dbapi(
         conn,
         ResolvePersonIdentityRequest(
@@ -80,12 +134,12 @@ def project_payment_order_mobile(
     if mobile_resolution.status in {"pending", "conflict"} or (mobile_unionid and mobile_unionid != unionid):
         return {"ok": False, "projected": False, "reason": "mobile_alias_conflict"}
 
-    owner_userid = _text(identity.get("owner_userid"))
-    customer_name = _text(order.get("payer_name_snapshot") or identity.get("payer_name"))
+    owner_userid = _text(owner_userid)
+    customer_name = _text(customer_name)
     audit_payload = json.dumps(
         {
-            "wechat_pay_mobile_projection": {
-                "out_trade_no": _text(order.get("out_trade_no")),
+            audit_key: {
+                reference_key: _text(reference_value),
                 "source_route": _text(source_route),
             }
         },
@@ -122,7 +176,7 @@ def project_payment_order_mobile(
             %s,
             %s,
             TRUE,
-            'wechat_pay_order',
+            %s,
             %s,
             %s::jsonb,
             %s,
@@ -179,6 +233,7 @@ def project_payment_order_mobile(
             openid,
             mobile,
             mobile,
+            _text(mobile_source),
             customer_name,
             audit_payload,
             owner_userid,
@@ -189,4 +244,4 @@ def project_payment_order_mobile(
     return {"ok": True, "projected": True, "unionid": unionid, "mobile": mobile}
 
 
-__all__ = ["project_payment_order_mobile"]
+__all__ = ["project_payment_order_mobile", "project_wechat_shop_order_mobile"]

@@ -70,8 +70,8 @@ def test_project_order_mobile_to_identity_uses_order_metadata(monkeypatch) -> No
     assert "ON CONFLICT (unionid) DO UPDATE SET" in call["query"]
     assert "WHERE COALESCE(crm_user_identity.mobile, '') = ''" in call["query"]
     assert call["params"][0:4] == ("union_order_001", "wm_order_001", "wm_order_001", "wm_order_001")
-    assert call["params"][7:10] == ("15812345678", "15812345678", "付款人")
-    assert call["params"][11] == "HuangYouCan"
+    assert call["params"][7:11] == ("15812345678", "15812345678", "wechat_pay_order", "付款人")
+    assert call["params"][12] == "HuangYouCan"
 
 
 def test_project_order_mobile_to_identity_skips_invalid_or_missing_identity(monkeypatch) -> None:

@@ -136,6 +136,21 @@ def test_h5_wechat_pay_mobile_projection_test_selects_commerce_scope() -> None:
     assert result["needs_full_ci"] is False
 
 
+def test_wechat_shop_mobile_projection_tests_select_commerce_scope() -> None:
+    result = _select(
+        "tests/test_wechat_shop_mobile_projection.py",
+        "tests/test_wechat_shop_mobile_projection_migration.py",
+    )
+
+    assert result["matched_scopes"] == ["commerce", "migration_db"]
+    assert "tests/test_wechat_shop_mobile_projection.py" in result["python_tests"]
+    assert "tests/test_wechat_shop_mobile_projection_migration.py" in result["python_tests"]
+    assert result["unmatched_files"] == []
+    assert result["needs_postgres"] is True
+    assert result["architecture_gate"] == "db"
+    assert result["needs_full_ci"] is False
+
+
 def test_public_pay_landing_test_selects_commerce_scope() -> None:
     result = _select("tests/test_public_pay_landing.py")
 
