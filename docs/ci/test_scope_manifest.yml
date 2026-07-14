@@ -592,15 +592,18 @@
         "aicrm_next/media_library/application.py",
         "aicrm_next/media_library/postgres_repo.py",
         "aicrm_next/media_library/wecom_lease.py",
+        "aicrm_next/integration_gateway/wecom_media_upload_client.py",
         "aicrm_next/wecom_media_jobs.py",
         "migrations/versions/0115_wecom_media_leases.py",
         "scripts/backfill_wecom_media_leases.py",
         "tests/test_automation_ops_scheduler.py",
-        "tests/test_wecom_media_lease.py"
+        "tests/test_wecom_media_lease.py",
+        "tests/test_wecom_media_upload_client.py"
       ],
       "python_tests": [
         "tests/test_media_library_no_real_external_calls.py",
         "tests/test_wecom_media_lease.py",
+        "tests/test_wecom_media_upload_client.py",
         "tests/test_automation_ops_scheduler.py",
         "tests/test_group_ops_material_resolver.py",
         "tests/test_external_effects_wecom_welcome.py",
