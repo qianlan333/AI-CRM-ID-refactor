@@ -481,6 +481,7 @@
         "aicrm_next/commerce/coupons/**",
         "aicrm_next/identity_contact/oauth_projection_repo.py",
         "aicrm_next/admin_shell/navigation.py",
+        "aicrm_next/shared/capability_flags.py",
         "aicrm_next/shared/wechat_h5_session.py",
         "migrations/versions/0114_commerce_coupons.py",
         "scripts/run_coupon_consistency_check.py",
