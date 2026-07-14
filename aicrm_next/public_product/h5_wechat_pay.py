@@ -481,6 +481,46 @@ def _lead_qr_for_product_code(conn: Any, product_code: str) -> dict[str, Any]:
     return _resolve_lead_channel_qr(conn, channel_id=channel_id)
 
 
+def _completion_projection_blocks_lead_qr(completion: dict[str, Any]) -> bool:
+    redirect = completion.get("completion_redirect") if isinstance(completion.get("completion_redirect"), dict) else {}
+    target = completion.get("completion_target") if isinstance(completion.get("completion_target"), dict) else {}
+    return bool(redirect.get("enabled") or target.get("enabled"))
+
+
+def _lead_qr_for_product(conn: Any, product: dict[str, Any]) -> dict[str, Any]:
+    completion = _completion_redirect_from_product(product)
+    if _completion_projection_blocks_lead_qr(completion):
+        return {}
+    try:
+        channel_id = int(product.get("lead_channel_id") or 0) or None
+    except (TypeError, ValueError):
+        channel_id = None
+    if channel_id:
+        return _resolve_lead_channel_qr(conn, channel_id=channel_id)
+    return _lead_qr_for_product_code(conn, _normalized_text(product.get("product_code")))
+
+
+def resolve_product_lead_qr(product: dict[str, Any]) -> dict[str, Any]:
+    """Resolve the configured post-purchase channel QR without external calls."""
+
+    if not production_data_ready():
+        return {}
+    normalized = dict(product or {})
+    if _completion_projection_blocks_lead_qr(_completion_redirect_from_product(normalized)):
+        return {}
+    try:
+        with _connect() as conn:
+            return _lead_qr_for_product(conn, normalized)
+    except Exception as exc:
+        safe_log_exception(
+            LOGGER,
+            "public_product_lead_qr_resolution_failed",
+            exc,
+            product_code=_normalized_text(normalized.get("product_code")),
+        )
+        return {}
+
+
 def _resolve_payment_identity(
     conn: Any,
     identity: dict[str, str],
@@ -578,7 +618,7 @@ def _paid_order_payload_for_product_identity(
     if not order:
         return None
     completion_redirect = _completion_redirect_from_product(product)
-    lead_qr = {} if completion_redirect.get("completion_redirect", {}).get("enabled") else _lead_qr_for_product_code(conn, _normalized_text(product.get("product_code")))
+    lead_qr = _lead_qr_for_product(conn, product)
     return _order_payload(order, completion_redirect=completion_redirect, lead_qr=lead_qr)
 
 
@@ -959,7 +999,7 @@ def order_status_response(out_trade_no: str, request: Request) -> JSONResponse:
         order_payload = dict(order)
         product_code = _normalized_text(order_payload.get("product_code"))
         completion_redirect = _completion_redirect_for_product_code(conn, product_code)
-        lead_qr = {} if completion_redirect.get("completion_redirect", {}).get("enabled") else _lead_qr_for_product_code(conn, product_code)
+        lead_qr = {} if _completion_projection_blocks_lead_qr(completion_redirect) else _lead_qr_for_product_code(conn, product_code)
     return JSONResponse(
         {"ok": True, "order": _order_payload(order_payload, completion_redirect=completion_redirect, lead_qr=lead_qr)},
         headers=route_headers(),

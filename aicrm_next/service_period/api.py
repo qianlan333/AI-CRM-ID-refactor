@@ -80,6 +80,7 @@ def _inactive_public_state(product: dict) -> dict:
         },
         "service_product": product,
         "entitlement": {"status": "unavailable", "remaining_days": 0, "end_at": ""},
+        "lead_qr": {},
         "cta_text": "暂未开放",
         "checkout_url": "",
         "create_order_url": "",
