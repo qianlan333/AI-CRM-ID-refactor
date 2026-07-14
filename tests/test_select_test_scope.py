@@ -80,6 +80,7 @@ def test_zero_scc_runtime_composition_files_force_full_postgres_ci() -> None:
         "aicrm_next/shared/product_code_aliases.py",
         "aicrm_next/shared/wecom_runtime.py",
         "scripts/run_wechat_pay_order_reconciliation_worker.py",
+        "tests/test_order_reconciliation_worker.py",
         "tests/test_internal_events_ops_shadow.py",
     )
 

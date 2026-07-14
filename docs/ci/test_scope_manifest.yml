@@ -259,6 +259,7 @@
         "aicrm_next/shared/product_code_aliases.py",
         "aicrm_next/shared/wecom_runtime.py",
         "scripts/run_wechat_pay_order_reconciliation_worker.py",
+        "tests/test_order_reconciliation_worker.py",
         "tests/test_internal_events_ai_campaign_slice.py",
         "tests/test_internal_events_customer_tags_slice.py",
         "tests/test_internal_events_ops_plan_slice.py",
