@@ -8,63 +8,55 @@ import pytest
 from aicrm_next.admin_shell.navigation import nav_items
 from aicrm_next.commerce.coupons import application as coupon_application
 from aicrm_next.commerce.coupons.application import CouponPublicApplication
-from aicrm_next.shared.capability_flags import (
-    COMMERCE_COUPONS_ENABLED_ENV,
-    commerce_coupons_new_activity_enabled,
-)
-from aicrm_next.shared.errors import ContractError
 
 
 _PRODUCTION_ENV_KEYS = ("AICRM_NEXT_ENV", "ENVIRONMENT", "APP_ENV", "FLASK_ENV")
+_RETIRED_ROLLOUT_ENV = "AICRM_COMMERCE_COUPONS_ENABLED"
 
 
-def _local_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+def _production_environment(monkeypatch: pytest.MonkeyPatch) -> None:
     for key in _PRODUCTION_ENV_KEYS:
         monkeypatch.delenv(key, raising=False)
-    monkeypatch.delenv(COMMERCE_COUPONS_ENABLED_ENV, raising=False)
-
-
-def _production_environment(monkeypatch: pytest.MonkeyPatch, *, enabled: str | None = None) -> None:
-    _local_environment(monkeypatch)
     monkeypatch.setenv("APP_ENV", "production")
-    if enabled is not None:
-        monkeypatch.setenv(COMMERCE_COUPONS_ENABLED_ENV, enabled)
+    # The retired variable must no longer hide or disable coupons.
+    monkeypatch.setenv(_RETIRED_ROLLOUT_ENV, "false")
 
 
-def _transaction_labels() -> list[str]:
+def _transaction_items() -> list[dict]:
     transaction = next(group for group in nav_items("") if group["title"] == "交易")
-    return [str(item["label"]) for item in transaction["items"]]
+    return list(transaction["items"])
 
 
-def test_coupon_rollout_is_local_on_but_production_explicit_opt_in(monkeypatch) -> None:
-    _local_environment(monkeypatch)
-    assert commerce_coupons_new_activity_enabled() is True
-    assert "优惠券" in _transaction_labels()
-
+def test_coupon_is_a_fixed_primary_transaction_entry_in_production(monkeypatch) -> None:
     _production_environment(monkeypatch)
-    assert commerce_coupons_new_activity_enabled() is False
-    assert "优惠券" not in _transaction_labels()
 
-    monkeypatch.setenv(COMMERCE_COUPONS_ENABLED_ENV, "true")
-    assert commerce_coupons_new_activity_enabled() is True
-    assert "优惠券" in _transaction_labels()
+    items = _transaction_items()
+    assert [str(item["label"]) for item in items] == [
+        "交易管理",
+        "商品管理",
+        "周期商品管理",
+        "优惠券",
+    ]
+    coupon = next(item for item in items if item["key"] == "coupons")
+    assert coupon["endpoint"] == "api.admin_coupons_page"
+    assert coupon["href"] == "/admin/coupons"
 
 
-class _PublicReadRepository:
+class _PublicCouponRepository:
     def __init__(self) -> None:
         self.claim_calls = 0
         self.available_calls = 0
 
     @staticmethod
     def resolve_canonical_unionid(_identity) -> str:
-        return "union_coupon_rollout"
+        return "union_coupon_direct"
 
     @staticmethod
     def get_coupon_by_slug(_public_slug: str) -> dict:
         return {
             "id": 17,
-            "public_slug": "rollout-coupon",
-            "name": "灰度优惠券",
+            "public_slug": "direct-coupon",
+            "name": "正式优惠券",
             "display_state": "active",
             "per_user_issue_limit": 2,
             "validity_mode": "fixed_range",
@@ -75,59 +67,68 @@ class _PublicReadRepository:
 
     @staticmethod
     def count_user_claims(_coupon_id: int, *, unionid: str) -> int:
-        assert unionid == "union_coupon_rollout"
-        return 1
+        assert unionid == "union_coupon_direct"
+        return 0
 
     def list_available_claims(self, _target_ref: str, *, unionid: str, now) -> dict:
-        assert unionid == "union_coupon_rollout"
+        assert unionid == "union_coupon_direct"
         assert now.tzinfo is not None
         self.available_calls += 1
         return {"ok": True, "items": [], "total": 0}
 
-    def claim_coupon(self, *_args, **_kwargs):
+    def claim_coupon(self, *_args, **_kwargs) -> dict:
         self.claim_calls += 1
-        raise AssertionError("disabled rollout must not write a claim")
+        return {
+            "ok": True,
+            "claim": {"claim_no": "clm_direct_coupon", "status": "available"},
+        }
 
 
-def test_production_gate_keeps_coupon_reads_but_blocks_new_claims(monkeypatch) -> None:
+def test_production_allows_coupon_discovery_and_claims_without_rollout_gate(monkeypatch) -> None:
     _production_environment(monkeypatch)
-    repo = _PublicReadRepository()
+    repo = _PublicCouponRepository()
     application = CouponPublicApplication(repository=repo)
 
     state = application.get_coupon(
-        "rollout-coupon",
-        identity={"openid": "openid_coupon_rollout"},
+        "direct-coupon",
+        identity={"openid": "openid_coupon_direct"},
     )
     available = application.list_available_claims(
         "opaque-target-ref",
-        identity={"openid": "openid_coupon_rollout"},
+        identity={"openid": "openid_coupon_direct"},
+    )
+    claimed = application.claim_coupon(
+        "direct-coupon",
+        identity={"openid": "openid_coupon_direct"},
+        idempotency_key="claim-direct-enabled",
     )
 
-    assert state["rollout_enabled"] is False
-    assert state["claimable"] is False
-    assert state["claimed"] is True
+    assert state["rollout_enabled"] is True
+    assert state["claimable"] is True
+    assert state["claimed"] is False
     assert available["ok"] is True
     assert available["items"] == []
     assert available["total"] == 0
-    assert available["rollout_enabled"] is False
-    assert repo.available_calls == 0
-
-    with pytest.raises(ContractError, match="coupon new activity is disabled"):
-        application.claim_coupon(
-            "rollout-coupon",
-            identity={"openid": "openid_coupon_rollout"},
-            idempotency_key="claim-rollout-disabled",
-        )
-    assert repo.claim_calls == 0
+    assert available["rollout_enabled"] is True
+    assert claimed["claim"]["claim_no"] == "clm_direct_coupon"
+    assert repo.available_calls == 1
+    assert repo.claim_calls == 1
 
 
-class _ExistingOrderCouponRepository:
+class _OrderCouponRepository:
     def __init__(self) -> None:
         self.events: list[str] = []
 
-    def reserve_coupon_for_order(self, **_kwargs):
+    def reserve_coupon_for_order(self, **kwargs) -> dict:
         self.events.append("reserve")
-        raise AssertionError("disabled rollout must not reserve a coupon")
+        assert kwargs["choice_mode"] == "auto"
+        payload = dict(kwargs["order"])
+        payload["subtotal_amount_total"] = 10_000
+        payload["discount_amount_total"] = 2_000
+        payload["amount_total"] = 8_000
+        payload["coupon_claim_id"] = 55
+        payload["coupon_snapshot_json"] = {"coupon_id": 17}
+        return payload
 
     def consume_coupon_for_paid_order(self, **_kwargs):
         self.events.append("consume")
@@ -138,11 +139,11 @@ class _ExistingOrderCouponRepository:
         return {"ok": True, "status": "released"}
 
 
-def test_production_gate_blocks_only_new_reservations_not_existing_order_completion(
+def test_production_allows_new_coupon_reservations_and_existing_order_completion(
     monkeypatch,
 ) -> None:
     _production_environment(monkeypatch)
-    repository = _ExistingOrderCouponRepository()
+    repository = _OrderCouponRepository()
     monkeypatch.setattr(
         coupon_application,
         "build_coupon_order_repository",
@@ -150,7 +151,7 @@ def test_production_gate_blocks_only_new_reservations_not_existing_order_complet
     )
     order = {
         "id": 91,
-        "out_trade_no": "WXP_ROLLOUT_GATE",
+        "out_trade_no": "WXP_DIRECT_COUPON",
         "amount_total": 10_000,
         "currency": "CNY",
     }
@@ -159,43 +160,46 @@ def test_production_gate_blocks_only_new_reservations_not_existing_order_complet
         object(),
         order=order,
         coupon_choice={"mode": "none"},
-        unionid="union_coupon_rollout",
+        unionid="union_coupon_direct",
         trade_product_id=7,
     )
     assert no_coupon_order["amount_total"] == 10_000
     assert no_coupon_order["coupon_claim_id"] is None
 
-    with pytest.raises(ContractError, match="coupon new activity is disabled"):
-        coupon_application.reserve_coupon_for_order(
-            object(),
-            order=order,
-            coupon_choice={"mode": "auto"},
-            unionid="union_coupon_rollout",
-            trade_product_id=7,
-        )
+    discounted_order = coupon_application.reserve_coupon_for_order(
+        object(),
+        order=order,
+        coupon_choice={"mode": "auto"},
+        unionid="union_coupon_direct",
+        trade_product_id=7,
+    )
+    assert discounted_order["discount_amount_total"] == 2_000
+    assert discounted_order["amount_total"] == 8_000
+    assert discounted_order["coupon_claim_id"] == 55
 
     consumed = coupon_application.consume_coupon_for_paid_order(
         object(),
-        out_trade_no="WXP_ROLLOUT_GATE",
+        out_trade_no="WXP_DIRECT_COUPON",
         provider_total=8_000,
         provider_currency="CNY",
     )
     released = coupon_application.release_coupon_for_order(
         object(),
-        out_trade_no="WXP_ROLLOUT_RELEASE",
+        out_trade_no="WXP_DIRECT_RELEASE",
         reason="order_closed",
     )
 
     assert consumed["status"] == "consumed"
     assert released["status"] == "released"
-    assert repository.events == ["consume", "release"]
+    assert repository.events == ["reserve", "consume", "release"]
 
 
-def test_disabled_rollout_public_page_uses_explicit_unavailable_copy() -> None:
+def test_public_page_has_no_rollout_unavailable_branch() -> None:
     template = (
         Path(__file__).resolve().parents[1]
         / "aicrm_next/commerce/coupons/templates/coupon_public.html"
     ).read_text(encoding="utf-8")
 
-    assert "state.rollout_enabled is sameas false" in template
-    assert "优惠券暂未开放" in template
+    assert "state.rollout_enabled is sameas false" not in template
+    assert "优惠券暂未开放" not in template
+    assert "立即领取" in template

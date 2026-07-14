@@ -480,7 +480,7 @@
       "paths": [
         "aicrm_next/commerce/coupons/**",
         "aicrm_next/identity_contact/oauth_projection_repo.py",
-        "aicrm_next/shared/capability_flags.py",
+        "aicrm_next/admin_shell/navigation.py",
         "aicrm_next/shared/wechat_h5_session.py",
         "migrations/versions/0114_commerce_coupons.py",
         "scripts/run_coupon_consistency_check.py",
@@ -496,7 +496,7 @@
         "tests/test_commerce_coupon_concurrency_postgres.py",
         "tests/test_coupon_admin_frontend_contract.py",
         "tests/test_coupon_architecture_governance.py",
-        "tests/test_coupon_rollout_gate.py",
+        "tests/test_coupon_direct_entry.py",
         "tests/test_coupon_v1_checkout_contract.py",
         "tests/test_wechat_oauth_coupon_identity_postgres.py"
       ],

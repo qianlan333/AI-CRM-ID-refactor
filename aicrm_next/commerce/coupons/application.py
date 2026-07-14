@@ -7,10 +7,6 @@ from typing import Any
 
 from pydantic import ValidationError
 
-from aicrm_next.shared.capability_flags import (
-    commerce_coupons_new_activity_enabled,
-    require_commerce_coupons_new_activity,
-)
 from aicrm_next.shared.errors import ContractError, NotFoundError
 from aicrm_next.shared.share_qr import svg_qr_data_url
 
@@ -225,8 +221,6 @@ def reserve_coupon_for_order(
     if choice.mode is CouponChoiceMode.NONE:
         # Compatibility invariant: omission/none performs no coupon SQL.
         return _no_coupon_order(order)
-    require_commerce_coupons_new_activity()
-
     current = _aware_utc(now)
     canonical_unionid = _text(unionid)
     if not canonical_unionid:
@@ -439,10 +433,8 @@ class CouponPublicApplication:
         )
         display_state = _text(coupon.get("display_state"))
         user_limit_reached = user_claim_count >= int(coupon.get("per_user_issue_limit") or 1)
-        rollout_enabled = commerce_coupons_new_activity_enabled()
         claimable = (
-            rollout_enabled
-            and display_state == "active"
+            display_state == "active"
             and bool(canonical_unionid)
             and not user_limit_reached
         )
@@ -453,7 +445,7 @@ class CouponPublicApplication:
             "products": public_coupon.get("products") or [],
             "display_state": display_state,
             "identity_ready": bool(canonical_unionid),
-            "rollout_enabled": rollout_enabled,
+            "rollout_enabled": True,
             "claimable": claimable,
             "claimed": user_claim_count > 0,
             "user_claim_count": user_claim_count,
@@ -468,7 +460,6 @@ class CouponPublicApplication:
         identity: dict[str, Any],
         idempotency_key: str,
     ) -> dict[str, Any]:
-        require_commerce_coupons_new_activity()
         unionid = self._repo.resolve_canonical_unionid(identity)
         if not unionid:
             raise ContractError("canonical unionid is required")
@@ -481,18 +472,6 @@ class CouponPublicApplication:
         return _sanitize_coupon_result(result, public=True)
 
     def list_available_claims(self, target_ref: str, *, identity: dict[str, Any]) -> dict[str, Any]:
-        if not commerce_coupons_new_activity_enabled():
-            # Checkout pages interpret an empty verified response as an
-            # explicit `none` choice. Keep the public coupon detail readable,
-            # but do not advertise a coupon that production checkout cannot
-            # reserve while the rollout/emergency-stop switch is off.
-            return {
-                "ok": True,
-                "items": [],
-                "total": 0,
-                "identity_ready": bool(_text(identity.get("unionid")) or _text(identity.get("openid"))),
-                "rollout_enabled": False,
-            }
         unionid = self._repo.resolve_canonical_unionid(identity)
         if not unionid:
             raise ContractError("canonical unionid is required")
