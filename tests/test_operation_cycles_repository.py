@@ -10,7 +10,7 @@ from aicrm_next.operation_cycles.application import (
     report_operation_cycle,
 )
 from aicrm_next.operation_cycles.domain import OperationCycleConflictError
-from aicrm_next.operation_cycles.dto import OperationCycleSnapshotV1
+from aicrm_next.operation_cycles.dto import OperationCycleSnapshotV1, ReferenceSnapshot
 from aicrm_next.operation_cycles.repository import InMemoryOperationCycleRepository
 from tests.test_operation_cycles_domain import snapshot_payload
 
@@ -81,6 +81,20 @@ def test_newer_revision_updates_projection_and_read_models() -> None:
     updated.execution_stage = "postmortem"
     updated.data_status = "mature"
     updated.next_iteration.summary = "下一轮采用新埋点"
+    updated.documents.broadcast_details.markdown = "# 本轮数据\n\n有效发送 845。"
+    updated.documents.execution_strategy.markdown = "# 执行策略\n\n先审计，再发送。"
+    updated.references.append(
+        ReferenceSnapshot(
+            reference_key="ai-assistant-plan:monday-20260713",
+            reference_type="other",
+            label="周一激活计划",
+            source_system="cloud_orchestrator_plan",
+            source_id="hxc-monday-20260713-plan",
+            href="/admin/cloud-orchestrator/plans/hxc-monday-20260713-plan",
+            evidence_hash="",
+            data_status="unknown",
+        )
+    )
     report_operation_cycle(updated, idempotency_key="r2", repo=repo)
 
     strategies = list_strategies(repo=repo)
@@ -93,10 +107,13 @@ def test_newer_revision_updates_projection_and_read_models() -> None:
     assert strategies["items"][0]["next_iteration_summary"] == "下一轮采用新埋点"
     assert strategy is not None and strategy["strategy"]["run_count"] == 1
     assert strategy["sources"][0]["reference_key"] == "broadcast-summary"
+    assert strategy["documents"]["broadcast_details"]["markdown"].startswith("# 本轮数据")
+    assert strategy["assistant_plans"][0]["source_id"] == "hxc-monday-20260713-plan"
     assert runs["items"][0]["snapshot_revision"] == 2
     assert run is not None and run["run"]["execution_stage"] == "postmortem"
     assert run["run"]["plan_version"] == "review-v2"
     assert run["run"]["fact_conflict"] is True
+    assert run["documents"]["execution_strategy"]["markdown"].startswith("# 执行策略")
 
 
 def test_strategy_version_and_run_strategy_version_are_immutable() -> None:

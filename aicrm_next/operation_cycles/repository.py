@@ -18,6 +18,7 @@ from .domain import (
     validate_attempt_revision,
 )
 from .dto import (
+    OperationCycleDocumentsSnapshot,
     OperationCycleReportReceipt,
     OperationCycleSnapshotV1,
     ReferenceSnapshot,
@@ -31,6 +32,7 @@ from .dto import (
 
 
 DEFAULT_TENANT_ID = "aicrm"
+_AI_ASSISTANT_PLAN_SOURCE_SYSTEMS = {"ai_assistant_plan", "cloud_orchestrator_plan"}
 
 
 def _utcnow() -> datetime:
@@ -128,6 +130,35 @@ def _run_summary_order(item: RunSummary) -> datetime:
         or item.started_at
         or item.received_at
         or datetime.min.replace(tzinfo=timezone.utc)
+    )
+
+
+def _assistant_plan_references(references: list[ReferenceSnapshot]) -> list[ReferenceSnapshot]:
+    """Keep exact Cloud Orchestrator plan associations without copying plan data."""
+
+    result: list[ReferenceSnapshot] = []
+    seen_plan_ids: set[str] = set()
+    for reference in references:
+        plan_id = _text(reference.source_id)
+        if reference.source_system not in _AI_ASSISTANT_PLAN_SOURCE_SYSTEMS or not plan_id:
+            continue
+        if plan_id in seen_plan_ids:
+            continue
+        seen_plan_ids.add(plan_id)
+        result.append(reference)
+    return result
+
+
+def _reference_from_row(row: dict[str, Any]) -> ReferenceSnapshot:
+    return ReferenceSnapshot(
+        reference_key=_text(row.get("reference_key")),
+        reference_type=cast(Any, _text(row.get("reference_type")) or "other"),
+        label=_text(row.get("label")),
+        source_system=_text(row.get("source_system")),
+        source_id=_text(row.get("source_id")),
+        href=_text(row.get("href")),
+        evidence_hash=_text(row.get("evidence_hash")),
+        data_status=cast(Any, _text(row.get("data_status")) or "unknown"),
     )
 
 
@@ -339,17 +370,34 @@ class InMemoryOperationCycleRepository:
             ]
             trend.sort(key=_run_summary_order, reverse=True)
             latest_sources: list[ReferenceSnapshot] = []
+            latest_documents = OperationCycleDocumentsSnapshot()
             if stored_runs:
-                latest_stored = max(
+                ordered_stored_runs = sorted(
                     stored_runs,
                     key=lambda item: _run_order_time(item["snapshot"], item["received_at"]),
+                    reverse=True,
                 )
+                latest_stored = ordered_stored_runs[0]
                 latest_sources = list(latest_stored["snapshot"].references)
+                latest_documents = latest_stored["snapshot"].documents
+            assistant_plans = _assistant_plan_references(
+                [
+                    reference
+                    for stored in sorted(
+                        stored_runs,
+                        key=lambda item: _run_order_time(item["snapshot"], item["received_at"]),
+                        reverse=True,
+                    )
+                    for reference in stored["snapshot"].references
+                ]
+            )
             return StrategyDetailView(
                 strategy=summary,
                 versions=versions,
                 trend=trend,
                 sources=latest_sources,
+                documents=latest_documents,
+                assistant_plans=assistant_plans,
             )
 
     def list_run_summaries(self, strategy_key: str, *, limit: int = 50, offset: int = 0) -> list[RunSummary]:
@@ -376,6 +424,7 @@ class InMemoryOperationCycleRepository:
                 retrospective=snapshot.retrospective,
                 next_iteration=snapshot.next_iteration,
                 references=snapshot.references,
+                documents=snapshot.documents,
                 snapshot=SnapshotInfo(
                     report_id=snapshot.report_id,
                     snapshot_revision=snapshot.snapshot_revision,
@@ -925,6 +974,21 @@ class PostgresOperationCycleRepository:
         )
         trend = self.list_run_summaries(strategy_key, limit=100, offset=0)
         latest_detail = self.get_run_detail(trend[0].run_key) if trend else None
+        assistant_rows = self._all(
+            """
+            SELECT ref.*
+            FROM operation_cycle_references ref
+            JOIN operation_cycle_runs r ON r.id = ref.run_id
+            JOIN operation_cycle_strategies s ON s.id = r.strategy_id
+            WHERE s.tenant_id = :tenant_id
+              AND s.strategy_key = :strategy_key
+              AND ref.source_system IN ('ai_assistant_plan', 'cloud_orchestrator_plan')
+              AND ref.source_id <> ''
+            ORDER BY COALESCE(r.first_sent_at, r.intended_send_at, r.started_at, r.updated_at) DESC,
+                     ref.id DESC
+            """,
+            {"tenant_id": self._tenant_id, "strategy_key": _text(strategy_key)},
+        )
         return StrategyDetailView(
             strategy=_strategy_summary_from_row(row),
             versions=[
@@ -940,6 +1004,8 @@ class PostgresOperationCycleRepository:
             ],
             trend=trend,
             sources=list(latest_detail.references) if latest_detail else [],
+            documents=latest_detail.documents if latest_detail else OperationCycleDocumentsSnapshot(),
+            assistant_plans=_assistant_plan_references([_reference_from_row(item) for item in assistant_rows]),
         )
 
     def list_run_summaries(self, strategy_key: str, *, limit: int = 50, offset: int = 0) -> list[RunSummary]:
@@ -975,6 +1041,7 @@ class PostgresOperationCycleRepository:
             retrospective=snapshot.retrospective,
             next_iteration=snapshot.next_iteration,
             references=snapshot.references,
+            documents=snapshot.documents,
             snapshot=SnapshotInfo(
                 report_id=_text(row.get("report_id")),
                 snapshot_revision=int(row.get("snapshot_revision") or 0),
