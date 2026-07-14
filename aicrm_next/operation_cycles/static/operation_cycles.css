@@ -1778,3 +1778,309 @@
     transition-duration: 0.01ms !important;
   }
 }
+
+/* Level 1 · minimal weekly task list */
+.operation-cycle--list {
+  display: block;
+  color: #1d2939;
+  font-family: "PingFang SC", "Microsoft YaHei", sans-serif;
+}
+
+.operation-cycle--list :where(h2, h3) {
+  font-family: inherit;
+  letter-spacing: 0;
+}
+
+.operation-cycle-task-list {
+  overflow: hidden;
+  border: 1px solid #e7ebf2;
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: 0 8px 24px rgba(16, 24, 40, 0.04);
+}
+
+.operation-cycle-task-list__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 70px;
+  padding: 0 22px;
+  border-bottom: 1px solid #edf0f4;
+}
+
+.operation-cycle-task-list__head h2 {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 750;
+}
+
+.operation-cycle-task-list__head span {
+  color: #667085;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.operation-cycle-task-table-wrap {
+  overflow-x: auto;
+}
+
+.operation-cycle-task-table {
+  width: 100%;
+  min-width: 980px;
+  border-collapse: separate;
+  border-spacing: 0;
+  table-layout: fixed;
+}
+
+.operation-cycle-task-table th,
+.operation-cycle-task-table td {
+  padding: 18px 22px;
+  border-bottom: 1px solid #edf0f4;
+  text-align: left;
+  vertical-align: middle;
+}
+
+.operation-cycle-task-table th {
+  padding-top: 13px;
+  padding-bottom: 13px;
+  background: #f8fafc;
+  color: #8a94a6;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.operation-cycle-task-table th:first-child {
+  width: 28%;
+}
+
+.operation-cycle-task-table th:nth-child(2) {
+  width: 49%;
+}
+
+.operation-cycle-task-table th:last-child {
+  width: 23%;
+}
+
+.operation-cycle-task-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.operation-cycle-task-table__actions-heading {
+  text-align: right !important;
+}
+
+.operation-cycle-task-name {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.operation-cycle-task-name > div {
+  display: grid;
+  min-width: 0;
+  gap: 5px;
+}
+
+.operation-cycle-task-name strong {
+  overflow: hidden;
+  color: #174ea6;
+  font-size: 15px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.operation-cycle-task-name span:not(.operation-cycle-task-dot) {
+  color: #98a2b3;
+  font-size: 12px;
+}
+
+.operation-cycle-task-dot {
+  width: 9px;
+  height: 9px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: #2f6fed;
+  box-shadow: 0 0 0 4px #eef4ff;
+}
+
+.operation-cycle-task-dot--paused,
+.operation-cycle-task-dot--archived {
+  background: #98a2b3;
+  box-shadow: 0 0 0 4px #f2f4f7;
+}
+
+.operation-cycle-task-dot--draft {
+  background: #f59e0b;
+  box-shadow: 0 0 0 4px #fff7e6;
+}
+
+.operation-cycle-weekly-progress {
+  display: grid;
+  gap: 10px;
+}
+
+.operation-cycle-weekly-progress__meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.operation-cycle-weekly-progress__meta strong {
+  color: #344054;
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.operation-cycle-weekly-progress__meta span {
+  color: #98a2b3;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.operation-cycle-progress-track {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 5px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.operation-cycle-progress-step {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-width: 0;
+  min-height: 34px;
+  padding: 7px 8px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: #f2f4f7;
+  color: #98a2b3;
+  font-size: 11px;
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+.operation-cycle-progress-step__dot {
+  width: 6px;
+  height: 6px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: #c7cdd6;
+}
+
+.operation-cycle-progress-step--completed {
+  background: #ecfdf3;
+  color: #087443;
+}
+
+.operation-cycle-progress-step--completed .operation-cycle-progress-step__dot {
+  background: #31b95f;
+}
+
+.operation-cycle-progress-step--active {
+  border-color: #2f6fed;
+  background: #eef4ff;
+  color: #174ea6;
+}
+
+.operation-cycle-progress-step--active .operation-cycle-progress-step__dot {
+  background: #f59e0b;
+}
+
+.operation-cycle-task-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  white-space: nowrap;
+}
+
+.operation-cycle-task-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 34px;
+  padding: 7px 12px;
+  border: 1px solid #d9dee8;
+  border-radius: 7px;
+  background: #fff;
+  color: #344054;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1;
+  text-decoration: none;
+}
+
+.operation-cycle-task-button:hover {
+  border-color: #b8c2d1;
+  text-decoration: none;
+}
+
+.operation-cycle-task-button--danger {
+  border-color: #fecaca;
+  background: #fff8f7;
+  color: #d92d20;
+}
+
+.operation-cycle-task-button--primary {
+  border-color: #2f6fed;
+  background: #2f6fed;
+  color: #fff;
+}
+
+.operation-cycle-task-button--primary:hover {
+  border-color: #245fd4;
+  background: #245fd4;
+  color: #fff;
+}
+
+.operation-cycle-task-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.46;
+}
+
+.operation-cycle-task-empty {
+  height: 180px;
+  color: #98a2b3;
+  text-align: center !important;
+}
+
+.operation-cycle-task-empty strong,
+.operation-cycle-task-empty span {
+  display: block;
+}
+
+.operation-cycle-task-empty strong {
+  margin-bottom: 6px;
+  color: #475467;
+  font-size: 14px;
+}
+
+.operation-cycle-task-empty span {
+  font-size: 12px;
+}
+
+@media (max-width: 760px) {
+  .operation-cycle-task-list__head {
+    min-height: 60px;
+    padding: 0 16px;
+  }
+
+  .operation-cycle-task-list__head h2 {
+    font-size: 18px;
+  }
+
+  .operation-cycle-task-table th,
+  .operation-cycle-task-table td {
+    padding-right: 16px;
+    padding-left: 16px;
+  }
+}

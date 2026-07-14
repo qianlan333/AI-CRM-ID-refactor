@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 from collections import OrderedDict
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse
@@ -16,6 +18,13 @@ from .application import get_run, get_strategy, list_strategies, list_strategy_r
 router = APIRouter()
 _TEMPLATES_DIR = Path(__file__).resolve().parents[1] / "admin_shell" / "templates"
 templates = Jinja2Templates(directory=_TEMPLATES_DIR)
+
+_WEEKLY_PROGRESS_STEPS = (
+    ("planning", "任务准备"),
+    ("delivery", "发送执行"),
+    ("review", "结果复盘"),
+    ("optimization", "优化确认"),
+)
 
 
 def _plain(value: Any) -> Any:
@@ -35,9 +44,112 @@ def _detail_href(strategy_key: object, run_key: object | None = None) -> str:
     return admin_path_for("api.admin_operation_cycle_run_page", run_key=str(run_key or ""), **params)
 
 
-def _strategy_summaries(payload: dict[str, Any]) -> list[dict[str, Any]]:
+def _utc_now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def _parse_datetime(value: object) -> datetime | None:
+    if isinstance(value, datetime):
+        return value if value.tzinfo is not None else value.replace(tzinfo=timezone.utc)
+    raw = str(value or "").strip()
+    if not raw:
+        return None
+    try:
+        parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=timezone.utc)
+
+
+def _business_timezone(name: object) -> ZoneInfo:
+    try:
+        return ZoneInfo(str(name or "Asia/Shanghai"))
+    except (ZoneInfoNotFoundError, ValueError):
+        return ZoneInfo("Asia/Shanghai")
+
+
+def _weekly_progress(item: dict[str, Any], *, now: datetime) -> dict[str, Any]:
+    business_tz = _business_timezone(item.get("timezone"))
+    local_now = now.astimezone(business_tz)
+    week_start = local_now.date() - timedelta(days=local_now.weekday())
+    week_end = week_start + timedelta(days=6)
+    week_label = f"{week_start:%m/%d}–{week_end:%m/%d}"
+    latest_run_at = _parse_datetime(item.get("latest_run_at"))
+    has_current_week_run = bool(
+        latest_run_at
+        and week_start <= latest_run_at.astimezone(business_tz).date() <= week_end
+    )
+    states = {key: "pending" for key, _label in _WEEKLY_PROGRESS_STEPS}
+    summary = "本周未开始"
+
+    if has_current_week_run:
+        execution_stage = str(item.get("execution_stage") or "scheduled").strip().lower()
+        review_status = str(item.get("review_status") or "not_created").strip().lower()
+        delivery_status = str(item.get("delivery_status") or "not_started").strip().lower()
+        optimization_status = str(item.get("optimization_status") or "none").strip().lower()
+
+        planning_done = (
+            review_status == "approved"
+            or execution_stage in {"delivery", "observing", "postmortem", "closed"}
+            or delivery_status in {"dispatching", "partial", "completed", "failed", "cancelled"}
+        )
+        if not planning_done:
+            states["planning"] = "active"
+            summary = "本周任务准备中"
+        else:
+            states["planning"] = "completed"
+            delivery_done = delivery_status in {"partial", "completed"}
+            if not delivery_done:
+                states["delivery"] = "active"
+                if delivery_status == "dispatching":
+                    summary = "正在发送"
+                elif delivery_status in {"failed", "cancelled"}:
+                    summary = "发送未完成，待处理"
+                else:
+                    summary = "准备完成，待发送"
+            else:
+                states["delivery"] = "completed"
+                review_done = execution_stage in {"postmortem", "closed"}
+                if not review_done:
+                    states["review"] = "active"
+                    summary = "发送完成，等待复盘"
+                else:
+                    states["review"] = "completed"
+                    optimization_done = execution_stage == "closed" or optimization_status in {
+                        "accepted",
+                        "rejected",
+                        "applied",
+                    }
+                    if optimization_done:
+                        states["optimization"] = "completed"
+                        summary = "本周已完成"
+                    else:
+                        states["optimization"] = "active"
+                        summary = (
+                            "已复盘，待确认优化"
+                            if optimization_status == "pending_confirmation"
+                            else "已复盘，正在形成优化"
+                        )
+
+    return {
+        "has_current_week_run": has_current_week_run,
+        "week_label": week_label,
+        "summary": summary,
+        "steps": [
+            {"key": key, "label": label, "state": states[key]}
+            for key, label in _WEEKLY_PROGRESS_STEPS
+        ],
+    }
+
+
+def _strategy_summaries(payload: dict[str, Any], *, now: datetime | None = None) -> list[dict[str, Any]]:
+    effective_now = now or _utc_now()
     return [
-        {**item, "detail_href": _detail_href(item.get("strategy_key"))}
+        {
+            **item,
+            "detail_href": _detail_href(item.get("strategy_key")),
+            "weekly_progress": _weekly_progress(item, now=effective_now),
+        }
         for item in _plain(payload.get("items") or [])
         if isinstance(item, dict)
     ]
@@ -154,7 +266,7 @@ def admin_operation_cycles_page(request: Request):
     context = shell_context(
         request=request,
         page_title="运营闭环",
-        page_summary="按策略查看每一次真实执行、结果复盘与下一轮优化。页面只读，不触发任何外部动作。",
+        page_summary="查看每项运营任务的本周进度。任务由 Agent 创建。",
         active_endpoint="api.admin_operation_cycles_page",
     )
     context.update(

@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import re
+from datetime import datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from fastapi.testclient import TestClient
 
@@ -91,6 +93,11 @@ def _client(monkeypatch) -> TestClient:
     run = _run()
     monkeypatch.delenv("DATABASE_URL", raising=False)
     monkeypatch.setenv("SECRET_KEY", "operation-cycles-frontend")
+    monkeypatch.setattr(
+        admin_pages,
+        "_utc_now",
+        lambda: datetime(2026, 7, 14, 12, 0, tzinfo=ZoneInfo("Asia/Shanghai")),
+    )
     monkeypatch.setattr(
         admin_pages,
         "list_strategies",
@@ -259,9 +266,12 @@ def test_operation_cycle_templates_are_readonly_and_use_three_level_ia() -> None
         assert f'id="cycle-step-{index}"' in sources["operation_cycles_run.html"]
     for source in sources.values():
         assert 'data-readonly="true"' in source
-        assert "<button" not in source
         assert "<form" not in source
         assert 'method="post"' not in source.lower()
+    assert sources["operation_cycles_list.html"].count("<button") == 2
+    assert sources["operation_cycles_list.html"].count("disabled aria-disabled=\"true\"") == 2
+    assert "<button" not in sources["operation_cycles_strategy.html"]
+    assert "<button" not in sources["operation_cycles_run.html"]
 
 
 def test_operation_cycle_pages_render_dense_readonly_evidence(monkeypatch) -> None:
@@ -275,11 +285,20 @@ def test_operation_cycle_pages_render_dense_readonly_evidence(monkeypatch) -> No
     assert listing.status_code == strategy.status_code == run.status_code == 200
     assert stylesheet.status_code == 200
     assert ".operation-cycle-step" in stylesheet.text
-    assert "/static/operation-cycles/operation_cycles.css?v=20260714-v1" in listing.text
+    assert "/static/operation-cycles/operation_cycles.css?v=20260714-v2" in listing.text
     assert "每周一全量用户激活" in listing.text
-    assert "1275" in listing.text
-    assert "845" in listing.text
-    assert "归因缺口" in listing.text
+    assert "任务列表" in listing.text
+    assert "本周进度" in listing.text
+    assert "已复盘，待确认优化" in listing.text
+    assert "任务准备" in listing.text
+    assert "发送执行" in listing.text
+    assert "结果复盘" in listing.text
+    assert "优化确认" in listing.text
+    assert "暂停" in listing.text
+    assert "删除" in listing.text
+    assert "明细数据" in listing.text
+    assert "1275" not in listing.text
+    assert "归因缺口" not in listing.text
     assert 'href="/admin/operation-cycles/monday_activation"' in listing.text
 
     assert "状态与核心漏斗" in strategy.text
@@ -305,6 +324,31 @@ def test_operation_cycle_pages_render_dense_readonly_evidence(monkeypatch) -> No
     assert "<button" not in run.text
 
 
+def test_operation_cycle_weekly_progress_resets_outside_current_week() -> None:
+    from aicrm_next.operation_cycles.admin_pages import _strategy_summaries
+
+    payload = {"items": [_strategy()]}
+    current_week = _strategy_summaries(
+        payload,
+        now=datetime(2026, 7, 14, 12, 0, tzinfo=ZoneInfo("Asia/Shanghai")),
+    )[0]["weekly_progress"]
+    next_week = _strategy_summaries(
+        payload,
+        now=datetime(2026, 7, 20, 0, 1, tzinfo=ZoneInfo("Asia/Shanghai")),
+    )[0]["weekly_progress"]
+
+    assert current_week["summary"] == "已复盘，待确认优化"
+    assert [step["state"] for step in current_week["steps"]] == [
+        "completed",
+        "completed",
+        "completed",
+        "active",
+    ]
+    assert next_week["summary"] == "本周未开始"
+    assert next_week["week_label"] == "07/20–07/26"
+    assert {step["state"] for step in next_week["steps"]} == {"pending"}
+
+
 def test_operation_cycle_empty_state_never_presents_missing_as_zero(monkeypatch) -> None:
     from aicrm_next.operation_cycles import admin_pages
 
@@ -318,8 +362,8 @@ def test_operation_cycle_empty_state_never_presents_missing_as_zero(monkeypatch)
     response = client.get("/admin/operation-cycles")
 
     assert response.status_code == 200
-    assert "还没有运营策略快照" in response.text
-    assert "当前空白不代表数值为零" in response.text
+    assert "暂无运营任务" in response.text
+    assert "Agent 创建并上报任务后会显示在这里" in response.text
 
 
 def test_operation_cycle_styles_are_namespaced_and_responsive() -> None:
@@ -329,13 +373,16 @@ def test_operation_cycle_styles_are_namespaced_and_responsive() -> None:
 
     assert ".operation-cycle-ledger" in operation_cycle_css
     assert ".operation-cycle-funnel" in operation_cycle_css
+    assert ".operation-cycle-task-table" in operation_cycle_css
+    assert ".operation-cycle-progress-track" in operation_cycle_css
+    assert ".operation-cycle-task-button:disabled" in operation_cycle_css
     assert ".operation-cycle-step-index" in operation_cycle_css
     assert ".operation-cycle-risk-note" in operation_cycle_css
     assert "@media (max-width: 760px)" in operation_cycle_css
     assert "@media (prefers-reduced-motion: reduce)" in operation_cycle_css
     assert "--operation-cycle-amber" in operation_cycle_css
     base = (TEMPLATE_DIR / "operation_cycles_base.html").read_text(encoding="utf-8")
-    assert "/static/operation-cycles/operation_cycles.css?v=20260714-v1" in base
+    assert "/static/operation-cycles/operation_cycles.css?v=20260714-v2" in base
 
 
 def test_operation_cycle_templates_do_not_name_sensitive_identity_fields() -> None:
