@@ -2773,7 +2773,7 @@
     }
   ],
   "migration_heads": [
-    "0111_wechat_shop_mobile_projection"
+    "0112_sync_fde_quarter_members"
   ],
   "openapi_components": {
     "schemas": {
