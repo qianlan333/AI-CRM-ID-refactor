@@ -285,11 +285,10 @@ def test_operation_cycle_pages_render_dense_readonly_evidence(monkeypatch) -> No
     assert listing.status_code == strategy.status_code == run.status_code == 200
     assert stylesheet.status_code == 200
     assert ".operation-cycle-step" in stylesheet.text
-    assert "/static/operation-cycles/operation_cycles.css?v=20260714-v2" in listing.text
+    assert "/static/operation-cycles/operation_cycles.css?v=20260714-v3" in listing.text
     assert "每周一全量用户激活" in listing.text
     assert "任务列表" in listing.text
     assert "本周进度" in listing.text
-    assert "已复盘，待确认优化" in listing.text
     assert "任务准备" in listing.text
     assert "发送执行" in listing.text
     assert "结果复盘" in listing.text
@@ -297,6 +296,8 @@ def test_operation_cycle_pages_render_dense_readonly_evidence(monkeypatch) -> No
     assert "暂停" in listing.text
     assert "删除" in listing.text
     assert "明细数据" in listing.text
+    assert "已复盘，待确认优化" not in listing.text
+    assert "07/13–07/19" not in listing.text
     assert "1275" not in listing.text
     assert "归因缺口" not in listing.text
     assert 'href="/admin/operation-cycles/monday_activation"' in listing.text
@@ -337,16 +338,15 @@ def test_operation_cycle_weekly_progress_resets_outside_current_week() -> None:
         now=datetime(2026, 7, 20, 0, 1, tzinfo=ZoneInfo("Asia/Shanghai")),
     )[0]["weekly_progress"]
 
-    assert current_week["summary"] == "已复盘，待确认优化"
     assert [step["state"] for step in current_week["steps"]] == [
         "completed",
         "completed",
         "completed",
         "active",
     ]
-    assert next_week["summary"] == "本周未开始"
-    assert next_week["week_label"] == "07/20–07/26"
     assert {step["state"] for step in next_week["steps"]} == {"pending"}
+    assert "summary" not in current_week
+    assert "week_label" not in current_week
 
 
 def test_operation_cycle_empty_state_never_presents_missing_as_zero(monkeypatch) -> None:
@@ -382,7 +382,7 @@ def test_operation_cycle_styles_are_namespaced_and_responsive() -> None:
     assert "@media (prefers-reduced-motion: reduce)" in operation_cycle_css
     assert "--operation-cycle-amber" in operation_cycle_css
     base = (TEMPLATE_DIR / "operation_cycles_base.html").read_text(encoding="utf-8")
-    assert "/static/operation-cycles/operation_cycles.css?v=20260714-v2" in base
+    assert "/static/operation-cycles/operation_cycles.css?v=20260714-v3" in base
 
 
 def test_operation_cycle_templates_do_not_name_sensitive_identity_fields() -> None:

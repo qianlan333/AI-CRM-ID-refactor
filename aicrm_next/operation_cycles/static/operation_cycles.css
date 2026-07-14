@@ -1855,6 +1855,7 @@
 
 .operation-cycle-task-table th:nth-child(2) {
   width: 49%;
+  text-align: center;
 }
 
 .operation-cycle-task-table th:last-child {
@@ -1916,35 +1917,13 @@
   box-shadow: 0 0 0 4px #fff7e6;
 }
 
-.operation-cycle-weekly-progress {
-  display: grid;
-  gap: 10px;
-}
-
-.operation-cycle-weekly-progress__meta {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.operation-cycle-weekly-progress__meta strong {
-  color: #344054;
-  font-size: 13px;
-  font-weight: 650;
-}
-
-.operation-cycle-weekly-progress__meta span {
-  color: #98a2b3;
-  font-size: 11px;
-  white-space: nowrap;
-}
-
 .operation-cycle-progress-track {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 5px;
-  margin: 0;
+  width: 100%;
+  max-width: 560px;
+  margin: 0 auto;
   padding: 0;
   list-style: none;
 }

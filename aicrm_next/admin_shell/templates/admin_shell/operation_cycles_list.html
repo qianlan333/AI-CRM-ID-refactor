@@ -31,20 +31,14 @@
               </div>
             </td>
             <td>
-              <div class="operation-cycle-weekly-progress">
-                <div class="operation-cycle-weekly-progress__meta">
-                  <strong>{{ progress.get("summary") or "本周未开始" }}</strong>
-                  <span>{{ progress.get("week_label") }}</span>
-                </div>
-                <ol class="operation-cycle-progress-track" aria-label="{{ item.get('title') or item.get('strategy_key') }}本周进度">
-                  {% for step in progress.get("steps") or [] %}
-                  <li class="operation-cycle-progress-step operation-cycle-progress-step--{{ step.get('state') }}"{% if step.get('state') == 'active' %} aria-current="step"{% endif %}>
-                    <span class="operation-cycle-progress-step__dot" aria-hidden="true"></span>
-                    <span>{{ step.get("label") }}</span>
-                  </li>
-                  {% endfor %}
-                </ol>
-              </div>
+              <ol class="operation-cycle-progress-track" aria-label="{{ item.get('title') or item.get('strategy_key') }}本周进度">
+                {% for step in progress.get("steps") or [] %}
+                <li class="operation-cycle-progress-step operation-cycle-progress-step--{{ step.get('state') }}"{% if step.get('state') == 'active' %} aria-current="step"{% endif %}>
+                  <span class="operation-cycle-progress-step__dot" aria-hidden="true"></span>
+                  <span>{{ step.get("label") }}</span>
+                </li>
+                {% endfor %}
+              </ol>
             </td>
             <td>
               <div class="operation-cycle-task-actions">

@@ -73,14 +73,12 @@ def _weekly_progress(item: dict[str, Any], *, now: datetime) -> dict[str, Any]:
     local_now = now.astimezone(business_tz)
     week_start = local_now.date() - timedelta(days=local_now.weekday())
     week_end = week_start + timedelta(days=6)
-    week_label = f"{week_start:%m/%d}–{week_end:%m/%d}"
     latest_run_at = _parse_datetime(item.get("latest_run_at"))
     has_current_week_run = bool(
         latest_run_at
         and week_start <= latest_run_at.astimezone(business_tz).date() <= week_end
     )
     states = {key: "pending" for key, _label in _WEEKLY_PROGRESS_STEPS}
-    summary = "本周未开始"
 
     if has_current_week_run:
         execution_stage = str(item.get("execution_stage") or "scheduled").strip().lower()
@@ -95,24 +93,16 @@ def _weekly_progress(item: dict[str, Any], *, now: datetime) -> dict[str, Any]:
         )
         if not planning_done:
             states["planning"] = "active"
-            summary = "本周任务准备中"
         else:
             states["planning"] = "completed"
             delivery_done = delivery_status in {"partial", "completed"}
             if not delivery_done:
                 states["delivery"] = "active"
-                if delivery_status == "dispatching":
-                    summary = "正在发送"
-                elif delivery_status in {"failed", "cancelled"}:
-                    summary = "发送未完成，待处理"
-                else:
-                    summary = "准备完成，待发送"
             else:
                 states["delivery"] = "completed"
                 review_done = execution_stage in {"postmortem", "closed"}
                 if not review_done:
                     states["review"] = "active"
-                    summary = "发送完成，等待复盘"
                 else:
                     states["review"] = "completed"
                     optimization_done = execution_stage == "closed" or optimization_status in {
@@ -122,19 +112,11 @@ def _weekly_progress(item: dict[str, Any], *, now: datetime) -> dict[str, Any]:
                     }
                     if optimization_done:
                         states["optimization"] = "completed"
-                        summary = "本周已完成"
                     else:
                         states["optimization"] = "active"
-                        summary = (
-                            "已复盘，待确认优化"
-                            if optimization_status == "pending_confirmation"
-                            else "已复盘，正在形成优化"
-                        )
 
     return {
         "has_current_week_run": has_current_week_run,
-        "week_label": week_label,
-        "summary": summary,
         "steps": [
             {"key": key, "label": label, "state": states[key]}
             for key, label in _WEEKLY_PROGRESS_STEPS
