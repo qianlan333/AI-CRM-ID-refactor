@@ -32,6 +32,10 @@ REQUIRED_OPENAPI_PATHS = (
     "/api/admin/automation-agents",
     "/api/admin/user-ops/send-records",
     "/api/admin/data-health/summary",
+    "/api/admin/operation-cycles/strategies",
+    "/api/admin/operation-cycles/strategies/{strategy_key}",
+    "/api/admin/operation-cycles/strategies/{strategy_key}/runs",
+    "/api/admin/operation-cycles/runs/{run_key}",
 )
 
 DATA_HEALTH_SUMMARY_PATH = "/api/admin/data-health/summary"
@@ -56,6 +60,8 @@ SMOKE_PATHS = (
     "/api/admin/ai-audience/packages",
     "/api/admin/automation-agents",
     "/api/admin/user-ops/send-records?limit=1",
+    "/admin/operation-cycles",
+    "/api/admin/operation-cycles/strategies?limit=1",
 )
 SIDEBAR_PATHS = tuple(
     dict.fromkeys(

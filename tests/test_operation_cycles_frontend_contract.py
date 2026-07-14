@@ -1,0 +1,353 @@
+from __future__ import annotations
+
+import re
+from pathlib import Path
+
+from fastapi.testclient import TestClient
+
+from aicrm_next.main import create_app
+
+
+ROOT = Path(__file__).resolve().parents[1]
+TEMPLATE_DIR = ROOT / "aicrm_next" / "admin_shell" / "templates" / "admin_shell"
+STYLESHEET = ROOT / "aicrm_next" / "operation_cycles" / "static" / "operation_cycles.css"
+
+
+def _funnel() -> dict:
+    return {
+        "candidate_count": {"status": "observed", "value": 1275, "data_source": "identity audit"},
+        "audited_count": {"status": "observed", "value": 895, "data_source": "decision snapshot"},
+        "recommended_send_count": {"status": "observed", "value": 848, "data_source": "review snapshot"},
+        "planned_target_count": {"status": "observed", "value": 848, "data_source": "plan snapshot"},
+        "effective_sent_count": {"status": "observed", "value": 845, "data_source": "delivery fact"},
+        "failed_count": {
+            "status": "observed",
+            "value": 3,
+            "data_source": "delivery fact",
+            "classification": "failed_retryable",
+            "limitation": "生产状态 failed_retryable",
+        },
+    }
+
+
+def _strategy() -> dict:
+    return {
+        "strategy_key": "monday_activation",
+        "title": "每周一全量用户激活",
+        "description": "对全量可运营用户完成审计、判断、发送与结果复盘。",
+        "cadence": "每周一",
+        "timezone": "Asia/Shanghai",
+        "status": "active",
+        "current_version": 2,
+        "run_count": 1,
+        "latest_run_key": "monday_activation_20260713",
+        "latest_run_label": "2026-07-13 周一激活",
+        "latest_run_at": "2026-07-13T09:00:00+08:00",
+        "execution_stage": "postmortem",
+        "review_status": "approved",
+        "delivery_status": "completed",
+        "data_status": "attribution_gap",
+        "optimization_status": "pending_confirmation",
+        "artifact_status": "partial",
+        "funnel": _funnel(),
+        "conclusion": "发送事实已形成，行为结果仍需补齐归因证据",
+        "next_iteration_summary": "补齐追踪后验证召回内容差异。",
+    }
+
+
+def _run() -> dict:
+    return {
+        "run_key": "monday_activation_20260713",
+        "strategy_key": "monday_activation",
+        "label": "2026-07-13 周一激活",
+        "objective": "验证全量用户激活闭环。",
+        "started_at": "2026-07-13T09:00:00+08:00",
+        "completed_at": None,
+        "intended_send_at": "2026-07-13T12:00:00+08:00",
+        "plan_scheduled_for": "2026-07-13T12:00:00+08:00",
+        "plan_version": "plan-v1",
+        "plan_status": "draft",
+        "plan_source": "campaign plan aggregate",
+        "first_sent_at": "2026-07-13T12:01:00+08:00",
+        "last_sent_at": "2026-07-13T12:11:00+08:00",
+        "execution_stage": "postmortem",
+        "review_status": "approved",
+        "delivery_status": "completed",
+        "data_status": "attribution_gap",
+        "optimization_status": "pending_confirmation",
+        "artifact_status": "partial",
+        "funnel": _funnel(),
+        "conclusion": "845 条发送事实可核验，结果只作为观察信号。",
+        "snapshot_revision": 3,
+        "received_at": "2026-07-13T22:10:00+08:00",
+        "fact_conflict": True,
+    }
+
+
+def _client(monkeypatch) -> TestClient:
+    from aicrm_next.operation_cycles import admin_pages
+
+    strategy = _strategy()
+    run = _run()
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    monkeypatch.setenv("SECRET_KEY", "operation-cycles-frontend")
+    monkeypatch.setattr(
+        admin_pages,
+        "list_strategies",
+        lambda **_: {"ok": True, "items": [strategy], "limit": 100, "offset": 0},
+    )
+    monkeypatch.setattr(
+        admin_pages,
+        "get_strategy",
+        lambda key: {
+            "ok": True,
+            "strategy": strategy,
+            "versions": [
+                {
+                    "version": 2,
+                    "label": "v2 · 归因补强",
+                    "objective": "补齐结果证据",
+                    "definition": {},
+                    "effective_from": "2026-07-13T00:00:00+08:00",
+                }
+            ],
+            "trend": [run],
+            "sources": [
+                {
+                    "reference_key": "broadcast-job:20260713",
+                    "reference_type": "broadcast_job",
+                    "label": "本轮发送聚合",
+                    "source_system": "broadcast_jobs",
+                    "source_id": "safe-plan-key",
+                    "href": "/admin/broadcast-jobs?source_type=cloud_plan",
+                    "evidence_hash": "a" * 64,
+                    "data_status": "observed",
+                }
+            ],
+        }
+        if key == strategy["strategy_key"]
+        else None,
+    )
+    monkeypatch.setattr(
+        admin_pages,
+        "list_strategy_runs",
+        lambda key, **_: {"ok": True, "strategy_key": key, "items": [run], "limit": 100, "offset": 0},
+    )
+    monkeypatch.setattr(
+        admin_pages,
+        "get_run",
+        lambda key: {
+            "ok": True,
+            "run": run,
+            "attempts": [
+                {
+                    "attempt_key": "attempt_blocked_0900",
+                    "parent_attempt_key": None,
+                    "status": "blocked",
+                    "started_at": "2026-07-13T09:00:00+08:00",
+                    "ended_at": "2026-07-13T09:05:00+08:00",
+                    "blocked_reason": "正式模板和只读证据未齐备。",
+                    "summary": {},
+                },
+                {
+                    "attempt_key": "attempt_recovered_1130",
+                    "parent_attempt_key": "attempt_blocked_0900",
+                    "status": "completed",
+                    "started_at": "2026-07-13T11:30:00+08:00",
+                    "ended_at": "2026-07-13T22:00:00+08:00",
+                    "blocked_reason": "",
+                    "summary": {"summary": "恢复后完成发送与早期复盘。"},
+                },
+            ],
+            "stages": [
+                {
+                    "stage_key": "delivery",
+                    "attempt_key": "attempt_recovered_1130",
+                    "stage": "delivery",
+                    "status": "completed",
+                    "started_at": "2026-07-13T12:00:00+08:00",
+                    "ended_at": "2026-07-13T12:11:00+08:00",
+                    "blocked_reason": "",
+                    "summary": {"summary": "发送事实已核验。"},
+                }
+            ],
+            "metrics": [
+                {
+                    "metric_key": "active_message_count_24h",
+                    "label": "主动消息",
+                    "numerator": 14,
+                    "denominator": 845,
+                    "value": 14,
+                    "unit": "人",
+                    "observation_window": "T+24h",
+                    "data_source": "message event aggregate",
+                    "data_quality": "partial",
+                    "limitations": ["只能作为下限观察"],
+                    "is_causal": False,
+                    "value_status": "partial_lower_bound",
+                },
+                {
+                    "metric_key": "target_behavior_72h",
+                    "label": "目标行为",
+                    "numerator": None,
+                    "denominator": None,
+                    "value": None,
+                    "unit": "人",
+                    "observation_window": "T+72h",
+                    "data_source": "tracking aggregate",
+                    "data_quality": "instrumentation_missing",
+                    "limitations": ["埋点缺失"],
+                    "is_causal": False,
+                    "value_status": "instrumentation_missing",
+                },
+            ],
+            "retrospective": {
+                "conclusion": "第一轮从决策推进到可核验发送事实。",
+                "observations": ["实际发送分母已核验"],
+                "limitations": ["行为归因仍不完整"],
+                "data_conflicts": ["计划状态与发送事实冲突"],
+            },
+            "next_iteration": {
+                "summary": "先补齐追踪，再验证内容差异。",
+                "hypothesis": "更完整的追踪可以缩小归因缺口。",
+                "actions": ["补齐行为追踪", "统一计划与发送状态"],
+                "status": "pending_confirmation",
+                "confirmation_note": "",
+                "applied_strategy_version": None,
+            },
+            "references": [
+                {
+                    "reference_key": "broadcast_job:20260713",
+                    "reference_type": "broadcast_job",
+                    "label": "Broadcast Jobs",
+                    "source_system": "aicrm",
+                    "source_id": "batch-20260713",
+                    "href": "/admin/broadcast-jobs?batch=20260713",
+                    "evidence_hash": "sha256:safe-aggregate",
+                    "data_status": "available",
+                }
+            ],
+            "snapshot": {
+                "report_id": "report-20260713",
+                "snapshot_revision": 3,
+                "snapshot_hash": "sha256:safe-snapshot",
+                "schema_version": "operation_cycle_snapshot.v1",
+                "reporter_id": "ops-reporter",
+            },
+        }
+        if key == run["run_key"]
+        else None,
+    )
+    return TestClient(create_app(), raise_server_exceptions=False)
+
+
+def test_operation_cycle_templates_are_readonly_and_use_three_level_ia() -> None:
+    sources = {
+        path.name: path.read_text(encoding="utf-8")
+        for path in (
+            TEMPLATE_DIR / "operation_cycles_list.html",
+            TEMPLATE_DIR / "operation_cycles_strategy.html",
+            TEMPLATE_DIR / "operation_cycles_run.html",
+        )
+    }
+
+    assert 'data-operation-cycle-surface="strategy-list"' in sources["operation_cycles_list.html"]
+    assert 'data-operation-cycle-surface="strategy-detail"' in sources["operation_cycles_strategy.html"]
+    assert 'data-operation-cycle-surface="run-detail"' in sources["operation_cycles_run.html"]
+    assert "每一次执行" in sources["operation_cycles_strategy.html"]
+    for index in range(1, 9):
+        assert f'id="cycle-step-{index}"' in sources["operation_cycles_run.html"]
+    for source in sources.values():
+        assert 'data-readonly="true"' in source
+        assert "<button" not in source
+        assert "<form" not in source
+        assert 'method="post"' not in source.lower()
+
+
+def test_operation_cycle_pages_render_dense_readonly_evidence(monkeypatch) -> None:
+    client = _client(monkeypatch)
+
+    listing = client.get("/admin/operation-cycles")
+    strategy = client.get("/admin/operation-cycles/monday_activation")
+    run = client.get("/admin/operation-cycles/monday_activation/runs/monday_activation_20260713")
+    stylesheet = client.get("/static/operation-cycles/operation_cycles.css")
+
+    assert listing.status_code == strategy.status_code == run.status_code == 200
+    assert stylesheet.status_code == 200
+    assert ".operation-cycle-step" in stylesheet.text
+    assert "/static/operation-cycles/operation_cycles.css?v=20260714-v1" in listing.text
+    assert "每周一全量用户激活" in listing.text
+    assert "1275" in listing.text
+    assert "845" in listing.text
+    assert "归因缺口" in listing.text
+    assert 'href="/admin/operation-cycles/monday_activation"' in listing.text
+
+    assert "状态与核心漏斗" in strategy.text
+    assert "历次运行对照" in strategy.text
+    assert "每一次执行" in strategy.text
+    assert "版本记录" in strategy.text
+    assert "本轮发送聚合" in strategy.text
+    assert "broadcast_jobs · broadcast_job · 已观测" in strategy.text
+    assert 'href="/admin/broadcast-jobs?source_type=cloud_plan"' in strategy.text.replace("&amp;", "&")
+    assert 'href="/admin/operation-cycles/monday_activation/runs/monday_activation_20260713"' in strategy.text
+
+    for label in ("任务目标与时间", "前置检查与执行尝试", "人群分层与去留判断", "人审与计划版本", "实际发送事实", "分窗口结果", "结果复盘与限制", "下一轮优化"):
+        assert label in run.text
+    assert "事实待核对" in run.text
+    assert "draft" in run.text
+    assert "campaign plan aggregate" in run.text
+    assert "T+24h" in run.text
+    assert "下限" in run.text
+    assert "埋点缺失" in run.text
+    assert "观察信号 · 不作为因果提升结论" in run.text
+    assert re.search(r"可重试失败.*?3", run.text, re.DOTALL)
+    assert 'href="/admin/broadcast-jobs?batch=20260713"' in run.text.replace("&amp;", "&")
+    assert "<button" not in run.text
+
+
+def test_operation_cycle_empty_state_never_presents_missing_as_zero(monkeypatch) -> None:
+    from aicrm_next.operation_cycles import admin_pages
+
+    client = _client(monkeypatch)
+    monkeypatch.setattr(
+        admin_pages,
+        "list_strategies",
+        lambda **_: {"ok": True, "items": [], "limit": 100, "offset": 0},
+    )
+
+    response = client.get("/admin/operation-cycles")
+
+    assert response.status_code == 200
+    assert "还没有运营策略快照" in response.text
+    assert "当前空白不代表数值为零" in response.text
+
+
+def test_operation_cycle_styles_are_namespaced_and_responsive() -> None:
+    css = STYLESHEET.read_text(encoding="utf-8")
+    marker = "/* Operation cycles · read-only execution ledger */"
+    operation_cycle_css = css[css.index(marker) :]
+
+    assert ".operation-cycle-ledger" in operation_cycle_css
+    assert ".operation-cycle-funnel" in operation_cycle_css
+    assert ".operation-cycle-step-index" in operation_cycle_css
+    assert ".operation-cycle-risk-note" in operation_cycle_css
+    assert "@media (max-width: 760px)" in operation_cycle_css
+    assert "@media (prefers-reduced-motion: reduce)" in operation_cycle_css
+    assert "--operation-cycle-amber" in operation_cycle_css
+    base = (TEMPLATE_DIR / "operation_cycles_base.html").read_text(encoding="utf-8")
+    assert "/static/operation-cycles/operation_cycles.css?v=20260714-v1" in base
+
+
+def test_operation_cycle_templates_do_not_name_sensitive_identity_fields() -> None:
+    combined = "\n".join(
+        (TEMPLATE_DIR / name).read_text(encoding="utf-8")
+        for name in (
+            "operation_cycles_list.html",
+            "operation_cycles_strategy.html",
+            "operation_cycles_run.html",
+            "operation_cycles_macros.html",
+        )
+    ).lower()
+
+    for forbidden in ("external_userid", "unionid", "openid", "手机号", "原始消息", "authorization: bearer"):
+        assert forbidden not in combined

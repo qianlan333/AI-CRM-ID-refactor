@@ -13713,3 +13713,165 @@ routes:
   principal_types:
   - api_client
   - service
+- path: /api/operation-cycles/reports
+  methods:
+  - POST
+  route_name: report_operation_cycle_snapshot
+  capability_owner: operation_cycles
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: none
+  data_source: command
+  requires_auth: true
+  rollback: previous_release_and_migration_0113_downgrade
+  audience: external_integration
+  auth_scheme: api_client_jwt
+  capability: operation_cycle_report_write
+  access_scope: service
+  pii_level: internal
+  csrf: false
+  rate_limit: integration
+  client_purpose: ops_reporter
+  principal_types:
+  - api_client
+  - service
+- path: /api/admin/operation-cycles/strategies
+  methods:
+  - GET
+  route_name: list_operation_cycle_strategies
+  capability_owner: operation_cycles
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: none
+  data_source: read_model
+  requires_auth: true
+  rollback: previous_release
+  audience: admin
+  auth_scheme: human_session
+  capability: admin_read
+  access_scope: global
+  pii_level: internal
+  csrf: false
+  rate_limit: authenticated
+  principal_types:
+  - human
+- path: /api/admin/operation-cycles/strategies/{strategy_key}
+  methods:
+  - GET
+  route_name: get_operation_cycle_strategy
+  capability_owner: operation_cycles
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: none
+  data_source: read_model
+  requires_auth: true
+  rollback: previous_release
+  audience: admin
+  auth_scheme: human_session
+  capability: admin_read
+  access_scope: global
+  pii_level: internal
+  csrf: false
+  rate_limit: authenticated
+  principal_types:
+  - human
+- path: /api/admin/operation-cycles/strategies/{strategy_key}/runs
+  methods:
+  - GET
+  route_name: list_operation_cycle_strategy_runs
+  capability_owner: operation_cycles
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: none
+  data_source: read_model
+  requires_auth: true
+  rollback: previous_release
+  audience: admin
+  auth_scheme: human_session
+  capability: admin_read
+  access_scope: global
+  pii_level: internal
+  csrf: false
+  rate_limit: authenticated
+  principal_types:
+  - human
+- path: /api/admin/operation-cycles/runs/{run_key}
+  methods:
+  - GET
+  route_name: get_operation_cycle_run
+  capability_owner: operation_cycles
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: none
+  data_source: read_model
+  requires_auth: true
+  rollback: previous_release
+  audience: admin
+  auth_scheme: human_session
+  capability: admin_read
+  access_scope: global
+  pii_level: internal
+  csrf: false
+  rate_limit: authenticated
+  principal_types:
+  - human
+- path: /admin/operation-cycles
+  methods:
+  - GET
+  route_name: api.admin_operation_cycles_page
+  capability_owner: operation_cycles
+  runtime_owner: ai_crm_next
+  layer: admin_page
+  external_effects: none
+  data_source: read_model
+  requires_auth: true
+  rollback: previous_release
+  audience: admin
+  auth_scheme: human_session
+  capability: admin_read
+  access_scope: global
+  pii_level: internal
+  csrf: false
+  rate_limit: authenticated
+  principal_types:
+  - human
+- path: /admin/operation-cycles/{strategy_key}/runs/{run_key}
+  methods:
+  - GET
+  route_name: api.admin_operation_cycle_run_page
+  capability_owner: operation_cycles
+  runtime_owner: ai_crm_next
+  layer: admin_page
+  external_effects: none
+  data_source: read_model
+  requires_auth: true
+  rollback: previous_release
+  audience: admin
+  auth_scheme: human_session
+  capability: admin_read
+  access_scope: global
+  pii_level: internal
+  csrf: false
+  rate_limit: authenticated
+  principal_types:
+  - human
+- path: /admin/operation-cycles/{strategy_key}
+  methods:
+  - GET
+  route_name: api.admin_operation_cycle_strategy_page
+  capability_owner: operation_cycles
+  runtime_owner: ai_crm_next
+  layer: admin_page
+  external_effects: none
+  data_source: read_model
+  requires_auth: true
+  rollback: previous_release
+  audience: admin
+  auth_scheme: human_session
+  capability: admin_read
+  access_scope: global
+  pii_level: internal
+  csrf: false
+  rate_limit: authenticated
+  principal_types:
+  - human

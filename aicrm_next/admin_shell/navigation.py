@@ -98,6 +98,10 @@ ADMIN_ROUTE_REGISTRY: dict[str, AdminRoute] = {
         "api.admin_growth_orchestration_page",
         "/admin/growth-orchestration",
     ),
+    "api.admin_operation_cycles_page": AdminRoute(
+        "api.admin_operation_cycles_page",
+        "/admin/operation-cycles",
+    ),
     "api.admin_dashboard_shell_context": AdminRoute(
         "api.admin_dashboard_shell_context",
         "/api/admin/dashboard/shell-context",
@@ -131,6 +135,13 @@ def admin_path_for(name: str, **path_params: object) -> str:
     if name == "api.admin_growth_orchestration_detail_page":
         program_key = quote(str(path_params.get("program_key", "")).strip(), safe="")
         return f"/admin/growth-orchestration/{program_key}"
+    if name == "api.admin_operation_cycle_strategy_page":
+        strategy_key = quote(str(path_params.get("strategy_key", "")).strip(), safe="")
+        return f"/admin/operation-cycles/{strategy_key}"
+    if name == "api.admin_operation_cycle_run_page":
+        strategy_key = quote(str(path_params.get("strategy_key", "")).strip(), safe="")
+        run_key = quote(str(path_params.get("run_key", "")).strip(), safe="")
+        return f"/admin/operation-cycles/{strategy_key}/runs/{run_key}"
 
     route = ADMIN_ROUTE_REGISTRY.get(name)
     base = route.path if route else "#"
@@ -143,6 +154,7 @@ ADMIN_NAV_GROUPS: list[dict[str, Any]] = [
         "title": "运营",
         "items": [
             {"key": "automation_conversion", "label": "自动化运营", "endpoint": "api.admin_automation_conversion"},
+            {"key": "operation_cycles", "label": "运营闭环", "endpoint": "api.admin_operation_cycles_page"},
             {"key": "group_ops", "label": "群运营计划", "endpoint": "api.admin_group_ops_ui"},
             {"key": "channels", "label": "渠道码中心", "endpoint": "api.admin_channels_page"},
             {"key": "cloud_orchestrator", "label": "AI 助手", "endpoint": "api.admin_cloud_orchestrator_workspace"},

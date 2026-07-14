@@ -3996,3 +3996,150 @@ tables:
   wechat_shop_tokens:
     <<: *legacy_production_table_defaults
     domain: legacy_commerce
+
+  operation_cycle_attempts:
+    domain: operation_cycles
+    lifecycle: canonical
+    write_owner: aicrm_next.operation_cycles
+    read_owners:
+      - operation cycle report projection
+      - operation cycle admin read model
+    replacement: none; canonical execution-attempt lineage
+    drop_candidate: false
+    drop_after: ""
+    runtime_entrypoints:
+      - operation cycle snapshot ingestion
+      - operation cycle run detail
+    migration_source: 0113_operation_cycles
+    pii_level: none
+    guard_tests:
+      - tests/test_operation_cycles_migration.py
+      - tests/test_data_table_lifecycle_guard.py
+
+  operation_cycle_metrics:
+    domain: operation_cycles
+    lifecycle: read_model
+    write_owner: aicrm_next.operation_cycles
+    read_owners:
+      - operation cycle admin read model
+    replacement: none; canonical aggregate observation metrics
+    drop_candidate: false
+    drop_after: ""
+    runtime_entrypoints:
+      - operation cycle snapshot ingestion
+      - operation cycle run detail
+    migration_source: 0113_operation_cycles
+    pii_level: none
+    guard_tests:
+      - tests/test_operation_cycles_migration.py
+      - tests/test_data_table_lifecycle_guard.py
+
+  operation_cycle_references:
+    domain: operation_cycles
+    lifecycle: read_model
+    write_owner: aicrm_next.operation_cycles
+    read_owners:
+      - operation cycle admin evidence links
+    replacement: none; canonical hashed evidence references without attachments
+    drop_candidate: false
+    drop_after: ""
+    runtime_entrypoints:
+      - operation cycle snapshot ingestion
+      - operation cycle run detail
+    migration_source: 0113_operation_cycles
+    pii_level: none
+    guard_tests:
+      - tests/test_operation_cycles_migration.py
+      - tests/test_data_table_lifecycle_guard.py
+
+  operation_cycle_runs:
+    domain: operation_cycles
+    lifecycle: canonical
+    write_owner: aicrm_next.operation_cycles
+    read_owners:
+      - operation cycle admin read model
+    replacement: none; canonical latest run projection with independent status axes
+    drop_candidate: false
+    drop_after: ""
+    runtime_entrypoints:
+      - operation cycle snapshot ingestion
+      - operation cycle strategy and run reads
+    migration_source: 0113_operation_cycles
+    pii_level: none
+    guard_tests:
+      - tests/test_operation_cycles_migration.py
+      - tests/test_data_table_lifecycle_guard.py
+
+  operation_cycle_snapshots:
+    domain: operation_cycles
+    lifecycle: event
+    write_owner: aicrm_next.operation_cycles
+    read_owners:
+      - operation cycle projection rebuild
+      - operation cycle audit
+    replacement: none; immutable versioned aggregate snapshot ledger
+    drop_candidate: false
+    drop_after: ""
+    runtime_entrypoints:
+      - operation cycle snapshot ingestion
+      - operation cycle snapshot receipt read
+    migration_source: 0113_operation_cycles
+    pii_level: none
+    guard_tests:
+      - tests/test_operation_cycles_migration.py
+      - tests/test_operation_cycles_repository.py
+      - tests/test_data_table_lifecycle_guard.py
+
+  operation_cycle_stages:
+    domain: operation_cycles
+    lifecycle: canonical
+    write_owner: aicrm_next.operation_cycles
+    read_owners:
+      - operation cycle admin read model
+    replacement: none; canonical per-attempt stage projection
+    drop_candidate: false
+    drop_after: ""
+    runtime_entrypoints:
+      - operation cycle snapshot ingestion
+      - operation cycle run detail
+    migration_source: 0113_operation_cycles
+    pii_level: none
+    guard_tests:
+      - tests/test_operation_cycles_migration.py
+      - tests/test_data_table_lifecycle_guard.py
+
+  operation_cycle_strategies:
+    domain: operation_cycles
+    lifecycle: canonical
+    write_owner: aicrm_next.operation_cycles
+    read_owners:
+      - operation cycle admin read model
+    replacement: none; canonical operation strategy registry
+    drop_candidate: false
+    drop_after: ""
+    runtime_entrypoints:
+      - operation cycle snapshot ingestion
+      - operation cycle strategy reads
+    migration_source: 0113_operation_cycles
+    pii_level: none
+    guard_tests:
+      - tests/test_operation_cycles_migration.py
+      - tests/test_data_table_lifecycle_guard.py
+
+  operation_cycle_strategy_versions:
+    domain: operation_cycles
+    lifecycle: canonical
+    write_owner: aicrm_next.operation_cycles
+    read_owners:
+      - operation cycle admin read model
+    replacement: none; canonical versioned strategy definition
+    drop_candidate: false
+    drop_after: ""
+    runtime_entrypoints:
+      - operation cycle snapshot ingestion
+      - operation cycle strategy detail
+    migration_source: 0113_operation_cycles
+    pii_level: none
+    guard_tests:
+      - tests/test_operation_cycles_migration.py
+      - tests/test_data_table_lifecycle_guard.py
