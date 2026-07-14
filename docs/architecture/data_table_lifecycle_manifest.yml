@@ -1454,6 +1454,27 @@ tables:
       - tests/test_material_library_table_boundary.py
     notes: Canonical attachment material table used by media library and send-content picker.
 
+  wecom_media_leases:
+    domain: media_library
+    lifecycle: canonical
+    write_owner: aicrm_next.media_library.wecom_lease
+    read_owners:
+      - aicrm_next.media_library.wecom_lease
+      - aicrm_next.automation_engine.group_ops.material_resolver
+      - aicrm_next.data_health.checks
+    replacement: none; canonical lifecycle state for temporary WeCom media ids
+    drop_candidate: false
+    drop_after: ""
+    runtime_entrypoints:
+      - media library upload synchronization
+      - external effect media refresh worker
+      - final-dispatch material resolution
+    migration_source: 0115_wecom_media_leases
+    guard_tests:
+      - tests/test_data_table_lifecycle_guard.py
+      - tests/test_wecom_media_lease.py
+    notes: Stores per-corp and per-upload-kind temporary media leases; source bytes remain in canonical media library tables.
+
   questionnaires:
     domain: questionnaire
     lifecycle: canonical

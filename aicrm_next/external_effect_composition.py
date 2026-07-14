@@ -20,6 +20,7 @@ from .platform_foundation.external_effects.adapters import (
     WeComWelcomeMessageAdapter,
     WebhookAdapter,
 )
+from .wecom_media_jobs import WeComMediaUploadAdapter
 from .platform_foundation.external_effects.continuations import ExternalEffectContinuationRegistry
 from .questionnaire.external_effect_continuation import QUESTIONNAIRE_CONTACT_TAGS_CONTINUATION
 
@@ -56,6 +57,7 @@ def build_external_effect_adapter_registry() -> ExternalEffectAdapterRegistry:
                 adapter_factory=provider_factory,
                 material_resolver=_resolve_production_wecom_welcome_materials,
             ),
+            "wecom_media_upload": WeComMediaUploadAdapter(),
             "wecom_tag": WeComContactTagAdapter(adapter_factory=provider_factory),
             "wecom_profile": WeComProfileUpdateAdapter(adapter_factory=provider_factory),
         }

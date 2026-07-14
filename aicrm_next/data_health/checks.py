@@ -1087,6 +1087,79 @@ def _customer_360_freshness_guard() -> DataHealthCheckResult:
     )
 
 
+def _wecom_media_lease_health() -> DataHealthCheckResult:
+    check_id = "wecom_media_lease_health"
+    title = "WeCom temporary media lease health"
+    if not database_schema_available():
+        return DataHealthCheckResult(
+            check_id=check_id,
+            title=title,
+            status="not_applicable",
+            severity="gray",
+            summary="DATABASE_URL is not configured, so WeCom media leases cannot be checked.",
+            evidence={"runtime_probe": "database_url_not_configured"},
+            remediation="Run this check against the migrated production database.",
+        )
+    try:
+        with get_session_factory()() as session:
+            row = (
+                session.execute(
+                    text(
+                        """
+                        SELECT
+                            COUNT(*) AS total_count,
+                            COUNT(*) FILTER (WHERE status = 'ready' AND provider_expires_at > CURRENT_TIMESTAMP) AS ready_count,
+                            COUNT(*) FILTER (WHERE status = 'ready' AND refresh_after <= CURRENT_TIMESTAMP) AS refresh_due_count,
+                            COUNT(*) FILTER (WHERE status = 'refreshing') AS refreshing_count,
+                            COUNT(*) FILTER (WHERE status = 'failed') AS failed_count,
+                            COUNT(*) FILTER (WHERE status = 'invalid_source') AS invalid_source_count,
+                            COUNT(*) FILTER (WHERE status = 'ready' AND provider_expires_at <= CURRENT_TIMESTAMP) AS expired_count,
+                            (
+                                SELECT COUNT(*) FROM (
+                                    SELECT id FROM image_library
+                                    WHERE enabled IS TRUE AND COALESCE(data_base64, '') = ''
+                                    UNION ALL
+                                    SELECT id FROM attachment_library
+                                    WHERE enabled IS TRUE AND COALESCE(data_base64, '') = ''
+                                    UNION ALL
+                                    SELECT id FROM miniprogram_library
+                                    WHERE enabled IS TRUE AND thumb_image_id IS NULL
+                                      AND COALESCE(thumb_image_base64, '') = ''
+                                ) source_gaps
+                            ) AS source_gap_count
+                        FROM wecom_media_leases
+                        WHERE tenant_id = 'aicrm'
+                        """
+                    )
+                )
+                .mappings()
+                .one()
+            )
+    except Exception as exc:  # pragma: no cover - defensive health endpoint guard
+        return _database_probe_failure(check_id, title, exc, ["wecom_media_leases"])
+    evidence = {key: int(value or 0) for key, value in dict(row).items()}
+    unhealthy = evidence["failed_count"] + evidence["invalid_source_count"] + evidence["expired_count"]
+    if unhealthy:
+        return DataHealthCheckResult(
+            check_id=check_id,
+            title=title,
+            status="warn",
+            severity="yellow",
+            summary="One or more WeCom temporary media leases require repair.",
+            evidence=evidence,
+            remediation="Run the media lease backfill/refresh worker and repair any material with an invalid durable source.",
+        )
+    return DataHealthCheckResult(
+        check_id=check_id,
+        title=title,
+        status="ok",
+        severity="green",
+        summary="WeCom temporary media leases have no failed, invalid, or expired rows.",
+        evidence=evidence,
+        remediation="",
+    )
+
+
 _CHECKS: tuple[Callable[[], DataHealthCheckResult], ...] = (
     _identity_legacy_column_guard,
     _table_lifecycle_manifest_guard,
@@ -1103,4 +1176,5 @@ _CHECKS: tuple[Callable[[], DataHealthCheckResult], ...] = (
     _questionnaire_submission_without_user_guard,
     _payment_order_without_user_guard,
     _customer_360_freshness_guard,
+    _wecom_media_lease_health,
 )

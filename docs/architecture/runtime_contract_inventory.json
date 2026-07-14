@@ -407,7 +407,7 @@
       "accessor": "runtime_setting",
       "file": "aicrm_next/platform_foundation/external_effects/adapters.py",
       "key": "AICRM_EXTERNAL_EFFECT_WEBHOOK_TIMEOUT_SECONDS",
-      "line": 308
+      "line": 310
     },
     {
       "accessor": "declared_runtime_environment_key",
@@ -426,12 +426,6 @@
       "file": "aicrm_next/automation_engine/group_ops/broadcast.py",
       "key": "AICRM_GROUP_OPS_BROADCAST_PLAN_ID",
       "line": 261
-    },
-    {
-      "accessor": "os.getenv",
-      "file": "aicrm_next/automation_engine/group_ops/material_resolver.py",
-      "key": "AICRM_GROUP_OPS_MATERIAL_UPLOAD_MODE",
-      "line": 392
     },
     {
       "accessor": "os.getenv",
@@ -797,7 +791,7 @@
       "accessor": "os.getenv",
       "file": "aicrm_next/media_library/application.py",
       "key": "AICRM_NEXT_WECOM_MEDIA_MODE",
-      "line": 72
+      "line": 93
     },
     {
       "accessor": "declared_runtime_environment_key",
@@ -1097,7 +1091,7 @@
       "accessor": "os.getenv",
       "file": "aicrm_next/background_jobs/automation_ops_scheduler.py",
       "key": "AUTOMATION_OPS_SCHEDULER_OPERATOR",
-      "line": 35
+      "line": 48
     },
     {
       "accessor": "os.getenv",
@@ -2090,7 +2084,6 @@
     "AICRM_EXTERNAL_EFFECT_WECOM_EXECUTE",
     "AICRM_FORCE_FULL_CI",
     "AICRM_GROUP_OPS_BROADCAST_PLAN_ID",
-    "AICRM_GROUP_OPS_MATERIAL_UPLOAD_MODE",
     "AICRM_GROUP_OPS_MINIPROGRAM_APPID",
     "AICRM_GROUP_OPS_TIMEZONE",
     "AICRM_HUANGYOUCAN_DB_CONNECT_TIMEOUT_SECONDS",
@@ -2878,7 +2871,7 @@
     }
   ],
   "migration_heads": [
-    "0114_commerce_coupons"
+    "0115_wecom_media_leases"
   ],
   "openapi_components": {
     "schemas": {
@@ -45854,6 +45847,20 @@
       ],
       "table": "wecom_group_chat_snapshots",
       "write_owner": "aicrm_next.automation_engine.group_ops"
+    },
+    {
+      "domain": "media_library",
+      "drop_candidate": false,
+      "lifecycle": "canonical",
+      "migration_source": "0115_wecom_media_leases",
+      "pii_level": "",
+      "read_owners": [
+        "aicrm_next.automation_engine.group_ops.material_resolver",
+        "aicrm_next.data_health.checks",
+        "aicrm_next.media_library.wecom_lease"
+      ],
+      "table": "wecom_media_leases",
+      "write_owner": "aicrm_next.media_library.wecom_lease"
     }
   ]
 }

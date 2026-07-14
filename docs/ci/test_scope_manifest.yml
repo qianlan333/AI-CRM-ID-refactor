@@ -587,6 +587,33 @@
       "architecture_gate": "none"
     },
     {
+      "name": "wecom_media_lease",
+      "paths": [
+        "aicrm_next/media_library/application.py",
+        "aicrm_next/media_library/postgres_repo.py",
+        "aicrm_next/media_library/wecom_lease.py",
+        "aicrm_next/wecom_media_jobs.py",
+        "migrations/versions/0115_wecom_media_leases.py",
+        "scripts/backfill_wecom_media_leases.py",
+        "tests/test_automation_ops_scheduler.py",
+        "tests/test_wecom_media_lease.py"
+      ],
+      "python_tests": [
+        "tests/test_media_library_no_real_external_calls.py",
+        "tests/test_wecom_media_lease.py",
+        "tests/test_automation_ops_scheduler.py",
+        "tests/test_group_ops_material_resolver.py",
+        "tests/test_external_effects_wecom_welcome.py",
+        "tests/test_broadcast_jobs_wecom_private_dispatch.py",
+        "tests/test_data_health_checks.py",
+        "tests/test_database_bootstrap.py",
+        "tests/test_runtime_contract_inventory.py"
+      ],
+      "needs_postgres": true,
+      "needs_full_ci": true,
+      "architecture_gate": "full"
+    },
+    {
       "name": "ai_audience_ops",
       "paths": [
         "aicrm_next/ai_audience_ops/**",
