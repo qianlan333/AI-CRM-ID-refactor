@@ -886,6 +886,20 @@ def test_frontend_typescript_change_runs_frontend_tests_and_build() -> None:
     assert result["python_tests"] == []
 
 
+def test_sidebar_workbench_change_selects_progressive_loading_behavior_test() -> None:
+    for changed_file, expected_gate, expected_full_ci in (
+        ("aicrm_next/frontend_compat/static/sidebar_workbench/sidebar_workbench.js", "full", True),
+        ("tests/frontend/sidebar_progressive_loading.test.mjs", "fast", False),
+    ):
+        result = _select(changed_file)
+
+        assert "customer_read_model_sidebar" in result["matched_scopes"]
+        assert "tests/frontend/sidebar_progressive_loading.test.mjs" in result["frontend_tests"]
+        assert result["unmatched_files"] == []
+        assert result["architecture_gate"] == expected_gate
+        assert result["needs_full_ci"] is expected_full_ci
+
+
 def test_questionnaire_change_selects_postgres_contracts_and_full_regression() -> None:
     result = _select("aicrm_next/questionnaire/h5_write.py")
 
