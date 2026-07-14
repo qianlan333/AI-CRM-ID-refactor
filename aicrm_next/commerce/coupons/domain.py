@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Mapping, Sequence
 from datetime import datetime, time, timedelta, timezone
-from enum import StrEnum
+from enum import Enum
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -14,14 +14,21 @@ SHANGHAI_TZ = ZoneInfo("Asia/Shanghai")
 SUPPORTED_CURRENCY = "CNY"
 
 
-class CouponLifecycleStatus(StrEnum):
+class _StringEnum(str, Enum):
+    """Python 3.10-compatible equivalent of enum.StrEnum."""
+
+    def __str__(self) -> str:
+        return self.value
+
+
+class CouponLifecycleStatus(_StringEnum):
     DRAFT = "draft"
     PUBLISHED = "published"
     STOPPED = "stopped"
     ARCHIVED = "archived"
 
 
-class CouponDisplayState(StrEnum):
+class CouponDisplayState(_StringEnum):
     DRAFT = "draft"
     SCHEDULED = "scheduled"
     ACTIVE = "active"
@@ -31,25 +38,25 @@ class CouponDisplayState(StrEnum):
     ARCHIVED = "archived"
 
 
-class CouponValidityMode(StrEnum):
+class CouponValidityMode(_StringEnum):
     FIXED_RANGE = "fixed_range"
     RELATIVE_DAYS = "relative_days"
 
 
-class CouponClaimStatus(StrEnum):
+class CouponClaimStatus(_StringEnum):
     AVAILABLE = "available"
     RESERVED = "reserved"
     CONSUMED = "consumed"
     EXPIRED = "expired"
 
 
-class CouponRedemptionStatus(StrEnum):
+class CouponRedemptionStatus(_StringEnum):
     RESERVED = "reserved"
     CONSUMED = "consumed"
     RELEASED = "released"
 
 
-class CouponChoiceMode(StrEnum):
+class CouponChoiceMode(_StringEnum):
     AUTO = "auto"
     NONE = "none"
     CLAIM = "claim"
@@ -300,7 +307,7 @@ def validate_coupon_transition(
 
 
 def _normalized_rule_value(value: Any) -> Any:
-    if isinstance(value, StrEnum):
+    if isinstance(value, _StringEnum):
         return value.value
     if isinstance(value, datetime):
         return require_aware_datetime(value, field="coupon rule datetime").astimezone(UTC)
