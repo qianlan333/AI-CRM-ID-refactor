@@ -3373,6 +3373,92 @@ tables:
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
     notes: Registered from the formal production public schema so schema_drift_guard can fail closed on future unmanaged table changes.
 
+  commerce_coupons:
+    domain: commerce
+    lifecycle: canonical
+    write_owner: aicrm_next.commerce.coupons
+    read_owners:
+      - aicrm_next.commerce.coupons
+      - aicrm_next.commerce.coupons.checker
+    replacement: none; canonical fixed-amount coupon campaign definition
+    drop_candidate: false
+    drop_after: ""
+    runtime_entrypoints:
+      - aicrm_next.commerce.coupons.admin_api
+      - aicrm_next.commerce.coupons.public_api
+    migration_source: 0114_commerce_coupons
+    pii_level: internal
+    guard_tests:
+      - tests/test_commerce_coupon_migration.py
+      - tests/test_data_table_lifecycle_guard.py
+    notes: Stores coupon rules and aggregate issuance count; first successful claim freezes financial and eligibility fields in application/domain validation.
+
+  commerce_coupon_product_bindings:
+    domain: commerce
+    lifecycle: canonical
+    write_owner: aicrm_next.commerce.coupons
+    read_owners:
+      - aicrm_next.commerce.coupons
+      - aicrm_next.commerce.coupons.checker
+    replacement: none; canonical coupon to unified trade product binding
+    drop_candidate: false
+    drop_after: ""
+    runtime_entrypoints:
+      - aicrm_next.commerce.coupons.admin_api
+      - aicrm_next.commerce.coupons.public_api
+      - aicrm_next.public_product.h5_wechat_pay
+      - aicrm_next.service_period.api
+    migration_source: 0114_commerce_coupons
+    pii_level: none
+    guard_tests:
+      - tests/test_commerce_coupon_migration.py
+      - tests/test_data_table_lifecycle_guard.py
+    notes: Both ordinary and service-period products bind through wechat_pay_products; no second service-period coupon engine exists.
+
+  commerce_coupon_claims:
+    domain: commerce
+    lifecycle: canonical
+    write_owner: aicrm_next.commerce.coupons
+    read_owners:
+      - aicrm_next.commerce.coupons
+      - aicrm_next.commerce.coupons.checker
+    replacement: none; canonical user coupon instance with immutable amount and validity snapshots
+    drop_candidate: false
+    drop_after: ""
+    runtime_entrypoints:
+      - aicrm_next.commerce.coupons.public_api
+      - aicrm_next.public_product.h5_wechat_pay
+      - aicrm_next.service_period.api
+      - aicrm_next.commerce.coupons.checker
+    migration_source: 0114_commerce_coupons
+    pii_level: direct_contact
+    guard_tests:
+      - tests/test_commerce_coupon_migration.py
+      - tests/test_data_table_lifecycle_guard.py
+    notes: Unionid-keyed claim instance. Admin projections must expose only masked identity values.
+
+  commerce_coupon_redemptions:
+    domain: commerce
+    lifecycle: canonical
+    write_owner: aicrm_next.commerce.coupons
+    read_owners:
+      - aicrm_next.commerce.coupons
+      - aicrm_next.commerce.coupons.checker
+      - aicrm_next.commerce.fulfillment_reconciliation
+    replacement: none; canonical coupon reservation consumption and release ledger
+    drop_candidate: false
+    drop_after: ""
+    runtime_entrypoints:
+      - aicrm_next.public_product.h5_wechat_pay
+      - aicrm_next.commerce.order_reconciliation
+      - aicrm_next.commerce.coupons.checker
+    migration_source: 0114_commerce_coupons
+    pii_level: financial
+    guard_tests:
+      - tests/test_commerce_coupon_migration.py
+      - tests/test_data_table_lifecycle_guard.py
+    notes: A claim and order can have at most one active reservation; released rows remain as reconciliation audit evidence.
+
   wechat_pay_order_events:
     domain: commerce
     lifecycle: audit
@@ -3522,8 +3608,12 @@ tables:
     domain: commerce
     lifecycle: canonical
     write_owner: aicrm_next.commerce.wechat_pay_service
+    write_owners:
+      - aicrm_next.commerce.coupons
+      - aicrm_next.commerce.wechat_pay_service
     read_owners:
       - aicrm_next.admin_read_model
+      - aicrm_next.commerce.coupons.checker
       - aicrm_next.customer_read_model
       - aicrm_next.external_push
       - aicrm_next.platform_foundation.internal_events
@@ -3539,7 +3629,7 @@ tables:
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
-    notes: Registered from the formal production public schema so schema_drift_guard can fail closed on future unmanaged table changes.
+    notes: Registered from the formal production public schema so schema_drift_guard can fail closed on future unmanaged table changes. The coupon owner may only write additive coupon claim and immutable amount snapshot fields inside the payment order transaction.
 
   wechat_pay_product_page_slices:
     domain: commerce
@@ -3564,6 +3654,7 @@ tables:
     lifecycle: canonical
     write_owner: aicrm_next.commerce.wechat_pay_service
     read_owners:
+      - aicrm_next.commerce.coupons
       - aicrm_next.external_push
       - aicrm_next.service_period
       - aicrm_next.customer_read_model.sidebar_v2

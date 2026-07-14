@@ -105,11 +105,14 @@ def _service_period_checkout_product(product: dict, public_state: dict | None = 
 
 
 def _service_period_checkout_state(product: dict, request: Request, public_state: dict) -> dict:
+    from aicrm_next.commerce.coupons.application import target_ref_for_product_id
+
     identity = h5_wechat_pay.h5_payment_identity_from_request(request)
     link_slug = str(product.get("link_slug") or "").strip()
     checkout_path = f"/s/{link_slug}/pay"
     public_path = f"/s/{quote(link_slug, safe='')}"
     checkout_product = _service_period_checkout_product(product, public_state)
+    coupon_target_ref = target_ref_for_product_id(product.get("trade_product_id") or checkout_product.get("id"))
     return {
         "product": {
             "product_code": str(checkout_product.get("product_code") or ""),
@@ -131,6 +134,8 @@ def _service_period_checkout_state(product: dict, request: Request, public_state
         "price_display": f"{str(checkout_product.get('currency') or 'CNY')} {int(checkout_product.get('price_cents') or 0) / 100:.2f}",
         "context_token": "",
         "context_status": "missing",
+        "coupon_target_ref": coupon_target_ref,
+        "available_coupon_url": f"/api/h5/coupons/available?target_ref={quote(coupon_target_ref, safe='')}",
     }
 
 

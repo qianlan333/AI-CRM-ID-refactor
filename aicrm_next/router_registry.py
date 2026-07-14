@@ -33,6 +33,9 @@ from .channel_entry.api import router as channel_entry_router
 from .class_user_management.api import router as class_user_management_router
 from .cloud_orchestrator.api import router as cloud_orchestrator_router
 from .commerce.api import router as commerce_router
+from .commerce.coupons.admin_api import router as coupons_admin_api_router
+from .commerce.coupons.admin_pages import router as coupons_admin_pages_router
+from .commerce.coupons.public_api import router as coupons_public_router
 from .common_operation_members import router as common_operation_members_router
 from .customer_read_model.admin_pages import router as customer_admin_pages_router
 from .customer_read_model.api import router as customer_router
@@ -132,6 +135,9 @@ ROUTER_SPECS: tuple[RouterSpec, ...] = (
     RouterSpec("customer_tags", "customer_tags_admin_pages", customer_tags_admin_pages_router),
     RouterSpec("automation_engine", "automation", automation_router),
     RouterSpec("commerce", "commerce", commerce_router),
+    RouterSpec("commerce", "coupons_admin_pages", coupons_admin_pages_router, "fixed-amount coupon admin pages"),
+    RouterSpec("commerce", "coupons_admin_api", coupons_admin_api_router, "fixed-amount coupon admin APIs"),
+    RouterSpec("commerce", "coupons_public", coupons_public_router, "coupon claim and availability APIs"),
     RouterSpec("media_library", "media_library", media_library_router),
     RouterSpec("media_library", "media_library_admin_pages", media_library_admin_pages_router),
     RouterSpec("ai_assist", "ai_assist", ai_assist_router),
