@@ -65,8 +65,11 @@ SELECT
     open_usage.last_open_at AS last_open_at
 FROM new_version_users users
 LEFT JOIN token_usage ON token_usage.user_id = users.id
-LEFT JOIN ranked_plans ON ranked_plans.user_id = users.id AND ranked_plans.plan_rank = 1
-LEFT JOIN open_usage ON open_usage.user_id = users.id
+LEFT JOIN ranked_plans
+    ON ranked_plans.user_id COLLATE utf8mb4_general_ci = users.id
+    AND ranked_plans.plan_rank = 1
+LEFT JOIN open_usage
+    ON open_usage.user_id COLLATE utf8mb4_general_ci = users.id
 WHERE COALESCE(users.is_deleted, 0) = 0
 ORDER BY users.id
 """.strip()

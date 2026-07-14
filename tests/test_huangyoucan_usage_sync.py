@@ -137,6 +137,8 @@ def test_source_sql_uses_one_readonly_aggregate_and_returns_no_plaintext_phone()
     ):
         assert table in HUANGYOUCAN_USAGE_SQL
     assert "ROW_NUMBER() OVER" in HUANGYOUCAN_USAGE_SQL
+    assert "ranked_plans.user_id COLLATE utf8mb4_general_ci = users.id" in HUANGYOUCAN_USAGE_SQL
+    assert "open_usage.user_id COLLATE utf8mb4_general_ci = users.id" in HUANGYOUCAN_USAGE_SQL
     assert "users.phone AS" not in HUANGYOUCAN_USAGE_SQL
     assert "mobile_md5" in HUANGYOUCAN_USAGE_SQL
 

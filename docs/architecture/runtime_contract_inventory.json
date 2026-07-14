@@ -431,43 +431,43 @@
       "accessor": "os.getenv",
       "file": "aicrm_next/integration_gateway/huangyoucan_usage_client.py",
       "key": "AICRM_HUANGYOUCAN_DB_CONNECT_TIMEOUT_SECONDS",
-      "line": 106
+      "line": 109
     },
     {
       "accessor": "os.getenv",
       "file": "aicrm_next/integration_gateway/huangyoucan_usage_client.py",
       "key": "AICRM_HUANGYOUCAN_DB_HOST",
-      "line": 92
-    },
-    {
-      "accessor": "os.getenv",
-      "file": "aicrm_next/integration_gateway/huangyoucan_usage_client.py",
-      "key": "AICRM_HUANGYOUCAN_DB_NAME",
-      "line": 93
-    },
-    {
-      "accessor": "os.getenv",
-      "file": "aicrm_next/integration_gateway/huangyoucan_usage_client.py",
-      "key": "AICRM_HUANGYOUCAN_DB_PASSWORD",
       "line": 95
     },
     {
       "accessor": "os.getenv",
       "file": "aicrm_next/integration_gateway/huangyoucan_usage_client.py",
+      "key": "AICRM_HUANGYOUCAN_DB_NAME",
+      "line": 96
+    },
+    {
+      "accessor": "os.getenv",
+      "file": "aicrm_next/integration_gateway/huangyoucan_usage_client.py",
+      "key": "AICRM_HUANGYOUCAN_DB_PASSWORD",
+      "line": 98
+    },
+    {
+      "accessor": "os.getenv",
+      "file": "aicrm_next/integration_gateway/huangyoucan_usage_client.py",
       "key": "AICRM_HUANGYOUCAN_DB_PORT",
-      "line": 102
+      "line": 105
     },
     {
       "accessor": "os.getenv",
       "file": "aicrm_next/integration_gateway/huangyoucan_usage_client.py",
       "key": "AICRM_HUANGYOUCAN_DB_READ_TIMEOUT_SECONDS",
-      "line": 107
+      "line": 110
     },
     {
       "accessor": "os.getenv",
       "file": "aicrm_next/integration_gateway/huangyoucan_usage_client.py",
       "key": "AICRM_HUANGYOUCAN_DB_USER",
-      "line": 94
+      "line": 97
     },
     {
       "accessor": "os.getenv",
