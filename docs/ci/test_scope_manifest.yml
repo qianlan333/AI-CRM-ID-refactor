@@ -196,7 +196,6 @@
         "tools/check_next_production_cutover_readiness.py",
         "aicrm_next/admin_read_model/projections.py",
         "tests/test_live_runtime_readiness.py",
-        "tests/test_retired_runtime_gap_timer_report.py",
         "tests/test_retired_timer_readiness_cleanup.py"
       ],
       "python_tests": [
@@ -480,6 +479,7 @@
       "paths": [
         "aicrm_next/commerce/coupons/**",
         "aicrm_next/identity_contact/oauth_projection_repo.py",
+        "aicrm_next/admin_shell/navigation.py",
         "aicrm_next/shared/capability_flags.py",
         "aicrm_next/shared/wechat_h5_session.py",
         "migrations/versions/0114_commerce_coupons.py",
@@ -496,7 +496,7 @@
         "tests/test_commerce_coupon_concurrency_postgres.py",
         "tests/test_coupon_admin_frontend_contract.py",
         "tests/test_coupon_architecture_governance.py",
-        "tests/test_coupon_rollout_gate.py",
+        "tests/test_coupon_direct_entry.py",
         "tests/test_coupon_v1_checkout_contract.py",
         "tests/test_wechat_oauth_coupon_identity_postgres.py"
       ],
@@ -1598,7 +1598,6 @@
         "tests/test_production_public_release_route.py",
         "tests/test_external_orders_blocker_diagnostics.py",
         "tests/test_external_orders_consumer_run_due_diagnostics.py",
-        "tests/test_retired_runtime_gap_timer_report.py",
         "tests/test_runtime_secret_readiness.py",
         "tests/test_runtime_units_autostart.py",
         "tests/test_select_test_scope.py",
@@ -1628,7 +1627,6 @@
         "tests/test_production_public_release_route.py",
         "tests/test_external_orders_blocker_diagnostics.py",
         "tests/test_external_orders_consumer_run_due_diagnostics.py",
-        "tests/test_retired_runtime_gap_timer_report.py",
         "tests/test_runtime_secret_readiness.py",
         "tests/test_runtime_units_autostart.py",
         "tests/test_select_test_scope.py",

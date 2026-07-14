@@ -7,7 +7,6 @@ from urllib.parse import quote, urlencode
 from fastapi import Request
 
 from aicrm_next.shared.admin_action_runtime import admin_action_token_bundle
-from aicrm_next.shared.capability_flags import commerce_coupons_new_activity_enabled
 
 
 @dataclass(frozen=True)
@@ -214,7 +213,6 @@ def nav_items(active_endpoint: str) -> list[dict[str, Any]]:
                 "href": admin_path_for(str(item["endpoint"])),
             }
             for item in group["items"]
-            if item["key"] != "coupons" or commerce_coupons_new_activity_enabled()
         ]
         groups.append({**group, "items": items, "active": any(item["active"] for item in items)})
     return groups

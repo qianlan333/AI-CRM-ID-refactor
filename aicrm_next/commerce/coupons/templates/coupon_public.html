@@ -53,8 +53,7 @@
       </div>
       {% set claimable = state.claimable and is_wechat and identity_ready %}
       <button class="claim" id="claimButton" type="button" {% if not claimable %}disabled{% endif %}>
-        {% if state.rollout_enabled is sameas false %}优惠券暂未开放
-        {% elif not is_wechat %}请在微信中领取
+        {% if not is_wechat %}请在微信中领取
         {% elif state.user_limit_reached %}已达到领取上限
         {% elif state.display_state == "sold_out" %}已领完
         {% elif state.display_state == "scheduled" %}领取尚未开始
