@@ -118,6 +118,7 @@ def _fixture_items() -> dict[str, list[dict[str, Any]]]:
                     "pic_url": "https://example.com/group-invite.png",
                     "config_id": "fixture-group-invite",
                     "state": "fixture",
+                    "binding_status": "ready",
                 },
             }
         ],

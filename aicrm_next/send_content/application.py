@@ -430,6 +430,32 @@ class ValidateMaterialAssetsQuery:
     __call__ = execute
 
 
+def assert_group_invite_bindings_ready(
+    content_package: SendContentPackage | dict[str, Any] | None,
+    *,
+    repo: SendContentRepository | None = None,
+    channel: str = "send_content",
+) -> None:
+    package = content_package.model_dump() if isinstance(content_package, SendContentPackage) else dict(content_package or {})
+    group_invite_ids = list(package.get("group_invite_library_ids") or [])
+    if not group_invite_ids:
+        return
+    result = ValidateMaterialAssetsQuery(repo)(
+        {
+            "content_text": "",
+            "image_library_ids": [],
+            "miniprogram_library_ids": [],
+            "attachment_library_ids": [],
+            "group_invite_library_ids": group_invite_ids,
+        },
+        channel=channel,
+    )
+    blocking = [issue for issue in result.get("issues") or [] if issue.get("severity") == "error"]
+    if blocking:
+        ids = ",".join(str(value) for value in group_invite_ids)
+        raise ContractError(f"group_invite_not_ready:ids={ids}:群邀请卡片尚未就绪，请联系管理员补齐邀请链接")
+
+
 def _validate_material_asset(material: dict[str, Any], *, channel: str, field_name: str) -> list[dict[str, Any]]:
     issues: list[dict[str, Any]] = []
     asset_id = str(material.get("material_asset_id") or "")
@@ -441,6 +467,11 @@ def _validate_material_asset(material: dict[str, Any], *, channel: str, field_na
     metadata = material.get("metadata") if isinstance(material.get("metadata"), dict) else {}
     if _contains_payload_leak(material):
         issues.append(_material_validation_issue(asset_id, "material_payload_leak", "素材响应包含 base64 或 data_url 原始载荷", field_name))
+    if material_type == "group_invite":
+        binding_status = str(metadata.get("binding_status") or ("ready" if metadata.get("join_url") else "pending")).strip()
+        if binding_status != "ready" or not str(metadata.get("join_url") or "").strip():
+            issues.append(_material_validation_issue(asset_id, "group_invite_not_ready", "群邀请卡片尚未就绪，请联系管理员补齐邀请链接", field_name))
+            return issues
     missing = _missing_metadata_fields(material_type, material, metadata)
     for field in missing:
         issues.append(_material_validation_issue(asset_id, "material_metadata_incomplete", f"素材元数据缺失：{field}", field_name))
@@ -470,6 +501,9 @@ def _missing_metadata_fields(material_type: str, material: dict[str, Any], metad
             missing.append("file_size")
         return missing
     if material_type == "group_invite":
+        binding_status = str(metadata.get("binding_status") or ("ready" if metadata.get("join_url") else "pending")).strip()
+        if binding_status != "ready":
+            return ["binding_status"]
         missing = []
         if not str(material.get("title") or "").strip():
             missing.append("title")

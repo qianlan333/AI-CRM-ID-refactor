@@ -49,8 +49,8 @@ def admin_attachment_library(request: Request):
 def admin_group_invite_library(request: Request):
     context = shell_context(
         request=request,
-        page_title="客户群邀请设置",
-        page_summary="为已同步客户群绑定企微原生加入群聊链接，运营人员发送时直接选择客户群。",
+        page_title="群邀请托管",
+        page_summary="管理员集中维护企微原生加入群聊链接；运营人员只需直接选择群聊。",
         active_endpoint="api.admin_group_invite_library_workspace",
     )
     return templates.TemplateResponse(request, "admin_console/group_invite_library.html", context)

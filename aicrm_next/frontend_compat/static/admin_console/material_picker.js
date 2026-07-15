@@ -33,52 +33,7 @@
     };
   }
 
-  async function fetchJson(url, errorMessage) {
-    const response = await fetch(url, { headers: { Accept: "application/json" } });
-    const data = await response.json().catch(() => ({}));
-    if (!response.ok || data.ok === false) {
-      throw new Error(data.error || data.detail || errorMessage);
-    }
-    return data;
-  }
-
-  async function fetchGroupChatItems(q) {
-    const groupParams = new URLSearchParams({ keyword: q || "", limit: "200", offset: "0" });
-    const inviteParams = new URLSearchParams({ q: "", enabled_only: "true", limit: "200", offset: "0" });
-    const [groupData, inviteData] = await Promise.all([
-      fetchJson(`/api/admin/automation-conversion/group-ops/groups?${groupParams.toString()}`, "客户群列表加载失败"),
-      fetchJson(`/api/admin/group-invite-library?${inviteParams.toString()}`, "客户群邀请设置加载失败"),
-    ]);
-    const bindings = new Map();
-    (inviteData.items || []).forEach((item) => {
-      const chatId = String((item.chat_id_list || [])[0] || "").trim();
-      if (chatId && !bindings.has(chatId)) bindings.set(chatId, item);
-    });
-    return (groupData.items || []).map((group) => {
-      const chatId = String(group.chat_id || "").trim();
-      const binding = bindings.get(chatId);
-      const ownerName = String(group.owner_name || group.owner_userid || "未识别群主");
-      return normalizeItem({
-        type: "group_invite",
-        library_id: Number(binding?.id || 0),
-        title: String(group.group_name || chatId || "未命名客户群"),
-        subtitle: binding ? `群主：${ownerName} · 已配置邀请链接` : `群主：${ownerName} · 请先配置邀请链接`,
-        enabled: Boolean(binding),
-        selectable: Boolean(binding),
-        metadata: {
-          chat_id: chatId,
-          group_name: String(group.group_name || ""),
-          owner_userid: String(group.owner_userid || ""),
-          owner_name: ownerName,
-          join_url: String(binding?.join_url || ""),
-          binding_status: binding ? "bound" : "unbound",
-        },
-      });
-    });
-  }
-
   async function fetchItems(type, q) {
-    if (type === "group_invite") return fetchGroupChatItems(q);
     const params = new URLSearchParams({ type, q: q || "", enabled_only: "true", limit: "50", offset: "0" });
     const response = await fetch(`/api/admin/material-picker/items?${params.toString()}`, {
       headers: { Accept: "application/json" },
@@ -94,6 +49,11 @@
     options = options || {};
     const type = String(options.type || "image");
     if (!TYPE_LABELS[type]) throw new Error("未知素材类型");
+    if (type === "group_invite") {
+      if (!window.AICRMGroupChatPicker) throw new Error("群聊选择器未加载");
+      window.AICRMGroupChatPicker.open(options);
+      return;
+    }
     const selectedIds = new Set((options.selectedIds || []).map((id) => Number(id)));
     const limit = Number(options.limit || 1);
     const allowedMimeTypes = new Set((options.allowedMimeTypes || []).map((value) => String(value || "").trim()).filter(Boolean));

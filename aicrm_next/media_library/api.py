@@ -13,6 +13,7 @@ from aicrm_next.shared.safe_logging import safe_log_exception
 
 from .application import (
     DeleteMediaItemCommand,
+    EnsureGroupInviteBindingCommand,
     GetMediaItemQuery,
     GetImageThumbnailQuery,
     GetImageVariantQuery,
@@ -23,10 +24,13 @@ from .application import (
     TestResolveMiniprogramThumbCommand,
     UploadAttachmentCommand,
     UploadImageCommand,
+    UpdateGroupInviteBindingCommand,
     UpsertMediaItemCommand,
 )
 from .dto import (
     AttachmentUpsertRequest,
+    GroupInviteBindingEnsureRequest,
+    GroupInviteBindingUpdateRequest,
     GroupInviteUpsertRequest,
     ImageFromBase64Request,
     ImageFromUrlRequest,
@@ -382,6 +386,38 @@ def create_group_invite(payload: GroupInviteUpsertRequest) -> dict:
     try:
         return _with_contract(
             UpsertMediaItemCommand("group_invite")(payload),
+            source_status="local_repository_write",
+        )
+    except Exception as exc:
+        return _error_response(exc)
+
+
+@router.get("/api/admin/group-invite-bindings")
+def list_group_invite_bindings(limit: int = 100, offset: int = 0, q: str = "") -> dict:
+    return list_group_invites(limit=limit, offset=offset, enabled_only=False, q=q)
+
+
+@router.post("/api/admin/group-invite-bindings/ensure")
+def ensure_group_invite_binding(payload: GroupInviteBindingEnsureRequest) -> dict:
+    try:
+        return _with_contract(
+            EnsureGroupInviteBindingCommand()(payload),
+            source_status="local_repository_write",
+        )
+    except Exception as exc:
+        return _error_response(exc)
+
+
+@router.get("/api/admin/group-invite-bindings/{item_id}")
+def get_group_invite_binding(item_id: str) -> dict:
+    return get_group_invite(item_id)
+
+
+@router.put("/api/admin/group-invite-bindings/{item_id}")
+def update_group_invite_binding(item_id: str, payload: GroupInviteBindingUpdateRequest) -> dict:
+    try:
+        return _with_contract(
+            UpdateGroupInviteBindingCommand()(item_id, payload),
             source_status="local_repository_write",
         )
     except Exception as exc:

@@ -1475,12 +1475,12 @@ tables:
       - SendContentPackage group invite resolution
       - private/group broadcast material resolution
       - channel welcome material resolution
-    migration_source: 0117_group_invite_cards
+    migration_source: 0117_group_invite_cards, 0119_group_invite_bindings
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_material_library_table_boundary.py
       - tests/test_group_invite_library.py
-    notes: Canonical WeCom gm join-link card metadata; resolves to msgtype link and never requires media_id.
+    notes: Canonical WeCom gm join-link binding keyed by chat_id; supports pending, ready and invalid lifecycle states, resolves to msgtype link, and never requires media_id.
 
   wecom_media_leases:
     domain: media_library

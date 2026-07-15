@@ -300,17 +300,22 @@ class _BaseGroupOpsMaterialResolver:
     def _resolve_group_invite_attachment(self, group_invite_id: int) -> dict[str, Any]:
         item = self._get_item("group_invite", group_invite_id)
         if not item:
-            raise self._error("group_invite_resolve_failed", group_invite_id, "not_found")
+            raise self._error("group_invite_not_ready", group_invite_id, "not_found")
         if not _enabled(item):
-            raise self._error("group_invite_resolve_failed", group_invite_id, "disabled")
+            raise self._error("group_invite_not_ready", group_invite_id, "disabled")
+        binding_status = _text(item.get("binding_status") or ("ready" if item.get("join_url") else "pending"))
+        if binding_status != "ready":
+            raise self._error("group_invite_not_ready", group_invite_id, binding_status or "pending")
         title = _text(item.get("title") or item.get("name"))
         if not title:
-            raise self._error("group_invite_resolve_failed", group_invite_id, "missing_title")
+            raise self._error("group_invite_not_ready", group_invite_id, "missing_title")
         try:
             join_url = normalize_group_invite_join_url(item.get("join_url"))
             pic_url = normalize_http_url(item.get("pic_url"), field_name="卡片封面链接") if _text(item.get("pic_url")) else ""
         except ValueError as exc:
-            raise self._error("group_invite_resolve_failed", group_invite_id, exc) from exc
+            raise self._error("group_invite_not_ready", group_invite_id, exc) from exc
+        if not join_url:
+            raise self._error("group_invite_not_ready", group_invite_id, "missing_join_url")
         link: dict[str, Any] = {"title": title, "url": join_url}
         if _text(item.get("description")):
             link["desc"] = _text(item.get("description"))
