@@ -272,12 +272,7 @@ def test_single_consumer_execute_only_updates_specified_consumer(monkeypatch) ->
     assert result["counts"]["succeeded_count"] == 1
     assert statuses["order_projection_consumer"] == "succeeded"
     assert {name: status for name, status in statuses.items() if name != "order_projection_consumer"} == {
-        "service_period_entitlement_consumer": "pending",
-        "webhook_order_paid_consumer": "pending",
-        "ai_audience_source_poke_consumer": "pending",
-        "customer_business_summary_consumer": "pending",
-        "dnd_policy_consumer": "pending",
-        "ai_assist_notify_consumer": "pending",
+        name: "pending" for name in PAYMENT_CONSUMERS - {"order_projection_consumer"}
     }
     assert len(attempts) == 1
     assert attempts[0].consumer_name == "order_projection_consumer"
