@@ -529,9 +529,7 @@ def _refresh_admin_candidate_groups(
             warnings.append(f"skipped_admin_candidate_refresh={chat_id}: invalid group detail")
             continue
         group = normalized[0]
-        if clean_text(group.get("owner_userid")) == owner_userid:
-            continue
-        if group_manageable_by_userid(group, owner_userid):
+        if clean_text(group.get("owner_userid")) == owner_userid or group_manageable_by_userid(group, owner_userid):
             refreshed_groups.append(group)
             known_chat_ids.add(chat_id)
     return refreshed_groups, attempted_count, skipped_count, warnings
