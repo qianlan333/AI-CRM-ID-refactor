@@ -27,6 +27,7 @@ PAYMENT_CONSUMERS = {
     "customer_business_summary_consumer",
     "dnd_policy_consumer",
     "ai_assist_notify_consumer",
+    "product_paid_wecom_tag_consumer",
 }
 
 
@@ -192,7 +193,7 @@ def _emit_payment(monkeypatch, *, out_trade_no: str = "WXP_SINGLE_CONSUMER"):
     assert InternalEventOutboxRelay().relay_due(limit=10)["ok"] is True
     event = InternalEventService().list_events({"event_type": PAYMENT_SUCCEEDED_EVENT_TYPE})[0][0]
     runs, total = InternalEventService().list_consumer_runs({"event_id": event.event_id})
-    assert total == 7
+    assert total == len(PAYMENT_CONSUMERS)
     assert {run.consumer_name for run in runs} == PAYMENT_CONSUMERS
     return event
 
