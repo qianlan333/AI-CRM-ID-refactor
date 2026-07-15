@@ -52,3 +52,16 @@ def test_all_requested_frontend_surfaces_expose_group_invite_selection() -> None
         source = (ROOT / relative_path).read_text(encoding="utf-8")
         assert "group_invite" in source, surface
         assert "group_invite_library_ids" in source, surface
+
+
+def test_operator_facing_controls_select_groups_instead_of_invite_materials() -> None:
+    composer = (ROOT / "aicrm_next/frontend_compat/static/admin_console/send_content_composer.js").read_text(encoding="utf-8")
+    agent_editor = (ROOT / "aicrm_next/automation_agents/templates/admin_console/automation_agent_edit.html").read_text(encoding="utf-8")
+    navigation = (ROOT / "aicrm_next/admin_shell/navigation.py").read_text(encoding="utf-8")
+
+    assert "+选择群聊" in composer
+    assert "+选择群聊" in agent_editor
+    assert "+群邀请" not in composer
+    assert "+群邀请" not in agent_editor
+    assert '"label": "客户群邀请设置"' in navigation
+    assert '"label": "群邀请卡片库"' not in navigation

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -65,8 +67,14 @@ def test_group_invite_admin_api_and_page_contract() -> None:
 
     page = client.get("/admin/group-invite-library")
     assert page.status_code == 200
-    assert "群邀请卡片库" in page.text
+    assert "客户群邀请设置" in page.text
+    assert "已同步客户群" in page.text
+    assert "/api/admin/automation-conversion/group-ops/groups" in page.text
     assert "work.weixin.qq.com/gm" in page.text
+    assert "素材名称" not in page.text
+    assert "卡片标题" not in page.text
+    assert "企微入群方式 config_id" not in page.text
+    assert "卡片封面 URL" not in page.text
 
     created = client.post(
         "/api/admin/group-invite-library",
@@ -75,6 +83,7 @@ def test_group_invite_admin_api_and_page_contract() -> None:
             "title": "点击加入 API 体验群",
             "description": "无需扫码",
             "join_url": VALID_JOIN_URL,
+            "chat_id_list": ["wr_group_1"],
             "enabled": True,
         },
     )
@@ -95,3 +104,18 @@ def test_group_invite_admin_api_and_page_contract() -> None:
 
     deleted = client.delete(f"/api/admin/group-invite-library/{item_id}").json()
     assert deleted["deleted"] is True
+
+
+def test_group_chat_picker_uses_synced_groups_and_only_enables_bound_groups() -> None:
+    source = (
+        Path(__file__).resolve().parents[1]
+        / "aicrm_next/frontend_compat/static/admin_console/material_picker.js"
+    ).read_text(encoding="utf-8")
+
+    assert "fetchGroupChatItems" in source
+    assert "/api/admin/automation-conversion/group-ops/groups" in source
+    assert "/api/admin/group-invite-library" in source
+    assert 'group_invite: "客户群"' in source
+    assert "selectable: Boolean(binding)" in source
+    assert "请先配置邀请链接" in source
+    assert "管理群邀请设置" in source

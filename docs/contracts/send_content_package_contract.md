@@ -22,14 +22,21 @@ Normalization rules:
 - `image_library_ids` accepts at most 3 positive integer IDs.
 - `miniprogram_library_ids` accepts at most 1 positive integer ID.
 - `attachment_library_ids` accepts at most 9 positive integer IDs.
-- `group_invite_library_ids` accepts at most 1 positive integer ID and resolves to a WeCom `link` card.
+- `group_invite_library_ids` accepts at most 1 positive integer compatibility ID. In operator-facing pages this is selected by customer-group name, then resolves to the group's bound WeCom `work.weixin.qq.com/gm/...` link card.
 - IDs are deduplicated while preserving input order.
 - Missing fields normalize to an empty string or empty arrays.
 - `text_enabled=false` forces `content_text=""`.
 - `require_body=true` requires at least one of text, image IDs, miniprogram IDs, attachment IDs, or group invite IDs.
 - `require_body=false` allows an empty package for draft saves.
 
-The component outputs only `content_text` plus the four material ID arrays. Outer business pages own their audience, scheduling, sender, and delivery-mode fields.
+The component outputs only `content_text` plus the four compatibility ID arrays. `group_invite_library_ids` is retained to avoid breaking saved content packages; it is not presented as a material or media-id resource. Outer business pages own their audience, scheduling, sender, and delivery-mode fields.
+
+## Customer group selection
+
+- Operators select a synced customer group rather than creating or selecting a group-invite material.
+- A group owner or administrator binds one native WeCom `work.weixin.qq.com/gm/...` join link to each `chat_id` on `/admin/group-invite-library`.
+- The settings page generates the link-card title and description from the group name. It does not expose media ID, media refresh, cover, config ID, state, or card-copy fields.
+- The persisted `group_invite_library` row and `group_invite_library_ids` field are compatibility storage only. Sending continues to resolve the row into a WeCom `link` attachment, which has no media-ID lifecycle.
 
 Frontend usage follows the same boundary. `AICRMSendContentComposer` only edits this package. The retired automation operation-task page no longer owns unified/profile-layered/behavior-layered/agent mode selection, profile template selection, behavior rule selection, or agent selection; new automation targeting belongs to AI Audience packages and agent copywriting flows.
 

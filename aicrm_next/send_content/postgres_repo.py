@@ -135,7 +135,7 @@ class PostgresSendContentRepository(SendContentRepository):
             }
         if material_type == "group_invite":
             library_id = int(item.get("id") or 0)
-            title = str(item.get("title") or item.get("name") or f"群邀请卡片 {library_id}")
+            title = str(item.get("title") or item.get("name") or f"客户群 {library_id}")
             description = str(item.get("description") or "")
             pic_url = str(item.get("pic_url") or "")
             return {

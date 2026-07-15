@@ -223,7 +223,7 @@
     return `
       <div class="cloud-plan-task-content-summary" data-task-content-summary>
         <strong>话术摘要：</strong><span>${escapeHtml(summary.text)}</span>
-        <strong>素材数量：</strong><span>图片 ${summary.imageCount} / 小程序 ${summary.miniprogramCount} / 附件 ${summary.attachmentCount} / 群邀请 ${summary.groupInviteCount}</span>
+        <strong>内容数量：</strong><span>图片 ${summary.imageCount} / 小程序 ${summary.miniprogramCount} / 附件 ${summary.attachmentCount} / 客户群 ${summary.groupInviteCount}</span>
         <strong>素材明细：</strong><span data-task-material-detail>${summary.imageCount + summary.miniprogramCount + summary.attachmentCount + summary.groupInviteCount ? "素材信息加载中" : "无素材"}</span>
       </div>
     `;

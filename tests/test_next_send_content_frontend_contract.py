@@ -19,7 +19,7 @@ CLOUD_PLAN_TEMPLATE = ROOT / "aicrm_next" / "frontend_compat" / "templates" / "a
 RETIRED_OPERATION_JS = AUTOMATION_STATIC / "automation_operation_orchestration_panel.js"
 RETIRED_AGENT_TEMPLATE_JS = STATIC / "automation_agent_config_templates.js"
 MATERIAL_PICKER_CSS = STATIC / "material_picker.css"
-SEND_CONTENT_ASSET_VERSION = "group-invite-card-20260715"
+SEND_CONTENT_ASSET_VERSION = "group-chat-selector-20260715"
 
 
 def _read(path: Path) -> str:
@@ -132,7 +132,7 @@ def test_material_selection_only_uses_material_picker_contract() -> None:
     picker = _read(STATIC / "material_picker.js")
 
     assert "AICRMMaterialPicker.open" in composer
-    assert "素材选择器未加载，请刷新页面后重试" in composer
+    assert "内容选择器未加载，请刷新页面后重试" in composer
     assert "/api/admin/material-picker/items" in picker
     for source in [composer, picker]:
         assert "/api/admin/image-library" not in source

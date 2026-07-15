@@ -13,7 +13,7 @@ MEDIA_LIBRARY_PAGES = (
     ("/admin/image-library", "图片素材库"),
     ("/admin/miniprogram-library", "小程序素材库"),
     ("/admin/attachment-library", "附件素材库"),
-    ("/admin/group-invite-library", "群邀请卡片库"),
+    ("/admin/group-invite-library", "客户群邀请设置"),
 )
 
 

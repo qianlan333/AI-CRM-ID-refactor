@@ -7,7 +7,7 @@ The canonical material tables are:
 - `image_library` for reusable image material and cached WeCom image media IDs.
 - `miniprogram_library` for reusable mini-program cards, with `thumb_image_id` pointing back to `image_library`.
 - `attachment_library` for reusable attachment material.
-- `group_invite_library` for reusable WeCom `work.weixin.qq.com/gm/...` group invite link cards.
+- `group_invite_library` is a compatibility table that binds a synced customer-group `chat_id` to its WeCom `work.weixin.qq.com/gm/...` native join link. It is not operator-facing material and has no media-ID lifecycle.
 - `image_library_variants` as a generated image thumbnail/preview read model owned by `image_library`.
 
 The shared cross-module contract remains `SendContentPackage`:
@@ -29,10 +29,12 @@ Material usage lineage is exposed as the read-only `material_asset_usage` projec
 Material validation is exposed as `/api/admin/material-assets/validate`; it checks material existence, enabled state, channel compatibility, metadata completeness, and payload safety without writing to business tables.
 This keeps campaign steps, group-ops plan nodes, channel welcome messages, HXC broadcast drafts, and sidebar material views from inventing separate material stores.
 
+For backward compatibility, `material_assets` still projects `group_invite_library` and existing content packages keep `group_invite_library_ids`. New operator-facing UI must use the synced customer-group selector and must not describe these rows as a card library or material library.
+
 The current boundary is intentionally conservative:
 
 - Do not physically merge material tables in PR #15.
 - Do not enable real external storage, CDN publishing, or real WeCom media upload.
 - Keep `image_library_variants` as a cache/read model, not as a canonical source of material metadata.
 - Keep product page slices and other business tables as consumers of `image_library` IDs rather than new media libraries.
-- New material consumers should store only `content_text` plus `image_library_ids`, `miniprogram_library_ids`, `attachment_library_ids`, and `group_invite_library_ids`, then use the send-content/material-picker APIs to read normalized picker shapes.
+- New consumers should store only `content_text` plus `image_library_ids`, `miniprogram_library_ids`, `attachment_library_ids`, and the compatibility `group_invite_library_ids`. Image, mini-program, and attachment rows use material APIs; customer-group selection joins synced group assets to invite-link bindings before returning the compatibility ID.

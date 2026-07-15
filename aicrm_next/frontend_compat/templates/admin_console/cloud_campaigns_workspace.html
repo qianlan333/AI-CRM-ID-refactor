@@ -1,10 +1,10 @@
 {% extends "admin_console/base.html" %}
 
 {% block head_extra %}
-<link rel="stylesheet" href="{{ url_for('static', filename='admin_console/material_picker.css') }}?v=group-invite-card-20260715">
-<link rel="stylesheet" href="{{ url_for('static', filename='admin_console/send_content_composer.css') }}?v=group-invite-card-20260715">
-<script defer src="{{ url_for('static', filename='admin_console/material_picker.js') }}?v=group-invite-card-20260715"></script>
-<script defer src="{{ url_for('static', filename='admin_console/send_content_composer.js') }}?v=group-invite-card-20260715"></script>
+<link rel="stylesheet" href="{{ url_for('static', filename='admin_console/material_picker.css') }}?v=group-chat-selector-20260715">
+<link rel="stylesheet" href="{{ url_for('static', filename='admin_console/send_content_composer.css') }}?v=group-chat-selector-20260715">
+<script defer src="{{ url_for('static', filename='admin_console/material_picker.js') }}?v=group-chat-selector-20260715"></script>
+<script defer src="{{ url_for('static', filename='admin_console/send_content_composer.js') }}?v=group-chat-selector-20260715"></script>
 {% endblock %}
 
 {% block content %}
@@ -330,7 +330,7 @@
     return `
       <div class="cloud-camp-step-content-summary" data-step-content-summary>
         <strong>话术：</strong><span>${escapeHtml(summary.text)}</span>
-        <strong>素材：</strong><span>图片 ${summary.imageCount} / 小程序 ${summary.miniprogramCount} / 附件 ${summary.attachmentCount} / 群邀请 ${summary.groupInviteCount}</span>
+        <strong>内容：</strong><span>图片 ${summary.imageCount} / 小程序 ${summary.miniprogramCount} / 附件 ${summary.attachmentCount} / 客户群 ${summary.groupInviteCount}</span>
       </div>
     `;
   }
@@ -558,7 +558,7 @@
                 ${editBtns}
               </div>
               <div class="step-text">${escapeHtml(contentSummary.text)}</div>
-              <div class="step-materials">图片 ${contentSummary.imageCount} / 小程序 ${contentSummary.miniprogramCount} / 附件 ${contentSummary.attachmentCount} / 群邀请 ${contentSummary.groupInviteCount}</div>
+              <div class="step-materials">图片 ${contentSummary.imageCount} / 小程序 ${contentSummary.miniprogramCount} / 附件 ${contentSummary.attachmentCount} / 客户群 ${contentSummary.groupInviteCount}</div>
             </div>
           `;
         }

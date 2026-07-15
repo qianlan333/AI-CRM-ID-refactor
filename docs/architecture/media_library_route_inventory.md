@@ -18,7 +18,7 @@ Closeout lock status:
 | `/api/admin/attachment-library*` POST/PUT/DELETE/OPTIONS | `next_storage_adapter` | `deletion_locked` | `locked` | `false` | create/upload/update/delete stay guarded and local/fake/real_blocked. |
 | `/api/admin/miniprogram-library*` GET | `next_native` | `deletion_locked` | `locked` | `false` | list/detail resolve to `aicrm_next.media_library.api`. |
 | `/api/admin/miniprogram-library*` POST/PUT/DELETE/OPTIONS | `next_storage_adapter` | `deletion_locked` | `locked` | `false` | create/update/delete/test-resolve stay guarded; real WeCom media upload remains blocked. |
-| `/api/admin/group-invite-library*` GET/POST/PUT/DELETE | `next_native` | `n/a` | `active` | `false` | Stores reusable WeCom gm links and resolves them as link cards without media upload. |
+| `/api/admin/group-invite-library*` GET/POST/PUT/DELETE | `next_native` | `n/a` | `active` | `false` | Compatibility storage for one synced customer-group `chat_id` to one WeCom gm link; the admin page is customer-group invite settings, not a material library. |
 
 Storage and side-effect boundary:
 

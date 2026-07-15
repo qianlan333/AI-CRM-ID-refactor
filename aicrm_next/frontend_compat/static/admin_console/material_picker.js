@@ -3,7 +3,7 @@
     image: "图片",
     miniprogram: "小程序",
     attachment: "PDF/附件",
-    group_invite: "群邀请卡片",
+    group_invite: "客户群",
   };
 
   function escapeHtml(value) {
@@ -25,6 +25,7 @@
       subtitle: String(raw.subtitle || ""),
       thumbnail_url: String(raw.thumbnail_url || ""),
       enabled: raw.enabled !== false,
+      selectable: raw.selectable !== false && raw.enabled !== false,
       mime_type: String(raw.mime_type || metadata.mime_type || ""),
       file_name: String(raw.file_name || metadata.file_name || raw.title || ""),
       file_size: Number(raw.file_size || metadata.file_size || 0),
@@ -32,7 +33,52 @@
     };
   }
 
+  async function fetchJson(url, errorMessage) {
+    const response = await fetch(url, { headers: { Accept: "application/json" } });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || data.ok === false) {
+      throw new Error(data.error || data.detail || errorMessage);
+    }
+    return data;
+  }
+
+  async function fetchGroupChatItems(q) {
+    const groupParams = new URLSearchParams({ keyword: q || "", limit: "200", offset: "0" });
+    const inviteParams = new URLSearchParams({ q: "", enabled_only: "true", limit: "200", offset: "0" });
+    const [groupData, inviteData] = await Promise.all([
+      fetchJson(`/api/admin/automation-conversion/group-ops/groups?${groupParams.toString()}`, "客户群列表加载失败"),
+      fetchJson(`/api/admin/group-invite-library?${inviteParams.toString()}`, "客户群邀请设置加载失败"),
+    ]);
+    const bindings = new Map();
+    (inviteData.items || []).forEach((item) => {
+      const chatId = String((item.chat_id_list || [])[0] || "").trim();
+      if (chatId && !bindings.has(chatId)) bindings.set(chatId, item);
+    });
+    return (groupData.items || []).map((group) => {
+      const chatId = String(group.chat_id || "").trim();
+      const binding = bindings.get(chatId);
+      const ownerName = String(group.owner_name || group.owner_userid || "未识别群主");
+      return normalizeItem({
+        type: "group_invite",
+        library_id: Number(binding?.id || 0),
+        title: String(group.group_name || chatId || "未命名客户群"),
+        subtitle: binding ? `群主：${ownerName} · 已配置邀请链接` : `群主：${ownerName} · 请先配置邀请链接`,
+        enabled: Boolean(binding),
+        selectable: Boolean(binding),
+        metadata: {
+          chat_id: chatId,
+          group_name: String(group.group_name || ""),
+          owner_userid: String(group.owner_userid || ""),
+          owner_name: ownerName,
+          join_url: String(binding?.join_url || ""),
+          binding_status: binding ? "bound" : "unbound",
+        },
+      });
+    });
+  }
+
   async function fetchItems(type, q) {
+    if (type === "group_invite") return fetchGroupChatItems(q);
     const params = new URLSearchParams({ type, q: q || "", enabled_only: "true", limit: "50", offset: "0" });
     const response = await fetch(`/api/admin/material-picker/items?${params.toString()}`, {
       headers: { Accept: "application/json" },
@@ -65,7 +111,7 @@
         <header class="aicrm-material-picker__head">
           <div>
             <h3>${escapeHtml(options.title || `选择${TYPE_LABELS[type]}`)}</h3>
-            <p>最多 ${limit} 个，已选项会高亮显示。</p>
+            <p>${type === "group_invite" ? `选择一个已配置邀请链接的客户群。<a href="/admin/group-invite-library" target="_blank" rel="noopener">管理群邀请设置</a>` : `最多 ${limit} 个，已选项会高亮显示。`}</p>
           </div>
           <button class="aicrm-material-picker__button" type="button" data-picker-close>取消</button>
         </header>
@@ -74,7 +120,7 @@
           <button class="aicrm-material-picker__button is-primary" type="button" data-picker-refresh>搜索</button>
         </div>
         <div class="aicrm-material-picker__body">
-          <div class="aicrm-material-picker__empty" data-picker-empty>正在加载素材...</div>
+          <div class="aicrm-material-picker__empty" data-picker-empty>正在加载${escapeHtml(TYPE_LABELS[type])}...</div>
           <div class="aicrm-material-picker__grid" data-picker-grid></div>
         </div>
       </div>
@@ -95,7 +141,7 @@
     function render() {
       if (!items.length) {
         empty.hidden = false;
-        empty.textContent = "没有可选素材";
+        empty.textContent = type === "group_invite" ? "没有已同步的客户群" : "没有可选素材";
         grid.innerHTML = "";
         return;
       }
@@ -105,7 +151,8 @@
         const thumb = item.thumbnail_url
           ? `<img src="${escapeHtml(item.thumbnail_url)}" alt="">`
           : `<span>${escapeHtml(TYPE_LABELS[item.type] || "素材")}</span>`;
-        return `<button class="aicrm-material-picker__item${selected ? " is-selected" : ""}" type="button" data-picker-id="${item.library_id}">
+        const disabled = !item.selectable || !item.library_id;
+        return `<button class="aicrm-material-picker__item${selected ? " is-selected" : ""}${disabled ? " is-disabled" : ""}" type="button" ${disabled ? "disabled" : `data-picker-id="${item.library_id}"`}>
           <span class="aicrm-material-picker__thumb">${thumb}</span>
           <span class="aicrm-material-picker__title">${escapeHtml(item.title || `${TYPE_LABELS[type]} ${item.library_id}`)}</span>
           <span class="aicrm-material-picker__subtitle">${escapeHtml(item.subtitle || "")}</span>
@@ -115,7 +162,7 @@
 
     async function load() {
       empty.hidden = false;
-      empty.textContent = "正在加载素材...";
+      empty.textContent = `正在加载${TYPE_LABELS[type]}...`;
       grid.innerHTML = "";
       try {
         items = await fetchItems(type, query);

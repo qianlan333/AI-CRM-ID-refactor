@@ -750,14 +750,14 @@
           '<span class="pill">图片 ' + contentPackage.image_library_ids.length + '</span>' +
           '<span class="pill">小程序 ' + contentPackage.miniprogram_library_ids.length + '</span>' +
           '<span class="pill">附件 ' + contentPackage.attachment_library_ids.length + '</span>' +
-          '<span class="pill">群邀请 ' + contentPackage.group_invite_library_ids.length + '</span>';
+          '<span class="pill">客户群 ' + contentPackage.group_invite_library_ids.length + '</span>';
       } else if (summary) {
         summary.innerHTML =
           '<strong>话术：</strong><span>' + escapeHtml(textSummary) + '</span>' +
           '<strong>素材：</strong><span>图片 ' + contentPackage.image_library_ids.length +
           ' / 小程序 ' + contentPackage.miniprogram_library_ids.length +
           ' / 附件 ' + contentPackage.attachment_library_ids.length +
-          ' / 群邀请 ' + contentPackage.group_invite_library_ids.length + '</span>';
+          ' / 客户群 ' + contentPackage.group_invite_library_ids.length + '</span>';
       }
     };
 

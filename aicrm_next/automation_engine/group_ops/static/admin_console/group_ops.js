@@ -924,7 +924,7 @@
     const summary = contentPackageSummary(contentPackage);
     target.innerHTML =
       `<strong>话术：</strong><span>${escapeHtml(summary.text)}</span>` +
-      `<strong>素材：</strong><span>图片 ${summary.imageCount} / 小程序 ${summary.miniprogramCount} / 附件 ${summary.attachmentCount} / 群邀请 ${summary.groupInviteCount}</span>`;
+      `<strong>内容：</strong><span>图片 ${summary.imageCount} / 小程序 ${summary.miniprogramCount} / 附件 ${summary.attachmentCount} / 客户群 ${summary.groupInviteCount}</span>`;
   }
 
   function renderLegacyAttachmentNotice(node) {
@@ -1010,7 +1010,7 @@
               <aside class="group-ops__content-box">
                 <div class="group-ops__content-summary" data-node-content-summary>
                   <strong>话术摘要</strong><span>${escapeHtml(currentContentSummary.text)}</span>
-                  <strong>素材数量</strong><span>图片 ${currentContentSummary.imageCount} / 小程序 ${currentContentSummary.miniprogramCount} / 附件 ${currentContentSummary.attachmentCount} / 群邀请 ${currentContentSummary.groupInviteCount}</span>
+                  <strong>内容数量</strong><span>图片 ${currentContentSummary.imageCount} / 小程序 ${currentContentSummary.miniprogramCount} / 附件 ${currentContentSummary.attachmentCount} / 客户群 ${currentContentSummary.groupInviteCount}</span>
                 </div>
                 <button class="group-ops__button" type="button" data-action="configure-node-content">配置话术和素材</button>
                 ${renderLegacyAttachmentNotice(current)}

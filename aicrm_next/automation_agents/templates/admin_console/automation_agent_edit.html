@@ -1,7 +1,7 @@
 {% extends "admin_console/base.html" %}
 
 {% block head_extra %}
-<link rel="stylesheet" href="{{ url_for('static', filename='admin_console/material_picker.css') }}?v=group-invite-card-20260715">
+<link rel="stylesheet" href="{{ url_for('static', filename='admin_console/material_picker.css') }}?v=group-chat-selector-20260715">
 <style>
   :root {
     --agent-bg: #f4f7fb;
@@ -494,7 +494,7 @@
   <div class="automation-agent-modal" role="dialog" aria-modal="true" aria-labelledby="materialModalTitle">
     <div class="automation-agent-modal-head">
       <h2 class="automation-agent-subtitle" id="materialModalTitle">配置固定素材</h2>
-      <span class="automation-agent-pill" id="assetCount">已选 0 图片 / 0 小程序 / 0 PDF / 0 群邀请</span>
+      <span class="automation-agent-pill" id="assetCount">已选 0 图片 / 0 小程序 / 0 PDF / 0 客户群</span>
     </div>
     <div class="automation-agent-modal-body">
       <div>
@@ -503,7 +503,7 @@
           <button class="automation-agent-token-btn" type="button" data-add-asset="image">+图片</button>
           <button class="automation-agent-token-btn" type="button" data-add-asset="miniprogram">+小程序</button>
           <button class="automation-agent-token-btn" type="button" data-add-asset="attachment">+附件</button>
-          <button class="automation-agent-token-btn" type="button" data-add-asset="group_invite">+群邀请</button>
+          <button class="automation-agent-token-btn" type="button" data-add-asset="group_invite">+选择群聊</button>
         </div>
         <label class="automation-agent-label">已选素材列表</label>
         <div class="automation-agent-selected-list" id="selectedAssets">还没有选择素材</div>
@@ -524,7 +524,7 @@
 {% endblock %}
 
 {% block scripts_extra %}
-<script defer src="{{ url_for('static', filename='admin_console/material_picker.js') }}?v=group-invite-card-20260715"></script>
+<script defer src="{{ url_for('static', filename='admin_console/material_picker.js') }}?v=group-chat-selector-20260715"></script>
 <script>
   (() => {
     const agentApiUrl = {{ automation_agent_api_url | tojson }};
@@ -710,7 +710,7 @@
 
     const renderAssets = () => {
       const counts = materialCounts();
-      els.assetCount.textContent = `已选 ${counts.image} 图片 / ${counts.miniprogram} 小程序 / ${counts.attachment} PDF / ${counts.group_invite} 群邀请`;
+      els.assetCount.textContent = `已选 ${counts.image} 图片 / ${counts.miniprogram} 小程序 / ${counts.attachment} PDF / ${counts.group_invite} 客户群`;
       const rows = [];
       ["image", "miniprogram", "attachment", "group_invite"].forEach((type) => {
         const field = typeField(type);

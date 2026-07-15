@@ -185,12 +185,12 @@ ADMIN_NAV_GROUPS: list[dict[str, Any]] = [
             {"key": "image_library", "label": "图片素材库", "endpoint": "api.admin_image_library_workspace"},
             {"key": "miniprogram_library", "label": "小程序素材库", "endpoint": "api.admin_miniprogram_library_workspace"},
             {"key": "attachment_library", "label": "附件素材库", "endpoint": "api.admin_attachment_library_workspace"},
-            {"key": "group_invite_library", "label": "群邀请卡片库", "endpoint": "api.admin_group_invite_library_workspace"},
         ],
     },
     {
         "title": "配置及后台",
         "items": [
+            {"key": "group_invite_library", "label": "客户群邀请设置", "endpoint": "api.admin_group_invite_library_workspace"},
             {"key": "jobs", "label": "同步任务配置 / 同步任务", "endpoint": "api.admin_jobs"},
             {"key": "push_center", "label": "推送中心", "endpoint": "api.admin_push_center_page"},
             {"key": "internal_events", "label": "事件中心", "endpoint": "api.admin_internal_events_page"},
