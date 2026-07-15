@@ -215,6 +215,7 @@ class InMemoryGroupOpsRepository:
                         "image_library_ids": [],
                         "miniprogram_library_ids": [],
                         "attachment_library_ids": [],
+                        "group_invite_library_ids": [],
                     },
                     "attachments": [],
                     "sort_order": 10,

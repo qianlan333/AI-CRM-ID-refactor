@@ -179,7 +179,26 @@ def test_group_ops_native_message_content_rejects_unsupported_attachment_msgtype
     from aicrm_next.shared.errors import ContractError
 
     with pytest.raises(ContractError, match="attachments msgtype is not supported"):
-        normalize_message_content(text="", attachments=[{"msgtype": "link", "link": {"url": "https://example.invalid"}}])
+        normalize_message_content(text="", attachments=[{"msgtype": "video", "video": {"media_id": "video-1"}}])
+
+
+def test_group_ops_native_message_content_accepts_group_invite_link():
+    from aicrm_next.automation_engine.group_ops.domain import normalize_message_content
+
+    normalized = normalize_message_content(
+        text="",
+        attachments=[{
+            "msgtype": "link",
+            "link": {
+                "title": "点击加入体验群",
+                "url": "https://work.weixin.qq.com/gm/0123456789abcdef0123456789abcdef",
+                "desc": "进群领取资料",
+            },
+        }],
+    )
+
+    assert normalized["attachments"][0]["msgtype"] == "link"
+    assert normalized["attachments"][0]["link"]["title"] == "点击加入体验群"
 
 
 def test_group_ops_node_payload_draft_allows_empty_content():

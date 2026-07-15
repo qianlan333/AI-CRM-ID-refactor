@@ -25,7 +25,14 @@ from .application import (
     UploadImageCommand,
     UpsertMediaItemCommand,
 )
-from .dto import AttachmentUpsertRequest, ImageFromBase64Request, ImageFromUrlRequest, ImageUpsertRequest, MiniprogramUpsertRequest
+from .dto import (
+    AttachmentUpsertRequest,
+    GroupInviteUpsertRequest,
+    ImageFromBase64Request,
+    ImageFromUrlRequest,
+    ImageUpsertRequest,
+    MiniprogramUpsertRequest,
+)
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -355,5 +362,57 @@ def delete_miniprogram(item_id: str) -> dict:
 def test_resolve_miniprogram(item_id: str) -> dict:
     try:
         return _with_contract(TestResolveMiniprogramThumbCommand()(item_id), source_status="wecom_media_plan_or_cache")
+    except Exception as exc:
+        return _error_response(exc)
+
+
+@router.get("/api/admin/group-invite-library")
+def list_group_invites(limit: int = 100, offset: int = 0, enabled_only: bool = True, q: str = "") -> dict:
+    return _with_contract(
+        ListMediaItemsQuery("group_invite")(
+            limit=limit,
+            offset=offset,
+            filters={"enabled_only": enabled_only, "q": q},
+        )
+    )
+
+
+@router.post("/api/admin/group-invite-library")
+def create_group_invite(payload: GroupInviteUpsertRequest) -> dict:
+    try:
+        return _with_contract(
+            UpsertMediaItemCommand("group_invite")(payload),
+            source_status="local_repository_write",
+        )
+    except Exception as exc:
+        return _error_response(exc)
+
+
+@router.get("/api/admin/group-invite-library/{item_id}")
+def get_group_invite(item_id: str) -> dict:
+    try:
+        return _with_contract(GetMediaItemQuery("group_invite")(item_id))
+    except Exception as exc:
+        return _error_response(exc)
+
+
+@router.put("/api/admin/group-invite-library/{item_id}")
+def update_group_invite(item_id: str, payload: GroupInviteUpsertRequest) -> dict:
+    try:
+        return _with_contract(
+            UpsertMediaItemCommand("group_invite")(payload, item_id),
+            source_status="local_repository_write",
+        )
+    except Exception as exc:
+        return _error_response(exc)
+
+
+@router.delete("/api/admin/group-invite-library/{item_id}")
+def delete_group_invite(item_id: str) -> dict:
+    try:
+        return _with_contract(
+            DeleteMediaItemCommand("group_invite")(item_id),
+            source_status="local_delete",
+        )
     except Exception as exc:
         return _error_response(exc)

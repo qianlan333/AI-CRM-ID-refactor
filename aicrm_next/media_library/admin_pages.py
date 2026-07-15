@@ -43,3 +43,14 @@ def admin_attachment_library(request: Request):
         active_endpoint="api.admin_attachment_library_workspace",
     )
     return templates.TemplateResponse(request, "admin_console/attachment_library.html", context)
+
+
+@router.get("/admin/group-invite-library", name="api.admin_group_invite_library_workspace")
+def admin_group_invite_library(request: Request):
+    context = shell_context(
+        request=request,
+        page_title="群邀请卡片库",
+        page_summary="维护可被群发、私信群发、AI 助手、自动化运营和欢迎语复用的企微群邀请卡片。",
+        active_endpoint="api.admin_group_invite_library_workspace",
+    )
+    return templates.TemplateResponse(request, "admin_console/group_invite_library.html", context)

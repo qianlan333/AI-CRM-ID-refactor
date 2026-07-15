@@ -3,6 +3,7 @@
     image: "图片",
     miniprogram: "小程序",
     attachment: "PDF/附件",
+    group_invite: "群邀请卡片",
   };
 
   function escapeHtml(value) {

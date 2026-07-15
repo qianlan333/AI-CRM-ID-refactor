@@ -104,6 +104,7 @@ def _summary(content_package: dict[str, Any]) -> dict[str, int]:
         "image_count": len(content_package.get("image_library_ids") or []),
         "miniprogram_count": len(content_package.get("miniprogram_library_ids") or []),
         "attachment_count": len(content_package.get("attachment_library_ids") or []),
+        "group_invite_count": len(content_package.get("group_invite_library_ids") or []),
     }
 
 

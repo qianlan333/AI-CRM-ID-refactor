@@ -496,6 +496,7 @@ repositories:
     table_writes:
       - attachment_library
       - campaign_steps
+      - group_invite_library
       - image_library
       - image_library_variants
       - miniprogram_library

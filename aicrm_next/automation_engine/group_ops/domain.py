@@ -302,6 +302,7 @@ def _content_package_has_body(content_package: dict[str, Any]) -> bool:
         or list(content_package.get("image_library_ids") or [])
         or list(content_package.get("miniprogram_library_ids") or [])
         or list(content_package.get("attachment_library_ids") or [])
+        or list(content_package.get("group_invite_library_ids") or [])
     )
 
 

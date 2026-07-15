@@ -228,6 +228,7 @@
               <span class="pill gray">图片 0</span>
               <span class="pill gray">小程序 0</span>
               <span class="pill gray">附件 0</span>
+              <span class="pill gray">群邀请 0</span>
             </div>
           </div>
         </div>
@@ -235,6 +236,7 @@
         <input type="hidden" name="welcome_image_library_ids" data-image-ids value="{{ (channel.welcome_image_library_ids or []) | join(',') }}">
         <input type="hidden" name="welcome_miniprogram_library_ids" data-miniprogram-ids value="{{ (channel.welcome_miniprogram_library_ids or []) | join(',') }}">
         <input type="hidden" name="welcome_attachment_library_ids" data-attachment-ids value="{{ (channel.welcome_attachment_library_ids or []) | join(',') }}">
+        <input type="hidden" name="welcome_group_invite_library_ids" data-group-invite-ids value="{{ (channel.welcome_group_invite_library_ids or []) | join(',') }}">
       </section>
 
       <section class="panel" data-channel-panel-content="tag">

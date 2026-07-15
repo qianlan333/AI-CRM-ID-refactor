@@ -1,8 +1,29 @@
 from __future__ import annotations
 
 from typing import Any
+from urllib.parse import urlparse
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
+
+def normalize_group_invite_join_url(value: Any) -> str:
+    url = str(value or "").strip()
+    if not url:
+        return ""
+    parsed = urlparse(url)
+    if parsed.scheme != "https" or parsed.hostname != "work.weixin.qq.com" or not parsed.path.startswith("/gm/"):
+        raise ValueError("群邀请链接必须是 https://work.weixin.qq.com/gm/... 地址")
+    return url
+
+
+def normalize_http_url(value: Any, *, field_name: str) -> str:
+    url = str(value or "").strip()
+    if not url:
+        return ""
+    parsed = urlparse(url)
+    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+        raise ValueError(f"{field_name} 必须是有效的 HTTP(S) 地址")
+    return url
 
 
 class ImageUpsertRequest(BaseModel):
@@ -84,3 +105,52 @@ class MiniprogramUpsertRequest(BaseModel):
                 updated["appid"] = updated.get("app_id")
             return updated
         return values
+
+
+class GroupInviteUpsertRequest(BaseModel):
+    name: str | None = None
+    title: str | None = None
+    description: str | None = None
+    pic_url: str | None = None
+    join_url: str | None = None
+    config_id: str | None = None
+    state: str | None = None
+    chat_id_list: list[str] | None = None
+    auto_create_room: bool | None = None
+    room_base_name: str | None = None
+    room_base_id: int | None = None
+    enabled: bool | None = None
+
+    @field_validator("join_url")
+    @classmethod
+    def validate_join_url(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return normalize_group_invite_join_url(value)
+
+    @field_validator("pic_url")
+    @classmethod
+    def validate_pic_url(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return normalize_http_url(value, field_name="卡片封面链接")
+
+    @field_validator("title")
+    @classmethod
+    def validate_title(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = str(value or "").strip()
+        if len(normalized.encode("utf-8")) > 128:
+            raise ValueError("群邀请卡片标题不能超过 128 字节")
+        return normalized
+
+    @field_validator("description")
+    @classmethod
+    def validate_description(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = str(value or "").strip()
+        if len(normalized.encode("utf-8")) > 512:
+            raise ValueError("群邀请卡片描述不能超过 512 字节")
+        return normalized

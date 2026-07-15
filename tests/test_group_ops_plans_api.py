@@ -384,6 +384,7 @@ def test_standard_plan_nodes_accept_content_package_for_drafts_and_materials(gro
         "image_library_ids": [],
         "miniprogram_library_ids": [],
         "attachment_library_ids": [],
+        "group_invite_library_ids": [],
     }
 
     text_only = group_ops_api_client.post(
@@ -410,6 +411,7 @@ def test_standard_plan_nodes_accept_content_package_for_drafts_and_materials(gro
                 "image_library_ids": [12, "12", 34],
                 "miniprogram_library_ids": [56],
                 "attachment_library_ids": [78, 90],
+                "group_invite_library_ids": [91],
             },
             "sort_order": 30,
             "status": "active",
@@ -424,6 +426,7 @@ def test_standard_plan_nodes_accept_content_package_for_drafts_and_materials(gro
         "image_library_ids": [12, 34],
         "miniprogram_library_ids": [56],
         "attachment_library_ids": [78, 90],
+        "group_invite_library_ids": [91],
     }
 
 

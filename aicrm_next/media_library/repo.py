@@ -17,6 +17,7 @@ from .variants import (
     make_thumbnail_bytes,
     variant_bytes,
 )
+from .dto import normalize_group_invite_join_url, normalize_http_url
 
 
 MEDIA_LIBRARY_BACKEND_ENV = "AICRM_MEDIA_LIBRARY_REPO_BACKEND"
@@ -125,6 +126,26 @@ def _seed() -> dict[str, list[dict[str, Any]]]:
                 "thumb_image_base64": "",
                 "description": "脱敏小程序素材 fixture",
                 "tags": ["fixture"],
+                "enabled": True,
+                "created_at": ts,
+                "updated_at": ts,
+                "deleted": False,
+            }
+        ],
+        "group_invite": [
+            {
+                "id": "group_invite_masked_001",
+                "name": "体验群邀请",
+                "title": "点击加入体验群",
+                "description": "点击卡片进入客户群",
+                "pic_url": "",
+                "join_url": "https://work.weixin.qq.com/gm/fixture0000000000000000000000000",
+                "config_id": "fixture_join_way",
+                "state": "fixture",
+                "chat_id_list": ["wr_fixture_group"],
+                "auto_create_room": True,
+                "room_base_name": "体验群",
+                "room_base_id": 1,
                 "enabled": True,
                 "created_at": ts,
                 "updated_at": ts,
@@ -291,6 +312,8 @@ class InMemoryMediaLibraryRepository:
             fields = ["name", "title", "appid", "pagepath", "page_path"]
         elif kind == "attachment":
             fields = ["name", "file_name", "mime_type"]
+        elif kind == "group_invite":
+            fields = ["name", "title", "description", "join_url", "config_id", "state", "room_base_name"]
         else:
             fields = ["name", "file_name", "description", "category"]
         text = " ".join(str(item.get(field) or "") for field in fields)
@@ -345,6 +368,29 @@ class InMemoryMediaLibraryRepository:
                 "tags": normalize_tags(data.get("tags")),
                 "enabled": bool(data.get("enabled", True)),
             }
+        if kind == "group_invite":
+            title = str(data.get("title") or data.get("name") or "").strip()
+            join_url = normalize_group_invite_join_url(data.get("join_url"))
+            if not title or not join_url:
+                raise ContractError("群邀请卡片缺少必填字段：title, join_url")
+            pic_url = normalize_http_url(data.get("pic_url"), field_name="卡片封面链接")
+            description = str(data.get("description") or "").strip()
+            if len(title.encode("utf-8")) > 128 or len(description.encode("utf-8")) > 512:
+                raise ContractError("群邀请卡片标题或描述超过企微长度限制")
+            return {
+                "name": str(data.get("name") or title).strip(),
+                "title": title,
+                "description": description,
+                "pic_url": pic_url,
+                "join_url": join_url,
+                "config_id": str(data.get("config_id") or "").strip(),
+                "state": str(data.get("state") or "").strip(),
+                "chat_id_list": [str(item).strip() for item in list(data.get("chat_id_list") or []) if str(item).strip()],
+                "auto_create_room": bool(data.get("auto_create_room", True)),
+                "room_base_name": str(data.get("room_base_name") or "").strip(),
+                "room_base_id": int(data["room_base_id"]) if data.get("room_base_id") not in (None, "") else None,
+                "enabled": bool(data.get("enabled", True)),
+            }
         return {
             "name": str(data.get("name") or data.get("file_name") or "附件素材"),
             "file_name": str(data.get("file_name") or "attachment.bin"),
@@ -386,6 +432,27 @@ class InMemoryMediaLibraryRepository:
                 out["thumb_media_id"] = str(data.get("thumb_media_id") or "")
             if "enabled" in data:
                 out["enabled"] = bool(data.get("enabled"))
+            return out
+        if kind == "group_invite":
+            for key in ["name", "title", "description", "config_id", "state", "room_base_name"]:
+                if key in data:
+                    out[key] = str(data.get(key) or "").strip()
+            if "join_url" in data:
+                out["join_url"] = normalize_group_invite_join_url(data.get("join_url"))
+            if "pic_url" in data:
+                out["pic_url"] = normalize_http_url(data.get("pic_url"), field_name="卡片封面链接")
+            if "chat_id_list" in data:
+                out["chat_id_list"] = [str(item).strip() for item in list(data.get("chat_id_list") or []) if str(item).strip()]
+            if "auto_create_room" in data:
+                out["auto_create_room"] = bool(data.get("auto_create_room"))
+            if "room_base_id" in data:
+                out["room_base_id"] = int(data["room_base_id"]) if data.get("room_base_id") not in (None, "") else None
+            if "enabled" in data:
+                out["enabled"] = bool(data.get("enabled"))
+            if "title" in data and not out.get("title"):
+                raise ContractError("群邀请卡片标题不能为空")
+            if "join_url" in data and not out.get("join_url"):
+                raise ContractError("群邀请链接不能为空")
             return out
         if "name" in data:
             out["name"] = str(data.get("name") or "")

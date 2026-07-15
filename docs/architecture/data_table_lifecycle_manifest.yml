@@ -1456,6 +1456,32 @@ tables:
       - tests/test_material_library_table_boundary.py
     notes: Canonical attachment material table used by media library and send-content picker.
 
+  group_invite_library:
+    domain: media_library
+    lifecycle: canonical
+    write_owner: aicrm_next.media_library.postgres_repo
+    read_owners:
+      - aicrm_next.media_library.postgres_repo
+      - aicrm_next.send_content.postgres_repo
+      - aicrm_next.automation_engine.group_ops.material_resolver
+      - aicrm_next.channel_entry.application
+      - campaign/group-ops SendContentPackage consumers
+    replacement: none; canonical reusable WeCom group invite link card table
+    drop_candidate: false
+    drop_after: ""
+    runtime_entrypoints:
+      - group invite library admin API
+      - material picker
+      - SendContentPackage group invite resolution
+      - private/group broadcast material resolution
+      - channel welcome material resolution
+    migration_source: 0117_group_invite_cards
+    guard_tests:
+      - tests/test_data_table_lifecycle_guard.py
+      - tests/test_material_library_table_boundary.py
+      - tests/test_group_invite_library.py
+    notes: Canonical WeCom gm join-link card metadata; resolves to msgtype link and never requires media_id.
+
   wecom_media_leases:
     domain: media_library
     lifecycle: canonical

@@ -10,12 +10,13 @@ from aicrm_next.shared.repository_provider import blocked_production_payload
 from .dto import MaterialPickerListRequest, SendContentPackage, SendContentPreviewRequest
 from .repo import SendContentRepository, build_send_content_repository
 
-_MATERIAL_ASSET_TYPES = ("image", "miniprogram", "attachment")
+_MATERIAL_ASSET_TYPES = ("image", "miniprogram", "attachment", "group_invite")
 _MATERIAL_ASSET_CURSOR_VERSION = 1
 _MATERIAL_FIELD_BY_TYPE = {
     "image": "image_library_ids",
     "miniprogram": "miniprogram_library_ids",
     "attachment": "attachment_library_ids",
+    "group_invite": "group_invite_library_ids",
 }
 _MATERIAL_CHANNEL_COMPATIBILITY = {
     "send_content": set(_MATERIAL_ASSET_TYPES),
@@ -46,13 +47,15 @@ def normalize_send_content_package(
     image_ids = _normalize_ids(content_package.image_library_ids, field_name="image_library_ids", max_count=3)
     miniprogram_ids = _normalize_ids(content_package.miniprogram_library_ids, field_name="miniprogram_library_ids", max_count=1)
     attachment_ids = _normalize_ids(content_package.attachment_library_ids, field_name="attachment_library_ids", max_count=9)
+    group_invite_ids = _normalize_ids(content_package.group_invite_library_ids, field_name="group_invite_library_ids", max_count=1)
     normalized = {
         "content_text": content_text,
         "image_library_ids": image_ids,
         "miniprogram_library_ids": miniprogram_ids,
         "attachment_library_ids": attachment_ids,
+        "group_invite_library_ids": group_invite_ids,
     }
-    if require_body and not any([content_text, image_ids, miniprogram_ids, attachment_ids]):
+    if require_body and not any([content_text, image_ids, miniprogram_ids, attachment_ids, group_invite_ids]):
         raise ContractError("内容包不能为空，请填写文本或选择素材")
     return normalized
 
@@ -95,6 +98,7 @@ class PreviewSendContentPackageQuery:
                     "image_count": len(content_package["image_library_ids"]),
                     "miniprogram_count": len(content_package["miniprogram_library_ids"]),
                     "attachment_count": len(content_package["attachment_library_ids"]),
+                    "group_invite_count": len(content_package["group_invite_library_ids"]),
                 },
                 "materials": materials,
             },
@@ -158,8 +162,8 @@ class ListMaterialAssetsQuery:
         cursor: str = "",
     ) -> dict[str, Any]:
         normalized_type = str(asset_type or "all").strip().lower()
-        if normalized_type not in {"all", "image", "miniprogram", "attachment"}:
-            raise ContractError("素材类型必须是 all、image、miniprogram 或 attachment")
+        if normalized_type not in {"all", *_MATERIAL_ASSET_TYPES}:
+            raise ContractError("素材类型必须是 all、image、miniprogram、attachment 或 group_invite")
 
         limit = max(1, min(int(limit or 50), 100))
         offset = max(0, int(offset or 0))
@@ -465,6 +469,13 @@ def _missing_metadata_fields(material_type: str, material: dict[str, Any], metad
         if int(metadata.get("file_size") or 0) <= 0:
             missing.append("file_size")
         return missing
+    if material_type == "group_invite":
+        missing = []
+        if not str(material.get("title") or "").strip():
+            missing.append("title")
+        if not str(metadata.get("join_url") or "").strip():
+            missing.append("join_url")
+        return missing
     return ["asset_type"]
 
 
@@ -495,7 +506,7 @@ def _parse_material_asset_id(material_asset_id: str) -> tuple[str, int]:
     material_type, separator, source_id_text = raw.partition(":")
     material_type = material_type.strip().lower()
     if not separator or material_type not in _MATERIAL_ASSET_TYPES:
-        raise ContractError("material_asset_id 必须形如 image:12、miniprogram:34 或 attachment:56")
+        raise ContractError("material_asset_id 必须形如 image:12、miniprogram:34、attachment:56 或 group_invite:78")
     try:
         source_id = int(source_id_text)
     except ValueError as exc:
@@ -596,6 +607,7 @@ def _material_asset_item(material_type: str, item: dict[str, Any]) -> dict[str, 
         "image": "image_library",
         "miniprogram": "miniprogram_library",
         "attachment": "attachment_library",
+        "group_invite": "group_invite_library",
     }[material_type]
     return {
         "material_asset_id": f"{material_type}:{library_id}",
@@ -644,6 +656,7 @@ def _preview_materials(repo: SendContentRepository, content_package: dict[str, A
         ("image", "image_library_ids"),
         ("miniprogram", "miniprogram_library_ids"),
         ("attachment", "attachment_library_ids"),
+        ("group_invite", "group_invite_library_ids"),
     ):
         rows = repo.get_materials_by_ids(material_type, list(content_package.get(field) or []))
         materials.extend(

@@ -133,6 +133,30 @@ class PostgresSendContentRepository(SendContentRepository):
                     "thumb_media_id": str(item.get("thumb_media_id") or ""),
                 },
             }
+        if material_type == "group_invite":
+            library_id = int(item.get("id") or 0)
+            title = str(item.get("title") or item.get("name") or f"群邀请卡片 {library_id}")
+            description = str(item.get("description") or "")
+            pic_url = str(item.get("pic_url") or "")
+            return {
+                "type": "group_invite",
+                "library_id": library_id,
+                "title": title,
+                "subtitle": description or "点击卡片直接加入群聊",
+                "thumbnail_url": pic_url,
+                "enabled": bool(item.get("enabled", True)),
+                "metadata": {
+                    "description": description,
+                    "join_url": str(item.get("join_url") or ""),
+                    "pic_url": pic_url,
+                    "config_id": str(item.get("config_id") or ""),
+                    "state": str(item.get("state") or ""),
+                    "chat_id_list": list(item.get("chat_id_list") or []),
+                    "auto_create_room": bool(item.get("auto_create_room", False)),
+                    "room_base_name": str(item.get("room_base_name") or ""),
+                    "room_base_id": item.get("room_base_id"),
+                },
+            }
         library_id = int(item.get("id") or 0)
         mime_type = str(item.get("mime_type") or "")
         file_size = int(item.get("file_size") or 0)
@@ -236,6 +260,7 @@ def _channel_welcome_usage(conn: Any, material_type: str, source_id: int) -> lis
         "image": "welcome_image_library_ids",
         "miniprogram": "welcome_miniprogram_library_ids",
         "attachment": "welcome_attachment_library_ids",
+        "group_invite": "welcome_group_invite_library_ids",
     }
     field_name = field_by_type[material_type]
     columns = ("id", "channel_code", "channel_name", "status", "owner_staff_id", field_name, "updated_at")
@@ -432,4 +457,5 @@ def _package_key(material_type: str) -> str:
         "image": "image_library_ids",
         "miniprogram": "miniprogram_library_ids",
         "attachment": "attachment_library_ids",
+        "group_invite": "group_invite_library_ids",
     }[material_type]

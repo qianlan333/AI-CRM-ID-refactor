@@ -1,0 +1,112 @@
+{% extends "admin_console/base.html" %}
+
+{% block head_extra %}
+<style>
+  .gi-layout { display:grid; grid-template-columns:minmax(0,1.45fr) minmax(320px,.8fr); gap:16px; }
+  .gi-card { background:#fff; border:1px solid #e5e7eb; border-radius:12px; padding:18px; }
+  .gi-toolbar { display:flex; gap:10px; align-items:center; margin-bottom:14px; }
+  .gi-toolbar input { flex:1; }
+  .gi-input, .gi-form input, .gi-form textarea { width:100%; box-sizing:border-box; border:1px solid #d1d5db; border-radius:7px; padding:8px 10px; font:inherit; }
+  .gi-form label { display:block; color:#4b5563; font-size:12px; font-weight:600; margin:12px 0 5px; }
+  .gi-form textarea { min-height:72px; resize:vertical; }
+  .gi-help { color:#6b7280; font-size:12px; line-height:1.55; margin:6px 0 0; }
+  .gi-list { display:grid; gap:10px; }
+  .gi-item { border:1px solid #e5e7eb; border-radius:9px; padding:13px; display:grid; grid-template-columns:64px minmax(0,1fr) auto; gap:12px; align-items:center; }
+  .gi-item img { width:64px; height:52px; object-fit:cover; border-radius:7px; background:#f3f4f6; }
+  .gi-thumb-empty { width:64px; height:52px; border-radius:7px; background:#eef2ff; color:#315bc7; display:grid; place-items:center; font-size:22px; }
+  .gi-title { font-weight:650; color:#111827; }
+  .gi-desc, .gi-url { color:#6b7280; font-size:12px; margin-top:3px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .gi-actions { display:flex; gap:6px; }
+  .gi-btn { border:1px solid #d1d5db; border-radius:7px; background:#fff; padding:7px 11px; cursor:pointer; }
+  .gi-btn.primary { background:#2c5cdb; border-color:#2c5cdb; color:#fff; }
+  .gi-btn.danger { color:#b42318; }
+  .gi-status { min-height:20px; margin-top:10px; font-size:12px; }
+  .gi-status.error { color:#b42318; } .gi-status.success { color:#087443; }
+  .gi-checkbox { display:flex !important; align-items:center; gap:7px; font-weight:500 !important; }
+  .gi-checkbox input { width:auto; }
+  @media (max-width: 900px) { .gi-layout { grid-template-columns:1fr; } }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="gi-layout" data-group-invite-library>
+  <section class="gi-card" aria-labelledby="gi-list-title">
+    <h2 id="gi-list-title">卡片列表</h2>
+    <div class="gi-toolbar">
+      <input class="gi-input" id="gi-search" type="search" placeholder="搜索名称、标题或描述">
+      <label class="gi-checkbox"><input id="gi-disabled" type="checkbox"> 含已停用</label>
+      <button class="gi-btn" id="gi-refresh" type="button">刷新</button>
+    </div>
+    <div class="gi-list" id="gi-list"><p class="gi-help">加载中…</p></div>
+  </section>
+
+  <section class="gi-card gi-form" aria-labelledby="gi-form-title">
+    <h2 id="gi-form-title">新增群邀请卡片</h2>
+    <input id="gi-id" type="hidden">
+    <label for="gi-name">素材名称</label><input id="gi-name" placeholder="如：7 月体验群邀请">
+    <label for="gi-title">卡片标题 *</label><input id="gi-title" maxlength="128" placeholder="点击加入体验群">
+    <label for="gi-description">卡片描述</label><textarea id="gi-description" maxlength="512" placeholder="进群领取资料并参加直播"></textarea>
+    <label for="gi-join-url">企微入群链接 *</label><input id="gi-join-url" placeholder="https://work.weixin.qq.com/gm/…">
+    <p class="gi-help">仅接受企业微信客户群「加入群聊」链接（work.weixin.qq.com/gm/…）。链接本身不是 media_id，不受临时素材失效影响。</p>
+    <label for="gi-pic-url">卡片封面 URL</label><input id="gi-pic-url" placeholder="https://…/cover.png">
+    <label for="gi-config-id">企微入群方式 config_id</label><input id="gi-config-id" placeholder="可选，用于追踪来源">
+    <label for="gi-state">渠道 state</label><input id="gi-state" placeholder="可选，用于来源归因">
+    <label class="gi-checkbox"><input id="gi-enabled" type="checkbox" checked> 启用</label>
+    <div class="gi-actions" style="margin-top:16px">
+      <button class="gi-btn primary" id="gi-save" type="button">保存</button>
+      <button class="gi-btn" id="gi-reset" type="button">清空</button>
+    </div>
+    <div class="gi-status" id="gi-status" role="status"></div>
+  </section>
+</div>
+
+<script>
+(() => {
+  const api = '/api/admin/group-invite-library';
+  const $ = (id) => document.getElementById(id);
+  const fields = ['name', 'title', 'description', 'join-url', 'pic-url', 'config-id', 'state'];
+  let timer = null;
+  const escapeHtml = (value) => String(value ?? '').replace(/[&<>'"]/g, (char) => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[char]));
+  const status = (message, kind='') => { $('gi-status').textContent = message; $('gi-status').className = `gi-status ${kind}`; };
+  const reset = () => {
+    $('gi-id').value = ''; fields.forEach((field) => { $(`gi-${field}`).value = ''; });
+    $('gi-enabled').checked = true; $('gi-form-title').textContent = '新增群邀请卡片'; status('');
+  };
+  const edit = (item) => {
+    $('gi-id').value = item.id; fields.forEach((field) => { const key = field.replaceAll('-', '_'); $(`gi-${field}`).value = item[key] || ''; });
+    $('gi-enabled').checked = item.enabled !== false; $('gi-form-title').textContent = '编辑群邀请卡片'; window.scrollTo({top:0, behavior:'smooth'});
+  };
+  const load = async () => {
+    const params = new URLSearchParams({enabled_only: String(!$('gi-disabled').checked), q: $('gi-search').value.trim()});
+    const response = await fetch(`${api}?${params}`); const payload = await response.json();
+    if (!response.ok || payload.ok === false) throw new Error(payload.error || '加载失败');
+    const items = payload.items || [];
+    $('gi-list').innerHTML = items.length ? items.map((item, index) => `
+      <article class="gi-item">
+        ${item.pic_url ? `<img src="${escapeHtml(item.pic_url)}" alt="">` : '<div class="gi-thumb-empty">群</div>'}
+        <div><div class="gi-title">${escapeHtml(item.title || item.name)}${item.enabled === false ? '（已停用）' : ''}</div><div class="gi-desc">${escapeHtml(item.description || '点击卡片直接加入群聊')}</div><div class="gi-url">${escapeHtml(item.join_url)}</div></div>
+        <div class="gi-actions"><button class="gi-btn" data-edit="${index}">编辑</button><button class="gi-btn danger" data-delete="${escapeHtml(item.id)}">删除</button></div>
+      </article>`).join('') : '<p class="gi-help">暂无群邀请卡片。</p>';
+    $('gi-list').querySelectorAll('[data-edit]').forEach((button) => button.addEventListener('click', () => edit(items[Number(button.dataset.edit)])));
+    $('gi-list').querySelectorAll('[data-delete]').forEach((button) => button.addEventListener('click', async () => {
+      if (!window.confirm('确定删除这张群邀请卡片？')) return;
+      const response = await fetch(`${api}/${encodeURIComponent(button.dataset.delete)}`, {method:'DELETE'}); const payload = await response.json();
+      if (!response.ok || payload.ok === false) return status(payload.error || '删除失败', 'error');
+      status('删除成功', 'success'); await load();
+    }));
+  };
+  $('gi-save').addEventListener('click', async () => {
+    const id = $('gi-id').value;
+    const body = {name:$('gi-name').value.trim(), title:$('gi-title').value.trim(), description:$('gi-description').value.trim(), join_url:$('gi-join-url').value.trim(), pic_url:$('gi-pic-url').value.trim(), config_id:$('gi-config-id').value.trim(), state:$('gi-state').value.trim(), enabled:$('gi-enabled').checked};
+    status('保存中…');
+    const response = await fetch(id ? `${api}/${encodeURIComponent(id)}` : api, {method:id ? 'PUT' : 'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)}); const payload = await response.json();
+    if (!response.ok || payload.ok === false) return status(payload.error || payload.detail || '保存失败', 'error');
+    status('保存成功', 'success'); reset(); await load();
+  });
+  $('gi-reset').addEventListener('click', reset); $('gi-refresh').addEventListener('click', () => load().catch((error) => status(error.message, 'error')));
+  $('gi-disabled').addEventListener('change', () => load().catch((error) => status(error.message, 'error')));
+  $('gi-search').addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(() => load().catch((error) => status(error.message, 'error')), 250); });
+  load().catch((error) => status(error.message, 'error'));
+})();
+</script>
+{% endblock %}

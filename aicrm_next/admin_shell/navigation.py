@@ -87,6 +87,10 @@ ADMIN_ROUTE_REGISTRY: dict[str, AdminRoute] = {
         "api.admin_attachment_library_workspace",
         "/admin/attachment-library",
     ),
+    "api.admin_group_invite_library_workspace": AdminRoute(
+        "api.admin_group_invite_library_workspace",
+        "/admin/group-invite-library",
+    ),
     "api.admin_config": AdminRoute("api.admin_config", "/admin/config"),
     "api.admin_config_app_settings": AdminRoute("api.admin_config_app_settings", "/admin/config/app-settings"),
     "api.admin_api_docs": AdminRoute("api.admin_api_docs", "/admin/api-docs"),
@@ -181,6 +185,7 @@ ADMIN_NAV_GROUPS: list[dict[str, Any]] = [
             {"key": "image_library", "label": "图片素材库", "endpoint": "api.admin_image_library_workspace"},
             {"key": "miniprogram_library", "label": "小程序素材库", "endpoint": "api.admin_miniprogram_library_workspace"},
             {"key": "attachment_library", "label": "附件素材库", "endpoint": "api.admin_attachment_library_workspace"},
+            {"key": "group_invite_library", "label": "群邀请卡片库", "endpoint": "api.admin_group_invite_library_workspace"},
         ],
     },
     {

@@ -11616,6 +11616,106 @@ routes:
   rate_limit: authenticated
   principal_types:
   - human
+- path: /api/admin/group-invite-library
+  methods:
+  - GET
+  route_name: list_group_invites
+  capability_owner: media_library
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: none
+  data_source: read_model
+  requires_auth: true
+  rollback: previous_release
+  audience: admin
+  auth_scheme: human_session
+  capability: admin_read
+  access_scope: global
+  pii_level: internal
+  csrf: false
+  rate_limit: authenticated
+  principal_types:
+  - human
+- path: /api/admin/group-invite-library
+  methods:
+  - POST
+  route_name: create_group_invite
+  capability_owner: media_library
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: none
+  data_source: command
+  requires_auth: true
+  rollback: previous_release
+  audience: admin
+  auth_scheme: human_session
+  capability: manage_content
+  access_scope: global
+  pii_level: internal
+  csrf: true
+  rate_limit: authenticated
+  principal_types:
+  - human
+- path: /api/admin/group-invite-library/{item_id}
+  methods:
+  - GET
+  route_name: get_group_invite
+  capability_owner: media_library
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: none
+  data_source: read_model
+  requires_auth: true
+  rollback: previous_release
+  audience: admin
+  auth_scheme: human_session
+  capability: admin_read
+  access_scope: global
+  pii_level: internal
+  csrf: false
+  rate_limit: authenticated
+  principal_types:
+  - human
+- path: /api/admin/group-invite-library/{item_id}
+  methods:
+  - PUT
+  route_name: update_group_invite
+  capability_owner: media_library
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: none
+  data_source: command
+  requires_auth: true
+  rollback: previous_release
+  audience: admin
+  auth_scheme: human_session
+  capability: manage_content
+  access_scope: global
+  pii_level: internal
+  csrf: true
+  rate_limit: authenticated
+  principal_types:
+  - human
+- path: /api/admin/group-invite-library/{item_id}
+  methods:
+  - DELETE
+  route_name: delete_group_invite
+  capability_owner: media_library
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: none
+  data_source: command
+  requires_auth: true
+  rollback: previous_release
+  audience: admin
+  auth_scheme: human_session
+  capability: manage_content
+  access_scope: global
+  pii_level: internal
+  csrf: true
+  rate_limit: authenticated
+  principal_types:
+  - human
 - path: /admin/image-library
   methods:
   - GET
@@ -11660,6 +11760,26 @@ routes:
   methods:
   - GET
   route_name: api.admin_attachment_library_workspace
+  capability_owner: media_library
+  runtime_owner: ai_crm_next
+  layer: admin_page
+  external_effects: none
+  data_source: read_model
+  requires_auth: true
+  rollback: previous_release
+  audience: admin
+  auth_scheme: human_session
+  capability: admin_read
+  access_scope: global
+  pii_level: internal
+  csrf: false
+  rate_limit: authenticated
+  principal_types:
+  - human
+- path: /admin/group-invite-library
+  methods:
+  - GET
+  route_name: api.admin_group_invite_library_workspace
   capability_owner: media_library
   runtime_owner: ai_crm_next
   layer: admin_page

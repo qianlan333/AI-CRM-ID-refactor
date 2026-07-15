@@ -677,7 +677,7 @@
       "accessor": "os.getenv",
       "file": "aicrm_next/media_library/api.py",
       "key": "AICRM_NEXT_MEDIA_STORAGE_MODE",
-      "line": 35
+      "line": 42
     },
     {
       "accessor": "os.getenv",
@@ -785,7 +785,7 @@
       "accessor": "os.getenv",
       "file": "aicrm_next/media_library/api.py",
       "key": "AICRM_NEXT_WECOM_MEDIA_MODE",
-      "line": 36
+      "line": 43
     },
     {
       "accessor": "os.getenv",
@@ -1097,7 +1097,7 @@
       "accessor": "os.getenv",
       "file": "aicrm_next/background_jobs/broadcast_queue_worker.py",
       "key": "BROADCAST_QUEUE_LEASE_SECONDS",
-      "line": 998
+      "line": 1020
     },
     {
       "accessor": "os.getenv",
@@ -1157,13 +1157,13 @@
       "accessor": "os.getenv",
       "file": "aicrm_next/cloud_orchestrator/campaigns_read.py",
       "key": "DATABASE_URL",
-      "line": 175
+      "line": 177
     },
     {
       "accessor": "os.getenv",
       "file": "aicrm_next/cloud_orchestrator/repository.py",
       "key": "DATABASE_URL",
-      "line": 346
+      "line": 348
     },
     {
       "accessor": "os.getenv",
@@ -2015,13 +2015,13 @@
       "accessor": "os.getenv",
       "file": "aicrm_next/channel_entry/application.py",
       "key": "WORKER_RELEASE_SHA",
-      "line": 969
+      "line": 976
     },
     {
       "accessor": "os.getenv",
       "file": "aicrm_next/channel_entry/application.py",
       "key": "WORKER_RELEASE_SHA",
-      "line": 1187
+      "line": 1194
     },
     {
       "accessor": "os.getenv",
@@ -2871,7 +2871,7 @@
     }
   ],
   "migration_heads": [
-    "0116_questionnaire_operations_config"
+    "0117_group_invite_cards"
   ],
   "openapi_components": {
     "schemas": {
@@ -3794,6 +3794,147 @@
           }
         },
         "title": "ExportPreviewRequest",
+        "type": "object"
+      },
+      "GroupInviteUpsertRequest": {
+        "properties": {
+          "auto_create_room": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Auto Create Room"
+          },
+          "chat_id_list": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Chat Id List"
+          },
+          "config_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Config Id"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Enabled"
+          },
+          "join_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Join Url"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "pic_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pic Url"
+          },
+          "room_base_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Room Base Id"
+          },
+          "room_base_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Room Base Name"
+          },
+          "state": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "State"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          }
+        },
+        "title": "GroupInviteUpsertRequest",
         "type": "object"
       },
       "GroupOpsBindGroupRequest": {
@@ -7034,6 +7175,33 @@
       "operation_id": "api.admin_delivery_lineage_page:GET:/admin/delivery-lineage",
       "path": "/admin/delivery-lineage",
       "route_group": "admin_shell"
+    },
+    {
+      "capability_owner": "media_library",
+      "contract": {
+        "parameters": [],
+        "request_body": null,
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        }
+      },
+      "endpoint": "aicrm_next.media_library.admin_pages.admin_group_invite_library",
+      "include_in_schema": true,
+      "kind": "page",
+      "methods": [
+        "GET"
+      ],
+      "name": "api.admin_group_invite_library_workspace",
+      "operation_id": "api.admin_group_invite_library_workspace:GET:/admin/group-invite-library",
+      "path": "/admin/group-invite-library",
+      "route_group": "media_library_admin_pages"
     },
     {
       "capability_owner": "admin_shell",
@@ -19471,6 +19639,300 @@
       "operation_id": "external_effect_troubleshooting_summary:GET:/api/admin/external-effects/troubleshooting/summary",
       "path": "/api/admin/external-effects/troubleshooting/summary",
       "route_group": "external_effects"
+    },
+    {
+      "capability_owner": "media_library",
+      "contract": {
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "enabled_only",
+            "required": false,
+            "schema": {
+              "default": true,
+              "title": "Enabled Only",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "Q",
+              "type": "string"
+            }
+          }
+        ],
+        "request_body": null,
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response List Group Invites Api Admin Group Invite Library Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        }
+      },
+      "endpoint": "aicrm_next.media_library.api.list_group_invites",
+      "include_in_schema": true,
+      "kind": "api",
+      "methods": [
+        "GET"
+      ],
+      "name": "list_group_invites",
+      "operation_id": "list_group_invites:GET:/api/admin/group-invite-library",
+      "path": "/api/admin/group-invite-library",
+      "route_group": "media_library"
+    },
+    {
+      "capability_owner": "media_library",
+      "contract": {
+        "parameters": [],
+        "request_body": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GroupInviteUpsertRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Create Group Invite Api Admin Group Invite Library Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        }
+      },
+      "endpoint": "aicrm_next.media_library.api.create_group_invite",
+      "include_in_schema": true,
+      "kind": "api",
+      "methods": [
+        "POST"
+      ],
+      "name": "create_group_invite",
+      "operation_id": "create_group_invite:POST:/api/admin/group-invite-library",
+      "path": "/api/admin/group-invite-library",
+      "route_group": "media_library"
+    },
+    {
+      "capability_owner": "media_library",
+      "contract": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "item_id",
+            "required": true,
+            "schema": {
+              "title": "Item Id",
+              "type": "string"
+            }
+          }
+        ],
+        "request_body": null,
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Delete Group Invite Api Admin Group Invite Library  Item Id  Delete",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        }
+      },
+      "endpoint": "aicrm_next.media_library.api.delete_group_invite",
+      "include_in_schema": true,
+      "kind": "api",
+      "methods": [
+        "DELETE"
+      ],
+      "name": "delete_group_invite",
+      "operation_id": "delete_group_invite:DELETE:/api/admin/group-invite-library/{item_id}",
+      "path": "/api/admin/group-invite-library/{item_id}",
+      "route_group": "media_library"
+    },
+    {
+      "capability_owner": "media_library",
+      "contract": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "item_id",
+            "required": true,
+            "schema": {
+              "title": "Item Id",
+              "type": "string"
+            }
+          }
+        ],
+        "request_body": null,
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Group Invite Api Admin Group Invite Library  Item Id  Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        }
+      },
+      "endpoint": "aicrm_next.media_library.api.get_group_invite",
+      "include_in_schema": true,
+      "kind": "api",
+      "methods": [
+        "GET"
+      ],
+      "name": "get_group_invite",
+      "operation_id": "get_group_invite:GET:/api/admin/group-invite-library/{item_id}",
+      "path": "/api/admin/group-invite-library/{item_id}",
+      "route_group": "media_library"
+    },
+    {
+      "capability_owner": "media_library",
+      "contract": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "item_id",
+            "required": true,
+            "schema": {
+              "title": "Item Id",
+              "type": "string"
+            }
+          }
+        ],
+        "request_body": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GroupInviteUpsertRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Update Group Invite Api Admin Group Invite Library  Item Id  Put",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        }
+      },
+      "endpoint": "aicrm_next.media_library.api.update_group_invite",
+      "include_in_schema": true,
+      "kind": "api",
+      "methods": [
+        "PUT"
+      ],
+      "name": "update_group_invite",
+      "operation_id": "update_group_invite:PUT:/api/admin/group-invite-library/{item_id}",
+      "path": "/api/admin/group-invite-library/{item_id}",
+      "route_group": "media_library"
     },
     {
       "capability_owner": "growth_orchestration",
@@ -44784,6 +45246,22 @@
       ],
       "table": "group_chats",
       "write_owner": "aicrm_next.automation_engine.group_ops"
+    },
+    {
+      "domain": "media_library",
+      "drop_candidate": false,
+      "lifecycle": "canonical",
+      "migration_source": "0117_group_invite_cards",
+      "pii_level": "",
+      "read_owners": [
+        "aicrm_next.automation_engine.group_ops.material_resolver",
+        "aicrm_next.channel_entry.application",
+        "aicrm_next.media_library.postgres_repo",
+        "aicrm_next.send_content.postgres_repo",
+        "campaign/group-ops SendContentPackage consumers"
+      ],
+      "table": "group_invite_library",
+      "write_owner": "aicrm_next.media_library.postgres_repo"
     },
     {
       "domain": "group_ops",
