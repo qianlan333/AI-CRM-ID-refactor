@@ -165,6 +165,53 @@ def test_group_sync_refreshes_stale_admin_candidate_details():
     assert "included_admin_groups_from_refreshed_candidates=1" in response["warnings"]
 
 
+def test_group_sync_recovers_owned_group_when_legacy_candidate_owner_is_stale():
+    from aicrm_next.automation_engine.group_ops.application import SyncGroupOpsGroupsCommand
+    from aicrm_next.automation_engine.group_ops.dto import GroupOpsGroupSyncRequest
+    from aicrm_next.automation_engine.group_ops.repo import InMemoryGroupOpsRepository
+
+    class CurrentOwnerAdapter:
+        def list_group_chats(self, *, owner_userid: str, limit: int = 100, cursor: str = ""):
+            return {"ok": True, "mode": "production", "groups": [], "next_cursor": "", "warnings": [], "skipped_count": 0}
+
+        def get_group_chat(self, *, chat_id: str, need_name: int = 1, owner_userid: str = ""):
+            assert chat_id == "wrbNXyCwAAm0Vx7_OVQ_-PkT6Exeg8pg"
+            return {
+                "ok": True,
+                "group": {
+                    "chat_id": chat_id,
+                    "group_name": "老黄的AI+进化同行圈",
+                    "owner_userid": "HuangYouCan",
+                    "owner_name": "HuangYouCan",
+                    "admin_userids": ["ShangZiYi", "ZhaoYanFang"],
+                    "internal_member_count": 5,
+                    "external_member_count": 110,
+                    "status": "active",
+                },
+            }
+
+    repo = InMemoryGroupOpsRepository(seed_groups=False)
+    repo.upsert_group_asset(
+        {
+            "chat_id": "wrbNXyCwAAm0Vx7_OVQ_-PkT6Exeg8pg",
+            "group_name": "旧缓存群名",
+            "owner_userid": "QianLan",
+            "owner_name": "QianLan",
+            "status": "active",
+        }
+    )
+
+    response = SyncGroupOpsGroupsCommand(repo=repo, sync_adapter=CurrentOwnerAdapter())(
+        GroupOpsGroupSyncRequest(owner_userid="HuangYouCan", limit=10, operator="pytest")
+    )
+
+    assert response["synced_count"] == 1
+    assert response["items"][0]["group_name"] == "老黄的AI+进化同行圈"
+    assert response["items"][0]["owner_userid"] == "HuangYouCan"
+    assert response["items"][0]["internal_member_count"] + response["items"][0]["external_member_count"] == 115
+    assert "included_admin_groups_from_refreshed_candidates=1" in response["warnings"]
+
+
 def test_group_sync_binding_does_not_prevalidate_cached_owner(group_ops_api_client, monkeypatch):
     from aicrm_next.automation_engine.group_ops.repo import reset_group_ops_fixture_state
 
