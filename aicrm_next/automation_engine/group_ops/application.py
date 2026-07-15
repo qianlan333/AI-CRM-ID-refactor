@@ -579,7 +579,7 @@ class PreviewGroupOpsOwnerGroupsSyncCommand:
             repo=repo,
             adapter=adapter,
             owner_userid=owner,
-            known_groups=[*groups, *extra_groups],
+            known_groups=groups,
             limit=sync_limit,
         )
         groups = _merge_group_sync_items(groups, [*extra_groups, *refreshed_groups])

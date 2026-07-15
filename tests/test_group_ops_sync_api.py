@@ -197,9 +197,11 @@ def test_group_sync_recovers_owned_group_when_legacy_candidate_owner_is_stale():
             "group_name": "旧缓存群名",
             "owner_userid": "QianLan",
             "owner_name": "QianLan",
+            "admin_userids": ["HuangYouCan"],
             "status": "active",
         }
     )
+    assert repo.list_admin_group_assets("HuangYouCan")[0]["group_name"] == "旧缓存群名"
 
     response = SyncGroupOpsGroupsCommand(repo=repo, sync_adapter=CurrentOwnerAdapter())(
         GroupOpsGroupSyncRequest(owner_userid="HuangYouCan", limit=10, operator="pytest")
