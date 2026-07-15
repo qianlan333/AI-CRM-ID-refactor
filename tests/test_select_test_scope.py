@@ -222,11 +222,13 @@ def test_service_period_change_selects_service_period_slice() -> None:
     assert "tests/test_service_period_application.py" in result["python_tests"]
     assert "tests/test_service_period_h5_payment.py" in result["python_tests"]
     assert "tests/test_service_period_frontend_contract.py" in result["python_tests"]
+    assert "tests/test_service_period_member_grid.py" in result["python_tests"]
     assert "tests/test_service_period_schema.py" in result["python_tests"]
     assert "tests/test_router_registry_contract.py" in result["python_tests"]
-    assert result["needs_postgres"] is False
-    assert result["architecture_gate"] == "fast"
-    assert result["needs_full_ci"] is False
+    assert "tests/frontend/service_period_member_grid.test.mjs" in result["frontend_tests"]
+    assert result["needs_postgres"] is True
+    assert result["architecture_gate"] == "full"
+    assert result["needs_full_ci"] is True
 
 
 def test_huangyoucan_usage_projection_has_permanent_full_pg_scope() -> None:

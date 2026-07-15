@@ -2898,7 +2898,7 @@
     }
   ],
   "migration_heads": [
-    "0119_group_invite_bindings"
+    "0120_service_period_member_views"
   ],
   "openapi_components": {
     "schemas": {
@@ -28460,6 +28460,326 @@
               "title": "Service Product Id",
               "type": "string"
             }
+          }
+        ],
+        "request_body": null,
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Query Service Period Member Grid Api Admin Service Period Products  Service Product Id  Member Grid Query Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        }
+      },
+      "endpoint": "aicrm_next.service_period.api.query_service_period_member_grid",
+      "include_in_schema": true,
+      "kind": "api",
+      "methods": [
+        "POST"
+      ],
+      "name": "query_service_period_member_grid",
+      "operation_id": "query_service_period_member_grid:POST:/api/admin/service-period-products/{service_product_id}/member-grid/query",
+      "path": "/api/admin/service-period-products/{service_product_id}/member-grid/query",
+      "route_group": "service_period"
+    },
+    {
+      "capability_owner": "service_period",
+      "contract": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "service_product_id",
+            "required": true,
+            "schema": {
+              "title": "Service Product Id",
+              "type": "string"
+            }
+          }
+        ],
+        "request_body": null,
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Service Period Member Grid Schema Api Admin Service Period Products  Service Product Id  Member Grid Schema Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        }
+      },
+      "endpoint": "aicrm_next.service_period.api.service_period_member_grid_schema",
+      "include_in_schema": true,
+      "kind": "api",
+      "methods": [
+        "GET"
+      ],
+      "name": "service_period_member_grid_schema",
+      "operation_id": "service_period_member_grid_schema:GET:/api/admin/service-period-products/{service_product_id}/member-grid/schema",
+      "path": "/api/admin/service-period-products/{service_product_id}/member-grid/schema",
+      "route_group": "service_period"
+    },
+    {
+      "capability_owner": "service_period",
+      "contract": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "service_product_id",
+            "required": true,
+            "schema": {
+              "title": "Service Product Id",
+              "type": "string"
+            }
+          }
+        ],
+        "request_body": null,
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response List Service Period Member Views Api Admin Service Period Products  Service Product Id  Member Views Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        }
+      },
+      "endpoint": "aicrm_next.service_period.api.list_service_period_member_views",
+      "include_in_schema": true,
+      "kind": "api",
+      "methods": [
+        "GET"
+      ],
+      "name": "list_service_period_member_views",
+      "operation_id": "list_service_period_member_views:GET:/api/admin/service-period-products/{service_product_id}/member-views",
+      "path": "/api/admin/service-period-products/{service_product_id}/member-views",
+      "route_group": "service_period"
+    },
+    {
+      "capability_owner": "service_period",
+      "contract": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "service_product_id",
+            "required": true,
+            "schema": {
+              "title": "Service Product Id",
+              "type": "string"
+            }
+          }
+        ],
+        "request_body": null,
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        }
+      },
+      "endpoint": "aicrm_next.service_period.api.create_service_period_member_view",
+      "include_in_schema": true,
+      "kind": "api",
+      "methods": [
+        "POST"
+      ],
+      "name": "create_service_period_member_view",
+      "operation_id": "create_service_period_member_view:POST:/api/admin/service-period-products/{service_product_id}/member-views",
+      "path": "/api/admin/service-period-products/{service_product_id}/member-views",
+      "route_group": "service_period"
+    },
+    {
+      "capability_owner": "service_period",
+      "contract": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "service_product_id",
+            "required": true,
+            "schema": {
+              "title": "Service Product Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "view_id",
+            "required": true,
+            "schema": {
+              "title": "View Id",
+              "type": "string"
+            }
+          }
+        ],
+        "request_body": null,
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Delete Service Period Member View Api Admin Service Period Products  Service Product Id  Member Views  View Id  Delete",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        }
+      },
+      "endpoint": "aicrm_next.service_period.api.delete_service_period_member_view",
+      "include_in_schema": true,
+      "kind": "api",
+      "methods": [
+        "DELETE"
+      ],
+      "name": "delete_service_period_member_view",
+      "operation_id": "delete_service_period_member_view:DELETE:/api/admin/service-period-products/{service_product_id}/member-views/{view_id}",
+      "path": "/api/admin/service-period-products/{service_product_id}/member-views/{view_id}",
+      "route_group": "service_period"
+    },
+    {
+      "capability_owner": "service_period",
+      "contract": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "service_product_id",
+            "required": true,
+            "schema": {
+              "title": "Service Product Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "view_id",
+            "required": true,
+            "schema": {
+              "title": "View Id",
+              "type": "string"
+            }
+          }
+        ],
+        "request_body": null,
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Update Service Period Member View Api Admin Service Period Products  Service Product Id  Member Views  View Id  Put",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        }
+      },
+      "endpoint": "aicrm_next.service_period.api.update_service_period_member_view",
+      "include_in_schema": true,
+      "kind": "api",
+      "methods": [
+        "PUT"
+      ],
+      "name": "update_service_period_member_view",
+      "operation_id": "update_service_period_member_view:PUT:/api/admin/service-period-products/{service_product_id}/member-views/{view_id}",
+      "path": "/api/admin/service-period-products/{service_product_id}/member-views/{view_id}",
+      "route_group": "service_period"
+    },
+    {
+      "capability_owner": "service_period",
+      "contract": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "service_product_id",
+            "required": true,
+            "schema": {
+              "title": "Service Product Id",
+              "type": "string"
+            }
           },
           {
             "in": "query",
@@ -46787,6 +47107,18 @@
         "aicrm_next.service_period"
       ],
       "table": "service_period_huangyoucan_usage_sync_runs",
+      "write_owner": "aicrm_next.service_period"
+    },
+    {
+      "domain": "service_period",
+      "drop_candidate": false,
+      "lifecycle": "canonical",
+      "migration_source": "0120_service_period_member_views",
+      "pii_level": "internal_contact",
+      "read_owners": [
+        "aicrm_next.service_period"
+      ],
+      "table": "service_period_member_views",
       "write_owner": "aicrm_next.service_period"
     },
     {

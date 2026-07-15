@@ -683,6 +683,17 @@ repositories:
     capability_owner: aicrm_next.send_content
     table_reads: []
     table_writes: []
+  aicrm_next/service_period/member_grid_repo.py:
+    capability_owner: aicrm_next.service_period
+    table_reads:
+      - crm_user_identity
+      - service_period_entitlements
+      - service_period_member_views
+      - wechat_pay_orders
+      - wecom_external_contact_follow_users
+      - wecom_external_contact_identity_map
+    table_writes:
+      - service_period_member_views
   aicrm_next/service_period/repo.py:
     capability_owner: aicrm_next.service_period
     table_reads:
