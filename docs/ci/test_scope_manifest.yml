@@ -684,6 +684,7 @@
       "name": "ai_assist_external_campaigns",
       "paths": [
         "aicrm_next/ai_assist/**",
+        "aicrm_next/send_targets/**",
         "aicrm_next/cloud_orchestrator/api.py",
         "aicrm_next/cloud_orchestrator/review_plans.py",
         "tests/test_ai_assist_external_campaigns.py",
