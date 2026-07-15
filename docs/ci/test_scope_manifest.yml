@@ -1714,6 +1714,7 @@
       "name": "docs_only",
       "paths": [
         "docs/**",
+        "design-qa.md",
         "README.md",
         "AGENTS.md"
       ],

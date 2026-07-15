@@ -131,6 +131,18 @@ def test_operation_cycles_changes_select_full_postgres_scope() -> None:
     assert result["needs_full_ci"] is True
 
 
+def test_root_design_qa_artifact_is_mapped_to_docs_only_scope() -> None:
+    result = _select("design-qa.md")
+
+    assert result["unmatched_files"] == []
+    assert result["matched_scopes"] == ["docs_only"]
+    assert result["python_tests"] == []
+    assert result["frontend_tests"] == []
+    assert result["needs_postgres"] is False
+    assert result["architecture_gate"] == "none"
+    assert result["needs_full_ci"] is False
+
+
 def test_live_runtime_readiness_replacement_has_permanent_full_ci_scope() -> None:
     result = _select(
         "tools/check_live_runtime_readiness.py",
