@@ -30,9 +30,10 @@ def test_route_policy_inventory_covers_every_runtime_business_route() -> None:
     index = RoutePolicyIndex.from_manifest(MANIFEST)
     inventory = collect_route_inventory(app)
 
-    # Operation Cycles contributes eight routes and Coupon V1 contributes
-    # twenty; static mounts are counted separately by the router contract.
-    assert len(index) == len(inventory) == 702
+    # Operation Cycles contributes eight routes, Coupon V1 contributes twenty,
+    # and questionnaire operations contributes five; static mounts are counted
+    # separately by the router-registry contract.
+    assert len(index) == len(inventory) == 707
     for route in app.routes:
         if not isinstance(route, APIRoute) or route.path in FASTAPI_BUILTIN_ROUTE_PATHS:
             continue

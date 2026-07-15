@@ -5709,6 +5709,26 @@ routes:
   rate_limit: authenticated
   principal_types:
   - human
+- path: /admin/questionnaires/{questionnaire_id:int}/operations
+  methods:
+  - GET
+  route_name: api.admin_console_questionnaire_operations
+  capability_owner: questionnaire
+  runtime_owner: ai_crm_next
+  layer: admin_page
+  external_effects: none
+  data_source: read_model
+  requires_auth: true
+  rollback: previous_release
+  audience: admin
+  auth_scheme: human_session
+  capability: admin_read
+  access_scope: global
+  pii_level: sensitive
+  csrf: false
+  rate_limit: authenticated
+  principal_types:
+  - human
 - path: /admin/questionnaires/{questionnaire_id:int}/external-push-logs
   methods:
   - GET
@@ -5847,6 +5867,86 @@ routes:
   access_scope: global
   pii_level: sensitive
   csrf: false
+  rate_limit: authenticated
+  principal_types:
+  - human
+- path: /api/admin/questionnaires/{questionnaire_id}/operations
+  methods:
+  - GET
+  route_name: get_questionnaire_operations
+  capability_owner: questionnaire
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: none
+  data_source: read_model
+  requires_auth: true
+  rollback: previous_release
+  audience: admin
+  auth_scheme: human_session
+  capability: admin_read
+  access_scope: global
+  pii_level: sensitive
+  csrf: false
+  rate_limit: authenticated
+  principal_types:
+  - human
+- path: /api/admin/questionnaires/{questionnaire_id}/operations/completion
+  methods:
+  - PUT
+  route_name: save_questionnaire_completion_operations
+  capability_owner: questionnaire
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: none
+  data_source: command
+  requires_auth: true
+  rollback: previous_release
+  audience: admin
+  auth_scheme: human_session
+  capability: manage_questionnaire
+  access_scope: global
+  pii_level: sensitive
+  csrf: true
+  rate_limit: authenticated
+  principal_types:
+  - human
+- path: /api/admin/questionnaires/{questionnaire_id}/operations/external-push
+  methods:
+  - PUT
+  route_name: save_questionnaire_external_push_operations
+  capability_owner: questionnaire
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: none
+  data_source: command
+  requires_auth: true
+  rollback: previous_release
+  audience: admin
+  auth_scheme: human_session
+  capability: manage_questionnaire
+  access_scope: global
+  pii_level: sensitive
+  csrf: true
+  rate_limit: authenticated
+  principal_types:
+  - human
+- path: /api/admin/questionnaires/{questionnaire_id}/operations/external-push/test
+  methods:
+  - POST
+  route_name: test_questionnaire_external_push_operations
+  capability_owner: questionnaire
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: none
+  data_source: command
+  requires_auth: true
+  rollback: previous_release
+  audience: admin
+  auth_scheme: human_session
+  capability: manage_questionnaire
+  access_scope: global
+  pii_level: sensitive
+  csrf: true
   rate_limit: authenticated
   principal_types:
   - human

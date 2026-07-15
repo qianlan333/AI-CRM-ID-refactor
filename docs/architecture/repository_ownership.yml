@@ -602,6 +602,11 @@ repositories:
       - internal_event_consumer_attempt
       - internal_event_consumer_run
       - internal_event_outbox
+  aicrm_next/platform_foundation/push_center/capability_repository.py:
+    capability_owner: aicrm_next.platform_foundation.push_center
+    table_reads:
+      - app_settings
+    table_writes: []
   aicrm_next/platform_foundation/push_center/repository.py:
     capability_owner: aicrm_next.platform_foundation.push_center
     table_reads: []

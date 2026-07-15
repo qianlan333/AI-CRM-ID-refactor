@@ -845,7 +845,7 @@
       "accessor": "runtime_setting",
       "file": "aicrm_next/public_product/h5_wechat_pay.py",
       "key": "AICRM_PUBLIC_BASE_URL",
-      "line": 115
+      "line": 119
     },
     {
       "accessor": "os.getenv",
@@ -1055,7 +1055,7 @@
       "accessor": "runtime_setting",
       "file": "aicrm_next/public_product/h5_wechat_pay.py",
       "key": "APP_BASE_URL",
-      "line": 117
+      "line": 121
     },
     {
       "accessor": "os.getenv",
@@ -1439,7 +1439,7 @@
       "accessor": "runtime_setting",
       "file": "aicrm_next/public_product/h5_wechat_pay.py",
       "key": "PUBLIC_BASE_URL",
-      "line": 116
+      "line": 120
     },
     {
       "accessor": "os.getenv",
@@ -2871,7 +2871,7 @@
     }
   ],
   "migration_heads": [
-    "0115_wecom_media_leases"
+    "0116_questionnaire_operations_config"
   ],
   "openapi_components": {
     "schemas": {
@@ -7692,6 +7692,24 @@
       "name": "api.admin_console_questionnaire_external_push_logs",
       "operation_id": "api.admin_console_questionnaire_external_push_logs:GET:/admin/questionnaires/{questionnaire_id:int}/external-push-logs",
       "path": "/admin/questionnaires/{questionnaire_id:int}/external-push-logs",
+      "route_group": "questionnaire_admin_pages"
+    },
+    {
+      "capability_owner": "questionnaire",
+      "contract": {
+        "parameters": [],
+        "request_body": null,
+        "responses": {}
+      },
+      "endpoint": "aicrm_next.questionnaire.admin_pages.admin_questionnaire_operations",
+      "include_in_schema": true,
+      "kind": "page",
+      "methods": [
+        "GET"
+      ],
+      "name": "api.admin_console_questionnaire_operations",
+      "operation_id": "api.admin_console_questionnaire_operations:GET:/admin/questionnaires/{questionnaire_id:int}/operations",
+      "path": "/admin/questionnaires/{questionnaire_id:int}/operations",
       "route_group": "questionnaire_admin_pages"
     },
     {
@@ -25218,6 +25236,194 @@
       "name": "latest_submit_debug",
       "operation_id": "latest_submit_debug:GET:/api/admin/questionnaires/{questionnaire_id}/latest-submit-debug",
       "path": "/api/admin/questionnaires/{questionnaire_id}/latest-submit-debug",
+      "route_group": "questionnaire"
+    },
+    {
+      "capability_owner": "questionnaire",
+      "contract": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "questionnaire_id",
+            "required": true,
+            "schema": {
+              "title": "Questionnaire Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "request_body": null,
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        }
+      },
+      "endpoint": "aicrm_next.questionnaire.api.get_questionnaire_operations",
+      "include_in_schema": true,
+      "kind": "api",
+      "methods": [
+        "GET"
+      ],
+      "name": "get_questionnaire_operations",
+      "operation_id": "get_questionnaire_operations:GET:/api/admin/questionnaires/{questionnaire_id}/operations",
+      "path": "/api/admin/questionnaires/{questionnaire_id}/operations",
+      "route_group": "questionnaire"
+    },
+    {
+      "capability_owner": "questionnaire",
+      "contract": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "questionnaire_id",
+            "required": true,
+            "schema": {
+              "title": "Questionnaire Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "request_body": null,
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        }
+      },
+      "endpoint": "aicrm_next.questionnaire.api.save_questionnaire_completion_operations",
+      "include_in_schema": true,
+      "kind": "api",
+      "methods": [
+        "PUT"
+      ],
+      "name": "save_questionnaire_completion_operations",
+      "operation_id": "save_questionnaire_completion_operations:PUT:/api/admin/questionnaires/{questionnaire_id}/operations/completion",
+      "path": "/api/admin/questionnaires/{questionnaire_id}/operations/completion",
+      "route_group": "questionnaire"
+    },
+    {
+      "capability_owner": "questionnaire",
+      "contract": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "questionnaire_id",
+            "required": true,
+            "schema": {
+              "title": "Questionnaire Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "request_body": null,
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        }
+      },
+      "endpoint": "aicrm_next.questionnaire.api.save_questionnaire_external_push_operations",
+      "include_in_schema": true,
+      "kind": "api",
+      "methods": [
+        "PUT"
+      ],
+      "name": "save_questionnaire_external_push_operations",
+      "operation_id": "save_questionnaire_external_push_operations:PUT:/api/admin/questionnaires/{questionnaire_id}/operations/external-push",
+      "path": "/api/admin/questionnaires/{questionnaire_id}/operations/external-push",
+      "route_group": "questionnaire"
+    },
+    {
+      "capability_owner": "questionnaire",
+      "contract": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "questionnaire_id",
+            "required": true,
+            "schema": {
+              "title": "Questionnaire Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "request_body": null,
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        }
+      },
+      "endpoint": "aicrm_next.questionnaire.api.test_questionnaire_external_push_operations",
+      "include_in_schema": true,
+      "kind": "api",
+      "methods": [
+        "POST"
+      ],
+      "name": "test_questionnaire_external_push_operations",
+      "operation_id": "test_questionnaire_external_push_operations:POST:/api/admin/questionnaires/{questionnaire_id}/operations/external-push/test",
+      "path": "/api/admin/questionnaires/{questionnaire_id}/operations/external-push/test",
       "route_group": "questionnaire"
     },
     {
@@ -42843,6 +43049,7 @@
       "read_owners": [
         "aicrm_next.admin_config.repository",
         "aicrm_next.message_archive.repo",
+        "aicrm_next.platform_foundation.push_center.capability_repository",
         "aicrm_next.questionnaire.repo",
         "aicrm_next.shared.runtime_settings"
       ],
@@ -43190,6 +43397,7 @@
       "migration_source": "migrations/baselines/0001_post_legacy.sql",
       "pii_level": "internal_contact",
       "read_owners": [
+        "aicrm_next.automation_engine.channel_completion",
         "historical schema drift guard"
       ],
       "table": "automation_channel",
@@ -43262,6 +43470,7 @@
       "migration_source": "migrations/baselines/0001_post_legacy.sql",
       "pii_level": "internal_contact",
       "read_owners": [
+        "aicrm_next.automation_engine.channel_completion",
         "historical schema drift guard"
       ],
       "table": "automation_channel_qrcode_asset",
@@ -45197,10 +45406,11 @@
       "domain": "questionnaire",
       "drop_candidate": false,
       "lifecycle": "canonical",
-      "migration_source": "migrations/baselines/0001_post_legacy.sql; list index added by 0106_critical_read_path_indexes",
+      "migration_source": "migrations/baselines/0001_post_legacy.sql; list index added by 0106_critical_read_path_indexes; nullable lead channel binding added by 0116_questionnaire_operations_config",
       "pii_level": "",
       "read_owners": [
         "aicrm_next.questionnaire.api",
+        "aicrm_next.questionnaire.operations",
         "aicrm_next.questionnaire.repo"
       ],
       "table": "questionnaires",

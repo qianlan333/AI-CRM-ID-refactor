@@ -517,12 +517,14 @@ tables:
     read_owners:
       - aicrm_next.admin_config.repository
       - aicrm_next.message_archive.repo
+      - aicrm_next.platform_foundation.push_center.capability_repository
       - aicrm_next.questionnaire.repo
       - aicrm_next.shared.runtime_settings
     replacement: ""
     drop_candidate: false
     runtime_entrypoints:
       - admin config app settings
+      - push capability runtime eligibility projection
       - runtime settings fallback
       - external effects configuration
     migration_source: 0084_id_dev_p1_baseline_tables
@@ -531,7 +533,7 @@ tables:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_repository_ownership_guard.py
       - tests/test_unionid_identity_refactor_schema.py::test_id_dev_p1_baseline_tables_exist_in_fresh_schema
-    notes: Runtime app configuration table. Secret values are masked at API/UI boundaries.
+    notes: Runtime app configuration table. Push consumers read capability gates through the platform push-center boundary; secret values are masked at API/UI boundaries.
 
   mcp_tool_settings:
     domain: admin_config
@@ -1482,17 +1484,20 @@ tables:
     read_owners:
       - aicrm_next.questionnaire.repo
       - aicrm_next.questionnaire.api
+      - aicrm_next.questionnaire.operations
     replacement: none; canonical questionnaire definition table
     drop_candidate: false
     drop_after: ""
     runtime_entrypoints:
       - questionnaire admin API
+      - questionnaire operations admin API
       - questionnaire H5 read/submit
-    migration_source: migrations/baselines/0001_post_legacy.sql; list index added by 0106_critical_read_path_indexes
+      - questionnaire completion action resolution
+    migration_source: migrations/baselines/0001_post_legacy.sql; list index added by 0106_critical_read_path_indexes; nullable lead channel binding added by 0116_questionnaire_operations_config
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_repository_ownership_guard.py
-    notes: Canonical questionnaire metadata table; fresh schemas must include it for admin and H5 flows.
+    notes: Canonical questionnaire metadata and operations configuration table; lead_channel_id is nullable, indexed, and uses ON DELETE SET NULL without historical backfill.
 
   questionnaire_questions:
     domain: questionnaire
@@ -2412,17 +2417,19 @@ tables:
       - aicrm_next.channel_entry
     read_owners:
       - historical schema drift guard
+      - aicrm_next.automation_engine.channel_completion
     replacement: none; active production schema table registered during schema drift closeout
     drop_candidate: false
     drop_after: ""
     runtime_entrypoints:
       - existing production runtime
+      - questionnaire completion channel validation and QR projection
     migration_source: migrations/baselines/0001_post_legacy.sql
     pii_level: internal_contact
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
-    notes: Registered from the formal production public schema so schema_drift_guard can fail closed on future unmanaged table changes.
+    notes: Canonical channel metadata; questionnaire reads it only through the channel application-layer completion projection.
 
   automation_channel_assignee:
     domain: channel_entry
@@ -2496,17 +2503,19 @@ tables:
       - aicrm_next.channel_entry
     read_owners:
       - historical schema drift guard
+      - aicrm_next.automation_engine.channel_completion
     replacement: none; active production schema table registered during schema drift closeout
     drop_candidate: false
     drop_after: ""
     runtime_entrypoints:
       - existing production runtime
+      - questionnaire completion QR asset projection
     migration_source: migrations/baselines/0001_post_legacy.sql
     pii_level: internal_contact
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
-    notes: Registered from the formal production public schema so schema_drift_guard can fail closed on future unmanaged table changes.
+    notes: Canonical channel QR asset table; questionnaire stores only channel ID and resolves the active QR asset at response time.
 
   automation_channel_scene_alias:
     domain: channel_entry

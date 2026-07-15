@@ -14,7 +14,11 @@ from fastapi import Request
 from fastapi.responses import JSONResponse, RedirectResponse
 
 from aicrm_next.commerce.domain import completion_redirect_projection, safe_completion_redirect_url
-from aicrm_next.navigation_target import completion_action_for_target, completion_target_projection
+from aicrm_next.navigation_target import (
+    completion_action_for_target,
+    completion_action_with_lead_qr,
+    completion_target_projection,
+)
 from aicrm_next.commerce.order_expiration import close_expired_wechat_pay_orders, pending_order_expires_at_text
 from aicrm_next.shared.product_code_aliases import product_code_filter_values
 from aicrm_next.identity_contact.dto import IdentityResolveResult, ResolvePersonIdentityRequest
@@ -837,15 +841,11 @@ def _order_payload(
     completion_url = safe_completion_redirect_url(completion.get("url") or effective_completion.get("completion_redirect_url"))
     completion_enabled = bool(completion.get("enabled")) and bool(completion_url)
     completion_target = (effective_completion.get("completion_target") or effective_completion.get("completion_target_json") or {}) if isinstance(effective_completion, dict) else {}
-    target_enabled = bool(completion_target.get("enabled")) if isinstance(completion_target, dict) else False
-    completion_action = (
-        completion_action_for_target(
-            completion_target,
-            legacy_redirect_url=completion_url,
-            legacy_enabled=completion_enabled,
-        )
-        if isinstance(completion_target, dict) and completion_target
-        else ({"type": "redirect", "redirect_url": completion_url} if completion_enabled else {"type": "default", "redirect_url": ""})
+    completion_action = completion_action_with_lead_qr(
+        completion_target if isinstance(completion_target, dict) else {},
+        lead_qr=lead_qr if _is_order_effectively_paid(row) else None,
+        legacy_redirect_url=completion_url,
+        legacy_enabled=completion_enabled,
     )
     status = _normalized_text(row.get("status"))
     if _is_order_fully_refunded(row):
@@ -872,8 +872,8 @@ def _order_payload(
         "completion_target": completion_target if isinstance(completion_target, dict) else {},
         "completion_action": completion_action,
     }
-    if _is_order_effectively_paid(row) and not completion_enabled and not target_enabled and lead_qr and lead_qr.get("qr_url"):
-        payload["lead_qr"] = lead_qr
+    if completion_action.get("type") == "lead_qr":
+        payload["lead_qr"] = completion_action.get("lead_qr") or lead_qr
         payload["completion_action"] = {"type": "lead_qr", "redirect_url": ""}
     return payload
 
