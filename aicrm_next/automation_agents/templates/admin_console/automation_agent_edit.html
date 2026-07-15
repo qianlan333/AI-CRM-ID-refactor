@@ -1,7 +1,7 @@
 {% extends "admin_console/base.html" %}
 
 {% block head_extra %}
-<link rel="stylesheet" href="{{ url_for('static', filename='admin_console/material_picker.css') }}?v=automation-agent-config-20260625">
+<link rel="stylesheet" href="{{ url_for('static', filename='admin_console/material_picker.css') }}?v=group-invite-card-20260715">
 <style>
   :root {
     --agent-bg: #f4f7fb;
@@ -524,7 +524,7 @@
 {% endblock %}
 
 {% block scripts_extra %}
-<script defer src="{{ url_for('static', filename='admin_console/material_picker.js') }}?v=automation-agent-config-20260625"></script>
+<script defer src="{{ url_for('static', filename='admin_console/material_picker.js') }}?v=group-invite-card-20260715"></script>
 <script>
   (() => {
     const agentApiUrl = {{ automation_agent_api_url | tojson }};
