@@ -28,16 +28,14 @@ from .domain import (
     validate_duration_days,
 )
 from .huangyoucan_usage import huangyoucan_usage_match_joins, huangyoucan_usage_select_fields, public_huangyoucan_usage_fields
-
+from .member_grid_repo import InMemoryMemberGridRepositoryMixin, MemberGridRepositoryProtocol, PostgresMemberGridRepositoryMixin
 
 LOGGER = logging.getLogger(__name__)
-
 
 def _jsonb(value: Any) -> Any:
     from psycopg.types.json import Jsonb
 
     return Jsonb(value if isinstance(value, (dict, list)) else {}, dumps=lambda data: json.dumps(data, ensure_ascii=False, default=str))
-
 
 def _json_object(value: Any) -> dict[str, Any]:
     if isinstance(value, dict):
@@ -50,10 +48,8 @@ def _json_object(value: Any) -> dict[str, Any]:
         return parsed if isinstance(parsed, dict) else {}
     return {}
 
-
 def _paid_order(order: dict[str, Any]) -> bool:
     return text(order.get("status")).lower() == "paid" or text(order.get("trade_state")).upper() == "SUCCESS"
-
 
 def _order_identity(order: dict[str, Any]) -> dict[str, str]:
     metadata = _json_object(order.get("metadata_json"))
@@ -65,7 +61,6 @@ def _order_identity(order: dict[str, Any]) -> dict[str, str]:
         "payer_name": text(order.get("payer_name_snapshot") or identity.get("payer_name")),
         "openid": text(identity.get("openid") or order.get("openid")),
     }
-
 
 def _resolve_paid_order_unionid(conn: Any, identity: dict[str, str]) -> str:
     canonical_unionid = text(identity.get("unionid"))
@@ -111,7 +106,7 @@ def _compact_trade_product_payload(product: dict[str, Any], *, product_id: Any |
     }
 
 
-class ServicePeriodRepository(Protocol):
+class ServicePeriodRepository(MemberGridRepositoryProtocol, Protocol):
     def list_products(self, *, limit: int, offset: int) -> dict[str, Any]: ...
     def create_service_product(self, *, trade_product: dict[str, Any], duration_days: int, membership_config_id: str, membership_config_name: str, link_slug: str, metadata_json: dict[str, Any] | None = None) -> dict[str, Any]: ...
     def get_product(self, service_product_id: str) -> dict[str, Any] | None: ...
@@ -130,14 +125,16 @@ class ServicePeriodRepository(Protocol):
     def expire_due_entitlements(self, *, now: datetime | None = None) -> dict[str, Any]: ...
 
 
-class InMemoryServicePeriodRepository:
+class InMemoryServicePeriodRepository(InMemoryMemberGridRepositoryMixin):
     def __init__(self) -> None:
         self._products: list[dict[str, Any]] = []
         self._entitlements: list[dict[str, Any]] = []
         self._events: list[dict[str, Any]] = []
+        self._member_views: list[dict[str, Any]] = []
         self._next_product_id = 1
         self._next_entitlement_id = 1
         self._next_event_id = 1
+        self._next_member_view_id = 1
 
     def list_products(self, *, limit: int, offset: int) -> dict[str, Any]:
         rows = [self._serialize_product(row, include_trade_product=False) for row in self._products if not row.get("deleted")]
@@ -176,6 +173,7 @@ class InMemoryServicePeriodRepository:
         }
         self._next_product_id += 1
         self._products.append(row)
+        self._append_default_member_view(text(row["id"]), actor="system")
         return self._serialize_product(row)
 
     def get_product(self, service_product_id: str) -> dict[str, Any] | None:
@@ -245,6 +243,7 @@ class InMemoryServicePeriodRepository:
         if self.has_entitlements(service_product_id):
             raise ContractError("已有服务期凭证的周期商品不能硬删除，请先下架")
         self._products = [item for item in self._products if item is not row]
+        self._delete_member_views(service_product_id)
         return {"ok": True, "deleted": True, "service_product_id": service_product_id, "trade_product_id": text(row.get("trade_product_id"))}
 
     def has_entitlements(self, service_product_id: str) -> bool:
@@ -609,7 +608,7 @@ class InMemoryServicePeriodRepository:
         }
 
 
-class PostgresServicePeriodRepository:
+class PostgresServicePeriodRepository(PostgresMemberGridRepositoryMixin):
     def __init__(self, database_url: str) -> None:
         self._database_url = database_url
 
@@ -680,6 +679,7 @@ class PostgresServicePeriodRepository:
                     _jsonb(metadata_json or {}),
                 ),
             ).fetchone()
+            self._insert_default_member_view(conn, row["id"], actor="system")
             conn.commit()
         return self.get_product(text(row.get("id"))) or {}
 

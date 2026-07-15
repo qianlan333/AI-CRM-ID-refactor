@@ -10086,6 +10086,126 @@ routes:
   rate_limit: authenticated
   principal_types:
   - human
+- path: /api/admin/service-period-products/{service_product_id}/member-grid/schema
+  methods:
+  - GET
+  route_name: service_period_member_grid_schema
+  capability_owner: service_period
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: none
+  data_source: read_model
+  requires_auth: true
+  rollback: previous_release
+  audience: admin
+  auth_scheme: human_session
+  capability: admin_read
+  access_scope: global
+  pii_level: financial
+  csrf: false
+  rate_limit: authenticated
+  principal_types:
+  - human
+- path: /api/admin/service-period-products/{service_product_id}/member-views
+  methods:
+  - GET
+  route_name: list_service_period_member_views
+  capability_owner: service_period
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: none
+  data_source: read_model
+  requires_auth: true
+  rollback: previous_release
+  audience: admin
+  auth_scheme: human_session
+  capability: admin_read
+  access_scope: global
+  pii_level: financial
+  csrf: false
+  rate_limit: authenticated
+  principal_types:
+  - human
+- path: /api/admin/service-period-products/{service_product_id}/member-views
+  methods:
+  - POST
+  route_name: create_service_period_member_view
+  capability_owner: service_period
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: none
+  data_source: command
+  requires_auth: true
+  rollback: previous_release
+  audience: admin
+  auth_scheme: human_session
+  capability: manage_commerce
+  access_scope: global
+  pii_level: financial
+  csrf: true
+  rate_limit: authenticated
+  principal_types:
+  - human
+- path: /api/admin/service-period-products/{service_product_id}/member-views/{view_id}
+  methods:
+  - PUT
+  route_name: update_service_period_member_view
+  capability_owner: service_period
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: none
+  data_source: command
+  requires_auth: true
+  rollback: previous_release
+  audience: admin
+  auth_scheme: human_session
+  capability: manage_commerce
+  access_scope: global
+  pii_level: financial
+  csrf: true
+  rate_limit: authenticated
+  principal_types:
+  - human
+- path: /api/admin/service-period-products/{service_product_id}/member-views/{view_id}
+  methods:
+  - DELETE
+  route_name: delete_service_period_member_view
+  capability_owner: service_period
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: none
+  data_source: command
+  requires_auth: true
+  rollback: previous_release
+  audience: admin
+  auth_scheme: human_session
+  capability: manage_commerce
+  access_scope: global
+  pii_level: financial
+  csrf: true
+  rate_limit: authenticated
+  principal_types:
+  - human
+- path: /api/admin/service-period-products/{service_product_id}/member-grid/query
+  methods:
+  - POST
+  route_name: query_service_period_member_grid
+  capability_owner: service_period
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: none
+  data_source: read_model
+  requires_auth: true
+  rollback: previous_release
+  audience: admin
+  auth_scheme: human_session
+  capability: admin_read
+  access_scope: global
+  pii_level: financial
+  csrf: true
+  rate_limit: authenticated
+  principal_types:
+  - human
 - path: /api/admin/service-period-products/{service_product_id}/members/{unionid}/remark
   methods:
   - PUT
