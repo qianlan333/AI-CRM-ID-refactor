@@ -6550,6 +6550,48 @@ routes:
   rate_limit: authenticated
   principal_types:
   - human
+- path: /api/external/radar-clicks
+  methods:
+  - GET
+  route_name: list_external_radar_clicks
+  capability_owner: radar_links
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: none
+  data_source: read_model
+  requires_auth: true
+  rollback: previous_release
+  audience: external_integration
+  auth_scheme: api_client_jwt
+  capability: external_read
+  access_scope: service
+  pii_level: sensitive
+  csrf: false
+  rate_limit: integration
+  principal_types:
+  - api_client
+  - service
+- path: /api/external/radar-links
+  methods:
+  - GET
+  route_name: list_external_radar_link_mappings
+  capability_owner: radar_links
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: none
+  data_source: read_model
+  requires_auth: true
+  rollback: previous_release
+  audience: external_integration
+  auth_scheme: api_client_jwt
+  capability: external_read
+  access_scope: service
+  pii_level: none
+  csrf: false
+  rate_limit: integration
+  principal_types:
+  - api_client
+  - service
 - path: /api/admin/radar-links
   methods:
   - GET

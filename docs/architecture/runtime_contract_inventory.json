@@ -1499,13 +1499,13 @@
       "accessor": "runtime_setting",
       "file": "aicrm_next/radar_links/api.py",
       "key": "SECRET_KEY",
-      "line": 104
+      "line": 185
     },
     {
       "accessor": "runtime_setting",
       "file": "aicrm_next/radar_links/application.py",
       "key": "SECRET_KEY",
-      "line": 40
+      "line": 41
     },
     {
       "accessor": "runtime_setting",
@@ -2871,7 +2871,7 @@
     }
   ],
   "migration_heads": [
-    "0117_group_invite_cards"
+    "0118_external_radar_read_api"
   ],
   "openapi_components": {
     "schemas": {
@@ -36089,6 +36089,286 @@
       "route_group": "questionnaire"
     },
     {
+      "capability_owner": "radar_links",
+      "contract": {
+        "parameters": [
+          {
+            "description": "手机号",
+            "in": "query",
+            "name": "mobile",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "手机号",
+              "title": "Mobile"
+            }
+          },
+          {
+            "description": "微信 unionid",
+            "in": "query",
+            "name": "unionid",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "微信 unionid",
+              "title": "Unionid"
+            }
+          },
+          {
+            "description": "雷达数字 ID",
+            "in": "query",
+            "name": "radar_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "雷达数字 ID",
+              "title": "Radar Id"
+            }
+          },
+          {
+            "description": "雷达代码",
+            "in": "query",
+            "name": "radar_code",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "雷达代码",
+              "title": "Radar Code"
+            }
+          },
+          {
+            "description": "点击开始秒级 Unix 时间戳",
+            "in": "query",
+            "name": "clicked_from",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "点击开始秒级 Unix 时间戳",
+              "title": "Clicked From"
+            }
+          },
+          {
+            "description": "点击结束秒级 Unix 时间戳",
+            "in": "query",
+            "name": "clicked_to",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "点击结束秒级 Unix 时间戳",
+              "title": "Clicked To"
+            }
+          },
+          {
+            "description": "分页条数，最大 500",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": "100",
+              "description": "分页条数，最大 500",
+              "title": "Limit",
+              "type": "string"
+            }
+          },
+          {
+            "description": "下一页游标",
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "下一页游标",
+              "title": "Cursor"
+            }
+          }
+        ],
+        "request_body": null,
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        }
+      },
+      "endpoint": "aicrm_next.radar_links.api.list_external_radar_clicks",
+      "include_in_schema": true,
+      "kind": "api",
+      "methods": [
+        "GET"
+      ],
+      "name": "list_external_radar_clicks",
+      "operation_id": "list_external_radar_clicks:GET:/api/external/radar-clicks",
+      "path": "/api/external/radar-clicks",
+      "route_group": "radar_links"
+    },
+    {
+      "capability_owner": "radar_links",
+      "contract": {
+        "parameters": [
+          {
+            "description": "雷达数字 ID",
+            "in": "query",
+            "name": "radar_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "雷达数字 ID",
+              "title": "Radar Id"
+            }
+          },
+          {
+            "description": "雷达代码",
+            "in": "query",
+            "name": "radar_code",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "雷达代码",
+              "title": "Radar Code"
+            }
+          },
+          {
+            "description": "分页条数，最大 500",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": "100",
+              "description": "分页条数，最大 500",
+              "title": "Limit",
+              "type": "string"
+            }
+          },
+          {
+            "description": "下一页游标",
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "下一页游标",
+              "title": "Cursor"
+            }
+          }
+        ],
+        "request_body": null,
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        }
+      },
+      "endpoint": "aicrm_next.radar_links.api.list_external_radar_link_mappings",
+      "include_in_schema": true,
+      "kind": "api",
+      "methods": [
+        "GET"
+      ],
+      "name": "list_external_radar_link_mappings",
+      "operation_id": "list_external_radar_link_mappings:GET:/api/external/radar-links",
+      "path": "/api/external/radar-links",
+      "route_group": "radar_links"
+    },
+    {
       "capability_owner": "unregistered",
       "contract": {
         "parameters": [
@@ -44982,6 +45262,7 @@
         "aicrm_next.identity_contact",
         "aicrm_next.message_archive",
         "aicrm_next.questionnaire",
+        "aicrm_next.radar_links",
         "aicrm_next.sidebar_write"
       ],
       "table": "crm_user_identity",
@@ -45901,9 +46182,10 @@
       "domain": "radar",
       "drop_candidate": false,
       "lifecycle": "event",
-      "migration_source": "0102_questionnaire_radar_invariants",
+      "migration_source": "0102_questionnaire_radar_invariants; external-feed index 0118_external_radar_read_api",
       "pii_level": "direct_contact",
       "read_owners": [
+        "external radar logical-click read model",
         "radar admin event list, export, and aggregate statistics"
       ],
       "table": "radar_click_events",

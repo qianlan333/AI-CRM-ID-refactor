@@ -658,6 +658,7 @@ repositories:
   aicrm_next/radar_links/repo.py:
     capability_owner: aicrm_next.radar_links
     table_reads:
+      - crm_user_identity
       - radar_click_events
       - radar_links
       - radar_pdf_preview_assets

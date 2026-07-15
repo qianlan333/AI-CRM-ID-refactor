@@ -91,6 +91,8 @@ def _admin_capability(entry: dict[str, Any]) -> str:
 def _pii_level(entry: dict[str, Any]) -> str:
     path = str(entry["path"]).lower()
     owner = str(entry["capability_owner"])
+    if path == "/api/external/radar-clicks":
+        return "sensitive"
     if any(marker in path for marker in ("message", "archive", "questionnaire", "identity", "customer", "user", "sidebar")):
         return "sensitive"
     if any(marker in path for marker in ("order", "payment", "refund", "wechat-pay", "alipay", "service-period", "coupon")):
