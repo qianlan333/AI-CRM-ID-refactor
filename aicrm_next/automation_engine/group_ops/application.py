@@ -582,7 +582,10 @@ class PreviewGroupOpsOwnerGroupsSyncCommand:
             known_groups=groups,
             limit=sync_limit,
         )
-        groups = _merge_group_sync_items(groups, [*extra_groups, *refreshed_groups])
+        # Local admin cache is only a fallback. Current WeCom list/detail data
+        # must win when the same chat_id exists in both sources, otherwise a
+        # stale cached name or owner makes a live group disappear from search.
+        groups = _merge_group_sync_items(extra_groups, [*groups, *refreshed_groups])
         if extra_groups:
             warnings.append(f"included_admin_groups_from_local_cache={len(extra_groups)}")
         if refreshed_groups:
