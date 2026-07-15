@@ -170,7 +170,7 @@ def test_wecom_welcome_resolves_library_materials_before_provider_call(monkeypat
 
     def resolve_materials(attachments: list[dict]) -> list[dict]:
         resolver_calls.append(attachments)
-        return [{"msgtype": "image", "media_id": "resolved-image-media"}]
+        return [{"msgtype": "image", "image": {"media_id": "resolved-image-media"}}]
 
     result = ExternalEffectWorker(
         repo,
@@ -184,7 +184,9 @@ def test_wecom_welcome_resolves_library_materials_before_provider_call(monkeypat
 
     assert result["job"]["status"] == "succeeded"
     assert resolver_calls == [[{"msgtype": "image", "material_id": 110}]]
-    assert fake.payloads[0]["attachments"] == [{"msgtype": "image", "media_id": "resolved-image-media"}]
+    assert fake.payloads[0]["attachments"] == [
+        {"msgtype": "image", "image": {"media_id": "resolved-image-media"}}
+    ]
 
 
 def test_production_welcome_material_translation_uses_wecom_welcome_shapes() -> None:
@@ -216,14 +218,16 @@ def test_production_welcome_material_translation_uses_wecom_welcome_shapes() -> 
     )
 
     assert resolved == [
-        {"msgtype": "image", "media_id": "image-media"},
-        {"msgtype": "file", "media_id": "file-media"},
+        {"msgtype": "image", "image": {"media_id": "image-media"}},
+        {"msgtype": "file", "file": {"media_id": "file-media"}},
         {
             "msgtype": "miniprogram",
-            "appid": "wx-app",
-            "page": "pages/index",
-            "title": "欢迎卡片",
-            "pic_media_id": "mini-media",
+            "miniprogram": {
+                "appid": "wx-app",
+                "page": "pages/index",
+                "title": "欢迎卡片",
+                "pic_media_id": "mini-media",
+            },
         },
     ]
 

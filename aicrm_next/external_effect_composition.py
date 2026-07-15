@@ -110,7 +110,7 @@ def _resolve_production_wecom_welcome_materials(attachments, *, resolver=None):
             media_id = str((image_media_ids or [""])[0] or "").strip()
             if not media_id:
                 raise ValueError("welcome image material resolved without media_id")
-            resolved.append({"msgtype": "image", "media_id": media_id})
+            resolved.append({"msgtype": "image", "image": {"media_id": media_id}})
             continue
 
         nested = dict((nested_attachments or [{}])[0] or {})
@@ -119,7 +119,7 @@ def _resolve_production_wecom_welcome_materials(attachments, *, resolver=None):
             media_id = str(nested_payload.get("media_id") or "").strip()
             if not media_id:
                 raise ValueError("welcome file material resolved without media_id")
-            resolved.append({"msgtype": "file", "media_id": media_id})
+            resolved.append({"msgtype": "file", "file": {"media_id": media_id}})
             continue
         required = ("appid", "page", "title", "pic_media_id")
         if any(not str(nested_payload.get(field) or "").strip() for field in required):
@@ -127,7 +127,10 @@ def _resolve_production_wecom_welcome_materials(attachments, *, resolver=None):
         resolved.append(
             {
                 "msgtype": "miniprogram",
-                **{field: str(nested_payload.get(field) or "").strip() for field in required},
+                "miniprogram": {
+                    field: str(nested_payload.get(field) or "").strip()
+                    for field in required
+                },
             }
         )
     return resolved
