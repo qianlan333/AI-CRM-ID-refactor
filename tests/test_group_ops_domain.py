@@ -5,19 +5,6 @@ import pytest
 from tests.group_ops_test_helpers import group_ops_repo
 
 
-def test_domain_validates_group_owner_match(group_ops_repo):
-    from aicrm_next.automation_engine.group_ops.domain import assert_group_owned_by_plan
-    from aicrm_next.shared.errors import ContractError
-
-    plan = group_ops_repo.get_plan(1)
-    owned_group = group_ops_repo.get_group_asset("wrOgAAA003")
-    other_group = group_ops_repo.get_group_asset("wrOgBBB001")
-
-    assert_group_owned_by_plan(group=owned_group, plan=plan)
-    with pytest.raises(ContractError, match="owner_userid"):
-        assert_group_owned_by_plan(group=other_group, plan=plan)
-
-
 def test_group_ops_plan_actions_disable_enable_and_archive(group_ops_repo):
     from aicrm_next.automation_engine.group_ops.application import (
         ArchiveGroupOpsPlanCommand,

@@ -165,7 +165,7 @@ def test_group_sync_refreshes_stale_admin_candidate_details():
     assert "included_admin_groups_from_refreshed_candidates=1" in response["warnings"]
 
 
-def test_group_sync_binding_owner_mismatch_is_rejected(group_ops_api_client, monkeypatch):
+def test_group_sync_binding_does_not_prevalidate_cached_owner(group_ops_api_client, monkeypatch):
     from aicrm_next.automation_engine.group_ops.repo import reset_group_ops_fixture_state
 
     reset_group_ops_fixture_state(seed_groups=False)
@@ -185,8 +185,8 @@ def test_group_sync_binding_owner_mismatch_is_rejected(group_ops_api_client, mon
         json={"chat_id": groups.json()["items"][0]["chat_id"]},
     )
 
-    assert bad.status_code == 400
-    assert bad.json()["detail"]["error_code"] == "group_owner_mismatch"
+    assert bad.status_code == 201
+    assert bad.json()["item"]["chat_id"] == groups.json()["items"][0]["chat_id"]
 
 
 def test_group_sync_default_disabled_blocks_without_real_wecom(group_ops_api_client, monkeypatch):

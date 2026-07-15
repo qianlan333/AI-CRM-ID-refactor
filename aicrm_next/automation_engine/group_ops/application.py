@@ -11,7 +11,6 @@ from aicrm_next.shared.repository_provider import RepositoryProviderError, block
 
 from . import CAPABILITY_OWNER
 from .domain import (
-    assert_group_owned_by_plan,
     assert_run_due_guard,
     build_node_group_message_content,
     binding_stats,
@@ -329,11 +328,10 @@ class AddGroupOpsPlanGroupCommand:
         repo = _repo_or_block(self._repo)
         if repo is None:
             return _production_unavailable()
-        plan = _plan_or_404(repo, plan_id)
+        _plan_or_404(repo, plan_id)
         group = repo.get_group_asset(request.chat_id)
         if not group:
             raise NotFoundError("group chat snapshot not found")
-        assert_group_owned_by_plan(group=group, plan=plan)
         item = repo.bind_group(int(plan_id), group)
         groups = repo.list_bound_groups(int(plan_id))
         return _response({"item": item, "summary": binding_stats(groups)}, status_code=201, repo=repo)

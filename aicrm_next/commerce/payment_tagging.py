@@ -56,18 +56,17 @@ def resolve_payment_tag_identity(conn: Any, order: dict[str, Any], owner_userid:
         WHERE (%s <> '' AND unionid = %s)
            OR (%s <> '' AND external_userid = %s)
         ORDER BY
-            CASE WHEN follow_user_userid = %s AND status = 'active' THEN 0 ELSE 1 END,
+            CASE WHEN status = 'active' THEN 0 ELSE 1 END,
             updated_at DESC NULLS LAST
         """,
-        (unionid, unionid, external_userid, external_userid, owner_userid),
+        (unionid, unionid, external_userid, external_userid),
     ).fetchall()
     mappings = [dict(row) for row in rows]
     match = next(
         (
             row
             for row in mappings
-            if _text(row.get("follow_user_userid")) == owner_userid
-            and _text(row.get("status")) == "active"
+            if _text(row.get("status")) == "active"
             and _text(row.get("external_userid"))
         ),
         None,
@@ -81,8 +80,7 @@ def resolve_payment_tag_identity(conn: Any, order: dict[str, Any], owner_userid:
     if mappings:
         return {
             "ok": False,
-            "reason": "owner_relation_mismatch",
-            "mapped_owner_count": len({_text(row.get("follow_user_userid")) for row in mappings if _text(row.get("follow_user_userid"))}),
+            "reason": "wecom_identity_inactive",
         }
     return {"ok": False, "reason": "wecom_identity_pending"}
 

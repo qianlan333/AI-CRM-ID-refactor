@@ -5,6 +5,7 @@ from aicrm_next.commerce.payment_tagging import (
     PRODUCT_CODE,
     TAG_ID,
     product_paid_wecom_tag_consumer,
+    resolve_payment_tag_identity,
 )
 from aicrm_next.platform_foundation.external_effects import (
     ExternalEffectService,
@@ -35,6 +36,42 @@ def _event(*, product_code: str = PRODUCT_CODE) -> InternalEvent:
 
 def _run() -> InternalEventConsumerRun:
     return InternalEventConsumerRun(consumer_name="product_paid_wecom_tag_consumer")
+
+
+class _Rows:
+    def __init__(self, rows):
+        self._rows = rows
+
+    def fetchall(self):
+        return list(self._rows)
+
+
+class _IdentityConn:
+    def execute(self, _query, params):
+        assert params[-1] == "wm_cached_other_owner"
+        return _Rows(
+            [
+                {
+                    "external_userid": "wm_cached_other_owner",
+                    "follow_user_userid": "OtherOwner",
+                    "status": "active",
+                }
+            ]
+        )
+
+
+def test_identity_resolution_uses_external_id_without_cached_owner_prevalidation() -> None:
+    result = resolve_payment_tag_identity(
+        _IdentityConn(),
+        {"external_userid": "wm_cached_other_owner"},
+        OWNER_USERID,
+    )
+
+    assert result == {
+        "ok": True,
+        "external_userid": "wm_cached_other_owner",
+        "follow_user_userid": OWNER_USERID,
+    }
 
 
 def test_non_matching_product_is_skipped_without_identity_lookup() -> None:
@@ -75,19 +112,12 @@ def test_matching_paid_order_plans_one_idempotent_wecom_tag_job() -> None:
     }
 
 
-def test_owner_mismatch_and_missing_identity_both_retry() -> None:
-    mismatch = product_paid_wecom_tag_consumer(
-        _event(),
-        _run(),
-        identity_resolver=lambda *_args: {"ok": False, "reason": "owner_relation_mismatch"},
-    )
+def test_missing_identity_retries_without_owner_relation_precheck() -> None:
     pending = product_paid_wecom_tag_consumer(
         _event(),
         _run(),
         identity_resolver=lambda *_args: {"ok": False, "reason": "wecom_identity_pending"},
     )
 
-    assert mismatch.status == "failed_retryable"
-    assert mismatch.error_code == "owner_relation_mismatch"
     assert pending.status == "failed_retryable"
     assert pending.error_code == "wecom_identity_pending"

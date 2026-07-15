@@ -410,12 +410,6 @@ def assert_run_due_guard(
         raise ContractError("max_outbound_tasks is required")
 
 
-def assert_group_owned_by_plan(*, group: dict[str, Any], plan: dict[str, Any]) -> None:
-    plan_owner = clean_text(plan.get("owner_userid"))
-    if not group_manageable_by_userid(group, plan_owner):
-        raise ContractError("group owner_userid/admin_userids must match plan owner_userid")
-
-
 def binding_stats(groups: list[dict[str, Any]]) -> dict[str, int]:
     active = [item for item in groups if clean_text(item.get("status") or "active") == "active"]
     internal = sum(int(item.get("internal_member_count_snapshot") or item.get("internal_member_count") or 0) for item in active)
