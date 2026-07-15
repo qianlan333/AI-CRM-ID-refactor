@@ -320,6 +320,7 @@
         "aicrm_next/frontend_compat/templates/admin_console/group_invite_library.html",
         "aicrm_next/frontend_compat/templates/admin_console/hxc_dashboard.html",
         "migrations/versions/0119_group_invite_bindings.py",
+        "tests/test_group_chat_picker_direct_select.py",
         "tests/test_campaign_send_content_frontend_contract.py",
         "tests/test_group_invite*.py",
         "tests/test_material_library_table_boundary.py",
