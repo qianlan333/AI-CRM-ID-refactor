@@ -193,7 +193,9 @@ def test_service_period_data_page_has_only_data_contract(next_client) -> None:
         "学习计划进度",
         "近 7 天打开次数",
         "最后打开时间",
+        "续费次数",
         "备注",
+        "联盟",
     ]
     assert [field["id"] for field in fields] == [
         "member",
@@ -203,10 +205,11 @@ def test_service_period_data_page_has_only_data_contract(next_client) -> None:
         "learning_plan_progress",
         "open_count_7d",
         "last_open_at",
+        "renewal_count",
         "remark",
+        "alliance",
     ]
-    assert fields[-1]["editable"] is True
-    assert all(not field["editable"] for field in fields[:-1])
+    assert [field["id"] for field in fields if field["editable"]] == ["remark", "alliance"]
 
     script = (
         Path(__file__).resolve().parents[1]
@@ -214,12 +217,25 @@ def test_service_period_data_page_has_only_data_contract(next_client) -> None:
     ).read_text(encoding="utf-8")
     assert "/member-grid/query" in script
     assert "/member-views" in script
-    assert "/members/${encodeURIComponent(row.unionid)}/remark" in script
+    assert "/members/${encodeURIComponent(row.unionid)}/${encodeURIComponent(fieldId)}" in script
+    assert '["remark", "alliance"]' in script
+    assert 'editableTextCell("remark")' in script
+    assert 'editableTextCell("alliance")' in script
+    assert "sp-col-renewal_count" in script
     assert "IntersectionObserver" in script
     assert "beforeunload" in script
     assert 'event.key === "Enter" && !event.shiftKey' in script
     assert 'event.key === "Escape"' in script
     assert "window.sessionStorage" in script
+
+    stylesheet = (
+        Path(__file__).resolve().parents[1]
+        / "aicrm_next/service_period/static/admin_console/member_grid.css"
+    ).read_text(encoding="utf-8")
+    assert "max-height: 780px" not in stylesheet
+    assert "height: calc(100vh - 286px)" in stylesheet
+    assert ".sp-member-table .sp-col-renewal_count" in stylesheet
+    assert ".sp-member-table .sp-col-alliance" in stylesheet
 
     for forbidden in (
         "导出数据",

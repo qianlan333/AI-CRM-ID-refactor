@@ -35,6 +35,7 @@ from .application import (
     ListServicePeriodProductsQuery,
     QueryServicePeriodMemberGridQuery,
     SetServicePeriodProductEnabledCommand,
+    UpdateServicePeriodMemberAllianceCommand,
     UpdateServicePeriodMemberViewCommand,
     UpdateServicePeriodMemberRemarkCommand,
     UpdateServicePeriodProductCommand,
@@ -530,6 +531,22 @@ def update_service_period_member_remark(service_product_id: str, unionid: str, r
         body = read_request_json(request)
         payload = body if isinstance(body, dict) else {}
         return _payload(UpdateServicePeriodMemberRemarkCommand()(service_product_id, unionid, remark=str(payload.get("remark") or "")))
+    except Exception as exc:
+        _raise_http(exc)
+
+
+@router.put("/api/admin/service-period-products/{service_product_id}/members/{unionid}/alliance")
+def update_service_period_member_alliance(service_product_id: str, unionid: str, request: Request) -> dict:
+    try:
+        body = read_request_json(request)
+        payload = body if isinstance(body, dict) else {}
+        return _payload(
+            UpdateServicePeriodMemberAllianceCommand()(
+                service_product_id,
+                unionid,
+                alliance=str(payload.get("alliance") or ""),
+            )
+        )
     except Exception as exc:
         _raise_http(exc)
 

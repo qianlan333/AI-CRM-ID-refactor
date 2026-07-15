@@ -28,6 +28,7 @@ from .domain import (
     validate_duration_days,
 )
 from .huangyoucan_usage import huangyoucan_usage_match_joins, huangyoucan_usage_select_fields, public_huangyoucan_usage_fields
+from .member_admin_fields import InMemoryMemberAdminFieldsMixin, PostgresMemberAdminFieldsMixin
 from .member_grid_repo import InMemoryMemberGridRepositoryMixin, MemberGridRepositoryProtocol, PostgresMemberGridRepositoryMixin
 
 LOGGER = logging.getLogger(__name__)
@@ -119,13 +120,14 @@ class ServicePeriodRepository(MemberGridRepositoryProtocol, Protocol):
     def stats(self, service_product_id: str) -> dict[str, Any]: ...
     def members(self, service_product_id: str, *, status: str | None, limit: int, offset: int) -> dict[str, Any]: ...
     def update_member_remark(self, service_product_id: str, unionid: str, remark: str) -> dict[str, Any]: ...
+    def update_member_alliance(self, service_product_id: str, unionid: str, alliance: str) -> dict[str, Any]: ...
     def entitlement_for_unionid(self, service_product_id: str, unionid: str) -> dict[str, Any] | None: ...
     def grant_or_renew_from_paid_order(self, *, order: dict[str, Any], transaction: dict[str, Any] | None = None) -> dict[str, Any]: ...
     def apply_refund_from_order(self, *, out_trade_no: str, refund: dict[str, Any] | None = None) -> dict[str, Any]: ...
     def expire_due_entitlements(self, *, now: datetime | None = None) -> dict[str, Any]: ...
 
 
-class InMemoryServicePeriodRepository(InMemoryMemberGridRepositoryMixin):
+class InMemoryServicePeriodRepository(InMemoryMemberAdminFieldsMixin, InMemoryMemberGridRepositoryMixin):
     def __init__(self) -> None:
         self._products: list[dict[str, Any]] = []
         self._entitlements: list[dict[str, Any]] = []
@@ -285,16 +287,6 @@ class InMemoryServicePeriodRepository(InMemoryMemberGridRepositoryMixin):
         items = [self._member_payload(row, now=now) for row in rows]
         items.sort(key=lambda item: text(item.get("end_at")), reverse=True)
         return {"ok": True, "items": items[offset : offset + limit], "total": len(items), "limit": limit, "offset": offset}
-
-    def update_member_remark(self, service_product_id: str, unionid: str, remark: str) -> dict[str, Any]:
-        row = self._find_entitlement(text(service_product_id), text(unionid))
-        if not row:
-            raise NotFoundError("service period member not found")
-        metadata = deepcopy(row.get("metadata_json") or {})
-        metadata["admin_remark"] = text(remark)
-        row["metadata_json"] = metadata
-        row["updated_at"] = utcnow().isoformat()
-        return {"ok": True, "member": self._member_payload(row, now=utcnow())}
 
     def entitlement_for_unionid(self, service_product_id: str, unionid: str) -> dict[str, Any] | None:
         normalized = text(unionid)
@@ -603,12 +595,14 @@ class InMemoryServicePeriodRepository(InMemoryMemberGridRepositoryMixin):
             "end_at": isoformat(row.get("end_at")),
             "last_order_amount": int(last_order.get("amount_total") or 0),
             "last_order_duration_days": int((self._find_product(row.get("service_product_id")) or {}).get("duration_days") or 0),
+            "renewal_count": max(0, int(row.get("renewal_count") or 0)),
             "remark": text(metadata.get("admin_remark") or metadata.get("remark")),
+            "alliance": text(metadata.get("admin_alliance")),
             **public_huangyoucan_usage_fields({}),
         }
 
 
-class PostgresServicePeriodRepository(PostgresMemberGridRepositoryMixin):
+class PostgresServicePeriodRepository(PostgresMemberAdminFieldsMixin, PostgresMemberGridRepositoryMixin):
     def __init__(self, database_url: str) -> None:
         self._database_url = database_url
 
@@ -954,89 +948,6 @@ class PostgresServicePeriodRepository(PostgresMemberGridRepositoryMixin):
             for row in rows
         ]
         return {"ok": True, "items": items, "total": int(total_row.get("total") or 0), "limit": limit, "offset": offset}
-
-    def update_member_remark(self, service_product_id: str, unionid: str, remark: str) -> dict[str, Any]:
-        with self._connect() as conn:
-            conn.execute(
-                """
-                UPDATE service_period_entitlements
-                SET metadata_json = jsonb_set(COALESCE(metadata_json, '{}'::jsonb), '{admin_remark}', to_jsonb(%s::text), true),
-                    updated_at = CURRENT_TIMESTAMP
-                WHERE tenant_id = 'aicrm'
-                  AND service_product_id::text = %s
-                  AND unionid = %s
-                RETURNING *
-                """,
-                (text(remark), text(service_product_id), text(unionid)),
-            )
-            row = conn.execute(
-                """
-                SELECT
-                    e.*,
-                    p.duration_days AS last_order_duration_days,
-                    o.amount_total AS last_order_amount,
-                    COALESCE(
-                        NULLIF(c.remark, ''),
-                        NULLIF(wfu.remark, ''),
-                        NULLIF(NULLIF(c.customer_name, ''), '问卷提交用户'),
-                        NULLIF(NULLIF(c.profile_json->>'name', ''), '问卷提交用户'),
-                        NULLIF(wim.name, ''),
-                        NULLIF(c.customer_name, ''),
-                        NULLIF(e.metadata_json->>'payer_name', ''),
-                        NULLIF(o.payer_name_snapshot, '')
-                    ) AS display_name,
-                    COALESCE(
-                        NULLIF(e.external_userid_snapshot, ''),
-                        NULLIF(c.primary_external_userid, ''),
-                        NULLIF(wim.external_userid, '')
-                    ) AS external_userid,
-                    COALESCE(NULLIF(c.mobile, ''), NULLIF(c.mobile_normalized, '')) AS mobile,
-                    COALESCE(NULLIF(e.metadata_json->>'admin_remark', ''), NULLIF(e.metadata_json->>'remark', '')) AS remark
-                FROM service_period_entitlements e
-                JOIN service_period_products p ON p.id = e.service_product_id
-                LEFT JOIN wechat_pay_orders o ON o.id = e.last_order_id
-                LEFT JOIN crm_user_identity c ON c.unionid = e.unionid
-                LEFT JOIN LATERAL (
-                    SELECT im.external_userid, im.name
-                    FROM wecom_external_contact_identity_map im
-                    WHERE im.unionid = e.unionid
-                    ORDER BY im.updated_at DESC NULLS LAST, im.id DESC
-                    LIMIT 1
-                ) wim ON TRUE
-                LEFT JOIN LATERAL (
-                    SELECT fu.remark
-                    FROM wecom_external_contact_follow_users fu
-                    WHERE fu.external_userid = COALESCE(NULLIF(e.external_userid_snapshot, ''), NULLIF(c.primary_external_userid, ''), NULLIF(wim.external_userid, ''))
-                      AND COALESCE(fu.relation_status, 'active') = 'active'
-                    ORDER BY fu.is_primary DESC NULLS LAST, fu.updated_at DESC NULLS LAST, fu.id DESC
-                    LIMIT 1
-                ) wfu ON TRUE
-                WHERE e.tenant_id = 'aicrm'
-                  AND e.service_product_id::text = %s
-                  AND e.unionid = %s
-                LIMIT 1
-                """,
-                (text(service_product_id), text(unionid)),
-            ).fetchone()
-            conn.commit()
-        if not row:
-            raise NotFoundError("service period member not found")
-        now = utcnow()
-        return {
-            "ok": True,
-            "member": {
-                "unionid": text(row.get("unionid")),
-                "display_name": text(row.get("display_name")),
-                "external_userid": text(row.get("external_userid")),
-                "mobile": text(row.get("mobile")),
-                "status": entitlement_status(row.get("end_at"), row.get("status"), now=now),
-                "remaining_days": remaining_days(row.get("end_at"), now=now),
-                "end_at": isoformat(row.get("end_at")),
-                "last_order_amount": int(row.get("last_order_amount") or 0),
-                "last_order_duration_days": int(row.get("last_order_duration_days") or 0),
-                "remark": text(row.get("remark")),
-            },
-        }
 
     def entitlement_for_unionid(self, service_product_id: str, unionid: str) -> dict[str, Any] | None:
         if not text(unionid):

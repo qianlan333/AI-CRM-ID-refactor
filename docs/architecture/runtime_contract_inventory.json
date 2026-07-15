@@ -28888,6 +28888,66 @@
               "application/json": {
                 "schema": {
                   "additionalProperties": true,
+                  "title": "Response Update Service Period Member Alliance Api Admin Service Period Products  Service Product Id  Members  Unionid  Alliance Put",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        }
+      },
+      "endpoint": "aicrm_next.service_period.api.update_service_period_member_alliance",
+      "include_in_schema": true,
+      "kind": "api",
+      "methods": [
+        "PUT"
+      ],
+      "name": "update_service_period_member_alliance",
+      "operation_id": "update_service_period_member_alliance:PUT:/api/admin/service-period-products/{service_product_id}/members/{unionid}/alliance",
+      "path": "/api/admin/service-period-products/{service_product_id}/members/{unionid}/alliance",
+      "route_group": "service_period"
+    },
+    {
+      "capability_owner": "service_period",
+      "contract": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "service_product_id",
+            "required": true,
+            "schema": {
+              "title": "Service Product Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "unionid",
+            "required": true,
+            "schema": {
+              "title": "Unionid",
+              "type": "string"
+            }
+          }
+        ],
+        "request_body": null,
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
                   "title": "Response Update Service Period Member Remark Api Admin Service Period Products  Service Product Id  Members  Unionid  Remark Put",
                   "type": "object"
                 }

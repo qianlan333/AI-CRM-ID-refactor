@@ -66,7 +66,7 @@
     panelKind: "",
     collapsed: new Set(),
     canManageViews: false,
-    canEditRemark: false,
+    editableFields: new Set(),
     toastTimer: 0,
   };
 
@@ -262,7 +262,13 @@
     const progress = values.learning_plan_progress || {};
     const formal = values.formally_logged_in || "unmatched";
     const token = values.token_usage || "unmatched";
-    const remark = String(values.remark || "");
+    const editableTextCell = (fieldId) => {
+      const value = String(values[fieldId] || "");
+      const editable = state.editableFields.has(fieldId);
+      return `<td class="sp-col-${escapeHtml(fieldId)} sp-editable-text-cell${editable ? " is-editable" : ""}" ` +
+        `data-row-index="${rowIndex}" data-field-id="${escapeHtml(fieldId)}"${editable ? ' tabindex="0"' : ""} ` +
+        `title="${escapeHtml(value)}">${escapeHtml(value || "—")}</td>`;
+    };
     const cells = [
       `<td>${rowIndex + 1}</td>`,
       `<td><div class="sp-member-cell"><div class="sp-member-primary" title="${escapeHtml(member.primary || "")}">${escapeHtml(member.primary || "—")}</div>` +
@@ -273,8 +279,9 @@
       `<td class="sp-col-learning_plan_progress"><span class="sp-progress is-${escapeHtml(progress.state || "unmatched")}" title="${escapeHtml(progressLabels[progress.state] || "")}">${escapeHtml(progressText(progress))}</span></td>`,
       `<td class="sp-col-open_count_7d">${values.open_count_7d === null || values.open_count_7d === undefined ? "—" : Number(values.open_count_7d)}</td>`,
       `<td class="sp-col-last_open_at" title="${escapeHtml(formatDateTime(values.last_open_at))}">${escapeHtml(formatDateTime(values.last_open_at))}</td>`,
-      `<td class="sp-col-remark sp-remark-cell${state.canEditRemark ? " is-editable" : ""}" ` +
-        `data-row-index="${rowIndex}"${state.canEditRemark ? ' tabindex="0"' : ""} title="${escapeHtml(remark)}">${escapeHtml(remark || "—")}</td>`,
+      `<td class="sp-col-renewal_count">${Math.max(0, Number(values.renewal_count || 0))}</td>`,
+      editableTextCell("remark"),
+      editableTextCell("alliance"),
     ];
     return `<tr data-record-id="${escapeHtml(row.record_id)}">${cells.join("")}</tr>`;
   }
@@ -749,14 +756,18 @@
     panelPosition(elements.viewMenu, elements.viewMenuButton);
   }
 
-  function startRemarkEdit(cell) {
-    if (!state.canEditRemark || cell.querySelector("textarea")) return;
+  function startTextEdit(cell) {
+    const fieldId = String(cell.dataset.fieldId || "");
+    if (!state.editableFields.has(fieldId) || cell.querySelector("textarea")) return;
     const rowIndex = Number(cell.dataset.rowIndex);
     const row = state.rows[rowIndex];
     if (!row) return;
-    const original = String((row.values || {}).remark || "");
+    const field = state.fieldMap.get(fieldId);
+    if (!field || !field.editable) return;
+    const label = String(field.label || fieldId);
+    const original = String((row.values || {})[fieldId] || "");
     const editor = document.createElement("textarea");
-    editor.className = "sp-remark-editor";
+    editor.className = "sp-text-cell-editor";
     editor.value = original;
     editor.maxLength = 500;
     cell.textContent = "";
@@ -771,20 +782,20 @@
       if (finished) return;
       finished = true;
       const next = editor.value.slice(0, 500);
-      row.values.remark = next;
+      row.values[fieldId] = next;
       renderRows();
       if (next === original) return;
       try {
-        await request(`${apiBase}/members/${encodeURIComponent(row.unionid)}/remark`, {
+        await request(`${apiBase}/members/${encodeURIComponent(row.unionid)}/${encodeURIComponent(fieldId)}`, {
           method: "PUT",
-          body: {remark: next},
+          body: {[fieldId]: next},
         });
-        toast("备注已保存", "success");
+        toast(`${label}已保存`, "success");
         scheduleQuery();
       } catch (error) {
-        row.values.remark = original;
+        row.values[fieldId] = original;
         renderRows();
-        toast(errorMessage(error, "备注保存失败，已恢复原值"), "error");
+        toast(errorMessage(error, `${label}保存失败，已恢复原值`), "error");
       }
     };
     editor.addEventListener("keydown", (event) => {
@@ -938,14 +949,14 @@
       }
     });
     elements.gridBody.addEventListener("dblclick", (event) => {
-      const cell = event.target.closest(".sp-remark-cell");
-      if (cell) startRemarkEdit(cell);
+      const cell = event.target.closest(".sp-editable-text-cell");
+      if (cell) startTextEdit(cell);
     });
     elements.gridBody.addEventListener("keydown", (event) => {
-      const cell = event.target.closest(".sp-remark-cell");
+      const cell = event.target.closest(".sp-editable-text-cell");
       if (cell && event.key === "Enter" && !cell.querySelector("textarea")) {
         event.preventDefault();
-        startRemarkEdit(cell);
+        startTextEdit(cell);
       }
     });
     document.addEventListener("click", (event) => {
@@ -990,7 +1001,11 @@
       return;
     }
     state.canManageViews = permissionProbe("POST", `${apiBase}/member-views`);
-    state.canEditRemark = permissionProbe("PUT", `${apiBase}/members/permission-probe/remark`);
+    state.editableFields = new Set(
+      ["remark", "alliance"].filter((fieldId) =>
+        permissionProbe("PUT", `${apiBase}/members/permission-probe/${fieldId}`),
+      ),
+    );
     installEvents();
     installInfiniteScroll();
     try {

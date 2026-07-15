@@ -327,6 +327,17 @@ class UpdateServicePeriodMemberRemarkCommand:
         return self._repo.update_member_remark(service_product_id, text(unionid), normalized_remark)
 
 
+class UpdateServicePeriodMemberAllianceCommand:
+    def __init__(self, repo: ServicePeriodRepository | None = None) -> None:
+        self._repo = repo or build_service_period_repository()
+
+    def __call__(self, service_product_id: str, unionid: str, *, alliance: str) -> dict[str, Any]:
+        if not self._repo.get_product(service_product_id):
+            raise NotFoundError("service period product not found")
+        normalized_alliance = text(alliance)[:500]
+        return self._repo.update_member_alliance(service_product_id, text(unionid), normalized_alliance)
+
+
 class GetServicePeriodPublicStateQuery:
     def __init__(
         self,

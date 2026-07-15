@@ -464,6 +464,7 @@ class PostgresMemberGridRepositoryMixin:
                         e.id AS record_id,
                         e.unionid,
                         e.end_at,
+                        GREATEST(COALESCE(e.renewal_count, 0), 0)::integer AS renewal_count,
                         COALESCE(
                             NULLIF(c.remark, ''),
                             NULLIF(wfu.remark, ''),
@@ -482,6 +483,7 @@ class PostgresMemberGridRepositoryMixin:
                         ) AS external_userid,
                         COALESCE(NULLIF(c.mobile, ''), NULLIF(c.mobile_normalized, '')) AS mobile,
                         COALESCE(NULLIF(e.metadata_json->>'admin_remark', ''), NULLIF(e.metadata_json->>'remark', ''), '') AS remark,
+                        COALESCE(NULLIF(e.metadata_json->>'admin_alliance', ''), '') AS alliance,
                         {huangyoucan_usage_select_fields()}
                     FROM service_period_entitlements e
                     LEFT JOIN wechat_pay_orders o ON o.id = e.last_order_id
@@ -570,7 +572,10 @@ class PostgresMemberGridRepositoryMixin:
                         ({last_open} AT TIME ZONE 'Asia/Shanghai')::date AS last_open_date,
                         NULLIF(LOWER(BTRIM(raw.remark)), '') AS remark_sort,
                         NULLIF(LOWER(BTRIM(raw.remark)), '') AS remark_group,
-                        LOWER(COALESCE(raw.remark, '')) AS remark_search
+                        LOWER(COALESCE(raw.remark, '')) AS remark_search,
+                        NULLIF(LOWER(BTRIM(raw.alliance)), '') AS alliance_sort,
+                        NULLIF(LOWER(BTRIM(raw.alliance)), '') AS alliance_group,
+                        LOWER(COALESCE(raw.alliance, '')) AS alliance_search
                     FROM raw_members raw
                 ),
                 filtered AS (
