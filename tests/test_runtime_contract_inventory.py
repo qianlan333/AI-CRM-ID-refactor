@@ -30,7 +30,7 @@ def test_runtime_contract_inventory_covers_r00_behavior_surfaces() -> None:
     assert all(route["capability_owner"] for route in routes)
     assert all("responses" in route["contract"] for route in routes)
 
-    assert inventory["migration_heads"] == ["0118_external_radar_read_api"]
+    assert inventory["migration_heads"] == ["0119_group_invite_bindings"]
     assert len(inventory["tables"]) >= 150
     owned_lifecycles = {"canonical", "read_model", "event", "queue", "config"}
     assert all(table["write_owner"] for table in inventory["tables"] if table["lifecycle"] in owned_lifecycles)

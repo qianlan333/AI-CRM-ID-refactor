@@ -190,7 +190,7 @@ ADMIN_NAV_GROUPS: list[dict[str, Any]] = [
     {
         "title": "配置及后台",
         "items": [
-            {"key": "group_invite_library", "label": "客户群邀请设置", "endpoint": "api.admin_group_invite_library_workspace"},
+            {"key": "group_invite_library", "label": "群邀请托管", "endpoint": "api.admin_group_invite_library_workspace"},
             {"key": "jobs", "label": "同步任务配置 / 同步任务", "endpoint": "api.admin_jobs"},
             {"key": "push_center", "label": "推送中心", "endpoint": "api.admin_push_center_page"},
             {"key": "internal_events", "label": "事件中心", "endpoint": "api.admin_internal_events_page"},

@@ -677,7 +677,7 @@
       "accessor": "os.getenv",
       "file": "aicrm_next/media_library/api.py",
       "key": "AICRM_NEXT_MEDIA_STORAGE_MODE",
-      "line": 42
+      "line": 46
     },
     {
       "accessor": "os.getenv",
@@ -785,7 +785,7 @@
       "accessor": "os.getenv",
       "file": "aicrm_next/media_library/api.py",
       "key": "AICRM_NEXT_WECOM_MEDIA_MODE",
-      "line": 43
+      "line": 47
     },
     {
       "accessor": "os.getenv",
@@ -1965,6 +1965,12 @@
     },
     {
       "accessor": "os.getenv",
+      "file": "aicrm_next/automation_engine/group_ops/picker_application.py",
+      "key": "WECOM_DEFAULT_OWNER_USERID",
+      "line": 17
+    },
+    {
+      "accessor": "os.getenv",
       "file": "scripts/run_incremental_archive_sync.py",
       "key": "WECOM_DEFAULT_OWNER_USERID",
       "line": 29
@@ -2871,7 +2877,7 @@
     }
   ],
   "migration_heads": [
-    "0118_external_radar_read_api"
+    "0119_group_invite_bindings"
   ],
   "openapi_components": {
     "schemas": {
@@ -3796,6 +3802,83 @@
         "title": "ExportPreviewRequest",
         "type": "object"
       },
+      "GroupChatPickerSyncRequest": {
+        "properties": {
+          "keyword": {
+            "default": "",
+            "title": "Keyword",
+            "type": "string"
+          },
+          "limit": {
+            "default": 200,
+            "title": "Limit",
+            "type": "integer"
+          },
+          "operator": {
+            "default": "system",
+            "title": "Operator",
+            "type": "string"
+          },
+          "owner_userid": {
+            "default": "",
+            "title": "Owner Userid",
+            "type": "string"
+          }
+        },
+        "title": "GroupChatPickerSyncRequest",
+        "type": "object"
+      },
+      "GroupInviteBindingEnsureRequest": {
+        "properties": {
+          "chat_id": {
+            "title": "Chat Id",
+            "type": "string"
+          },
+          "group_name": {
+            "default": "",
+            "title": "Group Name",
+            "type": "string"
+          },
+          "member_count": {
+            "default": 0,
+            "title": "Member Count",
+            "type": "integer"
+          },
+          "owner_name": {
+            "default": "",
+            "title": "Owner Name",
+            "type": "string"
+          },
+          "owner_userid": {
+            "default": "",
+            "title": "Owner Userid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "chat_id"
+        ],
+        "title": "GroupInviteBindingEnsureRequest",
+        "type": "object"
+      },
+      "GroupInviteBindingUpdateRequest": {
+        "properties": {
+          "enabled": {
+            "default": true,
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "join_url": {
+            "title": "Join Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "join_url"
+        ],
+        "title": "GroupInviteBindingUpdateRequest",
+        "type": "object"
+      },
       "GroupInviteUpsertRequest": {
         "properties": {
           "auto_create_room": {
@@ -3808,6 +3891,28 @@
               }
             ],
             "title": "Auto Create Room"
+          },
+          "binding_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Binding Status"
+          },
+          "chat_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Chat Id"
           },
           "chat_id_list": {
             "anyOf": [
@@ -11598,6 +11703,120 @@
       "name": "create_audience_rule_version",
       "operation_id": "create_audience_rule_version:POST:/api/admin/automation-conversion/group-ops/audience-rules/{rule_key}/versions",
       "path": "/api/admin/automation-conversion/group-ops/audience-rules/{rule_key}/versions",
+      "route_group": "unregistered"
+    },
+    {
+      "capability_owner": "unregistered",
+      "contract": {
+        "parameters": [
+          {
+            "in": "query",
+            "name": "owner_userid",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "Owner Userid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "keyword",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "Keyword",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 200,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "request_body": null,
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        }
+      },
+      "endpoint": "aicrm_next.automation_engine.group_ops.api.list_group_chat_picker",
+      "include_in_schema": true,
+      "kind": "api",
+      "methods": [
+        "GET"
+      ],
+      "name": "list_group_chat_picker",
+      "operation_id": "list_group_chat_picker:GET:/api/admin/automation-conversion/group-ops/group-picker",
+      "path": "/api/admin/automation-conversion/group-ops/group-picker",
+      "route_group": "unregistered"
+    },
+    {
+      "capability_owner": "unregistered",
+      "contract": {
+        "parameters": [],
+        "request_body": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GroupChatPickerSyncRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        }
+      },
+      "endpoint": "aicrm_next.automation_engine.group_ops.api.sync_group_chat_picker",
+      "include_in_schema": true,
+      "kind": "api",
+      "methods": [
+        "POST"
+      ],
+      "name": "sync_group_chat_picker",
+      "operation_id": "sync_group_chat_picker:POST:/api/admin/automation-conversion/group-ops/group-picker/sync",
+      "path": "/api/admin/automation-conversion/group-ops/group-picker/sync",
       "route_group": "unregistered"
     },
     {
@@ -19639,6 +19858,239 @@
       "operation_id": "external_effect_troubleshooting_summary:GET:/api/admin/external-effects/troubleshooting/summary",
       "path": "/api/admin/external-effects/troubleshooting/summary",
       "route_group": "external_effects"
+    },
+    {
+      "capability_owner": "media_library",
+      "contract": {
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "Q",
+              "type": "string"
+            }
+          }
+        ],
+        "request_body": null,
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response List Group Invite Bindings Api Admin Group Invite Bindings Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        }
+      },
+      "endpoint": "aicrm_next.media_library.api.list_group_invite_bindings",
+      "include_in_schema": true,
+      "kind": "api",
+      "methods": [
+        "GET"
+      ],
+      "name": "list_group_invite_bindings",
+      "operation_id": "list_group_invite_bindings:GET:/api/admin/group-invite-bindings",
+      "path": "/api/admin/group-invite-bindings",
+      "route_group": "media_library"
+    },
+    {
+      "capability_owner": "media_library",
+      "contract": {
+        "parameters": [],
+        "request_body": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GroupInviteBindingEnsureRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Ensure Group Invite Binding Api Admin Group Invite Bindings Ensure Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        }
+      },
+      "endpoint": "aicrm_next.media_library.api.ensure_group_invite_binding",
+      "include_in_schema": true,
+      "kind": "api",
+      "methods": [
+        "POST"
+      ],
+      "name": "ensure_group_invite_binding",
+      "operation_id": "ensure_group_invite_binding:POST:/api/admin/group-invite-bindings/ensure",
+      "path": "/api/admin/group-invite-bindings/ensure",
+      "route_group": "media_library"
+    },
+    {
+      "capability_owner": "media_library",
+      "contract": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "item_id",
+            "required": true,
+            "schema": {
+              "title": "Item Id",
+              "type": "string"
+            }
+          }
+        ],
+        "request_body": null,
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Group Invite Binding Api Admin Group Invite Bindings  Item Id  Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        }
+      },
+      "endpoint": "aicrm_next.media_library.api.get_group_invite_binding",
+      "include_in_schema": true,
+      "kind": "api",
+      "methods": [
+        "GET"
+      ],
+      "name": "get_group_invite_binding",
+      "operation_id": "get_group_invite_binding:GET:/api/admin/group-invite-bindings/{item_id}",
+      "path": "/api/admin/group-invite-bindings/{item_id}",
+      "route_group": "media_library"
+    },
+    {
+      "capability_owner": "media_library",
+      "contract": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "item_id",
+            "required": true,
+            "schema": {
+              "title": "Item Id",
+              "type": "string"
+            }
+          }
+        ],
+        "request_body": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GroupInviteBindingUpdateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Update Group Invite Binding Api Admin Group Invite Bindings  Item Id  Put",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        }
+      },
+      "endpoint": "aicrm_next.media_library.api.update_group_invite_binding",
+      "include_in_schema": true,
+      "kind": "api",
+      "methods": [
+        "PUT"
+      ],
+      "name": "update_group_invite_binding",
+      "operation_id": "update_group_invite_binding:PUT:/api/admin/group-invite-bindings/{item_id}",
+      "path": "/api/admin/group-invite-bindings/{item_id}",
+      "route_group": "media_library"
     },
     {
       "capability_owner": "media_library",
@@ -45532,7 +45984,7 @@
       "domain": "media_library",
       "drop_candidate": false,
       "lifecycle": "canonical",
-      "migration_source": "0117_group_invite_cards",
+      "migration_source": "0117_group_invite_cards, 0119_group_invite_bindings",
       "pii_level": "",
       "read_owners": [
         "aicrm_next.automation_engine.group_ops.material_resolver",

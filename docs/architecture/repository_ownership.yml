@@ -490,6 +490,7 @@ repositories:
     capability_owner: aicrm_next.media_library
     table_reads:
       - campaign_steps
+      - group_invite_library
       - image_library
       - image_library_variants
       - miniprogram_library
@@ -500,6 +501,8 @@ repositories:
       - image_library
       - image_library_variants
       - miniprogram_library
+    non_literal_table_reads:
+      - group_invite_library
   aicrm_next/media_library/repo.py:
     capability_owner: aicrm_next.media_library
     table_reads: []

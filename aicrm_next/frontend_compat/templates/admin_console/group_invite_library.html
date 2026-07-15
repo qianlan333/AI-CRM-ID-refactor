@@ -41,8 +41,8 @@
   <section class="gi-card gi-intro">
     <div class="gi-intro-icon">群</div>
     <div>
-      <h2>按客户群维护邀请链接</h2>
-      <p>运营人员在欢迎语、群发、私信群发、AI 助手和自动化运营里只需选择要加入的客户群。这里由群主或管理员为每个群绑定一次企业微信原生「加入群聊」链接；该链接不是素材，也不使用 media_id。</p>
+      <h2>群邀请托管</h2>
+      <p>运营人员在欢迎语、群发、私信群发、AI 助手和自动化运营里只需选择要加入的群聊。这里仅由管理员补齐企业微信原生「加入群聊」链接；该链接不是素材，也不使用 media_id。</p>
     </div>
   </section>
 
@@ -72,7 +72,6 @@
       <p class="gi-help">在企业微信客户群中复制原生「加入群聊」链接后粘贴到这里。系统会自动生成发送卡片的标题和说明，无需维护素材、封面或 media_id。</p>
       <div class="gi-actions" style="margin-top:18px">
         <button class="gi-btn primary" id="gi-save" type="button">保存群邀请设置</button>
-        <button class="gi-btn danger" id="gi-unbind" type="button" hidden>移除链接</button>
       </div>
     </div>
     <div class="gi-status" id="gi-status" role="status"></div>
@@ -82,7 +81,7 @@
 <script>
 (() => {
   const groupApi = '/api/admin/automation-conversion/group-ops/groups';
-  const bindingApi = '/api/admin/group-invite-library';
+  const bindingApi = '/api/admin/group-invite-bindings';
   const $ = (id) => document.getElementById(id);
   const state = { groups: [], bindings: [], selectedChatId: '' };
   let timer = null;
@@ -90,6 +89,9 @@
   const status = (message, kind='') => { $('gi-status').textContent = message; $('gi-status').className = `gi-status ${kind}`; };
 
   async function fetchJson(url, options) {
+    if (window.AdminApi && typeof window.AdminApi.requestJson === 'function') {
+      return window.AdminApi.requestJson(url, options || {});
+    }
     const response = await fetch(url, options);
     const payload = await response.json().catch(() => ({}));
     if (!response.ok || payload.ok === false) throw new Error(payload.error || payload.detail || '请求失败');
@@ -111,7 +113,7 @@
   }
 
   function bindingFor(chatId) {
-    return state.bindings.find((item) => String((item.chat_id_list || [])[0] || '') === String(chatId || '')) || null;
+    return state.bindings.find((item) => String(item.chat_id || (item.chat_id_list || [])[0] || '') === String(chatId || '')) || null;
   }
 
   function renderForm() {
@@ -125,7 +127,6 @@
     $('gi-group-name').textContent = group.group_name || group.chat_id || '未命名客户群';
     $('gi-group-meta').textContent = `群主：${group.owner_name || group.owner_userid || '未识别'} · chat_id：${group.chat_id}`;
     $('gi-join-url').value = binding?.join_url || '';
-    $('gi-unbind').hidden = !binding;
     $('gi-form-title').textContent = binding ? '更新邀请链接' : '配置邀请链接';
     status('');
   }
@@ -133,14 +134,15 @@
   function renderList() {
     const query = $('gi-search').value.trim().toLowerCase();
     const rows = state.groups.filter((group) => !query || `${group.group_name || ''} ${group.owner_name || ''} ${group.owner_userid || ''} ${group.chat_id || ''}`.toLowerCase().includes(query));
-    const boundCount = state.groups.filter((group) => bindingFor(group.chat_id)).length;
-    $('gi-count').textContent = `共 ${state.groups.length} 个客户群，${boundCount} 个已配置邀请链接`;
+    const boundCount = state.groups.filter((group) => bindingFor(group.chat_id)?.binding_status === 'ready').length;
+    $('gi-count').textContent = `共 ${state.groups.length} 个客户群，${boundCount} 个邀请链接已就绪`;
     $('gi-list').innerHTML = rows.length ? rows.map((group) => {
       const binding = bindingFor(group.chat_id);
+      const bindingStatus = String(binding?.binding_status || (binding?.join_url ? 'ready' : 'pending'));
       return `<article class="gi-item">
         <div>
-          <div class="gi-title">${escapeHtml(group.group_name || group.chat_id)} <span class="gi-badge ${binding ? 'bound' : 'unbound'}">${binding ? '已配置' : '待配置'}</span></div>
-          <div class="gi-meta">群主：${escapeHtml(group.owner_name || group.owner_userid || '未识别')} · ${escapeHtml(group.chat_id)}</div>
+          <div class="gi-title">${escapeHtml(group.group_name || group.chat_id)} <span class="gi-badge ${bindingStatus === 'ready' ? 'bound' : 'unbound'}">${bindingStatus === 'ready' ? '已就绪' : bindingStatus === 'invalid' ? '已失效' : '待托管'}</span></div>
+          <div class="gi-meta">群主：${escapeHtml(group.owner_name || group.owner_userid || '未识别')} · ${Number(group.member_count || 0)} 人 · ${escapeHtml(group.chat_id)}</div>
         </div>
         <button class="gi-btn${state.selectedChatId === String(group.chat_id) ? ' primary' : ''}" type="button" data-configure-chat="${escapeHtml(group.chat_id)}">${binding ? '编辑链接' : '配置链接'}</button>
       </article>`;
@@ -170,37 +172,31 @@
     if (!joinUrl) return status('请粘贴企业微信「加入群聊」链接', 'error');
     const id = $('gi-id').value;
     const groupName = String(group.group_name || group.chat_id || '客户群');
-    const body = {
-      name: groupName,
-      title: `加入「${groupName}」`,
-      description: '点击卡片直接加入群聊',
-      join_url: joinUrl,
-      pic_url: '',
-      config_id: '',
-      state: '',
-      chat_id_list: [String(group.chat_id)],
-      auto_create_room: false,
-      room_base_name: groupName,
-      enabled: true,
-    };
+    const body = { join_url: joinUrl, enabled: true };
     status('保存中…');
     try {
-      await fetchJson(id ? `${bindingApi}/${encodeURIComponent(id)}` : bindingApi, {
-        method: id ? 'PUT' : 'POST',
+      let bindingId = id;
+      if (!bindingId) {
+        const ensured = await fetchJson(`${bindingApi}/ensure`, {
+          method: 'POST',
+          headers: {'Content-Type':'application/json'},
+          body: JSON.stringify({
+            chat_id: String(group.chat_id),
+            group_name: groupName,
+            owner_userid: String(group.owner_userid || ''),
+            owner_name: String(group.owner_name || ''),
+            member_count: Number(group.member_count || 0),
+          }),
+        });
+        bindingId = String(ensured.binding_id || ensured.item?.id || '');
+      }
+      await fetchJson(`${bindingApi}/${encodeURIComponent(bindingId)}`, {
+        method: 'PUT',
         headers: {'Content-Type':'application/json'},
         body: JSON.stringify(body),
       });
       await load(); status('已保存。运营人员现在可以在发送场景中直接选择这个客户群。', 'success');
     } catch (error) { status(error.message || '保存失败', 'error'); }
-  });
-
-  $('gi-unbind').addEventListener('click', async () => {
-    const id = $('gi-id').value;
-    if (!id || !window.confirm('移除后，新配置将不能选择这个客户群；已有配置仍保留 ID，但发送前应重新选择。确定移除？')) return;
-    try {
-      await fetchJson(`${bindingApi}/${encodeURIComponent(id)}`, {method:'DELETE'});
-      await load(); status('邀请链接已移除', 'success');
-    } catch (error) { status(error.message || '移除失败', 'error'); }
   });
 
   $('gi-refresh').addEventListener('click', () => load().catch((error) => status(error.message, 'error')));

@@ -8321,6 +8321,46 @@ routes:
   rate_limit: authenticated
   principal_types:
   - human
+- path: /api/admin/automation-conversion/group-ops/group-picker
+  methods:
+  - GET
+  route_name: list_group_chat_picker
+  capability_owner: automation_engine
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: none
+  data_source: read_model
+  requires_auth: true
+  rollback: previous_release
+  audience: admin
+  auth_scheme: human_session
+  capability: admin_read
+  access_scope: global
+  pii_level: internal
+  csrf: false
+  rate_limit: authenticated
+  principal_types:
+  - human
+- path: /api/admin/automation-conversion/group-ops/group-picker/sync
+  methods:
+  - POST
+  route_name: sync_group_chat_picker
+  capability_owner: automation_engine
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: none
+  data_source: command
+  requires_auth: true
+  rollback: previous_release
+  audience: admin
+  auth_scheme: human_session
+  capability: manage_group_ops
+  access_scope: global
+  pii_level: internal
+  csrf: true
+  rate_limit: authenticated
+  principal_types:
+  - human
 - path: /api/admin/automation-conversion/group-ops/groups/sync/preview
   methods:
   - POST
@@ -11642,6 +11682,86 @@ routes:
   methods:
   - POST
   route_name: test_resolve_miniprogram
+  capability_owner: media_library
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: none
+  data_source: command
+  requires_auth: true
+  rollback: previous_release
+  audience: admin
+  auth_scheme: human_session
+  capability: manage_content
+  access_scope: global
+  pii_level: internal
+  csrf: true
+  rate_limit: authenticated
+  principal_types:
+  - human
+- path: /api/admin/group-invite-bindings
+  methods:
+  - GET
+  route_name: list_group_invite_bindings
+  capability_owner: media_library
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: none
+  data_source: read_model
+  requires_auth: true
+  rollback: previous_release
+  audience: admin
+  auth_scheme: human_session
+  capability: admin_read
+  access_scope: global
+  pii_level: internal
+  csrf: false
+  rate_limit: authenticated
+  principal_types:
+  - human
+- path: /api/admin/group-invite-bindings/ensure
+  methods:
+  - POST
+  route_name: ensure_group_invite_binding
+  capability_owner: media_library
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: none
+  data_source: command
+  requires_auth: true
+  rollback: previous_release
+  audience: admin
+  auth_scheme: human_session
+  capability: manage_content
+  access_scope: global
+  pii_level: internal
+  csrf: true
+  rate_limit: authenticated
+  principal_types:
+  - human
+- path: /api/admin/group-invite-bindings/{item_id}
+  methods:
+  - GET
+  route_name: get_group_invite_binding
+  capability_owner: media_library
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: none
+  data_source: read_model
+  requires_auth: true
+  rollback: previous_release
+  audience: admin
+  auth_scheme: human_session
+  capability: admin_read
+  access_scope: global
+  pii_level: internal
+  csrf: false
+  rate_limit: authenticated
+  principal_types:
+  - human
+- path: /api/admin/group-invite-bindings/{item_id}
+  methods:
+  - PUT
+  route_name: update_group_invite_binding
   capability_owner: media_library
   runtime_owner: ai_crm_next
   layer: api

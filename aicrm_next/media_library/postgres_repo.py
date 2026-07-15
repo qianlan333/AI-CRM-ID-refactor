@@ -504,6 +504,8 @@ class PostgresMediaLibraryRepository:
                 ("config_id", "''"),
                 ("state", "''"),
                 ("chat_id_list", "'[]'::jsonb"),
+                ("chat_id", "''"),
+                ("binding_status", "'ready'"),
                 ("auto_create_room", "TRUE"),
                 ("room_base_name", "''"),
                 ("room_base_id", "NULL::integer"),
@@ -816,6 +818,8 @@ class PostgresMediaLibraryRepository:
         return self.get_item("attachment", str(row["id"])) or {}
 
     def _save_group_invite(self, payload: dict[str, Any], item_id: str | None) -> dict[str, Any]:
+        if item_id and "join_url" in payload:
+            payload = {**payload, "binding_status": "ready"}
         title = str(payload.get("title") or payload.get("name") or "").strip()
         description = str(payload.get("description") or "").strip()
         join_url = normalize_group_invite_join_url(payload.get("join_url")) if "join_url" in payload or not item_id else ""
@@ -833,6 +837,8 @@ class PostgresMediaLibraryRepository:
             "config_id": str(payload.get("config_id") or "").strip()[:255],
             "state": str(payload.get("state") or "").strip()[:255],
             "chat_id_list": [str(value).strip() for value in list(payload.get("chat_id_list") or []) if str(value).strip()],
+            "chat_id": str(payload.get("chat_id") or ((payload.get("chat_id_list") or [""])[0])).strip(),
+            "binding_status": str(payload.get("binding_status") or ("ready" if join_url else "pending")).strip().lower(),
             "auto_create_room": _bool(payload.get("auto_create_room", True)),
             "room_base_name": str(payload.get("room_base_name") or "").strip()[:200],
             "room_base_id": _coerce_optional_int(payload.get("room_base_id"), "room_base_id"),
@@ -845,7 +851,7 @@ class PostgresMediaLibraryRepository:
                     params: list[Any] = []
                     for key in [
                         "name", "title", "description", "pic_url", "join_url", "config_id", "state",
-                        "chat_id_list", "auto_create_room", "room_base_name", "room_base_id", "enabled",
+                        "chat_id_list", "chat_id", "binding_status", "auto_create_room", "room_base_name", "room_base_id", "enabled",
                     ]:
                         if key not in payload:
                             continue
@@ -853,6 +859,8 @@ class PostgresMediaLibraryRepository:
                             raise ContractError("群邀请卡片标题不能为空")
                         if key == "join_url" and not data[key]:
                             raise ContractError("群邀请链接不能为空")
+                        if key == "join_url":
+                            data["binding_status"] = "ready"
                         sets.append("chat_id_list = %s::jsonb" if key == "chat_id_list" else f"{key} = %s")
                         params.append(json.dumps(data[key], ensure_ascii=False) if key == "chat_id_list" else data[key])
                     if not sets:
@@ -868,14 +876,14 @@ class PostgresMediaLibraryRepository:
                         """
                         INSERT INTO group_invite_library
                             (name, title, description, pic_url, join_url, config_id, state,
-                             chat_id_list, auto_create_room, room_base_name, room_base_id, enabled)
-                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s, %s, %s, %s)
+                             chat_id_list, chat_id, binding_status, auto_create_room, room_base_name, room_base_id, enabled)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s, %s, %s, %s, %s, %s)
                         RETURNING id
                         """,
                         (
                             data["name"], data["title"], data["description"], data["pic_url"], data["join_url"],
                             data["config_id"], data["state"], json.dumps(data["chat_id_list"], ensure_ascii=False),
-                            data["auto_create_room"], data["room_base_name"], data["room_base_id"], data["enabled"],
+                            data["chat_id"], data["binding_status"], data["auto_create_room"], data["room_base_name"], data["room_base_id"], data["enabled"],
                         ),
                     )
                     row = cur.fetchone()
@@ -883,6 +891,68 @@ class PostgresMediaLibraryRepository:
         if not row:
             raise NotFoundError("group_invite item not found")
         return self.get_item("group_invite", str(row["id"])) or {}
+
+    def ensure_group_invite_binding(self, payload: dict[str, Any]) -> dict[str, Any]:
+        chat_id = str(payload.get("chat_id") or "").strip()
+        if not chat_id:
+            raise ContractError("chat_id 不能为空")
+        group_name = str(payload.get("group_name") or chat_id).strip()
+        title = f"加入「{group_name}」"
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO group_invite_library
+                        (name, title, description, join_url, chat_id_list, chat_id,
+                         binding_status, auto_create_room, room_base_name, enabled)
+                    VALUES (%s, %s, %s, '', %s::jsonb, %s, 'pending', FALSE, %s, TRUE)
+                    ON CONFLICT (chat_id) WHERE chat_id <> ''
+                    DO UPDATE SET
+                        name = EXCLUDED.name,
+                        title = EXCLUDED.title,
+                        room_base_name = EXCLUDED.room_base_name,
+                        chat_id_list = EXCLUDED.chat_id_list,
+                        updated_at = CURRENT_TIMESTAMP
+                    RETURNING id
+                    """,
+                    (group_name, title, "点击卡片直接加入群聊", json.dumps([chat_id], ensure_ascii=False), chat_id, group_name),
+                )
+                row = cur.fetchone()
+            conn.commit()
+        if not row:
+            raise ContractError("群邀请绑定创建失败")
+        return self.get_item("group_invite", str(row["id"])) or {}
+
+    def reconcile_group_invite_bindings(self, active_chat_ids: list[str], inactive_chat_ids: list[str]) -> int:
+        active = [str(value or "").strip() for value in active_chat_ids if str(value or "").strip()]
+        inactive = [str(value or "").strip() for value in inactive_chat_ids if str(value or "").strip()]
+        changed = 0
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                if inactive:
+                    cur.execute(
+                        """
+                        UPDATE group_invite_library
+                        SET binding_status = 'invalid', updated_at = CURRENT_TIMESTAMP
+                        WHERE chat_id = ANY(%s) AND binding_status <> 'invalid'
+                        """,
+                        (inactive,),
+                    )
+                    changed += int(cur.rowcount or 0)
+                if active:
+                    cur.execute(
+                        """
+                        UPDATE group_invite_library
+                        SET binding_status = CASE WHEN join_url = '' THEN 'pending' ELSE 'ready' END,
+                            enabled = TRUE,
+                            updated_at = CURRENT_TIMESTAMP
+                        WHERE chat_id = ANY(%s) AND binding_status = 'invalid'
+                        """,
+                        (active,),
+                    )
+                    changed += int(cur.rowcount or 0)
+            conn.commit()
+        return changed
 
     def _delete_image(self, item_id: str, *, force: bool) -> dict[str, Any]:
         refs = self._image_references(item_id)
@@ -1006,6 +1076,8 @@ class PostgresMediaLibraryRepository:
                 "config_id": str(row.get("config_id") or ""),
                 "state": str(row.get("state") or ""),
                 "chat_id_list": [str(value) for value in _json(row.get("chat_id_list"), [])],
+                "chat_id": str(row.get("chat_id") or ((_json(row.get("chat_id_list"), []) or [""])[0]) or ""),
+                "binding_status": str(row.get("binding_status") or ("ready" if row.get("join_url") else "pending")),
                 "auto_create_room": _bool(row.get("auto_create_room")),
                 "room_base_name": str(row.get("room_base_name") or ""),
                 "room_base_id": row.get("room_base_id"),

@@ -120,6 +120,8 @@ class GroupInviteUpsertRequest(BaseModel):
     room_base_name: str | None = None
     room_base_id: int | None = None
     enabled: bool | None = None
+    chat_id: str | None = None
+    binding_status: str | None = None
 
     @field_validator("join_url")
     @classmethod
@@ -153,4 +155,43 @@ class GroupInviteUpsertRequest(BaseModel):
         normalized = str(value or "").strip()
         if len(normalized.encode("utf-8")) > 512:
             raise ValueError("群邀请卡片描述不能超过 512 字节")
+        return normalized
+
+    @field_validator("binding_status")
+    @classmethod
+    def validate_binding_status(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = str(value or "").strip().lower()
+        if normalized not in {"pending", "ready", "invalid"}:
+            raise ValueError("binding_status 必须是 pending、ready 或 invalid")
+        return normalized
+
+
+class GroupInviteBindingEnsureRequest(BaseModel):
+    chat_id: str
+    group_name: str = ""
+    owner_userid: str = ""
+    owner_name: str = ""
+    member_count: int = 0
+
+    @field_validator("chat_id")
+    @classmethod
+    def validate_chat_id(cls, value: str) -> str:
+        normalized = str(value or "").strip()
+        if not normalized:
+            raise ValueError("chat_id 不能为空")
+        return normalized
+
+
+class GroupInviteBindingUpdateRequest(BaseModel):
+    join_url: str
+    enabled: bool = True
+
+    @field_validator("join_url")
+    @classmethod
+    def validate_join_url(cls, value: str) -> str:
+        normalized = normalize_group_invite_join_url(value)
+        if not normalized:
+            raise ValueError("群邀请链接不能为空")
         return normalized

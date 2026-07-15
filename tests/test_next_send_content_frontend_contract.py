@@ -20,6 +20,7 @@ RETIRED_OPERATION_JS = AUTOMATION_STATIC / "automation_operation_orchestration_p
 RETIRED_AGENT_TEMPLATE_JS = STATIC / "automation_agent_config_templates.js"
 MATERIAL_PICKER_CSS = STATIC / "material_picker.css"
 SEND_CONTENT_ASSET_VERSION = "group-chat-selector-20260715"
+GROUP_CHAT_ASSET_VERSION = "group-chat-direct-select-20260715"
 
 
 def _read(path: Path) -> str:
@@ -63,10 +64,10 @@ def test_standard_send_content_assets_are_cache_busted_on_migrated_surfaces() ->
         assert "send_content_composer.css') }}?v=" in source
         assert "material_picker.js') }}?v=" in source
         assert "send_content_composer.js') }}?v=" in source
-        assert source.count(f"?v={SEND_CONTENT_ASSET_VERSION}") >= 4
+        assert source.count(f"?v={GROUP_CHAT_ASSET_VERSION}") >= 4
 
     automation_agent_source = _read(AUTOMATION_AGENT_TEMPLATE)
-    assert automation_agent_source.count(f"?v={SEND_CONTENT_ASSET_VERSION}") >= 2
+    assert automation_agent_source.count(f"?v={GROUP_CHAT_ASSET_VERSION}") >= 4
     assert f"channel_admission_pages.js?v={SEND_CONTENT_ASSET_VERSION}" in _read(CHANNEL_FORM_TEMPLATE)
     assert f"group_ops.js?v={SEND_CONTENT_ASSET_VERSION}" in _read(GROUP_OPS_TEMPLATE)
     assert "cloud_plan_review.js') }}?v=" + SEND_CONTENT_ASSET_VERSION in _read(CLOUD_PLAN_TEMPLATE)

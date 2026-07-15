@@ -138,11 +138,12 @@ class PostgresSendContentRepository(SendContentRepository):
             title = str(item.get("title") or item.get("name") or f"客户群 {library_id}")
             description = str(item.get("description") or "")
             pic_url = str(item.get("pic_url") or "")
+            binding_status = str(item.get("binding_status") or ("ready" if item.get("join_url") else "pending"))
             return {
                 "type": "group_invite",
                 "library_id": library_id,
                 "title": title,
-                "subtitle": description or "点击卡片直接加入群聊",
+                "subtitle": "邀请卡片准备中" if binding_status == "pending" else "群邀请已失效" if binding_status == "invalid" else description or "点击卡片直接加入群聊",
                 "thumbnail_url": pic_url,
                 "enabled": bool(item.get("enabled", True)),
                 "metadata": {
@@ -151,6 +152,8 @@ class PostgresSendContentRepository(SendContentRepository):
                     "pic_url": pic_url,
                     "config_id": str(item.get("config_id") or ""),
                     "state": str(item.get("state") or ""),
+                    "binding_status": binding_status,
+                    "chat_id": str(item.get("chat_id") or ((item.get("chat_id_list") or [""])[0]) or ""),
                     "chat_id_list": list(item.get("chat_id_list") or []),
                     "auto_create_room": bool(item.get("auto_create_room", False)),
                     "room_base_name": str(item.get("room_base_name") or ""),

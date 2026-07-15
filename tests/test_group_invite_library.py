@@ -67,7 +67,7 @@ def test_group_invite_admin_api_and_page_contract() -> None:
 
     page = client.get("/admin/group-invite-library")
     assert page.status_code == 200
-    assert "客户群邀请设置" in page.text
+    assert "群邀请托管" in page.text
     assert "已同步客户群" in page.text
     assert "/api/admin/automation-conversion/group-ops/groups" in page.text
     assert "work.weixin.qq.com/gm" in page.text
@@ -106,16 +106,44 @@ def test_group_invite_admin_api_and_page_contract() -> None:
     assert deleted["deleted"] is True
 
 
-def test_group_chat_picker_uses_synced_groups_and_only_enables_bound_groups() -> None:
-    source = (
+def test_group_invite_binding_ensure_get_update_compatibility_aliases() -> None:
+    client = TestClient(create_app())
+    payload = {
+        "chat_id": "wr_formal_hxc_group",
+        "group_name": "老黄的AI+进化同行圈",
+        "owner_userid": "HuangYouCan",
+        "owner_name": "HuangYouCan",
+        "member_count": 115,
+    }
+    first = client.post("/api/admin/group-invite-bindings/ensure", json=payload)
+    second = client.post("/api/admin/group-invite-bindings/ensure", json=payload)
+
+    assert first.status_code == 200
+    assert first.json()["binding_status"] == "pending"
+    assert first.json()["binding_id"] == second.json()["binding_id"]
+    binding_id = first.json()["binding_id"]
+    assert client.get(f"/api/admin/group-invite-bindings/{binding_id}").json()["item"]["chat_id"] == payload["chat_id"]
+
+    updated = client.put(
+        f"/api/admin/group-invite-bindings/{binding_id}",
+        json={"join_url": "https://work.weixin.qq.com/gm/formal-hxc-group", "enabled": True},
+    ).json()
+    assert updated["binding_status"] == "ready"
+    assert updated["item"]["join_url"].endswith("/formal-hxc-group")
+    assert client.get(f"/api/admin/group-invite-library/{binding_id}").json()["item"]["binding_status"] == "ready"
+
+
+def test_group_chat_material_picker_delegates_to_direct_group_picker() -> None:
+    material_source = (
         Path(__file__).resolve().parents[1]
         / "aicrm_next/frontend_compat/static/admin_console/material_picker.js"
     ).read_text(encoding="utf-8")
+    group_source = (
+        Path(__file__).resolve().parents[1]
+        / "aicrm_next/frontend_compat/static/admin_console/group_chat_picker.js"
+    ).read_text(encoding="utf-8")
 
-    assert "fetchGroupChatItems" in source
-    assert "/api/admin/automation-conversion/group-ops/groups" in source
-    assert "/api/admin/group-invite-library" in source
-    assert 'group_invite: "客户群"' in source
-    assert "selectable: Boolean(binding)" in source
-    assert "请先配置邀请链接" in source
-    assert "管理群邀请设置" in source
+    assert "window.AICRMGroupChatPicker.open(options)" in material_source
+    assert "/api/admin/automation-conversion/group-ops/group-picker" in group_source
+    assert "/api/admin/group-invite-bindings/ensure" in group_source
+    assert "管理群邀请设置" not in group_source
