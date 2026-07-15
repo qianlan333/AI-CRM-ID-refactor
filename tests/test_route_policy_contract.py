@@ -31,9 +31,10 @@ def test_route_policy_inventory_covers_every_runtime_business_route() -> None:
     inventory = collect_route_inventory(app)
 
     # Operation Cycles contributes eight routes, Coupon V1 contributes twenty,
-    # questionnaire operations contributes five, while direct group selection and invitation bindings add six; static mounts are counted
-    # separately by the router-registry contract.
-    assert len(index) == len(inventory) == 721
+    # questionnaire operations contributes five, direct group selection and
+    # invitation bindings add six, and the service-period member grid adds six;
+    # static mounts are counted separately by the router-registry contract.
+    assert len(index) == len(inventory) == 727
     for route in app.routes:
         if not isinstance(route, APIRoute) or route.path in FASTAPI_BUILTIN_ROUTE_PATHS:
             continue
