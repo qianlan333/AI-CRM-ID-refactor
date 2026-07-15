@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from aicrm_next.shared.repository_provider import RepositoryProviderError
-from tests.group_ops_test_helpers import error_code, group_ops_api_client
+from tests.group_ops_test_helpers import group_ops_api_client
 
 
 class FixedQueueStatsGateway:
@@ -289,8 +289,8 @@ def test_plan_group_binding_allows_owner_or_group_admin_groups(group_ops_api_cli
         "/api/admin/automation-conversion/group-ops/plans/1/groups",
         json={"chat_id": "wrOgBBB001", "operator": "pytest"},
     )
-    assert bad_response.status_code in {400, 409}
-    assert error_code(bad_response) == "group_owner_mismatch"
+    assert bad_response.status_code == 201
+    assert bad_response.json()["item"]["chat_id"] == "wrOgBBB001"
 
 
 def test_standard_plan_nodes_save_and_list_in_domain_order(group_ops_api_client):

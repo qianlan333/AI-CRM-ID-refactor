@@ -2709,6 +2709,13 @@
       "max_attempts": 5
     },
     {
+      "consumer_name": "product_paid_wecom_tag_consumer",
+      "consumer_type": "external_effect_planner",
+      "event_type": "payment.succeeded",
+      "handler_registered": true,
+      "max_attempts": 5
+    },
+    {
       "consumer_name": "service_period_entitlement_consumer",
       "consumer_type": "projection",
       "event_type": "payment.succeeded",
@@ -2753,6 +2760,13 @@
     {
       "consumer_name": "order_projection_consumer",
       "consumer_type": "projection",
+      "event_type": "payment_succeeded",
+      "handler_registered": true,
+      "max_attempts": 5
+    },
+    {
+      "consumer_name": "product_paid_wecom_tag_consumer",
+      "consumer_type": "external_effect_planner",
       "event_type": "payment_succeeded",
       "handler_registered": true,
       "max_attempts": 5
@@ -2851,6 +2865,13 @@
     {
       "consumer_name": "order_projection_consumer",
       "consumer_type": "projection",
+      "event_type": "transaction.paid",
+      "handler_registered": true,
+      "max_attempts": 5
+    },
+    {
+      "consumer_name": "product_paid_wecom_tag_consumer",
+      "consumer_type": "external_effect_planner",
       "event_type": "transaction.paid",
       "handler_registered": true,
       "max_attempts": 5

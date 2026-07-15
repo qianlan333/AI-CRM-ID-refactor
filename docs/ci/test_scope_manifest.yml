@@ -501,7 +501,8 @@
         "tests/test_public_pay_landing.py",
         "tests/test_public_product_*.py",
         "tests/test_checkout_*.py",
-        "tests/test_next_h5_wechat_pay_external_push_outbox.py"
+        "tests/test_next_h5_wechat_pay_external_push_outbox.py",
+        "tests/test_product_paid_wecom_tagging.py"
       ],
       "python_tests": [
         "tests/test_admin_p0_commerce_api.py",
@@ -516,7 +517,8 @@
         "tests/test_public_pay_landing.py",
         "tests/test_public_product_no_real_payment.py",
         "tests/test_public_product_h5_pay_oauth_native.py",
-        "tests/test_public_product_api_contract.py"
+        "tests/test_public_product_api_contract.py",
+        "tests/test_product_paid_wecom_tagging.py"
       ],
       "needs_postgres": false,
       "architecture_gate": "fast"
@@ -682,6 +684,7 @@
       "name": "ai_assist_external_campaigns",
       "paths": [
         "aicrm_next/ai_assist/**",
+        "aicrm_next/send_targets/**",
         "aicrm_next/cloud_orchestrator/api.py",
         "aicrm_next/cloud_orchestrator/review_plans.py",
         "tests/test_ai_assist_external_campaigns.py",

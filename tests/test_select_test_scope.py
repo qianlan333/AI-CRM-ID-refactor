@@ -700,6 +700,16 @@ def test_ai_assist_external_campaign_change_selects_focused_python_slice() -> No
     assert result["architecture_gate"] == "fast"
 
 
+def test_shared_send_target_change_selects_ai_assist_campaign_slice() -> None:
+    result = _select("aicrm_next/send_targets/resolver.py")
+
+    assert result["unmatched_files"] == []
+    assert "ai_assist_external_campaigns" in result["matched_scopes"]
+    assert "tests/test_ai_assist_external_campaigns.py" in result["python_tests"]
+    assert result["needs_postgres"] is False
+    assert result["architecture_gate"] == "fast"
+
+
 def test_user_ops_change_selects_batch_send_contract_slice() -> None:
     result = _select("aicrm_next/ops_enrollment/application.py")
 
