@@ -38770,12 +38770,15 @@
                   },
                   "OperationCycleDocumentsSnapshot": {
                     "additionalProperties": false,
-                    "description": "The two read-only document slots exposed by the strategy detail page.",
+                    "description": "The three read-only weekly document slots exposed by the strategy detail page.",
                     "properties": {
                       "broadcast_details": {
                         "$ref": "#/$defs/MarkdownDocumentSnapshot"
                       },
                       "execution_strategy": {
+                        "$ref": "#/$defs/MarkdownDocumentSnapshot"
+                      },
+                      "retrospective_details": {
                         "$ref": "#/$defs/MarkdownDocumentSnapshot"
                       }
                     },
