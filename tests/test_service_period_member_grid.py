@@ -23,11 +23,10 @@ from aicrm_next.service_period.member_grid import (
 )
 from aicrm_next.service_period.repo import (
     PostgresServicePeriodRepository,
-    build_service_period_repository,
     reset_service_period_fixture_state,
 )
 from aicrm_next.shared.errors import ContractError
-from tests.admin_auth_test_helpers import install_admin_action_tokens, install_admin_session
+from tests.admin_auth_test_helpers import install_admin_action_tokens
 
 
 def _reset() -> None:
@@ -49,7 +48,7 @@ def _product_payload(code: str = "sp_member_grid") -> dict:
     }
 
 
-def _paid_order(index: int, *, product_code: str = "sp_member_grid") -> dict:
+def _paid_order(index: int, *, product_code: str = "sp_member_grid", unionid: str | None = None) -> dict:
     return {
         "id": 10000 + index,
         "out_trade_no": f"SP_MEMBER_GRID_{index:04d}",
@@ -57,7 +56,7 @@ def _paid_order(index: int, *, product_code: str = "sp_member_grid") -> dict:
         "product_name": "成员网格测试商品",
         "amount_total": 99900,
         "currency": "CNY",
-        "unionid": f"union_grid_{index:04d}",
+        "unionid": unionid or f"union_grid_{index:04d}",
         "payer_name_snapshot": f"会员 {index:04d}",
         "status": "paid",
         "trade_state": "SUCCESS",
@@ -75,7 +74,9 @@ def _member(index: int, *, now: datetime) -> dict:
         "display_name": f"会员 {index:04d}",
         "external_userid": f"wm_{index:04d}",
         "end_at": (now + timedelta(days=index % 30)).isoformat(),
+        "renewal_count": index % 3,
         "remark": "重点" if index % 7 == 0 else "",
+        "alliance": "增长联盟" if index % 9 == 0 else "",
         "huangyoucan_match_status": "matched_unionid" if matched else "not_found",
         "huangyoucan_formally_logged_in": index % 2 == 0,
         "huangyoucan_has_token_usage": index % 3 == 0,
@@ -85,7 +86,7 @@ def _member(index: int, *, now: datetime) -> dict:
     }
 
 
-def test_member_grid_schema_is_code_owned_and_fixed_to_eight_fields() -> None:
+def test_member_grid_schema_is_code_owned_and_fixed_to_ten_fields() -> None:
     schema = member_grid_schema()
 
     assert [field["id"] for field in schema["fields"]] == [
@@ -96,7 +97,9 @@ def test_member_grid_schema_is_code_owned_and_fixed_to_eight_fields() -> None:
         "learning_plan_progress",
         "open_count_7d",
         "last_open_at",
+        "renewal_count",
         "remark",
+        "alliance",
     ]
     assert schema["limits"] == {
         "filter_conditions": 20,
@@ -104,8 +107,7 @@ def test_member_grid_schema_is_code_owned_and_fixed_to_eight_fields() -> None:
         "groups": 2,
         "page_size": 100,
     }
-    assert schema["fields"][-1]["editable"] is True
-    assert all(not field["editable"] for field in schema["fields"][:-1])
+    assert [field["id"] for field in schema["fields"] if field["editable"]] == ["remark", "alliance"]
 
 
 @pytest.mark.parametrize(
@@ -173,12 +175,23 @@ def test_member_grid_and_or_filter_sort_two_level_group_and_progress_semantics(m
         "conditions": [
             {"field": "member", "operator": "equals", "value": "会员 0001"},
             {"field": "remark", "operator": "contains", "value": "重点"},
+            {"field": "alliance", "operator": "equals", "value": "增长联盟"},
         ],
     }
     or_payload = query_in_memory_rows(members, config=or_config, limit=100)
     unionids = {row["unionid"] for row in or_payload["rows"]}
     assert "union_0001" in unionids
     assert "union_0007" in unionids
+    assert "union_0009" in unionids
+
+    renewal_config = empty_view_config()
+    renewal_config["filter"]["conditions"] = [
+        {"field": "renewal_count", "operator": "gte", "value": 2},
+    ]
+    renewal_config["sorts"] = [{"field": "renewal_count", "direction": "desc"}]
+    renewal_payload = query_in_memory_rows(members, config=renewal_config, limit=100)
+    assert renewal_payload["rows"]
+    assert all(row["values"]["renewal_count"] >= 2 for row in renewal_payload["rows"])
 
 
 def test_signed_keyset_cursor_has_no_cross_page_duplicates_and_rejects_tampering(monkeypatch) -> None:
@@ -263,7 +276,7 @@ def test_shared_view_crud_name_conflict_optimistic_lock_and_copy_default_only(ne
     assert [(item["name"], item["is_default"]) for item in copied_views] == [("表格", True)]
 
 
-def test_member_grid_api_uses_real_entitlement_rows_and_reuses_remark_endpoint(next_client) -> None:
+def test_member_grid_api_exposes_renewal_count_and_editable_admin_text_fields(next_client) -> None:
     _reset()
     product = CreateServicePeriodProductCommand()(ServicePeriodProductCreateRequest(**_product_payload()))["product"]
     GrantOrRenewEntitlementCommand()(order=_paid_order(1))
@@ -277,6 +290,7 @@ def test_member_grid_api_uses_real_entitlement_rows_and_reuses_remark_endpoint(n
     assert row["unionid"] == "union_grid_0001"
     assert row["values"]["member"]["primary"] == "会员 0001"
     assert row["values"]["member"]["secondary"] == "wm_grid_0001"
+    assert row["values"]["renewal_count"] == 0
     assert list(row["values"]) == [
         "member",
         "remaining_days",
@@ -285,7 +299,9 @@ def test_member_grid_api_uses_real_entitlement_rows_and_reuses_remark_endpoint(n
         "learning_plan_progress",
         "open_count_7d",
         "last_open_at",
+        "renewal_count",
         "remark",
+        "alliance",
     ]
 
     remark = next_client.put(
@@ -293,11 +309,20 @@ def test_member_grid_api_uses_real_entitlement_rows_and_reuses_remark_endpoint(n
         json={"remark": "网格内备注"},
     )
     assert remark.status_code == 200
+    alliance = next_client.put(
+        f"/api/admin/service-period-products/{product['id']}/members/union_grid_0001/alliance",
+        json={"alliance": "增长联盟"},
+    )
+    assert alliance.status_code == 200
+
+    GrantOrRenewEntitlementCommand()(order=_paid_order(2, unionid="union_grid_0001"))
     refreshed = next_client.post(
         f"/api/admin/service-period-products/{product['id']}/member-grid/query",
         json={"config": empty_view_config(), "limit": 100},
     )
     assert refreshed.json()["rows"][0]["values"]["remark"] == "网格内备注"
+    assert refreshed.json()["rows"][0]["values"]["alliance"] == "增长联盟"
+    assert refreshed.json()["rows"][0]["values"]["renewal_count"] == 1
 
 
 def test_viewer_can_query_drafts_but_cannot_manage_views_or_edit_remarks(monkeypatch) -> None:
@@ -328,16 +353,23 @@ def test_viewer_can_query_drafts_but_cannot_manage_views_or_edit_remarks(monkeyp
         headers={"X-Admin-Action-Token": query_token},
         json={"remark": "viewer cannot write"},
     )
+    denied_alliance = client.put(
+        f"/api/admin/service-period-products/{product['id']}/members/union_grid_0001/alliance",
+        headers={"X-Admin-Action-Token": query_token},
+        json={"alliance": "viewer cannot write"},
+    )
 
     assert [schema.status_code, views.status_code, query.status_code] == [200, 200, 200]
     assert denied_create.status_code == 403
     assert denied_remark.status_code == 403
+    assert denied_alliance.status_code == 403
 
     page = client.get(f"/admin/service-period-products/{product['id']}/data")
     grants_text = page.text.split('id="aicrmAdminActionGrants"', 1)[1]
     assert query_target in grants_text
     assert "POST /api/admin/service-period-products/{service_product_id}/member-views" not in grants_text
     assert "PUT /api/admin/service-period-products/{service_product_id}/members/{unionid}/remark" not in grants_text
+    assert "PUT /api/admin/service-period-products/{service_product_id}/members/{unionid}/alliance" not in grants_text
 
 
 def test_postgres_grid_query_and_view_repository_contract(next_pg_schema) -> None:
@@ -367,9 +399,9 @@ def test_postgres_grid_query_and_view_repository_contract(next_pg_schema) -> Non
                 """
                 INSERT INTO service_period_entitlements (
                     service_product_id, trade_product_id, unionid, external_userid_snapshot,
-                    membership_config_id, status, start_at, end_at, metadata_json
+                    membership_config_id, status, start_at, end_at, renewal_count, metadata_json
                 ) VALUES (%s, %s, %s, %s, 'pg_grid', 'active', CURRENT_TIMESTAMP,
-                          CURRENT_TIMESTAMP + (%s * INTERVAL '1 day'), %s::jsonb)
+                          CURRENT_TIMESTAMP + (%s * INTERVAL '1 day'), %s, %s::jsonb)
                 """,
                 (
                     int(product["id"]),
@@ -377,7 +409,14 @@ def test_postgres_grid_query_and_view_repository_contract(next_pg_schema) -> Non
                     unionid,
                     f"wm_grid_pg_{index:04d}",
                     index % 90 + 1,
-                    json.dumps({"payer_name": f"PG 会员 {index:04d}"}, ensure_ascii=False),
+                    index % 4,
+                    json.dumps(
+                        {
+                            "payer_name": f"PG 会员 {index:04d}",
+                            "admin_alliance": "PG 联盟" if index % 10 == 0 else "",
+                        },
+                        ensure_ascii=False,
+                    ),
                 ),
             )
             connection.execute(
@@ -420,6 +459,11 @@ def test_postgres_grid_query_and_view_repository_contract(next_pg_schema) -> Non
             actor="pytest",
         )
 
+    updated_alliance = repo.update_member_alliance(product["id"], "union_grid_pg_0010", "PG 联盟已更新")
+    assert updated_alliance["member"]["alliance"] == "PG 联盟已更新"
+    updated_remark = repo.update_member_remark(product["id"], "union_grid_pg_0010", "PG 备注")
+    assert updated_remark["member"]["remark"] == "PG 备注"
+
     config = updated_view["config"]
     pages = []
     cursor = ""
@@ -434,3 +478,6 @@ def test_postgres_grid_query_and_view_repository_contract(next_pg_schema) -> Non
     assert len({row["record_id"] for row in rows}) == 230
     assert pages[0]["total"] == 230
     assert all(len(row["group_path"]) == 2 for row in rows)
+    assert {row["values"]["renewal_count"] for row in rows} == {0, 1, 2, 3}
+    assert any(row["values"]["alliance"] == "PG 联盟已更新" for row in rows)
+    assert any(row["values"]["remark"] == "PG 备注" for row in rows)

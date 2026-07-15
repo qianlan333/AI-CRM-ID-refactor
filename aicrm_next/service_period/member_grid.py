@@ -194,6 +194,18 @@ FIELDS: tuple[FieldDefinition, ...] = (
         group_nullable=True,
     ),
     FieldDefinition(
+        field_id="renewal_count",
+        label="续费次数",
+        field_type="number",
+        icon="number",
+        operators=NUMBER_OPERATORS,
+        sort_alias="renewal_count",
+        group_order_alias="renewal_count",
+        group_partition_alias="renewal_count",
+        sort_cast="integer",
+        group_cast="integer",
+    ),
+    FieldDefinition(
         field_id="remark",
         label="备注",
         field_type="text",
@@ -202,6 +214,21 @@ FIELDS: tuple[FieldDefinition, ...] = (
         sort_alias="remark_sort",
         group_order_alias="remark_group",
         group_partition_alias="remark_group",
+        sort_cast="text",
+        sort_nullable=True,
+        group_cast="text",
+        group_nullable=True,
+        editable=True,
+    ),
+    FieldDefinition(
+        field_id="alliance",
+        label="联盟",
+        field_type="text",
+        icon="text",
+        operators=TEXT_OPERATORS,
+        sort_alias="alliance_sort",
+        group_order_alias="alliance_group",
+        group_partition_alias="alliance_group",
         sort_cast="text",
         sort_nullable=True,
         group_cast="text",
@@ -592,9 +619,17 @@ def _sql_condition(condition: dict[str, Any]) -> tuple[str, list[Any]]:
     field_id = condition["field"]
     operator = condition["operator"]
     value = condition.get("value")
-    if field_id in {"member", "remark"}:
-        search_alias = "member_search" if field_id == "member" else "remark_search"
-        value_alias = "member_sort" if field_id == "member" else "remark_sort"
+    if field_id in {"member", "remark", "alliance"}:
+        search_alias = {
+            "member": "member_search",
+            "remark": "remark_search",
+            "alliance": "alliance_search",
+        }[field_id]
+        value_alias = {
+            "member": "member_sort",
+            "remark": "remark_sort",
+            "alliance": "alliance_sort",
+        }[field_id]
         if operator in {"is_empty", "is_not_empty"}:
             clause = f"NULLIF(BTRIM(COALESCE({value_alias}, '')), '') IS NULL"
             return ((f"NOT ({clause})" if operator == "is_not_empty" else clause), [])
@@ -615,6 +650,7 @@ def _sql_condition(condition: dict[str, Any]) -> tuple[str, list[Any]]:
         "token_usage": "token_usage",
         "open_count_7d": "open_count_7d",
         "last_open_at": "last_open_at",
+        "renewal_count": "renewal_count",
     }.get(field_id)
     if field_id == "learning_plan_progress":
         if operator == "state_in":
@@ -665,6 +701,7 @@ def normalize_member_row(member: dict[str, Any], *, snapshot_at: datetime | None
     display_name = text(member.get("display_name") or member.get("unionid"))
     external_userid = text(member.get("external_userid"))
     remark = str(member.get("remark") or "").strip()
+    alliance = str(member.get("alliance") or "").strip()
     progress = member.get("huangyoucan_learning_plan_progress")
     progress = progress if isinstance(progress, dict) else None
     current = _optional_int((progress or {}).get("current"))
@@ -699,10 +736,15 @@ def normalize_member_row(member: dict[str, Any], *, snapshot_at: datetime | None
         "open_count_7d": open_count,
         "last_open_at": last_open_iso,
         "last_open_date": last_open_date,
+        "renewal_count": max(0, _as_int(member.get("renewal_count"))),
         "remark": remark,
         "remark_sort": remark.lower() or None,
         "remark_group": remark or None,
         "remark_search": remark.lower(),
+        "alliance": alliance,
+        "alliance_sort": alliance.lower() or None,
+        "alliance_group": alliance or None,
+        "alliance_search": alliance.lower(),
         "end_at": end_at.isoformat() if end_at else snapshot.isoformat(),
     }
 
@@ -795,9 +837,27 @@ def _matches_condition(row: dict[str, Any], condition: dict[str, Any]) -> bool:
     field_id = condition["field"]
     operator = condition["operator"]
     expected = condition.get("value")
-    if field_id in {"member", "remark"}:
-        search = str(row.get("member_search" if field_id == "member" else "remark_search") or "")
-        value = str(row.get("member_sort" if field_id == "member" else "remark_sort") or "")
+    if field_id in {"member", "remark", "alliance"}:
+        search = str(
+            row.get(
+                {
+                    "member": "member_search",
+                    "remark": "remark_search",
+                    "alliance": "alliance_search",
+                }[field_id]
+            )
+            or ""
+        )
+        value = str(
+            row.get(
+                {
+                    "member": "member_sort",
+                    "remark": "remark_sort",
+                    "alliance": "alliance_sort",
+                }[field_id]
+            )
+            or ""
+        )
         target = str(expected or "").lower()
         return {
             "contains": target in search,
@@ -822,6 +882,7 @@ def _matches_condition(row: dict[str, Any], condition: dict[str, Any]) -> bool:
         "token_usage": "token_usage",
         "open_count_7d": "open_count_7d",
         "last_open_at": "last_open_at",
+        "renewal_count": "renewal_count",
     }[field_id]
     actual = row.get(alias)
     if operator == "in":
@@ -935,7 +996,9 @@ def public_grid_row(row: dict[str, Any], config: dict[str, Any]) -> dict[str, An
             },
             "open_count_7d": _optional_int(row.get("open_count_7d")),
             "last_open_at": isoformat(row.get("last_open_at")) or None,
+            "renewal_count": max(0, _as_int(row.get("renewal_count"))),
             "remark": str(row.get("remark") or ""),
+            "alliance": str(row.get("alliance") or ""),
         },
         "group_path": [],
     }
@@ -958,6 +1021,8 @@ def group_label(field_id: str, value: Any) -> str:
         return "空值"
     if field_id == "remaining_days":
         return f"{_as_int(value)} 天"
+    if field_id == "renewal_count":
+        return f"{_as_int(value)} 次"
     if field_id in {"formally_logged_in", "token_usage"}:
         return {"yes": "是", "no": "否", "unmatched": "未匹配"}.get(text(value), text(value))
     if field_id == "learning_plan_progress":

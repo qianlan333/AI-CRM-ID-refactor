@@ -280,7 +280,6 @@
   width: 100%;
   height: calc(100vh - 286px);
   min-height: 460px;
-  max-height: 780px;
   overflow: auto;
   outline: none;
   overscroll-behavior: contain;
@@ -292,7 +291,7 @@
 
 .sp-member-table {
   width: 100%;
-  min-width: 1500px;
+  min-width: 1880px;
   border-collapse: separate;
   border-spacing: 0;
   table-layout: fixed;
@@ -357,7 +356,9 @@
 .sp-member-table .sp-col-learning_plan_progress { width: 160px; }
 .sp-member-table .sp-col-open_count_7d { width: 155px; }
 .sp-member-table .sp-col-last_open_at { width: 190px; }
-.sp-member-table .sp-col-remark { width: 260px; }
+.sp-member-table .sp-col-renewal_count { width: 120px; }
+.sp-member-table .sp-col-remark { width: 240px; }
+.sp-member-table .sp-col-alliance { width: 220px; }
 
 .sp-field-head {
   display: flex;
@@ -393,9 +394,9 @@
 .sp-progress { color: #4e5969; }
 .sp-progress.is-complete { color: #28945f; }
 
-.sp-remark-cell { position: relative; cursor: default; }
-.sp-remark-cell.is-editable { cursor: text; }
-.sp-remark-cell.is-editable:hover::after {
+.sp-editable-text-cell { position: relative; cursor: default; }
+.sp-editable-text-cell.is-editable { cursor: text; }
+.sp-editable-text-cell.is-editable:hover::after {
   position: absolute;
   top: 50%;
   right: 8px;
@@ -408,7 +409,7 @@
   font-size: 10px;
 }
 
-.sp-remark-editor {
+.sp-text-cell-editor {
   display: block;
   width: calc(100% + 12px);
   min-height: 38px;
