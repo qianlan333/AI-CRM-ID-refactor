@@ -29,7 +29,13 @@ def _connect():
     )
 
 
-def _seed_internal_run(*, consumer_name: str = "pytest_command_consumer") -> dict:
+def _seed_internal_run(
+    *,
+    consumer_name: str = "pytest_command_consumer",
+    status: str = "pending",
+    attempt_count: int = 0,
+    max_attempts: int = 5,
+) -> dict:
     key = uuid4().hex
     event_id = f"iev_command_{key}"
     execution_id = f"exe_internal_command_{key}"
@@ -48,19 +54,24 @@ def _seed_internal_run(*, consumer_name: str = "pytest_command_consumer") -> dic
             INSERT INTO internal_event_consumer_run (
                 event_id, consumer_name, status, execution_id,
                 parent_execution_id, lane, available_at,
-                ordering_key, fairness_key, policy_version
+                ordering_key, fairness_key, policy_version,
+                attempt_count, max_attempts
             ) VALUES (
-                %s, %s, 'pending', %s, %s, 'internal_general',
-                CURRENT_TIMESTAMP + INTERVAL '1 hour', %s, 'pytest', 'queue-v1'
+                %s, %s, %s, %s, %s, 'internal_general',
+                CURRENT_TIMESTAMP + INTERVAL '1 hour', %s, 'pytest', 'queue-v1',
+                %s, %s
             )
             RETURNING id, event_id, consumer_name, execution_id
             """,
             (
                 event_id,
                 consumer_name,
+                status,
                 execution_id,
                 f"exe_event_{key}",
                 f"order-{key}",
+                int(attempt_count),
+                int(max_attempts),
             ),
         ).fetchone()
     return dict(row)
@@ -200,6 +211,76 @@ def test_single_internal_consumer_execute_requires_version_and_returns_cas_confl
     _assert_accepted(accepted.json(), queue_kind="internal_event", item_id=int(row["id"]))
     assert stale.status_code == 409
     assert stale.json()["error"] == "queue_command_cas_conflict"
+
+
+@pytest.mark.parametrize(
+    ("action", "initial_status", "expected_status"),
+    (
+        ("retry", "failed_terminal", "pending"),
+        ("skip", "pending", "skipped"),
+    ),
+)
+def test_internal_manual_actions_are_versioned_commands_with_durable_attempts(
+    next_client,
+    action: str,
+    initial_status: str,
+    expected_status: str,
+) -> None:
+    exhausted = action == "retry"
+    row = _seed_internal_run(
+        consumer_name=f"pytest_internal_{action}",
+        status=initial_status,
+        attempt_count=5 if exhausted else 0,
+        max_attempts=5,
+    )
+    target = QueueRuntimeCommandService().read_target("internal_event", int(row["id"]))
+    assert target is not None
+    route = f"/api/admin/internal-events/{{event_id}}/consumers/{{consumer_name}}/{action}"
+    token = install_admin_action_tokens(next_client, ("POST", route))[("POST", route)]
+    url = route.replace("{event_id}", row["event_id"]).replace(
+        "{consumer_name}", row["consumer_name"]
+    )
+    headers = {"X-Admin-Action-Token": token}
+    payload = {
+        "actor": "pytest-operator",
+        "reason": "manual durable wake",
+        "expected_version": target.version_token,
+    }
+    _assert_required_command_fields(next_client, url, headers=headers, payload=payload)
+
+    accepted = next_client.post(url, headers=headers, json=payload)
+    stale = next_client.post(url, headers=headers, json=payload)
+
+    assert accepted.status_code == 202
+    _assert_accepted(accepted.json(), queue_kind="internal_event", item_id=int(row["id"]))
+    assert accepted.json()["action"] == action
+    assert accepted.json()["status"] == expected_status
+    assert stale.status_code == 409
+    assert stale.json()["error"] == "queue_command_cas_conflict"
+    with _connect() as connection:
+        persisted = connection.execute(
+            """
+            SELECT status, attempt_count, max_attempts, last_attempt_id
+            FROM internal_event_consumer_run WHERE id = %s
+            """,
+            (int(row["id"]),),
+        ).fetchone()
+        attempt = connection.execute(
+            """
+            SELECT status, request_summary_json, response_summary_json
+            FROM internal_event_consumer_attempt
+            WHERE consumer_run_id = %s
+            ORDER BY id DESC LIMIT 1
+            """,
+            (int(row["id"]),),
+        ).fetchone()
+    assert persisted["status"] == expected_status
+    assert persisted["last_attempt_id"]
+    assert attempt["status"] == ("manual_retry" if action == "retry" else "skipped")
+    assert attempt["request_summary_json"]["actor_ref_hash"]
+    assert "pytest-operator" not in str(attempt["request_summary_json"])
+    if action == "retry":
+        assert persisted["attempt_count"] < persisted["max_attempts"]
 
 
 def test_external_effect_run_due_execute_never_dispatches_provider(next_client, monkeypatch) -> None:

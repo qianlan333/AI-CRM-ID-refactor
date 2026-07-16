@@ -12,11 +12,11 @@ from starlette.concurrency import run_in_threadpool
 
 from aicrm_next.shared.admin_action_runtime import ensure_admin_action_token, validate_admin_action_token
 from aicrm_next.admin_shell import admin_path_for, shell_context
-from aicrm_next.platform_foundation.auth_platform.context import AuthContext
 from aicrm_next.platform_foundation.execution_runtime.api_command import (
     QueueCommandPayloadError,
     accepted_queue_command_payload,
     parse_manual_queue_command,
+    submit_manual_queue_action,
     submit_manual_queue_command,
 )
 from aicrm_next.platform_foundation.execution_runtime.commands import (
@@ -94,15 +94,6 @@ def _action_or_internal_token_error(request: Request, payload: dict[str, Any]) -
     return validate_admin_action_token(token, request=request)
 
 
-def _manual_action_actor(request: Request, payload: dict[str, Any]) -> tuple[str, str]:
-    context = getattr(request.state, "auth_context", None)
-    if isinstance(context, AuthContext):
-        return context.sub, context.principal_type.value
-    if _text(request.headers.get("X-Admin-Action-Token")) or _text(payload.get("admin_action_token")):
-        return "admin_action_token", "admin_action_token"
-    return "", ""
-
-
 def _service() -> InternalEventService:
     return InternalEventService(build_internal_event_repository())
 
@@ -176,6 +167,30 @@ async def _accepted_command_response(
             service,
             target,
             command,
+            source_route=source_route,
+        )
+    except QueueCommandConflict:
+        return _json({"ok": False, "error": "queue_command_cas_conflict"}, status_code=409)
+    except ValueError:
+        return _json({"ok": False, "error": "queue_command_target_not_eligible"}, status_code=409)
+    return _json(accepted_queue_command_payload(result, command), status_code=202)
+
+
+async def _accepted_action_response(
+    service: QueueRuntimeCommandService,
+    target: Any,
+    command: Any,
+    *,
+    action: str,
+    source_route: str,
+) -> JSONResponse:
+    try:
+        result = await run_in_threadpool(
+            submit_manual_queue_action,
+            service,
+            target,
+            command,
+            action=action,
             source_route=source_route,
         )
     except QueueCommandConflict:
@@ -372,21 +387,25 @@ async def retry_internal_event_consumer(event_id: str, consumer_name: str, reque
     token_error = _action_or_internal_token_error(request, payload)
     if token_error:
         return _json({"ok": False, "error": token_error}, status_code=401)
-    reason = _text(payload.get("reason"))
-    actor_id, actor_type = _manual_action_actor(request, payload)
-    if not reason or not actor_id:
-        return _json({"ok": False, "error": "manual_action_actor_and_reason_required"}, status_code=422)
-    retried = _service().retry_consumer_run(
+    try:
+        command = parse_manual_queue_command(payload)
+    except QueueCommandPayloadError as exc:
+        return _command_payload_error(exc)
+    service = _queue_command_service(request)
+    target = await run_in_threadpool(
+        service.read_internal_consumer_target,
         event_id,
         consumer_name,
-        actor_id=actor_id,
-        actor_type=actor_type,
-        reason=reason,
     )
-    if not retried:
-        return _json({"ok": False, "error": "internal_event_consumer_run_not_retryable"}, status_code=409)
-    run, attempt = retried
-    return _json({"ok": True, "consumer_run": run.to_dict(), "attempt": attempt.to_dict()})
+    if target is None:
+        return _json({"ok": False, "error": "consumer_run_not_found"}, status_code=404)
+    return await _accepted_action_response(
+        service,
+        target,
+        command,
+        action="retry",
+        source_route="/api/admin/internal-events/{event_id}/consumers/{consumer_name}/retry",
+    )
 
 
 @router.post("/api/admin/internal-events/{event_id}/consumers/{consumer_name}/skip")
@@ -395,18 +414,22 @@ async def skip_internal_event_consumer(event_id: str, consumer_name: str, reques
     token_error = _action_or_internal_token_error(request, payload)
     if token_error:
         return _json({"ok": False, "error": token_error}, status_code=401)
-    reason = _text(payload.get("reason"))
-    actor_id, actor_type = _manual_action_actor(request, payload)
-    if not reason or not actor_id:
-        return _json({"ok": False, "error": "manual_action_actor_and_reason_required"}, status_code=422)
-    skipped = _service().skip_consumer_run(
+    try:
+        command = parse_manual_queue_command(payload)
+    except QueueCommandPayloadError as exc:
+        return _command_payload_error(exc)
+    service = _queue_command_service(request)
+    target = await run_in_threadpool(
+        service.read_internal_consumer_target,
         event_id,
         consumer_name,
-        actor_id=actor_id,
-        actor_type=actor_type,
-        reason=reason,
     )
-    if not skipped:
-        return _json({"ok": False, "error": "internal_event_consumer_run_not_skippable"}, status_code=409)
-    run, attempt = skipped
-    return _json({"ok": True, "consumer_run": run.to_dict(), "attempt": attempt.to_dict()})
+    if target is None:
+        return _json({"ok": False, "error": "consumer_run_not_found"}, status_code=404)
+    return await _accepted_action_response(
+        service,
+        target,
+        command,
+        action="skip",
+        source_route="/api/admin/internal-events/{event_id}/consumers/{consumer_name}/skip",
+    )

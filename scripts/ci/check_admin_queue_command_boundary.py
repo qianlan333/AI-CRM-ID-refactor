@@ -10,6 +10,8 @@ ROUTES = {
     "aicrm_next/platform_foundation/internal_events/api.py": (
         "run_internal_event_due",
         "run_internal_event_consumer",
+        "retry_internal_event_consumer",
+        "skip_internal_event_consumer",
     ),
     "aicrm_next/platform_foundation/external_effects/api.py": (
         "run_external_effect_due",
