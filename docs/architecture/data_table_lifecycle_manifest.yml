@@ -2299,7 +2299,7 @@ tables:
     runtime_entrypoints:
       - AI audience agent execution
       - admin AI assistant diagnostics
-    migration_source: migrations/baselines/0001_post_legacy.sql
+    migration_source: migrations/versions/0124_automation_agent_audit_tables.py
     pii_level: internal_contact
     guard_tests:
       - tests/test_ai_audience_agent_copywriting.py
@@ -2317,7 +2317,7 @@ tables:
     runtime_entrypoints:
       - AI audience agent execution
       - admin AI assistant diagnostics
-    migration_source: migrations/baselines/0001_post_legacy.sql
+    migration_source: migrations/versions/0124_automation_agent_audit_tables.py
     pii_level: internal_contact
     guard_tests:
       - tests/test_ai_audience_agent_copywriting.py

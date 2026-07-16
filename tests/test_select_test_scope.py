@@ -379,6 +379,25 @@ def test_r06_internal_event_outbox_files_force_full_postgres_ci() -> None:
     assert result["needs_full_ci"] is True
 
 
+def test_automation_agent_audit_schema_repair_routes_to_full_postgres_contracts() -> None:
+    result = _select(
+        "migrations/versions/0124_automation_agent_audit_tables.py",
+        "docs/architecture/data_table_lifecycle_manifest.yml",
+        "tests/test_database_bootstrap.py",
+        "tests/test_deploy_workflow_contract.py",
+    )
+
+    assert {"migration_db", "ci_deploy"} <= set(result["matched_scopes"])
+    assert result["unmatched_files"] == []
+    assert "tests/test_alembic_revision_chain.py" in result["python_tests"]
+    assert "tests/test_database_bootstrap.py" in result["python_tests"]
+    assert "tests/test_data_table_lifecycle_guard.py" in result["python_tests"]
+    assert "tests/test_deploy_workflow_contract.py" in result["python_tests"]
+    assert result["needs_postgres"] is True
+    assert result["architecture_gate"] == "full"
+    assert result["needs_full_ci"] is True
+
+
 def test_r07_external_effect_delivery_files_force_full_postgres_ci() -> None:
     result = _select(
         "aicrm_next/platform_foundation/external_effects/worker.py",

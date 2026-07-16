@@ -2905,7 +2905,7 @@
     }
   ],
   "migration_heads": [
-    "0123_required_physical_schema_repair"
+    "0124_agent_audit_tables"
   ],
   "openapi_components": {
     "schemas": {
@@ -45296,7 +45296,7 @@
       "domain": "ai_audience_ops",
       "drop_candidate": false,
       "lifecycle": "audit",
-      "migration_source": "migrations/baselines/0001_post_legacy.sql",
+      "migration_source": "migrations/versions/0124_automation_agent_audit_tables.py",
       "pii_level": "internal_contact",
       "read_owners": [
         "aicrm_next.admin_read_model"
@@ -45308,7 +45308,7 @@
       "domain": "ai_audience_ops",
       "drop_candidate": false,
       "lifecycle": "audit",
-      "migration_source": "migrations/baselines/0001_post_legacy.sql",
+      "migration_source": "migrations/versions/0124_automation_agent_audit_tables.py",
       "pii_level": "internal_contact",
       "read_owners": [
         "aicrm_next.admin_read_model"

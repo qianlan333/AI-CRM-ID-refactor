@@ -71,6 +71,30 @@ def test_failed_uncommitted_deploy_restores_previous_exact_sha_and_dependencies(
     assert "alembic downgrade" not in workflow
 
 
+def test_full_runtime_rollback_uses_staged_runtime_verification_contract() -> None:
+    workflow = TEST_DEPLOY_WORKFLOW.read_text(encoding="utf-8")
+
+    cleanup_index = workflow.index("cleanup_deploy()")
+    restoring_index = workflow.index(
+        'echo "restoring runtime units for $restore_expected_sha"', cleanup_index
+    )
+    full_restore_index = workflow.rfind(
+        'if [ "${runtime_units_stopped:-0}" = "1" ]; then',
+        cleanup_index,
+        restoring_index,
+    )
+    partial_restore_index = workflow.index(
+        'if [ "${runtime_transaction_partial:-0}" = "1" ]', full_restore_index
+    )
+    full_restore = workflow[full_restore_index:partial_restore_index]
+    install_index = full_restore.index("--phase install-enable-after-web-health --execute")
+    verify_index = full_restore.index("--phase verify-staged-runtime --execute")
+    release_index = full_restore.index("--phase release-runtime-guard --execute")
+
+    assert install_index < verify_index < release_index
+    assert "--phase verify --execute" not in full_restore
+
+
 def test_failed_deploy_drain_restores_timers_without_killing_active_oneshots() -> None:
     workflow = TEST_DEPLOY_WORKFLOW.read_text(encoding="utf-8")
 
@@ -667,7 +691,7 @@ def test_deploy_exit_trap_revokes_smoke_session_and_restores_runtime_units():
 
     cleanup_index = workflow.index("cleanup_deploy() {")
     stop_index = workflow.index("--phase stop-for-migration --execute", cleanup_index)
-    verify_index = workflow.index("--phase verify --execute", stop_index)
+    verify_index = workflow.index("--phase verify-staged-runtime --execute", stop_index)
     trap_index = workflow.index("trap cleanup_deploy EXIT", verify_index)
     restored_flag_index = workflow.index("runtime_units_stopped=0", trap_index)
 
@@ -679,7 +703,8 @@ def test_deploy_exit_trap_revokes_smoke_session_and_restores_runtime_units():
     assert 'git reset --hard "$before_sha"' in cleanup
     assert 'grep -i "x-aicrm-release-sha: $restore_expected_sha"' in cleanup
     assert "--phase install-enable-after-web-health --execute" in cleanup
-    assert "--phase verify --execute" in cleanup
+    assert "--phase verify-staged-runtime --execute" in cleanup
+    assert "--phase verify --execute" not in cleanup
     assert "restored_web_ready" in cleanup
 
 
