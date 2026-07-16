@@ -172,9 +172,9 @@ REQUIRED_TEST_PROOFS = {
         "tests/test_next_channel_entry_orchestrator.py",
         "test_active_channel_baseline_emits_only_channel_entry_without_program_admission",
     ),
-    "external_effect_realtime_unknown_quarantine": (
+    "external_effect_realtime_signal_only": (
         "tests/test_external_effects_realtime.py",
-        "test_realtime_adapter_exception_quarantines_job_for_reconciliation",
+        "test_realtime_signal_never_dispatches_provider_or_creates_attempt",
     ),
     "external_effect_stale_dispatching_quarantine": (
         "tests/test_external_effect_delivery_lease.py",
@@ -271,7 +271,7 @@ OBJECTIVE_REQUIREMENTS = {
         "tests": [
             "external_effect_boundary",
             "channel_entry_effect_realtime_wakeup",
-            "external_effect_realtime_unknown_quarantine",
+            "external_effect_realtime_signal_only",
             "external_effect_stale_dispatching_quarantine",
         ],
         "readiness": ["downstream_worker_isolation_ok"],

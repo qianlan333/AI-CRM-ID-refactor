@@ -81,17 +81,17 @@ def test_channel_entry_real_wecom_actions_are_planned_as_external_effect_jobs() 
     assert "update_external_contact_remark(" not in source
 
 
-def test_external_effect_realtime_wakeup_stays_behind_runtime_gates() -> None:
+def test_external_effect_realtime_wakeup_is_signal_only() -> None:
     source = REALTIME.read_text(encoding="utf-8")
     application_source = APPLICATION.read_text(encoding="utf-8")
 
     assert "REALTIME_ENABLED_KEY" in source
     assert "REALTIME_ALLOWED_TYPES_KEY" in source
-    assert "runtime_bool(REALTIME_ENABLED_KEY)" in source
-    assert "runtime_csv(REALTIME_ALLOWED_TYPES_KEY)" in source
-    assert "load_wecom_execution_config" in source
     assert "ThreadPoolExecutor" not in source
     assert "_EXECUTOR.submit" not in source
-    assert "ExternalEffectWorker(" in source
+    assert "ExternalEffectWorker(" not in source
+    assert "dispatch_one(" not in source
+    assert '"provider_dispatch_allowed": False' in source
+    assert '"signal_transport": "transactional_queue_trigger"' in source
     assert "_wake_welcome_external_effect_job" not in application_source
     assert "wake_external_effect_job" in application_source
