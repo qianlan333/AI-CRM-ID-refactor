@@ -149,6 +149,8 @@ def test_automation_agent_edit_page_contract(next_client, monkeypatch) -> None:
         "AICRMMaterialPicker.open",
         "/api/admin/automation-agents/123",
         "/api/admin/automation-agents/123/fixed-content",
+        "`${agentApiUrl}/publish`",
+        'method: "POST"',
         "send_webhook_url: els.sendUrl.value.trim()",
         'id="sendUrl" value=""',
     ):

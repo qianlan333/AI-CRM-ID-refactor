@@ -21,7 +21,8 @@ from aicrm_next.shared.errors import ContractError, NotFoundError
 from aicrm_next.shared.repository_provider import RepositoryProviderError
 from aicrm_next.shared.runtime import production_data_ready
 
-from .domain import normalize_questionnaire, score_and_tags, validate_required_answers
+from .domain import normalize_mobile_answer, normalize_questionnaire, score_and_tags, validate_required_answers
+from .operations import resolve_questionnaire_completion_action
 from .repo import QuestionnaireRepository, build_questionnaire_repository
 
 
@@ -269,10 +270,9 @@ def _handle_submit(command: Command) -> dict[str, Any]:
         if not bool(item.get("enabled", True)):
             raise NotFoundError("questionnaire disabled")
         validate_required_answers(item, answers)
-        if not identity_payload.get("mobile"):
-            mobile_answer = _mobile_answer_from_questions(item, answers)
-            if mobile_answer:
-                identity_payload["mobile"] = mobile_answer
+        mobile_answer = _mobile_answer_from_questions(item, answers)
+        if mobile_answer:
+            identity_payload["mobile"] = mobile_answer
         identity_query = ResolvePersonIdentityQuery()
         has_canonical_alias = any(identity_payload.get(field) for field in ("external_userid", "openid", "unionid"))
         initial_resolution = _identity_result(
@@ -457,6 +457,7 @@ def _handle_submit(command: Command) -> dict[str, Any]:
     )
     real_external_call_executed = bool(tag_side_effect.get("real_external_call_executed"))
     questionnaire_projection = normalize_questionnaire(item)
+    completion_projection = resolve_questionnaire_completion_action(item)
     return {
         "ok": True,
         "success": True,
@@ -479,6 +480,8 @@ def _handle_submit(command: Command) -> dict[str, Any]:
         "completion_target": questionnaire_projection["completion_target"],
         "completion_target_enabled": questionnaire_projection["completion_target_enabled"],
         "completion_target_type": questionnaire_projection["completion_target_type"],
+        "completion_action": completion_projection["completion_action"],
+        "lead_qr": completion_projection["lead_qr"],
         "write_model_status": "submitted",
         "external_push": external_push_result,
         "external_push_mode": external_push_mode,
@@ -574,7 +577,7 @@ def _mobile_answer_from_questions(questionnaire: dict[str, Any], answers: dict[s
         value = answers.get(str(question.get("id")))
         if isinstance(value, list):
             value = "、".join(str(item) for item in value if item not in (None, ""))
-        mobile = str(value or "").strip()
+        mobile = normalize_mobile_answer(value)
         if mobile:
             return mobile
     return ""

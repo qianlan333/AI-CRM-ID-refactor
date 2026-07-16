@@ -23,7 +23,7 @@ def test_sidebar_workbench_v2_page_is_next_owned(client):
     assert 'data-periodic-orders-url="/api/sidebar/v2/periodic-orders"' in html
     assert 'data-periodic-order-remark-url="/api/sidebar/v2/periodic-orders"' in html
     assert "sidebar_workbench/sidebar_workbench.js" in html
-    assert "sidebar_workbench/sidebar_workbench.js?v=20260711-r04-access-boundary" in html
+    assert "sidebar_workbench/sidebar_workbench.js?v=20260714-progressive-loading" in html
     assert "sidebar_workbench/sidebar_workbench.css?v=20260709-periodic-product-tabs" in html
     assert "自动化转化操作区" not in html
 
@@ -50,6 +50,7 @@ def test_sidebar_workbench_static_contract_has_next_surface_only():
     assert "requestPanelJson" in script
     assert "PANEL_TIMEOUT_MS" in script
     assert "PANEL_CACHE_TTL_MS" in script
+    assert "panelRequests: new Map()" in script
     assert 'cache: "no-store"' in script
     assert "sidebar_owner_token" in script
     assert "data-material-thumb-img" in script
@@ -63,6 +64,11 @@ def test_sidebar_workbench_static_contract_has_next_surface_only():
     assert "renderPeriodicOrders" in script
     assert "data-periodic-order-remark" in script
     assert "savePeriodicOrderRemarkSoon" in script
+    periodic_renderer = script[script.index("function renderPeriodicOrders()") : script.index("function renderMaterials()")]
+    for label in ("剩余有效期", "正式登录", "token 消耗", "学习计划进度", "近 7 天打开次数", "最后打开时间"):
+        assert label in periodic_renderer
+    assert '<span>状态</span>' not in periodic_renderer
+    assert '<span>到期时间</span>' not in periodic_renderer
     assert 'queryUrl(endpoint("periodicOrdersUrl"), customerContextQuery())' in script
     assert 'queryUrl(endpoint("periodicOrderRemarkUrl") + "/" + encodeURIComponent(id) + "/remark", customerContextQuery())' in script
     assert 'data-periodic-orders-url="/api/sidebar/v2/periodic-orders"' in template
@@ -72,6 +78,26 @@ def test_sidebar_workbench_static_contract_has_next_surface_only():
     assert "@keyframes sidebar-skeleton" in css
     assert WORKBENCH_PRODUCT_CARD_COVER.exists()
     assert "context_token" not in script
+    assert 'prefetchTabs(["questionnaires", "orders", "periodic_orders"])' not in script
+    assert "function prefetchTabs" not in script
+    panel_request = script[script.index("async function requestPanelJson") : script.index("function absoluteUrl")]
+    assert "state.panelRequests.get(key)" in panel_request
+    assert "state.panelRequests.set(key, request)" in panel_request
+    assert "state.panelRequests.delete(key)" in panel_request
+    assert "retryCount: 0" in panel_request
+    switch_tab = script[script.index("async function switchTab") : script.index("async function sendMaterial")]
+    assert "function isWorkbenchReady" in script
+    assert 'key !== "profile" && !isWorkbenchReady()' in script
+    assert 'if (tab !== "profile" && !isWorkbenchReady()) return;' in switch_tab
+    assert "state.activeTab !== tab" in switch_tab
+    assert 'tab === "materials" && state.materialType !== materialType' in switch_tab
+    assert "data-retry-tab" in switch_tab
+    assert 'event.target.closest("[data-retry-tab]")' in script
+    material_switch = script[script.index("async function switchMaterialType") : script.index("function renderActiveTab")]
+    assert 'state.activeTab !== "materials"' in material_switch
+    assert "state.materialType !== type" in material_switch
+    assert "data-retry-material-type" in script
+    assert 'event.target.closest("[data-retry-material-type]")' in script
     assert "customer-avatar" not in combined
     assert "复制商品链接" not in combined
     assert "待确认员工身份" not in combined
@@ -81,6 +107,8 @@ def test_sidebar_workbench_static_contract_has_next_surface_only():
 def test_sidebar_workbench_query_context_skips_wecom_sdk_path():
     script = WORKBENCH_JS.read_text(encoding="utf-8")
 
+    boot = script[script.index("async function boot()") : script.index('tabsNode.addEventListener("click"')]
+    assert boot.index("setWorkbenchState(WORKBENCH_STATES.identifying_customer);") < boot.index("renderTabs();")
     assert "const hasQuery = await resolveContextFromQuery();" in script
     assert "await resolveContextFromWeCom();" in script
 

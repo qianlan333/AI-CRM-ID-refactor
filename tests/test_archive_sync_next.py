@@ -39,6 +39,16 @@ class FakeArchiveClient:
         self.closed = True
 
 
+class FakeBatchArchiveClient(FakeArchiveClient):
+    def __init__(self) -> None:
+        super().__init__()
+        self.decrypt_batch_sizes: list[int] = []
+
+    def decrypt_records(self, records: list[dict]) -> list[dict]:
+        self.decrypt_batch_sizes.append(len(records))
+        return [self.decrypt_record(record) for record in records]
+
+
 class FakeArchiveRepo:
     def __init__(self) -> None:
         self.finished: dict | None = None
@@ -88,6 +98,16 @@ def test_execute_archive_sync_fetches_from_last_seq_and_only_persists_archive(mo
     assert repo.finished and repo.finished["status"] == "success"
     assert client.fetch_calls == [{"seq": 30651, "limit": 100}]
     assert client.closed is True
+
+
+def test_execute_archive_sync_uses_batch_native_decrypt_boundary_when_available() -> None:
+    repo = FakeArchiveRepo()
+    client = FakeBatchArchiveClient()
+
+    result = execute_archive_sync(repo=repo, client=client, owner_userid="HuangYouCan", limit=100)
+
+    assert result["ok"] is True
+    assert client.decrypt_batch_sizes == [2]
 
 
 def test_archive_sync_route_requires_registered_archive_client(monkeypatch) -> None:

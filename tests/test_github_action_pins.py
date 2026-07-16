@@ -18,7 +18,10 @@ def test_repository_external_actions_are_immutable_and_trusted() -> None:
     errors, workflow_count, external_use_count = check_workflows(ROOT)
 
     assert errors == []
-    assert workflow_count >= 4
+    # The ID-validation repository intentionally owns only CI, full regression,
+    # and the single 49.232.57.128 deployment workflow.  Production promotion
+    # was removed as part of the repository-ownership cutover.
+    assert workflow_count == 3
     assert external_use_count > 0
 
 

@@ -32,7 +32,7 @@ class _Connection:
         return _Result({"anomaly_count": 1, "sample_ids": [7]})
 
 
-def test_count_only_reconciliation_has_six_pii_free_read_only_counts(monkeypatch) -> None:
+def test_count_only_reconciliation_has_seven_pii_free_read_only_counts(monkeypatch) -> None:
     connection = _Connection()
     monkeypatch.setattr(fulfillment_reconciliation, "connect_raw_postgres", lambda url: connection)
 
@@ -46,6 +46,7 @@ def test_count_only_reconciliation_has_six_pii_free_read_only_counts(monkeypatch
         "successful_full_refund_with_active_entitlement",
         "refund_request_without_effect",
         "duplicate_order_paid_effect",
+        "stale_succeeded_external_push_delivery_projection",
         "legacy_domain_outbox_pending",
     }
     assert set(result["counts"].values()) == {1}
@@ -57,6 +58,22 @@ def test_count_only_reconciliation_has_six_pii_free_read_only_counts(monkeypatch
     assert "INSERT INTO" not in statements
     assert "UPDATE " not in statements
     assert "DELETE FROM" not in statements
+
+
+def test_reconciliation_only_flags_post_rollout_actionable_gaps() -> None:
+    payment_query = fulfillment_reconciliation._ANOMALY_QUERIES["paid_without_payment_outbox"]
+    refund_query = fulfillment_reconciliation._ANOMALY_QUERIES["refund_request_without_effect"]
+    cutover = fulfillment_reconciliation._FULFILLMENT_RECONCILIATION_CUTOVER_AT_SQL
+
+    assert cutover in payment_query
+    assert "SELECT MIN(rollout.created_at)" not in payment_query
+    assert "COALESCE(o.paid_at, o.created_at)" in payment_query
+    assert "o.updated_at" not in payment_query
+    assert "LOWER(COALESCE(r.status, '')) IN ('requested', 'queued')" in refund_query
+    assert "COALESCE(r.refund_id, '') = ''" in refund_query
+    assert cutover in refund_query
+    assert "SELECT MIN(rollout.created_at)" not in refund_query
+    assert "job.effect_type = 'payment.wechat.refund.request'" in refund_query
 
 
 def test_repair_requires_auditable_actor_and_reason_without_connecting(monkeypatch) -> None:
@@ -87,5 +104,6 @@ def test_reconciliation_cli_help_is_available() -> None:
 
     assert completed.returncode == 0
     assert "--repair" in completed.stdout
+    assert "--projection-only" in completed.stdout
     assert "--actor" in completed.stdout
     assert "--reason" in completed.stdout

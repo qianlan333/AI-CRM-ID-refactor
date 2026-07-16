@@ -11,6 +11,10 @@ import yaml
 ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_MANIFEST = ROOT / "docs" / "architecture" / "route_ownership_manifest.yml"
 SAFE_METHODS = {"GET", "HEAD", "OPTIONS", "TRACE"}
+_READ_ONLY_UNSAFE_PATHS = {
+    "/api/admin/service-period-products/{service_product_id}/member-grid/query",
+    "/api/public/service-period-member-grid/query",
+}
 
 _HYBRID_ADMIN_EXACT_PATHS = {
     "/api/admin/cloud-orchestrator/campaigns/run-due",
@@ -50,6 +54,8 @@ def _methods(entry: dict[str, Any]) -> set[str]:
 
 
 def _is_write(entry: dict[str, Any]) -> bool:
+    if str(entry.get("path") or "") in _READ_ONLY_UNSAFE_PATHS:
+        return False
     return bool(_methods(entry) - SAFE_METHODS)
 
 
@@ -61,6 +67,10 @@ def _admin_capability(entry: dict[str, Any]) -> str:
     path = str(entry["path"])
     owner = str(entry["capability_owner"])
     write = _is_write(entry)
+    if "/service-period-products/" in path and any(
+        marker in path for marker in ("/data", "/member-grid", "/member-views", "/members/")
+    ):
+        return "service_period_grid_access"
     if not write:
         if owner == "admin_config" or path.startswith("/admin/config"):
             return "manage_config"
@@ -91,9 +101,11 @@ def _admin_capability(entry: dict[str, Any]) -> str:
 def _pii_level(entry: dict[str, Any]) -> str:
     path = str(entry["path"]).lower()
     owner = str(entry["capability_owner"])
+    if path == "/api/external/radar-clicks":
+        return "sensitive"
     if any(marker in path for marker in ("message", "archive", "questionnaire", "identity", "customer", "user", "sidebar")):
         return "sensitive"
-    if any(marker in path for marker in ("order", "payment", "refund", "wechat-pay", "alipay", "service-period")):
+    if any(marker in path for marker in ("order", "payment", "refund", "wechat-pay", "alipay", "service-period", "coupon")):
         return "financial"
     if owner in {"customer_tags", "owner_migration", "ops_enrollment"}:
         return "customer"
@@ -104,6 +116,12 @@ def _pii_level(entry: dict[str, Any]) -> str:
 
 def _hybrid_admin_route(path: str) -> bool:
     return path in _HYBRID_ADMIN_EXACT_PATHS
+
+
+def _service_period_grid_route(path: str) -> bool:
+    return "/service-period-products/" in path and any(
+        marker in path for marker in ("/data", "/member-grid", "/member-views", "/members/")
+    )
 
 
 def _machine_capability(path: str) -> str:
@@ -157,6 +175,7 @@ def _policy_for(entry: dict[str, Any]) -> dict[str, Any]:
     path = str(entry["path"])
     owner = str(entry["capability_owner"])
     write = _is_write(entry)
+    unsafe_method = bool(_methods(entry) - SAFE_METHODS)
 
     if path in {"/login", "/logout"}:
         return _policy("admin", "public", "public", "public", _pii_level(entry), False, "auth_strict")
@@ -179,11 +198,22 @@ def _policy_for(entry: dict[str, Any]) -> dict[str, Any]:
             _admin_capability(entry),
             "global",
             _pii_level(entry),
-            write,
+            unsafe_method,
             "authenticated",
             service_audience="internal_worker",
             service_capability=_machine_capability(path),
             client_purpose=_machine_purpose(path),
+        )
+
+    if _service_period_grid_route(path):
+        return _policy(
+            "admin",
+            "human_session",
+            "service_period_grid_access",
+            "single_resource",
+            "sensitive",
+            unsafe_method,
+            "authenticated",
         )
 
     if _starts(path, "/admin", "/api/admin", "/setup"):
@@ -193,7 +223,7 @@ def _policy_for(entry: dict[str, Any]) -> dict[str, Any]:
             _admin_capability(entry),
             "global",
             _pii_level(entry),
-            write,
+            unsafe_method,
             "authenticated",
         )
 
@@ -207,6 +237,24 @@ def _policy_for(entry: dict[str, Any]) -> dict[str, Any]:
             False,
             "integration",
             client_purpose="group_broadcast",
+        )
+
+    payment_identity_routes = {
+        "/api/h5/wechat-pay/jsapi/orders": "payment_order_create",
+        "/api/h5/wechat-pay/orders/{out_trade_no}": "payment_order_read",
+        "/api/h5/service-period-products/{link_slug}/wechat-pay/jsapi/orders": "payment_order_create",
+        "/api/h5/coupons/available": "coupon_available_read",
+        "/api/h5/coupons/{public_slug}/claim": "coupon_claim",
+    }
+    if path in payment_identity_routes:
+        return _policy(
+            "public_h5",
+            "payment_identity_session",
+            payment_identity_routes[path],
+            "self",
+            _pii_level(entry),
+            False,
+            "public_strict",
         )
 
     if path.startswith("/api/automation/group-ops/") and "/webhooks/" not in path:
@@ -238,6 +286,20 @@ def _policy_for(entry: dict[str, Any]) -> dict[str, Any]:
     if path.startswith("/sidebar/"):
         return _policy("sidebar", "public", "sidebar_bootstrap", "self", "none", False, "public_strict")
 
+    if path == "/shared/service-period-member-grid":
+        return _policy("public_h5", "public", "public", "public", "none", False, "public_standard")
+
+    if _starts(path, "/api/public/service-period-member-grid"):
+        return _policy(
+            "public_h5",
+            "public",
+            "public",
+            "single_resource",
+            "sensitive",
+            False,
+            "public_strict",
+        )
+
     callback_markers = ("callback", "notify", "webhook", "test-receiver")
     if path in {"/api/wecom/events"} or ("/webhook-deliveries" not in path and any(marker in path for marker in callback_markers)):
         return _policy(
@@ -252,6 +314,7 @@ def _policy_for(entry: dict[str, Any]) -> dict[str, Any]:
 
     public_prefixes = (
         "/api/h5",
+        "/c",
         "/s",
         "/p",
         "/pay",
@@ -285,6 +348,9 @@ def _policy_for(entry: dict[str, Any]) -> dict[str, Any]:
             False,
             "public_strict" if write else "public_standard",
         )
+
+    if path == "/{filename}" and entry.get("route_name") == "wechat_domain_verification_file":
+        return _policy("external_integration", "public", "domain_verification_read", "public", "none", False, "public_standard")
 
     if path in {"/health", "/api/system/health"}:
         return _policy("external_integration", "public", "health_read", "public", "none", False, "health")
@@ -323,6 +389,18 @@ def _policy_for(entry: dict[str, Any]) -> dict[str, Any]:
             False,
             "internal",
             client_purpose="identity",
+        )
+
+    if path == "/api/operation-cycles/reports":
+        return _policy(
+            "external_integration",
+            "api_client_jwt",
+            "operation_cycle_report_write",
+            "service",
+            "internal",
+            False,
+            "integration",
+            client_purpose="ops_reporter",
         )
 
     if path.startswith(("/api/customers", "/api/users", "/api/messages")):
@@ -413,6 +491,7 @@ def _policy(
         "client_credentials": ["api_client", "service"],
         "human_or_service": ["human", "service"],
         "human_session": ["human"],
+        "payment_identity_session": ["public"],
         "provider_oauth_state": ["provider_callback"],
         "provider_signature": ["provider_callback"],
         "public": ["public"],

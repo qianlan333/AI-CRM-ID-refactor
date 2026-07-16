@@ -6,8 +6,12 @@ from pathlib import Path
 import subprocess
 import sys
 
-from aicrm_next.platform_foundation.external_effects.models import WEBHOOK_GENERIC_PUSH
+from aicrm_next.platform_foundation.external_effects.models import (
+    WEBHOOK_GENERIC_PUSH,
+    ExternalEffectDispatchResult,
+)
 from aicrm_next.platform_foundation.external_effects.reconciliation import (
+    DELIVERY_EVIDENCE_CUTOVER_AT,
     ExternalEffectDispatchReconciliationService,
 )
 from aicrm_next.platform_foundation.external_effects.repo import InMemoryExternalEffectRepository
@@ -66,6 +70,55 @@ def test_reconciliation_reports_clean_queue_without_mutation() -> None:
 
     assert result["has_anomalies"] is False
     assert all(value == 0 for value in result["counts"].values())
+
+
+def test_internal_automation_side_effect_is_valid_delivery_evidence() -> None:
+    repo = InMemoryExternalEffectRepository()
+    job = _plan(repo, "r07-internal-side-effect")
+    claimed = repo.acquire_job(job["id"], locked_by="internal-adapter")
+    assert claimed is not None
+    completed = repo.complete_dispatch(
+        job=claimed,
+        result=ExternalEffectDispatchResult(
+            status="succeeded",
+            adapter_mode="execute",
+            response_summary={"internal_side_effect_executed": True, "http_status": 200},
+            real_external_call_executed=False,
+            provider_result_received=True,
+        ),
+    )
+    assert completed is not None
+
+    result = ExternalEffectDispatchReconciliationService(repo).diagnose()
+
+    assert result["has_anomalies"] is False
+    assert result["counts"]["succeeded_without_evidence_count"] == 0
+
+
+class _HistoricalEvidenceMetricsRepository:
+    @staticmethod
+    def queue_metrics(filters):
+        metrics = {
+            "stale_dispatching_count": 0,
+            "unknown_after_dispatch_count": 0,
+            "reconciliation_required_count": 0,
+            "succeeded_without_evidence_count": 22,
+            "simulated_recorded_as_succeeded_count": 0,
+            "dispatching_without_active_lease_count": 0,
+            "lease_on_non_dispatching_count": 0,
+        }
+        if filters.get("completed_from"):
+            metrics["succeeded_without_evidence_count"] = 0
+        return metrics
+
+
+def test_pre_cutover_missing_evidence_stays_auditable_without_failing_current_queue() -> None:
+    result = ExternalEffectDispatchReconciliationService(_HistoricalEvidenceMetricsRepository()).diagnose()
+
+    assert result["has_anomalies"] is False
+    assert result["counts"]["succeeded_without_evidence_count"] == 0
+    assert result["historical_counts"]["succeeded_without_evidence_count"] == 22
+    assert result["evidence_cutover_at"] == DELIVERY_EVIDENCE_CUTOVER_AT
 
 
 def test_push_center_preserves_simulated_and_unknown_delivery_truth() -> None:

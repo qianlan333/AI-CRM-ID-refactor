@@ -13,6 +13,7 @@ from .admin_auth.route_policy import route_policy_required_response
 from .admin_auth.action_token import build_admin_action_token_bundle, validate_action_token_for_request
 from .admin_config.pii_audit_repository import AdminConfigPiiAuditRepository
 from .automation_engine.repo import reset_automation_fixture_state
+from .automation_engine.channel_completion import ChannelQrReadService
 from .channel_entry_composition import build_wecom_callback_inbox_worker_factory
 from .commerce.repo import reset_commerce_fixture_state
 from .external_effect_composition import (
@@ -20,6 +21,7 @@ from .external_effect_composition import (
     build_external_effect_continuation_registry,
 )
 from .internal_event_composition import build_internal_event_consumer_registry
+from .integration_gateway.channel_completion_client import configure_channel_completion_provider
 from .media_library.repo import reset_media_library_fixture_state
 from .mcp_composition import build_mcp_jsonrpc_application
 from .ops_enrollment.application import reset_user_ops_fixture_state
@@ -27,13 +29,14 @@ from .platform_foundation.internal_events import internal_event_consumer_registr
 from .questionnaire.repo import reset_questionnaire_fixture_state
 from .read_model_composition import build_sidebar_contact_binding_status_query, get_customer_detail
 from .radar_links.repo import reset_radar_links_fixture_state
+from .service_period_composition import build_service_period_member_grid_access_service
 from .router_registry import register_routers
 from .shared.errors import ApplicationError
 from .shared.repository_provider import RepositoryProviderError
 from .shared.release import current_release_sha
 from .shared.pii_audit import PiiAuditRepository, apply_pii_audit, pii_audit_enabled
 from .shared.route_policy import RoutePolicyIndex
-from .shared.runtime import assert_required_runtime_secrets, fixture_mode, require_signing_secret
+from .shared.runtime import assert_required_runtime_secrets, fixture_mode, public_https_environment, require_signing_secret
 from .shared.safe_logging import safe_log_exception
 
 __all__ = [
@@ -48,15 +51,19 @@ __all__ = [
 ]
 
 _FRONTEND_COMPAT_DIR = Path(__file__).resolve().parent / "frontend_compat"
+_OPERATION_CYCLES_DIR = Path(__file__).resolve().parent / "operation_cycles"
 _GROUP_OPS_DIR = Path(__file__).resolve().parent / "automation_engine" / "group_ops"
 _AUTOMATION_ENGINE_DIR = Path(__file__).resolve().parent / "automation_engine"
 _CUSTOMER_TAGS_DIR = Path(__file__).resolve().parent / "customer_tags"
 _QUESTIONNAIRE_DIR = Path(__file__).resolve().parent / "questionnaire"
+_NAVIGATION_TARGET_DIR = Path(__file__).resolve().parent / "navigation_target"
+_SERVICE_PERIOD_DIR = Path(__file__).resolve().parent / "service_period"
 logger = logging.getLogger(__name__)
 
 
 def create_app(*, pii_audit_repository: PiiAuditRepository | None = None) -> FastAPI:
     assert_required_runtime_secrets()
+    configure_channel_completion_provider(ChannelQrReadService())
     app = FastAPI(title="AI-CRM Next", version="0.1.0")
     app.state.admin_action_token_bundle_builder = build_admin_action_token_bundle
     app.state.admin_action_token_validator = validate_action_token_for_request
@@ -72,6 +79,7 @@ def create_app(*, pii_audit_repository: PiiAuditRepository | None = None) -> Fas
     app.state.internal_event_consumer_registry = build_internal_event_consumer_registry()
     app.state.sidebar_contact_binding_status_query_factory = build_sidebar_contact_binding_status_query
     app.state.external_customer_detail_query = get_customer_detail
+    app.state.service_period_member_grid_access_service_factory = build_service_period_member_grid_access_service
 
     if fixture_mode():
         fixture_reset_registry.reset_fixture_state()
@@ -134,6 +142,8 @@ def create_app(*, pii_audit_repository: PiiAuditRepository | None = None) -> Fas
         response.headers.setdefault("X-AICRM-Fallback-Used", "false")
         response.headers.setdefault("X-AICRM-App", "ai_crm_next")
         response.headers.setdefault("X-AICRM-Release-SHA", current_release_sha())
+        if public_https_environment():
+            response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
         if request.url.path == "/sidebar/bind-mobile" or request.url.path.startswith("/api/sidebar/"):
             response.headers.setdefault("Cache-Control", "no-store, max-age=0")
             response.headers.setdefault("Pragma", "no-cache")
@@ -159,6 +169,21 @@ def create_app(*, pii_audit_repository: PiiAuditRepository | None = None) -> Fas
         "/static/questionnaire",
         StaticFiles(directory=_QUESTIONNAIRE_DIR / "static"),
         name="questionnaire_static",
+    )
+    app.mount(
+        "/static/navigation-target",
+        StaticFiles(directory=_NAVIGATION_TARGET_DIR / "static"),
+        name="navigation_target_static",
+    )
+    app.mount(
+        "/static/operation-cycles",
+        StaticFiles(directory=_OPERATION_CYCLES_DIR / "static"),
+        name="operation_cycles_static",
+    )
+    app.mount(
+        "/static/service-period",
+        StaticFiles(directory=_SERVICE_PERIOD_DIR / "static"),
+        name="service_period_static",
     )
     app.mount(
         "/static",

@@ -5,6 +5,7 @@ Requires=openclaw-wecom-postgres.service
 
 [Service]
 Type=oneshot
+User=ubuntu
 EnvironmentFile=/home/ubuntu/.openclaw-wecom-pg.env
 Environment=APP_HOST=127.0.0.1
 Environment=APP_PORT=5001

@@ -390,6 +390,7 @@ class InMemoryCloudPlanRepository:
         owner_userid: str,
         content_package: dict[str, Any],
         operator: str,
+        requires_review: bool = False,
     ) -> dict[str, Any]:
         normalized_event_id = _text(external_event_id)
         normalized_external_userid = _text(external_userid)
@@ -404,6 +405,8 @@ class InMemoryCloudPlanRepository:
         if not normalized_unionid:
             return {"status": "skipped", "reason": "identity_pending_unionid"}
         plan_id = _agent_plan_id(normalized_event_id)
+        review_status = "pending_review" if requires_review else "approved"
+        approval_status = "pending" if requires_review else "approved"
         existing = next((item for item in self.plans if item.get("plan_id") == plan_id), None)
         if not existing:
             self.plans.append(
@@ -414,7 +417,7 @@ class InMemoryCloudPlanRepository:
                     "intent": f"Agent generated send plan {normalized_external_userid}",
                     "owner_userid": normalized_owner,
                     "candidate_count": 1,
-                    "review_status": "approved",
+                    "review_status": review_status,
                     "run_status": "draft",
                     "status": "draft",
                     "selection_json": {
@@ -444,7 +447,7 @@ class InMemoryCloudPlanRepository:
                 "owner_userid": normalized_owner,
                 "display_name": normalized_unionid,
                 "planned_message_count": 1,
-                "approval_status": "approved",
+                "approval_status": approval_status,
                 "send_status": "pending",
                 "updated_at": _now(),
             }

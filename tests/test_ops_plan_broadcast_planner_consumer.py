@@ -159,6 +159,33 @@ def test_agent_send_plan_approval_immediately_enqueues_recipient_jobs(monkeypatc
     assert {message["status"] for message in messages} == {"queued"}
 
 
+def test_agent_review_plan_waits_for_admin_approval_before_enqueue(monkeypatch) -> None:
+    _configure(monkeypatch)
+    repo = build_cloud_plan_repository()
+    created = repo.create_or_reuse_agent_send_plan(
+        external_event_id="agent_review_before_enqueue",
+        package_key="admin_ai_assist_review_plan",
+        external_userid="wm_review_target",
+        owner_userid="HuangYouCan",
+        content_package={"content_text": "review me"},
+        operator="pytest",
+        requires_review=True,
+    )
+
+    plan = repo.get_plan(created["plan_id"])
+    recipients, total = repo.list_recipients(created["plan_id"], limit=10)
+    assert plan and plan["review_status"] == "pending_review"
+    assert total == 1
+    assert recipients[0]["approval_status"] == "pending"
+    assert repo.broadcast_jobs == []
+
+    approved = ApproveCloudPlanCommand(repo=repo).execute(created["plan_id"], operator="pytest")
+
+    assert approved["broadcast_enqueue"]["status"] == "created"
+    assert approved["broadcast_enqueue"]["created_count"] == 1
+    assert len(repo.broadcast_jobs) == 1
+
+
 def test_planner_missing_plan_id_skips_with_explicit_reason(monkeypatch) -> None:
     _configure(monkeypatch)
     register_shadow_event_consumers()

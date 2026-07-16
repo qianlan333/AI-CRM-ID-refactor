@@ -120,9 +120,11 @@ def _login_url_for(name: str, **path_params: object) -> str:
 
 
 def admin_cookie_secure() -> bool:
+    from aicrm_next.shared.runtime import secure_cookie_environment
+
+    if secure_cookie_environment():
+        return True
     value = normalize_text(os.getenv("AICRM_ADMIN_SESSION_COOKIE_SECURE")).lower()
     if value:
         return value in {"1", "true", "yes", "on"}
-    from aicrm_next.shared.runtime import production_environment
-
-    return production_environment()
+    return False

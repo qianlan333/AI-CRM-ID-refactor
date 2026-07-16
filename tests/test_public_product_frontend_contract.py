@@ -51,6 +51,111 @@ def test_public_product_frontend_redirects_empty_material_and_keeps_checkout_con
     assert "showLeadQr(order" in pay.text
     assert "支付暂不可用" not in pay.text
     assert "不会创建订单" not in pay.text
+    assert "微信身份正在同步，请稍后重试。" in pay.text
+    assert "当前微信身份存在冲突，请联系客服处理。" in pay.text
+
+
+def test_payment_identity_accepts_canonical_unionid_before_openid_projection() -> None:
+    from aicrm_next.public_product.h5_wechat_pay import _resolve_payment_identity
+
+    class Cursor:
+        def __init__(self, rows):
+            self.rows = rows
+
+        def fetchall(self):
+            return self.rows
+
+        def fetchone(self):
+            return self.rows[0] if self.rows else None
+
+    class FakeConn:
+        def execute(self, query, params=()):
+            if "FROM crm_user_identity identity" in query:
+                external_userid, unionid, openid, mobile = tuple(params)
+                if unionid == "un_canonical" and not openid:
+                    return Cursor(
+                        [
+                            {
+                                "unionid": "un_canonical",
+                                "external_userid": "ext_canonical",
+                                "openid": "",
+                                "mobile": "",
+                                "mobile_normalized": "",
+                                "status": "active",
+                                "matched_unionid": True,
+                                "matched_external_userid": False,
+                                "matched_openid": False,
+                                "matched_mobile": False,
+                            }
+                        ]
+                    )
+                return Cursor([])
+            if "FROM crm_user_identity_resolution_queue" in query:
+                return Cursor([{"pending_count": 1}])
+            raise AssertionError(query)
+
+    result = _resolve_payment_identity(
+        FakeConn(),
+        {"unionid": "un_canonical", "openid": "op_not_projected_yet"},
+        for_update=True,
+    )
+
+    assert result.status == "resolved"
+    assert result.identity is not None
+    assert result.identity.unionid == "un_canonical"
+
+
+def test_payment_identity_blocks_openid_resolved_to_another_unionid() -> None:
+    from aicrm_next.public_product.h5_wechat_pay import _resolve_payment_identity
+
+    class Cursor:
+        def __init__(self, rows):
+            self.rows = rows
+
+        def fetchall(self):
+            return self.rows
+
+        def fetchone(self):
+            return self.rows[0] if self.rows else None
+
+    class FakeConn:
+        def execute(self, query, params=()):
+            if "FROM crm_user_identity identity" not in query:
+                raise AssertionError(query)
+            _external_userid, unionid, openid, _mobile = tuple(params)
+            if unionid:
+                resolved_unionid = unionid
+                matched_unionid = True
+                matched_openid = False
+            else:
+                resolved_unionid = "un_other"
+                matched_unionid = False
+                matched_openid = bool(openid)
+            return Cursor(
+                [
+                    {
+                        "unionid": resolved_unionid,
+                        "external_userid": "",
+                        "openid": openid,
+                        "mobile": "",
+                        "mobile_normalized": "",
+                        "status": "active",
+                        "matched_unionid": matched_unionid,
+                        "matched_external_userid": False,
+                        "matched_openid": matched_openid,
+                        "matched_mobile": False,
+                    }
+                ]
+            )
+
+    result = _resolve_payment_identity(
+        FakeConn(),
+        {"unionid": "un_canonical", "openid": "op_other"},
+        for_update=True,
+    )
+
+    assert result.status == "conflict"
+    assert result.reason == "identity_inputs_disagree"
 
 
 def test_public_pay_landing_hides_mobile_before_oauth_for_mobile_required_product(monkeypatch) -> None:
@@ -109,6 +214,7 @@ def test_public_pay_landing_shows_mobile_after_oauth_for_mobile_required_product
 
     assert response.status_code == 200
     assert 'id="mobileInput"' in response.text
+    assert "!/^1[3-9]\\d{9}$/.test(value)" in response.text
     assert "立即报名" in response.text
     assert "已就绪。" in response.text
     assert "授权登录" not in response.text
@@ -340,6 +446,70 @@ def test_public_h5_order_payload_hides_lead_qr_before_paid_or_when_redirecting()
     )
     assert redirecting["completion_action"] == {"type": "redirect", "redirect_url": "/welcome"}
     assert "lead_qr" not in redirecting
+
+
+def test_public_lead_qr_resolver_reuses_configured_channel_asset(monkeypatch) -> None:
+    from aicrm_next.public_product import h5_wechat_pay
+
+    queries: list[tuple[str, tuple]] = []
+
+    class Cursor:
+        def fetchone(self):
+            return {
+                "channel_id": 7,
+                "channel_name": "报名后企微",
+                "qr_url": "https://example.com/current-channel.png",
+                "status": "active",
+            }
+
+    class FakeConn:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def execute(self, query, params=()):
+            queries.append((query, params))
+            return Cursor()
+
+    monkeypatch.setattr(h5_wechat_pay, "production_data_ready", lambda: True)
+    monkeypatch.setattr(h5_wechat_pay, "_connect", lambda: FakeConn())
+
+    lead_qr = h5_wechat_pay.resolve_product_lead_qr(
+        {
+            "product_code": "sp_public_lead_qr",
+            "lead_channel_id": 7,
+            "completion_redirect_enabled": False,
+            "completion_target": {},
+        }
+    )
+
+    assert lead_qr == {
+        "channel_id": 7,
+        "channel_name": "报名后企微",
+        "qr_url": "https://example.com/current-channel.png",
+        "status": "active",
+    }
+    assert len(queries) == 1
+    assert "FROM automation_channel c" in queries[0][0]
+    assert queries[0][1] == (7,)
+
+
+def test_public_lead_qr_resolver_skips_redirect_products(monkeypatch) -> None:
+    from aicrm_next.public_product import h5_wechat_pay
+
+    monkeypatch.setattr(h5_wechat_pay, "production_data_ready", lambda: True)
+    monkeypatch.setattr(h5_wechat_pay, "_connect", lambda: (_ for _ in ()).throw(AssertionError("database should not be read")))
+
+    assert h5_wechat_pay.resolve_product_lead_qr(
+        {
+            "product_code": "sp_redirect",
+            "lead_channel_id": 7,
+            "completion_redirect_enabled": True,
+            "completion_redirect_url": "/welcome",
+        }
+    ) == {}
 
 
 def test_public_pay_landing_reopens_existing_paid_order(monkeypatch) -> None:

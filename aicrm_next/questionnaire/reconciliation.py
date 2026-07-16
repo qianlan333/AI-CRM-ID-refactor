@@ -14,17 +14,30 @@ from aicrm_next.platform_foundation.internal_events.questionnaire import (
 from aicrm_next.shared.db_session import connect_raw_postgres
 from aicrm_next.shared.runtime import raw_database_url
 
+from aicrm_next.shared.release_cutovers import QUESTIONNAIRE_AUTO_EXECUTE_CUTOVER_AT, QUESTIONNAIRE_AUTO_EXECUTE_CUTOVER_SQL
+
+
+_QUESTIONNAIRE_R09_PRODUCTION_CUTOVER_SQL = QUESTIONNAIRE_AUTO_EXECUTE_CUTOVER_SQL
+
 
 _ANOMALY_QUERIES = {
-    "submission_without_outbox": """
+    "submission_without_outbox": f"""
         SELECT qs.id
         FROM questionnaire_submissions qs
-        WHERE NOT EXISTS (
+        WHERE qs.submitted_at >= {_QUESTIONNAIRE_R09_PRODUCTION_CUTOVER_SQL}
+          AND NOT EXISTS (
             SELECT 1
             FROM internal_event_outbox outbox
             WHERE outbox.tenant_id = 'aicrm'
               AND outbox.idempotency_key = 'questionnaire.submitted:' || qs.id::text
         )
+          AND NOT EXISTS (
+              SELECT 1
+              FROM internal_event event
+              WHERE event.tenant_id = 'aicrm'
+                AND event.event_type = 'questionnaire.submitted'
+                AND event.idempotency_key = 'questionnaire.submitted:' || qs.id::text
+          )
     """,
     "relayed_outbox_without_event": """
         SELECT outbox.id
@@ -38,7 +51,7 @@ _ANOMALY_QUERIES = {
                 AND event.idempotency_key = outbox.idempotency_key
           )
     """,
-    "event_without_required_webhook_effect": """
+    "event_without_required_webhook_effect": f"""
         SELECT event.id
         FROM internal_event event
         JOIN questionnaire_submissions submission
@@ -46,6 +59,7 @@ _ANOMALY_QUERIES = {
          AND submission.id = event.aggregate_id::bigint
         JOIN questionnaires questionnaire ON questionnaire.id = submission.questionnaire_id
         WHERE event.event_type = 'questionnaire.submitted'
+          AND submission.submitted_at >= {_QUESTIONNAIRE_R09_PRODUCTION_CUTOVER_SQL}
           AND questionnaire.external_push_enabled = TRUE
           AND questionnaire.external_push_url <> ''
           AND NOT EXISTS (
@@ -56,13 +70,14 @@ _ANOMALY_QUERIES = {
                 AND job.target_id = submission.id::text
           )
     """,
-    "event_without_required_tag_effect": """
+    "event_without_required_tag_effect": f"""
         SELECT event.id
         FROM internal_event event
         JOIN questionnaire_submissions submission
           ON event.aggregate_id ~ '^[0-9]+$'
          AND submission.id = event.aggregate_id::bigint
         WHERE event.event_type = 'questionnaire.submitted'
+          AND submission.submitted_at >= {_QUESTIONNAIRE_R09_PRODUCTION_CUTOVER_SQL}
           AND jsonb_array_length(COALESCE(submission.final_tags, '[]'::jsonb)) > 0
           AND NOT EXISTS (
               SELECT 1
@@ -89,6 +104,10 @@ _ANOMALY_QUERIES = {
     "effect_without_succeeded_planner": """
         SELECT job.id
         FROM external_effect_job job
+        JOIN internal_event event
+          ON event.tenant_id = job.tenant_id
+         AND event.event_id = job.source_event_id
+         AND event.event_type = 'questionnaire.submitted'
         WHERE job.effect_type IN (
             'webhook.questionnaire_submission.push',
             'wecom.contact.tag.mark'
@@ -149,13 +168,25 @@ _ANOMALY_QUERIES = {
     "stale_legacy_retry_residue": """
         SELECT log.id
         FROM questionnaire_external_push_logs log
-        WHERE log.retry_from_log_id IS NOT NULL OR log.status = 'planned'
+        WHERE log.status IN ('planned', 'pending', 'queued')
         UNION ALL
         SELECT job.id
         FROM external_effect_job job
         WHERE job.source_module = 'questionnaire.external_push_logs'
            OR job.target_type = 'questionnaire_external_push_log'
     """,
+}
+
+
+_HISTORICAL_ANOMALY_QUERIES = {
+    "event_without_required_webhook_effect": _ANOMALY_QUERIES["event_without_required_webhook_effect"].replace(
+        f"submission.submitted_at >= {_QUESTIONNAIRE_R09_PRODUCTION_CUTOVER_SQL}",
+        f"submission.submitted_at < {_QUESTIONNAIRE_R09_PRODUCTION_CUTOVER_SQL}",
+    ),
+    "event_without_required_tag_effect": _ANOMALY_QUERIES["event_without_required_tag_effect"].replace(
+        f"submission.submitted_at >= {_QUESTIONNAIRE_R09_PRODUCTION_CUTOVER_SQL}",
+        f"submission.submitted_at < {_QUESTIONNAIRE_R09_PRODUCTION_CUTOVER_SQL}",
+    ),
 }
 
 
@@ -180,17 +211,23 @@ class QuestionnaireRadarReconciliationService:
         from psycopg.rows import dict_row
 
         counts: dict[str, int] = {}
+        historical_counts: dict[str, int] = {}
         with connect_raw_postgres(self._database_url) as conn:
             conn.row_factory = dict_row
             for name, query in _ANOMALY_QUERIES.items():
                 row = conn.execute(f"WITH anomalies AS ({query}) SELECT COUNT(*)::integer AS anomaly_count FROM anomalies").fetchone()
                 counts[name] = int((row or {}).get("anomaly_count") or 0)
+            for name, query in _HISTORICAL_ANOMALY_QUERIES.items():
+                row = conn.execute(f"WITH anomalies AS ({query}) SELECT COUNT(*)::integer AS anomaly_count FROM anomalies").fetchone()
+                historical_counts[name] = int((row or {}).get("anomaly_count") or 0)
         return {
             "ok": True,
             "mode": "count_only",
             "repair_supported": True,
             "has_anomalies": any(counts.values()),
             "counts": counts,
+            "historical_counts": historical_counts,
+            "actionable_cutover_at": QUESTIONNAIRE_AUTO_EXECUTE_CUTOVER_AT,
             "database_mutation_performed": False,
             "consumer_executed": False,
             "provider_executed": False,

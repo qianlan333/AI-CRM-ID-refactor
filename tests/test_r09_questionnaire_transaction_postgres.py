@@ -376,3 +376,81 @@ def test_repair_adds_only_the_missing_outbox_continuation(database_url: str) -> 
     assert "r09-test-operator" not in str(outbox)
     assert "approved fixture continuation repair" not in str(outbox)
     assert counts == {"events": 0, "effects": 0, "attempts": 0, "projections": 0}
+
+
+def test_reconciliation_ignores_pre_cutover_and_retained_canonical_lineage(database_url: str) -> None:
+    questionnaire, _question = _seed_questionnaire(database_url, suffix="reconciliation-scope")
+    with _connect(database_url) as conn:
+        historical_id = int(
+            conn.execute(
+                """
+                INSERT INTO questionnaire_submissions (
+                    questionnaire_id, unionid, follow_user_userid, total_score,
+                    final_tags, result_token, submitted_at
+                ) VALUES (%s, %s, %s, 0, '[]'::jsonb, %s, TIMESTAMPTZ '2026-07-13 05:42:29+00')
+                RETURNING id
+                """,
+                (
+                    int(questionnaire["id"]),
+                    "union-r09-reconciliation-scope",
+                    "owner-r09-reconciliation-scope",
+                    "result-r09-reconciliation-historical",
+                ),
+            ).fetchone()["id"]
+        )
+        current_id = int(
+            conn.execute(
+                """
+                INSERT INTO questionnaire_submissions (
+                    questionnaire_id, unionid, follow_user_userid, total_score,
+                    final_tags, result_token, submitted_at
+                ) VALUES (%s, %s, %s, 0, '[]'::jsonb, %s, TIMESTAMPTZ '2026-07-13 05:42:31+00')
+                RETURNING id
+                """,
+                (
+                    int(questionnaire["id"]),
+                    "union-r09-reconciliation-scope",
+                    "owner-r09-reconciliation-scope",
+                    "result-r09-reconciliation-current",
+                ),
+            ).fetchone()["id"]
+        )
+        conn.execute(
+            """
+            INSERT INTO internal_event (
+                event_id, event_type, aggregate_type, aggregate_id, idempotency_key
+            ) VALUES (%s, 'questionnaire.submitted', 'questionnaire_submission', %s, %s)
+            """,
+            (
+                "iev_r09_reconciliation_scope",
+                str(current_id),
+                f"questionnaire.submitted:{current_id}",
+            ),
+        )
+        conn.execute(
+            """
+            INSERT INTO external_effect_job (
+                effect_type, adapter_name, operation, target_type, target_id,
+                source_module, source_event_id, idempotency_key, status
+            ) VALUES (
+                'wecom.contact.tag.mark', 'test', 'mark', 'unionid', 'legacy-target',
+                'channel_entry.application', 'channel_entry.application',
+                'r09-legacy-noncanonical-effect', 'failed_terminal'
+            )
+            """
+        )
+        conn.execute(
+            """
+            INSERT INTO questionnaire_external_push_logs (
+                questionnaire_id, submission_record_id, retry_from_log_id, status
+            ) VALUES (%s, %s, 1, 'failed')
+            """,
+            (int(questionnaire["id"]), historical_id),
+        )
+        conn.commit()
+
+    result = QuestionnaireRadarReconciliationService(database_url=database_url).diagnose()
+
+    assert result["counts"]["submission_without_outbox"] == 0
+    assert result["counts"]["effect_without_succeeded_planner"] == 0
+    assert result["counts"]["stale_legacy_retry_residue"] == 0

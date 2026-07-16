@@ -130,6 +130,7 @@ def test_external_effect_worker_script_returns_nonzero_for_blocked_or_unknown(mo
     assert payload["counts"]["blocked_count"] == 1
     assert captured["continuation_registry"].names == (
         "questionnaire_contact_tags",
+        "external_push_delivery",
         "automation_agent_audience_webhook",
     )
 

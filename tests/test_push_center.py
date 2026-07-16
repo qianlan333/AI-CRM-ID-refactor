@@ -552,7 +552,10 @@ def test_questionnaire_default_external_push_is_queue_first(client: TestClient, 
     assert body["external_effect_job"] is None
 
 
-def test_group_ops_default_webhook_uses_external_effect_not_legacy_gateway(group_ops_api_client, monkeypatch) -> None:
+def test_group_ops_default_webhook_uses_external_effect_not_legacy_gateway(
+    group_ops_api_client,  # noqa: F811
+    monkeypatch,
+) -> None:
     monkeypatch.delenv("AICRM_GROUP_OPS_OUTBOUND_MODE", raising=False)
     monkeypatch.delenv("AICRM_GROUP_OPS_EXTERNAL_EFFECT_SEND_MODE", raising=False)
     response = group_ops_api_client.post(

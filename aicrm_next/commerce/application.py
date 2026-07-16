@@ -15,6 +15,7 @@ from aicrm_next.integration_gateway.payment_adapters import (
     build_wechat_pay_adapter,
 )
 from aicrm_next.shared.errors import ContractError, NotFoundError
+from aicrm_next.shared.mobile import MOBILE_VALIDATION_MESSAGE, normalize_mainland_mobile
 
 from .domain import completion_redirect_projection, normalize_product_completion_target, preview_product, validate_quantity
 from .dto import CheckoutRequest, PaymentNotifyRequest, ProductUpsertRequest
@@ -101,6 +102,10 @@ class UpsertProductCommand:
         self._product_write_gateway = product_write_gateway or build_product_write_gateway()
 
     def __call__(self, payload: ProductUpsertRequest, product_id: str | None = None) -> dict[str, Any]:
+        if product_id:
+            from aicrm_next.commerce.coupons.application import assert_product_price_allows_coupons
+
+            assert_product_price_allows_coupons(product_id=product_id, new_price=int(payload.price_cents))
         completion_fields = normalize_product_completion_target(payload.model_dump())
         product_payload = {
             **payload.model_dump(),
@@ -205,6 +210,11 @@ class CheckoutCommand:
             raise ContractError("disabled product cannot checkout")
         amount = int(product["price_cents"]) * quantity
         identity = payload.buyer_identity.model_dump()
+        if product.get("require_mobile"):
+            mobile = normalize_mainland_mobile(identity.get("mobile"))
+            if not mobile:
+                raise ContractError(MOBILE_VALIDATION_MESSAGE)
+            identity["mobile"] = mobile
         order = self._repo.create_order(
             {
                 "payment_provider": self._provider,

@@ -13,6 +13,7 @@ import yaml
 from alembic import command
 from alembic.config import Config
 from psycopg import sql
+from sqlalchemy.exc import SQLAlchemyError
 
 from scripts.ops.bootstrap_database import (
     BASELINE_PATH,
@@ -41,24 +42,17 @@ def test_test_suite_uses_the_versioned_database_baseline() -> None:
 
 
 def test_every_active_manifest_table_has_a_versioned_create_source() -> None:
-    manifest = yaml.safe_load(
-        (ROOT / "docs" / "architecture" / "data_table_lifecycle_manifest.yml").read_text(
-            encoding="utf-8"
-        )
-    )["tables"]
+    manifest = yaml.safe_load((ROOT / "docs" / "architecture" / "data_table_lifecycle_manifest.yml").read_text(encoding="utf-8"))["tables"]
     created_tables = set(CREATE_TABLE_PATTERN.findall(BASELINE_PATH.read_text(encoding="utf-8")))
     for migration in sorted((ROOT / "migrations" / "versions").glob("*.py")):
         created_tables.update(CREATE_TABLE_PATTERN.findall(migration.read_text(encoding="utf-8")))
 
-    active_tables = {
-        table for table, entry in manifest.items() if entry.get("lifecycle") != "retired"
-    }
+    active_tables = {table for table, entry in manifest.items() if entry.get("lifecycle") not in {"retired", "legacy"}}
     assert active_tables - created_tables == {"alembic_version"}
     assert not [
         table
         for table, entry in manifest.items()
-        if entry.get("lifecycle") != "retired"
-        and str(entry.get("migration_source") or "").startswith("pre-Alembic baseline")
+        if entry.get("lifecycle") not in {"retired", "legacy"} and str(entry.get("migration_source") or "").startswith("pre-Alembic baseline")
     ]
 
 
@@ -79,7 +73,7 @@ def test_empty_postgres_database_installs_and_reuses_alembic_head() -> None:
 
         assert first.baseline_applied is True
         assert first.revision_before is None
-        assert first.revision_after == "0106_critical_read_path_indexes"
+        assert first.revision_after == "0123_required_physical_schema_repair"
         assert second.baseline_applied is False
         assert second.revision_before == first.revision_after
         assert second.revision_after == first.revision_after
@@ -97,9 +91,32 @@ def test_empty_postgres_database_installs_and_reuses_alembic_head() -> None:
             "auth_api_clients",
             "automation_channel_qrcode_asset",
             "automation_channel_scene_alias",
+            "service_period_huangyoucan_usage_snapshot",
+            "service_period_huangyoucan_usage_sync_runs",
             "sync_runs",
             "wecom_external_contact_event_logs",
+            "wecom_media_leases",
         } <= table_names
+        with psycopg.connect(database_url) as connection:
+            manifest_columns = connection.execute(
+                """
+                SELECT column_name, is_nullable
+                FROM information_schema.columns
+                WHERE table_schema = 'public'
+                  AND table_name = 'internal_event'
+                  AND column_name IN (
+                      'fanout_manifest_version', 'fanout_manifest_hash',
+                      'fanout_manifest_json', 'expected_consumer_count'
+                  )
+                """
+            ).fetchall()
+        assert {row[0] for row in manifest_columns} == {
+            "fanout_manifest_version",
+            "fanout_manifest_hash",
+            "fanout_manifest_json",
+            "expected_consumer_count",
+        }
+        assert all(row[1] == "NO" for row in manifest_columns)
 
 
 def test_production_shape_alembic_database_upgrades_without_reapplying_baseline() -> None:
@@ -128,17 +145,121 @@ def test_production_shape_alembic_database_upgrades_without_reapplying_baseline(
 
         assert result.baseline_applied is False
         assert result.revision_before == "0098_admin_session_revocation"
-        assert result.revision_after == "0106_critical_read_path_indexes"
+        assert result.revision_after == "0123_required_physical_schema_repair"
         with psycopg.connect(database_url) as connection:
             preserved = connection.execute(
                 "SELECT wecom_userid, session_version FROM admin_users WHERE id = %s",
                 (admin_user_id,),
             ).fetchone()
-            auth_table = connection.execute(
-                "SELECT to_regclass('public.auth_sessions')"
-            ).fetchone()
+            auth_table = connection.execute("SELECT to_regclass('public.auth_sessions')").fetchone()
         assert preserved == ("production-shape-upgrade", 7)
         assert auth_table == ("auth_sessions",)
+
+
+def test_questionnaire_auto_execute_upgrade_skips_only_pre_cutover_runs() -> None:
+    with _isolated_database("questionnaire_auto_execute") as database_url:
+        with psycopg.connect(database_url, autocommit=True) as connection:
+            connection.execute(BASELINE_PATH.read_text(encoding="utf-8"))
+        _upgrade_database_to(database_url, "0108_customer_read_model_refresh")
+
+        with psycopg.connect(database_url) as connection:
+            connection.execute(
+                """
+                INSERT INTO internal_event (
+                    event_id, event_type, aggregate_type, aggregate_id,
+                    idempotency_key, occurred_at, created_at
+                ) VALUES
+                    (
+                        'evt-questionnaire-pre-cutover', 'questionnaire.submitted',
+                        'questionnaire_submission', 'pre-cutover', 'questionnaire-pre-cutover',
+                        '2026-07-13 16:19:59+00', '2026-07-13 16:19:59+00'
+                    ),
+                    (
+                        'evt-questionnaire-post-cutover', 'questionnaire.submitted',
+                        'questionnaire_submission', 'post-cutover', 'questionnaire-post-cutover',
+                        '2026-07-13 16:20:01+00', '2026-07-13 16:20:01+00'
+                    )
+                """
+            )
+            connection.execute(
+                """
+                INSERT INTO internal_event_consumer_run (
+                    event_id, consumer_name, consumer_type, status
+                )
+                SELECT event_id, consumer_name, 'projection', 'pending'
+                FROM (
+                    VALUES
+                        ('evt-questionnaire-pre-cutover'),
+                        ('evt-questionnaire-post-cutover')
+                ) AS event(event_id)
+                CROSS JOIN (
+                    VALUES
+                        ('questionnaire_projection_consumer'),
+                        ('questionnaire_webhook_consumer'),
+                        ('questionnaire_tag_consumer'),
+                        ('automation_questionnaire_consumer'),
+                        ('customer_summary_consumer')
+                ) AS consumer(consumer_name)
+                """
+            )
+            connection.commit()
+
+        _upgrade_database_to(database_url, "head")
+
+        with psycopg.connect(database_url) as connection:
+            statuses = connection.execute(
+                """
+                SELECT event_id, status, COUNT(*)
+                FROM internal_event_consumer_run
+                GROUP BY event_id, status
+                ORDER BY event_id, status
+                """
+            ).fetchall()
+            attempts = connection.execute(
+                """
+                SELECT status, error_code, COUNT(*)
+                FROM internal_event_consumer_attempt
+                GROUP BY status, error_code
+                """
+            ).fetchall()
+
+        assert statuses == [
+            ("evt-questionnaire-post-cutover", "pending", 5),
+            ("evt-questionnaire-pre-cutover", "skipped", 5),
+        ]
+        assert attempts == [
+            (
+                "skipped",
+                "questionnaire_shadow_before_auto_execute_cutover",
+                5,
+            )
+        ]
+
+
+def test_retired_workspace_drop_fails_closed_when_any_table_contains_data() -> None:
+    with _isolated_database("retired_workspace_nonempty") as database_url:
+        with psycopg.connect(database_url, autocommit=True) as connection:
+            connection.execute(BASELINE_PATH.read_text(encoding="utf-8"))
+        _upgrade_database_to(database_url, "0107_hyc_usage_snapshot")
+        with psycopg.connect(database_url) as connection:
+            connection.execute(
+                """
+                INSERT INTO group_ops_workspace_drafts (draft_id, idempotency_key)
+                VALUES ('preserve_nonempty_draft', 'preserve_nonempty_draft')
+                """
+            )
+            connection.commit()
+
+        with pytest.raises(SQLAlchemyError, match="retired workspace table group_ops_workspace_drafts is not empty"):
+            _upgrade_database_to(database_url, "head")
+
+        with psycopg.connect(database_url) as connection:
+            revision = connection.execute("SELECT version_num FROM alembic_version").fetchone()
+            preserved = connection.execute("SELECT COUNT(*) FROM group_ops_workspace_drafts").fetchone()
+            refresh_state = connection.execute("SELECT to_regclass('public.customer_read_model_refresh_state')").fetchone()
+        assert revision == ("0107_hyc_usage_snapshot",)
+        assert preserved == (1,)
+        assert refresh_state == (None,)
 
 
 def test_nonempty_database_without_alembic_state_is_rejected() -> None:
@@ -150,9 +271,7 @@ def test_nonempty_database_without_alembic_state_is_rejected() -> None:
             install_or_upgrade_database(database_url)
 
         with psycopg.connect(database_url) as connection:
-            row = connection.execute(
-                "SELECT to_regclass('public.alembic_version')"
-            ).fetchone()
+            row = connection.execute("SELECT to_regclass('public.alembic_version')").fetchone()
         assert row == (None,)
 
 
@@ -165,9 +284,7 @@ def test_sequence_only_database_without_alembic_state_is_rejected() -> None:
             install_or_upgrade_database(database_url)
 
         with psycopg.connect(database_url) as connection:
-            row = connection.execute(
-                "SELECT to_regclass('public.alembic_version')"
-            ).fetchone()
+            row = connection.execute("SELECT to_regclass('public.alembic_version')").fetchone()
         assert row == (None,)
 
 

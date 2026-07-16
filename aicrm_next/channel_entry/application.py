@@ -435,6 +435,7 @@ def _canonicalize_channel_entry_after_identity(
     corp_id: str,
     event_log_id: int | None,
     identity_sync: dict[str, Any],
+    persist_runtime_identity: bool = True,
 ) -> dict[str, Any]:
     unionid = text(identity_sync.get("unionid"))
     scene = extract_scene(event)
@@ -463,11 +464,15 @@ def _canonicalize_channel_entry_after_identity(
         channel_id=channel_id,
         scene=scene,
     )
-    runtime_identity = _mark_runtime_identity_from_sync(
-        event,
-        corp_id=corp_id,
-        event_log_id=event_log_id,
-        identity_sync=identity_sync,
+    runtime_identity = (
+        _mark_runtime_identity_from_sync(
+            event,
+            corp_id=corp_id,
+            event_log_id=event_log_id,
+            identity_sync=identity_sync,
+        )
+        if persist_runtime_identity
+        else {"status": "skipped", "reason": "backfill_worker_owns_runtime_identity"}
     )
     return {
         "status": "success",
@@ -478,7 +483,13 @@ def _canonicalize_channel_entry_after_identity(
     }
 
 
-def _sync_identity_best_effort(event: dict[str, Any], *, corp_id: str, event_log_id: int | None) -> dict[str, Any]:
+def _sync_identity_best_effort(
+    event: dict[str, Any],
+    *,
+    corp_id: str,
+    event_log_id: int | None,
+    persist_runtime_identity: bool = True,
+) -> dict[str, Any]:
     try:
         identity_sync = sync_external_contact_identity_for_event(event, corp_id=corp_id)
     except Exception as exc:
@@ -494,17 +505,22 @@ def _sync_identity_best_effort(event: dict[str, Any], *, corp_id: str, event_log
                 corp_id=corp_id,
                 event_log_id=event_log_id,
                 identity_sync=identity_sync,
+                persist_runtime_identity=persist_runtime_identity,
             )
             identity_sync["channel_entry_canonical"] = canonical
         except Exception as exc:
             safe_log_exception(LOGGER, "channel entry canonicalization after identity failed", exc, level=logging.WARNING)
             identity_sync["channel_entry_canonical"] = {"status": "failed", "reason": str(exc)}
     else:
-        identity_sync["runtime_identity"] = _mark_runtime_identity_from_sync(
-            event,
-            corp_id=corp_id,
-            event_log_id=event_log_id,
-            identity_sync=identity_sync,
+        identity_sync["runtime_identity"] = (
+            _mark_runtime_identity_from_sync(
+                event,
+                corp_id=corp_id,
+                event_log_id=event_log_id,
+                identity_sync=identity_sync,
+            )
+            if persist_runtime_identity
+            else {"status": "skipped", "reason": "backfill_worker_owns_runtime_identity"}
         )
     return identity_sync
 
@@ -515,6 +531,7 @@ def _welcome_attachments(channel: dict[str, Any]) -> tuple[list[dict[str, Any]],
         ("welcome_image_library_ids", "image"),
         ("welcome_attachment_library_ids", "file"),
         ("welcome_miniprogram_library_ids", "miniprogram"),
+        ("welcome_group_invite_library_ids", "link"),
     ):
         raw = channel.get(key) or []
         if isinstance(raw, str):
@@ -532,6 +549,12 @@ def _welcome_attachments(channel: dict[str, Any]) -> tuple[list[dict[str, Any]],
                     if any(not text(item.get(field)) for field in required):
                         return attachments, "material_resolve_failed"
                     attachment.update({field: text(item.get(field)) for field in required})
+                elif msgtype == "link":
+                    title = text(item.get("title") or item.get("name"))
+                    url = text(item.get("url") or item.get("join_url"))
+                    if not title or not url:
+                        return attachments, "material_resolve_failed"
+                    attachment["link"] = {"title": title, "url": url}
                 else:
                     media_id = text(item.get("media_id") or item.get("material_id") or item.get("pic_media_id"))
                     if not media_id:

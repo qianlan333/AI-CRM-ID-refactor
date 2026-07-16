@@ -14,6 +14,7 @@ def test_external_effect_continuation_composition_is_explicit_and_deterministic(
     assert first is not second
     assert first.names == (
         "questionnaire_contact_tags",
+        "external_push_delivery",
         "automation_agent_audience_webhook",
     )
     assert second.names == first.names
@@ -25,6 +26,7 @@ def test_web_app_owns_its_external_effect_continuation_registry() -> None:
 
     assert first_app.state.external_effect_continuation_registry.names == (
         "questionnaire_contact_tags",
+        "external_push_delivery",
         "automation_agent_audience_webhook",
     )
     assert first_app.state.external_effect_continuation_registry is not second_app.state.external_effect_continuation_registry

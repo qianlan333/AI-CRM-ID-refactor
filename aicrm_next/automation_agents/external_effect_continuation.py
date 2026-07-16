@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import logging
 from typing import Any
-from urllib.parse import urlparse
 
 from aicrm_next.platform_foundation.external_effects.continuations import ExternalEffectContinuation
 from aicrm_next.platform_foundation.external_effects.models import (
@@ -13,6 +12,7 @@ from aicrm_next.platform_foundation.external_effects.models import (
 from aicrm_next.shared.safe_logging import safe_log_exception
 
 from .worker import AutomationAgentWorker
+from .internal_webhook_adapter import automation_agent_code_from_webhook_url
 
 LOGGER = logging.getLogger(__name__)
 
@@ -25,8 +25,7 @@ def _matches_automation_agent_audience_webhook(
         return False
     payload = dict(job.payload_json or {})
     url = str(payload.get("webhook_url") or payload.get("target_url") or "").strip()
-    path = urlparse(url).path if url else ""
-    return path.startswith("/api/ai/agents/") and path.endswith("/audience-webhook")
+    return bool(automation_agent_code_from_webhook_url(url))
 
 
 def _automation_agent_batch_id(response_summary: dict[str, Any] | None) -> str:

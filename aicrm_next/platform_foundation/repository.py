@@ -62,9 +62,43 @@ class RuntimeReadinessRepository:
         rows = self._execute("SELECT version_num FROM alembic_version ORDER BY version_num").fetchall()
         return tuple(sorted(str(row.get("version_num") or "").strip() for row in rows if row.get("version_num")))
 
-    def queue_metrics(self) -> dict[str, int]:
+    def queue_metrics(
+        self,
+        *,
+        allowed_pairs: tuple[tuple[str, str], ...] = (),
+        allowed_event_types: tuple[str, ...] = (),
+        allowed_consumers: tuple[str, ...] = (),
+    ) -> dict[str, int]:
+        params: dict[str, Any] = {}
+        if allowed_pairs:
+            predicates = ["(e.event_type || ':' || r.consumer_name) = ANY(%(allowed_pairs)s)"]
+            params["allowed_pairs"] = [f"{event_type}:{consumer_name}" for event_type, consumer_name in allowed_pairs]
+            if allowed_event_types:
+                predicates.append("e.event_type = ANY(%(allowed_event_types)s)")
+                params["allowed_event_types"] = list(allowed_event_types)
+            actionable_predicate = " AND ".join(predicates)
+        else:
+            predicates: list[str] = []
+            if allowed_event_types:
+                predicates.append("e.event_type = ANY(%(allowed_event_types)s)")
+                params["allowed_event_types"] = list(allowed_event_types)
+            if allowed_consumers:
+                predicates.append("r.consumer_name = ANY(%(allowed_consumers)s)")
+                params["allowed_consumers"] = list(allowed_consumers)
+            actionable_predicate = " AND ".join(predicates) if predicates else "TRUE"
         row = self._execute(
-            """
+            f"""
+            WITH internal_open AS (
+              SELECT r.created_at, ({actionable_predicate}) AS actionable
+              FROM internal_event_consumer_run r
+              JOIN internal_event e ON e.event_id = r.event_id
+              WHERE r.status IN ('pending', 'running', 'failed_retryable')
+            ), internal_terminal AS (
+              SELECT ({actionable_predicate}) AS actionable
+              FROM internal_event_consumer_run r
+              JOIN internal_event e ON e.event_id = r.event_id
+              WHERE r.status IN ('failed_terminal', 'blocked')
+            )
             SELECT
               (SELECT COUNT(*) FROM webhook_inbox
                  WHERE status IN ('received', 'processing', 'failed_retryable'))::BIGINT AS webhook_pending_count,
@@ -72,13 +106,18 @@ class RuntimeReadinessRepository:
                  FROM webhook_inbox
                  WHERE status IN ('received', 'processing', 'failed_retryable'))::BIGINT AS webhook_oldest_pending_age_seconds,
               (SELECT COUNT(*) FROM webhook_inbox WHERE status = 'dead_letter')::BIGINT AS webhook_dead_letter_count,
-              (SELECT COUNT(*) FROM internal_event_consumer_run
-                 WHERE status IN ('pending', 'running', 'failed_retryable'))::BIGINT AS internal_event_pending_count,
+              (SELECT COUNT(*) FROM internal_open)::BIGINT AS internal_event_pending_count,
               (SELECT COALESCE(EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - MIN(created_at))), 0)
-                 FROM internal_event_consumer_run
-                 WHERE status IN ('pending', 'running', 'failed_retryable'))::BIGINT AS internal_event_oldest_pending_age_seconds,
-              (SELECT COUNT(*) FROM internal_event_consumer_run
-                 WHERE status IN ('failed_terminal', 'blocked'))::BIGINT AS internal_event_terminal_count,
+                 FROM internal_open)::BIGINT AS internal_event_oldest_pending_age_seconds,
+              (SELECT COUNT(*) FROM internal_open WHERE actionable)::BIGINT AS internal_event_actionable_pending_count,
+              (SELECT COALESCE(EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - MIN(created_at))), 0)
+                 FROM internal_open WHERE actionable)::BIGINT AS internal_event_actionable_oldest_pending_age_seconds,
+              (SELECT COUNT(*) FROM internal_open WHERE NOT actionable)::BIGINT AS internal_event_rollout_gated_pending_count,
+              (SELECT COALESCE(EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - MIN(created_at))), 0)
+                 FROM internal_open WHERE NOT actionable)::BIGINT AS internal_event_rollout_gated_oldest_pending_age_seconds,
+              (SELECT COUNT(*) FROM internal_terminal)::BIGINT AS internal_event_terminal_count,
+              (SELECT COUNT(*) FROM internal_terminal WHERE actionable)::BIGINT AS internal_event_actionable_terminal_count,
+              (SELECT COUNT(*) FROM internal_terminal WHERE NOT actionable)::BIGINT AS internal_event_rollout_gated_terminal_count,
               (SELECT COUNT(*) FROM external_effect_job
                  WHERE status IN ('planned', 'approved', 'queued', 'dispatching', 'failed_retryable'))::BIGINT AS external_effect_pending_count,
               (SELECT COALESCE(EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - MIN(created_at))), 0)
@@ -86,11 +125,12 @@ class RuntimeReadinessRepository:
                  WHERE status IN ('planned', 'approved', 'queued', 'dispatching', 'failed_retryable'))::BIGINT AS external_effect_oldest_pending_age_seconds,
               (SELECT COUNT(*) FROM external_effect_job
                  WHERE status IN ('failed_terminal', 'blocked'))::BIGINT AS external_effect_terminal_count
-            """
+            """,
+            params,
         ).fetchone()
         return {str(key): int(value or 0) for key, value in dict(row or {}).items()}
 
-    def _execute(self, sql: str):
+    def _execute(self, sql: str, params: dict[str, Any] | None = None):
         if self._connection is None:
             raise RuntimeError("readiness repository is not open")
-        return self._connection.execute(sql)
+        return self._connection.execute(sql, params) if params else self._connection.execute(sql)

@@ -1,4 +1,24 @@
 routes:
+- path: /{filename}
+  methods:
+  - GET
+  route_name: wechat_domain_verification_file
+  capability_owner: platform_foundation
+  runtime_owner: ai_crm_next
+  layer: integration
+  external_effects: none
+  data_source: static
+  requires_auth: false
+  rollback: previous_release
+  audience: external_integration
+  auth_scheme: public
+  capability: domain_verification_read
+  access_scope: public
+  pii_level: none
+  csrf: false
+  rate_limit: public_standard
+  principal_types:
+  - public
 - path: /api/h5/product-context/session
   methods:
   - POST
@@ -2859,14 +2879,14 @@ routes:
   capability_owner: public_product
   runtime_owner: ai_crm_next
   layer: api
-  external_effects: none
+  external_effects: real_requires_approval
   data_source: command
-  requires_auth: false
+  requires_auth: true
   rollback: previous_release
   audience: public_h5
-  auth_scheme: public
-  capability: public
-  access_scope: single_resource
+  auth_scheme: payment_identity_session
+  capability: payment_order_create
+  access_scope: self
   pii_level: financial
   csrf: false
   rate_limit: public_strict
@@ -2879,17 +2899,17 @@ routes:
   capability_owner: public_product
   runtime_owner: ai_crm_next
   layer: api
-  external_effects: none
-  data_source: read_model
-  requires_auth: false
+  external_effects: real_requires_approval
+  data_source: external_adapter
+  requires_auth: true
   rollback: previous_release
   audience: public_h5
-  auth_scheme: public
-  capability: public
-  access_scope: single_resource
+  auth_scheme: payment_identity_session
+  capability: payment_order_read
+  access_scope: self
   pii_level: financial
   csrf: false
-  rate_limit: public_standard
+  rate_limit: public_strict
   principal_types:
   - public
 - path: /api/h5/navigation-target/url-link/resolve
@@ -5709,6 +5729,26 @@ routes:
   rate_limit: authenticated
   principal_types:
   - human
+- path: /admin/questionnaires/{questionnaire_id:int}/operations
+  methods:
+  - GET
+  route_name: api.admin_console_questionnaire_operations
+  capability_owner: questionnaire
+  runtime_owner: ai_crm_next
+  layer: admin_page
+  external_effects: none
+  data_source: read_model
+  requires_auth: true
+  rollback: previous_release
+  audience: admin
+  auth_scheme: human_session
+  capability: admin_read
+  access_scope: global
+  pii_level: sensitive
+  csrf: false
+  rate_limit: authenticated
+  principal_types:
+  - human
 - path: /admin/questionnaires/{questionnaire_id:int}/external-push-logs
   methods:
   - GET
@@ -5847,6 +5887,86 @@ routes:
   access_scope: global
   pii_level: sensitive
   csrf: false
+  rate_limit: authenticated
+  principal_types:
+  - human
+- path: /api/admin/questionnaires/{questionnaire_id}/operations
+  methods:
+  - GET
+  route_name: get_questionnaire_operations
+  capability_owner: questionnaire
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: none
+  data_source: read_model
+  requires_auth: true
+  rollback: previous_release
+  audience: admin
+  auth_scheme: human_session
+  capability: admin_read
+  access_scope: global
+  pii_level: sensitive
+  csrf: false
+  rate_limit: authenticated
+  principal_types:
+  - human
+- path: /api/admin/questionnaires/{questionnaire_id}/operations/completion
+  methods:
+  - PUT
+  route_name: save_questionnaire_completion_operations
+  capability_owner: questionnaire
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: none
+  data_source: command
+  requires_auth: true
+  rollback: previous_release
+  audience: admin
+  auth_scheme: human_session
+  capability: manage_questionnaire
+  access_scope: global
+  pii_level: sensitive
+  csrf: true
+  rate_limit: authenticated
+  principal_types:
+  - human
+- path: /api/admin/questionnaires/{questionnaire_id}/operations/external-push
+  methods:
+  - PUT
+  route_name: save_questionnaire_external_push_operations
+  capability_owner: questionnaire
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: none
+  data_source: command
+  requires_auth: true
+  rollback: previous_release
+  audience: admin
+  auth_scheme: human_session
+  capability: manage_questionnaire
+  access_scope: global
+  pii_level: sensitive
+  csrf: true
+  rate_limit: authenticated
+  principal_types:
+  - human
+- path: /api/admin/questionnaires/{questionnaire_id}/operations/external-push/test
+  methods:
+  - POST
+  route_name: test_questionnaire_external_push_operations
+  capability_owner: questionnaire
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: none
+  data_source: command
+  requires_auth: true
+  rollback: previous_release
+  audience: admin
+  auth_scheme: human_session
+  capability: manage_questionnaire
+  access_scope: global
+  pii_level: sensitive
+  csrf: true
   rate_limit: authenticated
   principal_types:
   - human
@@ -6450,6 +6570,48 @@ routes:
   rate_limit: authenticated
   principal_types:
   - human
+- path: /api/external/radar-clicks
+  methods:
+  - GET
+  route_name: list_external_radar_clicks
+  capability_owner: radar_links
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: none
+  data_source: read_model
+  requires_auth: true
+  rollback: previous_release
+  audience: external_integration
+  auth_scheme: api_client_jwt
+  capability: external_read
+  access_scope: service
+  pii_level: sensitive
+  csrf: false
+  rate_limit: integration
+  principal_types:
+  - api_client
+  - service
+- path: /api/external/radar-links
+  methods:
+  - GET
+  route_name: list_external_radar_link_mappings
+  capability_owner: radar_links
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: none
+  data_source: read_model
+  requires_auth: true
+  rollback: previous_release
+  audience: external_integration
+  auth_scheme: api_client_jwt
+  capability: external_read
+  access_scope: service
+  pii_level: none
+  csrf: false
+  rate_limit: integration
+  principal_types:
+  - api_client
+  - service
 - path: /api/admin/radar-links
   methods:
   - GET
@@ -8179,6 +8341,46 @@ routes:
   rate_limit: authenticated
   principal_types:
   - human
+- path: /api/admin/automation-conversion/group-ops/group-picker
+  methods:
+  - GET
+  route_name: list_group_chat_picker
+  capability_owner: automation_engine
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: none
+  data_source: read_model
+  requires_auth: true
+  rollback: previous_release
+  audience: admin
+  auth_scheme: human_session
+  capability: admin_read
+  access_scope: global
+  pii_level: internal
+  csrf: false
+  rate_limit: authenticated
+  principal_types:
+  - human
+- path: /api/admin/automation-conversion/group-ops/group-picker/sync
+  methods:
+  - POST
+  route_name: sync_group_chat_picker
+  capability_owner: automation_engine
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: none
+  data_source: command
+  requires_auth: true
+  rollback: previous_release
+  audience: admin
+  auth_scheme: human_session
+  capability: manage_group_ops
+  access_scope: global
+  pii_level: internal
+  csrf: true
+  rate_limit: authenticated
+  principal_types:
+  - human
 - path: /api/admin/automation-conversion/group-ops/groups/sync/preview
   methods:
   - POST
@@ -9097,9 +9299,9 @@ routes:
   rollback: previous_release
   audience: admin
   auth_scheme: human_session
-  capability: admin_read
-  access_scope: global
-  pii_level: financial
+  capability: service_period_grid_access
+  access_scope: single_resource
+  pii_level: sensitive
   csrf: false
   rate_limit: authenticated
   principal_types:
@@ -9904,6 +10106,146 @@ routes:
   rate_limit: authenticated
   principal_types:
   - human
+- path: /api/admin/service-period-products/{service_product_id}/member-grid/access
+  methods:
+  - GET
+  route_name: service_period_member_grid_access
+  capability_owner: service_period
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: none
+  data_source: read_model
+  requires_auth: true
+  rollback: previous_release
+  audience: admin
+  auth_scheme: human_session
+  capability: service_period_grid_access
+  access_scope: single_resource
+  pii_level: sensitive
+  csrf: false
+  rate_limit: authenticated
+  principal_types:
+  - human
+- path: /api/admin/service-period-products/{service_product_id}/member-grid/schema
+  methods:
+  - GET
+  route_name: service_period_member_grid_schema
+  capability_owner: service_period
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: none
+  data_source: read_model
+  requires_auth: true
+  rollback: previous_release
+  audience: admin
+  auth_scheme: human_session
+  capability: service_period_grid_access
+  access_scope: single_resource
+  pii_level: sensitive
+  csrf: false
+  rate_limit: authenticated
+  principal_types:
+  - human
+- path: /api/admin/service-period-products/{service_product_id}/member-views
+  methods:
+  - GET
+  route_name: list_service_period_member_views
+  capability_owner: service_period
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: none
+  data_source: read_model
+  requires_auth: true
+  rollback: previous_release
+  audience: admin
+  auth_scheme: human_session
+  capability: service_period_grid_access
+  access_scope: single_resource
+  pii_level: sensitive
+  csrf: false
+  rate_limit: authenticated
+  principal_types:
+  - human
+- path: /api/admin/service-period-products/{service_product_id}/member-views
+  methods:
+  - POST
+  route_name: create_service_period_member_view
+  capability_owner: service_period
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: none
+  data_source: command
+  requires_auth: true
+  rollback: previous_release
+  audience: admin
+  auth_scheme: human_session
+  capability: service_period_grid_access
+  access_scope: single_resource
+  pii_level: sensitive
+  csrf: true
+  rate_limit: authenticated
+  principal_types:
+  - human
+- path: /api/admin/service-period-products/{service_product_id}/member-views/{view_id}
+  methods:
+  - PUT
+  route_name: update_service_period_member_view
+  capability_owner: service_period
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: none
+  data_source: command
+  requires_auth: true
+  rollback: previous_release
+  audience: admin
+  auth_scheme: human_session
+  capability: service_period_grid_access
+  access_scope: single_resource
+  pii_level: sensitive
+  csrf: true
+  rate_limit: authenticated
+  principal_types:
+  - human
+- path: /api/admin/service-period-products/{service_product_id}/member-views/{view_id}
+  methods:
+  - DELETE
+  route_name: delete_service_period_member_view
+  capability_owner: service_period
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: none
+  data_source: command
+  requires_auth: true
+  rollback: previous_release
+  audience: admin
+  auth_scheme: human_session
+  capability: service_period_grid_access
+  access_scope: single_resource
+  pii_level: sensitive
+  csrf: true
+  rate_limit: authenticated
+  principal_types:
+  - human
+- path: /api/admin/service-period-products/{service_product_id}/member-grid/query
+  methods:
+  - POST
+  route_name: query_service_period_member_grid
+  capability_owner: service_period
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: none
+  data_source: read_model
+  requires_auth: true
+  rollback: previous_release
+  audience: admin
+  auth_scheme: human_session
+  capability: service_period_grid_access
+  access_scope: single_resource
+  pii_level: sensitive
+  csrf: true
+  rate_limit: authenticated
+  principal_types:
+  - human
 - path: /api/admin/service-period-products/{service_product_id}/members/{unionid}/remark
   methods:
   - PUT
@@ -9917,13 +10259,193 @@ routes:
   rollback: previous_release
   audience: admin
   auth_scheme: human_session
-  capability: manage_commerce
-  access_scope: global
-  pii_level: financial
+  capability: service_period_grid_access
+  access_scope: single_resource
+  pii_level: sensitive
   csrf: true
   rate_limit: authenticated
   principal_types:
   - human
+- path: /api/admin/service-period-products/{service_product_id}/members/{unionid}/alliance
+  methods:
+  - PUT
+  route_name: update_service_period_member_alliance
+  capability_owner: service_period
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: none
+  data_source: command
+  requires_auth: true
+  rollback: previous_release
+  audience: admin
+  auth_scheme: human_session
+  capability: service_period_grid_access
+  access_scope: single_resource
+  pii_level: sensitive
+  csrf: true
+  rate_limit: authenticated
+  principal_types:
+  - human
+- path: /api/admin/service-period-products/{service_product_id}/member-grid/share-settings
+  methods:
+  - GET
+  route_name: get_service_period_member_grid_share_settings
+  capability_owner: service_period
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: none
+  data_source: read_model
+  requires_auth: true
+  rollback: previous_release
+  audience: admin
+  auth_scheme: human_session
+  capability: service_period_grid_access
+  access_scope: single_resource
+  pii_level: sensitive
+  csrf: false
+  rate_limit: authenticated
+  principal_types:
+  - human
+- path: /api/admin/service-period-products/{service_product_id}/member-grid/collaborators
+  methods:
+  - POST
+  route_name: create_service_period_member_grid_collaborator
+  capability_owner: service_period
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: none
+  data_source: command
+  requires_auth: true
+  rollback: previous_release
+  audience: admin
+  auth_scheme: human_session
+  capability: service_period_grid_access
+  access_scope: single_resource
+  pii_level: sensitive
+  csrf: true
+  rate_limit: authenticated
+  principal_types:
+  - human
+- path: /api/admin/service-period-products/{service_product_id}/member-grid/collaborators/{collaborator_id}
+  methods:
+  - PUT
+  route_name: update_service_period_member_grid_collaborator
+  capability_owner: service_period
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: none
+  data_source: command
+  requires_auth: true
+  rollback: previous_release
+  audience: admin
+  auth_scheme: human_session
+  capability: service_period_grid_access
+  access_scope: single_resource
+  pii_level: sensitive
+  csrf: true
+  rate_limit: authenticated
+  principal_types:
+  - human
+- path: /api/admin/service-period-products/{service_product_id}/member-grid/collaborators/{collaborator_id}
+  methods:
+  - DELETE
+  route_name: delete_service_period_member_grid_collaborator
+  capability_owner: service_period
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: none
+  data_source: command
+  requires_auth: true
+  rollback: previous_release
+  audience: admin
+  auth_scheme: human_session
+  capability: service_period_grid_access
+  access_scope: single_resource
+  pii_level: sensitive
+  csrf: true
+  rate_limit: authenticated
+  principal_types:
+  - human
+- path: /api/admin/service-period-products/{service_product_id}/member-grid/external-share
+  methods:
+  - PUT
+  route_name: update_service_period_member_grid_external_share
+  capability_owner: service_period
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: none
+  data_source: command
+  requires_auth: true
+  rollback: previous_release
+  audience: admin
+  auth_scheme: human_session
+  capability: service_period_grid_access
+  access_scope: single_resource
+  pii_level: sensitive
+  csrf: true
+  rate_limit: authenticated
+  principal_types:
+  - human
+- path: /shared/service-period-member-grid
+  methods:
+  - GET
+  route_name: api.public_service_period_member_grid_page
+  capability_owner: service_period
+  runtime_owner: ai_crm_next
+  layer: h5
+  external_effects: none
+  data_source: static
+  requires_auth: false
+  rollback: previous_release
+  audience: public_h5
+  auth_scheme: public
+  capability: public
+  access_scope: public
+  pii_level: none
+  csrf: false
+  rate_limit: public_standard
+  principal_types:
+  - public
+- path: /api/public/service-period-member-grid/bootstrap
+  methods:
+  - GET
+  route_name: public_service_period_member_grid_bootstrap
+  capability_owner: service_period
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: none
+  data_source: read_model
+  requires_auth: false
+  rollback: previous_release
+  audience: public_h5
+  auth_scheme: public
+  capability: public
+  access_scope: single_resource
+  pii_level: sensitive
+  csrf: false
+  rate_limit: public_strict
+  principal_types:
+  - public
+- path: /api/public/service-period-member-grid/query
+  methods:
+  - POST
+  route_name: public_service_period_member_grid_query
+  capability_owner: service_period
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: none
+  data_source: read_model
+  requires_auth: false
+  rollback: previous_release
+  audience: public_h5
+  auth_scheme: public
+  capability: public
+  access_scope: single_resource
+  pii_level: sensitive
+  csrf: false
+  rate_limit: public_strict
+  principal_types:
+  - public
 - path: /api/products/{page_slug}
   methods:
   - GET
@@ -10033,12 +10555,12 @@ routes:
   layer: api
   external_effects: real_requires_approval
   data_source: command
-  requires_auth: false
+  requires_auth: true
   rollback: previous_release
   audience: public_h5
-  auth_scheme: public
-  capability: public
-  access_scope: single_resource
+  auth_scheme: payment_identity_session
+  capability: payment_order_create
+  access_scope: self
   pii_level: financial
   csrf: false
   rate_limit: public_strict
@@ -11516,6 +12038,186 @@ routes:
   rate_limit: authenticated
   principal_types:
   - human
+- path: /api/admin/group-invite-bindings
+  methods:
+  - GET
+  route_name: list_group_invite_bindings
+  capability_owner: media_library
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: none
+  data_source: read_model
+  requires_auth: true
+  rollback: previous_release
+  audience: admin
+  auth_scheme: human_session
+  capability: admin_read
+  access_scope: global
+  pii_level: internal
+  csrf: false
+  rate_limit: authenticated
+  principal_types:
+  - human
+- path: /api/admin/group-invite-bindings/ensure
+  methods:
+  - POST
+  route_name: ensure_group_invite_binding
+  capability_owner: media_library
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: none
+  data_source: command
+  requires_auth: true
+  rollback: previous_release
+  audience: admin
+  auth_scheme: human_session
+  capability: manage_content
+  access_scope: global
+  pii_level: internal
+  csrf: true
+  rate_limit: authenticated
+  principal_types:
+  - human
+- path: /api/admin/group-invite-bindings/{item_id}
+  methods:
+  - GET
+  route_name: get_group_invite_binding
+  capability_owner: media_library
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: none
+  data_source: read_model
+  requires_auth: true
+  rollback: previous_release
+  audience: admin
+  auth_scheme: human_session
+  capability: admin_read
+  access_scope: global
+  pii_level: internal
+  csrf: false
+  rate_limit: authenticated
+  principal_types:
+  - human
+- path: /api/admin/group-invite-bindings/{item_id}
+  methods:
+  - PUT
+  route_name: update_group_invite_binding
+  capability_owner: media_library
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: none
+  data_source: command
+  requires_auth: true
+  rollback: previous_release
+  audience: admin
+  auth_scheme: human_session
+  capability: manage_content
+  access_scope: global
+  pii_level: internal
+  csrf: true
+  rate_limit: authenticated
+  principal_types:
+  - human
+- path: /api/admin/group-invite-library
+  methods:
+  - GET
+  route_name: list_group_invites
+  capability_owner: media_library
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: none
+  data_source: read_model
+  requires_auth: true
+  rollback: previous_release
+  audience: admin
+  auth_scheme: human_session
+  capability: admin_read
+  access_scope: global
+  pii_level: internal
+  csrf: false
+  rate_limit: authenticated
+  principal_types:
+  - human
+- path: /api/admin/group-invite-library
+  methods:
+  - POST
+  route_name: create_group_invite
+  capability_owner: media_library
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: none
+  data_source: command
+  requires_auth: true
+  rollback: previous_release
+  audience: admin
+  auth_scheme: human_session
+  capability: manage_content
+  access_scope: global
+  pii_level: internal
+  csrf: true
+  rate_limit: authenticated
+  principal_types:
+  - human
+- path: /api/admin/group-invite-library/{item_id}
+  methods:
+  - GET
+  route_name: get_group_invite
+  capability_owner: media_library
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: none
+  data_source: read_model
+  requires_auth: true
+  rollback: previous_release
+  audience: admin
+  auth_scheme: human_session
+  capability: admin_read
+  access_scope: global
+  pii_level: internal
+  csrf: false
+  rate_limit: authenticated
+  principal_types:
+  - human
+- path: /api/admin/group-invite-library/{item_id}
+  methods:
+  - PUT
+  route_name: update_group_invite
+  capability_owner: media_library
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: none
+  data_source: command
+  requires_auth: true
+  rollback: previous_release
+  audience: admin
+  auth_scheme: human_session
+  capability: manage_content
+  access_scope: global
+  pii_level: internal
+  csrf: true
+  rate_limit: authenticated
+  principal_types:
+  - human
+- path: /api/admin/group-invite-library/{item_id}
+  methods:
+  - DELETE
+  route_name: delete_group_invite
+  capability_owner: media_library
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: none
+  data_source: command
+  requires_auth: true
+  rollback: previous_release
+  audience: admin
+  auth_scheme: human_session
+  capability: manage_content
+  access_scope: global
+  pii_level: internal
+  csrf: true
+  rate_limit: authenticated
+  principal_types:
+  - human
 - path: /admin/image-library
   methods:
   - GET
@@ -11576,6 +12278,26 @@ routes:
   rate_limit: authenticated
   principal_types:
   - human
+- path: /admin/group-invite-library
+  methods:
+  - GET
+  route_name: api.admin_group_invite_library_workspace
+  capability_owner: media_library
+  runtime_owner: ai_crm_next
+  layer: admin_page
+  external_effects: none
+  data_source: read_model
+  requires_auth: true
+  rollback: previous_release
+  audience: admin
+  auth_scheme: human_session
+  capability: admin_read
+  access_scope: global
+  pii_level: internal
+  csrf: false
+  rate_limit: authenticated
+  principal_types:
+  - human
 - path: /api/admin/ai-assist/contract
   methods:
   - GET
@@ -11593,6 +12315,26 @@ routes:
   access_scope: global
   pii_level: internal
   csrf: false
+  rate_limit: authenticated
+  principal_types:
+  - human
+- path: /api/admin/ai-assist/review-plans
+  methods:
+  - POST
+  route_name: create_admin_ai_assist_review_plan
+  capability_owner: ai_assist
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: none
+  data_source: command
+  requires_auth: true
+  rollback: previous_release
+  audience: admin
+  auth_scheme: human_session
+  capability: manage_automation
+  access_scope: global
+  pii_level: internal
+  csrf: true
   rate_limit: authenticated
   principal_types:
   - human
@@ -13552,6 +14294,26 @@ routes:
   rate_limit: authenticated
   principal_types:
   - human
+- path: /api/admin/automation-agents/{agent_id}/publish
+  methods:
+  - POST
+  route_name: api.admin_automation_agent_publish
+  capability_owner: automation_agents
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: none
+  data_source: command
+  requires_auth: true
+  rollback: previous_release
+  audience: admin
+  auth_scheme: human_session
+  capability: manage_automation
+  access_scope: global
+  pii_level: internal
+  csrf: true
+  rate_limit: authenticated
+  principal_types:
+  - human
 - path: /api/admin/automation-agents/{agent_id}/pause
   methods:
   - POST
@@ -13673,3 +14435,565 @@ routes:
   principal_types:
   - api_client
   - service
+- path: /api/operation-cycles/reports
+  methods:
+  - POST
+  route_name: report_operation_cycle_snapshot
+  capability_owner: operation_cycles
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: none
+  data_source: command
+  requires_auth: true
+  rollback: previous_release_and_migration_0113_downgrade
+  audience: external_integration
+  auth_scheme: api_client_jwt
+  capability: operation_cycle_report_write
+  access_scope: service
+  pii_level: internal
+  csrf: false
+  rate_limit: integration
+  client_purpose: ops_reporter
+  principal_types:
+  - api_client
+  - service
+- path: /api/admin/operation-cycles/strategies
+  methods:
+  - GET
+  route_name: list_operation_cycle_strategies
+  capability_owner: operation_cycles
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: none
+  data_source: read_model
+  requires_auth: true
+  rollback: previous_release
+  audience: admin
+  auth_scheme: human_session
+  capability: admin_read
+  access_scope: global
+  pii_level: internal
+  csrf: false
+  rate_limit: authenticated
+  principal_types:
+  - human
+- path: /api/admin/operation-cycles/strategies/{strategy_key}
+  methods:
+  - GET
+  route_name: get_operation_cycle_strategy
+  capability_owner: operation_cycles
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: none
+  data_source: read_model
+  requires_auth: true
+  rollback: previous_release
+  audience: admin
+  auth_scheme: human_session
+  capability: admin_read
+  access_scope: global
+  pii_level: internal
+  csrf: false
+  rate_limit: authenticated
+  principal_types:
+  - human
+- path: /api/admin/operation-cycles/strategies/{strategy_key}/runs
+  methods:
+  - GET
+  route_name: list_operation_cycle_strategy_runs
+  capability_owner: operation_cycles
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: none
+  data_source: read_model
+  requires_auth: true
+  rollback: previous_release
+  audience: admin
+  auth_scheme: human_session
+  capability: admin_read
+  access_scope: global
+  pii_level: internal
+  csrf: false
+  rate_limit: authenticated
+  principal_types:
+  - human
+- path: /api/admin/operation-cycles/runs/{run_key}
+  methods:
+  - GET
+  route_name: get_operation_cycle_run
+  capability_owner: operation_cycles
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: none
+  data_source: read_model
+  requires_auth: true
+  rollback: previous_release
+  audience: admin
+  auth_scheme: human_session
+  capability: admin_read
+  access_scope: global
+  pii_level: internal
+  csrf: false
+  rate_limit: authenticated
+  principal_types:
+  - human
+- path: /admin/operation-cycles
+  methods:
+  - GET
+  route_name: api.admin_operation_cycles_page
+  capability_owner: operation_cycles
+  runtime_owner: ai_crm_next
+  layer: admin_page
+  external_effects: none
+  data_source: read_model
+  requires_auth: true
+  rollback: previous_release
+  audience: admin
+  auth_scheme: human_session
+  capability: admin_read
+  access_scope: global
+  pii_level: internal
+  csrf: false
+  rate_limit: authenticated
+  principal_types:
+  - human
+- path: /admin/operation-cycles/{strategy_key}/runs/{run_key}
+  methods:
+  - GET
+  route_name: api.admin_operation_cycle_run_page
+  capability_owner: operation_cycles
+  runtime_owner: ai_crm_next
+  layer: admin_page
+  external_effects: none
+  data_source: read_model
+  requires_auth: true
+  rollback: previous_release
+  audience: admin
+  auth_scheme: human_session
+  capability: admin_read
+  access_scope: global
+  pii_level: internal
+  csrf: false
+  rate_limit: authenticated
+  principal_types:
+  - human
+- path: /admin/operation-cycles/{strategy_key}
+  methods:
+  - GET
+  route_name: api.admin_operation_cycle_strategy_page
+  capability_owner: operation_cycles
+  runtime_owner: ai_crm_next
+  layer: admin_page
+  external_effects: none
+  data_source: read_model
+  requires_auth: true
+  rollback: previous_release
+  audience: admin
+  auth_scheme: human_session
+  capability: admin_read
+  access_scope: global
+  pii_level: internal
+  csrf: false
+  rate_limit: authenticated
+  principal_types:
+  - human
+- path: /admin/coupons
+  methods:
+  - GET
+  route_name: api.admin_coupons_page
+  capability_owner: commerce
+  runtime_owner: ai_crm_next
+  layer: admin_page
+  external_effects: none
+  data_source: read_model
+  requires_auth: true
+  rollback: previous_release
+  audience: admin
+  auth_scheme: human_session
+  capability: admin_read
+  access_scope: global
+  pii_level: financial
+  csrf: false
+  rate_limit: authenticated
+  principal_types:
+  - human
+- path: /admin/coupons/new
+  methods:
+  - GET
+  route_name: api.admin_coupon_new_page
+  capability_owner: commerce
+  runtime_owner: ai_crm_next
+  layer: admin_page
+  external_effects: none
+  data_source: read_model
+  requires_auth: true
+  rollback: previous_release
+  audience: admin
+  auth_scheme: human_session
+  capability: admin_read
+  access_scope: global
+  pii_level: financial
+  csrf: false
+  rate_limit: authenticated
+  principal_types:
+  - human
+- path: /admin/coupons/{coupon_id}/edit
+  methods:
+  - GET
+  route_name: api.admin_coupon_edit_page
+  capability_owner: commerce
+  runtime_owner: ai_crm_next
+  layer: admin_page
+  external_effects: none
+  data_source: read_model
+  requires_auth: true
+  rollback: previous_release
+  audience: admin
+  auth_scheme: human_session
+  capability: admin_read
+  access_scope: global
+  pii_level: financial
+  csrf: false
+  rate_limit: authenticated
+  principal_types:
+  - human
+- path: /admin/coupons/{coupon_id}/data
+  methods:
+  - GET
+  route_name: api.admin_coupon_data_page
+  capability_owner: commerce
+  runtime_owner: ai_crm_next
+  layer: admin_page
+  external_effects: none
+  data_source: read_model
+  requires_auth: true
+  rollback: previous_release
+  audience: admin
+  auth_scheme: human_session
+  capability: admin_read
+  access_scope: global
+  pii_level: financial
+  csrf: false
+  rate_limit: authenticated
+  principal_types:
+  - human
+- path: /api/admin/coupons
+  methods:
+  - GET
+  route_name: api.admin_coupons
+  capability_owner: commerce
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: none
+  data_source: read_model
+  requires_auth: true
+  rollback: previous_release
+  audience: admin
+  auth_scheme: human_session
+  capability: admin_read
+  access_scope: global
+  pii_level: financial
+  csrf: false
+  rate_limit: authenticated
+  principal_types:
+  - human
+- path: /api/admin/coupons
+  methods:
+  - POST
+  route_name: api.admin_coupon_create
+  capability_owner: commerce
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: none
+  data_source: command
+  requires_auth: true
+  rollback: previous_release
+  audience: admin
+  auth_scheme: human_session
+  capability: manage_commerce
+  access_scope: global
+  pii_level: financial
+  csrf: true
+  rate_limit: authenticated
+  principal_types:
+  - human
+- path: /api/admin/coupons/product-options
+  methods:
+  - GET
+  route_name: api.admin_coupon_product_options
+  capability_owner: commerce
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: none
+  data_source: read_model
+  requires_auth: true
+  rollback: previous_release
+  audience: admin
+  auth_scheme: human_session
+  capability: admin_read
+  access_scope: global
+  pii_level: financial
+  csrf: false
+  rate_limit: authenticated
+  principal_types:
+  - human
+- path: /api/admin/coupons/{coupon_id}
+  methods:
+  - GET
+  route_name: api.admin_coupon_detail
+  capability_owner: commerce
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: none
+  data_source: read_model
+  requires_auth: true
+  rollback: previous_release
+  audience: admin
+  auth_scheme: human_session
+  capability: admin_read
+  access_scope: global
+  pii_level: financial
+  csrf: false
+  rate_limit: authenticated
+  principal_types:
+  - human
+- path: /api/admin/coupons/{coupon_id}
+  methods:
+  - PUT
+  route_name: api.admin_coupon_update
+  capability_owner: commerce
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: none
+  data_source: command
+  requires_auth: true
+  rollback: previous_release
+  audience: admin
+  auth_scheme: human_session
+  capability: manage_commerce
+  access_scope: global
+  pii_level: financial
+  csrf: true
+  rate_limit: authenticated
+  principal_types:
+  - human
+- path: /api/admin/coupons/{coupon_id}
+  methods:
+  - DELETE
+  route_name: api.admin_coupon_delete
+  capability_owner: commerce
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: none
+  data_source: command
+  requires_auth: true
+  rollback: previous_release
+  audience: admin
+  auth_scheme: human_session
+  capability: manage_commerce
+  access_scope: global
+  pii_level: financial
+  csrf: true
+  rate_limit: authenticated
+  principal_types:
+  - human
+- path: /api/admin/coupons/{coupon_id}/publish
+  methods:
+  - POST
+  route_name: api.admin_coupon_publish
+  capability_owner: commerce
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: none
+  data_source: command
+  requires_auth: true
+  rollback: previous_release
+  audience: admin
+  auth_scheme: human_session
+  capability: manage_commerce
+  access_scope: global
+  pii_level: financial
+  csrf: true
+  rate_limit: authenticated
+  principal_types:
+  - human
+- path: /api/admin/coupons/{coupon_id}/stop
+  methods:
+  - POST
+  route_name: api.admin_coupon_stop
+  capability_owner: commerce
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: none
+  data_source: command
+  requires_auth: true
+  rollback: previous_release
+  audience: admin
+  auth_scheme: human_session
+  capability: manage_commerce
+  access_scope: global
+  pii_level: financial
+  csrf: true
+  rate_limit: authenticated
+  principal_types:
+  - human
+- path: /api/admin/coupons/{coupon_id}/archive
+  methods:
+  - POST
+  route_name: api.admin_coupon_archive
+  capability_owner: commerce
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: none
+  data_source: command
+  requires_auth: true
+  rollback: previous_release
+  audience: admin
+  auth_scheme: human_session
+  capability: manage_commerce
+  access_scope: global
+  pii_level: sensitive
+  csrf: true
+  rate_limit: authenticated
+  principal_types:
+  - human
+- path: /api/admin/coupons/{coupon_id}/copy
+  methods:
+  - POST
+  route_name: api.admin_coupon_copy
+  capability_owner: commerce
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: none
+  data_source: command
+  requires_auth: true
+  rollback: previous_release
+  audience: admin
+  auth_scheme: human_session
+  capability: manage_commerce
+  access_scope: global
+  pii_level: financial
+  csrf: true
+  rate_limit: authenticated
+  principal_types:
+  - human
+- path: /api/admin/coupons/{coupon_id}/share
+  methods:
+  - GET
+  route_name: api.admin_coupon_share
+  capability_owner: commerce
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: none
+  data_source: read_model
+  requires_auth: true
+  rollback: previous_release
+  audience: admin
+  auth_scheme: human_session
+  capability: admin_read
+  access_scope: global
+  pii_level: financial
+  csrf: false
+  rate_limit: authenticated
+  principal_types:
+  - human
+- path: /api/admin/coupons/{coupon_id}/claims
+  methods:
+  - GET
+  route_name: api.admin_coupon_claims
+  capability_owner: commerce
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: none
+  data_source: read_model
+  requires_auth: true
+  rollback: previous_release
+  audience: admin
+  auth_scheme: human_session
+  capability: admin_read
+  access_scope: global
+  pii_level: financial
+  csrf: false
+  rate_limit: authenticated
+  principal_types:
+  - human
+- path: /c/{public_slug}
+  methods:
+  - GET
+  route_name: api.public_coupon_page
+  capability_owner: commerce
+  runtime_owner: ai_crm_next
+  layer: integration
+  external_effects: none
+  data_source: read_model
+  requires_auth: false
+  rollback: previous_release
+  audience: public_h5
+  auth_scheme: public
+  capability: public
+  access_scope: single_resource
+  pii_level: none
+  csrf: false
+  rate_limit: public_standard
+  principal_types:
+  - public
+- path: /api/h5/coupons/available
+  methods:
+  - GET
+  route_name: api.h5_available_coupons
+  capability_owner: commerce
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: none
+  data_source: read_model
+  requires_auth: true
+  rollback: previous_release
+  audience: public_h5
+  auth_scheme: payment_identity_session
+  capability: coupon_available_read
+  access_scope: self
+  pii_level: financial
+  csrf: false
+  rate_limit: public_strict
+  principal_types:
+  - public
+- path: /api/h5/coupons/{public_slug}
+  methods:
+  - GET
+  route_name: api.h5_coupon_state
+  capability_owner: commerce
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: none
+  data_source: read_model
+  requires_auth: false
+  rollback: previous_release
+  audience: public_h5
+  auth_scheme: public
+  capability: public
+  access_scope: single_resource
+  pii_level: financial
+  csrf: false
+  rate_limit: public_standard
+  principal_types:
+  - public
+- path: /api/h5/coupons/{public_slug}/claim
+  methods:
+  - POST
+  route_name: api.h5_coupon_claim
+  capability_owner: commerce
+  runtime_owner: ai_crm_next
+  layer: api
+  external_effects: none
+  data_source: command
+  requires_auth: true
+  rollback: previous_release
+  audience: public_h5
+  auth_scheme: payment_identity_session
+  capability: coupon_claim
+  access_scope: self
+  pii_level: financial
+  csrf: false
+  rate_limit: public_strict
+  principal_types:
+  - public

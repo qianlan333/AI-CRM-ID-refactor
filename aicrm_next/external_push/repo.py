@@ -326,7 +326,7 @@ class SQLAlchemyExternalPushRepository:
                 request_url = :request_url,
                 request_headers = CAST(:request_headers AS jsonb),
                 request_body = CAST(:request_body AS jsonb),
-                response_status = :response_status,
+                response_status = COALESCE(:response_status, response_status),
                 response_body = :response_body,
                 error_message = :error_message,
                 next_retry_at = CAST(NULLIF(:next_retry_at, '') AS timestamptz),
@@ -344,6 +344,41 @@ class SQLAlchemyExternalPushRepository:
                 "response_body": _normalized_text(response_body),
                 "error_message": _normalized_text(error_message),
                 "next_retry_at": _normalized_text(next_retry_at),
+                "delivery_id": _normalized_text(delivery_id),
+            },
+        )
+        return _public_delivery(row) or {}
+
+    def mark_delivery_succeeded_from_external_effect(
+        self,
+        delivery_id: str,
+        *,
+        external_effect_job_id: int,
+        response_status: int | None,
+    ) -> dict[str, Any]:
+        """Project the canonical External Effect result into the legacy delivery row."""
+
+        row = self._write_one(
+            """
+            UPDATE external_push_delivery
+            SET status = 'success',
+                attempt_count = GREATEST(attempt_count, 1),
+                response_status = :response_status,
+                response_body = :response_body,
+                error_message = '',
+                next_retry_at = NULL,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE delivery_id = :delivery_id
+            RETURNING *
+            """,
+            {
+                "response_status": response_status,
+                "response_body": _json_dumps(
+                    {
+                        "external_effect_job_id": int(external_effect_job_id),
+                        "external_effect_status": "succeeded",
+                    }
+                ),
                 "delivery_id": _normalized_text(delivery_id),
             },
         )

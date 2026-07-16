@@ -4,8 +4,8 @@ import pytest
 
 pytestmark = pytest.mark.usefixtures("composed_internal_event_registry")
 
-from aicrm_next.platform_foundation.external_effects import WEBHOOK_ORDER_PAID_PUSH, ExternalEffectService, reset_external_effect_fixture_state
 from aicrm_next.internal_event_composition import register_payment_succeeded_consumers
+from aicrm_next.platform_foundation.external_effects import WEBHOOK_ORDER_PAID_PUSH, ExternalEffectService, reset_external_effect_fixture_state
 from aicrm_next.platform_foundation.internal_events import InternalEventService, reset_internal_event_fixture_state
 from aicrm_next.platform_foundation.internal_events.outbox import InternalEventOutboxRelay
 from aicrm_next.platform_foundation.internal_events.payment import PAYMENT_SUCCEEDED_EVENT_TYPE
@@ -215,6 +215,7 @@ def test_payment_success_emits_payment_succeeded_and_duplicate_notify_is_idempot
         "customer_business_summary_consumer",
         "dnd_policy_consumer",
         "order_projection_consumer",
+        "product_paid_wecom_tag_consumer",
         "service_period_entitlement_consumer",
         "webhook_order_paid_consumer",
     }.issubset(consumer_names)
@@ -224,6 +225,7 @@ def test_payment_success_emits_payment_succeeded_and_duplicate_notify_is_idempot
         "customer_business_summary_consumer",
         "dnd_policy_consumer",
         "order_projection_consumer",
+        "product_paid_wecom_tag_consumer",
         "service_period_entitlement_consumer",
         "webhook_order_paid_consumer",
     }

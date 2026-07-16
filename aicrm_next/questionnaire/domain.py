@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-import re
 from typing import Any
 
 from aicrm_next.navigation_target import completion_target_projection
 from aicrm_next.shared.errors import ContractError
+from aicrm_next.shared.mobile import MOBILE_VALIDATION_MESSAGE, normalize_mainland_mobile
 
 CHOICE_QUESTION_TYPES = {"single_choice", "multi_choice"}
 
@@ -38,6 +38,7 @@ def normalize_questionnaire(item: dict[str, Any]) -> dict[str, Any]:
         item.get("completion_target_json") if item.get("completion_target_json") is not None else item.get("completion_target"),
         legacy_h5_url=item.get("redirect_url"),
     )
+    assessment_config = dict(item.get("assessment_config") or item.get("result_config") or {})
     normalized = {
         "id": item["id"],
         "slug": str(item.get("slug") or "").strip(),
@@ -49,6 +50,7 @@ def normalize_questionnaire(item: dict[str, Any]) -> dict[str, Any]:
         "status": str(item.get("status") or ("disabled" if not enabled else "published")),
         "version": int(item.get("version") or 1),
         "redirect_url": str(item.get("redirect_url") or "").strip(),
+        "lead_channel_id": int(item.get("lead_channel_id") or 0) or None,
         **completion_target,
         "answer_display_mode": str(item.get("answer_display_mode") or "all_in_one").strip() or "all_in_one",
         "submit_button_text": str(item.get("submit_button_text") or "提交").strip(),
@@ -57,8 +59,8 @@ def normalize_questionnaire(item: dict[str, Any]) -> dict[str, Any]:
         "questions": [normalize_question(question) for question in item.get("questions", [])],
         "rules": list(item.get("rules") or item.get("score_rules") or []),
         "score_rules": list(item.get("score_rules") or item.get("rules") or []),
-        "assessment_config": dict(item.get("assessment_config") or item.get("result_config") or {}),
-        "result_config": dict(item.get("result_config") or item.get("assessment_config") or {}),
+        "assessment_config": assessment_config,
+        "result_config": dict(item.get("result_config") or assessment_config),
         "submissions_summary": dict(item.get("submissions_summary") or {}),
         "last_submitted_at": item.get("last_submitted_at") or "",
         "external_push_config": external_push_config,
@@ -84,6 +86,14 @@ def normalize_questionnaire(item: dict[str, Any]) -> dict[str, Any]:
         ),
         "submission_count": int(item.get("submission_count") or 0),
         "assessment_enabled": bool(item.get("assessment_enabled", False)),
+        "is_assessment_template_asset": bool(item.get("assessment_enabled", False))
+        and (
+            str(assessment_config.get("asset_kind") or "").strip() == "assessment_template"
+            or (
+                not str(assessment_config.get("asset_kind") or "").strip()
+                and str(assessment_config.get("template_id") or "").strip() == "siyuan_ip_business"
+            )
+        ),
     }
     normalized["question_count"] = len(normalized["questions"])
     normalized["public_path"] = f"/s/{normalized['slug']}"
@@ -130,6 +140,7 @@ def summary_projection(item: dict[str, Any]) -> dict[str, Any]:
         "enabled",
         "is_disabled",
         "redirect_url",
+        "lead_channel_id",
         "completion_target",
         "completion_target_enabled",
         "completion_target_type",
@@ -141,6 +152,7 @@ def summary_projection(item: dict[str, Any]) -> dict[str, Any]:
         "submission_count",
         "last_submitted_at",
         "assessment_enabled",
+        "is_assessment_template_asset",
         "public_path",
         "submitted_path",
     ]
@@ -256,6 +268,8 @@ def validate_required_answers(questionnaire: dict[str, Any], answers: dict[str, 
         if question_type not in CHOICE_QUESTION_TYPES:
             if question["required"] and value in (None, "", []):
                 raise ContractError(f"missing required answer: {question['id']}")
+            if question_type == "mobile" and value not in (None, "", []) and not normalize_mainland_mobile(value):
+                raise ContractError(f"question {_question_label(question)}: {MOBILE_VALIDATION_MESSAGE}")
             continue
         selected_ids, _other_text = choice_answer_parts(value)
         if question["required"] and not selected_ids:
@@ -276,14 +290,7 @@ def validate_required_answers(questionnaire: dict[str, Any], answers: dict[str, 
 
 
 def normalize_mobile_answer(value: Any) -> str:
-    if isinstance(value, list):
-        value = value[0] if value else ""
-    digits = re.sub(r"\D+", "", str(value or ""))
-    if len(digits) == 13 and digits.startswith("86"):
-        digits = digits[2:]
-    if re.fullmatch(r"1\d{10}", digits):
-        return digits
-    return ""
+    return normalize_mainland_mobile(value)
 
 
 def extract_submission_mobile(questionnaire: dict[str, Any], answers: dict[str, Any], respondent_identity: dict[str, Any]) -> str:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 from aicrm_next.commerce.repo import reset_commerce_fixture_state
 from aicrm_next.public_product import h5_wechat_pay
@@ -166,38 +167,130 @@ def test_service_period_data_page_has_only_data_contract(next_client) -> None:
     text = response.text
 
     assert "前端周期服务数据" in text
-    assert "查看有效用户、到期用户和续费订单。" in text
-    assert "导出数据" in text
-    product_card = text[
-        text.index('class="admin-card service-period-product-card"') : text.index('class="service-period-stats-grid"')
+    assert "按视图筛选、排序和分组周期商品会员数据。" in text
+    assert 'id="spMemberGrid"' in text
+    assert 'id="spViewTabs"' in text
+    assert 'id="spAddView"' in text
+    assert 'id="spFilterButton"' in text
+    assert 'id="spGroupButton"' in text
+    assert 'id="spSortButton"' in text
+    assert 'id="spSaveView"' in text
+    assert 'id="spSaveAsView"' in text
+    assert 'id="spGridScroll"' in text
+    assert 'id="spUnsavedDialog"' in text
+    assert 'id="spConflictDialog"' in text
+    assert 'id="spShareButton"' in text
+    assert 'id="spShareDialog"' in text
+    assert 'id="spInviteCollaborator"' in text
+    assert 'id="spExternalShareToggle"' in text
+    assert 'id="spCopyExternalShareUrl"' in text
+    assert "/static/service-period/admin_console/member_grid.css" in text
+    assert "/static/service-period/admin_console/member_grid_share.js" in text
+    assert "/static/service-period/admin_console/member_grid.js" in text
+
+    schema = next_client.get(f"/api/admin/service-period-products/{product['id']}/member-grid/schema")
+    assert schema.status_code == 200
+    fields = schema.json()["schema"]["fields"]
+    assert [field["label"] for field in fields] == [
+        "会员",
+        "剩余有效期",
+        "正式登录",
+        "token 消耗",
+        "学习计划进度",
+        "近 7 天打开次数",
+        "最后打开时间",
+        "续费次数",
+        "备注",
+        "联盟",
     ]
-    assert 'href="/admin/service-period-products">返回列表</a>' in product_card
-    assert 'id="exportMembersBtn"' in product_card
-    assert "service-period-inline-actions" not in text
-    for label in ("有效用户", "7 天内到期", "续费订单", "累计金额", "会员列表"):
-        assert label in text
-    for header in ("会员", "外部联系人id", "状态", "剩余有效期", "到期日", "备注", "操作"):
-        assert f"<th>{header}</th>" in text
-    assert "<th>最近订单</th>" not in text
-    assert ">备注<" in text
-    assert ">查看<" not in text
-    assert "/members/${encodeURIComponent(unionid)}/remark" in text
-    assert 'const dateOnly = (value) => String(value || "").slice(0, 10);' in text
-    assert "dateOnly(member.end_at)" in text
-    assert '"external_userid"' in text
-    assert '"remark"' in text
-    assert '"last_order_amount"' not in text
-    assert '"last_order_duration_days"' not in text
-    for forbidden in ("报名链接", "续费规则", "交易商品卡片", "交易商品信息", ">编辑<", "用户报名页", "用户续费页", "管理配置页", "管理详情页"):
+    assert [field["id"] for field in fields] == [
+        "member",
+        "remaining_days",
+        "formally_logged_in",
+        "token_usage",
+        "learning_plan_progress",
+        "open_count_7d",
+        "last_open_at",
+        "renewal_count",
+        "remark",
+        "alliance",
+    ]
+    assert [field["id"] for field in fields if field["editable"]] == ["remark", "alliance"]
+
+    script = (
+        Path(__file__).resolve().parents[1]
+        / "aicrm_next/service_period/static/admin_console/member_grid.js"
+    ).read_text(encoding="utf-8")
+    assert "/member-grid/query" in script
+    assert "/member-views" in script
+    assert "/members/${encodeURIComponent(row.unionid)}/${encodeURIComponent(fieldId)}" in script
+    assert '["remark", "alliance"]' in script
+    assert 'editableTextCell("remark")' in script
+    assert 'editableTextCell("alliance")' in script
+    assert "sp-col-renewal_count" in script
+    assert "IntersectionObserver" in script
+    assert "beforeunload" in script
+    assert 'event.key === "Enter" && !event.shiftKey' in script
+    assert 'event.key === "Escape"' in script
+    assert "window.sessionStorage" in script
+    assert 'String(root.dataset.mode || "internal") === "public"' in script
+    assert '"X-AICRM-Grid-Share-Token": shareToken' in script
+    assert 'credentials: "omit"' in script
+    assert 'referrerPolicy: "no-referrer"' in script
+
+    stylesheet = (
+        Path(__file__).resolve().parents[1]
+        / "aicrm_next/service_period/static/admin_console/member_grid.css"
+    ).read_text(encoding="utf-8")
+    assert "max-height: 780px" not in stylesheet
+    assert "height: calc(100vh - 286px)" in stylesheet
+    assert ".sp-member-table .sp-col-renewal_count" in stylesheet
+    assert ".sp-member-table .sp-col-alliance" in stylesheet
+
+    for forbidden in (
+        "导出数据",
+        "有效用户",
+        "7 天内到期",
+        "续费订单",
+        "累计金额",
+        "会员列表",
+        "添加记录",
+        "字段配置",
+        "填色",
+        "行高",
+        "操作</th>",
+        "报名链接",
+        "续费规则",
+        "交易商品卡片",
+        "交易商品信息",
+        "用户报名页",
+        "用户续费页",
+        "管理配置页",
+        "管理详情页",
+    ):
         assert forbidden not in text
 
 
-def test_service_period_public_page_renders_none_active_and_expired_ctas(next_client) -> None:
+def test_service_period_public_page_renders_none_active_and_expired_ctas(next_client, monkeypatch) -> None:
     _reset()
+    monkeypatch.setattr(
+        h5_wechat_pay,
+        "resolve_product_lead_qr",
+        lambda _product: {
+            "channel_id": 7,
+            "channel_name": "报名后企微",
+            "qr_url": "https://example.com/service-period-lead.png",
+            "status": "active",
+        },
+        raising=False,
+    )
     _create(next_client, product_code="sp_public_none")
 
     none_page = next_client.get("/s/sp_public_none")
+    none_state = next_client.get("/api/h5/service-period-products/sp_public_none")
     assert none_page.status_code == 200
+    assert none_state.status_code == 200
+    assert none_state.json()["lead_qr"] == {}
     assert "立即报名" in none_page.text
     assert "开通后获得" not in none_page.text
     assert "测试会员设置" not in none_page.text
@@ -206,6 +299,7 @@ def test_service_period_public_page_renders_none_active_and_expired_ctas(next_cl
     assert 'WeixinJSBridge.invoke("getBrandWCPayRequest"' not in none_page.text
     assert "商品编码" not in none_page.text
     assert "webhook" not in none_page.text.lower()
+    assert '<div class="service-period-wecom-action" id="servicePeriodWecomAction" hidden>' in none_page.text
 
     _create(next_client, product_code="sp_public_active")
     GrantOrRenewEntitlementCommand()(
@@ -213,11 +307,24 @@ def test_service_period_public_page_renders_none_active_and_expired_ctas(next_cl
     )
     next_client.cookies.set(h5_wechat_pay.COOKIE_NAME, h5_wechat_pay._signed_blob({"openid": "op_active", "unionid": "union_public_active"}))
     active_page = next_client.get("/s/sp_public_active")
+    active_state = next_client.get("/api/h5/service-period-products/sp_public_active")
     assert active_page.status_code == 200
+    assert active_state.status_code == 200
+    assert active_state.json()["lead_qr"]["qr_url"] == "https://example.com/service-period-lead.png"
+    assert active_state.headers["X-AICRM-Route-Owner"] == "ai_crm_next"
     assert "立即续费" in active_page.text
     assert "使用中" not in active_page.text
     assert "当前服务仍在有效期内" not in active_page.text
     assert "续费后有效期将继续顺延" not in active_page.text
+    assert '<div class="service-period-wecom-action" id="servicePeriodWecomAction">' in active_page.text
+    assert 'id="servicePeriodAddWecomButton"' in active_page.text
+    assert "添加企微账号" in active_page.text
+    assert "width: min(100%, 280px);" in active_page.text
+    assert "min-height: 44px;" in active_page.text
+    assert "font-size: 16px;" in active_page.text
+    assert 'id="leadQrModal"' in active_page.text
+    assert "扫码添加企微领取后续资料" in active_page.text
+    assert "https://example.com/service-period-lead.png" in active_page.text
 
     _create(next_client, product_code="sp_public_expired")
     GrantOrRenewEntitlementCommand()(
@@ -225,9 +332,41 @@ def test_service_period_public_page_renders_none_active_and_expired_ctas(next_cl
     )
     next_client.cookies.set(h5_wechat_pay.COOKIE_NAME, h5_wechat_pay._signed_blob({"openid": "op_expired", "unionid": "union_public_expired"}))
     expired_page = next_client.get("/s/sp_public_expired")
+    expired_state = next_client.get("/api/h5/service-period-products/sp_public_expired")
     assert expired_page.status_code == 200
+    assert expired_state.status_code == 200
+    assert expired_state.json()["lead_qr"] == {}
     assert "重新开通" in expired_page.text
     assert "上次到期日" in expired_page.text
+    assert '<div class="service-period-wecom-action" id="servicePeriodWecomAction" hidden>' in expired_page.text
+
+
+def test_service_period_active_page_hides_wecom_entry_without_channel_qr(next_client, monkeypatch) -> None:
+    _reset()
+    monkeypatch.setattr(h5_wechat_pay, "resolve_product_lead_qr", lambda _product: {}, raising=False)
+    _create(next_client, product_code="sp_public_active_without_qr")
+    GrantOrRenewEntitlementCommand()(
+        order=_paid_order(
+            "SP_PUBLIC_ACTIVE_WITHOUT_QR",
+            product_code="sp_public_active_without_qr",
+            unionid="union_public_active_without_qr",
+            paid_at="2099-01-01T00:00:00+00:00",
+        )
+    )
+    next_client.cookies.set(
+        h5_wechat_pay.COOKIE_NAME,
+        h5_wechat_pay._signed_blob({"openid": "op_active_without_qr", "unionid": "union_public_active_without_qr"}),
+    )
+
+    page = next_client.get("/s/sp_public_active_without_qr")
+    state = next_client.get("/api/h5/service-period-products/sp_public_active_without_qr")
+
+    assert page.status_code == 200
+    assert state.status_code == 200
+    assert state.json()["lead_qr"] == {}
+    assert '<div class="service-period-wecom-action" id="servicePeriodWecomAction" hidden>' in page.text
+    assert "wecomAction.hidden = !(status === \"active\" && activeLeadQr.qr_url);" in page.text
+    assert "leadQrController.clear();" in page.text
 
 
 def test_service_period_public_page_starts_oauth_before_state_in_wechat(next_client) -> None:

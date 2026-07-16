@@ -46,7 +46,7 @@ def test_admin_automation_agent_crud_copy_pause_archive_contract(next_client, ne
     assert agent["send_webhook_url"].endswith("/api/ai/audience/packages/prod_channel_9p9_questionnaire_activation_hyc/webhook")
     assert agent["automation_type"] == "agent"
     assert agent["automation_type_label"] == "agent"
-    assert agent["fixed_material_summary"] == {"image_count": 0, "miniprogram_count": 0, "attachment_count": 0}
+    assert agent["fixed_material_summary"] == {"image_count": 0, "miniprogram_count": 0, "attachment_count": 0, "group_invite_count": 0}
 
     listed = next_client.get("/api/admin/automation-agents", cookies=_admin_cookies(next_client))
     assert listed.status_code == 200
@@ -71,7 +71,11 @@ def test_admin_automation_agent_crud_copy_pause_archive_contract(next_client, ne
     )
     assert patched.status_code == 200
     assert patched.json()["agent"]["agent_name"] == "更新后的 Agent"
-    assert patched.json()["agent"]["published_task_prompt"] == "看{{用户标签}}输出话术"
+    assert patched.json()["agent"]["draft_task_prompt"] == "看{{用户标签}}输出话术"
+    assert patched.json()["agent"]["published_task_prompt"] == "根据{{问卷信息}}生成一条跟进话术"
+    assert patched.json()["agent"]["draft_version"] == 2
+    assert patched.json()["agent"]["published_version"] == 1
+    assert patched.json()["agent"]["has_unpublished_changes"] is True
     assert (
         patched.json()["agent"]["send_webhook_url"]
         == "https://www.youcangogogo.com/api/ai/audience/packages/prod_channel_9p9_questionnaire_activation_hyc/webhook"
@@ -84,6 +88,22 @@ def test_admin_automation_agent_crud_copy_pause_archive_contract(next_client, ne
     )
     assert invalid_send.status_code == 400
     assert invalid_send.json()["error"] == "invalid_send_webhook_url"
+
+    published = next_client.post(
+        f"/api/admin/automation-agents/{agent_id}/publish",
+        cookies=_admin_cookies(next_client),
+    )
+    assert published.status_code == 200
+    assert published.json()["agent"]["published_task_prompt"] == "看{{用户标签}}输出话术"
+    assert published.json()["agent"]["published_version"] == 2
+    assert published.json()["agent"]["has_unpublished_changes"] is False
+
+    republished = next_client.post(
+        f"/api/admin/automation-agents/{agent_id}/publish",
+        cookies=_admin_cookies(next_client),
+    )
+    assert republished.status_code == 200
+    assert republished.json()["agent"]["published_version"] == 2
 
     removed_reset = next_client.post(
         f"/api/admin/automation-agents/{agent_id}/reset-token",

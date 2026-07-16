@@ -66,8 +66,13 @@ ROLE_LABELS = {
     "automation_admin": "自动化管理员",
     "questionnaire_admin": "问卷管理员",
     "viewer": "只读成员",
+    "service_period_grid_collaborator": "周期商品数据协作者",
 }
-ADMIN_ASSIGNABLE_ROLE_OPTIONS = [{"value": key, "label": value} for key, value in ROLE_LABELS.items() if key != "super_admin"]
+ADMIN_ASSIGNABLE_ROLE_OPTIONS = [
+    {"value": key, "label": value}
+    for key, value in ROLE_LABELS.items()
+    if key not in {"super_admin", "service_period_grid_collaborator"}
+]
 ADMIN_LEVEL_LABELS = {"super_admin": "超级管理员", "admin": "管理员"}
 MCP_TOOL_GROUP_LABELS = {
     "crm": "客户查询",
@@ -519,6 +524,7 @@ def _validate_known_setting(key: str, value: str) -> str:
             "wecom.message.private.send",
             "wecom.message.group.send",
             "wecom.profile.update",
+            "wecom.media.upload",
         }
         values = [item.strip() for item in normalized.replace("\n", ",").split(",") if item.strip()]
         invalid = sorted({item for item in values if item not in allowed})
@@ -793,8 +799,7 @@ def _effect_type_union_for_enabled_capabilities(read_service: "AdminConfigReadSe
     for capability in visible_push_capabilities(main_only=False):
         if not capability.toggleable or not capability.supports_real_execution:
             continue
-        value, _source = read_service._setting_value_source(capability.setting_key)
-        if not _capability_enabled_from_value(value, default=False):
+        if not read_service._capability_enabled(capability, default=False):
             continue
         for effect_type in capability.effect_types:
             if effect_type not in seen:

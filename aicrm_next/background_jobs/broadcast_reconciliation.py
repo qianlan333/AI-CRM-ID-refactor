@@ -9,40 +9,49 @@ from aicrm_next.shared.db_session import connect_raw_postgres
 from aicrm_next.shared.runtime import raw_database_url
 
 
+_R10_PRODUCTION_CUTOVER_SQL = "TIMESTAMPTZ '2026-07-13 05:42:30+00'"
+
+
 _ANOMALY_QUERIES = {
-    "stale_dispatching": """
+    "stale_dispatching": f"""
         SELECT job.id
         FROM broadcast_jobs job
         WHERE job.status = 'dispatching'
+          AND job.created_at >= {_R10_PRODUCTION_CUTOVER_SQL}
           AND COALESCE(job.dispatch_started_at, job.updated_at)
               < CURRENT_TIMESTAMP - INTERVAL '15 minutes'
     """,
-    "unknown_after_dispatch": """
+    "unknown_after_dispatch": f"""
         SELECT job.id
         FROM broadcast_jobs job
-        WHERE job.status = 'unknown_after_dispatch'
-           OR job.reconciliation_required = TRUE
+        WHERE job.created_at >= {_R10_PRODUCTION_CUTOVER_SQL}
+          AND (
+              job.status = 'unknown_after_dispatch'
+              OR job.reconciliation_required = TRUE
+          )
     """,
-    "job_recipient_projection_mismatch": """
+    "job_recipient_projection_mismatch": f"""
         SELECT job.id
         FROM broadcast_jobs job
         JOIN cloud_broadcast_plan_recipients recipient
           ON recipient.broadcast_job_id = job.id
         WHERE job.source_type = 'cloud_plan'
           AND job.source_table = 'cloud_broadcast_plan_recipients'
+          AND job.created_at >= {_R10_PRODUCTION_CUTOVER_SQL}
           AND job.status IN (
               'dispatching', 'sent', 'simulated', 'failed_retryable',
               'failed_terminal', 'blocked', 'unknown_after_dispatch'
           )
           AND recipient.send_status IS DISTINCT FROM job.status
     """,
-    "job_message_projection_mismatch": """
+    "job_message_projection_mismatch": f"""
         SELECT job.id
         FROM broadcast_jobs job
         JOIN cloud_broadcast_plan_recipients recipient
           ON recipient.broadcast_job_id = job.id
         WHERE job.source_type = 'cloud_plan'
           AND job.source_table = 'cloud_broadcast_plan_recipients'
+          AND job.created_at >= {_R10_PRODUCTION_CUTOVER_SQL}
           AND job.status IN (
               'dispatching', 'sent', 'simulated', 'failed_retryable',
               'failed_terminal', 'blocked', 'unknown_after_dispatch'
@@ -59,20 +68,22 @@ _ANOMALY_QUERIES = {
                 AND message.status = job.status
           )
     """,
-    "sent_missing_delivery_evidence": """
+    "sent_missing_delivery_evidence": f"""
         SELECT job.id
         FROM broadcast_jobs job
         WHERE job.status = 'sent'
+          AND job.created_at >= {_R10_PRODUCTION_CUTOVER_SQL}
           AND (
               job.side_effect_executed IS NOT TRUE
               OR job.provider_result_received IS NOT TRUE
-              OR COALESCE(job.result_summary_json, '{}'::jsonb) = '{}'::jsonb
+              OR COALESCE(job.result_summary_json, '{{}}'::jsonb) = '{{}}'::jsonb
           )
     """,
-    "sent_missing_outbound_task": """
+    "sent_missing_outbound_task": f"""
         SELECT job.id
         FROM broadcast_jobs job
         WHERE job.status = 'sent'
+          AND job.created_at >= {_R10_PRODUCTION_CUTOVER_SQL}
           AND (
               job.outbound_task_id IS NULL
               OR NOT EXISTS (
@@ -135,9 +146,7 @@ class GroupOpsBroadcastReconciliationService:
         with connect_raw_postgres(self._database_url) as conn:
             conn.row_factory = dict_row
             for name, query in _ANOMALY_QUERIES.items():
-                row = conn.execute(
-                    f"WITH anomalies AS ({query}) SELECT COUNT(*)::integer AS anomaly_count FROM anomalies"
-                ).fetchone()
+                row = conn.execute(f"WITH anomalies AS ({query}) SELECT COUNT(*)::integer AS anomaly_count FROM anomalies").fetchone()
                 counts[name] = int((row or {}).get("anomaly_count") or 0)
         counts.update(self._static_p1_counts())
         return {

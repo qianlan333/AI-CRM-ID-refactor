@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import logging
 import os
+from collections.abc import Callable
 
 from aicrm_next.shared.errors import NotFoundError
 from aicrm_next.shared.safe_logging import safe_log_exception
@@ -1070,9 +1071,42 @@ def _normalized_admin_profile_tags(tags: object) -> list[str]:
 
 
 class GetCustomerContextQuery:
-    def __init__(self, repo: CustomerReadRepository | None = None, live_source_repo: CustomerReadRepository | None = None) -> None:
+    def __init__(
+        self,
+        repo: CustomerReadRepository | None = None,
+        live_source_repo: CustomerReadRepository | None = None,
+        owner_scope_verifier: Callable[[str, str], None] | None = None,
+    ) -> None:
         self._repo = repo
         self._live_source_repo = live_source_repo
+        self._owner_scope_verifier = owner_scope_verifier
+
+    def _assert_owner_scope(self, customer: JsonDict, query: CustomerContextRequest) -> None:
+        try:
+            _assert_customer_owner_scope(
+                customer,
+                query.owner_userid,
+                require_owner=query.require_owner_scope,
+                owner_verified=query.owner_verified,
+            )
+        except CustomerScopeForbiddenError:
+            # Sidebar projections and live-source fallbacks can lag the current
+            # WeCom owner relation. Only an injected verifier backed by that
+            # current relation may override the projection mismatch; callers
+            # without one remain fail-closed.
+            if self._owner_scope_verifier is None:
+                raise
+            external_userid = str(
+                customer.get("external_userid")
+                or customer.get("user_id")
+                or query.external_userid
+                or query.user_id
+                or ""
+            ).strip()
+            owner_userid = str(query.owner_userid or "").strip()
+            if not external_userid or not owner_userid:
+                raise
+            self._owner_scope_verifier(external_userid, owner_userid)
 
     def _resolve_fixture_external_userid(self, query: CustomerContextRequest, repo: CustomerReadRepository) -> str:
         external_userid = str(query.external_userid or query.user_id or "").strip()
@@ -1125,21 +1159,31 @@ class GetCustomerContextQuery:
                 if not detail.get("ok"):
                     raise RuntimeError(str(detail.get("page_error") or detail.get("error_code") or "customer detail unavailable"))
                 customer = dict(detail.get("customer") or {})
-                _assert_customer_owner_scope(customer, query.owner_userid, require_owner=query.require_owner_scope, owner_verified=query.owner_verified)
+                self._assert_owner_scope(customer, query)
                 unionid = unionid or str(customer.get("unionid") or "").strip()
                 external_userid = external_userid or str(customer.get("external_userid") or customer.get("user_id") or "").strip()
-                timeline_payload = GetCustomerTimelineQuery(repo, live_source_repo=self._live_source_repo)(
-                    CustomerTimelineRequest(unionid=unionid or None, external_userid=external_userid or None, limit=query.timeline_limit)
-                )
-                if not timeline_payload.get("ok"):
-                    raise RuntimeError(str(timeline_payload.get("page_error") or timeline_payload.get("error_code") or "customer timeline unavailable"))
-                messages_payload = ListRecentMessagesQuery(repo, live_source_repo=self._live_source_repo)(
-                    RecentMessagesRequest(unionid=unionid or None, external_userid=external_userid or None, limit=query.recent_message_limit)
-                )
-                if not messages_payload.get("ok"):
-                    raise RuntimeError(str(messages_payload.get("page_error") or messages_payload.get("error_code") or "recent messages unavailable"))
-                timeline = dict(timeline_payload.get("timeline") or {})
-                recent_messages = list(messages_payload.get("messages") or messages_payload.get("items") or [])
+                if query.include_activity:
+                    timeline_payload = GetCustomerTimelineQuery(repo, live_source_repo=self._live_source_repo)(
+                        CustomerTimelineRequest(unionid=unionid or None, external_userid=external_userid or None, limit=query.timeline_limit)
+                    )
+                    if not timeline_payload.get("ok"):
+                        raise RuntimeError(
+                            str(timeline_payload.get("page_error") or timeline_payload.get("error_code") or "customer timeline unavailable")
+                        )
+                    messages_payload = ListRecentMessagesQuery(repo, live_source_repo=self._live_source_repo)(
+                        RecentMessagesRequest(unionid=unionid or None, external_userid=external_userid or None, limit=query.recent_message_limit)
+                    )
+                    if not messages_payload.get("ok"):
+                        raise RuntimeError(
+                            str(messages_payload.get("page_error") or messages_payload.get("error_code") or "recent messages unavailable")
+                        )
+                    timeline = dict(timeline_payload.get("timeline") or {})
+                    recent_messages = list(messages_payload.get("messages") or messages_payload.get("items") or [])
+                else:
+                    timeline_payload = {"source_status": "skipped", "fallback_used": False, "fallback_reason": ""}
+                    messages_payload = {"source_status": "skipped", "fallback_used": False, "fallback_reason": ""}
+                    timeline = {"external_userid": external_userid, "items": [], "count": 0, "total": 0}
+                    recent_messages = []
                 return _customer_context_payload(
                     unionid=unionid,
                     external_userid=external_userid,
@@ -1173,15 +1217,25 @@ class GetCustomerContextQuery:
                 CustomerDetailRequest(unionid=unionid or None, external_userid=external_userid or None)
             )
             customer = dict(detail.get("customer") or {})
-            _assert_customer_owner_scope(customer, query.owner_userid, require_owner=query.require_owner_scope, owner_verified=query.owner_verified)
+            self._assert_owner_scope(customer, query)
             unionid = unionid or str(customer.get("unionid") or "").strip()
             external_userid = external_userid or str(customer.get("external_userid") or customer.get("user_id") or "").strip()
-            timeline = GetCustomerTimelineQuery(repo, live_source_repo=self._live_source_repo)(
-                CustomerTimelineRequest(unionid=unionid or None, external_userid=external_userid or None, limit=query.timeline_limit)
-            )
-            messages = ListRecentMessagesQuery(repo, live_source_repo=self._live_source_repo)(
-                RecentMessagesRequest(unionid=unionid or None, external_userid=external_userid or None, limit=query.recent_message_limit)
-            )
+            if query.include_activity:
+                timeline = GetCustomerTimelineQuery(repo, live_source_repo=self._live_source_repo)(
+                    CustomerTimelineRequest(unionid=unionid or None, external_userid=external_userid or None, limit=query.timeline_limit)
+                )
+                messages = ListRecentMessagesQuery(repo, live_source_repo=self._live_source_repo)(
+                    RecentMessagesRequest(unionid=unionid or None, external_userid=external_userid or None, limit=query.recent_message_limit)
+                )
+            else:
+                timeline = {
+                    "timeline": {"external_userid": external_userid, "items": [], "count": 0, "total": 0},
+                    "adapter_contract": {"source_status": "skipped", "fallback_used": False},
+                }
+                messages = {
+                    "messages": [],
+                    "adapter_contract": {"source_status": "skipped", "fallback_used": False},
+                }
             return _customer_context_payload(
                 unionid=unionid,
                 external_userid=external_userid,

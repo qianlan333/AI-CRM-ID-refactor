@@ -17,4 +17,3 @@ Move the mutable internal-event consumer registry out of `create_app` process-gl
 - Multi-app composition tests.
 - Permanent Full CI selector regression.
 - Full architecture gates.
-

@@ -198,6 +198,15 @@ _TABLES_TO_TRUNCATE = [
     "external_effect_job",
     "external_push_config",
     "domain_event_outbox",
+    "commerce_coupon_redemptions",
+    "commerce_coupon_claims",
+    "commerce_coupon_product_bindings",
+    "commerce_coupons",
+    "service_period_huangyoucan_usage_sync_runs",
+    "service_period_huangyoucan_usage_snapshot",
+    "service_period_member_collaborators",
+    "service_period_member_shares",
+    "service_period_member_views",
     "service_period_events",
     "service_period_entitlements",
     "service_period_products",
@@ -267,6 +276,12 @@ _TABLES_TO_TRUNCATE = [
     # — broadcast_jobs
     "broadcast_job_events",
     "broadcast_jobs",
+    # — customer read model projection
+    "customer_recent_message_next",
+    "customer_timeline_event_next",
+    "customer_detail_snapshot_next",
+    "customer_list_index_next",
+    "customer_read_model_refresh_state",
     # — archive / system
     "archived_messages",
     "archive_sync_state",

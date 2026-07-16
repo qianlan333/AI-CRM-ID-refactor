@@ -7,7 +7,7 @@ from uuid import uuid4
 
 from pydantic import ValidationError
 
-from aicrm_next.send_content.application import PreviewSendContentPackageQuery, normalize_send_content_package
+from aicrm_next.send_content.application import PreviewSendContentPackageQuery, assert_group_invite_bindings_ready, normalize_send_content_package
 from aicrm_next.send_content.dto import SendContentPackage, SendContentPreviewRequest
 from aicrm_next.send_content.repo import build_send_content_repository
 from aicrm_next.shared.errors import ContractError
@@ -104,6 +104,7 @@ def _summary(content_package: dict[str, Any]) -> dict[str, int]:
         "image_count": len(content_package.get("image_library_ids") or []),
         "miniprogram_count": len(content_package.get("miniprogram_library_ids") or []),
         "attachment_count": len(content_package.get("attachment_library_ids") or []),
+        "group_invite_count": len(content_package.get("group_invite_library_ids") or []),
     }
 
 
@@ -145,6 +146,11 @@ def _agent_payload(row: dict[str, Any], *, request_base_url: str = "", include_d
                 "published_task_prompt": _text(row.get("published_task_prompt")),
                 "draft_version": int(row.get("draft_version") or 0),
                 "published_version": int(row.get("published_version") or 0),
+                "has_unpublished_changes": (
+                    int(row.get("draft_version") or 0) != int(row.get("published_version") or 0)
+                    or _text(row.get("draft_role_prompt")) != _text(row.get("published_role_prompt"))
+                    or _text(row.get("draft_task_prompt")) != _text(row.get("published_task_prompt"))
+                ),
                 "fixed_content_package": content_package,
                 "fixed_content_package_preview": preview.get("preview", {}),
             }
@@ -258,7 +264,29 @@ class AutomationAgentAdminService:
         detail = self._repo.get_agent(int(copied["id"])) or copied
         return {"ok": True, "agent": _agent_payload(detail, request_base_url=request_base_url, include_detail=True)}
 
+    def publish_agent(self, agent_id: int, *, request_base_url: str = "") -> dict[str, Any]:
+        existing = self._repo.get_agent(agent_id)
+        if not existing or _text(existing.get("status")) == "archived":
+            return {"ok": False, "error": "agent_not_found"}
+        try:
+            assert_group_invite_bindings_ready(existing.get("fixed_content_package_json") or {})
+        except ContractError as exc:
+            return {"ok": False, "error": "group_invite_not_ready", "detail": str(exc)}
+        row = self._repo.publish_agent(agent_id)
+        if not row:
+            return {"ok": False, "error": "agent_not_found"}
+        detail = self._repo.get_agent(agent_id) or row
+        return {"ok": True, "agent": _agent_payload(detail, request_base_url=request_base_url, include_detail=True)}
+
     def set_status(self, agent_id: int, status: str, *, request_base_url: str = "") -> dict[str, Any]:
+        if status == "active":
+            existing = self._repo.get_agent(agent_id)
+            if not existing:
+                return {"ok": False, "error": "agent_not_found"}
+            try:
+                assert_group_invite_bindings_ready(existing.get("fixed_content_package_json") or {})
+            except ContractError as exc:
+                return {"ok": False, "error": "group_invite_not_ready", "detail": str(exc)}
         row = self._repo.set_status(agent_id, status)
         if not row:
             return {"ok": False, "error": "agent_not_found"}

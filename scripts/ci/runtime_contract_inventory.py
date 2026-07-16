@@ -95,9 +95,7 @@ def _route_owner_index(router_specs: tuple[Any, ...]) -> dict[tuple[str, str], d
 
 def _route_kind(path: str, method: str, media_type: str) -> str:
     if method == "GET" and (
-        media_type == "text/html"
-        or path.startswith(("/admin", "/login", "/sidebar", "/questionnaires/"))
-        or path.endswith(("/page", "/ui"))
+        media_type == "text/html" or path.startswith(("/admin", "/login", "/sidebar", "/questionnaires/")) or path.endswith(("/page", "/ui"))
     ):
         return "page"
     return "api"
@@ -197,9 +195,7 @@ def _external_effects(root: Path) -> tuple[list[dict[str, str]], list[dict[str, 
     runtime_effects = [
         {"constant": name, "effect_type": value}
         for name, value in vars(models).items()
-        if name.isupper()
-        and isinstance(value, str)
-        and value.startswith(EFFECT_PREFIXES)
+        if name.isupper() and isinstance(value, str) and value.startswith(EFFECT_PREFIXES)
     ]
     runtime_effects.sort(key=lambda item: (item["effect_type"], item["constant"]))
     governance = _load_structured(root / "docs" / "architecture" / "external_effects_registry.yml")
@@ -211,6 +207,15 @@ def _external_effects(root: Path) -> tuple[list[dict[str, str]], list[dict[str, 
 def _runtime_units(root: Path) -> list[dict[str, Any]]:
     manifest = _load_structured(root / "deploy" / "production_runtime_units.json")
     units: list[dict[str, Any]] = []
+    primary_web = dict(manifest.get("primary_web") or {})
+    if primary_web.get("service"):
+        units.append(
+            {
+                "unit": str(primary_web["service"]),
+                "kind": "service",
+                "state": "primary_web",
+            }
+        )
     for item in manifest.get("active_services", []) or []:
         units.append(
             {
@@ -231,10 +236,26 @@ def _runtime_units(root: Path) -> list[dict[str, Any]]:
                 "kick_failure_fatal": bool(item.get("kick_failure_fatal", False)),
             }
         )
-    for unit in manifest.get("approval_required", []) or []:
-        units.append({"unit": str(unit), "kind": "timer", "state": "approval_required"})
+    for item in manifest.get("approval_required", []) or []:
+        if not isinstance(item, dict):
+            raise ValueError("approval_required runtime units must declare timer and service")
+        units.append(
+            {
+                "unit": str(item["timer"]),
+                "kind": "timer",
+                "state": "approval_required",
+                "service": str(item["service"]),
+            }
+        )
     for unit in manifest.get("retired_forbidden", []) or []:
-        units.append({"unit": str(unit), "kind": "timer", "state": "retired_forbidden"})
+        name = str(unit)
+        units.append(
+            {
+                "unit": name,
+                "kind": "service" if name.endswith(".service") else "timer",
+                "state": "retired_forbidden",
+            }
+        )
     return sorted(units, key=lambda item: (item["unit"], item["state"]))
 
 
@@ -247,11 +268,7 @@ def _literal_string(node: ast.AST | None) -> str:
 def _literal_strings(node: ast.AST | None) -> set[str]:
     if node is None:
         return set()
-    return {
-        str(item.value).strip()
-        for item in ast.walk(node)
-        if isinstance(item, ast.Constant) and isinstance(item.value, str) and str(item.value).strip()
-    }
+    return {str(item.value).strip() for item in ast.walk(node) if isinstance(item, ast.Constant) and isinstance(item.value, str) and str(item.value).strip()}
 
 
 def _call_name(node: ast.Call) -> str:
@@ -260,10 +277,7 @@ def _call_name(node: ast.Call) -> str:
     if isinstance(node.func, ast.Attribute):
         if isinstance(node.func.value, ast.Name):
             return f"{node.func.value.id}.{node.func.attr}"
-        if (
-            isinstance(node.func.value, ast.Attribute)
-            and isinstance(node.func.value.value, ast.Name)
-        ):
+        if isinstance(node.func.value, ast.Attribute) and isinstance(node.func.value.value, ast.Name):
             return f"{node.func.value.value.id}.{node.func.value.attr}.{node.func.attr}"
         return node.func.attr
     return ""
@@ -311,12 +325,7 @@ def _environment_references(root: Path) -> list[dict[str, Any]]:
                         key = _literal_string(node.args[0] if node.args else None)
                 elif isinstance(node, ast.Subscript):
                     value = node.value
-                    if (
-                        isinstance(value, ast.Attribute)
-                        and isinstance(value.value, ast.Name)
-                        and value.value.id == "os"
-                        and value.attr == "environ"
-                    ):
+                    if isinstance(value, ast.Attribute) and isinstance(value.value, ast.Name) and value.value.id == "os" and value.attr == "environ":
                         accessor = "os.environ[]"
                         key = _literal_string(node.slice)
                 if key:
@@ -328,10 +337,7 @@ def _environment_references(root: Path) -> list[dict[str, Any]]:
                             "accessor": accessor,
                         }
                     )
-    unique = {
-        (item["key"], item["file"], item["line"], item["accessor"]): item
-        for item in references
-    }
+    unique = {(item["key"], item["file"], item["line"], item["accessor"]): item for item in references}
     return [unique[key] for key in sorted(unique)]
 
 

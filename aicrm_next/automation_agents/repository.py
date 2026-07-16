@@ -357,6 +357,10 @@ class AutomationAgentRepository:
                 payload.get("fixed_content_package") if "fixed_content_package" in payload else existing.get("fixed_content_package_json") or {}
             ),
         }
+        draft_changed = (
+            merged["role_prompt"] != _text(existing.get("draft_role_prompt"))
+            or merged["task_prompt"] != _text(existing.get("draft_task_prompt"))
+        )
         return self._write_one(
             """
             UPDATE automation_agent_runtime_config
@@ -366,10 +370,7 @@ class AutomationAgentRepository:
                 status = :status,
                 draft_role_prompt = :role_prompt,
                 draft_task_prompt = :task_prompt,
-                published_role_prompt = :role_prompt,
-                published_task_prompt = :task_prompt,
-                draft_version = draft_version + 1,
-                published_version = published_version + 1,
+                draft_version = CASE WHEN :draft_changed THEN draft_version + 1 ELSE draft_version END,
                 fixed_content_package_json = CAST(:fixed_content_package_json AS jsonb),
                 send_webhook_url = :send_webhook_url,
                 archived_at = CASE WHEN :status = 'archived' THEN COALESCE(archived_at, CURRENT_TIMESTAMP) ELSE archived_at END,
@@ -385,9 +386,24 @@ class AutomationAgentRepository:
                 "status": merged["status"] or "active",
                 "role_prompt": merged["role_prompt"],
                 "task_prompt": merged["task_prompt"],
+                "draft_changed": draft_changed,
                 "send_webhook_url": merged["send_webhook_url"],
                 "fixed_content_package_json": _json_dumps(merged["fixed_content_package"]),
             },
+        )
+
+    def publish_agent(self, agent_id: int) -> dict[str, Any] | None:
+        return self._write_one(
+            """
+            UPDATE automation_agent_runtime_config
+            SET published_role_prompt = draft_role_prompt,
+                published_task_prompt = draft_task_prompt,
+                published_version = draft_version,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = :agent_id
+            RETURNING *
+            """,
+            {"agent_id": int(agent_id)},
         )
 
     def set_status(self, agent_id: int, status: str) -> dict[str, Any] | None:

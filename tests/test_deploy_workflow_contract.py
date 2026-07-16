@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import ast
 import json
+import subprocess
 from pathlib import Path
 
 
@@ -12,24 +13,31 @@ TEST_DEPLOY_WORKFLOW = ROOT / ".github" / "workflows" / "deploy.yml"
 PRODUCTION_PROMOTION_WORKFLOW = ROOT / ".github" / "workflows" / "promote-production.yml"
 
 
+def _git(cwd: Path, *args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        ["git", "-C", str(cwd), *args],
+        check=check,
+        capture_output=True,
+        text=True,
+    )
+
+
 def _runtime_units_phase(phase: str) -> str:
     return f"{RUNTIME_UNITS_HELPER} --phase {phase} --execute"
 
 
-def test_deploy_workflows_serialize_without_cancelling_active_release() -> None:
+def test_id_validation_deploy_serializes_without_cancelling_active_release() -> None:
     deploy = TEST_DEPLOY_WORKFLOW.read_text(encoding="utf-8")
-    promotion = PRODUCTION_PROMOTION_WORKFLOW.read_text(encoding="utf-8")
 
-    assert "group: aicrm-deploy-${{ inputs.target_environment || 'test' }}" in deploy
-    assert "group: aicrm-production-promotion" in promotion
+    assert "group: aicrm-id-validation-deploy" in deploy
     assert "cancel-in-progress: false" in deploy
-    assert "cancel-in-progress: false" in promotion
+    assert not PRODUCTION_PROMOTION_WORKFLOW.exists()
 
 
 def test_remote_deploy_holds_target_specific_server_lock_before_sha_checks() -> None:
     workflow = TEST_DEPLOY_WORKFLOW.read_text(encoding="utf-8")
 
-    target_index = workflow.index('deploy_target="${{ inputs.target_environment || \'test\' }}"', workflow.index("Deploy via SSH"))
+    target_index = workflow.index("deploy_target=\"${{ env.DEPLOY_TARGET }}\"", workflow.index("Deploy via SSH"))
     lock_file_index = workflow.index('deploy_lock_file="/tmp/aicrm-deploy-${deploy_target}.lock"', target_index)
     lock_fd_index = workflow.index('exec 9>"$deploy_lock_file"', lock_file_index)
     flock_index = workflow.index("if ! flock -n 9; then", lock_fd_index)
@@ -46,20 +54,55 @@ def test_failed_uncommitted_deploy_restores_previous_exact_sha_and_dependencies(
     switched_init = workflow.index("release_switched=0")
     committed_init = workflow.index("release_committed=0", switched_init)
     cleanup_index = workflow.index("cleanup_deploy()", committed_init)
-    rollback_guard = workflow.index('[ "${release_switched:-0}" = "1" ]', cleanup_index)
-    stop_index = workflow.index("--phase stop-for-migration --execute", rollback_guard)
-    reset_index = workflow.index('git reset --hard "$before_sha"', stop_index)
+    transaction_guard = workflow.index('[ "${runtime_mutation_started:-0}" = "1" ]', cleanup_index)
+    stop_index = workflow.index("--phase stop-for-migration --execute", transaction_guard)
+    rollback_guard = workflow.index('[ "${release_switched:-0}" = "1" ]', stop_index)
+    reset_index = workflow.index('git reset --hard "$before_sha"', rollback_guard)
     release_file_index = workflow.index("printf '%s\\n' \"$before_sha\" > .release-sha", reset_index)
     dependency_guard = workflow.index('git diff --quiet "$before_sha" "$verified_sha" -- requirements.lock', release_file_index)
     dependency_restore = workflow.index("--require-hashes -r requirements.lock", dependency_guard)
     exact_health = workflow.index('grep -i "x-aicrm-release-sha: $restore_expected_sha"', dependency_restore)
     restore_units = workflow.index("--phase install-enable-after-web-health --execute", exact_health)
 
-    assert switched_init < committed_init < cleanup_index < rollback_guard
-    assert rollback_guard < stop_index < reset_index < release_file_index
+    assert switched_init < committed_init < cleanup_index < transaction_guard < stop_index < rollback_guard
+    assert rollback_guard < reset_index < release_file_index
     assert release_file_index < dependency_guard < dependency_restore < exact_health < restore_units
     assert 'restore_expected_sha="$before_sha"' in workflow
     assert "alembic downgrade" not in workflow
+
+
+def test_failed_deploy_drain_restores_timers_without_killing_active_oneshots() -> None:
+    workflow = TEST_DEPLOY_WORKFLOW.read_text(encoding="utf-8")
+
+    partial_init = workflow.index("runtime_transaction_partial=0")
+    mutation_index = workflow.index("runtime_mutation_started=1", partial_init)
+    partial_start = workflow.index("runtime_transaction_partial=1", mutation_index)
+    stop_index = workflow.index("--phase stop-for-migration --execute", partial_start)
+    stopped_index = workflow.index("runtime_units_stopped=1", stop_index)
+    partial_clear = workflow.index("runtime_transaction_partial=0", stopped_index)
+    cleanup_index = workflow.index("cleanup_deploy()")
+    preserve_index = workflow.index("preserving active one-shot workers during rollback", cleanup_index)
+    conditional_web_stop = workflow.index('if [ "${runtime_units_stopped:-0}" = "1" ]; then', preserve_index)
+    rollback_index = workflow.index('git reset --hard "$before_sha"', conditional_web_stop)
+    restore_index = workflow.index("--phase authorize-runtime-restore --execute", rollback_index)
+    install_index = workflow.index("--phase install-enable-after-web-health --execute", restore_index)
+    release_index = workflow.index("--phase release-runtime-guard --execute", install_index)
+
+    assert partial_init < mutation_index < partial_start < stop_index < stopped_index < partial_clear
+    assert cleanup_index < preserve_index < conditional_web_stop < rollback_index < restore_index < install_index < release_index
+
+
+def test_deploy_recovers_only_exact_identity_worker_self_deadlock_under_transaction_guard() -> None:
+    workflow = TEST_DEPLOY_WORKFLOW.read_text(encoding="utf-8")
+
+    mutation_index = workflow.index("runtime_mutation_started=1")
+    begin_index = workflow.index("--phase begin-transaction --execute", mutation_index)
+    recovery_index = workflow.index("scripts/ops/recover_identity_resolution_worker_deadlock.py", begin_index)
+    execute_index = workflow.index("--execute", recovery_index)
+    evidence_index = workflow.index("/tmp/aicrm-identity-worker-deadlock-recovery.json", execute_index)
+    stop_index = workflow.index("--phase stop-for-migration --execute", evidence_index)
+
+    assert mutation_index < begin_index < recovery_index < execute_index < evidence_index < stop_index
 
 
 def test_success_marks_release_committed_only_after_public_exact_sha_verification() -> None:
@@ -77,7 +120,7 @@ def test_success_marks_release_committed_only_after_public_exact_sha_verificatio
 def test_deploy_requires_runtime_units_and_application_readiness_before_commit() -> None:
     workflow = TEST_DEPLOY_WORKFLOW.read_text(encoding="utf-8")
 
-    verify_units_index = workflow.index(_runtime_units_phase("verify"))
+    verify_units_index = workflow.index(_runtime_units_phase("verify-staged-runtime"))
     readiness_index = workflow.index(
         "curl -sSf http://127.0.0.1:5001/api/system/health",
         verify_units_index,
@@ -87,6 +130,14 @@ def test_deploy_requires_runtime_units_and_application_readiness_before_commit()
 
     assert verify_units_index < readiness_index < restored_flag_index < committed_index
     assert "tee /tmp/aicrm-runtime-readiness.json" in workflow
+
+
+def _deploy_runtime_phase_index(workflow: str, phase: str) -> int:
+    if phase == "stop-for-migration":
+        mutation_index = workflow.index("runtime_mutation_started=1")
+        return workflow.index(f"--phase {phase} --execute", mutation_index)
+    reset_index = workflow.index('git reset --hard "$verified_sha"')
+    return workflow.index(_runtime_units_phase(phase), reset_index)
 
 
 def test_production_deploy_loads_postgres_env_before_alembic_upgrade():
@@ -109,26 +160,36 @@ def test_production_deploy_stashes_dirty_worktree_before_remote_update():
 
     stash_index = workflow.index("git stash push --include-untracked")
     before_sha_index = workflow.index('before_sha="$(git rev-parse HEAD)"')
-    verified_sha_index = workflow.index(
-        'verified_sha="${{ inputs.release_sha || github.event.workflow_run.head_sha }}"', before_sha_index
-    )
-    fetch_index = workflow.index(
-        'git fetch --no-tags "$release_bundle" "refs/deploy/release:refs/remotes/aicrm-id-refactor/main"'
-    )
+    verified_sha_index = workflow.index('verified_sha="${{ github.event.workflow_run.head_sha }}"', before_sha_index)
+    fetch_index = workflow.index('git fetch --no-tags "$release_bundle" "refs/deploy/release:refs/remotes/deploy/main"')
     reset_index = workflow.index('git reset --hard "$verified_sha"')
+    stop_index = _deploy_runtime_phase_index(workflow, "stop-for-migration")
 
-    assert before_sha_index < verified_sha_index < stash_index < fetch_index < reset_index
+    assert before_sha_index < verified_sha_index < stash_index < fetch_index < reset_index < stop_index
     assert 'release_bundle="/tmp/aicrm-release-$verified_sha/aicrm-release.bundle"' in workflow
-    assert "git@github.com" not in workflow
+    remote_script = workflow[workflow.index("Deploy via SSH") :]
+    assert "git fetch --no-tags origin" not in remote_script
     assert "GIT_SSH_COMMAND" not in workflow
+
+
+def test_production_deploy_retires_callback_hotfix_overlay_before_migration_and_restart():
+    workflow = (ROOT / ".github" / "workflows" / "deploy.yml").read_text(encoding="utf-8")
+
+    reset_index = workflow.index('git reset --hard "$verified_sha"')
+    marker_index = workflow.index("printf '%s\\n' \"$after_sha\" > .release-sha")
+    retire_index = workflow.index(_runtime_units_phase("retire-legacy-overlays"))
+    stop_runtime_units_index = _deploy_runtime_phase_index(workflow, "stop-for-migration")
+    alembic_upgrade_index = workflow.index("python3 -m alembic upgrade head")
+    web_start_index = workflow.index("if ! sudo systemctl start openclaw-wecom-postgres.service; then")
+    install_index = workflow.index(_runtime_units_phase("install-enable-after-web-health"))
+
+    assert reset_index < marker_index < retire_index < stop_runtime_units_index < alembic_upgrade_index < web_start_index < install_index
 
 
 def test_production_deploy_installs_dependencies_only_when_hashed_lock_changes():
     workflow = (ROOT / ".github" / "workflows" / "deploy.yml").read_text(encoding="utf-8")
 
-    fetch_index = workflow.index(
-        'git fetch --no-tags "$release_bundle" "refs/deploy/release:refs/remotes/aicrm-id-refactor/main"'
-    )
+    fetch_index = workflow.index('git fetch --no-tags "$release_bundle" "refs/deploy/release:refs/remotes/deploy/main"')
     reset_index = workflow.index('git reset --hard "$verified_sha"')
     after_sha_index = workflow.index('after_sha="$(git rev-parse HEAD)"')
     requirements_guard_index = workflow.index('git diff --quiet "$before_sha" "$after_sha" -- requirements.lock')
@@ -143,37 +204,35 @@ def test_production_deploy_fails_closed_unless_checkout_matches_verified_workflo
     workflow = (ROOT / ".github" / "workflows" / "deploy.yml").read_text(encoding="utf-8")
 
     remote_deploy_index = workflow.index("uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2")
-    verified_sha_index = workflow.index(
-        'verified_sha="${{ inputs.release_sha || github.event.workflow_run.head_sha }}"', remote_deploy_index
-    )
-    release_head_index = workflow.index('release_head_sha="$(git rev-parse refs/remotes/aicrm-id-refactor/main)"')
+    verified_sha_index = workflow.index('verified_sha="${{ github.event.workflow_run.head_sha }}"', remote_deploy_index)
+    release_head_index = workflow.index('release_head_sha="$(git rev-parse refs/remotes/deploy/main)"')
     head_guard_index = workflow.index('if [ "$release_head_sha" != "$verified_sha" ]; then')
     reset_index = workflow.index('git reset --hard "$verified_sha"')
     after_sha_index = workflow.index('after_sha="$(git rev-parse HEAD)"')
     checkout_guard_index = workflow.index('if [ "$after_sha" != "$verified_sha" ]; then')
-    stop_index = workflow.index(_runtime_units_phase("stop-for-migration"))
+    stop_index = _deploy_runtime_phase_index(workflow, "stop-for-migration")
 
     assert verified_sha_index < release_head_index < head_guard_index < reset_index < after_sha_index < checkout_guard_index < stop_index
     assert "invalid verified workflow sha" in workflow
-    assert "verified workflow sha is no longer the ID-refactor main head" in workflow
+    assert "verified workflow sha is no longer the repository main head" in workflow
     assert "deployed checkout does not match verified workflow sha" in workflow
 
 
 def test_production_deploy_verifies_local_bundle_before_fetch_and_stopping_services():
     workflow = (ROOT / ".github" / "workflows" / "deploy.yml").read_text(encoding="utf-8")
 
+    remote_deploy_index = workflow.index("uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2")
     bundle_index = workflow.index('release_bundle="/tmp/aicrm-release-$verified_sha/aicrm-release.bundle"')
     checksum_index = workflow.index("sha256sum -c aicrm-release.bundle.sha256")
     verify_index = workflow.index('git bundle verify "$release_bundle"')
     head_guard_index = workflow.index('git bundle list-heads "$release_bundle"')
-    fetch_index = workflow.index(
-        'git fetch --no-tags "$release_bundle" "refs/deploy/release:refs/remotes/aicrm-id-refactor/main"'
-    )
-    stop_index = workflow.index(_runtime_units_phase("stop-for-migration"))
+    fetch_index = workflow.index('git fetch --no-tags "$release_bundle" "refs/deploy/release:refs/remotes/deploy/main"')
+    stop_index = _deploy_runtime_phase_index(workflow, "stop-for-migration")
 
     assert bundle_index < checksum_index < verify_index < head_guard_index < fetch_index < stop_index
     assert "release bundle does not advertise the verified workflow sha" in workflow
-    assert "git@github.com" not in workflow
+    remote_script = workflow[remote_deploy_index:]
+    assert "git fetch --no-tags origin" not in remote_script
     assert "GIT_SSH_COMMAND" not in workflow
 
 
@@ -181,21 +240,19 @@ def test_production_deploy_builds_and_transfers_incremental_exact_sha_bundle_bef
     workflow = (ROOT / ".github" / "workflows" / "deploy.yml").read_text(encoding="utf-8")
 
     checkout_index = workflow.index("uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0")
-    discover_index = workflow.index('public_health_url="https://id-dev.youcangogogo.com/health"')
-    build_index = workflow.index(
-        'git bundle create release/aicrm-release.bundle refs/deploy/release ^refs/deploy/base'
-    )
+    discover_index = workflow.index('public_health_url="$PUBLIC_HEALTH_URL"')
+    build_index = workflow.index("git bundle create release/aicrm-release.bundle refs/deploy/release ^refs/deploy/base")
     transfer_index = workflow.index("uses: appleboy/scp-action@ff85246acaad7bdce478db94a363cd2bf7c90345")
     remote_deploy_index = workflow.index("uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2")
 
     assert checkout_index < discover_index < build_index < transfer_index < remote_deploy_index
     assert "permissions:\n  contents: read" in workflow
-    assert "ref: ${{ inputs.release_sha || github.event.workflow_run.head_sha }}" in workflow
+    assert "ref: ${{ github.event.workflow_run.head_sha }}" in workflow
     assert "fetch-depth: 0" in workflow
-    assert 'verified_sha="${{ inputs.release_sha || github.event.workflow_run.head_sha }}"' in workflow
-    assert 'git fetch --no-tags origin main' in workflow
+    assert 'verified_sha="${{ github.event.workflow_run.head_sha }}"' in workflow
+    assert "git fetch --no-tags origin main" in workflow
     assert 'if [ "$(git rev-parse FETCH_HEAD)" != "$verified_sha" ]; then' in workflow
-    assert 'public_health_url="https://www.youcangogogo.com/health"' in workflow
+    assert 'public_health_url="$PUBLIC_HEALTH_URL"' in workflow
     assert 'base_sha="$(awk \'tolower($1) == "x-aicrm-release-sha:" {print $2}\'' in workflow
     assert 'git merge-base --is-ancestor "$base_sha" "$verified_sha"' in workflow
     assert 'git update-ref refs/deploy/release "$verified_sha"' in workflow
@@ -204,9 +261,57 @@ def test_production_deploy_builds_and_transfers_incremental_exact_sha_bundle_bef
     assert "sha256sum aicrm-release.bundle" in workflow
     assert "git bundle verify release/aicrm-release.bundle" in workflow
     assert "git bundle create release/aicrm-release.bundle HEAD" not in workflow
-    assert "target: /tmp/aicrm-release-${{ inputs.release_sha || github.event.workflow_run.head_sha }}" in workflow
+    assert "target: /tmp/aicrm-release-${{ github.event.workflow_run.head_sha }}" in workflow
     assert "strip_components: 1" in workflow
     assert "overwrite: true" in workflow
+
+
+def test_id_validation_deploy_treats_already_active_sha_as_successful_noop() -> None:
+    workflow = TEST_DEPLOY_WORKFLOW.read_text(encoding="utf-8")
+
+    active_sha_index = workflow.index('if [ "$base_sha" = "$verified_sha" ]; then')
+    noop_output_index = workflow.index('echo "noop=true" >> "$GITHUB_OUTPUT"', active_sha_index)
+    successful_message_index = workflow.index("successful no-op", noop_output_index)
+    exit_zero_index = workflow.index("exit 0", successful_message_index)
+    bundle_index = workflow.index("git bundle create release/aicrm-release.bundle", exit_zero_index)
+    transfer_index = workflow.index("- name: Transfer verified release bundle", bundle_index)
+    ssh_index = workflow.index("- name: Deploy via SSH", transfer_index)
+
+    assert active_sha_index < noop_output_index < successful_message_index < exit_zero_index < bundle_index
+    assert "exit 1" not in workflow[active_sha_index:exit_zero_index]
+    assert "if: steps.release.outputs.noop != 'true'" in workflow[transfer_index:ssh_index]
+    assert "if: steps.release.outputs.noop != 'true'" in workflow[ssh_index:]
+    assert "Record successful no-op provenance" in workflow
+
+
+def test_id_validation_deploy_records_exact_repository_run_and_bundle_provenance() -> None:
+    workflow = TEST_DEPLOY_WORKFLOW.read_text(encoding="utf-8")
+
+    remote_index = workflow.index("- name: Deploy via SSH")
+    repository_guard_index = workflow.index('if [ "$release_repository" != "$expected_repository" ]; then', remote_index)
+    origin_guard_index = workflow.index('remote_origin_url="$(git remote get-url origin)"', repository_guard_index)
+    lock_index = workflow.index('deploy_lock_file="/tmp/aicrm-deploy-${deploy_target}.lock"', origin_guard_index)
+    checksum_index = workflow.index('if [ "$actual_bundle_sha256" != "$bundle_sha256" ]; then', lock_index)
+    mutation_index = workflow.index("runtime_mutation_started=1", checksum_index)
+    public_sha_index = workflow.index(
+        'grep -i "x-aicrm-release-sha: $after_sha"',
+        workflow.index("public_release_ready=0", mutation_index),
+    )
+    provenance_index = workflow.index('RELEASE_REPOSITORY="$release_repository"', public_sha_index)
+    release_guard_index = workflow.index(_runtime_units_phase("release-runtime-guard"), provenance_index)
+    provenance_commit_index = workflow.index(
+        'mv -f "$release_provenance_tmp" /home/ubuntu/.aicrm-releases/id-validation.json',
+        release_guard_index,
+    )
+    runtime_commit_index = workflow.index("runtime_committed=1", provenance_commit_index)
+
+    assert repository_guard_index < origin_guard_index < lock_index < checksum_index < mutation_index
+    assert public_sha_index < provenance_index < release_guard_index < provenance_commit_index < runtime_commit_index
+    assert '"repository": os.environ["RELEASE_REPOSITORY"]' in workflow
+    assert '"deploy_run_id": os.environ["RELEASE_RUN_ID"]' in workflow
+    assert '"source_ci_run_id": os.environ["SOURCE_CI_RUN_ID"]' in workflow
+    assert '"bundle_sha256": os.environ["BUNDLE_SHA256"]' in workflow
+    assert '"environment": "id-validation"' in workflow
 
 
 def test_production_deploy_requires_remote_head_to_match_bundle_prerequisite_before_fetch():
@@ -217,20 +322,74 @@ def test_production_deploy_requires_remote_head_to_match_bundle_prerequisite_bef
     base_guard_index = workflow.index('if [ "$before_sha" != "$base_sha" ]; then')
     bundle_verify_index = workflow.index('git bundle verify "$release_bundle"')
     stash_index = workflow.index("git stash push --include-untracked")
-    fetch_index = workflow.index(
-        'git fetch --no-tags "$release_bundle" "refs/deploy/release:refs/remotes/aicrm-id-refactor/main"'
-    )
-    stop_index = workflow.index(_runtime_units_phase("stop-for-migration"))
+    fetch_index = workflow.index('git fetch --no-tags "$release_bundle" "refs/deploy/release:refs/remotes/deploy/main"')
+    stop_index = _deploy_runtime_phase_index(workflow, "stop-for-migration")
 
     assert before_sha_index < base_sha_index < base_guard_index < bundle_verify_index < stash_index < fetch_index < stop_index
     assert "target checkout moved after the incremental release bundle was built" in workflow
+
+
+def test_incremental_release_bundle_requires_live_base_and_fetches_exact_merge_sha(tmp_path: Path):
+    source = tmp_path / "source"
+    source.mkdir()
+    _git(source, "init", "-b", "main")
+    _git(source, "config", "user.name", "AI CRM CI")
+    _git(source, "config", "user.email", "ci@example.invalid")
+
+    (source / "root.txt").write_text("root\n", encoding="utf-8")
+    _git(source, "add", "root.txt")
+    _git(source, "commit", "-m", "root")
+    root_sha = _git(source, "rev-parse", "HEAD").stdout.strip()
+    _git(source, "branch", "feature")
+
+    (source / "main.txt").write_text("main\n", encoding="utf-8")
+    _git(source, "add", "main.txt")
+    _git(source, "commit", "-m", "main")
+    base_sha = _git(source, "rev-parse", "HEAD").stdout.strip()
+
+    _git(source, "checkout", "feature")
+    (source / "feature.txt").write_text("feature\n", encoding="utf-8")
+    _git(source, "add", "feature.txt")
+    _git(source, "commit", "-m", "feature")
+    _git(source, "checkout", "main")
+    _git(source, "merge", "--no-ff", "feature", "-m", "merge")
+    verified_sha = _git(source, "rev-parse", "HEAD").stdout.strip()
+    _git(source, "update-ref", "refs/deploy/release", verified_sha)
+    _git(source, "update-ref", "refs/deploy/base", base_sha)
+    _git(source, "branch", "release-root", root_sha)
+    _git(source, "branch", "release-base", base_sha)
+
+    bundle = tmp_path / "aicrm-release.bundle"
+    _git(source, "bundle", "create", str(bundle), "refs/deploy/release", "^refs/deploy/base")
+
+    missing_base = tmp_path / "missing-base"
+    missing_base.mkdir()
+    _git(missing_base, "init")
+    _git(missing_base, "fetch", str(source), "release-root:refs/heads/release-root")
+    missing_verify = _git(missing_base, "bundle", "verify", str(bundle), check=False)
+    assert missing_verify.returncode != 0
+
+    receiver = tmp_path / "receiver"
+    receiver.mkdir()
+    _git(receiver, "init")
+    _git(receiver, "fetch", str(source), "release-base:refs/heads/release-base")
+    _git(receiver, "bundle", "verify", str(bundle))
+    _git(
+        receiver,
+        "fetch",
+        "--no-tags",
+        str(bundle),
+        "refs/deploy/release:refs/remotes/aicrm-release/main",
+    )
+    release_sha = _git(receiver, "rev-parse", "refs/remotes/aicrm-release/main").stdout.strip()
+    assert release_sha == verified_sha
 
 
 def test_production_deploy_refreshes_release_marker_before_restart_and_checks_health_header():
     workflow = (ROOT / ".github" / "workflows" / "deploy.yml").read_text(encoding="utf-8")
 
     after_sha_index = workflow.index('after_sha="$(git rev-parse HEAD)"')
-    marker_index = workflow.index('printf \'%s\\n\' "$after_sha" > .release-sha')
+    marker_index = workflow.index("printf '%s\\n' \"$after_sha\" > .release-sha")
     start_index = workflow.index("if ! sudo systemctl start openclaw-wecom-postgres.service; then")
     header_curl_index = workflow.index("curl -sSf -D /tmp/aicrm_health_headers.txt http://127.0.0.1:5001/health")
     header_grep_index = workflow.index('grep -i "x-aicrm-release-sha: $after_sha" /tmp/aicrm_health_headers.txt')
@@ -239,37 +398,39 @@ def test_production_deploy_refreshes_release_marker_before_restart_and_checks_he
     assert after_sha_index < marker_index < start_index < header_curl_index < header_grep_index < ready_guard_index
 
 
-def test_production_deploy_runs_alembic_upgrade_before_service_restart():
+def test_production_deploy_quiesces_web_before_alembic_and_service_restart():
     workflow = (ROOT / ".github" / "workflows" / "deploy.yml").read_text(encoding="utf-8")
 
     env_source_index = workflow.index("source /home/ubuntu/.openclaw-wecom-pg.env")
     database_url_guard_index = workflow.index('test -n "${DATABASE_URL:-}"')
-    pip_install_index = workflow.index("python -m pip install --require-hashes -r requirements.lock")
-    stop_runtime_units_index = workflow.index(_runtime_units_phase("stop-for-migration"))
+    begin_transaction_index = workflow.index("--phase begin-transaction --execute", workflow.index("runtime_mutation_started=1"))
+    stop_runtime_units_index = _deploy_runtime_phase_index(workflow, "stop-for-migration")
+    stash_index = workflow.index("git stash push --include-untracked")
+    reset_index = workflow.index('git reset --hard "$verified_sha"', stash_index)
+    pip_install_index = workflow.index("python -m pip install --require-hashes -r requirements.lock", reset_index)
+    preflight_index = workflow.index("--phase preflight", reset_index)
     alembic_upgrade_index = workflow.index("python3 -m alembic upgrade head")
-    stop_canonical_web_index = workflow.index("sudo systemctl stop aicrm-web.service || true", alembic_upgrade_index)
-    stop_compatible_web_index = workflow.index(
-        "sudo systemctl stop openclaw-wecom-postgres.service || true", stop_canonical_web_index
-    )
-    stale_listener_index = workflow.index('if sudo fuser -s 5001/tcp; then')
+    stale_listener_index = workflow.index("if sudo fuser -s 5001/tcp; then", stop_runtime_units_index)
     term_kill_index = workflow.index("sudo fuser -k -TERM 5001/tcp || true")
     force_kill_index = workflow.index("sudo fuser -k -KILL 5001/tcp || true")
     wait_for_free_index = workflow.index('echo "waiting for stale 5001 listener to exit"')
-    reset_failed_index = workflow.index("sudo systemctl reset-failed openclaw-wecom-postgres.service || true")
+    reset_failed_index = workflow.index("sudo systemctl reset-failed openclaw-wecom-postgres.service || true", alembic_upgrade_index)
     start_index = workflow.index("if ! sudo systemctl start openclaw-wecom-postgres.service; then")
     alembic_table = "alembic_" + "version"
 
     assert env_source_index < database_url_guard_index < alembic_upgrade_index
     assert (
-        pip_install_index
+        stash_index
+        < reset_index
+        < pip_install_index
+        < preflight_index
+        < begin_transaction_index
         < stop_runtime_units_index
-        < alembic_upgrade_index
-        < stop_canonical_web_index
-        < stop_compatible_web_index
         < stale_listener_index
         < term_kill_index
         < force_kill_index
         < wait_for_free_index
+        < alembic_upgrade_index
         < reset_failed_index
         < start_index
     )
@@ -278,6 +439,8 @@ def test_production_deploy_runs_alembic_upgrade_before_service_restart():
     assert "python3 app.py init-db" not in workflow
     assert "python app.py init-db" not in workflow
     assert "alembic stamp head" not in workflow
+    assert "systemctl mask --runtime" not in workflow
+    assert "systemctl unmask --runtime" not in workflow
     assert f"ALTER TABLE IF EXISTS {alembic_table}" not in workflow
     assert f"ALTER TABLE {alembic_table}" not in workflow
 
@@ -291,12 +454,12 @@ def test_production_deploy_migrates_and_reconciles_secret_references_before_web_
     refreshed_env_index = workflow.index("source /home/ubuntu/.openclaw-wecom-pg.env", migration_index)
     auth_readiness_index = workflow.index("python3 scripts/ops/check_auth_readiness.py", refreshed_env_index)
     reconciliation_index = workflow.index("python3 scripts/ops/check_secret_reference_cutover.py")
-    stop_web_index = workflow.index("sudo systemctl stop aicrm-web.service || true", alembic_upgrade_index)
+    stop_web_index = _deploy_runtime_phase_index(workflow, "stop-for-migration")
     start_web_index = workflow.index("if ! sudo systemctl start openclaw-wecom-postgres.service; then")
 
     assert (
-        alembic_upgrade_index
-        < stop_web_index
+        stop_web_index
+        < alembic_upgrade_index
         < migration_index
         < auth_bootstrap_index
         < refreshed_env_index
@@ -304,49 +467,118 @@ def test_production_deploy_migrates_and_reconciles_secret_references_before_web_
         < reconciliation_index
         < start_web_index
     )
-    assert "--secret-store-dir \"$AICRM_SECRET_STORE_DIR\"" in workflow
+    assert '--secret-store-dir "$AICRM_SECRET_STORE_DIR"' in workflow
     assert "--environment-file /home/ubuntu/.openclaw-wecom-pg.env" in workflow
     assert "tee /tmp/aicrm-secret-migration.json" in workflow
     assert "--apply" in workflow[auth_bootstrap_index:refreshed_env_index]
     assert '--issuer "$auth_issuer"' in workflow[auth_bootstrap_index:reconciliation_index]
-    assert 'auth_issuer="https://www.youcangogogo.com"' in workflow
-    assert 'auth_issuer="https://id-dev.youcangogogo.com"' in workflow
+    assert 'auth_issuer="${{ env.PUBLIC_BASE_URL }}"' in workflow
     assert "tee /tmp/aicrm-auth-client-bootstrap.json" in workflow
     assert "tee /tmp/aicrm-auth-readiness.json" in workflow
     assert "tee /tmp/aicrm-secret-reconciliation.json" in workflow
     assert "set -x" not in workflow
 
 
-def test_production_deploy_repairs_only_approved_legacy_nginx_web_route_and_requires_public_exact_sha():
+def test_id_validation_deploy_serializes_workflow_and_host_transactions():
+    workflow = (ROOT / ".github" / "workflows" / "deploy.yml").read_text(encoding="utf-8")
+
+    assert "group: aicrm-id-validation-deploy" in workflow
+    assert "cancel-in-progress: false" in workflow
+    remote_deploy_index = workflow.index("uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2")
+    lock_path_index = workflow.index('deploy_lock_file="/tmp/aicrm-deploy-${deploy_target}.lock"', remote_deploy_index)
+    lock_fd_index = workflow.index('exec 9>"$deploy_lock_file"', lock_path_index)
+    flock_index = workflow.index("if ! flock -n 9; then", lock_fd_index)
+    checkout_mutation_index = workflow.index("git stash push --include-untracked", flock_index)
+
+    assert remote_deploy_index < lock_path_index < lock_fd_index < flock_index < checkout_mutation_index
+
+
+def test_production_deploy_failure_after_quiesce_is_fail_closed():
+    workflow = (ROOT / ".github" / "workflows" / "deploy.yml").read_text(encoding="utf-8")
+
+    cleanup_index = workflow.index("cleanup_deploy()")
+    trap_index = workflow.index("trap cleanup_deploy EXIT", cleanup_index)
+    mutation_flag_index = workflow.index("runtime_mutation_started=1", trap_index)
+    begin_runtime_index = workflow.index("--phase begin-transaction --execute", mutation_flag_index)
+    stop_runtime_index = workflow.index("--phase stop-for-migration --execute", begin_runtime_index)
+    cleanup_guard_index = workflow.index('[ "${runtime_mutation_started:-0}" = "1" ]', cleanup_index)
+    cleanup_begin_index = workflow.index(
+        "--phase begin-transaction --execute",
+        cleanup_guard_index,
+    )
+    cleanup_stop_runtime_index = workflow.index("--phase stop-for-migration --execute", cleanup_begin_index)
+    cleanup_stop_web_index = workflow.index("sudo systemctl stop openclaw-wecom-postgres.service || true", cleanup_guard_index)
+    deploy_stop_index = _deploy_runtime_phase_index(workflow, "stop-for-migration")
+    reset_index = workflow.index('git reset --hard "$verified_sha"')
+    install_web_index = workflow.index(_runtime_units_phase("install-primary-web"), reset_index)
+    authorize_web_index = workflow.index(_runtime_units_phase("authorize-web-start"), install_web_index)
+    start_web_index = workflow.index("if ! sudo systemctl start openclaw-wecom-postgres.service; then", authorize_web_index)
+    readiness_index = workflow.index("python scripts/ops/check_runtime_secret_readiness.py", start_web_index)
+    authorize_runtime_index = workflow.index(_runtime_units_phase("authorize-runtime-start"), readiness_index)
+    staged_verify_index = workflow.index(_runtime_units_phase("verify-staged-runtime"), authorize_runtime_index)
+    public_health_index = workflow.index("public_release_ready=0", staged_verify_index)
+    provenance_index = workflow.index('RELEASE_REPOSITORY="$release_repository"', public_health_index)
+    release_guard_index = workflow.index(_runtime_units_phase("release-runtime-guard"), provenance_index)
+    commit_index = workflow.index("runtime_committed=1", release_guard_index)
+
+    assert cleanup_index < trap_index < mutation_flag_index < begin_runtime_index < stop_runtime_index
+    assert cleanup_guard_index < cleanup_begin_index < cleanup_stop_runtime_index < cleanup_stop_web_index
+    assert reset_index < deploy_stop_index < install_web_index < authorize_web_index < start_web_index
+    assert start_web_index < readiness_index < authorize_runtime_index < staged_verify_index < public_health_index
+    assert public_health_index < provenance_index < release_guard_index < commit_index
+    assert release_guard_index < workflow.index("runtime_committed=1", release_guard_index)
+    assert "systemctl mask --runtime" not in workflow
+
+
+def test_production_deploy_installs_managed_web_and_checks_runtime_secret_readiness_before_workers():
+    workflow = (ROOT / ".github" / "workflows" / "deploy.yml").read_text(encoding="utf-8")
+
+    reconciliation_index = workflow.index("python3 scripts/ops/check_secret_reference_cutover.py")
+    install_web_index = workflow.index(_runtime_units_phase("install-primary-web"), reconciliation_index)
+    start_web_index = workflow.index("if ! sudo systemctl start openclaw-wecom-postgres.service; then", install_web_index)
+    readiness_index = workflow.index("python scripts/ops/check_runtime_secret_readiness.py", start_web_index)
+    authorize_runtime_index = workflow.index(_runtime_units_phase("authorize-runtime-start"), readiness_index)
+    worker_install_index = workflow.index(_runtime_units_phase("install-enable-after-web-health"), readiness_index)
+    staged_verify_index = workflow.index(_runtime_units_phase("verify-staged-runtime"), worker_install_index)
+    public_health_index = workflow.index("public_release_ready=0", staged_verify_index)
+    release_guard_index = workflow.index(_runtime_units_phase("release-runtime-guard"), public_health_index)
+
+    assert reconciliation_index < install_web_index < start_web_index < readiness_index < authorize_runtime_index
+    assert authorize_runtime_index < worker_install_index < staged_verify_index < public_health_index < release_guard_index
+    assert '--expected-sha "$after_sha"' in workflow[readiness_index:worker_install_index]
+    assert '--expected-callback-url "$auth_issuer/auth/wecom/callback"' in workflow[readiness_index:worker_install_index]
+    assert "tee /tmp/aicrm-runtime-secret-readiness.json" in workflow[readiness_index:worker_install_index]
+
+
+def test_id_validation_deploy_keeps_public_route_read_only_and_requires_public_exact_sha():
     workflow = TEST_DEPLOY_WORKFLOW.read_text(encoding="utf-8")
 
     local_health_index = workflow.index('grep -i "x-aicrm-release-sha: $after_sha"')
-    runtime_verify_index = workflow.index(_runtime_units_phase("verify"))
-    public_route_index = workflow.index("scripts/ops/ensure_production_public_release_route.py --execute")
-    public_sha_index = workflow.index('--expected-sha "$after_sha"', public_route_index)
+    runtime_verify_index = workflow.index(_runtime_units_phase("verify-staged-runtime"))
+    public_health_index = workflow.index("public_release_ready=0", runtime_verify_index)
+    public_sha_index = workflow.index('grep -i "x-aicrm-release-sha: $after_sha"', public_health_index)
+    provenance_index = workflow.index('RELEASE_REPOSITORY="$release_repository"', public_sha_index)
 
-    assert local_health_index < runtime_verify_index < public_route_index < public_sha_index
-    assert "--server-name www.youcangogogo.com" in workflow
-    assert "--public-health-url https://www.youcangogogo.com/health" in workflow
-    assert "--nginx-config /etc/nginx/sites-enabled/youcangogogo.conf" in workflow
-    assert "tee /tmp/aicrm-public-release-route.json" in workflow
+    assert local_health_index < runtime_verify_index < public_health_index < public_sha_index < provenance_index
+    assert "PUBLIC_HEALTH_URL: https://id-dev.youcangogogo.com/health" in workflow
+    assert "scripts/ops/ensure_production_public_release_route.py" not in workflow
+    assert "PUBLIC_SERVER_NAME" not in workflow
+    assert "NGINX_CONFIG_PATH" not in workflow
 
 
-def test_automatic_test_deploy_uses_test_secrets_and_read_only_test_public_health_check():
+def test_id_validation_deploy_uses_only_id_validation_secrets_and_public_health_check():
     workflow = TEST_DEPLOY_WORKFLOW.read_text(encoding="utf-8")
 
-    runtime_verify_index = workflow.index(_runtime_units_phase("verify"))
-    public_health_index = workflow.index("https://id-dev.youcangogogo.com/health", runtime_verify_index)
+    runtime_verify_index = workflow.index(_runtime_units_phase("verify-staged-runtime"))
+    public_health_index = workflow.index('"${{ env.PUBLIC_HEALTH_URL }}"', runtime_verify_index)
 
     assert runtime_verify_index < public_health_index
-    assert "secrets.TEST_DEPLOY_HOST" in workflow
-    assert "secrets.TEST_DEPLOY_USER" in workflow
-    assert "secrets.TEST_DEPLOY_SSH_KEY" in workflow
-    assert "inputs.target_environment == 'production' && secrets.DEPLOY_HOST || secrets.TEST_DEPLOY_HOST" in workflow
-    assert 'if [ "$deploy_target" = "production" ]; then' in workflow
-    assert workflow.index('if [ "$deploy_target" = "production" ]; then') < workflow.index(
-        "ensure_production_public_release_route.py"
-    )
+    assert "secrets.ID_VALIDATION_DEPLOY_HOST" in workflow
+    assert "secrets.ID_VALIDATION_DEPLOY_USER" in workflow
+    assert "secrets.ID_VALIDATION_DEPLOY_SSH_KEY" in workflow
+    assert "secrets.TEST_DEPLOY_HOST" not in workflow
+    assert "secrets.DEPLOY_HOST" not in workflow
+    assert 'if [ "$deploy_target" = "production" ]; then' not in workflow
     assert 'grep -i "x-aicrm-release-sha: $after_sha"' in workflow
 
 
@@ -371,12 +603,15 @@ def test_deploy_admin_smoke_uses_short_lived_server_session_without_logging_cook
     smoke_index = workflow.index("python scripts/ops/check_admin_read_pages_smoke.py", issue_index)
     revoke_index = workflow.index("python3 scripts/ops/create_deploy_smoke_session.py revoke", smoke_index)
     install_index = workflow.index(_runtime_units_phase("install-enable-after-web-health"))
+    verify_index = workflow.index(_runtime_units_phase("verify-staged-runtime"))
 
-    assert issue_index < smoke_index < revoke_index < install_index
+    assert issue_index < smoke_index < revoke_index < install_index < verify_index
     assert 'deploy_smoke_session_file="$(mktemp /tmp/aicrm-deploy-smoke-session.XXXXXX)"' in workflow
     assert '--output-file "$deploy_smoke_session_file"' in workflow
     assert "--ttl-seconds 300" in workflow
     assert '--admin-cookie-file "$deploy_smoke_session_file"' in workflow
+    assert 'admin_smoke_sidebar_args=(--include-all-sidebar --require-all-data-health-green)' in workflow
+    assert 'if [ "$deploy_target" = "production" ]; then' not in workflow[:smoke_index]
     assert '--cookie-file "$deploy_smoke_session_file"' in workflow
     assert "aicrm_next_admin_session=" not in workflow
     assert 'cat "$deploy_smoke_session_file"' not in workflow
@@ -387,13 +622,12 @@ def test_deploy_exit_trap_revokes_smoke_session_and_restores_runtime_units():
     workflow = TEST_DEPLOY_WORKFLOW.read_text(encoding="utf-8")
 
     cleanup_index = workflow.index("cleanup_deploy() {")
-    trap_index = workflow.index("trap cleanup_deploy EXIT", cleanup_index)
-    stop_index = workflow.index(_runtime_units_phase("stop-for-migration"))
-    stopped_flag_index = workflow.index("runtime_units_stopped=1", stop_index)
-    verify_index = workflow.index(_runtime_units_phase("verify"), stopped_flag_index)
-    restored_flag_index = workflow.index("runtime_units_stopped=0", verify_index)
+    stop_index = workflow.index("--phase stop-for-migration --execute", cleanup_index)
+    verify_index = workflow.index("--phase verify --execute", stop_index)
+    trap_index = workflow.index("trap cleanup_deploy EXIT", verify_index)
+    restored_flag_index = workflow.index("runtime_units_stopped=0", trap_index)
 
-    assert cleanup_index < trap_index < stop_index < stopped_flag_index < verify_index < restored_flag_index
+    assert cleanup_index < stop_index < verify_index < trap_index < restored_flag_index
     cleanup = workflow[cleanup_index:trap_index]
     assert "create_deploy_smoke_session.py revoke" in cleanup
     assert 'if [ "${runtime_units_stopped:-0}" = "1" ]; then' in cleanup
@@ -418,11 +652,11 @@ def test_production_deploy_retires_legacy_external_push_worker():
 def test_production_deploy_installs_external_effect_queue_worker_timer_without_manual_execute():
     workflow = (ROOT / ".github" / "workflows" / "deploy.yml").read_text(encoding="utf-8")
 
-    stop_runtime_units_index = workflow.index(_runtime_units_phase("stop-for-migration"))
+    stop_runtime_units_index = _deploy_runtime_phase_index(workflow, "stop-for-migration")
     alembic_upgrade_index = workflow.index("python3 -m alembic upgrade head")
     health_index = workflow.index("curl -sSf -D /tmp/aicrm_health_headers.txt http://127.0.0.1:5001/health", workflow.index("for _ in $(seq 1 60); do"))
     install_index = workflow.index(_runtime_units_phase("install-enable-after-web-health"))
-    verify_index = workflow.index(_runtime_units_phase("verify"))
+    verify_index = workflow.index(_runtime_units_phase("verify-staged-runtime"))
 
     assert stop_runtime_units_index < alembic_upgrade_index
     assert health_index < install_index < verify_index
@@ -434,7 +668,7 @@ def test_production_deploy_installs_and_runs_broadcast_queue_worker_timer():
 
     health_index = workflow.index("curl -sSf -D /tmp/aicrm_health_headers.txt http://127.0.0.1:5001/health", workflow.index("for _ in $(seq 1 60); do"))
     install_index = workflow.index(_runtime_units_phase("install-enable-after-web-health"))
-    verify_index = workflow.index(_runtime_units_phase("verify"))
+    verify_index = workflow.index(_runtime_units_phase("verify-staged-runtime"))
     assert health_index < install_index < verify_index
 
 
@@ -443,7 +677,7 @@ def test_production_deploy_installs_and_runs_internal_event_worker_timer():
 
     health_index = workflow.index("curl -sSf -D /tmp/aicrm_health_headers.txt http://127.0.0.1:5001/health", workflow.index("for _ in $(seq 1 60); do"))
     install_index = workflow.index(_runtime_units_phase("install-enable-after-web-health"))
-    verify_index = workflow.index(_runtime_units_phase("verify"))
+    verify_index = workflow.index(_runtime_units_phase("verify-staged-runtime"))
     reconciliation_index = workflow.index("python scripts/ops/reconcile_internal_event_outbox.py")
 
     assert health_index < install_index < verify_index < reconciliation_index
@@ -453,7 +687,7 @@ def test_production_deploy_installs_and_runs_internal_event_worker_timer():
 def test_production_deploy_runs_commerce_fulfillment_reconciliation_count_only():
     workflow = (ROOT / ".github" / "workflows" / "deploy.yml").read_text(encoding="utf-8")
 
-    verify_index = workflow.index(_runtime_units_phase("verify"))
+    verify_index = workflow.index(_runtime_units_phase("verify-staged-runtime"))
     internal_event_index = workflow.index("python scripts/ops/reconcile_internal_event_outbox.py")
     commerce_index = workflow.index("python scripts/ops/reconcile_commerce_fulfillment.py")
 
@@ -464,7 +698,7 @@ def test_production_deploy_runs_commerce_fulfillment_reconciliation_count_only()
 def test_production_deploy_runs_r09_and_r10_reconciliation_count_only():
     workflow = (ROOT / ".github" / "workflows" / "deploy.yml").read_text(encoding="utf-8")
 
-    verify_index = workflow.index(_runtime_units_phase("verify"))
+    verify_index = workflow.index(_runtime_units_phase("verify-staged-runtime"))
     commerce_index = workflow.index("python scripts/ops/reconcile_commerce_fulfillment.py")
     questionnaire_index = workflow.index("python scripts/ops/reconcile_questionnaire_radar.py")
     group_ops_index = workflow.index("python scripts/ops/reconcile_group_ops_broadcast.py")
@@ -498,21 +732,17 @@ def test_external_effect_queue_worker_systemd_units_are_deployable():
 def test_production_deploy_installs_payment_reconciliation_and_identity_workers():
     workflow = (ROOT / ".github" / "workflows" / "deploy.yml").read_text(encoding="utf-8")
 
-    stop_runtime_units_index = workflow.index(_runtime_units_phase("stop-for-migration"))
+    stop_runtime_units_index = _deploy_runtime_phase_index(workflow, "stop-for-migration")
     alembic_upgrade_index = workflow.index("python3 -m alembic upgrade head")
     install_index = workflow.index(_runtime_units_phase("install-enable-after-web-health"))
-    verify_index = workflow.index(_runtime_units_phase("verify"))
+    verify_index = workflow.index(_runtime_units_phase("verify-staged-runtime"))
 
     assert stop_runtime_units_index < alembic_upgrade_index < install_index < verify_index
 
 
 def test_payment_reconciliation_and_identity_worker_units_are_deployable():
-    payment_service = (ROOT / "deploy" / "openclaw-wechat-pay-order-reconciliation-worker.service").read_text(
-        encoding="utf-8"
-    )
-    payment_timer = (ROOT / "deploy" / "openclaw-wechat-pay-order-reconciliation-worker.timer").read_text(
-        encoding="utf-8"
-    )
+    payment_service = (ROOT / "deploy" / "openclaw-wechat-pay-order-reconciliation-worker.service").read_text(encoding="utf-8")
+    payment_timer = (ROOT / "deploy" / "openclaw-wechat-pay-order-reconciliation-worker.timer").read_text(encoding="utf-8")
     identity_service = (ROOT / "deploy" / "openclaw-identity-resolution-worker.service").read_text(encoding="utf-8")
     identity_timer = (ROOT / "deploy" / "openclaw-identity-resolution-worker.timer").read_text(encoding="utf-8")
 
@@ -530,7 +760,7 @@ def test_payment_reconciliation_and_identity_worker_units_are_deployable():
     assert "Persistent=true" in payment_timer
     assert "Unit=openclaw-wechat-pay-order-reconciliation-worker.service" in payment_timer
 
-    assert "python scripts/run_identity_resolution_backfill_worker.py --execute" in identity_service
+    assert "python scripts/run_identity_resolution_backfill_worker.py --execute --limit 20" in identity_service
     assert "OnCalendar=*-*-* *:0/2:20" in identity_timer
     assert "Persistent=true" in identity_timer
     assert "Unit=openclaw-identity-resolution-worker.service" in identity_timer
@@ -545,14 +775,24 @@ def test_internal_event_worker_systemd_units_are_deployable():
     assert "EnvironmentFile=/home/ubuntu/.openclaw-wecom-pg.env" in service
     assert "Environment=AICRM_INTERNAL_EVENTS_ENABLED=1" in service
     assert "Environment=AICRM_INTERNAL_EVENTS_PAYMENT_ENABLED=1" in service
+    assert "Environment=AICRM_INTERNAL_EVENTS_QUESTIONNAIRE_ENABLED=1" in service
     assert "Environment=AICRM_INTERNAL_EVENTS_SHADOW_ONLY=1" in service
     assert "Environment=AICRM_INTERNAL_EVENTS_AUTO_EXECUTE=1" in service
+    assert "Environment=AICRM_INTERNAL_EVENT_RELAY_ROLE=owner" in service
     assert "Environment=AICRM_INTERNAL_EVENT_WORKER_BATCH_SIZE=50" in service
     assert "Environment=AICRM_INTERNAL_EVENTS_WORKER_BATCH_SIZE=50" in service
     assert "Environment=AICRM_INTERNAL_EVENTS_AUTO_EXECUTE_MAX_BATCH_SIZE=50" in service
     assert "payment.succeeded:service_period_entitlement_consumer" in service
+    assert "payment.succeeded:webhook_order_paid_consumer" in service
+    assert "questionnaire.submitted:questionnaire_projection_consumer" in service
+    assert "questionnaire.submitted:questionnaire_webhook_consumer" in service
+    assert "questionnaire.submitted:questionnaire_tag_consumer" in service
+    assert "questionnaire.submitted:automation_questionnaire_consumer" in service
+    assert "questionnaire.submitted:customer_summary_consumer" in service
     assert "WorkingDirectory=/home/ubuntu/极简 crm" in service
-    assert "python scripts/run_internal_event_worker.py --execute --limit ${AICRM_INTERNAL_EVENTS_WORKER_BATCH_SIZE:-50}" in service
+    assert "ExecStart=/usr/bin/env" in service
+    assert "/home/ubuntu/venvs/openclaw/bin/python scripts/run_internal_event_worker.py --execute --limit 50" in service
+    assert "/bin/bash -lc" not in service
     assert "wecom_ability_service" not in service
     assert "legacy_flask_app" not in service
     assert "run-legacy" not in service
@@ -564,13 +804,13 @@ def test_internal_event_worker_systemd_units_are_deployable():
 def test_production_deploy_installs_callback_ingress_and_worker_isolated_runtime():
     workflow = (ROOT / ".github" / "workflows" / "deploy.yml").read_text(encoding="utf-8")
 
-    stop_runtime_units_index = workflow.index(_runtime_units_phase("stop-for-migration"))
+    stop_runtime_units_index = _deploy_runtime_phase_index(workflow, "stop-for-migration")
     alembic_upgrade_index = workflow.index("python3 -m alembic upgrade head")
     health_index = workflow.index("curl -sSf -D /tmp/aicrm_health_headers.txt http://127.0.0.1:5001/health", workflow.index("for _ in $(seq 1 60); do"))
     install_index = workflow.index(_runtime_units_phase("install-enable-after-web-health"))
     smoke_index = workflow.index("python scripts/ops/check_wecom_callback_deploy_smoke.py")
     smoke_evidence_index = workflow.index("tee /tmp/wecom-callback-deploy-smoke.json")
-    verify_index = workflow.index(_runtime_units_phase("verify"))
+    verify_index = workflow.index(_runtime_units_phase("verify-staged-runtime"))
 
     assert stop_runtime_units_index < alembic_upgrade_index
     assert health_index < install_index < smoke_index < smoke_evidence_index < verify_index
@@ -617,13 +857,13 @@ def test_wecom_callback_inbox_worker_systemd_units_are_deployable():
 
 
 def test_aicrm_canonical_runtime_isolation_systemd_units_are_deployable():
-    web = (ROOT / "deploy" / "aicrm-web.service").read_text(encoding="utf-8")
+    web = (ROOT / "deploy" / "openclaw-wecom-postgres.service").read_text(encoding="utf-8")
     ingress = (ROOT / "deploy" / "aicrm-wecom-ingress.service").read_text(encoding="utf-8")
     callback_worker = (ROOT / "deploy" / "aicrm-wecom-callback-worker.service").read_text(encoding="utf-8")
     internal_worker = (ROOT / "deploy" / "aicrm-internal-event-worker.service").read_text(encoding="utf-8")
     external_worker = (ROOT / "deploy" / "aicrm-external-effect-worker.service").read_text(encoding="utf-8")
 
-    for service in (web, ingress, callback_worker, internal_worker, external_worker):
+    for service in (ingress, callback_worker, internal_worker, external_worker):
         assert "After=network.target openclaw-wecom-postgres.service" in service
         assert "Requires=openclaw-wecom-postgres.service" in service
         assert "EnvironmentFile=/home/ubuntu/.openclaw-wecom-pg.env" in service
@@ -632,7 +872,11 @@ def test_aicrm_canonical_runtime_isolation_systemd_units_are_deployable():
         assert "legacy_flask_app" not in service
         assert "run-legacy" not in service
 
-    assert "Environment=APP_PORT=5001" in web
+    assert not (ROOT / "deploy" / "aicrm-web.service").exists()
+    assert "After=network.target postgresql.service" in web
+    assert "User=ubuntu" in web
+    assert "EnvironmentFile=/home/ubuntu/.openclaw-wecom-pg.env" in web
+    assert "WorkingDirectory=/home/ubuntu/极简 crm" in web
     assert "python app.py run" in web
     assert "Environment=APP_PORT=5002" in ingress
     assert "python scripts/run_wecom_callback_ingress.py" in ingress
@@ -650,7 +894,7 @@ def test_wechat_shop_order_sync_systemd_units_are_deployable():
     timer = (ROOT / "deploy" / "aicrm-wechat-shop-order-sync.timer").read_text(encoding="utf-8")
 
     install_index = workflow.index(_runtime_units_phase("install-enable-after-web-health"))
-    verify_index = workflow.index(_runtime_units_phase("verify"))
+    verify_index = workflow.index(_runtime_units_phase("verify-staged-runtime"))
 
     assert install_index < verify_index
     assert "After=network.target openclaw-wecom-postgres.service" in service
@@ -739,9 +983,7 @@ def test_postgres_backup_restore_share_database_url_guard():
 
 def test_batch_scripts_share_int_env_reader():
     runtime = (ROOT / "scripts" / "script_runtime.py").read_text(encoding="utf-8")
-    broadcast_worker = (ROOT / "scripts" / "run_broadcast_queue_worker.py").read_text(
-        encoding="utf-8"
-    )
+    broadcast_worker = (ROOT / "scripts" / "run_broadcast_queue_worker.py").read_text(encoding="utf-8")
 
     assert "def read_int_env" in runtime
     assert 'read_int_env("BROADCAST_QUEUE_BATCH_SIZE", 50)' in broadcast_worker
@@ -752,6 +994,7 @@ def test_due_runner_scripts_share_int_env_reader():
     external_push_worker = (ROOT / "scripts" / "run_external_push_worker.py").read_text(encoding="utf-8")
     internal_event_worker = (ROOT / "scripts" / "run_internal_event_worker.py").read_text(encoding="utf-8")
     ai_audience_scheduler = (ROOT / "scripts" / "run_ai_audience_scheduler.py").read_text(encoding="utf-8")
+    ai_audience_scheduler_runtime = (ROOT / "aicrm_next" / "ai_audience_ops" / "scheduler.py").read_text(encoding="utf-8")
 
     assert not (ROOT / "scripts" / "run_automation_sop.py").exists()
     assert 'read_int_env("EXTERNAL_PUSH_WORKER_BATCH_SIZE", DEFAULT_BATCH_SIZE)' in external_push_worker
@@ -762,7 +1005,8 @@ def test_due_runner_scripts_share_int_env_reader():
     assert "build_internal_event_consumer_registry" in internal_event_worker
     assert 'read_int_env("AICRM_AI_AUDIENCE_SCHEDULER_BATCH_SIZE", 20)' in ai_audience_scheduler
     assert "--execute" in internal_event_worker
-    assert "InternalEventWorker(consumer_registry=build_internal_event_consumer_registry()).run_due" in internal_event_worker
+    assert 'relay_role="owner"' in internal_event_worker
+    assert 'relay_role="consumer_only"' in ai_audience_scheduler_runtime
     assert "int(os.environ.get" not in external_push_worker
     assert "int(os.environ.get" not in internal_event_worker
     assert "int(os.environ.get" not in ai_audience_scheduler
@@ -773,16 +1017,17 @@ def test_ai_audience_scheduler_runs_through_internal_event_queue_only():
     scheduler = (ROOT / "scripts" / "run_ai_audience_scheduler.py").read_text(encoding="utf-8")
     service = (ROOT / "deploy" / "openclaw-ai-audience-scheduler.service").read_text(encoding="utf-8")
     timer = (ROOT / "deploy" / "openclaw-ai-audience-scheduler.timer").read_text(encoding="utf-8")
-    stop_runtime_units_index = workflow.index(_runtime_units_phase("stop-for-migration"))
+    stop_runtime_units_index = _deploy_runtime_phase_index(workflow, "stop-for-migration")
     alembic_upgrade_index = workflow.index("python3 -m alembic upgrade head")
     install_index = workflow.index(_runtime_units_phase("install-enable-after-web-health"))
-    verify_index = workflow.index(_runtime_units_phase("verify"))
+    verify_index = workflow.index(_runtime_units_phase("verify-staged-runtime"))
 
     assert stop_runtime_units_index < alembic_upgrade_index < install_index < verify_index
     assert "register_ai_audience_event_consumers()" in scheduler
     assert 'read_int_env("AICRM_AI_AUDIENCE_SCHEDULER_BATCH_SIZE", 20)' in scheduler
     assert "run_due_ai_audience_consumers" in scheduler
     assert "--run-consumers --execute" in service
+    assert "Environment=AICRM_INTERNAL_EVENT_RELAY_ROLE=consumer_only" in service
     assert "ExecStart=/bin/bash -c" in service
     assert "AICRM_INTERNAL_EVENTS_ALLOWED_EVENT_TYPES=" in service
     assert "ai_audience.refresh.incremental_tick,ai_audience.refresh.daily_tick" in service
@@ -795,6 +1040,29 @@ def test_ai_audience_scheduler_runs_through_internal_event_queue_only():
     assert "ExternalEffectWorker" not in service
     assert "run_external_effect_queue_worker.py" not in service
     assert "OnCalendar=*-*-* *:0/3:00" in timer
+
+
+def test_production_runtime_declares_exactly_one_internal_event_relay_owner():
+    manifest = json.loads((ROOT / "deploy" / "production_runtime_units.json").read_text(encoding="utf-8"))
+    declared = {
+        item["service"]: item["internal_event_relay_role"]
+        for item in manifest["active_autostart"]
+        if item.get("internal_event_relay_role")
+    }
+
+    assert declared == {
+        "openclaw-ai-audience-scheduler.service": "consumer_only",
+        "openclaw-internal-event-worker.service": "owner",
+    }
+    assert list(declared.values()).count("owner") == 1
+
+    owner_sources = [
+        path.relative_to(ROOT).as_posix()
+        for root in (ROOT / "aicrm_next", ROOT / "scripts")
+        for path in root.rglob("*.py")
+        if 'relay_role="owner"' in path.read_text(encoding="utf-8")
+    ]
+    assert owner_sources == ["scripts/run_internal_event_worker.py"]
 
 
 def _calls_utcnow(path: Path) -> bool:
@@ -810,22 +1078,13 @@ def _calls_utcnow(path: Path) -> bool:
 
 
 def test_runtime_code_does_not_use_deprecated_utcnow():
-    offenders = sorted(
-        path.relative_to(ROOT).as_posix()
-        for path in RUNTIME_DIR.rglob("*.py")
-        if "__pycache__" not in path.parts and _calls_utcnow(path)
-    )
+    offenders = sorted(path.relative_to(ROOT).as_posix() for path in RUNTIME_DIR.rglob("*.py") if "__pycache__" not in path.parts and _calls_utcnow(path))
 
-    assert not offenders, (
-        "Runtime code must use explicit timezone-aware UTC helpers instead of datetime.utcnow(). "
-        f"Offenders: {offenders}"
-    )
+    assert not offenders, f"Runtime code must use explicit timezone-aware UTC helpers instead of datetime.utcnow(). Offenders: {offenders}"
 
 
 def test_alembic_0002_is_pg_only():
-    migration = (
-        ROOT / "migrations" / "versions" / "0002_perf_indexes_and_trace.py"
-    ).read_text(encoding="utf-8")
+    migration = (ROOT / "migrations" / "versions" / "0002_perf_indexes_and_trace.py").read_text(encoding="utf-8")
 
     assert "_is_postgres" not in migration
     assert "PRAGMA" not in migration
@@ -835,9 +1094,7 @@ def test_alembic_0002_is_pg_only():
 
 
 def test_alembic_0003_is_pg_only():
-    migration = (
-        ROOT / "migrations" / "versions" / "0003_member_segment_columns.py"
-    ).read_text(encoding="utf-8")
+    migration = (ROOT / "migrations" / "versions" / "0003_member_segment_columns.py").read_text(encoding="utf-8")
 
     assert "_is_postgres" not in migration
     assert "PRAGMA" not in migration
@@ -846,9 +1103,7 @@ def test_alembic_0003_is_pg_only():
 
 
 def test_alembic_0004_is_pg_only():
-    migration = (
-        ROOT / "migrations" / "versions" / "0004_cloud_orchestrator.py"
-    ).read_text(encoding="utf-8")
+    migration = (ROOT / "migrations" / "versions" / "0004_cloud_orchestrator.py").read_text(encoding="utf-8")
 
     assert "_is_postgres" not in migration
     assert "PRAGMA" not in migration
@@ -864,9 +1119,7 @@ def test_alembic_0004_is_pg_only():
 
 
 def test_alembic_0005_is_pg_only():
-    migration = (
-        ROOT / "migrations" / "versions" / "0005_segments_and_campaigns.py"
-    ).read_text(encoding="utf-8")
+    migration = (ROOT / "migrations" / "versions" / "0005_segments_and_campaigns.py").read_text(encoding="utf-8")
 
     assert "_is_postgres" not in migration
     assert "PRAGMA" not in migration
@@ -879,9 +1132,7 @@ def test_alembic_0005_is_pg_only():
 
 
 def test_alembic_0006_is_pg_only():
-    migration = (
-        ROOT / "migrations" / "versions" / "0006_miniprogram_library.py"
-    ).read_text(encoding="utf-8")
+    migration = (ROOT / "migrations" / "versions" / "0006_miniprogram_library.py").read_text(encoding="utf-8")
 
     assert "_is_postgres" not in migration
     assert "PRAGMA" not in migration
@@ -892,9 +1143,7 @@ def test_alembic_0006_is_pg_only():
 
 
 def test_alembic_0007_is_pg_only():
-    migration = (
-        ROOT / "migrations" / "versions" / "0007_image_library.py"
-    ).read_text(encoding="utf-8")
+    migration = (ROOT / "migrations" / "versions" / "0007_image_library.py").read_text(encoding="utf-8")
 
     assert "_is_postgres" not in migration
     assert "PRAGMA" not in migration
@@ -905,9 +1154,7 @@ def test_alembic_0007_is_pg_only():
 
 
 def test_alembic_0008_is_pg_only():
-    migration = (
-        ROOT / "migrations" / "versions" / "0008_broadcast_jobs.py"
-    ).read_text(encoding="utf-8")
+    migration = (ROOT / "migrations" / "versions" / "0008_broadcast_jobs.py").read_text(encoding="utf-8")
 
     assert "_is_postgres" not in migration
     assert "AUTOINCREMENT" not in migration
@@ -918,12 +1165,23 @@ def test_alembic_0008_is_pg_only():
 
 
 def test_alembic_0009_is_pg_only():
-    migration = (
-        ROOT / "migrations" / "versions" / "0009_image_library_semantic.py"
-    ).read_text(encoding="utf-8")
+    migration = (ROOT / "migrations" / "versions" / "0009_image_library_semantic.py").read_text(encoding="utf-8")
 
     assert "_is_postgres" not in migration
     assert "PRAGMA" not in migration
     assert "TEXT NOT NULL DEFAULT '[]'" not in migration
     assert "JSONB NOT NULL DEFAULT '[]'::jsonb" in migration
     assert "USING GIN (tags)" in migration
+
+
+def test_deploy_runs_runtime_environment_as_repository_module():
+    workflow = TEST_DEPLOY_WORKFLOW.read_text(encoding="utf-8")
+
+    assert "python3 -m scripts.ops.ensure_runtime_environment" in workflow
+    assert "python3 scripts/ops/ensure_runtime_environment.py" not in workflow
+    persistence_index = workflow.index("python3 -m scripts.ops.ensure_runtime_environment")
+    runtime_start_index = workflow.index("sudo systemctl start openclaw-wecom-postgres.service", persistence_index)
+    flag_index = workflow.index("runtime_environment_args+=(--allow-missing-wechat-shop-callback-token)")
+
+    assert flag_index < persistence_index < runtime_start_index
+    assert '"${runtime_environment_args[@]}"' in workflow[persistence_index:runtime_start_index]

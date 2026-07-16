@@ -60,9 +60,10 @@ def test_service_period_h5_order_allows_repeat_paid_order(monkeypatch) -> None:
             queries.append((query, tuple(params)))
             if "FROM crm_user_identity identity" in query:
                 external_userid, unionid, openid, mobile = tuple(params)
+                canonical_unionid = unionid or ("union_h5_repeat" if openid == "op_h5" else "")
                 return Cursor(
                     {
-                        "unionid": unionid,
+                        "unionid": canonical_unionid,
                         "external_userid": external_userid,
                         "openid": openid,
                         "mobile": mobile,
@@ -186,6 +187,49 @@ def test_service_period_h5_order_requires_mobile_when_configured(monkeypatch) ->
 
     assert response.status_code == 400
     assert response.json()["error"] == "mobile_required"
+
+
+def test_service_period_h5_order_rejects_12_digit_mobile_when_configured(monkeypatch) -> None:
+    reset_commerce_fixture_state()
+    reset_service_period_fixture_state()
+
+    monkeypatch.setattr(
+        h5_wechat_pay,
+        "_require_payment_ready",
+        lambda: WeChatPayClientConfig(
+            app_id="app",
+            mch_id="mch",
+            api_v3_key="api-v3-key",
+            private_key_path="/tmp/key.pem",
+            merchant_serial_no="serial",
+        ),
+    )
+    client = _client(monkeypatch)
+    created = client.post(
+        "/api/admin/service-period-products",
+        json={
+            "product_code": "sp_h5_invalid_mobile",
+            "title": "H5 周期服务",
+            "price_cents": 9900,
+            "status": "active",
+            "duration_days": 30,
+            "require_mobile": True,
+        },
+    )
+    assert created.status_code == 201
+    client.cookies.set(
+        h5_wechat_pay.COOKIE_NAME,
+        h5_wechat_pay._signed_blob({"openid": "op_h5_invalid", "unionid": "union_h5_invalid"}),
+    )
+
+    response = client.post(
+        "/api/h5/service-period-products/sp_h5_invalid_mobile/wechat-pay/jsapi/orders",
+        json={"mobile": "186109474111"},
+        headers={"User-Agent": "MicroMessenger"},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["error"] == "mobile_invalid"
 
 
 def test_payment_succeeded_consumer_registers_and_skips_non_service_product() -> None:

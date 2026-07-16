@@ -265,7 +265,7 @@
   <section class="automation-agent-card" aria-label="自动化话术">
     <div class="automation-agent-list-top">
       <div class="automation-agent-list-top__left">
-        <h1 class="automation-agent-title">自动化话术</h1>
+        <h2 class="automation-agent-title">自动化列表</h2>
       </div>
       <div class="automation-agent-list-actions">
         <button class="automation-agent-btn primary" id="createAgent" type="button">新增 Agent</button>
@@ -340,7 +340,7 @@
 
     const materialText = (summary) => {
       const value = summary && typeof summary === "object" ? summary : {};
-      return `${Number(value.image_count || 0)} 图片 / ${Number(value.miniprogram_count || 0)} 小程序 / ${Number(value.attachment_count || 0)} PDF`;
+      return `${Number(value.image_count || 0)} 图片 / ${Number(value.miniprogram_count || 0)} 小程序 / ${Number(value.attachment_count || 0)} PDF / ${Number(value.group_invite_count || 0)} 群邀请`;
     };
 
     const statusPill = (status) => {
@@ -474,6 +474,7 @@
               image_library_ids: [],
               miniprogram_library_ids: [],
               attachment_library_ids: [],
+              group_invite_library_ids: [],
             },
           },
         });

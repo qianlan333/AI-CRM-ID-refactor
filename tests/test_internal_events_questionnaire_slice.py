@@ -353,10 +353,17 @@ def test_reconciliation_explains_placeholder_and_allowlist_pending(monkeypatch) 
     by_consumer = {item["consumer_name"]: item for item in reconciliation["consumer_states"]}
 
     assert by_consumer["questionnaire_projection_consumer"]["why_pending"]["category"] == "allowlist_blocked"
-    assert by_consumer["questionnaire_projection_consumer"]["why_pending"]["actionable"] is True
+    assert by_consumer["questionnaire_projection_consumer"]["why_pending"]["actionable"] is False
+    assert by_consumer["questionnaire_projection_consumer"]["why_pending"]["rollout_gated"] is True
     assert by_consumer["questionnaire_tag_consumer"]["why_pending"]["category"] == "allowlist_blocked"
     assert by_consumer["automation_questionnaire_consumer"]["why_pending"]["category"] == "placeholder_not_configured"
     assert by_consumer["customer_summary_consumer"]["why_pending"]["actionable"] is False
+
+    detail = build_event_detail_payload(emitted["event"]["event_id"], service=service)
+    assert detail is not None
+    assert detail["reconciliation_summary"]["unresolved_consumer_count"] == 0
+    assert detail["reconciliation_summary"]["rollout_gated_consumer_count"] == 3
+    assert detail["reconciliation_summary"]["placeholder_consumer_count"] == 2
 
 
 def test_internal_event_api_redacts_questionnaire_summary_and_hides_payload(monkeypatch) -> None:

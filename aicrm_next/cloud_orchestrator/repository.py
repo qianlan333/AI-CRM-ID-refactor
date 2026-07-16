@@ -134,6 +134,7 @@ class CloudPlanRepository(Protocol):
         owner_userid: str,
         content_package: dict[str, Any],
         operator: str,
+        requires_review: bool = False,
     ) -> dict[str, Any]: ...
     def approve_recipient(self, plan_id: str, recipient_id: int, *, operator: str) -> dict[str, Any]: ...
     def reject_recipient(self, plan_id: str, recipient_id: int, *, operator: str, reason: str = "") -> dict[str, Any]: ...
@@ -215,6 +216,7 @@ def _content_payload_for_package(content_package: dict[str, Any]) -> dict[str, A
         "image_library_ids": list(content_package.get("image_library_ids") or []),
         "miniprogram_library_ids": list(content_package.get("miniprogram_library_ids") or []),
         "attachment_library_ids": list(content_package.get("attachment_library_ids") or []),
+        "group_invite_library_ids": list(content_package.get("group_invite_library_ids") or []),
     }
     return {
         "content_package": package,
@@ -222,6 +224,7 @@ def _content_payload_for_package(content_package: dict[str, Any]) -> dict[str, A
         "image_media_ids": [],
         "miniprogram_library_ids": package["miniprogram_library_ids"],
         "attachment_library_ids": package["attachment_library_ids"],
+        "group_invite_library_ids": package["group_invite_library_ids"],
     }
 
 
@@ -938,6 +941,7 @@ class PostgresCloudPlanRepository(CloudLegacyPostgresRepositoryMixin):
         owner_userid: str,
         content_package: dict[str, Any],
         operator: str,
+        requires_review: bool = False,
     ) -> dict[str, Any]:
         normalized_event_id = _text(external_event_id)
         normalized_external_userid = _text(external_userid)
@@ -949,6 +953,8 @@ class PostgresCloudPlanRepository(CloudLegacyPostgresRepositoryMixin):
         if not normalized_owner:
             return {"status": "skipped", "reason": "missing_owner_userid"}
         plan_id = _agent_plan_id(normalized_event_id)
+        review_status = "pending_review" if requires_review else "approved"
+        approval_status = "pending" if requires_review else "approved"
         content_payload = _content_payload_for_package(content_package)
         with self._connect() as conn:
             normalized_unionid = resolve_external_userid_with_dbapi(conn, normalized_external_userid)
@@ -968,7 +974,7 @@ class PostgresCloudPlanRepository(CloudLegacyPostgresRepositoryMixin):
                     ) VALUES (
                         %s, %s, %s, %s, %s, %s, %s,
                         %s::jsonb, 'agent_generated_single', 1, 1,
-                        %s::jsonb, 'draft', 'approved', 'draft', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+                        %s::jsonb, 'draft', %s, 'draft', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
                     )
                     ON CONFLICT (plan_id) DO NOTHING
                     """,
@@ -989,6 +995,7 @@ class PostgresCloudPlanRepository(CloudLegacyPostgresRepositoryMixin):
                             }
                         ),
                         _json_dump({"source": "automation_agent", "external_event_id": normalized_event_id}),
+                        review_status,
                     ),
                 )
             recipient = conn.execute(
@@ -997,7 +1004,7 @@ class PostgresCloudPlanRepository(CloudLegacyPostgresRepositoryMixin):
                     plan_id, unionid, owner_userid, display_name, planned_message_count,
                     approval_status, send_status, created_at, updated_at
                 ) VALUES (
-                    %s, %s, %s, %s, 1, 'approved', 'pending', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+                    %s, %s, %s, %s, 1, %s, 'pending', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
                 )
                 ON CONFLICT (plan_id, unionid) WHERE unionid <> '' DO UPDATE SET
                     owner_userid = EXCLUDED.owner_userid,
@@ -1005,7 +1012,7 @@ class PostgresCloudPlanRepository(CloudLegacyPostgresRepositoryMixin):
                     updated_at = CURRENT_TIMESTAMP
                 RETURNING *
                 """,
-                (plan_id, normalized_unionid, normalized_owner, normalized_unionid),
+                (plan_id, normalized_unionid, normalized_owner, normalized_unionid, approval_status),
             ).fetchone()
             recipient_id = int((recipient or {}).get("id") or 0)
             existing_message = conn.execute(

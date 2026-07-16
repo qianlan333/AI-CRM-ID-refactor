@@ -1,15 +1,18 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import datetime
 from typing import Any
 
 from aicrm_next.commerce.application import DeleteProductCommand, SetProductEnabledCommand, UpsertProductCommand
 from aicrm_next.commerce.dto import ProductUpsertRequest
 from aicrm_next.commerce.repo import build_commerce_repository
+from aicrm_next.public_product import h5_wechat_pay
 from aicrm_next.shared.errors import ContractError, NotFoundError
 
 from .domain import BUY_BUTTON_TEXT, cta_text_for_status, entitlement_status, remaining_days, text, validate_duration_days
 from .dto import ServicePeriodProductCreateRequest, ServicePeriodProductUpdateRequest
+from .member_grid import DEFAULT_PAGE_SIZE, empty_view_config, member_grid_schema
 from .repo import ServicePeriodRepository, build_service_period_repository
 from .repo import reset_service_period_fixture_state as _reset_repo_fixture_state
 
@@ -219,6 +222,100 @@ class ListServicePeriodMembersQuery:
         return self._repo.members(service_product_id, status=text(status) or None, limit=max(1, min(int(limit or 50), 200)), offset=max(0, int(offset or 0)))
 
 
+class GetServicePeriodMemberGridSchemaQuery:
+    def __init__(self, repo: ServicePeriodRepository | None = None) -> None:
+        self._repo = repo or build_service_period_repository()
+
+    def __call__(self, service_product_id: str) -> dict[str, Any]:
+        if not self._repo.get_product(service_product_id):
+            raise NotFoundError("service period product not found")
+        return {"ok": True, "schema": member_grid_schema()}
+
+
+class ListServicePeriodMemberViewsQuery:
+    def __init__(self, repo: ServicePeriodRepository | None = None) -> None:
+        self._repo = repo or build_service_period_repository()
+
+    def __call__(self, service_product_id: str) -> dict[str, Any]:
+        return self._repo.list_member_views(service_product_id)
+
+
+class CreateServicePeriodMemberViewCommand:
+    def __init__(self, repo: ServicePeriodRepository | None = None) -> None:
+        self._repo = repo or build_service_period_repository()
+
+    def __call__(
+        self,
+        service_product_id: str,
+        *,
+        name: str,
+        config: dict[str, Any] | None,
+        actor: str,
+    ) -> dict[str, Any]:
+        return self._repo.create_member_view(
+            service_product_id,
+            name=name,
+            config=config if isinstance(config, dict) else empty_view_config(),
+            actor=text(actor) or "system",
+        )
+
+
+class UpdateServicePeriodMemberViewCommand:
+    def __init__(self, repo: ServicePeriodRepository | None = None) -> None:
+        self._repo = repo or build_service_period_repository()
+
+    def __call__(
+        self,
+        service_product_id: str,
+        view_id: str,
+        *,
+        name: str,
+        config: dict[str, Any],
+        expected_version: int,
+        actor: str,
+    ) -> dict[str, Any]:
+        return self._repo.update_member_view(
+            service_product_id,
+            view_id,
+            name=name,
+            config=config,
+            expected_version=int(expected_version or 0),
+            actor=text(actor) or "system",
+        )
+
+
+class DeleteServicePeriodMemberViewCommand:
+    def __init__(self, repo: ServicePeriodRepository | None = None) -> None:
+        self._repo = repo or build_service_period_repository()
+
+    def __call__(self, service_product_id: str, view_id: str, *, expected_version: int) -> dict[str, Any]:
+        return self._repo.delete_member_view(
+            service_product_id,
+            view_id,
+            expected_version=int(expected_version or 0),
+        )
+
+
+class QueryServicePeriodMemberGridQuery:
+    def __init__(self, repo: ServicePeriodRepository | None = None) -> None:
+        self._repo = repo or build_service_period_repository()
+
+    def __call__(
+        self,
+        service_product_id: str,
+        *,
+        config: dict[str, Any] | None,
+        limit: int = DEFAULT_PAGE_SIZE,
+        cursor: str = "",
+    ) -> dict[str, Any]:
+        return self._repo.query_member_grid(
+            service_product_id,
+            config=config if isinstance(config, dict) else empty_view_config(),
+            limit=max(1, min(int(limit or DEFAULT_PAGE_SIZE), 200)),
+            cursor=text(cursor),
+        )
+
+
 class UpdateServicePeriodMemberRemarkCommand:
     def __init__(self, repo: ServicePeriodRepository | None = None) -> None:
         self._repo = repo or build_service_period_repository()
@@ -230,9 +327,25 @@ class UpdateServicePeriodMemberRemarkCommand:
         return self._repo.update_member_remark(service_product_id, text(unionid), normalized_remark)
 
 
-class GetServicePeriodPublicStateQuery:
+class UpdateServicePeriodMemberAllianceCommand:
     def __init__(self, repo: ServicePeriodRepository | None = None) -> None:
         self._repo = repo or build_service_period_repository()
+
+    def __call__(self, service_product_id: str, unionid: str, *, alliance: str) -> dict[str, Any]:
+        if not self._repo.get_product(service_product_id):
+            raise NotFoundError("service period product not found")
+        normalized_alliance = text(alliance)[:500]
+        return self._repo.update_member_alliance(service_product_id, text(unionid), normalized_alliance)
+
+
+class GetServicePeriodPublicStateQuery:
+    def __init__(
+        self,
+        repo: ServicePeriodRepository | None = None,
+        lead_qr_resolver: Callable[[dict[str, Any]], dict[str, Any]] | None = None,
+    ) -> None:
+        self._repo = repo or build_service_period_repository()
+        self._lead_qr_resolver = lead_qr_resolver or h5_wechat_pay.resolve_product_lead_qr
 
     def __call__(self, link_slug: str, *, unionid: str = "") -> dict[str, Any]:
         product = self._repo.get_public_product_by_slug(link_slug)
@@ -245,6 +358,19 @@ class GetServicePeriodPublicStateQuery:
             "remaining_days": remaining_days((entitlement or {}).get("end_at")),
             "end_at": text((entitlement or {}).get("end_at")),
         }
+        lead_qr: dict[str, Any] = {}
+        if status == "active":
+            try:
+                resolved_lead_qr = self._lead_qr_resolver(dict(product.get("trade_product") or {}))
+                if isinstance(resolved_lead_qr, dict) and text(resolved_lead_qr.get("qr_url")):
+                    lead_qr = {
+                        "channel_id": int(resolved_lead_qr.get("channel_id") or 0),
+                        "channel_name": text(resolved_lead_qr.get("channel_name")),
+                        "qr_url": text(resolved_lead_qr.get("qr_url")),
+                        "status": text(resolved_lead_qr.get("status")),
+                    }
+            except (TypeError, ValueError, RuntimeError):
+                lead_qr = {}
         return {
             "ok": True,
             "product": {
@@ -256,6 +382,7 @@ class GetServicePeriodPublicStateQuery:
             },
             "service_product": product,
             "entitlement": entitlement_payload,
+            "lead_qr": lead_qr,
             "cta_text": cta_text_for_status(status),
             "checkout_url": f"/s/{product.get('link_slug')}/pay",
             "create_order_url": f"/api/h5/service-period-products/{product.get('link_slug')}/wechat-pay/jsapi/orders",

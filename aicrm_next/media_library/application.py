@@ -8,7 +8,7 @@ from aicrm_next.integration_gateway.media_adapters import build_cloud_storage_ad
 from aicrm_next.shared.errors import ContractError
 from aicrm_next.shared import runtime
 
-from .dto import AttachmentUpsertRequest, ImageFromBase64Request, ImageFromUrlRequest, ImageUpsertRequest, MiniprogramUpsertRequest
+from .dto import AttachmentUpsertRequest, GroupInviteBindingEnsureRequest, GroupInviteBindingUpdateRequest, GroupInviteUpsertRequest, ImageFromBase64Request, ImageFromUrlRequest, ImageUpsertRequest, MiniprogramUpsertRequest
 from .repo import MediaLibraryRepository, build_media_library_repository, normalize_tags
 
 
@@ -54,6 +54,27 @@ def _side_effect_plan(*, operation: str, idempotency_key: str = "", reason: str 
         "idempotency_required": False,
         "idempotency_reason": reason,
     }
+
+
+def _upload_side_effect_plan(*, operation: str, idempotency_key: str, wecom_sync: dict[str, Any]) -> dict[str, Any]:
+    plan = _side_effect_plan(
+        operation=operation,
+        idempotency_key=idempotency_key,
+        reason="source row is durable before audited WeCom media synchronization",
+    )
+    status = str(wecom_sync.get("status") or "")
+    if status in {"succeeded", "failed_retryable", "failed_terminal", "blocked"}:
+        plan["wecom_media_upload"] = "executed" if wecom_sync.get("real_external_call_executed") else status
+        plan["real_external_call"] = "executed" if wecom_sync.get("real_external_call_executed") else "not_executed"
+        plan["audit"] = "external_effect_job"
+    return plan
+
+
+def _numeric_material_id(item: dict[str, Any]) -> int:
+    try:
+        return int(item.get("id") or 0)
+    except (TypeError, ValueError):
+        return 0
 
 
 def _child_idempotency_key(idempotency_key: str | None, suffix: str) -> str | None:
@@ -105,6 +126,26 @@ class GetMediaItemQuery:
         return {"ok": True, "item": item}
 
 
+class EnsureGroupInviteBindingCommand:
+    def __init__(self, repo: MediaLibraryRepository | None = None) -> None:
+        self._repo = repo or build_media_library_repository()
+
+    def __call__(self, payload: GroupInviteBindingEnsureRequest | dict[str, Any]) -> dict[str, Any]:
+        data = payload.model_dump() if hasattr(payload, "model_dump") else dict(payload)
+        item = self._repo.ensure_group_invite_binding(data)
+        return {"ok": True, "item": item, "binding_id": item.get("id"), "binding_status": item.get("binding_status") or "pending"}
+
+
+class UpdateGroupInviteBindingCommand:
+    def __init__(self, repo: MediaLibraryRepository | None = None) -> None:
+        self._repo = repo or build_media_library_repository()
+
+    def __call__(self, item_id: str, payload: GroupInviteBindingUpdateRequest | dict[str, Any]) -> dict[str, Any]:
+        data = payload.model_dump() if hasattr(payload, "model_dump") else dict(payload)
+        item = self._repo.save_item("group_invite", {**data, "binding_status": "ready"}, item_id)
+        return {"ok": True, "item": item, "binding_id": item.get("id"), "binding_status": item.get("binding_status") or "ready"}
+
+
 class GetImageVariantQuery:
     def __init__(self, repo: MediaLibraryRepository | None = None) -> None:
         self._repo = repo or build_media_library_repository()
@@ -138,7 +179,7 @@ class UpsertMediaItemCommand:
 
     def __call__(
         self,
-        payload: dict[str, Any] | ImageUpsertRequest | AttachmentUpsertRequest | MiniprogramUpsertRequest,
+        payload: dict[str, Any] | ImageUpsertRequest | AttachmentUpsertRequest | MiniprogramUpsertRequest | GroupInviteUpsertRequest,
         item_id: str | None = None,
         *,
         idempotency_key: str | None = None,
@@ -290,14 +331,32 @@ class UploadImageCommand:
                 "ai_metadata": {},
             },
         )
+        from aicrm_next.wecom_media_jobs import sync_uploaded_material
+
+        material_id = _numeric_material_id(item)
+        wecom_sync = (
+            sync_uploaded_material(
+                material_kind="image",
+                material_id=material_id,
+                upload_kind="image",
+                actor="media_library_upload",
+                idempotency_key=str(idempotency_key or ""),
+            )
+            if material_id > 0
+            else {"status": "skipped", "reason": "non_persistent_material_id", "real_external_call_executed": False}
+        )
+        if wecom_sync.get("status") == "succeeded":
+            item = self._repo.get_item("image", str(item.get("id") or 0)) or item
         return {
             "ok": True,
             "item": item,
-            "source_status": "local_upload",
-            "side_effect_plan": _side_effect_plan(
+            "source_status": "local_upload_wecom_synced" if wecom_sync.get("status") == "succeeded" else "local_upload",
+            "wecom_sync": wecom_sync,
+            "real_external_call_executed": bool(wecom_sync.get("real_external_call_executed")),
+            "side_effect_plan": _upload_side_effect_plan(
                 operation="image_upload",
                 idempotency_key=str(idempotency_key or ""),
-                reason="multipart upload writes the media library row and local/postgres payload only; no external storage or WeCom media upload is executed",
+                wecom_sync=wecom_sync,
             ),
         }
 
@@ -329,14 +388,32 @@ class UploadAttachmentCommand:
                 "enabled": True,
             },
         )
+        from aicrm_next.wecom_media_jobs import sync_uploaded_material
+
+        material_id = _numeric_material_id(item)
+        wecom_sync = (
+            sync_uploaded_material(
+                material_kind="attachment",
+                material_id=material_id,
+                upload_kind="attachment",
+                actor="media_library_upload",
+                idempotency_key=str(idempotency_key or ""),
+            )
+            if material_id > 0
+            else {"status": "skipped", "reason": "non_persistent_material_id", "real_external_call_executed": False}
+        )
+        if wecom_sync.get("status") == "succeeded":
+            item = self._repo.get_item("attachment", str(item.get("id") or 0)) or item
         return {
             "ok": True,
             "item": item,
-            "source_status": "local_upload",
-            "side_effect_plan": _side_effect_plan(
+            "source_status": "local_upload_wecom_synced" if wecom_sync.get("status") == "succeeded" else "local_upload",
+            "wecom_sync": wecom_sync,
+            "real_external_call_executed": bool(wecom_sync.get("real_external_call_executed")),
+            "side_effect_plan": _upload_side_effect_plan(
                 operation="attachment_upload",
                 idempotency_key=str(idempotency_key or ""),
-                reason="multipart upload writes the media library row and local/postgres payload only; no external storage or WeCom media upload is executed",
+                wecom_sync=wecom_sync,
             ),
         }
 

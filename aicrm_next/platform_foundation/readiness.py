@@ -7,6 +7,11 @@ from typing import Any
 from aicrm_next.shared.wecom_runtime import load_wecom_execution_config
 from aicrm_next.shared.release import current_release_sha
 from aicrm_next.shared.runtime import production_environment, raw_database_url, runtime_setting
+from aicrm_next.platform_foundation.internal_events.config import (
+    allowed_consumers,
+    allowed_event_consumer_pairs,
+    allowed_event_types,
+)
 
 from .repository import ConnectionFactory, RuntimeReadinessRepository
 
@@ -58,15 +63,23 @@ def _probe_migration(repository: RuntimeReadinessRepository, expected_heads: tup
 
 
 def _probe_queues(repository: RuntimeReadinessRepository) -> dict[str, Any]:
-    metrics = repository.queue_metrics()
+    metrics = repository.queue_metrics(
+        allowed_pairs=tuple(allowed_event_consumer_pairs()),
+        allowed_event_types=tuple(allowed_event_types()),
+        allowed_consumers=tuple(allowed_consumers()),
+    )
+    actionable_internal_age = metrics.get(
+        "internal_event_actionable_oldest_pending_age_seconds",
+        metrics.get("internal_event_oldest_pending_age_seconds", 0),
+    )
     max_age = max(
         metrics.get("webhook_oldest_pending_age_seconds", 0),
-        metrics.get("internal_event_oldest_pending_age_seconds", 0),
+        actionable_internal_age,
         metrics.get("external_effect_oldest_pending_age_seconds", 0),
     )
     terminal_count = (
         metrics.get("webhook_dead_letter_count", 0)
-        + metrics.get("internal_event_terminal_count", 0)
+        + metrics.get("internal_event_actionable_terminal_count", metrics.get("internal_event_terminal_count", 0))
         + metrics.get("external_effect_terminal_count", 0)
     )
     max_age_threshold = _threshold("AICRM_READINESS_MAX_QUEUE_AGE_SECONDS", 3600)

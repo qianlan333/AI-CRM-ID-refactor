@@ -6,6 +6,23 @@ migration_guard:
   new_table_registration_after: "0073_drop_hxc_snapshot_external_userid"
   migration_file_prefix_after: "0073"
 
+legacy_production_table_defaults: &legacy_production_table_defaults
+  lifecycle: legacy
+  write_owner: legacy.production_runtime
+  read_owners:
+    - production compatibility and historical audit
+  replacement: canonical Next owner must be assigned before mutation or retirement
+  drop_candidate: false
+  drop_after: ""
+  runtime_entrypoints:
+    - preserved production compatibility data
+  migration_source: pre-convergence production schema
+  pii_level: internal_contact
+  guard_tests:
+    - tests/test_data_table_lifecycle_guard.py
+    - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
+  notes: Explicitly registered production relation outside the converged Next schema. It may remain present or be removed by a separately reviewed migration, but it is no longer unmanaged drift.
+
 tables:
   auth_api_clients:
     domain: auth_platform
@@ -500,12 +517,14 @@ tables:
     read_owners:
       - aicrm_next.admin_config.repository
       - aicrm_next.message_archive.repo
+      - aicrm_next.platform_foundation.push_center.capability_repository
       - aicrm_next.questionnaire.repo
       - aicrm_next.shared.runtime_settings
     replacement: ""
     drop_candidate: false
     runtime_entrypoints:
       - admin config app settings
+      - push capability runtime eligibility projection
       - runtime settings fallback
       - external effects configuration
     migration_source: 0084_id_dev_p1_baseline_tables
@@ -514,7 +533,7 @@ tables:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_repository_ownership_guard.py
       - tests/test_unionid_identity_refactor_schema.py::test_id_dev_p1_baseline_tables_exist_in_fresh_schema
-    notes: Runtime app configuration table. Secret values are masked at API/UI boundaries.
+    notes: Runtime app configuration table. Push consumers read capability gates through the platform push-center boundary; secret values are masked at API/UI boundaries.
 
   mcp_tool_settings:
     domain: admin_config
@@ -1437,6 +1456,53 @@ tables:
       - tests/test_material_library_table_boundary.py
     notes: Canonical attachment material table used by media library and send-content picker.
 
+  group_invite_library:
+    domain: media_library
+    lifecycle: canonical
+    write_owner: aicrm_next.media_library.postgres_repo
+    read_owners:
+      - aicrm_next.media_library.postgres_repo
+      - aicrm_next.send_content.postgres_repo
+      - aicrm_next.automation_engine.group_ops.material_resolver
+      - aicrm_next.channel_entry.application
+      - campaign/group-ops SendContentPackage consumers
+    replacement: none; canonical reusable WeCom group invite link card table
+    drop_candidate: false
+    drop_after: ""
+    runtime_entrypoints:
+      - group invite library admin API
+      - material picker
+      - SendContentPackage group invite resolution
+      - private/group broadcast material resolution
+      - channel welcome material resolution
+    migration_source: 0117_group_invite_cards, 0119_group_invite_bindings
+    guard_tests:
+      - tests/test_data_table_lifecycle_guard.py
+      - tests/test_material_library_table_boundary.py
+      - tests/test_group_invite_library.py
+    notes: Canonical WeCom gm join-link binding keyed by chat_id; supports pending, ready and invalid lifecycle states, resolves to msgtype link, and never requires media_id.
+
+  wecom_media_leases:
+    domain: media_library
+    lifecycle: canonical
+    write_owner: aicrm_next.media_library.wecom_lease
+    read_owners:
+      - aicrm_next.media_library.wecom_lease
+      - aicrm_next.automation_engine.group_ops.material_resolver
+      - aicrm_next.data_health.checks
+    replacement: none; canonical lifecycle state for temporary WeCom media ids
+    drop_candidate: false
+    drop_after: ""
+    runtime_entrypoints:
+      - media library upload synchronization
+      - external effect media refresh worker
+      - final-dispatch material resolution
+    migration_source: 0115_wecom_media_leases
+    guard_tests:
+      - tests/test_data_table_lifecycle_guard.py
+      - tests/test_wecom_media_lease.py
+    notes: Stores per-corp and per-upload-kind temporary media leases; source bytes remain in canonical media library tables.
+
   questionnaires:
     domain: questionnaire
     lifecycle: canonical
@@ -1444,17 +1510,20 @@ tables:
     read_owners:
       - aicrm_next.questionnaire.repo
       - aicrm_next.questionnaire.api
+      - aicrm_next.questionnaire.operations
     replacement: none; canonical questionnaire definition table
     drop_candidate: false
     drop_after: ""
     runtime_entrypoints:
       - questionnaire admin API
+      - questionnaire operations admin API
       - questionnaire H5 read/submit
-    migration_source: migrations/baselines/0001_post_legacy.sql; list index added by 0106_critical_read_path_indexes
+      - questionnaire completion action resolution
+    migration_source: migrations/baselines/0001_post_legacy.sql; list index added by 0106_critical_read_path_indexes; nullable lead channel binding added by 0116_questionnaire_operations_config
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_repository_ownership_guard.py
-    notes: Canonical questionnaire metadata table; fresh schemas must include it for admin and H5 flows.
+    notes: Canonical questionnaire metadata and operations configuration table; lead_channel_id is nullable, indexed, and uses ON DELETE SET NULL without historical backfill.
 
   questionnaire_questions:
     domain: questionnaire
@@ -1673,11 +1742,11 @@ tables:
       - internal event publish
       - internal event worker
       - internal event admin API
-    migration_source: 0043_internal_event_queue
+    migration_source: 0043_internal_event_queue, fan-out manifest added by 0122_internal_event_fanout_manifest
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_event_effect_table_lineage.py
-    notes: Canonical internal event ledger. Business-critical producers first write internal_event_outbox in the business transaction; relay atomically creates this row and all registered consumer runs. Handlers must enqueue external_effect_job for real external calls.
+    notes: Canonical internal event ledger. Business-critical producers first write internal_event_outbox in the business transaction; the single canonical relay owner snapshots the sealed fan-out manifest, atomically creates this row and the exact declared consumer-run set, and only then marks outbox relayed. Handlers must enqueue external_effect_job for real external calls.
 
   internal_event_outbox:
     domain: internal_events
@@ -1709,7 +1778,7 @@ tables:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_event_effect_table_lineage.py
       - tests/test_internal_event_outbox.py
-    notes: Technical outbox only; payment and refund state share this durability boundary. Commerce repair only ensures idempotent outbox continuations and never executes consumers or providers.
+    notes: Technical outbox only; payment and refund state share this durability boundary. scripts/run_internal_event_worker.py is the only relay owner; scoped schedulers are consumer-only. Commerce and internal-event repair only ensure idempotent technical continuations and never execute consumers or providers.
 
   internal_event_consumer_run:
     domain: internal_events
@@ -1729,7 +1798,7 @@ tables:
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_event_effect_table_lineage.py
-    notes: Tracks consumer execution state for internal_event. Automatic due is limited to pending, due failed_retryable, and stale running; failed_terminal/blocked require audited manual action.
+    notes: Tracks consumer execution state for internal_event. Relay creates the exact manifest-declared set atomically; manifest-aware reconciliation may only restore missing declared rows without executing handlers. Automatic due is limited to pending, due failed_retryable, and stale running; failed_terminal/blocked require audited manual action.
 
   internal_event_consumer_attempt:
     domain: internal_events
@@ -1868,7 +1937,7 @@ tables:
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
-    notes: Registered from the id-dev public schema so schema_drift_guard can fail closed on future unmanaged table changes.
+    notes: Registered from the formal production public schema so schema_drift_guard can fail closed on future unmanaged table changes.
 
   admin_operation_logs:
     domain: admin_config
@@ -1919,7 +1988,7 @@ tables:
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
-    notes: Registered from the id-dev public schema so schema_drift_guard can fail closed on future unmanaged table changes.
+    notes: Registered from the formal production public schema so schema_drift_guard can fail closed on future unmanaged table changes.
 
   admin_users:
     domain: admin_config
@@ -1937,7 +2006,7 @@ tables:
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
-    notes: Registered from the id-dev public schema so schema_drift_guard can fail closed on future unmanaged table changes.
+    notes: Registered from the formal production public schema so schema_drift_guard can fail closed on future unmanaged table changes.
 
   ai_audience_inbound_webhook_event:
     domain: ai_audience_ops
@@ -1955,7 +2024,7 @@ tables:
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
-    notes: Registered from the id-dev public schema so schema_drift_guard can fail closed on future unmanaged table changes.
+    notes: Registered from the formal production public schema so schema_drift_guard can fail closed on future unmanaged table changes.
 
   ai_audience_member_current:
     domain: ai_audience_ops
@@ -1975,7 +2044,7 @@ tables:
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
-    notes: Registered from the id-dev public schema so schema_drift_guard can fail closed on future unmanaged table changes.
+    notes: Registered from the formal production public schema so schema_drift_guard can fail closed on future unmanaged table changes.
 
   ai_audience_member_event:
     domain: ai_audience_ops
@@ -1993,7 +2062,7 @@ tables:
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
-    notes: Registered from the id-dev public schema so schema_drift_guard can fail closed on future unmanaged table changes.
+    notes: Registered from the formal production public schema so schema_drift_guard can fail closed on future unmanaged table changes.
 
   ai_audience_outbound_subscription:
     domain: ai_audience_ops
@@ -2011,7 +2080,7 @@ tables:
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
-    notes: Registered from the id-dev public schema so schema_drift_guard can fail closed on future unmanaged table changes.
+    notes: Registered from the formal production public schema so schema_drift_guard can fail closed on future unmanaged table changes.
 
   ai_audience_package:
     domain: ai_audience_ops
@@ -2030,7 +2099,7 @@ tables:
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
-    notes: Registered from the id-dev public schema so schema_drift_guard can fail closed on future unmanaged table changes.
+    notes: Registered from the formal production public schema so schema_drift_guard can fail closed on future unmanaged table changes.
 
   ai_audience_package_dependency:
     domain: ai_audience_ops
@@ -2048,7 +2117,7 @@ tables:
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
-    notes: Registered from the id-dev public schema so schema_drift_guard can fail closed on future unmanaged table changes.
+    notes: Registered from the formal production public schema so schema_drift_guard can fail closed on future unmanaged table changes.
 
   ai_audience_package_run:
     domain: ai_audience_ops
@@ -2066,7 +2135,7 @@ tables:
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
-    notes: Registered from the id-dev public schema so schema_drift_guard can fail closed on future unmanaged table changes.
+    notes: Registered from the formal production public schema so schema_drift_guard can fail closed on future unmanaged table changes.
 
   ai_audience_package_sender:
     domain: ai_audience_ops
@@ -2084,7 +2153,7 @@ tables:
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
-    notes: Registered from the id-dev public schema so schema_drift_guard can fail closed on future unmanaged table changes.
+    notes: Registered from the formal production public schema so schema_drift_guard can fail closed on future unmanaged table changes.
 
   ai_audience_package_version:
     domain: ai_audience_ops
@@ -2102,7 +2171,7 @@ tables:
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
-    notes: Registered from the id-dev public schema so schema_drift_guard can fail closed on future unmanaged table changes.
+    notes: Registered from the formal production public schema so schema_drift_guard can fail closed on future unmanaged table changes.
 
   alembic_version:
     domain: schema_migration
@@ -2120,7 +2189,7 @@ tables:
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
-    notes: Registered from the id-dev public schema so schema_drift_guard can fail closed on future unmanaged table changes.
+    notes: Registered from the formal production public schema so schema_drift_guard can fail closed on future unmanaged table changes.
 
   alipay_pay_order_events:
     domain: commerce
@@ -2138,7 +2207,7 @@ tables:
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
-    notes: Registered from the id-dev public schema so schema_drift_guard can fail closed on future unmanaged table changes.
+    notes: Registered from the formal production public schema so schema_drift_guard can fail closed on future unmanaged table changes.
 
   alipay_pay_orders:
     domain: commerce
@@ -2156,7 +2225,7 @@ tables:
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
-    notes: Registered from the id-dev public schema so schema_drift_guard can fail closed on future unmanaged table changes.
+    notes: Registered from the formal production public schema so schema_drift_guard can fail closed on future unmanaged table changes.
 
   automation_agent_audit_log:
     domain: automation_agents
@@ -2177,7 +2246,7 @@ tables:
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
-    notes: Registered from the id-dev public schema so schema_drift_guard can fail closed on future unmanaged table changes.
+    notes: Registered from the formal production public schema so schema_drift_guard can fail closed on future unmanaged table changes.
 
   automation_agent_config:
     domain: automation_agents
@@ -2195,7 +2264,7 @@ tables:
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
-    notes: Registered from the id-dev public schema so schema_drift_guard can fail closed on future unmanaged table changes.
+    notes: Registered from the formal production public schema so schema_drift_guard can fail closed on future unmanaged table changes.
 
   automation_agent_idempotency:
     domain: automation_agents
@@ -2216,7 +2285,7 @@ tables:
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
-    notes: Registered from the id-dev public schema so schema_drift_guard can fail closed on future unmanaged table changes.
+    notes: Registered from the formal production public schema so schema_drift_guard can fail closed on future unmanaged table changes.
 
   automation_agent_llm_call_log:
     domain: ai_audience_ops
@@ -2270,7 +2339,7 @@ tables:
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
-    notes: Registered from the id-dev public schema so schema_drift_guard can fail closed on future unmanaged table changes.
+    notes: Registered from the formal production public schema so schema_drift_guard can fail closed on future unmanaged table changes.
 
   automation_agent_runtime_config:
     domain: automation_agents
@@ -2288,7 +2357,7 @@ tables:
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
-    notes: Registered from the id-dev public schema so schema_drift_guard can fail closed on future unmanaged table changes.
+    notes: Registered from the formal production public schema so schema_drift_guard can fail closed on future unmanaged table changes.
 
   automation_agent_webhook_batch:
     domain: automation_agents
@@ -2306,7 +2375,7 @@ tables:
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
-    notes: Registered from the id-dev public schema so schema_drift_guard can fail closed on future unmanaged table changes.
+    notes: Registered from the formal production public schema so schema_drift_guard can fail closed on future unmanaged table changes.
 
   automation_agent_webhook_item:
     domain: automation_agents
@@ -2324,7 +2393,7 @@ tables:
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
-    notes: Registered from the id-dev public schema so schema_drift_guard can fail closed on future unmanaged table changes.
+    notes: Registered from the formal production public schema so schema_drift_guard can fail closed on future unmanaged table changes.
 
   automation_agents:
     domain: automation_agents
@@ -2345,7 +2414,7 @@ tables:
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
-    notes: Registered from the id-dev public schema so schema_drift_guard can fail closed on future unmanaged table changes.
+    notes: Registered from the formal production public schema so schema_drift_guard can fail closed on future unmanaged table changes.
 
   automation_ai_push_log:
     domain: automation_engine
@@ -2363,7 +2432,7 @@ tables:
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
-    notes: Registered from the id-dev public schema so schema_drift_guard can fail closed on future unmanaged table changes.
+    notes: Registered from the formal production public schema so schema_drift_guard can fail closed on future unmanaged table changes.
 
   automation_channel:
     domain: channel_entry
@@ -2374,17 +2443,19 @@ tables:
       - aicrm_next.channel_entry
     read_owners:
       - historical schema drift guard
+      - aicrm_next.automation_engine.channel_completion
     replacement: none; active production schema table registered during schema drift closeout
     drop_candidate: false
     drop_after: ""
     runtime_entrypoints:
       - existing production runtime
+      - questionnaire completion channel validation and QR projection
     migration_source: migrations/baselines/0001_post_legacy.sql
     pii_level: internal_contact
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
-    notes: Registered from the id-dev public schema so schema_drift_guard can fail closed on future unmanaged table changes.
+    notes: Canonical channel metadata; questionnaire reads it only through the channel application-layer completion projection.
 
   automation_channel_assignee:
     domain: channel_entry
@@ -2405,7 +2476,7 @@ tables:
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
-    notes: Registered from the id-dev public schema so schema_drift_guard can fail closed on future unmanaged table changes.
+    notes: Registered from the formal production public schema so schema_drift_guard can fail closed on future unmanaged table changes.
 
   automation_channel_assignment_event:
     domain: channel_entry
@@ -2426,7 +2497,7 @@ tables:
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
-    notes: Registered from the id-dev public schema so schema_drift_guard can fail closed on future unmanaged table changes.
+    notes: Registered from the formal production public schema so schema_drift_guard can fail closed on future unmanaged table changes.
 
   automation_channel_contact:
     domain: channel_entry
@@ -2447,7 +2518,7 @@ tables:
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
-    notes: Registered from the id-dev public schema so schema_drift_guard can fail closed on future unmanaged table changes.
+    notes: Registered from the formal production public schema so schema_drift_guard can fail closed on future unmanaged table changes.
 
   automation_channel_qrcode_asset:
     domain: channel_entry
@@ -2458,17 +2529,19 @@ tables:
       - aicrm_next.channel_entry
     read_owners:
       - historical schema drift guard
+      - aicrm_next.automation_engine.channel_completion
     replacement: none; active production schema table registered during schema drift closeout
     drop_candidate: false
     drop_after: ""
     runtime_entrypoints:
       - existing production runtime
+      - questionnaire completion QR asset projection
     migration_source: migrations/baselines/0001_post_legacy.sql
     pii_level: internal_contact
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
-    notes: Registered from the id-dev public schema so schema_drift_guard can fail closed on future unmanaged table changes.
+    notes: Canonical channel QR asset table; questionnaire stores only channel ID and resolves the active QR asset at response time.
 
   automation_channel_scene_alias:
     domain: channel_entry
@@ -2489,7 +2562,7 @@ tables:
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
-    notes: Registered from the id-dev public schema so schema_drift_guard can fail closed on future unmanaged table changes.
+    notes: Registered from the formal production public schema so schema_drift_guard can fail closed on future unmanaged table changes.
 
   automation_frequency_budget:
     domain: automation_engine
@@ -2507,7 +2580,7 @@ tables:
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
-    notes: Registered from the id-dev public schema so schema_drift_guard can fail closed on future unmanaged table changes.
+    notes: Registered from the formal production public schema so schema_drift_guard can fail closed on future unmanaged table changes.
 
   automation_frequency_consumption:
     domain: automation_engine
@@ -2525,7 +2598,7 @@ tables:
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
-    notes: Registered from the id-dev public schema so schema_drift_guard can fail closed on future unmanaged table changes.
+    notes: Registered from the formal production public schema so schema_drift_guard can fail closed on future unmanaged table changes.
 
   automation_sop_template:
     domain: automation_engine
@@ -2543,7 +2616,7 @@ tables:
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
-    notes: Registered from the id-dev public schema so schema_drift_guard can fail closed on future unmanaged table changes.
+    notes: Registered from the formal production public schema so schema_drift_guard can fail closed on future unmanaged table changes.
 
   automation_touch_delivery_log:
     domain: automation_engine
@@ -2561,7 +2634,7 @@ tables:
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
-    notes: Registered from the id-dev public schema so schema_drift_guard can fail closed on future unmanaged table changes.
+    notes: Registered from the formal production public schema so schema_drift_guard can fail closed on future unmanaged table changes.
 
   broadcast_job_events:
     domain: broadcast_jobs
@@ -2602,7 +2675,7 @@ tables:
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
-    notes: Registered from the id-dev public schema so schema_drift_guard can fail closed on future unmanaged table changes.
+    notes: Registered from the formal production public schema so schema_drift_guard can fail closed on future unmanaged table changes.
 
   broadcast_queue_notification_settings:
     domain: broadcast_jobs
@@ -2620,7 +2693,7 @@ tables:
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
-    notes: Registered from the id-dev public schema so schema_drift_guard can fail closed on future unmanaged table changes.
+    notes: Registered from the formal production public schema so schema_drift_guard can fail closed on future unmanaged table changes.
 
   cloud_agent_audit_log:
     domain: cloud_orchestrator
@@ -2638,7 +2711,7 @@ tables:
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
-    notes: Registered from the id-dev public schema so schema_drift_guard can fail closed on future unmanaged table changes.
+    notes: Registered from the formal production public schema so schema_drift_guard can fail closed on future unmanaged table changes.
 
   cloud_approval_tokens:
     domain: cloud_orchestrator
@@ -2656,7 +2729,7 @@ tables:
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
-    notes: Registered from the id-dev public schema so schema_drift_guard can fail closed on future unmanaged table changes.
+    notes: Registered from the formal production public schema so schema_drift_guard can fail closed on future unmanaged table changes.
 
   cloud_broadcast_plan_recipient_messages:
     domain: cloud_orchestrator
@@ -2721,7 +2794,7 @@ tables:
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
-    notes: Registered from the id-dev public schema so schema_drift_guard can fail closed on future unmanaged table changes.
+    notes: Registered from the formal production public schema so schema_drift_guard can fail closed on future unmanaged table changes.
 
   contacts:
     domain: contacts
@@ -2739,7 +2812,7 @@ tables:
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
-    notes: Registered from the id-dev public schema so schema_drift_guard can fail closed on future unmanaged table changes.
+    notes: Registered from the formal production public schema so schema_drift_guard can fail closed on future unmanaged table changes.
 
   crm_user_identity:
     domain: identity_contact
@@ -2760,6 +2833,7 @@ tables:
       - aicrm_next.identity_contact
       - aicrm_next.message_archive
       - aicrm_next.questionnaire
+      - aicrm_next.radar_links
       - aicrm_next.sidebar_write
     replacement: none; active production schema table registered during schema drift closeout
     drop_candidate: false
@@ -2771,7 +2845,7 @@ tables:
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
-    notes: Unionid is the only canonical business identity. Channel entry, public payment projection, and sidebar are bounded ingress adapters; every alias lookup uses aicrm_next.identity_contact.resolver and every write targets a resolved active unionid.
+    notes: Unionid is the only canonical business identity. Channel entry, public payment projection, and sidebar are bounded ingress adapters; every mutation alias lookup uses aicrm_next.identity_contact.resolver and every write targets a resolved active unionid. Declared cross-context read projections must fail closed instead of selecting an arbitrary identity when an alias has multiple candidates.
 
   crm_user_identity_conflicts:
     domain: identity_contact
@@ -2810,7 +2884,7 @@ tables:
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
-    notes: Registered from the id-dev public schema so schema_drift_guard can fail closed on future unmanaged table changes.
+    notes: Registered from the formal production public schema so schema_drift_guard can fail closed on future unmanaged table changes.
 
   crm_user_identity_resolution_queue:
     domain: identity_contact
@@ -2832,6 +2906,8 @@ tables:
       - existing production runtime
     migration_source: migrations/baselines/0001_post_legacy.sql
     pii_level: internal_contact
+    status_enum:
+      column: status
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
@@ -2853,7 +2929,7 @@ tables:
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
-    notes: Registered from the id-dev public schema so schema_drift_guard can fail closed on future unmanaged table changes.
+    notes: Registered from the formal production public schema so schema_drift_guard can fail closed on future unmanaged table changes.
 
   customer_list_index_next:
     domain: customer_read_model
@@ -2871,7 +2947,7 @@ tables:
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
-    notes: Registered from the id-dev public schema so schema_drift_guard can fail closed on future unmanaged table changes.
+    notes: Registered from the formal production public schema so schema_drift_guard can fail closed on future unmanaged table changes.
 
   customer_recent_message_next:
     domain: customer_read_model
@@ -2889,7 +2965,7 @@ tables:
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
-    notes: Registered from the id-dev public schema so schema_drift_guard can fail closed on future unmanaged table changes.
+    notes: Registered from the formal production public schema so schema_drift_guard can fail closed on future unmanaged table changes.
 
   customer_timeline_event_next:
     domain: customer_read_model
@@ -2907,7 +2983,7 @@ tables:
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
-    notes: Registered from the id-dev public schema so schema_drift_guard can fail closed on future unmanaged table changes.
+    notes: Registered from the formal production public schema so schema_drift_guard can fail closed on future unmanaged table changes.
 
   external_contact_bindings:
     domain: identity_contact
@@ -2949,7 +3025,7 @@ tables:
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
-    notes: Registered from the id-dev public schema so schema_drift_guard can fail closed on future unmanaged table changes.
+    notes: Registered from the formal production public schema so schema_drift_guard can fail closed on future unmanaged table changes.
 
   external_push_config:
     domain: external
@@ -2970,7 +3046,7 @@ tables:
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
-    notes: Registered from the id-dev public schema so schema_drift_guard can fail closed on future unmanaged table changes.
+    notes: Registered from the formal production public schema so schema_drift_guard can fail closed on future unmanaged table changes.
 
   group_chats:
     domain: group_ops
@@ -2988,7 +3064,7 @@ tables:
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
-    notes: Registered from the id-dev public schema so schema_drift_guard can fail closed on future unmanaged table changes.
+    notes: Registered from the formal production public schema so schema_drift_guard can fail closed on future unmanaged table changes.
 
   group_ops_workspace_allowlist_snapshots:
     domain: group_ops
@@ -3142,7 +3218,7 @@ tables:
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
-    notes: Registered from the id-dev public schema so schema_drift_guard can fail closed on future unmanaged table changes.
+    notes: Registered from the formal production public schema so schema_drift_guard can fail closed on future unmanaged table changes.
 
   legacy_webhook_cleanup_audit:
     domain: legacy_webhook_cleanup
@@ -3206,13 +3282,14 @@ tables:
     write_owner: aicrm_next.radar_links
     read_owners:
       - radar admin event list, export, and aggregate statistics
+      - external radar logical-click read model
     replacement: none; append-only Radar access event ledger
     drop_candidate: false
     drop_after: ""
     runtime_entrypoints:
       - Radar landing and trusted OAuth callback
       - signed Radar viewer-session content events
-    migration_source: 0102_questionnaire_radar_invariants
+    migration_source: 0102_questionnaire_radar_invariants; external-feed index 0118_external_radar_read_api
     pii_level: direct_contact
     retention_policy: retained with the owning radar link and deleted by the link foreign-key cascade
     guard_tests:
@@ -3236,7 +3313,7 @@ tables:
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
-    notes: Registered from the id-dev public schema so schema_drift_guard can fail closed on future unmanaged table changes.
+    notes: Registered from the formal production public schema so schema_drift_guard can fail closed on future unmanaged table changes.
 
   radar_pdf_preview_assets:
     domain: radar
@@ -3254,7 +3331,7 @@ tables:
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
-    notes: Registered from the id-dev public schema so schema_drift_guard can fail closed on future unmanaged table changes.
+    notes: Registered from the formal production public schema so schema_drift_guard can fail closed on future unmanaged table changes.
 
   sync_runs:
     domain: admin_jobs
@@ -3277,7 +3354,7 @@ tables:
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
-    notes: Registered from the id-dev public schema so schema_drift_guard can fail closed on future unmanaged table changes.
+    notes: Registered from the formal production public schema so schema_drift_guard can fail closed on future unmanaged table changes.
 
   user_ops_hxc_dashboard_meta:
     domain: user_ops
@@ -3295,7 +3372,7 @@ tables:
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
-    notes: Registered from the id-dev public schema so schema_drift_guard can fail closed on future unmanaged table changes.
+    notes: Registered from the formal production public schema so schema_drift_guard can fail closed on future unmanaged table changes.
 
   user_ops_hxc_dashboard_snapshot:
     domain: user_ops
@@ -3313,7 +3390,7 @@ tables:
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
-    notes: Registered from the id-dev public schema so schema_drift_guard can fail closed on future unmanaged table changes.
+    notes: Registered from the formal production public schema so schema_drift_guard can fail closed on future unmanaged table changes.
 
   user_ops_hxc_send_config:
     domain: user_ops
@@ -3331,7 +3408,7 @@ tables:
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
-    notes: Registered from the id-dev public schema so schema_drift_guard can fail closed on future unmanaged table changes.
+    notes: Registered from the formal production public schema so schema_drift_guard can fail closed on future unmanaged table changes.
 
   webhook_inbox:
     domain: webhook_ingress
@@ -3352,7 +3429,93 @@ tables:
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
-    notes: Registered from the id-dev public schema so schema_drift_guard can fail closed on future unmanaged table changes.
+    notes: Registered from the formal production public schema so schema_drift_guard can fail closed on future unmanaged table changes.
+
+  commerce_coupons:
+    domain: commerce
+    lifecycle: canonical
+    write_owner: aicrm_next.commerce.coupons
+    read_owners:
+      - aicrm_next.commerce.coupons
+      - aicrm_next.commerce.coupons.checker
+    replacement: none; canonical fixed-amount coupon campaign definition
+    drop_candidate: false
+    drop_after: ""
+    runtime_entrypoints:
+      - aicrm_next.commerce.coupons.admin_api
+      - aicrm_next.commerce.coupons.public_api
+    migration_source: 0114_commerce_coupons
+    pii_level: internal
+    guard_tests:
+      - tests/test_commerce_coupon_migration.py
+      - tests/test_data_table_lifecycle_guard.py
+    notes: Stores coupon rules and aggregate issuance count; first successful claim freezes financial and eligibility fields in application/domain validation.
+
+  commerce_coupon_product_bindings:
+    domain: commerce
+    lifecycle: canonical
+    write_owner: aicrm_next.commerce.coupons
+    read_owners:
+      - aicrm_next.commerce.coupons
+      - aicrm_next.commerce.coupons.checker
+    replacement: none; canonical coupon to unified trade product binding
+    drop_candidate: false
+    drop_after: ""
+    runtime_entrypoints:
+      - aicrm_next.commerce.coupons.admin_api
+      - aicrm_next.commerce.coupons.public_api
+      - aicrm_next.public_product.h5_wechat_pay
+      - aicrm_next.service_period.api
+    migration_source: 0114_commerce_coupons
+    pii_level: none
+    guard_tests:
+      - tests/test_commerce_coupon_migration.py
+      - tests/test_data_table_lifecycle_guard.py
+    notes: Both ordinary and service-period products bind through wechat_pay_products; no second service-period coupon engine exists.
+
+  commerce_coupon_claims:
+    domain: commerce
+    lifecycle: canonical
+    write_owner: aicrm_next.commerce.coupons
+    read_owners:
+      - aicrm_next.commerce.coupons
+      - aicrm_next.commerce.coupons.checker
+    replacement: none; canonical user coupon instance with immutable amount and validity snapshots
+    drop_candidate: false
+    drop_after: ""
+    runtime_entrypoints:
+      - aicrm_next.commerce.coupons.public_api
+      - aicrm_next.public_product.h5_wechat_pay
+      - aicrm_next.service_period.api
+      - aicrm_next.commerce.coupons.checker
+    migration_source: 0114_commerce_coupons
+    pii_level: direct_contact
+    guard_tests:
+      - tests/test_commerce_coupon_migration.py
+      - tests/test_data_table_lifecycle_guard.py
+    notes: Unionid-keyed claim instance. Admin projections must expose only masked identity values.
+
+  commerce_coupon_redemptions:
+    domain: commerce
+    lifecycle: canonical
+    write_owner: aicrm_next.commerce.coupons
+    read_owners:
+      - aicrm_next.commerce.coupons
+      - aicrm_next.commerce.coupons.checker
+      - aicrm_next.commerce.fulfillment_reconciliation
+    replacement: none; canonical coupon reservation consumption and release ledger
+    drop_candidate: false
+    drop_after: ""
+    runtime_entrypoints:
+      - aicrm_next.public_product.h5_wechat_pay
+      - aicrm_next.commerce.order_reconciliation
+      - aicrm_next.commerce.coupons.checker
+    migration_source: 0114_commerce_coupons
+    pii_level: financial
+    guard_tests:
+      - tests/test_commerce_coupon_migration.py
+      - tests/test_data_table_lifecycle_guard.py
+    notes: A claim and order can have at most one active reservation; released rows remain as reconciliation audit evidence.
 
   wechat_pay_order_events:
     domain: commerce
@@ -3370,7 +3533,7 @@ tables:
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
-    notes: Registered from the id-dev public schema so schema_drift_guard can fail closed on future unmanaged table changes.
+    notes: Registered from the formal production public schema so schema_drift_guard can fail closed on future unmanaged table changes.
 
   wechat_pay_order_identity_repair:
     domain: commerce
@@ -3411,6 +3574,66 @@ tables:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_service_period_schema.py
     notes: Stores duration/link/membership snapshot for service period products while trade fields remain in wechat_pay_products.
+
+  service_period_member_views:
+    domain: service_period
+    lifecycle: canonical
+    write_owner: aicrm_next.service_period
+    read_owners:
+      - aicrm_next.service_period
+    replacement: none; shared saved member-grid views for each service period product
+    drop_candidate: false
+    drop_after: ""
+    runtime_entrypoints:
+      - aicrm_next.service_period.api
+      - aicrm_next.service_period.application
+    migration_source: 0120_service_period_member_views
+    pii_level: internal_contact
+    guard_tests:
+      - tests/test_data_table_lifecycle_guard.py
+      - tests/test_service_period_schema.py
+      - tests/test_service_period_member_grid.py
+    notes: Stores versioned filter, sort, and grouping configuration shared by administrators. Configuration is validated against the code-owned ten-field registry and never stores member values, alliance, or remark text.
+
+  service_period_member_collaborators:
+    domain: service_period
+    lifecycle: canonical
+    write_owner: aicrm_next.service_period
+    read_owners:
+      - aicrm_next.service_period
+    replacement: none; resource ACL for service-period member-grid workspaces
+    drop_candidate: false
+    drop_after: ""
+    runtime_entrypoints:
+      - aicrm_next.service_period.api
+      - aicrm_next.service_period.member_grid_sharing
+    migration_source: 0121_service_period_member_grid_sharing
+    pii_level: internal_contact
+    guard_tests:
+      - tests/test_data_table_lifecycle_guard.py
+      - tests/test_service_period_schema.py
+      - tests/test_service_period_member_grid_sharing.py
+    notes: Stores product-scoped read/edit collaborator grants and optimistic-lock versions; super admins remain implicit.
+
+  service_period_member_shares:
+    domain: service_period
+    lifecycle: canonical
+    write_owner: aicrm_next.service_period
+    read_owners:
+      - aicrm_next.service_period
+    replacement: none; revocable signed public share state for member-grid workspaces
+    drop_candidate: false
+    drop_after: ""
+    runtime_entrypoints:
+      - aicrm_next.service_period.api
+      - aicrm_next.service_period.member_grid_sharing
+    migration_source: 0121_service_period_member_grid_sharing
+    pii_level: internal_contact
+    guard_tests:
+      - tests/test_data_table_lifecycle_guard.py
+      - tests/test_service_period_schema.py
+      - tests/test_service_period_member_grid_sharing.py
+    notes: Stores only enabled state, random public id, generation, and audit metadata; signed share tokens are never persisted.
 
   service_period_entitlements:
     domain: service_period
@@ -3458,12 +3681,57 @@ tables:
       - tests/test_service_period_schema.py
     notes: Idempotent activation, renewal, expiry, refund/disable/admin-adjustment and failure event log for service period changes.
 
+  service_period_huangyoucan_usage_snapshot:
+    domain: service_period
+    lifecycle: projection
+    write_owner: aicrm_next.service_period
+    read_owners:
+      - aicrm_next.service_period
+      - aicrm_next.customer_read_model
+    replacement: none; local readonly HuangYouCan usage projection for service period views
+    drop_candidate: false
+    drop_after: ""
+    runtime_entrypoints:
+      - scripts.run_huangyoucan_usage_sync
+      - aicrm_next.service_period.api
+      - aicrm_next.customer_read_model.sidebar_v2
+    migration_source: 0107_hyc_usage_snapshot
+    pii_level: internal_contact
+    guard_tests:
+      - tests/test_data_table_lifecycle_guard.py
+      - tests/test_service_period_schema.py
+      - tests/test_huangyoucan_usage_sync.py
+    notes: Transactionally replaced last-known-good projection. Stores HuangYouCan user ID, unionid, mobile MD5, usage metrics, and refresh time; never stores plaintext phone or message content.
+
+  service_period_huangyoucan_usage_sync_runs:
+    domain: service_period
+    lifecycle: event
+    write_owner: aicrm_next.service_period
+    read_owners:
+      - aicrm_next.service_period
+    replacement: none; HuangYouCan usage projection sync audit trail
+    drop_candidate: false
+    drop_after: ""
+    runtime_entrypoints:
+      - scripts.run_huangyoucan_usage_sync
+    migration_source: 0107_hyc_usage_snapshot
+    pii_level: none
+    guard_tests:
+      - tests/test_data_table_lifecycle_guard.py
+      - tests/test_service_period_schema.py
+      - tests/test_huangyoucan_usage_sync.py
+    notes: Records terminal success or failure for each non-dry-run sync while failed refreshes preserve the previous successful snapshot.
+
   wechat_pay_orders:
     domain: commerce
     lifecycle: canonical
     write_owner: aicrm_next.commerce.wechat_pay_service
+    write_owners:
+      - aicrm_next.commerce.coupons
+      - aicrm_next.commerce.wechat_pay_service
     read_owners:
       - aicrm_next.admin_read_model
+      - aicrm_next.commerce.coupons.checker
       - aicrm_next.customer_read_model
       - aicrm_next.external_push
       - aicrm_next.platform_foundation.internal_events
@@ -3479,7 +3747,7 @@ tables:
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
-    notes: Registered from the id-dev public schema so schema_drift_guard can fail closed on future unmanaged table changes.
+    notes: Registered from the formal production public schema so schema_drift_guard can fail closed on future unmanaged table changes. The coupon owner may only write additive coupon claim and immutable amount snapshot fields inside the payment order transaction.
 
   wechat_pay_product_page_slices:
     domain: commerce
@@ -3497,13 +3765,14 @@ tables:
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
-    notes: Registered from the id-dev public schema so schema_drift_guard can fail closed on future unmanaged table changes.
+    notes: Registered from the formal production public schema so schema_drift_guard can fail closed on future unmanaged table changes.
 
   wechat_pay_products:
     domain: commerce
     lifecycle: canonical
     write_owner: aicrm_next.commerce.wechat_pay_service
     read_owners:
+      - aicrm_next.commerce.coupons
       - aicrm_next.external_push
       - aicrm_next.service_period
       - aicrm_next.customer_read_model.sidebar_v2
@@ -3518,7 +3787,7 @@ tables:
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
-    notes: Registered from the id-dev public schema so schema_drift_guard can fail closed on future unmanaged table changes.
+    notes: Registered from the formal production public schema so schema_drift_guard can fail closed on future unmanaged table changes.
 
   wechat_pay_refunds:
     domain: commerce
@@ -3555,7 +3824,7 @@ tables:
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
-    notes: Registered from the id-dev public schema so schema_drift_guard can fail closed on future unmanaged table changes.
+    notes: Registered from the formal production public schema so schema_drift_guard can fail closed on future unmanaged table changes.
 
   wechat_shop_sync_runs:
     domain: commerce
@@ -3573,7 +3842,7 @@ tables:
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
-    notes: Registered from the id-dev public schema so schema_drift_guard can fail closed on future unmanaged table changes.
+    notes: Registered from the formal production public schema so schema_drift_guard can fail closed on future unmanaged table changes.
 
   wecom_corp_tag_groups:
     domain: customer_tags
@@ -3591,7 +3860,7 @@ tables:
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
-    notes: Registered from the id-dev public schema so schema_drift_guard can fail closed on future unmanaged table changes.
+    notes: Registered from the formal production public schema so schema_drift_guard can fail closed on future unmanaged table changes.
 
   wecom_corp_tags:
     domain: customer_tags
@@ -3609,7 +3878,7 @@ tables:
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
-    notes: Registered from the id-dev public schema so schema_drift_guard can fail closed on future unmanaged table changes.
+    notes: Registered from the formal production public schema so schema_drift_guard can fail closed on future unmanaged table changes.
 
   wecom_external_contact_event_logs:
     domain: identity_contact
@@ -3631,7 +3900,7 @@ tables:
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
-    notes: Registered from the id-dev public schema so schema_drift_guard can fail closed on future unmanaged table changes.
+    notes: Registered from the formal production public schema so schema_drift_guard can fail closed on future unmanaged table changes.
 
   wecom_external_contact_follow_users:
     domain: identity_contact
@@ -3652,7 +3921,7 @@ tables:
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
-    notes: Registered from the id-dev public schema so schema_drift_guard can fail closed on future unmanaged table changes.
+    notes: Registered from the formal production public schema so schema_drift_guard can fail closed on future unmanaged table changes.
 
   wecom_external_contact_identity_map:
     domain: identity_contact
@@ -3673,7 +3942,7 @@ tables:
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
-    notes: Registered from the id-dev public schema so schema_drift_guard can fail closed on future unmanaged table changes.
+    notes: Registered from the formal production public schema so schema_drift_guard can fail closed on future unmanaged table changes.
 
   wecom_group_chat_snapshots:
     domain: group_ops
@@ -3691,4 +3960,395 @@ tables:
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
-    notes: Registered from the id-dev public schema so schema_drift_guard can fail closed on future unmanaged table changes.
+    notes: Registered from the formal production public schema so schema_drift_guard can fail closed on future unmanaged table changes.
+
+  customer_read_model_refresh_state:
+    domain: customer_read_model
+    lifecycle: read_model
+    write_owner: aicrm_next.customer_read_model.refresh
+    read_owners:
+      - aicrm_next.data_health
+    replacement: none; singleton evidence for the managed customer projection refresh
+    drop_candidate: false
+    drop_after: ""
+    runtime_entrypoints:
+      - openclaw-customer-read-model-refresh.service
+      - data health projection freshness probe
+    migration_source: 0108_customer_read_model_refresh
+    pii_level: aggregate_only
+    guard_tests:
+      - tests/test_customer_read_model_refresh.py
+      - tests/test_data_health_checks.py
+      - tests/test_data_table_lifecycle_guard.py
+    notes: Count-only refresh evidence. It contains no customer identifiers or payloads.
+
+  admin_sso_states:
+    <<: *legacy_production_table_defaults
+    domain: legacy_auth
+
+  automation_agent_output_export_job:
+    <<: *legacy_production_table_defaults
+    domain: legacy_automation_agent
+
+  automation_agent_prompt_registry:
+    <<: *legacy_production_table_defaults
+    domain: legacy_automation_agent
+
+  automation_agent_router_config:
+    <<: *legacy_production_table_defaults
+    domain: legacy_automation_agent
+
+  automation_agent_skill_call_audit:
+    <<: *legacy_production_table_defaults
+    domain: legacy_automation_agent
+
+  automation_agent_skill_registry:
+    <<: *legacy_production_table_defaults
+    domain: legacy_automation_agent
+
+  automation_focus_send_batch:
+    <<: *legacy_production_table_defaults
+    domain: legacy_automation
+
+  automation_focus_send_batch_item:
+    <<: *legacy_production_table_defaults
+    domain: legacy_automation
+
+  automation_laohuang_chat_job:
+    <<: *legacy_production_table_defaults
+    domain: legacy_automation
+
+  automation_message_activity_sync_item:
+    <<: *legacy_production_table_defaults
+    domain: legacy_automation
+
+  automation_message_activity_sync_run:
+    <<: *legacy_production_table_defaults
+    domain: legacy_automation
+
+  automation_operation_task_execution:
+    <<: *legacy_production_table_defaults
+    domain: legacy_automation
+
+  automation_operation_task_execution_item:
+    <<: *legacy_production_table_defaults
+    domain: legacy_automation
+
+  automation_operation_task_group:
+    <<: *legacy_production_table_defaults
+    domain: legacy_automation
+
+  automation_operation_template_audit_log:
+    <<: *legacy_production_table_defaults
+    domain: legacy_automation
+
+  automation_operation_template_idempotency:
+    <<: *legacy_production_table_defaults
+    domain: legacy_automation
+
+  automation_operation_templates:
+    <<: *legacy_production_table_defaults
+    domain: legacy_automation
+
+  automation_profile_segment_category:
+    <<: *legacy_production_table_defaults
+    domain: legacy_automation_profile
+
+  automation_profile_segment_option_mapping:
+    <<: *legacy_production_table_defaults
+    domain: legacy_automation_profile
+
+  automation_profile_segment_template:
+    <<: *legacy_production_table_defaults
+    domain: legacy_automation_profile
+
+  automation_profile_segment_template_audit_log:
+    <<: *legacy_production_table_defaults
+    domain: legacy_automation_profile
+
+  automation_profile_segment_template_idempotency:
+    <<: *legacy_production_table_defaults
+    domain: legacy_automation_profile
+
+  automation_reply_monitor_config:
+    <<: *legacy_production_table_defaults
+    domain: legacy_automation
+
+  automation_reply_monitor_queue:
+    <<: *legacy_production_table_defaults
+    domain: legacy_automation
+
+  automation_sop_batch:
+    <<: *legacy_production_table_defaults
+    domain: legacy_automation
+
+  automation_sop_batch_item:
+    <<: *legacy_production_table_defaults
+    domain: legacy_automation
+
+  automation_sop_pool_config:
+    <<: *legacy_production_table_defaults
+    domain: legacy_automation
+
+  automation_sop_progress:
+    <<: *legacy_production_table_defaults
+    domain: legacy_automation
+
+  automation_workflow_agent_binding:
+    <<: *legacy_production_table_defaults
+    domain: legacy_automation
+
+  automation_workflow_audience:
+    <<: *legacy_production_table_defaults
+    domain: legacy_automation
+
+  callback_jobs:
+    <<: *legacy_production_table_defaults
+    domain: legacy_callback
+
+  class_term_tag_mapping:
+    <<: *legacy_production_table_defaults
+    domain: legacy_customer_tags
+
+  codex_schema_backups:
+    <<: *legacy_production_table_defaults
+    domain: legacy_schema_audit
+
+  conversion_feedback:
+    <<: *legacy_production_table_defaults
+    domain: legacy_conversion
+
+  customer_marketing_state_current:
+    <<: *legacy_production_table_defaults
+    domain: legacy_customer_projection
+
+  customer_marketing_state_history:
+    <<: *legacy_production_table_defaults
+    domain: legacy_customer_projection
+
+  customer_read_model_current:
+    <<: *legacy_production_table_defaults
+    domain: legacy_customer_projection
+
+  customer_value_segment_current:
+    <<: *legacy_production_table_defaults
+    domain: legacy_customer_projection
+
+  customer_value_segment_history:
+    <<: *legacy_production_table_defaults
+    domain: legacy_customer_projection
+
+  marketing_state_current:
+    <<: *legacy_production_table_defaults
+    domain: legacy_customer_projection
+
+  marketing_value_segment_current:
+    <<: *legacy_production_table_defaults
+    domain: legacy_customer_projection
+
+  people:
+    <<: *legacy_production_table_defaults
+    domain: legacy_identity
+
+  prod_fix_backup_ai_audience_regression_20260624:
+    <<: *legacy_production_table_defaults
+    domain: legacy_schema_backup
+
+  prod_test_backup_ai_audience_20260623:
+    <<: *legacy_production_table_defaults
+    domain: legacy_schema_backup
+
+  prod_test_backup_ai_audience_full_20260623:
+    <<: *legacy_production_table_defaults
+    domain: legacy_schema_backup
+
+  questionnaire_scrm_apply_logs:
+    <<: *legacy_production_table_defaults
+    domain: legacy_questionnaire
+
+  routing_rule_config:
+    <<: *legacy_production_table_defaults
+    domain: legacy_routing
+
+  schema_migrations:
+    <<: *legacy_production_table_defaults
+    domain: legacy_schema_audit
+
+  signup_tag_rules:
+    <<: *legacy_production_table_defaults
+    domain: legacy_customer_tags
+
+  user_ops_activation_status_source:
+    <<: *legacy_production_table_defaults
+    domain: legacy_user_ops
+
+  user_ops_do_not_disturb:
+    <<: *legacy_production_table_defaults
+    domain: legacy_user_ops
+
+  user_ops_experience_leads:
+    <<: *legacy_production_table_defaults
+    domain: legacy_user_ops
+
+  user_ops_huangxiaocan_activation_source:
+    <<: *legacy_production_table_defaults
+    domain: legacy_user_ops
+
+  user_ops_import_batches:
+    <<: *legacy_production_table_defaults
+    domain: legacy_user_ops
+
+  wechat_pay_order_export_jobs:
+    <<: *legacy_production_table_defaults
+    domain: legacy_commerce
+
+  wechat_shop_tokens:
+    <<: *legacy_production_table_defaults
+    domain: legacy_commerce
+
+  operation_cycle_attempts:
+    domain: operation_cycles
+    lifecycle: canonical
+    write_owner: aicrm_next.operation_cycles
+    read_owners:
+      - operation cycle report projection
+      - operation cycle admin read model
+    replacement: none; canonical execution-attempt lineage
+    drop_candidate: false
+    drop_after: ""
+    runtime_entrypoints:
+      - operation cycle snapshot ingestion
+      - operation cycle run detail
+    migration_source: 0113_operation_cycles
+    pii_level: none
+    guard_tests:
+      - tests/test_operation_cycles_migration.py
+      - tests/test_data_table_lifecycle_guard.py
+
+  operation_cycle_metrics:
+    domain: operation_cycles
+    lifecycle: read_model
+    write_owner: aicrm_next.operation_cycles
+    read_owners:
+      - operation cycle admin read model
+    replacement: none; canonical aggregate observation metrics
+    drop_candidate: false
+    drop_after: ""
+    runtime_entrypoints:
+      - operation cycle snapshot ingestion
+      - operation cycle run detail
+    migration_source: 0113_operation_cycles
+    pii_level: none
+    guard_tests:
+      - tests/test_operation_cycles_migration.py
+      - tests/test_data_table_lifecycle_guard.py
+
+  operation_cycle_references:
+    domain: operation_cycles
+    lifecycle: read_model
+    write_owner: aicrm_next.operation_cycles
+    read_owners:
+      - operation cycle admin evidence links
+    replacement: none; canonical hashed evidence references without attachments
+    drop_candidate: false
+    drop_after: ""
+    runtime_entrypoints:
+      - operation cycle snapshot ingestion
+      - operation cycle run detail
+    migration_source: 0113_operation_cycles
+    pii_level: none
+    guard_tests:
+      - tests/test_operation_cycles_migration.py
+      - tests/test_data_table_lifecycle_guard.py
+
+  operation_cycle_runs:
+    domain: operation_cycles
+    lifecycle: canonical
+    write_owner: aicrm_next.operation_cycles
+    read_owners:
+      - operation cycle admin read model
+    replacement: none; canonical latest run projection with independent status axes
+    drop_candidate: false
+    drop_after: ""
+    runtime_entrypoints:
+      - operation cycle snapshot ingestion
+      - operation cycle strategy and run reads
+    migration_source: 0113_operation_cycles
+    pii_level: none
+    guard_tests:
+      - tests/test_operation_cycles_migration.py
+      - tests/test_data_table_lifecycle_guard.py
+
+  operation_cycle_snapshots:
+    domain: operation_cycles
+    lifecycle: event
+    write_owner: aicrm_next.operation_cycles
+    read_owners:
+      - operation cycle projection rebuild
+      - operation cycle audit
+    replacement: none; immutable versioned aggregate snapshot ledger
+    drop_candidate: false
+    drop_after: ""
+    runtime_entrypoints:
+      - operation cycle snapshot ingestion
+      - operation cycle snapshot receipt read
+    migration_source: 0113_operation_cycles
+    pii_level: none
+    guard_tests:
+      - tests/test_operation_cycles_migration.py
+      - tests/test_operation_cycles_repository.py
+      - tests/test_data_table_lifecycle_guard.py
+
+  operation_cycle_stages:
+    domain: operation_cycles
+    lifecycle: canonical
+    write_owner: aicrm_next.operation_cycles
+    read_owners:
+      - operation cycle admin read model
+    replacement: none; canonical per-attempt stage projection
+    drop_candidate: false
+    drop_after: ""
+    runtime_entrypoints:
+      - operation cycle snapshot ingestion
+      - operation cycle run detail
+    migration_source: 0113_operation_cycles
+    pii_level: none
+    guard_tests:
+      - tests/test_operation_cycles_migration.py
+      - tests/test_data_table_lifecycle_guard.py
+
+  operation_cycle_strategies:
+    domain: operation_cycles
+    lifecycle: canonical
+    write_owner: aicrm_next.operation_cycles
+    read_owners:
+      - operation cycle admin read model
+    replacement: none; canonical operation strategy registry
+    drop_candidate: false
+    drop_after: ""
+    runtime_entrypoints:
+      - operation cycle snapshot ingestion
+      - operation cycle strategy reads
+    migration_source: 0113_operation_cycles
+    pii_level: none
+    guard_tests:
+      - tests/test_operation_cycles_migration.py
+      - tests/test_data_table_lifecycle_guard.py
+
+  operation_cycle_strategy_versions:
+    domain: operation_cycles
+    lifecycle: canonical
+    write_owner: aicrm_next.operation_cycles
+    read_owners:
+      - operation cycle admin read model
+    replacement: none; canonical versioned strategy definition
+    drop_candidate: false
+    drop_after: ""
+    runtime_entrypoints:
+      - operation cycle snapshot ingestion
+      - operation cycle strategy detail
+    migration_source: 0113_operation_cycles
+    pii_level: none
+    guard_tests:
+      - tests/test_operation_cycles_migration.py
+      - tests/test_data_table_lifecycle_guard.py
