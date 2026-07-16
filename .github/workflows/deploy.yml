@@ -228,6 +228,9 @@ jobs:
           username: ${{ secrets.ID_VALIDATION_DEPLOY_USER }}
           key: ${{ secrets.ID_VALIDATION_DEPLOY_SSH_KEY }}
           fingerprint: ${{ env.EXPECTED_SSH_HOST_FINGERPRINT }}
+          # stop-for-migration may legitimately drain a running timer service
+          # for up to 600s before migrations and health verification begin.
+          command_timeout: 30m
           script: |
             set -e
             set -o pipefail
