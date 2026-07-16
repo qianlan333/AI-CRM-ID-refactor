@@ -1223,9 +1223,22 @@ def test_deploy_runs_runtime_environment_as_repository_module():
 
     assert "python3 -m scripts.ops.ensure_runtime_environment" in workflow
     assert "python3 scripts/ops/ensure_runtime_environment.py" not in workflow
+    assert "RUNTIME_TARGET_ENVIRONMENT: production" in workflow
+    assert 'runtime_target_environment="${{ env.RUNTIME_TARGET_ENVIRONMENT }}"' in workflow
+    assert '--target-environment "$runtime_target_environment"' in workflow
+    assert '--target-environment "$deploy_target"' not in workflow
     persistence_index = workflow.index("python3 -m scripts.ops.ensure_runtime_environment")
     runtime_start_index = workflow.index("sudo systemctl start openclaw-wecom-postgres.service", persistence_index)
     flag_index = workflow.index("runtime_environment_args+=(--allow-missing-wechat-shop-callback-token)")
 
     assert flag_index < persistence_index < runtime_start_index
     assert '"${runtime_environment_args[@]}"' in workflow[persistence_index:runtime_start_index]
+
+
+def test_id_validation_release_marker_is_a_canonical_ignored_runtime_file():
+    ignored = (ROOT / ".gitignore").read_text(encoding="utf-8").splitlines()
+    workflow = TEST_DEPLOY_WORKFLOW.read_text(encoding="utf-8")
+
+    assert "/.release-sha" in ignored
+    assert "printf '%s\\n' \"$after_sha\" > .release-sha" in workflow
+    assert 'test "$(tr -d \'\\r\\n\' < .release-sha)" = "$verified_sha"' in workflow

@@ -1698,6 +1698,7 @@
     {
       "name": "ci_deploy",
       "paths": [
+        ".gitignore",
         ".github/**",
         "alembic.ini",
         "scripts/ci/**",

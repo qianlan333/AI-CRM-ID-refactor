@@ -923,6 +923,16 @@ def test_runtime_units_change_selects_deploy_contract_tests() -> None:
     assert result["architecture_gate"] == "full"
 
 
+def test_root_gitignore_change_selects_deploy_contract_tests() -> None:
+    result = _select(".gitignore")
+
+    assert "ci_deploy" in result["matched_scopes"]
+    assert "tests/test_deploy_workflow_contract.py" in result["python_tests"]
+    assert result["architecture_gate"] == "full"
+    assert result["unmatched_files"] == []
+    assert result["needs_postgres"] is False
+
+
 def test_database_baseline_and_ownership_change_selects_required_postgres_slice() -> None:
     result = _select(
         "migrations/baselines/0001_post_legacy.sql",
