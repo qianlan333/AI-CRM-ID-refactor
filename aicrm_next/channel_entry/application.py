@@ -42,6 +42,10 @@ from aicrm_next.platform_foundation.external_effects import (
 from aicrm_next.platform_foundation.internal_events import InternalEventService
 from aicrm_next.platform_foundation.external_effects.realtime import wake_external_effect_job
 from aicrm_next.platform_foundation.external_effects.adapters import ExternalEffectAdapterRegistry
+from aicrm_next.channel_entry.welcome_media_effects import (
+    WelcomeEffectGraphRequest,
+    build_welcome_effect_graph_repository,
+)
 
 CUSTOMER_NAME_PLACEHOLDER_RE = re.compile(r"\{\{\s*客户名\s*\}\}")
 LOGGER = logging.getLogger(__name__)
@@ -658,55 +662,52 @@ def _send_welcome(
         return {"attempted": False, "sent": False, "reason": "dry_run", "request_payload": payload}
     target_type, target_id, target_payload = _channel_entry_target(command)
     try:
-        job = _plan_channel_entry_effect(
-            command,
-            effect_type=WECOM_WELCOME_MESSAGE_SEND,
-            adapter_name="wecom_welcome_message",
-            operation="send",
-            target_type=target_type,
-            target_id=target_id,
-            business_id=str(channel_id),
-            idempotency_key=key,
-            payload={
-                **payload,
-                **target_payload,
-                "external_userid": command.external_contact_id,
-                "follow_user_userid": command.follow_user_userid,
-                "channel_id": channel_id,
-                "scene_value": scene,
-            },
-            payload_summary={
-                "external_userid": command.external_contact_id,
-                "target_type": target_type,
-                "target_id": target_id,
-                "target_unionid": text(target_payload.get("target_unionid")),
-                "follow_user_userid": command.follow_user_userid,
-                "channel_id": channel_id,
-                "scene_value": scene,
-                "welcome_code_present": bool(welcome_code),
-                "text_present": bool(text_content),
-                "attachment_count": len(attachments),
-            },
+        graph = build_welcome_effect_graph_repository().plan(
+            WelcomeEffectGraphRequest(
+                idempotency_key=f"channel_entry:{key}",
+                channel_id=channel_id,
+                corp_id=extract_corp_id(command.payload_json),
+                external_userid=command.external_contact_id,
+                follow_user_userid=command.follow_user_userid,
+                welcome_code=welcome_code,
+                target_type=target_type,
+                target_id=target_id,
+                target_payload=target_payload,
+                text_content=text_content,
+                attachments=tuple(attachments),
+                actor_id=text(command.operator_id or command.follow_user_userid),
+                source_event_id=str(command.event_log_id or ""),
+                scene_value=scene,
+            )
         )
     except Exception as exc:
         result = {"attempted": True, "sent": False, "reason": "external_effect_queue_failed", "welcome_code": welcome_code, "message": str(exc)}
         _log_effect(command, effect_type="welcome_message", idempotency_key=key, status="failed", channel_id=channel_id, scene_value=scene, reason="external_effect_queue_failed", request_json=payload, response_json=result)
         return result
-    immediate_dispatch_scheduled = _wake_channel_entry_external_effect_job(
-        job.get("id"),
-        effect_type=WECOM_WELCOME_MESSAGE_SEND,
-        reason="channel_entry_welcome_message",
-        adapter_registry=adapter_registry,
-    )
+    final_job_id = int(graph.get("final_effect_job_id") or 0)
+    immediate_dispatch_scheduled = False
+    if graph.get("status") == "ready":
+        immediate_dispatch_scheduled = _wake_channel_entry_external_effect_job(
+            final_job_id,
+            effect_type=WECOM_WELCOME_MESSAGE_SEND,
+            reason="channel_entry_welcome_message",
+            adapter_registry=adapter_registry,
+        )
     result = {
         "attempted": True,
         "sent": False,
         "queued": True,
         "reason": "external_effect_job_queued",
         "welcome_code": welcome_code,
-        "external_effect_job_id": job.get("id"),
+        "execution_id": graph.get("execution_id"),
+        "status_url": graph.get("status_url"),
+        "external_effect_job_id": final_job_id,
+        "external_effect_job_ids": graph.get("external_effect_job_ids") or [],
+        "upload_effect_job_ids": graph.get("upload_effect_job_ids") or [],
+        "dependency_status": graph.get("status"),
+        "duplicate": bool(graph.get("duplicate")),
         "immediate_dispatch_scheduled": immediate_dispatch_scheduled,
-        "immediate_dispatch_mode": "durable_callback_worker_inline_claim",
+        "immediate_dispatch_mode": "postgres_queue_trigger",
         "fallback_message": {},
         "welcome_effect_cancelled_for_fallback": False,
         "real_external_call_executed": False,

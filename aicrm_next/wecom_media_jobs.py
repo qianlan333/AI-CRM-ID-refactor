@@ -194,15 +194,27 @@ def enqueue_due_media_refreshes(
     *,
     dry_run: bool = False,
     now: datetime | None = None,
-    operator: str = "automation_ops_scheduler",
+    operator: str = "manual_media_repair",
     limit: int = 50,
     manager=None,
     repository=None,
+    repair_authorized: bool = False,
 ) -> dict[str, Any]:
+    """Run an explicit repair/backfill scan, never a normal timer path."""
+
+    if not repair_authorized or not str(operator or "").strip() or operator == "automation_ops_scheduler":
+        return {
+            "component": "wecom_media_lease_repair",
+            "status": "blocked",
+            "reason": "manual_repair_authorization_required",
+            "candidate_count": 0,
+            "enqueued_count": 0,
+            "errors": [],
+        }
     scanned_at = _utc(now)
     if production_environment() and not production_data_ready():
         return {
-            "component": "wecom_media_lease_refresher",
+            "component": "wecom_media_lease_repair",
             "status": "failed",
             "candidate_count": 0,
             "enqueued_count": 0,
@@ -212,7 +224,7 @@ def enqueue_due_media_refreshes(
     candidates = lease_manager.list_due_materials(limit=limit)
     if dry_run:
         return {
-            "component": "wecom_media_lease_refresher",
+            "component": "wecom_media_lease_repair",
             "status": "skipped",
             "reason": "dry_run",
             "candidate_count": len(candidates),
@@ -232,14 +244,14 @@ def enqueue_due_media_refreshes(
             material_id=material_id,
             upload_kind=upload_kind,
             actor=operator,
-            source_route="automation_ops_scheduler:wecom_media_lease_refresher",
+            source_route="manual_repair:wecom_media_lease_backfill",
             idempotency_key=f"media-refresh:{kind}:{material_id}:{upload_kind}:{bucket}",
             force_refresh=True,
             repository=repo,
         )
         enqueued.append({"job_id": int(job.get("id") or 0), **candidate})
     return {
-        "component": "wecom_media_lease_refresher",
+        "component": "wecom_media_lease_repair",
         "status": "ok",
         "candidate_count": len(candidates),
         "enqueued_count": len(enqueued),

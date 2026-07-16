@@ -168,6 +168,7 @@ def test_scheduler_enqueues_only_material_references_without_persisting_source_b
         repository=repository,
         operator="pytest",
         now=NOW,
+        repair_authorized=True,
     )
     job = repository.get_job(result["items"][0]["job_id"])
 

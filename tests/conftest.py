@@ -142,6 +142,8 @@ _TABLES_TO_TRUNCATE = [
     "automation_sop_batch",
     "automation_sop_template",
     "automation_agent_run",
+    "channel_welcome_effect_dependency",
+    "channel_welcome_effect_graph",
     "automation_group_ops_effect_dependency",
     "automation_group_ops_effect_material",
     "automation_group_ops_effect_graph",

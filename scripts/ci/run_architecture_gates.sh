@@ -31,6 +31,7 @@ run_fast() {
 "$PYTHON" scripts/ci/check_github_action_pins.py
 "$PYTHON" scripts/ci/check_queue_runtime_cutover_kernel.py
 "$PYTHON" scripts/ci/check_admin_queue_command_boundary.py
+"$PYTHON" scripts/ci/check_welcome_media_effect_ownership.py
 }
 
 run_db() {
