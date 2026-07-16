@@ -37,6 +37,7 @@ from .external_effects import content_payload_summary, parse_external_effect_sch
 
 STATUS_URL_PREFIX = "/api/admin/executions/"
 GROUP_OPS_EFFECT_BUSINESS_TYPE = "group_ops_effect_graph"
+MEDIA_PREPARATION_LEAD = timedelta(hours=12)
 
 
 def _utcnow() -> datetime:
@@ -50,6 +51,18 @@ def _stable_hash(value: Any, *, length: int = 32) -> str:
 
 def _execution_id(prefix: str = "exe_group_ops") -> str:
     return f"{prefix}_{uuid4().hex}"
+
+
+def _media_upload_available_at(scheduled_at: datetime) -> datetime:
+    """Open the media lane shortly before the business send is due.
+
+    WeCom temporary media expires after a few days.  Uploading at plan-create
+    time can therefore make a future send deterministically stale.  The queue
+    row keeps the business ``scheduled_at`` while ``available_at`` controls
+    when an idle media slot may actually claim the upload.
+    """
+
+    return max(_utcnow(), scheduled_at - MEDIA_PREPARATION_LEAD)
 
 
 @dataclass(frozen=True)
@@ -645,6 +658,8 @@ class SQLAlchemyGroupOpsEffectGraphRepository:
         material: GroupOpsEffectMaterial,
         library_material_id: int,
     ) -> dict[str, Any]:
+        business_due_at = request.normalized_scheduled_at()
+        upload_available_at = _media_upload_available_at(business_due_at)
         planned = ExternalEffectService().plan_effect(
             effect_type=WECOM_MEDIA_UPLOAD,
             adapter_name="wecom_media_upload",
@@ -682,7 +697,8 @@ class SQLAlchemyGroupOpsEffectGraphRepository:
             risk_level="low",
             execution_mode="execute",
             status="queued",
-            scheduled_at=_utcnow(),
+            scheduled_at=business_due_at,
+            available_at=upload_available_at,
             idempotency_key=f"{request.idempotency_key}:upload:{material.material_key}:v{source_version}",
             execution_id=_execution_id("exe_group_ops_upload"),
             parent_execution_id=execution_id,
@@ -1124,6 +1140,8 @@ class InMemoryGroupOpsEffectGraphRepository:
             )
             uploads: list[int] = []
             dependencies: dict[str, dict[str, Any]] = {}
+            business_due_at = request.normalized_scheduled_at()
+            upload_available_at = _media_upload_available_at(business_due_at)
             for index, material in enumerate(request.materials, start=1):
                 upload = self._service.plan_effect(
                     effect_type=WECOM_MEDIA_UPLOAD,
@@ -1154,6 +1172,8 @@ class InMemoryGroupOpsEffectGraphRepository:
                     source_event_id=request.source_event_id,
                     source_command_id=f"{request.source_command_id}:{material.material_key}",
                     status="queued",
+                    scheduled_at=business_due_at,
+                    available_at=upload_available_at,
                     idempotency_key=f"{request.idempotency_key}:upload:{material.material_key}:v1",
                     execution_id=_execution_id("exe_group_ops_upload"),
                     parent_execution_id=execution_id,

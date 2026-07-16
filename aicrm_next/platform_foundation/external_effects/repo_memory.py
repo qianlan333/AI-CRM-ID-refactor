@@ -58,6 +58,7 @@ class InMemoryExternalEffectRepository(ExternalEffectRepository):
                 return job
         now = utcnow()
         scheduled_at = request.scheduled_at or now
+        available_at = request.available_at or scheduled_at
         payload_summary = dict(request.payload_summary or {}) or _payload_summary(request.payload)
         row = {
             "id": self._next_id,
@@ -91,7 +92,7 @@ class InMemoryExternalEffectRepository(ExternalEffectRepository):
             "priority": int(request.priority or 100),
             "scheduled_at": public_datetime(scheduled_at),
             "lane": _execution_lane(request),
-            "available_at": public_datetime(scheduled_at),
+            "available_at": public_datetime(available_at),
             "ordering_key": _text(request.ordering_key) or _text(request.target_id) or f"effect:{key}",
             "fairness_key": _text(request.fairness_key) or _text(request.business_id) or _text(request.target_id) or "default",
             "rate_scope_key": _rate_scope_key(request),

@@ -27,6 +27,7 @@ def enqueue_transactional_external_effect_job(conn: Any, request: ExternalEffect
     idempotency_key = _idempotency_key(request)
     payload_summary = dict(request.payload_summary or {}) or _payload_summary(request.payload)
     scheduled_at = request.scheduled_at or utcnow()
+    available_at = request.available_at or scheduled_at
     execution_id = str(request.execution_id or "").strip() or "exe_" + uuid4().hex
     ordering_key = str(request.ordering_key or request.target_id or f"effect:{idempotency_key}").strip()
     fairness_key = str(request.fairness_key or request.business_id or request.target_id or "default").strip()
@@ -75,7 +76,7 @@ def enqueue_transactional_external_effect_job(conn: Any, request: ExternalEffect
             execution_id,
             str(request.parent_execution_id or "").strip(),
             _execution_lane(request),
-            public_datetime(scheduled_at),
+            public_datetime(available_at),
             ordering_key,
             fairness_key,
             rate_scope_key,
@@ -115,6 +116,7 @@ def enqueue_external_effect_job_in_session(session: Session, request: ExternalEf
     idempotency_key = _idempotency_key(request)
     payload_summary = dict(request.payload_summary or {}) or _payload_summary(request.payload)
     scheduled_at = request.scheduled_at or utcnow()
+    available_at = request.available_at or scheduled_at
     execution_id = str(request.execution_id or "").strip() or "exe_" + uuid4().hex
     ordering_key = str(request.ordering_key or request.target_id or f"effect:{idempotency_key}").strip()
     fairness_key = str(request.fairness_key or request.business_id or request.target_id or "default").strip()
@@ -138,7 +140,7 @@ def enqueue_external_effect_job_in_session(session: Session, request: ExternalEf
         "execution_id": execution_id,
         "parent_execution_id": str(request.parent_execution_id or "").strip(),
         "lane": _execution_lane(request),
-        "available_at": public_datetime(scheduled_at),
+        "available_at": public_datetime(available_at),
         "ordering_key": ordering_key,
         "fairness_key": fairness_key,
         "rate_scope_key": _rate_scope_key(request),

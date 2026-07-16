@@ -40,6 +40,7 @@ def _request(
     material_count: int = 1,
     source_kind: str = "direct_send",
     version: str = "v1",
+    scheduled_at: datetime | None = None,
 ) -> GroupOpsEffectGraphRequest:
     return GroupOpsEffectGraphRequest(
         idempotency_key=key,
@@ -59,7 +60,7 @@ def _request(
         source_module="pytest.group_ops",
         source_route="/pytest/group-ops",
         source_command_id=key,
-        scheduled_at=datetime.now(timezone.utc) + timedelta(hours=1),
+        scheduled_at=scheduled_at or datetime.now(timezone.utc) + timedelta(hours=1),
         version_fingerprint=version,
         materials=tuple(
             GroupOpsEffectMaterial(
@@ -147,6 +148,29 @@ def test_postgres_graph_is_atomic_across_material_and_effect_rows():
         ).fetchone()["count"]
     assert graph_count == 0
     assert effect_count == 0
+
+
+def test_postgres_future_send_keeps_media_ineligible_until_preparation_window():
+    due_at = datetime.now(timezone.utc) + timedelta(days=7)
+    planned = _repo().plan(
+        _request("postgres-future-media-window", material_count=1, scheduled_at=due_at)
+    )
+
+    with _connect() as connection:
+        upload = connection.execute(
+            "SELECT status, scheduled_at, available_at FROM external_effect_job WHERE id = %s",
+            (planned["upload_effect_job_ids"][0],),
+        ).fetchone()
+        final = connection.execute(
+            "SELECT status, scheduled_at, available_at FROM external_effect_job WHERE id = %s",
+            (planned["final_effect_job_id"],),
+        ).fetchone()
+
+    assert upload["status"] == "queued"
+    assert upload["scheduled_at"] == final["scheduled_at"]
+    assert timedelta(hours=11, minutes=59) <= due_at - upload["available_at"] <= timedelta(hours=12, seconds=1)
+    assert upload["available_at"] > datetime.now(timezone.utc)
+    assert final["status"] == "planned"
 
 
 def test_postgres_dependency_release_requires_every_upload_and_is_restart_idempotent():

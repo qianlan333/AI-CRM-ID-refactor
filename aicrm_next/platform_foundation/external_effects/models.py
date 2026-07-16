@@ -102,6 +102,7 @@ class ExternalEffectCreateRequest:
     requires_approval: bool = False
     execution_mode: ExternalEffectExecutionMode = "execute"
     scheduled_at: datetime | None = None
+    available_at: datetime | None = None
     priority: int = 100
     max_attempts: int = 5
     tenant_id: str = DEFAULT_TENANT_ID

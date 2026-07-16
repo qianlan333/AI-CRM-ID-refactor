@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
+
 from aicrm_next.automation_engine.group_ops.durable_effects_repository import (
     GroupOpsEffectGraphRequest,
     GroupOpsEffectMaterial,
@@ -17,6 +19,7 @@ def _request(
     materials: int = 0,
     source_kind: str = "direct_send",
     version: str = "v1",
+    scheduled_at: datetime | None = None,
 ) -> GroupOpsEffectGraphRequest:
     return GroupOpsEffectGraphRequest(
         idempotency_key=key,
@@ -36,6 +39,7 @@ def _request(
         source_module="pytest.group_ops",
         source_route="/pytest/group-ops",
         source_command_id=key,
+        scheduled_at=scheduled_at,
         version_fingerprint=version,
         materials=tuple(
             GroupOpsEffectMaterial(
@@ -68,6 +72,21 @@ def test_uploads_and_final_effect_are_independent_children_of_one_execution():
         assert upload.status == "queued"
         assert upload.parent_execution_id == planned["execution_id"]
     assert effects.get_job(planned["final_effect_job_id"]).parent_execution_id == planned["execution_id"]
+
+
+def test_future_send_opens_media_upload_only_inside_preparation_window():
+    effects, graphs = _repositories()
+    due_at = datetime.now(timezone.utc) + timedelta(days=7)
+    planned = graphs.plan(_request("graph-future-media", materials=1, scheduled_at=due_at))
+
+    upload = effects.get_job(planned["upload_effect_job_ids"][0])
+    final = effects.get_job(planned["final_effect_job_id"])
+    upload_available_at = datetime.fromisoformat(upload.available_at.replace("Z", "+00:00"))
+
+    assert upload.scheduled_at == final.scheduled_at
+    assert timedelta(hours=11, minutes=59) <= due_at - upload_available_at <= timedelta(hours=12, seconds=1)
+    assert upload_available_at > datetime.now(timezone.utc)
+    assert final.status == "planned"
 
 
 def test_partial_success_and_failure_never_release_final_effect():
