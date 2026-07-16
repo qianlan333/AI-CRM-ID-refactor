@@ -330,20 +330,13 @@ def process_channel_entry_runtime(
         identity_status=identity_status,
         runtime_status="received",
         payload_json=repo.json_safe(command.payload_json or {}),
+        enqueue_identity_resolution=True,
+        identity_resolution_reason="identity_pending_unionid",
     )
-    identity_queue: dict[str, Any] = {"ok": True}
-    try:
-        repo.enqueue_channel_entry_identity_resolution(
-            corp_id=corp_id,
-            external_userid=command.external_contact_id,
-            follow_user_userid=command.follow_user_userid,
-            payload_json=repo.json_safe(command.payload_json or {}),
-            reason="identity_pending_unionid",
-        )
-    except Exception as exc:
-        safe_log_exception(LOGGER, "channel entry identity resolution enqueue failed", exc, level=logging.WARNING)
-        identity_queue = {"ok": False, "reason": "identity_resolution_enqueue_failed", "message": str(exc)}
-    runtime_entry["identity_resolution_queue"] = identity_queue
+    runtime_entry.setdefault(
+        "identity_resolution_queue",
+        {"ok": False, "reason": "identity_resolution_enqueue_missing"},
+    )
     _log_effect(
         command,
         effect_type="channel_entry_runtime",
@@ -523,6 +516,39 @@ def _sync_identity_best_effort(
             else {"status": "skipped", "reason": "backfill_worker_owns_runtime_identity"}
         )
     return identity_sync
+
+
+def _plan_identity_resolution_for_event(
+    event: dict[str, Any],
+    *,
+    corp_id: str,
+    event_log_id: int | None,
+) -> dict[str, Any]:
+    """Persist provider work only; callback processing never calls WeCom here."""
+
+    try:
+        planned = repo.enqueue_channel_entry_identity_resolution(
+            corp_id=corp_id,
+            external_userid=text(event.get("ExternalUserID")),
+            follow_user_userid=text(event.get("UserID")),
+            payload_json=repo.json_safe(event),
+            reason="callback_identity_resolution_required",
+            event_log_id=event_log_id,
+        )
+    except Exception as exc:
+        safe_log_exception(LOGGER, "callback identity resolution effect planning failed", exc, level=logging.WARNING)
+        return {
+            "status": "failed",
+            "reason": "identity_resolution_effect_planning_failed",
+            "message": str(exc),
+            "real_external_call_executed": False,
+        }
+    return {
+        "status": "queued" if planned.get("external_effect_job_id") else "held",
+        "reason": "external_contact_detail_effect_queued" if planned.get("external_effect_job_id") else text(planned.get("reason")),
+        **planned,
+        "real_external_call_executed": False,
+    }
 
 
 def _welcome_attachments(channel: dict[str, Any]) -> tuple[list[dict[str, Any]], str]:
@@ -904,6 +930,7 @@ def process_wecom_external_contact_event(
     try:
         is_entry_event = text(event.get("Event")) == "change_external_contact" and text(event.get("ChangeType")) in ENTRY_CHANGE_TYPES
         if is_entry_event:
+            entry_identity_plan: dict[str, Any] = {}
             if text(event.get("State")) and text(event.get("ExternalUserID")):
                 entry = process_channel_entry(
                     ProcessChannelEntryCommand(
@@ -917,6 +944,10 @@ def process_wecom_external_contact_event(
                     external_effect_adapter_registry=external_effect_adapter_registry,
                 )
                 result.update({"handled": bool(entry.get("handled")), "entry_result": entry})
+                runtime_entry = entry.get("runtime_entry") if isinstance(entry.get("runtime_entry"), dict) else {}
+                candidate = runtime_entry.get("identity_resolution_queue") if isinstance(runtime_entry, dict) else {}
+                if isinstance(candidate, dict):
+                    entry_identity_plan = dict(candidate)
             else:
                 result["entry_result"] = {
                     "handled": False,
@@ -924,11 +955,19 @@ def process_wecom_external_contact_event(
                     "state_present": bool(text(event.get("State"))),
                     "external_userid_present": bool(text(event.get("ExternalUserID"))),
                 }
-            result["identity_sync"] = _sync_identity_best_effort(
-                event,
-                corp_id=command.corp_id,
-                event_log_id=int(logged.get("id") or 0) or None,
-            )
+            if entry_identity_plan.get("external_effect_job_id"):
+                result["identity_sync"] = {
+                    "status": "queued",
+                    "reason": "external_contact_detail_effect_queued",
+                    **entry_identity_plan,
+                    "real_external_call_executed": False,
+                }
+            else:
+                result["identity_sync"] = _plan_identity_resolution_for_event(
+                    event,
+                    corp_id=command.corp_id,
+                    event_log_id=int(logged.get("id") or 0) or None,
+                )
             repo.mark_event_status(int(logged["id"]), "success")
         else:
             result["identity_sync"] = {"status": "skipped", "reason": "non_entry_change_type"}

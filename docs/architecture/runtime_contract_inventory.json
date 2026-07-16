@@ -407,7 +407,7 @@
       "accessor": "runtime_setting",
       "file": "aicrm_next/platform_foundation/external_effects/adapters.py",
       "key": "AICRM_EXTERNAL_EFFECT_WEBHOOK_TIMEOUT_SECONDS",
-      "line": 310
+      "line": 312
     },
     {
       "accessor": "declared_runtime_environment_key",
@@ -1293,6 +1293,12 @@
     },
     {
       "accessor": "os.getenv",
+      "file": "scripts/ops/check_identity_customer_event_driven.py",
+      "key": "DATABASE_URL",
+      "line": 176
+    },
+    {
+      "accessor": "os.getenv",
       "file": "scripts/ops/check_sidebar_questionnaire_access.py",
       "key": "DATABASE_URL",
       "line": 12
@@ -2063,13 +2069,13 @@
       "accessor": "os.getenv",
       "file": "aicrm_next/channel_entry/application.py",
       "key": "WORKER_RELEASE_SHA",
-      "line": 976
+      "line": 1015
     },
     {
       "accessor": "os.getenv",
       "file": "aicrm_next/channel_entry/application.py",
       "key": "WORKER_RELEASE_SHA",
-      "line": 1194
+      "line": 1233
     },
     {
       "accessor": "os.getenv",
@@ -2315,6 +2321,17 @@
       "migration_target": "aicrm_next/integration_gateway/wecom_channel_entry_client.py",
       "owner": "channel_entry",
       "provider": "wecom"
+    },
+    {
+      "adapter_module": "aicrm_next/platform_foundation/external_effects/adapters.py",
+      "allowed_runtime": "real_requires_approval",
+      "audit_required": true,
+      "boundary": "platform_foundation.external_effects",
+      "effect_key": "wecom.external_contact.detail.fetch",
+      "idempotency_required": true,
+      "migration_target": "aicrm_next/platform_foundation/external_effects/adapters.py",
+      "owner": "identity_contact",
+      "provider": "wecom"
     }
   ],
   "external_effects": [
@@ -2393,6 +2410,10 @@
     {
       "constant": "WECOM_CONTACT_TAG_UNMARK",
       "effect_type": "wecom.contact.tag.unmark"
+    },
+    {
+      "constant": "WECOM_EXTERNAL_CONTACT_DETAIL_FETCH",
+      "effect_type": "wecom.external_contact.detail.fetch"
     },
     {
       "constant": "WECOM_MEDIA_UPLOAD",
@@ -2590,6 +2611,13 @@
       "max_attempts": 5
     },
     {
+      "consumer_name": "customer_read_model_dirty_consumer",
+      "consumer_type": "projection",
+      "event_type": "channel_entry.entered",
+      "handler_registered": true,
+      "max_attempts": 10
+    },
+    {
       "consumer_name": "automation_phone_bound_consumer",
       "consumer_type": "orchestration",
       "event_type": "customer.phone_bound",
@@ -2609,6 +2637,13 @@
       "event_type": "customer.phone_bound",
       "handler_registered": true,
       "max_attempts": 5
+    },
+    {
+      "consumer_name": "customer_read_model_dirty_consumer",
+      "consumer_type": "projection",
+      "event_type": "customer.phone_bound",
+      "handler_registered": true,
+      "max_attempts": 10
     },
     {
       "consumer_name": "customer_summary_consumer",
@@ -2660,6 +2695,13 @@
       "max_attempts": 5
     },
     {
+      "consumer_name": "customer_read_model_refresh_intent_consumer",
+      "consumer_type": "projection",
+      "event_type": "customer_read_model.refresh.requested",
+      "handler_registered": true,
+      "max_attempts": 5
+    },
+    {
       "consumer_name": "external_effect_completion_continuation_consumer",
       "consumer_type": "orchestration",
       "event_type": "external_effect.completed",
@@ -2672,6 +2714,13 @@
       "event_type": "external_form.submitted",
       "handler_registered": true,
       "max_attempts": 5
+    },
+    {
+      "consumer_name": "customer_read_model_dirty_consumer",
+      "consumer_type": "projection",
+      "event_type": "identity.resolved",
+      "handler_registered": true,
+      "max_attempts": 10
     },
     {
       "consumer_name": "ai_assist_notify_consumer",
@@ -2763,6 +2812,13 @@
       "event_type": "payment.succeeded",
       "handler_registered": true,
       "max_attempts": 5
+    },
+    {
+      "consumer_name": "customer_read_model_dirty_consumer",
+      "consumer_type": "projection",
+      "event_type": "payment.succeeded",
+      "handler_registered": true,
+      "max_attempts": 10
     },
     {
       "consumer_name": "dnd_policy_consumer",
@@ -2870,6 +2926,13 @@
       "max_attempts": 5
     },
     {
+      "consumer_name": "customer_read_model_dirty_consumer",
+      "consumer_type": "projection",
+      "event_type": "questionnaire.submitted",
+      "handler_registered": true,
+      "max_attempts": 10
+    },
+    {
       "consumer_name": "customer_summary_consumer",
       "consumer_type": "projection",
       "event_type": "questionnaire.submitted",
@@ -2969,7 +3032,7 @@
     }
   ],
   "migration_heads": [
-    "0128_ai_audience_refresh_intents"
+    "0129_identity_customer_event_driven"
   ],
   "openapi_components": {
     "schemas": {
@@ -45707,7 +45770,7 @@
       "domain": "channel_entry",
       "drop_candidate": false,
       "lifecycle": "queue",
-      "migration_source": "0088_channel_entry_identity_best_effort, hardened by 0092_channel_entry_runtime_identity_backoff",
+      "migration_source": "0088_channel_entry_identity_best_effort, hardened by 0092_channel_entry_runtime_identity_backoff and 0129_identity_customer_event_driven",
       "pii_level": "internal_contact",
       "read_owners": [
         "aicrm_next.channel_entry.repo"
@@ -46842,7 +46905,7 @@
       "domain": "identity_contact",
       "drop_candidate": false,
       "lifecycle": "queue",
-      "migration_source": "migrations/baselines/0001_post_legacy.sql",
+      "migration_source": "migrations/baselines/0001_post_legacy.sql, event-driven effect ownership added by 0129_identity_customer_event_driven",
       "pii_level": "internal_contact",
       "read_owners": [
         "aicrm_next.channel_entry"
@@ -46909,6 +46972,31 @@
       ],
       "table": "customer_read_model_current",
       "write_owner": "legacy.production_runtime"
+    },
+    {
+      "domain": "customer_read_model",
+      "drop_candidate": false,
+      "lifecycle": "canonical",
+      "migration_source": "0129_identity_customer_event_driven",
+      "pii_level": "aggregate_only",
+      "read_owners": [
+        "aicrm_next.customer_read_model.events",
+        "aicrm_next.data_health"
+      ],
+      "table": "customer_read_model_refresh_intent",
+      "write_owner": "aicrm_next.customer_read_model.refresh_intents"
+    },
+    {
+      "domain": "customer_read_model",
+      "drop_candidate": false,
+      "lifecycle": "audit",
+      "migration_source": "0129_identity_customer_event_driven",
+      "pii_level": "none",
+      "read_owners": [
+        "aicrm_next.customer_read_model.refresh_intents"
+      ],
+      "table": "customer_read_model_refresh_source_receipt",
+      "write_owner": "aicrm_next.customer_read_model.refresh_intents"
     },
     {
       "domain": "customer_read_model",
@@ -47000,7 +47088,7 @@
       "domain": "external_effects",
       "drop_candidate": false,
       "lifecycle": "audit",
-      "migration_source": "0039_external_effect_queue",
+      "migration_source": "0039_external_effect_queue, private provider-result handoff added by 0129_identity_customer_event_driven",
       "pii_level": "",
       "read_owners": [
         "admin external effect APIs",
@@ -47187,6 +47275,19 @@
       ],
       "table": "hxc_dashboard_broadcast_tasks",
       "write_owner": "aicrm_next.user_ops"
+    },
+    {
+      "domain": "identity_contact",
+      "drop_candidate": false,
+      "lifecycle": "audit",
+      "migration_source": "0129_identity_customer_event_driven",
+      "pii_level": "aggregate_only",
+      "read_owners": [
+        "aicrm_next.channel_entry.identity_external_effect",
+        "identity resolution reconciliation"
+      ],
+      "table": "identity_resolution_completion_receipt",
+      "write_owner": "aicrm_next.channel_entry.identity_external_effect"
     },
     {
       "domain": "media_library",

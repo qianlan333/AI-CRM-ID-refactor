@@ -49,6 +49,7 @@ WECOM_WELCOME_MESSAGE_SEND = "wecom.welcome_message.send"
 WECOM_CONTACT_TAG_MARK = "wecom.contact.tag.mark"
 WECOM_CONTACT_TAG_UNMARK = "wecom.contact.tag.unmark"
 WECOM_PROFILE_UPDATE = "wecom.profile.update"
+WECOM_EXTERNAL_CONTACT_DETAIL_FETCH = "wecom.external_contact.detail.fetch"
 GROUP_OPS_MESSAGE_LOOPBACK = "group_ops.message.loopback"
 GROUP_OPS_WEBHOOK_ACTION_LOOPBACK = "group_ops.webhook.action.loopback"
 PAYMENT_WECHAT_ORDER_QUERY = "payment.wechat.order.query"
@@ -247,6 +248,7 @@ class ExternalEffectDispatchResult:
     adapter_mode: str = "none"
     request_summary: dict[str, Any] = field(default_factory=dict)
     response_summary: dict[str, Any] = field(default_factory=dict)
+    provider_result: dict[str, Any] = field(default_factory=dict)
     error_code: str = ""
     error_message: str = ""
     retry_after_seconds: int | None = None

@@ -195,6 +195,7 @@ _TABLES_TO_TRUNCATE = [
     "questionnaire_score_rules",
     "questionnaires",
     "external_push_delivery",
+    "identity_resolution_completion_receipt",
     "internal_event_consumer_attempt",
     "internal_event_consumer_run",
     "internal_event",
@@ -287,6 +288,8 @@ _TABLES_TO_TRUNCATE = [
     "customer_timeline_event_next",
     "customer_detail_snapshot_next",
     "customer_list_index_next",
+    "customer_read_model_refresh_source_receipt",
+    "customer_read_model_refresh_intent",
     "customer_read_model_refresh_state",
     # — archive / system
     "archived_messages",

@@ -74,7 +74,7 @@ def test_empty_postgres_database_installs_and_reuses_alembic_head() -> None:
 
         assert first.baseline_applied is True
         assert first.revision_before is None
-        assert first.revision_after == "0128_ai_audience_refresh_intents"
+        assert first.revision_after == "0129_identity_customer_event_driven"
         assert second.baseline_applied is False
         assert second.revision_before == first.revision_after
         assert second.revision_after == first.revision_after
@@ -95,6 +95,9 @@ def test_empty_postgres_database_installs_and_reuses_alembic_head() -> None:
             "service_period_huangyoucan_usage_snapshot",
             "service_period_huangyoucan_usage_sync_runs",
             "sync_runs",
+            "customer_read_model_refresh_intent",
+            "customer_read_model_refresh_source_receipt",
+            "identity_resolution_completion_receipt",
             "queue_fairness_cursor",
             "queue_lane_policy",
             "queue_policy_snapshot",
@@ -292,7 +295,7 @@ def test_production_shape_alembic_database_upgrades_without_reapplying_baseline(
 
         assert result.baseline_applied is False
         assert result.revision_before == "0098_admin_session_revocation"
-        assert result.revision_after == "0128_ai_audience_refresh_intents"
+        assert result.revision_after == "0129_identity_customer_event_driven"
         with psycopg.connect(database_url) as connection:
             preserved = connection.execute(
                 "SELECT wecom_userid, session_version FROM admin_users WHERE id = %s",
@@ -320,7 +323,7 @@ def test_upgrade_repairs_missing_or_partial_automation_agent_audit_tables_withou
 
         assert result.baseline_applied is False
         assert result.revision_before == "0123_required_physical_schema_repair"
-        assert result.revision_after == "0128_ai_audience_refresh_intents"
+        assert result.revision_after == "0129_identity_customer_event_driven"
 
         expected_columns = {
             "automation_agent_output": {
@@ -921,6 +924,77 @@ def test_failed_baseline_is_atomic_and_does_not_fake_alembic_head(tmp_path: Path
                 """
             ).fetchone()
         assert row == (None, None)
+
+
+def test_identity_customer_cutover_holds_historical_work_without_replay() -> None:
+    with _isolated_database("identity_customer_history_hold") as database_url:
+        with psycopg.connect(database_url, autocommit=True) as connection:
+            connection.execute(BASELINE_PATH.read_text(encoding="utf-8"))
+        _upgrade_database_to(database_url, "0128_ai_audience_refresh_intents")
+
+        with psycopg.connect(database_url) as connection:
+            connection.execute(
+                """
+                INSERT INTO crm_user_identity_resolution_queue (
+                    source_type, source_key, external_userid, reason, status, next_attempt_at
+                ) VALUES
+                    ('history', 'pending', 'wm-history-pending', 'historical', 'pending', CURRENT_TIMESTAMP),
+                    ('history', 'polling', 'wm-history-polling', 'historical', 'polling', CURRENT_TIMESTAMP)
+                """
+            )
+            connection.execute(
+                """
+                INSERT INTO automation_channel_entry_runtime (
+                    corp_id, scene_value, external_userid, follow_user_userid,
+                    identity_status, runtime_status
+                ) VALUES
+                    ('ww-history', 'scene-pending', 'wm-runtime-pending', 'owner', 'pending', 'received'),
+                    ('ww-history', 'scene-failed', 'wm-runtime-failed', 'owner', 'failed', 'received')
+                """
+            )
+            connection.commit()
+
+        _upgrade_database_to(database_url, "head")
+
+        with psycopg.connect(database_url) as connection:
+            queue_rows = connection.execute(
+                """
+                SELECT source_key, status, hold_reason, held_at IS NOT NULL,
+                       next_attempt_at, external_effect_job_id
+                FROM crm_user_identity_resolution_queue
+                ORDER BY source_key
+                """
+            ).fetchall()
+            runtime_rows = connection.execute(
+                """
+                SELECT scene_value, identity_status, identity_hold_reason,
+                       identity_held_at IS NOT NULL, identity_next_attempt_at,
+                       identity_external_effect_job_id
+                FROM automation_channel_entry_runtime
+                ORDER BY scene_value
+                """
+            ).fetchall()
+            control = connection.execute(
+                "SELECT active_generation, claim_enabled FROM queue_runtime_control WHERE singleton = TRUE"
+            ).fetchone()
+
+        expected_reason = "pre_event_driven_cutover_requires_manual_classification"
+        assert queue_rows == [
+            ("pending", "held", expected_reason, True, None, None),
+            ("polling", "held", expected_reason, True, None, None),
+        ]
+        assert runtime_rows == [
+            ("scene-failed", "held", expected_reason, True, None, None),
+            ("scene-pending", "held", expected_reason, True, None, None),
+        ]
+        assert control == (0, False)
+
+        _downgrade_database_to(database_url, "0128_ai_audience_refresh_intents")
+        _upgrade_database_to(database_url, "head")
+        with psycopg.connect(database_url) as connection:
+            assert connection.execute("SELECT version_num FROM alembic_version").fetchone() == (
+                "0129_identity_customer_event_driven",
+            )
 
 
 def _upgrade_database_to(database_url: str, revision: str) -> None:

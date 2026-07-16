@@ -11,6 +11,7 @@ from .commerce.payment_tagging import (
 from .identity_contact.payment_projection import project_payment_order_mobile
 from .external_effect_composition import build_external_effect_continuation_registry
 from .ai_audience_ops import register_ai_audience_event_consumers
+from .customer_read_model.events import register_customer_read_model_event_consumers
 from .cloud_orchestrator.repository import build_cloud_plan_repository
 from .questionnaire.event_consumers import (
     automation_questionnaire_consumer,
@@ -148,6 +149,7 @@ def build_internal_event_consumer_registry() -> InternalEventConsumerRegistry:
     register_questionnaire_event_consumers(registry)
     register_shadow_event_consumers(registry)
     register_ai_audience_event_consumers(registry)
+    register_customer_read_model_event_consumers(registry)
     register_external_effect_completion_consumers(registry)
     register_queue_runtime_command_consumer(registry)
     registry.seal_fanout_contract()

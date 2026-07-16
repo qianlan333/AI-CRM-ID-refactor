@@ -622,12 +622,12 @@ tables:
     runtime_entrypoints:
       - channel entry callback runtime buffer
       - unresolved channel entry identity reconciliation
-    migration_source: 0088_channel_entry_identity_best_effort, hardened by 0092_channel_entry_runtime_identity_backoff
+    migration_source: 0088_channel_entry_identity_best_effort, hardened by 0092_channel_entry_runtime_identity_backoff and 0129_identity_customer_event_driven
     pii_level: internal_contact
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_channel_entry_identity_best_effort_contract.py::test_channel_entry_identity_best_effort_runtime_table_is_governed
-    notes: Runtime staging table keyed by WeCom external_userid/follow_user_userid/scene until unionid canonicalization writes automation_channel_contact.
+    notes: Runtime staging table keyed by WeCom external_userid/follow_user_userid/scene until unionid canonicalization writes automation_channel_contact. Revision 0129 links new rows to one canonical wecom_interactive external effect in the same transaction; pre-cutover unresolved rows are held for manual classification and are never replayed automatically.
 
   wechat_shop_orders:
     domain: commerce
@@ -2036,11 +2036,11 @@ tables:
     runtime_entrypoints:
       - external effect worker attempt logging
       - unified execution timeline
-    migration_source: 0039_external_effect_queue
+    migration_source: 0039_external_effect_queue, private provider-result handoff added by 0129_identity_customer_event_driven
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_event_effect_table_lineage.py
-    notes: Append-only attempt audit for external_effect_job execution. Provider result and job state are committed atomically under the active lease. Revision 0125 freezes a historical dispatching attempt as unknown_after_dispatch when its parent job has already left dispatching, recording historical_freeze_orphan evidence instead of replaying it. Unified timeline redacts combined request/response summaries before returning them.
+    notes: Append-only public attempt audit for external_effect_job execution. Provider result and job state are committed atomically under the active lease. Revision 0129 adds a repository-only restricted provider-result handoff; it is absent from ExternalEffectAttempt, Push Center, timeline, and admin API models, and is cleared after the idempotent local continuation receipt commits. Revision 0125 freezes a historical dispatching attempt as unknown_after_dispatch when its parent job has already left dispatching, recording historical_freeze_orphan evidence instead of replaying it. Unified timeline redacts combined request/response summaries before returning them.
 
   owner_migration_import_sessions:
     domain: owner_migration
@@ -3121,14 +3121,33 @@ tables:
     drop_after: ""
     runtime_entrypoints:
       - existing production runtime
-    migration_source: migrations/baselines/0001_post_legacy.sql
+    migration_source: migrations/baselines/0001_post_legacy.sql, event-driven effect ownership added by 0129_identity_customer_event_driven
     pii_level: internal_contact
     status_enum:
       column: status
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
-    notes: Existing unresolved identity boundary. Missing aliases remain pending/failed/conflict here and must never be treated as a canonical identity or successful consumer outcome.
+    notes: Durable unresolved identity intent. Revision 0129 gives each new eligible row an execution_id and exactly one canonical wecom_interactive external effect; linked rows are excluded from the legacy poller. All pre-cutover pending/polling rows are held for manual classification and never auto-replayed. Missing aliases remain held/conflict and must never be treated as a canonical identity or successful consumer outcome.
+
+  identity_resolution_completion_receipt:
+    domain: identity_contact
+    lifecycle: audit
+    write_owner: aicrm_next.channel_entry.identity_external_effect
+    read_owners:
+      - aicrm_next.channel_entry.identity_external_effect
+      - identity resolution reconciliation
+    replacement: none; idempotent local continuation evidence after provider success
+    drop_candidate: false
+    drop_after: ""
+    runtime_entrypoints:
+      - external_effect.completed identity continuation
+    migration_source: 0129_identity_customer_event_driven
+    pii_level: aggregate_only
+    guard_tests:
+      - tests/test_identity_customer_event_driven_postgres.py
+      - tests/test_data_table_lifecycle_guard.py
+    notes: One receipt per canonical external effect. It stores only result status, execution links, internal row ids, and a boolean/count summary; raw provider detail is never copied here.
 
   customer_detail_snapshot_next:
     domain: customer_read_model
@@ -4201,6 +4220,46 @@ tables:
       - tests/test_data_health_checks.py
       - tests/test_data_table_lifecycle_guard.py
     notes: Count-only refresh evidence. It contains no customer identifiers or payloads.
+
+  customer_read_model_refresh_intent:
+    domain: customer_read_model
+    lifecycle: canonical
+    write_owner: aicrm_next.customer_read_model.refresh_intents
+    read_owners:
+      - aicrm_next.customer_read_model.events
+      - aicrm_next.data_health
+    replacement: none; singleton coalescing generation owner for projection refresh
+    drop_candidate: false
+    drop_after: ""
+    runtime_entrypoints:
+      - customer source-event dirty consumer
+      - customer_read_model.refresh.requested consumer
+      - compatibility clock intent writer
+    migration_source: 0129_identity_customer_event_driven
+    pii_level: aggregate_only
+    guard_tests:
+      - tests/test_identity_customer_event_driven_postgres.py
+      - tests/test_data_table_lifecycle_guard.py
+    notes: Global singleton generation intent. Source events only advance dirty_generation and create at most one outstanding signal; the internal consumer owns the local projection refresh, and dirty-during-run creates one explicit continuation generation.
+
+  customer_read_model_refresh_source_receipt:
+    domain: customer_read_model
+    lifecycle: audit
+    write_owner: aicrm_next.customer_read_model.refresh_intents
+    read_owners:
+      - aicrm_next.customer_read_model.refresh_intents
+    replacement: none; idempotent source-event dirty-mark evidence
+    drop_candidate: false
+    drop_after: ""
+    runtime_entrypoints:
+      - customer source-event dirty consumer
+      - manual or compatibility refresh intent request
+    migration_source: 0129_identity_customer_event_driven
+    pii_level: none
+    guard_tests:
+      - tests/test_identity_customer_event_driven_postgres.py
+      - tests/test_data_table_lifecycle_guard.py
+    notes: Stores only a SHA-256 opaque source event key, source event type, generation, and execution links. It never stores customer identifiers, messages, questionnaire answers, payment payloads, or provider results.
 
   admin_sso_states:
     <<: *legacy_production_table_defaults

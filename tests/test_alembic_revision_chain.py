@@ -61,7 +61,7 @@ def test_all_alembic_down_revisions_exist() -> None:
     assert missing == {}
 
 
-def test_ai_audience_refresh_intents_is_the_single_head() -> None:
+def test_identity_customer_event_driven_is_the_single_head() -> None:
     revisions = _migration_revisions()
     referenced = {parent for item in revisions.values() for parent in _parents(item["down_revision"])}
     heads = set(revisions) - referenced
@@ -79,8 +79,11 @@ def test_ai_audience_refresh_intents_is_the_single_head() -> None:
     group_ops_graph_source = group_ops_graph.read_text(encoding="utf-8")
     audience_intents = VERSIONS / "0128_ai_audience_refresh_intents.py"
     audience_intents_source = audience_intents.read_text(encoding="utf-8")
+    identity_customer = VERSIONS / "0129_identity_customer_event_driven.py"
+    identity_customer_source = identity_customer.read_text(encoding="utf-8")
 
-    assert heads == {"0128_ai_audience_refresh_intents"}
+    assert heads == {"0129_identity_customer_event_driven"}
+    assert revisions["0129_identity_customer_event_driven"]["down_revision"] == "0128_ai_audience_refresh_intents"
     assert revisions["0128_ai_audience_refresh_intents"]["down_revision"] == "0127_group_ops_durable_effect_graph"
     assert revisions["0127_group_ops_durable_effect_graph"]["down_revision"] == "0126_postgres_execution_runtime"
     assert revisions["0126_postgres_execution_runtime"]["down_revision"] == "0125_execution_runtime_correctness"
@@ -115,6 +118,11 @@ def test_ai_audience_refresh_intents_is_the_single_head() -> None:
     assert "aicrm_reject_queue_policy_snapshot_mutation" in postgres_runtime_source
     assert "CREATE TABLE IF NOT EXISTS ai_audience_refresh_intent" in audience_intents_source
     assert "CREATE TABLE IF NOT EXISTS ai_audience_refresh_source_receipt" in audience_intents_source
+    assert "identity_resolution_completion_receipt" in identity_customer_source
+    assert "customer_read_model_refresh_intent" in identity_customer_source
+    assert "customer_read_model_refresh_source_receipt" in identity_customer_source
+    assert "provider_result_json" in identity_customer_source
+    assert "pre_event_driven_cutover_requires_manual_classification" in identity_customer_source
     for constraint_name in (
         "ck_external_effect_job_runtime_lane",
         "ck_internal_event_consumer_run_runtime_lane",

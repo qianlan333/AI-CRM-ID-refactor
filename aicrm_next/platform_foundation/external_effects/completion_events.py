@@ -113,11 +113,18 @@ def external_effect_completion_consumer(
         )
 
     response_summary = dict(attempt.response_summary_json or {})
+    provider_result_loader = getattr(repository, "get_attempt_provider_result", None)
+    provider_result = (
+        dict(provider_result_loader(attempt_id) or {})
+        if callable(provider_result_loader)
+        else {}
+    )
     dispatch_result = ExternalEffectDispatchResult(
         status="succeeded",
         adapter_mode=attempt.adapter_mode,
         request_summary=dict(attempt.request_summary_json or {}),
         response_summary=response_summary,
+        provider_result=provider_result,
         error_code=attempt.error_code,
         error_message=attempt.error_message,
         real_external_call_executed=bool(response_summary.get("real_external_call_executed")),

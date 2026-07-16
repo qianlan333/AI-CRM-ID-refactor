@@ -166,6 +166,24 @@ class InMemoryExternalEffectRepository(ExternalEffectRepository):
                 return _public_attempt(row)
         return None
 
+    def get_attempt_provider_result(self, attempt_id: str) -> dict[str, Any]:
+        for row in self._attempts:
+            if _text(row.get("attempt_id")) == _text(attempt_id) and not row.get("provider_result_consumed_at"):
+                return dict(row.get("provider_result_json") or {})
+        return {}
+
+    def consume_attempt_provider_result(self, attempt_id: str, *, job_id: int) -> bool:
+        for row in self._attempts:
+            if (
+                _text(row.get("attempt_id")) == _text(attempt_id)
+                and int(row.get("job_id") or 0) == int(job_id)
+                and not row.get("provider_result_consumed_at")
+            ):
+                row["provider_result_json"] = {}
+                row["provider_result_consumed_at"] = public_datetime(utcnow())
+                return True
+        return False
+
     def list_attempts_for_jobs(self, job_ids: list[int]) -> dict[int, list[ExternalEffectAttempt]]:
         normalized = sorted({int(job_id) for job_id in job_ids})
         grouped: dict[int, list[ExternalEffectAttempt]] = {job_id: [] for job_id in normalized}
@@ -485,6 +503,9 @@ class InMemoryExternalEffectRepository(ExternalEffectRepository):
                 "status": "dispatching",
                 "request_summary_json": scrub_summary({**dict(request_summary or {}), "provider_boundary_crossed": True}),
                 "response_summary_json": {},
+                "provider_result_json": {},
+                "provider_result_hash": "",
+                "provider_result_consumed_at": "",
                 "error_code": "",
                 "error_message": "",
                 "started_at": now,
@@ -561,6 +582,13 @@ class InMemoryExternalEffectRepository(ExternalEffectRepository):
                             }
                         ),
                         "response_summary_json": scrub_summary(response_summary),
+                        "provider_result_json": dict(result.provider_result or {}),
+                        "provider_result_hash": hashlib.sha256(
+                            _json_dumps(dict(result.provider_result or {})).encode("utf-8")
+                        ).hexdigest()
+                        if result.provider_result
+                        else "",
+                        "provider_result_consumed_at": "",
                         "error_code": _text(result.error_code),
                         "error_message": _safe_error_message(result.error_message),
                         "completed_at": now,

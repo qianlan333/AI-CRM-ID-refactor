@@ -772,16 +772,23 @@
       "name": "customer_read_model_refresh",
       "paths": [
         "aicrm_next/customer_read_model/refresh.py",
+        "aicrm_next/customer_read_model/events.py",
+        "aicrm_next/customer_read_model/refresh_intents.py",
+        "aicrm_next/internal_event_composition.py",
         "scripts/run_customer_read_model_refresh.py",
+        "scripts/ops/check_identity_customer_event_driven.py",
         "deploy/openclaw-customer-read-model-refresh.service",
         "deploy/openclaw-customer-read-model-refresh.timer",
         "migrations/versions/0108_customer_read_model_refresh_and_retired_workspace_drop.py",
+        "migrations/versions/0129_identity_customer_event_driven.py",
         "tests/test_customer_live_source_repository.py",
-        "tests/test_customer_read_model_refresh.py"
+        "tests/test_customer_read_model_refresh.py",
+        "tests/test_identity_customer_event_driven_postgres.py"
       ],
       "python_tests": [
         "tests/test_customer_live_source_repository.py",
         "tests/test_customer_read_model_refresh.py",
+        "tests/test_identity_customer_event_driven_postgres.py",
         "tests/test_data_health_checks.py",
         "tests/test_database_bootstrap.py",
         "tests/test_runtime_units_autostart.py",
@@ -797,7 +804,10 @@
       "paths": [
         "aicrm_next/identity_contact/**",
         "aicrm_next/channel_entry/**",
+        "aicrm_next/platform_foundation/external_effects/**",
         "aicrm_next/auth_wecom/**",
+        "migrations/versions/0129_identity_customer_event_driven.py",
+        "scripts/ops/check_identity_customer_event_driven.py",
         "scripts/ops/check_wecom_callback_*.py",
         "scripts/ops/prepare_wecom_callback_ingress_cutover.py",
         "scripts/ops/recover_identity_resolution_worker_deadlock.py",
@@ -812,12 +822,14 @@
         "tests/test_wecom_callback_external_effect_boundary.py",
         "tests/test_wecom_callback_inbox.py",
         "tests/test_auth_wecom_*.py",
-        "tests/test_identity_resolution_backfill_worker.py"
+        "tests/test_identity_resolution_backfill_worker.py",
+        "tests/test_identity_customer_event_driven_postgres.py"
       ],
       "python_tests": [
         "tests/test_identity_application_contract.py",
         "tests/test_channel_entry_identity_best_effort_contract.py",
         "tests/test_identity_resolution_backfill_worker.py",
+        "tests/test_identity_customer_event_driven_postgres.py",
         "tests/test_channel_identity_bridge_native_service.py",
         "tests/test_next_channel_entry_orchestrator.py",
         "tests/test_next_channel_identity_bridge.py",
@@ -829,7 +841,8 @@
         "tests/test_wecom_callback_permanent_fix_readiness.py"
       ],
       "needs_postgres": true,
-      "architecture_gate": "db"
+      "needs_full_ci": true,
+      "architecture_gate": "full"
     },
     {
       "name": "sidebar_questionnaire_access",

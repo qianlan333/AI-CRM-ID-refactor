@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from .commerce.admin_transactions import apply_wechat_refund_result, mark_wechat_refund_request_failed
+from .channel_entry.identity_external_effect import IDENTITY_EXTERNAL_CONTACT_DETAIL_CONTINUATION
 from .automation_agents.external_effect_continuation import AUTOMATION_AGENT_AUDIENCE_WEBHOOK_CONTINUATION
 from .automation_engine.group_ops.external_effect_continuation import GROUP_OPS_MEDIA_DEPENDENCY_CONTINUATION
 from .background_jobs.broadcast_effect_repository import BROADCAST_EXTERNAL_EFFECT_READ_MODEL_CONTINUATION
@@ -16,6 +17,7 @@ from .platform_foundation.external_effects.adapters import (
     ExternalEffectAdapterRegistry,
     WeChatPaymentAdapter,
     WeComContactTagAdapter,
+    WeComExternalContactDetailAdapter,
     WeComGroupMessageExternalEffectAdapter,
     WeComPrivateMessageAdapter,
     WeComProfileUpdateAdapter,
@@ -30,6 +32,7 @@ from .questionnaire.external_effect_continuation import QUESTIONNAIRE_CONTACT_TA
 def build_external_effect_continuation_registry() -> ExternalEffectContinuationRegistry:
     return ExternalEffectContinuationRegistry(
         (
+            IDENTITY_EXTERNAL_CONTACT_DETAIL_CONTINUATION,
             GROUP_OPS_MEDIA_DEPENDENCY_CONTINUATION,
             BROADCAST_EXTERNAL_EFFECT_READ_MODEL_CONTINUATION,
             QUESTIONNAIRE_CONTACT_TAGS_CONTINUATION,
@@ -64,6 +67,7 @@ def build_external_effect_adapter_registry() -> ExternalEffectAdapterRegistry:
             "wecom_media_upload": WeComMediaUploadAdapter(),
             "wecom_tag": WeComContactTagAdapter(adapter_factory=provider_factory),
             "wecom_profile": WeComProfileUpdateAdapter(adapter_factory=provider_factory),
+            "wecom_external_contact_detail": WeComExternalContactDetailAdapter(adapter_factory=provider_factory),
         }
     )
 

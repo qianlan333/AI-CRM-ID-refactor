@@ -325,7 +325,8 @@ def test_wecom_callback_ops_change_selects_identity_contact_slice() -> None:
     assert "tests/test_wecom_callback_permanent_fix_readiness.py" in result["python_tests"]
     assert result["unmatched_files"] == []
     assert result["needs_postgres"] is True
-    assert result["architecture_gate"] == "db"
+    assert result["architecture_gate"] == "full"
+    assert result["needs_full_ci"] is True
 
 
 def test_identity_worker_deadlock_recovery_has_permanent_deploy_and_identity_scope() -> None:
