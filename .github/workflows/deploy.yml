@@ -393,7 +393,7 @@ jobs:
                   fi
                   if ! python3 "$release_control_manager" \
                     --manifest "$release_control_manifest" \
-                    --phase verify --execute; then
+                    --phase verify-staged-runtime --execute; then
                     cleanup_failed=1
                   fi
                   if ! python3 "$release_control_manager" \

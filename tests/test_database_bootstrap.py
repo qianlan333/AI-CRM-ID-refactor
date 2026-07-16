@@ -73,7 +73,7 @@ def test_empty_postgres_database_installs_and_reuses_alembic_head() -> None:
 
         assert first.baseline_applied is True
         assert first.revision_before is None
-        assert first.revision_after == "0123_required_physical_schema_repair"
+        assert first.revision_after == "0124_agent_audit_tables"
         assert second.baseline_applied is False
         assert second.revision_before == first.revision_after
         assert second.revision_after == first.revision_after
@@ -145,7 +145,7 @@ def test_production_shape_alembic_database_upgrades_without_reapplying_baseline(
 
         assert result.baseline_applied is False
         assert result.revision_before == "0098_admin_session_revocation"
-        assert result.revision_after == "0123_required_physical_schema_repair"
+        assert result.revision_after == "0124_agent_audit_tables"
         with psycopg.connect(database_url) as connection:
             preserved = connection.execute(
                 "SELECT wecom_userid, session_version FROM admin_users WHERE id = %s",
@@ -154,6 +154,159 @@ def test_production_shape_alembic_database_upgrades_without_reapplying_baseline(
             auth_table = connection.execute("SELECT to_regclass('public.auth_sessions')").fetchone()
         assert preserved == ("production-shape-upgrade", 7)
         assert auth_table == ("auth_sessions",)
+
+
+def test_upgrade_repairs_missing_or_partial_automation_agent_audit_tables_without_data_loss() -> None:
+    with _isolated_database("automation_agent_audit_repair") as database_url:
+        with psycopg.connect(database_url, autocommit=True) as connection:
+            connection.execute(BASELINE_PATH.read_text(encoding="utf-8"))
+        _upgrade_database_to(database_url, "0123_required_physical_schema_repair")
+
+        with psycopg.connect(database_url) as connection:
+            connection.execute("DROP TABLE automation_agent_llm_call_log")
+            connection.execute("DROP TABLE automation_agent_output")
+            connection.execute(
+                "CREATE TABLE automation_agent_output (id BIGSERIAL PRIMARY KEY)"
+            )
+            preserved_id = int(
+                connection.execute(
+                    "INSERT INTO automation_agent_output DEFAULT VALUES RETURNING id"
+                ).fetchone()[0]
+            )
+            connection.commit()
+
+        result = install_or_upgrade_database(database_url)
+
+        assert result.baseline_applied is False
+        assert result.revision_before == "0123_required_physical_schema_repair"
+        assert result.revision_after == "0124_agent_audit_tables"
+
+        expected_columns = {
+            "automation_agent_output": {
+                "id",
+                "output_id",
+                "run_id",
+                "request_id",
+                "userid",
+                "unionid",
+                "agent_code",
+                "output_type",
+                "raw_output_text",
+                "normalized_output_json",
+                "rendered_output_text",
+                "target_agent_code",
+                "target_pool",
+                "confidence",
+                "reason",
+                "need_human_review",
+                "applied_status",
+                "adopted_by",
+                "adopted_action",
+                "outcome_status",
+                "outcome_value",
+                "revision_of_output_id",
+                "error_code",
+                "error_message",
+                "created_at",
+                "updated_at",
+            },
+            "automation_agent_llm_call_log": {
+                "id",
+                "run_id",
+                "agent_code",
+                "provider",
+                "model",
+                "model_name",
+                "request_id",
+                "prompt_hash",
+                "request_summary",
+                "response_summary",
+                "status",
+                "latency_ms",
+                "error_code",
+                "error_message",
+                "created_at",
+                "updated_at",
+            },
+        }
+        with psycopg.connect(database_url) as connection:
+            columns = connection.execute(
+                """
+                SELECT table_name, column_name, is_nullable, udt_name
+                FROM information_schema.columns
+                WHERE table_schema = 'public'
+                  AND table_name IN (
+                      'automation_agent_output',
+                      'automation_agent_llm_call_log'
+                  )
+                ORDER BY table_name, ordinal_position
+                """
+            ).fetchall()
+            indexes = connection.execute(
+                """
+                SELECT indexname
+                FROM pg_indexes
+                WHERE schemaname = 'public'
+                  AND tablename IN (
+                      'automation_agent_output',
+                      'automation_agent_llm_call_log'
+                  )
+                """
+            ).fetchall()
+            foreign_keys = connection.execute(
+                """
+                SELECT constraint_name
+                FROM information_schema.table_constraints
+                WHERE table_schema = 'public'
+                  AND table_name IN (
+                      'automation_agent_output',
+                      'automation_agent_llm_call_log'
+                  )
+                  AND constraint_type = 'FOREIGN KEY'
+                """
+            ).fetchall()
+            preserved = connection.execute(
+                """
+                SELECT id, output_id, normalized_output_json
+                FROM automation_agent_output
+                WHERE id = %s
+                """,
+                (preserved_id,),
+            ).fetchone()
+
+        actual_columns = {
+            table_name: {column_name for row_table, column_name, _, _ in columns if row_table == table_name}
+            for table_name in expected_columns
+        }
+        assert actual_columns == expected_columns
+        assert all(is_nullable == "NO" for _, _, is_nullable, _ in columns)
+        assert {
+            (table_name, column_name, udt_name)
+            for table_name, column_name, _, udt_name in columns
+            if column_name in {"normalized_output_json", "request_summary", "response_summary"}
+        } == {
+            ("automation_agent_output", "normalized_output_json", "jsonb"),
+            ("automation_agent_llm_call_log", "request_summary", "jsonb"),
+            ("automation_agent_llm_call_log", "response_summary", "jsonb"),
+        }
+        assert {row[0] for row in indexes} == {
+            "automation_agent_output_pkey",
+            "idx_automation_agent_output_run_created",
+            "ix_automation_agent_output_unionid",
+            "automation_agent_llm_call_log_pkey",
+            "idx_automation_agent_llm_call_log_agent_created",
+        }
+        assert foreign_keys == []
+        assert preserved == (preserved_id, "", {})
+
+        _downgrade_database_to(database_url, "0123_required_physical_schema_repair")
+        _upgrade_database_to(database_url, "head")
+        with psycopg.connect(database_url) as connection:
+            preserved_after_reapply = connection.execute(
+                "SELECT COUNT(*) FROM automation_agent_output WHERE id = %s",
+                (preserved_id,),
+            ).fetchone()
+        assert preserved_after_reapply == (1,)
 
 
 def test_questionnaire_auto_execute_upgrade_skips_only_pre_cutover_runs() -> None:
@@ -315,6 +468,20 @@ def _upgrade_database_to(database_url: str, revision: str) -> None:
     os.environ["DATABASE_URL"] = database_url
     try:
         command.upgrade(config, revision)
+    finally:
+        if previous_url is None:
+            os.environ.pop("DATABASE_URL", None)
+        else:
+            os.environ["DATABASE_URL"] = previous_url
+
+
+def _downgrade_database_to(database_url: str, revision: str) -> None:
+    config = Config(str(ROOT / "alembic.ini"))
+    config.set_main_option("sqlalchemy.url", database_url)
+    previous_url = os.environ.get("DATABASE_URL")
+    os.environ["DATABASE_URL"] = database_url
+    try:
+        command.downgrade(config, revision)
     finally:
         if previous_url is None:
             os.environ.pop("DATABASE_URL", None)
