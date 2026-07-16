@@ -1362,6 +1362,9 @@ tables:
     domain: media_library
     lifecycle: canonical
     write_owner: aicrm_next.media_library.postgres_repo
+    write_owners:
+      - aicrm_next.automation_engine.group_ops.durable_effects_repository
+      - aicrm_next.media_library.postgres_repo
     read_owners:
       - aicrm_next.media_library.postgres_repo
       - aicrm_next.send_content.postgres_repo
@@ -1987,6 +1990,7 @@ tables:
     lifecycle: queue
     write_owner: aicrm_next.platform_foundation.external_effects.service
     write_owners:
+      - aicrm_next.automation_engine.group_ops.durable_effects_repository
       - aicrm_next.platform_foundation.execution_runtime.repository
       - aicrm_next.platform_foundation.external_effects.service
       - aicrm_next.platform_foundation.external_effects.transactional
@@ -4528,3 +4532,67 @@ tables:
     guard_tests:
       - tests/test_operation_cycles_migration.py
       - tests/test_data_table_lifecycle_guard.py
+
+  automation_group_ops_effect_graph:
+    domain: automation_engine_group_ops
+    lifecycle: canonical
+    write_owner: aicrm_next.automation_engine.group_ops.durable_effects_repository
+    read_owners:
+      - Group Ops execution status API
+      - unified execution timeline
+    replacement: none; canonical root and version record for one durable Group Ops effect graph
+    drop_candidate: false
+    drop_after: ""
+    runtime_entrypoints:
+      - Group Ops direct send command
+      - Group Ops future plan materializer
+      - Group Ops media completion continuation
+    migration_source: 0127_group_ops_durable_effect_graph
+    pii_level: none
+    guard_tests:
+      - tests/test_group_ops_durable_effect_graph.py
+      - tests/test_group_ops_durable_effect_graph_postgres.py
+      - tests/test_data_table_lifecycle_guard.py
+    notes: Stores public execution identifiers, plan and node versions, schedule and the final External Effect link. Provider payload and recipient content remain in their canonical execution facts.
+
+  automation_group_ops_effect_material:
+    domain: automation_engine_group_ops
+    lifecycle: canonical
+    write_owner: aicrm_next.automation_engine.group_ops.durable_effects_repository
+    read_owners:
+      - Group Ops media completion continuation
+      - Group Ops execution detail
+    replacement: none; canonical material reference for a Group Ops effect dependency
+    drop_candidate: false
+    drop_after: ""
+    runtime_entrypoints:
+      - Group Ops direct send command
+      - Group Ops future plan materializer
+      - Group Ops media completion continuation
+    migration_source: 0127_group_ops_durable_effect_graph
+    pii_level: none
+    guard_tests:
+      - tests/test_group_ops_durable_effect_graph_postgres.py
+      - tests/test_data_table_lifecycle_guard.py
+    notes: References durable media-library source rows and stores only non-secret attachment metadata; uploaded bytes remain in image_library.
+
+  automation_group_ops_effect_dependency:
+    domain: automation_engine_group_ops
+    lifecycle: queue
+    write_owner: aicrm_next.automation_engine.group_ops.durable_effects_repository
+    read_owners:
+      - Group Ops media completion continuation
+      - execution runtime consistency audit
+    replacement: none; canonical prerequisite edge from media upload effect to final send effect
+    drop_candidate: false
+    drop_after: ""
+    runtime_entrypoints:
+      - Group Ops effect graph planning
+      - external_effect.completed continuation
+    migration_source: 0127_group_ops_durable_effect_graph
+    pii_level: none
+    guard_tests:
+      - tests/test_group_ops_durable_effect_graph.py
+      - tests/test_group_ops_durable_effect_graph_postgres.py
+      - tests/test_data_table_lifecycle_guard.py
+    notes: CAS-updated dependency state. Only every prerequisite succeeded may release the final planned effect; failed, cancelled and superseded graphs cannot release.

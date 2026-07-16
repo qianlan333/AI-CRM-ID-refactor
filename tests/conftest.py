@@ -17,6 +17,7 @@ superuser，开箱即用）。
 - ``next_pg_schema``：显式 opt-in 的 Next/Alembic PG schema 测试入口
 - ``app`` / ``client``：默认指向 Next FastAPI，测试层不再提供 legacy Flask bridge
 """
+
 from __future__ import annotations
 
 import os
@@ -139,6 +140,9 @@ _TABLES_TO_TRUNCATE = [
     "automation_sop_batch",
     "automation_sop_template",
     "automation_agent_run",
+    "automation_group_ops_effect_dependency",
+    "automation_group_ops_effect_material",
+    "automation_group_ops_effect_graph",
     "automation_agent_output",
     "automation_agent_llm_call_log",
     "automation_agent_webhook_item",
@@ -422,8 +426,7 @@ def _ensure_schema_once():
     pcur = probe.cursor()
     placeholders = ", ".join(["%s"] * len(_TABLES_TO_TRUNCATE))
     pcur.execute(
-        f"SELECT table_name FROM information_schema.tables "
-        f"WHERE table_schema = 'public' AND table_name IN ({placeholders})",
+        f"SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' AND table_name IN ({placeholders})",
         tuple(_TABLES_TO_TRUNCATE),
     )
     existing = {row[0] for row in pcur.fetchall()}
@@ -431,11 +434,7 @@ def _ensure_schema_once():
     probe.close()
     ordered = [t for t in _TABLES_TO_TRUNCATE if t in existing]
     _truncate_state["url"] = url
-    _truncate_state["tables_sql"] = (
-        f"TRUNCATE TABLE {', '.join(ordered)} RESTART IDENTITY CASCADE"
-        if ordered
-        else ""
-    )
+    _truncate_state["tables_sql"] = f"TRUNCATE TABLE {', '.join(ordered)} RESTART IDENTITY CASCADE" if ordered else ""
     if _fixture_default_runtime_enabled():
         os.environ.pop("DATABASE_URL", None)
     yield

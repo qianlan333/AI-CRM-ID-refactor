@@ -74,7 +74,7 @@ def test_empty_postgres_database_installs_and_reuses_alembic_head() -> None:
 
         assert first.baseline_applied is True
         assert first.revision_before is None
-        assert first.revision_after == "0126_postgres_execution_runtime"
+        assert first.revision_after == "0127_group_ops_durable_effect_graph"
         assert second.baseline_applied is False
         assert second.revision_before == first.revision_after
         assert second.revision_after == first.revision_after
@@ -204,10 +204,7 @@ def test_empty_postgres_database_installs_and_reuses_alembic_head() -> None:
             "wecom_media": (2, "standby", True),
         }
         assert policy_snapshot == ("queue-v1", 10, 30, 30, "blocked")
-        assert {
-            (str(table_name), str(column_name)): str(is_nullable)
-            for table_name, column_name, is_nullable in runtime_queue_columns
-        } == {
+        assert {(str(table_name), str(column_name)): str(is_nullable) for table_name, column_name, is_nullable in runtime_queue_columns} == {
             ("external_effect_job", "available_at"): "NO",
             ("external_effect_job", "lane"): "NO",
             ("internal_event_consumer_run", "available_at"): "NO",
@@ -261,16 +258,12 @@ def test_empty_postgres_database_installs_and_reuses_alembic_head() -> None:
 
         with psycopg.connect(database_url) as connection:
             with pytest.raises(psycopg.errors.RaiseException, match="queue_policy_snapshot is append-only"):
-                connection.execute(
-                    "UPDATE queue_policy_snapshot SET created_reason = 'tampered' WHERE policy_version = 'queue-v1'"
-                )
+                connection.execute("UPDATE queue_policy_snapshot SET created_reason = 'tampered' WHERE policy_version = 'queue-v1'")
             connection.rollback()
             with pytest.raises(psycopg.errors.RaiseException, match="queue_policy_snapshot is append-only"):
                 connection.execute("DELETE FROM queue_policy_snapshot WHERE policy_version = 'queue-v1'")
             connection.rollback()
-            assert connection.execute(
-                "SELECT COUNT(*) FROM queue_policy_snapshot WHERE policy_version = 'queue-v1'"
-            ).fetchone() == (1,)
+            assert connection.execute("SELECT COUNT(*) FROM queue_policy_snapshot WHERE policy_version = 'queue-v1'").fetchone() == (1,)
 
 
 def test_production_shape_alembic_database_upgrades_without_reapplying_baseline() -> None:
@@ -299,7 +292,7 @@ def test_production_shape_alembic_database_upgrades_without_reapplying_baseline(
 
         assert result.baseline_applied is False
         assert result.revision_before == "0098_admin_session_revocation"
-        assert result.revision_after == "0126_postgres_execution_runtime"
+        assert result.revision_after == "0127_group_ops_durable_effect_graph"
         with psycopg.connect(database_url) as connection:
             preserved = connection.execute(
                 "SELECT wecom_userid, session_version FROM admin_users WHERE id = %s",
@@ -320,16 +313,14 @@ def test_upgrade_repairs_missing_or_partial_automation_agent_audit_tables_withou
             connection.execute("DROP TABLE automation_agent_llm_call_log")
             connection.execute("DROP TABLE automation_agent_output")
             connection.execute("CREATE TABLE automation_agent_output (id BIGSERIAL PRIMARY KEY)")
-            preserved_id = int(
-                connection.execute("INSERT INTO automation_agent_output DEFAULT VALUES RETURNING id").fetchone()[0]
-            )
+            preserved_id = int(connection.execute("INSERT INTO automation_agent_output DEFAULT VALUES RETURNING id").fetchone()[0])
             connection.commit()
 
         result = install_or_upgrade_database(database_url)
 
         assert result.baseline_applied is False
         assert result.revision_before == "0123_required_physical_schema_repair"
-        assert result.revision_after == "0126_postgres_execution_runtime"
+        assert result.revision_after == "0127_group_ops_durable_effect_graph"
 
         expected_columns = {
             "automation_agent_output": {
@@ -424,10 +415,7 @@ def test_upgrade_repairs_missing_or_partial_automation_agent_audit_tables_withou
                 (preserved_id,),
             ).fetchone()
 
-        actual_columns = {
-            table_name: {column_name for row_table, column_name, _, _ in columns if row_table == table_name}
-            for table_name in expected_columns
-        }
+        actual_columns = {table_name: {column_name for row_table, column_name, _, _ in columns if row_table == table_name} for table_name in expected_columns}
         assert actual_columns == expected_columns
         assert all(is_nullable == "NO" for _, _, is_nullable, _ in columns)
         assert {
@@ -540,7 +528,7 @@ def test_execution_runtime_correctness_freezes_and_classifies_pre_cutover_queue_
                     ('webhook.test', 'http', 'post', 'loopback', 'terminal',
                      'history-freeze-terminal', 'succeeded', CURRENT_TIMESTAMP - INTERVAL '1 hour')
                     """
-                )
+            )
             connection.execute(
                 """
                 INSERT INTO external_effect_job (
@@ -641,9 +629,7 @@ def test_execution_runtime_correctness_freezes_and_classifies_pre_cutover_queue_
                 )
                 """
             )
-            new_hold = connection.execute(
-                "SELECT hold_reason, hold_at FROM external_effect_job WHERE idempotency_key = 'history-freeze-new-row'"
-            ).fetchone()
+            new_hold = connection.execute("SELECT hold_reason, hold_at FROM external_effect_job WHERE idempotency_key = 'history-freeze-new-row'").fetchone()
             connection.commit()
 
         assert classifications == {
@@ -666,9 +652,7 @@ def test_execution_runtime_correctness_freezes_and_classifies_pre_cutover_queue_
         from aicrm_next.platform_foundation.repository import RuntimeReadinessRepository
 
         with RuntimeReadinessRepository(database_url) as readiness_repo:
-            queue_metrics = readiness_repo.queue_metrics(
-                allowed_pairs=(("payment.succeeded", "payment_projection_consumer"),)
-            )
+            queue_metrics = readiness_repo.queue_metrics(allowed_pairs=(("payment.succeeded", "payment_projection_consumer"),))
         assert queue_metrics["queue_policy_version"] == 1
         assert queue_metrics["queue_raw_open_count"] == 9
         assert queue_metrics["queue_held_count"] == 8
@@ -696,11 +680,7 @@ def test_execution_runtime_correctness_freezes_and_classifies_pre_cutover_queue_
         from aicrm_next.platform_foundation.internal_events.repository import SQLAlchemyInternalEventRepository
         from aicrm_next.platform_foundation.webhook_inbox.repository import PostgresWebhookInboxRepository
 
-        sqlalchemy_url = (
-            "postgresql+psycopg://" + database_url[len("postgresql://") :]
-            if database_url.startswith("postgresql://")
-            else database_url
-        )
+        sqlalchemy_url = "postgresql+psycopg://" + database_url[len("postgresql://") :] if database_url.startswith("postgresql://") else database_url
         engine = create_engine(sqlalchemy_url)
         session_factory = sessionmaker(bind=engine, expire_on_commit=False)
         external_repo = SQLAlchemyExternalEffectRepository(session_factory)
@@ -716,12 +696,15 @@ def test_execution_runtime_correctness_freezes_and_classifies_pre_cutover_queue_
         previous_url = os.environ.get("DATABASE_URL")
         os.environ["DATABASE_URL"] = database_url
         try:
-            assert PostgresBroadcastQueueRepository().claim_due_jobs(
-                limit=10,
-                now=datetime.now(timezone.utc),
-                claim_token="history-freeze-test",
-                lease_seconds=30,
-            ) == []
+            assert (
+                PostgresBroadcastQueueRepository().claim_due_jobs(
+                    limit=10,
+                    now=datetime.now(timezone.utc),
+                    claim_token="history-freeze-test",
+                    lease_seconds=30,
+                )
+                == []
+            )
         finally:
             if previous_url is None:
                 os.environ.pop("DATABASE_URL", None)

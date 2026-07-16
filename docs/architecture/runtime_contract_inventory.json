@@ -389,7 +389,7 @@
       "accessor": "runtime_setting",
       "file": "aicrm_next/background_jobs/broadcast_queue_worker.py",
       "key": "AICRM_EXTERNAL_EFFECT_ALLOWED_OWNER_USERIDS",
-      "line": 645
+      "line": 838
     },
     {
       "accessor": "declared_runtime_environment_key",
@@ -431,19 +431,19 @@
       "accessor": "os.getenv",
       "file": "aicrm_next/automation_engine/group_ops/broadcast.py",
       "key": "AICRM_GROUP_OPS_BROADCAST_PLAN_ID",
-      "line": 260
+      "line": 270
     },
     {
       "accessor": "os.getenv",
       "file": "aicrm_next/automation_engine/group_ops/broadcast.py",
       "key": "AICRM_GROUP_OPS_MINIPROGRAM_APPID",
-      "line": 268
+      "line": 278
     },
     {
       "accessor": "os.getenv",
       "file": "aicrm_next/automation_engine/group_ops/scheduler.py",
       "key": "AICRM_GROUP_OPS_TIMEZONE",
-      "line": 23
+      "line": 29
     },
     {
       "accessor": "os.getenv",
@@ -1109,13 +1109,13 @@
       "accessor": "os.getenv",
       "file": "aicrm_next/background_jobs/broadcast_queue_worker.py",
       "key": "BROADCAST_QUEUE_LEASE_SECONDS",
-      "line": 1031
+      "line": 1219
     },
     {
       "accessor": "os.getenv",
       "file": "aicrm_next/background_jobs/broadcast_queue_worker.py",
       "key": "BROADCAST_QUEUE_RETRY_DELAY_SECONDS",
-      "line": 201
+      "line": 388
     },
     {
       "accessor": "_env_flag",
@@ -2950,7 +2950,7 @@
     }
   ],
   "migration_heads": [
-    "0126_postgres_execution_runtime"
+    "0127_group_ops_durable_effect_graph"
   ],
   "openapi_components": {
     "schemas": {
@@ -45773,6 +45773,45 @@
       ],
       "table": "automation_frequency_consumption",
       "write_owner": "aicrm_next.automation_engine"
+    },
+    {
+      "domain": "automation_engine_group_ops",
+      "drop_candidate": false,
+      "lifecycle": "queue",
+      "migration_source": "0127_group_ops_durable_effect_graph",
+      "pii_level": "none",
+      "read_owners": [
+        "Group Ops media completion continuation",
+        "execution runtime consistency audit"
+      ],
+      "table": "automation_group_ops_effect_dependency",
+      "write_owner": "aicrm_next.automation_engine.group_ops.durable_effects_repository"
+    },
+    {
+      "domain": "automation_engine_group_ops",
+      "drop_candidate": false,
+      "lifecycle": "canonical",
+      "migration_source": "0127_group_ops_durable_effect_graph",
+      "pii_level": "none",
+      "read_owners": [
+        "Group Ops execution status API",
+        "unified execution timeline"
+      ],
+      "table": "automation_group_ops_effect_graph",
+      "write_owner": "aicrm_next.automation_engine.group_ops.durable_effects_repository"
+    },
+    {
+      "domain": "automation_engine_group_ops",
+      "drop_candidate": false,
+      "lifecycle": "canonical",
+      "migration_source": "0127_group_ops_durable_effect_graph",
+      "pii_level": "none",
+      "read_owners": [
+        "Group Ops execution detail",
+        "Group Ops media completion continuation"
+      ],
+      "table": "automation_group_ops_effect_material",
+      "write_owner": "aicrm_next.automation_engine.group_ops.durable_effects_repository"
     },
     {
       "domain": "automation_group_ops",

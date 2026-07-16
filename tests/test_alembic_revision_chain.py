@@ -56,17 +56,12 @@ def _parents(value: Any) -> list[str]:
 def test_all_alembic_down_revisions_exist() -> None:
     revisions = _migration_revisions()
 
-    missing = {
-        revision: parent
-        for revision, item in revisions.items()
-        for parent in _parents(item["down_revision"])
-        if parent not in revisions
-    }
+    missing = {revision: parent for revision, item in revisions.items() for parent in _parents(item["down_revision"]) if parent not in revisions}
 
     assert missing == {}
 
 
-def test_postgres_execution_runtime_is_the_single_head() -> None:
+def test_group_ops_effect_graph_is_the_single_head() -> None:
     revisions = _migration_revisions()
     referenced = {parent for item in revisions.values() for parent in _parents(item["down_revision"])}
     heads = set(revisions) - referenced
@@ -80,8 +75,11 @@ def test_postgres_execution_runtime_is_the_single_head() -> None:
 
     postgres_runtime = VERSIONS / "0126_postgres_execution_runtime.py"
     postgres_runtime_source = postgres_runtime.read_text(encoding="utf-8")
+    group_ops_graph = VERSIONS / "0127_group_ops_durable_effect_graph.py"
+    group_ops_graph_source = group_ops_graph.read_text(encoding="utf-8")
 
-    assert heads == {"0126_postgres_execution_runtime"}
+    assert heads == {"0127_group_ops_durable_effect_graph"}
+    assert revisions["0127_group_ops_durable_effect_graph"]["down_revision"] == "0126_postgres_execution_runtime"
     assert revisions["0126_postgres_execution_runtime"]["down_revision"] == "0125_execution_runtime_correctness"
     assert revisions["0125_execution_runtime_correctness"]["down_revision"] == "0124_agent_audit_tables"
     assert revisions["0124_agent_audit_tables"]["down_revision"] == "0123_required_physical_schema_repair"
@@ -103,9 +101,10 @@ def test_postgres_execution_runtime_is_the_single_head() -> None:
     assert "uq_external_effect_attempt_open_job" in runtime_source
     assert "'dispatching'" in runtime_source
     assert "claim_enabled BOOLEAN NOT NULL DEFAULT FALSE" in postgres_runtime_source
+    assert "automation_group_ops_effect_dependency" in group_ops_graph_source
     assert "'PR-2 installs in claimless standby mode'" in postgres_runtime_source
     assert '"outbound_webhook": 4' in postgres_runtime_source
-    assert "mode = \"blocked\" if lane == \"outbound_webhook\" else \"standby\"" in postgres_runtime_source
+    assert 'mode = "blocked" if lane == "outbound_webhook" else "standby"' in postgres_runtime_source
     assert "ALTER COLUMN available_at SET NOT NULL" in postgres_runtime_source
     assert "ALTER COLUMN available_at SET DEFAULT CURRENT_TIMESTAMP" in postgres_runtime_source
     assert "historical_freeze_orphan" in postgres_runtime_source
@@ -143,9 +142,7 @@ def test_alembic_revision_storage_supports_deployed_revision_ids() -> None:
     old_wechat_unionid_revision = "0029_wechat_pay_order_" + "unionid_index"
 
     beyond_runtime_limit = {
-        revision: {"length": len(revision), "path": str(item["path"])}
-        for revision, item in revisions.items()
-        if len(revision) > ALEMBIC_VERSION_NUM_LENGTH
+        revision: {"length": len(revision), "path": str(item["path"])} for revision, item in revisions.items() if len(revision) > ALEMBIC_VERSION_NUM_LENGTH
     }
     alembic_env = (ROOT / "migrations" / "env.py").read_text(encoding="utf-8")
 
@@ -182,13 +179,9 @@ def test_user_ops_production_tables_migration_is_parent_of_wechat_unionid_index(
 
 
 def test_miniprogram_reset_migration_preserves_broadcast_job_claim_token_not_null_contract() -> None:
-    source = (
-        VERSIONS / "0034_reset_miniprogram_only_material_jobs_20260611.py"
-    ).read_text(encoding="utf-8")
+    source = (VERSIONS / "0034_reset_miniprogram_only_material_jobs_20260611.py").read_text(encoding="utf-8")
 
-    assert "claim_token TEXT NOT NULL DEFAULT ''" in (
-        VERSIONS / "0012_broadcast_job_leases.py"
-    ).read_text(encoding="utf-8")
+    assert "claim_token TEXT NOT NULL DEFAULT ''" in (VERSIONS / "0012_broadcast_job_leases.py").read_text(encoding="utf-8")
     assert "claim_token = ''" in source
     assert "claim_token = NULL" not in source
 
@@ -284,15 +277,12 @@ def test_raw_migration_sql_does_not_expose_numeric_bind_literals() -> None:
             raw_sql_strings.append((path, node.lineno, node.args[0].value))
 
     numeric_bind_risks = {
-        f"{path.relative_to(ROOT)}:{lineno}": NUMERIC_BIND_PATTERN.findall(sql)
-        for path, lineno, sql in raw_sql_strings
-        if NUMERIC_BIND_PATTERN.search(sql)
+        f"{path.relative_to(ROOT)}:{lineno}": NUMERIC_BIND_PATTERN.findall(sql) for path, lineno, sql in raw_sql_strings if NUMERIC_BIND_PATTERN.search(sql)
     }
     raw_json_default_risks = {
         f"{path.relative_to(ROOT)}:{lineno}": sql
         for path, lineno, sql in raw_sql_strings
-        if any(f"{risky_default_prefix}{value}" in sql for value in ("30", "3", "1"))
-        or old_sqlalchemy_rendered_default in sql
+        if any(f"{risky_default_prefix}{value}" in sql for value in ("30", "3", "1")) or old_sqlalchemy_rendered_default in sql
     }
 
     assert numeric_bind_risks == {}

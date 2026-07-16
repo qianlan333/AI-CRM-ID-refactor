@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from .commerce.admin_transactions import apply_wechat_refund_result, mark_wechat_refund_request_failed
 from .automation_agents.external_effect_continuation import AUTOMATION_AGENT_AUDIENCE_WEBHOOK_CONTINUATION
+from .automation_engine.group_ops.external_effect_continuation import GROUP_OPS_MEDIA_DEPENDENCY_CONTINUATION
+from .background_jobs.broadcast_effect_repository import BROADCAST_EXTERNAL_EFFECT_READ_MODEL_CONTINUATION
 from .automation_agents.internal_webhook_adapter import AutomationAgentRoutingWebhookAdapter
 from .external_push.external_effect_continuation import EXTERNAL_PUSH_DELIVERY_CONTINUATION
 from .integration_gateway import (
@@ -28,6 +30,8 @@ from .questionnaire.external_effect_continuation import QUESTIONNAIRE_CONTACT_TA
 def build_external_effect_continuation_registry() -> ExternalEffectContinuationRegistry:
     return ExternalEffectContinuationRegistry(
         (
+            GROUP_OPS_MEDIA_DEPENDENCY_CONTINUATION,
+            BROADCAST_EXTERNAL_EFFECT_READ_MODEL_CONTINUATION,
             QUESTIONNAIRE_CONTACT_TAGS_CONTINUATION,
             EXTERNAL_PUSH_DELIVERY_CONTINUATION,
             AUTOMATION_AGENT_AUDIENCE_WEBHOOK_CONTINUATION,
@@ -140,10 +144,7 @@ def _resolve_production_wecom_welcome_materials(attachments, *, resolver=None):
         resolved.append(
             {
                 "msgtype": "miniprogram",
-                "miniprogram": {
-                    field: str(nested_payload.get(field) or "").strip()
-                    for field in required
-                },
+                "miniprogram": {field: str(nested_payload.get(field) or "").strip() for field in required},
             }
         )
     return resolved
