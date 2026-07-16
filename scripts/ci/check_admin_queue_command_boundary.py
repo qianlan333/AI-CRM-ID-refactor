@@ -13,8 +13,16 @@ ROUTES = {
     ),
     "aicrm_next/platform_foundation/external_effects/api.py": (
         "run_external_effect_due",
+        "retry_external_effect_job",
+        "cancel_external_effect_job",
+    ),
+    "aicrm_next/platform_foundation/push_center/api.py": (
+        "push_center_retry_job",
+        "push_center_cancel_job",
     ),
     "aicrm_next/platform_foundation/webhook_inbox/api.py": (
+        "retry_webhook_inbox_item",
+        "skip_webhook_inbox_item",
         "dispatch_webhook_inbox_item",
         "run_webhook_inbox_due",
     ),
@@ -27,15 +35,23 @@ FORBIDDEN_CALLS = {
     "_adapter_registry",
     "_continuation_registry",
     "_worker",
+    "mark_retryable_now",
+    "mark_ignored",
+    "retry",
+    "cancel",
 }
 FORBIDDEN_NAMES = {
     "ExternalEffectWorker",
     "InternalEventWorker",
     "WeComCallbackInboxWorker",
+    "ExternalEffectService",
 }
 COMMAND_CALLS = {
     "_accepted_command_response",
+    "_accepted_action_response",
+    "_accepted_manual_action_response",
     "submit_manual_queue_command",
+    "submit_manual_queue_action",
 }
 
 

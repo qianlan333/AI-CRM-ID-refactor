@@ -18,6 +18,7 @@ from aicrm_next.platform_foundation.execution_runtime.api_command import (
     QueueCommandPayloadError,
     accepted_queue_command_payload,
     parse_manual_queue_command,
+    submit_manual_queue_action,
     submit_manual_queue_command,
 )
 from aicrm_next.platform_foundation.execution_runtime.commands import (
@@ -159,6 +160,30 @@ async def _accepted_command_response(
             service,
             target,
             command,
+            source_route=source_route,
+        )
+    except QueueCommandConflict:
+        return _json({"ok": False, "error": "queue_command_cas_conflict"}, status_code=409)
+    except ValueError:
+        return _json({"ok": False, "error": "queue_command_target_not_eligible"}, status_code=409)
+    return _json(accepted_queue_command_payload(result, command), status_code=202)
+
+
+async def _accepted_manual_action_response(
+    service: QueueRuntimeCommandService,
+    target: Any,
+    command: Any,
+    *,
+    action: str,
+    source_route: str,
+) -> JSONResponse:
+    try:
+        result = await run_in_threadpool(
+            submit_manual_queue_action,
+            service,
+            target,
+            command,
+            action=action,
             source_route=source_route,
         )
     except QueueCommandConflict:
@@ -377,10 +402,25 @@ async def retry_webhook_inbox_item(inbox_id: int, request: Request) -> JSONRespo
     token_error = _action_or_internal_token_error(request, payload)
     if token_error:
         return _json({"ok": False, "error": token_error}, status_code=401)
-    row = _repo().mark_retryable_now(int(inbox_id), reason=_text(payload.get("reason")))
-    if not row:
-        return _json({"ok": False, "error": "webhook_inbox_item_not_retryable_or_not_found"}, status_code=404)
-    return _json({"ok": True, "item": _item_payload(row)})
+    try:
+        command = parse_manual_queue_command(payload)
+    except QueueCommandPayloadError as exc:
+        return _command_payload_error(exc)
+    service = _queue_command_service(request)
+    target = await run_in_threadpool(
+        service.read_webhook_inbox_target,
+        int(inbox_id),
+        provider="wecom",
+    )
+    if target is None:
+        return _json({"ok": False, "error": "webhook_inbox_item_not_found"}, status_code=404)
+    return await _accepted_manual_action_response(
+        service,
+        target,
+        command,
+        action="retry",
+        source_route="/api/admin/webhook-inbox/{inbox_id}/retry",
+    )
 
 
 @router.post("/api/admin/webhook-inbox/{inbox_id}/skip")
@@ -389,10 +429,25 @@ async def skip_webhook_inbox_item(inbox_id: int, request: Request) -> JSONRespon
     token_error = _action_or_internal_token_error(request, payload)
     if token_error:
         return _json({"ok": False, "error": token_error}, status_code=401)
-    row = _repo().mark_ignored(int(inbox_id), reason=_text(payload.get("reason")))
-    if not row:
+    try:
+        command = parse_manual_queue_command(payload)
+    except QueueCommandPayloadError as exc:
+        return _command_payload_error(exc)
+    service = _queue_command_service(request)
+    target = await run_in_threadpool(
+        service.read_webhook_inbox_target,
+        int(inbox_id),
+        provider="wecom",
+    )
+    if target is None:
         return _json({"ok": False, "error": "webhook_inbox_item_not_found"}, status_code=404)
-    return _json({"ok": True, "item": _item_payload(row)})
+    return await _accepted_manual_action_response(
+        service,
+        target,
+        command,
+        action="skip",
+        source_route="/api/admin/webhook-inbox/{inbox_id}/skip",
+    )
 
 
 @router.post("/api/admin/webhook-inbox/{inbox_id}/dispatch")

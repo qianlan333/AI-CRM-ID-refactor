@@ -19,6 +19,7 @@ class ManualQueueCommand:
     expected_version: str
     expected_status: str = ""
     command_id: str = ""
+    duplicate_risk_confirmed: bool = False
 
 
 class QueueCommandPayloadError(ValueError):
@@ -29,6 +30,12 @@ class QueueCommandPayloadError(ValueError):
 
 def _text(value: Any) -> str:
     return str(value or "").strip()
+
+
+def _bool(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    return _text(value).lower() in {"1", "true", "yes", "on"}
 
 
 def parse_manual_queue_command(payload: Mapping[str, Any]) -> ManualQueueCommand:
@@ -46,6 +53,12 @@ def parse_manual_queue_command(payload: Mapping[str, Any]) -> ManualQueueCommand
         expected_version=values["expected_version"],
         expected_status=_text(payload.get("expected_status")),
         command_id=_text(payload.get("command_id")),
+        duplicate_risk_confirmed=_bool(
+            payload.get(
+                "duplicate_risk_confirmed",
+                payload.get("confirm_duplicate_risk"),
+            )
+        ),
     )
 
 
@@ -81,6 +94,7 @@ def accepted_queue_command_payload(
     return {
         "ok": True,
         "accepted": True,
+        "action": result.action,
         "queue_kind": target.queue_kind,
         "item_id": target.item_id,
         "execution_id": target.execution_id,
@@ -93,9 +107,36 @@ def accepted_queue_command_payload(
         "accepted_version": target.version_token,
         "actor": command.actor,
         "reason": command.reason,
+        "duplicate_risk_confirmed": command.duplicate_risk_confirmed,
         "notification": dict(result.notification_payload),
         "real_external_call_executed": False,
     }
+
+
+def submit_manual_queue_action(
+    service: QueueRuntimeCommandService,
+    target: QueueCommandTarget,
+    command: ManualQueueCommand,
+    *,
+    action: str,
+    source_route: str,
+) -> QueueCommandResult:
+    if command.expected_status and command.expected_status != target.status:
+        raise QueueCommandConflict(
+            "queue command expected_status does not match the current durable row"
+        )
+    return service.request_manual_action(
+        target.queue_kind,
+        target.item_id,
+        action=action,
+        expected_status=target.status,
+        expected_version=command.expected_version,
+        actor=command.actor,
+        reason=command.reason,
+        duplicate_risk_confirmed=command.duplicate_risk_confirmed,
+        command_id=command.command_id,
+        source_route=source_route,
+    )
 
 
 __all__ = [
@@ -104,4 +145,5 @@ __all__ = [
     "accepted_queue_command_payload",
     "parse_manual_queue_command",
     "submit_manual_queue_command",
+    "submit_manual_queue_action",
 ]

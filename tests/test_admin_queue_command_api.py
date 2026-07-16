@@ -66,7 +66,7 @@ def _seed_internal_run(*, consumer_name: str = "pytest_command_consumer") -> dic
     return dict(row)
 
 
-def _seed_webhook() -> dict:
+def _seed_webhook(*, status: str = "received") -> dict:
     key = uuid4().hex
     with _connect() as connection:
         row = connection.execute(
@@ -74,15 +74,20 @@ def _seed_webhook() -> dict:
             INSERT INTO webhook_inbox (
                 provider, event_family, route, idempotency_key,
                 execution_id, lane, available_at, ordering_key,
-                fairness_key, policy_version
+                fairness_key, policy_version, status
             ) VALUES (
                 'wecom', 'external_contact', '/tests/admin-queue-command', %s,
                 %s, 'webhook_inbox', CURRENT_TIMESTAMP + INTERVAL '1 hour',
-                %s, 'wecom:external_contact', 'queue-v1'
+                %s, 'wecom:external_contact', 'queue-v1', %s
             )
             RETURNING id, execution_id
             """,
-            (f"webhook-{key}", f"exe_webhook_command_{key}", f"order-{key}"),
+            (
+                f"webhook-{key}",
+                f"exe_webhook_command_{key}",
+                f"order-{key}",
+                status,
+            ),
         ).fetchone()
     return dict(row)
 
@@ -99,6 +104,21 @@ def _assert_accepted(body: dict, *, queue_kind: str, item_id: int) -> None:
     assert body["actor"] == "pytest-operator"
     assert body["reason"] == "manual durable wake"
     assert body["real_external_call_executed"] is False
+
+
+def _seed_external_effect(*, status: str) -> dict:
+    return ExternalEffectService().plan_effect(
+        effect_type="test.admin.manual.queue.command",
+        adapter_name="forbidden_provider",
+        operation="send",
+        target_type="test_target",
+        target_id=f"target-{uuid4().hex}",
+        payload={"execution_scope": "test_loopback"},
+        idempotency_key=f"admin-manual-queue-command-{uuid4().hex}",
+        scheduled_at=datetime.now(timezone.utc) + timedelta(hours=1),
+        lane="wecom_interactive",
+        status=status,
+    )
 
 
 def _assert_required_command_fields(client, url: str, *, headers: dict, payload: dict) -> None:
@@ -318,3 +338,170 @@ def test_queue_command_cas_has_one_concurrent_winner() -> None:
         results = list(executor.map(submit, (1, 2)))
 
     assert sorted(results) == ["accepted", "conflict"]
+
+
+@pytest.mark.parametrize(
+    "route_template",
+    (
+        "/api/admin/external-effects/jobs/{job_id}/retry",
+        "/api/admin/push-center/jobs/{job_id}/retry",
+    ),
+)
+def test_external_retry_routes_require_versioned_command_and_never_call_provider(
+    next_client,
+    route_template: str,
+) -> None:
+    job = _seed_external_effect(status="failed_retryable")
+    target = QueueRuntimeCommandService().read_target("external_effect", int(job["id"]))
+    assert target is not None
+    token = install_admin_action_tokens(next_client, ("POST", route_template))[("POST", route_template)]
+    url = route_template.replace("{job_id}", str(job["id"]))
+    headers = {"X-Admin-Action-Token": token}
+    payload = {
+        "actor": "pytest-operator",
+        "reason": "manual durable wake",
+        "expected_version": target.version_token,
+    }
+    _assert_required_command_fields(next_client, url, headers=headers, payload=payload)
+
+    accepted = next_client.post(url, headers=headers, json=payload)
+    stale = next_client.post(url, headers=headers, json=payload)
+
+    assert accepted.status_code == 202
+    _assert_accepted(accepted.json(), queue_kind="external_effect", item_id=int(job["id"]))
+    assert accepted.json()["action"] == "retry"
+    assert stale.status_code == 409
+    assert stale.json()["error"] == "queue_command_cas_conflict"
+    with _connect() as connection:
+        persisted = connection.execute(
+            """
+            SELECT status, provider_call_started_at, available_at
+            FROM external_effect_job WHERE id = %s
+            """,
+            (int(job["id"]),),
+        ).fetchone()
+        attempt_count = connection.execute(
+            "SELECT COUNT(*) AS count FROM external_effect_attempt WHERE job_id = %s",
+            (int(job["id"]),),
+        ).fetchone()["count"]
+    assert persisted["status"] == "queued"
+    assert persisted["provider_call_started_at"] is None
+    assert persisted["available_at"] <= datetime.now(timezone.utc)
+    assert attempt_count == 0
+
+
+@pytest.mark.parametrize(
+    "route_template",
+    (
+        "/api/admin/external-effects/jobs/{job_id}/cancel",
+        "/api/admin/push-center/jobs/{job_id}/cancel",
+    ),
+)
+def test_external_cancel_routes_are_strict_cas_commands(
+    next_client,
+    route_template: str,
+) -> None:
+    job = _seed_external_effect(status="queued")
+    target = QueueRuntimeCommandService().read_target("external_effect", int(job["id"]))
+    assert target is not None
+    token = install_admin_action_tokens(next_client, ("POST", route_template))[("POST", route_template)]
+    url = route_template.replace("{job_id}", str(job["id"]))
+    headers = {"X-Admin-Action-Token": token}
+    payload = {
+        "actor": "pytest-operator",
+        "reason": "manual durable wake",
+        "expected_version": target.version_token,
+    }
+    _assert_required_command_fields(next_client, url, headers=headers, payload=payload)
+
+    accepted = next_client.post(url, headers=headers, json=payload)
+    stale = next_client.post(url, headers=headers, json=payload)
+
+    assert accepted.status_code == 202
+    _assert_accepted(accepted.json(), queue_kind="external_effect", item_id=int(job["id"]))
+    assert accepted.json()["action"] == "cancel"
+    assert accepted.json()["status"] == "cancelled"
+    assert stale.status_code == 409
+    assert stale.json()["error"] == "queue_command_cas_conflict"
+
+
+def test_unknown_external_retry_requires_duplicate_risk_confirmed(next_client) -> None:
+    job = _seed_external_effect(status="failed_retryable")
+    with _connect() as connection:
+        connection.execute(
+            """
+            UPDATE external_effect_job
+            SET status = 'unknown_after_dispatch',
+                provider_call_started_at = CURRENT_TIMESTAMP,
+                reconciliation_required = TRUE,
+                row_version = row_version + 1
+            WHERE id = %s
+            """,
+            (int(job["id"]),),
+        )
+    target = QueueRuntimeCommandService().read_target("external_effect", int(job["id"]))
+    assert target is not None
+    route = "/api/admin/external-effects/jobs/{job_id}/retry"
+    token = install_admin_action_tokens(next_client, ("POST", route))[("POST", route)]
+    url = route.replace("{job_id}", str(job["id"]))
+    payload = {
+        "actor": "pytest-operator",
+        "reason": "manual durable wake",
+        "expected_version": target.version_token,
+    }
+
+    missing_confirmation = next_client.post(
+        url,
+        headers={"X-Admin-Action-Token": token},
+        json=payload,
+    )
+    payload["duplicate_risk_confirmed"] = True
+    accepted = next_client.post(
+        url,
+        headers={"X-Admin-Action-Token": token},
+        json=payload,
+    )
+
+    assert missing_confirmation.status_code == 409
+    assert missing_confirmation.json()["error"] == "duplicate_risk_confirmation_required"
+    assert accepted.status_code == 202
+    assert accepted.json()["duplicate_risk_confirmed"] is True
+    assert accepted.json()["action"] == "retry"
+
+
+@pytest.mark.parametrize(
+    ("action", "initial_status", "expected_status"),
+    (
+        ("retry", "dead_letter", "failed_retryable"),
+        ("skip", "received", "ignored"),
+    ),
+)
+def test_webhook_manual_actions_use_versioned_queue_commands(
+    next_client,
+    action: str,
+    initial_status: str,
+    expected_status: str,
+) -> None:
+    row = _seed_webhook(status=initial_status)
+    target = QueueRuntimeCommandService().read_target("webhook_inbox", int(row["id"]))
+    assert target is not None
+    route = f"/api/admin/webhook-inbox/{{inbox_id}}/{action}"
+    token = install_admin_action_tokens(next_client, ("POST", route))[("POST", route)]
+    url = route.replace("{inbox_id}", str(row["id"]))
+    headers = {"X-Admin-Action-Token": token}
+    payload = {
+        "actor": "pytest-operator",
+        "reason": "manual durable wake",
+        "expected_version": target.version_token,
+    }
+    _assert_required_command_fields(next_client, url, headers=headers, payload=payload)
+
+    accepted = next_client.post(url, headers=headers, json=payload)
+    stale = next_client.post(url, headers=headers, json=payload)
+
+    assert accepted.status_code == 202
+    _assert_accepted(accepted.json(), queue_kind="webhook_inbox", item_id=int(row["id"]))
+    assert accepted.json()["action"] == action
+    assert accepted.json()["status"] == expected_status
+    assert stale.status_code == 409
+    assert stale.json()["error"] == "queue_command_cas_conflict"

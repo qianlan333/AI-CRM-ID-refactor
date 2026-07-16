@@ -160,10 +160,11 @@ def test_webhook_inbox_admin_retry_and_skip_require_token(monkeypatch):
     )
 
     assert rejected.status_code == 401
-    assert accepted.status_code == 200
-    assert accepted.json()["item"]["status"] == "failed_retryable"
-    assert skipped.status_code == 200
-    assert skipped.json()["item"]["status"] == "ignored"
+    assert accepted.status_code == 422
+    assert set(accepted.json()["missing_fields"]) == {"actor", "expected_version"}
+    assert skipped.status_code == 422
+    assert set(skipped.json()["missing_fields"]) == {"actor", "expected_version"}
+    assert repo.get_item(row["id"])["status"] == "dead_letter"
 
 
 def test_webhook_inbox_admin_dispatch_one_requires_token_and_versioned_command(monkeypatch):

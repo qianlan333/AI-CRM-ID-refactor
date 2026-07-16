@@ -41,10 +41,15 @@ class QueueCommandResult:
     intent_id: str
     command_id: str
     notification_payload: dict[str, str]
+    action: str = "make_eligible_now"
 
 
 class QueueCommandConflict(RuntimeError):
     """The durable queue row no longer matches the operator's snapshot."""
+
+
+class QueueCommandDuplicateRiskRequired(RuntimeError):
+    """An unknown provider outcome cannot be retried without explicit risk acceptance."""
 
 
 @dataclass(frozen=True)
@@ -393,6 +398,272 @@ class QueueRuntimeCommandService:
             notification_payload=notification,
         )
 
+    def request_manual_action(
+        self,
+        queue_kind: str,
+        item_id: int,
+        *,
+        action: str,
+        expected_status: str,
+        expected_version: str,
+        actor: str,
+        reason: str,
+        duplicate_risk_confirmed: bool = False,
+        command_id: str = "",
+        source_route: str = "",
+    ) -> QueueCommandResult:
+        normalized_kind, fact = _fact(queue_kind)
+        normalized_action = _required_text(action, "action").lower()
+        normalized_status = _required_text(expected_status, "expected_status")
+        normalized_version = _required_text(expected_version, "expected_version")
+        normalized_actor = _required_text(actor, "actor")
+        normalized_reason = _required_text(reason, "reason")
+        normalized_command_id = str(command_id or "").strip() or "qcmd_" + uuid4().hex
+        supported = {
+            ("external_effect", "retry"),
+            ("external_effect", "cancel"),
+            ("webhook_inbox", "retry"),
+            ("webhook_inbox", "skip"),
+        }
+        if (normalized_kind, normalized_action) not in supported:
+            raise ValueError(
+                f"action {normalized_action!r} is not supported for {normalized_kind}"
+            )
+        if (
+            normalized_kind == "external_effect"
+            and normalized_action == "retry"
+            and normalized_status == "unknown_after_dispatch"
+            and duplicate_risk_confirmed is not True
+        ):
+            raise QueueCommandDuplicateRiskRequired(
+                "duplicate_risk_confirmed=true is required for unknown_after_dispatch"
+            )
+
+        statement = self._manual_action_statement(
+            queue_kind=normalized_kind,
+            action=normalized_action,
+            version_predicate=fact.version_predicate,
+            version_expression=fact.version_expression,
+        )
+        with self._session_factory() as session:
+            with session.begin():
+                row = (
+                    session.execute(
+                        text(statement),
+                        {
+                            "item_id": int(item_id),
+                            "expected_status": normalized_status,
+                            "expected_version": normalized_version,
+                            "actor": normalized_actor,
+                            "reason": normalized_reason,
+                        },
+                    )
+                    .mappings()
+                    .fetchone()
+                )
+                if not row:
+                    raise QueueCommandConflict(
+                        "manual queue command CAS failed; target changed, is leased, held, or terminal"
+                    )
+                target = self._target(normalized_kind, row)
+                notification = {"queue_kind": normalized_kind, "lane": target.lane}
+                session.execute(
+                    text(
+                        """
+                        SELECT pg_notify(
+                            'aicrm_queue_wakeup',
+                            json_build_object(
+                                'queue_kind', CAST(:queue_kind AS TEXT),
+                                'lane', CAST(:lane AS TEXT)
+                            )::text
+                        )
+                        """
+                    ),
+                    notification,
+                )
+                audit = enqueue_internal_event_outbox_in_session(
+                    session,
+                    InternalEventCreateRequest(
+                        event_type=QUEUE_RUNTIME_COMMAND_APPLIED,
+                        aggregate_type="queue_runtime_item",
+                        aggregate_id=f"{normalized_kind}:{int(item_id)}",
+                        subject_type="execution",
+                        subject_id=target.execution_id,
+                        idempotency_key=f"queue-runtime-command:{normalized_command_id}",
+                        source_module="platform_foundation.execution_runtime.commands",
+                        source_command_id=normalized_command_id,
+                        parent_execution_id=target.execution_id,
+                        payload={
+                            "queue_kind": normalized_kind,
+                            "item_id": int(item_id),
+                            "lane": target.lane,
+                            "action": normalized_action,
+                            "reason": normalized_reason,
+                            "duplicate_risk_confirmed": bool(duplicate_risk_confirmed),
+                        },
+                        payload_summary={
+                            "queue_kind": normalized_kind,
+                            "lane": target.lane,
+                            "action": normalized_action,
+                            "expected_status": normalized_status,
+                            "duplicate_risk_confirmed": bool(duplicate_risk_confirmed),
+                            "provider_call_requested": False,
+                        },
+                        context=CommandContext(
+                            actor_id=normalized_actor,
+                            actor_type="operator",
+                            request_id=normalized_command_id,
+                            trace_id=normalized_command_id,
+                            source_route=str(source_route or "").strip(),
+                        ),
+                    ),
+                )
+        return QueueCommandResult(
+            target=target,
+            intent_id=str(audit.get("outbox_id") or ""),
+            command_id=normalized_command_id,
+            notification_payload=notification,
+            action=normalized_action,
+        )
+
+    @staticmethod
+    def _manual_action_statement(
+        *,
+        queue_kind: str,
+        action: str,
+        version_predicate: str,
+        version_expression: str,
+    ) -> str:
+        if queue_kind == "external_effect" and action == "retry":
+            return f"""
+                UPDATE external_effect_job
+                SET status = 'queued',
+                    locked_by = '', locked_at = NULL,
+                    lease_token = '', lease_expires_at = NULL,
+                    heartbeat_at = NULL, worker_generation = 0,
+                    next_retry_at = CURRENT_TIMESTAMP,
+                    available_at = CURRENT_TIMESTAMP,
+                    reconciliation_required = FALSE,
+                    cancel_requested_at = NULL,
+                    cancel_requested_by = '', cancel_reason = '',
+                    max_attempts = GREATEST(max_attempts, attempt_count + 1),
+                    completed_at = NULL,
+                    row_version = row_version + 1,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = :item_id
+                  AND status = :expected_status
+                  AND {version_predicate}
+                  AND status IN (
+                      'failed_retryable', 'failed_terminal', 'blocked',
+                      'unknown_after_dispatch'
+                  )
+                  AND hold_reason = ''
+                  AND (lease_expires_at IS NULL OR lease_expires_at <= CURRENT_TIMESTAMP)
+                RETURNING id, execution_id, lane, status, hold_reason,
+                          {version_expression} AS version_token
+            """
+        if queue_kind == "external_effect" and action == "cancel":
+            return f"""
+                UPDATE external_effect_job
+                SET cancel_requested_at = COALESCE(cancel_requested_at, CURRENT_TIMESTAMP),
+                    cancel_requested_by = CASE
+                        WHEN cancel_requested_by = '' THEN :actor ELSE cancel_requested_by
+                    END,
+                    cancel_reason = CASE
+                        WHEN cancel_reason = '' THEN :reason ELSE cancel_reason
+                    END,
+                    status = CASE WHEN status = 'dispatching' THEN status ELSE 'cancelled' END,
+                    locked_by = CASE WHEN status = 'dispatching' THEN locked_by ELSE '' END,
+                    locked_at = CASE WHEN status = 'dispatching' THEN locked_at ELSE NULL END,
+                    lease_token = CASE WHEN status = 'dispatching' THEN lease_token ELSE '' END,
+                    lease_expires_at = CASE
+                        WHEN status = 'dispatching' THEN lease_expires_at ELSE NULL
+                    END,
+                    heartbeat_at = CASE WHEN status = 'dispatching' THEN heartbeat_at ELSE NULL END,
+                    worker_generation = CASE
+                        WHEN status = 'dispatching' THEN worker_generation ELSE 0
+                    END,
+                    cancelled_at = CASE
+                        WHEN status = 'dispatching' THEN cancelled_at ELSE CURRENT_TIMESTAMP
+                    END,
+                    completed_at = CASE
+                        WHEN status = 'dispatching' THEN completed_at ELSE CURRENT_TIMESTAMP
+                    END,
+                    row_version = row_version + 1,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = :item_id
+                  AND status = :expected_status
+                  AND {version_predicate}
+                  AND status IN (
+                      'planned', 'approved', 'queued', 'failed_retryable', 'dispatching'
+                  )
+                RETURNING id, execution_id, lane, status, hold_reason,
+                          {version_expression} AS version_token
+            """
+        if queue_kind == "webhook_inbox" and action == "retry":
+            return f"""
+                UPDATE webhook_inbox
+                SET status = 'failed_retryable',
+                    next_retry_at = CURRENT_TIMESTAMP,
+                    available_at = CURRENT_TIMESTAMP,
+                    locked_at = NULL, locked_by = '',
+                    lease_token = '', lease_expires_at = NULL,
+                    heartbeat_at = NULL, worker_generation = 0,
+                    max_attempts = GREATEST(max_attempts, attempt_count + 1),
+                    last_error_code = 'operator_retry',
+                    last_error_message = :reason,
+                    finished_at = NULL,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = :item_id
+                  AND status = :expected_status
+                  AND {version_predicate}
+                  AND status IN (
+                      'failed_retryable', 'failed_terminal', 'dead_letter', 'processing'
+                  )
+                  AND hold_reason = ''
+                  AND (
+                      status <> 'processing'
+                      OR lease_expires_at <= CURRENT_TIMESTAMP
+                      OR (
+                          lease_expires_at IS NULL
+                          AND locked_at <= CURRENT_TIMESTAMP - INTERVAL '5 minutes'
+                      )
+                  )
+                RETURNING id, execution_id, lane, status, hold_reason,
+                          {version_expression} AS version_token
+            """
+        if queue_kind == "webhook_inbox" and action == "skip":
+            return f"""
+                UPDATE webhook_inbox
+                SET status = 'ignored',
+                    next_retry_at = NULL,
+                    locked_at = NULL, locked_by = '',
+                    lease_token = '', lease_expires_at = NULL,
+                    heartbeat_at = NULL, worker_generation = 0,
+                    last_error_code = 'operator_skip',
+                    last_error_message = :reason,
+                    finished_at = CURRENT_TIMESTAMP,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = :item_id
+                  AND status = :expected_status
+                  AND {version_predicate}
+                  AND status IN (
+                      'received', 'failed_retryable', 'failed_terminal',
+                      'dead_letter', 'processing'
+                  )
+                  AND (
+                      status <> 'processing'
+                      OR lease_expires_at <= CURRENT_TIMESTAMP
+                      OR (
+                          lease_expires_at IS NULL
+                          AND locked_at <= CURRENT_TIMESTAMP - INTERVAL '5 minutes'
+                      )
+                  )
+                RETURNING id, execution_id, lane, status, hold_reason,
+                          {version_expression} AS version_token
+            """
+        raise ValueError(f"unsupported manual queue action: {queue_kind}:{action}")
+
     @staticmethod
     def _target(queue_kind: str, row: Any) -> QueueCommandTarget:
         values = dict(row or {})
@@ -449,6 +720,7 @@ __all__ = [
     "QUEUE_RUNTIME_COMMAND_APPLIED",
     "QUEUE_RUNTIME_COMMAND_AUDIT_CONSUMER",
     "QueueCommandConflict",
+    "QueueCommandDuplicateRiskRequired",
     "QueueCommandResult",
     "QueueCommandTarget",
     "QueueRuntimeCommandService",

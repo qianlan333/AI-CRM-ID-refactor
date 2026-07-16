@@ -11,10 +11,12 @@ from aicrm_next.platform_foundation.execution_runtime.api_command import (
     QueueCommandPayloadError,
     accepted_queue_command_payload,
     parse_manual_queue_command,
+    submit_manual_queue_action,
     submit_manual_queue_command,
 )
 from aicrm_next.platform_foundation.execution_runtime.commands import (
     QueueCommandConflict,
+    QueueCommandDuplicateRiskRequired,
     QueueRuntimeCommandService,
 )
 
@@ -67,19 +69,6 @@ def _int(value: Any, *, default: int, minimum: int = 0, maximum: int = 200) -> i
     except Exception:
         parsed = default
     return max(minimum, min(parsed, maximum))
-
-
-def _optional_expected_version(payload: dict[str, Any]) -> tuple[int | None, str]:
-    value = payload.get("expected_version", payload.get("row_version"))
-    if value in (None, ""):
-        return None, ""
-    try:
-        parsed = int(value)
-    except (TypeError, ValueError):
-        return None, "expected_version_must_be_a_positive_integer"
-    if parsed < 1:
-        return None, "expected_version_must_be_a_positive_integer"
-    return parsed, ""
 
 
 def _json(payload: dict[str, Any], *, status_code: int = 200) -> JSONResponse:
@@ -138,6 +127,58 @@ async def _preview_external_due(request: Request, payload: dict[str, Any]) -> di
     )
     result["route_owner"] = ROUTE_OWNER
     return redact_external_effect_admin_response(result)
+
+
+async def _accepted_action_response(
+    service: QueueRuntimeCommandService,
+    target: Any,
+    command: Any,
+    *,
+    action: str,
+    source_route: str,
+) -> JSONResponse:
+    try:
+        result = await run_in_threadpool(
+            submit_manual_queue_action,
+            service,
+            target,
+            command,
+            action=action,
+            source_route=source_route,
+        )
+    except QueueCommandDuplicateRiskRequired:
+        return _json(
+            {
+                "ok": False,
+                "error": "duplicate_risk_confirmation_required",
+                "route_owner": ROUTE_OWNER,
+                "real_external_call_executed": False,
+            },
+            status_code=409,
+        )
+    except QueueCommandConflict:
+        return _json(
+            {
+                "ok": False,
+                "error": "queue_command_cas_conflict",
+                "route_owner": ROUTE_OWNER,
+                "real_external_call_executed": False,
+            },
+            status_code=409,
+        )
+    except ValueError:
+        return _json(
+            {
+                "ok": False,
+                "error": "queue_command_target_not_eligible",
+                "route_owner": ROUTE_OWNER,
+                "real_external_call_executed": False,
+            },
+            status_code=409,
+        )
+    accepted = accepted_queue_command_payload(result, command)
+    accepted["route_owner"] = ROUTE_OWNER
+    return _json(accepted, status_code=202)
 
 
 @router.get("/api/admin/external-effects/jobs")
@@ -443,36 +484,27 @@ async def retry_external_effect_job(job_id: int, request: Request) -> JSONRespon
     token_error = _action_or_internal_token_error(request, payload)
     if token_error:
         return _json({"ok": False, "error": token_error, "route_owner": ROUTE_OWNER}, status_code=401)
-    service = _service()
-    existing = service.get(job_id)
-    if existing and existing.status == "unknown_after_dispatch":
-        if not _bool(payload.get("confirm_duplicate_risk")):
-            return _json(
-                {
-                    "ok": False,
-                    "error": "duplicate_risk_confirmation_required",
-                    "route_owner": ROUTE_OWNER,
-                },
-                status_code=409,
-            )
-        if not _text(payload.get("actor")) or not _text(payload.get("reason")):
-            return _json(
-                {
-                    "ok": False,
-                    "error": "manual_retry_actor_and_reason_required",
-                    "route_owner": ROUTE_OWNER,
-                },
-                status_code=422,
-            )
-    job = service.retry(
-        job_id,
-        actor=_text(payload.get("actor")),
-        reason=_text(payload.get("reason")),
-        confirm_duplicate_risk=_bool(payload.get("confirm_duplicate_risk")),
+    try:
+        command = parse_manual_queue_command(payload)
+    except QueueCommandPayloadError as exc:
+        return _command_payload_error(exc)
+    service = _queue_command_service(request)
+    target = await run_in_threadpool(
+        service.read_external_effect_target,
+        int(job_id),
     )
-    if not job:
-        return _json({"ok": False, "error": "external_effect_job_not_retryable", "route_owner": ROUTE_OWNER}, status_code=409)
-    return _json({"ok": True, "job": external_effect_job_detail_item(job), "route_owner": ROUTE_OWNER})
+    if target is None:
+        return _json(
+            {"ok": False, "error": "external_effect_job_not_found", "route_owner": ROUTE_OWNER},
+            status_code=404,
+        )
+    return await _accepted_action_response(
+        service,
+        target,
+        command,
+        action="retry",
+        source_route="/api/admin/external-effects/jobs/{job_id}/retry",
+    )
 
 
 @router.post("/api/admin/external-effects/jobs/{job_id}/cancel")
@@ -481,15 +513,24 @@ async def cancel_external_effect_job(job_id: int, request: Request) -> JSONRespo
     token_error = _action_or_internal_token_error(request, payload)
     if token_error:
         return _json({"ok": False, "error": token_error, "route_owner": ROUTE_OWNER}, status_code=401)
-    expected_version, version_error = _optional_expected_version(payload)
-    if version_error:
-        return _json({"ok": False, "error": version_error, "route_owner": ROUTE_OWNER}, status_code=422)
-    job = _service().cancel(
-        job_id,
-        actor=_text(payload.get("actor")),
-        reason=_text(payload.get("reason")),
-        expected_version=expected_version,
+    try:
+        command = parse_manual_queue_command(payload)
+    except QueueCommandPayloadError as exc:
+        return _command_payload_error(exc)
+    service = _queue_command_service(request)
+    target = await run_in_threadpool(
+        service.read_external_effect_target,
+        int(job_id),
     )
-    if not job:
-        return _json({"ok": False, "error": "external_effect_job_not_cancellable", "route_owner": ROUTE_OWNER}, status_code=409)
-    return _json({"ok": True, "job": external_effect_job_detail_item(job), "route_owner": ROUTE_OWNER})
+    if target is None:
+        return _json(
+            {"ok": False, "error": "external_effect_job_not_found", "route_owner": ROUTE_OWNER},
+            status_code=404,
+        )
+    return await _accepted_action_response(
+        service,
+        target,
+        command,
+        action="cancel",
+        source_route="/api/admin/external-effects/jobs/{job_id}/cancel",
+    )
