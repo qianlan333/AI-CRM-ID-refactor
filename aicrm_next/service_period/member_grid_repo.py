@@ -27,6 +27,58 @@ from .member_grid import (
 )
 
 
+EFFECTIVE_RENEWAL_EVENT_TYPES = ("activated", "renewed", "admin_adjusted")
+REFUND_RELATED_ORDER_STATUSES = (
+    "requested",
+    "processing",
+    "refund_processing",
+    "partial_refunded",
+    "full_refunded",
+)
+
+
+def effective_renewal_count_from_events(
+    events: list[dict[str, Any]],
+    *,
+    service_product_id: str,
+    unionid: str,
+) -> int:
+    """Return valid paid enrollment orders minus the first enrollment."""
+
+    normalized_product_id = text(service_product_id)
+    normalized_unionid = text(unionid)
+    eligible_orders: set[str] = set()
+    refunded_orders: set[str] = set()
+    for event in events:
+        if text(event.get("service_product_id")) != normalized_product_id:
+            continue
+        if text(event.get("unionid")) != normalized_unionid:
+            continue
+        out_trade_no = text(event.get("out_trade_no"))
+        if not out_trade_no:
+            continue
+        event_type = text(event.get("event_type"))
+        if event_type == "refunded":
+            refunded_orders.add(out_trade_no)
+            continue
+        if event_type not in EFFECTIVE_RENEWAL_EVENT_TYPES:
+            continue
+        payload = event.get("payload_json") if isinstance(event.get("payload_json"), dict) else {}
+        order = payload.get("order") if isinstance(payload.get("order"), dict) else {}
+        if order:
+            is_paid = text(order.get("status")).lower() == "paid" or text(order.get("trade_state")).upper() == "SUCCESS"
+            if not is_paid:
+                continue
+            try:
+                refunded_amount = int(order.get("refunded_amount_total") or 0)
+            except (TypeError, ValueError):
+                refunded_amount = 0
+            if refunded_amount > 0 or text(order.get("refund_status")).lower() in REFUND_RELATED_ORDER_STATUSES:
+                continue
+        eligible_orders.add(out_trade_no)
+    return max(len(eligible_orders - refunded_orders) - 1, 0)
+
+
 class MemberGridRepositoryProtocol(Protocol):
     def list_member_views(self, service_product_id: str) -> dict[str, Any]: ...
     def create_member_view(self, service_product_id: str, *, name: str, config: dict[str, Any], actor: str) -> dict[str, Any]: ...
@@ -450,6 +502,9 @@ class PostgresMemberGridRepositoryMixin:
         last_open = f"CASE WHEN {matched} THEN raw.huangyoucan_last_open_at ELSE NULL END"
         params: list[Any] = [
             text(service_product_id),
+            list(EFFECTIVE_RENEWAL_EVENT_TYPES),
+            list(REFUND_RELATED_ORDER_STATUSES),
+            text(service_product_id),
             snapshot_at,
             snapshot_at,
             *filter_params,
@@ -459,12 +514,46 @@ class PostgresMemberGridRepositoryMixin:
         with self._connect() as conn:
             rows = conn.execute(
                 f"""
-                WITH raw_members AS (
+                WITH effective_order_counts AS MATERIALIZED (
+                    SELECT
+                        source.service_product_id,
+                        source.unionid,
+                        GREATEST(
+                            COUNT(DISTINCT COALESCE(NULLIF(paid_order.out_trade_no, ''), paid_order.id::text)) - 1,
+                            0
+                        )::integer AS renewal_count
+                    FROM service_period_events source
+                    JOIN wechat_pay_orders paid_order
+                      ON paid_order.id = source.order_id
+                      OR (
+                          source.order_id IS NULL
+                          AND source.out_trade_no <> ''
+                          AND paid_order.out_trade_no = source.out_trade_no
+                      )
+                    WHERE source.tenant_id = 'aicrm'
+                      AND source.service_product_id::text = %s
+                      AND source.event_type = ANY(%s)
+                      AND source.unionid <> ''
+                      AND source.out_trade_no <> ''
+                      AND (paid_order.status = 'paid' OR paid_order.trade_state = 'SUCCESS')
+                      AND COALESCE(paid_order.refunded_amount_total, 0) = 0
+                      AND NOT (LOWER(COALESCE(paid_order.refund_status, '')) = ANY(%s))
+                      AND NOT EXISTS (
+                          SELECT 1
+                          FROM service_period_events refunded
+                          WHERE refunded.tenant_id = source.tenant_id
+                            AND refunded.service_product_id = source.service_product_id
+                            AND refunded.event_type = 'refunded'
+                            AND refunded.out_trade_no = source.out_trade_no
+                      )
+                    GROUP BY source.service_product_id, source.unionid
+                ),
+                raw_members AS (
                     SELECT
                         e.id AS record_id,
                         e.unionid,
                         e.end_at,
-                        GREATEST(COALESCE(e.renewal_count, 0), 0)::integer AS renewal_count,
+                        COALESCE(effective_orders.renewal_count, 0)::integer AS renewal_count,
                         COALESCE(
                             NULLIF(c.remark, ''),
                             NULLIF(wfu.remark, ''),
@@ -486,6 +575,9 @@ class PostgresMemberGridRepositoryMixin:
                         COALESCE(NULLIF(e.metadata_json->>'admin_alliance', ''), '') AS alliance,
                         {huangyoucan_usage_select_fields()}
                     FROM service_period_entitlements e
+                    LEFT JOIN effective_order_counts effective_orders
+                      ON effective_orders.service_product_id = e.service_product_id
+                     AND effective_orders.unionid = e.unionid
                     LEFT JOIN wechat_pay_orders o ON o.id = e.last_order_id
                     LEFT JOIN crm_user_identity c ON c.unionid = e.unionid
                     LEFT JOIN LATERAL (

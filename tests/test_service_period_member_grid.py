@@ -10,6 +10,7 @@ from fastapi.testclient import TestClient
 from aicrm_next.commerce.repo import reset_commerce_fixture_state
 from aicrm_next.main import create_app
 from aicrm_next.service_period.application import (
+    ApplyServicePeriodRefundCommand,
     CreateServicePeriodProductCommand,
     GrantOrRenewEntitlementCommand,
 )
@@ -324,6 +325,13 @@ def test_member_grid_api_exposes_renewal_count_and_editable_admin_text_fields(ne
     assert refreshed.json()["rows"][0]["values"]["alliance"] == "增长联盟"
     assert refreshed.json()["rows"][0]["values"]["renewal_count"] == 1
 
+    ApplyServicePeriodRefundCommand()(out_trade_no="SP_MEMBER_GRID_0002", refund={"refund_status": "full_refunded"})
+    after_refund = next_client.post(
+        f"/api/admin/service-period-products/{product['id']}/member-grid/query",
+        json={"config": empty_view_config(), "limit": 100},
+    )
+    assert after_refund.json()["rows"][0]["values"]["renewal_count"] == 0
+
 
 def test_viewer_can_query_drafts_but_cannot_manage_views_or_edit_remarks(monkeypatch) -> None:
     _reset()
@@ -430,6 +438,83 @@ def test_postgres_grid_query_and_view_repository_contract(next_pg_schema) -> Non
                 (f"hyc_grid_pg_{index:04d}", unionid, index % 2 == 0, index % 3 == 0, index % 6, index % 11),
             )
 
+        def insert_paid_order_event(
+            *,
+            member_index: int,
+            order_index: int,
+            refunded_amount_total: int = 0,
+            refund_status: str = "",
+            add_refund_event: bool = False,
+        ) -> None:
+            unionid = f"union_grid_pg_{member_index:04d}"
+            entitlement_id = connection.execute(
+                "SELECT id FROM service_period_entitlements WHERE service_product_id = %s AND unionid = %s",
+                (int(product["id"]), unionid),
+            ).fetchone()[0]
+            out_trade_no = f"SP_GRID_PG_{member_index:04d}_{order_index:02d}"
+            order_id = connection.execute(
+                """
+                INSERT INTO wechat_pay_orders (
+                    out_trade_no, order_source, product_code, product_name,
+                    amount_total, unionid, status, trade_state, paid_at,
+                    refunded_amount_total, refund_status
+                ) VALUES (%s, 'service_period_checkout', 'sp_grid_pg', 'PG 成员网格',
+                          99900, %s, 'paid', 'SUCCESS', CURRENT_TIMESTAMP, %s, %s)
+                RETURNING id
+                """,
+                (out_trade_no, unionid, refunded_amount_total, refund_status),
+            ).fetchone()[0]
+            event_type = "activated" if order_index == 1 else "renewed"
+            connection.execute(
+                """
+                INSERT INTO service_period_events (
+                    event_id, service_product_id, entitlement_id, trade_product_id,
+                    order_id, out_trade_no, unionid, event_type, duration_days
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 90)
+                """,
+                (
+                    f"pytest:{event_type}:{out_trade_no}",
+                    int(product["id"]),
+                    entitlement_id,
+                    trade_product_id,
+                    order_id,
+                    out_trade_no,
+                    unionid,
+                    event_type,
+                ),
+            )
+            if add_refund_event:
+                connection.execute(
+                    """
+                    INSERT INTO service_period_events (
+                        event_id, service_product_id, entitlement_id, trade_product_id,
+                        order_id, out_trade_no, unionid, event_type, duration_days
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, 'refunded', 90)
+                    """,
+                    (
+                        f"pytest:refunded:{out_trade_no}",
+                        int(product["id"]),
+                        entitlement_id,
+                        trade_product_id,
+                        order_id,
+                        out_trade_no,
+                        unionid,
+                    ),
+                )
+
+        for member_index, valid_order_count in ((1, 1), (2, 2), (3, 3), (4, 4)):
+            for order_index in range(1, valid_order_count + 1):
+                insert_paid_order_event(member_index=member_index, order_index=order_index)
+        insert_paid_order_event(member_index=5, order_index=1)
+        insert_paid_order_event(
+            member_index=5,
+            order_index=2,
+            refunded_amount_total=99900,
+            refund_status="full_refunded",
+        )
+        insert_paid_order_event(member_index=6, order_index=1)
+        insert_paid_order_event(member_index=6, order_index=2, add_refund_event=True)
+
     views = repo.list_member_views(product["id"])["items"]
     assert [(view["name"], view["is_default"]) for view in views] == [("表格", True)]
     created_view = repo.create_member_view(product["id"], name="PG 分组", config=empty_view_config(), actor="pytest")["view"]
@@ -479,5 +564,26 @@ def test_postgres_grid_query_and_view_repository_contract(next_pg_schema) -> Non
     assert pages[0]["total"] == 230
     assert all(len(row["group_path"]) == 2 for row in rows)
     assert {row["values"]["renewal_count"] for row in rows} == {0, 1, 2, 3}
+    rows_by_unionid = {row["unionid"]: row for row in rows}
+    # EVER regression: the stored aggregate is 1, but one valid enrollment order means zero renewals.
+    assert rows_by_unionid["union_grid_pg_0001"]["values"]["renewal_count"] == 0
+    assert rows_by_unionid["union_grid_pg_0002"]["values"]["renewal_count"] == 1
+    assert rows_by_unionid["union_grid_pg_0005"]["values"]["renewal_count"] == 0
+    assert rows_by_unionid["union_grid_pg_0006"]["values"]["renewal_count"] == 0
     assert any(row["values"]["alliance"] == "PG 联盟已更新" for row in rows)
     assert any(row["values"]["remark"] == "PG 备注" for row in rows)
+
+    renewal_page = repo.query_member_grid(
+        product["id"],
+        config={
+            **empty_view_config(),
+            "filter": {
+                "logic": "and",
+                "conditions": [{"field": "renewal_count", "operator": "gte", "value": 1}],
+            },
+            "sorts": [{"field": "renewal_count", "direction": "desc"}],
+        },
+        limit=100,
+        cursor="",
+    )
+    assert [row["values"]["renewal_count"] for row in renewal_page["rows"]] == [3, 2, 1]

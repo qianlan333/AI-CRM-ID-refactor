@@ -29,7 +29,12 @@ from .domain import (
 )
 from .huangyoucan_usage import huangyoucan_usage_match_joins, huangyoucan_usage_select_fields, public_huangyoucan_usage_fields
 from .member_admin_fields import InMemoryMemberAdminFieldsMixin, PostgresMemberAdminFieldsMixin
-from .member_grid_repo import InMemoryMemberGridRepositoryMixin, MemberGridRepositoryProtocol, PostgresMemberGridRepositoryMixin
+from .member_grid_repo import (
+    InMemoryMemberGridRepositoryMixin,
+    MemberGridRepositoryProtocol,
+    PostgresMemberGridRepositoryMixin,
+    effective_renewal_count_from_events,
+)
 
 LOGGER = logging.getLogger(__name__)
 
@@ -595,7 +600,11 @@ class InMemoryServicePeriodRepository(InMemoryMemberAdminFieldsMixin, InMemoryMe
             "end_at": isoformat(row.get("end_at")),
             "last_order_amount": int(last_order.get("amount_total") or 0),
             "last_order_duration_days": int((self._find_product(row.get("service_product_id")) or {}).get("duration_days") or 0),
-            "renewal_count": max(0, int(row.get("renewal_count") or 0)),
+            "renewal_count": effective_renewal_count_from_events(
+                self._events,
+                service_product_id=text(row.get("service_product_id")),
+                unionid=text(row.get("unionid")),
+            ),
             "remark": text(metadata.get("admin_remark") or metadata.get("remark")),
             "alliance": text(metadata.get("admin_alliance")),
             **public_huangyoucan_usage_fields({}),

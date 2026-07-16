@@ -688,6 +688,7 @@ repositories:
     table_reads:
       - crm_user_identity
       - service_period_entitlements
+      - service_period_events
       - service_period_member_views
       - wechat_pay_orders
       - wecom_external_contact_follow_users
