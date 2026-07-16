@@ -158,6 +158,7 @@ def collect_errors(root: Path = ROOT) -> list[str]:
     for token in (
         "AICRM_QUEUE_RUNTIME_EXECUTE=1",
         "AICRM_QUEUE_RUNTIME_TEST_ONLY=1",
+        "AICRM_EXTERNAL_EFFECT_TEST_EXECUTION_ONLY=1",
         "AICRM_QUEUE_CUTOVER_COMMITTED=",
         "ACTIVATE_QUEUE_GENERATION_",
         "--owner-inventory",
@@ -169,6 +170,36 @@ def collect_errors(root: Path = ROOT) -> list[str]:
             errors.append(f"generation cutover is missing a fail-closed activation token: {token}")
     if "legacy_timer_v" in cutover_source or "postgres_listener_v" in cutover_source:
         errors.append("generation cutover must use numeric database generations, not string aliases")
+
+    scope_contracts = {
+        "migrations/versions/0132_external_claim_scope_policy.py": (
+            "external_claim_scope",
+            "queue-v2-test-loopback",
+            "test_loopback",
+        ),
+        "aicrm_next/platform_foundation/execution_runtime/repository.py": (
+            "external_claim_scope_predicate",
+            "def next_due_at(",
+            "test_only: bool = False",
+        ),
+        "aicrm_next/platform_foundation/execution_runtime/read_model.py": (
+            "external_claim_scope_predicate",
+            '"policy_gated"',
+        ),
+        "aicrm_next/platform_foundation/execution_runtime/service.py": (
+            "_validate_external_execution_scope",
+            "database test-loopback scope requires a test-only worker",
+        ),
+    }
+    for relative, tokens in scope_contracts.items():
+        path = root / relative
+        if not path.exists():
+            errors.append(f"{relative}: durable external claim-scope contract is missing")
+            continue
+        body = path.read_text(encoding="utf-8")
+        for token in tokens:
+            if token not in body:
+                errors.append(f"{relative}: missing external claim-scope token: {token}")
     return errors
 
 

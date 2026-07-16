@@ -56,6 +56,7 @@ class SystemdQueueRuntimeLifecycle:
             f"AICRM_QUEUE_WORKER_GENERATION={int(generation)}\n"
             "AICRM_QUEUE_RUNTIME_EXECUTE=1\n"
             "AICRM_QUEUE_RUNTIME_TEST_ONLY=1\n"
+            "AICRM_EXTERNAL_EFFECT_TEST_EXECUTION_ONLY=1\n"
             f"AICRM_QUEUE_CUTOVER_COMMITTED={1 if committed else 0}\n"
         )
         with tempfile.NamedTemporaryFile("w", encoding="utf-8", delete=False) as handle:
@@ -298,6 +299,7 @@ def main(argv: list[str] | None = None) -> int:
                     "active_generation": state.active_generation,
                     "claim_enabled": state.claim_enabled,
                     "rollout_mode": state.rollout_mode,
+                    "external_claim_scope": state.external_claim_scope,
                     "real_external_call_executed": False,
                 },
                 ensure_ascii=False,
@@ -323,6 +325,7 @@ def main(argv: list[str] | None = None) -> int:
                 "active_generation": activation.after.active_generation,
                 "claim_enabled": activation.after.claim_enabled,
                 "rollout_mode": activation.after.rollout_mode,
+                "external_claim_scope": activation.after.external_claim_scope,
                 "activated_lanes": list(activation.activated_lanes),
                 "owner_inventory": str(args.owner_inventory),
                 "freeze_revision": activation.freeze.freeze_revision if activation.freeze else "",

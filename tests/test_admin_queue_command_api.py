@@ -58,7 +58,7 @@ def _seed_internal_run(
                 attempt_count, max_attempts
             ) VALUES (
                 %s, %s, %s, %s, %s, 'internal_general',
-                CURRENT_TIMESTAMP + INTERVAL '1 hour', %s, 'pytest', 'queue-v1',
+                CURRENT_TIMESTAMP + INTERVAL '1 hour', %s, 'pytest', 'queue-v2-test-loopback',
                 %s, %s
             )
             RETURNING id, event_id, consumer_name, execution_id
@@ -89,7 +89,7 @@ def _seed_webhook(*, status: str = "received") -> dict:
             ) VALUES (
                 'wecom', 'external_contact', '/tests/admin-queue-command', %s,
                 %s, 'webhook_inbox', CURRENT_TIMESTAMP + INTERVAL '1 hour',
-                %s, 'wecom:external_contact', 'queue-v1', %s
+                %s, 'wecom:external_contact', 'queue-v2-test-loopback', %s
             )
             RETURNING id, execution_id
             """,

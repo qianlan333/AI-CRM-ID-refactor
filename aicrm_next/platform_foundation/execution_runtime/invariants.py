@@ -119,12 +119,18 @@ class QueueRuntimeInvariantChecker:
         return """
             SELECT 'runtime_control_invalid' AS code,
                    COUNT(*)::BIGINT AS violation_count
-            FROM queue_runtime_control
-            WHERE singleton = TRUE
+            FROM queue_runtime_control control
+            LEFT JOIN queue_policy_snapshot snapshot
+              ON snapshot.policy_version = control.policy_version
+            WHERE control.singleton = TRUE
               AND (
                   (claim_enabled AND active_generation <= 0)
                   OR (claim_enabled AND rollout_mode NOT IN ('canary', 'execute'))
                   OR (NOT claim_enabled AND rollout_mode IN ('canary', 'execute'))
+                  OR (claim_enabled AND external_claim_scope = 'blocked')
+                  OR snapshot.policy_version IS NULL
+                  OR COALESCE(snapshot.policy_json->>'external_claim_scope', '')
+                     <> control.external_claim_scope
               )
         """
 

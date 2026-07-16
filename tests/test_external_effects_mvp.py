@@ -1537,6 +1537,50 @@ def test_external_effect_loopback_dry_run_allowlist_miss_and_test_only_gate(next
     assert repo.test_receipt_metrics()["non_test_execution_blocked_count"] == 1
 
 
+def test_test_loopback_scope_cannot_smuggle_a_real_wecom_adapter_call(monkeypatch) -> None:
+    monkeypatch.setenv("AICRM_EXTERNAL_EFFECT_TEST_EXECUTION_ONLY", "1")
+    monkeypatch.setenv("AICRM_WECOM_EXECUTION_MODE", "execute")
+    monkeypatch.setenv("AICRM_WECOM_ENABLED_EFFECT_TYPES", WECOM_CONTACT_TAG_MARK)
+    repo = InMemoryExternalEffectRepository()
+    calls: list[int] = []
+
+    class CountingAdapter:
+        def dispatch(self, job):
+            calls.append(int(job.id))
+            return ExternalEffectDispatchResult(status="succeeded", real_external_call_executed=True)
+
+    job = ExternalEffectService(repo).plan_effect(
+        effect_type=WECOM_CONTACT_TAG_MARK,
+        adapter_name="wecom_tag",
+        operation="mark",
+        target_type="external_userid",
+        target_id="wm_test_scope_must_not_reach_wecom",
+        payload={
+            "execution_scope": "test_loopback",
+            "is_test": True,
+            "external_userid": "wm_test_scope_must_not_reach_wecom",
+            "add_tags": ["tag-test"],
+            "remove_tags": [],
+        },
+        idempotency_key="test-loopback-cannot-smuggle-wecom",
+        lane="wecom_interactive",
+    )
+    registry = ExternalEffectAdapterRegistry({"wecom_tag": CountingAdapter()})
+
+    result = ExternalEffectWorker(repo, registry).run_due(
+        batch_size=1,
+        dry_run=False,
+        effect_types=[WECOM_CONTACT_TAG_MARK],
+        test_only=True,
+    )
+
+    updated = repo.get_job(job["id"])
+    assert calls == []
+    assert result["real_external_call_executed"] is False
+    assert updated is not None and updated.status == "blocked"
+    assert updated.last_error_code == "test_execution_adapter_not_allowed"
+
+
 def test_external_effect_diagnostics_and_api_docs_show_virtual_test_state(next_client: TestClient, monkeypatch) -> None:
     monkeypatch.setenv("AICRM_EXTERNAL_EFFECT_TEST_RECEIVER_ENABLED", "1")
     monkeypatch.setenv("AICRM_EXTERNAL_EFFECT_TEST_EXECUTION_ONLY", "1")

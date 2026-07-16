@@ -10,7 +10,7 @@ from aicrm_next.shared.release import current_release_sha
 from aicrm_next.shared.runtime import raw_database_url
 from aicrm_next.shared.sensitive_data import redact_sensitive_data
 
-from .repository import _default_connect, _psycopg_url
+from .repository import _default_connect, _psycopg_url, external_claim_scope_predicate
 
 
 PROVENANCE_PATH = Path("/home/ubuntu/.aicrm-releases/id-validation.json")
@@ -70,7 +70,8 @@ class ExecutionRuntimeReadModel:
             control = connection.execute(
                 """
                 SELECT active_generation, claim_enabled, rollout_mode,
-                       global_max_in_flight, policy_version, updated_by,
+                       global_max_in_flight, policy_version,
+                       external_claim_scope, updated_by,
                        updated_reason, updated_at
                 FROM queue_runtime_control
                 WHERE singleton = TRUE
@@ -151,9 +152,15 @@ class ExecutionRuntimeReadModel:
 
     @staticmethod
     def _lane_metrics_sql() -> str:
-        return """
+        external_scope = external_claim_scope_predicate(
+            row_alias="rows",
+            scope_expression="control.external_claim_scope",
+        )
+        return f"""
             WITH queue_rows AS (
-                SELECT job.lane, job.status, job.hold_reason, job.available_at,
+                SELECT 'external_effect'::TEXT AS queue_kind,
+                       COALESCE(job.payload_json->>'execution_scope', '') AS execution_scope,
+                       job.lane, job.status, job.hold_reason, job.available_at,
                        job.lease_expires_at, job.attempt_count, job.max_attempts,
                        job.worker_generation, job.policy_version,
                        job.status IN ('queued', 'failed_retryable') AS ready_state,
@@ -182,7 +189,7 @@ class ExecutionRuntimeReadModel:
                     'failed_terminal', 'blocked'
                 )
                 UNION ALL
-                SELECT lane, status, hold_reason, available_at, lease_expires_at,
+                SELECT 'internal_event', '', lane, status, hold_reason, available_at, lease_expires_at,
                        attempt_count, max_attempts, worker_generation, policy_version,
                        status IN ('pending', 'failed_retryable'),
                        status = 'running', FALSE,
@@ -203,7 +210,7 @@ class ExecutionRuntimeReadModel:
                     'failed_terminal', 'blocked'
                 )
                 UNION ALL
-                SELECT lane, status, hold_reason, available_at, lease_expires_at,
+                SELECT 'internal_outbox', '', lane, status, hold_reason, available_at, lease_expires_at,
                        attempt_count, max_attempts, worker_generation, policy_version,
                        status IN ('pending', 'failed_retryable'),
                        status = 'running', FALSE,
@@ -223,7 +230,7 @@ class ExecutionRuntimeReadModel:
                     'pending', 'running', 'failed_retryable', 'failed_terminal'
                 )
                 UNION ALL
-                SELECT lane, status, hold_reason, available_at, lease_expires_at,
+                SELECT 'webhook_inbox', '', lane, status, hold_reason, available_at, lease_expires_at,
                        attempt_count, max_attempts, worker_generation, policy_version,
                        status IN ('received', 'failed_retryable'),
                        status = 'processing', FALSE,
@@ -267,7 +274,19 @@ class ExecutionRuntimeReadModel:
                          AND NOT rows.dlq_state
                          AND NOT rows.rate_limited
                          AND NOT rows.ordering_blocked
+                         AND (
+                             rows.queue_kind <> 'external_effect'
+                             OR {external_scope}
+                         )
                    )::BIGINT AS eligible,
+                   COUNT(rows.*) FILTER (
+                       WHERE rows.queue_kind = 'external_effect'
+                         AND rows.hold_reason = ''
+                         AND rows.ready_state
+                         AND rows.available_at <= CURRENT_TIMESTAMP
+                         AND rows.attempt_count < rows.max_attempts
+                         AND NOT ({external_scope})
+                   )::BIGINT AS policy_gated,
                    COUNT(rows.*) FILTER (
                        WHERE rows.hold_reason = ''
                          AND rows.ready_state
@@ -312,6 +331,10 @@ class ExecutionRuntimeReadModel:
                              AND NOT rows.dlq_state
                              AND NOT rows.rate_limited
                              AND NOT rows.ordering_blocked
+                             AND (
+                                 rows.queue_kind <> 'external_effect'
+                                 OR {external_scope}
+                             )
                        )),
                        0
                    )::BIGINT AS oldest_eligible_age_seconds
@@ -321,7 +344,8 @@ class ExecutionRuntimeReadModel:
             GROUP BY policy.lane, policy.max_in_flight, policy.enabled,
                      policy.rollout_mode, policy.blocked_until, policy.policy_version,
                      control.active_generation, control.claim_enabled,
-                     control.rollout_mode, control.policy_version
+                     control.rollout_mode, control.policy_version,
+                     control.external_claim_scope
             ORDER BY policy.lane
         """
 
@@ -393,6 +417,7 @@ class ExecutionRuntimeReadModel:
             "rollout_mode": str(row.get("rollout_mode") or "blocked"),
             "global_max_in_flight": int(row.get("global_max_in_flight") or 0),
             "policy_version": str(row.get("policy_version") or ""),
+            "external_claim_scope": str(row.get("external_claim_scope") or "blocked"),
             "updated_by": str(row.get("updated_by") or ""),
             "updated_reason": str(row.get("updated_reason") or ""),
             "updated_at": _public_datetime(row.get("updated_at")),
@@ -410,6 +435,7 @@ class ExecutionRuntimeReadModel:
             "raw_open": int(row.get("raw_open") or 0),
             "held": int(row.get("held") or 0),
             "eligible": int(row.get("eligible") or 0),
+            "policy_gated": int(row.get("policy_gated") or 0),
             "scheduled": int(row.get("scheduled") or 0),
             "retry_wait": int(row.get("retry_wait") or 0),
             "rate_limited": int(row.get("rate_limited") or 0),

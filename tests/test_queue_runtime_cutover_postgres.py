@@ -53,7 +53,8 @@ def _reset_control_plane() -> None:
             SET active_generation = 0,
                 claim_enabled = FALSE,
                 rollout_mode = 'standby',
-                policy_version = 'queue-v1',
+                policy_version = 'queue-v2-test-loopback',
+                external_claim_scope = 'test_loopback',
                 updated_by = 'pytest',
                 updated_reason = 'cutover test reset'
             WHERE singleton = TRUE
@@ -68,7 +69,7 @@ def _reset_control_plane() -> None:
                     ELSE 'standby'
                 END,
                 blocked_until = NULL,
-                policy_version = 'queue-v1',
+                policy_version = 'queue-v2-test-loopback',
                 updated_by = 'pytest',
                 updated_reason = 'cutover test reset'
             """
@@ -85,7 +86,7 @@ def test_numeric_generation_cas_allows_only_one_concurrent_winner() -> None:
             result = repository.activate_generation(
                 expected_generation=0,
                 target_generation=target,
-                expected_policy_version="queue-v1",
+                expected_policy_version="queue-v2-test-loopback",
                 lanes=("internal_general",),
                 actor=f"pytest-{target}",
                 reason="concurrent generation CAS",
@@ -111,7 +112,7 @@ def test_generation_cas_failure_does_not_change_lane_policy() -> None:
         repository.activate_generation(
             expected_generation=99,
             target_generation=100,
-            expected_policy_version="queue-v1",
+            expected_policy_version="queue-v2-test-loopback",
             lanes=("internal_general",),
             actor="pytest",
             reason="wrong expected generation",
@@ -140,7 +141,7 @@ def test_generation_cutover_freezes_fifty_unheld_legacy_media_rows_before_claims
                 'pr3-freeze-media-' || sequence::TEXT, 'real', 'queued',
                 'wecom_media', CURRENT_TIMESTAMP,
                 'pr3-media-' || sequence::TEXT, 'pr3-freeze', 'wecom:test:media',
-                'queue-v1', 'exe-pr3-freeze-' || sequence::TEXT, CURRENT_TIMESTAMP
+                'queue-v2-test-loopback', 'exe-pr3-freeze-' || sequence::TEXT, CURRENT_TIMESTAMP
             FROM generate_series(1, 50) AS sequence
             """
         )
@@ -155,7 +156,7 @@ def test_generation_cutover_freezes_fifty_unheld_legacy_media_rows_before_claims
                 'wecom.media.upload', 'wecom', 'upload', 'media', 'after-cutoff',
                 'pr3-freeze-media-after-cutoff', 'real', 'queued', 'wecom_media',
                 CURRENT_TIMESTAMP + INTERVAL '1 hour', 'pr3-media-after-cutoff',
-                'pr3-freeze', 'wecom:test:media', 'queue-v1',
+                'pr3-freeze', 'wecom:test:media', 'queue-v2-test-loopback',
                 'exe-pr3-freeze-after-cutoff', CURRENT_TIMESTAMP + INTERVAL '1 hour'
             )
             """
@@ -164,7 +165,7 @@ def test_generation_cutover_freezes_fifty_unheld_legacy_media_rows_before_claims
     activation = RuntimeGenerationRepository(_database_url()).activate_generation(
         expected_generation=0,
         target_generation=71,
-        expected_policy_version="queue-v1",
+        expected_policy_version="queue-v2-test-loopback",
         lanes=("wecom_media",),
         actor="pytest",
         reason="freeze pre-cutover media backlog",
@@ -230,7 +231,7 @@ def test_generation_cutover_quarantines_ambiguous_provider_boundary() -> None:
                 'wecom.media.upload', 'wecom', 'upload', 'media', 'ambiguous',
                 'pr3-provider-boundary-ambiguous', 'real', 'dispatching',
                 'wecom_media', CURRENT_TIMESTAMP, 'pr3-ambiguous', 'pr3-freeze',
-                'wecom:test:media', 'queue-v1', 'exe-pr3-ambiguous',
+                'wecom:test:media', 'queue-v2-test-loopback', 'exe-pr3-ambiguous',
                 CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
             ) RETURNING id
             """
@@ -239,7 +240,7 @@ def test_generation_cutover_quarantines_ambiguous_provider_boundary() -> None:
     RuntimeGenerationRepository(_database_url()).activate_generation(
         expected_generation=0,
         target_generation=72,
-        expected_policy_version="queue-v1",
+        expected_policy_version="queue-v2-test-loopback",
         lanes=("wecom_media",),
         actor="pytest",
         reason="quarantine ambiguous provider boundary",
@@ -286,7 +287,7 @@ def test_generation_cutover_freezes_all_four_durable_queue_kinds_at_one_cutoff()
             ) VALUES (
                 'wecom.media.upload', 'wecom', 'upload', 'media', %s,
                 %s, 'real', 'queued', 'wecom_media', CURRENT_TIMESTAMP,
-                %s, 'pytest', 'wecom:test:media', 'queue-v1', %s
+                %s, 'pytest', 'wecom:test:media', 'queue-v2-test-loopback', %s
             ) RETURNING id
             """,
             (key, f"external-{key}", f"external-{key}", f"exe-external-{key}"),
@@ -308,7 +309,7 @@ def test_generation_cutover_freezes_all_four_durable_queue_kinds_at_one_cutoff()
                 ordering_key, fairness_key, policy_version
             ) VALUES (
                 %s, 'pytest_pr3_freeze', 'pending', %s, %s,
-                'internal_general', CURRENT_TIMESTAMP, %s, 'pytest', 'queue-v1'
+                'internal_general', CURRENT_TIMESTAMP, %s, 'pytest', 'queue-v2-test-loopback'
             ) RETURNING id
             """,
             (f"iev_{key}", f"exe-run-{key}", f"exe-event-{key}", f"run-{key}"),
@@ -321,7 +322,7 @@ def test_generation_cutover_freezes_all_four_durable_queue_kinds_at_one_cutoff()
                 ordering_key, fairness_key, policy_version
             ) VALUES (
                 %s, 'test.pr3.freeze', 'test', %s, %s, %s,
-                'internal_financial', CURRENT_TIMESTAMP, %s, 'pytest', 'queue-v1'
+                'internal_financial', CURRENT_TIMESTAMP, %s, 'pytest', 'queue-v2-test-loopback'
             ) RETURNING id
             """,
             (f"ieo_{key}", key, f"outbox-{key}", f"exe-outbox-{key}", f"outbox-{key}"),
@@ -337,7 +338,7 @@ def test_generation_cutover_freezes_all_four_durable_queue_kinds_at_one_cutoff()
                 'internal_financial', CURRENT_TIMESTAMP + INTERVAL '1 hour',
                 CURRENT_TIMESTAMP - INTERVAL '1 day',
                 CURRENT_TIMESTAMP + INTERVAL '1 hour',
-                %s, 'pytest', 'queue-v1'
+                %s, 'pytest', 'queue-v2-test-loopback'
             ) RETURNING id
             """,
             (
@@ -356,7 +357,7 @@ def test_generation_cutover_freezes_all_four_durable_queue_kinds_at_one_cutoff()
                 fairness_key, policy_version
             ) VALUES (
                 'pytest', 'test', '/tests/pr3-freeze', %s, %s,
-                'webhook_inbox', CURRENT_TIMESTAMP, %s, 'pytest', 'queue-v1'
+                'webhook_inbox', CURRENT_TIMESTAMP, %s, 'pytest', 'queue-v2-test-loopback'
             ) RETURNING id
             """,
             (f"inbox-{key}", f"exe-inbox-{key}", f"inbox-{key}"),
@@ -370,7 +371,7 @@ def test_generation_cutover_freezes_all_four_durable_queue_kinds_at_one_cutoff()
             ) VALUES (
                 'pytest', 'test', '/tests/pr3-freeze-future', %s, %s,
                 'webhook_inbox', CURRENT_TIMESTAMP + INTERVAL '1 hour',
-                CURRENT_TIMESTAMP + INTERVAL '1 hour', %s, 'pytest', 'queue-v1'
+                CURRENT_TIMESTAMP + INTERVAL '1 hour', %s, 'pytest', 'queue-v2-test-loopback'
             ) RETURNING id
             """,
             (f"inbox-future-{key}", f"exe-inbox-future-{key}", f"inbox-future-{key}"),
@@ -379,7 +380,7 @@ def test_generation_cutover_freezes_all_four_durable_queue_kinds_at_one_cutoff()
     activation = RuntimeGenerationRepository(_database_url()).activate_generation(
         expected_generation=0,
         target_generation=74,
-        expected_policy_version="queue-v1",
+        expected_policy_version="queue-v2-test-loopback",
         lanes=("internal_general", "internal_financial", "webhook_inbox", "wecom_media"),
         actor="pytest",
         reason="freeze all four durable queue facts",
@@ -458,7 +459,7 @@ def test_generation_cutover_freeze_rolls_back_with_failed_final_cas_precondition
                 'wecom.media.upload', 'wecom', 'upload', 'media', 'rollback',
                 'pr3-freeze-rollback', 'real', 'queued', 'wecom_media',
                 CURRENT_TIMESTAMP, 'pr3-rollback', 'pr3-freeze',
-                'wecom:test:media', 'queue-v1', 'exe-pr3-freeze-rollback'
+                'wecom:test:media', 'queue-v2-test-loopback', 'exe-pr3-freeze-rollback'
             ) RETURNING id
             """
         ).fetchone()
@@ -470,7 +471,7 @@ def test_generation_cutover_freeze_rolls_back_with_failed_final_cas_precondition
         RuntimeGenerationRepository(_database_url()).activate_generation(
             expected_generation=0,
             target_generation=73,
-            expected_policy_version="queue-v1",
+            expected_policy_version="queue-v2-test-loopback",
             lanes=("wecom_media",),
             actor="pytest",
             reason="prove freeze and CAS rollback together",
@@ -619,7 +620,7 @@ def test_command_cas_supports_each_non_external_durable_queue_fact(
                 ) VALUES (
                     %s, 'pytest_consumer', 'pending', %s, %s,
                     'internal_general', CURRENT_TIMESTAMP + INTERVAL '1 hour',
-                    %s, 'pytest', 'queue-v1'
+                    %s, 'pytest', 'queue-v2-test-loopback'
                 ) RETURNING id
                 """,
                 (event_id, f"exe-run-{key}", f"exe-event-{key}", f"order-{key}"),
@@ -634,7 +635,7 @@ def test_command_cas_supports_each_non_external_durable_queue_fact(
                 ) VALUES (
                     %s, 'test.queue.command', 'test', %s, %s, %s,
                     'internal_financial', CURRENT_TIMESTAMP + INTERVAL '1 hour',
-                    %s, 'pytest', 'queue-v1'
+                    %s, 'pytest', 'queue-v2-test-loopback'
                 ) RETURNING id
                 """,
                 (f"ieo_{key}", key, f"outbox-{key}", f"exe-outbox-{key}", f"order-{key}"),
@@ -649,7 +650,7 @@ def test_command_cas_supports_each_non_external_durable_queue_fact(
                 ) VALUES (
                     'pytest', 'test', '/tests/queue-command', %s, %s,
                     'webhook_inbox', CURRENT_TIMESTAMP + INTERVAL '1 hour',
-                    %s, 'pytest', 'queue-v1'
+                    %s, 'pytest', 'queue-v2-test-loopback'
                 ) RETURNING id
                 """,
                 (f"webhook-{key}", f"exe-webhook-{key}", f"order-{key}"),
@@ -718,11 +719,22 @@ def test_invariant_checker_reports_without_changing_queue_rows() -> None:
     assert dict(after) == dict(before)
 
 
+def test_invariant_checker_rejects_scope_change_without_matching_policy_snapshot() -> None:
+    with _connect() as connection:
+        connection.execute(
+            "UPDATE queue_runtime_control SET external_claim_scope = 'allowlisted' WHERE singleton = TRUE"
+        )
+
+    report = QueueRuntimeInvariantChecker(_database_url()).check()
+
+    assert any(item.code == "runtime_control_invalid" for item in report.violations)
+
+
 def test_invariant_checker_reports_missing_active_generation_heartbeats() -> None:
     RuntimeGenerationRepository(_database_url()).activate_generation(
         expected_generation=0,
         target_generation=77,
-        expected_policy_version="queue-v1",
+        expected_policy_version="queue-v2-test-loopback",
         lanes=("internal_general",),
         actor="pytest",
         reason="heartbeat invariant test",

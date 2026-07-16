@@ -58,6 +58,7 @@ class GenerationState:
     updated_by: str
     updated_reason: str
     updated_at: datetime | None
+    external_claim_scope: str = "blocked"
 
 
 @dataclass(frozen=True)
@@ -98,7 +99,8 @@ class RuntimeGenerationRepository:
             row = connection.execute(
                 """
                 SELECT active_generation, claim_enabled, rollout_mode,
-                       policy_version, updated_by, updated_reason, updated_at
+                       policy_version, external_claim_scope,
+                       updated_by, updated_reason, updated_at
                 FROM queue_runtime_control
                 WHERE singleton = TRUE
                 """
@@ -122,6 +124,7 @@ class RuntimeGenerationRepository:
             state.active_generation != expected
             or state.claim_enabled
             or state.policy_version != policy_version
+            or state.external_claim_scope != "test_loopback"
         ):
             raise GenerationCASConflict(
                 "queue claim gate is not closed at the expected generation and policy version"
@@ -160,7 +163,8 @@ class RuntimeGenerationRepository:
                 before_row = connection.execute(
                     """
                     SELECT active_generation, claim_enabled, rollout_mode,
-                           policy_version, updated_by, updated_reason, updated_at
+                           policy_version, external_claim_scope,
+                           updated_by, updated_reason, updated_at
                     FROM queue_runtime_control
                     WHERE singleton = TRUE
                     FOR UPDATE
@@ -173,6 +177,7 @@ class RuntimeGenerationRepository:
                     before.active_generation != expected
                     or before.claim_enabled
                     or before.policy_version != policy_version
+                    or before.external_claim_scope != "test_loopback"
                 ):
                     raise GenerationCASConflict(
                         "generation activation precondition changed before the CAS"
@@ -238,8 +243,10 @@ class RuntimeGenerationRepository:
                       AND active_generation = %s
                       AND claim_enabled = FALSE
                       AND policy_version = %s
+                      AND external_claim_scope = 'test_loopback'
                     RETURNING active_generation, claim_enabled, rollout_mode,
-                              policy_version, updated_by, updated_reason, updated_at
+                              policy_version, external_claim_scope,
+                              updated_by, updated_reason, updated_at
                     """,
                     (
                         target,
@@ -283,7 +290,8 @@ class RuntimeGenerationRepository:
                   AND active_generation = %s
                   AND claim_enabled = TRUE
                 RETURNING active_generation, claim_enabled, rollout_mode,
-                          policy_version, updated_by, updated_reason, updated_at
+                          policy_version, external_claim_scope,
+                          updated_by, updated_reason, updated_at
                 """,
                 (normalized_actor, normalized_reason, expected),
             ).fetchone()
@@ -579,6 +587,7 @@ class RuntimeGenerationRepository:
             updated_by=str(values.get("updated_by") or ""),
             updated_reason=str(values.get("updated_reason") or ""),
             updated_at=values.get("updated_at"),
+            external_claim_scope=str(values.get("external_claim_scope") or "blocked"),
         )
 
 

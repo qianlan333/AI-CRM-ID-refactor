@@ -43,6 +43,33 @@ def open_listener_connection(url: str, *, autocommit: bool, application_name: st
     )
 
 
+def external_claim_scope_predicate(
+    *,
+    row_alias: str = "job",
+    scope_expression: str = "control.external_claim_scope",
+) -> str:
+    """Return the canonical SQL gate for external-effect execution scope.
+
+    The expression is composed only from trusted static aliases supplied by
+    this module and the read model; no request data is interpolated here.
+    """
+
+    execution_scope = f"COALESCE({row_alias}.payload_json->>'execution_scope', '')"
+    return f"""
+        (
+            {scope_expression} = 'all'
+            OR (
+                {scope_expression} = 'allowlisted'
+                AND {execution_scope} IN ('test_loopback', 'allowlisted_canary')
+            )
+            OR (
+                {scope_expression} = 'test_loopback'
+                AND {execution_scope} = 'test_loopback'
+            )
+        )
+    """
+
+
 @dataclass(frozen=True)
 class RuntimeControl:
     active_generation: int
@@ -50,6 +77,7 @@ class RuntimeControl:
     rollout_mode: str
     global_max_in_flight: int
     policy_version: str
+    external_claim_scope: str = "blocked"
 
 
 @dataclass(frozen=True)
@@ -101,7 +129,8 @@ class ExecutionRuntimeRepository:
             row = connection.execute(
                 """
                 SELECT active_generation, claim_enabled, rollout_mode,
-                       global_max_in_flight, policy_version
+                       global_max_in_flight, policy_version,
+                       external_claim_scope
                 FROM queue_runtime_control
                 WHERE singleton = TRUE
                 """
@@ -205,7 +234,8 @@ class ExecutionRuntimeRepository:
                 control_row = connection.execute(
                     """
                     SELECT active_generation, claim_enabled, rollout_mode,
-                           global_max_in_flight, policy_version
+                           global_max_in_flight, policy_version,
+                           external_claim_scope
                     FROM queue_runtime_control
                     WHERE singleton = TRUE
                     FOR UPDATE
@@ -488,6 +518,7 @@ class ExecutionRuntimeRepository:
             rollout_mode=str(row.get("rollout_mode") or "blocked"),
             global_max_in_flight=int(row.get("global_max_in_flight") or 0),
             policy_version=str(row.get("policy_version") or ""),
+            external_claim_scope=str(row.get("external_claim_scope") or "blocked"),
         )
 
     @staticmethod
@@ -530,6 +561,10 @@ class ExecutionRuntimeRepository:
     def _claim_sql(*, queue_kind: str, test_only: bool) -> str:
         if queue_kind == "external_effect":
             test_predicate = "AND COALESCE(job.payload_json->>'execution_scope', '') = 'test_loopback'" if test_only else ""
+            scope_predicate = external_claim_scope_predicate(
+                row_alias="job",
+                scope_expression="(SELECT external_claim_scope FROM queue_runtime_control WHERE singleton = TRUE)",
+            )
             return f"""
                 WITH candidate AS (
                     SELECT job.id
@@ -549,6 +584,7 @@ class ExecutionRuntimeRepository:
                       AND job.hold_reason = ''
                       AND job.attempt_count < job.max_attempts
                       AND job.available_at <= CURRENT_TIMESTAMP
+                      AND {scope_predicate}
                       AND (job.lease_expires_at IS NULL OR job.lease_expires_at <= CURRENT_TIMESTAMP)
                       AND cooldown.rate_scope_key IS NULL
                       AND NOT EXISTS (
@@ -756,7 +792,14 @@ class ExecutionRuntimeRepository:
             connection.commit()
         return bool(row)
 
-    def next_due_at(self, *, queue_kind: str, lane: str, generation: int) -> datetime | None:
+    def next_due_at(
+        self,
+        *,
+        queue_kind: str,
+        lane: str,
+        generation: int,
+        test_only: bool = False,
+    ) -> datetime | None:
         if int(generation) <= 0:
             return None
         table, statuses = {
@@ -776,6 +819,7 @@ class ExecutionRuntimeRepository:
                        lane.blocked_until,
                        control.policy_version AS control_policy_version,
                        lane.policy_version AS lane_policy_version,
+                       control.external_claim_scope,
                        control.global_max_in_flight,
                        lane.max_in_flight
                 FROM queue_runtime_control control
@@ -807,22 +851,35 @@ class ExecutionRuntimeRepository:
             ):
                 return None
             if queue_kind == "external_effect":
+                test_predicate = (
+                    "AND COALESCE(job.payload_json->>'execution_scope', '') = 'test_loopback'"
+                    if test_only
+                    else ""
+                )
+                scope_predicate = external_claim_scope_predicate(
+                    row_alias="job",
+                    scope_expression="control.external_claim_scope",
+                )
                 row = connection.execute(
-                    """
+                    f"""
                     SELECT MIN(GREATEST(
                         job.available_at,
                         COALESCE(cooldown.blocked_until, job.available_at)
                     )) AS available_at
                     FROM external_effect_job job
+                    CROSS JOIN queue_runtime_control control
                     LEFT JOIN queue_rate_scope_cooldown cooldown
                       ON cooldown.rate_scope_key = job.rate_scope_key
                      AND cooldown.blocked_until > CURRENT_TIMESTAMP
-                    WHERE job.lane = %s
+                    WHERE control.singleton = TRUE
+                      AND job.lane = %s
                       AND job.worker_generation IN (0, %s)
                       AND job.policy_version = %s
                       AND job.status = ANY(%s)
                       AND job.hold_reason = ''
                       AND job.attempt_count < job.max_attempts
+                      AND {scope_predicate}
+                      {test_predicate}
                       AND NOT EXISTS (
                           SELECT 1
                           FROM external_effect_job active

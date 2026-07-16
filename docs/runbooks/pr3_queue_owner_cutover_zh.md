@@ -15,7 +15,7 @@
 python3 scripts/ops/cutover_queue_runtime_generation.py \
   --expected-generation 0 \
   --target-generation 1 \
-  --expected-policy-version queue-v1 \
+  --expected-policy-version queue-v2-test-loopback \
   --lane internal_general \
   --lane internal_financial \
   --lane webhook_inbox \
@@ -31,7 +31,9 @@ python3 scripts/ops/cutover_queue_runtime_generation.py \
 
 ## 经批准切换的不变量
 
-执行顺序固定为：确认 DB claim gate closed → 写入 target marker（committed=0）→ 启动三个 canonical runtime 并等待完整 heartbeat → 停旧 timers → 停 persistent callback worker → drain 旧 services → disable 旧 units → 验证无双 owner且 daily replacement 仍 disabled → 在同一数据库事务中以 DB 当前时间为 cutoff 冻结四类旧 backlog并完成 generation CAS → 写 committed=1并启用 daily intent timer。
+执行顺序固定为：确认 DB claim gate closed 且 `external_claim_scope=test_loopback`、policy snapshot 为 `queue-v2-test-loopback` → 写入 target marker（committed=0）→ 启动三个 canonical runtime 并等待完整 heartbeat → 停旧 timers → 停 persistent callback worker → drain 旧 services → disable 旧 units → 验证无双 owner且 daily replacement 仍 disabled → 在同一数据库事务中以 DB 当前时间为 cutoff 冻结四类旧 backlog并完成 generation CAS → 写 committed=1并启用 daily intent timer。
+
+初次 generation 切换时 external runtime 只允许 `payload_json.execution_scope=test_loopback`；普通企微、支付、OAuth、MCP 和真实 outbound webhook 即使已经排队，也只能显示为 `policy_gated`，不得被 claim。进程 marker 中的 test-only 开关只是第二道 fail-closed 校验，不能替代数据库策略。
 
 cutoff 前所有 unheld/open `external_effect_job`、`internal_event_consumer_run`、`internal_event_outbox`、`webhook_inbox` 必须写入 `queue_history_classification` 并设置 hold；provider boundary 不明的 External Effect 必须进入 quarantine/`unknown_after_dispatch`。cutoff 后 callback 行保留给新 generation。
 
@@ -43,7 +45,7 @@ cutoff 前所有 unheld/open `external_effect_job`、`internal_event_consumer_ru
 python3 scripts/ops/cutover_queue_runtime_generation.py \
   --expected-generation 0 \
   --target-generation 1 \
-  --expected-policy-version queue-v1 \
+  --expected-policy-version queue-v2-test-loopback \
   --lane internal_general \
   --owner-inventory pr3 \
   --actor '<reviewed-actor>' \

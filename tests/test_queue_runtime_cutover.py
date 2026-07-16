@@ -116,10 +116,11 @@ def _state(generation: int, claim_enabled: bool) -> GenerationState:
         active_generation=generation,
         claim_enabled=claim_enabled,
         rollout_mode="canary" if claim_enabled else "standby",
-        policy_version="queue-v1",
+        policy_version="queue-v2-test-loopback",
         updated_by="pytest",
         updated_reason="test",
         updated_at=None,
+        external_claim_scope="test_loopback",
     )
 
 
@@ -127,7 +128,7 @@ def _request() -> QueueRuntimeCutoverRequest:
     return QueueRuntimeCutoverRequest(
         expected_generation=0,
         target_generation=17,
-        expected_policy_version="queue-v1",
+        expected_policy_version="queue-v2-test-loopback",
         lanes=("internal_general", "webhook_inbox"),
         actor="pytest",
         reason="cutover ordering test",
@@ -247,7 +248,7 @@ def test_cutover_cli_is_plan_only_without_explicit_apply(capsys) -> None:
             "--target-generation",
             "17",
             "--expected-policy-version",
-            "queue-v1",
+            "queue-v2-test-loopback",
             "--lane",
             "internal_general",
             "--owner-inventory",
@@ -279,7 +280,7 @@ def test_cutover_cli_rejects_manual_legacy_owner_subset() -> None:
                 "--target-generation",
                 "17",
                 "--expected-policy-version",
-                "queue-v1",
+                "queue-v2-test-loopback",
                 "--lane",
                 "internal_general",
                 "--legacy-timer",
