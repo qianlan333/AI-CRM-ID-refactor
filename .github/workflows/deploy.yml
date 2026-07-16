@@ -137,6 +137,12 @@ jobs:
           script: |
             set -e
             set -o pipefail
+            deploy_lock_file="/tmp/aicrm-deploy-${{ env.DEPLOY_TARGET }}.lock"
+            exec 9>"$deploy_lock_file"
+            if ! flock -n 9; then
+              echo "another id-validation deployment holds $deploy_lock_file"
+              exit 1
+            fi
             cd '/home/ubuntu/极简 crm'
             expected_repository="${{ env.EXPECTED_REPOSITORY }}"
             verified_sha="${{ github.event.workflow_run.head_sha }}"
@@ -154,6 +160,11 @@ jobs:
             esac
             test "$(git rev-parse HEAD)" = "$verified_sha"
             test "$(tr -d '\r\n' < .release-sha)" = "$verified_sha"
+            if [ -n "$(git status --porcelain=v1 --untracked-files=all)" ]; then
+              echo "same-SHA verification refuses a dirty server checkout"
+              git status --short --untracked-files=all
+              exit 1
+            fi
             curl -sSf -D /tmp/aicrm_id_noop_health_headers.txt \
               http://127.0.0.1:5001/health \
               -o /tmp/aicrm_id_noop_health.json
@@ -162,7 +173,7 @@ jobs:
             test -r /home/ubuntu/.aicrm-releases/id-validation.json
             EXPECTED_REPOSITORY="$expected_repository" \
             EXPECTED_SHA="$verified_sha" \
-              python3 -c 'import json, os; payload=json.load(open("/home/ubuntu/.aicrm-releases/id-validation.json", encoding="utf-8")); assert payload.get("repository") == os.environ["EXPECTED_REPOSITORY"]; assert payload.get("environment") == "id-validation"; assert payload.get("release_sha") == os.environ["EXPECTED_SHA"]; assert len(str(payload.get("bundle_sha256") or "")) == 64'
+              python3 -c 'import json, os, re, sys; payload=json.load(open("/home/ubuntu/.aicrm-releases/id-validation.json", encoding="utf-8")); valid=payload.get("repository") == os.environ["EXPECTED_REPOSITORY"] and payload.get("environment") == "id-validation" and payload.get("release_sha") == os.environ["EXPECTED_SHA"] and re.fullmatch(r"[0-9a-f]{64}", str(payload.get("bundle_sha256") or "")); sys.exit(0 if valid else "canonical ID validation provenance mismatch")'
             python3 scripts/ops/manage_production_runtime_units.py --phase verify --execute
             install -d -m 0750 /home/ubuntu/.aicrm-releases
             verification_tmp="$(mktemp /home/ubuntu/.aicrm-releases/id-validation-last-verified.XXXXXX)"

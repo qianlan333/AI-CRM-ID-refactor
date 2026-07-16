@@ -303,15 +303,21 @@ def test_id_validation_noop_revalidates_origin_checkout_provenance_and_runtime()
     transfer_index = workflow.index("- name: Transfer verified release bundle", summary_index)
 
     assert "if: steps.release.outputs.noop == 'true'" in workflow[noop_index:summary_index]
+    lock_index = workflow.index('deploy_lock_file="/tmp/aicrm-deploy-${{ env.DEPLOY_TARGET }}.lock"', noop_index)
+    flock_index = workflow.index("if ! flock -n 9; then", lock_index)
     assert 'remote_origin_url="$(git remote get-url origin)"' in workflow[noop_index:summary_index]
     assert 'test "$(git rev-parse HEAD)" = "$verified_sha"' in workflow[noop_index:summary_index]
     assert 'test "$(tr -d \'\\r\\n\' < .release-sha)" = "$verified_sha"' in workflow[noop_index:summary_index]
     assert "/home/ubuntu/.aicrm-releases/id-validation.json" in workflow[noop_index:summary_index]
+    assert 'git status --porcelain=v1 --untracked-files=all' in workflow[noop_index:summary_index]
+    assert "same-SHA verification refuses a dirty server checkout" in workflow[noop_index:summary_index]
     assert 'payload.get("repository") == os.environ["EXPECTED_REPOSITORY"]' in workflow[noop_index:summary_index]
     assert 'payload.get("release_sha") == os.environ["EXPECTED_SHA"]' in workflow[noop_index:summary_index]
+    assert "canonical ID validation provenance mismatch" in workflow[noop_index:summary_index]
+    assert "assert payload" not in workflow[noop_index:summary_index]
     assert _runtime_units_phase("verify") in workflow[noop_index:summary_index]
     assert "id-validation-last-verified.json" in workflow[noop_index:summary_index]
-    assert noop_index < summary_index < transfer_index
+    assert noop_index < lock_index < flock_index < summary_index < transfer_index
 
 
 def test_id_validation_deploy_pins_authenticated_server_host_key() -> None:
