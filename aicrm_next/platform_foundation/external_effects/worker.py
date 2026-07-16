@@ -28,6 +28,7 @@ from .models import (
 )
 from .repo import ExternalEffectRepository, build_external_effect_repository
 from .retry_policy import next_retry_at, status_for_failure
+from .rate_limit import is_rate_limited
 
 LOGGER = logging.getLogger(__name__)
 
@@ -194,6 +195,20 @@ class ExternalEffectWorker:
             }
         return self._dispatch_claimed(claimed)
 
+    def dispatch_claimed(self, job_id: int, *, lease_token: str) -> dict[str, Any]:
+        """Dispatch a row already claimed by the PostgreSQL lane runtime."""
+
+        claimed = self._repo.get_active_claim(int(job_id), lease_token=str(lease_token or ""))
+        if claimed is None:
+            current = self._repo.get_job(int(job_id))
+            return {
+                "ok": False,
+                "error": "lost_lease",
+                "job": current.to_dict() if current else {"id": int(job_id)},
+                "real_external_call_executed": False,
+            }
+        return self._dispatch_claimed(claimed)
+
     def _dispatch_claimed(self, job: ExternalEffectJob) -> dict[str, Any]:
         active = self._repo.get_active_claim(job.id, lease_token=job.lease_token)
         if active is None:
@@ -321,6 +336,7 @@ class ExternalEffectWorker:
         dispatch_result = normalize_dispatch_result(job, dispatch_result)
         continuation = self._run_post_success_continuations(job, dispatch_result)
 
+        rate_limited = is_rate_limited(dispatch_result)
         if (
             dispatch_result.status == "failed_retryable"
             and status_for_failure(
@@ -333,10 +349,13 @@ class ExternalEffectWorker:
             dispatch_result = replace(dispatch_result, status="failed_terminal")
 
         retry_at = None
-        if dispatch_result.status == "failed_retryable":
+        if dispatch_result.status == "failed_retryable" or rate_limited:
+            retry_after_seconds = dispatch_result.retry_after_seconds
+            if retry_after_seconds is None:
+                retry_after_seconds = (dispatch_result.response_summary or {}).get("retry_after_seconds")
             retry_at = next_retry_at(
                 job.attempt_count,
-                retry_after_seconds=(dispatch_result.response_summary or {}).get("retry_after_seconds"),
+                retry_after_seconds=retry_after_seconds,
             )
 
         try:

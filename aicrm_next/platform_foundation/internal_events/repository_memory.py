@@ -323,9 +323,12 @@ class InMemoryInternalEventRepository(InternalEventRepository):
         *,
         locked_by: str,
         expected_lease_token: str = "",
+        expected_generation: int = 0,
     ) -> InternalEventConsumerRun | None:
         row = self._find_run(run_id)
         if not row or (_text(expected_lease_token) and _text(row.get("lease_token")) != _text(expected_lease_token)):
+            return None
+        if expected_generation and int(row.get("worker_generation") or 0) != int(expected_generation):
             return None
         return self._mutate(run_id, status="running", locked_by=_text(locked_by), locked_at=public_datetime(utcnow()))
 
@@ -340,12 +343,15 @@ class InMemoryInternalEventRepository(InternalEventRepository):
         error_message: str = "",
         next_retry_at: datetime | None = None,
         expected_lease_token: str = "",
+        expected_generation: int = 0,
     ) -> InternalEventConsumerRun | None:
         status = _text(status)
         if status not in {"succeeded", "failed_retryable", "failed_terminal", "blocked", "skipped"}:
             status = "blocked"
         row = self._find_run(run_id)
         if not row or (_text(expected_lease_token) and _text(row.get("lease_token")) != _text(expected_lease_token)):
+            return None
+        if expected_generation and int(row.get("worker_generation") or 0) != int(expected_generation):
             return None
         if row:
             row["attempt_count"] = int(row.get("attempt_count") or 0) + 1
@@ -396,6 +402,7 @@ class InMemoryInternalEventRepository(InternalEventRepository):
             error_message=error_message,
             next_retry_at=next_retry_at,
             expected_lease_token=run.lease_token,
+            expected_generation=run.worker_generation,
         )
         return (updated, attempt) if updated else None
 

@@ -1733,6 +1733,7 @@ tables:
     lifecycle: event
     write_owner: aicrm_next.platform_foundation.internal_events.service
     read_owners:
+      - aicrm_next.platform_foundation.execution_runtime.read_model
       - aicrm_next.platform_foundation.internal_events.worker
       - internal event admin/reconciliation APIs
     replacement: none; canonical internal event bus
@@ -1742,6 +1743,7 @@ tables:
       - internal event publish
       - internal event worker
       - internal event admin API
+      - unified execution timeline
     migration_source: 0043_internal_event_queue, fan-out manifest added by 0122_internal_event_fanout_manifest
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
@@ -1755,11 +1757,13 @@ tables:
     write_owners:
       - aicrm_next.commerce.fulfillment_reconciliation
       - aicrm_next.commerce.admin_transactions
+      - aicrm_next.platform_foundation.execution_runtime.repository
       - aicrm_next.platform_foundation.internal_events.outbox
       - aicrm_next.public_product.h5_wechat_pay
     status_enum:
       column: status
     read_owners:
+      - aicrm_next.platform_foundation.execution_runtime.read_model
       - aicrm_next.platform_foundation.internal_events.worker
       - aicrm_next.platform_foundation.internal_events.reconciliation
       - aicrm_next.commerce.fulfillment_reconciliation
@@ -1772,21 +1776,26 @@ tables:
       - internal event outbox relay
       - internal event outbox reconciliation
       - commerce fulfillment reconciliation repair
+      - unified execution timeline
     migration_source: 0099_internal_event_outbox_and_consumer_lease
     pii_level: restricted_business_payload
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_event_effect_table_lineage.py
       - tests/test_internal_event_outbox.py
-    notes: Technical outbox only; payment and refund state share this durability boundary. scripts/run_internal_event_worker.py is the only relay owner; scoped schedulers are consumer-only. Commerce and internal-event repair only ensure idempotent technical continuations and never execute consumers or providers.
+    notes: Technical outbox only; payment and refund state share this durability boundary. scripts/run_internal_event_worker.py is the only relay owner; scoped schedulers are consumer-only. Commerce and internal-event repair only ensure idempotent technical continuations and never execute consumers or providers. Revision 0125 makes available_at mandatory and constrains lane to internal_general or internal_financial. Unified timeline reads payload_summary_json only and applies centralized sensitive-data redaction; full payload_json is excluded.
 
   internal_event_consumer_run:
     domain: internal_events
     lifecycle: queue
     write_owner: aicrm_next.platform_foundation.internal_events.worker
+    write_owners:
+      - aicrm_next.platform_foundation.execution_runtime.repository
+      - aicrm_next.platform_foundation.internal_events.worker
     status_enum:
       column: status
     read_owners:
+      - aicrm_next.platform_foundation.execution_runtime.read_model
       - internal event admin/reconciliation APIs
     replacement: none; canonical internal consumer queue
     drop_candidate: false
@@ -1794,28 +1803,31 @@ tables:
     runtime_entrypoints:
       - internal event consumer scheduling
       - internal event worker retry
+      - unified execution timeline
     migration_source: 0043_internal_event_queue, lease CAS hardened by 0099_internal_event_outbox_and_consumer_lease
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_event_effect_table_lineage.py
-    notes: Tracks consumer execution state for internal_event. Relay creates the exact manifest-declared set atomically; manifest-aware reconciliation may only restore missing declared rows without executing handlers. Automatic due is limited to pending, due failed_retryable, and stale running; failed_terminal/blocked require audited manual action.
+    notes: Tracks consumer execution state for internal_event. Relay creates the exact manifest-declared set atomically; manifest-aware reconciliation may only restore missing declared rows without executing handlers. Automatic due is limited to pending, due failed_retryable, and stale running; failed_terminal/blocked require audited manual action. Revision 0125 makes available_at mandatory and constrains lane to internal_general or internal_financial.
 
   internal_event_consumer_attempt:
     domain: internal_events
     lifecycle: audit
     write_owner: aicrm_next.platform_foundation.internal_events.worker
     read_owners:
+      - aicrm_next.platform_foundation.execution_runtime.read_model
       - internal event admin/reconciliation APIs
     replacement: none; canonical internal consumer attempt audit
     drop_candidate: false
     drop_after: ""
     runtime_entrypoints:
       - internal event worker attempt logging
+      - unified execution timeline
     migration_source: 0043_internal_event_queue, manual retry audit hardened by 0099_internal_event_outbox_and_consumer_lease
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_event_effect_table_lineage.py
-    notes: Attempt audit for internal_event_consumer_run.
+    notes: Attempt audit for internal_event_consumer_run. Unified timeline combines request/response summaries only and applies centralized sensitive-data redaction.
 
   queue_history_classification:
     domain: platform_foundation
@@ -1837,16 +1849,151 @@ tables:
       - tests/test_data_table_lifecycle_guard.py
     notes: Append-only classification of the exact pre-cutover rows. It stores queue kind, numeric row id, source status, classification and non-sensitive evidence only; update and delete are rejected by a database trigger, and no automatic release path exists.
 
+  queue_runtime_control:
+    domain: platform_foundation
+    lifecycle: config
+    write_owner: aicrm_next.platform_foundation.execution_runtime
+    read_owners:
+      - PostgreSQL execution runtime generation gate
+      - execution runtime admin read model
+    replacement: none; canonical singleton generation and global claim gate
+    drop_candidate: false
+    drop_after: ""
+    runtime_entrypoints:
+      - execution runtime claim authorization
+      - generation cutover command
+      - execution runtime admin API
+    migration_source: 0126_postgres_execution_runtime
+    pii_level: none
+    guard_tests:
+      - tests/test_execution_runtime_postgres.py
+      - tests/test_database_bootstrap.py
+      - tests/test_data_table_lifecycle_guard.py
+    notes: Fail-closed singleton control row. A generation must match and claim_enabled plus rollout policy must authorize a claim; deployment labels alone never activate execution.
+
+  queue_lane_policy:
+    domain: platform_foundation
+    lifecycle: config
+    write_owner: aicrm_next.platform_foundation.execution_runtime
+    read_owners:
+      - PostgreSQL execution runtime lane capacity gate
+      - execution runtime admin read model
+    replacement: none; canonical per-lane capacity and rollout policy
+    drop_candidate: false
+    drop_after: ""
+    runtime_entrypoints:
+      - execution runtime claim authorization
+      - lane policy administration
+      - execution runtime admin API
+    migration_source: 0126_postgres_execution_runtime
+    pii_level: none
+    guard_tests:
+      - tests/test_execution_runtime_postgres.py
+      - tests/test_database_bootstrap.py
+      - tests/test_data_table_lifecycle_guard.py
+    notes: Stores reserved per-lane capacity and explicit rollout mode. outbound_webhook is seeded blocked and must remain fail-closed without separate approval.
+
+  queue_policy_snapshot:
+    domain: platform_foundation
+    lifecycle: config
+    write_owner: aicrm_next.platform_foundation.execution_runtime
+    read_owners:
+      - PostgreSQL execution runtime policy resolver
+      - execution runtime admin read model
+    replacement: none; canonical versioned queue policy snapshot
+    drop_candidate: false
+    drop_after: ""
+    runtime_entrypoints:
+      - execution runtime policy resolution
+      - execution runtime health and statistics
+    migration_source: 0126_postgres_execution_runtime
+    pii_level: none
+    guard_tests:
+      - tests/test_execution_runtime_postgres.py
+      - tests/test_database_bootstrap.py
+      - tests/test_data_table_lifecycle_guard.py
+    notes: Versioned non-secret policy document shared by claim and read paths so health metrics and execution decisions use the same policy snapshot. It is append-only at the database boundary; UPDATE and DELETE are rejected by a trigger.
+
+  queue_fairness_cursor:
+    domain: platform_foundation
+    lifecycle: read_model
+    write_owner: aicrm_next.platform_foundation.execution_runtime.repository
+    read_owners:
+      - PostgreSQL execution runtime fair claim selector
+      - execution runtime admin read model
+    replacement: none; durable scheduler fairness projection
+    drop_candidate: false
+    drop_after: ""
+    runtime_entrypoints:
+      - execution runtime claim_one
+      - execution runtime queue diagnostics
+    migration_source: 0126_postgres_execution_runtime
+    pii_level: none
+    guard_tests:
+      - tests/test_execution_runtime_postgres.py
+      - tests/test_database_bootstrap.py
+      - tests/test_data_table_lifecycle_guard.py
+    notes: Derived scheduling state only. fairness_key must be a non-secret operational partition key and must not contain message content or personal contact data.
+
+  queue_rate_scope_cooldown:
+    domain: platform_foundation
+    lifecycle: queue
+    write_owner: aicrm_next.platform_foundation.execution_runtime.repository
+    write_owners:
+      - aicrm_next.platform_foundation.execution_runtime.repository
+      - aicrm_next.platform_foundation.external_effects.rate_limit
+    read_owners:
+      - PostgreSQL execution runtime external-effect claim selector
+      - execution runtime admin read model
+    replacement: none; canonical provider rate-scope cooldown state
+    drop_candidate: false
+    drop_after: ""
+    runtime_entrypoints:
+      - provider rate-limit result handling
+      - execution runtime external-effect claim_one
+      - execution runtime admin API
+    migration_source: 0126_postgres_execution_runtime
+    pii_level: none
+    guard_tests:
+      - tests/test_execution_runtime_postgres.py
+      - tests/test_database_bootstrap.py
+      - tests/test_data_table_lifecycle_guard.py
+    notes: Durable rate-scope deadline releases worker capacity instead of sleeping. The external-effect rate_limit helper persists 429 cooldown in the same transaction as attempt and job result state. It records provider/corp/app/operation identifiers and audit reason only; request payload, recipient identity, content and secrets are forbidden.
+
+  queue_worker_heartbeat:
+    domain: platform_foundation
+    lifecycle: read_model
+    write_owner: aicrm_next.platform_foundation.execution_runtime
+    read_owners:
+      - execution runtime admin read model
+      - execution runtime consistency audit
+    replacement: none; canonical worker and listener liveness projection
+    drop_candidate: false
+    drop_after: ""
+    runtime_entrypoints:
+      - execution runtime worker heartbeat
+      - listener reconnect and drain tracking
+      - execution runtime admin API
+    migration_source: 0126_postgres_execution_runtime
+    pii_level: none
+    guard_tests:
+      - tests/test_execution_runtime_postgres.py
+      - tests/test_database_bootstrap.py
+      - tests/test_data_table_lifecycle_guard.py
+    notes: Operational liveness projection keyed by service and worker. It exposes generation, release SHA, listener and drain timestamps without queue payloads or customer identifiers.
+
   external_effect_job:
     domain: external_effects
     lifecycle: queue
     write_owner: aicrm_next.platform_foundation.external_effects.service
     write_owners:
+      - aicrm_next.platform_foundation.execution_runtime.repository
       - aicrm_next.platform_foundation.external_effects.service
       - aicrm_next.platform_foundation.external_effects.transactional
     status_enum:
       column: status
     read_owners:
+      - aicrm_next.platform_foundation.execution_runtime.read_model
       - aicrm_next.platform_foundation.external_effects.worker
       - aicrm_next.platform_foundation.external_effects.reconciliation
       - push center projection
@@ -1860,18 +2007,23 @@ tables:
       - payment external-push planner transaction
       - external effect worker
       - push center reconciliation
+      - unified execution timeline
     migration_source: 0039_external_effect_queue, hardened by 0100_external_effect_delivery_lease and R08 transactional producers
     pii_level: internal_contact
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_event_effect_table_lineage.py
-    notes: Canonical queue for real external side effects. Scheduler, realtime, and manual dispatch share lease-token CAS; uncertain outcomes are quarantined for reconciliation and fake outcomes are simulated.
+    notes: Canonical queue for real external side effects. Scheduler, realtime, and manual dispatch share lease-token CAS; uncertain outcomes are quarantined for reconciliation and fake outcomes are simulated. Revision 0125 makes available_at mandatory and constrains lane to the four external-effect lanes. Unified timeline reads summary projections only and applies centralized sensitive-data redaction; provider request payloads are excluded.
 
   external_effect_attempt:
     domain: external_effects
     lifecycle: audit
     write_owner: aicrm_next.platform_foundation.external_effects.worker
+    write_owners:
+      - aicrm_next.platform_foundation.execution_runtime.repository
+      - aicrm_next.platform_foundation.external_effects.worker
     read_owners:
+      - aicrm_next.platform_foundation.execution_runtime.read_model
       - push center projection
       - admin external effect APIs
     replacement: none; canonical external side-effect attempt audit
@@ -1879,11 +2031,12 @@ tables:
     drop_after: ""
     runtime_entrypoints:
       - external effect worker attempt logging
+      - unified execution timeline
     migration_source: 0039_external_effect_queue
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_event_effect_table_lineage.py
-    notes: Append-only attempt audit for external_effect_job execution. Provider result and job state are committed atomically under the active lease.
+    notes: Append-only attempt audit for external_effect_job execution. Provider result and job state are committed atomically under the active lease. Revision 0125 freezes a historical dispatching attempt as unknown_after_dispatch when its parent job has already left dispatching, recording historical_freeze_orphan evidence instead of replaying it. Unified timeline redacts combined request/response summaries before returning them.
 
   owner_migration_import_sessions:
     domain: owner_migration
@@ -3435,21 +3588,24 @@ tables:
     lifecycle: canonical
     write_owner: aicrm_next.webhook_ingress
     write_owners:
+      - aicrm_next.platform_foundation.execution_runtime.repository
       - aicrm_next.platform_foundation.webhook_inbox
       - aicrm_next.webhook_ingress
     read_owners:
+      - aicrm_next.platform_foundation.execution_runtime.read_model
       - historical schema drift guard
     replacement: none; active production schema table registered during schema drift closeout
     drop_candidate: false
     drop_after: ""
     runtime_entrypoints:
       - existing production runtime
+      - unified execution timeline
     migration_source: 0054_webhook_inbox
     pii_level: internal_contact
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
-    notes: Registered from the formal production public schema so schema_drift_guard can fail closed on future unmanaged table changes.
+    notes: Registered from the formal production public schema so schema_drift_guard can fail closed on future unmanaged table changes. Revision 0125 makes available_at mandatory and constrains lane to webhook_inbox. Unified timeline reads summary projections only and applies centralized sensitive-data redaction; raw callback bodies are excluded.
 
   commerce_coupons:
     domain: commerce

@@ -30,13 +30,60 @@ def test_runtime_contract_inventory_covers_r00_behavior_surfaces() -> None:
     assert all(route["capability_owner"] for route in routes)
     assert all("responses" in route["contract"] for route in routes)
 
-    assert inventory["migration_heads"] == ["0125_execution_runtime_correctness"]
+    assert inventory["migration_heads"] == ["0126_postgres_execution_runtime"]
     assert len(inventory["tables"]) >= 150
     owned_lifecycles = {"canonical", "read_model", "event", "queue", "config"}
     assert all(table["write_owner"] for table in inventory["tables"] if table["lifecycle"] in owned_lifecycles)
+    tables_by_name = {table["table"]: table for table in inventory["tables"]}
+    assert {
+        "queue_runtime_control",
+        "queue_lane_policy",
+        "queue_policy_snapshot",
+        "queue_fairness_cursor",
+        "queue_rate_scope_cooldown",
+        "queue_worker_heartbeat",
+    } <= set(tables_by_name)
+    assert {
+        name: tables_by_name[name]["lifecycle"]
+        for name in (
+            "queue_runtime_control",
+            "queue_lane_policy",
+            "queue_policy_snapshot",
+            "queue_fairness_cursor",
+            "queue_rate_scope_cooldown",
+            "queue_worker_heartbeat",
+        )
+    } == {
+        "queue_runtime_control": "config",
+        "queue_lane_policy": "config",
+        "queue_policy_snapshot": "config",
+        "queue_fairness_cursor": "read_model",
+        "queue_rate_scope_cooldown": "queue",
+        "queue_worker_heartbeat": "read_model",
+    }
+    assert all(
+        tables_by_name[name]["migration_source"] == "0126_postgres_execution_runtime"
+        for name in (
+            "queue_runtime_control",
+            "queue_lane_policy",
+            "queue_policy_snapshot",
+            "queue_fairness_cursor",
+            "queue_rate_scope_cooldown",
+            "queue_worker_heartbeat",
+        )
+    )
     assert inventory["internal_event_consumers"]
     assert inventory["external_effects"]
     assert any(unit["unit"] == "openclaw-wecom-callback-ingress.service" for unit in inventory["runtime_units"])
+    runtime_units = {unit["unit"]: unit for unit in inventory["runtime_units"]}
+    for unit_name in (
+        "aicrm-internal-queue-runtime.service",
+        "aicrm-inbox-queue-runtime.service",
+        "aicrm-external-queue-runtime.service",
+    ):
+        assert runtime_units[unit_name]["kind"] == "service"
+        assert runtime_units[unit_name]["state"] == "active"
+        assert runtime_units[unit_name]["stop_for_migration"] is True
     assert "DATABASE_URL" in inventory["environment_variables"]
     assert {
         "AICRM_AUTH_ARCHIVE_WORKER_CLIENT_ID",

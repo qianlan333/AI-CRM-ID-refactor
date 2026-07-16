@@ -1,6 +1,7 @@
 # ruff: noqa: F401
 from __future__ import annotations
 
+import hashlib
 from collections.abc import Callable
 from datetime import datetime
 from typing import Any
@@ -24,8 +25,10 @@ from .models import (
     utcnow,
 )
 from .completion_events import build_external_effect_completed_event
+from .rate_limit import persist_rate_limit_cooldown
 from .repo_contract import (
     ExternalEffectRepository,
+    _execution_lane,
     _idempotency_key,
     _initial_status,
     _json_dumps,
@@ -34,10 +37,10 @@ from .repo_contract import (
     _public_attempt,
     _public_job,
     _public_receipt,
+    _rate_scope_key,
     _safe_error_message,
     _text,
 )
-
 
 class SQLAlchemyExternalEffectRepository(ExternalEffectRepository):
     def __init__(self, session_factory: Callable[[], Session] | None = None):
@@ -75,6 +78,8 @@ class SQLAlchemyExternalEffectRepository(ExternalEffectRepository):
                 tenant_id, effect_type, adapter_name, operation, target_type, target_id,
                 business_type, business_id, source_module, source_route, source_event_id,
                 source_command_id, trace_id, request_id, correlation_id, idempotency_key,
+                execution_id, parent_execution_id, lane, available_at,
+                ordering_key, fairness_key, rate_scope_key,
                 actor_id, actor_type, risk_level, requires_approval, execution_mode,
                 payload_json, payload_summary_json, status, priority, scheduled_at,
                 attempt_count, max_attempts, created_at, updated_at
@@ -83,6 +88,8 @@ class SQLAlchemyExternalEffectRepository(ExternalEffectRepository):
                 :tenant_id, :effect_type, :adapter_name, :operation, :target_type, :target_id,
                 :business_type, :business_id, :source_module, :source_route, :source_event_id,
                 :source_command_id, :trace_id, :request_id, :correlation_id, :idempotency_key,
+                :execution_id, :parent_execution_id, :lane, CAST(:available_at AS timestamptz),
+                :ordering_key, :fairness_key, :rate_scope_key,
                 :actor_id, :actor_type, :risk_level, :requires_approval, :execution_mode,
                 CAST(:payload_json AS jsonb), CAST(:payload_summary_json AS jsonb), :status,
                 :priority, CAST(:scheduled_at AS timestamptz), 0, :max_attempts,
@@ -108,6 +115,13 @@ class SQLAlchemyExternalEffectRepository(ExternalEffectRepository):
                 "request_id": _text(request.context.request_id),
                 "correlation_id": _text(request.correlation_id),
                 "idempotency_key": key,
+                "execution_id": _text(request.execution_id) or "exe_" + uuid4().hex,
+                "parent_execution_id": _text(request.parent_execution_id),
+                "lane": _execution_lane(request),
+                "available_at": public_datetime(scheduled_at),
+                "ordering_key": _text(request.ordering_key) or _text(request.target_id) or f"effect:{key}",
+                "fairness_key": _text(request.fairness_key) or _text(request.business_id) or _text(request.target_id) or "default",
+                "rate_scope_key": _rate_scope_key(request),
                 "actor_id": _text(request.context.actor_id),
                 "actor_type": _text(request.context.actor_type) or "system",
                 "risk_level": _text(request.risk_level) or "medium",
@@ -462,6 +476,7 @@ class SQLAlchemyExternalEffectRepository(ExternalEffectRepository):
                 lease_token = CAST(:lease_prefix AS text) || '-' || j.id::text,
                 lease_expires_at = CURRENT_TIMESTAMP + (:lease_seconds * INTERVAL '1 second'),
                 dispatch_started_at = CURRENT_TIMESTAMP,
+                provider_call_started_at = NULL,
                 locked_at = CURRENT_TIMESTAMP,
                 locked_by = :locked_by,
                 row_version = row_version + 1,
@@ -483,6 +498,7 @@ class SQLAlchemyExternalEffectRepository(ExternalEffectRepository):
                 lease_token = :lease_token,
                 lease_expires_at = CURRENT_TIMESTAMP + (:lease_seconds * INTERVAL '1 second'),
                 dispatch_started_at = CURRENT_TIMESTAMP,
+                provider_call_started_at = NULL,
                 locked_at = CURRENT_TIMESTAMP,
                 locked_by = :locked_by,
                 row_version = row_version + 1,
@@ -506,8 +522,7 @@ class SQLAlchemyExternalEffectRepository(ExternalEffectRepository):
         return _public_job(row)
 
     def get_active_claim(self, job_id: int, *, lease_token: str) -> ExternalEffectJob | None:
-        return _public_job(
-            self._one(
+        return _public_job(self._one(
                 """
                 SELECT *
                 FROM external_effect_job
@@ -519,22 +534,21 @@ class SQLAlchemyExternalEffectRepository(ExternalEffectRepository):
                 LIMIT 1
                 """,
                 {"job_id": int(job_id), "lease_token": _text(lease_token)},
-            )
-        )
+            ))
 
     def quarantine_stale_dispatching(self) -> int:
         with self._session_factory() as session:
-            stale_rows = (
-                session.execute(
-                    text(
-                        """
-                        SELECT job.id, job.last_attempt_id,
+            stale_rows = session.execute(text(
+                    """
+                        SELECT job.id, job.last_attempt_id, job.lease_token,
                                EXISTS (
                                    SELECT 1
                                    FROM external_effect_attempt attempt
                                    WHERE attempt.job_id = job.id
                                      AND attempt.attempt_id = job.last_attempt_id
+                                     AND attempt.lease_token = job.lease_token
                                      AND attempt.status = 'dispatching'
+                                     AND attempt.provider_call_started_at IS NOT NULL
                                ) AS provider_boundary_crossed
                         FROM external_effect_job job
                         WHERE job.status = 'dispatching'
@@ -543,17 +557,14 @@ class SQLAlchemyExternalEffectRepository(ExternalEffectRepository):
                           AND job.lease_expires_at <= CURRENT_TIMESTAMP
                         ORDER BY job.id ASC
                         FOR UPDATE SKIP LOCKED
-                        """
-                    )
-                )
-                .mappings()
-                .fetchall()
-            )
+                    """
+            )).mappings().fetchall()
             count = 0
             for stale in stale_rows:
                 provider_boundary_crossed = bool(stale.get("provider_boundary_crossed"))
                 attempt_id = _text(stale.get("last_attempt_id"))
-                if provider_boundary_crossed and attempt_id:
+                lease_token = _text(stale.get("lease_token"))
+                if provider_boundary_crossed and attempt_id and lease_token:
                     session.execute(
                         text(
                             """
@@ -573,10 +584,15 @@ class SQLAlchemyExternalEffectRepository(ExternalEffectRepository):
                                 completed_at = COALESCE(completed_at, CURRENT_TIMESTAMP)
                             WHERE attempt_id = :attempt_id
                               AND job_id = :job_id
+                              AND lease_token = :lease_token
                               AND status = 'dispatching'
                             """
                         ),
-                        {"attempt_id": attempt_id, "job_id": int(stale["id"])},
+                        {
+                            "attempt_id": attempt_id,
+                            "job_id": int(stale["id"]),
+                            "lease_token": lease_token,
+                        },
                     )
                 if provider_boundary_crossed:
                     update_statement = """
@@ -586,7 +602,7 @@ class SQLAlchemyExternalEffectRepository(ExternalEffectRepository):
                             reconciliation_required = TRUE,
                             last_error_code = 'lease_expired_after_dispatch',
                             last_error_message = 'Dispatch lease expired; reconcile provider outcome before retry.',
-                            lease_token = '', lease_expires_at = NULL,
+                            lease_token = '', lease_expires_at = NULL, heartbeat_at = NULL,
                             locked_by = '', locked_at = NULL,
                             completed_at = CURRENT_TIMESTAMP,
                             row_version = row_version + 1,
@@ -594,6 +610,7 @@ class SQLAlchemyExternalEffectRepository(ExternalEffectRepository):
                         WHERE id = :job_id
                           AND hold_reason = ''
                           AND status = 'dispatching'
+                          AND lease_token = :lease_token
                           AND lease_expires_at IS NOT NULL
                           AND lease_expires_at <= CURRENT_TIMESTAMP
                         RETURNING id
@@ -602,28 +619,30 @@ class SQLAlchemyExternalEffectRepository(ExternalEffectRepository):
                     update_statement = """
                         UPDATE external_effect_job
                         SET status = 'queued',
+                            available_at = CURRENT_TIMESTAMP,
                             next_retry_at = CURRENT_TIMESTAMP,
+                            worker_generation = 0,
                             reconciliation_required = FALSE,
                             last_error_code = 'lease_expired_before_dispatch',
                             last_error_message = 'Pre-dispatch lease expired and was safely requeued.',
-                            lease_token = '', lease_expires_at = NULL,
+                            lease_token = '', lease_expires_at = NULL, heartbeat_at = NULL,
                             locked_by = '', locked_at = NULL,
                             dispatch_started_at = NULL,
+                            provider_call_started_at = NULL,
                             completed_at = NULL,
                             row_version = row_version + 1,
                             updated_at = CURRENT_TIMESTAMP
                         WHERE id = :job_id
                           AND hold_reason = ''
                           AND status = 'dispatching'
+                          AND lease_token = :lease_token
                           AND lease_expires_at IS NOT NULL
                           AND lease_expires_at <= CURRENT_TIMESTAMP
                         RETURNING id
                     """
                 updated = session.execute(
-                    text(
-                        update_statement
-                    ),
-                    {"job_id": int(stale["id"])},
+                    text(update_statement),
+                    {"job_id": int(stale["id"]), "lease_token": lease_token},
                 ).fetchone()
                 count += 1 if updated else 0
             session.commit()
@@ -645,6 +664,17 @@ class SQLAlchemyExternalEffectRepository(ExternalEffectRepository):
                 "provider_boundary_crossed": True,
             }
         )
+        request_hash = hashlib.sha256(
+            _json_dumps(
+                {
+                    "effect_type": job.effect_type,
+                    "operation": job.operation,
+                    "target_type": job.target_type,
+                    "target_id": job.target_id,
+                    "payload": dict(job.payload_json or {}),
+                }
+            ).encode("utf-8")
+        ).hexdigest()
         with self._session_factory() as session:
             current = (
                 session.execute(
@@ -675,11 +705,13 @@ class SQLAlchemyExternalEffectRepository(ExternalEffectRepository):
                         """
                         INSERT INTO external_effect_attempt (
                             attempt_id, job_id, adapter_name, adapter_mode, operation, trace_id,
-                            request_id, status, request_summary_json, response_summary_json,
+                            request_id, lease_token, request_hash, provider_call_started_at,
+                            worker_generation, status, request_summary_json, response_summary_json,
                             error_code, error_message, started_at, completed_at
                         ) VALUES (
                             :attempt_id, :job_id, :adapter_name, :adapter_mode, :operation, :trace_id,
-                            :request_id, 'dispatching', CAST(:request_summary AS jsonb), '{}'::jsonb,
+                            :request_id, :lease_token, :request_hash, CURRENT_TIMESTAMP,
+                            :worker_generation, 'dispatching', CAST(:request_summary AS jsonb), '{}'::jsonb,
                             '', '', CURRENT_TIMESTAMP, NULL
                         )
                         RETURNING *
@@ -693,6 +725,9 @@ class SQLAlchemyExternalEffectRepository(ExternalEffectRepository):
                         "operation": job.operation,
                         "trace_id": job.trace_id,
                         "request_id": job.request_id,
+                        "lease_token": lease_token,
+                        "request_hash": request_hash,
+                        "worker_generation": int(current.get("worker_generation") or job.worker_generation or 0),
                         "request_summary": _json_dumps(summary),
                     },
                 )
@@ -705,6 +740,7 @@ class SQLAlchemyExternalEffectRepository(ExternalEffectRepository):
                         """
                         UPDATE external_effect_job
                         SET last_attempt_id = :attempt_id,
+                            provider_call_started_at = CURRENT_TIMESTAMP,
                             row_version = row_version + 1,
                             updated_at = CURRENT_TIMESTAMP
                         WHERE id = :job_id
@@ -868,7 +904,16 @@ class SQLAlchemyExternalEffectRepository(ExternalEffectRepository):
                     UPDATE external_effect_job
                     SET status = :status,
                         attempt_count = attempt_count + 1,
-                        next_retry_at = CAST(:next_retry_at AS timestamptz),
+                        next_retry_at = CASE
+                            WHEN :status = 'failed_retryable'
+                            THEN CAST(:next_retry_at AS timestamptz)
+                            ELSE NULL
+                        END,
+                        available_at = CASE
+                            WHEN :status = 'failed_retryable'
+                            THEN CAST(:next_retry_at AS timestamptz)
+                            ELSE available_at
+                        END,
                         last_attempt_id = :attempt_id,
                         last_error_code = :error_code,
                         last_error_message = :error_message,
@@ -876,6 +921,10 @@ class SQLAlchemyExternalEffectRepository(ExternalEffectRepository):
                         provider_result_received = :provider_result_received,
                         result_summary_json = CAST(:result_summary AS jsonb),
                         reconciliation_required = :reconciliation_required,
+                        worker_generation = CASE
+                            WHEN :status = 'failed_retryable' THEN 0
+                            ELSE worker_generation
+                        END,
                         lease_token = '', lease_expires_at = NULL,
                         locked_by = '', locked_at = NULL,
                         row_version = row_version + 1,
@@ -916,6 +965,13 @@ class SQLAlchemyExternalEffectRepository(ExternalEffectRepository):
             if not updated or not attempt:
                 session.rollback()
                 return None
+            persist_rate_limit_cooldown(
+                session,
+                job=updated,
+                attempt=attempt,
+                result=result,
+                blocked_until=next_retry_at,
+            )
             if status == "succeeded":
                 from aicrm_next.platform_foundation.internal_events.outbox import (
                     enqueue_internal_event_outbox_in_session,
@@ -1045,7 +1101,7 @@ class SQLAlchemyExternalEffectRepository(ExternalEffectRepository):
     def mark_failed_retryable(self, job_id: int, *, attempt_id: str, error_code: str, error_message: str, next_retry_at: datetime) -> ExternalEffectJob | None:
         return self._update(
             job_id,
-            "status = 'failed_retryable', attempt_count = attempt_count + 1, next_retry_at = CAST(:next_retry_at AS timestamptz), last_attempt_id = :attempt_id, last_error_code = :error_code, last_error_message = :error_message, locked_by = '', locked_at = NULL, lease_token = '', lease_expires_at = NULL",
+            "status = 'failed_retryable', attempt_count = attempt_count + 1, next_retry_at = CAST(:next_retry_at AS timestamptz), available_at = CAST(:next_retry_at AS timestamptz), last_attempt_id = :attempt_id, last_error_code = :error_code, last_error_message = :error_message, locked_by = '', locked_at = NULL, lease_token = '', lease_expires_at = NULL",
             {
                 "attempt_id": _text(attempt_id),
                 "error_code": _text(error_code),
@@ -1117,6 +1173,7 @@ class SQLAlchemyExternalEffectRepository(ExternalEffectRepository):
                 SET status = 'cancelled',
                     locked_by = '', locked_at = NULL,
                     lease_token = '', lease_expires_at = NULL,
+                    heartbeat_at = NULL, worker_generation = 0,
                     cancelled_at = CURRENT_TIMESTAMP,
                     completed_at = CURRENT_TIMESTAMP,
                     row_version = row_version + 1,
@@ -1169,6 +1226,7 @@ class SQLAlchemyExternalEffectRepository(ExternalEffectRepository):
                     locked_by = '', locked_at = NULL,
                     lease_token = '', lease_expires_at = NULL,
                     next_retry_at = CURRENT_TIMESTAMP,
+                    available_at = CURRENT_TIMESTAMP,
                     reconciliation_required = FALSE,
                     cancel_requested_at = NULL,
                     cancel_requested_by = '',
@@ -1194,7 +1252,7 @@ class SQLAlchemyExternalEffectRepository(ExternalEffectRepository):
     def approve_job(self, job_id: int) -> ExternalEffectJob | None:
         return self._update(
             job_id,
-            "status = 'queued', approved_at = CURRENT_TIMESTAMP, locked_by = '', locked_at = NULL, lease_token = '', lease_expires_at = NULL, next_retry_at = CURRENT_TIMESTAMP, reconciliation_required = FALSE",
+            "status = 'queued', approved_at = CURRENT_TIMESTAMP, locked_by = '', locked_at = NULL, lease_token = '', lease_expires_at = NULL, heartbeat_at = NULL, worker_generation = 0, next_retry_at = CURRENT_TIMESTAMP, available_at = CURRENT_TIMESTAMP, reconciliation_required = FALSE",
             {},
         )
 

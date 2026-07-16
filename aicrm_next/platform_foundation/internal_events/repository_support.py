@@ -202,11 +202,22 @@ def _public_run(row: dict[str, Any] | None) -> InternalEventConsumerRun | None:
         return None
     payload = dict(row)
     payload["result_summary_json"] = _json_obj(payload.get("result_summary_json"))
-    for key in ("next_retry_at", "locked_at", "created_at", "updated_at", "finished_at", "hold_at"):
+    for key in (
+        "available_at",
+        "next_retry_at",
+        "locked_at",
+        "lease_expires_at",
+        "heartbeat_at",
+        "created_at",
+        "updated_at",
+        "finished_at",
+        "hold_at",
+    ):
         payload[key] = public_datetime(payload.get(key))
     payload["id"] = int(payload.get("id") or 0)
     payload["attempt_count"] = int(payload.get("attempt_count") or 0)
     payload["max_attempts"] = int(payload.get("max_attempts") or 0)
+    payload["worker_generation"] = int(payload.get("worker_generation") or 0)
     return InternalEventConsumerRun(**payload)
 
 
@@ -229,10 +240,22 @@ def _public_outbox(row: dict[str, Any] | None) -> InternalEventOutboxRecord | No
     payload = dict(row)
     for key in ("payload_json", "payload_summary_json"):
         payload[key] = _json_obj(payload.get(key))
-    for key in ("occurred_at", "next_retry_at", "locked_at", "created_at", "updated_at", "relayed_at", "hold_at"):
+    for key in (
+        "occurred_at",
+        "available_at",
+        "next_retry_at",
+        "locked_at",
+        "lease_expires_at",
+        "heartbeat_at",
+        "created_at",
+        "updated_at",
+        "relayed_at",
+        "hold_at",
+    ):
         payload[key] = public_datetime(payload.get(key))
     for key in ("id", "event_version", "attempt_count", "max_attempts"):
         payload[key] = int(payload.get(key) or 0)
+    payload["worker_generation"] = int(payload.get("worker_generation") or 0)
     return InternalEventOutboxRecord(**payload)
 
 
@@ -329,6 +352,7 @@ class InternalEventRepository:
         *,
         locked_by: str,
         expected_lease_token: str = "",
+        expected_generation: int = 0,
     ) -> InternalEventConsumerRun | None:
         raise NotImplementedError
 
@@ -343,6 +367,7 @@ class InternalEventRepository:
         error_message: str = "",
         next_retry_at: datetime | None = None,
         expected_lease_token: str = "",
+        expected_generation: int = 0,
     ) -> InternalEventConsumerRun | None:
         raise NotImplementedError
 

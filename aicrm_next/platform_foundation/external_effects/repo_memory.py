@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 from datetime import datetime, timedelta, timezone
 from threading import RLock
 from typing import Any
@@ -22,12 +23,15 @@ from .completion_events import build_external_effect_completed_event
 
 from .repo import (
     ExternalEffectRepository,
+    _execution_lane,
     _idempotency_key,
     _initial_status,
+    _json_dumps,
     _payload_summary,
     _public_attempt,
     _public_job,
     _public_receipt,
+    _rate_scope_key,
     _safe_error_message,
     _text,
 )
@@ -53,6 +57,7 @@ class InMemoryExternalEffectRepository(ExternalEffectRepository):
                 assert job is not None
                 return job
         now = utcnow()
+        scheduled_at = request.scheduled_at or now
         payload_summary = dict(request.payload_summary or {}) or _payload_summary(request.payload)
         row = {
             "id": self._next_id,
@@ -71,6 +76,8 @@ class InMemoryExternalEffectRepository(ExternalEffectRepository):
             "trace_id": _text(request.context.trace_id),
             "request_id": _text(request.context.request_id),
             "correlation_id": _text(request.correlation_id),
+            "execution_id": _text(request.execution_id) or "exe_" + uuid4().hex,
+            "parent_execution_id": _text(request.parent_execution_id),
             "idempotency_key": key,
             "actor_id": _text(request.context.actor_id),
             "actor_type": _text(request.context.actor_type) or "system",
@@ -82,7 +89,12 @@ class InMemoryExternalEffectRepository(ExternalEffectRepository):
             "status": _initial_status(request),
             "row_version": 1,
             "priority": int(request.priority or 100),
-            "scheduled_at": public_datetime(request.scheduled_at or now),
+            "scheduled_at": public_datetime(scheduled_at),
+            "lane": _execution_lane(request),
+            "available_at": public_datetime(scheduled_at),
+            "ordering_key": _text(request.ordering_key) or _text(request.target_id) or f"effect:{key}",
+            "fairness_key": _text(request.fairness_key) or _text(request.business_id) or _text(request.target_id) or "default",
+            "rate_scope_key": _rate_scope_key(request),
             "attempt_count": 0,
             "max_attempts": int(request.max_attempts or 5),
             "next_retry_at": "",
@@ -90,7 +102,11 @@ class InMemoryExternalEffectRepository(ExternalEffectRepository):
             "locked_by": "",
             "lease_token": "",
             "lease_expires_at": "",
+            "heartbeat_at": "",
+            "worker_generation": 0,
+            "policy_version": "queue-v1",
             "dispatch_started_at": "",
+            "provider_call_started_at": "",
             "last_attempt_id": "",
             "last_error_code": "",
             "last_error_message": "",
@@ -191,6 +207,7 @@ class InMemoryExternalEffectRepository(ExternalEffectRepository):
             if row.get("status") in {"queued", "failed_retryable"}
             and not _text(row.get("hold_reason"))
             and int(row.get("attempt_count") or 0) < int(row.get("max_attempts") or 5)
+            and self._dt(row.get("available_at")) <= now
             and self._dt(row.get("scheduled_at")) <= now
             and (not row.get("next_retry_at") or self._dt(row.get("next_retry_at")) <= now)
             and (not row.get("lease_expires_at") or self._dt(row.get("lease_expires_at")) <= now)
@@ -273,7 +290,7 @@ class InMemoryExternalEffectRepository(ExternalEffectRepository):
             and int(row.get("attempt_count") or 0) < int(row.get("max_attempts") or 5)
             and (not type_set or row.get("effect_type") in type_set)
             and (not test_only or (row.get("payload_json") or {}).get("execution_scope") == "test_loopback")
-            and self._dt(row.get("scheduled_at")) <= now
+            and self._dt(row.get("available_at")) <= now
             and (not row.get("next_retry_at") or self._dt(row.get("next_retry_at")) <= now)
             and (not row.get("lease_expires_at") or self._dt(row.get("lease_expires_at")) <= now)
         ]
@@ -441,6 +458,17 @@ class InMemoryExternalEffectRepository(ExternalEffectRepository):
             if any(int(attempt_row.get("job_id") or 0) == int(job.id) and attempt_row.get("status") == "dispatching" for attempt_row in self._attempts):
                 return None
             now = public_datetime(utcnow())
+            request_hash = hashlib.sha256(
+                _json_dumps(
+                    {
+                        "effect_type": job.effect_type,
+                        "operation": job.operation,
+                        "target_type": job.target_type,
+                        "target_id": job.target_id,
+                        "payload": dict(job.payload_json or {}),
+                    }
+                ).encode("utf-8")
+            ).hexdigest()
             attempt_row = {
                 "id": self._next_attempt_id,
                 "attempt_id": "eea_" + uuid4().hex,
@@ -450,6 +478,10 @@ class InMemoryExternalEffectRepository(ExternalEffectRepository):
                 "operation": job.operation,
                 "trace_id": job.trace_id,
                 "request_id": job.request_id,
+                "lease_token": _text(job.lease_token),
+                "request_hash": request_hash,
+                "provider_call_started_at": now,
+                "worker_generation": int(row.get("worker_generation") or job.worker_generation or 0),
                 "status": "dispatching",
                 "request_summary_json": scrub_summary({**dict(request_summary or {}), "provider_boundary_crossed": True}),
                 "response_summary_json": {},
@@ -463,6 +495,7 @@ class InMemoryExternalEffectRepository(ExternalEffectRepository):
             row.update(
                 {
                     "last_attempt_id": attempt_row["attempt_id"],
+                    "provider_call_started_at": now,
                     "row_version": int(row.get("row_version") or 1) + 1,
                     "updated_at": now,
                 }
@@ -553,6 +586,7 @@ class InMemoryExternalEffectRepository(ExternalEffectRepository):
                     "status": status,
                     "attempt_count": int(row.get("attempt_count") or 0) + 1,
                     "next_retry_at": public_datetime(next_retry_at) if status == "failed_retryable" and next_retry_at else "",
+                    "available_at": public_datetime(next_retry_at) if status == "failed_retryable" and next_retry_at else row.get("available_at") or "",
                     "last_attempt_id": attempt.attempt_id,
                     "last_error_code": _text(result.error_code),
                     "last_error_message": _safe_error_message(result.error_message),
@@ -560,6 +594,7 @@ class InMemoryExternalEffectRepository(ExternalEffectRepository):
                     "provider_result_received": bool(result.provider_result_received),
                     "result_summary_json": scrub_summary(response_summary),
                     "reconciliation_required": status == "unknown_after_dispatch",
+                    "worker_generation": 0 if status == "failed_retryable" else int(row.get("worker_generation") or 0),
                     "lease_token": "",
                     "lease_expires_at": "",
                     "locked_by": "",
@@ -680,6 +715,7 @@ class InMemoryExternalEffectRepository(ExternalEffectRepository):
             job_id,
             status="failed_retryable",
             next_retry_at=public_datetime(next_retry_at),
+            available_at=public_datetime(next_retry_at),
             last_attempt_id=_text(attempt_id),
             last_error_code=_text(error_code),
             last_error_message=_safe_error_message(error_message),
@@ -784,6 +820,8 @@ class InMemoryExternalEffectRepository(ExternalEffectRepository):
                 locked_at="",
                 lease_token="",
                 lease_expires_at="",
+                heartbeat_at="",
+                worker_generation=0,
                 cancelled_at=now,
                 completed_at=now,
             )
@@ -820,6 +858,7 @@ class InMemoryExternalEffectRepository(ExternalEffectRepository):
             max_attempts = int(row.get("max_attempts") or 5)
             if extend_attempt_budget:
                 max_attempts = max(max_attempts, int(row.get("attempt_count") or 0) + 1)
+            now = public_datetime(utcnow())
             return self._mutate(
                 job_id,
                 status="queued",
@@ -827,7 +866,8 @@ class InMemoryExternalEffectRepository(ExternalEffectRepository):
                 locked_at="",
                 lease_token="",
                 lease_expires_at="",
-                next_retry_at=public_datetime(utcnow()),
+                next_retry_at=now,
+                available_at=now,
                 reconciliation_required=False,
                 cancel_requested_at="",
                 cancel_requested_by="",
@@ -837,15 +877,19 @@ class InMemoryExternalEffectRepository(ExternalEffectRepository):
             )
 
     def approve_job(self, job_id: int) -> ExternalEffectJob | None:
+        now = public_datetime(utcnow())
         return self._mutate(
             job_id,
             status="queued",
-            approved_at=public_datetime(utcnow()),
+            approved_at=now,
             locked_by="",
             locked_at="",
             lease_token="",
             lease_expires_at="",
-            next_retry_at=public_datetime(utcnow()),
+            heartbeat_at="",
+            worker_generation=0,
+            next_retry_at=now,
+            available_at=now,
             reconciliation_required=False,
         )
 

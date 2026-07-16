@@ -223,6 +223,7 @@ def _runtime_units(root: Path) -> list[dict[str, Any]]:
                 "kind": "service",
                 "state": "active",
                 "health_url": str(item.get("health_url") or ""),
+                "stop_for_migration": bool(item.get("stop_for_migration", False)),
             }
         )
     for item in manifest.get("active_autostart", []) or []:

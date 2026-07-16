@@ -1,0 +1,602 @@
+from __future__ import annotations
+
+import os
+import time
+from concurrent.futures import ThreadPoolExecutor
+from dataclasses import fields
+from datetime import datetime, timedelta, timezone
+from uuid import uuid4
+
+import psycopg
+import pytest
+from psycopg.rows import dict_row
+
+from aicrm_next.platform_foundation.command_bus.models import CommandContext
+from aicrm_next.platform_foundation.execution_runtime.listener import (
+    PostgresQueueWakeListener,
+)
+from aicrm_next.platform_foundation.execution_runtime.read_model import (
+    ExecutionRuntimeReadModel,
+)
+from aicrm_next.platform_foundation.execution_runtime.repository import (
+    ExecutionRuntimeRepository,
+)
+from aicrm_next.platform_foundation.external_effects.models import (
+    ExternalEffectCreateRequest,
+    ExternalEffectDispatchResult,
+)
+from aicrm_next.platform_foundation.external_effects.repo import (
+    SQLAlchemyExternalEffectRepository,
+)
+from aicrm_next.platform_foundation.external_effects.service import ExternalEffectService
+from aicrm_next.platform_foundation.external_effects.transactional import (
+    enqueue_transactional_external_effect_job,
+)
+from aicrm_next.platform_foundation.internal_events.models import (
+    InternalEventCreateRequest,
+    InternalEventOutboxRecord,
+)
+from aicrm_next.platform_foundation.internal_events.outbox import (
+    enqueue_internal_event_outbox_in_session,
+)
+from aicrm_next.platform_foundation.internal_events.repository import (
+    SQLAlchemyInternalEventRepository,
+)
+from aicrm_next.shared.db_session import get_session_factory
+
+
+pytestmark = pytest.mark.usefixtures("next_pg_schema")
+
+
+def _database_url() -> str:
+    return str(os.environ.get("DATABASE_URL") or os.environ.get("AICRM_TEST_DATABASE_URL") or "")
+
+
+def _connect(*, autocommit: bool = True):
+    return psycopg.connect(_database_url(), autocommit=autocommit, row_factory=dict_row)
+
+
+@pytest.fixture(autouse=True)
+def _reset_runtime_control() -> None:
+    with _connect() as connection:
+        connection.execute("DELETE FROM queue_fairness_cursor")
+        connection.execute("DELETE FROM queue_rate_scope_cooldown")
+        connection.execute("DELETE FROM queue_worker_heartbeat")
+        connection.execute(
+            """
+            UPDATE queue_runtime_control
+            SET active_generation = 0,
+                claim_enabled = FALSE,
+                rollout_mode = 'standby',
+                global_max_in_flight = 20,
+                policy_version = 'queue-v1'
+            WHERE singleton = TRUE
+            """
+        )
+        connection.execute(
+            """
+            UPDATE queue_lane_policy
+            SET enabled = TRUE,
+                rollout_mode = CASE WHEN lane = 'outbound_webhook' THEN 'blocked' ELSE 'standby' END,
+                blocked_until = NULL,
+                max_in_flight = CASE lane
+                    WHEN 'internal_general' THEN 4
+                    WHEN 'internal_financial' THEN 1
+                    WHEN 'webhook_inbox' THEN 4
+                    WHEN 'wecom_interactive' THEN 4
+                    WHEN 'wecom_bulk' THEN 1
+                    WHEN 'wecom_media' THEN 2
+                    WHEN 'outbound_webhook' THEN 4
+                    ELSE max_in_flight
+                END
+            """
+        )
+
+
+def _enable(*, generation: int = 7, global_capacity: int = 20, **lane_capacities: int) -> None:
+    with _connect() as connection:
+        connection.execute(
+            """
+            UPDATE queue_runtime_control
+            SET active_generation = %s,
+                claim_enabled = TRUE,
+                rollout_mode = 'execute',
+                global_max_in_flight = %s,
+                updated_by = 'pytest',
+                updated_reason = 'runtime integration test'
+            WHERE singleton = TRUE
+            """,
+            (generation, global_capacity),
+        )
+        for lane, capacity in lane_capacities.items():
+            connection.execute(
+                """
+                UPDATE queue_lane_policy
+                SET max_in_flight = %s,
+                    enabled = TRUE,
+                    rollout_mode = 'execute',
+                    blocked_until = NULL,
+                    updated_by = 'pytest',
+                    updated_reason = 'runtime integration test'
+                WHERE lane = %s
+                """,
+                (capacity, lane),
+            )
+
+
+def _job(
+    *,
+    lane: str = "wecom_interactive",
+    ordering_key: str = "",
+    fairness_key: str = "",
+    rate_scope_key: str = "",
+) -> dict:
+    key = uuid4().hex
+    return ExternalEffectService().plan_effect(
+        effect_type="test.queue.effect",
+        adapter_name="test_provider",
+        operation="send",
+        target_type="test_target",
+        target_id=f"target-{key}",
+        business_type="runtime_test",
+        business_id=f"business-{key}",
+        payload={"execution_scope": "test_loopback"},
+        idempotency_key=f"runtime-{key}",
+        status="queued",
+        lane=lane,
+        ordering_key=ordering_key,
+        fairness_key=fairness_key,
+        rate_scope_key=rate_scope_key,
+    )
+
+
+def _finish(item_id: int, *, status: str = "simulated") -> None:
+    with _connect() as connection:
+        connection.execute(
+            """
+            UPDATE external_effect_job
+            SET status = %s,
+                lease_token = '',
+                lease_expires_at = NULL,
+                heartbeat_at = NULL,
+                locked_by = '',
+                locked_at = NULL,
+                completed_at = CURRENT_TIMESTAMP,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = %s
+            """,
+            (status, item_id),
+        )
+
+
+def test_generation_and_standby_gate_are_fail_closed() -> None:
+    job = _job()
+    repository = ExecutionRuntimeRepository(_database_url())
+
+    assert repository.claim_external_effect_one(lane="wecom_interactive", worker_id="standby", generation=7) is None
+
+    _enable(generation=7, wecom_interactive=1)
+    assert repository.claim_external_effect_one(lane="wecom_interactive", worker_id="old-generation", generation=6) is None
+    claim = repository.claim_external_effect_one(lane="wecom_interactive", worker_id="active-generation", generation=7)
+    assert claim is not None
+    assert claim.item_id == job["id"]
+    assert claim.worker_generation == 7
+
+
+def test_generation_zero_cannot_be_enabled_for_runtime_claims() -> None:
+    repository = ExecutionRuntimeRepository(_database_url())
+    assert repository.claim_external_effect_one(
+        lane="wecom_interactive",
+        worker_id="generation-zero",
+        generation=0,
+    ) is None
+    with pytest.raises(psycopg.errors.CheckViolation):
+        with _connect() as connection:
+            connection.execute(
+                """
+                UPDATE queue_runtime_control
+                SET active_generation = 0, claim_enabled = TRUE, rollout_mode = 'execute'
+                WHERE singleton = TRUE
+                """
+            )
+
+
+def test_runtime_snapshot_uses_the_claim_policy_gate() -> None:
+    job = _job()
+    read_model = ExecutionRuntimeReadModel(_database_url())
+
+    standby = {item["lane"]: item for item in read_model.runtime_snapshot()["lanes"]}
+    assert standby["wecom_interactive"]["raw_open"] == 1
+    assert standby["wecom_interactive"]["eligible"] == 0
+
+    _enable(generation=7, wecom_interactive=1)
+    enabled = {item["lane"]: item for item in read_model.runtime_snapshot()["lanes"]}
+    assert enabled["wecom_interactive"]["eligible"] == 1
+
+    with _connect() as connection:
+        connection.execute(
+            "UPDATE external_effect_job SET policy_version = 'stale-policy' WHERE id = %s",
+            (job["id"],),
+        )
+    mismatched = {item["lane"]: item for item in read_model.runtime_snapshot()["lanes"]}
+    assert mismatched["wecom_interactive"]["eligible"] == 0
+
+
+def test_capacity_claims_only_real_slots_and_refills_immediately() -> None:
+    jobs = [_job(fairness_key=f"tenant-{index}") for index in range(3)]
+    _enable(generation=7, global_capacity=2, wecom_interactive=2)
+    repository = ExecutionRuntimeRepository(_database_url())
+
+    with ThreadPoolExecutor(max_workers=3) as executor:
+        claims = list(
+            executor.map(
+                lambda index: repository.claim_external_effect_one(
+                    lane="wecom_interactive",
+                    worker_id=f"capacity-{index}",
+                    generation=7,
+                ),
+                range(3),
+            )
+        )
+    claimed = [claim for claim in claims if claim is not None]
+    assert len(claimed) == 2
+    with _connect() as connection:
+        counts = connection.execute(
+            """
+            SELECT COUNT(*) FILTER (WHERE status = 'dispatching') AS running,
+                   COUNT(*) FILTER (WHERE status = 'queued') AS waiting
+            FROM external_effect_job
+            WHERE id = ANY(%s)
+            """,
+            ([job["id"] for job in jobs],),
+        ).fetchone()
+    assert counts == {"running": 2, "waiting": 1}
+    assert repository.next_due_at(
+        queue_kind="external_effect",
+        lane="wecom_interactive",
+        generation=7,
+    ) is None
+
+    _finish(claimed[0].item_id)
+    due_at = repository.next_due_at(
+        queue_kind="external_effect",
+        lane="wecom_interactive",
+        generation=7,
+    )
+    assert due_at is not None and due_at <= datetime.now(timezone.utc)
+    started = time.monotonic()
+    next_claim = repository.claim_external_effect_one(lane="wecom_interactive", worker_id="capacity-refill", generation=7)
+    assert next_claim is not None
+    assert time.monotonic() - started < 1.0
+
+
+def test_ordering_is_serial_and_fairness_rotates_between_keys() -> None:
+    first = _job(ordering_key="customer-1", fairness_key="tenant-a")
+    second = _job(ordering_key="customer-1", fairness_key="tenant-a")
+    third = _job(ordering_key="customer-2", fairness_key="tenant-b")
+    _enable(generation=7, global_capacity=2, wecom_interactive=2)
+    repository = ExecutionRuntimeRepository(_database_url())
+
+    first_claim = repository.claim_external_effect_one(lane="wecom_interactive", worker_id="ordering-1", generation=7)
+    assert first_claim is not None and first_claim.item_id == first["id"]
+    second_claim = repository.claim_external_effect_one(lane="wecom_interactive", worker_id="ordering-2", generation=7)
+    assert second_claim is not None and second_claim.item_id == third["id"]
+
+    _finish(first_claim.item_id)
+    _finish(second_claim.item_id)
+    rotated = repository.claim_external_effect_one(lane="wecom_interactive", worker_id="ordering-3", generation=7)
+    assert rotated is not None and rotated.item_id == second["id"]
+
+
+def test_rate_scope_cooldown_skips_scope_without_sleeping() -> None:
+    blocked = _job(rate_scope_key="provider:corp-a:send")
+    available = _job(rate_scope_key="provider:corp-b:send")
+    _enable(generation=7, global_capacity=1, wecom_interactive=1)
+    repository = ExecutionRuntimeRepository(_database_url())
+    repository.record_rate_limit(
+        rate_scope_key="provider:corp-a:send",
+        blocked_until=datetime.now(timezone.utc) + timedelta(minutes=5),
+        provider="test_provider",
+        corp_id="corp-a",
+        operation="send",
+    )
+
+    claim = repository.claim_external_effect_one(lane="wecom_interactive", worker_id="rate-open", generation=7)
+    assert claim is not None and claim.item_id == available["id"]
+    _finish(claim.item_id)
+    with _connect() as connection:
+        connection.execute(
+            """
+            UPDATE queue_rate_scope_cooldown
+            SET blocked_until = CURRENT_TIMESTAMP - INTERVAL '1 second'
+            WHERE rate_scope_key = 'provider:corp-a:send'
+            """
+        )
+    released = repository.claim_external_effect_one(lane="wecom_interactive", worker_id="rate-released", generation=7)
+    assert released is not None and released.item_id == blocked["id"]
+
+
+def test_lease_heartbeat_extends_owner_and_prevents_duplicate_claim() -> None:
+    job = _job()
+    _enable(generation=7, global_capacity=1, wecom_interactive=1)
+    repository = ExecutionRuntimeRepository(_database_url())
+    claim = repository.claim_external_effect_one(lane="wecom_interactive", worker_id="heartbeat-owner", generation=7, lease_seconds=10)
+    assert claim is not None
+    time.sleep(0.05)
+    assert (
+        repository.renew_lease(
+            queue_kind="external_effect",
+            item_id=claim.item_id,
+            lease_token=claim.lease_token,
+            generation=7,
+            lease_seconds=10,
+        )
+        is True
+    )
+    with _connect() as connection:
+        row = connection.execute(
+            "SELECT lease_expires_at, heartbeat_at FROM external_effect_job WHERE id = %s",
+            (job["id"],),
+        ).fetchone()
+    assert row["lease_expires_at"] > claim.lease_expires_at
+    assert row["heartbeat_at"] is not None
+    assert repository.claim_external_effect_one(lane="wecom_interactive", worker_id="duplicate", generation=7) is None
+
+
+def test_expired_pre_provider_lease_is_safely_requeued_and_reclaimed() -> None:
+    job = _job()
+    _enable(generation=7, global_capacity=1, wecom_interactive=1)
+    repository = ExecutionRuntimeRepository(_database_url())
+    first = repository.claim_external_effect_one(
+        lane="wecom_interactive",
+        worker_id="pre-boundary-first",
+        generation=7,
+    )
+    assert first is not None and first.item_id == job["id"]
+    with _connect() as connection:
+        connection.execute(
+            "UPDATE external_effect_job SET lease_expires_at = CURRENT_TIMESTAMP - INTERVAL '1 second' WHERE id = %s",
+            (job["id"],),
+        )
+
+    second = repository.claim_external_effect_one(
+        lane="wecom_interactive",
+        worker_id="pre-boundary-second",
+        generation=7,
+    )
+    assert second is not None and second.item_id == job["id"]
+    assert second.lease_token != first.lease_token
+    with _connect() as connection:
+        row = connection.execute(
+            "SELECT status, attempt_count, provider_call_started_at, last_error_code FROM external_effect_job WHERE id = %s",
+            (job["id"],),
+        ).fetchone()
+    assert row["status"] == "dispatching"
+    assert row["attempt_count"] == 0
+    assert row["provider_call_started_at"] is None
+    assert row["last_error_code"] == "lease_expired_before_dispatch"
+
+
+def test_expired_post_provider_lease_becomes_unknown_and_attempt_is_closed() -> None:
+    job = _job()
+    _enable(generation=7, global_capacity=1, wecom_interactive=1)
+    runtime = ExecutionRuntimeRepository(_database_url())
+    claim = runtime.claim_external_effect_one(
+        lane="wecom_interactive",
+        worker_id="post-boundary",
+        generation=7,
+    )
+    assert claim is not None
+    effects = SQLAlchemyExternalEffectRepository()
+    claimed_job = effects.get_job(job["id"])
+    assert claimed_job is not None
+    begun = effects.begin_provider_attempt(
+        job=claimed_job,
+        request_summary={"provider_request": "redacted"},
+    )
+    assert begun is not None
+    begun_job, attempt = begun
+    assert attempt.lease_token == claim.lease_token
+    assert len(attempt.request_hash) == 64
+    assert attempt.provider_call_started_at
+    assert attempt.worker_generation == 7
+    with _connect() as connection:
+        connection.execute(
+            "UPDATE external_effect_job SET lease_expires_at = CURRENT_TIMESTAMP - INTERVAL '1 second' WHERE id = %s",
+            (job["id"],),
+        )
+    assert (
+        effects.complete_dispatch(
+            job=begun_job,
+            result=ExternalEffectDispatchResult(
+                status="succeeded",
+                provider_result_received=True,
+                real_external_call_executed=True,
+            ),
+        )
+        is None
+    )
+    assert runtime.claim_external_effect_one(
+        lane="wecom_interactive",
+        worker_id="post-boundary-recovery",
+        generation=7,
+    ) is None
+    with _connect() as connection:
+        job_row = connection.execute(
+            "SELECT status, attempt_count, reconciliation_required FROM external_effect_job WHERE id = %s",
+            (job["id"],),
+        ).fetchone()
+        attempt_row = connection.execute(
+            "SELECT status, error_code FROM external_effect_attempt WHERE attempt_id = %s",
+            (attempt.attempt_id,),
+        ).fetchone()
+    assert job_row == {
+        "status": "unknown_after_dispatch",
+        "attempt_count": 1,
+        "reconciliation_required": True,
+    }
+    assert attempt_row["status"] == "unknown_after_dispatch"
+    assert attempt_row["error_code"] == "lease_expired_after_dispatch"
+    timeline = ExecutionRuntimeReadModel(_database_url()).execution_timeline(job["execution_id"])
+    assert timeline is not None
+    assert {item["item_kind"] for item in timeline["items"]} >= {
+        "external_effect",
+        "external_effect_attempt",
+    }
+
+
+def test_terminal_429_still_atomically_blocks_the_provider_scope() -> None:
+    scope = f"test-provider:corp:app:send:{uuid4().hex}"
+    first = _job(rate_scope_key=scope)
+    second = _job(rate_scope_key=scope)
+    _enable(generation=7, global_capacity=1, wecom_interactive=1)
+    runtime = ExecutionRuntimeRepository(_database_url())
+    claim = runtime.claim_external_effect_one(
+        lane="wecom_interactive",
+        worker_id="terminal-rate-limit",
+        generation=7,
+    )
+    assert claim is not None and claim.item_id == first["id"]
+    effects = SQLAlchemyExternalEffectRepository()
+    claimed_job = effects.get_job(first["id"])
+    assert claimed_job is not None
+    begun = effects.begin_provider_attempt(job=claimed_job, request_summary={"send": True})
+    assert begun is not None
+    begun_job, attempt = begun
+    blocked_until = datetime.now(timezone.utc) + timedelta(seconds=7)
+    completed = effects.complete_dispatch(
+        job=begun_job,
+        result=ExternalEffectDispatchResult(
+            status="failed_terminal",
+            error_code="http_429",
+            response_summary={"status_code": 429, "retry_after_seconds": 7},
+            retry_after_seconds=7,
+            provider_result_received=True,
+            real_external_call_executed=True,
+        ),
+        next_retry_at=blocked_until,
+    )
+    assert completed is not None and completed[0].status == "failed_terminal"
+    with _connect() as connection:
+        cooldown = connection.execute(
+            "SELECT blocked_until, source_attempt_id FROM queue_rate_scope_cooldown WHERE rate_scope_key = %s",
+            (scope,),
+        ).fetchone()
+    assert cooldown["blocked_until"] >= blocked_until - timedelta(milliseconds=1)
+    assert cooldown["source_attempt_id"] == attempt.attempt_id
+    assert runtime.claim_external_effect_one(
+        lane="wecom_interactive",
+        worker_id="same-scope-blocked",
+        generation=7,
+    ) is None
+    with _connect() as connection:
+        assert connection.execute(
+            "SELECT status FROM external_effect_job WHERE id = %s",
+            (second["id"],),
+        ).fetchone()["status"] == "queued"
+
+
+def test_internal_outbox_attempt_budget_counts_claim_once_and_expired_owner_loses_cas() -> None:
+    with get_session_factory()() as session:
+        outbox = enqueue_internal_event_outbox_in_session(
+            session,
+            InternalEventCreateRequest(
+                event_type="runtime.outbox.test",
+                aggregate_type="runtime_test",
+                aggregate_id=uuid4().hex,
+                payload={"mobile": "13800000000", "token": "must-not-leak"},
+                idempotency_key=f"runtime-outbox-{uuid4().hex}",
+            ),
+        )
+        session.commit()
+    timeline = ExecutionRuntimeReadModel(_database_url()).execution_timeline(outbox["execution_id"])
+    assert timeline is not None
+    assert any(item["item_kind"] == "internal_outbox" for item in timeline["items"])
+    assert "13800000000" not in str(timeline)
+    assert "must-not-leak" not in str(timeline)
+    _enable(generation=7, global_capacity=1, internal_general=1)
+    runtime = ExecutionRuntimeRepository(_database_url())
+    first = runtime.claim_internal_outbox_one(
+        lane="internal_general",
+        worker_id="outbox-first",
+        generation=7,
+    )
+    assert first is not None and first.item_id == outbox["id"]
+    assert int(first.payload["attempt_count"]) == 1
+    field_names = {field.name for field in fields(InternalEventOutboxRecord)}
+    record = InternalEventOutboxRecord(
+        **{key: value for key, value in first.payload.items() if key in field_names}
+    )
+    with _connect() as connection:
+        connection.execute(
+            "UPDATE internal_event_outbox SET lease_expires_at = CURRENT_TIMESTAMP - INTERVAL '1 second' WHERE id = %s",
+            (outbox["id"],),
+        )
+    internal = SQLAlchemyInternalEventRepository()
+    assert internal.mark_outbox_failure(
+        record,
+        error_code="expired_owner",
+        error_message="must not commit",
+        next_retry_at=datetime.now(timezone.utc),
+    ) is None
+    second = runtime.claim_internal_outbox_one(
+        lane="internal_general",
+        worker_id="outbox-second",
+        generation=7,
+    )
+    assert second is not None and second.item_id == outbox["id"]
+    assert int(second.payload["attempt_count"]) == 2
+
+
+def test_external_effect_producer_rejects_unknown_lane() -> None:
+    with pytest.raises(ValueError, match="unsupported external effect lane"):
+        _job(lane="unknown_lane")
+
+
+def test_notify_is_visible_only_after_commit_and_transactional_rows_are_eligible() -> None:
+    listener = PostgresQueueWakeListener(_database_url())
+    listener.connect()
+    try:
+        with _connect(autocommit=False) as connection:
+            request = ExternalEffectCreateRequest(
+                effect_type="test.queue.notify",
+                adapter_name="test_provider",
+                operation="send",
+                target_type="test_target",
+                target_id="notify-target",
+                context=CommandContext(actor_id="pytest", actor_type="system"),
+                payload={"execution_scope": "test_loopback"},
+                idempotency_key=f"notify-{uuid4().hex}",
+                lane="wecom_interactive",
+                ordering_key="notify-order",
+                fairness_key="notify-fairness",
+                rate_scope_key="notify-scope",
+            )
+            job = enqueue_transactional_external_effect_job(connection, request)
+            assert job.execution_id
+            assert job.available_at
+            assert listener.wait(timeout_seconds=0.1) is None
+            connection.commit()
+        hint = listener.wait(timeout_seconds=1.0)
+        assert hint is not None
+        assert hint.queue_kind == "external_effect"
+        assert hint.lane == "wecom_interactive"
+    finally:
+        listener.close()
+
+    with get_session_factory()() as session:
+        outbox = enqueue_internal_event_outbox_in_session(
+            session,
+            InternalEventCreateRequest(
+                event_type="external_effect.completed",
+                aggregate_type="external_effect_job",
+                aggregate_id=str(job.id),
+                parent_execution_id=job.execution_id,
+                idempotency_key=f"completion-{uuid4().hex}",
+            ),
+        )
+        session.commit()
+    assert outbox["execution_id"]
+    assert outbox["parent_execution_id"] == job.execution_id
+    assert outbox["lane"] == "internal_general"
+    assert outbox["available_at"] is not None

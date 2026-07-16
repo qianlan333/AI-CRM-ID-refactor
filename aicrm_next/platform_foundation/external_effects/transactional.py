@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import json
 from typing import Any
+from uuid import uuid4
 
 from .models import DEFAULT_TENANT_ID, ExternalEffectCreateRequest, ExternalEffectJob, public_datetime, utcnow
-from .repo import _idempotency_key, _initial_status, _payload_summary, _public_job
+from .repo import _execution_lane, _idempotency_key, _initial_status, _payload_summary, _public_job, _rate_scope_key
 
 
 def _json(value: Any) -> str:
@@ -22,12 +23,19 @@ def enqueue_transactional_external_effect_job(conn: Any, request: ExternalEffect
     tenant_id = str(request.tenant_id or DEFAULT_TENANT_ID).strip() or DEFAULT_TENANT_ID
     idempotency_key = _idempotency_key(request)
     payload_summary = dict(request.payload_summary or {}) or _payload_summary(request.payload)
+    scheduled_at = request.scheduled_at or utcnow()
+    execution_id = str(request.execution_id or "").strip() or "exe_" + uuid4().hex
+    ordering_key = str(request.ordering_key or request.target_id or f"effect:{idempotency_key}").strip()
+    fairness_key = str(request.fairness_key or request.business_id or request.target_id or "default").strip()
+    rate_scope_key = _rate_scope_key(request)
     row = conn.execute(
         """
         INSERT INTO external_effect_job (
             tenant_id, effect_type, adapter_name, operation, target_type, target_id,
             business_type, business_id, source_module, source_route, source_event_id,
             source_command_id, trace_id, request_id, correlation_id, idempotency_key,
+            execution_id, parent_execution_id, lane, available_at,
+            ordering_key, fairness_key, rate_scope_key,
             actor_id, actor_type, risk_level, requires_approval, execution_mode,
             payload_json, payload_summary_json, status, priority, scheduled_at,
             attempt_count, max_attempts, created_at, updated_at
@@ -35,6 +43,8 @@ def enqueue_transactional_external_effect_job(conn: Any, request: ExternalEffect
             %s, %s, %s, %s, %s, %s,
             %s, %s, %s, %s, %s,
             %s, %s, %s, %s, %s,
+            %s, %s, %s, %s::timestamptz,
+            %s, %s, %s,
             %s, %s, %s, %s, %s,
             %s::jsonb, %s::jsonb, %s, %s, %s::timestamptz,
             0, %s, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
@@ -59,6 +69,13 @@ def enqueue_transactional_external_effect_job(conn: Any, request: ExternalEffect
             str(request.context.request_id or "").strip(),
             str(request.correlation_id or "").strip(),
             idempotency_key,
+            execution_id,
+            str(request.parent_execution_id or "").strip(),
+            _execution_lane(request),
+            public_datetime(scheduled_at),
+            ordering_key,
+            fairness_key,
+            rate_scope_key,
             str(request.context.actor_id or "").strip(),
             str(request.context.actor_type or "system").strip() or "system",
             str(request.risk_level or "medium").strip() or "medium",
@@ -68,7 +85,7 @@ def enqueue_transactional_external_effect_job(conn: Any, request: ExternalEffect
             _json(payload_summary),
             _initial_status(request),
             int(request.priority or 100),
-            public_datetime(request.scheduled_at or utcnow()),
+            public_datetime(scheduled_at),
             int(request.max_attempts or 5),
         ),
     ).fetchone()

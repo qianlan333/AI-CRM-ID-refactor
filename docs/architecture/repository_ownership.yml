@@ -585,6 +585,26 @@ repositories:
       - auth_sessions
       - auth_webhook_clients
       - auth_webhook_replay
+  aicrm_next/platform_foundation/execution_runtime/repository.py:
+    capability_owner: aicrm_next.platform_foundation.execution_runtime
+    table_reads:
+      - external_effect_job
+      - internal_event_consumer_run
+      - internal_event_outbox
+      - queue_fairness_cursor
+      - queue_lane_policy
+      - queue_rate_scope_cooldown
+      - queue_runtime_control
+      - webhook_inbox
+    table_writes:
+      - external_effect_attempt
+      - external_effect_job
+      - internal_event_consumer_run
+      - internal_event_outbox
+      - queue_fairness_cursor
+      - queue_rate_scope_cooldown
+      - queue_worker_heartbeat
+      - webhook_inbox
   aicrm_next/platform_foundation/external_effects/repo.py:
     capability_owner: aicrm_next.platform_foundation.external_effects
     table_reads:

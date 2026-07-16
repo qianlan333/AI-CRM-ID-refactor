@@ -74,7 +74,7 @@ def test_empty_postgres_database_installs_and_reuses_alembic_head() -> None:
 
         assert first.baseline_applied is True
         assert first.revision_before is None
-        assert first.revision_after == "0125_execution_runtime_correctness"
+        assert first.revision_after == "0126_postgres_execution_runtime"
         assert second.baseline_applied is False
         assert second.revision_before == first.revision_after
         assert second.revision_after == first.revision_after
@@ -95,6 +95,12 @@ def test_empty_postgres_database_installs_and_reuses_alembic_head() -> None:
             "service_period_huangyoucan_usage_snapshot",
             "service_period_huangyoucan_usage_sync_runs",
             "sync_runs",
+            "queue_fairness_cursor",
+            "queue_lane_policy",
+            "queue_policy_snapshot",
+            "queue_rate_scope_cooldown",
+            "queue_runtime_control",
+            "queue_worker_heartbeat",
             "wecom_external_contact_event_logs",
             "wecom_media_leases",
         } <= table_names
@@ -111,6 +117,75 @@ def test_empty_postgres_database_installs_and_reuses_alembic_head() -> None:
                   )
                 """
             ).fetchall()
+            runtime_control = connection.execute(
+                """
+                SELECT active_generation, claim_enabled, rollout_mode,
+                       global_max_in_flight, policy_version
+                FROM queue_runtime_control
+                WHERE singleton = TRUE
+                """
+            ).fetchone()
+            lane_policies = {
+                str(row[0]): (int(row[1]), str(row[2]), bool(row[3]))
+                for row in connection.execute(
+                    """
+                    SELECT lane, max_in_flight, rollout_mode, enabled
+                    FROM queue_lane_policy
+                    ORDER BY lane
+                    """
+                ).fetchall()
+            }
+            policy_snapshot = connection.execute(
+                """
+                SELECT policy_version,
+                       (policy_json ->> 'heartbeat_seconds')::INTEGER,
+                       (policy_json ->> 'lease_ttl_seconds')::INTEGER,
+                       (policy_json ->> 'fallback_drain_seconds')::INTEGER,
+                       policy_json ->> 'outbound_webhook_default'
+                FROM queue_policy_snapshot
+                WHERE policy_version = 'queue-v1'
+                """
+            ).fetchone()
+            runtime_queue_columns = connection.execute(
+                """
+                SELECT table_name, column_name, is_nullable
+                FROM information_schema.columns
+                WHERE table_schema = 'public'
+                  AND table_name IN (
+                      'external_effect_job', 'internal_event_consumer_run',
+                      'internal_event_outbox', 'webhook_inbox'
+                  )
+                  AND column_name IN ('available_at', 'lane')
+                ORDER BY table_name, column_name
+                """
+            ).fetchall()
+            runtime_lane_constraints = connection.execute(
+                """
+                SELECT constraint_name
+                FROM information_schema.table_constraints
+                WHERE table_schema = 'public'
+                  AND constraint_type = 'CHECK'
+                  AND constraint_name IN (
+                      'ck_external_effect_job_runtime_lane',
+                      'ck_internal_event_consumer_run_runtime_lane',
+                      'ck_internal_event_outbox_runtime_lane',
+                      'ck_webhook_inbox_runtime_lane'
+                  )
+                ORDER BY constraint_name
+                """
+            ).fetchall()
+            runtime_ordering_indexes = connection.execute(
+                """
+                SELECT indexname
+                FROM pg_indexes
+                WHERE schemaname = 'public'
+                  AND indexname IN (
+                      'idx_internal_outbox_ordering_active',
+                      'idx_webhook_inbox_ordering_active'
+                  )
+                ORDER BY indexname
+                """
+            ).fetchall()
         assert {row[0] for row in manifest_columns} == {
             "fanout_manifest_version",
             "fanout_manifest_hash",
@@ -118,6 +193,84 @@ def test_empty_postgres_database_installs_and_reuses_alembic_head() -> None:
             "expected_consumer_count",
         }
         assert all(row[1] == "NO" for row in manifest_columns)
+        assert runtime_control == (0, False, "standby", 20, "queue-v1")
+        assert lane_policies == {
+            "internal_financial": (1, "standby", True),
+            "internal_general": (4, "standby", True),
+            "outbound_webhook": (4, "blocked", True),
+            "webhook_inbox": (4, "standby", True),
+            "wecom_bulk": (1, "standby", True),
+            "wecom_interactive": (4, "standby", True),
+            "wecom_media": (2, "standby", True),
+        }
+        assert policy_snapshot == ("queue-v1", 10, 30, 30, "blocked")
+        assert {
+            (str(table_name), str(column_name)): str(is_nullable)
+            for table_name, column_name, is_nullable in runtime_queue_columns
+        } == {
+            ("external_effect_job", "available_at"): "NO",
+            ("external_effect_job", "lane"): "NO",
+            ("internal_event_consumer_run", "available_at"): "NO",
+            ("internal_event_consumer_run", "lane"): "NO",
+            ("internal_event_outbox", "available_at"): "NO",
+            ("internal_event_outbox", "lane"): "NO",
+            ("webhook_inbox", "available_at"): "NO",
+            ("webhook_inbox", "lane"): "NO",
+        }
+        assert {str(row[0]) for row in runtime_lane_constraints} == {
+            "ck_external_effect_job_runtime_lane",
+            "ck_internal_event_consumer_run_runtime_lane",
+            "ck_internal_event_outbox_runtime_lane",
+            "ck_webhook_inbox_runtime_lane",
+        }
+        assert {str(row[0]) for row in runtime_ordering_indexes} == {
+            "idx_internal_outbox_ordering_active",
+            "idx_webhook_inbox_ordering_active",
+        }
+
+        with psycopg.connect(database_url) as connection:
+            with pytest.raises(psycopg.errors.CheckViolation):
+                connection.execute(
+                    """
+                    INSERT INTO external_effect_job (
+                        effect_type, adapter_name, operation, target_type, target_id,
+                        idempotency_key, status, scheduled_at, available_at, lane
+                    ) VALUES (
+                        'webhook.test', 'http', 'post', 'loopback', 'invalid-lane',
+                        'bootstrap-invalid-runtime-lane', 'queued', CURRENT_TIMESTAMP,
+                        CURRENT_TIMESTAMP, 'not_a_runtime_lane'
+                    )
+                    """
+                )
+            connection.rollback()
+            defaulted_available_at = connection.execute(
+                """
+                INSERT INTO external_effect_job (
+                    effect_type, adapter_name, operation, target_type, target_id,
+                    idempotency_key, status, scheduled_at, lane
+                ) VALUES (
+                    'webhook.test', 'http', 'post', 'loopback', 'defaulted-available-at',
+                    'bootstrap-defaulted-available-at', 'queued', CURRENT_TIMESTAMP,
+                    'outbound_webhook'
+                )
+                RETURNING available_at
+                """
+            ).fetchone()[0]
+            assert defaulted_available_at is not None
+            connection.rollback()
+
+        with psycopg.connect(database_url) as connection:
+            with pytest.raises(psycopg.errors.RaiseException, match="queue_policy_snapshot is append-only"):
+                connection.execute(
+                    "UPDATE queue_policy_snapshot SET created_reason = 'tampered' WHERE policy_version = 'queue-v1'"
+                )
+            connection.rollback()
+            with pytest.raises(psycopg.errors.RaiseException, match="queue_policy_snapshot is append-only"):
+                connection.execute("DELETE FROM queue_policy_snapshot WHERE policy_version = 'queue-v1'")
+            connection.rollback()
+            assert connection.execute(
+                "SELECT COUNT(*) FROM queue_policy_snapshot WHERE policy_version = 'queue-v1'"
+            ).fetchone() == (1,)
 
 
 def test_production_shape_alembic_database_upgrades_without_reapplying_baseline() -> None:
@@ -146,7 +299,7 @@ def test_production_shape_alembic_database_upgrades_without_reapplying_baseline(
 
         assert result.baseline_applied is False
         assert result.revision_before == "0098_admin_session_revocation"
-        assert result.revision_after == "0125_execution_runtime_correctness"
+        assert result.revision_after == "0126_postgres_execution_runtime"
         with psycopg.connect(database_url) as connection:
             preserved = connection.execute(
                 "SELECT wecom_userid, session_version FROM admin_users WHERE id = %s",
@@ -176,7 +329,7 @@ def test_upgrade_repairs_missing_or_partial_automation_agent_audit_tables_withou
 
         assert result.baseline_applied is False
         assert result.revision_before == "0123_required_physical_schema_repair"
-        assert result.revision_after == "0125_execution_runtime_correctness"
+        assert result.revision_after == "0126_postgres_execution_runtime"
 
         expected_columns = {
             "automation_agent_output": {
@@ -306,6 +459,69 @@ def test_upgrade_repairs_missing_or_partial_automation_agent_audit_tables_withou
         assert preserved_after_reapply == (1,)
 
 
+def test_postgres_execution_runtime_freezes_historical_orphan_provider_attempt_without_replay() -> None:
+    with _isolated_database("runtime_orphan_attempt") as database_url:
+        with psycopg.connect(database_url, autocommit=True) as connection:
+            connection.execute(BASELINE_PATH.read_text(encoding="utf-8"))
+        _upgrade_database_to(database_url, "0125_execution_runtime_correctness")
+
+        with psycopg.connect(database_url) as connection:
+            job_id = int(
+                connection.execute(
+                    """
+                    INSERT INTO external_effect_job (
+                        effect_type, adapter_name, operation, target_type, target_id,
+                        idempotency_key, status, scheduled_at
+                    ) VALUES (
+                        'webhook.test', 'http', 'post', 'loopback', 'historical-orphan',
+                        'bootstrap-historical-orphan-job', 'succeeded', CURRENT_TIMESTAMP
+                    )
+                    RETURNING id
+                    """
+                ).fetchone()[0]
+            )
+            connection.execute(
+                """
+                INSERT INTO external_effect_attempt (
+                    attempt_id, job_id, adapter_name, adapter_mode, operation, status
+                ) VALUES (
+                    'bootstrap-historical-orphan-attempt', %s,
+                    'http', 'real', 'post', 'dispatching'
+                )
+                """,
+                (job_id,),
+            )
+            connection.commit()
+
+        _upgrade_database_to(database_url, "head")
+
+        with psycopg.connect(database_url) as connection:
+            frozen = connection.execute(
+                """
+                SELECT attempt.status,
+                       attempt.error_code,
+                       attempt.error_message,
+                       attempt.response_summary_json ->> 'historical_freeze_orphan',
+                       attempt.response_summary_json ->> 'provider_result_received',
+                       attempt.completed_at IS NOT NULL,
+                       job.status
+                FROM external_effect_attempt attempt
+                JOIN external_effect_job job ON job.id = attempt.job_id
+                WHERE attempt.attempt_id = 'bootstrap-historical-orphan-attempt'
+                """
+            ).fetchone()
+
+        assert frozen == (
+            "unknown_after_dispatch",
+            "historical_freeze_orphan",
+            "Open provider attempt was frozen after its job left dispatching state.",
+            "true",
+            "false",
+            True,
+            "succeeded",
+        )
+
+
 def test_execution_runtime_correctness_freezes_and_classifies_pre_cutover_queue_history() -> None:
     with _isolated_database("queue_history_freeze") as database_url:
         with psycopg.connect(database_url, autocommit=True) as connection:
@@ -418,10 +634,10 @@ def test_execution_runtime_correctness_freezes_and_classifies_pre_cutover_queue_
                 """
                 INSERT INTO external_effect_job (
                     effect_type, adapter_name, operation, target_type, target_id,
-                    idempotency_key, status, scheduled_at
+                    idempotency_key, status, scheduled_at, available_at
                 ) VALUES (
                     'webhook.test', 'http', 'post', 'loopback', 'new-row',
-                    'history-freeze-new-row', 'queued', CURRENT_TIMESTAMP
+                    'history-freeze-new-row', 'queued', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
                 )
                 """
             )
@@ -531,6 +747,22 @@ def test_execution_runtime_correctness_freezes_and_classifies_pre_cutover_queue_
                 os.environ["DATABASE_URL"] = previous_url
         with psycopg.connect(database_url) as connection:
             assert connection.execute("SELECT to_regclass('public.queue_history_classification')").fetchone() == (None,)
+            assert connection.execute(
+                """
+                SELECT to_regclass('public.queue_runtime_control'),
+                       to_regclass('public.queue_lane_policy'),
+                       to_regclass('public.queue_policy_snapshot'),
+                       to_regclass('public.queue_fairness_cursor'),
+                       to_regclass('public.queue_rate_scope_cooldown'),
+                       to_regclass('public.queue_worker_heartbeat')
+                """
+            ).fetchone() == (None, None, None, None, None, None)
+            assert connection.execute(
+                """
+                SELECT to_regclass('public.idx_internal_outbox_ordering_active'),
+                       to_regclass('public.idx_webhook_inbox_ordering_active')
+                """
+            ).fetchone() == (None, None)
             downgraded_statuses = dict(
                 connection.execute(
                     """

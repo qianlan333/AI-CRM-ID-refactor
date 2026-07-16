@@ -43,6 +43,12 @@ class ExternalEffectService:
         max_attempts: int = 5,
         idempotency_key: str = "",
         status: str = "queued",
+        execution_id: str = "",
+        parent_execution_id: str = "",
+        lane: str = "",
+        ordering_key: str = "",
+        fairness_key: str = "",
+        rate_scope_key: str = "",
         connection: Any | None = None,
     ) -> dict[str, Any]:
         initial_status = str(status or "queued").strip() or "queued"
@@ -82,6 +88,12 @@ class ExternalEffectService:
             max_attempts=max_attempts,
             idempotency_key=idempotency_key,
             status=initial_status,
+            execution_id=execution_id,
+            parent_execution_id=parent_execution_id,
+            lane=lane,
+            ordering_key=ordering_key,
+            fairness_key=fairness_key,
+            rate_scope_key=rate_scope_key,
         )
         if connection is not None:
             from .transactional import enqueue_transactional_external_effect_job
