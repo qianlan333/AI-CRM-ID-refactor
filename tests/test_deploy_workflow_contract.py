@@ -728,6 +728,7 @@ def test_internal_event_worker_systemd_units_are_deployable():
     assert "Environment=AICRM_INTERNAL_EVENTS_QUESTIONNAIRE_ENABLED=1" in service
     assert "Environment=AICRM_INTERNAL_EVENTS_SHADOW_ONLY=1" in service
     assert "Environment=AICRM_INTERNAL_EVENTS_AUTO_EXECUTE=1" in service
+    assert "Environment=AICRM_INTERNAL_EVENT_RELAY_ROLE=owner" in service
     assert "Environment=AICRM_INTERNAL_EVENT_WORKER_BATCH_SIZE=50" in service
     assert "Environment=AICRM_INTERNAL_EVENTS_WORKER_BATCH_SIZE=50" in service
     assert "Environment=AICRM_INTERNAL_EVENTS_AUTO_EXECUTE_MAX_BATCH_SIZE=50" in service
@@ -943,6 +944,7 @@ def test_due_runner_scripts_share_int_env_reader():
     external_push_worker = (ROOT / "scripts" / "run_external_push_worker.py").read_text(encoding="utf-8")
     internal_event_worker = (ROOT / "scripts" / "run_internal_event_worker.py").read_text(encoding="utf-8")
     ai_audience_scheduler = (ROOT / "scripts" / "run_ai_audience_scheduler.py").read_text(encoding="utf-8")
+    ai_audience_scheduler_runtime = (ROOT / "aicrm_next" / "ai_audience_ops" / "scheduler.py").read_text(encoding="utf-8")
 
     assert not (ROOT / "scripts" / "run_automation_sop.py").exists()
     assert 'read_int_env("EXTERNAL_PUSH_WORKER_BATCH_SIZE", DEFAULT_BATCH_SIZE)' in external_push_worker
@@ -953,7 +955,8 @@ def test_due_runner_scripts_share_int_env_reader():
     assert "build_internal_event_consumer_registry" in internal_event_worker
     assert 'read_int_env("AICRM_AI_AUDIENCE_SCHEDULER_BATCH_SIZE", 20)' in ai_audience_scheduler
     assert "--execute" in internal_event_worker
-    assert "InternalEventWorker(consumer_registry=build_internal_event_consumer_registry()).run_due" in internal_event_worker
+    assert 'relay_role="owner"' in internal_event_worker
+    assert 'relay_role="consumer_only"' in ai_audience_scheduler_runtime
     assert "int(os.environ.get" not in external_push_worker
     assert "int(os.environ.get" not in internal_event_worker
     assert "int(os.environ.get" not in ai_audience_scheduler
@@ -974,6 +977,7 @@ def test_ai_audience_scheduler_runs_through_internal_event_queue_only():
     assert 'read_int_env("AICRM_AI_AUDIENCE_SCHEDULER_BATCH_SIZE", 20)' in scheduler
     assert "run_due_ai_audience_consumers" in scheduler
     assert "--run-consumers --execute" in service
+    assert "Environment=AICRM_INTERNAL_EVENT_RELAY_ROLE=consumer_only" in service
     assert "ExecStart=/bin/bash -c" in service
     assert "AICRM_INTERNAL_EVENTS_ALLOWED_EVENT_TYPES=" in service
     assert "ai_audience.refresh.incremental_tick,ai_audience.refresh.daily_tick" in service
@@ -986,6 +990,29 @@ def test_ai_audience_scheduler_runs_through_internal_event_queue_only():
     assert "ExternalEffectWorker" not in service
     assert "run_external_effect_queue_worker.py" not in service
     assert "OnCalendar=*-*-* *:0/3:00" in timer
+
+
+def test_production_runtime_declares_exactly_one_internal_event_relay_owner():
+    manifest = json.loads((ROOT / "deploy" / "production_runtime_units.json").read_text(encoding="utf-8"))
+    declared = {
+        item["service"]: item["internal_event_relay_role"]
+        for item in manifest["active_autostart"]
+        if item.get("internal_event_relay_role")
+    }
+
+    assert declared == {
+        "openclaw-ai-audience-scheduler.service": "consumer_only",
+        "openclaw-internal-event-worker.service": "owner",
+    }
+    assert list(declared.values()).count("owner") == 1
+
+    owner_sources = [
+        path.relative_to(ROOT).as_posix()
+        for root in (ROOT / "aicrm_next", ROOT / "scripts")
+        for path in root.rglob("*.py")
+        if 'relay_role="owner"' in path.read_text(encoding="utf-8")
+    ]
+    assert owner_sources == ["scripts/run_internal_event_worker.py"]
 
 
 def _calls_utcnow(path: Path) -> bool:
