@@ -37,11 +37,7 @@ def wecom_callback_idempotency_key(corp_id: str, event_data: dict[str, Any]) -> 
 
 def _safe_headers(headers: dict[str, Any]) -> dict[str, str]:
     blocked = {"authorization", "cookie", "set-cookie", "x-api-key"}
-    return {
-        str(key).lower(): text(value)
-        for key, value in (headers or {}).items()
-        if str(key).lower() not in blocked
-    }
+    return {str(key).lower(): text(value) for key, value in (headers or {}).items() if str(key).lower() not in blocked}
 
 
 def _payload_summary(event_data: dict[str, Any]) -> dict[str, Any]:
@@ -253,7 +249,19 @@ class WeComCallbackInboxWorker:
                 )
             )
             summary = _processing_summary(result)
-            updated = self._repo.mark_succeeded(inbox_id, processing_summary_json=summary) or {"status": "succeeded"}
+            updated = self._repo.mark_succeeded(
+                inbox_id,
+                processing_summary_json=summary,
+                expected_lease_token=text(row.get("lease_token")),
+                expected_generation=int(row.get("worker_generation") or 0),
+            )
+            if updated is None:
+                return {
+                    "id": inbox_id,
+                    "status": "unknown",
+                    "error_code": "lost_lease",
+                    "error_message": "Webhook result was not persisted because queue ownership changed.",
+                }
             return {
                 "id": inbox_id,
                 "status": text(updated.get("status")) or "succeeded",
@@ -289,7 +297,15 @@ class WeComCallbackInboxWorker:
                 error_message=str(exc),
                 retryable=retryable,
                 next_retry_at=next_retry if retryable else None,
-            ) or {"status": "failed_retryable"}
+                expected_lease_token=text(row.get("lease_token")),
+                expected_generation=int(row.get("worker_generation") or 0),
+            )
+            if updated is None:
+                updated = {
+                    "status": "unknown",
+                    "attempt_count": attempt_count,
+                }
+                error_code = "lost_lease"
             safe_log_exception(
                 LOGGER,
                 "wecom callback inbox dispatch failed",

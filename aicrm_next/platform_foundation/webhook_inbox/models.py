@@ -36,6 +36,11 @@ class WebhookInboxItem:
     change_type: str = ""
     external_event_id: str = ""
     idempotency_key: str = ""
+    execution_id: str = ""
+    parent_execution_id: str = ""
+    lane: str = "webhook_inbox"
+    ordering_key: str = ""
+    fairness_key: str = ""
     raw_query_json: dict[str, Any] | None = None
     raw_headers_json: dict[str, Any] | None = None
     raw_body: bytes = b""
@@ -47,6 +52,9 @@ class WebhookInboxItem:
     attempt_count: int = 0
     max_attempts: int = 0
     locked_by: str = ""
+    lease_token: str = ""
+    worker_generation: int = 0
+    policy_version: str = ""
     last_error_code: str = ""
     last_error_message: str = ""
     duplicate_count: int = 0
@@ -57,7 +65,10 @@ class WebhookInboxItem:
     created_at: datetime | None = None
     updated_at: datetime | None = None
     next_retry_at: datetime | None = None
+    available_at: datetime | None = None
     locked_at: datetime | None = None
+    lease_expires_at: datetime | None = None
+    heartbeat_at: datetime | None = None
 
     @classmethod
     def from_row(cls, row: dict[str, Any]) -> "WebhookInboxItem":
@@ -73,6 +84,11 @@ class WebhookInboxItem:
             change_type=str(row.get("change_type") or ""),
             external_event_id=str(row.get("external_event_id") or ""),
             idempotency_key=str(row.get("idempotency_key") or ""),
+            execution_id=str(row.get("execution_id") or ""),
+            parent_execution_id=str(row.get("parent_execution_id") or ""),
+            lane=str(row.get("lane") or "webhook_inbox"),
+            ordering_key=str(row.get("ordering_key") or ""),
+            fairness_key=str(row.get("fairness_key") or ""),
             raw_query_json=_dict_value(row.get("raw_query_json")),
             raw_headers_json=_dict_value(row.get("raw_headers_json")),
             raw_body=_bytes_value(row.get("raw_body")),
@@ -84,6 +100,9 @@ class WebhookInboxItem:
             attempt_count=int(row.get("attempt_count") or 0),
             max_attempts=int(row.get("max_attempts") or 0),
             locked_by=str(row.get("locked_by") or ""),
+            lease_token=str(row.get("lease_token") or ""),
+            worker_generation=int(row.get("worker_generation") or 0),
+            policy_version=str(row.get("policy_version") or ""),
             last_error_code=str(row.get("last_error_code") or ""),
             last_error_message=str(row.get("last_error_message") or ""),
             duplicate_count=int(row.get("duplicate_count") or 0),
@@ -94,7 +113,10 @@ class WebhookInboxItem:
             created_at=_datetime_value(row.get("created_at")),
             updated_at=_datetime_value(row.get("updated_at")),
             next_retry_at=_datetime_value(row.get("next_retry_at")),
+            available_at=_datetime_value(row.get("available_at")),
             locked_at=_datetime_value(row.get("locked_at")),
+            lease_expires_at=_datetime_value(row.get("lease_expires_at")),
+            heartbeat_at=_datetime_value(row.get("heartbeat_at")),
         )
 
 

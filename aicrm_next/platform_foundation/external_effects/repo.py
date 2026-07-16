@@ -26,6 +26,7 @@ from .models import (
 from .completion_events import build_external_effect_completed_event
 from .repo_contract import (
     ExternalEffectRepository,
+    _execution_lane,
     _idempotency_key,
     _initial_status,
     _json_dumps,
@@ -37,7 +38,6 @@ from .repo_contract import (
     _safe_error_message,
     _text,
 )
-
 
 class SQLAlchemyExternalEffectRepository(ExternalEffectRepository):
     def __init__(self, session_factory: Callable[[], Session] | None = None):
@@ -75,6 +75,8 @@ class SQLAlchemyExternalEffectRepository(ExternalEffectRepository):
                 tenant_id, effect_type, adapter_name, operation, target_type, target_id,
                 business_type, business_id, source_module, source_route, source_event_id,
                 source_command_id, trace_id, request_id, correlation_id, idempotency_key,
+                execution_id, parent_execution_id, lane, available_at,
+                ordering_key, fairness_key, rate_scope_key,
                 actor_id, actor_type, risk_level, requires_approval, execution_mode,
                 payload_json, payload_summary_json, status, priority, scheduled_at,
                 attempt_count, max_attempts, created_at, updated_at
@@ -83,6 +85,8 @@ class SQLAlchemyExternalEffectRepository(ExternalEffectRepository):
                 :tenant_id, :effect_type, :adapter_name, :operation, :target_type, :target_id,
                 :business_type, :business_id, :source_module, :source_route, :source_event_id,
                 :source_command_id, :trace_id, :request_id, :correlation_id, :idempotency_key,
+                :execution_id, :parent_execution_id, :lane, CAST(:available_at AS timestamptz),
+                :ordering_key, :fairness_key, :rate_scope_key,
                 :actor_id, :actor_type, :risk_level, :requires_approval, :execution_mode,
                 CAST(:payload_json AS jsonb), CAST(:payload_summary_json AS jsonb), :status,
                 :priority, CAST(:scheduled_at AS timestamptz), 0, :max_attempts,
@@ -108,6 +112,20 @@ class SQLAlchemyExternalEffectRepository(ExternalEffectRepository):
                 "request_id": _text(request.context.request_id),
                 "correlation_id": _text(request.correlation_id),
                 "idempotency_key": key,
+                "execution_id": _text(request.execution_id) or "exe_" + uuid4().hex,
+                "parent_execution_id": _text(request.parent_execution_id),
+                "lane": _execution_lane(request),
+                "available_at": public_datetime(scheduled_at),
+                "ordering_key": _text(request.ordering_key) or _text(request.target_id) or f"effect:{key}",
+                "fairness_key": _text(request.fairness_key) or _text(request.business_id) or _text(request.target_id) or "default",
+                "rate_scope_key": _text(request.rate_scope_key)
+                or ":".join(
+                    (
+                        _text(request.adapter_name),
+                        _text(request.operation),
+                        _text(request.tenant_id) or DEFAULT_TENANT_ID,
+                    )
+                ),
                 "actor_id": _text(request.context.actor_id),
                 "actor_type": _text(request.context.actor_type) or "system",
                 "risk_level": _text(request.risk_level) or "medium",
@@ -869,6 +887,11 @@ class SQLAlchemyExternalEffectRepository(ExternalEffectRepository):
                     SET status = :status,
                         attempt_count = attempt_count + 1,
                         next_retry_at = CAST(:next_retry_at AS timestamptz),
+                        available_at = CASE
+                            WHEN :status = 'failed_retryable'
+                            THEN CAST(:next_retry_at AS timestamptz)
+                            ELSE available_at
+                        END,
                         last_attempt_id = :attempt_id,
                         last_error_code = :error_code,
                         last_error_message = :error_message,
@@ -1045,7 +1068,7 @@ class SQLAlchemyExternalEffectRepository(ExternalEffectRepository):
     def mark_failed_retryable(self, job_id: int, *, attempt_id: str, error_code: str, error_message: str, next_retry_at: datetime) -> ExternalEffectJob | None:
         return self._update(
             job_id,
-            "status = 'failed_retryable', attempt_count = attempt_count + 1, next_retry_at = CAST(:next_retry_at AS timestamptz), last_attempt_id = :attempt_id, last_error_code = :error_code, last_error_message = :error_message, locked_by = '', locked_at = NULL, lease_token = '', lease_expires_at = NULL",
+            "status = 'failed_retryable', attempt_count = attempt_count + 1, next_retry_at = CAST(:next_retry_at AS timestamptz), available_at = CAST(:next_retry_at AS timestamptz), last_attempt_id = :attempt_id, last_error_code = :error_code, last_error_message = :error_message, locked_by = '', locked_at = NULL, lease_token = '', lease_expires_at = NULL",
             {
                 "attempt_id": _text(attempt_id),
                 "error_code": _text(error_code),
@@ -1169,6 +1192,7 @@ class SQLAlchemyExternalEffectRepository(ExternalEffectRepository):
                     locked_by = '', locked_at = NULL,
                     lease_token = '', lease_expires_at = NULL,
                     next_retry_at = CURRENT_TIMESTAMP,
+                    available_at = CURRENT_TIMESTAMP,
                     reconciliation_required = FALSE,
                     cancel_requested_at = NULL,
                     cancel_requested_by = '',
@@ -1194,7 +1218,7 @@ class SQLAlchemyExternalEffectRepository(ExternalEffectRepository):
     def approve_job(self, job_id: int) -> ExternalEffectJob | None:
         return self._update(
             job_id,
-            "status = 'queued', approved_at = CURRENT_TIMESTAMP, locked_by = '', locked_at = NULL, lease_token = '', lease_expires_at = NULL, next_retry_at = CURRENT_TIMESTAMP, reconciliation_required = FALSE",
+            "status = 'queued', approved_at = CURRENT_TIMESTAMP, locked_by = '', locked_at = NULL, lease_token = '', lease_expires_at = NULL, next_retry_at = CURRENT_TIMESTAMP, available_at = CURRENT_TIMESTAMP, reconciliation_required = FALSE",
             {},
         )
 

@@ -62,6 +62,8 @@ def enqueue_transactional_internal_event_outbox(conn: Any, request: InternalEven
 
     tenant_id = _text(request.tenant_id) or DEFAULT_TENANT_ID
     key = _idempotency_key(request)
+    occurred_at = public_datetime(request.occurred_at or utcnow())
+    lane = "internal_financial" if _text(request.event_type).startswith(("payment.", "refund.", "order.")) else "internal_general"
     params = (
         tenant_id,
         "ieo_" + uuid4().hex,
@@ -80,7 +82,13 @@ def enqueue_transactional_internal_event_outbox(conn: Any, request: InternalEven
         _text(request.context.trace_id),
         _text(request.context.request_id),
         _text(request.correlation_id),
-        public_datetime(request.occurred_at or utcnow()),
+        _text(request.execution_id) or "exe_" + uuid4().hex,
+        _text(request.parent_execution_id),
+        lane,
+        occurred_at,
+        f"{_text(request.aggregate_type)}:{_text(request.aggregate_id)}",
+        _text(request.event_type),
+        occurred_at,
         json.dumps(dict(request.payload or {}), ensure_ascii=False, default=str, separators=(",", ":")),
         json.dumps(_payload_summary(request), ensure_ascii=False, default=str, separators=(",", ":")),
     )
@@ -90,11 +98,13 @@ def enqueue_transactional_internal_event_outbox(conn: Any, request: InternalEven
             tenant_id, outbox_id, event_type, event_version, aggregate_type, aggregate_id,
             subject_type, subject_id, idempotency_key, actor_id, actor_type,
             source_module, source_route, source_command_id, trace_id, request_id,
-            correlation_id, occurred_at, payload_json, payload_summary_json,
+            correlation_id, execution_id, parent_execution_id, lane, available_at,
+            ordering_key, fairness_key, occurred_at, payload_json, payload_summary_json,
             status, attempt_count, max_attempts, created_at, updated_at
         ) VALUES (
             %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-            %s, %s, %s, %s, %s, %s, %s, %s::timestamptz,
+            %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+            %s::timestamptz, %s, %s, %s::timestamptz,
             %s::jsonb, %s::jsonb, 'pending', 0, 10, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
         )
         ON CONFLICT (tenant_id, idempotency_key) DO NOTHING
@@ -320,5 +330,57 @@ class InternalEventOutboxRelay:
             "items": items,
             "counts": counts,
             "metrics": self._repo.outbox_metrics(),
+            "real_external_call_executed": False,
+        }
+
+    def relay_claimed(self, record) -> dict[str, Any]:
+        """Relay exactly one outbox row already leased by the lane runtime."""
+
+        try:
+            relayed = self._repo.relay_outbox(
+                record,
+                self._consumer_specs(record.event_type),
+                fanout_manifest=self._fanout_manifest(record.event_type),
+            )
+        except Exception as exc:
+            try:
+                failed = self._repo.mark_outbox_failure(
+                    record,
+                    error_code="relay_exception",
+                    error_message=exc.__class__.__name__,
+                    next_retry_at=_retry_at(record.attempt_count),
+                )
+            except Exception as persist_exc:
+                return {
+                    "ok": False,
+                    "outbox_id": record.outbox_id,
+                    "status": "failure_persist_failed",
+                    "error": "outbox_failure_persist_failed",
+                    "error_class": persist_exc.__class__.__name__,
+                    "real_external_call_executed": False,
+                }
+            return {
+                "ok": False,
+                "outbox_id": record.outbox_id,
+                "status": failed.status if failed else "lost_lease",
+                "error": "relay_exception",
+                "error_class": exc.__class__.__name__,
+                "real_external_call_executed": False,
+            }
+        if relayed is None:
+            return {
+                "ok": False,
+                "outbox_id": record.outbox_id,
+                "status": "lost_lease",
+                "error": "lost_lease",
+                "real_external_call_executed": False,
+            }
+        updated, event, runs = relayed
+        return {
+            "ok": True,
+            "outbox_id": updated.outbox_id,
+            "status": updated.status,
+            "event_id": event.event_id,
+            "consumer_run_count": len(runs),
             "real_external_call_executed": False,
         }

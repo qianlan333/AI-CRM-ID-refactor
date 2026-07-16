@@ -1,0 +1,366 @@
+from __future__ import annotations
+
+import json
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any, Callable
+
+from aicrm_next.shared.release import current_release_sha
+from aicrm_next.shared.runtime import raw_database_url
+
+from .repository import _default_connect, _psycopg_url
+
+
+PROVENANCE_PATH = Path("/home/ubuntu/.aicrm-releases/id-validation.json")
+
+
+def _public_datetime(value: Any) -> str:
+    if not isinstance(value, datetime):
+        return str(value or "")
+    normalized = value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+    return normalized.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def release_provenance(path: Path = PROVENANCE_PATH) -> dict[str, Any]:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError, TypeError):
+        return {"available": False}
+    if not isinstance(payload, dict):
+        return {"available": False}
+    allowed = {
+        "repository",
+        "release_sha",
+        "base_sha",
+        "bundle_sha256",
+        "source_ci_run_id",
+        "deploy_run_id",
+        "deploy_run_attempt",
+        "environment",
+        "public_health_url",
+        "deployed_at",
+    }
+    return {"available": True, **{key: payload.get(key) for key in allowed if key in payload}}
+
+
+class ExecutionRuntimeReadModel:
+    def __init__(
+        self,
+        database_url: str | None = None,
+        *,
+        connect: Callable[[str], Any] = _default_connect,
+        provenance_path: Path = PROVENANCE_PATH,
+    ) -> None:
+        self._database_url = _psycopg_url(database_url or raw_database_url())
+        if not self._database_url.startswith("postgresql://"):
+            raise RuntimeError("PostgreSQL DATABASE_URL is required for execution runtime reads")
+        self._connect = connect
+        self._provenance_path = provenance_path
+
+    def runtime_snapshot(self) -> dict[str, Any]:
+        release_sha = current_release_sha()
+        with self._connect(self._database_url) as connection:
+            control = connection.execute(
+                """
+                SELECT active_generation, claim_enabled, rollout_mode,
+                       global_max_in_flight, policy_version, updated_by,
+                       updated_reason, updated_at
+                FROM queue_runtime_control
+                WHERE singleton = TRUE
+                """
+            ).fetchone()
+            lanes = connection.execute(self._lane_metrics_sql()).fetchall()
+            workers = connection.execute(
+                """
+                SELECT service_name, worker_id, queue_kind, generation,
+                       release_sha, rollout_mode, listener_connected,
+                       last_notification_at, last_drain_at, heartbeat_at,
+                       heartbeat_at > CURRENT_TIMESTAMP - INTERVAL '30 seconds' AS fresh,
+                       release_sha = %s AS release_matches
+                FROM queue_worker_heartbeat
+                ORDER BY service_name, worker_id
+                """,
+                (release_sha,),
+            ).fetchall()
+            cooldowns = connection.execute(
+                """
+                SELECT rate_scope_key, provider, corp_id, app_id, operation,
+                       blocked_until, reason, source_attempt_id
+                FROM queue_rate_scope_cooldown
+                WHERE blocked_until > CURRENT_TIMESTAMP
+                ORDER BY blocked_until DESC, rate_scope_key
+                LIMIT 100
+                """
+            ).fetchall()
+            policy = connection.execute(
+                """
+                SELECT policy_version, policy_json, created_by, created_reason, created_at
+                FROM queue_policy_snapshot
+                WHERE policy_version = %s
+                """,
+                (str((control or {}).get("policy_version") or ""),),
+            ).fetchone()
+        lane_items = [self._lane_payload(row) for row in lanes]
+        worker_items = [self._worker_payload(row) for row in workers]
+        return {
+            "ok": bool(control),
+            "control": self._control_payload(control or {}),
+            "lanes": lane_items,
+            "workers": worker_items,
+            "active_rate_limits": [self._cooldown_payload(row) for row in cooldowns],
+            "policy_snapshot": self._policy_payload(policy or {}),
+            "release": {
+                "web_release_sha": release_sha,
+                "all_fresh_workers_match_release": bool(worker_items) and all(item["fresh"] and item["release_matches"] for item in worker_items),
+                "provenance": release_provenance(self._provenance_path),
+            },
+            "pii_in_output": False,
+            "secrets_in_output": False,
+        }
+
+    def execution_timeline(self, execution_id: str) -> dict[str, Any] | None:
+        normalized = str(execution_id or "").strip()
+        if not normalized:
+            return None
+        with self._connect(self._database_url) as connection:
+            rows = connection.execute(self._timeline_sql(), (normalized,) * 8).fetchall()
+        if not rows:
+            return None
+        items = [self._timeline_payload(row) for row in rows]
+        parent_ids = sorted({str(row.get("parent_execution_id") or "") for row in rows if row.get("parent_execution_id")})
+        child_ids = sorted({str(row.get("execution_id") or "") for row in rows if row.get("execution_id") and str(row.get("execution_id")) != normalized})
+        return {
+            "execution_id": normalized,
+            "parent_execution_ids": parent_ids,
+            "child_execution_ids": child_ids,
+            "items": items,
+            "pii_in_output": False,
+            "secrets_in_output": False,
+        }
+
+    @staticmethod
+    def _lane_metrics_sql() -> str:
+        return """
+            WITH queue_rows AS (
+                SELECT lane, status, hold_reason, available_at, lease_expires_at,
+                       attempt_count, max_attempts,
+                       CASE WHEN status = 'dispatching' THEN TRUE ELSE FALSE END AS in_flight,
+                       CASE WHEN status = 'unknown_after_dispatch' THEN TRUE ELSE FALSE END AS unknown_state,
+                       CASE WHEN status IN ('failed_terminal', 'blocked') THEN TRUE ELSE FALSE END AS dlq_state,
+                       EXISTS (
+                           SELECT 1 FROM queue_rate_scope_cooldown cooldown
+                           WHERE cooldown.rate_scope_key = external_effect_job.rate_scope_key
+                             AND cooldown.blocked_until > CURRENT_TIMESTAMP
+                       ) AS rate_limited
+                FROM external_effect_job
+                WHERE status IN (
+                    'planned', 'approved', 'queued', 'dispatching',
+                    'failed_retryable', 'unknown_after_dispatch',
+                    'failed_terminal', 'blocked'
+                )
+                UNION ALL
+                SELECT lane, status, hold_reason, available_at, lease_expires_at,
+                       attempt_count, max_attempts,
+                       status = 'running', FALSE,
+                       status IN ('failed_terminal', 'blocked'), FALSE
+                FROM internal_event_consumer_run
+                WHERE status IN (
+                    'pending', 'running', 'failed_retryable',
+                    'failed_terminal', 'blocked'
+                )
+                UNION ALL
+                SELECT lane, status, hold_reason, available_at, lease_expires_at,
+                       attempt_count, max_attempts,
+                       status = 'running', FALSE,
+                       status = 'failed_terminal', FALSE
+                FROM internal_event_outbox
+                WHERE status IN (
+                    'pending', 'running', 'failed_retryable', 'failed_terminal'
+                )
+                UNION ALL
+                SELECT lane, status, hold_reason, available_at, lease_expires_at,
+                       attempt_count, max_attempts,
+                       status = 'processing', FALSE,
+                       status IN ('failed_terminal', 'dead_letter'), FALSE
+                FROM webhook_inbox
+                WHERE status IN (
+                    'received', 'processing', 'failed_retryable',
+                    'failed_terminal', 'dead_letter'
+                )
+            )
+            SELECT policy.lane, policy.max_in_flight, policy.enabled,
+                   policy.rollout_mode, policy.blocked_until, policy.policy_version,
+                   COUNT(rows.*)::BIGINT AS raw_open,
+                   COUNT(rows.*) FILTER (WHERE rows.hold_reason <> '')::BIGINT AS held,
+                   COUNT(rows.*) FILTER (
+                       WHERE rows.hold_reason = ''
+                         AND rows.available_at <= CURRENT_TIMESTAMP
+                         AND rows.attempt_count < rows.max_attempts
+                         AND NOT rows.in_flight
+                         AND NOT rows.unknown_state
+                         AND NOT rows.dlq_state
+                         AND NOT rows.rate_limited
+                   )::BIGINT AS eligible,
+                   COUNT(rows.*) FILTER (
+                       WHERE rows.hold_reason = ''
+                         AND rows.available_at > CURRENT_TIMESTAMP
+                         AND rows.status NOT IN ('failed_retryable')
+                   )::BIGINT AS scheduled,
+                   COUNT(rows.*) FILTER (
+                       WHERE rows.hold_reason = ''
+                         AND rows.available_at > CURRENT_TIMESTAMP
+                         AND rows.status = 'failed_retryable'
+                   )::BIGINT AS retry_wait,
+                   COUNT(rows.*) FILTER (WHERE rows.rate_limited)::BIGINT AS rate_limited,
+                   COUNT(rows.*) FILTER (
+                       WHERE rows.in_flight
+                         AND rows.lease_expires_at > CURRENT_TIMESTAMP
+                   )::BIGINT AS in_flight,
+                   COUNT(rows.*) FILTER (WHERE rows.unknown_state)::BIGINT AS unknown,
+                   COUNT(rows.*) FILTER (WHERE rows.dlq_state)::BIGINT AS dlq,
+                   COALESCE(
+                       EXTRACT(EPOCH FROM CURRENT_TIMESTAMP - MIN(rows.available_at) FILTER (
+                           WHERE rows.hold_reason = ''
+                             AND rows.available_at <= CURRENT_TIMESTAMP
+                             AND rows.attempt_count < rows.max_attempts
+                             AND NOT rows.in_flight
+                             AND NOT rows.unknown_state
+                             AND NOT rows.dlq_state
+                             AND NOT rows.rate_limited
+                       )),
+                       0
+                   )::BIGINT AS oldest_eligible_age_seconds
+            FROM queue_lane_policy policy
+            LEFT JOIN queue_rows rows ON rows.lane = policy.lane
+            GROUP BY policy.lane, policy.max_in_flight, policy.enabled,
+                     policy.rollout_mode, policy.blocked_until, policy.policy_version
+            ORDER BY policy.lane
+        """
+
+    @staticmethod
+    def _timeline_sql() -> str:
+        return """
+            SELECT 'internal_event' AS item_kind, event.id::TEXT AS item_id,
+                   event.execution_id, event.parent_execution_id,
+                   event.event_type AS item_type, 'recorded' AS status,
+                   '' AS lane, event.occurred_at AS available_at,
+                   event.created_at, event.created_at AS updated_at,
+                   event.payload_summary_json AS summary_json
+            FROM internal_event event
+            WHERE event.execution_id = %s OR event.parent_execution_id = %s
+            UNION ALL
+            SELECT 'internal_consumer_run', run.id::TEXT, run.execution_id,
+                   run.parent_execution_id, run.consumer_name, run.status,
+                   run.lane, run.available_at, run.created_at, run.updated_at,
+                   run.result_summary_json
+            FROM internal_event_consumer_run run
+            WHERE run.execution_id = %s OR run.parent_execution_id = %s
+            UNION ALL
+            SELECT 'external_effect', job.id::TEXT, job.execution_id,
+                   job.parent_execution_id, job.effect_type, job.status,
+                   job.lane, job.available_at, job.created_at, job.updated_at,
+                   job.payload_summary_json || job.result_summary_json
+            FROM external_effect_job job
+            WHERE job.execution_id = %s OR job.parent_execution_id = %s
+            UNION ALL
+            SELECT 'webhook_inbox', inbox.id::TEXT, inbox.execution_id,
+                   inbox.parent_execution_id, inbox.event_family, inbox.status,
+                   inbox.lane, inbox.available_at, inbox.created_at, inbox.updated_at,
+                   inbox.payload_summary_json || inbox.processing_summary_json
+            FROM webhook_inbox inbox
+            WHERE inbox.execution_id = %s OR inbox.parent_execution_id = %s
+            ORDER BY created_at ASC, item_kind ASC, item_id ASC
+        """
+
+    @staticmethod
+    def _control_payload(row: Any) -> dict[str, Any]:
+        return {
+            "active_generation": int(row.get("active_generation") or 0),
+            "claim_enabled": bool(row.get("claim_enabled")),
+            "rollout_mode": str(row.get("rollout_mode") or "blocked"),
+            "global_max_in_flight": int(row.get("global_max_in_flight") or 0),
+            "policy_version": str(row.get("policy_version") or ""),
+            "updated_by": str(row.get("updated_by") or ""),
+            "updated_reason": str(row.get("updated_reason") or ""),
+            "updated_at": _public_datetime(row.get("updated_at")),
+        }
+
+    @staticmethod
+    def _lane_payload(row: Any) -> dict[str, Any]:
+        return {
+            "lane": str(row.get("lane") or ""),
+            "max_in_flight": int(row.get("max_in_flight") or 0),
+            "enabled": bool(row.get("enabled")),
+            "rollout_mode": str(row.get("rollout_mode") or "blocked"),
+            "blocked_until": _public_datetime(row.get("blocked_until")),
+            "policy_version": str(row.get("policy_version") or ""),
+            "raw_open": int(row.get("raw_open") or 0),
+            "held": int(row.get("held") or 0),
+            "eligible": int(row.get("eligible") or 0),
+            "scheduled": int(row.get("scheduled") or 0),
+            "retry_wait": int(row.get("retry_wait") or 0),
+            "rate_limited": int(row.get("rate_limited") or 0),
+            "in_flight": int(row.get("in_flight") or 0),
+            "unknown": int(row.get("unknown") or 0),
+            "dlq": int(row.get("dlq") or 0),
+            "oldest_eligible_age_seconds": int(row.get("oldest_eligible_age_seconds") or 0),
+        }
+
+    @staticmethod
+    def _worker_payload(row: Any) -> dict[str, Any]:
+        return {
+            "service_name": str(row.get("service_name") or ""),
+            "worker_id": str(row.get("worker_id") or ""),
+            "queue_kind": str(row.get("queue_kind") or ""),
+            "generation": int(row.get("generation") or 0),
+            "release_sha": str(row.get("release_sha") or ""),
+            "rollout_mode": str(row.get("rollout_mode") or ""),
+            "listener_connected": bool(row.get("listener_connected")),
+            "last_notification_at": _public_datetime(row.get("last_notification_at")),
+            "last_drain_at": _public_datetime(row.get("last_drain_at")),
+            "heartbeat_at": _public_datetime(row.get("heartbeat_at")),
+            "fresh": bool(row.get("fresh")),
+            "release_matches": bool(row.get("release_matches")),
+        }
+
+    @staticmethod
+    def _cooldown_payload(row: Any) -> dict[str, Any]:
+        return {
+            "rate_scope_key": str(row.get("rate_scope_key") or ""),
+            "provider": str(row.get("provider") or ""),
+            "corp_id_present": bool(row.get("corp_id")),
+            "app_id_present": bool(row.get("app_id")),
+            "operation": str(row.get("operation") or ""),
+            "blocked_until": _public_datetime(row.get("blocked_until")),
+            "reason": str(row.get("reason") or ""),
+            "source_attempt_id": str(row.get("source_attempt_id") or ""),
+        }
+
+    @staticmethod
+    def _policy_payload(row: Any) -> dict[str, Any]:
+        return {
+            "policy_version": str(row.get("policy_version") or ""),
+            "policy": dict(row.get("policy_json") or {}),
+            "created_by": str(row.get("created_by") or ""),
+            "created_reason": str(row.get("created_reason") or ""),
+            "created_at": _public_datetime(row.get("created_at")),
+        }
+
+    @staticmethod
+    def _timeline_payload(row: Any) -> dict[str, Any]:
+        return {
+            "item_kind": str(row.get("item_kind") or ""),
+            "item_id": str(row.get("item_id") or ""),
+            "execution_id": str(row.get("execution_id") or ""),
+            "parent_execution_id": str(row.get("parent_execution_id") or ""),
+            "item_type": str(row.get("item_type") or ""),
+            "status": str(row.get("status") or ""),
+            "lane": str(row.get("lane") or ""),
+            "available_at": _public_datetime(row.get("available_at")),
+            "created_at": _public_datetime(row.get("created_at")),
+            "updated_at": _public_datetime(row.get("updated_at")),
+            "summary": dict(row.get("summary_json") or {}),
+        }
+
+
+__all__ = ["ExecutionRuntimeReadModel", "release_provenance"]

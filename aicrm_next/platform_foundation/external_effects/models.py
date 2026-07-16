@@ -107,6 +107,12 @@ class ExternalEffectCreateRequest:
     status: ExternalEffectStatus = "queued"
     idempotency_key: str = ""
     correlation_id: str = ""
+    execution_id: str = ""
+    parent_execution_id: str = ""
+    lane: str = ""
+    ordering_key: str = ""
+    fairness_key: str = ""
+    rate_scope_key: str = ""
 
 
 @dataclass(frozen=True)
@@ -128,6 +134,8 @@ class ExternalEffectJob:
     trace_id: str = ""
     request_id: str = ""
     correlation_id: str = ""
+    execution_id: str = ""
+    parent_execution_id: str = ""
     idempotency_key: str = ""
     actor_id: str = ""
     actor_type: str = "system"
@@ -140,6 +148,11 @@ class ExternalEffectJob:
     row_version: int = 1
     priority: int = 100
     scheduled_at: str = ""
+    lane: str = ""
+    available_at: str = ""
+    ordering_key: str = ""
+    fairness_key: str = ""
+    rate_scope_key: str = ""
     attempt_count: int = 0
     max_attempts: int = 5
     next_retry_at: str = ""
@@ -147,7 +160,11 @@ class ExternalEffectJob:
     locked_by: str = ""
     lease_token: str = ""
     lease_expires_at: str = ""
+    heartbeat_at: str = ""
+    worker_generation: int = 0
+    policy_version: str = ""
     dispatch_started_at: str = ""
+    provider_call_started_at: str = ""
     last_attempt_id: str = ""
     last_error_code: str = ""
     last_error_message: str = ""
@@ -181,6 +198,10 @@ class ExternalEffectAttempt:
     operation: str = ""
     trace_id: str = ""
     request_id: str = ""
+    lease_token: str = ""
+    request_hash: str = ""
+    provider_call_started_at: str = ""
+    worker_generation: int = 0
     status: ExternalEffectAttemptStatus = "skipped"
     request_summary_json: dict[str, Any] = field(default_factory=dict)
     response_summary_json: dict[str, Any] = field(default_factory=dict)

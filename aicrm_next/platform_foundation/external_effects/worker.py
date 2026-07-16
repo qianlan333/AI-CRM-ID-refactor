@@ -194,6 +194,20 @@ class ExternalEffectWorker:
             }
         return self._dispatch_claimed(claimed)
 
+    def dispatch_claimed(self, job_id: int, *, lease_token: str) -> dict[str, Any]:
+        """Dispatch a row already claimed by the PostgreSQL lane runtime."""
+
+        claimed = self._repo.get_active_claim(int(job_id), lease_token=str(lease_token or ""))
+        if claimed is None:
+            current = self._repo.get_job(int(job_id))
+            return {
+                "ok": False,
+                "error": "lost_lease",
+                "job": current.to_dict() if current else {"id": int(job_id)},
+                "real_external_call_executed": False,
+            }
+        return self._dispatch_claimed(claimed)
+
     def _dispatch_claimed(self, job: ExternalEffectJob) -> dict[str, Any]:
         active = self._repo.get_active_claim(job.id, lease_token=job.lease_token)
         if active is None:

@@ -61,7 +61,10 @@ def _public_job(row: dict[str, Any] | None) -> ExternalEffectJob | None:
         "next_retry_at",
         "locked_at",
         "lease_expires_at",
+        "available_at",
+        "heartbeat_at",
         "dispatch_started_at",
+        "provider_call_started_at",
         "created_at",
         "updated_at",
         "approved_at",
@@ -78,6 +81,7 @@ def _public_job(row: dict[str, Any] | None) -> ExternalEffectJob | None:
     payload["row_version"] = max(1, int(payload.get("row_version") or 1))
     payload["attempt_count"] = int(payload.get("attempt_count") or 0)
     payload["max_attempts"] = int(payload.get("max_attempts") or 0)
+    payload["worker_generation"] = int(payload.get("worker_generation") or 0)
     payload["requires_approval"] = bool(payload.get("requires_approval"))
     payload["side_effect_executed"] = bool(payload.get("side_effect_executed"))
     payload["provider_result_received"] = bool(payload.get("provider_result_received"))
@@ -91,10 +95,11 @@ def _public_attempt(row: dict[str, Any] | None) -> ExternalEffectAttempt | None:
     payload = dict(row)
     for key in ("request_summary_json", "response_summary_json"):
         payload[key] = _json_obj(payload.get(key))
-    for key in ("started_at", "completed_at"):
+    for key in ("provider_call_started_at", "started_at", "completed_at"):
         payload[key] = public_datetime(payload.get(key))
     payload["id"] = int(payload.get("id") or 0)
     payload["job_id"] = int(payload.get("job_id") or 0)
+    payload["worker_generation"] = int(payload.get("worker_generation") or 0)
     return ExternalEffectAttempt(**_model_payload(ExternalEffectAttempt, payload))
 
 
@@ -141,6 +146,22 @@ def _initial_status(request: ExternalEffectCreateRequest) -> str:
     if request.requires_approval and status in {"queued", "approved"}:
         return "planned"
     return status
+
+
+def _execution_lane(request: ExternalEffectCreateRequest) -> str:
+    explicit = _text(request.lane)
+    if explicit:
+        return explicit
+    if request.effect_type == "wecom.media.upload":
+        return "wecom_media"
+    if request.effect_type == "wecom.message.broadcast.send":
+        return "wecom_bulk"
+    if request.effect_type.startswith("webhook.") or request.effect_type in {
+        "feishu.webhook.notify",
+        "openclaw.context.push",
+    }:
+        return "outbound_webhook"
+    return "wecom_interactive"
 
 
 class ExternalEffectRepository:
@@ -366,6 +387,7 @@ class ExternalEffectRepository:
 
 __all__ = [
     "ExternalEffectRepository",
+    "_execution_lane",
     "_idempotency_key",
     "_initial_status",
     "_json_dumps",
