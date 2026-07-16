@@ -145,4 +145,3 @@ def downgrade() -> None:
     op.execute("DROP INDEX IF EXISTS idx_external_effect_job_due")
     op.execute("DROP INDEX IF EXISTS uq_external_effect_job_tenant_idempotency")
     op.execute("DROP TABLE IF EXISTS external_effect_job")
-

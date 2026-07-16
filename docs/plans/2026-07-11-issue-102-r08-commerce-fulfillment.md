@@ -1,6 +1,6 @@
 # R08 Payment / Refund / Entitlement Transaction Closure
 
-Issue: #102  
+Issue: #102
 Parent: #67
 
 ## Scope
