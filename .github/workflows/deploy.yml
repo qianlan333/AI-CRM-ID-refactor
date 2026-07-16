@@ -26,6 +26,7 @@ jobs:
     env:
       EXPECTED_REPOSITORY: qianlan333/AI-CRM-ID-refactor
       EXPECTED_DEPLOY_HOST: 49.232.57.128
+      EXPECTED_SSH_HOST_FINGERPRINT: SHA256:DeE1h5Q7hcKv2XpZTsiwhLUSElTEx9nxHOkkRme3vww
       DEPLOY_TARGET: id-validation
       PUBLIC_BASE_URL: https://id-dev.youcangogogo.com
       PUBLIC_HEALTH_URL: https://id-dev.youcangogogo.com/health
@@ -125,6 +126,60 @@ jobs:
           fi
           echo "bundle_sha256=$bundle_sha256" >> "$GITHUB_OUTPUT"
 
+      - name: Verify already active ID release
+        if: steps.release.outputs.noop == 'true'
+        uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1.2.5
+        with:
+          host: ${{ secrets.ID_VALIDATION_DEPLOY_HOST }}
+          username: ${{ secrets.ID_VALIDATION_DEPLOY_USER }}
+          key: ${{ secrets.ID_VALIDATION_DEPLOY_SSH_KEY }}
+          fingerprint: ${{ env.EXPECTED_SSH_HOST_FINGERPRINT }}
+          script: |
+            set -e
+            set -o pipefail
+            cd '/home/ubuntu/极简 crm'
+            expected_repository="${{ env.EXPECTED_REPOSITORY }}"
+            verified_sha="${{ github.event.workflow_run.head_sha }}"
+            remote_origin_url="$(git remote get-url origin)"
+            case "$remote_origin_url" in
+              "https://github.com/${expected_repository}"|\
+              "https://github.com/${expected_repository}.git"|\
+              "git@github.com:${expected_repository}"|\
+              "git@github.com:${expected_repository}.git")
+                ;;
+              *)
+                echo "target checkout origin is not the ID validation repository"
+                exit 1
+                ;;
+            esac
+            test "$(git rev-parse HEAD)" = "$verified_sha"
+            test "$(tr -d '\r\n' < .release-sha)" = "$verified_sha"
+            curl -sSf -D /tmp/aicrm_id_noop_health_headers.txt \
+              http://127.0.0.1:5001/health \
+              -o /tmp/aicrm_id_noop_health.json
+            grep -i "x-aicrm-release-sha: $verified_sha" \
+              /tmp/aicrm_id_noop_health_headers.txt
+            test -r /home/ubuntu/.aicrm-releases/id-validation.json
+            EXPECTED_REPOSITORY="$expected_repository" \
+            EXPECTED_SHA="$verified_sha" \
+              python3 -c 'import json, os; payload=json.load(open("/home/ubuntu/.aicrm-releases/id-validation.json", encoding="utf-8")); assert payload.get("repository") == os.environ["EXPECTED_REPOSITORY"]; assert payload.get("environment") == "id-validation"; assert payload.get("release_sha") == os.environ["EXPECTED_SHA"]; assert len(str(payload.get("bundle_sha256") or "")) == 64'
+            python3 scripts/ops/manage_production_runtime_units.py --phase verify --execute
+            install -d -m 0750 /home/ubuntu/.aicrm-releases
+            verification_tmp="$(mktemp /home/ubuntu/.aicrm-releases/id-validation-last-verified.XXXXXX)"
+            trap 'rm -f -- "$verification_tmp"' EXIT
+            RELEASE_REPOSITORY="${{ github.repository }}" \
+            RELEASE_SHA="$verified_sha" \
+            SOURCE_CI_RUN_ID="${{ github.event.workflow_run.id }}" \
+            DEPLOY_RUN_ID="${{ github.run_id }}" \
+            DEPLOY_RUN_ATTEMPT="${{ github.run_attempt }}" \
+            VERIFIED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+              python3 -c 'import json, os, sys; json.dump({"repository": os.environ["RELEASE_REPOSITORY"], "release_sha": os.environ["RELEASE_SHA"], "source_ci_run_id": os.environ["SOURCE_CI_RUN_ID"], "deploy_run_id": os.environ["DEPLOY_RUN_ID"], "deploy_run_attempt": os.environ["DEPLOY_RUN_ATTEMPT"], "environment": "id-validation", "verification_kind": "same_sha_noop", "verified_at": os.environ["VERIFIED_AT"]}, sys.stdout, sort_keys=True); sys.stdout.write("\\n")' \
+              > "$verification_tmp"
+            chmod 0640 "$verification_tmp"
+            mv -f "$verification_tmp" \
+              /home/ubuntu/.aicrm-releases/id-validation-last-verified.json
+            trap - EXIT
+
       - name: Record successful no-op provenance
         if: steps.release.outputs.noop == 'true'
         run: |
@@ -146,6 +201,7 @@ jobs:
           host: ${{ secrets.ID_VALIDATION_DEPLOY_HOST }}
           username: ${{ secrets.ID_VALIDATION_DEPLOY_USER }}
           key: ${{ secrets.ID_VALIDATION_DEPLOY_SSH_KEY }}
+          fingerprint: ${{ env.EXPECTED_SSH_HOST_FINGERPRINT }}
           source: "release/aicrm-release.bundle,release/aicrm-release.bundle.sha256"
           target: /tmp/aicrm-release-${{ github.event.workflow_run.head_sha }}
           strip_components: 1
@@ -158,6 +214,7 @@ jobs:
           host: ${{ secrets.ID_VALIDATION_DEPLOY_HOST }}
           username: ${{ secrets.ID_VALIDATION_DEPLOY_USER }}
           key: ${{ secrets.ID_VALIDATION_DEPLOY_SSH_KEY }}
+          fingerprint: ${{ env.EXPECTED_SSH_HOST_FINGERPRINT }}
           script: |
             set -e
             set -o pipefail

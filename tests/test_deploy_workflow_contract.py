@@ -203,7 +203,11 @@ def test_production_deploy_installs_dependencies_only_when_hashed_lock_changes()
 def test_production_deploy_fails_closed_unless_checkout_matches_verified_workflow_sha():
     workflow = (ROOT / ".github" / "workflows" / "deploy.yml").read_text(encoding="utf-8")
 
-    remote_deploy_index = workflow.index("uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2")
+    deploy_step_index = workflow.index("- name: Deploy via SSH")
+    remote_deploy_index = workflow.index(
+        "uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2",
+        deploy_step_index,
+    )
     verified_sha_index = workflow.index('verified_sha="${{ github.event.workflow_run.head_sha }}"', remote_deploy_index)
     release_head_index = workflow.index('release_head_sha="$(git rev-parse refs/remotes/deploy/main)"')
     head_guard_index = workflow.index('if [ "$release_head_sha" != "$verified_sha" ]; then')
@@ -221,7 +225,11 @@ def test_production_deploy_fails_closed_unless_checkout_matches_verified_workflo
 def test_production_deploy_verifies_local_bundle_before_fetch_and_stopping_services():
     workflow = (ROOT / ".github" / "workflows" / "deploy.yml").read_text(encoding="utf-8")
 
-    remote_deploy_index = workflow.index("uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2")
+    deploy_step_index = workflow.index("- name: Deploy via SSH")
+    remote_deploy_index = workflow.index(
+        "uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2",
+        deploy_step_index,
+    )
     bundle_index = workflow.index('release_bundle="/tmp/aicrm-release-$verified_sha/aicrm-release.bundle"')
     checksum_index = workflow.index("sha256sum -c aicrm-release.bundle.sha256")
     verify_index = workflow.index('git bundle verify "$release_bundle"')
@@ -243,7 +251,10 @@ def test_production_deploy_builds_and_transfers_incremental_exact_sha_bundle_bef
     discover_index = workflow.index('public_health_url="$PUBLIC_HEALTH_URL"')
     build_index = workflow.index("git bundle create release/aicrm-release.bundle refs/deploy/release ^refs/deploy/base")
     transfer_index = workflow.index("uses: appleboy/scp-action@ff85246acaad7bdce478db94a363cd2bf7c90345")
-    remote_deploy_index = workflow.index("uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2")
+    remote_deploy_index = workflow.index(
+        "uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2",
+        transfer_index,
+    )
 
     assert checkout_index < discover_index < build_index < transfer_index < remote_deploy_index
     assert "permissions:\n  contents: read" in workflow
@@ -282,6 +293,33 @@ def test_id_validation_deploy_treats_already_active_sha_as_successful_noop() -> 
     assert "if: steps.release.outputs.noop != 'true'" in workflow[transfer_index:ssh_index]
     assert "if: steps.release.outputs.noop != 'true'" in workflow[ssh_index:]
     assert "Record successful no-op provenance" in workflow
+
+
+def test_id_validation_noop_revalidates_origin_checkout_provenance_and_runtime() -> None:
+    workflow = TEST_DEPLOY_WORKFLOW.read_text(encoding="utf-8")
+
+    noop_index = workflow.index("- name: Verify already active ID release")
+    summary_index = workflow.index("- name: Record successful no-op provenance", noop_index)
+    transfer_index = workflow.index("- name: Transfer verified release bundle", summary_index)
+
+    assert "if: steps.release.outputs.noop == 'true'" in workflow[noop_index:summary_index]
+    assert 'remote_origin_url="$(git remote get-url origin)"' in workflow[noop_index:summary_index]
+    assert 'test "$(git rev-parse HEAD)" = "$verified_sha"' in workflow[noop_index:summary_index]
+    assert 'test "$(tr -d \'\\r\\n\' < .release-sha)" = "$verified_sha"' in workflow[noop_index:summary_index]
+    assert "/home/ubuntu/.aicrm-releases/id-validation.json" in workflow[noop_index:summary_index]
+    assert 'payload.get("repository") == os.environ["EXPECTED_REPOSITORY"]' in workflow[noop_index:summary_index]
+    assert 'payload.get("release_sha") == os.environ["EXPECTED_SHA"]' in workflow[noop_index:summary_index]
+    assert _runtime_units_phase("verify") in workflow[noop_index:summary_index]
+    assert "id-validation-last-verified.json" in workflow[noop_index:summary_index]
+    assert noop_index < summary_index < transfer_index
+
+
+def test_id_validation_deploy_pins_authenticated_server_host_key() -> None:
+    workflow = TEST_DEPLOY_WORKFLOW.read_text(encoding="utf-8")
+    expected = "SHA256:DeE1h5Q7hcKv2XpZTsiwhLUSElTEx9nxHOkkRme3vww"
+
+    assert f"EXPECTED_SSH_HOST_FINGERPRINT: {expected}" in workflow
+    assert workflow.count("fingerprint: ${{ env.EXPECTED_SSH_HOST_FINGERPRINT }}") == 3
 
 
 def test_id_validation_deploy_records_exact_repository_run_and_bundle_provenance() -> None:
