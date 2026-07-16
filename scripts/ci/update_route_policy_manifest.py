@@ -349,6 +349,9 @@ def _policy_for(entry: dict[str, Any]) -> dict[str, Any]:
             "public_strict" if write else "public_standard",
         )
 
+    if path == "/{filename}" and entry.get("route_name") == "wechat_domain_verification_file":
+        return _policy("external_integration", "public", "domain_verification_read", "public", "none", False, "public_standard")
+
     if path in {"/health", "/api/system/health"}:
         return _policy("external_integration", "public", "health_read", "public", "none", False, "health")
 

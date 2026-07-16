@@ -1,4 +1,24 @@
 routes:
+- path: /{filename}
+  methods:
+  - GET
+  route_name: wechat_domain_verification_file
+  capability_owner: platform_foundation
+  runtime_owner: ai_crm_next
+  layer: integration
+  external_effects: none
+  data_source: static
+  requires_auth: false
+  rollback: previous_release
+  audience: external_integration
+  auth_scheme: public
+  capability: domain_verification_read
+  access_scope: public
+  pii_level: none
+  csrf: false
+  rate_limit: public_standard
+  principal_types:
+  - public
 - path: /api/h5/product-context/session
   methods:
   - POST

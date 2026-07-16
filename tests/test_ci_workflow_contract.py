@@ -107,7 +107,7 @@ def test_full_regression_runs_governance_once_and_ci_fast_does_not_duplicate_it(
 def test_test_deploy_waits_for_successful_ci_fast_on_main() -> None:
     source = _source(DEPLOY_WORKFLOW)
 
-    assert "name: Deploy to Test" in source
+    assert "name: Deploy" in source
     assert "workflow_run:" in source
     assert 'workflows: ["CI Fast"]' in source
     assert "types: [completed]" in source
@@ -118,11 +118,11 @@ def test_test_deploy_waits_for_successful_ci_fast_on_main() -> None:
     assert "TEST_DEPLOY_HOST" in source
     assert "TEST_DEPLOY_USER" in source
     assert "TEST_DEPLOY_SSH_KEY" in source
-    assert "inputs.target_environment == 'production' && secrets.DEPLOY_HOST || secrets.TEST_DEPLOY_HOST" in source
-    assert "inputs.target_environment == 'production' && secrets.DEPLOY_USER || secrets.TEST_DEPLOY_USER" in source
-    assert "inputs.target_environment == 'production' && secrets.DEPLOY_SSH_KEY || secrets.TEST_DEPLOY_SSH_KEY" in source
-    assert "environment: ${{ inputs.target_environment || 'test' }}" in source
-    assert "https://id-dev.youcangogogo.com/health" in source
+    assert "env.DEPLOY_TARGET == 'production' && secrets.DEPLOY_HOST || secrets.TEST_DEPLOY_HOST" in source
+    assert "env.DEPLOY_TARGET == 'production' && secrets.DEPLOY_USER || secrets.TEST_DEPLOY_USER" in source
+    assert "env.DEPLOY_TARGET == 'production' && secrets.DEPLOY_SSH_KEY || secrets.TEST_DEPLOY_SSH_KEY" in source
+    assert "environment: ${{ inputs.target_environment || vars.DEFAULT_DEPLOY_ENVIRONMENT || 'test' }}" in source
+    assert "PUBLIC_HEALTH_URL: ${{ vars.PUBLIC_HEALTH_URL }}" in source
     assert 'if [ "$deploy_target" = "production" ]; then' in source
     assert "set -o pipefail" in source
     session_issue_index = source.index("python3 scripts/ops/create_deploy_smoke_session.py issue")
@@ -152,7 +152,7 @@ def test_production_promotion_is_manual_test_verified_and_environment_approved()
     assert "uses: ./.github/workflows/deploy.yml" in source
     assert "needs: validate" in source
     assert "secrets: inherit" in source
-    assert "environment: ${{ inputs.target_environment || 'test' }}" in deploy_source
+    assert "environment: ${{ inputs.target_environment || vars.DEFAULT_DEPLOY_ENVIRONMENT || 'test' }}" in deploy_source
     assert "DEPLOY 150.158.82.186" in source
     assert "https://id-dev.youcangogogo.com/health" in source
     assert "test release sha does not match requested production release" in source
@@ -162,7 +162,7 @@ def test_production_promotion_is_manual_test_verified_and_environment_approved()
     assert "inputs.target_environment == 'production'" in deploy_source
     assert "inputs.release_sha != ''" in deploy_source
     assert "scripts/ops/ensure_production_public_release_route.py --execute" in deploy_source
-    assert "--public-health-url https://www.youcangogogo.com/health" in deploy_source
+    assert '--public-health-url "${{ env.PUBLIC_HEALTH_URL }}"' in deploy_source
 
 
 def test_architecture_gate_script_has_fast_db_and_full_modes() -> None:

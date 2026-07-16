@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from datetime import timedelta
+
+from aicrm_next.customer_read_model.repo import _coerce_datetime
 from aicrm_next.customer_read_model.refresh import CustomerReadModelRefreshService
 
 
@@ -155,3 +158,13 @@ def test_customer_read_model_refresh_refuses_duplicate_or_empty_unionid() -> Non
             assert str(exc) == reason
         else:  # pragma: no cover - fail closed contract
             raise AssertionError("refresh must reject invalid identity keys")
+
+
+def test_customer_read_model_accepts_postgres_whole_hour_timezone_offset() -> None:
+    whole_hour = _coerce_datetime("2026-07-16 18:02:25.720198+08")
+    variable_fraction = _coerce_datetime("2026-07-16 18:01:43.6157+08:00")
+
+    assert whole_hour.utcoffset() == timedelta(hours=8)
+    assert whole_hour.isoformat() == "2026-07-16T18:02:25.720198+08:00"
+    assert variable_fraction.utcoffset() == timedelta(hours=8)
+    assert variable_fraction.isoformat() == "2026-07-16T18:01:43.615700+08:00"
