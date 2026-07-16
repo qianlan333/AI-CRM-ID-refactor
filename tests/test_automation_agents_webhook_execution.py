@@ -8,11 +8,18 @@ from sqlalchemy import text
 from aicrm_next.automation_agents.context_builder import referenced_context_keys
 from aicrm_next.automation_agents.worker import AutomationAgentWorker
 from aicrm_next.external_effect_composition import build_external_effect_continuation_registry
+from aicrm_next.internal_event_composition import build_internal_event_consumer_registry
 from aicrm_next.platform_foundation.command_bus.models import CommandContext
 from aicrm_next.platform_foundation.external_effects.adapters import ExternalEffectAdapterRegistry, WebhookAdapter
 from aicrm_next.platform_foundation.external_effects.models import WEBHOOK_GENERIC_PUSH
+from aicrm_next.platform_foundation.external_effects.completion_events import (
+    EXTERNAL_EFFECT_COMPLETED_EVENT_TYPE,
+)
 from aicrm_next.platform_foundation.external_effects.service import ExternalEffectService
 from aicrm_next.platform_foundation.external_effects.worker import ExternalEffectWorker
+from aicrm_next.platform_foundation.internal_events import InternalEventService
+from aicrm_next.platform_foundation.internal_events.outbox import InternalEventOutboxRelay
+from aicrm_next.platform_foundation.internal_events.worker import InternalEventWorker
 from aicrm_next.platform_foundation.auth_platform.webhook_hmac import WebhookHmacSigner
 from aicrm_next.shared.db_session import get_session_factory
 from tests.webhook_hmac_test_helpers import (
@@ -518,9 +525,16 @@ def test_external_effect_agent_webhook_continuation_enqueues_broadcast_job(next_
 
     assert result["counts"]["succeeded_count"] == 1
     assert len(calls) == 1
-    item_result = result["items"][0]["post_success_continuation"]
-    assert item_result["ok"] is True
-    assert item_result["broadcast_enqueue"]["approved_count"] == 1
+    assert result["items"][0]["post_success_continuation"]["reason"] == "durable_completion_event_pending"
+    registry = build_internal_event_consumer_registry()
+    relayed = InternalEventOutboxRelay(consumer_registry=registry).relay_due(limit=1)
+    assert relayed["counts"]["relayed_count"] == 1
+    completion_event = InternalEventService().list_events({"event_type": EXTERNAL_EFFECT_COMPLETED_EVENT_TYPE})[0][0]
+    completion_runs, completion_run_count = InternalEventService().list_consumer_runs({"event_id": completion_event.event_id})
+    assert completion_run_count == 1
+    completion_result = InternalEventWorker(consumer_registry=registry).dispatch_one(completion_runs[0])
+    assert completion_result["ok"] is True
+    assert completion_result["consumer_run"]["result_summary_json"]["continuation"] == "dict"
     with get_session_factory()() as session:
         job_row = session.execute(text("SELECT * FROM external_effect_job WHERE id = :job_id"), {"job_id": job["id"]}).mappings().one()
         attempt = session.execute(text("SELECT * FROM external_effect_attempt WHERE job_id = :job_id"), {"job_id": job["id"]}).mappings().one()
@@ -532,7 +546,8 @@ def test_external_effect_agent_webhook_continuation_enqueues_broadcast_job(next_
     response_summary = _json_mapping(attempt["response_summary_json"])
     assert job_row["status"] == "succeeded"
     assert response_summary["automation_agent_batch_id"].startswith("agent_batch_")
-    assert response_summary["post_success_continuation"] == "dict"
+    assert response_summary["provider_result_received"] is True
+    assert "post_success_continuation" not in response_summary
     assert item["status"] == "callback_succeeded"
     assert recipient["approval_status"] == "approved"
     assert recipient["send_status"] == "queued"
