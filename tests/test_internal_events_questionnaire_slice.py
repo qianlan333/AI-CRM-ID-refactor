@@ -27,14 +27,15 @@ from aicrm_next.questionnaire.h5_write import reset_questionnaire_h5_write_fixtu
 from aicrm_next.questionnaire.repo import reset_questionnaire_fixture_state
 
 
-QUESTIONNAIRE_CONSUMERS = [
+QUESTIONNAIRE_CONSUMERS = frozenset({
     "ai_audience_source_poke_consumer",
     "automation_questionnaire_consumer",
+    "customer_read_model_dirty_consumer",
     "customer_summary_consumer",
     "questionnaire_projection_consumer",
     "questionnaire_tag_consumer",
     "questionnaire_webhook_consumer",
-]
+})
 
 
 def _reset() -> None:
@@ -119,8 +120,8 @@ def test_questionnaire_submit_emits_single_event_and_expected_consumer_runs(monk
     assert events[0].payload_summary_json["answer_count"] == 3
     assert "13800138000" not in str(events[0].payload_summary_json)
     assert "openid_flag-on" not in str(events[0].payload_summary_json)
-    assert run_total == 6
-    assert sorted(run.consumer_name for run in runs) == QUESTIONNAIRE_CONSUMERS
+    assert run_total == len(QUESTIONNAIRE_CONSUMERS)
+    assert {run.consumer_name for run in runs} == QUESTIONNAIRE_CONSUMERS
 
 
 def test_questionnaire_projection_consumer_succeeds() -> None:

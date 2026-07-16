@@ -22,6 +22,17 @@ from aicrm_next.questionnaire.h5_write import reset_questionnaire_h5_write_fixtu
 from aicrm_next.questionnaire.repo import reset_questionnaire_fixture_state
 
 
+QUESTIONNAIRE_CONSUMERS = frozenset({
+    "ai_audience_source_poke_consumer",
+    "automation_questionnaire_consumer",
+    "customer_read_model_dirty_consumer",
+    "customer_summary_consumer",
+    "questionnaire_projection_consumer",
+    "questionnaire_tag_consumer",
+    "questionnaire_webhook_consumer",
+})
+
+
 def _client(monkeypatch) -> TestClient:
     monkeypatch.delenv("DATABASE_URL", raising=False)
     monkeypatch.delenv("AICRM_NEXT_ENV", raising=False)
@@ -74,15 +85,8 @@ def test_questionnaire_submit_emits_durable_event_without_request_path_side_effe
         "submission_id": body["submission_id"],
         "unionid_present": False,
     }
-    assert run_total == 6
-    assert sorted(run.consumer_name for run in runs) == [
-        "ai_audience_source_poke_consumer",
-        "automation_questionnaire_consumer",
-        "customer_summary_consumer",
-        "questionnaire_projection_consumer",
-        "questionnaire_tag_consumer",
-        "questionnaire_webhook_consumer",
-    ]
+    assert run_total == len(QUESTIONNAIRE_CONSUMERS)
+    assert {run.consumer_name for run in runs} == QUESTIONNAIRE_CONSUMERS
 
 
 def test_customer_tag_mark_and_unmark_shadow_emit_internal_events(monkeypatch) -> None:
