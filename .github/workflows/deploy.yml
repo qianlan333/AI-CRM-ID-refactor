@@ -26,7 +26,7 @@ jobs:
     env:
       EXPECTED_REPOSITORY: qianlan333/AI-CRM-ID-refactor
       EXPECTED_DEPLOY_HOST: 49.232.57.128
-      EXPECTED_SSH_HOST_FINGERPRINT: SHA256:DeE1h5Q7hcKv2XpZTsiwhLUSElTEx9nxHOkkRme3vww
+      EXPECTED_SSH_HOST_FINGERPRINT: SHA256:NXSJUveGoNy1lDsa+eOKho1h0ythB+pKTyijv8/KfU0
       DEPLOY_TARGET: id-validation
       PUBLIC_BASE_URL: https://id-dev.youcangogogo.com
       PUBLIC_HEALTH_URL: https://id-dev.youcangogogo.com/health
