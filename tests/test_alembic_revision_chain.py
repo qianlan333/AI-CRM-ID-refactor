@@ -61,7 +61,7 @@ def test_all_alembic_down_revisions_exist() -> None:
     assert missing == {}
 
 
-def test_welcome_media_dependencies_is_the_single_head() -> None:
+def test_external_claim_scope_policy_is_the_single_head() -> None:
     revisions = _migration_revisions()
     referenced = {parent for item in revisions.values() for parent in _parents(item["down_revision"])}
     heads = set(revisions) - referenced
@@ -83,8 +83,14 @@ def test_welcome_media_dependencies_is_the_single_head() -> None:
     identity_customer_source = identity_customer.read_text(encoding="utf-8")
     welcome_media = VERSIONS / "0130_welcome_media_dependencies.py"
     welcome_media_source = welcome_media.read_text(encoding="utf-8")
+    continuation_fanout = VERSIONS / "0131_external_effect_continuation_fanout.py"
+    continuation_fanout_source = continuation_fanout.read_text(encoding="utf-8")
+    external_scope = VERSIONS / "0132_external_claim_scope_policy.py"
+    external_scope_source = external_scope.read_text(encoding="utf-8")
 
-    assert heads == {"0130_welcome_media_dependencies"}
+    assert heads == {"0132_external_claim_scope_policy"}
+    assert revisions["0132_external_claim_scope_policy"]["down_revision"] == "0131_external_effect_continuation_fanout"
+    assert revisions["0131_external_effect_continuation_fanout"]["down_revision"] == "0130_welcome_media_dependencies"
     assert revisions["0130_welcome_media_dependencies"]["down_revision"] == "0129_identity_customer_event_driven"
     assert revisions["0129_identity_customer_event_driven"]["down_revision"] == "0128_ai_audience_refresh_intents"
     assert revisions["0128_ai_audience_refresh_intents"]["down_revision"] == "0127_group_ops_durable_effect_graph"
@@ -128,6 +134,10 @@ def test_welcome_media_dependencies_is_the_single_head() -> None:
     assert "pre_event_driven_cutover_requires_manual_classification" in identity_customer_source
     assert "channel_welcome_effect_graph" in welcome_media_source
     assert "channel_welcome_effect_dependency" in welcome_media_source
+    assert "pre_independent_continuation_fanout_requires_manual_classification" in continuation_fanout_source
+    assert "external_effect_completion_continuation_consumer" in continuation_fanout_source
+    assert "external_claim_scope" in external_scope_source
+    assert "queue-v2-test-loopback" in external_scope_source
     for constraint_name in (
         "ck_external_effect_job_runtime_lane",
         "ck_internal_event_consumer_run_runtime_lane",

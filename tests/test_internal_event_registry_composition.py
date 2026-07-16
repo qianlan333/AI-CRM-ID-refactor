@@ -3,8 +3,13 @@ from __future__ import annotations
 import pytest
 from fastapi.testclient import TestClient
 
+from aicrm_next.external_effect_composition import build_external_effect_continuation_consumers
 from aicrm_next.internal_event_composition import build_internal_event_consumer_registry
 from aicrm_next.main import create_app
+from aicrm_next.platform_foundation.external_effects.completion_events import (
+    EXTERNAL_EFFECT_COMPLETED_EVENT_TYPE,
+    LEGACY_EXTERNAL_EFFECT_COMPLETION_CONSUMER,
+)
 from aicrm_next.platform_foundation.internal_events import (
     DEFAULT_INTERNAL_EVENT_CONSUMER_REGISTRY,
     InternalEventConsumerRegistry,
@@ -31,7 +36,21 @@ def test_composition_builds_complete_isolated_registries() -> None:
     assert second.is_fanout_authoritative is True
     assert _consumer_names(first, "payment.succeeded") == _consumer_names(second, "payment.succeeded")
     assert "service_period_entitlement_consumer" in _consumer_names(first, "payment.succeeded")
-    assert _consumer_names(first, "external_effect.completed") == {"external_effect_completion_continuation_consumer"}
+    continuation_consumers = {item.consumer_name for item in build_external_effect_continuation_consumers()}
+    assert _consumer_names(first, EXTERNAL_EFFECT_COMPLETED_EVENT_TYPE) == continuation_consumers
+    assert LEGACY_EXTERNAL_EFFECT_COMPLETION_CONSUMER not in continuation_consumers
+    assert first.get_handler(EXTERNAL_EFFECT_COMPLETED_EVENT_TYPE, LEGACY_EXTERNAL_EFFECT_COMPLETION_CONSUMER) is not None
+    assert {
+        (item["event_type"], item["consumer_name"])
+        for item in first.aliases_to_dict()
+    } >= {(EXTERNAL_EFFECT_COMPLETED_EVENT_TYPE, LEGACY_EXTERNAL_EFFECT_COMPLETION_CONSUMER)}
+
+    manifest = first.fanout_manifest_for(EXTERNAL_EFFECT_COMPLETED_EVENT_TYPE)
+    assert manifest["expected_consumer_count"] == len(continuation_consumers)
+    assert {item["consumer_name"] for item in manifest["consumers"]} == continuation_consumers
+    assert LEGACY_EXTERNAL_EFFECT_COMPLETION_CONSUMER not in {
+        item["consumer_name"] for item in manifest["consumers"]
+    }
 
     with pytest.raises(RuntimeError, match="fanout contract is sealed"):
         first.register("registry.probe", "first_only", _unused_handler)

@@ -18,9 +18,18 @@ from aicrm_next.customer_read_model.refresh_intents import (
     CustomerReadModelRefreshIntentRepository,
     CustomerReadModelRefreshIntentService,
 )
+from aicrm_next.external_effect_composition import (
+    IDENTITY_EXTERNAL_EFFECT_CONTINUATION_CONSUMER,
+    build_external_effect_continuation_consumers,
+)
+from aicrm_next import internal_event_composition
+from aicrm_next.internal_event_composition import build_internal_event_consumer_registry
 from aicrm_next.platform_foundation.external_effects.adapters import WeComExternalContactDetailAdapter
-from aicrm_next.platform_foundation.external_effects.continuations import ExternalEffectContinuationRegistry
+from aicrm_next.platform_foundation.external_effects.completion_events import EXTERNAL_EFFECT_COMPLETED_EVENT_TYPE
 from aicrm_next.platform_foundation.external_effects.repo import SQLAlchemyExternalEffectRepository
+from aicrm_next.platform_foundation.internal_events import InternalEventService
+from aicrm_next.platform_foundation.internal_events.outbox import InternalEventOutboxRelay
+from aicrm_next.platform_foundation.internal_events.worker import InternalEventWorker
 
 
 pytestmark = pytest.mark.usefixtures("next_pg_schema")
@@ -246,12 +255,50 @@ def test_provider_result_is_private_and_continuation_failure_cannot_pollute_prov
     assert "敏感客户姓名" not in json.dumps(private_attempt["request_summary_json"], ensure_ascii=False)
     assert "敏感客户姓名" not in json.dumps(private_attempt["response_summary_json"], ensure_ascii=False)
 
-    continuation_registry = ExternalEffectContinuationRegistry(
-        (identity_external_effect.IDENTITY_EXTERNAL_CONTACT_DETAIL_CONTINUATION,)
+    raw_result_reads: list[tuple[str, int | None]] = []
+
+    class _CompletionRepository:
+        def get_job(self, current_job_id: int):
+            return repository.get_job(current_job_id)
+
+        def get_attempt(self, attempt_id: str):
+            return repository.get_attempt(attempt_id)
+
+        def get_attempt_provider_result(self, attempt_id: str, *, job_id: int | None = None):
+            raw_result_reads.append((attempt_id, job_id))
+            return repository.get_attempt_provider_result(attempt_id, job_id=job_id)
+
+    monkeypatch.setattr(
+        internal_event_composition,
+        "build_external_effect_repository",
+        _CompletionRepository,
     )
+    internal_registry = build_internal_event_consumer_registry()
+    relayed = InternalEventOutboxRelay(consumer_registry=internal_registry).relay_due(limit=20)
+    assert relayed["counts"]["relayed_count"] == 1
+    completion_events, completion_event_count = InternalEventService().list_events(
+        {"event_type": EXTERNAL_EFFECT_COMPLETED_EVENT_TYPE}
+    )
+    assert completion_event_count == 1
+    completion_runs, completion_run_count = InternalEventService().list_consumer_runs(
+        {"event_id": completion_events[0].event_id}
+    )
+    assert completion_run_count == len(build_external_effect_continuation_consumers())
+    identity_run = next(
+        run
+        for run in completion_runs
+        if run.consumer_name == IDENTITY_EXTERNAL_EFFECT_CONTINUATION_CONSUMER
+    )
+    sibling_runs = [run for run in completion_runs if run.id != identity_run.id]
+    internal_worker = InternalEventWorker(consumer_registry=internal_registry)
+    sibling_results = [internal_worker.dispatch_one(run) for run in sibling_runs]
+    assert {result["consumer_run"]["status"] for result in sibling_results} == {"succeeded"}
+    assert raw_result_reads == []
+
     monkeypatch.setattr(identity_external_effect, "build_identity_bridge_service", lambda: _FailingIdentityBridge())
-    failed = continuation_registry.run(completed_job, dispatch_result)
-    assert failed["ok"] is False
+    failed = internal_worker.dispatch_one(identity_run)
+    assert failed["consumer_run"]["status"] == "failed_retryable"
+    assert raw_result_reads == [(public_attempt.attempt_id, job_id)]
     with _connect() as connection:
         failure_state = connection.execute(
             """
@@ -264,9 +311,27 @@ def test_provider_result_is_private_and_continuation_failure_cannot_pollute_prov
             """,
             (job_id,),
         ).fetchone()
+        private_consumer_attempts = connection.execute(
+            """
+            SELECT request_summary_json, response_summary_json, error_code, error_message
+            FROM internal_event_consumer_attempt
+            WHERE consumer_run_id = %s
+            ORDER BY id
+            """,
+            (identity_run.id,),
+        ).fetchall()
     assert failure_state["job_status"] == failure_state["attempt_status"] == "succeeded"
     assert failure_state["provider_result_json"]["external_contact"]["unionid"] == "union_private_result_001"
     assert failure_state["receipt_count"] == 0
+    private_consumer_attempt_json = json.dumps(private_consumer_attempts, ensure_ascii=False, default=str)
+    for secret in (
+        "union_private_result_001",
+        "openid_private_result_001",
+        "敏感客户姓名",
+        "敏感备注",
+        "敏感描述",
+    ):
+        assert secret not in private_consumer_attempt_json
 
     successful_bridge = _SuccessfulIdentityBridge()
     monkeypatch.setattr(identity_external_effect, "build_identity_bridge_service", lambda: successful_bridge)
@@ -278,11 +343,22 @@ def test_provider_result_is_private_and_continuation_failure_cannot_pollute_prov
     )
     monkeypatch.setattr(identity_external_effect, "_emit_identity_resolved", lambda **kwargs: {"ok": True})
 
-    first = continuation_registry.run(completed_job, dispatch_result)
-    second = continuation_registry.run(completed_job, dispatch_result)
-    assert first["ok"] is second["ok"] is True
-    assert first["provider_result_consumed"] is True
-    assert second["deduplicated"] is True
+    manual_retry = InternalEventService().retry_consumer_run(
+        completion_events[0].event_id,
+        IDENTITY_EXTERNAL_EFFECT_CONTINUATION_CONSUMER,
+        actor_id="pytest-operator",
+        actor_type="test",
+        reason="approved identity continuation retry",
+    )
+    assert manual_retry is not None
+    assert manual_retry[0].status == "pending"
+    assert manual_retry[1].status == "manual_retry"
+    retried = internal_worker.dispatch_one(manual_retry[0])
+    assert retried["consumer_run"]["status"] == "succeeded", retried
+    assert raw_result_reads == [
+        (public_attempt.attempt_id, job_id),
+        (public_attempt.attempt_id, job_id),
+    ]
     assert successful_bridge.calls == 1
 
     with _connect() as connection:
@@ -304,6 +380,20 @@ def test_provider_result_is_private_and_continuation_failure_cannot_pollute_prov
     assert final_state["provider_result_consumed_at"] is not None
     assert final_state["receipt_count"] == 1
     assert repository.get_attempt_provider_result(public_attempt.attempt_id) == {}
+    final_runs, _ = InternalEventService().list_consumer_runs({"event_id": completion_events[0].event_id})
+    assert {run.status for run in final_runs} == {"succeeded"}
+    final_attempts = InternalEventService().list_attempts(event_id=completion_events[0].event_id)
+    assert len(final_attempts) == len(final_runs) + 2
+    identity_attempts = [
+        attempt
+        for attempt in final_attempts
+        if attempt.consumer_name == IDENTITY_EXTERNAL_EFFECT_CONTINUATION_CONSUMER
+    ]
+    assert {attempt.status for attempt in identity_attempts} == {
+        "failed_retryable",
+        "manual_retry",
+        "succeeded",
+    }
 
 
 def test_customer_refresh_coalesces_sources_and_preserves_dirty_during_run() -> None:
@@ -411,4 +501,3 @@ def test_customer_refresh_request_is_intent_only_until_internal_consumer() -> No
     assert processed["ok"] is True
     assert processed["completion"]["completed"] is True
     assert refresh_calls == [False]
-

@@ -41,6 +41,16 @@ provider call followed by an unpersisted result or outbox hand-off is quarantine
 as unknown, not retried as if no call occurred. Post-success projections execute
 from the durable internal event and cannot rewrite provider truth.
 
+`external_effect.completed` has an authoritative per-continuation fan-out. Identity,
+Group Ops, Broadcast, Questionnaire, External Push, Automation, and any separately
+registered media dependency each own a distinct `internal_event_consumer_run`, attempt
+history, and retry budget. A predicate miss is a successful no-op; one continuation
+failure cannot block a sibling or change a succeeded provider job/attempt. The former
+`external_effect_completion_continuation_consumer` is only a handler alias for held
+historical runs and is excluded from every new fan-out manifest. Restricted provider
+payload is loaded only after an explicitly allowlisted continuation predicate matches;
+job, terminal attempt, and tenant linkage must all match before that read.
+
 ## Cancellation
 
 - Every mutable job exposes a monotonic `row_version`; a supplied

@@ -26,14 +26,28 @@ def encode_provider_result(value: Any) -> tuple[str, str]:
 class ExternalEffectProviderResultRepositoryMixin:
     """Restricted handoff API intentionally absent from public attempt models."""
 
-    def get_attempt_provider_result(self, attempt_id: str) -> dict[str, Any]:
-        row = self._one(  # type: ignore[attr-defined]
+    def get_attempt_provider_result(self, attempt_id: str, *, job_id: int | None = None) -> dict[str, Any]:
+        if job_id is None:
+            statement = """
+                SELECT provider_result_json FROM external_effect_attempt
+                WHERE attempt_id = :attempt_id AND provider_result_consumed_at IS NULL
+                LIMIT 1
             """
-            SELECT provider_result_json FROM external_effect_attempt
-            WHERE attempt_id = :attempt_id AND provider_result_consumed_at IS NULL
-            LIMIT 1
-            """,
-            {"attempt_id": str(attempt_id or "").strip()},
+            parameters = {"attempt_id": str(attempt_id or "").strip()}
+        else:
+            statement = """
+                SELECT provider_result_json FROM external_effect_attempt
+                WHERE attempt_id = :attempt_id AND job_id = :job_id
+                  AND provider_result_consumed_at IS NULL
+                LIMIT 1
+            """
+            parameters = {
+                "attempt_id": str(attempt_id or "").strip(),
+                "job_id": int(job_id),
+            }
+        row = self._one(  # type: ignore[attr-defined]
+            statement,
+            parameters,
         )
         return _json_object((row or {}).get("provider_result_json"))
 

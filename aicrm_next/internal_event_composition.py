@@ -9,7 +9,11 @@ from .commerce.payment_tagging import (
     resolve_payment_tag_identity,
 )
 from .identity_contact.payment_projection import project_payment_order_mobile
-from .external_effect_composition import build_external_effect_continuation_registry
+from .external_effect_composition import (
+    EXTERNAL_EFFECT_PROVIDER_RESULT_ACCESS_ALLOWLIST,
+    build_external_effect_continuation_consumers,
+    build_external_effect_continuation_registry,
+)
 from .ai_audience_ops import register_ai_audience_event_consumers
 from .customer_read_model.events import register_customer_read_model_event_consumers
 from .cloud_orchestrator.repository import build_cloud_plan_repository
@@ -25,8 +29,7 @@ from .service_period.refund_consumer import service_period_refund_consumer
 from .platform_foundation.internal_events.shadow import broadcast_task_planner_consumer
 from .platform_foundation.internal_events.payment import webhook_order_paid_consumer
 from .platform_foundation.external_effects.completion_events import (
-    external_effect_completion_consumer,
-    register_external_effect_completed_consumer,
+    register_external_effect_completed_consumers,
 )
 from .platform_foundation.external_effects.repo import build_external_effect_repository
 from .platform_foundation.execution_runtime.commands import (
@@ -132,13 +135,12 @@ def register_shadow_event_consumers(registry: InternalEventConsumerRegistry | No
 
 def register_external_effect_completion_consumers(registry: InternalEventConsumerRegistry | None = None) -> None:
     registry = registry or current_internal_event_consumer_registry()
-    register_external_effect_completed_consumer(
+    register_external_effect_completed_consumers(
         registry,
-        handler=partial(
-            external_effect_completion_consumer,
-            repository_factory=build_external_effect_repository,
-            continuation_registry_factory=build_external_effect_continuation_registry,
-        ),
+        consumers=build_external_effect_continuation_consumers(),
+        repository_factory=build_external_effect_repository,
+        legacy_continuation_registry_factory=build_external_effect_continuation_registry,
+        provider_result_access_allowlist=EXTERNAL_EFFECT_PROVIDER_RESULT_ACCESS_ALLOWLIST,
     )
 
 

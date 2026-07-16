@@ -229,7 +229,7 @@ class ExternalEffectRepository:
     def get_attempt(self, attempt_id: str) -> ExternalEffectAttempt | None:
         raise NotImplementedError
 
-    def get_attempt_provider_result(self, attempt_id: str) -> dict[str, Any]:
+    def get_attempt_provider_result(self, attempt_id: str, *, job_id: int | None = None) -> dict[str, Any]:
         raise NotImplementedError
 
     def consume_attempt_provider_result(self, attempt_id: str, *, job_id: int) -> bool:

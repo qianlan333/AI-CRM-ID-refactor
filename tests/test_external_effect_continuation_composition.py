@@ -1,7 +1,15 @@
 from __future__ import annotations
 
 from aicrm_next.external_effect_composition import (
+    AUTOMATION_EXTERNAL_EFFECT_CONTINUATION_CONSUMER,
+    BROADCAST_EXTERNAL_EFFECT_CONTINUATION_CONSUMER,
+    EXTERNAL_EFFECT_PROVIDER_RESULT_ACCESS_ALLOWLIST,
+    EXTERNAL_PUSH_EFFECT_CONTINUATION_CONSUMER,
+    GROUP_OPS_EXTERNAL_EFFECT_CONTINUATION_CONSUMER,
+    IDENTITY_EXTERNAL_EFFECT_CONTINUATION_CONSUMER,
+    QUESTIONNAIRE_EXTERNAL_EFFECT_CONTINUATION_CONSUMER,
     build_external_effect_adapter_registry,
+    build_external_effect_continuation_consumers,
     build_external_effect_continuation_registry,
 )
 from aicrm_next.main import create_app
@@ -21,6 +29,32 @@ def test_external_effect_continuation_composition_is_explicit_and_deterministic(
         "automation_agent_audience_webhook",
     )
     assert second.names == first.names
+
+
+def test_external_effect_continuations_have_independent_durable_consumer_names() -> None:
+    consumers = build_external_effect_continuation_consumers()
+
+    assert tuple(item.consumer_name for item in consumers) == (
+        IDENTITY_EXTERNAL_EFFECT_CONTINUATION_CONSUMER,
+        GROUP_OPS_EXTERNAL_EFFECT_CONTINUATION_CONSUMER,
+        BROADCAST_EXTERNAL_EFFECT_CONTINUATION_CONSUMER,
+        QUESTIONNAIRE_EXTERNAL_EFFECT_CONTINUATION_CONSUMER,
+        EXTERNAL_PUSH_EFFECT_CONTINUATION_CONSUMER,
+        AUTOMATION_EXTERNAL_EFFECT_CONTINUATION_CONSUMER,
+    )
+    assert tuple(item.continuation.name for item in consumers) == build_external_effect_continuation_registry().names
+    assert all(item.max_attempts == 5 for item in consumers)
+    assert {
+        (item.consumer_name, item.continuation.name)
+        for item in consumers
+        if item.continuation.requires_provider_result
+    } == EXTERNAL_EFFECT_PROVIDER_RESULT_ACCESS_ALLOWLIST
+    assert EXTERNAL_EFFECT_PROVIDER_RESULT_ACCESS_ALLOWLIST == {
+        (
+            IDENTITY_EXTERNAL_EFFECT_CONTINUATION_CONSUMER,
+            "identity_external_contact_detail_continuation",
+        )
+    }
 
 
 def test_web_app_owns_its_external_effect_continuation_registry() -> None:

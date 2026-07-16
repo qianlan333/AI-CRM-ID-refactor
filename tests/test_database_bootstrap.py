@@ -74,7 +74,7 @@ def test_empty_postgres_database_installs_and_reuses_alembic_head() -> None:
 
         assert first.baseline_applied is True
         assert first.revision_before is None
-        assert first.revision_after == "0129_identity_customer_event_driven"
+        assert first.revision_after == "0131_external_effect_continuation_fanout"
         assert second.baseline_applied is False
         assert second.revision_before == first.revision_after
         assert second.revision_after == first.revision_after
@@ -295,7 +295,7 @@ def test_production_shape_alembic_database_upgrades_without_reapplying_baseline(
 
         assert result.baseline_applied is False
         assert result.revision_before == "0098_admin_session_revocation"
-        assert result.revision_after == "0129_identity_customer_event_driven"
+        assert result.revision_after == "0131_external_effect_continuation_fanout"
         with psycopg.connect(database_url) as connection:
             preserved = connection.execute(
                 "SELECT wecom_userid, session_version FROM admin_users WHERE id = %s",
@@ -323,7 +323,7 @@ def test_upgrade_repairs_missing_or_partial_automation_agent_audit_tables_withou
 
         assert result.baseline_applied is False
         assert result.revision_before == "0123_required_physical_schema_repair"
-        assert result.revision_after == "0129_identity_customer_event_driven"
+        assert result.revision_after == "0131_external_effect_continuation_fanout"
 
         expected_columns = {
             "automation_agent_output": {
@@ -993,8 +993,158 @@ def test_identity_customer_cutover_holds_historical_work_without_replay() -> Non
         _upgrade_database_to(database_url, "head")
         with psycopg.connect(database_url) as connection:
             assert connection.execute("SELECT version_num FROM alembic_version").fetchone() == (
-                "0129_identity_customer_event_driven",
+                "0131_external_effect_continuation_fanout",
             )
+
+
+def test_continuation_fanout_cutover_holds_legacy_completion_work_without_replay() -> None:
+    with _isolated_database("continuation_fanout_history_hold") as database_url:
+        with psycopg.connect(database_url, autocommit=True) as connection:
+            connection.execute(BASELINE_PATH.read_text(encoding="utf-8"))
+        _upgrade_database_to(database_url, "0130_welcome_media_dependencies")
+
+        with psycopg.connect(database_url) as connection:
+            connection.execute(
+                """
+                INSERT INTO internal_event_outbox (
+                    outbox_id, event_type, aggregate_type, aggregate_id,
+                    idempotency_key, status
+                ) VALUES
+                    (
+                        'ieo-completion-pending', 'external_effect.completed',
+                        'external_effect_job', '8101', 'completion-pending', 'pending'
+                    ),
+                    (
+                        'ieo-completion-relayed', 'external_effect.completed',
+                        'external_effect_job', '8102', 'completion-relayed', 'relayed'
+                    )
+                """
+            )
+            connection.execute(
+                """
+                INSERT INTO internal_event (
+                    event_id, event_type, aggregate_type, aggregate_id, idempotency_key
+                ) VALUES
+                    (
+                        'iev-completion-pending', 'external_effect.completed',
+                        'external_effect_job', '8101', 'event-completion-pending'
+                    ),
+                    (
+                        'iev-completion-succeeded', 'external_effect.completed',
+                        'external_effect_job', '8102', 'event-completion-succeeded'
+                    )
+                """
+            )
+            connection.execute(
+                """
+                INSERT INTO internal_event_consumer_run (
+                    event_id, consumer_name, consumer_type, status
+                ) VALUES
+                    (
+                        'iev-completion-pending',
+                        'external_effect_completion_continuation_consumer',
+                        'orchestration', 'pending'
+                    ),
+                    (
+                        'iev-completion-succeeded',
+                        'external_effect_completion_continuation_consumer',
+                        'orchestration', 'succeeded'
+                    )
+                """
+            )
+            connection.commit()
+
+        _upgrade_database_to(database_url, "head")
+
+        with psycopg.connect(database_url) as connection:
+            outbox = connection.execute(
+                """
+                SELECT outbox_id, status, hold_reason, hold_at IS NOT NULL
+                FROM internal_event_outbox
+                WHERE outbox_id LIKE 'ieo-completion-%'
+                ORDER BY outbox_id
+                """
+            ).fetchall()
+            runs = connection.execute(
+                """
+                SELECT event_id, status, hold_reason, hold_at IS NOT NULL
+                FROM internal_event_consumer_run
+                WHERE consumer_name = 'external_effect_completion_continuation_consumer'
+                  AND event_id LIKE 'iev-completion-%'
+                ORDER BY event_id
+                """
+            ).fetchall()
+            classifications = connection.execute(
+                """
+                SELECT queue_kind, source_status, classification, hold_reason,
+                       evidence_json ->> 'automatic_replay_allowed'
+                FROM queue_history_classification
+                WHERE freeze_revision = '0131_external_effect_continuation_fanout'
+                ORDER BY queue_kind, queue_row_id
+                """
+            ).fetchall()
+            connection.execute(
+                """
+                INSERT INTO internal_event_outbox (
+                    outbox_id, event_type, aggregate_type, aggregate_id,
+                    idempotency_key, status
+                ) VALUES (
+                    'ieo-completion-new', 'external_effect.completed',
+                    'external_effect_job', '8103', 'completion-new', 'pending'
+                )
+                """
+            )
+            new_hold = connection.execute(
+                """
+                SELECT hold_reason, hold_at
+                FROM internal_event_outbox
+                WHERE outbox_id = 'ieo-completion-new'
+                """
+            ).fetchone()
+            connection.commit()
+
+        reason = "pre_independent_continuation_fanout_requires_manual_classification"
+        assert outbox == [
+            ("ieo-completion-pending", "pending", reason, True),
+            ("ieo-completion-relayed", "relayed", "", False),
+        ]
+        assert runs == [
+            ("iev-completion-pending", "pending", reason, True),
+            ("iev-completion-succeeded", "succeeded", "", False),
+        ]
+        assert classifications == [
+            ("internal_event_consumer", "pending", "ambiguous_hold", reason, "false"),
+            ("internal_event_consumer", "succeeded", "terminal_readonly", "", "false"),
+            ("internal_event_outbox", "pending", "ambiguous_hold", reason, "false"),
+            ("internal_event_outbox", "relayed", "terminal_readonly", "", "false"),
+        ]
+        assert new_hold == ("", None)
+
+        _downgrade_database_to(database_url, "0130_welcome_media_dependencies")
+        with psycopg.connect(database_url) as connection:
+            assert connection.execute(
+                """
+                SELECT hold_reason
+                FROM internal_event_outbox
+                WHERE outbox_id = 'ieo-completion-pending'
+                """
+            ).fetchone() == (reason,)
+        _upgrade_database_to(database_url, "head")
+        with psycopg.connect(database_url) as connection:
+            assert connection.execute(
+                """
+                SELECT COUNT(*)
+                FROM queue_history_classification
+                WHERE freeze_revision = '0131_external_effect_continuation_fanout'
+                """
+            ).fetchone() == (5,)
+            assert connection.execute(
+                """
+                SELECT hold_reason
+                FROM internal_event_outbox
+                WHERE outbox_id = 'ieo-completion-new'
+                """
+            ).fetchone() == (reason,)
 
 
 def _upgrade_database_to(database_url: str, revision: str) -> None:

@@ -7,7 +7,11 @@ from sqlalchemy import text
 
 from aicrm_next.automation_agents.context_builder import referenced_context_keys
 from aicrm_next.automation_agents.worker import AutomationAgentWorker
-from aicrm_next.external_effect_composition import build_external_effect_continuation_registry
+from aicrm_next.external_effect_composition import (
+    AUTOMATION_EXTERNAL_EFFECT_CONTINUATION_CONSUMER,
+    build_external_effect_continuation_consumers,
+    build_external_effect_continuation_registry,
+)
 from aicrm_next.internal_event_composition import build_internal_event_consumer_registry
 from aicrm_next.platform_foundation.command_bus.models import CommandContext
 from aicrm_next.platform_foundation.external_effects.adapters import ExternalEffectAdapterRegistry, WebhookAdapter
@@ -531,8 +535,14 @@ def test_external_effect_agent_webhook_continuation_enqueues_broadcast_job(next_
     assert relayed["counts"]["relayed_count"] == 1
     completion_event = InternalEventService().list_events({"event_type": EXTERNAL_EFFECT_COMPLETED_EVENT_TYPE})[0][0]
     completion_runs, completion_run_count = InternalEventService().list_consumer_runs({"event_id": completion_event.event_id})
-    assert completion_run_count == 1
-    completion_result = InternalEventWorker(consumer_registry=registry).dispatch_one(completion_runs[0])
+    assert completion_run_count == len(build_external_effect_continuation_consumers())
+    internal_worker = InternalEventWorker(consumer_registry=registry)
+    completion_results = {
+        run.consumer_name: internal_worker.dispatch_one(run)
+        for run in completion_runs
+    }
+    assert {item["consumer_run"]["status"] for item in completion_results.values()} == {"succeeded"}
+    completion_result = completion_results[AUTOMATION_EXTERNAL_EFFECT_CONTINUATION_CONSUMER]
     assert completion_result["ok"] is True
     assert completion_result["consumer_run"]["result_summary_json"]["continuation"] == "dict"
     with get_session_factory()() as session:

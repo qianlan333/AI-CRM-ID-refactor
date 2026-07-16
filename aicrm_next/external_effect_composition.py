@@ -25,20 +25,60 @@ from .platform_foundation.external_effects.adapters import (
     WebhookAdapter,
 )
 from .wecom_media_jobs import WeComMediaUploadAdapter
-from .platform_foundation.external_effects.continuations import ExternalEffectContinuationRegistry
+from .platform_foundation.external_effects.continuations import (
+    ExternalEffectContinuationConsumer,
+    ExternalEffectContinuationRegistry,
+)
 from .questionnaire.external_effect_continuation import QUESTIONNAIRE_CONTACT_TAGS_CONTINUATION
+
+IDENTITY_EXTERNAL_EFFECT_CONTINUATION_CONSUMER = "external_effect_identity_continuation_consumer"
+GROUP_OPS_EXTERNAL_EFFECT_CONTINUATION_CONSUMER = "external_effect_group_ops_continuation_consumer"
+BROADCAST_EXTERNAL_EFFECT_CONTINUATION_CONSUMER = "external_effect_broadcast_continuation_consumer"
+QUESTIONNAIRE_EXTERNAL_EFFECT_CONTINUATION_CONSUMER = "external_effect_questionnaire_continuation_consumer"
+EXTERNAL_PUSH_EFFECT_CONTINUATION_CONSUMER = "external_effect_external_push_continuation_consumer"
+AUTOMATION_EXTERNAL_EFFECT_CONTINUATION_CONSUMER = "external_effect_automation_continuation_consumer"
+EXTERNAL_EFFECT_PROVIDER_RESULT_ACCESS_ALLOWLIST = frozenset(
+    {
+        (
+            IDENTITY_EXTERNAL_EFFECT_CONTINUATION_CONSUMER,
+            IDENTITY_EXTERNAL_CONTACT_DETAIL_CONTINUATION.name,
+        )
+    }
+)
+
+
+def build_external_effect_continuation_consumers() -> tuple[ExternalEffectContinuationConsumer, ...]:
+    return (
+        ExternalEffectContinuationConsumer(
+            IDENTITY_EXTERNAL_EFFECT_CONTINUATION_CONSUMER,
+            IDENTITY_EXTERNAL_CONTACT_DETAIL_CONTINUATION,
+        ),
+        ExternalEffectContinuationConsumer(
+            GROUP_OPS_EXTERNAL_EFFECT_CONTINUATION_CONSUMER,
+            GROUP_OPS_MEDIA_DEPENDENCY_CONTINUATION,
+        ),
+        ExternalEffectContinuationConsumer(
+            BROADCAST_EXTERNAL_EFFECT_CONTINUATION_CONSUMER,
+            BROADCAST_EXTERNAL_EFFECT_READ_MODEL_CONTINUATION,
+        ),
+        ExternalEffectContinuationConsumer(
+            QUESTIONNAIRE_EXTERNAL_EFFECT_CONTINUATION_CONSUMER,
+            QUESTIONNAIRE_CONTACT_TAGS_CONTINUATION,
+        ),
+        ExternalEffectContinuationConsumer(
+            EXTERNAL_PUSH_EFFECT_CONTINUATION_CONSUMER,
+            EXTERNAL_PUSH_DELIVERY_CONTINUATION,
+        ),
+        ExternalEffectContinuationConsumer(
+            AUTOMATION_EXTERNAL_EFFECT_CONTINUATION_CONSUMER,
+            AUTOMATION_AGENT_AUDIENCE_WEBHOOK_CONTINUATION,
+        ),
+    )
 
 
 def build_external_effect_continuation_registry() -> ExternalEffectContinuationRegistry:
     return ExternalEffectContinuationRegistry(
-        (
-            IDENTITY_EXTERNAL_CONTACT_DETAIL_CONTINUATION,
-            GROUP_OPS_MEDIA_DEPENDENCY_CONTINUATION,
-            BROADCAST_EXTERNAL_EFFECT_READ_MODEL_CONTINUATION,
-            QUESTIONNAIRE_CONTACT_TAGS_CONTINUATION,
-            EXTERNAL_PUSH_DELIVERY_CONTINUATION,
-            AUTOMATION_AGENT_AUDIENCE_WEBHOOK_CONTINUATION,
-        )
+        consumer.continuation for consumer in build_external_effect_continuation_consumers()
     )
 
 
@@ -159,6 +199,14 @@ def _build_wechat_pay_client():
 
 
 __all__ = [
+    "AUTOMATION_EXTERNAL_EFFECT_CONTINUATION_CONSUMER",
+    "BROADCAST_EXTERNAL_EFFECT_CONTINUATION_CONSUMER",
+    "EXTERNAL_EFFECT_PROVIDER_RESULT_ACCESS_ALLOWLIST",
+    "EXTERNAL_PUSH_EFFECT_CONTINUATION_CONSUMER",
+    "GROUP_OPS_EXTERNAL_EFFECT_CONTINUATION_CONSUMER",
+    "IDENTITY_EXTERNAL_EFFECT_CONTINUATION_CONSUMER",
+    "QUESTIONNAIRE_EXTERNAL_EFFECT_CONTINUATION_CONSUMER",
     "build_external_effect_adapter_registry",
+    "build_external_effect_continuation_consumers",
     "build_external_effect_continuation_registry",
 ]

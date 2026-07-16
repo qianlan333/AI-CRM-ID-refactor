@@ -167,9 +167,13 @@ class InMemoryExternalEffectRepository(ExternalEffectRepository):
                 return _public_attempt(row)
         return None
 
-    def get_attempt_provider_result(self, attempt_id: str) -> dict[str, Any]:
+    def get_attempt_provider_result(self, attempt_id: str, *, job_id: int | None = None) -> dict[str, Any]:
         for row in self._attempts:
-            if _text(row.get("attempt_id")) == _text(attempt_id) and not row.get("provider_result_consumed_at"):
+            if (
+                _text(row.get("attempt_id")) == _text(attempt_id)
+                and (job_id is None or int(row.get("job_id") or 0) == int(job_id))
+                and not row.get("provider_result_consumed_at")
+            ):
                 return dict(row.get("provider_result_json") or {})
         return {}
 

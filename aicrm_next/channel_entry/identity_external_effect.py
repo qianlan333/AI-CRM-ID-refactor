@@ -273,6 +273,7 @@ IDENTITY_EXTERNAL_CONTACT_DETAIL_CONTINUATION = ExternalEffectContinuation(
     name="identity_external_contact_detail_continuation",
     matches=_matches,
     run=_run,
+    requires_provider_result=True,
 )
 
 

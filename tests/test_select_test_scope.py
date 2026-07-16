@@ -435,8 +435,18 @@ def test_external_effect_continuation_composition_has_a_permanent_full_ci_scope(
         "aicrm_next/external_effect_composition.py",
         "aicrm_next/automation_agents/external_effect_continuation.py",
         "aicrm_next/automation_agents/internal_webhook_adapter.py",
+        "aicrm_next/channel_entry/identity_external_effect.py",
+        "aicrm_next/external_push/external_effect_continuation.py",
+        "aicrm_next/internal_event_composition.py",
         "aicrm_next/questionnaire/external_effect_continuation.py",
+        "aicrm_next/platform_foundation/external_effects/completion_events.py",
         "aicrm_next/platform_foundation/external_effects/continuations.py",
+        "aicrm_next/platform_foundation/external_effects/provider_result_repository.py",
+        "aicrm_next/platform_foundation/external_effects/repo_contract.py",
+        "aicrm_next/platform_foundation/external_effects/repo_memory.py",
+        "deploy/openclaw-internal-event-worker.service",
+        "migrations/versions/0131_external_effect_continuation_fanout.py",
+        "tests/test_external_effect_completion_event.py",
         "tests/test_automation_agent_internal_webhook_adapter.py",
         "tests/test_external_effect_continuation_composition.py",
     )
@@ -444,6 +454,10 @@ def test_external_effect_continuation_composition_has_a_permanent_full_ci_scope(
     assert "external_effect_continuation_composition" in result["matched_scopes"]
     assert result["unmatched_files"] == []
     assert "tests/test_external_effect_continuation_composition.py" in result["python_tests"]
+    assert "tests/test_external_effect_completion_event.py" in result["python_tests"]
+    assert "tests/test_internal_event_registry_composition.py" in result["python_tests"]
+    assert "tests/test_database_bootstrap.py" in result["python_tests"]
+    assert "tests/test_alembic_revision_chain.py" in result["python_tests"]
     assert "tests/test_external_effects_mvp.py" in result["python_tests"]
     assert "tests/test_questionnaire_h5_final_tags_real_wecom.py" in result["python_tests"]
     assert "tests/test_automation_agents_webhook_execution.py" in result["python_tests"]

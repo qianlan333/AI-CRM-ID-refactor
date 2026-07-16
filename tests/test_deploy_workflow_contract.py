@@ -859,6 +859,13 @@ def test_internal_event_worker_systemd_units_are_deployable():
     assert "questionnaire.submitted:automation_questionnaire_consumer" in service
     assert "questionnaire.submitted:customer_summary_consumer" in service
     assert "external_effect.completed" in service
+    assert "external_effect.completed:external_effect_identity_continuation_consumer" in service
+    assert "external_effect.completed:external_effect_group_ops_continuation_consumer" in service
+    assert "external_effect.completed:external_effect_broadcast_continuation_consumer" in service
+    assert "external_effect.completed:external_effect_questionnaire_continuation_consumer" in service
+    assert "external_effect.completed:external_effect_external_push_continuation_consumer" in service
+    assert "external_effect.completed:external_effect_automation_continuation_consumer" in service
+    # Kept only while held pre-0131 runs may require an audited manual release.
     assert "external_effect.completed:external_effect_completion_continuation_consumer" in service
     assert "WorkingDirectory=/home/ubuntu/极简 crm" in service
     assert "ExecStart=/usr/bin/env" in service

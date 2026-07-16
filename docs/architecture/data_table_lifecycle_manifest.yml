@@ -1811,7 +1811,7 @@ tables:
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_event_effect_table_lineage.py
-    notes: Tracks consumer execution state for internal_event. Relay creates the exact manifest-declared set atomically; manifest-aware reconciliation may only restore missing declared rows without executing handlers. Automatic due is limited to pending, due failed_retryable, and stale running; failed_terminal/blocked require audited manual action. Revision 0125 makes available_at mandatory and constrains lane to internal_general or internal_financial.
+    notes: Tracks consumer execution state for internal_event. Relay creates the exact manifest-declared set atomically; manifest-aware reconciliation may only restore missing declared rows without executing handlers. Each external_effect.completed continuation owns an independent row and retry budget; predicate misses succeed as no-op, while the former first-match consumer name is a history-only handler alias excluded from new manifests. Revision 0131 holds and classifies all nonterminal work created under the former contract. Automatic due is limited to pending, due failed_retryable, and stale running; failed_terminal/blocked require audited manual action. Revision 0125 makes available_at mandatory and constrains lane to internal_general or internal_financial.
 
   internal_event_consumer_attempt:
     domain: internal_events
@@ -1830,7 +1830,7 @@ tables:
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_event_effect_table_lineage.py
-    notes: Attempt audit for internal_event_consumer_run. Unified timeline combines request/response summaries only and applies centralized sensitive-data redaction.
+    notes: Attempt audit for internal_event_consumer_run. external_effect.completed sibling attempts are independent, so one failed continuation cannot overwrite provider truth or a sibling result. Unified timeline combines request/response summaries only and applies centralized sensitive-data redaction; restricted provider payload is never copied into these summaries.
 
   queue_history_classification:
     domain: platform_foundation
@@ -1850,7 +1850,7 @@ tables:
       - tests/test_queue_history_freeze.py
       - tests/test_database_bootstrap.py
       - tests/test_data_table_lifecycle_guard.py
-    notes: Append-only classification of the exact pre-cutover rows. It stores queue kind, numeric row id, source status, classification and non-sensitive evidence only; update and delete are rejected by a database trigger, and no automatic release path exists.
+    notes: Append-only classification of the exact pre-cutover rows, including revision 0131 completion outbox and legacy first-match consumer work. It stores queue kind, numeric row id, source status, classification and non-sensitive evidence only; update and delete are rejected by a database trigger, and no automatic release path exists.
 
   queue_runtime_control:
     domain: platform_foundation
@@ -2040,7 +2040,7 @@ tables:
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_event_effect_table_lineage.py
-    notes: Append-only public attempt audit for external_effect_job execution. Provider result and job state are committed atomically under the active lease. Revision 0129 adds a repository-only restricted provider-result handoff; it is absent from ExternalEffectAttempt, Push Center, timeline, and admin API models, and is cleared after the idempotent local continuation receipt commits. Revision 0125 freezes a historical dispatching attempt as unknown_after_dispatch when its parent job has already left dispatching, recording historical_freeze_orphan evidence instead of replaying it. Unified timeline redacts combined request/response summaries before returning them.
+    notes: Append-only public attempt audit for external_effect_job execution. Provider result and job state are committed atomically under the active lease. Revision 0129 adds a repository-only restricted provider-result handoff; it is absent from ExternalEffectAttempt, Push Center, timeline, and admin API models, and is loaded only by the explicitly allowlisted identity continuation after predicate plus job/attempt/tenant linkage validation, then cleared after its idempotent local receipt commits. Revision 0125 freezes a historical dispatching attempt as unknown_after_dispatch when its parent job has already left dispatching, recording historical_freeze_orphan evidence instead of replaying it. Unified timeline redacts combined request/response summaries before returning them.
 
   owner_migration_import_sessions:
     domain: owner_migration

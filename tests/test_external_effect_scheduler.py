@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 
+from aicrm_next.external_effect_composition import build_external_effect_continuation_registry
 from aicrm_next.platform_foundation.command_bus import CommandContext
 from aicrm_next.platform_foundation.external_effects import (
     WEBHOOK_ORDER_PAID_PUSH,
@@ -128,11 +129,7 @@ def test_external_effect_worker_script_returns_nonzero_for_blocked_or_unknown(mo
     assert exit_code == 1
     assert payload["ok"] is False
     assert payload["counts"]["blocked_count"] == 1
-    assert captured["continuation_registry"].names == (
-        "questionnaire_contact_tags",
-        "external_push_delivery",
-        "automation_agent_audience_webhook",
-    )
+    assert captured["continuation_registry"].names == build_external_effect_continuation_registry().names
 
 
 def test_external_effect_scheduler_execute_scans_all_due_jobs_one_by_one(monkeypatch) -> None:
