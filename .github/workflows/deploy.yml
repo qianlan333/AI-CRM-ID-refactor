@@ -28,6 +28,7 @@ jobs:
       EXPECTED_DEPLOY_HOST: 49.232.57.128
       EXPECTED_SSH_HOST_FINGERPRINT: SHA256:NXSJUveGoNy1lDsa+eOKho1h0ythB+pKTyijv8/KfU0
       DEPLOY_TARGET: id-validation
+      RUNTIME_TARGET_ENVIRONMENT: production
       PUBLIC_BASE_URL: https://id-dev.youcangogogo.com
       PUBLIC_HEALTH_URL: https://id-dev.youcangogogo.com/health
       ALLOW_MISSING_WECHAT_SHOP_CALLBACK_TOKEN: "0"
@@ -40,6 +41,7 @@ jobs:
           test "$GITHUB_REPOSITORY" = "$EXPECTED_REPOSITORY"
           test "$DEPLOY_HOST" = "$EXPECTED_DEPLOY_HOST"
           test "$DEPLOY_TARGET" = "id-validation"
+          test "$RUNTIME_TARGET_ENVIRONMENT" = "production"
           test "$PUBLIC_BASE_URL" = "https://id-dev.youcangogogo.com"
           test "$PUBLIC_HEALTH_URL" = "https://id-dev.youcangogogo.com/health"
 
@@ -237,6 +239,7 @@ jobs:
             release_provenance_tmp=""
             cd '/home/ubuntu/极简 crm'
             deploy_target="${{ env.DEPLOY_TARGET }}"
+            runtime_target_environment="${{ env.RUNTIME_TARGET_ENVIRONMENT }}"
             expected_repository="${{ env.EXPECTED_REPOSITORY }}"
             release_repository="${{ github.repository }}"
             release_run_id="${{ github.run_id }}"
@@ -249,6 +252,10 @@ jobs:
             fi
             if [ "$deploy_target" != "id-validation" ]; then
               echo "deployment target does not match the immutable ID validation environment"
+              exit 1
+            fi
+            if [ "$runtime_target_environment" != "production" ]; then
+              echo "runtime target does not match the production data environment"
               exit 1
             fi
             remote_origin_url="$(git remote get-url origin)"
@@ -519,7 +526,7 @@ jobs:
             fi
             python3 -m scripts.ops.ensure_runtime_environment \
               --environment-file /home/ubuntu/.openclaw-wecom-pg.env \
-              --target-environment "$deploy_target" \
+              --target-environment "$runtime_target_environment" \
               --public-base-url "$auth_issuer" \
               "${runtime_environment_args[@]}"
             set -a
