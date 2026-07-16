@@ -13,11 +13,22 @@ if str(ROOT) not in sys.path:
 
 from aicrm_next.platform_foundation.execution_runtime.cutover import (
     CANONICAL_RUNTIME_SERVICES,
+    PR3_LEGACY_PERSISTENT_SERVICES,
+    PR3_LEGACY_TIMER_OWNERS,
+    PR3_OWNER_INVENTORY_NAME,
+    PR3_REPLACEMENT_TIMER_OWNERS,
 )
 
 
 INVARIANT_SERVICE = "aicrm-queue-invariant-check.service"
 INVARIANT_TIMER = "aicrm-queue-invariant-check.timer"
+AI_AUDIENCE_DAILY_SERVICE = "aicrm-ai-audience-daily-intent.service"
+AI_AUDIENCE_DAILY_TIMER = "aicrm-ai-audience-daily-intent.timer"
+FORBIDDEN_PROVIDER_OWNER_TOKENS = (
+    "run_external_effect_queue_worker.py --execute",
+    "AICRM_GROUP_OPS_MATERIAL_UPLOAD_MODE=real",
+    "AICRM_INTERNAL_EVENT_RELAY_ROLE=owner",
+)
 
 
 def collect_errors(root: Path = ROOT) -> list[str]:
@@ -60,6 +71,23 @@ def collect_errors(root: Path = ROOT) -> list[str]:
     manifest = json.loads(
         (root / "deploy" / "production_runtime_units.json").read_text(encoding="utf-8")
     )
+    if manifest.get("schema_version") != 3:
+        errors.append("production runtime manifest must use cutover-aware schema_version 3")
+    cutover = manifest.get("cutover_managed_legacy") or {}
+    actual_timer_owners = tuple(
+        (str(item.get("timer") or ""), str(item.get("service") or ""))
+        for item in cutover.get("timers") or []
+    )
+    actual_persistent = tuple(
+        str(item.get("service") or "")
+        for item in cutover.get("persistent_services") or []
+    )
+    if str(cutover.get("owner_inventory") or "") != PR3_OWNER_INVENTORY_NAME:
+        errors.append("production runtime manifest must declare the reviewed PR-3 owner inventory")
+    if actual_timer_owners != PR3_LEGACY_TIMER_OWNERS:
+        errors.append("cutover_managed_legacy timer owners must exactly match the reviewed PR-3 inventory")
+    if actual_persistent != PR3_LEGACY_PERSISTENT_SERVICES:
+        errors.append("cutover_managed_legacy persistent owners must exactly match the reviewed PR-3 inventory")
     active_services = [
         str(item.get("service") or "")
         for item in manifest.get("active_services") or []
@@ -67,6 +95,42 @@ def collect_errors(root: Path = ROOT) -> list[str]:
     ]
     if set(active_services) != expected or len(active_services) != len(expected):
         errors.append("production runtime manifest must own each canonical queue service exactly once")
+    active_timer_pairs = {
+        (str(item.get("timer") or ""), str(item.get("service") or ""))
+        for item in manifest.get("active_autostart") or []
+    }
+    active_service_names = {
+        str(item.get("service") or "")
+        for item in manifest.get("active_services") or []
+    } | {service for _timer, service in active_timer_pairs}
+    legacy_units = {
+        unit
+        for timer, service in PR3_LEGACY_TIMER_OWNERS
+        for unit in (timer, service)
+    } | set(PR3_LEGACY_PERSISTENT_SERVICES)
+    active_units = {timer for timer, _service in active_timer_pairs} | active_service_names
+    overlap = sorted(legacy_units & active_units)
+    if overlap:
+        errors.append(f"reviewed PR-3 old owners must never return to active runtime lists: {overlap}")
+    replacement = manifest.get("cutover_replacement_autostart") or {}
+    replacement_pairs = tuple(
+        (str(item.get("timer") or ""), str(item.get("service") or ""))
+        for item in replacement.get("timers") or []
+    )
+    if str(replacement.get("owner_inventory") or "") != PR3_OWNER_INVENTORY_NAME:
+        errors.append("cutover replacement timers must use the reviewed PR-3 owner inventory")
+    if replacement_pairs != PR3_REPLACEMENT_TIMER_OWNERS:
+        errors.append("cutover replacement timers must exactly match the reviewed PR-3 inventory")
+    if (AI_AUDIENCE_DAILY_TIMER, AI_AUDIENCE_DAILY_SERVICE) in active_timer_pairs:
+        errors.append("the 02:00 AI Audience replacement timer must not autostart before cutover")
+    for service in sorted(active_service_names):
+        path = root / "deploy" / service
+        if not path.exists():
+            continue
+        body = path.read_text(encoding="utf-8")
+        for token in FORBIDDEN_PROVIDER_OWNER_TOKENS:
+            if token in body:
+                errors.append(f"deploy/{service}: active service contains forbidden old-owner provider token: {token}")
     invariant_entries = [
         item
         for item in manifest.get("active_autostart") or []
@@ -94,7 +158,12 @@ def collect_errors(root: Path = ROOT) -> list[str]:
     for token in (
         "AICRM_QUEUE_RUNTIME_EXECUTE=1",
         "AICRM_QUEUE_RUNTIME_TEST_ONLY=1",
+        "AICRM_QUEUE_CUTOVER_COMMITTED=",
         "ACTIVATE_QUEUE_GENERATION_",
+        "--owner-inventory",
+        "PR3_LEGACY_TIMER_OWNERS",
+        "verify_single_owner",
+        "activate_post_cutover_replacements",
     ):
         if token not in cutover_source:
             errors.append(f"generation cutover is missing a fail-closed activation token: {token}")

@@ -21,6 +21,9 @@ from aicrm_next.platform_foundation.execution_runtime.cutover import (
 from aicrm_next.platform_foundation.execution_runtime.invariants import (
     QueueRuntimeInvariantChecker,
 )
+from aicrm_next.platform_foundation.execution_runtime.repository import (
+    ExecutionRuntimeRepository,
+)
 from aicrm_next.platform_foundation.execution_runtime.listener import (
     PostgresQueueWakeListener,
 )
@@ -120,6 +123,346 @@ def test_generation_cas_failure_does_not_change_lane_policy() -> None:
         ).fetchone()
     assert lane["rollout_mode"] == "standby"
     assert lane["updated_reason"] == "cutover test reset"
+
+
+def test_generation_cutover_freezes_fifty_unheld_legacy_media_rows_before_claims_open() -> None:
+    with _connect() as connection:
+        connection.execute(
+            """
+            INSERT INTO external_effect_job (
+                effect_type, adapter_name, operation, target_type, target_id,
+                idempotency_key, execution_mode, status, lane, available_at,
+                ordering_key, fairness_key, rate_scope_key, policy_version,
+                execution_id, created_at
+            )
+            SELECT
+                'wecom.media.upload', 'wecom', 'upload', 'media', sequence::TEXT,
+                'pr3-freeze-media-' || sequence::TEXT, 'real', 'queued',
+                'wecom_media', CURRENT_TIMESTAMP,
+                'pr3-media-' || sequence::TEXT, 'pr3-freeze', 'wecom:test:media',
+                'queue-v1', 'exe-pr3-freeze-' || sequence::TEXT, CURRENT_TIMESTAMP
+            FROM generate_series(1, 50) AS sequence
+            """
+        )
+        connection.execute(
+            """
+            INSERT INTO external_effect_job (
+                effect_type, adapter_name, operation, target_type, target_id,
+                idempotency_key, execution_mode, status, lane, available_at,
+                ordering_key, fairness_key, rate_scope_key, policy_version,
+                execution_id, created_at
+            ) VALUES (
+                'wecom.media.upload', 'wecom', 'upload', 'media', 'after-cutoff',
+                'pr3-freeze-media-after-cutoff', 'real', 'queued', 'wecom_media',
+                CURRENT_TIMESTAMP + INTERVAL '1 hour', 'pr3-media-after-cutoff',
+                'pr3-freeze', 'wecom:test:media', 'queue-v1',
+                'exe-pr3-freeze-after-cutoff', CURRENT_TIMESTAMP + INTERVAL '1 hour'
+            )
+            """
+        )
+
+    activation = RuntimeGenerationRepository(_database_url()).activate_generation(
+        expected_generation=0,
+        target_generation=71,
+        expected_policy_version="queue-v1",
+        lanes=("wecom_media",),
+        actor="pytest",
+        reason="freeze pre-cutover media backlog",
+    )
+
+    assert activation.freeze is not None
+    assert activation.freeze.freeze_revision == "pr3_generation_71"
+    assert dict(activation.freeze.counts)["external_effect"] == 50
+    with _connect() as connection:
+        held = connection.execute(
+            """
+            SELECT COUNT(*)::BIGINT AS count
+            FROM external_effect_job
+            WHERE idempotency_key LIKE 'pr3-freeze-media-%'
+              AND idempotency_key <> 'pr3-freeze-media-after-cutoff'
+              AND hold_reason = 'history_frozen_at_pr3_generation_71'
+            """
+        ).fetchone()
+        audit = connection.execute(
+            """
+            SELECT COUNT(*)::BIGINT AS count
+            FROM queue_history_classification audit
+            JOIN external_effect_job job ON job.id = audit.queue_row_id
+            WHERE audit.freeze_revision = 'pr3_generation_71'
+              AND audit.queue_kind = 'external_effect'
+              AND audit.classification = 'safe_pre_provider'
+              AND job.idempotency_key LIKE 'pr3-freeze-media-%'
+              AND audit.evidence_json ->> 'actor' = 'pytest'
+              AND audit.evidence_json ->> 'reason' = 'freeze pre-cutover media backlog'
+              AND audit.evidence_json ? 'cutoff_at'
+            """
+        ).fetchone()
+        after_cutoff = connection.execute(
+            """
+            SELECT hold_reason
+            FROM external_effect_job
+            WHERE idempotency_key = 'pr3-freeze-media-after-cutoff'
+            """
+        ).fetchone()
+    assert held["count"] == 50
+    assert audit["count"] == 50
+    assert after_cutoff["hold_reason"] == ""
+    assert (
+        ExecutionRuntimeRepository(_database_url()).claim_external_effect_one(
+            lane="wecom_media",
+            worker_id="pytest-cutover",
+            generation=71,
+        )
+        is None
+    )
+
+
+def test_generation_cutover_quarantines_ambiguous_provider_boundary() -> None:
+    with _connect() as connection:
+        job = connection.execute(
+            """
+            INSERT INTO external_effect_job (
+                effect_type, adapter_name, operation, target_type, target_id,
+                idempotency_key, execution_mode, status, lane, available_at,
+                ordering_key, fairness_key, rate_scope_key, policy_version,
+                execution_id, dispatch_started_at, provider_call_started_at
+            ) VALUES (
+                'wecom.media.upload', 'wecom', 'upload', 'media', 'ambiguous',
+                'pr3-provider-boundary-ambiguous', 'real', 'dispatching',
+                'wecom_media', CURRENT_TIMESTAMP, 'pr3-ambiguous', 'pr3-freeze',
+                'wecom:test:media', 'queue-v1', 'exe-pr3-ambiguous',
+                CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+            ) RETURNING id
+            """
+        ).fetchone()
+
+    RuntimeGenerationRepository(_database_url()).activate_generation(
+        expected_generation=0,
+        target_generation=72,
+        expected_policy_version="queue-v1",
+        lanes=("wecom_media",),
+        actor="pytest",
+        reason="quarantine ambiguous provider boundary",
+    )
+
+    with _connect() as connection:
+        persisted = connection.execute(
+            """
+            SELECT status, hold_reason, reconciliation_required
+            FROM external_effect_job
+            WHERE id = %s
+            """,
+            (job["id"],),
+        ).fetchone()
+        audit = connection.execute(
+            """
+            SELECT classification, evidence_json
+            FROM queue_history_classification
+            WHERE freeze_revision = 'pr3_generation_72'
+              AND queue_kind = 'external_effect'
+              AND queue_row_id = %s
+            """,
+            (job["id"],),
+        ).fetchone()
+    assert persisted == {
+        "status": "unknown_after_dispatch",
+        "hold_reason": "provider_boundary_quarantine_at_pr3_generation_72",
+        "reconciliation_required": True,
+    }
+    assert audit["classification"] == "inconsistent_quarantine"
+    assert audit["evidence_json"]["provider_boundary_started"] is True
+
+
+def test_generation_cutover_freezes_all_four_durable_queue_kinds_at_one_cutoff() -> None:
+    key = uuid4().hex
+    with _connect() as connection:
+        external = connection.execute(
+            """
+            INSERT INTO external_effect_job (
+                effect_type, adapter_name, operation, target_type, target_id,
+                idempotency_key, execution_mode, status, lane, available_at,
+                ordering_key, fairness_key, rate_scope_key, policy_version,
+                execution_id
+            ) VALUES (
+                'wecom.media.upload', 'wecom', 'upload', 'media', %s,
+                %s, 'real', 'queued', 'wecom_media', CURRENT_TIMESTAMP,
+                %s, 'pytest', 'wecom:test:media', 'queue-v1', %s
+            ) RETURNING id
+            """,
+            (key, f"external-{key}", f"external-{key}", f"exe-external-{key}"),
+        ).fetchone()
+        connection.execute(
+            """
+            INSERT INTO internal_event (
+                event_id, event_type, aggregate_type, aggregate_id,
+                idempotency_key, execution_id
+            ) VALUES (%s, 'test.pr3.freeze', 'test', %s, %s, %s)
+            """,
+            (f"iev_{key}", key, f"event-{key}", f"exe-event-{key}"),
+        )
+        consumer = connection.execute(
+            """
+            INSERT INTO internal_event_consumer_run (
+                event_id, consumer_name, status, execution_id,
+                parent_execution_id, lane, available_at,
+                ordering_key, fairness_key, policy_version
+            ) VALUES (
+                %s, 'pytest_pr3_freeze', 'pending', %s, %s,
+                'internal_general', CURRENT_TIMESTAMP, %s, 'pytest', 'queue-v1'
+            ) RETURNING id
+            """,
+            (f"iev_{key}", f"exe-run-{key}", f"exe-event-{key}", f"run-{key}"),
+        ).fetchone()
+        outbox = connection.execute(
+            """
+            INSERT INTO internal_event_outbox (
+                outbox_id, event_type, aggregate_type, aggregate_id,
+                idempotency_key, execution_id, lane, available_at,
+                ordering_key, fairness_key, policy_version
+            ) VALUES (
+                %s, 'test.pr3.freeze', 'test', %s, %s, %s,
+                'internal_financial', CURRENT_TIMESTAMP, %s, 'pytest', 'queue-v1'
+            ) RETURNING id
+            """,
+            (f"ieo_{key}", key, f"outbox-{key}", f"exe-outbox-{key}", f"outbox-{key}"),
+        ).fetchone()
+        inbox = connection.execute(
+            """
+            INSERT INTO webhook_inbox (
+                provider, event_family, route, idempotency_key,
+                execution_id, lane, available_at, ordering_key,
+                fairness_key, policy_version
+            ) VALUES (
+                'pytest', 'test', '/tests/pr3-freeze', %s, %s,
+                'webhook_inbox', CURRENT_TIMESTAMP, %s, 'pytest', 'queue-v1'
+            ) RETURNING id
+            """,
+            (f"inbox-{key}", f"exe-inbox-{key}", f"inbox-{key}"),
+        ).fetchone()
+        future_inbox = connection.execute(
+            """
+            INSERT INTO webhook_inbox (
+                provider, event_family, route, idempotency_key,
+                execution_id, lane, available_at, received_at, ordering_key,
+                fairness_key, policy_version
+            ) VALUES (
+                'pytest', 'test', '/tests/pr3-freeze-future', %s, %s,
+                'webhook_inbox', CURRENT_TIMESTAMP + INTERVAL '1 hour',
+                CURRENT_TIMESTAMP + INTERVAL '1 hour', %s, 'pytest', 'queue-v1'
+            ) RETURNING id
+            """,
+            (f"inbox-future-{key}", f"exe-inbox-future-{key}", f"inbox-future-{key}"),
+        ).fetchone()
+
+    activation = RuntimeGenerationRepository(_database_url()).activate_generation(
+        expected_generation=0,
+        target_generation=74,
+        expected_policy_version="queue-v1",
+        lanes=("internal_general", "internal_financial", "webhook_inbox", "wecom_media"),
+        actor="pytest",
+        reason="freeze all four durable queue facts",
+    )
+
+    assert activation.freeze is not None
+    assert dict(activation.freeze.counts) == {
+        "external_effect": 1,
+        "internal_event_consumer": 1,
+        "internal_event_outbox": 1,
+        "webhook_inbox": 1,
+    }
+    with _connect() as connection:
+        classifications = connection.execute(
+            """
+            SELECT queue_kind, classification, evidence_json ->> 'cutoff_at' AS cutoff_at
+            FROM queue_history_classification
+            WHERE freeze_revision = 'pr3_generation_74'
+            ORDER BY queue_kind
+            """
+        ).fetchall()
+        held = {
+            "external": connection.execute(
+                "SELECT hold_reason FROM external_effect_job WHERE id = %s",
+                (external["id"],),
+            ).fetchone()["hold_reason"],
+            "consumer": connection.execute(
+                "SELECT hold_reason FROM internal_event_consumer_run WHERE id = %s",
+                (consumer["id"],),
+            ).fetchone()["hold_reason"],
+            "outbox": connection.execute(
+                "SELECT hold_reason FROM internal_event_outbox WHERE id = %s",
+                (outbox["id"],),
+            ).fetchone()["hold_reason"],
+            "inbox": connection.execute(
+                "SELECT hold_reason FROM webhook_inbox WHERE id = %s",
+                (inbox["id"],),
+            ).fetchone()["hold_reason"],
+            "future_inbox": connection.execute(
+                "SELECT hold_reason FROM webhook_inbox WHERE id = %s",
+                (future_inbox["id"],),
+            ).fetchone()["hold_reason"],
+        }
+    assert [row["queue_kind"] for row in classifications] == [
+        "external_effect",
+        "internal_event_consumer",
+        "internal_event_outbox",
+        "webhook_inbox",
+    ]
+    assert {row["classification"] for row in classifications} == {"safe_pre_provider"}
+    assert len({row["cutoff_at"] for row in classifications}) == 1
+    assert held == {
+        "external": "history_frozen_at_pr3_generation_74",
+        "consumer": "history_frozen_at_pr3_generation_74",
+        "outbox": "history_frozen_at_pr3_generation_74",
+        "inbox": "history_frozen_at_pr3_generation_74",
+        "future_inbox": "",
+    }
+
+
+def test_generation_cutover_freeze_rolls_back_with_failed_final_cas_precondition() -> None:
+    with _connect() as connection:
+        job = connection.execute(
+            """
+            INSERT INTO external_effect_job (
+                effect_type, adapter_name, operation, target_type, target_id,
+                idempotency_key, execution_mode, status, lane, available_at,
+                ordering_key, fairness_key, rate_scope_key, policy_version,
+                execution_id
+            ) VALUES (
+                'wecom.media.upload', 'wecom', 'upload', 'media', 'rollback',
+                'pr3-freeze-rollback', 'real', 'queued', 'wecom_media',
+                CURRENT_TIMESTAMP, 'pr3-rollback', 'pr3-freeze',
+                'wecom:test:media', 'queue-v1', 'exe-pr3-freeze-rollback'
+            ) RETURNING id
+            """
+        ).fetchone()
+        connection.execute(
+            "UPDATE queue_lane_policy SET enabled = FALSE WHERE lane = 'wecom_media'"
+        )
+
+    with pytest.raises(GenerationCASConflict, match="disabled"):
+        RuntimeGenerationRepository(_database_url()).activate_generation(
+            expected_generation=0,
+            target_generation=73,
+            expected_policy_version="queue-v1",
+            lanes=("wecom_media",),
+            actor="pytest",
+            reason="prove freeze and CAS rollback together",
+        )
+
+    with _connect() as connection:
+        persisted = connection.execute(
+            "SELECT hold_reason FROM external_effect_job WHERE id = %s",
+            (job["id"],),
+        ).fetchone()
+        audit = connection.execute(
+            "SELECT COUNT(*)::BIGINT AS count FROM queue_history_classification WHERE freeze_revision = 'pr3_generation_73'"
+        ).fetchone()
+        control = connection.execute(
+            "SELECT active_generation, claim_enabled FROM queue_runtime_control WHERE singleton = TRUE"
+        ).fetchone()
+    assert persisted["hold_reason"] == ""
+    assert audit["count"] == 0
+    assert control == {"active_generation": 0, "claim_enabled": False}
 
 
 def test_command_cas_makes_target_due_writes_audit_intent_and_notifies_lane() -> None:

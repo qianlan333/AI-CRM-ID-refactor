@@ -237,6 +237,40 @@ def _runtime_units(root: Path) -> list[dict[str, Any]]:
                 "kick_failure_fatal": bool(item.get("kick_failure_fatal", False)),
             }
         )
+    replacement = manifest.get("cutover_replacement_autostart") or {}
+    replacement_inventory = str(replacement.get("owner_inventory") or "")
+    for item in replacement.get("timers", []) or []:
+        units.append(
+            {
+                "unit": str(item["timer"]),
+                "kind": "timer",
+                "state": "cutover_replacement_autostart",
+                "service": str(item["service"]),
+                "owner_inventory": replacement_inventory,
+            }
+        )
+    cutover = manifest.get("cutover_managed_legacy") or {}
+    owner_inventory = str(cutover.get("owner_inventory") or "")
+    for item in cutover.get("timers", []) or []:
+        units.append(
+            {
+                "unit": str(item["timer"]),
+                "kind": "timer",
+                "state": "cutover_managed_legacy",
+                "service": str(item["service"]),
+                "owner_inventory": owner_inventory,
+            }
+        )
+    for item in cutover.get("persistent_services", []) or []:
+        units.append(
+            {
+                "unit": str(item["service"]),
+                "kind": "service",
+                "state": "cutover_managed_legacy",
+                "owner_inventory": owner_inventory,
+                "persistent": True,
+            }
+        )
     for item in manifest.get("approval_required", []) or []:
         if not isinstance(item, dict):
             raise ValueError("approval_required runtime units must declare timer and service")

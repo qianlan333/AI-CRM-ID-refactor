@@ -15,6 +15,22 @@ CANONICAL_RUNTIME_SERVICES = (
     "aicrm-inbox-queue-runtime.service",
     "aicrm-external-queue-runtime.service",
 )
+PR3_OWNER_INVENTORY_NAME = "pr3"
+PR3_LEGACY_TIMER_OWNERS = (
+    ("openclaw-internal-event-worker.timer", "openclaw-internal-event-worker.service"),
+    ("openclaw-external-effect-worker.timer", "openclaw-external-effect-worker.service"),
+    ("openclaw-broadcast-queue-worker.timer", "openclaw-broadcast-queue-worker.service"),
+    ("openclaw-ai-audience-scheduler.timer", "openclaw-ai-audience-scheduler.service"),
+    ("openclaw-identity-resolution-worker.timer", "openclaw-identity-resolution-worker.service"),
+    ("openclaw-customer-read-model-refresh.timer", "openclaw-customer-read-model-refresh.service"),
+    ("openclaw-automation-ops-scheduler.timer", "openclaw-automation-ops-scheduler.service"),
+)
+PR3_LEGACY_PERSISTENT_SERVICES = (
+    "openclaw-wecom-callback-inbox-worker.service",
+)
+PR3_REPLACEMENT_TIMER_OWNERS = (
+    ("aicrm-ai-audience-daily-intent.timer", "aicrm-ai-audience-daily-intent.service"),
+)
 REQUIRED_RUNTIME_HEARTBEATS = (
     "aicrm-internal_event-runtime",
     "aicrm-internal_outbox-runtime",
@@ -49,6 +65,14 @@ class GenerationActivation:
     before: GenerationState
     after: GenerationState
     activated_lanes: tuple[str, ...]
+    freeze: CutoverFreeze | None = None
+
+
+@dataclass(frozen=True)
+class CutoverFreeze:
+    freeze_revision: str
+    cutoff_at: datetime
+    counts: tuple[tuple[str, int], ...]
 
 
 class GenerationCASConflict(RuntimeError):
@@ -153,6 +177,12 @@ class RuntimeGenerationRepository:
                     raise GenerationCASConflict(
                         "generation activation precondition changed before the CAS"
                     )
+                freeze = self._freeze_legacy_rows(
+                    connection,
+                    target_generation=target,
+                    actor=normalized_actor,
+                    reason=normalized_reason,
+                )
                 lane_rows = connection.execute(
                     """
                     SELECT lane, enabled, rollout_mode, blocked_until, policy_version
@@ -225,6 +255,7 @@ class RuntimeGenerationRepository:
             before=before,
             after=self._state(after_row),
             activated_lanes=normalized_lanes,
+            freeze=freeze,
         )
 
     def disable_claims(
@@ -285,6 +316,251 @@ class RuntimeGenerationRepository:
         return frozenset(str(row.get("service_name") or "") for row in rows)
 
     @staticmethod
+    def _freeze_legacy_rows(
+        connection: Any,
+        *,
+        target_generation: int,
+        actor: str,
+        reason: str,
+    ) -> CutoverFreeze:
+        revision = f"pr3_generation_{int(target_generation)}"
+        hold_reason = f"history_frozen_at_{revision}"
+        quarantine_reason = f"provider_boundary_quarantine_at_{revision}"
+        cutoff_row = connection.execute(
+            "SELECT CURRENT_TIMESTAMP AS cutoff_at"
+        ).fetchone()
+        cutoff_at = dict(cutoff_row or {}).get("cutoff_at")
+        if not isinstance(cutoff_at, datetime):
+            raise RuntimeError("database cutoff timestamp is missing")
+
+        connection.execute(
+            """
+            INSERT INTO queue_history_classification (
+                freeze_revision, queue_kind, queue_row_id, source_status,
+                classification, hold_reason, evidence_json
+            )
+            SELECT
+                %s, 'external_effect', job.id, job.status,
+                CASE
+                    WHEN job.provider_call_started_at IS NOT NULL
+                      OR job.status IN ('dispatching', 'unknown_after_dispatch')
+                      OR (
+                          job.dispatch_started_at IS NOT NULL
+                          AND job.provider_result_received = FALSE
+                      )
+                        THEN 'inconsistent_quarantine'
+                    WHEN job.attempt_count >= job.max_attempts
+                        THEN 'inconsistent_quarantine'
+                    WHEN job.status = 'failed_retryable'
+                      AND job.reconciliation_required = FALSE
+                      AND (job.side_effect_executed = FALSE OR job.provider_result_received = TRUE)
+                        THEN 'safe_retryable'
+                    WHEN job.status IN ('planned', 'approved', 'queued')
+                      AND job.last_attempt_id = ''
+                      AND job.side_effect_executed = FALSE
+                        THEN 'safe_pre_provider'
+                    ELSE 'ambiguous_hold'
+                END,
+                CASE
+                    WHEN job.provider_call_started_at IS NOT NULL
+                      OR job.status IN ('dispatching', 'unknown_after_dispatch')
+                      OR (
+                          job.dispatch_started_at IS NOT NULL
+                          AND job.provider_result_received = FALSE
+                      )
+                        THEN %s
+                    ELSE %s
+                END,
+                jsonb_build_object(
+                    'actor', %s::TEXT,
+                    'reason', %s::TEXT,
+                    'cutoff_at', %s::TIMESTAMPTZ,
+                    'attempt_count', job.attempt_count,
+                    'max_attempts', job.max_attempts,
+                    'provider_boundary_started', (
+                        job.provider_call_started_at IS NOT NULL
+                        OR job.status IN ('dispatching', 'unknown_after_dispatch')
+                        OR (
+                            job.dispatch_started_at IS NOT NULL
+                            AND job.provider_result_received = FALSE
+                        )
+                    ),
+                    'provider_call_started_at', job.provider_call_started_at,
+                    'provider_result_received', job.provider_result_received,
+                    'reconciliation_required', job.reconciliation_required
+                )
+            FROM external_effect_job job
+            WHERE job.hold_reason = ''
+              AND job.created_at <= %s
+              AND job.status IN (
+                  'planned', 'approved', 'queued', 'dispatching',
+                  'failed_retryable', 'unknown_after_dispatch'
+              )
+            ON CONFLICT (freeze_revision, queue_kind, queue_row_id) DO NOTHING
+            """,
+            (
+                revision,
+                quarantine_reason,
+                hold_reason,
+                actor,
+                reason,
+                cutoff_at,
+                cutoff_at,
+            ),
+        )
+        connection.execute(
+            """
+            INSERT INTO queue_history_classification (
+                freeze_revision, queue_kind, queue_row_id, source_status,
+                classification, hold_reason, evidence_json
+            )
+            SELECT
+                %s, 'internal_event_consumer', run.id, run.status,
+                CASE
+                    WHEN run.status = 'running' THEN 'ambiguous_hold'
+                    WHEN run.attempt_count >= run.max_attempts THEN 'inconsistent_quarantine'
+                    WHEN run.status = 'failed_retryable' THEN 'safe_retryable'
+                    WHEN run.status = 'pending' AND run.attempt_count = 0 THEN 'safe_pre_provider'
+                    ELSE 'ambiguous_hold'
+                END,
+                %s,
+                jsonb_build_object(
+                    'actor', %s::TEXT,
+                    'reason', %s::TEXT,
+                    'cutoff_at', %s::TIMESTAMPTZ,
+                    'attempt_count', run.attempt_count,
+                    'max_attempts', run.max_attempts,
+                    'provider_boundary_started', FALSE,
+                    'had_active_lease', run.lease_token <> '' OR run.locked_at IS NOT NULL
+                )
+            FROM internal_event_consumer_run run
+            WHERE run.hold_reason = ''
+              AND run.created_at <= %s
+              AND run.status IN ('pending', 'running', 'failed_retryable')
+            ON CONFLICT (freeze_revision, queue_kind, queue_row_id) DO NOTHING
+            """,
+            (revision, hold_reason, actor, reason, cutoff_at, cutoff_at),
+        )
+        connection.execute(
+            """
+            INSERT INTO queue_history_classification (
+                freeze_revision, queue_kind, queue_row_id, source_status,
+                classification, hold_reason, evidence_json
+            )
+            SELECT
+                %s, 'internal_event_outbox', outbox.id, outbox.status,
+                CASE
+                    WHEN outbox.status = 'running' THEN 'ambiguous_hold'
+                    WHEN outbox.attempt_count >= outbox.max_attempts THEN 'inconsistent_quarantine'
+                    WHEN outbox.status = 'failed_retryable' THEN 'safe_retryable'
+                    WHEN outbox.status = 'pending' AND outbox.attempt_count = 0 THEN 'safe_pre_provider'
+                    ELSE 'ambiguous_hold'
+                END,
+                %s,
+                jsonb_build_object(
+                    'actor', %s::TEXT,
+                    'reason', %s::TEXT,
+                    'cutoff_at', %s::TIMESTAMPTZ,
+                    'attempt_count', outbox.attempt_count,
+                    'max_attempts', outbox.max_attempts,
+                    'provider_boundary_started', FALSE,
+                    'had_active_lease', outbox.lease_token <> '' OR outbox.locked_at IS NOT NULL
+                )
+            FROM internal_event_outbox outbox
+            WHERE outbox.hold_reason = ''
+              AND outbox.occurred_at <= %s
+              AND outbox.status IN ('pending', 'running', 'failed_retryable')
+            ON CONFLICT (freeze_revision, queue_kind, queue_row_id) DO NOTHING
+            """,
+            (revision, hold_reason, actor, reason, cutoff_at, cutoff_at),
+        )
+        connection.execute(
+            """
+            INSERT INTO queue_history_classification (
+                freeze_revision, queue_kind, queue_row_id, source_status,
+                classification, hold_reason, evidence_json
+            )
+            SELECT
+                %s, 'webhook_inbox', inbox.id, inbox.status,
+                CASE
+                    WHEN inbox.status = 'processing' THEN 'ambiguous_hold'
+                    WHEN inbox.attempt_count >= inbox.max_attempts THEN 'inconsistent_quarantine'
+                    WHEN inbox.status = 'failed_retryable' THEN 'safe_retryable'
+                    WHEN inbox.status = 'received' AND inbox.attempt_count = 0 THEN 'safe_pre_provider'
+                    ELSE 'ambiguous_hold'
+                END,
+                %s,
+                jsonb_build_object(
+                    'actor', %s::TEXT,
+                    'reason', %s::TEXT,
+                    'cutoff_at', %s::TIMESTAMPTZ,
+                    'attempt_count', inbox.attempt_count,
+                    'max_attempts', inbox.max_attempts,
+                    'provider_boundary_started', FALSE,
+                    'had_active_lock', inbox.locked_at IS NOT NULL
+                )
+            FROM webhook_inbox inbox
+            WHERE inbox.hold_reason = ''
+              AND inbox.received_at <= %s
+              AND inbox.status IN ('received', 'processing', 'failed_retryable')
+            ON CONFLICT (freeze_revision, queue_kind, queue_row_id) DO NOTHING
+            """,
+            (revision, hold_reason, actor, reason, cutoff_at, cutoff_at),
+        )
+
+        for table_name, queue_kind in (
+            ("external_effect_job", "external_effect"),
+            ("internal_event_consumer_run", "internal_event_consumer"),
+            ("internal_event_outbox", "internal_event_outbox"),
+            ("webhook_inbox", "webhook_inbox"),
+        ):
+            connection.execute(
+                f"""
+                UPDATE {table_name} target
+                SET hold_reason = audit.hold_reason,
+                    hold_at = %s
+                FROM queue_history_classification audit
+                WHERE audit.freeze_revision = %s
+                  AND audit.queue_kind = %s
+                  AND audit.queue_row_id = target.id
+                  AND target.hold_reason = ''
+                """,
+                (cutoff_at, revision, queue_kind),
+            )
+        connection.execute(
+            """
+            UPDATE external_effect_job target
+            SET status = 'unknown_after_dispatch',
+                reconciliation_required = TRUE
+            FROM queue_history_classification audit
+            WHERE audit.freeze_revision = %s
+              AND audit.queue_kind = 'external_effect'
+              AND audit.queue_row_id = target.id
+              AND audit.classification = 'inconsistent_quarantine'
+              AND COALESCE((audit.evidence_json ->> 'provider_boundary_started')::BOOLEAN, FALSE)
+            """,
+            (revision,),
+        )
+        rows = connection.execute(
+            """
+            SELECT queue_kind, COUNT(*)::BIGINT AS count
+            FROM queue_history_classification
+            WHERE freeze_revision = %s
+            GROUP BY queue_kind
+            ORDER BY queue_kind
+            """,
+            (revision,),
+        ).fetchall()
+        return CutoverFreeze(
+            freeze_revision=revision,
+            cutoff_at=cutoff_at,
+            counts=tuple(
+                (str(row.get("queue_kind") or ""), int(row.get("count") or 0))
+                for row in rows
+            ),
+        )
+
+    @staticmethod
     def _generation(value: int, *, allow_zero: bool) -> int:
         generation = int(value)
         if generation < 0 or (generation == 0 and not allow_zero):
@@ -318,6 +594,19 @@ class QueueRuntimeLifecycle(Protocol):
     def wait_legacy_services_drained(self, units: Sequence[str], timeout_seconds: int) -> None: ...
 
     def retire_legacy_units(self, units: Sequence[str]) -> None: ...
+
+    def verify_single_owner(
+        self,
+        *,
+        legacy_triggers: Sequence[str],
+        legacy_services: Sequence[str],
+        legacy_persistent_services: Sequence[str],
+        replacement_active: bool = False,
+    ) -> None: ...
+
+    def activate_post_cutover_replacements(self, generation: int) -> None: ...
+
+    def deactivate_post_cutover_replacements(self, generation: int) -> None: ...
 
 
 @dataclass(frozen=True)
@@ -388,6 +677,12 @@ class QueueRuntimeCutoverCoordinator:
                 )
             )
         )
+        self._lifecycle.verify_single_owner(
+            legacy_triggers=request.legacy_triggers,
+            legacy_services=request.legacy_services,
+            legacy_persistent_services=request.legacy_persistent_services,
+            replacement_active=False,
+        )
         activation = self._repository.activate_generation(
             expected_generation=request.expected_generation,
             target_generation=request.target_generation,
@@ -396,6 +691,20 @@ class QueueRuntimeCutoverCoordinator:
             actor=request.actor,
             reason=request.reason,
         )
+        try:
+            self._lifecycle.activate_post_cutover_replacements(
+                int(request.target_generation)
+            )
+        except Exception:
+            self._repository.disable_claims(
+                expected_generation=int(request.target_generation),
+                actor=request.actor,
+                reason=f"post-cutover replacement activation failed: {request.reason}",
+            )
+            self._lifecycle.deactivate_post_cutover_replacements(
+                int(request.target_generation)
+            )
+            raise
         return activation
 
     @staticmethod
@@ -439,8 +748,13 @@ class QueueRuntimeCutoverCoordinator:
 __all__ = [
     "ACTIVATABLE_LANES",
     "CANONICAL_RUNTIME_SERVICES",
+    "PR3_LEGACY_PERSISTENT_SERVICES",
+    "PR3_LEGACY_TIMER_OWNERS",
+    "PR3_OWNER_INVENTORY_NAME",
+    "PR3_REPLACEMENT_TIMER_OWNERS",
     "REQUIRED_RUNTIME_HEARTBEATS",
     "GenerationActivation",
+    "CutoverFreeze",
     "GenerationCASConflict",
     "GenerationState",
     "QueueRuntimeCutoverCoordinator",

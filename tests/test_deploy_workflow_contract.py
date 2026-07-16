@@ -1074,7 +1074,7 @@ def test_due_runner_scripts_share_int_env_reader():
     assert "run_due_external_push_retries" not in external_push_worker
     assert 'read_int_env("AICRM_INTERNAL_EVENT_WORKER_BATCH_SIZE", DEFAULT_WORKER_BATCH_SIZE)' in internal_event_worker
     assert "build_internal_event_consumer_registry" in internal_event_worker
-    assert "read_int_env" not in ai_audience_scheduler
+    assert 'read_int_env("AICRM_AI_AUDIENCE_SCHEDULER_BATCH_SIZE", 20)' in ai_audience_scheduler
     assert "--execute" in internal_event_worker
     assert 'relay_role="owner"' in internal_event_worker
     assert 'relay_role="consumer_only"' in ai_audience_scheduler_runtime
@@ -1086,8 +1086,10 @@ def test_due_runner_scripts_share_int_env_reader():
 def test_ai_audience_scheduler_runs_through_internal_event_queue_only():
     workflow = (ROOT / ".github" / "workflows" / "deploy.yml").read_text(encoding="utf-8")
     scheduler = (ROOT / "scripts" / "run_ai_audience_scheduler.py").read_text(encoding="utf-8")
-    service = (ROOT / "deploy" / "openclaw-ai-audience-scheduler.service").read_text(encoding="utf-8")
-    timer = (ROOT / "deploy" / "openclaw-ai-audience-scheduler.timer").read_text(encoding="utf-8")
+    legacy_service = (ROOT / "deploy" / "openclaw-ai-audience-scheduler.service").read_text(encoding="utf-8")
+    legacy_timer = (ROOT / "deploy" / "openclaw-ai-audience-scheduler.timer").read_text(encoding="utf-8")
+    daily_service = (ROOT / "deploy" / "aicrm-ai-audience-daily-intent.service").read_text(encoding="utf-8")
+    daily_timer = (ROOT / "deploy" / "aicrm-ai-audience-daily-intent.timer").read_text(encoding="utf-8")
     stop_runtime_units_index = _deploy_runtime_phase_index(workflow, "stop-for-migration")
     alembic_upgrade_index = workflow.index("python3 -m alembic upgrade head")
     install_index = workflow.index(_runtime_units_phase("install-enable-after-web-health"))
@@ -1095,19 +1097,20 @@ def test_ai_audience_scheduler_runs_through_internal_event_queue_only():
 
     assert stop_runtime_units_index < alembic_upgrade_index < install_index < verify_index
     assert "register_ai_audience_event_consumers()" in scheduler
-    assert "run_due_ai_audience_consumers" not in scheduler
-    assert "--run-consumers" not in service
-    assert "--execute" not in service
-    assert "AICRM_INTERNAL_EVENT_RELAY_ROLE" not in service
-    assert "ExecStart=/bin/bash -c" in service
-    assert "check_ai_audience_refresh_owner.py --code-only" in service
-    assert "run_ai_audience_scheduler.py --daily-only" in service
-    assert "AICRM_INTERNAL_EVENTS_ALLOWED_EVENT_TYPES=" not in service
-    assert "AICRM_INTERNAL_EVENTS_ALLOWED_EVENT_CONSUMERS=" not in service
-    assert "ExternalEffectWorker" not in service
-    assert "run_external_effect_queue_worker.py" not in service
-    assert "OnCalendar=*-*-* 02:00:00 Asia/Shanghai" in timer
-    assert "*:0/3:00" not in timer
+    assert "assert_legacy_owner_allowed()" in scheduler
+    assert "run_due_ai_audience_consumers" in scheduler
+    assert "--run-consumers --execute" in legacy_service
+    assert "AICRM_INTERNAL_EVENT_RELAY_ROLE=consumer_only" in legacy_service
+    assert "*:0/3:00" in legacy_timer
+    assert "check_ai_audience_refresh_owner.py --code-only" in daily_service
+    assert "run_ai_audience_scheduler.py --daily-only" in daily_service
+    assert "--run-consumers" not in daily_service
+    assert "--execute" not in daily_service
+    assert "AICRM_INTERNAL_EVENT_RELAY_ROLE" not in daily_service
+    assert "ExternalEffectWorker" not in daily_service
+    assert "run_external_effect_queue_worker.py" not in daily_service
+    assert "OnCalendar=*-*-* 02:00:00 Asia/Shanghai" in daily_timer
+    assert "*:0/3:00" not in daily_timer
 
 
 def test_production_runtime_declares_exactly_one_internal_event_relay_owner():
@@ -1118,10 +1121,13 @@ def test_production_runtime_declares_exactly_one_internal_event_relay_owner():
         if item.get("internal_event_relay_role")
     }
 
-    assert declared == {
-        "openclaw-internal-event-worker.service": "owner",
+    assert declared == {}
+
+    cutover_pairs = {
+        item["timer"]: item["service"]
+        for item in manifest["cutover_managed_legacy"]["timers"]
     }
-    assert list(declared.values()).count("owner") == 1
+    assert cutover_pairs["openclaw-internal-event-worker.timer"] == "openclaw-internal-event-worker.service"
 
     owner_sources = [
         path.relative_to(ROOT).as_posix()

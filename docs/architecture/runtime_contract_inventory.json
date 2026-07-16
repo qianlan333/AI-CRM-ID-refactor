@@ -1271,7 +1271,13 @@
       "accessor": "os.getenv",
       "file": "scripts/ops/check_ai_audience_refresh_owner.py",
       "key": "DATABASE_URL",
-      "line": 92
+      "line": 111
+    },
+    {
+      "accessor": "os.getenv",
+      "file": "scripts/ops/check_ai_audience_refresh_owner.py",
+      "key": "DATABASE_URL",
+      "line": 140
     },
     {
       "accessor": "os.getenv",
@@ -44817,6 +44823,13 @@
   "runtime_units": [
     {
       "kind": "timer",
+      "owner_inventory": "pr3",
+      "service": "aicrm-ai-audience-daily-intent.service",
+      "state": "cutover_replacement_autostart",
+      "unit": "aicrm-ai-audience-daily-intent.timer"
+    },
+    {
+      "kind": "timer",
       "service": "aicrm-archive-sync.service",
       "state": "approval_required",
       "unit": "aicrm-archive-sync.timer"
@@ -44908,11 +44921,10 @@
       "unit": "aicrm-wechat-shop-order-sync.timer"
     },
     {
-      "kick_after_timer_restart": true,
-      "kick_failure_fatal": false,
       "kind": "timer",
+      "owner_inventory": "pr3",
       "service": "openclaw-ai-audience-scheduler.service",
-      "state": "active_autostart",
+      "state": "cutover_managed_legacy",
       "unit": "openclaw-ai-audience-scheduler.timer"
     },
     {
@@ -44926,11 +44938,10 @@
       "unit": "openclaw-automation-conversion-due-runner.timer"
     },
     {
-      "kick_after_timer_restart": false,
-      "kick_failure_fatal": false,
       "kind": "timer",
+      "owner_inventory": "pr3",
       "service": "openclaw-automation-ops-scheduler.service",
-      "state": "active_autostart",
+      "state": "cutover_managed_legacy",
       "unit": "openclaw-automation-ops-scheduler.timer"
     },
     {
@@ -44940,19 +44951,17 @@
       "unit": "openclaw-broadcast-hourly-feishu-report.timer"
     },
     {
-      "kick_after_timer_restart": true,
-      "kick_failure_fatal": false,
       "kind": "timer",
+      "owner_inventory": "pr3",
       "service": "openclaw-broadcast-queue-worker.service",
-      "state": "active_autostart",
+      "state": "cutover_managed_legacy",
       "unit": "openclaw-broadcast-queue-worker.timer"
     },
     {
-      "kick_after_timer_restart": true,
-      "kick_failure_fatal": true,
       "kind": "timer",
+      "owner_inventory": "pr3",
       "service": "openclaw-customer-read-model-refresh.service",
-      "state": "active_autostart",
+      "state": "cutover_managed_legacy",
       "unit": "openclaw-customer-read-model-refresh.timer"
     },
     {
@@ -44968,11 +44977,10 @@
       "unit": "openclaw-external-contact-sync.timer"
     },
     {
-      "kick_after_timer_restart": false,
-      "kick_failure_fatal": false,
       "kind": "timer",
+      "owner_inventory": "pr3",
       "service": "openclaw-external-effect-worker.service",
-      "state": "active_autostart",
+      "state": "cutover_managed_legacy",
       "unit": "openclaw-external-effect-worker.timer"
     },
     {
@@ -44986,19 +44994,17 @@
       "unit": "openclaw-external-push-worker.timer"
     },
     {
-      "kick_after_timer_restart": false,
-      "kick_failure_fatal": false,
       "kind": "timer",
+      "owner_inventory": "pr3",
       "service": "openclaw-identity-resolution-worker.service",
-      "state": "active_autostart",
+      "state": "cutover_managed_legacy",
       "unit": "openclaw-identity-resolution-worker.timer"
     },
     {
-      "kick_after_timer_restart": true,
-      "kick_failure_fatal": false,
       "kind": "timer",
+      "owner_inventory": "pr3",
       "service": "openclaw-internal-event-worker.service",
-      "state": "active_autostart",
+      "state": "cutover_managed_legacy",
       "unit": "openclaw-internal-event-worker.timer"
     },
     {
@@ -45010,10 +45016,10 @@
       "unit": "openclaw-wechat-pay-order-reconciliation-worker.timer"
     },
     {
-      "health_url": "",
       "kind": "service",
-      "state": "active",
-      "stop_for_migration": true,
+      "owner_inventory": "pr3",
+      "persistent": true,
+      "state": "cutover_managed_legacy",
       "unit": "openclaw-wecom-callback-inbox-worker.service"
     },
     {
