@@ -186,8 +186,9 @@ jobs:
             DEPLOY_RUN_ID="${{ github.run_id }}" \
             DEPLOY_RUN_ATTEMPT="${{ github.run_attempt }}" \
             VERIFIED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-              python3 -c 'import json, os, sys; json.dump({"repository": os.environ["RELEASE_REPOSITORY"], "release_sha": os.environ["RELEASE_SHA"], "source_ci_run_id": os.environ["SOURCE_CI_RUN_ID"], "deploy_run_id": os.environ["DEPLOY_RUN_ID"], "deploy_run_attempt": os.environ["DEPLOY_RUN_ATTEMPT"], "environment": "id-validation", "verification_kind": "same_sha_noop", "verified_at": os.environ["VERIFIED_AT"]}, sys.stdout, sort_keys=True); sys.stdout.write("\\n")' \
+              python3 -c 'import json, os, sys; json.dump({"repository": os.environ["RELEASE_REPOSITORY"], "release_sha": os.environ["RELEASE_SHA"], "source_ci_run_id": os.environ["SOURCE_CI_RUN_ID"], "deploy_run_id": os.environ["DEPLOY_RUN_ID"], "deploy_run_attempt": os.environ["DEPLOY_RUN_ATTEMPT"], "environment": "id-validation", "verification_kind": "same_sha_noop", "verified_at": os.environ["VERIFIED_AT"]}, sys.stdout, sort_keys=True); sys.stdout.write("\n")' \
               > "$verification_tmp"
+            python3 -m json.tool "$verification_tmp" >/dev/null
             chmod 0640 "$verification_tmp"
             mv -f "$verification_tmp" \
               /home/ubuntu/.aicrm-releases/id-validation-last-verified.json
@@ -713,7 +714,7 @@ jobs:
             BASE_SHA="$before_sha" \
             BUNDLE_SHA256="$bundle_sha256" \
             DEPLOYED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-              python3 -c 'import json, os, sys; json.dump({"repository": os.environ["RELEASE_REPOSITORY"], "deploy_run_id": os.environ["RELEASE_RUN_ID"], "deploy_run_attempt": os.environ["RELEASE_RUN_ATTEMPT"], "source_ci_run_id": os.environ["SOURCE_CI_RUN_ID"], "release_sha": os.environ["RELEASE_SHA"], "base_sha": os.environ["BASE_SHA"], "bundle_sha256": os.environ["BUNDLE_SHA256"], "environment": "id-validation", "public_health_url": "https://id-dev.youcangogogo.com/health", "deployed_at": os.environ["DEPLOYED_AT"]}, sys.stdout, sort_keys=True); sys.stdout.write("\\n")' \
+              python3 -c 'import json, os, sys; json.dump({"repository": os.environ["RELEASE_REPOSITORY"], "deploy_run_id": os.environ["RELEASE_RUN_ID"], "deploy_run_attempt": os.environ["RELEASE_RUN_ATTEMPT"], "source_ci_run_id": os.environ["SOURCE_CI_RUN_ID"], "release_sha": os.environ["RELEASE_SHA"], "base_sha": os.environ["BASE_SHA"], "bundle_sha256": os.environ["BUNDLE_SHA256"], "environment": "id-validation", "public_health_url": "https://id-dev.youcangogogo.com/health", "deployed_at": os.environ["DEPLOYED_AT"]}, sys.stdout, sort_keys=True); sys.stdout.write("\n")' \
               > "$release_provenance_tmp"
             python3 -m json.tool "$release_provenance_tmp" >/dev/null
             chmod 0640 "$release_provenance_tmp"
