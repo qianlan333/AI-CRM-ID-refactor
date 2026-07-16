@@ -2879,6 +2879,13 @@
       "max_attempts": 5
     },
     {
+      "consumer_name": "queue_runtime_command_audit_consumer",
+      "consumer_type": "diagnostic",
+      "event_type": "queue.runtime.command.applied",
+      "handler_registered": true,
+      "max_attempts": 3
+    },
+    {
       "consumer_name": "service_period_refund_consumer",
       "consumer_type": "projection",
       "event_type": "refund.succeeded",
@@ -44847,6 +44854,14 @@
       "state": "active",
       "stop_for_migration": true,
       "unit": "aicrm-internal-queue-runtime.service"
+    },
+    {
+      "kick_after_timer_restart": false,
+      "kick_failure_fatal": false,
+      "kind": "timer",
+      "service": "aicrm-queue-invariant-check.service",
+      "state": "active_autostart",
+      "unit": "aicrm-queue-invariant-check.timer"
     },
     {
       "kind": "service",

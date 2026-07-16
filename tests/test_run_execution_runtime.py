@@ -15,6 +15,18 @@ def test_runtime_defaults_to_claimless_standby(monkeypatch) -> None:
     assert args.generation == 0
 
 
+def test_runtime_can_be_armed_from_numeric_generation_environment(monkeypatch) -> None:
+    monkeypatch.setenv("AICRM_QUEUE_RUNTIME_EXECUTE", "1")
+    monkeypatch.setenv("AICRM_QUEUE_RUNTIME_TEST_ONLY", "1")
+    monkeypatch.setenv("AICRM_QUEUE_WORKER_GENERATION", "17")
+
+    args = run_execution_runtime._parse_args(["--queue-kind", "external"])
+
+    assert args.execute is True
+    assert args.test_only is True
+    assert args.generation == 17
+
+
 def test_worker_id_is_stable_for_the_same_host_and_queue(monkeypatch) -> None:
     captured: list[str] = []
 

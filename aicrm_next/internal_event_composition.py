@@ -28,6 +28,9 @@ from .platform_foundation.external_effects.completion_events import (
     register_external_effect_completed_consumer,
 )
 from .platform_foundation.external_effects.repo import build_external_effect_repository
+from .platform_foundation.execution_runtime.commands import (
+    register_queue_runtime_command_consumer,
+)
 from .shared.runtime import production_data_ready
 
 
@@ -146,6 +149,7 @@ def build_internal_event_consumer_registry() -> InternalEventConsumerRegistry:
     register_shadow_event_consumers(registry)
     register_ai_audience_event_consumers(registry)
     register_external_effect_completion_consumers(registry)
+    register_queue_runtime_command_consumer(registry)
     registry.seal_fanout_contract()
     return registry
 

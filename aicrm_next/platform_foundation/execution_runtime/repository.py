@@ -9,7 +9,7 @@ from aicrm_next.shared.release import current_release_sha
 from aicrm_next.shared.runtime import raw_database_url
 
 
-def _psycopg_url(value: str) -> str:
+def normalize_runtime_database_url(value: str) -> str:
     normalized = str(value or "").strip()
     if normalized.startswith("postgresql+psycopg://"):
         return "postgresql://" + normalized[len("postgresql+psycopg://") :]
@@ -18,11 +18,17 @@ def _psycopg_url(value: str) -> str:
     return normalized
 
 
-def _default_connect(database_url: str):
+def open_runtime_connection(database_url: str):
     import psycopg
     from psycopg.rows import dict_row
 
     return psycopg.connect(database_url, row_factory=dict_row)
+
+
+# Kept as module-local compatibility aliases for the PR-2 read model.  New
+# runtime control code uses the explicit public boundary names above.
+_psycopg_url = normalize_runtime_database_url
+_default_connect = open_runtime_connection
 
 
 def open_listener_connection(url: str, *, autocommit: bool, application_name: str):
@@ -83,9 +89,9 @@ class ExecutionRuntimeRepository:
         self,
         database_url: str | None = None,
         *,
-        connect: Callable[[str], Any] = _default_connect,
+        connect: Callable[[str], Any] = open_runtime_connection,
     ) -> None:
-        self._database_url = _psycopg_url(database_url or raw_database_url())
+        self._database_url = normalize_runtime_database_url(database_url or raw_database_url())
         if not self._database_url.startswith("postgresql://"):
             raise RuntimeError("PostgreSQL DATABASE_URL is required for the execution runtime")
         self._connect = connect
@@ -981,4 +987,6 @@ __all__ = [
     "RuntimeClaim",
     "RuntimeControl",
     "open_listener_connection",
+    "normalize_runtime_database_url",
+    "open_runtime_connection",
 ]

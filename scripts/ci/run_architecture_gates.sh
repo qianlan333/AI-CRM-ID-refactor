@@ -29,6 +29,7 @@ run_fast() {
 "$PYTHON" tools/check_repository_ownership.py
 "$PYTHON" tools/check_retired_runtime_references.py
 "$PYTHON" scripts/ci/check_github_action_pins.py
+"$PYTHON" scripts/ci/check_queue_runtime_cutover_kernel.py
 }
 
 run_db() {
