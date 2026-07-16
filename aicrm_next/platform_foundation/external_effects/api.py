@@ -10,6 +10,7 @@ from aicrm_next.shared.admin_action_runtime import validate_admin_action_token
 from aicrm_next.platform_foundation.execution_runtime.api_command import (
     QueueCommandPayloadError,
     accepted_queue_command_payload,
+    authenticated_queue_actor,
     parse_manual_queue_command,
     submit_manual_queue_action,
     submit_manual_queue_command,
@@ -345,7 +346,10 @@ async def run_external_effect_due(request: Request) -> JSONResponse:
     if _bool(payload.get("dry_run"), default=True):
         return _json(await _preview_external_due(request, payload))
     try:
-        command = parse_manual_queue_command(payload)
+        command = parse_manual_queue_command(
+            payload,
+            authenticated_actor=authenticated_queue_actor(request),
+        )
     except QueueCommandPayloadError as exc:
         return _command_payload_error(exc)
     item_id = _command_item_id(payload)
@@ -485,7 +489,10 @@ async def retry_external_effect_job(job_id: int, request: Request) -> JSONRespon
     if token_error:
         return _json({"ok": False, "error": token_error, "route_owner": ROUTE_OWNER}, status_code=401)
     try:
-        command = parse_manual_queue_command(payload)
+        command = parse_manual_queue_command(
+            payload,
+            authenticated_actor=authenticated_queue_actor(request),
+        )
     except QueueCommandPayloadError as exc:
         return _command_payload_error(exc)
     service = _queue_command_service(request)
@@ -514,7 +521,10 @@ async def cancel_external_effect_job(job_id: int, request: Request) -> JSONRespo
     if token_error:
         return _json({"ok": False, "error": token_error, "route_owner": ROUTE_OWNER}, status_code=401)
     try:
-        command = parse_manual_queue_command(payload)
+        command = parse_manual_queue_command(
+            payload,
+            authenticated_actor=authenticated_queue_actor(request),
+        )
     except QueueCommandPayloadError as exc:
         return _command_payload_error(exc)
     service = _queue_command_service(request)

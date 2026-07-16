@@ -4,6 +4,8 @@ from dataclasses import dataclass
 from typing import Any, Mapping
 from urllib.parse import quote
 
+from aicrm_next.platform_foundation.auth_platform.context import AuthContext
+
 from .commands import (
     QueueCommandConflict,
     QueueCommandResult,
@@ -38,13 +40,28 @@ def _bool(value: Any) -> bool:
     return _text(value).lower() in {"1", "true", "yes", "on"}
 
 
-def parse_manual_queue_command(payload: Mapping[str, Any]) -> ManualQueueCommand:
+def authenticated_queue_actor(request: Any) -> str:
+    """Return the authenticated principal that owns a manual queue action."""
+
+    context = getattr(getattr(request, "state", None), "auth_context", None)
+    if isinstance(context, AuthContext):
+        return _text(context.principal_id)
+    return ""
+
+
+def parse_manual_queue_command(
+    payload: Mapping[str, Any],
+    *,
+    authenticated_actor: str = "",
+) -> ManualQueueCommand:
+    claimed_actor = _text(payload.get("actor"))
     values = {
-        "actor": _text(payload.get("actor")),
+        "actor": _text(authenticated_actor) or claimed_actor,
         "reason": _text(payload.get("reason")),
         "expected_version": _text(payload.get("expected_version")),
     }
-    missing = tuple(key for key, value in values.items() if not value)
+    required_values = {**values, "actor": claimed_actor}
+    missing = tuple(key for key, value in required_values.items() if not value)
     if missing:
         raise QueueCommandPayloadError(missing)
     return ManualQueueCommand(
@@ -143,6 +160,7 @@ __all__ = [
     "ManualQueueCommand",
     "QueueCommandPayloadError",
     "accepted_queue_command_payload",
+    "authenticated_queue_actor",
     "parse_manual_queue_command",
     "submit_manual_queue_command",
     "submit_manual_queue_action",

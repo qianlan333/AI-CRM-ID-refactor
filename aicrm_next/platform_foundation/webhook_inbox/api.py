@@ -17,6 +17,7 @@ from aicrm_next.platform_foundation.internal_events import InternalEventService
 from aicrm_next.platform_foundation.execution_runtime.api_command import (
     QueueCommandPayloadError,
     accepted_queue_command_payload,
+    authenticated_queue_actor,
     parse_manual_queue_command,
     submit_manual_queue_action,
     submit_manual_queue_command,
@@ -403,7 +404,10 @@ async def retry_webhook_inbox_item(inbox_id: int, request: Request) -> JSONRespo
     if token_error:
         return _json({"ok": False, "error": token_error}, status_code=401)
     try:
-        command = parse_manual_queue_command(payload)
+        command = parse_manual_queue_command(
+            payload,
+            authenticated_actor=authenticated_queue_actor(request),
+        )
     except QueueCommandPayloadError as exc:
         return _command_payload_error(exc)
     service = _queue_command_service(request)
@@ -430,7 +434,10 @@ async def skip_webhook_inbox_item(inbox_id: int, request: Request) -> JSONRespon
     if token_error:
         return _json({"ok": False, "error": token_error}, status_code=401)
     try:
-        command = parse_manual_queue_command(payload)
+        command = parse_manual_queue_command(
+            payload,
+            authenticated_actor=authenticated_queue_actor(request),
+        )
     except QueueCommandPayloadError as exc:
         return _command_payload_error(exc)
     service = _queue_command_service(request)
@@ -470,7 +477,10 @@ async def dispatch_webhook_inbox_item(inbox_id: int, request: Request) -> JSONRe
         result["real_external_call_executed"] = False
         return _json(result, status_code=status_code)
     try:
-        command = parse_manual_queue_command(payload)
+        command = parse_manual_queue_command(
+            payload,
+            authenticated_actor=authenticated_queue_actor(request),
+        )
     except QueueCommandPayloadError as exc:
         return _command_payload_error(exc)
     service = _queue_command_service(request)
@@ -510,7 +520,10 @@ async def run_webhook_inbox_due(request: Request) -> JSONResponse:
         result["real_external_call_executed"] = False
         return _json(result)
     try:
-        command = parse_manual_queue_command(payload)
+        command = parse_manual_queue_command(
+            payload,
+            authenticated_actor=authenticated_queue_actor(request),
+        )
     except QueueCommandPayloadError as exc:
         return _command_payload_error(exc)
     try:

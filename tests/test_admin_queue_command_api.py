@@ -112,7 +112,7 @@ def _assert_accepted(body: dict, *, queue_kind: str, item_id: int) -> None:
     assert body["command_id"].startswith("qcmd_")
     assert body["intent_id"].startswith("ieo_")
     assert body["status_url"] == f"/api/admin/executions/{body['execution_id']}"
-    assert body["actor"] == "pytest-operator"
+    assert body["actor"] == "admin-user:test"
     assert body["reason"] == "manual durable wake"
     assert body["real_external_call_executed"] is False
 
