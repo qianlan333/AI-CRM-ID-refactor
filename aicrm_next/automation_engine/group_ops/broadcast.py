@@ -3,7 +3,6 @@ from __future__ import annotations
 import os
 import re
 from dataclasses import dataclass
-from datetime import timedelta
 from typing import Any
 from urllib.parse import parse_qs, urlsplit
 from uuid import UUID
@@ -235,7 +234,7 @@ class ExecuteGroupOpsTokenBroadcastCommand:
             GroupOpsWebhookReceiveRequest(
                 idempotency_key=key,
                 send_mode="queued",
-                scheduled_at=(utcnow() + timedelta(minutes=2)).isoformat(),
+                scheduled_at=utcnow().isoformat(),
                 event="group_ops_api_broadcast",
                 source="group_ops_token_broadcast_api",
                 content={"text": text, "attachments": attachments},

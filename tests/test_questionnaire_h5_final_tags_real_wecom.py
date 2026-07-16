@@ -23,6 +23,9 @@ from aicrm_next.platform_foundation.external_effects.adapters import (
     ExternalEffectAdapterRegistry,
     WeComContactTagAdapter,
 )
+from aicrm_next.platform_foundation.external_effects.completion_events import (
+    external_effect_completion_consumer,
+)
 from aicrm_next.platform_foundation.external_effects.repo import build_external_effect_repository
 from aicrm_next.platform_foundation.external_effects.worker import ExternalEffectWorker
 from aicrm_next.platform_foundation.internal_events import (
@@ -31,6 +34,10 @@ from aicrm_next.platform_foundation.internal_events import (
     reset_internal_event_fixture_state,
 )
 from aicrm_next.platform_foundation.internal_events.worker import InternalEventWorker
+from aicrm_next.platform_foundation.internal_events.models import (
+    InternalEvent,
+    InternalEventConsumerRun,
+)
 from aicrm_next.questionnaire import h5_write
 from aicrm_next.questionnaire.h5_write import reset_questionnaire_h5_write_fixture_state
 from aicrm_next.questionnaire.repo import reset_questionnaire_fixture_state
@@ -236,8 +243,9 @@ def test_provider_success_projects_tags_only_after_external_effect_success(monke
     registry._adapters["wecom_tag"] = WeComContactTagAdapter(  # type: ignore[attr-defined]
         adapter_factory=lambda: FakeWeComAdapter()
     )
+    external_effect_repo = build_external_effect_repository()
     executed = ExternalEffectWorker(
-        build_external_effect_repository(),
+        external_effect_repo,
         registry,
         continuation_registry=build_external_effect_continuation_registry(),
     ).run_due(
@@ -248,7 +256,26 @@ def test_provider_success_projects_tags_only_after_external_effect_success(monke
 
     assert response.status_code == 200
     assert executed["counts"]["succeeded_count"] == 1, executed
-    assert executed["items"][0]["post_success_continuation"]["ok"] is True
+    assert executed["items"][0]["post_success_continuation"]["reason"] == "durable_completion_event_pending"
+    queued_event = external_effect_repo.list_completion_events()[0]
+    completion_result = external_effect_completion_consumer(
+        InternalEvent(
+            event_id="iev_questionnaire_tag_completion",
+            event_type=queued_event["event_type"],
+            aggregate_type="external_effect_job",
+            aggregate_id=queued_event["aggregate_id"],
+            payload_json=dict(queued_event["payload"]),
+        ),
+        InternalEventConsumerRun(
+            id=1,
+            event_id="iev_questionnaire_tag_completion",
+            consumer_name="external_effect_completion_continuation_consumer",
+        ),
+        repository_factory=lambda: external_effect_repo,
+        continuation_registry_factory=build_external_effect_continuation_registry,
+    )
+    assert completion_result.status == "succeeded"
+    assert completion_result.response_summary["continuation"]["ok"] is True
     assert calls == [
         {
             "external_userid": "wx_real_001",

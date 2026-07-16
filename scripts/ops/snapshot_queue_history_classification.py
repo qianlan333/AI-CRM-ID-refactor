@@ -15,6 +15,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from aicrm_next.shared.runtime import raw_database_url  # noqa: E402
+from aicrm_next.shared.sensitive_data import redact_sensitive_data  # noqa: E402
 
 
 FREEZE_REVISION = "0124_execution_runtime_correctness"
@@ -121,9 +122,9 @@ def main(argv: list[str] | None = None) -> int:
         )
     except Exception as exc:  # command must fail closed without echoing credentials
         payload = {"ok": False, "read_only": True, "error_class": exc.__class__.__name__}
-        print(json.dumps(payload, ensure_ascii=False, sort_keys=True))
+        print(json.dumps(redact_sensitive_data(payload), ensure_ascii=False, sort_keys=True))
         return 1
-    print(json.dumps(payload, ensure_ascii=False, sort_keys=True, default=str))
+    print(json.dumps(redact_sensitive_data(payload), ensure_ascii=False, sort_keys=True, default=str))
     return 0
 
 
