@@ -2,8 +2,8 @@
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
-**Issue:** #106  
-**Parent:** #67  
+**Issue:** #106
+**Parent:** #67
 **Base:** `main@d36b4482de6f068fe7cb50282ac9e9a336534ab7`
 
 **Goal:** Remove the duplicate P1 Group Ops control plane, converge Group Ops actions on one durable delivery path, and make broadcast delivery state/evidence crash-safe without triggering real sends during development or reconciliation.

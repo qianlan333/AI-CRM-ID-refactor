@@ -17,4 +17,3 @@ Keep `/health` as a lightweight liveness probe and make `/api/system/health` a f
 - Fixture, healthy PostgreSQL, connection failure, migration drift, queue warning, and HTTP status tests.
 - Deploy workflow contract tests.
 - Runtime contract inventory and full architecture gates.
-

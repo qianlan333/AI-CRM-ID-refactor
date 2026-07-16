@@ -147,4 +147,3 @@ export const P1_PREVIEW_BOARD_FIXTURE: PreviewBoardFixture = {
     scenarios: cards
   }
 };
-

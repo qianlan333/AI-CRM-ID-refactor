@@ -18,4 +18,3 @@ Split the only template above 3000 lines without changing its DOM, styling, API 
 - Static asset HTTP checks.
 - Inline-script and template-size guards.
 - Full architecture gates.
-

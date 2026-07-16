@@ -17,4 +17,3 @@ Restore the previously verified application release and runtime units whenever a
 - Deploy workflow contract tests.
 - CI workflow tests.
 - Full architecture gates.
-

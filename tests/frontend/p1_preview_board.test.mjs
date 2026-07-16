@@ -91,4 +91,3 @@ for (const forbidden of [
 }
 
 console.log("p1 cross-page preview board OK");
-

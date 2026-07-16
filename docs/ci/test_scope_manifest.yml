@@ -1664,6 +1664,7 @@
     {
       "name": "import_graph_governance",
       "paths": [
+        "aicrm_next/automation_agents/__init__.py",
         "tools/check_import_graph.py",
         "docs/architecture/import_graph_baseline.yml",
         "tests/test_import_graph_guard.py",
@@ -1739,6 +1740,7 @@
         "tests/test_next_api_docs_page.py",
         "tests/test_router_registry_contract.py",
         "tests/test_runtime_contract_inventory.py",
+        "tests/test_wechat_domain_verification_files.py",
         "tests/test_high_risk_contract_inventory.py",
         "tests/test_dependency_security_contract.py",
         "requirements-dev.txt",
@@ -1769,6 +1771,7 @@
         "tests/test_next_api_docs_page.py",
         "tests/test_router_registry_contract.py",
         "tests/test_runtime_contract_inventory.py",
+        "tests/test_wechat_domain_verification_files.py",
         "tests/test_high_risk_contract_inventory.py",
         "tests/test_dependency_security_contract.py"
       ],

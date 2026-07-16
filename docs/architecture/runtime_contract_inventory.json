@@ -358,6 +358,12 @@
     {
       "accessor": "os.getenv",
       "file": "aicrm_next/data_health/checks.py",
+      "key": "AICRM_DATA_HEALTH_EXTERNAL_EFFECT_TERMINAL_LOOKBACK_HOURS",
+      "line": 37
+    },
+    {
+      "accessor": "os.getenv",
+      "file": "aicrm_next/data_health/checks.py",
       "key": "AICRM_DATA_HEALTH_PROJECTION_FRESHNESS_MAX_MINUTES",
       "line": 27
     },
@@ -563,7 +569,7 @@
       "accessor": "os.getenv",
       "file": "aicrm_next/admin_config/application.py",
       "key": "AICRM_NEXT_ALIPAY_MODE",
-      "line": 970
+      "line": 1012
     },
     {
       "accessor": "os.getenv",
@@ -761,7 +767,7 @@
       "accessor": "os.getenv",
       "file": "aicrm_next/admin_config/application.py",
       "key": "AICRM_NEXT_WECHAT_PAY_MODE",
-      "line": 964
+      "line": 1006
     },
     {
       "accessor": "os.getenv",
@@ -1133,7 +1139,7 @@
       "accessor": "os.getenv",
       "file": "aicrm_next/customer_read_model/repo.py",
       "key": "CUSTOMER_READ_MODEL_REPO_BACKEND",
-      "line": 580
+      "line": 592
     },
     {
       "accessor": "os.getenv",
@@ -2080,6 +2086,7 @@
     "AICRM_DATA_HEALTH_BROADCAST_RETRYABLE_DUE_MAX_COUNT",
     "AICRM_DATA_HEALTH_BROADCAST_TERMINAL_LOOKBACK_HOURS",
     "AICRM_DATA_HEALTH_EXTERNAL_EFFECT_RETRYABLE_DUE_MAX_COUNT",
+    "AICRM_DATA_HEALTH_EXTERNAL_EFFECT_TERMINAL_LOOKBACK_HOURS",
     "AICRM_DATA_HEALTH_PROJECTION_FRESHNESS_MAX_MINUTES",
     "AICRM_ENABLE_IN_PROCESS_ARCHIVE_SYNC",
     "AICRM_ENV_FILE",
@@ -2898,7 +2905,7 @@
     }
   ],
   "migration_heads": [
-    "0122_internal_event_fanout_manifest"
+    "0123_required_physical_schema_repair"
   ],
   "openapi_components": {
     "schemas": {
@@ -44626,6 +44633,53 @@
       "operation_id": "external_contact_callback:POST:/wecom/external-contact/callback",
       "path": "/wecom/external-contact/callback",
       "route_group": "unregistered"
+    },
+    {
+      "capability_owner": "platform_foundation",
+      "contract": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "filename",
+            "required": true,
+            "schema": {
+              "title": "Filename",
+              "type": "string"
+            }
+          }
+        ],
+        "request_body": null,
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        }
+      },
+      "endpoint": "aicrm_next.platform_foundation.verification_files.wechat_domain_verification_file",
+      "include_in_schema": true,
+      "kind": "api",
+      "methods": [
+        "GET"
+      ],
+      "name": "wechat_domain_verification_file",
+      "operation_id": "wechat_domain_verification_file:GET:/{filename}",
+      "path": "/{filename}",
+      "route_group": "verification_files"
     }
   ],
   "runtime_units": [
@@ -44687,11 +44741,9 @@
       "unit": "aicrm-web.service"
     },
     {
-      "kick_after_timer_restart": true,
-      "kick_failure_fatal": false,
       "kind": "timer",
       "service": "aicrm-wechat-shop-order-sync.service",
-      "state": "active_autostart",
+      "state": "approval_required",
       "unit": "aicrm-wechat-shop-order-sync.timer"
     },
     {
@@ -44706,6 +44758,11 @@
       "kind": "service",
       "state": "retired_forbidden",
       "unit": "openclaw-automation-conversion-due-runner.service"
+    },
+    {
+      "kind": "timer",
+      "state": "retired_forbidden",
+      "unit": "openclaw-automation-conversion-due-runner.timer"
     },
     {
       "kick_after_timer_restart": false,

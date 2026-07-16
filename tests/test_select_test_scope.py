@@ -55,6 +55,7 @@ def test_every_runtime_python_change_runs_import_graph_architecture_gate() -> No
 
 def test_import_graph_governance_changes_force_mapped_full_ci() -> None:
     result = _select(
+        "aicrm_next/automation_agents/__init__.py",
         "tools/check_import_graph.py",
         "docs/architecture/import_graph_baseline.yml",
         "tests/test_import_graph_guard.py",
@@ -337,6 +338,7 @@ def test_r06_internal_event_outbox_files_force_full_postgres_ci() -> None:
         "aicrm_next/public_product/h5_wechat_pay.py",
         "migrations/versions/0099_internal_event_outbox_and_consumer_lease.py",
         "migrations/versions/0122_internal_event_fanout_manifest.py",
+        "migrations/versions/0123_required_physical_schema_repair.py",
         "scripts/ops/reconcile_internal_event_outbox.py",
         "tests/test_internal_event_outbox.py",
         "tests/test_internal_event_worker_exit.py",

@@ -1,7 +1,7 @@
 # Epic #67 最终验收审计
 
-审计日期：2026-07-13  
-Epic 基线：`0741a8e45c7b52c8dc5b184ea33e4ef5d2f8e9cd`  
+审计日期：2026-07-13
+Epic 基线：`0741a8e45c7b52c8dc5b184ea33e4ef5d2f8e9cd`
 业务重构审计主线：`ca3e96c4cc2e633802bcc71d4b09a9fad0ae53aa`（PR #156 合并后）
 
 ## 结论
