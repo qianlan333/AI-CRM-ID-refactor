@@ -7,9 +7,18 @@ from fastapi.responses import JSONResponse
 from starlette.concurrency import run_in_threadpool
 
 from aicrm_next.shared.admin_action_runtime import validate_admin_action_token
+from aicrm_next.platform_foundation.execution_runtime.api_command import (
+    QueueCommandPayloadError,
+    accepted_queue_command_payload,
+    parse_manual_queue_command,
+    submit_manual_queue_command,
+)
+from aicrm_next.platform_foundation.execution_runtime.commands import (
+    QueueCommandConflict,
+    QueueRuntimeCommandService,
+)
 
 from .adapters import DEFAULT_ADAPTER_REGISTRY, ExternalEffectAdapterRegistry, wecom_execution_settings
-from .continuations import EMPTY_EXTERNAL_EFFECT_CONTINUATION_REGISTRY, ExternalEffectContinuationRegistry
 from .repo import build_external_effect_repository
 from .service import ExternalEffectService
 from .test_receiver import create_loopback_job, record_test_receiver_request, safe_current_base_url
@@ -90,16 +99,45 @@ def _service() -> ExternalEffectService:
     return ExternalEffectService(build_external_effect_repository())
 
 
-def _continuation_registry(request: Request) -> ExternalEffectContinuationRegistry:
-    return getattr(
-        request.app.state,
-        "external_effect_continuation_registry",
-        EMPTY_EXTERNAL_EFFECT_CONTINUATION_REGISTRY,
-    )
+def _queue_command_service(request: Request) -> QueueRuntimeCommandService:
+    service = getattr(request.app.state, "queue_runtime_command_service", None)
+    return service if service is not None else QueueRuntimeCommandService()
 
 
 def _adapter_registry(request: Request) -> ExternalEffectAdapterRegistry:
     return getattr(request.app.state, "external_effect_adapter_registry", DEFAULT_ADAPTER_REGISTRY)
+
+
+def _command_item_id(payload: dict[str, Any]) -> int:
+    try:
+        item_id = int(payload.get("item_id") or 0)
+    except (TypeError, ValueError):
+        item_id = 0
+    return item_id if item_id > 0 else 0
+
+
+def _command_payload_error(exc: QueueCommandPayloadError) -> JSONResponse:
+    return _json(
+        {
+            "ok": False,
+            "error": "manual_queue_command_fields_required",
+            "missing_fields": list(exc.missing_fields),
+            "route_owner": ROUTE_OWNER,
+            "real_external_call_executed": False,
+        },
+        status_code=422,
+    )
+
+
+async def _preview_external_due(request: Request, payload: dict[str, Any]) -> dict[str, Any]:
+    result = await run_in_threadpool(
+        ExternalEffectWorker(build_external_effect_repository(), _adapter_registry(request)).preview_due,
+        batch_size=_int(payload.get("batch_size") or payload.get("limit"), default=10, minimum=1),
+        effect_types=[_text(item) for item in payload.get("effect_types") or [] if _text(item)] or None,
+        test_only=_bool(payload.get("test_only"), default=False),
+    )
+    result["route_owner"] = ROUTE_OWNER
+    return redact_external_effect_admin_response(result)
 
 
 @router.get("/api/admin/external-effects/jobs")
@@ -254,15 +292,7 @@ async def preview_external_effect_run_due(request: Request) -> JSONResponse:
     if token_error:
         return _json({"ok": False, "error": token_error, "route_owner": ROUTE_OWNER, "real_external_call_executed": False}, status_code=401)
     payload = await _payload(request)
-    repo = build_external_effect_repository()
-    result = await run_in_threadpool(
-        ExternalEffectWorker(repo, _adapter_registry(request)).preview_due,
-        batch_size=_int(payload.get("batch_size") or payload.get("limit"), default=10, minimum=1),
-        effect_types=[_text(item) for item in payload.get("effect_types") or [] if _text(item)] or None,
-        test_only=_bool(payload.get("test_only"), default=False),
-    )
-    result["route_owner"] = ROUTE_OWNER
-    return _json(redact_external_effect_admin_response(result))
+    return _json(await _preview_external_due(request, payload))
 
 
 @router.post("/api/admin/external-effects/run-due")
@@ -271,22 +301,73 @@ async def run_external_effect_due(request: Request) -> JSONResponse:
     if token_error:
         return _json({"ok": False, "error": token_error, "route_owner": ROUTE_OWNER, "real_external_call_executed": False}, status_code=401)
     payload = await _payload(request)
-    dry_run = _bool(payload.get("dry_run"), default=True)
-    repo = build_external_effect_repository()
-    result = await run_in_threadpool(
-        ExternalEffectWorker(
-            repo,
-            _adapter_registry(request),
-            continuation_registry=_continuation_registry(request),
-        ).run_due,
-        batch_size=_int(payload.get("batch_size") or payload.get("limit"), default=10, minimum=1),
-        dry_run=dry_run,
-        effect_types=[_text(item) for item in payload.get("effect_types") or [] if _text(item)] or None,
+    if _bool(payload.get("dry_run"), default=True):
+        return _json(await _preview_external_due(request, payload))
+    try:
+        command = parse_manual_queue_command(payload)
+    except QueueCommandPayloadError as exc:
+        return _command_payload_error(exc)
+    item_id = _command_item_id(payload)
+    if not item_id:
+        return _json(
+            {
+                "ok": False,
+                "error": "manual_queue_command_fields_required",
+                "missing_fields": ["item_id"],
+                "route_owner": ROUTE_OWNER,
+                "real_external_call_executed": False,
+            },
+            status_code=422,
+        )
+    effect_types = [_text(item) for item in payload.get("effect_types") or [] if _text(item)] or None
+    service = _queue_command_service(request)
+    target = await run_in_threadpool(
+        service.read_external_effect_target,
+        item_id,
+        effect_types=effect_types,
         test_only=_bool(payload.get("test_only"), default=False),
     )
-    result["route_owner"] = ROUTE_OWNER
-    result["real_external_call_executed"] = bool(result.get("real_external_call_executed")) and not dry_run
-    return _json(redact_external_effect_admin_response(result))
+    if target is None:
+        return _json(
+            {
+                "ok": False,
+                "error": "external_effect_job_not_found",
+                "route_owner": ROUTE_OWNER,
+                "real_external_call_executed": False,
+            },
+            status_code=404,
+        )
+    try:
+        result = await run_in_threadpool(
+            submit_manual_queue_command,
+            service,
+            target,
+            command,
+            source_route="/api/admin/external-effects/run-due",
+        )
+    except QueueCommandConflict:
+        return _json(
+            {
+                "ok": False,
+                "error": "queue_command_cas_conflict",
+                "route_owner": ROUTE_OWNER,
+                "real_external_call_executed": False,
+            },
+            status_code=409,
+        )
+    except ValueError:
+        return _json(
+            {
+                "ok": False,
+                "error": "queue_command_target_not_eligible",
+                "route_owner": ROUTE_OWNER,
+                "real_external_call_executed": False,
+            },
+            status_code=409,
+        )
+    accepted = accepted_queue_command_payload(result, command)
+    accepted["route_owner"] = ROUTE_OWNER
+    return _json(accepted, status_code=202)
 
 
 @router.post("/api/external-effects/test-receiver")

@@ -13,6 +13,16 @@ from starlette.concurrency import run_in_threadpool
 from aicrm_next.shared.admin_action_runtime import ensure_admin_action_token, validate_admin_action_token
 from aicrm_next.admin_shell import admin_path_for, shell_context
 from aicrm_next.platform_foundation.auth_platform.context import AuthContext
+from aicrm_next.platform_foundation.execution_runtime.api_command import (
+    QueueCommandPayloadError,
+    accepted_queue_command_payload,
+    parse_manual_queue_command,
+    submit_manual_queue_command,
+)
+from aicrm_next.platform_foundation.execution_runtime.commands import (
+    QueueCommandConflict,
+    QueueRuntimeCommandService,
+)
 
 from .config import diagnostics_payload as config_diagnostics_payload, worker_batch_size
 from .repository import build_internal_event_repository
@@ -97,12 +107,82 @@ def _service() -> InternalEventService:
     return InternalEventService(build_internal_event_repository())
 
 
+def _queue_command_service(request: Request) -> QueueRuntimeCommandService:
+    service = getattr(request.app.state, "queue_runtime_command_service", None)
+    return service if service is not None else QueueRuntimeCommandService()
+
+
 def _csv(value: Any) -> list[str] | None:
     if isinstance(value, list):
         items = [_text(item) for item in value if _text(item)]
     else:
         items = [_text(item) for item in _text(value).split(",") if _text(item)]
     return items or None
+
+
+def _command_item_id(payload: dict[str, Any]) -> int:
+    try:
+        item_id = int(payload.get("item_id") or 0)
+    except (TypeError, ValueError):
+        item_id = 0
+    return item_id if item_id > 0 else 0
+
+
+def _command_payload_error(exc: QueueCommandPayloadError) -> JSONResponse:
+    return _json(
+        {
+            "ok": False,
+            "error": "manual_queue_command_fields_required",
+            "missing_fields": list(exc.missing_fields),
+        },
+        status_code=422,
+    )
+
+
+async def _preview_internal_due(payload: dict[str, Any]) -> dict[str, Any]:
+    return await run_in_threadpool(
+        InternalEventWorker(build_internal_event_repository()).preview_due,
+        batch_size=_int(payload.get("batch_size") or payload.get("limit"), default=worker_batch_size(), minimum=1),
+        event_types=_csv(payload.get("event_types")),
+        consumer_names=_csv(payload.get("consumer_names")),
+    )
+
+
+async def _preview_internal_consumer(
+    event_id: str,
+    consumer_name: str,
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    return await run_in_threadpool(
+        InternalEventWorker(build_internal_event_repository()).dispatch_one_consumer,
+        event_id,
+        consumer_name,
+        dry_run=True,
+        force=_bool(payload.get("force"), default=False),
+        reason=_text(payload.get("reason")),
+    )
+
+
+async def _accepted_command_response(
+    service: QueueRuntimeCommandService,
+    target: Any,
+    command: Any,
+    *,
+    source_route: str,
+) -> JSONResponse:
+    try:
+        result = await run_in_threadpool(
+            submit_manual_queue_command,
+            service,
+            target,
+            command,
+            source_route=source_route,
+        )
+    except QueueCommandConflict:
+        return _json({"ok": False, "error": "queue_command_cas_conflict"}, status_code=409)
+    except ValueError:
+        return _json({"ok": False, "error": "queue_command_target_not_eligible"}, status_code=409)
+    return _json(accepted_queue_command_payload(result, command), status_code=202)
 
 
 def _page_context(request: Request) -> dict[str, Any]:
@@ -180,12 +260,7 @@ async def preview_internal_event_run_due(request: Request) -> JSONResponse:
     if token_error:
         return _json({"ok": False, "error": token_error}, status_code=401)
     payload = await _payload(request)
-    result = await run_in_threadpool(
-        InternalEventWorker(build_internal_event_repository()).preview_due,
-        batch_size=_int(payload.get("batch_size") or payload.get("limit"), default=worker_batch_size(), minimum=1),
-        event_types=_csv(payload.get("event_types")),
-        consumer_names=_csv(payload.get("consumer_names")),
-    )
+    result = await _preview_internal_due(payload)
     return _json(result)
 
 
@@ -195,14 +270,44 @@ async def run_internal_event_due(request: Request) -> JSONResponse:
     if token_error:
         return _json({"ok": False, "error": token_error}, status_code=401)
     payload = await _payload(request)
-    result = await run_in_threadpool(
-        InternalEventWorker(build_internal_event_repository()).run_due,
-        batch_size=_int(payload.get("batch_size") or payload.get("limit"), default=worker_batch_size(), minimum=1),
-        dry_run=_bool(payload.get("dry_run"), default=True),
+    if _bool(payload.get("dry_run"), default=True):
+        return _json(await _preview_internal_due(payload))
+    try:
+        command = parse_manual_queue_command(payload)
+    except QueueCommandPayloadError as exc:
+        return _command_payload_error(exc)
+    item_id = _command_item_id(payload)
+    if not item_id:
+        return _json(
+            {
+                "ok": False,
+                "error": "manual_queue_command_fields_required",
+                "missing_fields": ["item_id"],
+            },
+            status_code=422,
+        )
+    service = _queue_command_service(request)
+    target = await run_in_threadpool(
+        service.read_internal_due_target,
+        item_id,
         event_types=_csv(payload.get("event_types")),
         consumer_names=_csv(payload.get("consumer_names")),
     )
-    return _json(result)
+    if target is None:
+        return _json({"ok": False, "error": "internal_event_consumer_run_not_found"}, status_code=404)
+    try:
+        result = await run_in_threadpool(
+            submit_manual_queue_command,
+            service,
+            target,
+            command,
+            source_route="/api/admin/internal-events/run-due",
+        )
+    except QueueCommandConflict:
+        return _json({"ok": False, "error": "queue_command_cas_conflict"}, status_code=409)
+    except ValueError:
+        return _json({"ok": False, "error": "queue_command_target_not_eligible"}, status_code=409)
+    return _json(accepted_queue_command_payload(result, command), status_code=202)
 
 
 @router.get("/api/admin/internal-events/{event_id}")
@@ -234,19 +339,31 @@ async def run_internal_event_consumer(event_id: str, consumer_name: str, request
     token_error = _action_or_internal_token_error(request, payload)
     if token_error:
         return _json({"ok": False, "error": token_error}, status_code=401)
-    result = await run_in_threadpool(
-        InternalEventWorker(build_internal_event_repository()).dispatch_one_consumer,
+    if _bool(payload.get("dry_run"), default=True):
+        result = await _preview_internal_consumer(event_id, consumer_name, payload)
+        if result.get("ok"):
+            return _json(result)
+        error = _text(result.get("error"))
+        status_code = 404 if error in {"consumer_run_not_found", "internal_event_not_found"} else 409
+        return _json(result, status_code=status_code)
+    try:
+        command = parse_manual_queue_command(payload)
+    except QueueCommandPayloadError as exc:
+        return _command_payload_error(exc)
+    service = _queue_command_service(request)
+    target = await run_in_threadpool(
+        service.read_internal_consumer_target,
         event_id,
         consumer_name,
-        dry_run=_bool(payload.get("dry_run"), default=True),
-        force=_bool(payload.get("force"), default=False),
-        reason=_text(payload.get("reason")),
     )
-    if result.get("ok"):
-        return _json(result)
-    error = _text(result.get("error"))
-    status_code = 404 if error in {"consumer_run_not_found", "internal_event_not_found"} else 409
-    return _json(result, status_code=status_code)
+    if target is None:
+        return _json({"ok": False, "error": "consumer_run_not_found"}, status_code=404)
+    return await _accepted_command_response(
+        service,
+        target,
+        command,
+        source_route="/api/admin/internal-events/{event_id}/consumers/{consumer_name}/run",
+    )
 
 
 @router.post("/api/admin/internal-events/{event_id}/consumers/{consumer_name}/retry")

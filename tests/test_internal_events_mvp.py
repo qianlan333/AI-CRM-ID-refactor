@@ -284,13 +284,17 @@ def test_diagnostics_and_admin_api_return_internal_event_metrics(next_client: Te
         assert preview.status_code == 200
         assert preview.json()["dry_run"] is True
         assert preview.json()["counts"]["candidate_count"] == 1
-        assert run_due.status_code == 200
-        assert run_due.json()["counts"]["failed_retryable_count"] == 1
-        assert calls == ["api_consumer"]
-        assert diagnostics_after.json()["due_count"] == 0
-        assert diagnostics_after.json()["failed_retryable_count"] == 1
-        assert retry.status_code == 200
-        assert retry.json()["consumer_run"]["status"] == "pending"
+        assert run_due.status_code == 422
+        assert set(run_due.json()["missing_fields"]) == {
+            "actor",
+            "reason",
+            "expected_version",
+        }
+        assert calls == []
+        assert diagnostics_after.json()["due_count"] == 1
+        assert diagnostics_after.json()["failed_retryable_count"] == 0
+        assert retry.status_code == 409
+        assert retry.json()["error"] == "internal_event_consumer_run_not_retryable"
         assert skip.status_code == 200
         assert skip.json()["consumer_run"]["status"] == "skipped"
         assert skip.json()["attempt"]["status"] == "skipped"

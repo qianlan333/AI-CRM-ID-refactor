@@ -30,6 +30,7 @@ run_fast() {
 "$PYTHON" tools/check_retired_runtime_references.py
 "$PYTHON" scripts/ci/check_github_action_pins.py
 "$PYTHON" scripts/ci/check_queue_runtime_cutover_kernel.py
+"$PYTHON" scripts/ci/check_admin_queue_command_boundary.py
 }
 
 run_db() {

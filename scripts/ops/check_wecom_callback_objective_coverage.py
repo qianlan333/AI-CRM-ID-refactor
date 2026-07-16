@@ -191,7 +191,7 @@ REQUIRED_TEST_PROOFS = {
     ),
     "admin_replay_detail": ("tests/test_webhook_inbox_admin_api.py", "test_webhook_inbox_admin_detail_returns_processing_chain"),
     "admin_retry_skip": ("tests/test_webhook_inbox_admin_api.py", "test_webhook_inbox_admin_retry_and_skip_require_token"),
-    "admin_dispatch_one": ("tests/test_webhook_inbox_admin_api.py", "test_webhook_inbox_admin_dispatch_one_requires_token_and_supports_execute"),
+    "admin_dispatch_one": ("tests/test_webhook_inbox_admin_api.py", "test_webhook_inbox_admin_dispatch_one_requires_token_and_versioned_command"),
     "admin_run_due": ("tests/test_webhook_inbox_admin_api.py", "test_webhook_inbox_admin_run_due_defaults_to_dry_run"),
     "admin_page_hooks": ("tests/test_webhook_inbox_admin_api.py", "test_webhook_inbox_admin_page_renders_shell_and_api_hooks"),
     "admin_incident_window_filter": (

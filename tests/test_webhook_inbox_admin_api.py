@@ -166,7 +166,7 @@ def test_webhook_inbox_admin_retry_and_skip_require_token(monkeypatch):
     assert skipped.json()["item"]["status"] == "ignored"
 
 
-def test_webhook_inbox_admin_dispatch_one_requires_token_and_supports_execute(monkeypatch):
+def test_webhook_inbox_admin_dispatch_one_requires_token_and_versioned_command(monkeypatch):
     repo = InMemoryWebhookInboxRepository()
     row = _seed(repo)
     calls: list[dict] = []
@@ -201,11 +201,10 @@ def test_webhook_inbox_admin_dispatch_one_requires_token_and_supports_execute(mo
     assert rejected.status_code == 401
     assert preview.status_code == 200
     assert preview.json()["dry_run"] is True
-    assert executed.status_code == 200
-    assert executed.json()["dry_run"] is False
+    assert executed.status_code == 422
+    assert set(executed.json()["missing_fields"]) == {"actor", "expected_version"}
     assert calls == [
         {"inbox_id": row["id"], "dry_run": True, "reason": "admin_dispatch_one"},
-        {"inbox_id": row["id"], "dry_run": False, "reason": "manual replay"},
     ]
 
 

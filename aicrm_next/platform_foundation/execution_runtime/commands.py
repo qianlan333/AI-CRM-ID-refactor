@@ -141,6 +141,142 @@ class QueueRuntimeCommandService:
             session.rollback()
         return self._target(normalized_kind, row) if row else None
 
+    def read_internal_consumer_target(
+        self,
+        event_id: str,
+        consumer_name: str,
+    ) -> QueueCommandTarget | None:
+        normalized_event_id = _required_text(event_id, "event_id")
+        normalized_consumer_name = _required_text(consumer_name, "consumer_name")
+        fact = _QUEUE_FACTS["internal_event"]
+        with self._session_factory() as session:
+            row = (
+                session.execute(
+                    text(
+                        f"""
+                        SELECT id, execution_id, lane, status, hold_reason,
+                               {fact.version_expression} AS version_token
+                        FROM {fact.table}
+                        WHERE event_id = :event_id
+                          AND consumer_name = :consumer_name
+                        """
+                    ),
+                    {
+                        "event_id": normalized_event_id,
+                        "consumer_name": normalized_consumer_name,
+                    },
+                )
+                .mappings()
+                .fetchone()
+            )
+            session.rollback()
+        return self._target("internal_event", row) if row else None
+
+    def read_internal_due_target(
+        self,
+        item_id: int,
+        *,
+        event_types: list[str] | None = None,
+        consumer_names: list[str] | None = None,
+    ) -> QueueCommandTarget | None:
+        fact = _QUEUE_FACTS["internal_event"]
+        clauses = ["run.id = :item_id"]
+        params: dict[str, Any] = {"item_id": int(item_id)}
+        if event_types:
+            clauses.append("event.event_type = ANY(:event_types)")
+            params["event_types"] = [
+                _required_text(item, "event_type") for item in event_types
+            ]
+        if consumer_names:
+            clauses.append("run.consumer_name = ANY(:consumer_names)")
+            params["consumer_names"] = [
+                _required_text(item, "consumer_name") for item in consumer_names
+            ]
+        with self._session_factory() as session:
+            row = (
+                session.execute(
+                    text(
+                        f"""
+                        SELECT run.id, run.execution_id, run.lane, run.status,
+                               run.hold_reason,
+                               {fact.version_expression.replace('xmin', 'run.xmin')} AS version_token
+                        FROM internal_event_consumer_run run
+                        JOIN internal_event event ON event.event_id = run.event_id
+                        WHERE {' AND '.join(clauses)}
+                        """
+                    ),
+                    params,
+                )
+                .mappings()
+                .fetchone()
+            )
+            session.rollback()
+        return self._target("internal_event", row) if row else None
+
+    def read_external_effect_target(
+        self,
+        item_id: int,
+        *,
+        effect_types: list[str] | None = None,
+        test_only: bool = False,
+    ) -> QueueCommandTarget | None:
+        fact = _QUEUE_FACTS["external_effect"]
+        clauses = ["id = :item_id"]
+        params: dict[str, Any] = {"item_id": int(item_id)}
+        if effect_types:
+            clauses.append("effect_type = ANY(:effect_types)")
+            params["effect_types"] = [
+                _required_text(item, "effect_type") for item in effect_types
+            ]
+        if test_only:
+            clauses.append("COALESCE(payload_json->>'execution_scope', '') = 'test_loopback'")
+        with self._session_factory() as session:
+            row = (
+                session.execute(
+                    text(
+                        f"""
+                        SELECT id, execution_id, lane, status, hold_reason,
+                               {fact.version_expression} AS version_token
+                        FROM external_effect_job
+                        WHERE {' AND '.join(clauses)}
+                        """
+                    ),
+                    params,
+                )
+                .mappings()
+                .fetchone()
+            )
+            session.rollback()
+        return self._target("external_effect", row) if row else None
+
+    def read_webhook_inbox_target(
+        self,
+        item_id: int,
+        *,
+        provider: str,
+    ) -> QueueCommandTarget | None:
+        normalized_provider = _required_text(provider, "provider")
+        fact = _QUEUE_FACTS["webhook_inbox"]
+        with self._session_factory() as session:
+            row = (
+                session.execute(
+                    text(
+                        f"""
+                        SELECT id, execution_id, lane, status, hold_reason,
+                               {fact.version_expression} AS version_token
+                        FROM webhook_inbox
+                        WHERE id = :item_id
+                          AND provider = :provider
+                        """
+                    ),
+                    {"item_id": int(item_id), "provider": normalized_provider},
+                )
+                .mappings()
+                .fetchone()
+            )
+            session.rollback()
+        return self._target("webhook_inbox", row) if row else None
+
     def request_immediate_execution(
         self,
         queue_kind: str,

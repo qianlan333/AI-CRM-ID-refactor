@@ -273,7 +273,7 @@ routes:
   runtime_owner: ai_crm_next
   layer: api
   external_effects: staging_disabled
-  data_source: external_adapter
+  data_source: command
   requires_auth: true
   rollback: previous_release
   audience: admin
