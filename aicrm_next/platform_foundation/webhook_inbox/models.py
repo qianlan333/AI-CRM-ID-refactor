@@ -109,6 +109,15 @@ class WebhookInboxMetrics:
     provider_distribution: list[dict[str, Any]]
     route_distribution: list[dict[str, Any]]
     recent_errors: list[dict[str, Any]]
+    raw_open_count: int = 0
+    held_count: int = 0
+    eligible_due_count: int = 0
+    scheduled_count: int = 0
+    retry_wait_count: int = 0
+    rate_limited_count: int = 0
+    in_flight_count: int = 0
+    unknown_count: int = 0
+    dlq_count: int = 0
 
     @classmethod
     def from_payload(cls, payload: dict[str, Any]) -> "WebhookInboxMetrics":
@@ -123,4 +132,13 @@ class WebhookInboxMetrics:
             provider_distribution=list(payload.get("provider_distribution") or []),
             route_distribution=list(payload.get("route_distribution") or []),
             recent_errors=list(payload.get("recent_errors") or []),
+            raw_open_count=int(payload.get("raw_open_count") or 0),
+            held_count=int(payload.get("held_count") or 0),
+            eligible_due_count=int(payload.get("eligible_due_count", payload.get("due_count")) or 0),
+            scheduled_count=int(payload.get("scheduled_count") or 0),
+            retry_wait_count=int(payload.get("retry_wait_count") or 0),
+            rate_limited_count=int(payload.get("rate_limited_count") or 0),
+            in_flight_count=int(payload.get("in_flight_count") or 0),
+            unknown_count=int(payload.get("unknown_count") or 0),
+            dlq_count=int(payload.get("dlq_count", payload.get("dead_letter_count")) or 0),
         )

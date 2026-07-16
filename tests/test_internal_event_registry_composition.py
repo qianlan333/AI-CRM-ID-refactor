@@ -31,6 +31,7 @@ def test_composition_builds_complete_isolated_registries() -> None:
     assert second.is_fanout_authoritative is True
     assert _consumer_names(first, "payment.succeeded") == _consumer_names(second, "payment.succeeded")
     assert "service_period_entitlement_consumer" in _consumer_names(first, "payment.succeeded")
+    assert _consumer_names(first, "external_effect.completed") == {"external_effect_completion_continuation_consumer"}
 
     with pytest.raises(RuntimeError, match="fanout contract is sealed"):
         first.register("registry.probe", "first_only", _unused_handler)

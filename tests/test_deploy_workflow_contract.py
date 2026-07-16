@@ -858,6 +858,8 @@ def test_internal_event_worker_systemd_units_are_deployable():
     assert "questionnaire.submitted:questionnaire_tag_consumer" in service
     assert "questionnaire.submitted:automation_questionnaire_consumer" in service
     assert "questionnaire.submitted:customer_summary_consumer" in service
+    assert "external_effect.completed" in service
+    assert "external_effect.completed:external_effect_completion_continuation_consumer" in service
     assert "WorkingDirectory=/home/ubuntu/极简 crm" in service
     assert "ExecStart=/usr/bin/env" in service
     assert "/home/ubuntu/venvs/openclaw/bin/python scripts/run_internal_event_worker.py --execute --limit 50" in service

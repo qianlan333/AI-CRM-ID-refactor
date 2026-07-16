@@ -713,7 +713,7 @@ def test_webhook_adapter_enabled_allowlisted_2xx_succeeds_and_records_attempt(mo
     assert attempts[0].response_summary_json["real_external_call_executed"] is True
 
 
-def test_external_effect_worker_continues_automation_agent_webhook_batch(monkeypatch) -> None:
+def test_external_effect_worker_queues_automation_agent_continuation_without_running_it_inline(monkeypatch) -> None:
     from aicrm_next.automation_agents.worker import AutomationAgentWorker
 
     seen: dict[str, str] = {}
@@ -753,16 +753,20 @@ def test_external_effect_worker_continues_automation_agent_webhook_batch(monkeyp
     ).run_due(batch_size=1, dry_run=False, effect_types=[WEBHOOK_GENERIC_PUSH])
     attempts = repo.list_attempts(job["id"])
 
-    assert seen == {"batch_id": "agent_batch_unit_001", "operator": "external_effect_agent_continuation"}
+    assert seen == {}
     assert result["counts"]["succeeded_count"] == 1
     continuation = result["items"][0]["post_success_continuation"]
-    assert continuation["ok"] is True
-    assert continuation["broadcast_enqueue"]["approved_count"] == 1
+    assert continuation["applicable"] is False
+    assert continuation["reason"] == "durable_completion_event_pending"
+    assert result["items"][0]["completion_event_queued"] is True
+    events = repo.list_completion_events()
+    assert len(events) == 1
+    assert events[0]["event_type"] == "external_effect.completed"
+    assert events[0]["payload"]["attempt_id"] == attempts[0].attempt_id
     response_summary = attempts[0].response_summary_json
     if isinstance(response_summary, str):
         response_summary = json.loads(response_summary)
-    continuation_summary = response_summary["post_success_continuation"]
-    assert continuation_summary == "dict" or continuation_summary == continuation
+    assert "post_success_continuation" not in response_summary
 
 
 def test_webhook_adapter_retryable_statuses_and_timeout_set_next_retry(monkeypatch) -> None:
@@ -849,6 +853,51 @@ def test_cancelled_job_is_not_scanned_by_run_due_preview() -> None:
     assert cancelled is not None
     assert cancelled.status == "cancelled"
     assert preview["counts"]["candidate_count"] == 0
+
+
+def test_external_effect_cancel_api_supports_optional_row_version_cas(next_client: TestClient, monkeypatch) -> None:
+    tokens = _external_effect_admin_tokens(next_client, monkeypatch, CANCEL_JOB_ROUTE)
+    service = ExternalEffectService()
+    job = service.plan_effect(
+        effect_type=WEBHOOK_QUESTIONNAIRE_SUBMISSION_PUSH,
+        adapter_name="outbound_webhook",
+        operation="post",
+        target_type="questionnaire_submission",
+        target_id="api-cancel-cas",
+        idempotency_key="api-external-effect-cancel-cas",
+        status="queued",
+    )
+
+    stale = next_client.post(
+        f"/api/admin/external-effects/jobs/{job['id']}/cancel",
+        json={
+            "admin_action_token": tokens[CANCEL_JOB_ROUTE],
+            "expected_version": job["row_version"] + 1,
+            "actor": "operator",
+            "reason": "stale request",
+        },
+    )
+    invalid = next_client.post(
+        f"/api/admin/external-effects/jobs/{job['id']}/cancel",
+        json={"admin_action_token": tokens[CANCEL_JOB_ROUTE], "expected_version": "invalid"},
+    )
+    cancelled = next_client.post(
+        f"/api/admin/external-effects/jobs/{job['id']}/cancel",
+        json={
+            "admin_action_token": tokens[CANCEL_JOB_ROUTE],
+            "expected_version": job["row_version"],
+            "actor": "operator",
+            "reason": "cancel with cas",
+        },
+    )
+
+    assert stale.status_code == 409
+    assert invalid.status_code == 422
+    assert cancelled.status_code == 200
+    assert cancelled.json()["job"]["status"] == "cancelled"
+    assert cancelled.json()["job"]["row_version"] == job["row_version"] + 1
+    assert cancelled.json()["job"]["cancel_requested_by"] == "operator"
+    assert cancelled.json()["job"]["cancel_reason"] == "cancel with cas"
 
 
 def test_external_effect_admin_api_lists_previews_retries_and_cancels(next_client: TestClient, monkeypatch) -> None:
@@ -1085,7 +1134,7 @@ def test_external_effect_diagnostics_metrics_execution_mode_and_allowed_types(ne
     assert enabled_body["allowed_effect_types"] == [WEBHOOK_ORDER_PAID_PUSH]
 
 
-def test_external_effect_due_queue_quarantines_stale_dispatching_jobs() -> None:
+def test_external_effect_due_queue_requeues_stale_pre_provider_jobs() -> None:
     repo = InMemoryExternalEffectRepository()
     service = _service(repo)
     job = _queued_webhook_job(service, idempotency_key="stale-dispatching-reclaim")
@@ -1102,15 +1151,14 @@ def test_external_effect_due_queue_quarantines_stale_dispatching_jobs() -> None:
     updated = repo.get_job(job["id"])
 
     assert quarantined == 1
-    assert metrics["eligible_due_count"] == 0
-    assert metrics["unknown_after_dispatch_count"] == 1
-    assert due == []
-    assert acquired == []
+    assert metrics["eligible_due_count"] == 1
+    assert metrics["unknown_after_dispatch_count"] == 0
+    assert [item.id for item in due] == [job["id"]]
+    assert [item.id for item in acquired] == [job["id"]]
     assert updated is not None
-    assert updated.status == "unknown_after_dispatch"
-    assert updated.locked_by == ""
-    assert updated.locked_at == ""
-    assert updated.reconciliation_required is True
+    assert updated.status == "dispatching"
+    assert updated.locked_by == "replacement-worker"
+    assert updated.reconciliation_required is False
 
 
 def test_external_effect_sql_due_queue_quarantines_stale_dispatching_jobs() -> None:
@@ -1119,6 +1167,8 @@ def test_external_effect_sql_due_queue_quarantines_stale_dispatching_jobs() -> N
     assert "status = 'dispatching'" in source
     assert "lease_expires_at <= CURRENT_TIMESTAMP" in source
     assert "status = 'unknown_after_dispatch'" in source
+    assert "status = 'queued'" in source
+    assert "provider_boundary_crossed" in source
 
 
 def test_external_effect_admin_page_is_removed_and_troubleshooting_api_covers_queue_debug(next_client: TestClient) -> None:

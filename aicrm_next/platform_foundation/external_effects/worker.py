@@ -204,6 +204,20 @@ class ExternalEffectWorker:
                 "real_external_call_executed": False,
             }
         job = active
+        if job.cancel_requested_at:
+            cancelled = self._repo.settle_cancel(job=job)
+            current = cancelled or self._repo.get_job(job.id) or job
+            return {
+                "ok": bool(cancelled),
+                "error": "" if cancelled else "cancel_settlement_lost_lease",
+                "job": current.to_dict(),
+                "post_success_continuation": {
+                    "applicable": False,
+                    "reason": "dispatch_cancelled_before_provider",
+                },
+                "completion_event_queued": False,
+                "real_external_call_executed": False,
+            }
         dispatch_result = self._block_if_wecom_execution_disabled(job)
         if dispatch_result is None and _enabled("AICRM_EXTERNAL_EFFECT_TEST_EXECUTION_ONLY") and not _is_test_job(job):
             dispatch_result = ExternalEffectDispatchResult(
@@ -235,6 +249,43 @@ class ExternalEffectWorker:
                 error_message=message,
             )
         if dispatch_result is None:
+            begun = self._repo.begin_provider_attempt(
+                job=job,
+                request_summary={
+                    "effect_type": job.effect_type,
+                    "adapter_name": job.adapter_name,
+                    "operation": job.operation,
+                    "target_type": job.target_type,
+                    "provider_boundary": "durable_attempt_committed_before_adapter_dispatch",
+                },
+            )
+            if begun is None:
+                current = self._repo.get_job(job.id)
+                if current is not None and current.status == "dispatching" and current.cancel_requested_at and current.lease_token == job.lease_token:
+                    cancelled = self._repo.settle_cancel(job=current)
+                    if cancelled is not None:
+                        return {
+                            "ok": True,
+                            "job": cancelled.to_dict(),
+                            "post_success_continuation": {
+                                "applicable": False,
+                                "reason": "dispatch_cancelled_before_provider",
+                            },
+                            "completion_event_queued": False,
+                            "real_external_call_executed": False,
+                        }
+                return {
+                    "ok": False,
+                    "error": "provider_attempt_not_started",
+                    "job": (current or job).to_dict(),
+                    "post_success_continuation": {
+                        "applicable": False,
+                        "reason": "provider_attempt_not_started",
+                    },
+                    "completion_event_queued": False,
+                    "real_external_call_executed": False,
+                }
+            job, _provider_attempt = begun
             try:
                 dispatch_result = self._adapters.get(job.adapter_name).dispatch(job)
             except Exception as exc:
@@ -258,6 +309,8 @@ class ExternalEffectWorker:
                     response_summary={
                         "adapter_exception": True,
                         "provider_result_received": False,
+                        "provider_boundary_crossed": True,
+                        "external_call_outcome_unknown": True,
                     },
                     error_code="adapter_exception",
                     error_message=str(exc)[:500],
@@ -267,21 +320,6 @@ class ExternalEffectWorker:
 
         dispatch_result = normalize_dispatch_result(job, dispatch_result)
         continuation = self._run_post_success_continuations(job, dispatch_result)
-        if continuation.get("applicable"):
-            dispatch_result = replace(
-                dispatch_result,
-                response_summary={
-                    **dict(dispatch_result.response_summary or {}),
-                    "post_success_continuation": continuation,
-                },
-            )
-            if not continuation.get("ok"):
-                dispatch_result = replace(
-                    dispatch_result,
-                    status="unknown_after_dispatch",
-                    error_code="post_success_continuation_unknown",
-                    error_message=str(continuation.get("error") or "Post-success continuation did not complete."),
-                )
 
         if (
             dispatch_result.status == "failed_retryable"
@@ -332,6 +370,7 @@ class ExternalEffectWorker:
                 "error": "result_persistence_failed",
                 "job": updated.to_dict() if updated else job.to_dict(),
                 "post_success_continuation": continuation,
+                "completion_event_queued": False,
                 "real_external_call_executed": dispatch_result.real_external_call_executed,
             }
         if completed is None:
@@ -341,6 +380,7 @@ class ExternalEffectWorker:
                 "error": "lost_lease",
                 "job": current.to_dict() if current else job.to_dict(),
                 "post_success_continuation": continuation,
+                "completion_event_queued": False,
                 "real_external_call_executed": dispatch_result.real_external_call_executed,
             }
         updated, attempt = completed
@@ -349,6 +389,7 @@ class ExternalEffectWorker:
             "job": updated.to_dict(),
             "attempt": attempt.to_dict(),
             "post_success_continuation": continuation,
+            "completion_event_queued": updated.status == "succeeded",
             "real_external_call_executed": dispatch_result.real_external_call_executed,
         }
 
@@ -382,4 +423,8 @@ class ExternalEffectWorker:
     def _run_post_success_continuations(self, job: ExternalEffectJob, dispatch_result) -> dict[str, Any]:
         if dispatch_result.status != "succeeded":
             return {"applicable": False, "reason": "dispatch_not_succeeded"}
-        return self._continuations.run(job, dispatch_result)
+        return {
+            "applicable": False,
+            "reason": "durable_completion_event_pending",
+            "registered_compatibility_continuations": list(self._continuations.names),
+        }

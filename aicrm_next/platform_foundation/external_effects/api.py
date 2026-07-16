@@ -60,6 +60,19 @@ def _int(value: Any, *, default: int, minimum: int = 0, maximum: int = 200) -> i
     return max(minimum, min(parsed, maximum))
 
 
+def _optional_expected_version(payload: dict[str, Any]) -> tuple[int | None, str]:
+    value = payload.get("expected_version", payload.get("row_version"))
+    if value in (None, ""):
+        return None, ""
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return None, "expected_version_must_be_a_positive_integer"
+    if parsed < 1:
+        return None, "expected_version_must_be_a_positive_integer"
+    return parsed, ""
+
+
 def _json(payload: dict[str, Any], *, status_code: int = 200) -> JSONResponse:
     headers = {
         "X-AICRM-Route-Owner": ROUTE_OWNER,
@@ -387,7 +400,15 @@ async def cancel_external_effect_job(job_id: int, request: Request) -> JSONRespo
     token_error = _action_or_internal_token_error(request, payload)
     if token_error:
         return _json({"ok": False, "error": token_error, "route_owner": ROUTE_OWNER}, status_code=401)
-    job = _service().cancel(job_id)
+    expected_version, version_error = _optional_expected_version(payload)
+    if version_error:
+        return _json({"ok": False, "error": version_error, "route_owner": ROUTE_OWNER}, status_code=422)
+    job = _service().cancel(
+        job_id,
+        actor=_text(payload.get("actor")),
+        reason=_text(payload.get("reason")),
+        expected_version=expected_version,
+    )
     if not job:
         return _json({"ok": False, "error": "external_effect_job_not_cancellable", "route_owner": ROUTE_OWNER}, status_code=409)
     return _json({"ok": True, "job": external_effect_job_detail_item(job), "route_owner": ROUTE_OWNER})

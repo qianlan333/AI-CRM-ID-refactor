@@ -277,6 +277,7 @@ class PostgresWebhookInboxRepository:
                 SELECT *
                 FROM webhook_inbox
                 WHERE provider = %s
+                  AND hold_reason = ''
                   AND (
                     (
                       status IN ('received', 'failed_retryable')
@@ -360,6 +361,7 @@ class PostgresWebhookInboxRepository:
                     SELECT id
                     FROM webhook_inbox
                     WHERE provider = %s
+                      AND hold_reason = ''
                       AND (
                         (
                           status IN ('received', 'failed_retryable')
@@ -410,6 +412,7 @@ class PostgresWebhookInboxRepository:
                     started_at = COALESCE(started_at, CURRENT_TIMESTAMP),
                     updated_at = CURRENT_TIMESTAMP
                 WHERE id = %s
+                  AND hold_reason = ''
                   AND status IN ('received', 'failed_retryable')
                   AND (next_retry_at IS NULL OR next_retry_at <= CURRENT_TIMESTAMP)
                   AND (locked_at IS NULL OR locked_at <= CURRENT_TIMESTAMP - INTERVAL '5 minutes')
@@ -605,18 +608,39 @@ class PostgresWebhookInboxRepository:
                 f"""
                 SELECT
                     COUNT(*) FILTER (
+                        WHERE status IN ('received', 'processing', 'failed_retryable')
+                    ) AS raw_open_count,
+                    COUNT(*) FILTER (
+                        WHERE hold_reason <> '' AND status IN ('received', 'processing', 'failed_retryable')
+                    ) AS held_count,
+                    COUNT(*) FILTER (
                         WHERE (
+                          hold_reason = ''
+                          AND
                           (
-                            status IN ('received', 'failed_retryable')
-                            AND (next_retry_at IS NULL OR next_retry_at <= CURRENT_TIMESTAMP)
-                            AND (locked_at IS NULL OR locked_at <= CURRENT_TIMESTAMP - INTERVAL '5 minutes')
-                          )
-                          OR (
-                            status = 'processing'
-                            AND locked_at <= CURRENT_TIMESTAMP - INTERVAL '5 minutes'
+                            (
+                              status IN ('received', 'failed_retryable')
+                              AND (next_retry_at IS NULL OR next_retry_at <= CURRENT_TIMESTAMP)
+                              AND (locked_at IS NULL OR locked_at <= CURRENT_TIMESTAMP - INTERVAL '5 minutes')
+                            )
+                            OR (
+                              status = 'processing'
+                              AND locked_at <= CURRENT_TIMESTAMP - INTERVAL '5 minutes'
+                            )
                           )
                         )
                     ) AS due_count,
+                    0::BIGINT AS scheduled_count,
+                    COUNT(*) FILTER (
+                        WHERE hold_reason = '' AND status = 'failed_retryable'
+                          AND next_retry_at > CURRENT_TIMESTAMP
+                    ) AS retry_wait_count,
+                    0::BIGINT AS rate_limited_count,
+                    COUNT(*) FILTER (
+                        WHERE hold_reason = '' AND status = 'processing'
+                          AND locked_at > CURRENT_TIMESTAMP - INTERVAL '5 minutes'
+                    ) AS in_flight_count,
+                    0::BIGINT AS unknown_count,
                     COUNT(*) FILTER (WHERE status = 'processing') AS processing_count,
                     COUNT(*) FILTER (WHERE status = 'failed_retryable') AS failed_retryable_count,
                     COUNT(*) FILTER (WHERE status = 'dead_letter') AS dead_letter_count,
@@ -700,7 +724,16 @@ class PostgresWebhookInboxRepository:
             ]
         oldest_age = row.get("oldest_received_age_seconds")
         return {
+            "raw_open_count": int(row.get("raw_open_count") or 0),
+            "held_count": int(row.get("held_count") or 0),
             "due_count": int(row.get("due_count") or 0),
+            "eligible_due_count": int(row.get("due_count") or 0),
+            "scheduled_count": int(row.get("scheduled_count") or 0),
+            "retry_wait_count": int(row.get("retry_wait_count") or 0),
+            "rate_limited_count": int(row.get("rate_limited_count") or 0),
+            "in_flight_count": int(row.get("in_flight_count") or 0),
+            "unknown_count": int(row.get("unknown_count") or 0),
+            "dlq_count": int(row.get("dead_letter_count") or 0),
             "processing_count": int(row.get("processing_count") or 0),
             "failed_retryable_count": int(row.get("failed_retryable_count") or 0),
             "dead_letter_count": int(row.get("dead_letter_count") or 0),
@@ -761,6 +794,8 @@ class InMemoryWebhookInboxRepository:
             "payload_summary_json": deepcopy(kwargs.get("payload_summary_json") or {}),
             "processing_summary_json": {},
             "status": "received",
+            "hold_reason": "",
+            "hold_at": None,
             "attempt_count": 0,
             "max_attempts": max(1, int(kwargs.get("max_attempts") or 8)),
             "next_retry_at": None,
@@ -784,6 +819,8 @@ class InMemoryWebhookInboxRepository:
         now = datetime.now(timezone.utc)
 
         def is_due(row: dict[str, Any]) -> bool:
+            if _text(row.get("hold_reason")):
+                return False
             status = row.get("status")
             locked_expired = bool(row.get("locked_at") and row["locked_at"] <= now - timedelta(minutes=5))
             if status == "processing":
@@ -855,7 +892,8 @@ class InMemoryWebhookInboxRepository:
                 continue
             locked_expired = bool(row.get("locked_at") and row["locked_at"] <= now - timedelta(minutes=5))
             if (
-                row.get("status") in {"received", "failed_retryable"}
+                not _text(row.get("hold_reason"))
+                and row.get("status") in {"received", "failed_retryable"}
                 and (not row.get("next_retry_at") or row["next_retry_at"] <= now)
                 and (not row.get("locked_at") or locked_expired)
             ):
@@ -981,6 +1019,8 @@ class InMemoryWebhookInboxRepository:
         rows = [row for row in self.rows if matches(row)]
 
         def is_due(row: dict[str, Any]) -> bool:
+            if _text(row.get("hold_reason")):
+                return False
             status = row.get("status")
             locked_expired = bool(row.get("locked_at") and row["locked_at"] <= now - timedelta(minutes=5))
             if status == "processing":
@@ -1042,7 +1082,24 @@ class InMemoryWebhookInboxRepository:
             reverse=True,
         )[:10]
         return {
+            "raw_open_count": len(active_rows),
+            "held_count": len([row for row in active_rows if _text(row.get("hold_reason"))]),
             "due_count": len(due_rows),
+            "eligible_due_count": len(due_rows),
+            "scheduled_count": 0,
+            "retry_wait_count": len([
+                row for row in rows
+                if not _text(row.get("hold_reason")) and row.get("status") == "failed_retryable"
+                and row.get("next_retry_at") and row.get("next_retry_at") > now
+            ]),
+            "rate_limited_count": 0,
+            "in_flight_count": len([
+                row for row in rows
+                if not _text(row.get("hold_reason")) and row.get("status") == "processing"
+                and row.get("locked_at") and row.get("locked_at") > now - timedelta(minutes=5)
+            ]),
+            "unknown_count": 0,
+            "dlq_count": len([row for row in rows if row.get("status") in {"dead_letter", "failed_terminal"}]),
             "processing_count": len([row for row in rows if row.get("status") == "processing"]),
             "failed_retryable_count": len([row for row in rows if row.get("status") == "failed_retryable"]),
             "dead_letter_count": len([row for row in rows if row.get("status") == "dead_letter"]),

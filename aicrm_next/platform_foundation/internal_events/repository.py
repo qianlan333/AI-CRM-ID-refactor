@@ -403,6 +403,7 @@ class SQLAlchemyInternalEventRepository(InternalEventRepository):
     ) -> InternalEventConsumerRun | None:
         executable = (
             "r.status IN ('pending','failed_retryable','failed_terminal','blocked','succeeded','skipped') "
+            "AND r.hold_reason = '' "
             "AND (r.locked_at IS NULL OR r.locked_at <= CURRENT_TIMESTAMP - INTERVAL '5 minutes')"
             if force
             else automatic_due_predicate_sql("r")
@@ -489,8 +490,26 @@ class SQLAlchemyInternalEventRepository(InternalEventRepository):
             f"""
             SELECT
                 COUNT(*) FILTER (
+                    WHERE r.status IN ('pending', 'running', 'failed_retryable')
+                ) AS raw_open_count,
+                COUNT(*) FILTER (
+                    WHERE r.hold_reason <> '' AND r.status IN ('pending', 'running', 'failed_retryable')
+                ) AS held_count,
+                COUNT(*) FILTER (
                     WHERE {due_predicate}
                 ) AS due_count,
+                0::BIGINT AS scheduled_count,
+                COUNT(*) FILTER (
+                    WHERE r.hold_reason = '' AND r.status = 'failed_retryable'
+                      AND r.next_retry_at > CURRENT_TIMESTAMP
+                ) AS retry_wait_count,
+                0::BIGINT AS rate_limited_count,
+                COUNT(*) FILTER (
+                    WHERE r.hold_reason = '' AND r.status = 'running'
+                      AND r.locked_at > CURRENT_TIMESTAMP - INTERVAL '5 minutes'
+                ) AS in_flight_count,
+                0::BIGINT AS unknown_count,
+                COUNT(*) FILTER (WHERE r.status IN ('failed_terminal', 'blocked')) AS dlq_count,
                 COUNT(*) FILTER (WHERE r.status = 'failed_retryable') AS failed_retryable_count,
                 COUNT(*) FILTER (WHERE r.status = 'failed_terminal') AS failed_terminal_count,
                 COALESCE(
@@ -531,7 +550,16 @@ class SQLAlchemyInternalEventRepository(InternalEventRepository):
             params,
         )
         return {
+            "raw_open_count": int(row.get("raw_open_count") or 0),
+            "held_count": int(row.get("held_count") or 0),
             "due_count": int(row.get("due_count") or 0),
+            "eligible_due_count": int(row.get("due_count") or 0),
+            "scheduled_count": int(row.get("scheduled_count") or 0),
+            "retry_wait_count": int(row.get("retry_wait_count") or 0),
+            "rate_limited_count": int(row.get("rate_limited_count") or 0),
+            "in_flight_count": int(row.get("in_flight_count") or 0),
+            "unknown_count": int(row.get("unknown_count") or 0),
+            "dlq_count": int(row.get("dlq_count") or 0),
             "failed_retryable_count": int(row.get("failed_retryable_count") or 0),
             "failed_terminal_count": int(row.get("failed_terminal_count") or 0),
             "oldest_pending_age_seconds": int(float(row.get("oldest_pending_age_seconds") or 0)),

@@ -6,13 +6,17 @@ realtime callback, and manual execution all enter the same durable claim boundar
 ## Claim and lease
 
 - Scheduler claims only due `queued` or `failed_retryable` jobs.
-- Scheduler scans honor `scheduled_at` and retry backoff. An explicit trusted
-  `dispatch_one(job_id)` may claim a queued/retryable job early, but uses the same
-  lease-token/CAS result boundary.
+- Scheduler and explicit `dispatch_one(job_id)` claims both honor `scheduled_at`,
+  retry backoff, and `attempt_count < max_attempts`.
 - A claim atomically changes the job to `dispatching` and assigns a unique
   `lease_token` plus `lease_expires_at`.
 - Result persistence compares both `status = dispatching` and the lease token.
-  A worker that lost its lease writes neither an attempt nor a job result.
+  A worker that lost its lease cannot mutate the open attempt or job result; the
+  already durable `dispatching` attempt remains for stale-lease quarantine.
+- Immediately before entering an adapter, the worker commits one
+  `external_effect_attempt(status = dispatching)` and links it through
+  `last_attempt_id`. A provider result may only complete that existing attempt;
+  a success without this durable boundary is rejected.
 - Expired `dispatching` jobs are quarantined as `unknown_after_dispatch`. They are
   never automatically requeued because the former worker may have reached the provider.
 
@@ -31,9 +35,21 @@ An adapter may not turn `side_effect_executed = false` into `succeeded`. Fake su
 is `simulated`; a claimed success without real execution is `blocked`. A real call
 without provider evidence is `unknown_after_dispatch`.
 
-The attempt row and final job transition are committed in one transaction. A
-successful provider call followed by an unpersisted result is quarantined as unknown,
-not retried as if no call occurred.
+The existing attempt row, final job transition, and `external_effect.completed`
+internal-event outbox envelope are committed in one transaction. A successful
+provider call followed by an unpersisted result or outbox hand-off is quarantined
+as unknown, not retried as if no call occurred. Post-success projections execute
+from the durable internal event and cannot rewrite provider truth.
+
+## Cancellation
+
+- Every mutable job exposes a monotonic `row_version`; a supplied
+  `expected_version` must match before a cancellation request is accepted.
+- A queued/planned/retryable job is cancelled with a status CAS.
+- A leased job records `cancel_requested_at/by/reason` without clearing the lease.
+- The worker may settle the request only before the durable provider attempt exists.
+  Once that boundary exists, the provider result wins and the request remains audit
+  evidence rather than overwriting the result.
 
 ## Manual recovery
 

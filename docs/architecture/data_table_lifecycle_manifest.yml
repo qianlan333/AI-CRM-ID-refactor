@@ -1817,6 +1817,26 @@ tables:
       - tests/test_event_effect_table_lineage.py
     notes: Attempt audit for internal_event_consumer_run.
 
+  queue_history_classification:
+    domain: platform_foundation
+    lifecycle: audit
+    write_owner: migrations.0125_execution_runtime_correctness
+    read_owners:
+      - queue history classification operations snapshot
+      - execution runtime consistency audit
+    replacement: none; immutable cutover evidence for pre-runtime queue history
+    drop_candidate: false
+    drop_after: ""
+    runtime_entrypoints:
+      - scripts/ops/snapshot_queue_history_classification.py
+    migration_source: 0125_execution_runtime_correctness
+    pii_level: none
+    guard_tests:
+      - tests/test_queue_history_freeze.py
+      - tests/test_database_bootstrap.py
+      - tests/test_data_table_lifecycle_guard.py
+    notes: Append-only classification of the exact pre-cutover rows. It stores queue kind, numeric row id, source status, classification and non-sensitive evidence only; update and delete are rejected by a database trigger, and no automatic release path exists.
+
   external_effect_job:
     domain: external_effects
     lifecycle: queue

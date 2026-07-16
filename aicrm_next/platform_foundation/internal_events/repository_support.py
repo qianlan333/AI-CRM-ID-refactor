@@ -44,25 +44,31 @@ LEASE_TIMEOUT = timedelta(minutes=5)
 def automatic_due_predicate_sql(alias: str = "r") -> str:
     return f"""
         (
+            {alias}.hold_reason = ''
+            AND
             (
-                {alias}.status = 'pending'
-                AND ({alias}.locked_at IS NULL OR {alias}.locked_at <= CURRENT_TIMESTAMP - INTERVAL '5 minutes')
-            )
-            OR (
-                {alias}.status = 'failed_retryable'
-                AND ({alias}.next_retry_at IS NULL OR {alias}.next_retry_at <= CURRENT_TIMESTAMP)
-                AND ({alias}.locked_at IS NULL OR {alias}.locked_at <= CURRENT_TIMESTAMP - INTERVAL '5 minutes')
-            )
-            OR (
-                {alias}.status = 'running'
-                AND {alias}.locked_at IS NOT NULL
-                AND {alias}.locked_at <= CURRENT_TIMESTAMP - INTERVAL '5 minutes'
+                (
+                    {alias}.status = 'pending'
+                    AND ({alias}.locked_at IS NULL OR {alias}.locked_at <= CURRENT_TIMESTAMP - INTERVAL '5 minutes')
+                )
+                OR (
+                    {alias}.status = 'failed_retryable'
+                    AND ({alias}.next_retry_at IS NULL OR {alias}.next_retry_at <= CURRENT_TIMESTAMP)
+                    AND ({alias}.locked_at IS NULL OR {alias}.locked_at <= CURRENT_TIMESTAMP - INTERVAL '5 minutes')
+                )
+                OR (
+                    {alias}.status = 'running'
+                    AND {alias}.locked_at IS NOT NULL
+                    AND {alias}.locked_at <= CURRENT_TIMESTAMP - INTERVAL '5 minutes'
+                )
             )
         )
     """
 
 
 def _run_is_automatically_due(row: dict[str, Any], *, now: datetime) -> bool:
+    if _text(row.get("hold_reason")):
+        return False
     status = _text(row.get("status"))
     if status not in AUTOMATIC_PENDING_STATUSES and status != "running":
         return False
@@ -196,7 +202,7 @@ def _public_run(row: dict[str, Any] | None) -> InternalEventConsumerRun | None:
         return None
     payload = dict(row)
     payload["result_summary_json"] = _json_obj(payload.get("result_summary_json"))
-    for key in ("next_retry_at", "locked_at", "created_at", "updated_at", "finished_at"):
+    for key in ("next_retry_at", "locked_at", "created_at", "updated_at", "finished_at", "hold_at"):
         payload[key] = public_datetime(payload.get(key))
     payload["id"] = int(payload.get("id") or 0)
     payload["attempt_count"] = int(payload.get("attempt_count") or 0)
@@ -223,7 +229,7 @@ def _public_outbox(row: dict[str, Any] | None) -> InternalEventOutboxRecord | No
     payload = dict(row)
     for key in ("payload_json", "payload_summary_json"):
         payload[key] = _json_obj(payload.get(key))
-    for key in ("occurred_at", "next_retry_at", "locked_at", "created_at", "updated_at", "relayed_at"):
+    for key in ("occurred_at", "next_retry_at", "locked_at", "created_at", "updated_at", "relayed_at", "hold_at"):
         payload[key] = public_datetime(payload.get(key))
     for key in ("id", "event_version", "attempt_count", "max_attempts"):
         payload[key] = int(payload.get(key) or 0)

@@ -39,6 +39,19 @@ def _int(value: Any, *, default: int = 0, minimum: int = 0, maximum: int = 10**1
     return max(minimum, min(parsed, maximum))
 
 
+def _optional_expected_version(payload: dict[str, Any]) -> tuple[int | None, str]:
+    value = payload.get("expected_version", payload.get("row_version"))
+    if value in (None, ""):
+        return None, ""
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return None, "expected_version_must_be_a_positive_integer"
+    if parsed < 1:
+        return None, "expected_version_must_be_a_positive_integer"
+    return parsed, ""
+
+
 async def _payload(request: Request) -> dict[str, Any]:
     try:
         raw = await request.json()
@@ -203,7 +216,15 @@ async def push_center_cancel_job(job_id: int, request: Request) -> JSONResponse:
     token_error = _action_or_internal_token_error(request, payload)
     if token_error:
         return _json({"ok": False, "error": token_error}, status_code=401)
-    job = ExternalEffectService().cancel(job_id)
+    expected_version, version_error = _optional_expected_version(payload)
+    if version_error:
+        return _json({"ok": False, "error": version_error}, status_code=422)
+    job = ExternalEffectService().cancel(
+        job_id,
+        actor=_text(payload.get("actor")),
+        reason=_text(payload.get("reason")),
+        expected_version=expected_version,
+    )
     if not job:
         return _json({"ok": False, "error": "push_center_job_not_cancellable"}, status_code=409)
     detail = build_job_detail_payload(job.id, repository=PushCenterRepository())

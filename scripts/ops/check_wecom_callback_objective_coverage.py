@@ -177,8 +177,8 @@ REQUIRED_TEST_PROOFS = {
         "test_realtime_adapter_exception_quarantines_job_for_reconciliation",
     ),
     "external_effect_stale_dispatching_quarantine": (
-        "tests/test_external_effects_mvp.py",
-        "test_external_effect_due_queue_quarantines_stale_dispatching_jobs",
+        "tests/test_external_effect_delivery_lease.py",
+        "test_stale_post_provider_dispatch_is_quarantined_as_unknown",
     ),
     "schema_contract": ("tests/test_webhook_inbox_migration_contract.py", "test_webhook_inbox_migration_locks_status_and_idempotency_contracts"),
     "webhook_inbox_service_models": (

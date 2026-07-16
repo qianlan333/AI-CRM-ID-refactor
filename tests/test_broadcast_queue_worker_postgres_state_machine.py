@@ -187,3 +187,61 @@ def test_claim_query_never_reclaims_dispatching_or_unknown_jobs(next_pg_schema) 
     assert int(queued["job_id"]) in claimed_ids
     assert int(dispatching["job_id"]) not in claimed_ids
     assert int(unknown["job_id"]) not in claimed_ids
+
+
+def test_retryable_failure_at_max_attempts_becomes_terminal_and_is_not_reclaimed(next_pg_schema) -> None:
+    seeded = _seed_cloud_job(status="queued")
+    with psycopg.connect(os.environ["DATABASE_URL"], row_factory=dict_row) as conn:
+        conn.execute(
+            "UPDATE broadcast_jobs SET max_attempts = 1 WHERE id = %s",
+            (seeded["job_id"],),
+        )
+        conn.commit()
+
+    repo = PostgresBroadcastQueueRepository()
+    now = datetime.now(timezone.utc)
+    claimed = repo.claim_due_jobs(
+        limit=1,
+        now=now,
+        claim_token="max-attempt-owner",
+        lease_seconds=300,
+    )
+    assert [int(item["id"]) for item in claimed] == [seeded["job_id"]]
+    assert int(claimed[0]["attempt_count"]) == 1
+
+    dispatching = repo.begin_dispatch(
+        int(seeded["job_id"]),
+        claim_token="max-attempt-owner",
+        now=now,
+    )
+    assert dispatching is not None
+    finalized = repo.finalize_dispatch(
+        int(seeded["job_id"]),
+        claim_token="max-attempt-owner",
+        outcome={
+            "status": "failed_retryable",
+            "failure_type": "provider_unavailable_before_call",
+            "error": "temporary provider outage",
+            "side_effect_executed": False,
+            "provider_result_received": False,
+        },
+    )
+
+    assert finalized is not None
+    assert finalized["status"] == "failed_terminal"
+    row = _row(
+        "SELECT status, attempt_count, max_attempts, next_retry_at FROM broadcast_jobs WHERE id = %s",
+        (seeded["job_id"],),
+    )
+    assert row == {
+        "status": "failed_terminal",
+        "attempt_count": 1,
+        "max_attempts": 1,
+        "next_retry_at": None,
+    }
+    assert repo.claim_due_jobs(
+        limit=1,
+        now=now + timedelta(hours=1),
+        claim_token="must-not-reclaim",
+        lease_seconds=300,
+    ) == []

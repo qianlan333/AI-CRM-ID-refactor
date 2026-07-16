@@ -5,6 +5,9 @@ from datetime import timedelta
 from typing import Any
 from uuid import uuid4
 
+from sqlalchemy import text
+from sqlalchemy.orm import Session
+
 from .consumer_registry import InternalEventConsumerRegistry, current_internal_event_consumer_registry
 from .models import (
     DEFAULT_TENANT_ID,
@@ -105,6 +108,78 @@ def enqueue_transactional_internal_event_outbox(conn: Any, request: InternalEven
         "SELECT * FROM internal_event_outbox WHERE tenant_id = %s AND idempotency_key = %s LIMIT 1",
         (tenant_id, key),
     ).fetchone()
+    if not existing:
+        raise RuntimeError("internal event outbox idempotent create failed")
+    return dict(existing)
+
+
+def enqueue_internal_event_outbox_in_session(
+    session: Session,
+    request: InternalEventCreateRequest,
+) -> dict[str, Any]:
+    """Insert an outbox envelope in a caller-owned SQLAlchemy transaction."""
+
+    tenant_id = _text(request.tenant_id) or DEFAULT_TENANT_ID
+    key = _idempotency_key(request)
+    params = {
+        "tenant_id": tenant_id,
+        "outbox_id": "ieo_" + uuid4().hex,
+        "event_type": _text(request.event_type),
+        "event_version": int(request.event_version or 1),
+        "aggregate_type": _text(request.aggregate_type),
+        "aggregate_id": _text(request.aggregate_id),
+        "subject_type": _text(request.subject_type),
+        "subject_id": _text(request.subject_id),
+        "idempotency_key": key,
+        "actor_id": _text(request.context.actor_id),
+        "actor_type": _text(request.context.actor_type) or "system",
+        "source_module": _text(request.source_module),
+        "source_route": _text(request.context.source_route),
+        "source_command_id": _text(request.source_command_id),
+        "trace_id": _text(request.context.trace_id),
+        "request_id": _text(request.context.request_id),
+        "correlation_id": _text(request.correlation_id),
+        "occurred_at": public_datetime(request.occurred_at or utcnow()),
+        "payload_json": json.dumps(dict(request.payload or {}), ensure_ascii=False, default=str, separators=(",", ":")),
+        "payload_summary_json": json.dumps(_payload_summary(request), ensure_ascii=False, default=str, separators=(",", ":")),
+    }
+    row = (
+        session.execute(
+            text(
+                """
+                INSERT INTO internal_event_outbox (
+                    tenant_id, outbox_id, event_type, event_version, aggregate_type, aggregate_id,
+                    subject_type, subject_id, idempotency_key, actor_id, actor_type,
+                    source_module, source_route, source_command_id, trace_id, request_id,
+                    correlation_id, occurred_at, payload_json, payload_summary_json,
+                    status, attempt_count, max_attempts, created_at, updated_at
+                ) VALUES (
+                    :tenant_id, :outbox_id, :event_type, :event_version, :aggregate_type, :aggregate_id,
+                    :subject_type, :subject_id, :idempotency_key, :actor_id, :actor_type,
+                    :source_module, :source_route, :source_command_id, :trace_id, :request_id,
+                    :correlation_id, CAST(:occurred_at AS timestamptz), CAST(:payload_json AS jsonb),
+                    CAST(:payload_summary_json AS jsonb), 'pending', 0, 10,
+                    CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+                )
+                ON CONFLICT (tenant_id, idempotency_key) DO NOTHING
+                RETURNING *
+                """
+            ),
+            params,
+        )
+        .mappings()
+        .fetchone()
+    )
+    if row:
+        return dict(row)
+    existing = (
+        session.execute(
+            text("SELECT * FROM internal_event_outbox WHERE tenant_id = :tenant_id AND idempotency_key = :idempotency_key LIMIT 1"),
+            {"tenant_id": tenant_id, "idempotency_key": key},
+        )
+        .mappings()
+        .fetchone()
+    )
     if not existing:
         raise RuntimeError("internal event outbox idempotent create failed")
     return dict(existing)
@@ -238,12 +313,7 @@ class InternalEventOutboxRelay:
                     "consumer_run_count": len(runs),
                 }
             )
-        failed_count = (
-            counts["failed_retryable_count"]
-            + counts["failed_terminal_count"]
-            + counts["lost_lease_count"]
-            + counts["unhandled_failure_count"]
-        )
+        failed_count = counts["failed_retryable_count"] + counts["failed_terminal_count"] + counts["lost_lease_count"] + counts["unhandled_failure_count"]
         return {
             "ok": failed_count == 0,
             "dry_run": False,

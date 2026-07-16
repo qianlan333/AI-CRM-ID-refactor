@@ -80,6 +80,8 @@ class PostgresBroadcastQueueRepository:
                     SELECT id
                     FROM broadcast_jobs
                     WHERE scheduled_for <= %s
+                      AND hold_reason = ''
+                      AND attempt_count < max_attempts
                       AND (
                         status = 'queued'
                         OR (
@@ -124,6 +126,7 @@ class PostgresBroadcastQueueRepository:
                     reconciliation_required = FALSE,
                     updated_at = CURRENT_TIMESTAMP
                 WHERE id = %s
+                  AND hold_reason = ''
                   AND status = 'claimed'
                   AND claim_token = %s
                 RETURNING *
@@ -210,6 +213,14 @@ class PostgresBroadcastQueueRepository:
             ).fetchone()
             if not job:
                 return None
+            if (
+                final_status == "failed_retryable"
+                and int_value(job.get("attempt_count")) >= max(1, int_value(job.get("max_attempts")))
+            ):
+                final_status = "failed_terminal"
+                failure_type = failure_type or "max_attempts_exhausted"
+                if not error_text:
+                    error_text = "Broadcast retry budget exhausted before provider dispatch succeeded."
             self._fault("before_outbound_task")
             outbound_task = conn.execute(
                 """
