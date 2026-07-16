@@ -522,8 +522,7 @@ class SQLAlchemyExternalEffectRepository(ExternalEffectRepository):
         return _public_job(row)
 
     def get_active_claim(self, job_id: int, *, lease_token: str) -> ExternalEffectJob | None:
-        return _public_job(
-            self._one(
+        return _public_job(self._one(
                 """
                 SELECT *
                 FROM external_effect_job
@@ -535,15 +534,12 @@ class SQLAlchemyExternalEffectRepository(ExternalEffectRepository):
                 LIMIT 1
                 """,
                 {"job_id": int(job_id), "lease_token": _text(lease_token)},
-            )
-        )
+            ))
 
     def quarantine_stale_dispatching(self) -> int:
         with self._session_factory() as session:
-            stale_rows = (
-                session.execute(
-                    text(
-                        """
+            stale_rows = session.execute(text(
+                    """
                         SELECT job.id, job.last_attempt_id, job.lease_token,
                                EXISTS (
                                    SELECT 1
@@ -561,12 +557,8 @@ class SQLAlchemyExternalEffectRepository(ExternalEffectRepository):
                           AND job.lease_expires_at <= CURRENT_TIMESTAMP
                         ORDER BY job.id ASC
                         FOR UPDATE SKIP LOCKED
-                        """
-                    )
-                )
-                .mappings()
-                .fetchall()
-            )
+                    """
+            )).mappings().fetchall()
             count = 0
             for stale in stale_rows:
                 provider_boundary_crossed = bool(stale.get("provider_boundary_crossed"))
@@ -649,9 +641,7 @@ class SQLAlchemyExternalEffectRepository(ExternalEffectRepository):
                         RETURNING id
                     """
                 updated = session.execute(
-                    text(
-                        update_statement
-                    ),
+                    text(update_statement),
                     {"job_id": int(stale["id"]), "lease_token": lease_token},
                 ).fetchone()
                 count += 1 if updated else 0
