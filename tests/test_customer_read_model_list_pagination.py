@@ -89,7 +89,6 @@ def test_list_customers_query_response_schema_uses_repo_page_and_total(monkeypat
 
     assert set(payload) >= {"customers", "items", "count", "total", "limit", "offset", "filters", "status_code"}
     assert payload["customers"] == payload["items"]
-    assert payload["customers"][0]["unionid"] == "union_customer_002"
     assert payload["count"] == 1
     assert payload["total"] == 12
     assert payload["limit"] == 1

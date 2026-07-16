@@ -58,7 +58,7 @@ def test_customer_list_profile_link_uses_detail_route_unionid(monkeypatch) -> No
                 "customers": [
                     {
                         "unionid": "union_test_001",
-                        "external_userid": "ext_test_001",
+                        "external_userid": "",
                         "customer_name": "测试客户",
                         "owner_display_name": "HuangYouCan",
                         "mobile": "13800000000",
@@ -79,6 +79,20 @@ def test_customer_list_profile_link_uses_detail_route_unionid(monkeypatch) -> No
     detail_response = client.get("/admin/customers/union_test_001")
     assert detail_response.status_code == 200
     assert "测试客户" in detail_response.text
+
+
+def test_customer_list_projection_preserves_unionid() -> None:
+    from aicrm_next.customer_read_model.projections import list_item_projection
+
+    item = list_item_projection(
+        {
+            "identity": {"unionid": "union_test_001"},
+            "external_userid": "",
+            "customer_name": "测试客户",
+        }
+    )
+
+    assert item["unionid"] == "union_test_001"
 
 
 def test_customer_detail_page_renders_from_native_shell(monkeypatch) -> None:

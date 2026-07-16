@@ -119,8 +119,8 @@ def admin_path_for(name: str, **path_params: object) -> str:
     if name == "static":
         return "/static/" + str(path_params.get("filename", "")).lstrip("/")
     if name == "api.admin_console_customer_detail":
-        customer_identity = str(path_params.get("unionid") or path_params.get("external_userid") or "")
-        return f"/admin/customers/{quote(customer_identity, safe='')}"
+        external_userid = str(path_params.get("external_userid", ""))
+        return f"/admin/customers/{quote(external_userid, safe='')}"
     if name == "api.admin_cloud_orchestrator_plan_detail":
         plan_id = quote(str(path_params.get("plan_id", "")).strip(), safe="")
         return f"/admin/cloud-orchestrator/plans/{plan_id}"

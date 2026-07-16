@@ -728,12 +728,14 @@
         "aicrm_next/main.py",
         "aicrm_next/customer_read_model/**",
         "aicrm_next/sidebar_write/**",
+        "aicrm_next/frontend_compat/templates/admin_console/customers.html",
         "aicrm_next/frontend_compat/templates/sidebar_customer_workbench.html",
         "aicrm_next/frontend_compat/static/sidebar_workbench/**",
         "tests/test_sidebar_*.py",
         "tests/test_customer_*read_model*.py",
         "tests/test_db_session_runtime_audit.py",
         "tests/test_next_sidebar_workbench_routes.py",
+        "tests/test_customer_detail_admin_page_native.py",
         "tests/frontend/sidebar_progressive_loading.test.mjs"
       ],
       "python_tests": [
@@ -742,7 +744,8 @@
         "tests/test_customer_read_model_request_scope.py",
         "tests/test_db_session_runtime_audit.py",
         "tests/test_sidebar_workbench_frontend.py",
-        "tests/test_sidebar_jssdk_frontend_contract.py"
+        "tests/test_sidebar_jssdk_frontend_contract.py",
+        "tests/test_customer_detail_admin_page_native.py"
       ],
       "frontend_tests": [
         "tests/frontend/sidebar_progressive_loading.test.mjs"
