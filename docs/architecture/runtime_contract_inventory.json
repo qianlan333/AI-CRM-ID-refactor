@@ -71,7 +71,7 @@
       "accessor": "runtime_bool",
       "file": "aicrm_next/ai_audience_ops/webhook_service.py",
       "key": "AICRM_AI_AUDIENCE_INBOUND_ACTION_EXECUTE",
-      "line": 53
+      "line": 180
     },
     {
       "accessor": "os.getenv",
@@ -402,12 +402,6 @@
       "file": "aicrm_next/shared/wecom_runtime.py",
       "key": "AICRM_EXTERNAL_EFFECT_ALLOWED_TYPES",
       "line": 19
-    },
-    {
-      "accessor": "runtime_bool",
-      "file": "aicrm_next/platform_foundation/external_effects/realtime.py",
-      "key": "AICRM_EXTERNAL_EFFECT_WEBHOOK_EXECUTE",
-      "line": 37
     },
     {
       "accessor": "runtime_setting",
@@ -839,7 +833,7 @@
       "accessor": "os.getenv",
       "file": "aicrm_next/ai_audience_ops/service.py",
       "key": "AICRM_PUBLIC_BASE_URL",
-      "line": 633
+      "line": 611
     },
     {
       "accessor": "os.getenv",
@@ -1272,6 +1266,12 @@
       "file": "scripts/ops/bootstrap_database.py",
       "key": "DATABASE_URL",
       "line": 162
+    },
+    {
+      "accessor": "os.getenv",
+      "file": "scripts/ops/check_ai_audience_refresh_owner.py",
+      "key": "DATABASE_URL",
+      "line": 92
     },
     {
       "accessor": "os.getenv",
@@ -2122,7 +2122,6 @@
     "AICRM_ENV_FILE",
     "AICRM_EXTERNAL_EFFECT_ALLOWED_OWNER_USERIDS",
     "AICRM_EXTERNAL_EFFECT_ALLOWED_TYPES",
-    "AICRM_EXTERNAL_EFFECT_WEBHOOK_EXECUTE",
     "AICRM_EXTERNAL_EFFECT_WEBHOOK_TIMEOUT_SECONDS",
     "AICRM_EXTERNAL_EFFECT_WECOM_EXECUTE",
     "AICRM_FORCE_FULL_CI",
@@ -2417,6 +2416,13 @@
   "fixture_records_included": false,
   "internal_event_consumers": [
     {
+      "consumer_name": "ai_audience_inbound_action_planner",
+      "consumer_type": "external_effect_planner",
+      "event_type": "ai_audience.inbound.received",
+      "handler_registered": true,
+      "max_attempts": 5
+    },
+    {
       "consumer_name": "ai_audience_daily_refresh_consumer",
       "consumer_type": "orchestration",
       "event_type": "ai_audience.refresh.daily_tick",
@@ -2429,6 +2435,13 @@
       "event_type": "ai_audience.refresh.incremental_tick",
       "handler_registered": true,
       "max_attempts": 5
+    },
+    {
+      "consumer_name": "ai_audience_refresh_intent_consumer",
+      "consumer_type": "orchestration",
+      "event_type": "ai_audience.refresh.requested",
+      "handler_registered": true,
+      "max_attempts": 10
     },
     {
       "consumer_name": "ai_audience_outbound_effect_planner",
@@ -2950,7 +2963,7 @@
     }
   ],
   "migration_heads": [
-    "0127_group_ops_durable_effect_graph"
+    "0128_ai_audience_refresh_intents"
   ],
   "openapi_components": {
     "schemas": {
@@ -45210,6 +45223,31 @@
         "aicrm_next.ai_audience_ops"
       ],
       "table": "ai_audience_package_version",
+      "write_owner": "aicrm_next.ai_audience_ops"
+    },
+    {
+      "domain": "ai_audience_ops",
+      "drop_candidate": false,
+      "lifecycle": "canonical",
+      "migration_source": "0128_ai_audience_refresh_intents",
+      "pii_level": "restricted_business_payload",
+      "read_owners": [
+        "aicrm_next.ai_audience_ops",
+        "aicrm_next.platform_foundation.execution_runtime"
+      ],
+      "table": "ai_audience_refresh_intent",
+      "write_owner": "aicrm_next.ai_audience_ops"
+    },
+    {
+      "domain": "ai_audience_ops",
+      "drop_candidate": false,
+      "lifecycle": "audit",
+      "migration_source": "0128_ai_audience_refresh_intents",
+      "pii_level": "none",
+      "read_owners": [
+        "aicrm_next.ai_audience_ops"
+      ],
+      "table": "ai_audience_refresh_source_receipt",
       "write_owner": "aicrm_next.ai_audience_ops"
     },
     {

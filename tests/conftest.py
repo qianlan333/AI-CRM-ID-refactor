@@ -97,6 +97,8 @@ _TABLES_TO_TRUNCATE = [
     # durable callback ingress
     "webhook_inbox",
     # — ai audience ops
+    "ai_audience_refresh_source_receipt",
+    "ai_audience_refresh_intent",
     "ai_audience_inbound_webhook_event",
     "ai_audience_package_sender",
     "ai_audience_outbound_subscription",

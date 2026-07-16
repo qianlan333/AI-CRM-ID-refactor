@@ -700,16 +700,23 @@
       "name": "ai_audience_ops",
       "paths": [
         "aicrm_next/ai_audience_ops/**",
+        "deploy/openclaw-ai-audience-scheduler.service",
+        "deploy/openclaw-ai-audience-scheduler.timer",
+        "migrations/versions/0128_ai_audience_refresh_intents.py",
+        "scripts/ops/check_ai_audience_refresh_owner.py",
+        "scripts/run_ai_audience_scheduler.py",
         "tests/test_ai_audience_*.py",
         "tests/test_huangyoucan_unregistered_ai_audience.py"
       ],
       "python_tests": [
         "tests/test_ai_audience_ops.py",
+        "tests/test_ai_audience_refresh_intents_postgres.py",
         "tests/test_ai_audience_runtime_hotfixes.py",
         "tests/test_ai_audience_external_api.py"
       ],
-      "needs_postgres": false,
-      "architecture_gate": "fast"
+      "needs_postgres": true,
+      "needs_full_ci": true,
+      "architecture_gate": "full"
     },
     {
       "name": "ai_assist_external_campaigns",

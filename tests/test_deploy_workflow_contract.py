@@ -1074,7 +1074,7 @@ def test_due_runner_scripts_share_int_env_reader():
     assert "run_due_external_push_retries" not in external_push_worker
     assert 'read_int_env("AICRM_INTERNAL_EVENT_WORKER_BATCH_SIZE", DEFAULT_WORKER_BATCH_SIZE)' in internal_event_worker
     assert "build_internal_event_consumer_registry" in internal_event_worker
-    assert 'read_int_env("AICRM_AI_AUDIENCE_SCHEDULER_BATCH_SIZE", 20)' in ai_audience_scheduler
+    assert "read_int_env" not in ai_audience_scheduler
     assert "--execute" in internal_event_worker
     assert 'relay_role="owner"' in internal_event_worker
     assert 'relay_role="consumer_only"' in ai_audience_scheduler_runtime
@@ -1095,22 +1095,19 @@ def test_ai_audience_scheduler_runs_through_internal_event_queue_only():
 
     assert stop_runtime_units_index < alembic_upgrade_index < install_index < verify_index
     assert "register_ai_audience_event_consumers()" in scheduler
-    assert 'read_int_env("AICRM_AI_AUDIENCE_SCHEDULER_BATCH_SIZE", 20)' in scheduler
-    assert "run_due_ai_audience_consumers" in scheduler
-    assert "--run-consumers --execute" in service
-    assert "Environment=AICRM_INTERNAL_EVENT_RELAY_ROLE=consumer_only" in service
+    assert "run_due_ai_audience_consumers" not in scheduler
+    assert "--run-consumers" not in service
+    assert "--execute" not in service
+    assert "AICRM_INTERNAL_EVENT_RELAY_ROLE" not in service
     assert "ExecStart=/bin/bash -c" in service
-    assert "AICRM_INTERNAL_EVENTS_ALLOWED_EVENT_TYPES=" in service
-    assert "ai_audience.refresh.incremental_tick,ai_audience.refresh.daily_tick" in service
-    assert "AICRM_INTERNAL_EVENTS_ALLOWED_EVENT_CONSUMERS=" in service
-    assert "ai_audience.refresh.incremental_tick:ai_audience_incremental_refresh_consumer" in service
-    assert "ai_audience.refresh.daily_tick:ai_audience_daily_refresh_consumer" in service
-    assert "ai_audience.run.refreshed:ai_audience_outbound_effect_planner" in service
-    assert "ai_audience.member.updated:ai_audience_outbound_effect_planner" not in service
-    assert "ai_audience.member.exited:ai_audience_outbound_effect_planner" not in service
+    assert "check_ai_audience_refresh_owner.py --code-only" in service
+    assert "run_ai_audience_scheduler.py --daily-only" in service
+    assert "AICRM_INTERNAL_EVENTS_ALLOWED_EVENT_TYPES=" not in service
+    assert "AICRM_INTERNAL_EVENTS_ALLOWED_EVENT_CONSUMERS=" not in service
     assert "ExternalEffectWorker" not in service
     assert "run_external_effect_queue_worker.py" not in service
-    assert "OnCalendar=*-*-* *:0/3:00" in timer
+    assert "OnCalendar=*-*-* 02:00:00 Asia/Shanghai" in timer
+    assert "*:0/3:00" not in timer
 
 
 def test_production_runtime_declares_exactly_one_internal_event_relay_owner():
@@ -1122,7 +1119,6 @@ def test_production_runtime_declares_exactly_one_internal_event_relay_owner():
     }
 
     assert declared == {
-        "openclaw-ai-audience-scheduler.service": "consumer_only",
         "openclaw-internal-event-worker.service": "owner",
     }
     assert list(declared.values()).count("owner") == 1

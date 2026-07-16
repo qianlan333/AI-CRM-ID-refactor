@@ -1,8 +1,8 @@
 [Unit]
-Description=Run OpenClaw AI Audience Scheduler every 3 minutes
+Description=Write AI Audience daily refresh intents at 02:00 Asia/Shanghai
 
 [Timer]
-OnCalendar=*-*-* *:0/3:00
+OnCalendar=*-*-* 02:00:00 Asia/Shanghai
 Persistent=true
 Unit=openclaw-ai-audience-scheduler.service
 

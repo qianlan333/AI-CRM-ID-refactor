@@ -2203,6 +2203,46 @@ tables:
       - tests/test_data_health_checks.py::test_schema_drift_guard_reports_manifest_and_live_schema_mismatches
     notes: Registered from the formal production public schema so schema_drift_guard can fail closed on future unmanaged table changes.
 
+  ai_audience_refresh_intent:
+    domain: ai_audience_ops
+    lifecycle: canonical
+    write_owner: aicrm_next.ai_audience_ops
+    read_owners:
+      - aicrm_next.ai_audience_ops
+      - aicrm_next.platform_foundation.execution_runtime
+    replacement: none; one coalescing durable refresh intent per package
+    drop_candidate: false
+    drop_after: ""
+    runtime_entrypoints:
+      - AI Audience source event dirty marking
+      - PostgreSQL internal event refresh consumer
+      - daily clock intent writer
+    migration_source: 0128_ai_audience_refresh_intents
+    pii_level: restricted_business_payload
+    guard_tests:
+      - tests/test_ai_audience_refresh_intents_postgres.py
+      - tests/test_data_table_lifecycle_guard.py
+    notes: Stores generation, execution links, scheduling state, refresh query parameters, and redacted failure metadata. Public summaries exclude parameter payloads and error text is centrally redacted.
+
+  ai_audience_refresh_source_receipt:
+    domain: ai_audience_ops
+    lifecycle: audit
+    write_owner: aicrm_next.ai_audience_ops
+    read_owners:
+      - aicrm_next.ai_audience_ops
+    replacement: none; idempotent source-event to package-generation evidence
+    drop_candidate: false
+    drop_after: ""
+    runtime_entrypoints:
+      - AI Audience source event dirty marking
+      - daily and manual refresh intent creation
+    migration_source: 0128_ai_audience_refresh_intents
+    pii_level: none
+    guard_tests:
+      - tests/test_ai_audience_refresh_intents_postgres.py
+      - tests/test_data_table_lifecycle_guard.py
+    notes: Stores only SHA-256 opaque source identifiers and execution links; never stores raw contact identity, message content, or provider secrets.
+
   ai_audience_member_current:
     domain: ai_audience_ops
     lifecycle: read_model

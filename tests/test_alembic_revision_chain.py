@@ -61,7 +61,7 @@ def test_all_alembic_down_revisions_exist() -> None:
     assert missing == {}
 
 
-def test_group_ops_effect_graph_is_the_single_head() -> None:
+def test_ai_audience_refresh_intents_is_the_single_head() -> None:
     revisions = _migration_revisions()
     referenced = {parent for item in revisions.values() for parent in _parents(item["down_revision"])}
     heads = set(revisions) - referenced
@@ -77,8 +77,11 @@ def test_group_ops_effect_graph_is_the_single_head() -> None:
     postgres_runtime_source = postgres_runtime.read_text(encoding="utf-8")
     group_ops_graph = VERSIONS / "0127_group_ops_durable_effect_graph.py"
     group_ops_graph_source = group_ops_graph.read_text(encoding="utf-8")
+    audience_intents = VERSIONS / "0128_ai_audience_refresh_intents.py"
+    audience_intents_source = audience_intents.read_text(encoding="utf-8")
 
-    assert heads == {"0127_group_ops_durable_effect_graph"}
+    assert heads == {"0128_ai_audience_refresh_intents"}
+    assert revisions["0128_ai_audience_refresh_intents"]["down_revision"] == "0127_group_ops_durable_effect_graph"
     assert revisions["0127_group_ops_durable_effect_graph"]["down_revision"] == "0126_postgres_execution_runtime"
     assert revisions["0126_postgres_execution_runtime"]["down_revision"] == "0125_execution_runtime_correctness"
     assert revisions["0125_execution_runtime_correctness"]["down_revision"] == "0124_agent_audit_tables"
@@ -110,6 +113,8 @@ def test_group_ops_effect_graph_is_the_single_head() -> None:
     assert "historical_freeze_orphan" in postgres_runtime_source
     assert "BEFORE UPDATE OR DELETE ON queue_policy_snapshot" in postgres_runtime_source
     assert "aicrm_reject_queue_policy_snapshot_mutation" in postgres_runtime_source
+    assert "CREATE TABLE IF NOT EXISTS ai_audience_refresh_intent" in audience_intents_source
+    assert "CREATE TABLE IF NOT EXISTS ai_audience_refresh_source_receipt" in audience_intents_source
     for constraint_name in (
         "ck_external_effect_job_runtime_lane",
         "ck_internal_event_consumer_run_runtime_lane",
