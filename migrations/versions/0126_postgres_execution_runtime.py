@@ -251,7 +251,13 @@ def _add_execution_columns() -> None:
         "internal_event_outbox",
         "webhook_inbox",
     ):
-        op.execute(f"ALTER TABLE {table} ALTER COLUMN available_at SET NOT NULL")
+        op.execute(
+            f"""
+            ALTER TABLE {table}
+            ALTER COLUMN available_at SET DEFAULT CURRENT_TIMESTAMP,
+            ALTER COLUMN available_at SET NOT NULL
+            """
+        )
     lane_constraints = {
         "external_effect_job": (
             "ck_external_effect_job_runtime_lane",

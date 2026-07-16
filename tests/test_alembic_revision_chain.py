@@ -107,6 +107,7 @@ def test_postgres_execution_runtime_is_the_single_head() -> None:
     assert '"outbound_webhook": 4' in postgres_runtime_source
     assert "mode = \"blocked\" if lane == \"outbound_webhook\" else \"standby\"" in postgres_runtime_source
     assert "ALTER COLUMN available_at SET NOT NULL" in postgres_runtime_source
+    assert "ALTER COLUMN available_at SET DEFAULT CURRENT_TIMESTAMP" in postgres_runtime_source
     assert "historical_freeze_orphan" in postgres_runtime_source
     assert "BEFORE UPDATE OR DELETE ON queue_policy_snapshot" in postgres_runtime_source
     assert "aicrm_reject_queue_policy_snapshot_mutation" in postgres_runtime_source

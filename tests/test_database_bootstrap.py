@@ -243,19 +243,20 @@ def test_empty_postgres_database_installs_and_reuses_alembic_head() -> None:
                     """
                 )
             connection.rollback()
-            with pytest.raises(psycopg.errors.NotNullViolation):
-                connection.execute(
-                    """
-                    INSERT INTO external_effect_job (
-                        effect_type, adapter_name, operation, target_type, target_id,
-                        idempotency_key, status, scheduled_at, lane
-                    ) VALUES (
-                        'webhook.test', 'http', 'post', 'loopback', 'missing-available-at',
-                        'bootstrap-missing-available-at', 'queued', CURRENT_TIMESTAMP,
-                        'outbound_webhook'
-                    )
-                    """
+            defaulted_available_at = connection.execute(
+                """
+                INSERT INTO external_effect_job (
+                    effect_type, adapter_name, operation, target_type, target_id,
+                    idempotency_key, status, scheduled_at, lane
+                ) VALUES (
+                    'webhook.test', 'http', 'post', 'loopback', 'defaulted-available-at',
+                    'bootstrap-defaulted-available-at', 'queued', CURRENT_TIMESTAMP,
+                    'outbound_webhook'
                 )
+                RETURNING available_at
+                """
+            ).fetchone()[0]
+            assert defaulted_available_at is not None
             connection.rollback()
 
         with psycopg.connect(database_url) as connection:
