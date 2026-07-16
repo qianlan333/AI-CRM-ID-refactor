@@ -55,6 +55,7 @@ def test_every_runtime_python_change_runs_import_graph_architecture_gate() -> No
 
 def test_import_graph_governance_changes_force_mapped_full_ci() -> None:
     result = _select(
+        "aicrm_next/automation_agents/__init__.py",
         "tools/check_import_graph.py",
         "docs/architecture/import_graph_baseline.yml",
         "tests/test_import_graph_guard.py",
