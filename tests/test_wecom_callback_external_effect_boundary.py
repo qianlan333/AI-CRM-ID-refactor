@@ -14,6 +14,7 @@ CALLBACK_MODULES = [
     ROOT / "aicrm_next" / "channel_entry" / "ingress_app.py",
 ]
 APPLICATION = ROOT / "aicrm_next" / "channel_entry" / "application.py"
+WELCOME_EFFECT_REPOSITORY = ROOT / "aicrm_next" / "channel_entry" / "welcome_media_effects_repository.py"
 REALTIME = ROOT / "aicrm_next" / "platform_foundation" / "external_effects" / "realtime.py"
 
 
@@ -70,12 +71,15 @@ def test_callback_http_handler_only_ingests_and_never_runs_business_processor_in
 
 
 def test_channel_entry_real_wecom_actions_are_planned_as_external_effect_jobs() -> None:
-    source = APPLICATION.read_text(encoding="utf-8")
+    application_source = APPLICATION.read_text(encoding="utf-8")
+    welcome_repository_source = WELCOME_EFFECT_REPOSITORY.read_text(encoding="utf-8")
+    source = application_source + welcome_repository_source
 
-    assert "ExternalEffectService().plan_effect" in source
-    assert 'adapter_name="wecom_welcome_message"' in source
-    assert 'adapter_name="wecom_tag"' in source
-    assert '"real_external_call_executed": False' in source
+    assert "build_welcome_effect_graph_repository().plan" in application_source
+    assert "ExternalEffectService" in welcome_repository_source
+    assert 'adapter_name="wecom_welcome_message"' in welcome_repository_source
+    assert 'adapter_name="wecom_tag"' in application_source
+    assert '"real_external_call_executed": False' in application_source
     assert "send_welcome_msg(" not in source
     assert "mark_external_contact_tags(" not in source
     assert "update_external_contact_remark(" not in source
