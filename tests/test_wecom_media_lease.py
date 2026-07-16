@@ -11,7 +11,7 @@ from aicrm_next.media_library.wecom_lease import (
     WeComMediaLeaseError,
     WeComMediaLeaseManager,
 )
-from aicrm_next.wecom_media_jobs import WeComMediaUploadAdapter, enqueue_due_media_refreshes
+from aicrm_next.wecom_media_jobs import WeComMediaUploadAdapter, enqueue_due_media_refreshes, sync_uploaded_material
 from aicrm_next.platform_foundation.external_effects import WECOM_MEDIA_UPLOAD, ExternalEffectJob
 from aicrm_next.platform_foundation.external_effects.repo import InMemoryExternalEffectRepository
 
@@ -182,3 +182,31 @@ def test_scheduler_enqueues_only_material_references_without_persisting_source_b
         "bypass_push_capability": True,
     }
     assert "data_base64" not in str(job.payload_json)
+
+
+def test_media_upload_request_only_enqueues_and_never_dispatches_inline(monkeypatch) -> None:
+    from aicrm_next import wecom_media_jobs
+
+    repository = InMemoryExternalEffectRepository()
+    monkeypatch.setattr(wecom_media_jobs, "production_data_ready", lambda: True)
+    monkeypatch.setattr(wecom_media_jobs, "build_external_effect_repository", lambda: repository)
+    monkeypatch.setenv("AICRM_WECOM_EXECUTION_MODE", "execute")
+
+    result = sync_uploaded_material(
+        material_kind="image",
+        material_id=1,
+        upload_kind="image",
+        actor="pytest",
+        idempotency_key="request-only",
+    )
+
+    job = repository.get_job(result["job_id"])
+    assert result["accepted"] is True
+    assert result["status"] == "queued"
+    assert result["lane"] == "wecom_media"
+    assert result["execution_id"]
+    assert result["status_url"].endswith(result["execution_id"])
+    assert result["real_external_call_executed"] is False
+    assert job is not None
+    assert job.status == "queued"
+    assert repository.list_attempts(job.id) == []

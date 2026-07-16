@@ -12,7 +12,6 @@ from aicrm_next.platform_foundation.external_effects import (
 )
 from aicrm_next.platform_foundation.external_effects.repo import build_external_effect_repository
 from aicrm_next.platform_foundation.external_effects.service import ExternalEffectService
-from aicrm_next.platform_foundation.external_effects.worker import ExternalEffectWorker
 from aicrm_next.shared.runtime import production_data_ready, production_environment
 
 
@@ -156,6 +155,14 @@ def sync_uploaded_material(
     actor: str,
     idempotency_key: str,
 ) -> dict[str, Any]:
+    """Enqueue one durable media-upload effect without calling WeCom inline.
+
+    The historical implementation claimed and dispatched the row inside the
+    upload HTTP request.  That bypassed lane capacity and made an API process a
+    second execution owner.  The PostgreSQL runtime is now the only dispatch
+    owner; the insert trigger supplies the non-sensitive wake hint.
+    """
+
     if not production_data_ready():
         return {"status": "skipped", "reason": "production_data_not_ready", "real_external_call_executed": False}
     repo = build_external_effect_repository()
@@ -169,17 +176,17 @@ def sync_uploaded_material(
         force_refresh=True,
         repository=repo,
     )
-    result = ExternalEffectWorker(
-        repo,
-        build_wecom_media_upload_adapter_registry(),
-        locked_by=f"media-upload-inline-{material_kind}-{material_id}",
-    ).dispatch_one(int(job.get("id") or 0))
-    current = (result.get("job") or {}) if isinstance(result, dict) else {}
+    job_id = int(job.get("id") or 0)
+    execution_id = str(job.get("execution_id") or "").strip()
     return {
-        "status": str(current.get("status") or "unknown"),
-        "job_id": int(current.get("id") or job.get("id") or 0),
-        "real_external_call_executed": bool(result.get("real_external_call_executed")),
-        "error_code": str(current.get("last_error_code") or ""),
+        "accepted": job_id > 0,
+        "status": str(job.get("status") or "queued"),
+        "job_id": job_id,
+        "execution_id": execution_id,
+        "status_url": f"/api/admin/executions/{execution_id}" if execution_id else "",
+        "lane": str(job.get("lane") or "wecom_media"),
+        "real_external_call_executed": False,
+        "error_code": str(job.get("last_error_code") or ""),
     }
 
 
