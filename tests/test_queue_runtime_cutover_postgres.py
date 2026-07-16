@@ -326,6 +326,28 @@ def test_generation_cutover_freezes_all_four_durable_queue_kinds_at_one_cutoff()
             """,
             (f"ieo_{key}", key, f"outbox-{key}", f"exe-outbox-{key}", f"outbox-{key}"),
         ).fetchone()
+        future_outbox = connection.execute(
+            """
+            INSERT INTO internal_event_outbox (
+                outbox_id, event_type, aggregate_type, aggregate_id,
+                idempotency_key, execution_id, lane, available_at,
+                occurred_at, created_at, ordering_key, fairness_key, policy_version
+            ) VALUES (
+                %s, 'test.pr3.freeze', 'test', %s, %s, %s,
+                'internal_financial', CURRENT_TIMESTAMP + INTERVAL '1 hour',
+                CURRENT_TIMESTAMP - INTERVAL '1 day',
+                CURRENT_TIMESTAMP + INTERVAL '1 hour',
+                %s, 'pytest', 'queue-v1'
+            ) RETURNING id
+            """,
+            (
+                f"ieo_future_{key}",
+                key,
+                f"outbox-future-{key}",
+                f"exe-outbox-future-{key}",
+                f"outbox-future-{key}",
+            ),
+        ).fetchone()
         inbox = connection.execute(
             """
             INSERT INTO webhook_inbox (
@@ -392,6 +414,10 @@ def test_generation_cutover_freezes_all_four_durable_queue_kinds_at_one_cutoff()
                 "SELECT hold_reason FROM internal_event_outbox WHERE id = %s",
                 (outbox["id"],),
             ).fetchone()["hold_reason"],
+            "future_outbox": connection.execute(
+                "SELECT hold_reason FROM internal_event_outbox WHERE id = %s",
+                (future_outbox["id"],),
+            ).fetchone()["hold_reason"],
             "inbox": connection.execute(
                 "SELECT hold_reason FROM webhook_inbox WHERE id = %s",
                 (inbox["id"],),
@@ -413,6 +439,7 @@ def test_generation_cutover_freezes_all_four_durable_queue_kinds_at_one_cutoff()
         "external": "history_frozen_at_pr3_generation_74",
         "consumer": "history_frozen_at_pr3_generation_74",
         "outbox": "history_frozen_at_pr3_generation_74",
+        "future_outbox": "",
         "inbox": "history_frozen_at_pr3_generation_74",
         "future_inbox": "",
     }

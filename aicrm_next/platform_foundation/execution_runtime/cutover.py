@@ -468,7 +468,7 @@ class RuntimeGenerationRepository:
                 )
             FROM internal_event_outbox outbox
             WHERE outbox.hold_reason = ''
-              AND outbox.occurred_at <= %s
+              AND outbox.created_at <= %s
               AND outbox.status IN ('pending', 'running', 'failed_retryable')
             ON CONFLICT (freeze_revision, queue_kind, queue_row_id) DO NOTHING
             """,
