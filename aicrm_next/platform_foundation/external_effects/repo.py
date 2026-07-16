@@ -27,6 +27,7 @@ from .models import (
     public_datetime,
     utcnow,
 )
+from .completion_events import build_external_effect_completed_event
 
 _MODEL_FIELD_NAMES: dict[type[Any], set[str]] = {}
 
@@ -78,11 +79,14 @@ def _public_job(row: dict[str, Any] | None) -> ExternalEffectJob | None:
         "executed_at",
         "completed_at",
         "cancelled_at",
+        "cancel_requested_at",
+        "hold_at",
     ):
         payload[key] = public_datetime(payload.get(key))
     payload["id"] = int(payload.get("id") or 0)
     payload["created_on_plan"] = bool(payload.get("created_on_plan"))
     payload["priority"] = int(payload.get("priority") or 0)
+    payload["row_version"] = max(1, int(payload.get("row_version") or 1))
     payload["attempt_count"] = int(payload.get("attempt_count") or 0)
     payload["max_attempts"] = int(payload.get("max_attempts") or 0)
     payload["requires_approval"] = bool(payload.get("requires_approval"))
@@ -163,6 +167,9 @@ class ExternalEffectRepository:
     def list_attempts(self, job_id: int) -> list[ExternalEffectAttempt]:
         raise NotImplementedError
 
+    def get_attempt(self, attempt_id: str) -> ExternalEffectAttempt | None:
+        raise NotImplementedError
+
     def list_attempts_for_jobs(self, job_ids: list[int]) -> dict[int, list[ExternalEffectAttempt]]:
         normalized = sorted({int(job_id) for job_id in job_ids})
         return {job_id: self.list_attempts(job_id) for job_id in normalized}
@@ -194,6 +201,14 @@ class ExternalEffectRepository:
         raise NotImplementedError
 
     def quarantine_stale_dispatching(self) -> int:
+        raise NotImplementedError
+
+    def begin_provider_attempt(
+        self,
+        *,
+        job: ExternalEffectJob,
+        request_summary: dict[str, Any],
+    ) -> tuple[ExternalEffectJob, ExternalEffectAttempt] | None:
         raise NotImplementedError
 
     def complete_dispatch(
@@ -234,10 +249,36 @@ class ExternalEffectRepository:
     def mark_blocked(self, job_id: int, *, attempt_id: str, error_code: str, error_message: str) -> ExternalEffectJob | None:
         raise NotImplementedError
 
-    def cancel_job(self, job_id: int) -> ExternalEffectJob | None:
+    def request_cancel(
+        self,
+        job_id: int,
+        *,
+        actor: str = "",
+        reason: str = "",
+        expected_version: int | None = None,
+    ) -> ExternalEffectJob | None:
         raise NotImplementedError
 
-    def enqueue_job(self, job_id: int, *, allow_unknown_after_dispatch: bool = False) -> ExternalEffectJob | None:
+    def settle_cancel(self, *, job: ExternalEffectJob) -> ExternalEffectJob | None:
+        raise NotImplementedError
+
+    def cancel_job(
+        self,
+        job_id: int,
+        *,
+        actor: str = "",
+        reason: str = "",
+        expected_version: int | None = None,
+    ) -> ExternalEffectJob | None:
+        raise NotImplementedError
+
+    def enqueue_job(
+        self,
+        job_id: int,
+        *,
+        allow_unknown_after_dispatch: bool = False,
+        extend_attempt_budget: bool = False,
+    ) -> ExternalEffectJob | None:
         raise NotImplementedError
 
     def approve_job(self, job_id: int) -> ExternalEffectJob | None:
@@ -426,6 +467,14 @@ class SQLAlchemyExternalEffectRepository(ExternalEffectRepository):
         )
         return [attempt for row in rows if (attempt := _public_attempt(row)) is not None]
 
+    def get_attempt(self, attempt_id: str) -> ExternalEffectAttempt | None:
+        return _public_attempt(
+            self._one(
+                "SELECT * FROM external_effect_attempt WHERE attempt_id = :attempt_id LIMIT 1",
+                {"attempt_id": _text(attempt_id)},
+            )
+        )
+
     def list_attempts_for_jobs(self, job_ids: list[int]) -> dict[int, list[ExternalEffectAttempt]]:
         normalized = sorted({int(job_id) for job_id in job_ids})
         grouped: dict[int, list[ExternalEffectAttempt]] = {job_id: [] for job_id in normalized}
@@ -516,11 +565,36 @@ class SQLAlchemyExternalEffectRepository(ExternalEffectRepository):
                 f"""
             SELECT
                 COUNT(*) FILTER (
+                    WHERE status IN ('planned', 'approved', 'queued', 'dispatching', 'failed_retryable')
+                ) AS raw_open_count,
+                COUNT(*) FILTER (
+                    WHERE hold_reason <> ''
+                      AND status IN ('planned', 'approved', 'queued', 'dispatching', 'failed_retryable')
+                ) AS held_count,
+                COUNT(*) FILTER (
                     WHERE status IN ('queued', 'failed_retryable')
+                      AND hold_reason = ''
+                      AND attempt_count < max_attempts
                       AND scheduled_at <= CURRENT_TIMESTAMP
                       AND (next_retry_at IS NULL OR next_retry_at <= CURRENT_TIMESTAMP)
                       AND (lease_expires_at IS NULL OR lease_expires_at <= CURRENT_TIMESTAMP)
                 ) AS eligible_due_count,
+                COUNT(*) FILTER (
+                    WHERE hold_reason = '' AND status = 'queued' AND scheduled_at > CURRENT_TIMESTAMP
+                ) AS scheduled_count,
+                COUNT(*) FILTER (
+                    WHERE hold_reason = '' AND status = 'failed_retryable'
+                      AND next_retry_at > CURRENT_TIMESTAMP
+                ) AS retry_wait_count,
+                COUNT(*) FILTER (
+                    WHERE hold_reason = '' AND status = 'dispatching'
+                      AND lease_expires_at > CURRENT_TIMESTAMP
+                ) AS in_flight_count,
+                0::BIGINT AS rate_limited_count,
+                COUNT(*) FILTER (
+                    WHERE status = 'unknown_after_dispatch' OR reconciliation_required = TRUE
+                ) AS unknown_count,
+                COUNT(*) FILTER (WHERE status IN ('failed_terminal', 'blocked')) AS dlq_count,
                 COUNT(*) FILTER (WHERE status = 'dispatching') AS dispatching_count,
                 COUNT(*) FILTER (
                     WHERE status = 'dispatching'
@@ -565,12 +639,16 @@ class SQLAlchemyExternalEffectRepository(ExternalEffectRepository):
                 COALESCE(
                     EXTRACT(EPOCH FROM CURRENT_TIMESTAMP - MIN(scheduled_at) FILTER (
                         WHERE status = 'queued' AND scheduled_at <= CURRENT_TIMESTAMP
+                          AND hold_reason = ''
+                          AND attempt_count < max_attempts
                     )),
                     0
                 ) AS oldest_queued_age_seconds,
                 COALESCE(
                     EXTRACT(EPOCH FROM CURRENT_TIMESTAMP - MIN(COALESCE(next_retry_at, scheduled_at)) FILTER (
                         WHERE status = 'failed_retryable'
+                          AND hold_reason = ''
+                          AND attempt_count < max_attempts
                           AND scheduled_at <= CURRENT_TIMESTAMP
                           AND (next_retry_at IS NULL OR next_retry_at <= CURRENT_TIMESTAMP)
                     )),
@@ -584,7 +662,15 @@ class SQLAlchemyExternalEffectRepository(ExternalEffectRepository):
             or {}
         )
         return {
+            "raw_open_count": int(row.get("raw_open_count") or 0),
+            "held_count": int(row.get("held_count") or 0),
             "eligible_due_count": int(row.get("eligible_due_count") or 0),
+            "scheduled_count": int(row.get("scheduled_count") or 0),
+            "retry_wait_count": int(row.get("retry_wait_count") or 0),
+            "rate_limited_count": int(row.get("rate_limited_count") or 0),
+            "in_flight_count": int(row.get("in_flight_count") or 0),
+            "unknown_count": int(row.get("unknown_count") or 0),
+            "dlq_count": int(row.get("dlq_count") or 0),
             "dispatching_count": int(row.get("dispatching_count") or 0),
             "stale_dispatching_count": int(row.get("stale_dispatching_count") or 0),
             "unknown_after_dispatch_count": int(row.get("unknown_after_dispatch_count") or 0),
@@ -611,6 +697,8 @@ class SQLAlchemyExternalEffectRepository(ExternalEffectRepository):
             SELECT *
             FROM external_effect_job
             WHERE status IN ('queued', 'failed_retryable')
+              AND hold_reason = ''
+              AND attempt_count < max_attempts
               AND scheduled_at <= CURRENT_TIMESTAMP
               AND (next_retry_at IS NULL OR next_retry_at <= CURRENT_TIMESTAMP)
               AND (lease_expires_at IS NULL OR lease_expires_at <= CURRENT_TIMESTAMP)
@@ -648,6 +736,8 @@ class SQLAlchemyExternalEffectRepository(ExternalEffectRepository):
                 SELECT id
                 FROM external_effect_job
                 WHERE status IN ('queued', 'failed_retryable')
+                  AND hold_reason = ''
+                  AND attempt_count < max_attempts
                   AND scheduled_at <= CURRENT_TIMESTAMP
                   AND (next_retry_at IS NULL OR next_retry_at <= CURRENT_TIMESTAMP)
                   AND (lease_expires_at IS NULL OR lease_expires_at <= CURRENT_TIMESTAMP)
@@ -664,6 +754,7 @@ class SQLAlchemyExternalEffectRepository(ExternalEffectRepository):
                 dispatch_started_at = CURRENT_TIMESTAMP,
                 locked_at = CURRENT_TIMESTAMP,
                 locked_by = :locked_by,
+                row_version = row_version + 1,
                 updated_at = CURRENT_TIMESTAMP
             FROM due
             WHERE j.id = due.id
@@ -684,9 +775,14 @@ class SQLAlchemyExternalEffectRepository(ExternalEffectRepository):
                 dispatch_started_at = CURRENT_TIMESTAMP,
                 locked_at = CURRENT_TIMESTAMP,
                 locked_by = :locked_by,
+                row_version = row_version + 1,
                 updated_at = CURRENT_TIMESTAMP
             WHERE id = :job_id
+              AND hold_reason = ''
               AND status IN ('queued', 'failed_retryable')
+              AND attempt_count < max_attempts
+              AND scheduled_at <= CURRENT_TIMESTAMP
+              AND (next_retry_at IS NULL OR next_retry_at <= CURRENT_TIMESTAMP)
               AND (lease_expires_at IS NULL OR lease_expires_at <= CURRENT_TIMESTAMP)
             RETURNING *
             """,
@@ -706,6 +802,7 @@ class SQLAlchemyExternalEffectRepository(ExternalEffectRepository):
                 SELECT *
                 FROM external_effect_job
                 WHERE id = :job_id
+                  AND hold_reason = ''
                   AND status = 'dispatching'
                   AND lease_token = :lease_token
                   AND lease_expires_at > CURRENT_TIMESTAMP
@@ -716,24 +813,178 @@ class SQLAlchemyExternalEffectRepository(ExternalEffectRepository):
         )
 
     def quarantine_stale_dispatching(self) -> int:
-        rows = self._write_all(
-            """
-            UPDATE external_effect_job
-            SET status = 'unknown_after_dispatch',
-                reconciliation_required = TRUE,
-                last_error_code = 'lease_expired_after_dispatch',
-                last_error_message = 'Dispatch lease expired; reconcile provider outcome before retry.',
-                lease_token = '', lease_expires_at = NULL,
-                locked_by = '', locked_at = NULL,
-                completed_at = CURRENT_TIMESTAMP,
-                updated_at = CURRENT_TIMESTAMP
-            WHERE status = 'dispatching'
-              AND lease_expires_at IS NOT NULL
-              AND lease_expires_at <= CURRENT_TIMESTAMP
-            RETURNING id
-            """
+        with self._session_factory() as session:
+            stale_rows = (
+                session.execute(
+                    text(
+                        """
+                        SELECT id, last_attempt_id
+                        FROM external_effect_job
+                        WHERE status = 'dispatching'
+                          AND hold_reason = ''
+                          AND lease_expires_at IS NOT NULL
+                          AND lease_expires_at <= CURRENT_TIMESTAMP
+                        ORDER BY id ASC
+                        FOR UPDATE SKIP LOCKED
+                        """
+                    )
+                )
+                .mappings()
+                .fetchall()
+            )
+            count = 0
+            for stale in stale_rows:
+                attempt_id = _text(stale.get("last_attempt_id"))
+                if attempt_id:
+                    session.execute(
+                        text(
+                            """
+                            UPDATE external_effect_attempt
+                            SET status = 'unknown_after_dispatch',
+                                response_summary_json = response_summary_json ||
+                                    '{"provider_result_received": false, "lease_expired": true}'::jsonb,
+                                error_code = CASE
+                                    WHEN error_code = '' THEN 'lease_expired_after_dispatch'
+                                    ELSE error_code
+                                END,
+                                error_message = CASE
+                                    WHEN error_message = ''
+                                    THEN 'Dispatch lease expired; reconcile provider outcome before retry.'
+                                    ELSE error_message
+                                END,
+                                completed_at = COALESCE(completed_at, CURRENT_TIMESTAMP)
+                            WHERE attempt_id = :attempt_id
+                              AND job_id = :job_id
+                              AND status = 'dispatching'
+                            """
+                        ),
+                        {"attempt_id": attempt_id, "job_id": int(stale["id"])},
+                    )
+                updated = session.execute(
+                    text(
+                        """
+                        UPDATE external_effect_job
+                        SET status = 'unknown_after_dispatch',
+                            attempt_count = attempt_count + 1,
+                            reconciliation_required = TRUE,
+                            last_error_code = 'lease_expired_after_dispatch',
+                            last_error_message = 'Dispatch lease expired; reconcile provider outcome before retry.',
+                            lease_token = '', lease_expires_at = NULL,
+                            locked_by = '', locked_at = NULL,
+                            completed_at = CURRENT_TIMESTAMP,
+                            row_version = row_version + 1,
+                            updated_at = CURRENT_TIMESTAMP
+                        WHERE id = :job_id
+                          AND hold_reason = ''
+                          AND status = 'dispatching'
+                          AND lease_expires_at IS NOT NULL
+                          AND lease_expires_at <= CURRENT_TIMESTAMP
+                        RETURNING id
+                        """
+                    ),
+                    {"job_id": int(stale["id"])},
+                ).fetchone()
+                count += 1 if updated else 0
+            session.commit()
+            return count
+
+    def begin_provider_attempt(
+        self,
+        *,
+        job: ExternalEffectJob,
+        request_summary: dict[str, Any],
+    ) -> tuple[ExternalEffectJob, ExternalEffectAttempt] | None:
+        lease_token = _text(job.lease_token)
+        if not lease_token:
+            return None
+        attempt_id = "eea_" + uuid4().hex
+        summary = scrub_summary(
+            {
+                **dict(request_summary or {}),
+                "provider_boundary_crossed": True,
+            }
         )
-        return len(rows)
+        with self._session_factory() as session:
+            current = (
+                session.execute(
+                    text(
+                        """
+                        SELECT *
+                        FROM external_effect_job
+                        WHERE id = :job_id
+                          AND hold_reason = ''
+                          AND status = 'dispatching'
+                          AND lease_token = :lease_token
+                          AND lease_expires_at > CURRENT_TIMESTAMP
+                          AND cancel_requested_at IS NULL
+                        FOR UPDATE
+                        """
+                    ),
+                    {"job_id": int(job.id), "lease_token": lease_token},
+                )
+                .mappings()
+                .fetchone()
+            )
+            if not current:
+                session.rollback()
+                return None
+            attempt_row = (
+                session.execute(
+                    text(
+                        """
+                        INSERT INTO external_effect_attempt (
+                            attempt_id, job_id, adapter_name, adapter_mode, operation, trace_id,
+                            request_id, status, request_summary_json, response_summary_json,
+                            error_code, error_message, started_at, completed_at
+                        ) VALUES (
+                            :attempt_id, :job_id, :adapter_name, :adapter_mode, :operation, :trace_id,
+                            :request_id, 'dispatching', CAST(:request_summary AS jsonb), '{}'::jsonb,
+                            '', '', CURRENT_TIMESTAMP, NULL
+                        )
+                        RETURNING *
+                        """
+                    ),
+                    {
+                        "attempt_id": attempt_id,
+                        "job_id": int(job.id),
+                        "adapter_name": job.adapter_name,
+                        "adapter_mode": _text(job.execution_mode) or "execute",
+                        "operation": job.operation,
+                        "trace_id": job.trace_id,
+                        "request_id": job.request_id,
+                        "request_summary": _json_dumps(summary),
+                    },
+                )
+                .mappings()
+                .fetchone()
+            )
+            updated_row = (
+                session.execute(
+                    text(
+                        """
+                        UPDATE external_effect_job
+                        SET last_attempt_id = :attempt_id,
+                            row_version = row_version + 1,
+                            updated_at = CURRENT_TIMESTAMP
+                        WHERE id = :job_id
+                          AND status = 'dispatching'
+                          AND lease_token = :lease_token
+                          AND cancel_requested_at IS NULL
+                        RETURNING *
+                        """
+                    ),
+                    {"attempt_id": attempt_id, "job_id": int(job.id), "lease_token": lease_token},
+                )
+                .mappings()
+                .fetchone()
+            )
+            if not attempt_row or not updated_row:
+                session.rollback()
+                return None
+            session.commit()
+            updated = _public_job(dict(updated_row))
+            attempt = _public_attempt(dict(attempt_row))
+            return (updated, attempt) if updated and attempt else None
 
     def complete_dispatch(
         self,
@@ -753,7 +1004,6 @@ class SQLAlchemyExternalEffectRepository(ExternalEffectRepository):
         }
         if status not in allowed or not _text(job.lease_token):
             return None
-        attempt_id = "eea_" + uuid4().hex
         request_summary = scrub_summary(dict(result.request_summary or {}))
         response_summary = scrub_summary(
             {
@@ -765,7 +1015,11 @@ class SQLAlchemyExternalEffectRepository(ExternalEffectRepository):
         with self._session_factory() as session:
             current = (
                 session.execute(
-                    text("SELECT * FROM external_effect_job WHERE id = :job_id AND status = 'dispatching' AND lease_token = :lease_token FOR UPDATE"),
+                    text(
+                        "SELECT * FROM external_effect_job "
+                        "WHERE id = :job_id AND status = 'dispatching' AND lease_token = :lease_token "
+                        "AND lease_expires_at > CURRENT_TIMESTAMP FOR UPDATE"
+                    ),
                     {"job_id": int(job.id), "lease_token": _text(job.lease_token)},
                 )
                 .mappings()
@@ -774,41 +1028,98 @@ class SQLAlchemyExternalEffectRepository(ExternalEffectRepository):
             if not current:
                 session.rollback()
                 return None
-            attempt_row = (
-                session.execute(
-                    text(
-                        """
-                    INSERT INTO external_effect_attempt (
-                        attempt_id, job_id, adapter_name, adapter_mode, operation, trace_id,
-                        request_id, status, request_summary_json, response_summary_json,
-                        error_code, error_message, started_at, completed_at
+            current_job = _public_job(dict(current))
+            open_attempt = None
+            if current_job and _text(current_job.last_attempt_id):
+                open_attempt = (
+                    session.execute(
+                        text("SELECT * FROM external_effect_attempt WHERE attempt_id = :attempt_id AND job_id = :job_id AND status = 'dispatching' FOR UPDATE"),
+                        {"attempt_id": current_job.last_attempt_id, "job_id": int(job.id)},
                     )
-                    VALUES (
-                        :attempt_id, :job_id, :adapter_name, :adapter_mode, :operation, :trace_id,
-                        :request_id, :status, CAST(:request_summary AS jsonb), CAST(:response_summary AS jsonb),
-                        :error_code, :error_message, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
-                    )
-                    RETURNING *
-                    """
-                    ),
-                    {
-                        "attempt_id": attempt_id,
-                        "job_id": int(job.id),
-                        "adapter_name": job.adapter_name,
-                        "adapter_mode": _text(result.adapter_mode) or "none",
-                        "operation": job.operation,
-                        "trace_id": job.trace_id,
-                        "request_id": job.request_id,
-                        "status": status,
-                        "request_summary": _json_dumps(request_summary),
-                        "response_summary": _json_dumps(response_summary),
-                        "error_code": _text(result.error_code),
-                        "error_message": _safe_error_message(result.error_message),
-                    },
+                    .mappings()
+                    .fetchone()
                 )
-                .mappings()
-                .fetchone()
-            )
+            if open_attempt:
+                attempt_id = _text(open_attempt.get("attempt_id"))
+                merged_request_summary = scrub_summary(
+                    {
+                        **_json_obj(open_attempt.get("request_summary_json")),
+                        **request_summary,
+                        "provider_boundary_crossed": True,
+                    }
+                )
+                attempt_row = (
+                    session.execute(
+                        text(
+                            """
+                            UPDATE external_effect_attempt
+                            SET status = :status,
+                                adapter_mode = :adapter_mode,
+                                request_summary_json = CAST(:request_summary AS jsonb),
+                                response_summary_json = CAST(:response_summary AS jsonb),
+                                error_code = :error_code,
+                                error_message = :error_message,
+                                completed_at = CURRENT_TIMESTAMP
+                            WHERE attempt_id = :attempt_id
+                              AND job_id = :job_id
+                              AND status = 'dispatching'
+                            RETURNING *
+                            """
+                        ),
+                        {
+                            "attempt_id": attempt_id,
+                            "job_id": int(job.id),
+                            "status": status,
+                            "adapter_mode": _text(result.adapter_mode) or "none",
+                            "request_summary": _json_dumps(merged_request_summary),
+                            "response_summary": _json_dumps(response_summary),
+                            "error_code": _text(result.error_code),
+                            "error_message": _safe_error_message(result.error_message),
+                        },
+                    )
+                    .mappings()
+                    .fetchone()
+                )
+            else:
+                if status != "blocked":
+                    session.rollback()
+                    return None
+                attempt_id = "eea_" + uuid4().hex
+                attempt_row = (
+                    session.execute(
+                        text(
+                            """
+                            INSERT INTO external_effect_attempt (
+                                attempt_id, job_id, adapter_name, adapter_mode, operation, trace_id,
+                                request_id, status, request_summary_json, response_summary_json,
+                                error_code, error_message, started_at, completed_at
+                            ) VALUES (
+                                :attempt_id, :job_id, :adapter_name, :adapter_mode, :operation, :trace_id,
+                                :request_id, :status, CAST(:request_summary AS jsonb),
+                                CAST(:response_summary AS jsonb), :error_code, :error_message,
+                                CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+                            )
+                            RETURNING *
+                            """
+                        ),
+                        {
+                            "attempt_id": attempt_id,
+                            "job_id": int(job.id),
+                            "adapter_name": job.adapter_name,
+                            "adapter_mode": _text(result.adapter_mode) or "none",
+                            "operation": job.operation,
+                            "trace_id": job.trace_id,
+                            "request_id": job.request_id,
+                            "status": status,
+                            "request_summary": _json_dumps(request_summary),
+                            "response_summary": _json_dumps(response_summary),
+                            "error_code": _text(result.error_code),
+                            "error_message": _safe_error_message(result.error_message),
+                        },
+                    )
+                    .mappings()
+                    .fetchone()
+                )
             updated_row = (
                 session.execute(
                     text(
@@ -826,6 +1137,7 @@ class SQLAlchemyExternalEffectRepository(ExternalEffectRepository):
                         reconciliation_required = :reconciliation_required,
                         lease_token = '', lease_expires_at = NULL,
                         locked_by = '', locked_at = NULL,
+                        row_version = row_version + 1,
                         executed_at = CASE WHEN :status = 'succeeded' THEN CURRENT_TIMESTAMP ELSE executed_at END,
                         completed_at = CASE
                             WHEN :status IN ('succeeded', 'simulated', 'unknown_after_dispatch', 'failed_terminal', 'blocked')
@@ -858,10 +1170,22 @@ class SQLAlchemyExternalEffectRepository(ExternalEffectRepository):
             if not updated_row or not attempt_row:
                 session.rollback()
                 return None
-            session.commit()
             updated = _public_job(dict(updated_row))
             attempt = _public_attempt(dict(attempt_row))
-            return (updated, attempt) if updated and attempt else None
+            if not updated or not attempt:
+                session.rollback()
+                return None
+            if status == "succeeded":
+                from aicrm_next.platform_foundation.internal_events.outbox import (
+                    enqueue_internal_event_outbox_in_session,
+                )
+
+                enqueue_internal_event_outbox_in_session(
+                    session,
+                    build_external_effect_completed_event(job=updated, attempt=attempt),
+                )
+            session.commit()
+            return updated, attempt
 
     def mark_dispatch_unknown(
         self,
@@ -872,34 +1196,93 @@ class SQLAlchemyExternalEffectRepository(ExternalEffectRepository):
         side_effect_executed: bool = True,
         provider_result_received: bool = False,
     ) -> ExternalEffectJob | None:
-        row = self._write_one(
-            """
-            UPDATE external_effect_job
-            SET status = 'unknown_after_dispatch',
-                reconciliation_required = TRUE,
-                side_effect_executed = :side_effect_executed,
-                provider_result_received = :provider_result_received,
-                last_error_code = :error_code,
-                last_error_message = :error_message,
-                lease_token = '', lease_expires_at = NULL,
-                locked_by = '', locked_at = NULL,
-                completed_at = CURRENT_TIMESTAMP,
-                updated_at = CURRENT_TIMESTAMP
-            WHERE id = :job_id
-              AND status = 'dispatching'
-              AND lease_token = :lease_token
-            RETURNING *
-            """,
-            {
-                "job_id": int(job.id),
-                "lease_token": _text(job.lease_token),
-                "side_effect_executed": bool(side_effect_executed),
-                "provider_result_received": bool(provider_result_received),
-                "error_code": _text(error_code) or "result_persistence_failed",
-                "error_message": _safe_error_message(error_message),
-            },
-        )
-        return _public_job(row)
+        lease_token = _text(job.lease_token)
+        if not lease_token:
+            return None
+        normalized_error_code = _text(error_code) or "result_persistence_failed"
+        normalized_error_message = _safe_error_message(error_message)
+        with self._session_factory() as session:
+            current = (
+                session.execute(
+                    text("SELECT * FROM external_effect_job WHERE id = :job_id AND status = 'dispatching' AND lease_token = :lease_token FOR UPDATE"),
+                    {"job_id": int(job.id), "lease_token": lease_token},
+                )
+                .mappings()
+                .fetchone()
+            )
+            if not current:
+                session.rollback()
+                return None
+            last_attempt_id = _text(current.get("last_attempt_id"))
+            if last_attempt_id:
+                session.execute(
+                    text(
+                        """
+                        UPDATE external_effect_attempt
+                        SET status = 'unknown_after_dispatch',
+                            response_summary_json = response_summary_json ||
+                                CAST(:response_summary AS jsonb),
+                            error_code = :error_code,
+                            error_message = :error_message,
+                            completed_at = COALESCE(completed_at, CURRENT_TIMESTAMP)
+                        WHERE attempt_id = :attempt_id
+                          AND job_id = :job_id
+                          AND status = 'dispatching'
+                        """
+                    ),
+                    {
+                        "attempt_id": last_attempt_id,
+                        "job_id": int(job.id),
+                        "response_summary": _json_dumps(
+                            {
+                                "provider_result_received": bool(provider_result_received),
+                                "result_persistence_failed": True,
+                            }
+                        ),
+                        "error_code": normalized_error_code,
+                        "error_message": normalized_error_message,
+                    },
+                )
+            updated_row = (
+                session.execute(
+                    text(
+                        """
+                        UPDATE external_effect_job
+                        SET status = 'unknown_after_dispatch',
+                            attempt_count = attempt_count + 1,
+                            reconciliation_required = TRUE,
+                            side_effect_executed = :side_effect_executed,
+                            provider_result_received = :provider_result_received,
+                            last_error_code = :error_code,
+                            last_error_message = :error_message,
+                            lease_token = '', lease_expires_at = NULL,
+                            locked_by = '', locked_at = NULL,
+                            completed_at = CURRENT_TIMESTAMP,
+                            row_version = row_version + 1,
+                            updated_at = CURRENT_TIMESTAMP
+                        WHERE id = :job_id
+                          AND status = 'dispatching'
+                          AND lease_token = :lease_token
+                        RETURNING *
+                        """
+                    ),
+                    {
+                        "job_id": int(job.id),
+                        "lease_token": lease_token,
+                        "side_effect_executed": bool(side_effect_executed),
+                        "provider_result_received": bool(provider_result_received),
+                        "error_code": normalized_error_code,
+                        "error_message": normalized_error_message,
+                    },
+                )
+                .mappings()
+                .fetchone()
+            )
+            if not updated_row:
+                session.rollback()
+                return None
+            session.commit()
+            return _public_job(dict(updated_row))
 
     def mark_dispatching(self, job_id: int, *, locked_by: str) -> ExternalEffectJob | None:
         return self.acquire_job(job_id, locked_by=locked_by)
@@ -944,14 +1327,98 @@ class SQLAlchemyExternalEffectRepository(ExternalEffectRepository):
             {"attempt_id": _text(attempt_id), "error_code": _text(error_code), "error_message": _safe_error_message(error_message)},
         )
 
-    def cancel_job(self, job_id: int) -> ExternalEffectJob | None:
-        return self._update(
-            job_id,
-            "status = 'cancelled', locked_by = '', locked_at = NULL, lease_token = '', lease_expires_at = NULL, cancelled_at = CURRENT_TIMESTAMP, completed_at = CURRENT_TIMESTAMP",
-            {},
+    def request_cancel(
+        self,
+        job_id: int,
+        *,
+        actor: str = "",
+        reason: str = "",
+        expected_version: int | None = None,
+    ) -> ExternalEffectJob | None:
+        version_clause = "AND row_version = :expected_version" if expected_version is not None else ""
+        return _public_job(
+            self._write_one(
+                f"""
+                UPDATE external_effect_job
+                SET cancel_requested_at = COALESCE(cancel_requested_at, CURRENT_TIMESTAMP),
+                    cancel_requested_by = CASE
+                        WHEN cancel_requested_by = '' THEN :actor ELSE cancel_requested_by
+                    END,
+                    cancel_reason = CASE WHEN cancel_reason = '' THEN :reason ELSE cancel_reason END,
+                    status = CASE WHEN status = 'dispatching' THEN status ELSE 'cancelled' END,
+                    locked_by = CASE WHEN status = 'dispatching' THEN locked_by ELSE '' END,
+                    locked_at = CASE WHEN status = 'dispatching' THEN locked_at ELSE NULL END,
+                    lease_token = CASE WHEN status = 'dispatching' THEN lease_token ELSE '' END,
+                    lease_expires_at = CASE WHEN status = 'dispatching' THEN lease_expires_at ELSE NULL END,
+                    cancelled_at = CASE WHEN status = 'dispatching' THEN cancelled_at ELSE CURRENT_TIMESTAMP END,
+                    completed_at = CASE WHEN status = 'dispatching' THEN completed_at ELSE CURRENT_TIMESTAMP END,
+                    row_version = row_version + 1,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = :job_id
+                  AND status IN ('planned', 'approved', 'queued', 'failed_retryable', 'dispatching')
+                  {version_clause}
+                RETURNING *
+                """,
+                {
+                    "job_id": int(job_id),
+                    "actor": _text(actor),
+                    "reason": _safe_error_message(reason),
+                    "expected_version": int(expected_version or 0),
+                },
+            )
         )
 
-    def enqueue_job(self, job_id: int, *, allow_unknown_after_dispatch: bool = False) -> ExternalEffectJob | None:
+    def settle_cancel(self, *, job: ExternalEffectJob) -> ExternalEffectJob | None:
+        return _public_job(
+            self._write_one(
+                """
+                UPDATE external_effect_job j
+                SET status = 'cancelled',
+                    locked_by = '', locked_at = NULL,
+                    lease_token = '', lease_expires_at = NULL,
+                    cancelled_at = CURRENT_TIMESTAMP,
+                    completed_at = CURRENT_TIMESTAMP,
+                    row_version = row_version + 1,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE j.id = :job_id
+                  AND j.status = 'dispatching'
+                  AND j.lease_token = :lease_token
+                  AND j.cancel_requested_at IS NOT NULL
+                  AND NOT EXISTS (
+                      SELECT 1
+                      FROM external_effect_attempt a
+                      WHERE a.job_id = j.id
+                        AND a.attempt_id = j.last_attempt_id
+                        AND a.status = 'dispatching'
+                  )
+                RETURNING j.*
+                """,
+                {"job_id": int(job.id), "lease_token": _text(job.lease_token)},
+            )
+        )
+
+    def cancel_job(
+        self,
+        job_id: int,
+        *,
+        actor: str = "",
+        reason: str = "",
+        expected_version: int | None = None,
+    ) -> ExternalEffectJob | None:
+        return self.request_cancel(
+            job_id,
+            actor=actor,
+            reason=reason,
+            expected_version=expected_version,
+        )
+
+    def enqueue_job(
+        self,
+        job_id: int,
+        *,
+        allow_unknown_after_dispatch: bool = False,
+        extend_attempt_budget: bool = False,
+    ) -> ExternalEffectJob | None:
         unknown_clause = "OR status = 'unknown_after_dispatch'" if allow_unknown_after_dispatch else ""
         return _public_job(
             self._write_one(
@@ -962,7 +1429,15 @@ class SQLAlchemyExternalEffectRepository(ExternalEffectRepository):
                     lease_token = '', lease_expires_at = NULL,
                     next_retry_at = CURRENT_TIMESTAMP,
                     reconciliation_required = FALSE,
+                    cancel_requested_at = NULL,
+                    cancel_requested_by = '',
+                    cancel_reason = '',
+                    max_attempts = CASE
+                        WHEN :extend_attempt_budget THEN GREATEST(max_attempts, attempt_count + 1)
+                        ELSE max_attempts
+                    END,
                     completed_at = NULL,
+                    row_version = row_version + 1,
                     updated_at = CURRENT_TIMESTAMP
                 WHERE id = :job_id
                   AND (
@@ -971,7 +1446,7 @@ class SQLAlchemyExternalEffectRepository(ExternalEffectRepository):
                   )
                 RETURNING *
                 """,
-                {"job_id": int(job_id)},
+                {"job_id": int(job_id), "extend_attempt_budget": bool(extend_attempt_budget)},
             )
         )
 
@@ -1157,6 +1632,7 @@ class SQLAlchemyExternalEffectRepository(ExternalEffectRepository):
             SELECT COUNT(*) AS count
             FROM external_effect_job
             WHERE payload_json->>'execution_scope' = 'test_loopback'
+              AND hold_reason = ''
               AND status IN ('queued', 'failed_retryable')
               AND scheduled_at <= CURRENT_TIMESTAMP
               AND (next_retry_at IS NULL OR next_retry_at <= CURRENT_TIMESTAMP)
@@ -1196,6 +1672,7 @@ class SQLAlchemyExternalEffectRepository(ExternalEffectRepository):
             f"""
             UPDATE external_effect_job
             SET {set_sql},
+                row_version = row_version + 1,
                 updated_at = CURRENT_TIMESTAMP
             WHERE id = :job_id
             RETURNING *

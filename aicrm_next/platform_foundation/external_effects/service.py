@@ -191,13 +191,23 @@ class ExternalEffectService:
         return self._repo.enqueue_job(
             job_id,
             allow_unknown_after_dispatch=job.status == "unknown_after_dispatch",
+            extend_attempt_budget=True,
         )
 
-    def cancel(self, job_id: int) -> ExternalEffectJob | None:
-        job = self._repo.get_job(job_id)
-        if not job or job.status in {"succeeded", "cancelled"}:
-            return None
-        return self._repo.cancel_job(job_id)
+    def cancel(
+        self,
+        job_id: int,
+        *,
+        actor: str = "",
+        reason: str = "",
+        expected_version: int | None = None,
+    ) -> ExternalEffectJob | None:
+        return self._repo.request_cancel(
+            job_id,
+            actor=str(actor or "").strip(),
+            reason=str(reason or "").strip(),
+            expected_version=expected_version,
+        )
 
     def complete_record_only(self, *, dry_run: bool = True, limit: int = 100, operator: str = "system") -> dict[str, Any]:
         jobs = self._repo.list_record_only_jobs(limit=limit)
@@ -273,12 +283,15 @@ class ExternalEffectService:
             error_code=WECOM_EXECUTION_DISABLED_CODE,
             error_message=wecom_execution_disabled_message(),
         )
-        return self._repo.mark_blocked(
-            job.id,
-            attempt_id=attempt.attempt_id,
-            error_code=WECOM_EXECUTION_DISABLED_CODE,
-            error_message=wecom_execution_disabled_message(),
-        ) or job
+        return (
+            self._repo.mark_blocked(
+                job.id,
+                attempt_id=attempt.attempt_id,
+                error_code=WECOM_EXECUTION_DISABLED_CODE,
+                error_message=wecom_execution_disabled_message(),
+            )
+            or job
+        )
 
 
 def default_external_effect_service() -> ExternalEffectService:

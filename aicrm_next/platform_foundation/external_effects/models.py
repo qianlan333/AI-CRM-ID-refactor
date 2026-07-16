@@ -25,6 +25,7 @@ ExternalEffectStatus = Literal[
 ]
 ExternalEffectExecutionMode = Literal["disabled", "shadow", "plan_only", "execute", "execute_dryrun"]
 ExternalEffectAttemptStatus = Literal[
+    "dispatching",
     "succeeded",
     "simulated",
     "unknown_after_dispatch",
@@ -136,6 +137,7 @@ class ExternalEffectJob:
     payload_json: dict[str, Any] = field(default_factory=dict)
     payload_summary_json: dict[str, Any] = field(default_factory=dict)
     status: ExternalEffectStatus = "queued"
+    row_version: int = 1
     priority: int = 100
     scheduled_at: str = ""
     attempt_count: int = 0
@@ -159,6 +161,11 @@ class ExternalEffectJob:
     executed_at: str = ""
     completed_at: str = ""
     cancelled_at: str = ""
+    cancel_requested_at: str = ""
+    cancel_requested_by: str = ""
+    cancel_reason: str = ""
+    hold_reason: str = ""
+    hold_at: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

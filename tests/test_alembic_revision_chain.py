@@ -66,29 +66,37 @@ def test_all_alembic_down_revisions_exist() -> None:
     assert missing == {}
 
 
-def test_automation_agent_audit_table_repair_is_the_single_head() -> None:
+def test_execution_runtime_correctness_is_the_single_head() -> None:
     revisions = _migration_revisions()
     referenced = {parent for item in revisions.values() for parent in _parents(item["down_revision"])}
     heads = set(revisions) - referenced
-    physical_repair = VERSIONS / "0123_required_physical_schema_repair.py"
+    repair = VERSIONS / "0123_required_physical_schema_repair.py"
+    source = repair.read_text(encoding="utf-8")
     audit_repair = VERSIONS / "0124_automation_agent_audit_tables.py"
-    physical_source = physical_repair.read_text(encoding="utf-8")
     audit_source = audit_repair.read_text(encoding="utf-8")
 
-    assert heads == {"0124_agent_audit_tables"}
-    assert revisions["0124_agent_audit_tables"]["down_revision"] == "0123_required_physical_schema_repair"
+    runtime_correctness = VERSIONS / "0124_execution_runtime_correctness.py"
+    runtime_source = runtime_correctness.read_text(encoding="utf-8")
+
+    assert heads == {"0124_execution_runtime_correctness"}
+    assert revisions["0124_execution_runtime_correctness"]["down_revision"] == "0123_required_physical_schema_repair"
     assert revisions["0123_required_physical_schema_repair"]["down_revision"] == "0122_internal_event_fanout_manifest"
-    assert "0018_hxc_dashboard_broadcast_tasks" in physical_source
-    assert "0023_group_ops_webhook_rules" in physical_source
-    assert "0028_owner_migration_excel_sessions" in physical_source
+    assert "0018_hxc_dashboard_broadcast_tasks" in source
+    assert "0023_group_ops_webhook_rules" in source
+    assert "0028_owner_migration_excel_sessions" in source
+    assert "def downgrade()" in source
+    assert "return None" in source
     assert "CREATE TABLE IF NOT EXISTS automation_agent_output" in audit_source
     assert "CREATE TABLE IF NOT EXISTS automation_agent_llm_call_log" in audit_source
     assert "idx_automation_agent_output_run_created" in audit_source
     assert "ix_automation_agent_output_unionid" in audit_source
     assert "idx_automation_agent_llm_call_log_agent_created" in audit_source
     assert "FOREIGN KEY" not in audit_source
-    assert "return None" in physical_source
     assert "return None" in audit_source
+    assert "row_version BIGINT NOT NULL DEFAULT 1" in runtime_source
+    assert "cancel_requested_at TIMESTAMPTZ" in runtime_source
+    assert "uq_external_effect_attempt_open_job" in runtime_source
+    assert "'dispatching'" in runtime_source
 
 
 def test_alembic_revision_storage_supports_deployed_revision_ids() -> None:

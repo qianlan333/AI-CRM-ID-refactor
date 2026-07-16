@@ -4,6 +4,7 @@ import os
 import re
 import uuid
 from contextlib import contextmanager
+from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlsplit, urlunsplit
 
@@ -73,7 +74,7 @@ def test_empty_postgres_database_installs_and_reuses_alembic_head() -> None:
 
         assert first.baseline_applied is True
         assert first.revision_before is None
-        assert first.revision_after == "0124_agent_audit_tables"
+        assert first.revision_after == "0124_execution_runtime_correctness"
         assert second.baseline_applied is False
         assert second.revision_before == first.revision_after
         assert second.revision_after == first.revision_after
@@ -145,7 +146,7 @@ def test_production_shape_alembic_database_upgrades_without_reapplying_baseline(
 
         assert result.baseline_applied is False
         assert result.revision_before == "0098_admin_session_revocation"
-        assert result.revision_after == "0124_agent_audit_tables"
+        assert result.revision_after == "0124_execution_runtime_correctness"
         with psycopg.connect(database_url) as connection:
             preserved = connection.execute(
                 "SELECT wecom_userid, session_version FROM admin_users WHERE id = %s",
@@ -165,13 +166,9 @@ def test_upgrade_repairs_missing_or_partial_automation_agent_audit_tables_withou
         with psycopg.connect(database_url) as connection:
             connection.execute("DROP TABLE automation_agent_llm_call_log")
             connection.execute("DROP TABLE automation_agent_output")
-            connection.execute(
-                "CREATE TABLE automation_agent_output (id BIGSERIAL PRIMARY KEY)"
-            )
+            connection.execute("CREATE TABLE automation_agent_output (id BIGSERIAL PRIMARY KEY)")
             preserved_id = int(
-                connection.execute(
-                    "INSERT INTO automation_agent_output DEFAULT VALUES RETURNING id"
-                ).fetchone()[0]
+                connection.execute("INSERT INTO automation_agent_output DEFAULT VALUES RETURNING id").fetchone()[0]
             )
             connection.commit()
 
@@ -179,7 +176,7 @@ def test_upgrade_repairs_missing_or_partial_automation_agent_audit_tables_withou
 
         assert result.baseline_applied is False
         assert result.revision_before == "0123_required_physical_schema_repair"
-        assert result.revision_after == "0124_agent_audit_tables"
+        assert result.revision_after == "0124_execution_runtime_correctness"
 
         expected_columns = {
             "automation_agent_output": {
@@ -307,6 +304,256 @@ def test_upgrade_repairs_missing_or_partial_automation_agent_audit_tables_withou
                 (preserved_id,),
             ).fetchone()
         assert preserved_after_reapply == (1,)
+
+
+def test_execution_runtime_correctness_freezes_and_classifies_pre_cutover_queue_history() -> None:
+    with _isolated_database("queue_history_freeze") as database_url:
+        with psycopg.connect(database_url, autocommit=True) as connection:
+            connection.execute(BASELINE_PATH.read_text(encoding="utf-8"))
+        _upgrade_database_to(database_url, "0123_required_physical_schema_repair")
+
+        with psycopg.connect(database_url) as connection:
+            connection.execute(
+                """
+                INSERT INTO external_effect_job (
+                    effect_type, adapter_name, operation, target_type, target_id,
+                    idempotency_key, status, scheduled_at
+                ) VALUES
+                    ('wecom.media.upload', 'wecom', 'upload', 'media', 'legacy-media',
+                     'history-freeze-media', 'queued', CURRENT_TIMESTAMP - INTERVAL '1 hour'),
+                    ('webhook.test', 'http', 'post', 'loopback', 'terminal',
+                     'history-freeze-terminal', 'succeeded', CURRENT_TIMESTAMP - INTERVAL '1 hour')
+                    """
+                )
+            connection.execute(
+                """
+                INSERT INTO external_effect_job (
+                    effect_type, adapter_name, operation, target_type, target_id,
+                    idempotency_key, status, scheduled_at, attempt_count, max_attempts,
+                    side_effect_executed, provider_result_received, reconciliation_required
+                ) VALUES
+                    ('webhook.test', 'http', 'post', 'loopback', 'ambiguous',
+                     'history-freeze-ambiguous', 'dispatching', CURRENT_TIMESTAMP, 1, 5,
+                     TRUE, FALSE, TRUE),
+                    ('webhook.test', 'http', 'post', 'loopback', 'retryable',
+                     'history-freeze-retryable', 'failed_retryable', CURRENT_TIMESTAMP, 1, 5,
+                     FALSE, FALSE, FALSE),
+                    ('webhook.test', 'http', 'post', 'loopback', 'exhausted',
+                     'history-freeze-exhausted', 'queued', CURRENT_TIMESTAMP, 5, 5,
+                     FALSE, FALSE, FALSE)
+                """
+            )
+            connection.execute(
+                """
+                INSERT INTO internal_event (
+                    event_id, event_type, aggregate_type, aggregate_id, idempotency_key
+                ) VALUES ('evt-history-freeze', 'payment.succeeded', 'order', 'history-freeze', 'evt-history-freeze')
+                """
+            )
+            connection.execute(
+                """
+                INSERT INTO internal_event_consumer_run (event_id, consumer_name, status)
+                VALUES ('evt-history-freeze', 'payment_projection_consumer', 'pending')
+                """
+            )
+            connection.execute(
+                """
+                INSERT INTO internal_event_outbox (
+                    outbox_id, event_type, aggregate_type, aggregate_id, idempotency_key
+                ) VALUES ('ieo-history-freeze', 'payment.succeeded', 'order', 'history-freeze', 'ieo-history-freeze')
+                """
+            )
+            connection.execute(
+                """
+                INSERT INTO webhook_inbox (provider, event_family, route, idempotency_key)
+                VALUES ('wecom', 'contact_change', '/callback', 'webhook-history-freeze')
+                """
+            )
+            connection.execute(
+                """
+                INSERT INTO broadcast_jobs (
+                    source_type, source_id, source_table, scheduled_for, status,
+                    idempotency_key, target_unionids_json, content_payload
+                ) VALUES (
+                    'manual', 'history-freeze', 'manual', CURRENT_TIMESTAMP - INTERVAL '1 hour', 'queued',
+                    'broadcast-history-freeze', '[]'::jsonb, '{}'::jsonb
+                )
+                """
+            )
+            connection.commit()
+
+        _upgrade_database_to(database_url, "head")
+
+        with psycopg.connect(database_url) as connection:
+            classifications = dict(
+                connection.execute(
+                    """
+                    SELECT classification, COUNT(*)
+                    FROM queue_history_classification
+                    GROUP BY classification
+                    """
+                ).fetchall()
+            )
+            hold_counts = {
+                table: int(connection.execute(f"SELECT COUNT(*) FROM {table} WHERE hold_reason <> ''").fetchone()[0])
+                for table in (
+                    "external_effect_job",
+                    "internal_event_consumer_run",
+                    "internal_event_outbox",
+                    "webhook_inbox",
+                    "broadcast_jobs",
+                )
+            }
+            external_candidates = int(
+                connection.execute(
+                    """
+                    SELECT COUNT(*) FROM external_effect_job
+                    WHERE status IN ('queued', 'failed_retryable')
+                      AND hold_reason = ''
+                      AND scheduled_at <= CURRENT_TIMESTAMP
+                    """
+                ).fetchone()[0]
+            )
+            connection.execute(
+                """
+                INSERT INTO external_effect_job (
+                    effect_type, adapter_name, operation, target_type, target_id,
+                    idempotency_key, status, scheduled_at
+                ) VALUES (
+                    'webhook.test', 'http', 'post', 'loopback', 'new-row',
+                    'history-freeze-new-row', 'queued', CURRENT_TIMESTAMP
+                )
+                """
+            )
+            new_hold = connection.execute(
+                "SELECT hold_reason, hold_at FROM external_effect_job WHERE idempotency_key = 'history-freeze-new-row'"
+            ).fetchone()
+            connection.commit()
+
+        assert classifications == {
+            "ambiguous_hold": 1,
+            "inconsistent_quarantine": 1,
+            "safe_pre_provider": 5,
+            "safe_retryable": 1,
+            "terminal_readonly": 1,
+        }
+        assert hold_counts == {
+            "external_effect_job": 4,
+            "internal_event_consumer_run": 1,
+            "internal_event_outbox": 1,
+            "webhook_inbox": 1,
+            "broadcast_jobs": 1,
+        }
+        assert external_candidates == 0
+        assert new_hold == ("", None)
+
+        from aicrm_next.platform_foundation.repository import RuntimeReadinessRepository
+
+        with RuntimeReadinessRepository(database_url) as readiness_repo:
+            queue_metrics = readiness_repo.queue_metrics(
+                allowed_pairs=(("payment.succeeded", "payment_projection_consumer"),)
+            )
+        assert queue_metrics["queue_policy_version"] == 1
+        assert queue_metrics["queue_raw_open_count"] == 9
+        assert queue_metrics["queue_held_count"] == 8
+        assert queue_metrics["queue_eligible_count"] == 1
+        assert queue_metrics["internal_event_pending_count"] == 1
+        assert queue_metrics["internal_event_actionable_pending_count"] == 0
+        assert queue_metrics["internal_event_outbox_raw_open_count"] == 1
+        assert queue_metrics["internal_event_outbox_held_count"] == 1
+        assert queue_metrics["internal_event_outbox_eligible_count"] == 0
+        assert queue_metrics["webhook_raw_open_count"] == 1
+        assert queue_metrics["webhook_held_count"] == 1
+        assert queue_metrics["webhook_eligible_count"] == 0
+        assert queue_metrics["external_effect_pending_count"] == 5
+        assert queue_metrics["external_effect_held_count"] == 4
+        assert queue_metrics["external_effect_eligible_count"] == 1
+        assert queue_metrics["broadcast_raw_open_count"] == 1
+        assert queue_metrics["broadcast_held_count"] == 1
+        assert queue_metrics["broadcast_eligible_count"] == 0
+
+        from sqlalchemy import create_engine
+        from sqlalchemy.orm import sessionmaker
+
+        from aicrm_next.background_jobs.broadcast_queue_worker import PostgresBroadcastQueueRepository
+        from aicrm_next.platform_foundation.external_effects.repo import SQLAlchemyExternalEffectRepository
+        from aicrm_next.platform_foundation.internal_events.repository import SQLAlchemyInternalEventRepository
+        from aicrm_next.platform_foundation.webhook_inbox.repository import PostgresWebhookInboxRepository
+
+        sqlalchemy_url = (
+            "postgresql+psycopg://" + database_url[len("postgresql://") :]
+            if database_url.startswith("postgresql://")
+            else database_url
+        )
+        engine = create_engine(sqlalchemy_url)
+        session_factory = sessionmaker(bind=engine, expire_on_commit=False)
+        external_repo = SQLAlchemyExternalEffectRepository(session_factory)
+        internal_repo = SQLAlchemyInternalEventRepository(session_factory)
+        assert external_repo.list_due_jobs(effect_types=["wecom.media.upload"]) == []
+        assert internal_repo.list_due_runs() == []
+        assert internal_repo.acquire_due_runs(locked_by="history-freeze-test") == []
+        assert internal_repo.list_due_outbox() == []
+        assert internal_repo.acquire_due_outbox(locked_by="history-freeze-test") == []
+        webhook_repo = PostgresWebhookInboxRepository(database_url)
+        assert webhook_repo.preview_due(provider="wecom") == []
+        assert webhook_repo.claim_due(provider="wecom", locked_by="history-freeze-test") == []
+        previous_url = os.environ.get("DATABASE_URL")
+        os.environ["DATABASE_URL"] = database_url
+        try:
+            assert PostgresBroadcastQueueRepository().claim_due_jobs(
+                limit=10,
+                now=datetime.now(timezone.utc),
+                claim_token="history-freeze-test",
+                lease_seconds=30,
+            ) == []
+        finally:
+            if previous_url is None:
+                os.environ.pop("DATABASE_URL", None)
+            else:
+                os.environ["DATABASE_URL"] = previous_url
+            engine.dispose()
+
+        with psycopg.connect(database_url) as connection:
+            with pytest.raises(psycopg.errors.RaiseException, match="append-only"):
+                connection.execute("UPDATE queue_history_classification SET source_status = 'tampered'")
+            connection.rollback()
+
+        config = Config(str(ROOT / "alembic.ini"))
+        config.set_main_option("sqlalchemy.url", database_url)
+        previous_url = os.environ.get("DATABASE_URL")
+        os.environ["DATABASE_URL"] = database_url
+        try:
+            command.downgrade(config, "0123_required_physical_schema_repair")
+        finally:
+            if previous_url is None:
+                os.environ.pop("DATABASE_URL", None)
+            else:
+                os.environ["DATABASE_URL"] = previous_url
+        with psycopg.connect(database_url) as connection:
+            assert connection.execute("SELECT to_regclass('public.queue_history_classification')").fetchone() == (None,)
+            downgraded_statuses = dict(
+                connection.execute(
+                    """
+                    SELECT idempotency_key, status
+                    FROM external_effect_job
+                    WHERE idempotency_key IN ('history-freeze-media', 'history-freeze-ambiguous')
+                    """
+                ).fetchall()
+            )
+            assert downgraded_statuses == {
+                "history-freeze-ambiguous": "unknown_after_dispatch",
+                "history-freeze-media": "blocked",
+            }
+            assert connection.execute(
+                """
+                SELECT COUNT(*) FROM information_schema.columns
+                WHERE table_schema = 'public' AND column_name IN ('hold_reason', 'hold_at')
+                  AND table_name IN (
+                    'external_effect_job', 'internal_event_consumer_run', 'internal_event_outbox',
+                    'webhook_inbox', 'broadcast_jobs'
+                  )
+                """
+            ).fetchone() == (0,)
 
 
 def test_questionnaire_auto_execute_upgrade_skips_only_pre_cutover_runs() -> None:
@@ -468,20 +715,6 @@ def _upgrade_database_to(database_url: str, revision: str) -> None:
     os.environ["DATABASE_URL"] = database_url
     try:
         command.upgrade(config, revision)
-    finally:
-        if previous_url is None:
-            os.environ.pop("DATABASE_URL", None)
-        else:
-            os.environ["DATABASE_URL"] = previous_url
-
-
-def _downgrade_database_to(database_url: str, revision: str) -> None:
-    config = Config(str(ROOT / "alembic.ini"))
-    config.set_main_option("sqlalchemy.url", database_url)
-    previous_url = os.environ.get("DATABASE_URL")
-    os.environ["DATABASE_URL"] = database_url
-    try:
-        command.downgrade(config, revision)
     finally:
         if previous_url is None:
             os.environ.pop("DATABASE_URL", None)

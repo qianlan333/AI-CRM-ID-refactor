@@ -154,6 +154,8 @@ class InMemoryInternalEventRepository(InternalEventRepository):
             "created_at": now,
             "updated_at": now,
             "finished_at": "",
+            "hold_reason": "",
+            "hold_at": "",
         }
         self._next_run_id += 1
         self._runs.append(row)
@@ -190,6 +192,8 @@ class InMemoryInternalEventRepository(InternalEventRepository):
             if row.get("event_id") != _text(event_id) or row.get("consumer_name") != _text(consumer_name):
                 continue
             if force:
+                if _text(row.get("hold_reason")):
+                    return None
                 if row.get("status") not in {"pending", "failed_retryable", "failed_terminal", "blocked", "succeeded", "skipped"}:
                     return None
                 if row.get("locked_at") and self._dt(row.get("locked_at")) > now - LEASE_TIMEOUT:
@@ -241,7 +245,27 @@ class InMemoryInternalEventRepository(InternalEventRepository):
             by_event_type[event_type] = by_event_type.get(event_type, 0) + 1
             by_consumer[consumer_name] = by_consumer.get(consumer_name, 0) + 1
         return {
+            "raw_open_count": len([row for row in rows if row.get("status") in {"pending", "running", "failed_retryable"}]),
+            "held_count": len([
+                row for row in rows
+                if _text(row.get("hold_reason")) and row.get("status") in {"pending", "running", "failed_retryable"}
+            ]),
             "due_count": len(due_rows),
+            "eligible_due_count": len(due_rows),
+            "scheduled_count": 0,
+            "retry_wait_count": len([
+                row for row in rows
+                if not _text(row.get("hold_reason")) and row.get("status") == "failed_retryable"
+                and row.get("next_retry_at") and self._dt(row.get("next_retry_at")) > now
+            ]),
+            "rate_limited_count": 0,
+            "in_flight_count": len([
+                row for row in rows
+                if not _text(row.get("hold_reason")) and row.get("status") == "running"
+                and row.get("locked_at") and self._dt(row.get("locked_at")) > now - LEASE_TIMEOUT
+            ]),
+            "unknown_count": 0,
+            "dlq_count": len([row for row in rows if row.get("status") in {"failed_terminal", "blocked"}]),
             "failed_retryable_count": len([row for row in rows if row.get("status") == "failed_retryable"]),
             "failed_terminal_count": len([row for row in rows if row.get("status") == "failed_terminal"]),
             "oldest_pending_age_seconds": max(0, int((now - oldest).total_seconds())) if oldest else 0,
@@ -520,6 +544,8 @@ class InMemoryInternalEventRepository(InternalEventRepository):
             "payload_json": dict(request.payload or {}),
             "payload_summary_json": dict(request.payload_summary or {}) or _payload_summary(request.payload),
             "status": "pending",
+            "hold_reason": "",
+            "hold_at": "",
             "attempt_count": 0,
             "max_attempts": 10,
             "next_retry_at": "",

@@ -367,7 +367,11 @@ def test_push_center_sections_stats_retry_cancel_auth(next_client: TestClient, m
     cancelled = next_client.post(
         f"/api/admin/push-center/jobs/{queued['id']}/cancel",
         headers={"X-Admin-Action-Token": tokens[("POST", "/api/admin/push-center/jobs/{job_id}/cancel")]},
-        json={},
+        json={
+            "expected_version": queued["row_version"],
+            "actor": "push-center-operator",
+            "reason": "manual stop",
+        },
     )
 
     assert any(item["key"] == "questionnaire" and item["count"] == 1 for item in sections["sections"])
@@ -385,6 +389,9 @@ def test_push_center_sections_stats_retry_cancel_auth(next_client: TestClient, m
     assert cancelled.status_code == 200
     assert cancelled.json()["job"]["status"] == "failed"
     assert cancelled.json()["job"]["raw_status"] == "cancelled"
+    assert cancelled.json()["job"]["row_version"] == queued["row_version"] + 1
+    assert cancelled.json()["job"]["cancel_requested_by"] == "push-center-operator"
+    assert cancelled.json()["job"]["cancel_reason"] == "manual stop"
 
 
 def test_push_center_page_smoke(next_client: TestClient) -> None:

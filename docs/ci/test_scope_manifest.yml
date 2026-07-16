@@ -213,11 +213,18 @@
     {
       "name": "runtime_readiness",
       "paths": [
+        "aicrm_next/platform_foundation/repository.py",
         "aicrm_next/platform_foundation/readiness.py",
+        "migrations/versions/0124_execution_runtime_correctness.py",
+        "scripts/ops/snapshot_queue_history_classification.py",
+        "tests/test_queue_history_freeze.py",
+        "tests/test_database_bootstrap.py",
         "tests/test_runtime_readiness.py",
         "tests/test_p1_runtime_security.py"
       ],
       "python_tests": [
+        "tests/test_queue_history_freeze.py",
+        "tests/test_database_bootstrap.py",
         "tests/test_runtime_readiness.py",
         "tests/test_deploy_workflow_contract.py",
         "tests/test_p1_runtime_security.py",
@@ -904,6 +911,8 @@
         "aicrm_next/external_push/**",
         "aicrm_next/integration_gateway/**",
         "aicrm_next/platform_foundation/external_effects/**",
+        "aicrm_next/platform_foundation/internal_events/outbox.py",
+        "aicrm_next/internal_event_composition.py",
         "aicrm_next/automation_engine/group_ops/**",
         "aicrm_next/frontend_compat/static/admin_console/p1/p1_group_ops_workspace/**",
         "migrations/versions/0103_broadcast_delivery_state_machine.py",
@@ -1423,8 +1432,10 @@
         "aicrm_next/integration_gateway/wecom_private_adapter.py",
         "aicrm_next/integration_gateway/wecom_group_adapter.py",
         "migrations/versions/0100_external_effect_delivery_lease.py",
+        "migrations/versions/0124_execution_runtime_correctness.py",
         "scripts/run_external_effect_queue_worker.py",
         "scripts/ops/reconcile_external_effect_dispatch.py",
+        "scripts/ops/snapshot_queue_history_classification.py",
         "scripts/ops/check_wecom_callback_objective_coverage.py",
         "deploy/*external-effect*",
         "docs/architecture/external_effect_delivery_state_machine.md",
@@ -1432,16 +1443,20 @@
         "docs/architecture/data_table_lifecycle_manifest.yml",
         "tests/test_external_effect*.py",
         "tests/test_broadcast_jobs*.py",
-        "tests/test_wecom_callback_objective_coverage.py"
+        "tests/test_wecom_callback_objective_coverage.py",
+        "tests/test_queue_history_freeze.py"
       ],
       "python_tests": [
         "tests/test_external_effect_delivery_lease.py",
+        "tests/test_external_effect_completion_event.py",
         "tests/test_external_effect_reconciliation.py",
         "tests/test_external_effects_mvp.py",
         "tests/test_external_effects_realtime.py",
         "tests/test_external_effects_wecom_welcome.py",
         "tests/test_external_effect_scheduler.py",
         "tests/test_external_effects_admin_redaction.py",
+        "tests/test_internal_event_outbox.py",
+        "tests/test_internal_event_registry_composition.py",
         "tests/test_broadcast_jobs_service.py",
         "tests/test_broadcast_jobs_wecom_private_dispatch.py",
         "tests/test_external_push_next_native_service.py",
@@ -1450,7 +1465,8 @@
         "tests/test_wecom_callback_objective_coverage.py",
         "tests/test_alembic_revision_chain.py",
         "tests/test_data_table_lifecycle_guard.py",
-        "tests/test_repository_ownership_guard.py"
+        "tests/test_repository_ownership_guard.py",
+        "tests/test_queue_history_freeze.py"
       ],
       "needs_postgres": true,
       "needs_full_ci": true,

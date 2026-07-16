@@ -197,6 +197,39 @@ class _BlockingAdapter:
         return _success_result()
 
 
+class _InspectDurableAttemptAdapter:
+    def __init__(self, repository: InMemoryExternalEffectRepository) -> None:
+        self._repository = repository
+        self.seen_attempt_id = ""
+
+    def dispatch(self, job) -> ExternalEffectDispatchResult:
+        attempts = self._repository.list_attempts(job.id)
+        assert len(attempts) == 1
+        assert attempts[0].status == "dispatching"
+        assert attempts[0].completed_at == ""
+        assert attempts[0].attempt_id == job.last_attempt_id
+        assert attempts[0].request_summary_json["provider_boundary_crossed"] is True
+        self.seen_attempt_id = attempts[0].attempt_id
+        return _success_result()
+
+
+class _CancelDuringDispatchAdapter:
+    def __init__(self, service: ExternalEffectService) -> None:
+        self._service = service
+        self.cancel_result = None
+        self.calls = 0
+
+    def dispatch(self, job) -> ExternalEffectDispatchResult:
+        self.calls += 1
+        self.cancel_result = self._service.cancel(
+            job.id,
+            actor="operator",
+            reason="too late after provider boundary",
+            expected_version=job.row_version,
+        )
+        return _success_result()
+
+
 def test_realtime_and_worker_share_one_claim_provider_call_at_most_once() -> None:
     repo = InMemoryExternalEffectRepository()
     job = _plan(repo, key="r07-concurrent-claim")
@@ -205,9 +238,7 @@ def test_realtime_and_worker_share_one_claim_provider_call_at_most_once() -> Non
     first_result: dict[str, Any] = {}
 
     def run_first() -> None:
-        first_result.update(
-            ExternalEffectWorker(repo, registry, locked_by="worker-a").dispatch_one(job["id"])
-        )
+        first_result.update(ExternalEffectWorker(repo, registry, locked_by="worker-a").dispatch_one(job["id"]))
 
     thread = Thread(target=run_first)
     thread.start()
@@ -223,7 +254,115 @@ def test_realtime_and_worker_share_one_claim_provider_call_at_most_once() -> Non
     assert len(repo.list_attempts(job["id"])) == 1
 
 
-def test_explicit_dispatch_uses_shared_claim_and_may_override_future_schedule() -> None:
+def test_provider_attempt_is_durable_before_adapter_and_same_attempt_is_completed() -> None:
+    repo = InMemoryExternalEffectRepository()
+    job = _plan(repo, key="r07-provider-boundary")
+    adapter = _InspectDurableAttemptAdapter(repo)
+
+    result = ExternalEffectWorker(repo, _registry(adapter), locked_by="worker-boundary").dispatch_one(job["id"])
+    attempts = repo.list_attempts(job["id"])
+
+    assert result["ok"] is True
+    assert len(attempts) == 1
+    assert attempts[0].attempt_id == adapter.seen_attempt_id
+    assert attempts[0].status == "succeeded"
+    assert attempts[0].completed_at
+    assert result["completion_event_queued"] is True
+    assert repo.list_completion_events()[0]["payload"]["attempt_id"] == attempts[0].attempt_id
+
+
+def test_repository_rejects_provider_success_without_durable_begin_attempt() -> None:
+    repo = InMemoryExternalEffectRepository()
+    job = _plan(repo, key="r07-provider-boundary-required")
+    claimed = repo.acquire_job(job["id"], locked_by="worker-boundary-required")
+    assert claimed is not None
+
+    completed = repo.complete_dispatch(job=claimed, result=_success_result())
+
+    assert completed is None
+    assert repo.list_attempts(job["id"]) == []
+    assert repo.get_job(job["id"]).status == "dispatching"  # type: ignore[union-attr]
+
+
+def test_cancel_uses_row_version_cas_and_settles_before_provider_boundary() -> None:
+    repo = InMemoryExternalEffectRepository()
+    service = ExternalEffectService(repo)
+    job = _plan(repo, key="r07-cancel-before-provider")
+    claimed = repo.acquire_job(job["id"], locked_by="worker-cancel")
+    assert claimed is not None
+
+    assert service.cancel(job["id"], expected_version=claimed.row_version + 1) is None
+    requested = service.cancel(
+        job["id"],
+        actor="operator",
+        reason="stop before provider",
+        expected_version=claimed.row_version,
+    )
+
+    assert requested is not None
+    assert requested.status == "dispatching"
+    assert requested.row_version == claimed.row_version + 1
+    assert requested.cancel_requested_by == "operator"
+    assert requested.cancel_reason == "stop before provider"
+    adapter = _StaticAdapter(_success_result())
+    result = ExternalEffectWorker(repo, _registry(adapter), locked_by="worker-cancel")._dispatch_claimed(claimed)
+
+    assert result["ok"] is True
+    assert result["job"]["status"] == "cancelled"
+    assert result["job"]["row_version"] == requested.row_version + 1
+    assert adapter.calls == 0
+    assert repo.list_attempts(job["id"]) == []
+
+
+def test_cancel_after_provider_boundary_cannot_overwrite_provider_success() -> None:
+    repo = InMemoryExternalEffectRepository()
+    service = ExternalEffectService(repo)
+    job = _plan(repo, key="r07-cancel-after-boundary")
+    adapter = _CancelDuringDispatchAdapter(service)
+
+    result = ExternalEffectWorker(repo, _registry(adapter), locked_by="worker-cancel-late").dispatch_one(job["id"])
+    updated = repo.get_job(job["id"])
+
+    assert adapter.calls == 1
+    assert adapter.cancel_result is not None
+    assert adapter.cancel_result.status == "dispatching"
+    assert result["ok"] is True
+    assert updated is not None
+    assert updated.status == "succeeded"
+    assert updated.cancel_requested_at
+    assert updated.cancelled_at == ""
+
+
+def test_exhausted_retryable_job_is_not_due_but_manual_retry_extends_one_attempt() -> None:
+    repo = InMemoryExternalEffectRepository()
+    service = ExternalEffectService(repo)
+    job = service.plan_effect(
+        effect_type=WEBHOOK_GENERIC_PUSH,
+        adapter_name="test_adapter",
+        operation="post",
+        target_type="test_target",
+        target_id="r07-max-attempts",
+        idempotency_key="r07-max-attempts",
+        execution_mode="execute",
+        status="queued",
+        max_attempts=1,
+    )
+    row = repo._find(job["id"])
+    assert row is not None
+    row.update({"status": "failed_retryable", "attempt_count": 1})
+
+    assert repo.list_due_jobs(limit=10) == []
+    not_claimed = ExternalEffectWorker(repo, _registry(_StaticAdapter(_success_result()))).dispatch_one(job["id"])
+    assert not_claimed["error"] == "not_claimed"
+
+    retried = service.retry(job["id"], actor="operator", reason="one audited retry")
+    assert retried is not None
+    assert retried.status == "queued"
+    assert retried.max_attempts == 2
+    assert [item.id for item in repo.list_due_jobs(limit=10)] == [job["id"]]
+
+
+def test_explicit_dispatch_respects_future_schedule() -> None:
     repo = InMemoryExternalEffectRepository()
     job = ExternalEffectService(repo).plan_effect(
         effect_type=WEBHOOK_GENERIC_PUSH,
@@ -241,9 +380,10 @@ def test_explicit_dispatch_uses_shared_claim_and_may_override_future_schedule() 
     assert repo.list_due_jobs(limit=10) == []
     result = ExternalEffectWorker(repo, _registry(adapter), locked_by="trusted-explicit-worker").dispatch_one(job["id"])
 
-    assert result["ok"] is True
-    assert result["job"]["status"] == "succeeded"
-    assert adapter.calls == 1
+    assert result["ok"] is False
+    assert result["error"] == "not_claimed"
+    assert result["job"]["status"] == "queued"
+    assert adapter.calls == 0
 
 
 class _LoseLeaseOnCompleteRepository(InMemoryExternalEffectRepository):
@@ -255,7 +395,7 @@ class _LoseLeaseOnCompleteRepository(InMemoryExternalEffectRepository):
         return super().complete_dispatch(job=job, result=result, next_retry_at=next_retry_at)
 
 
-def test_lost_lease_writes_neither_attempt_nor_result() -> None:
+def test_lost_lease_preserves_durable_open_attempt_without_writing_result() -> None:
     repo = _LoseLeaseOnCompleteRepository()
     job = _plan(repo, key="r07-lost-lease")
     adapter = _StaticAdapter(_success_result())
@@ -265,7 +405,10 @@ def test_lost_lease_writes_neither_attempt_nor_result() -> None:
 
     assert result["error"] == "lost_lease"
     assert adapter.calls == 1
-    assert repo.list_attempts(job["id"]) == []
+    attempts = repo.list_attempts(job["id"])
+    assert len(attempts) == 1
+    assert attempts[0].status == "dispatching"
+    assert attempts[0].completed_at == ""
     assert updated is not None
     assert updated.status == "dispatching"
     assert updated.lease_token == "eel_new_owner"
@@ -290,7 +433,10 @@ def test_provider_success_then_result_persistence_failure_is_unknown_not_retried
     assert updated.status == "unknown_after_dispatch"
     assert updated.reconciliation_required is True
     assert repo.list_due_jobs(limit=10) == []
-    assert repo.list_attempts(job["id"]) == []
+    attempts = repo.list_attempts(job["id"])
+    assert len(attempts) == 1
+    assert attempts[0].status == "unknown_after_dispatch"
+    assert attempts[0].error_code == "result_persistence_failed"
 
 
 def test_stale_dispatching_is_quarantined_instead_of_requeued() -> None:
@@ -371,10 +517,64 @@ def test_postgres_concurrent_claim_has_one_winner_and_lease_cas() -> None:
     winners = [item for item in results if item is not None]
     assert len(winners) == 1
     winner = winners[0]
+    begun = repo.begin_provider_attempt(
+        job=winner,
+        request_summary={"provider_boundary": "postgres_concurrent_claim_test"},
+    )
+    assert begun is not None
+    winner, open_attempt = begun
+    assert open_attempt.status == "dispatching"
     completed = repo.complete_dispatch(job=winner, result=_success_result())
     assert completed is not None
     updated, attempt = completed
     assert updated.status == "succeeded"
     assert updated.side_effect_executed is True
     assert updated.provider_result_received is True
+    assert updated.row_version == winner.row_version + 1
     assert attempt.status == "succeeded"
+    outbox = repo._one(
+        """
+        SELECT event_type, aggregate_id, idempotency_key, status
+        FROM internal_event_outbox
+        WHERE idempotency_key = :idempotency_key
+        """,
+        {"idempotency_key": f"external_effect.completed:{updated.id}:{attempt.attempt_id}"},
+    )
+    assert outbox == {
+        "event_type": "external_effect.completed",
+        "aggregate_id": str(updated.id),
+        "idempotency_key": f"external_effect.completed:{updated.id}:{attempt.attempt_id}",
+        "status": "pending",
+    }
+
+
+@pytest.mark.skipif(not _database_url(), reason="PostgreSQL integration database is not configured")
+def test_postgres_cancel_request_uses_row_version_and_preserves_live_lease_until_settled() -> None:
+    repo = SQLAlchemyExternalEffectRepository(get_session_factory(_database_url()))
+    job = _plan(repo, key="r07-postgres-cancel-" + uuid4().hex)
+    claimed = repo.acquire_job(job["id"], locked_by="pg-worker-cancel")
+    assert claimed is not None
+
+    stale = repo.request_cancel(
+        claimed.id,
+        actor="operator",
+        reason="stale version",
+        expected_version=claimed.row_version + 1,
+    )
+    requested = repo.request_cancel(
+        claimed.id,
+        actor="operator",
+        reason="cancel before provider",
+        expected_version=claimed.row_version,
+    )
+
+    assert stale is None
+    assert requested is not None
+    assert requested.status == "dispatching"
+    assert requested.lease_token == claimed.lease_token
+    assert requested.row_version == claimed.row_version + 1
+    settled = repo.settle_cancel(job=requested)
+    assert settled is not None
+    assert settled.status == "cancelled"
+    assert settled.lease_token == ""
+    assert settled.row_version == requested.row_version + 1

@@ -9,6 +9,7 @@ from .commerce.payment_tagging import (
     resolve_payment_tag_identity,
 )
 from .identity_contact.payment_projection import project_payment_order_mobile
+from .external_effect_composition import build_external_effect_continuation_registry
 from .ai_audience_ops import register_ai_audience_event_consumers
 from .cloud_orchestrator.repository import build_cloud_plan_repository
 from .questionnaire.event_consumers import (
@@ -22,6 +23,11 @@ from .service_period.payment_consumer import service_period_entitlement_consumer
 from .service_period.refund_consumer import service_period_refund_consumer
 from .platform_foundation.internal_events.shadow import broadcast_task_planner_consumer
 from .platform_foundation.internal_events.payment import webhook_order_paid_consumer
+from .platform_foundation.external_effects.completion_events import (
+    external_effect_completion_consumer,
+    register_external_effect_completed_consumer,
+)
+from .platform_foundation.external_effects.repo import build_external_effect_repository
 from .shared.runtime import production_data_ready
 
 
@@ -33,6 +39,7 @@ def _plan_order_paid_external_push_effect_from_db(
 ) -> dict | None:
     if not production_data_ready():
         raise RuntimeError("production database is required for order-paid external push planning")
+
     def _plan(conn):
         return plan_order_paid_external_push_effect(
             conn,
@@ -42,6 +49,7 @@ def _plan_order_paid_external_push_effect_from_db(
             source_module="platform_foundation.internal_events.payment",
             source_route="/internal-events/payment.succeeded/webhook_order_paid_consumer",
         )
+
     return execute_commerce_transaction(_plan)
 
 
@@ -49,17 +57,15 @@ def _project_payment_order_identity_from_db(*, order: dict, source_route: str) -
     if not production_data_ready():
         return {"ok": True, "projected": False, "reason": "production_database_required"}
 
-    return execute_commerce_transaction(
-        lambda conn: project_payment_order_mobile(conn, order, source_route=source_route)
-    )
+    return execute_commerce_transaction(lambda conn: project_payment_order_mobile(conn, order, source_route=source_route))
 
 
 def _resolve_payment_tag_identity_from_db(order: dict, owner_userid: str) -> dict:
     if not production_data_ready():
         return {"ok": False, "reason": "production_database_required"}
-    return execute_commerce_transaction(
-        lambda conn: resolve_payment_tag_identity(conn, order, owner_userid)
-    )
+    return execute_commerce_transaction(lambda conn: resolve_payment_tag_identity(conn, order, owner_userid))
+
+
 from .platform_foundation.internal_events import (
     InternalEventConsumerRegistry,
     current_internal_event_consumer_registry,
@@ -120,6 +126,18 @@ def register_shadow_event_consumers(registry: InternalEventConsumerRegistry | No
     )
 
 
+def register_external_effect_completion_consumers(registry: InternalEventConsumerRegistry | None = None) -> None:
+    registry = registry or current_internal_event_consumer_registry()
+    register_external_effect_completed_consumer(
+        registry,
+        handler=partial(
+            external_effect_completion_consumer,
+            repository_factory=build_external_effect_repository,
+            continuation_registry_factory=build_external_effect_continuation_registry,
+        ),
+    )
+
+
 def build_internal_event_consumer_registry() -> InternalEventConsumerRegistry:
     registry = InternalEventConsumerRegistry()
     register_payment_succeeded_consumers(registry)
@@ -127,6 +145,7 @@ def build_internal_event_consumer_registry() -> InternalEventConsumerRegistry:
     register_questionnaire_event_consumers(registry)
     register_shadow_event_consumers(registry)
     register_ai_audience_event_consumers(registry)
+    register_external_effect_completion_consumers(registry)
     registry.seal_fanout_contract()
     return registry
 
@@ -137,4 +156,5 @@ __all__ = [
     "register_questionnaire_event_consumers",
     "register_refund_succeeded_consumers",
     "register_shadow_event_consumers",
+    "register_external_effect_completion_consumers",
 ]

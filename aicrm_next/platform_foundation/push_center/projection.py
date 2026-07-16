@@ -66,7 +66,8 @@ def _is_missing_projection_table(exc: SQLAlchemyError) -> bool:
     return (
         "no such table: broadcast_jobs" in message
         or "no such table: outbound_tasks" in message
-        or "undefinedtable" in message and ("broadcast_jobs" in message or "outbound_tasks" in message)
+        or "undefinedtable" in message
+        and ("broadcast_jobs" in message or "outbound_tasks" in message)
     )
 
 
@@ -153,6 +154,7 @@ def _external_job_item(job: ExternalEffectJob) -> dict[str, Any]:
         "adapter_name": job.adapter_name,
         "operation": job.operation,
         "raw_status": job.status,
+        "row_version": job.row_version,
         "execution_mode": job.execution_mode,
         "business_type": job.business_type,
         "business_id": job.business_id,
@@ -182,6 +184,9 @@ def _external_job_item(job: ExternalEffectJob) -> dict[str, Any]:
         "updated_at": job.updated_at,
         "executed_at": job.executed_at,
         "cancelled_at": job.cancelled_at,
+        "cancel_requested_at": job.cancel_requested_at,
+        "cancel_requested_by": job.cancel_requested_by,
+        "cancel_reason": job.cancel_reason,
         "payload_summary": scrub_summary(dict(job.payload_summary_json or {})),
         "payload_summary_json": scrub_summary(dict(job.payload_summary_json or {})),
     }
@@ -324,10 +329,7 @@ class ExternalEffectAdapter:
         return list(self._service.list_attempts(job_id))
 
     def list_attempts_for_jobs(self, job_ids: list[int]) -> dict[int, list[ExternalEffectAttempt]]:
-        return {
-            int(job_id): list(attempts)
-            for job_id, attempts in self._service.list_attempts_for_jobs(job_ids).items()
-        }
+        return {int(job_id): list(attempts) for job_id, attempts in self._service.list_attempts_for_jobs(job_ids).items()}
 
 
 class BroadcastJobAdapter:
@@ -515,9 +517,7 @@ class PushCenterProjectionService:
 
     def _groups(self, filters: dict[str, Any]) -> list[ProjectionGroup]:
         external_filters = {
-            key: filters.get(key)
-            for key in ("effect_type", "business_type", "business_id", "target_type", "target_id", "trace_id")
-            if _text(filters.get(key))
+            key: filters.get(key) for key in ("effect_type", "business_type", "business_id", "target_type", "target_id", "trace_id") if _text(filters.get(key))
         }
         external_jobs = self._external.list_jobs(external_filters, limit=1000)
         attempts_by_job = self._external.list_attempts_for_jobs([job.id for job in external_jobs])
@@ -615,10 +615,7 @@ class PushCenterProjectionService:
         primary_sent = any(job.get("raw_status") == "sent" for job in group.broadcast_jobs)
         primary_simulated = any(job.get("raw_status") == "simulated" for job in group.broadcast_jobs)
         primary_unknown = any(job.get("raw_status") == "unknown_after_dispatch" for job in group.broadcast_jobs)
-        primary_failed = any(
-            job.get("raw_status") in {"failed", "failed_retryable", "failed_terminal", "blocked", "cancelled"}
-            for job in group.broadcast_jobs
-        )
+        primary_failed = any(job.get("raw_status") in {"failed", "failed_retryable", "failed_terminal", "blocked", "cancelled"} for job in group.broadcast_jobs)
         primary_running = any(job.get("raw_status") in {"claimed", "running", "dispatching"} for job in group.broadcast_jobs)
         primary_pending = any(job.get("raw_status") in {"queued", "waiting_approval", "pending"} for job in group.broadcast_jobs)
         shadow_failed = any(self._is_shadow_failed(job) for job in group.external_effect_jobs)
@@ -658,7 +655,19 @@ class PushCenterProjectionService:
         status = _text(filters.get("status"))
         if status and not self._status_matches(_text(item.get("effective_status")), status):
             return False
-        for key in ("effect_type", "business_type", "business_id", "target_type", "target_id", "trace_id", "idempotency_key", "source_module", "source_route", "external_userid", "owner_userid"):
+        for key in (
+            "effect_type",
+            "business_type",
+            "business_id",
+            "target_type",
+            "target_id",
+            "trace_id",
+            "idempotency_key",
+            "source_module",
+            "source_route",
+            "external_userid",
+            "owner_userid",
+        ):
             expected = _text(filters.get(key))
             if expected and expected not in _text(item.get(key)):
                 return False
