@@ -48,6 +48,39 @@ def _patch_profile_query(monkeypatch, result: dict) -> None:
     monkeypatch.setattr(admin_pages, "GetAdminCustomerProfileQuery", FakeGetAdminCustomerProfileQuery)
 
 
+def test_customer_list_profile_link_uses_detail_route_unionid(monkeypatch) -> None:
+    from aicrm_next.customer_read_model import admin_pages
+
+    class FakeListCustomersQuery:
+        def __call__(self, query):
+            return {
+                "ok": True,
+                "customers": [
+                    {
+                        "unionid": "union_test_001",
+                        "external_userid": "ext_test_001",
+                        "customer_name": "测试客户",
+                        "owner_display_name": "HuangYouCan",
+                        "mobile": "13800000000",
+                    }
+                ],
+                "total": 1,
+            }
+
+    monkeypatch.setattr(admin_pages, "ListCustomersQuery", FakeListCustomersQuery)
+    _patch_profile_query(monkeypatch, _profile_result())
+    client = TestClient(create_app())
+    response = client.get("/admin/customers")
+
+    assert response.status_code == 200
+    assert 'href="/admin/customers/union_test_001"' in response.text
+    assert "/admin/customers?external_userid=" not in response.text
+
+    detail_response = client.get("/admin/customers/union_test_001")
+    assert detail_response.status_code == 200
+    assert "测试客户" in detail_response.text
+
+
 def test_customer_detail_page_renders_from_native_shell(monkeypatch) -> None:
     _patch_profile_query(monkeypatch, _profile_result())
     client = TestClient(create_app())
