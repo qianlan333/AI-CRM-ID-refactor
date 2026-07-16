@@ -215,7 +215,7 @@
       "paths": [
         "aicrm_next/platform_foundation/repository.py",
         "aicrm_next/platform_foundation/readiness.py",
-        "migrations/versions/0124_execution_runtime_correctness.py",
+        "migrations/versions/0125_execution_runtime_correctness.py",
         "scripts/ops/snapshot_queue_history_classification.py",
         "tests/test_queue_history_freeze.py",
         "tests/test_database_bootstrap.py",
@@ -1432,7 +1432,7 @@
         "aicrm_next/integration_gateway/wecom_private_adapter.py",
         "aicrm_next/integration_gateway/wecom_group_adapter.py",
         "migrations/versions/0100_external_effect_delivery_lease.py",
-        "migrations/versions/0124_execution_runtime_correctness.py",
+        "migrations/versions/0125_execution_runtime_correctness.py",
         "scripts/run_external_effect_queue_worker.py",
         "scripts/ops/reconcile_external_effect_dispatch.py",
         "scripts/ops/snapshot_queue_history_classification.py",

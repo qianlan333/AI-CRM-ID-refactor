@@ -389,7 +389,7 @@
       "accessor": "runtime_setting",
       "file": "aicrm_next/background_jobs/broadcast_queue_worker.py",
       "key": "AICRM_EXTERNAL_EFFECT_ALLOWED_OWNER_USERIDS",
-      "line": 634
+      "line": 645
     },
     {
       "accessor": "declared_runtime_environment_key",
@@ -431,13 +431,13 @@
       "accessor": "os.getenv",
       "file": "aicrm_next/automation_engine/group_ops/broadcast.py",
       "key": "AICRM_GROUP_OPS_BROADCAST_PLAN_ID",
-      "line": 261
+      "line": 260
     },
     {
       "accessor": "os.getenv",
       "file": "aicrm_next/automation_engine/group_ops/broadcast.py",
       "key": "AICRM_GROUP_OPS_MINIPROGRAM_APPID",
-      "line": 269
+      "line": 268
     },
     {
       "accessor": "os.getenv",
@@ -1103,13 +1103,13 @@
       "accessor": "os.getenv",
       "file": "aicrm_next/background_jobs/broadcast_queue_worker.py",
       "key": "BROADCAST_QUEUE_LEASE_SECONDS",
-      "line": 1020
+      "line": 1031
     },
     {
       "accessor": "os.getenv",
       "file": "aicrm_next/background_jobs/broadcast_queue_worker.py",
       "key": "BROADCAST_QUEUE_RETRY_DELAY_SECONDS",
-      "line": 198
+      "line": 201
     },
     {
       "accessor": "_env_flag",
@@ -2610,6 +2610,13 @@
       "max_attempts": 5
     },
     {
+      "consumer_name": "external_effect_completion_continuation_consumer",
+      "consumer_type": "orchestration",
+      "event_type": "external_effect.completed",
+      "handler_registered": true,
+      "max_attempts": 5
+    },
+    {
       "consumer_name": "ai_audience_source_poke_consumer",
       "consumer_type": "projection",
       "event_type": "external_form.submitted",
@@ -2905,7 +2912,7 @@
     }
   ],
   "migration_heads": [
-    "0124_agent_audit_tables"
+    "0125_execution_runtime_correctness"
   ],
   "openapi_components": {
     "schemas": {
@@ -47490,6 +47497,19 @@
       ],
       "table": "questionnaires",
       "write_owner": "aicrm_next.questionnaire.repo"
+    },
+    {
+      "domain": "platform_foundation",
+      "drop_candidate": false,
+      "lifecycle": "audit",
+      "migration_source": "0125_execution_runtime_correctness",
+      "pii_level": "none",
+      "read_owners": [
+        "execution runtime consistency audit",
+        "queue history classification operations snapshot"
+      ],
+      "table": "queue_history_classification",
+      "write_owner": "migrations.0125_execution_runtime_correctness"
     },
     {
       "domain": "radar",

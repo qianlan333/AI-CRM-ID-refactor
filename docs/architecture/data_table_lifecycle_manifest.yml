@@ -1820,7 +1820,7 @@ tables:
   queue_history_classification:
     domain: platform_foundation
     lifecycle: audit
-    write_owner: migrations.0124_execution_runtime_correctness
+    write_owner: migrations.0125_execution_runtime_correctness
     read_owners:
       - queue history classification operations snapshot
       - execution runtime consistency audit
@@ -1829,7 +1829,7 @@ tables:
     drop_after: ""
     runtime_entrypoints:
       - scripts/ops/snapshot_queue_history_classification.py
-    migration_source: 0124_execution_runtime_correctness
+    migration_source: 0125_execution_runtime_correctness
     pii_level: none
     guard_tests:
       - tests/test_queue_history_freeze.py

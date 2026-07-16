@@ -33,7 +33,7 @@ def test_memory_repositories_never_claim_held_rows() -> None:
             idempotency_key="held-external",
         )
     )
-    external._find(job.id)["hold_reason"] = "history_frozen_at_0124"
+    external._find(job.id)["hold_reason"] = "history_frozen_at_0125"
     assert external.list_due_jobs() == []
     assert external.acquire_job(job.id, locked_by="test") is None
     assert external.queue_metrics({})["held_count"] == 1
@@ -49,7 +49,7 @@ def test_memory_repositories_never_claim_held_rows() -> None:
         )
     )
     run = internal.create_consumer_run(event=event, consumer_name="held-consumer")
-    internal._find_run(run.id)["hold_reason"] = "history_frozen_at_0124"
+    internal._find_run(run.id)["hold_reason"] = "history_frozen_at_0125"
     assert internal.list_due_runs() == []
     assert (
         internal.acquire_consumer_run(
@@ -70,7 +70,7 @@ def test_memory_repositories_never_claim_held_rows() -> None:
         route="/callback",
         idempotency_key="held-webhook",
     )
-    webhook.rows[0]["hold_reason"] = "history_frozen_at_0124"
+    webhook.rows[0]["hold_reason"] = "history_frozen_at_0125"
     assert webhook.preview_due(provider="wecom") == []
     assert webhook.claim_one(int(inbox["id"])) is None
     assert webhook.queue_metrics({})["held_count"] == 1
@@ -203,7 +203,7 @@ class _SnapshotConnection:
                         "queue_row_id": 7,
                         "source_status": "queued",
                         "classification": "safe_pre_provider",
-                        "hold_reason": "history_frozen_at_0124",
+                        "hold_reason": "history_frozen_at_0125",
                         "classified_at": datetime(2026, 7, 17, tzinfo=timezone.utc),
                     }
                 ]
@@ -237,7 +237,7 @@ def test_history_snapshot_command_is_read_only_and_redacted() -> None:
             "queue_row_id": 7,
             "source_status": "queued",
             "classification": "safe_pre_provider",
-            "hold_reason": "history_frozen_at_0124",
+            "hold_reason": "history_frozen_at_0125",
             "classified_at": "2026-07-17T00:00:00+00:00",
         }
     ]

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Read-only snapshot of the 0124 queue-history freeze classification."""
+"""Read-only snapshot of the 0125 queue-history freeze classification."""
 
 from __future__ import annotations
 
@@ -18,7 +18,7 @@ from aicrm_next.shared.runtime import raw_database_url  # noqa: E402
 from aicrm_next.shared.sensitive_data import redact_sensitive_data  # noqa: E402
 
 
-FREEZE_REVISION = "0124_execution_runtime_correctness"
+FREEZE_REVISION = "0125_execution_runtime_correctness"
 QUEUE_TABLES = {
     "external_effect": "external_effect_job",
     "internal_event_consumer": "internal_event_consumer_run",

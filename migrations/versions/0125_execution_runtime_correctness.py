@@ -1,7 +1,7 @@
 """external effect execution correctness primitives.
 
-Revision ID: 0124_execution_runtime_correctness
-Revises: 0123_required_physical_schema_repair
+Revision ID: 0125_execution_runtime_correctness
+Revises: 0124_agent_audit_tables
 """
 
 from __future__ import annotations
@@ -9,8 +9,8 @@ from __future__ import annotations
 from alembic import op
 
 
-revision = "0124_execution_runtime_correctness"
-down_revision = "0123_required_physical_schema_repair"
+revision = "0125_execution_runtime_correctness"
+down_revision = "0124_agent_audit_tables"
 branch_labels = None
 depends_on = None
 
@@ -159,7 +159,7 @@ def _create_history_classification_audit() -> None:
 
 
 def _classify_and_hold_pre_cutover_rows() -> None:
-    revision = "0124_execution_runtime_correctness"
+    revision = "0125_execution_runtime_correctness"
     op.execute(
         f"""
         INSERT INTO queue_history_classification (
@@ -186,7 +186,7 @@ def _classify_and_hold_pre_cutover_rows() -> None:
             END,
             CASE
                 WHEN j.status IN ('succeeded', 'simulated', 'failed_terminal', 'blocked', 'cancelled', 'expired') THEN ''
-                ELSE 'history_frozen_at_0124'
+                ELSE 'history_frozen_at_0125'
             END,
             jsonb_build_object(
                 'attempt_count', j.attempt_count,
@@ -217,7 +217,7 @@ def _classify_and_hold_pre_cutover_rows() -> None:
                 ELSE 'ambiguous_hold'
             END,
             CASE WHEN r.status IN ('succeeded', 'failed_terminal', 'blocked', 'skipped')
-                 THEN '' ELSE 'history_frozen_at_0124' END,
+                 THEN '' ELSE 'history_frozen_at_0125' END,
             jsonb_build_object(
                 'attempt_count', r.attempt_count,
                 'max_attempts', r.max_attempts,
@@ -245,7 +245,7 @@ def _classify_and_hold_pre_cutover_rows() -> None:
                 ELSE 'ambiguous_hold'
             END,
             CASE WHEN o.status IN ('relayed', 'failed_terminal')
-                 THEN '' ELSE 'history_frozen_at_0124' END,
+                 THEN '' ELSE 'history_frozen_at_0125' END,
             jsonb_build_object(
                 'attempt_count', o.attempt_count,
                 'max_attempts', o.max_attempts,
@@ -273,7 +273,7 @@ def _classify_and_hold_pre_cutover_rows() -> None:
                 ELSE 'ambiguous_hold'
             END,
             CASE WHEN i.status IN ('succeeded', 'failed_terminal', 'dead_letter', 'ignored')
-                 THEN '' ELSE 'history_frozen_at_0124' END,
+                 THEN '' ELSE 'history_frozen_at_0125' END,
             jsonb_build_object(
                 'attempt_count', i.attempt_count,
                 'max_attempts', i.max_attempts,
@@ -307,7 +307,7 @@ def _classify_and_hold_pre_cutover_rows() -> None:
                 ELSE 'ambiguous_hold'
             END,
             CASE WHEN b.status IN ('sent', 'simulated', 'failed', 'failed_terminal', 'blocked', 'cancelled')
-                 THEN '' ELSE 'history_frozen_at_0124' END,
+                 THEN '' ELSE 'history_frozen_at_0125' END,
             jsonb_build_object(
                 'attempt_count', b.attempt_count,
                 'max_attempts', b.max_attempts,

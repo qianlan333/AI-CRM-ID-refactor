@@ -439,7 +439,7 @@ def test_provider_success_then_result_persistence_failure_is_unknown_not_retried
     assert attempts[0].error_code == "result_persistence_failed"
 
 
-def test_stale_dispatching_is_quarantined_instead_of_requeued() -> None:
+def test_stale_pre_provider_dispatch_is_safely_requeued() -> None:
     repo = InMemoryExternalEffectRepository()
     job = _plan(repo, key="r07-stale-dispatching")
     claimed = repo.acquire_job(job["id"], locked_by="worker-crashed")
@@ -453,8 +453,30 @@ def test_stale_dispatching_is_quarantined_instead_of_requeued() -> None:
 
     assert count == 1
     assert updated is not None
+    assert updated.status == "queued"
+    assert updated.reconciliation_required is False
+    assert updated.attempt_count == 0
+    assert [item.id for item in repo.list_due_jobs(limit=10)] == [job["id"]]
+
+
+def test_stale_post_provider_dispatch_is_quarantined_as_unknown() -> None:
+    repo = InMemoryExternalEffectRepository()
+    job = _plan(repo, key="r07-stale-post-provider")
+    claimed = repo.acquire_job(job["id"], locked_by="worker-crashed")
+    assert claimed is not None
+    begun = repo.begin_provider_attempt(job=claimed, request_summary={"provider_call": True})
+    assert begun is not None
+    row = repo._find(job["id"])
+    assert row is not None
+    row["lease_expires_at"] = "2000-01-01T00:00:00Z"
+
+    assert repo.quarantine_stale_dispatching() == 1
+    updated = repo.get_job(job["id"])
+
+    assert updated is not None
     assert updated.status == "unknown_after_dispatch"
     assert updated.reconciliation_required is True
+    assert updated.attempt_count == 1
     assert repo.list_due_jobs(limit=10) == []
 
 

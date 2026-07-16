@@ -360,36 +360,59 @@ class InMemoryExternalEffectRepository(ExternalEffectRepository):
                     continue
                 now = public_datetime(current)
                 attempt_id = _text(row.get("last_attempt_id"))
-                if attempt_id:
-                    for attempt_row in self._attempts:
-                        if _text(attempt_row.get("attempt_id")) != attempt_id or attempt_row.get("status") != "dispatching":
-                            continue
-                        attempt_row.update(
-                            {
-                                "status": "unknown_after_dispatch",
-                                "response_summary_json": {
-                                    **dict(attempt_row.get("response_summary_json") or {}),
-                                    "provider_result_received": False,
-                                    "lease_expired": True,
-                                },
-                                "error_code": _text(attempt_row.get("error_code")) or "lease_expired_after_dispatch",
-                                "error_message": _text(attempt_row.get("error_message")) or "Dispatch lease expired; reconcile provider outcome before retry.",
-                                "completed_at": attempt_row.get("completed_at") or now,
-                            }
-                        )
-                        break
+                open_attempt = next(
+                    (
+                        attempt_row
+                        for attempt_row in self._attempts
+                        if _text(attempt_row.get("attempt_id")) == attempt_id
+                        and int(attempt_row.get("job_id") or 0) == int(row.get("id") or 0)
+                        and attempt_row.get("status") == "dispatching"
+                    ),
+                    None,
+                )
+                if open_attempt is not None:
+                    open_attempt.update(
+                        {
+                            "status": "unknown_after_dispatch",
+                            "response_summary_json": {
+                                **dict(open_attempt.get("response_summary_json") or {}),
+                                "provider_result_received": False,
+                                "lease_expired": True,
+                            },
+                            "error_code": _text(open_attempt.get("error_code")) or "lease_expired_after_dispatch",
+                            "error_message": _text(open_attempt.get("error_message"))
+                            or "Dispatch lease expired; reconcile provider outcome before retry.",
+                            "completed_at": open_attempt.get("completed_at") or now,
+                        }
+                    )
+                    row.update(
+                        {
+                            "status": "unknown_after_dispatch",
+                            "attempt_count": int(row.get("attempt_count") or 0) + 1,
+                            "reconciliation_required": True,
+                            "last_error_code": "lease_expired_after_dispatch",
+                            "last_error_message": "Dispatch lease expired; reconcile provider outcome before retry.",
+                            "completed_at": now,
+                        }
+                    )
+                else:
+                    row.update(
+                        {
+                            "status": "queued",
+                            "next_retry_at": now,
+                            "reconciliation_required": False,
+                            "last_error_code": "lease_expired_before_dispatch",
+                            "last_error_message": "Pre-dispatch lease expired and was safely requeued.",
+                            "dispatch_started_at": "",
+                            "completed_at": "",
+                        }
+                    )
                 row.update(
                     {
-                        "status": "unknown_after_dispatch",
-                        "attempt_count": int(row.get("attempt_count") or 0) + 1,
-                        "reconciliation_required": True,
-                        "last_error_code": "lease_expired_after_dispatch",
-                        "last_error_message": "Dispatch lease expired; reconcile provider outcome before retry.",
                         "lease_token": "",
                         "lease_expires_at": "",
                         "locked_by": "",
                         "locked_at": "",
-                        "completed_at": now,
                         "row_version": int(row.get("row_version") or 1) + 1,
                         "updated_at": now,
                     }

@@ -528,13 +528,20 @@ class SQLAlchemyExternalEffectRepository(ExternalEffectRepository):
                 session.execute(
                     text(
                         """
-                        SELECT id, last_attempt_id
-                        FROM external_effect_job
-                        WHERE status = 'dispatching'
-                          AND hold_reason = ''
-                          AND lease_expires_at IS NOT NULL
-                          AND lease_expires_at <= CURRENT_TIMESTAMP
-                        ORDER BY id ASC
+                        SELECT job.id, job.last_attempt_id,
+                               EXISTS (
+                                   SELECT 1
+                                   FROM external_effect_attempt attempt
+                                   WHERE attempt.job_id = job.id
+                                     AND attempt.attempt_id = job.last_attempt_id
+                                     AND attempt.status = 'dispatching'
+                               ) AS provider_boundary_crossed
+                        FROM external_effect_job job
+                        WHERE job.status = 'dispatching'
+                          AND job.hold_reason = ''
+                          AND job.lease_expires_at IS NOT NULL
+                          AND job.lease_expires_at <= CURRENT_TIMESTAMP
+                        ORDER BY job.id ASC
                         FOR UPDATE SKIP LOCKED
                         """
                     )
@@ -544,8 +551,9 @@ class SQLAlchemyExternalEffectRepository(ExternalEffectRepository):
             )
             count = 0
             for stale in stale_rows:
+                provider_boundary_crossed = bool(stale.get("provider_boundary_crossed"))
                 attempt_id = _text(stale.get("last_attempt_id"))
-                if attempt_id:
+                if provider_boundary_crossed and attempt_id:
                     session.execute(
                         text(
                             """
@@ -570,9 +578,8 @@ class SQLAlchemyExternalEffectRepository(ExternalEffectRepository):
                         ),
                         {"attempt_id": attempt_id, "job_id": int(stale["id"])},
                     )
-                updated = session.execute(
-                    text(
-                        """
+                if provider_boundary_crossed:
+                    update_statement = """
                         UPDATE external_effect_job
                         SET status = 'unknown_after_dispatch',
                             attempt_count = attempt_count + 1,
@@ -590,7 +597,31 @@ class SQLAlchemyExternalEffectRepository(ExternalEffectRepository):
                           AND lease_expires_at IS NOT NULL
                           AND lease_expires_at <= CURRENT_TIMESTAMP
                         RETURNING id
-                        """
+                    """
+                else:
+                    update_statement = """
+                        UPDATE external_effect_job
+                        SET status = 'queued',
+                            next_retry_at = CURRENT_TIMESTAMP,
+                            reconciliation_required = FALSE,
+                            last_error_code = 'lease_expired_before_dispatch',
+                            last_error_message = 'Pre-dispatch lease expired and was safely requeued.',
+                            lease_token = '', lease_expires_at = NULL,
+                            locked_by = '', locked_at = NULL,
+                            dispatch_started_at = NULL,
+                            completed_at = NULL,
+                            row_version = row_version + 1,
+                            updated_at = CURRENT_TIMESTAMP
+                        WHERE id = :job_id
+                          AND hold_reason = ''
+                          AND status = 'dispatching'
+                          AND lease_expires_at IS NOT NULL
+                          AND lease_expires_at <= CURRENT_TIMESTAMP
+                        RETURNING id
+                    """
+                updated = session.execute(
+                    text(
+                        update_statement
                     ),
                     {"job_id": int(stale["id"])},
                 ).fetchone()

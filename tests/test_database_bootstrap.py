@@ -74,7 +74,7 @@ def test_empty_postgres_database_installs_and_reuses_alembic_head() -> None:
 
         assert first.baseline_applied is True
         assert first.revision_before is None
-        assert first.revision_after == "0124_execution_runtime_correctness"
+        assert first.revision_after == "0125_execution_runtime_correctness"
         assert second.baseline_applied is False
         assert second.revision_before == first.revision_after
         assert second.revision_after == first.revision_after
@@ -146,7 +146,7 @@ def test_production_shape_alembic_database_upgrades_without_reapplying_baseline(
 
         assert result.baseline_applied is False
         assert result.revision_before == "0098_admin_session_revocation"
-        assert result.revision_after == "0124_execution_runtime_correctness"
+        assert result.revision_after == "0125_execution_runtime_correctness"
         with psycopg.connect(database_url) as connection:
             preserved = connection.execute(
                 "SELECT wecom_userid, session_version FROM admin_users WHERE id = %s",
@@ -176,7 +176,7 @@ def test_upgrade_repairs_missing_or_partial_automation_agent_audit_tables_withou
 
         assert result.baseline_applied is False
         assert result.revision_before == "0123_required_physical_schema_repair"
-        assert result.revision_after == "0124_execution_runtime_correctness"
+        assert result.revision_after == "0125_execution_runtime_correctness"
 
         expected_columns = {
             "automation_agent_output": {
@@ -715,6 +715,20 @@ def _upgrade_database_to(database_url: str, revision: str) -> None:
     os.environ["DATABASE_URL"] = database_url
     try:
         command.upgrade(config, revision)
+    finally:
+        if previous_url is None:
+            os.environ.pop("DATABASE_URL", None)
+        else:
+            os.environ["DATABASE_URL"] = previous_url
+
+
+def _downgrade_database_to(database_url: str, revision: str) -> None:
+    config = Config(str(ROOT / "alembic.ini"))
+    config.set_main_option("sqlalchemy.url", database_url)
+    previous_url = os.environ.get("DATABASE_URL")
+    os.environ["DATABASE_URL"] = database_url
+    try:
+        command.downgrade(config, revision)
     finally:
         if previous_url is None:
             os.environ.pop("DATABASE_URL", None)

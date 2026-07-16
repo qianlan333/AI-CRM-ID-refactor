@@ -1134,7 +1134,7 @@ def test_external_effect_diagnostics_metrics_execution_mode_and_allowed_types(ne
     assert enabled_body["allowed_effect_types"] == [WEBHOOK_ORDER_PAID_PUSH]
 
 
-def test_external_effect_due_queue_quarantines_stale_dispatching_jobs() -> None:
+def test_external_effect_due_queue_requeues_stale_pre_provider_jobs() -> None:
     repo = InMemoryExternalEffectRepository()
     service = _service(repo)
     job = _queued_webhook_job(service, idempotency_key="stale-dispatching-reclaim")
@@ -1151,15 +1151,14 @@ def test_external_effect_due_queue_quarantines_stale_dispatching_jobs() -> None:
     updated = repo.get_job(job["id"])
 
     assert quarantined == 1
-    assert metrics["eligible_due_count"] == 0
-    assert metrics["unknown_after_dispatch_count"] == 1
-    assert due == []
-    assert acquired == []
+    assert metrics["eligible_due_count"] == 1
+    assert metrics["unknown_after_dispatch_count"] == 0
+    assert [item.id for item in due] == [job["id"]]
+    assert [item.id for item in acquired] == [job["id"]]
     assert updated is not None
-    assert updated.status == "unknown_after_dispatch"
-    assert updated.locked_by == ""
-    assert updated.locked_at == ""
-    assert updated.reconciliation_required is True
+    assert updated.status == "dispatching"
+    assert updated.locked_by == "replacement-worker"
+    assert updated.reconciliation_required is False
 
 
 def test_external_effect_sql_due_queue_quarantines_stale_dispatching_jobs() -> None:
@@ -1168,6 +1167,8 @@ def test_external_effect_sql_due_queue_quarantines_stale_dispatching_jobs() -> N
     assert "status = 'dispatching'" in source
     assert "lease_expires_at <= CURRENT_TIMESTAMP" in source
     assert "status = 'unknown_after_dispatch'" in source
+    assert "status = 'queued'" in source
+    assert "provider_boundary_crossed" in source
 
 
 def test_external_effect_admin_page_is_removed_and_troubleshooting_api_covers_queue_debug(next_client: TestClient) -> None:

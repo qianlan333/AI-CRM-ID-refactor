@@ -75,11 +75,12 @@ def test_execution_runtime_correctness_is_the_single_head() -> None:
     audit_repair = VERSIONS / "0124_automation_agent_audit_tables.py"
     audit_source = audit_repair.read_text(encoding="utf-8")
 
-    runtime_correctness = VERSIONS / "0124_execution_runtime_correctness.py"
+    runtime_correctness = VERSIONS / "0125_execution_runtime_correctness.py"
     runtime_source = runtime_correctness.read_text(encoding="utf-8")
 
-    assert heads == {"0124_execution_runtime_correctness"}
-    assert revisions["0124_execution_runtime_correctness"]["down_revision"] == "0123_required_physical_schema_repair"
+    assert heads == {"0125_execution_runtime_correctness"}
+    assert revisions["0125_execution_runtime_correctness"]["down_revision"] == "0124_agent_audit_tables"
+    assert revisions["0124_agent_audit_tables"]["down_revision"] == "0123_required_physical_schema_repair"
     assert revisions["0123_required_physical_schema_repair"]["down_revision"] == "0122_internal_event_fanout_manifest"
     assert "0018_hxc_dashboard_broadcast_tasks" in source
     assert "0023_group_ops_webhook_rules" in source
