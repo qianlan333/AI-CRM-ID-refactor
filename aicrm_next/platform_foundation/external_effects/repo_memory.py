@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 from datetime import datetime, timedelta, timezone
 from threading import RLock
 from typing import Any
@@ -25,10 +26,12 @@ from .repo import (
     _execution_lane,
     _idempotency_key,
     _initial_status,
+    _json_dumps,
     _payload_summary,
     _public_attempt,
     _public_job,
     _public_receipt,
+    _rate_scope_key,
     _safe_error_message,
     _text,
 )
@@ -91,7 +94,7 @@ class InMemoryExternalEffectRepository(ExternalEffectRepository):
             "available_at": public_datetime(scheduled_at),
             "ordering_key": _text(request.ordering_key) or _text(request.target_id) or f"effect:{key}",
             "fairness_key": _text(request.fairness_key) or _text(request.business_id) or _text(request.target_id) or "default",
-            "rate_scope_key": _text(request.rate_scope_key) or ":".join((request.adapter_name, request.operation, tenant_id)),
+            "rate_scope_key": _rate_scope_key(request),
             "attempt_count": 0,
             "max_attempts": int(request.max_attempts or 5),
             "next_retry_at": "",
@@ -455,6 +458,17 @@ class InMemoryExternalEffectRepository(ExternalEffectRepository):
             if any(int(attempt_row.get("job_id") or 0) == int(job.id) and attempt_row.get("status") == "dispatching" for attempt_row in self._attempts):
                 return None
             now = public_datetime(utcnow())
+            request_hash = hashlib.sha256(
+                _json_dumps(
+                    {
+                        "effect_type": job.effect_type,
+                        "operation": job.operation,
+                        "target_type": job.target_type,
+                        "target_id": job.target_id,
+                        "payload": dict(job.payload_json or {}),
+                    }
+                ).encode("utf-8")
+            ).hexdigest()
             attempt_row = {
                 "id": self._next_attempt_id,
                 "attempt_id": "eea_" + uuid4().hex,
@@ -464,6 +478,10 @@ class InMemoryExternalEffectRepository(ExternalEffectRepository):
                 "operation": job.operation,
                 "trace_id": job.trace_id,
                 "request_id": job.request_id,
+                "lease_token": _text(job.lease_token),
+                "request_hash": request_hash,
+                "provider_call_started_at": now,
+                "worker_generation": int(row.get("worker_generation") or job.worker_generation or 0),
                 "status": "dispatching",
                 "request_summary_json": scrub_summary({**dict(request_summary or {}), "provider_boundary_crossed": True}),
                 "response_summary_json": {},
@@ -477,6 +495,7 @@ class InMemoryExternalEffectRepository(ExternalEffectRepository):
             row.update(
                 {
                     "last_attempt_id": attempt_row["attempt_id"],
+                    "provider_call_started_at": now,
                     "row_version": int(row.get("row_version") or 1) + 1,
                     "updated_at": now,
                 }
@@ -575,6 +594,7 @@ class InMemoryExternalEffectRepository(ExternalEffectRepository):
                     "provider_result_received": bool(result.provider_result_received),
                     "result_summary_json": scrub_summary(response_summary),
                     "reconciliation_required": status == "unknown_after_dispatch",
+                    "worker_generation": 0 if status == "failed_retryable" else int(row.get("worker_generation") or 0),
                     "lease_token": "",
                     "lease_expires_at": "",
                     "locked_by": "",
@@ -800,6 +820,8 @@ class InMemoryExternalEffectRepository(ExternalEffectRepository):
                 locked_at="",
                 lease_token="",
                 lease_expires_at="",
+                heartbeat_at="",
+                worker_generation=0,
                 cancelled_at=now,
                 completed_at=now,
             )
@@ -864,6 +886,8 @@ class InMemoryExternalEffectRepository(ExternalEffectRepository):
             locked_at="",
             lease_token="",
             lease_expires_at="",
+            heartbeat_at="",
+            worker_generation=0,
             next_retry_at=now,
             available_at=now,
             reconciliation_required=False,

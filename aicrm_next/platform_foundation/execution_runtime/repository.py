@@ -25,6 +25,18 @@ def _default_connect(database_url: str):
     return psycopg.connect(database_url, row_factory=dict_row)
 
 
+def open_listener_connection(url: str, *, autocommit: bool, application_name: str):
+    """Open the dedicated session-scoped LISTEN connection at the DB boundary."""
+
+    import psycopg
+
+    return psycopg.connect(
+        url,
+        autocommit=autocommit,
+        application_name=application_name,
+    )
+
+
 @dataclass(frozen=True)
 class RuntimeControl:
     active_generation: int
@@ -209,6 +221,11 @@ class ExecutionRuntimeRepository:
                 policy = self._lane_policy(lane_row)
                 if not self._claim_allowed(control=control, lane=policy, generation=generation):
                     return None
+                self._recover_expired_claims(
+                    connection,
+                    queue_kind=queue_kind,
+                    lane=normalized_lane,
+                )
                 in_flight = connection.execute(self._in_flight_sql(), (normalized_lane,)).fetchone()
                 global_count = int((in_flight or {}).get("global_count") or 0)
                 lane_count = int((in_flight or {}).get("lane_count") or 0)
@@ -251,11 +268,206 @@ class ExecutionRuntimeRepository:
         )
 
     @staticmethod
+    def _recover_expired_claims(connection: Any, *, queue_kind: str, lane: str) -> None:
+        if queue_kind == "external_effect":
+            connection.execute(
+                """
+                UPDATE external_effect_attempt attempt
+                SET status = 'unknown_after_dispatch',
+                    response_summary_json = COALESCE(attempt.response_summary_json, '{}'::jsonb)
+                        || '{"provider_result_received":false,"lease_expired":true}'::jsonb,
+                    error_code = CASE
+                        WHEN attempt.error_code = '' THEN 'lease_expired_after_dispatch'
+                        ELSE attempt.error_code
+                    END,
+                    error_message = CASE
+                        WHEN attempt.error_message = ''
+                        THEN 'Dispatch lease expired; reconcile provider outcome before retry.'
+                        ELSE attempt.error_message
+                    END,
+                    completed_at = COALESCE(attempt.completed_at, CURRENT_TIMESTAMP)
+                FROM external_effect_job job
+                WHERE job.lane = %s
+                  AND job.status = 'dispatching'
+                  AND job.lease_expires_at IS NOT NULL
+                  AND job.lease_expires_at <= CURRENT_TIMESTAMP
+                  AND job.provider_call_started_at IS NOT NULL
+                  AND attempt.job_id = job.id
+                  AND attempt.attempt_id = job.last_attempt_id
+                  AND attempt.lease_token = job.lease_token
+                  AND attempt.status = 'dispatching'
+                """,
+                (lane,),
+            )
+            connection.execute(
+                """
+                UPDATE external_effect_job
+                SET status = 'unknown_after_dispatch',
+                    attempt_count = attempt_count + 1,
+                    reconciliation_required = TRUE,
+                    last_error_code = 'lease_expired_after_dispatch',
+                    last_error_message = 'Dispatch lease expired; reconcile provider outcome before retry.',
+                    lease_token = '',
+                    lease_expires_at = NULL,
+                    heartbeat_at = NULL,
+                    locked_by = '',
+                    locked_at = NULL,
+                    completed_at = CURRENT_TIMESTAMP,
+                    row_version = row_version + 1,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE lane = %s
+                  AND status = 'dispatching'
+                  AND lease_expires_at IS NOT NULL
+                  AND lease_expires_at <= CURRENT_TIMESTAMP
+                  AND provider_call_started_at IS NOT NULL
+                """,
+                (lane,),
+            )
+            connection.execute(
+                """
+                UPDATE external_effect_job
+                SET status = 'queued',
+                    available_at = CURRENT_TIMESTAMP,
+                    next_retry_at = CURRENT_TIMESTAMP,
+                    worker_generation = 0,
+                    last_error_code = 'lease_expired_before_dispatch',
+                    last_error_message = 'Pre-dispatch lease expired and was safely requeued.',
+                    lease_token = '',
+                    lease_expires_at = NULL,
+                    heartbeat_at = NULL,
+                    locked_by = '',
+                    locked_at = NULL,
+                    dispatch_started_at = NULL,
+                    row_version = row_version + 1,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE lane = %s
+                  AND status = 'dispatching'
+                  AND lease_expires_at IS NOT NULL
+                  AND lease_expires_at <= CURRENT_TIMESTAMP
+                  AND provider_call_started_at IS NULL
+                """,
+                (lane,),
+            )
+            return
+
+        if queue_kind == "internal_event":
+            connection.execute(
+                """
+                UPDATE internal_event_consumer_run
+                SET status = CASE
+                        WHEN attempt_count + 1 >= max_attempts THEN 'failed_terminal'
+                        ELSE 'failed_retryable'
+                    END,
+                    attempt_count = attempt_count + 1,
+                    available_at = CASE
+                        WHEN attempt_count + 1 < max_attempts THEN CURRENT_TIMESTAMP
+                        ELSE available_at
+                    END,
+                    next_retry_at = CASE
+                        WHEN attempt_count + 1 < max_attempts THEN CURRENT_TIMESTAMP
+                        ELSE NULL
+                    END,
+                    worker_generation = CASE
+                        WHEN attempt_count + 1 < max_attempts THEN 0
+                        ELSE worker_generation
+                    END,
+                    last_error_code = 'lease_expired',
+                    last_error_message = 'Consumer lease expired before completion.',
+                    lease_token = '', lease_expires_at = NULL, heartbeat_at = NULL,
+                    locked_by = '', locked_at = NULL,
+                    finished_at = CASE
+                        WHEN attempt_count + 1 >= max_attempts THEN CURRENT_TIMESTAMP
+                        ELSE NULL
+                    END,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE lane = %s
+                  AND status = 'running'
+                  AND lease_expires_at IS NOT NULL
+                  AND lease_expires_at <= CURRENT_TIMESTAMP
+                """,
+                (lane,),
+            )
+            return
+
+        if queue_kind == "internal_outbox":
+            connection.execute(
+                """
+                UPDATE internal_event_outbox
+                SET status = CASE
+                        WHEN attempt_count >= max_attempts THEN 'failed_terminal'
+                        ELSE 'failed_retryable'
+                    END,
+                    available_at = CASE
+                        WHEN attempt_count < max_attempts THEN CURRENT_TIMESTAMP
+                        ELSE available_at
+                    END,
+                    next_retry_at = CASE
+                        WHEN attempt_count < max_attempts THEN CURRENT_TIMESTAMP
+                        ELSE NULL
+                    END,
+                    worker_generation = CASE
+                        WHEN attempt_count < max_attempts THEN 0
+                        ELSE worker_generation
+                    END,
+                    last_error_code = 'lease_expired',
+                    last_error_message = 'Outbox relay lease expired before completion.',
+                    lease_token = '', lease_expires_at = NULL, heartbeat_at = NULL,
+                    locked_by = '', locked_at = NULL,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE lane = %s
+                  AND status = 'running'
+                  AND lease_expires_at IS NOT NULL
+                  AND lease_expires_at <= CURRENT_TIMESTAMP
+                """,
+                (lane,),
+            )
+            return
+
+        connection.execute(
+            """
+            UPDATE webhook_inbox
+            SET status = CASE
+                    WHEN attempt_count + 1 >= max_attempts THEN 'dead_letter'
+                    ELSE 'failed_retryable'
+                END,
+                attempt_count = attempt_count + 1,
+                available_at = CASE
+                    WHEN attempt_count + 1 < max_attempts THEN CURRENT_TIMESTAMP
+                    ELSE available_at
+                END,
+                next_retry_at = CASE
+                    WHEN attempt_count + 1 < max_attempts THEN CURRENT_TIMESTAMP
+                    ELSE NULL
+                END,
+                worker_generation = CASE
+                    WHEN attempt_count + 1 < max_attempts THEN 0
+                    ELSE worker_generation
+                END,
+                last_error_code = 'lease_expired',
+                last_error_message = 'Webhook processing lease expired before completion.',
+                lease_token = '', lease_expires_at = NULL, heartbeat_at = NULL,
+                locked_by = '', locked_at = NULL,
+                finished_at = CASE
+                    WHEN attempt_count + 1 >= max_attempts THEN CURRENT_TIMESTAMP
+                    ELSE NULL
+                END,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE lane = %s
+              AND status = 'processing'
+              AND lease_expires_at IS NOT NULL
+              AND lease_expires_at <= CURRENT_TIMESTAMP
+            """,
+            (lane,),
+        )
+
+    @staticmethod
     def _claim_allowed(*, control: RuntimeControl, lane: LanePolicy, generation: int) -> bool:
         now = datetime.now(tz=lane.blocked_until.tzinfo) if lane.blocked_until else None
         return bool(
-            control.claim_enabled
+            int(generation) > 0
+            and control.claim_enabled
             and control.active_generation == int(generation)
+            and control.policy_version == lane.policy_version
             and control.rollout_mode in {"canary", "execute"}
             and lane.enabled
             and lane.rollout_mode in {"canary", "execute"}
@@ -324,6 +536,9 @@ class ExecutionRuntimeRepository:
                      AND cooldown.blocked_until > CURRENT_TIMESTAMP
                     WHERE job.lane = %s
                       AND job.worker_generation IN (0, %s)
+                      AND job.policy_version = (
+                          SELECT policy_version FROM queue_runtime_control WHERE singleton = TRUE
+                      )
                       AND job.status IN ('queued', 'failed_retryable')
                       AND job.hold_reason = ''
                       AND job.attempt_count < job.max_attempts
@@ -351,6 +566,7 @@ class ExecutionRuntimeRepository:
                     lease_token = %s,
                     locked_at = CURRENT_TIMESTAMP,
                     dispatch_started_at = CURRENT_TIMESTAMP,
+                    provider_call_started_at = NULL,
                     lease_expires_at = CURRENT_TIMESTAMP + (%s * INTERVAL '1 second'),
                     heartbeat_at = CURRENT_TIMESTAMP,
                     worker_generation = %s,
@@ -370,6 +586,9 @@ class ExecutionRuntimeRepository:
                      AND fairness.fairness_key = run.fairness_key
                     WHERE run.lane = %s
                       AND run.worker_generation IN (0, %s)
+                      AND run.policy_version = (
+                          SELECT policy_version FROM queue_runtime_control WHERE singleton = TRUE
+                      )
                       AND run.status IN ('pending', 'failed_retryable')
                       AND run.hold_reason = ''
                       AND run.attempt_count < run.max_attempts
@@ -412,6 +631,9 @@ class ExecutionRuntimeRepository:
                      AND fairness.fairness_key = outbox.fairness_key
                     WHERE outbox.lane = %s
                       AND outbox.worker_generation IN (0, %s)
+                      AND outbox.policy_version = (
+                          SELECT policy_version FROM queue_runtime_control WHERE singleton = TRUE
+                      )
                       AND outbox.status IN ('pending', 'failed_retryable')
                       AND outbox.hold_reason = ''
                       AND outbox.attempt_count < outbox.max_attempts
@@ -433,6 +655,7 @@ class ExecutionRuntimeRepository:
                 )
                 UPDATE internal_event_outbox outbox
                 SET status = 'running',
+                    attempt_count = attempt_count + 1,
                     locked_by = %s,
                     lease_token = %s,
                     locked_at = CURRENT_TIMESTAMP,
@@ -453,6 +676,9 @@ class ExecutionRuntimeRepository:
                  AND fairness.fairness_key = inbox.fairness_key
                 WHERE inbox.lane = %s
                   AND inbox.worker_generation IN (0, %s)
+                  AND inbox.policy_version = (
+                      SELECT policy_version FROM queue_runtime_control WHERE singleton = TRUE
+                  )
                   AND inbox.status IN ('received', 'failed_retryable')
                   AND inbox.hold_reason = ''
                   AND inbox.attempt_count < inbox.max_attempts
@@ -524,7 +750,9 @@ class ExecutionRuntimeRepository:
             connection.commit()
         return bool(row)
 
-    def next_due_at(self, *, queue_kind: str, lane: str) -> datetime | None:
+    def next_due_at(self, *, queue_kind: str, lane: str, generation: int) -> datetime | None:
+        if int(generation) <= 0:
+            return None
         table, statuses = {
             "external_effect": ("external_effect_job", ("queued", "failed_retryable")),
             "internal_event": ("internal_event_consumer_run", ("pending", "failed_retryable")),
@@ -534,16 +762,110 @@ class ExecutionRuntimeRepository:
         if not table:
             raise ValueError("unsupported queue kind")
         with self._connect(self._database_url) as connection:
+            policy = connection.execute(
+                """
+                SELECT control.active_generation, control.claim_enabled,
+                       control.rollout_mode AS control_mode,
+                       lane.enabled, lane.rollout_mode AS lane_mode,
+                       lane.blocked_until,
+                       control.policy_version AS control_policy_version,
+                       lane.policy_version AS lane_policy_version,
+                       control.global_max_in_flight,
+                       lane.max_in_flight
+                FROM queue_runtime_control control
+                JOIN queue_lane_policy lane ON lane.lane = %s
+                WHERE control.singleton = TRUE
+                """,
+                (str(lane or ""),),
+            ).fetchone()
+            if (
+                not policy
+                or not bool(policy.get("claim_enabled"))
+                or int(policy.get("active_generation") or 0) != int(generation)
+                or str(policy.get("control_policy_version") or "")
+                != str(policy.get("lane_policy_version") or "")
+                or str(policy.get("control_mode") or "") not in {"canary", "execute"}
+                or not bool(policy.get("enabled"))
+                or str(policy.get("lane_mode") or "") not in {"canary", "execute"}
+            ):
+                return None
+            blocked_until = policy.get("blocked_until")
+            if blocked_until and blocked_until > datetime.now(tz=blocked_until.tzinfo):
+                return blocked_until
+            in_flight = connection.execute(self._in_flight_sql(), (str(lane or ""),)).fetchone()
+            if (
+                int((in_flight or {}).get("global_count") or 0)
+                >= int(policy.get("global_max_in_flight") or 0)
+                or int((in_flight or {}).get("lane_count") or 0)
+                >= int(policy.get("max_in_flight") or 0)
+            ):
+                return None
+            if queue_kind == "external_effect":
+                row = connection.execute(
+                    """
+                    SELECT MIN(GREATEST(
+                        job.available_at,
+                        COALESCE(cooldown.blocked_until, job.available_at)
+                    )) AS available_at
+                    FROM external_effect_job job
+                    LEFT JOIN queue_rate_scope_cooldown cooldown
+                      ON cooldown.rate_scope_key = job.rate_scope_key
+                     AND cooldown.blocked_until > CURRENT_TIMESTAMP
+                    WHERE job.lane = %s
+                      AND job.worker_generation IN (0, %s)
+                      AND job.policy_version = %s
+                      AND job.status = ANY(%s)
+                      AND job.hold_reason = ''
+                      AND job.attempt_count < job.max_attempts
+                      AND NOT EXISTS (
+                          SELECT 1
+                          FROM external_effect_job active
+                          WHERE active.lane = job.lane
+                            AND active.ordering_key = job.ordering_key
+                            AND active.ordering_key <> ''
+                            AND active.status = 'dispatching'
+                            AND active.lease_expires_at > CURRENT_TIMESTAMP
+                      )
+                    """,
+                    (
+                        str(lane or ""),
+                        int(generation),
+                        str(policy.get("control_policy_version") or ""),
+                        list(statuses),
+                    ),
+                ).fetchone()
+                return row.get("available_at") if row else None
+            active_status = {
+                "internal_event": "running",
+                "internal_outbox": "running",
+                "webhook_inbox": "processing",
+            }[queue_kind]
             row = connection.execute(
                 f"""
-                SELECT MIN(available_at) AS available_at
-                FROM {table}
-                WHERE lane = %s
-                  AND status = ANY(%s)
-                  AND hold_reason = ''
-                  AND attempt_count < max_attempts
+                SELECT MIN(item.available_at) AS available_at
+                FROM {table} item
+                WHERE item.lane = %s
+                  AND item.worker_generation IN (0, %s)
+                  AND item.policy_version = %s
+                  AND item.status = ANY(%s)
+                  AND item.hold_reason = ''
+                  AND item.attempt_count < item.max_attempts
+                  AND NOT EXISTS (
+                      SELECT 1
+                      FROM {table} active
+                      WHERE active.lane = item.lane
+                        AND active.ordering_key = item.ordering_key
+                        AND active.ordering_key <> ''
+                        AND active.status = '{active_status}'
+                        AND active.lease_expires_at > CURRENT_TIMESTAMP
+                  )
                 """,
-                (str(lane or ""), list(statuses)),
+                (
+                    str(lane or ""),
+                    int(generation),
+                    str(policy.get("control_policy_version") or ""),
+                    list(statuses),
+                ),
             ).fetchone()
         return row.get("available_at") if row else None
 
@@ -658,4 +980,5 @@ __all__ = [
     "LanePolicy",
     "RuntimeClaim",
     "RuntimeControl",
+    "open_listener_connection",
 ]

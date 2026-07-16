@@ -658,6 +658,7 @@ class SQLAlchemyInternalEventRepository(InternalEventRepository):
         *,
         locked_by: str,
         expected_lease_token: str = "",
+        expected_generation: int = 0,
     ) -> InternalEventConsumerRun | None:
         lease_guard = "AND lease_token = :expected_lease_token" if _text(expected_lease_token) else ""
         row = self._write_one(
@@ -665,13 +666,23 @@ class SQLAlchemyInternalEventRepository(InternalEventRepository):
             UPDATE internal_event_consumer_run
             SET status = 'running', locked_by = :locked_by,
                 locked_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
-            WHERE id = :run_id {lease_guard}
+            WHERE id = :run_id
+              AND status = 'running'
+              {lease_guard}
+              AND (
+                  :expected_generation = 0
+                  OR (
+                      worker_generation = :expected_generation
+                      AND lease_expires_at > CURRENT_TIMESTAMP
+                  )
+              )
             RETURNING *
             """,
             {
                 "run_id": int(run_id),
                 "locked_by": _text(locked_by),
                 "expected_lease_token": _text(expected_lease_token),
+                "expected_generation": int(expected_generation or 0),
             },
         )
         return _public_run(row)
@@ -687,6 +698,7 @@ class SQLAlchemyInternalEventRepository(InternalEventRepository):
         error_message: str = "",
         next_retry_at: datetime | None = None,
         expected_lease_token: str = "",
+        expected_generation: int = 0,
     ) -> InternalEventConsumerRun | None:
         status = _text(status)
         if status not in {"succeeded", "failed_retryable", "failed_terminal", "blocked", "skipped"}:
@@ -708,13 +720,25 @@ class SQLAlchemyInternalEventRepository(InternalEventRepository):
             locked_by = '',
             locked_at = NULL,
             lease_token = '',
+            lease_expires_at = NULL,
+            heartbeat_at = NULL,
+            worker_generation = CASE WHEN :status = 'failed_retryable' THEN 0 ELSE worker_generation END,
             last_attempt_id = :attempt_id,
             last_error_code = :error_code,
             last_error_message = :error_message,
             result_summary_json = CAST(:result_summary AS jsonb)
             {finished_sql},
             updated_at = CURRENT_TIMESTAMP
-            WHERE id = :run_id {lease_guard}
+            WHERE id = :run_id
+              {lease_guard}
+              AND (
+                  :expected_generation = 0
+                  OR (
+                      status = 'running'
+                      AND worker_generation = :expected_generation
+                      AND lease_expires_at > CURRENT_TIMESTAMP
+                  )
+              )
             RETURNING *
             """,
             {
@@ -726,6 +750,7 @@ class SQLAlchemyInternalEventRepository(InternalEventRepository):
                 "next_retry_at": public_datetime(next_retry_at) if next_retry_at else None,
                 "result_summary": _json_dumps(scrub_summary(result_summary or {})),
                 "expected_lease_token": _text(expected_lease_token),
+                "expected_generation": int(expected_generation or 0),
             },
         )
         return _public_run(row)
@@ -753,8 +778,17 @@ class SQLAlchemyInternalEventRepository(InternalEventRepository):
         with self._session_factory() as session:
             current = (
                 session.execute(
-                    text("SELECT * FROM internal_event_consumer_run WHERE id = :run_id AND status = 'running' AND lease_token = :lease_token FOR UPDATE"),
-                    {"run_id": int(run.id), "lease_token": lease_token},
+                    text(
+                        "SELECT * FROM internal_event_consumer_run "
+                        "WHERE id = :run_id AND status = 'running' AND lease_token = :lease_token "
+                        "AND (:worker_generation = 0 OR (worker_generation = :worker_generation "
+                        "AND lease_expires_at > CURRENT_TIMESTAMP)) FOR UPDATE"
+                    ),
+                    {
+                        "run_id": int(run.id),
+                        "lease_token": lease_token,
+                        "worker_generation": int(run.worker_generation or 0),
+                    },
                 )
                 .mappings()
                 .fetchone()
@@ -807,6 +841,8 @@ class SQLAlchemyInternalEventRepository(InternalEventRepository):
                             ELSE available_at
                         END,
                         locked_by = '', locked_at = NULL, lease_token = '',
+                        lease_expires_at = NULL, heartbeat_at = NULL,
+                        worker_generation = CASE WHEN :status = 'failed_retryable' THEN 0 ELSE worker_generation END,
                         last_attempt_id = :attempt_id,
                         last_error_code = :error_code,
                         last_error_message = :error_message,
@@ -814,6 +850,13 @@ class SQLAlchemyInternalEventRepository(InternalEventRepository):
                         finished_at = CASE WHEN :finished_at THEN CURRENT_TIMESTAMP ELSE NULL END,
                         updated_at = CURRENT_TIMESTAMP
                     WHERE id = :run_id AND status = 'running' AND lease_token = :lease_token
+                      AND (
+                          :worker_generation = 0
+                          OR (
+                              worker_generation = :worker_generation
+                              AND lease_expires_at > CURRENT_TIMESTAMP
+                          )
+                      )
                     RETURNING *
                     """
                     ),
@@ -827,6 +870,7 @@ class SQLAlchemyInternalEventRepository(InternalEventRepository):
                         "error_message": _text(error_message),
                         "result_summary": _json_dumps(scrub_summary(result_summary or {})),
                         "finished_at": finished_at,
+                        "worker_generation": int(run.worker_generation or 0),
                     },
                 )
                 .mappings()
@@ -912,6 +956,7 @@ class SQLAlchemyInternalEventRepository(InternalEventRepository):
                     SET status = 'pending', next_retry_at = CURRENT_TIMESTAMP,
                         available_at = CURRENT_TIMESTAMP,
                         locked_by = '', locked_at = NULL, lease_token = '',
+                        lease_expires_at = NULL, heartbeat_at = NULL, worker_generation = 0,
                         last_attempt_id = :attempt_id,
                         last_error_code = '', last_error_message = '',
                         finished_at = NULL, updated_at = CURRENT_TIMESTAMP
@@ -1155,8 +1200,17 @@ class SQLAlchemyInternalEventRepository(InternalEventRepository):
         with self._session_factory() as session:
             current = (
                 session.execute(
-                    text("SELECT * FROM internal_event_outbox WHERE id = :outbox_id AND status = 'running' AND lease_token = :lease_token FOR UPDATE"),
-                    {"outbox_id": int(outbox.id), "lease_token": _text(outbox.lease_token)},
+                    text(
+                        "SELECT * FROM internal_event_outbox "
+                        "WHERE id = :outbox_id AND status = 'running' AND lease_token = :lease_token "
+                        "AND (:worker_generation = 0 OR (worker_generation = :worker_generation "
+                        "AND lease_expires_at > CURRENT_TIMESTAMP)) FOR UPDATE"
+                    ),
+                    {
+                        "outbox_id": int(outbox.id),
+                        "lease_token": _text(outbox.lease_token),
+                        "worker_generation": int(outbox.worker_generation or 0),
+                    },
                 )
                 .mappings()
                 .fetchone()
@@ -1228,9 +1282,17 @@ class SQLAlchemyInternalEventRepository(InternalEventRepository):
                     UPDATE internal_event_outbox
                     SET status = 'relayed', internal_event_id = :internal_event_id,
                         lease_token = '', locked_at = NULL, locked_by = '',
+                        lease_expires_at = NULL, heartbeat_at = NULL,
                         next_retry_at = NULL, last_error_code = '', last_error_message = '',
                         relayed_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
                     WHERE id = :outbox_id AND status = 'running' AND lease_token = :lease_token
+                      AND (
+                          :worker_generation = 0
+                          OR (
+                              worker_generation = :worker_generation
+                              AND lease_expires_at > CURRENT_TIMESTAMP
+                          )
+                      )
                     RETURNING *
                     """
                     ),
@@ -1238,6 +1300,7 @@ class SQLAlchemyInternalEventRepository(InternalEventRepository):
                         "outbox_id": int(outbox.id),
                         "lease_token": _text(outbox.lease_token),
                         "internal_event_id": event.event_id,
+                        "worker_generation": int(outbox.worker_generation or 0),
                     },
                 )
                 .mappings()
@@ -1272,9 +1335,18 @@ class SQLAlchemyInternalEventRepository(InternalEventRepository):
                     ELSE available_at
                 END,
                 lease_token = '', locked_at = NULL, locked_by = '',
+                lease_expires_at = NULL, heartbeat_at = NULL,
+                worker_generation = CASE WHEN :status = 'failed_retryable' THEN 0 ELSE worker_generation END,
                 last_error_code = :error_code, last_error_message = :error_message,
                 updated_at = CURRENT_TIMESTAMP
             WHERE id = :outbox_id AND status = 'running' AND lease_token = :lease_token
+              AND (
+                  :worker_generation = 0
+                  OR (
+                      worker_generation = :worker_generation
+                      AND lease_expires_at > CURRENT_TIMESTAMP
+                  )
+              )
             RETURNING *
             """,
             {
@@ -1284,6 +1356,7 @@ class SQLAlchemyInternalEventRepository(InternalEventRepository):
                 "next_retry_at": public_datetime(next_retry_at) if status == "failed_retryable" and next_retry_at else None,
                 "error_code": _text(error_code),
                 "error_message": _text(error_message),
+                "worker_generation": int(outbox.worker_generation or 0),
             },
         )
         return _public_outbox(row)

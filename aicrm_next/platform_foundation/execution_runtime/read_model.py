@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from datetime import datetime, timezone
 from pathlib import Path
@@ -7,6 +8,7 @@ from typing import Any, Callable
 
 from aicrm_next.shared.release import current_release_sha
 from aicrm_next.shared.runtime import raw_database_url
+from aicrm_next.shared.sensitive_data import redact_sensitive_data
 
 from .repository import _default_connect, _psycopg_url
 
@@ -19,6 +21,11 @@ def _public_datetime(value: Any) -> str:
         return str(value or "")
     normalized = value if value.tzinfo else value.replace(tzinfo=timezone.utc)
     return normalized.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def _public_hash(value: Any) -> str:
+    normalized = str(value or "").strip()
+    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()[:16] if normalized else ""
 
 
 def release_provenance(path: Path = PROVENANCE_PATH) -> dict[str, Any]:
@@ -102,6 +109,7 @@ class ExecutionRuntimeReadModel:
             ).fetchone()
         lane_items = [self._lane_payload(row) for row in lanes]
         worker_items = [self._worker_payload(row) for row in workers]
+        fresh_worker_items = [item for item in worker_items if item["fresh"]]
         return {
             "ok": bool(control),
             "control": self._control_payload(control or {}),
@@ -111,7 +119,10 @@ class ExecutionRuntimeReadModel:
             "policy_snapshot": self._policy_payload(policy or {}),
             "release": {
                 "web_release_sha": release_sha,
-                "all_fresh_workers_match_release": bool(worker_items) and all(item["fresh"] and item["release_matches"] for item in worker_items),
+                "fresh_worker_count": len(fresh_worker_items),
+                "stale_worker_count": len(worker_items) - len(fresh_worker_items),
+                "all_fresh_workers_match_release": bool(fresh_worker_items)
+                and all(item["release_matches"] for item in fresh_worker_items),
                 "provenance": release_provenance(self._provenance_path),
             },
             "pii_in_output": False,
@@ -123,7 +134,7 @@ class ExecutionRuntimeReadModel:
         if not normalized:
             return None
         with self._connect(self._database_url) as connection:
-            rows = connection.execute(self._timeline_sql(), (normalized,) * 8).fetchall()
+            rows = connection.execute(self._timeline_sql(), (normalized,) * 14).fetchall()
         if not rows:
             return None
         items = [self._timeline_payload(row) for row in rows]
@@ -142,48 +153,93 @@ class ExecutionRuntimeReadModel:
     def _lane_metrics_sql() -> str:
         return """
             WITH queue_rows AS (
-                SELECT lane, status, hold_reason, available_at, lease_expires_at,
-                       attempt_count, max_attempts,
+                SELECT job.lane, job.status, job.hold_reason, job.available_at,
+                       job.lease_expires_at, job.attempt_count, job.max_attempts,
+                       job.worker_generation, job.policy_version,
+                       job.status IN ('queued', 'failed_retryable') AS ready_state,
                        CASE WHEN status = 'dispatching' THEN TRUE ELSE FALSE END AS in_flight,
                        CASE WHEN status = 'unknown_after_dispatch' THEN TRUE ELSE FALSE END AS unknown_state,
                        CASE WHEN status IN ('failed_terminal', 'blocked') THEN TRUE ELSE FALSE END AS dlq_state,
                        EXISTS (
                            SELECT 1 FROM queue_rate_scope_cooldown cooldown
-                           WHERE cooldown.rate_scope_key = external_effect_job.rate_scope_key
+                           WHERE cooldown.rate_scope_key = job.rate_scope_key
                              AND cooldown.blocked_until > CURRENT_TIMESTAMP
-                       ) AS rate_limited
-                FROM external_effect_job
-                WHERE status IN (
+                       ) AS rate_limited,
+                       EXISTS (
+                           SELECT 1
+                           FROM external_effect_job active
+                           WHERE active.id <> job.id
+                             AND active.lane = job.lane
+                             AND active.ordering_key = job.ordering_key
+                             AND active.ordering_key <> ''
+                             AND active.status = 'dispatching'
+                             AND active.lease_expires_at > CURRENT_TIMESTAMP
+                       ) AS ordering_blocked
+                FROM external_effect_job job
+                WHERE job.status IN (
                     'planned', 'approved', 'queued', 'dispatching',
                     'failed_retryable', 'unknown_after_dispatch',
                     'failed_terminal', 'blocked'
                 )
                 UNION ALL
                 SELECT lane, status, hold_reason, available_at, lease_expires_at,
-                       attempt_count, max_attempts,
+                       attempt_count, max_attempts, worker_generation, policy_version,
+                       status IN ('pending', 'failed_retryable'),
                        status = 'running', FALSE,
-                       status IN ('failed_terminal', 'blocked'), FALSE
-                FROM internal_event_consumer_run
-                WHERE status IN (
+                       status IN ('failed_terminal', 'blocked'), FALSE,
+                       EXISTS (
+                           SELECT 1
+                           FROM internal_event_consumer_run active
+                           WHERE active.id <> run.id
+                             AND active.lane = run.lane
+                             AND active.ordering_key = run.ordering_key
+                             AND active.ordering_key <> ''
+                             AND active.status = 'running'
+                             AND active.lease_expires_at > CURRENT_TIMESTAMP
+                       )
+                FROM internal_event_consumer_run run
+                WHERE run.status IN (
                     'pending', 'running', 'failed_retryable',
                     'failed_terminal', 'blocked'
                 )
                 UNION ALL
                 SELECT lane, status, hold_reason, available_at, lease_expires_at,
-                       attempt_count, max_attempts,
+                       attempt_count, max_attempts, worker_generation, policy_version,
+                       status IN ('pending', 'failed_retryable'),
                        status = 'running', FALSE,
-                       status = 'failed_terminal', FALSE
-                FROM internal_event_outbox
-                WHERE status IN (
+                       status = 'failed_terminal', FALSE,
+                       EXISTS (
+                           SELECT 1
+                           FROM internal_event_outbox active
+                           WHERE active.id <> outbox.id
+                             AND active.lane = outbox.lane
+                             AND active.ordering_key = outbox.ordering_key
+                             AND active.ordering_key <> ''
+                             AND active.status = 'running'
+                             AND active.lease_expires_at > CURRENT_TIMESTAMP
+                       )
+                FROM internal_event_outbox outbox
+                WHERE outbox.status IN (
                     'pending', 'running', 'failed_retryable', 'failed_terminal'
                 )
                 UNION ALL
                 SELECT lane, status, hold_reason, available_at, lease_expires_at,
-                       attempt_count, max_attempts,
+                       attempt_count, max_attempts, worker_generation, policy_version,
+                       status IN ('received', 'failed_retryable'),
                        status = 'processing', FALSE,
-                       status IN ('failed_terminal', 'dead_letter'), FALSE
-                FROM webhook_inbox
-                WHERE status IN (
+                       status IN ('failed_terminal', 'dead_letter'), FALSE,
+                       EXISTS (
+                           SELECT 1
+                           FROM webhook_inbox active
+                           WHERE active.id <> inbox.id
+                             AND active.lane = inbox.lane
+                             AND active.ordering_key = inbox.ordering_key
+                             AND active.ordering_key <> ''
+                             AND active.status = 'processing'
+                             AND active.lease_expires_at > CURRENT_TIMESTAMP
+                       )
+                FROM webhook_inbox inbox
+                WHERE inbox.status IN (
                     'received', 'processing', 'failed_retryable',
                     'failed_terminal', 'dead_letter'
                 )
@@ -194,24 +250,42 @@ class ExecutionRuntimeReadModel:
                    COUNT(rows.*) FILTER (WHERE rows.hold_reason <> '')::BIGINT AS held,
                    COUNT(rows.*) FILTER (
                        WHERE rows.hold_reason = ''
+                         AND rows.ready_state
                          AND rows.available_at <= CURRENT_TIMESTAMP
                          AND rows.attempt_count < rows.max_attempts
+                         AND rows.worker_generation IN (0, control.active_generation)
+                         AND rows.policy_version = control.policy_version
+                         AND control.active_generation > 0
+                         AND control.claim_enabled
+                         AND control.rollout_mode IN ('canary', 'execute')
+                         AND policy.enabled
+                         AND policy.rollout_mode IN ('canary', 'execute')
+                         AND (policy.blocked_until IS NULL OR policy.blocked_until <= CURRENT_TIMESTAMP)
+                         AND policy.policy_version = control.policy_version
                          AND NOT rows.in_flight
                          AND NOT rows.unknown_state
                          AND NOT rows.dlq_state
                          AND NOT rows.rate_limited
+                         AND NOT rows.ordering_blocked
                    )::BIGINT AS eligible,
                    COUNT(rows.*) FILTER (
                        WHERE rows.hold_reason = ''
+                         AND rows.ready_state
                          AND rows.available_at > CURRENT_TIMESTAMP
                          AND rows.status NOT IN ('failed_retryable')
                    )::BIGINT AS scheduled,
                    COUNT(rows.*) FILTER (
                        WHERE rows.hold_reason = ''
+                         AND rows.ready_state
                          AND rows.available_at > CURRENT_TIMESTAMP
                          AND rows.status = 'failed_retryable'
                    )::BIGINT AS retry_wait,
-                   COUNT(rows.*) FILTER (WHERE rows.rate_limited)::BIGINT AS rate_limited,
+                   COUNT(rows.*) FILTER (
+                       WHERE rows.rate_limited
+                         AND rows.ready_state
+                         AND rows.hold_reason = ''
+                         AND rows.attempt_count < rows.max_attempts
+                   )::BIGINT AS rate_limited,
                    COUNT(rows.*) FILTER (
                        WHERE rows.in_flight
                          AND rows.lease_expires_at > CURRENT_TIMESTAMP
@@ -221,19 +295,33 @@ class ExecutionRuntimeReadModel:
                    COALESCE(
                        EXTRACT(EPOCH FROM CURRENT_TIMESTAMP - MIN(rows.available_at) FILTER (
                            WHERE rows.hold_reason = ''
+                             AND rows.ready_state
                              AND rows.available_at <= CURRENT_TIMESTAMP
                              AND rows.attempt_count < rows.max_attempts
+                             AND rows.worker_generation IN (0, control.active_generation)
+                             AND rows.policy_version = control.policy_version
+                             AND control.active_generation > 0
+                             AND control.claim_enabled
+                             AND control.rollout_mode IN ('canary', 'execute')
+                             AND policy.enabled
+                             AND policy.rollout_mode IN ('canary', 'execute')
+                             AND (policy.blocked_until IS NULL OR policy.blocked_until <= CURRENT_TIMESTAMP)
+                             AND policy.policy_version = control.policy_version
                              AND NOT rows.in_flight
                              AND NOT rows.unknown_state
                              AND NOT rows.dlq_state
                              AND NOT rows.rate_limited
+                             AND NOT rows.ordering_blocked
                        )),
                        0
                    )::BIGINT AS oldest_eligible_age_seconds
             FROM queue_lane_policy policy
+            CROSS JOIN queue_runtime_control control
             LEFT JOIN queue_rows rows ON rows.lane = policy.lane
             GROUP BY policy.lane, policy.max_in_flight, policy.enabled,
-                     policy.rollout_mode, policy.blocked_until, policy.policy_version
+                     policy.rollout_mode, policy.blocked_until, policy.policy_version,
+                     control.active_generation, control.claim_enabled,
+                     control.rollout_mode, control.policy_version
             ORDER BY policy.lane
         """
 
@@ -249,6 +337,13 @@ class ExecutionRuntimeReadModel:
             FROM internal_event event
             WHERE event.execution_id = %s OR event.parent_execution_id = %s
             UNION ALL
+            SELECT 'internal_outbox', outbox.id::TEXT, outbox.execution_id,
+                   outbox.parent_execution_id, outbox.event_type, outbox.status,
+                   outbox.lane, outbox.available_at, outbox.created_at, outbox.updated_at,
+                   outbox.payload_summary_json
+            FROM internal_event_outbox outbox
+            WHERE outbox.execution_id = %s OR outbox.parent_execution_id = %s
+            UNION ALL
             SELECT 'internal_consumer_run', run.id::TEXT, run.execution_id,
                    run.parent_execution_id, run.consumer_name, run.status,
                    run.lane, run.available_at, run.created_at, run.updated_at,
@@ -256,11 +351,29 @@ class ExecutionRuntimeReadModel:
             FROM internal_event_consumer_run run
             WHERE run.execution_id = %s OR run.parent_execution_id = %s
             UNION ALL
+            SELECT 'internal_consumer_attempt', attempt.attempt_id, run.execution_id,
+                   run.parent_execution_id, attempt.consumer_name, attempt.status,
+                   run.lane, attempt.started_at, attempt.started_at,
+                   COALESCE(attempt.completed_at, attempt.started_at),
+                   attempt.request_summary_json || attempt.response_summary_json
+            FROM internal_event_consumer_attempt attempt
+            JOIN internal_event_consumer_run run ON run.id = attempt.consumer_run_id
+            WHERE run.execution_id = %s OR run.parent_execution_id = %s
+            UNION ALL
             SELECT 'external_effect', job.id::TEXT, job.execution_id,
                    job.parent_execution_id, job.effect_type, job.status,
                    job.lane, job.available_at, job.created_at, job.updated_at,
                    job.payload_summary_json || job.result_summary_json
             FROM external_effect_job job
+            WHERE job.execution_id = %s OR job.parent_execution_id = %s
+            UNION ALL
+            SELECT 'external_effect_attempt', attempt.attempt_id, job.execution_id,
+                   job.parent_execution_id, attempt.operation, attempt.status,
+                   job.lane, attempt.started_at, attempt.started_at,
+                   COALESCE(attempt.completed_at, attempt.started_at),
+                   attempt.request_summary_json || attempt.response_summary_json
+            FROM external_effect_attempt attempt
+            JOIN external_effect_job job ON job.id = attempt.job_id
             WHERE job.execution_id = %s OR job.parent_execution_id = %s
             UNION ALL
             SELECT 'webhook_inbox', inbox.id::TEXT, inbox.execution_id,
@@ -326,7 +439,7 @@ class ExecutionRuntimeReadModel:
     @staticmethod
     def _cooldown_payload(row: Any) -> dict[str, Any]:
         return {
-            "rate_scope_key": str(row.get("rate_scope_key") or ""),
+            "rate_scope_hash": _public_hash(row.get("rate_scope_key")),
             "provider": str(row.get("provider") or ""),
             "corp_id_present": bool(row.get("corp_id")),
             "app_id_present": bool(row.get("app_id")),
@@ -359,7 +472,7 @@ class ExecutionRuntimeReadModel:
             "available_at": _public_datetime(row.get("available_at")),
             "created_at": _public_datetime(row.get("created_at")),
             "updated_at": _public_datetime(row.get("updated_at")),
-            "summary": dict(row.get("summary_json") or {}),
+            "summary": redact_sensitive_data(dict(row.get("summary_json") or {})),
         }
 
 

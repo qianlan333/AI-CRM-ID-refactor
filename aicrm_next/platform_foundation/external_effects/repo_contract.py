@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import fields
 from datetime import datetime
 from typing import Any
@@ -19,6 +20,9 @@ from .models import (
 
 
 _MODEL_FIELD_NAMES: dict[type[Any], set[str]] = {}
+EXTERNAL_EFFECT_LANES = frozenset(
+    {"wecom_interactive", "wecom_bulk", "wecom_media", "outbound_webhook"}
+)
 
 
 def _text(value: Any) -> str:
@@ -151,6 +155,8 @@ def _initial_status(request: ExternalEffectCreateRequest) -> str:
 def _execution_lane(request: ExternalEffectCreateRequest) -> str:
     explicit = _text(request.lane)
     if explicit:
+        if explicit not in EXTERNAL_EFFECT_LANES:
+            raise ValueError(f"unsupported external effect lane: {explicit}")
         return explicit
     if request.effect_type == "wecom.media.upload":
         return "wecom_media"
@@ -162,6 +168,43 @@ def _execution_lane(request: ExternalEffectCreateRequest) -> str:
     }:
         return "outbound_webhook"
     return "wecom_interactive"
+
+
+def _rate_scope_key(request: ExternalEffectCreateRequest) -> str:
+    explicit = _text(request.rate_scope_key)
+    if explicit:
+        return explicit
+    payload = dict(request.payload or {})
+    provider = _text(request.adapter_name) or "unknown_provider"
+    corp_id = next(
+        (
+            _text(payload.get(key))
+            for key in ("corp_id", "CorpId", "ToUserName", "wecom_corp_id")
+            if _text(payload.get(key))
+        ),
+        (
+            _text(os.getenv("WECOM_CORP_ID"))
+            if provider.startswith("wecom")
+            else ""
+        )
+        or _text(request.tenant_id)
+        or "aicrm",
+    )
+    app_id = next(
+        (
+            _text(payload.get(key))
+            for key in ("app_id", "agent_id", "wecom_agent_id")
+            if _text(payload.get(key))
+        ),
+        (
+            _text(os.getenv("WECOM_AGENT_ID"))
+            if provider.startswith("wecom")
+            else ""
+        )
+        or "default",
+    )
+    operation = _text(request.operation) or "unknown_operation"
+    return ":".join((provider, corp_id, app_id, operation))
 
 
 class ExternalEffectRepository:

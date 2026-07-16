@@ -131,6 +131,8 @@ def enqueue_internal_event_outbox_in_session(
 
     tenant_id = _text(request.tenant_id) or DEFAULT_TENANT_ID
     key = _idempotency_key(request)
+    occurred_at = public_datetime(request.occurred_at or utcnow())
+    lane = "internal_financial" if _text(request.event_type).startswith(("payment.", "refund.", "order.")) else "internal_general"
     params = {
         "tenant_id": tenant_id,
         "outbox_id": "ieo_" + uuid4().hex,
@@ -149,7 +151,13 @@ def enqueue_internal_event_outbox_in_session(
         "trace_id": _text(request.context.trace_id),
         "request_id": _text(request.context.request_id),
         "correlation_id": _text(request.correlation_id),
-        "occurred_at": public_datetime(request.occurred_at or utcnow()),
+        "execution_id": _text(request.execution_id) or "exe_" + uuid4().hex,
+        "parent_execution_id": _text(request.parent_execution_id),
+        "lane": lane,
+        "available_at": occurred_at,
+        "ordering_key": f"{_text(request.aggregate_type)}:{_text(request.aggregate_id)}",
+        "fairness_key": _text(request.event_type),
+        "occurred_at": occurred_at,
         "payload_json": json.dumps(dict(request.payload or {}), ensure_ascii=False, default=str, separators=(",", ":")),
         "payload_summary_json": json.dumps(_payload_summary(request), ensure_ascii=False, default=str, separators=(",", ":")),
     }
@@ -161,13 +169,16 @@ def enqueue_internal_event_outbox_in_session(
                     tenant_id, outbox_id, event_type, event_version, aggregate_type, aggregate_id,
                     subject_type, subject_id, idempotency_key, actor_id, actor_type,
                     source_module, source_route, source_command_id, trace_id, request_id,
-                    correlation_id, occurred_at, payload_json, payload_summary_json,
+                    correlation_id, execution_id, parent_execution_id, lane, available_at,
+                    ordering_key, fairness_key, occurred_at, payload_json, payload_summary_json,
                     status, attempt_count, max_attempts, created_at, updated_at
                 ) VALUES (
                     :tenant_id, :outbox_id, :event_type, :event_version, :aggregate_type, :aggregate_id,
                     :subject_type, :subject_id, :idempotency_key, :actor_id, :actor_type,
                     :source_module, :source_route, :source_command_id, :trace_id, :request_id,
-                    :correlation_id, CAST(:occurred_at AS timestamptz), CAST(:payload_json AS jsonb),
+                    :correlation_id, :execution_id, :parent_execution_id, :lane,
+                    CAST(:available_at AS timestamptz), :ordering_key, :fairness_key,
+                    CAST(:occurred_at AS timestamptz), CAST(:payload_json AS jsonb),
                     CAST(:payload_summary_json AS jsonb), 'pending', 0, 10,
                     CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
                 )

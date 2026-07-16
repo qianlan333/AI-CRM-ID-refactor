@@ -8,6 +8,8 @@ from typing import Any, Callable
 
 from aicrm_next.shared.runtime import production_environment, raw_database_url
 
+from .repository import open_listener_connection
+
 
 QUEUE_WAKE_CHANNEL = "aicrm_queue_wakeup"
 _SAFE_HINT_VALUE = re.compile(r"^[a-z0-9_.-]{1,80}$")
@@ -56,22 +58,12 @@ def parse_wake_hint(payload: object) -> QueueWakeHint:
     return QueueWakeHint(queue_kind=queue_kind, lane=lane)
 
 
-def _default_connect(url: str, *, autocommit: bool, application_name: str):
-    import psycopg
-
-    return psycopg.connect(
-        url,
-        autocommit=autocommit,
-        application_name=application_name,
-    )
-
-
 class PostgresQueueWakeListener:
     def __init__(
         self,
         database_url: str | None = None,
         *,
-        connect: Callable[..., Any] = _default_connect,
+        connect: Callable[..., Any] = open_listener_connection,
         application_name: str = "aicrm-queue-listener",
     ) -> None:
         self._database_url = _direct_psycopg_url(database_url or listener_database_url())

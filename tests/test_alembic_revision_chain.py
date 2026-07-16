@@ -66,7 +66,7 @@ def test_all_alembic_down_revisions_exist() -> None:
     assert missing == {}
 
 
-def test_execution_runtime_correctness_is_the_single_head() -> None:
+def test_postgres_execution_runtime_is_the_single_head() -> None:
     revisions = _migration_revisions()
     referenced = {parent for item in revisions.values() for parent in _parents(item["down_revision"])}
     heads = set(revisions) - referenced
@@ -78,7 +78,11 @@ def test_execution_runtime_correctness_is_the_single_head() -> None:
     runtime_correctness = VERSIONS / "0125_execution_runtime_correctness.py"
     runtime_source = runtime_correctness.read_text(encoding="utf-8")
 
-    assert heads == {"0125_execution_runtime_correctness"}
+    postgres_runtime = VERSIONS / "0126_postgres_execution_runtime.py"
+    postgres_runtime_source = postgres_runtime.read_text(encoding="utf-8")
+
+    assert heads == {"0126_postgres_execution_runtime"}
+    assert revisions["0126_postgres_execution_runtime"]["down_revision"] == "0125_execution_runtime_correctness"
     assert revisions["0125_execution_runtime_correctness"]["down_revision"] == "0124_agent_audit_tables"
     assert revisions["0124_agent_audit_tables"]["down_revision"] == "0123_required_physical_schema_repair"
     assert revisions["0123_required_physical_schema_repair"]["down_revision"] == "0122_internal_event_fanout_manifest"
@@ -98,6 +102,36 @@ def test_execution_runtime_correctness_is_the_single_head() -> None:
     assert "cancel_requested_at TIMESTAMPTZ" in runtime_source
     assert "uq_external_effect_attempt_open_job" in runtime_source
     assert "'dispatching'" in runtime_source
+    assert "claim_enabled BOOLEAN NOT NULL DEFAULT FALSE" in postgres_runtime_source
+    assert "'PR-2 installs in claimless standby mode'" in postgres_runtime_source
+    assert '"outbound_webhook": 4' in postgres_runtime_source
+    assert "mode = \"blocked\" if lane == \"outbound_webhook\" else \"standby\"" in postgres_runtime_source
+    assert "ALTER COLUMN available_at SET NOT NULL" in postgres_runtime_source
+    assert "historical_freeze_orphan" in postgres_runtime_source
+    assert "BEFORE UPDATE OR DELETE ON queue_policy_snapshot" in postgres_runtime_source
+    assert "aicrm_reject_queue_policy_snapshot_mutation" in postgres_runtime_source
+    for constraint_name in (
+        "ck_external_effect_job_runtime_lane",
+        "ck_internal_event_consumer_run_runtime_lane",
+        "ck_internal_event_outbox_runtime_lane",
+        "ck_webhook_inbox_runtime_lane",
+    ):
+        assert constraint_name in postgres_runtime_source
+    for index_name in (
+        "idx_internal_outbox_ordering_active",
+        "idx_webhook_inbox_ordering_active",
+    ):
+        assert f"CREATE INDEX IF NOT EXISTS {index_name}" in postgres_runtime_source
+        assert postgres_runtime_source.count(index_name) >= 2
+    for table_name in (
+        "queue_runtime_control",
+        "queue_lane_policy",
+        "queue_policy_snapshot",
+        "queue_fairness_cursor",
+        "queue_rate_scope_cooldown",
+        "queue_worker_heartbeat",
+    ):
+        assert f"CREATE TABLE IF NOT EXISTS {table_name}" in postgres_runtime_source
 
 
 def test_alembic_revision_storage_supports_deployed_revision_ids() -> None:

@@ -27,7 +27,13 @@ def _database_url() -> str:
     return str(os.getenv("AICRM_TEST_DATABASE_URL") or os.getenv("DATABASE_URL") or "").strip()
 
 
-def _plan(repo, *, key: str, adapter_name: str = "test_adapter") -> dict[str, Any]:
+def _plan(
+    repo,
+    *,
+    key: str,
+    adapter_name: str = "test_adapter",
+    max_attempts: int = 5,
+) -> dict[str, Any]:
     return ExternalEffectService(repo).plan_effect(
         effect_type=WEBHOOK_GENERIC_PUSH,
         adapter_name=adapter_name,
@@ -41,6 +47,7 @@ def _plan(repo, *, key: str, adapter_name: str = "test_adapter") -> dict[str, An
         idempotency_key=key,
         execution_mode="execute",
         status="queued",
+        max_attempts=max_attempts,
     )
 
 
@@ -182,6 +189,43 @@ def test_provider_rejection_with_response_remains_safely_retryable() -> None:
     assert updated.status == "failed_retryable"
     assert updated.next_retry_at
     assert updated.reconciliation_required is False
+
+
+def test_last_attempt_429_keeps_scope_cooldown_deadline_for_repository() -> None:
+    class CapturingRepository(InMemoryExternalEffectRepository):
+        def __init__(self) -> None:
+            super().__init__()
+            self.completed_result = None
+            self.completed_retry_at = None
+
+        def complete_dispatch(self, *, job, result, next_retry_at=None):
+            self.completed_result = result
+            self.completed_retry_at = next_retry_at
+            return super().complete_dispatch(job=job, result=result, next_retry_at=next_retry_at)
+
+    repo = CapturingRepository()
+    job = _plan(repo, key="r07-final-429", max_attempts=1)
+    adapter = _StaticAdapter(
+        ExternalEffectDispatchResult(
+            status="failed_retryable",
+            adapter_mode="execute",
+            response_summary={"status_code": 429, "retry_after_seconds": 7},
+            error_code="http_429",
+            error_message="provider throttled",
+            retry_after_seconds=7,
+            real_external_call_executed=True,
+            provider_result_received=True,
+        )
+    )
+
+    before = utcnow()
+    ExternalEffectWorker(repo, _registry(adapter), locked_by="worker-final-429").dispatch_one(job["id"])
+    updated = repo.get_job(job["id"])
+
+    assert updated is not None and updated.status == "failed_terminal"
+    assert repo.completed_result is not None and repo.completed_result.status == "failed_terminal"
+    assert repo.completed_retry_at is not None
+    assert before + timedelta(seconds=6) <= repo.completed_retry_at <= before + timedelta(seconds=8)
 
 
 class _BlockingAdapter:

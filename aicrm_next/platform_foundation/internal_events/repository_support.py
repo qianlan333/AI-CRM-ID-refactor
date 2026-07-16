@@ -352,6 +352,7 @@ class InternalEventRepository:
         *,
         locked_by: str,
         expected_lease_token: str = "",
+        expected_generation: int = 0,
     ) -> InternalEventConsumerRun | None:
         raise NotImplementedError
 
@@ -366,6 +367,7 @@ class InternalEventRepository:
         error_message: str = "",
         next_retry_at: datetime | None = None,
         expected_lease_token: str = "",
+        expected_generation: int = 0,
     ) -> InternalEventConsumerRun | None:
         raise NotImplementedError
 

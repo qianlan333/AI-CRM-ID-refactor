@@ -29,7 +29,11 @@ from aicrm_next.platform_foundation.external_effects import (
     reset_external_effect_fixture_state,
 )
 from aicrm_next.platform_foundation.external_effects.repo import InMemoryExternalEffectRepository, _public_job, build_external_effect_repository
-from aicrm_next.platform_foundation.external_effects.retry_policy import classify_error_code, retry_delay_seconds
+from aicrm_next.platform_foundation.external_effects.retry_policy import (
+    classify_error_code,
+    next_retry_at,
+    retry_delay_seconds,
+)
 from aicrm_next.platform_foundation.external_effects.worker import ExternalEffectWorker
 from aicrm_next.platform_foundation.external_effects.adapters import (
     DEFAULT_ADAPTER_REGISTRY,
@@ -466,7 +470,9 @@ def test_retry_policy_classifies_retryable_terminal_and_blocked_errors() -> None
     assert classify_error_code("payload_invalid") == "terminal"
     assert classify_error_code("adapter_blocked") == "blocked"
     assert retry_delay_seconds(0) == 60
-    assert retry_delay_seconds(3) == 3600
+    assert retry_delay_seconds(3) == 480
+    now = datetime(2026, 7, 17, tzinfo=timezone.utc)
+    assert next_retry_at(8, now=now, retry_after_seconds=7) == now + timedelta(seconds=7)
 
 
 def test_run_due_preview_dry_run_and_disabled_adapter_do_not_execute_real_call() -> None:

@@ -542,6 +542,12 @@
       "line": 186
     },
     {
+      "accessor": "os.getenv",
+      "file": "aicrm_next/platform_foundation/execution_runtime/listener.py",
+      "key": "AICRM_LISTENER_DATABASE_URL",
+      "line": 34
+    },
+    {
       "accessor": "runtime_setting",
       "file": "aicrm_next/commerce/coupons/target_refs.py",
       "key": "AICRM_NEXT_ACTION_TOKEN_SECRET",
@@ -1749,6 +1755,18 @@
     },
     {
       "accessor": "os.getenv",
+      "file": "aicrm_next/platform_foundation/external_effects/rate_limit.py",
+      "key": "WECOM_AGENT_ID",
+      "line": 59
+    },
+    {
+      "accessor": "os.getenv",
+      "file": "aicrm_next/platform_foundation/external_effects/repo_contract.py",
+      "key": "WECOM_AGENT_ID",
+      "line": 200
+    },
+    {
+      "accessor": "os.getenv",
       "file": "aicrm_next/integration_gateway/wecom_admin_auth_client.py",
       "key": "WECOM_API_BASE",
       "line": 30
@@ -1935,6 +1953,18 @@
     },
     {
       "accessor": "os.getenv",
+      "file": "aicrm_next/platform_foundation/external_effects/rate_limit.py",
+      "key": "WECOM_CORP_ID",
+      "line": 51
+    },
+    {
+      "accessor": "os.getenv",
+      "file": "aicrm_next/platform_foundation/external_effects/repo_contract.py",
+      "key": "WECOM_CORP_ID",
+      "line": 186
+    },
+    {
+      "accessor": "os.getenv",
       "file": "aicrm_next/questionnaire/application.py",
       "key": "WECOM_CORP_ID",
       "line": 305
@@ -2114,6 +2144,7 @@
     "AICRM_INTERNAL_EVENTS_LEGACY_PATH_RETIRE_AFTER_DAYS",
     "AICRM_INTERNAL_EVENTS_WORKER_BATCH_SIZE",
     "AICRM_INTERNAL_EVENT_WORKER_BATCH_SIZE",
+    "AICRM_LISTENER_DATABASE_URL",
     "AICRM_NEXT_ACTION_TOKEN_SECRET",
     "AICRM_NEXT_ADMIN_AUTH_USER_COUNT",
     "AICRM_NEXT_ALIPAY_MODE",
@@ -2912,7 +2943,7 @@
     }
   ],
   "migration_heads": [
-    "0125_execution_runtime_correctness"
+    "0126_postgres_execution_runtime"
   ],
   "openapi_components": {
     "schemas": {
@@ -18799,6 +18830,80 @@
       "operation_id": "create_admin_direct_wecom_private_send:POST:/api/admin/direct-send/wecom-private",
       "path": "/api/admin/direct-send/wecom-private",
       "route_group": "ai_assist"
+    },
+    {
+      "capability_owner": "platform_foundation",
+      "contract": {
+        "parameters": [],
+        "request_body": null,
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        }
+      },
+      "endpoint": "aicrm_next.platform_foundation.execution_runtime.api.get_execution_runtime",
+      "include_in_schema": true,
+      "kind": "api",
+      "methods": [
+        "GET"
+      ],
+      "name": "get_execution_runtime",
+      "operation_id": "get_execution_runtime:GET:/api/admin/execution-runtime",
+      "path": "/api/admin/execution-runtime",
+      "route_group": "execution_runtime"
+    },
+    {
+      "capability_owner": "platform_foundation",
+      "contract": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "execution_id",
+            "required": true,
+            "schema": {
+              "title": "Execution Id",
+              "type": "string"
+            }
+          }
+        ],
+        "request_body": null,
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        }
+      },
+      "endpoint": "aicrm_next.platform_foundation.execution_runtime.api.get_execution_timeline",
+      "include_in_schema": true,
+      "kind": "api",
+      "methods": [
+        "GET"
+      ],
+      "name": "get_execution_timeline",
+      "operation_id": "get_execution_timeline:GET:/api/admin/executions/{execution_id}",
+      "path": "/api/admin/executions/{execution_id}",
+      "route_group": "execution_runtime"
     },
     {
       "capability_owner": "commerce",
@@ -44717,10 +44822,31 @@
       "unit": "aicrm-campaign-run-due.timer"
     },
     {
+      "health_url": "",
+      "kind": "service",
+      "state": "active",
+      "stop_for_migration": true,
+      "unit": "aicrm-external-queue-runtime.service"
+    },
+    {
       "kind": "timer",
       "service": "aicrm-huangyoucan-usage-sync.service",
       "state": "approval_required",
       "unit": "aicrm-huangyoucan-usage-sync.timer"
+    },
+    {
+      "health_url": "",
+      "kind": "service",
+      "state": "active",
+      "stop_for_migration": true,
+      "unit": "aicrm-inbox-queue-runtime.service"
+    },
+    {
+      "health_url": "",
+      "kind": "service",
+      "state": "active",
+      "stop_for_migration": true,
+      "unit": "aicrm-internal-queue-runtime.service"
     },
     {
       "kind": "service",
@@ -44859,6 +44985,7 @@
       "health_url": "",
       "kind": "service",
       "state": "active",
+      "stop_for_migration": true,
       "unit": "openclaw-wecom-callback-inbox-worker.service"
     },
     {
@@ -44870,6 +44997,7 @@
       "health_url": "http://127.0.0.1:5002/health",
       "kind": "service",
       "state": "active",
+      "stop_for_migration": false,
       "unit": "openclaw-wecom-callback-ingress.service"
     },
     {
@@ -46778,6 +46906,7 @@
       "pii_level": "",
       "read_owners": [
         "admin external effect APIs",
+        "aicrm_next.platform_foundation.execution_runtime.read_model",
         "push center projection"
       ],
       "table": "external_effect_attempt",
@@ -46791,6 +46920,7 @@
       "pii_level": "internal_contact",
       "read_owners": [
         "admin external effect APIs",
+        "aicrm_next.platform_foundation.execution_runtime.read_model",
         "aicrm_next.platform_foundation.external_effects.reconciliation",
         "aicrm_next.platform_foundation.external_effects.worker",
         "push center projection"
@@ -46997,6 +47127,7 @@
       "migration_source": "0043_internal_event_queue, fan-out manifest added by 0122_internal_event_fanout_manifest",
       "pii_level": "",
       "read_owners": [
+        "aicrm_next.platform_foundation.execution_runtime.read_model",
         "aicrm_next.platform_foundation.internal_events.worker",
         "internal event admin/reconciliation APIs"
       ],
@@ -47010,6 +47141,7 @@
       "migration_source": "0043_internal_event_queue, manual retry audit hardened by 0099_internal_event_outbox_and_consumer_lease",
       "pii_level": "",
       "read_owners": [
+        "aicrm_next.platform_foundation.execution_runtime.read_model",
         "internal event admin/reconciliation APIs"
       ],
       "table": "internal_event_consumer_attempt",
@@ -47022,6 +47154,7 @@
       "migration_source": "0043_internal_event_queue, lease CAS hardened by 0099_internal_event_outbox_and_consumer_lease",
       "pii_level": "",
       "read_owners": [
+        "aicrm_next.platform_foundation.execution_runtime.read_model",
         "internal event admin/reconciliation APIs"
       ],
       "table": "internal_event_consumer_run",
@@ -47035,6 +47168,7 @@
       "pii_level": "restricted_business_payload",
       "read_owners": [
         "aicrm_next.commerce.fulfillment_reconciliation",
+        "aicrm_next.platform_foundation.execution_runtime.read_model",
         "aicrm_next.platform_foundation.internal_events.reconciliation",
         "aicrm_next.platform_foundation.internal_events.worker"
       ],
@@ -47501,6 +47635,19 @@
     {
       "domain": "platform_foundation",
       "drop_candidate": false,
+      "lifecycle": "read_model",
+      "migration_source": "0126_postgres_execution_runtime",
+      "pii_level": "none",
+      "read_owners": [
+        "PostgreSQL execution runtime fair claim selector",
+        "execution runtime admin read model"
+      ],
+      "table": "queue_fairness_cursor",
+      "write_owner": "aicrm_next.platform_foundation.execution_runtime.repository"
+    },
+    {
+      "domain": "platform_foundation",
+      "drop_candidate": false,
       "lifecycle": "audit",
       "migration_source": "0125_execution_runtime_correctness",
       "pii_level": "none",
@@ -47510,6 +47657,71 @@
       ],
       "table": "queue_history_classification",
       "write_owner": "migrations.0125_execution_runtime_correctness"
+    },
+    {
+      "domain": "platform_foundation",
+      "drop_candidate": false,
+      "lifecycle": "config",
+      "migration_source": "0126_postgres_execution_runtime",
+      "pii_level": "none",
+      "read_owners": [
+        "PostgreSQL execution runtime lane capacity gate",
+        "execution runtime admin read model"
+      ],
+      "table": "queue_lane_policy",
+      "write_owner": "aicrm_next.platform_foundation.execution_runtime"
+    },
+    {
+      "domain": "platform_foundation",
+      "drop_candidate": false,
+      "lifecycle": "config",
+      "migration_source": "0126_postgres_execution_runtime",
+      "pii_level": "none",
+      "read_owners": [
+        "PostgreSQL execution runtime policy resolver",
+        "execution runtime admin read model"
+      ],
+      "table": "queue_policy_snapshot",
+      "write_owner": "aicrm_next.platform_foundation.execution_runtime"
+    },
+    {
+      "domain": "platform_foundation",
+      "drop_candidate": false,
+      "lifecycle": "queue",
+      "migration_source": "0126_postgres_execution_runtime",
+      "pii_level": "none",
+      "read_owners": [
+        "PostgreSQL execution runtime external-effect claim selector",
+        "execution runtime admin read model"
+      ],
+      "table": "queue_rate_scope_cooldown",
+      "write_owner": "aicrm_next.platform_foundation.execution_runtime.repository"
+    },
+    {
+      "domain": "platform_foundation",
+      "drop_candidate": false,
+      "lifecycle": "config",
+      "migration_source": "0126_postgres_execution_runtime",
+      "pii_level": "none",
+      "read_owners": [
+        "PostgreSQL execution runtime generation gate",
+        "execution runtime admin read model"
+      ],
+      "table": "queue_runtime_control",
+      "write_owner": "aicrm_next.platform_foundation.execution_runtime"
+    },
+    {
+      "domain": "platform_foundation",
+      "drop_candidate": false,
+      "lifecycle": "read_model",
+      "migration_source": "0126_postgres_execution_runtime",
+      "pii_level": "none",
+      "read_owners": [
+        "execution runtime admin read model",
+        "execution runtime consistency audit"
+      ],
+      "table": "queue_worker_heartbeat",
+      "write_owner": "aicrm_next.platform_foundation.execution_runtime"
     },
     {
       "domain": "radar",
@@ -47938,6 +48150,7 @@
       "migration_source": "0054_webhook_inbox",
       "pii_level": "internal_contact",
       "read_owners": [
+        "aicrm_next.platform_foundation.execution_runtime.read_model",
         "historical schema drift guard"
       ],
       "table": "webhook_inbox",

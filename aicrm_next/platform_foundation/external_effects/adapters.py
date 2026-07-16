@@ -394,7 +394,20 @@ class WebhookAdapter:
             status = "failed_retryable"
         else:
             status = "failed_terminal"
-        response_summary = {"status_code": status_code, "real_external_call_executed": True}
+        retry_after_seconds = None
+        if status_code == 429:
+            try:
+                retry_after_seconds = max(
+                    0,
+                    min(int(float(str(response.headers.get("Retry-After") or "").strip())), 86400),
+                )
+            except (TypeError, ValueError):
+                retry_after_seconds = None
+        response_summary = {
+            "status_code": status_code,
+            "real_external_call_executed": True,
+            **({"retry_after_seconds": retry_after_seconds} if retry_after_seconds is not None else {}),
+        }
         response_json_summary = _safe_response_json_summary(response)
         if response_json_summary:
             response_summary["response_json"] = response_json_summary
@@ -407,6 +420,7 @@ class WebhookAdapter:
             response_summary=response_summary,
             error_code="" if status == "succeeded" else http_error_code(status_code),
             error_message="" if status == "succeeded" else _safe_error_message(response.text),
+            retry_after_seconds=retry_after_seconds,
             real_external_call_executed=True,
             provider_result_received=True,
         )

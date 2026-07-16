@@ -12,6 +12,18 @@
     {
       "service": "openclaw-wecom-callback-inbox-worker.service",
       "stop_for_migration": true
+    },
+    {
+      "service": "aicrm-internal-queue-runtime.service",
+      "stop_for_migration": true
+    },
+    {
+      "service": "aicrm-inbox-queue-runtime.service",
+      "stop_for_migration": true
+    },
+    {
+      "service": "aicrm-external-queue-runtime.service",
+      "stop_for_migration": true
     }
   ],
   "active_autostart": [

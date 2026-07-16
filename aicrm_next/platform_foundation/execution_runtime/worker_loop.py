@@ -28,6 +28,7 @@ class CapacityBoundWorkerLoop:
         max_concurrency: int,
         fallback_seconds: float = 30,
         reconnect_seconds: float = 1,
+        wake_filter: Callable[[Any], bool] | None = None,
     ) -> None:
         self._work_once = work_once
         self._next_due_at = next_due_at
@@ -35,18 +36,25 @@ class CapacityBoundWorkerLoop:
         self._max_concurrency = max(1, int(max_concurrency))
         self._fallback_seconds = max(0.1, float(fallback_seconds))
         self._reconnect_seconds = max(0.05, float(reconnect_seconds))
+        self._wake_filter = wake_filter or (lambda _hint: True)
 
     def run(self, *, stop_event: threading.Event) -> dict[str, int | bool]:
         wake = threading.Event()
         dirty = threading.Event()
+        listener_ready = threading.Event()
         counters = {"attempted": 0, "claimed": 0, "failed": 0}
         listener_thread = threading.Thread(
             target=self._listen,
-            args=(stop_event, wake, dirty),
+            args=(stop_event, wake, dirty, listener_ready),
             name="aicrm-queue-listener",
             daemon=True,
         )
         listener_thread.start()
+        while not listener_ready.wait(timeout=0.1):
+            if stop_event.is_set():
+                self._listener.close()
+                listener_thread.join(timeout=2)
+                return {"ok": False, "attempted": 0, "claimed": 0, "failed": 1}
         futures: set[Future[WorkAttempt]] = set()
         should_fill = True
         try:
@@ -67,7 +75,7 @@ class CapacityBoundWorkerLoop:
                         if result.claimed:
                             counters["claimed"] += 1
                             should_fill = True
-                        elif not result.ok:
+                        if not result.ok:
                             counters["failed"] += 1
 
                     if should_fill:
@@ -123,19 +131,27 @@ class CapacityBoundWorkerLoop:
         stop_event: threading.Event,
         wake: threading.Event,
         dirty: threading.Event,
+        listener_ready: threading.Event,
     ) -> None:
+        initial_listener_ready = False
         while not stop_event.is_set():
             try:
-                self._listener.connect()
-                self._listener.wait(timeout_seconds=self._fallback_seconds)
-                dirty.set()
-                wake.set()
+                if not bool(getattr(self._listener, "connected", False)):
+                    self._listener.connect()
+                    if initial_listener_ready:
+                        dirty.set()
+                        wake.set()
+                    else:
+                        initial_listener_ready = True
+                        listener_ready.set()
+                hint = self._listener.wait(timeout_seconds=self._fallback_seconds)
+                if hint is None or self._wake_filter(hint):
+                    dirty.set()
+                    wake.set()
             except Exception:
                 self._listener.close()
                 if stop_event.wait(self._reconnect_seconds):
                     return
-                dirty.set()
-                wake.set()
 
     def _deadline_timeout(self) -> float:
         due_at = self._next_due_at()
@@ -144,4 +160,4 @@ class CapacityBoundWorkerLoop:
         if due_at.tzinfo is None:
             due_at = due_at.replace(tzinfo=timezone.utc)
         seconds = (due_at.astimezone(timezone.utc) - datetime.now(timezone.utc)).total_seconds()
-        return min(self._fallback_seconds, max(0.0, seconds))
+        return min(self._fallback_seconds, max(0.25, seconds))

@@ -32,6 +32,7 @@ def build_external_effect_completed_event(
         source_module="aicrm_next.platform_foundation.external_effects",
         source_command_id=job.source_command_id,
         correlation_id=job.correlation_id,
+        parent_execution_id=job.execution_id,
         context=CommandContext(
             actor_id=job.actor_id,
             actor_type=job.actor_type,

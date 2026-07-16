@@ -174,3 +174,67 @@ def test_empty_claim_does_not_spin_until_listener_or_deadline_wakes() -> None:
     stop.set()
     thread.join(timeout=2)
     assert not thread.is_alive()
+
+
+def test_listener_is_ready_before_the_initial_drain() -> None:
+    connect_release = threading.Event()
+    stop = threading.Event()
+    called = threading.Event()
+
+    class DelayedListener(FakeListener):
+        def __init__(self) -> None:
+            super().__init__()
+            self.connected = False
+
+        def connect(self) -> None:
+            connect_release.wait(timeout=1)
+            self.connected = True
+
+        def close(self) -> None:
+            self.connected = False
+            super().close()
+
+    def no_work() -> WorkAttempt:
+        called.set()
+        stop.set()
+        return WorkAttempt(claimed=False, ok=True)
+
+    loop = CapacityBoundWorkerLoop(
+        work_once=no_work,
+        next_due_at=lambda: None,
+        listener=DelayedListener(),
+        max_concurrency=1,
+        fallback_seconds=30,
+    )
+    thread = threading.Thread(target=loop.run, kwargs={"stop_event": stop}, daemon=True)
+    thread.start()
+    assert called.wait(timeout=0.1) is False
+    connect_release.set()
+    assert called.wait(timeout=1)
+    thread.join(timeout=2)
+    assert not thread.is_alive()
+
+
+def test_claimed_failure_marks_the_worker_loop_failed() -> None:
+    stop = threading.Event()
+    attempts = 0
+
+    def work_once() -> WorkAttempt:
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            return WorkAttempt(claimed=True, ok=False, item_id="failed", error="handler_failed")
+        stop.set()
+        return WorkAttempt(claimed=False, ok=True)
+
+    result = CapacityBoundWorkerLoop(
+        work_once=work_once,
+        next_due_at=lambda: datetime.now(timezone.utc),
+        listener=FakeListener(),
+        max_concurrency=1,
+        fallback_seconds=0.1,
+    ).run(stop_event=stop)
+
+    assert result["claimed"] == 1
+    assert result["failed"] == 1
+    assert result["ok"] is False

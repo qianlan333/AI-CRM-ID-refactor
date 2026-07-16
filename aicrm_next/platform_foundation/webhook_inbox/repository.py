@@ -462,14 +462,19 @@ class PostgresWebhookInboxRepository:
                     finished_at = CURRENT_TIMESTAMP,
                     updated_at = CURRENT_TIMESTAMP
                 WHERE id = %s
+                  AND (%s = 0 OR status = 'processing')
                   AND (%s = '' OR lease_token = %s)
-                  AND (%s = 0 OR worker_generation = %s)
+                  AND (
+                      %s = 0
+                      OR (worker_generation = %s AND lease_expires_at > CURRENT_TIMESTAMP)
+                  )
                 RETURNING *
                 """,
                 (
                     processing_summary_json is not None,
                     _json(processing_summary_json or {}),
                     int(inbox_id),
+                    int(expected_generation),
                     _text(expected_lease_token),
                     _text(expected_lease_token),
                     int(expected_generation),
@@ -517,6 +522,10 @@ class PostgresWebhookInboxRepository:
                     lease_token = '',
                     lease_expires_at = NULL,
                     heartbeat_at = NULL,
+                    worker_generation = CASE
+                        WHEN %s AND attempt_count + 1 < max_attempts THEN 0
+                        ELSE worker_generation
+                    END,
                     last_error_code = %s,
                     last_error_message = %s,
                     finished_at = CASE
@@ -525,8 +534,12 @@ class PostgresWebhookInboxRepository:
                     END,
                     updated_at = CURRENT_TIMESTAMP
                 WHERE id = %s
+                  AND (%s = 0 OR status = 'processing')
                   AND (%s = '' OR lease_token = %s)
-                  AND (%s = 0 OR worker_generation = %s)
+                  AND (
+                      %s = 0
+                      OR (worker_generation = %s AND lease_expires_at > CURRENT_TIMESTAMP)
+                  )
                 RETURNING *
                 """,
                 (
@@ -535,10 +548,12 @@ class PostgresWebhookInboxRepository:
                     next_retry_at,
                     bool(retryable),
                     next_retry_at,
+                    bool(retryable),
                     _text(error_code)[:120],
                     _text(error_message)[:2000],
                     bool(retryable),
                     int(inbox_id),
+                    int(expected_generation),
                     _text(expected_lease_token),
                     _text(expected_lease_token),
                     int(expected_generation),
@@ -602,6 +617,7 @@ class PostgresWebhookInboxRepository:
                     lease_token = '',
                     lease_expires_at = NULL,
                     heartbeat_at = NULL,
+                    worker_generation = 0,
                     last_error_code = 'operator_retry',
                     last_error_message = %s,
                     finished_at = NULL,
@@ -982,9 +998,16 @@ class InMemoryWebhookInboxRepository:
         now = datetime.now(timezone.utc)
         for row in self.rows:
             if int(row.get("id") or 0) == int(inbox_id):
+                if expected_generation and row.get("status") != "processing":
+                    return None
                 if expected_lease_token and row.get("lease_token") != expected_lease_token:
                     return None
                 if expected_generation and int(row.get("worker_generation") or 0) != int(expected_generation):
+                    return None
+                if expected_generation and (
+                    not isinstance(row.get("lease_expires_at"), datetime)
+                    or row["lease_expires_at"] <= now
+                ):
                     return None
                 update = {
                     "status": "succeeded",
@@ -1193,9 +1216,16 @@ class InMemoryWebhookInboxRepository:
         now = datetime.now(timezone.utc)
         for row in self.rows:
             if int(row.get("id") or 0) == int(inbox_id):
+                if expected_generation and row.get("status") != "processing":
+                    return None
                 if expected_lease_token and row.get("lease_token") != expected_lease_token:
                     return None
                 if expected_generation and int(row.get("worker_generation") or 0) != int(expected_generation):
+                    return None
+                if expected_generation and (
+                    not isinstance(row.get("lease_expires_at"), datetime)
+                    or row["lease_expires_at"] <= now
+                ):
                     return None
                 attempt_count = int(row.get("attempt_count") or 0) + 1
                 row["attempt_count"] = attempt_count

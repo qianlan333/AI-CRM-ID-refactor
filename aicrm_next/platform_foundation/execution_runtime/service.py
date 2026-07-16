@@ -126,13 +126,23 @@ class QueueRuntimeService:
                 worker_id=lane_worker_id,
                 listener=listener,
             ),
-            next_due_at=lambda: self._repo.next_due_at(
-                queue_kind=self._queue_kind,
-                lane=lane.name,
+            next_due_at=lambda: (
+                None
+                if self._claimless
+                else self._repo.next_due_at(
+                    queue_kind=self._queue_kind,
+                    lane=lane.name,
+                    generation=self._generation,
+                )
             ),
             listener=listener,
             max_concurrency=lane.max_in_flight,
             fallback_seconds=self._fallback_seconds,
+            wake_filter=lambda hint: (
+                str(getattr(hint, "queue_kind", "all") or "all")
+                in {"all", self._queue_kind}
+                and str(getattr(hint, "lane", "") or "") in {"", lane.name}
+            ),
         )
         try:
             return loop.run(stop_event=stop_event)

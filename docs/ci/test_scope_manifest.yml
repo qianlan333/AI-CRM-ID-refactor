@@ -1473,6 +1473,44 @@
       "architecture_gate": "full"
     },
     {
+      "name": "postgres_execution_runtime",
+      "paths": [
+        "aicrm_next/platform_foundation/execution_runtime/**",
+        "aicrm_next/platform_foundation/external_effects/rate_limit.py",
+        "deploy/aicrm-*-queue-runtime.service",
+        "deploy/production_runtime_units.json",
+        "migrations/versions/0126_postgres_execution_runtime.py",
+        "scripts/run_execution_runtime.py",
+        "tests/test_execution_runtime_*.py",
+        "tests/test_queue_runtime_systemd.py",
+        "tests/test_run_execution_runtime.py"
+      ],
+      "python_tests": [
+        "tests/test_execution_runtime_api.py",
+        "tests/test_execution_runtime_heartbeat.py",
+        "tests/test_execution_runtime_listener.py",
+        "tests/test_execution_runtime_postgres.py",
+        "tests/test_execution_runtime_service.py",
+        "tests/test_execution_runtime_worker_loop.py",
+        "tests/test_external_effects_mvp.py",
+        "tests/test_queue_runtime_systemd.py",
+        "tests/test_run_execution_runtime.py",
+        "tests/test_alembic_revision_chain.py",
+        "tests/test_database_bootstrap.py",
+        "tests/test_data_table_lifecycle_guard.py",
+        "tests/test_runtime_contract_inventory.py",
+        "tests/test_runtime_units_autostart.py",
+        "tests/test_deploy_workflow_contract.py",
+        "tests/test_route_ownership_manifest.py",
+        "tests/test_route_policy_contract.py",
+        "tests/test_router_registry_contract.py",
+        "tests/test_sql_static_guard.py"
+      ],
+      "needs_postgres": true,
+      "needs_full_ci": true,
+      "architecture_gate": "full"
+    },
+    {
       "name": "commerce_fulfillment_reliability",
       "paths": [
         "aicrm_next/public_product/h5_wechat_pay.py",

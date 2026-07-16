@@ -4,10 +4,10 @@ from __future__ import annotations
 import argparse
 import os
 import signal
+import socket
 import sys
 import threading
 from typing import Any
-from uuid import uuid4
 
 try:
     from scripts.script_runtime import ensure_repo_root_on_path, print_json, read_int_env
@@ -62,6 +62,8 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     args = parser.parse_args(argv)
     if args.generation < 0:
         parser.error("--generation must be >= 0")
+    if args.execute and args.generation <= 0:
+        parser.error("--execute requires --generation > 0")
     if args.execute and not _truthy(os.getenv(EXECUTE_ENV, "")):
         parser.error(f"--execute requires {EXECUTE_ENV}=1")
     if args.queue_kind == "external" and args.execute and not args.test_only:
@@ -112,7 +114,7 @@ def _service(
 
 def _build_services(args: argparse.Namespace) -> tuple[QueueRuntimeService, ...]:
     claimless = not bool(args.execute)
-    worker_id = f"{args.queue_kind}-{uuid4().hex[:10]}"
+    worker_id = f"{socket.gethostname()}:{args.queue_kind}"
     if args.queue_kind == "external":
         worker = ExternalEffectWorker(
             adapter_registry=build_external_effect_adapter_registry(),
