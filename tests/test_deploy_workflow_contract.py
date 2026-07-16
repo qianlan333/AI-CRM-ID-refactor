@@ -322,7 +322,7 @@ def test_id_validation_noop_revalidates_origin_checkout_provenance_and_runtime()
 
 def test_id_validation_deploy_pins_authenticated_server_host_key() -> None:
     workflow = TEST_DEPLOY_WORKFLOW.read_text(encoding="utf-8")
-    expected = "SHA256:DeE1h5Q7hcKv2XpZTsiwhLUSElTEx9nxHOkkRme3vww"
+    expected = "SHA256:NXSJUveGoNy1lDsa+eOKho1h0ythB+pKTyijv8/KfU0"
 
     assert f"EXPECTED_SSH_HOST_FINGERPRINT: {expected}" in workflow
     assert workflow.count("fingerprint: ${{ env.EXPECTED_SSH_HOST_FINGERPRINT }}") == 3
