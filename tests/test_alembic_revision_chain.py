@@ -61,7 +61,7 @@ def test_all_alembic_down_revisions_exist() -> None:
     assert missing == {}
 
 
-def test_sidebar_customer_timeline_is_the_single_head() -> None:
+def test_execution_timeline_graph_indexes_are_the_single_head() -> None:
     revisions = _migration_revisions()
     referenced = {parent for item in revisions.values() for parent in _parents(item["down_revision"])}
     heads = set(revisions) - referenced
@@ -89,8 +89,11 @@ def test_sidebar_customer_timeline_is_the_single_head() -> None:
     external_scope_source = external_scope.read_text(encoding="utf-8")
     sidebar_timeline = VERSIONS / "0133_sidebar_customer_timeline.py"
     sidebar_timeline_source = sidebar_timeline.read_text(encoding="utf-8")
+    timeline_indexes = VERSIONS / "0134_execution_timeline_graph_indexes.py"
+    timeline_indexes_source = timeline_indexes.read_text(encoding="utf-8")
 
-    assert heads == {"0133_sidebar_customer_timeline"}
+    assert heads == {"0134_execution_timeline_graph_indexes"}
+    assert revisions["0134_execution_timeline_graph_indexes"]["down_revision"] == "0133_sidebar_customer_timeline"
     assert revisions["0133_sidebar_customer_timeline"]["down_revision"] == "0132_external_claim_scope_policy"
     assert revisions["0132_external_claim_scope_policy"]["down_revision"] == "0131_external_effect_continuation_fanout"
     assert revisions["0131_external_effect_continuation_fanout"]["down_revision"] == "0130_welcome_media_dependencies"
@@ -144,6 +147,17 @@ def test_sidebar_customer_timeline_is_the_single_head() -> None:
     assert "ix_customer_timeline_event_next_unionid_time_id" in sidebar_timeline_source
     assert "ROW_NUMBER() OVER" in sidebar_timeline_source
     assert "queue-v2-test-loopback" in external_scope_source
+    assert "execution timeline index migration requires standby generation 0" in timeline_indexes_source
+    for index_name in (
+        "idx_external_effect_parent_execution",
+        "idx_internal_event_parent_execution",
+        "idx_internal_run_parent_execution",
+        "idx_internal_outbox_parent_execution",
+        "idx_webhook_inbox_parent_execution",
+    ):
+        assert index_name in timeline_indexes_source
+    assert "CREATE INDEX IF NOT EXISTS {index_name}" in timeline_indexes_source
+    assert "DROP INDEX IF EXISTS {index_name}" in timeline_indexes_source
     for constraint_name in (
         "ck_external_effect_job_runtime_lane",
         "ck_internal_event_consumer_run_runtime_lane",

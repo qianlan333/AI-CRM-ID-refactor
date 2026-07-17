@@ -14,6 +14,9 @@ from .repository import _default_connect, _psycopg_url, external_claim_scope_pre
 
 
 PROVENANCE_PATH = Path("/home/ubuntu/.aicrm-releases/id-validation.json")
+TIMELINE_MAX_DEPTH = 12
+TIMELINE_MAX_EXECUTION_NODES = 256
+TIMELINE_MAX_ITEMS = 1024
 
 
 def queue_policy_base_eligible_predicate(
@@ -225,19 +228,103 @@ class ExecutionRuntimeReadModel:
         if not normalized:
             return None
         with self._connect(self._database_url) as connection:
-            rows = connection.execute(self._timeline_sql(), (normalized,) * 14).fetchall()
+            graph = self._discover_execution_graph(connection, normalized)
+            execution_ids = sorted(graph["execution_ids"])
+            rows = connection.execute(
+                self._timeline_sql(),
+                (*([execution_ids] * 7), TIMELINE_MAX_ITEMS + 1),
+            ).fetchall()
         if not rows:
             return None
+        items_truncated = len(rows) > TIMELINE_MAX_ITEMS
+        rows = rows[:TIMELINE_MAX_ITEMS]
         items = [self._timeline_payload(row) for row in rows]
-        parent_ids = sorted({str(row.get("parent_execution_id") or "") for row in rows if row.get("parent_execution_id")})
-        child_ids = sorted({str(row.get("execution_id") or "") for row in rows if row.get("execution_id") and str(row.get("execution_id")) != normalized})
+        parent_ids = sorted({parent_id for _, parent_id in graph["edges"]})
+        child_ids = sorted(set(execution_ids) - {normalized})
         return {
             "execution_id": normalized,
             "parent_execution_ids": parent_ids,
             "child_execution_ids": child_ids,
             "items": items,
+            "graph": {
+                "execution_node_count": len(execution_ids),
+                "edge_count": len(graph["edges"]),
+                "max_depth_reached": int(graph["max_depth_reached"]),
+                "max_depth": TIMELINE_MAX_DEPTH,
+                "max_execution_nodes": TIMELINE_MAX_EXECUTION_NODES,
+                "max_items": TIMELINE_MAX_ITEMS,
+                "truncated": bool(graph["truncated"] or items_truncated),
+            },
             "pii_in_output": False,
             "secrets_in_output": False,
+        }
+
+    @classmethod
+    def _discover_execution_graph(cls, connection: Any, root_execution_id: str) -> dict[str, Any]:
+        """Discover the bounded connected execution graph around one public root.
+
+        Parent links are traversed in both directions so the same endpoint works
+        when an operator opens a root, an intermediate event, or a leaf run.  A
+        global visited set prevents cycles and caps database work independently
+        of malformed historical links.
+        """
+
+        execution_ids = {root_execution_id}
+        frontier = {root_execution_id}
+        edges: set[tuple[str, str]] = set()
+        max_depth_reached = 0
+        truncated = False
+
+        for depth in range(1, TIMELINE_MAX_DEPTH + 1):
+            if not frontier:
+                break
+            frontier_ids = sorted(frontier)
+            per_lookup_limit = TIMELINE_MAX_EXECUTION_NODES + 1
+            rows = connection.execute(
+                cls._timeline_links_sql(),
+                (
+                    *(
+                        value
+                        for _ in range(10)
+                        for value in (frontier_ids, per_lookup_limit)
+                    ),
+                    per_lookup_limit,
+                ),
+            ).fetchall()
+            discovered: set[str] = set()
+            for row in rows:
+                child_execution_id = str(row.get("execution_id") or "").strip()
+                parent_execution_id = str(row.get("parent_execution_id") or "").strip()
+                if child_execution_id and parent_execution_id:
+                    edges.add((child_execution_id, parent_execution_id))
+                for candidate in (child_execution_id, parent_execution_id):
+                    if candidate and candidate not in execution_ids:
+                        discovered.add(candidate)
+
+            remaining = TIMELINE_MAX_EXECUTION_NODES - len(execution_ids)
+            if len(discovered) > remaining:
+                truncated = True
+                discovered = set(sorted(discovered)[:remaining])
+            execution_ids.update(discovered)
+            frontier = discovered
+            if discovered:
+                max_depth_reached = depth
+            if len(execution_ids) >= TIMELINE_MAX_EXECUTION_NODES:
+                truncated = truncated or bool(frontier)
+                break
+        else:
+            truncated = truncated or bool(frontier)
+
+        bounded_edges = {
+            edge
+            for edge in edges
+            if edge[0] in execution_ids and edge[1] in execution_ids
+        }
+        return {
+            "execution_ids": execution_ids,
+            "edges": bounded_edges,
+            "max_depth_reached": max_depth_reached,
+            "truncated": truncated,
         }
 
     @staticmethod
@@ -398,6 +485,106 @@ class ExecutionRuntimeReadModel:
         """
 
     @staticmethod
+    def _timeline_links_sql() -> str:
+        return """
+            SELECT DISTINCT execution_id, parent_execution_id
+            FROM (
+                (
+                SELECT event.execution_id, event.parent_execution_id
+                FROM internal_event event
+                WHERE event.execution_id <> ''
+                  AND event.execution_id = ANY(%s::text[])
+                ORDER BY event.execution_id, event.parent_execution_id
+                LIMIT %s
+                )
+                UNION ALL
+                (
+                SELECT event.execution_id, event.parent_execution_id
+                FROM internal_event event
+                WHERE event.parent_execution_id <> ''
+                  AND event.parent_execution_id = ANY(%s::text[])
+                ORDER BY event.parent_execution_id, event.execution_id
+                LIMIT %s
+                )
+                UNION ALL
+                (
+                SELECT outbox.execution_id, outbox.parent_execution_id
+                FROM internal_event_outbox outbox
+                WHERE outbox.execution_id <> ''
+                  AND outbox.execution_id = ANY(%s::text[])
+                ORDER BY outbox.execution_id, outbox.parent_execution_id
+                LIMIT %s
+                )
+                UNION ALL
+                (
+                SELECT outbox.execution_id, outbox.parent_execution_id
+                FROM internal_event_outbox outbox
+                WHERE outbox.parent_execution_id <> ''
+                  AND outbox.parent_execution_id = ANY(%s::text[])
+                ORDER BY outbox.parent_execution_id, outbox.execution_id
+                LIMIT %s
+                )
+                UNION ALL
+                (
+                SELECT run.execution_id, run.parent_execution_id
+                FROM internal_event_consumer_run run
+                WHERE run.execution_id <> ''
+                  AND run.execution_id = ANY(%s::text[])
+                ORDER BY run.execution_id, run.parent_execution_id
+                LIMIT %s
+                )
+                UNION ALL
+                (
+                SELECT run.execution_id, run.parent_execution_id
+                FROM internal_event_consumer_run run
+                WHERE run.parent_execution_id <> ''
+                  AND run.parent_execution_id = ANY(%s::text[])
+                ORDER BY run.parent_execution_id, run.execution_id
+                LIMIT %s
+                )
+                UNION ALL
+                (
+                SELECT job.execution_id, job.parent_execution_id
+                FROM external_effect_job job
+                WHERE job.execution_id <> ''
+                  AND job.execution_id = ANY(%s::text[])
+                ORDER BY job.execution_id, job.parent_execution_id
+                LIMIT %s
+                )
+                UNION ALL
+                (
+                SELECT job.execution_id, job.parent_execution_id
+                FROM external_effect_job job
+                WHERE job.parent_execution_id <> ''
+                  AND job.parent_execution_id = ANY(%s::text[])
+                ORDER BY job.parent_execution_id, job.execution_id
+                LIMIT %s
+                )
+                UNION ALL
+                (
+                SELECT inbox.execution_id, inbox.parent_execution_id
+                FROM webhook_inbox inbox
+                WHERE inbox.execution_id <> ''
+                  AND inbox.execution_id = ANY(%s::text[])
+                ORDER BY inbox.execution_id, inbox.parent_execution_id
+                LIMIT %s
+                )
+                UNION ALL
+                (
+                SELECT inbox.execution_id, inbox.parent_execution_id
+                FROM webhook_inbox inbox
+                WHERE inbox.parent_execution_id <> ''
+                  AND inbox.parent_execution_id = ANY(%s::text[])
+                ORDER BY inbox.parent_execution_id, inbox.execution_id
+                LIMIT %s
+                )
+            ) links
+            WHERE execution_id <> '' OR parent_execution_id <> ''
+            ORDER BY execution_id ASC, parent_execution_id ASC
+            LIMIT %s
+        """
+
+    @staticmethod
     def _timeline_sql() -> str:
         return """
             SELECT 'internal_event' AS item_kind, event.id::TEXT AS item_id,
@@ -407,21 +594,24 @@ class ExecutionRuntimeReadModel:
                    event.created_at, event.created_at AS updated_at,
                    event.payload_summary_json AS summary_json
             FROM internal_event event
-            WHERE event.execution_id = %s OR event.parent_execution_id = %s
+            WHERE event.execution_id <> ''
+              AND event.execution_id = ANY(%s::text[])
             UNION ALL
             SELECT 'internal_outbox', outbox.id::TEXT, outbox.execution_id,
                    outbox.parent_execution_id, outbox.event_type, outbox.status,
                    outbox.lane, outbox.available_at, outbox.created_at, outbox.updated_at,
                    outbox.payload_summary_json
             FROM internal_event_outbox outbox
-            WHERE outbox.execution_id = %s OR outbox.parent_execution_id = %s
+            WHERE outbox.execution_id <> ''
+              AND outbox.execution_id = ANY(%s::text[])
             UNION ALL
             SELECT 'internal_consumer_run', run.id::TEXT, run.execution_id,
                    run.parent_execution_id, run.consumer_name, run.status,
                    run.lane, run.available_at, run.created_at, run.updated_at,
                    run.result_summary_json
             FROM internal_event_consumer_run run
-            WHERE run.execution_id = %s OR run.parent_execution_id = %s
+            WHERE run.execution_id <> ''
+              AND run.execution_id = ANY(%s::text[])
             UNION ALL
             SELECT 'internal_consumer_attempt', attempt.attempt_id, run.execution_id,
                    run.parent_execution_id, attempt.consumer_name, attempt.status,
@@ -430,14 +620,16 @@ class ExecutionRuntimeReadModel:
                    attempt.request_summary_json || attempt.response_summary_json
             FROM internal_event_consumer_attempt attempt
             JOIN internal_event_consumer_run run ON run.id = attempt.consumer_run_id
-            WHERE run.execution_id = %s OR run.parent_execution_id = %s
+            WHERE run.execution_id <> ''
+              AND run.execution_id = ANY(%s::text[])
             UNION ALL
             SELECT 'external_effect', job.id::TEXT, job.execution_id,
                    job.parent_execution_id, job.effect_type, job.status,
                    job.lane, job.available_at, job.created_at, job.updated_at,
                    job.payload_summary_json || job.result_summary_json
             FROM external_effect_job job
-            WHERE job.execution_id = %s OR job.parent_execution_id = %s
+            WHERE job.execution_id <> ''
+              AND job.execution_id = ANY(%s::text[])
             UNION ALL
             SELECT 'external_effect_attempt', attempt.attempt_id, job.execution_id,
                    job.parent_execution_id, attempt.operation, attempt.status,
@@ -446,15 +638,18 @@ class ExecutionRuntimeReadModel:
                    attempt.request_summary_json || attempt.response_summary_json
             FROM external_effect_attempt attempt
             JOIN external_effect_job job ON job.id = attempt.job_id
-            WHERE job.execution_id = %s OR job.parent_execution_id = %s
+            WHERE job.execution_id <> ''
+              AND job.execution_id = ANY(%s::text[])
             UNION ALL
             SELECT 'webhook_inbox', inbox.id::TEXT, inbox.execution_id,
                    inbox.parent_execution_id, inbox.event_family, inbox.status,
                    inbox.lane, inbox.available_at, inbox.created_at, inbox.updated_at,
                    inbox.payload_summary_json || inbox.processing_summary_json
             FROM webhook_inbox inbox
-            WHERE inbox.execution_id = %s OR inbox.parent_execution_id = %s
+            WHERE inbox.execution_id <> ''
+              AND inbox.execution_id = ANY(%s::text[])
             ORDER BY created_at ASC, item_kind ASC, item_id ASC
+            LIMIT %s
         """
 
     @staticmethod
@@ -552,6 +747,9 @@ class ExecutionRuntimeReadModel:
 
 __all__ = [
     "ExecutionRuntimeReadModel",
+    "TIMELINE_MAX_DEPTH",
+    "TIMELINE_MAX_EXECUTION_NODES",
+    "TIMELINE_MAX_ITEMS",
     "queue_policy_base_eligible_predicate",
     "queue_policy_eligible_predicate",
     "queue_policy_external_scope_predicate",

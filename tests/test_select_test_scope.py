@@ -9,6 +9,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 SELECTOR = ROOT / "scripts" / "ci" / "select_test_scope.py"
+MANIFEST = ROOT / "docs" / "ci" / "test_scope_manifest.yml"
 
 
 def _select(
@@ -525,15 +526,18 @@ def test_welcome_media_dependency_migration_has_a_permanent_postgres_scope() -> 
     assert result["architecture_gate"] == "full"
 
 
-def test_external_claim_scope_policy_migration_has_a_permanent_postgres_scope() -> None:
+def test_execution_runtime_policy_and_timeline_migrations_have_a_permanent_postgres_scope() -> None:
     result = _select(
         "migrations/versions/0132_external_claim_scope_policy.py",
+        "migrations/versions/0134_execution_timeline_graph_indexes.py",
         "scripts/ci/check_queue_runtime_cutover_kernel.py",
+        "tests/test_execution_timeline_graph_postgres.py",
     )
 
     assert result["unmatched_files"] == []
     assert "postgres_execution_runtime" in result["matched_scopes"]
     assert "tests/test_execution_runtime_postgres.py" in result["python_tests"]
+    assert "tests/test_execution_timeline_graph_postgres.py" in result["python_tests"]
     assert "tests/test_queue_runtime_cutover_postgres.py" in result["python_tests"]
     assert "tests/test_database_bootstrap.py" in result["python_tests"]
     assert "tests/test_alembic_revision_chain.py" in result["python_tests"]
@@ -1120,6 +1124,20 @@ def test_pytest_marker_configuration_change_forces_full_ci() -> None:
     assert result["needs_full_ci"] is True
 
 
+def test_ci_manifest_only_references_existing_test_files() -> None:
+    manifest = json.loads(MANIFEST.read_text(encoding="utf-8"))
+
+    missing = sorted(
+        (scope["name"], test_path)
+        for scope in manifest["scopes"]
+        for key in ("python_tests", "frontend_tests")
+        for test_path in scope.get(key, [])
+        if not (ROOT / test_path).is_file()
+    )
+
+    assert missing == []
+
+
 def test_frontend_typescript_change_runs_frontend_tests_and_build() -> None:
     result = _select("frontend/admin/push_center/push_center_status.ts")
 
@@ -1248,7 +1266,6 @@ def test_private_auth_cutover_maps_every_runtime_caller_and_regression_file() ->
         "tests/test_cloud_orchestrator_run_due_preview.py",
         "tests/test_external_orders_api.py",
         "tests/test_internal_oauth_client_purpose.py",
-        "tests/test_internal_service_token_purpose.py",
         "tests/test_next_admin_jobs_native.py",
         "tests/test_run_message_activity_sync_script.py",
         "tests/test_wecom_tag_read_selectors.py",

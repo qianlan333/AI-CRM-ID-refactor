@@ -693,6 +693,9 @@ repositories:
       - internal_event
       - internal_event_consumer_run
       - internal_event_outbox
+      - queue_lane_policy
+      - queue_rate_scope_cooldown
+      - queue_runtime_control
       - webhook_inbox
     table_writes: []
   aicrm_next/platform_foundation/webhook_inbox/repository.py:
