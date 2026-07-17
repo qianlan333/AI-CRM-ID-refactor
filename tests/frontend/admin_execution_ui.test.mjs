@@ -57,7 +57,10 @@ assert.equal(ui.csvCell("=HYPERLINK(\"https://evil.invalid\")"), '"\'=HYPERLINK(
 assert.equal(ui.csvCell("  +1+1"), '"\'  +1+1"');
 assert.equal(ui.csvCell({ safe: "value" }), '"{""safe"":""value""}"');
 assert.match(ui.QueueStateBadge("waiting", "waiting_for_lane_capacity"), /正常排队/);
-assert.match(ui.CapacitySummary({ lanes: [{ lane: "wecom_bulk", max_in_flight: 1, in_flight: 0 }] }, ["wecom_bulk"]), /wecom_bulk/);
+const capacity = ui.CapacitySummary({ lanes: [{ lane: "wecom_bulk", max_in_flight: 1, in_flight: 0, held: 2, policy_gated: 3 }] }, ["wecom_bulk"]);
+assert.match(capacity, /wecom_bulk/);
+assert.match(capacity, /Policy Gate/);
+assert.match(capacity, /2 \/ 3/);
 assert.match(ui.ExecutionTimeline({ items: [{ item_kind: "external_effect", item_type: "wecom.message.group.send", status: "queued" }] }), /wecom\.message\.group\.send/);
 
 const params = ui.formParams(null, { section: "group_ops", offset: 0, empty: "" });

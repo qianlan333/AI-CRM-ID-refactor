@@ -11,6 +11,13 @@ from typing import Any, Callable
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from aicrm_next.platform_foundation.execution_runtime.read_model import (
+    queue_policy_eligible_predicate,
+)
+from aicrm_next.platform_foundation.execution_runtime.repository import (
+    external_claim_scope_predicate,
+    external_effect_claim_order_sql,
+)
 from aicrm_next.shared.db_session import get_session_factory
 from aicrm_next.shared.runtime import require_signing_secret
 from aicrm_next.shared.sensitive_data import redact_sensitive_data, redact_sensitive_text
@@ -49,6 +56,18 @@ SQL_FILTER_KEYS = (
     "created_from",
     "created_to",
 )
+
+
+def _external_scope_gated_sql(*, row_alias: str, control_alias: str) -> str:
+    scope_allowed = external_claim_scope_predicate(
+        row_alias=row_alias,
+        scope_expression=f"{control_alias}.external_claim_scope",
+    )
+    return f"({row_alias}.status IN ('queued', 'failed_retryable') AND NOT ({scope_allowed}))"
+
+
+_DETAIL_EXTERNAL_SCOPE_GATED_SQL = _external_scope_gated_sql(row_alias="e", control_alias="control")
+_PAGE_EXTERNAL_SCOPE_GATED_SQL = _external_scope_gated_sql(row_alias="e", control_alias="control")
 
 
 _BASE_CTE = r"""
@@ -156,6 +175,23 @@ WITH seed_group AS (
         e.policy_version,
         e.cancel_requested_at,
         e.provider_call_started_at,
+        (__EXTERNAL_SCOPE_GATED_SQL__) AS policy_gated,
+        CASE
+            WHEN e.hold_reason <> '' THEN e.hold_reason
+            WHEN (__EXTERNAL_SCOPE_GATED_SQL__) THEN 'external_claim_scope_policy_gated'
+            WHEN e.status = 'unknown_after_dispatch' THEN 'provider_result_unknown'
+            WHEN e.status = 'dispatching' THEN 'provider_call_in_flight'
+            WHEN EXISTS (
+                SELECT 1
+                FROM queue_rate_scope_cooldown cooldown
+                WHERE cooldown.rate_scope_key = e.rate_scope_key
+                  AND cooldown.blocked_until > CURRENT_TIMESTAMP
+            ) THEN 'provider_rate_limited'
+            WHEN e.available_at > CURRENT_TIMESTAMP THEN 'not_yet_eligible'
+            WHEN e.status = 'queued' THEN 'waiting_for_lane_capacity'
+            WHEN e.status = 'failed_retryable' THEN 'retry_wait'
+            ELSE ''
+        END AS wait_reason,
         EXISTS (
             SELECT 1
             FROM queue_rate_scope_cooldown cooldown
@@ -175,6 +211,7 @@ WITH seed_group AS (
             THEN 'execution:' || COALESCE(NULLIF(e.parent_execution_id, ''), e.execution_id)
         ELSE 'external_effect_job:' || e.id::text
     END
+    JOIN queue_runtime_control control ON control.singleton = TRUE
 ), external_base AS (
     SELECT f.*,
         jsonb_build_object(
@@ -271,6 +308,15 @@ WITH seed_group AS (
         ''::text AS policy_version,
         NULL::timestamptz AS cancel_requested_at,
         NULL::timestamptz AS provider_call_started_at,
+        FALSE AS policy_gated,
+        CASE
+            WHEN b.hold_reason <> '' THEN b.hold_reason
+            WHEN b.status = 'delegated' THEN 'owned_by_external_effect'
+            WHEN b.status = 'waiting_approval' THEN 'waiting_for_approval'
+            WHEN b.status = 'queued' THEN 'waiting_for_external_effect_delegation'
+            WHEN b.status = 'unknown_after_dispatch' THEN 'provider_result_unknown'
+            ELSE ''
+        END AS wait_reason,
         FALSE AS rate_limited,
         FALSE AS is_shadow,
         TRUE AS is_delivery_effect,
@@ -333,7 +379,8 @@ WITH seed_group AS (
         last_error_code, last_error_message, scheduled_at, next_retry_at, created_at,
         updated_at, executed_at, cancelled_at, payload_summary_json, available_at,
         execution_id, parent_execution_id, lane, row_version, hold_reason,
-        policy_version, cancel_requested_at, provider_call_started_at, rate_limited,
+        policy_version, cancel_requested_at, provider_call_started_at, policy_gated,
+        wait_reason, rate_limited,
         is_shadow, is_delivery_effect, primary_rank, record_json,
         outbound_task_json
     FROM external_base
@@ -347,7 +394,8 @@ WITH seed_group AS (
         last_error_code, last_error_message, scheduled_at, next_retry_at, created_at,
         updated_at, executed_at, cancelled_at, payload_summary_json, available_at,
         execution_id, parent_execution_id, lane, row_version, hold_reason,
-        policy_version, cancel_requested_at, provider_call_started_at, rate_limited,
+        policy_version, cancel_requested_at, provider_call_started_at, policy_gated,
+        wait_reason, rate_limited,
         is_shadow, is_delivery_effect, primary_rank, record_json,
         outbound_task_json
     FROM broadcast_base
@@ -397,6 +445,7 @@ WITH seed_group AS (
         BOOL_OR(b.raw_status IN ('claimed', 'running', 'dispatching')) AS has_running,
         BOOL_OR(b.raw_status = 'failed_retryable') AS has_retry_wait,
         BOOL_OR(b.hold_reason <> '') AS has_hold,
+        BOOL_OR(b.policy_gated) AS has_policy_gated,
         BOOL_OR(b.rate_limited) AS has_rate_limit,
         BOOL_OR(b.raw_status IN ('planned', 'approved', 'waiting_approval', 'blocked')) AS has_held,
         BOOL_OR(b.raw_status IN ('queued', 'pending', 'delegated')) AS has_waiting,
@@ -429,7 +478,7 @@ WITH seed_group AS (
             ELSE 'pending'
         END AS delivery_state,
         CASE
-            WHEN g.has_hold THEN 'held'
+            WHEN g.has_hold OR g.has_policy_gated THEN 'held'
             WHEN g.has_unknown THEN 'unknown'
             WHEN g.has_running THEN 'running'
             WHEN g.has_retry_wait THEN 'retry_wait'
@@ -453,6 +502,11 @@ WITH seed_group AS (
         p.effective_status,
         p.delivery_state,
         p.queue_state,
+        p.has_policy_gated AS policy_gated,
+        CASE
+            WHEN p.has_policy_gated THEN 'external_claim_scope_policy_gated'
+            ELSE COALESCE(p.primary_record->>'wait_reason', '')
+        END AS wait_reason,
         p.primary_record,
         p.external_records,
         p.broadcast_records,
@@ -473,6 +527,8 @@ WITH seed_group AS (
         p.effective_status,
         p.delivery_state,
         p.queue_state,
+        p.policy_gated,
+        p.wait_reason,
         COALESCE(p.primary_record->>'section', 'other') AS section,
         COALESCE(p.primary_record->>'effect_type', '') AS effect_type,
         COALESCE(p.primary_record->>'business_type', '') AS business_type,
@@ -515,7 +571,7 @@ WITH seed_group AS (
       AND (:created_from = '' OR p.created_at >= CAST(:created_from AS timestamptz))
       AND (:created_to = '' OR p.created_at <= CAST(:created_to AS timestamptz))
 )
-"""
+""".replace("__EXTERNAL_SCOPE_GATED_SQL__", _DETAIL_EXTERNAL_SCOPE_GATED_SQL)
 
 
 _FAST_PAGE_SQL = r"""
@@ -605,6 +661,7 @@ WITH source_rows AS (
         END AS delivery_state,
         CASE
             WHEN e.hold_reason <> '' THEN 'held'
+            WHEN (__EXTERNAL_SCOPE_GATED_SQL__) THEN 'held'
             WHEN e.status = 'unknown_after_dispatch' THEN 'unknown'
             WHEN e.status IN ('claimed', 'running', 'dispatching') THEN 'running'
             WHEN e.status = 'failed_retryable' THEN 'retry_wait'
@@ -624,8 +681,10 @@ WITH source_rows AS (
         e.policy_version,
         e.cancel_requested_at,
         e.provider_call_started_at,
+        (__EXTERNAL_SCOPE_GATED_SQL__) AS policy_gated,
         CASE
             WHEN e.hold_reason <> '' THEN e.hold_reason
+            WHEN (__EXTERNAL_SCOPE_GATED_SQL__) THEN 'external_claim_scope_policy_gated'
             WHEN e.status = 'unknown_after_dispatch' THEN 'provider_result_unknown'
             WHEN e.status = 'dispatching' THEN 'provider_call_in_flight'
             WHEN EXISTS (
@@ -643,6 +702,7 @@ WITH source_rows AS (
         NULL::bigint AS sent_count,
         NULL::bigint AS failed_count
     FROM external_effect_job e
+    JOIN queue_runtime_control control ON control.singleton = TRUE
 
     UNION ALL
 
@@ -719,6 +779,7 @@ WITH source_rows AS (
         ''::text AS policy_version,
         NULL::timestamptz AS cancel_requested_at,
         NULL::timestamptz AS provider_call_started_at,
+        FALSE AS policy_gated,
         CASE
             WHEN b.hold_reason <> '' THEN b.hold_reason
             WHEN b.status = 'delegated' THEN 'owned_by_external_effect'
@@ -772,7 +833,7 @@ SELECT
     (SELECT COUNT(*) FROM filtered) AS total,
     COALESCE((SELECT jsonb_object_agg(effective_status, count) FROM status_counts), '{}'::jsonb) AS by_status,
     COALESCE((SELECT jsonb_object_agg(section, count) FROM section_counts), '{}'::jsonb) AS by_section
-"""
+""".replace("__EXTERNAL_SCOPE_GATED_SQL__", _PAGE_EXTERNAL_SCOPE_GATED_SQL)
 
 
 _PAGE_SQL = _FAST_PAGE_SQL
@@ -786,6 +847,8 @@ SELECT jsonb_build_object(
     'effective_status', p.effective_status,
     'delivery_state', p.delivery_state,
     'queue_state', p.queue_state,
+    'policy_gated', p.policy_gated,
+    'wait_reason', p.wait_reason,
     'section', p.section,
     'effect_type', p.effect_type,
     'business_type', p.business_type,
@@ -821,33 +884,89 @@ LIMIT 1
 """
 
 
+_QUEUE_CONTEXT_ELIGIBLE_SQL = queue_policy_eligible_predicate(
+    row_alias="rows",
+    control_alias="control",
+    policy_alias="policy",
+)
+_QUEUE_CONTEXT_CLAIM_ORDER_SQL = external_effect_claim_order_sql(
+    row_alias="rows",
+    fairness_alias="rows",
+)
+
+
 _QUEUE_CONTEXT_SQL = r"""
 WITH target AS (
-    SELECT e.id, e.lane, e.available_at, e.priority, e.status
+    SELECT e.id, e.lane, e.available_at
     FROM external_effect_job e
     WHERE :seed_kind = 'external_effect_job' AND e.id = :seed_id
     UNION ALL
-    SELECT e.id, e.lane, e.available_at, e.priority, e.status
+    SELECT e.id, e.lane, e.available_at
     FROM broadcast_jobs b
     JOIN external_effect_job e ON e.id = b.external_effect_job_id
     WHERE :seed_kind = 'broadcast_job' AND b.id = :seed_id
     LIMIT 1
+), candidate_rows AS (
+    SELECT
+        e.id,
+        e.lane,
+        e.priority,
+        e.available_at,
+        e.hold_reason,
+        e.attempt_count,
+        e.max_attempts,
+        e.worker_generation,
+        e.policy_version,
+        e.status IN ('queued', 'failed_retryable') AS ready_state,
+        e.status = 'dispatching' AS in_flight,
+        e.status = 'unknown_after_dispatch' AS unknown_state,
+        e.status IN ('failed_terminal', 'blocked') AS dlq_state,
+        COALESCE(e.payload_json->>'execution_scope', '') AS execution_scope,
+        fairness.last_claimed_at,
+        (e.lease_expires_at IS NULL OR e.lease_expires_at <= CURRENT_TIMESTAMP) AS lease_available,
+        EXISTS (
+            SELECT 1
+            FROM queue_rate_scope_cooldown cooldown
+            WHERE cooldown.rate_scope_key = e.rate_scope_key
+              AND cooldown.blocked_until > CURRENT_TIMESTAMP
+        ) AS rate_limited,
+        EXISTS (
+            SELECT 1
+            FROM external_effect_job active
+            WHERE active.lane = e.lane
+              AND active.ordering_key = e.ordering_key
+              AND active.ordering_key <> ''
+              AND active.status = 'dispatching'
+              AND active.lease_expires_at > CURRENT_TIMESTAMP
+        ) AS ordering_blocked,
+        'external_effect'::text AS queue_kind
+    FROM external_effect_job e
+    LEFT JOIN queue_fairness_cursor fairness
+      ON fairness.lane = e.lane
+     AND fairness.fairness_key = e.fairness_key
+    WHERE e.lane = (SELECT lane FROM target LIMIT 1)
+      AND e.status IN ('queued', 'failed_retryable')
+), ranked_eligible AS (
+    SELECT
+        rows.id,
+        rows.lane,
+        ROW_NUMBER() OVER (
+            PARTITION BY rows.lane
+            ORDER BY __CLAIM_ORDER_SQL__
+        ) AS claim_rank
+    FROM candidate_rows rows
+    CROSS JOIN queue_runtime_control control
+    JOIN queue_lane_policy policy ON policy.lane = rows.lane
+    WHERE control.singleton = TRUE
+      AND rows.lease_available
+      AND (__ELIGIBLE_SQL__)
 )
 SELECT
     target.lane,
     target.available_at AS eligible_at,
     policy.max_in_flight AS lane_capacity,
-    (
-        SELECT COUNT(*)::BIGINT
-        FROM external_effect_job ahead
-        WHERE ahead.lane = target.lane
-          AND ahead.status IN ('queued', 'failed_retryable')
-          AND ahead.hold_reason = ''
-          AND ahead.available_at <= CURRENT_TIMESTAMP
-          AND ahead.attempt_count < ahead.max_attempts
-          AND (ahead.available_at, ahead.priority, ahead.id)
-              < (target.available_at, target.priority, target.id)
-    ) AS lane_ahead_count,
+    COALESCE(ranked.claim_rank - 1, 0)::BIGINT AS lane_ahead_count,
+    (ranked.claim_rank IS NOT NULL) AS queue_position_eligible,
     (
         SELECT COUNT(*)::BIGINT
         FROM external_effect_job active
@@ -857,8 +976,12 @@ SELECT
     ) AS lane_in_flight
 FROM target
 JOIN queue_lane_policy policy ON policy.lane = target.lane
+LEFT JOIN ranked_eligible ranked ON ranked.id = target.id
 LIMIT 1
-"""
+""".replace("__ELIGIBLE_SQL__", _QUEUE_CONTEXT_ELIGIBLE_SQL).replace(
+    "__CLAIM_ORDER_SQL__",
+    _QUEUE_CONTEXT_CLAIM_ORDER_SQL,
+)
 
 
 def _cursor_secret() -> bytes:
@@ -1032,7 +1155,8 @@ def _public_item(raw: dict[str, Any]) -> dict[str, Any]:
         "row_version": int(primary.get("row_version") or 0),
         "hold_reason": str(primary.get("hold_reason") or ""),
         "policy_version": str(primary.get("policy_version") or ""),
-        "wait_reason": str(primary.get("wait_reason") or primary.get("hold_reason") or ""),
+        "policy_gated": bool(raw.get("policy_gated") or primary.get("policy_gated")),
+        "wait_reason": str(raw.get("wait_reason") or primary.get("wait_reason") or primary.get("hold_reason") or ""),
         "cancel_requested_at": primary.get("cancel_requested_at"),
         "provider_call_started_at": primary.get("provider_call_started_at"),
         "raw_statuses": {
@@ -1178,7 +1302,12 @@ class SQLPushCenterReadModel:
                 "lane_capacity": int(queue_context.get("lane_capacity") or 0),
                 "lane_in_flight": int(queue_context.get("lane_in_flight") or 0),
                 "eligible_at": queue_context.get("eligible_at") or public_item.get("eligible_at"),
-                "queue_position_scope": "lane_snapshot",
+                "queue_position_eligible": bool(queue_context.get("queue_position_eligible")),
+                "queue_position_scope": (
+                    "lane_eligible_snapshot"
+                    if queue_context.get("queue_position_eligible")
+                    else "not_currently_eligible"
+                ),
             }
         )
         return public_item

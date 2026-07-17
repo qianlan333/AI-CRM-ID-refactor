@@ -97,7 +97,8 @@
           ["容量", `${number(lane.in_flight)} / ${number(lane.max_in_flight)}`],
           ["可领取", lane.eligible],
           ["等待 / 计划", `${number(lane.raw_open)} / ${number(lane.scheduled)}`],
-          ["Hold / 限流", `${number(lane.held)} / ${number(lane.rate_limited)}`],
+          ["Hold / Policy Gate", `${number(lane.held)} / ${number(lane.policy_gated)}`],
+          ["限流", lane.rate_limited],
           ["Unknown / DLQ", `${number(lane.unknown)} / ${number(lane.dlq)}`],
           ["最老 eligible", `${number(lane.oldest_eligible_age_seconds)} 秒`],
         ])}
