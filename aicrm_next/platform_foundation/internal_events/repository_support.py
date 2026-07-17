@@ -303,6 +303,25 @@ class InternalEventRepository:
     def list_consumer_runs(self, filters: dict[str, Any] | None = None, *, limit: int = 100, offset: int = 0) -> tuple[list[InternalEventConsumerRun], int]:
         raise NotImplementedError
 
+    def list_consumer_runs_for_events(
+        self,
+        event_ids: list[str],
+    ) -> dict[str, list[InternalEventConsumerRun]]:
+        """Return consumer runs grouped by event.
+
+        Concrete repositories override this with one batch query.  The fallback
+        keeps small test doubles source-compatible while they migrate to the
+        batch contract.
+        """
+
+        grouped: dict[str, list[InternalEventConsumerRun]] = {
+            _text(event_id): [] for event_id in event_ids if _text(event_id)
+        }
+        for event_id in grouped:
+            runs, _ = self.list_consumer_runs({"event_id": event_id}, limit=200)
+            grouped[event_id] = runs
+        return grouped
+
     def get_consumer_run(self, event_id: str, consumer_name: str) -> InternalEventConsumerRun | None:
         raise NotImplementedError
 

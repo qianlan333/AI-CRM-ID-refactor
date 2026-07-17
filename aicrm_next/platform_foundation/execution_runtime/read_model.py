@@ -130,6 +130,29 @@ class ExecutionRuntimeReadModel:
             "secrets_in_output": False,
         }
 
+    def lane_summary(self, lane_names: set[str] | frozenset[str]) -> dict[str, Any]:
+        snapshot = self.runtime_snapshot()
+        selected = [lane for lane in snapshot.get("lanes", []) if lane.get("lane") in lane_names]
+        count_keys = (
+            "raw_open",
+            "held",
+            "eligible",
+            "scheduled",
+            "retry_wait",
+            "rate_limited",
+            "in_flight",
+            "unknown",
+            "dlq",
+        )
+        return {
+            "policy_version": str((snapshot.get("control") or {}).get("policy_version") or ""),
+            "active_generation": int((snapshot.get("control") or {}).get("active_generation") or 0),
+            "claim_enabled": bool((snapshot.get("control") or {}).get("claim_enabled")),
+            "rollout_mode": str((snapshot.get("control") or {}).get("rollout_mode") or "blocked"),
+            "lanes": selected,
+            **{key: sum(int(lane.get(key) or 0) for lane in selected) for key in count_keys},
+        }
+
     def execution_timeline(self, execution_id: str) -> dict[str, Any] | None:
         normalized = str(execution_id or "").strip()
         if not normalized:

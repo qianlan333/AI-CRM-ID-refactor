@@ -390,7 +390,7 @@ class SQLAlchemyInternalEventRepository(InternalEventRepository):
         )
         rows = self._all(
             f"""
-            SELECT r.*
+            SELECT r.*, r.xmin::text AS row_version
             FROM internal_event_consumer_run r
             JOIN internal_event e ON e.event_id = r.event_id
             {where}
@@ -401,16 +401,39 @@ class SQLAlchemyInternalEventRepository(InternalEventRepository):
         )
         return [run for row in rows if (run := _public_run(row)) is not None], int((count_row or {}).get("total") or 0)
 
+    def list_consumer_runs_for_events(
+        self,
+        event_ids: list[str],
+    ) -> dict[str, list[InternalEventConsumerRun]]:
+        normalized_ids = list(dict.fromkeys(_text(event_id) for event_id in event_ids if _text(event_id)))
+        grouped: dict[str, list[InternalEventConsumerRun]] = {event_id: [] for event_id in normalized_ids}
+        if not normalized_ids:
+            return grouped
+        rows = self._all(
+            """
+            SELECT r.*, r.xmin::text AS row_version
+            FROM internal_event_consumer_run r
+            WHERE r.event_id = ANY(:event_ids)
+            ORDER BY r.created_at DESC, r.id DESC
+            """,
+            {"event_ids": normalized_ids},
+        )
+        for row in rows:
+            run = _public_run(row)
+            if run and run.event_id in grouped:
+                grouped[run.event_id].append(run)
+        return grouped
+
     def get_consumer_run(self, event_id: str, consumer_name: str) -> InternalEventConsumerRun | None:
         return _public_run(
             self._one(
-                "SELECT * FROM internal_event_consumer_run WHERE event_id = :event_id AND consumer_name = :consumer_name LIMIT 1",
+                "SELECT internal_event_consumer_run.*, xmin::text AS row_version FROM internal_event_consumer_run WHERE event_id = :event_id AND consumer_name = :consumer_name LIMIT 1",
                 {"event_id": _text(event_id), "consumer_name": _text(consumer_name)},
             )
         )
 
     def get_consumer_run_by_id(self, run_id: int) -> InternalEventConsumerRun | None:
-        return _public_run(self._one("SELECT * FROM internal_event_consumer_run WHERE id = :run_id LIMIT 1", {"run_id": int(run_id)}))
+        return _public_run(self._one("SELECT internal_event_consumer_run.*, xmin::text AS row_version FROM internal_event_consumer_run WHERE id = :run_id LIMIT 1", {"run_id": int(run_id)}))
 
     def acquire_consumer_run(
         self,
@@ -487,6 +510,50 @@ class SQLAlchemyInternalEventRepository(InternalEventRepository):
         if _text(filters.get("event_type")):
             clauses.append("e.event_type = :event_type")
             params["event_type"] = _text(filters.get("event_type"))
+        event_section = _text(filters.get("event_section"))
+        if event_section and not _text(filters.get("event_type")):
+            known_types = sorted({event_type for values in EVENT_SECTION_EVENT_TYPES.values() for event_type in values})
+            section_types = list(EVENT_SECTION_EVENT_TYPES.get(event_section, ()))
+            if section_types:
+                clauses.append("e.event_type = ANY(:metric_event_section_types)")
+                params["metric_event_section_types"] = section_types
+            elif event_section == "other" and known_types:
+                clauses.append("NOT (e.event_type = ANY(:metric_known_event_types))")
+                params["metric_known_event_types"] = known_types
+        for key in (
+            "aggregate_type",
+            "aggregate_id",
+            "subject_type",
+            "subject_id",
+            "trace_id",
+            "idempotency_key",
+            "source_module",
+        ):
+            value = _text(filters.get(key))
+            if value:
+                clauses.append(f"e.{key} = :metric_{key}")
+                params[f"metric_{key}"] = value
+        trace_hashes = _trace_hash_candidates(filters)
+        if trace_hashes:
+            trace_clauses: list[str] = []
+            for index, trace_hash in enumerate(trace_hashes):
+                param_key = f"metric_original_trace_hash_{index}"
+                trace_clauses.append(
+                    f"""
+                    (
+                        e.payload_json -> 'broadcast_task' ->> 'original_trace_hash' = :{param_key}
+                        OR e.payload_json -> 'broadcast_task' ->> 'trace_id_hash' = :{param_key}
+                    )
+                    """
+                )
+                params[param_key] = trace_hash
+            clauses.append("(" + " OR ".join(trace_clauses) + ")")
+        if _text(filters.get("created_from")):
+            clauses.append("e.created_at >= CAST(:metric_created_from AS timestamptz)")
+            params["metric_created_from"] = _text(filters.get("created_from"))
+        if _text(filters.get("created_to")):
+            clauses.append("e.created_at <= CAST(:metric_created_to AS timestamptz)")
+            params["metric_created_to"] = _text(filters.get("created_to"))
         if filters.get("event_types"):
             event_types = [_text(item) for item in filters.get("event_types") or [] if _text(item)]
             if event_types:
@@ -495,6 +562,9 @@ class SQLAlchemyInternalEventRepository(InternalEventRepository):
         if _text(filters.get("consumer_name")):
             clauses.append("r.consumer_name = :consumer_name")
             params["consumer_name"] = _text(filters.get("consumer_name"))
+        if _text(filters.get("consumer_status")):
+            clauses.append("r.status = :metric_consumer_status")
+            params["metric_consumer_status"] = _text(filters.get("consumer_status"))
         if filters.get("consumer_names"):
             consumer_names = [_text(item) for item in filters.get("consumer_names") or [] if _text(item)]
             if consumer_names:

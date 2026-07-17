@@ -126,6 +126,9 @@ def test_internal_event_admin_api_lists_filters_and_redacts_payload(next_client:
     assert body["items"][0]["succeeded_count"] == 1
     assert body["items"][0]["failed_count"] == 1
     assert body["items"][0]["skipped_count"] == 1
+    assert body["counts"]["total"] == 1
+    assert body["counts"]["failed_retryable"] == 1
+    assert body["counts"]["failed_terminal"] == 0
     assert body["items"][0]["payload_summary_json"]["phone"] == "[redacted]"
     assert body["items"][0]["payload_summary_json"]["openid"] == "[redacted]"
     assert body["items"][0]["payload_summary_json"]["unionid"] == "[redacted]"
