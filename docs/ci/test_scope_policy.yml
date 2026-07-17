@@ -1,0 +1,138 @@
+{
+  "version": 1,
+  "mode": "shadow",
+  "description": "Convention-driven CI selector policy. The legacy manifest remains authoritative until an explicit cutover is approved.",
+  "high_risk_rules": [
+    {
+      "name": "ci_and_dependency_runtime",
+      "paths": [
+        ".github/**",
+        "scripts/ci/**",
+        "docs/ci/test_scope_manifest.yml",
+        "requirements*.txt",
+        "requirements.lock",
+        "pyproject.toml",
+        "tests/conftest.py",
+        "app.py"
+      ]
+    },
+    {
+      "name": "schema_and_deploy",
+      "paths": [
+        "migrations/**",
+        "deploy/**",
+        "alembic.ini",
+        "scripts/ops/bootstrap_database.py",
+        "scripts/ops/deploy*.sh",
+        "scripts/ops/create_deploy_smoke_session.py",
+        "scripts/ops/check_id_validation_release_readiness.py",
+        "scripts/ops/extract_id_validation_release_base.py",
+        "scripts/ops/resolve_id_validation_release_base.sh",
+        "scripts/ops/ensure_production_public_release_route.py",
+        "scripts/ops/manage_production_runtime_units.py",
+        "scripts/ops/recover_*.py",
+        "scripts/ops/reconcile_wecom_callback_runtime.py",
+        "tests/test_deploy*.py",
+        "tests/test_id_validation*.py",
+        "tests/test_database_bootstrap.py",
+        "tests/test_alembic_revision_chain.py"
+      ]
+    },
+    {
+      "name": "authentication",
+      "paths": [
+        "aicrm_next/admin_auth/**",
+        "aicrm_next/auth_wecom/**",
+        "aicrm_next/platform_foundation/auth_platform/**",
+        "tests/test_admin_auth*.py",
+        "tests/test_auth_*.py",
+        "tests/test_*oauth*.py"
+      ]
+    },
+    {
+      "name": "payment_refund_and_entitlement",
+      "paths": [
+        "aicrm_next/commerce/admin_transactions.py",
+        "aicrm_next/commerce/external_push_admin.py",
+        "aicrm_next/commerce/*payment*.py",
+        "aicrm_next/commerce/*refund*.py",
+        "aicrm_next/commerce/*reconciliation*.py",
+        "aicrm_next/commerce/repo.py",
+        "aicrm_next/public_product/h5_wechat_pay.py",
+        "aicrm_next/service_period/payment_consumer.py",
+        "aicrm_next/service_period/refund_consumer.py",
+        "aicrm_next/service_period/repo.py",
+        "tests/test_*payment*.py",
+        "tests/test_*refund*.py",
+        "tests/test_service_period*.py"
+      ]
+    },
+    {
+      "name": "callbacks_and_external_effects",
+      "paths": [
+        "aicrm_next/channel_entry/**",
+        "aicrm_next/integration_gateway/**",
+        "aicrm_next/platform_foundation/external_effects/**",
+        "aicrm_next/platform_foundation/webhook_inbox/**",
+        "aicrm_next/background_jobs/**",
+        "aicrm_next/external_push/**",
+        "tests/test_*callback*.py",
+        "tests/test_external_effect*.py",
+        "tests/test_webhook*.py"
+      ]
+    },
+    {
+      "name": "approved_high_risk_business_flows",
+      "paths": [
+        "aicrm_next/questionnaire/**",
+        "aicrm_next/automation_engine/group_ops/**",
+        "tests/test_questionnaire*.py",
+        "tests/test_*group_ops*.py"
+      ]
+    },
+    {
+      "name": "global_architecture_contract",
+      "paths": [
+        "docs/architecture/*manifest*",
+        "docs/architecture/repository_ownership.yml",
+        "docs/ci/test_scope_policy.yml"
+      ]
+    }
+  ],
+  "context_aliases": {
+    "ai_audience_ops": ["ai_audience"],
+    "automation_engine": ["automation", "group_ops", "broadcast"],
+    "channel_entry": ["channel_entry", "welcome"],
+    "customer_read_model": ["customer_read_model", "sidebar"],
+    "identity_contact": ["identity", "unionid"],
+    "integration_gateway": ["integration_gateway", "mcp"],
+    "ops_enrollment": ["ops_enrollment", "user_ops"],
+    "platform_foundation": ["internal_event", "external_effect", "execution_runtime", "push_center", "webhook_inbox"],
+    "public_product": ["public_product", "wechat_pay", "checkout"],
+    "service_period": ["service_period", "entitlement"]
+  },
+  "frontend_build_paths": [
+    "frontend/admin/**/*.ts",
+    "tsconfig.frontend.json",
+    "package.json",
+    "package-lock.json"
+  ],
+  "docs_only_paths": [
+    "docs/**",
+    "README.md",
+    "AGENTS.md",
+    "design-qa.md"
+  ],
+  "postgres_indicators": [
+    "pytest.mark.postgres",
+    "next_pg_schema",
+    "psycopg",
+    "postgresql://",
+    "database_url",
+    "alembic"
+  ],
+  "full_regression_test_indicators": [
+    "pytest.mark.high_risk",
+    "pytest.mark.slow"
+  ]
+}

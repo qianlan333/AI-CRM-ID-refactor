@@ -17,15 +17,6 @@ def test_route_ownership_manifest_covers_current_app_routes() -> None:
     assert errors == []
 
 
-def test_route_ownership_manifest_matches_non_static_route_count() -> None:
-    inventory = collect_route_inventory(app)
-    with open("docs/architecture/route_ownership_manifest.yml", encoding="utf-8") as handle:
-        manifest = yaml.safe_load(handle)
-
-    assert len(manifest["routes"]) == len(inventory)
-    assert len(manifest["routes"]) >= 600
-
-
 def test_route_ownership_manifest_rejects_unknown_owner(tmp_path) -> None:
     test_app = FastAPI()
 

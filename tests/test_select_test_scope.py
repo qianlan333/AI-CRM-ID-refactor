@@ -956,14 +956,34 @@ def test_deploy_smoke_session_change_selects_admin_and_deploy_contracts() -> Non
     assert result["needs_full_ci"] is True
 
 
-def test_ci_manifest_change_selects_lightweight_selector_scope() -> None:
-    result = _select("docs/ci/test_scope_manifest.yml", "tests/test_select_test_scope.py")
+def test_ci_selector_governance_change_selects_both_selector_contracts() -> None:
+    result = _select(
+        "docs/ci/test_scope_manifest.yml",
+        "docs/ci/test_scope_policy.yml",
+        "scripts/ci/select_test_scope_v2.py",
+        "tests/test_convention_test_scope.py",
+        "tests/test_select_test_scope.py",
+    )
 
     assert result["matched_scopes"] == ["ci_scope_selector"]
-    assert result["python_tests"] == ["tests/test_select_test_scope.py", "tests/test_ci_workflow_contract.py"]
+    assert result["python_tests"] == [
+        "tests/test_convention_test_scope.py",
+        "tests/test_select_test_scope.py",
+        "tests/test_ci_workflow_contract.py",
+    ]
     assert result["unmatched_files"] == []
     assert result["needs_postgres"] is False
     assert result["architecture_gate"] == "full"
+    assert result["needs_full_ci"] is True
+
+
+def test_pytest_marker_configuration_change_forces_full_ci() -> None:
+    result = _select("pyproject.toml")
+
+    assert result["matched_scopes"] == ["ci_deploy"]
+    assert result["unmatched_files"] == []
+    assert result["architecture_gate"] == "full"
+    assert result["needs_full_ci"] is True
 
 
 def test_frontend_typescript_change_runs_frontend_tests_and_build() -> None:

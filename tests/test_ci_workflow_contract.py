@@ -6,6 +6,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 CI_FAST_WORKFLOW = ROOT / ".github" / "workflows" / "ci-fast.yml"
 FULL_REGRESSION_WORKFLOW = ROOT / ".github" / "workflows" / "full-regression.yml"
+DURATION_BASELINE_REFRESH_WORKFLOW = ROOT / ".github" / "workflows" / "refresh-pytest-duration-baseline.yml"
 DEPLOY_WORKFLOW = ROOT / ".github" / "workflows" / "deploy.yml"
 PROMOTE_PRODUCTION_WORKFLOW = ROOT / ".github" / "workflows" / "promote-production.yml"
 LEGACY_CI_WORKFLOW = ROOT / ".github" / "workflows" / "ci.yml"
@@ -21,6 +22,10 @@ def test_ci_fast_uses_selector_and_single_required_result() -> None:
     assert "pull_request:" in source
     assert "push:" in source
     assert "scripts/ci/select_test_scope.py --github-output" in source
+    assert "scripts/ci/select_test_scope_v2.py" in source
+    assert "Compare convention selector in shadow mode" in source
+    assert "continue-on-error: true" in source
+    assert "test-scope-v2-shadow.json" in source
     assert "python -m pytest tests/ -n auto" not in source
     assert "ci-fast-result:" in source
     assert "NEEDS_JSON: ${{ toJson(needs) }}" in source
@@ -87,6 +92,33 @@ def test_full_regression_owns_full_pytest_and_full_frontend() -> None:
     assert "npm run typecheck" in source
     assert "npm run build:frontend" in source
     assert "npm run test:frontend:all" in source
+
+
+def test_duration_baseline_refresh_is_isolated_to_trusted_successful_main_runs() -> None:
+    source = _source(DURATION_BASELINE_REFRESH_WORKFLOW)
+    trigger = source[source.index("on:") : source.index("permissions:")]
+
+    assert "name: Refresh Pytest Duration Baseline" in source
+    assert "workflow_run:" in trigger
+    assert 'workflows: ["Full Regression"]' in trigger
+    assert "types: [completed]" in trigger
+    assert "pull_request:" not in trigger
+    assert "push:" not in trigger
+    assert "actions: read" in source
+    assert "contents: write" in source
+    assert "pull-requests: write" in source
+    assert "github.event.workflow_run.conclusion == 'success'" in source
+    assert "github.event.workflow_run.head_repository.full_name == 'qianlan333/AI-CRM'" in source
+    assert "github.event.workflow_run.head_branch == 'main'" in source
+    assert "github.event.workflow_run.event == 'schedule'" in source
+    assert "github.event.workflow_run.event == 'workflow_dispatch'" in source
+    assert "ref: ${{ github.event.workflow_run.head_sha }}" in source
+    assert "actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c" in source
+    assert "run-id: ${{ github.event.workflow_run.id }}" in source
+    assert "python scripts/ci/build_pytest_duration_baseline.py" in source
+    assert 'branch="automation/pytest-duration-baseline"' in source
+    assert "gh pr create" in source
+    assert "--draft" in source
 
 
 def test_full_regression_runs_governance_once_and_ci_fast_does_not_duplicate_it() -> None:

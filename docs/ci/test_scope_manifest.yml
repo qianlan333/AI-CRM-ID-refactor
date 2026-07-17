@@ -15,6 +15,7 @@
     "requirements.txt",
     "requirements-dev.txt",
     "requirements.lock",
+    "pyproject.toml",
     ".github/**",
     "scripts/ci/**",
     "scripts/ops/create_deploy_smoke_session.py",
@@ -24,6 +25,7 @@
     "scripts/ops/reconcile_wecom_callback_runtime.py",
     "scripts/run_wecom_callback_inbox_worker.py",
     "tests/conftest.py",
+    "docs/ci/test_scope_policy.yml",
     "docs/ci/pytest_duration_baseline.json",
     "tests/test_pytest_duration_baseline_builder.py",
     "tests/test_pytest_shard_selector.py",
@@ -104,6 +106,9 @@
     {
       "paths": [
         "docs/ci/test_scope_manifest.yml",
+        "docs/ci/test_scope_policy.yml",
+        "scripts/ci/select_test_scope_v2.py",
+        "tests/test_convention_test_scope.py",
         "tests/test_select_test_scope.py"
       ],
       "scopes": [
@@ -1688,9 +1693,13 @@
       "name": "ci_scope_selector",
       "paths": [
         "docs/ci/test_scope_manifest.yml",
+        "docs/ci/test_scope_policy.yml",
+        "scripts/ci/select_test_scope_v2.py",
+        "tests/test_convention_test_scope.py",
         "tests/test_select_test_scope.py"
       ],
       "python_tests": [
+        "tests/test_convention_test_scope.py",
         "tests/test_select_test_scope.py",
         "tests/test_ci_workflow_contract.py"
       ],
@@ -1741,6 +1750,7 @@
         "tests/test_internal_events_single_consumer_run.py",
         "tests/test_internal_events_worker_allowlist.py",
         "tests/test_next_api_docs_page.py",
+        "tests/test_route_ownership_manifest.py",
         "tests/test_router_registry_contract.py",
         "tests/test_runtime_contract_inventory.py",
         "tests/test_wechat_domain_verification_files.py",
@@ -1749,6 +1759,7 @@
         "requirements-dev.txt",
         "requirements.lock",
         "requirements.txt",
+        "pyproject.toml",
         "app.py",
         "aicrm_next/platform_foundation/**"
       ],
@@ -1772,6 +1783,7 @@
         "tests/test_internal_events_single_consumer_run.py",
         "tests/test_internal_events_worker_allowlist.py",
         "tests/test_next_api_docs_page.py",
+        "tests/test_route_ownership_manifest.py",
         "tests/test_router_registry_contract.py",
         "tests/test_runtime_contract_inventory.py",
         "tests/test_wechat_domain_verification_files.py",
