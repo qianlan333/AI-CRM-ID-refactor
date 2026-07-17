@@ -363,20 +363,20 @@
   <div class="page-shell">
     {% if page_state.mode == "auth_gate" %}
     <section class="hero-card">
-      <p class="eyebrow">企微认证入口</p>
-      <h1>点击下方认证，登记表单</h1>
-      <p class="hero-subtitle">认证成功后即可填写并提交问卷</p>
+      <p class="eyebrow">微信身份验证</p>
+      <h1>{% if page_state.is_wechat_browser %}完成微信授权后填写{% else %}请在微信中打开问卷{% endif %}</h1>
+      <p class="hero-subtitle">验证 UnionID 后才可填写并提交问卷</p>
       {% if page_state.description %}
       <p class="hero-subtitle">{{ page_state.description }}</p>
       {% endif %}
       <div class="hero-actions">
         {% if page_state.oauth_start_url %}
-        <a href="{{ page_state.oauth_start_url }}">立即认证并填写</a>
+        <a href="{{ page_state.oauth_start_url }}">微信授权后继续</a>
         {% else %}
         <button type="button" disabled>暂时无法认证</button>
         {% endif %}
       </div>
-      <div class="hero-meta">仅需一次认证，即可继续填写当前问卷</div>
+      <div class="hero-meta">授权成功后会自动返回当前问卷</div>
       {% if page_state.env_notice %}
       <p class="hero-note">{{ page_state.env_notice }}</p>
       {% endif %}
@@ -630,7 +630,7 @@
         return fallback;
       }
       function isOAuthRequired(result) {
-        return Boolean(result && (result.error === 'oauth_required' || result.source_status === 'oauth_required'));
+        return Boolean(result && (result.error === 'oauth_required' || result.error === 'unionid_oauth_required' || result.source_status === 'oauth_required'));
       }
 
       function oauthRedirectUrl(result) {
@@ -641,7 +641,7 @@
 
       function startOAuthRedirect(result) {
         const redirectUrl = oauthRedirectUrl(result);
-        const message = (result && result.message) || '请先完成企微认证，认证成功后会回到问卷继续提交。';
+        const message = (result && result.message) || '请先完成微信授权，认证成功后会回到问卷继续提交。';
         reportClientIssue('oauth_required_redirect', message, {
           hasRedirectUrl: Boolean(redirectUrl),
           submitUrl,

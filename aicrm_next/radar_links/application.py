@@ -9,6 +9,8 @@ import secrets
 from typing import Any
 
 from aicrm_next.integration_gateway.questionnaire_adapters import WeChatOAuthAdapter, build_wechat_oauth_adapter
+from aicrm_next.identity_contact.application import ResolvePersonIdentityQuery
+from aicrm_next.identity_contact.wechat_unionid_guard import resolve_oauth_unionid
 from aicrm_next.media_library.application import GetImageVariantQuery, GetMediaItemQuery, UploadAttachmentCommand
 from aicrm_next.shared.errors import ContractError, NotFoundError
 from aicrm_next.shared.runtime import fixture_mode
@@ -694,7 +696,7 @@ class ResolveRadarLandingQuery:
         try:
             session = verify_viewer_session(viewer_session, code=str(link["code"]), secret_key=_secret_key())
             identity = dict(session.get("identity") or identity)
-            has_session = True
+            has_session = bool(identity.get("unionid")) if bool(link.get("auth_required")) else True
         except ContractError:
             has_session = False
         self._record_event(link, stage="landing", identity=identity, request_meta=request_meta)
@@ -806,8 +808,12 @@ class CompleteRadarOAuthCallbackCommand:
             "unionid": str(result.get("unionid") or "").strip(),
             "external_userid": str(result.get("external_userid") or "").strip(),
         }
-        if not (identity["openid"] or identity["unionid"]):
-            raise ContractError("radar oauth canonical identity is missing")
+        identity["unionid"] = resolve_oauth_unionid(
+            identity,
+            identity_query=ResolvePersonIdentityQuery(),
+        )
+        if not identity["unionid"]:
+            raise ContractError("unionid_required: radar oauth canonical UnionID is missing")
         meta = request_meta or {}
         for stage in ("oauth_callback", "authorized"):
             event_payload = {
@@ -1169,7 +1175,10 @@ def _require_viewable_content(repo: RadarLinksRepository, code: str, viewer_sess
     if target_type not in {"image", "pdf"}:
         raise NotFoundError("radar content not found")
     session = verify_viewer_session(viewer_session, code=str(link["code"]), secret_key=_secret_key())
-    return {**link, "_viewer_identity": dict(session.get("identity") or {})}
+    identity = dict(session.get("identity") or {})
+    if bool(link.get("auth_required")) and not str(identity.get("unionid") or "").strip():
+        raise ContractError("unionid_required: radar viewer session is missing UnionID")
+    return {**link, "_viewer_identity": identity}
 
 
 def _view_event_payload(link: dict[str, Any], *, stage: str, request_meta: dict[str, Any]) -> dict[str, Any]:

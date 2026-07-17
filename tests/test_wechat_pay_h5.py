@@ -389,11 +389,11 @@ def test_h5_order_status_requires_signed_payment_identity_before_db_access(monke
 
     response = h5_wechat_pay.order_status_response(
         "WXP_PRIVATE_ORDER",
-        type("Request", (), {"query_params": {}, "cookies": {}})(),
+        type("Request", (), {"query_params": {}, "cookies": {}, "headers": {"User-Agent": "MicroMessenger"}})(),
     )
 
     assert response.status_code == 401
-    assert b"payment_identity_required" in response.body
+    assert b"unionid_oauth_required" in response.body
 
 
 def test_h5_order_status_hides_orders_owned_by_another_unionid(monkeypatch) -> None:

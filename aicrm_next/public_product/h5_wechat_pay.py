@@ -11,7 +11,7 @@ from typing import Any
 from urllib.parse import urlencode, urlsplit
 
 from fastapi import Request
-from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi.responses import JSONResponse, RedirectResponse, Response
 
 from aicrm_next.commerce.domain import completion_redirect_projection, safe_completion_redirect_url
 from aicrm_next.navigation_target import (
@@ -22,9 +22,14 @@ from aicrm_next.navigation_target import (
 from aicrm_next.commerce.order_expiration import close_expired_wechat_pay_orders, pending_order_expires_at_text
 from aicrm_next.shared.product_code_aliases import product_code_filter_values
 from aicrm_next.identity_contact.dto import IdentityResolveResult, ResolvePersonIdentityRequest
+from aicrm_next.identity_contact.application import ResolvePersonIdentityQuery
 from aicrm_next.identity_contact.payment_projection import project_payment_order_mobile
 from aicrm_next.identity_contact.oauth_projection_repo import project_wechat_oauth_identity
 from aicrm_next.identity_contact.resolver import resolve_identity_with_dbapi, resolved_unionid
+from aicrm_next.identity_contact.wechat_unionid_guard import (
+    evaluate_wechat_unionid_access,
+    resolve_oauth_unionid,
+)
 from aicrm_next.integration_gateway.wechat_pay_client import WeChatPayClient, WeChatPayClientConfig, WeChatPayClientError
 from aicrm_next.integration_gateway.wechat_oauth_client import WeChatOAuthClientError, build_wechat_oauth_client
 from aicrm_next.platform_foundation.internal_events.outbox import enqueue_transactional_internal_event_outbox
@@ -37,9 +42,13 @@ from aicrm_next.shared.runtime import (
     secure_cookie_environment,
 )
 from aicrm_next.shared.safe_logging import safe_log_exception, safe_log_fields
+from aicrm_next.shared.wechat_identity_page import wechat_identity_failure_response
 from aicrm_next.shared.wechat_h5_session import (
     WECHAT_PAYMENT_IDENTITY_COOKIE,
     WECHAT_PAYMENT_IDENTITY_TTL_SECONDS,
+    WECHAT_PAYMENT_OAUTH_STATE_COOKIE,
+    WECHAT_PAYMENT_OAUTH_STATE_COOKIE_PATH,
+    clear_payment_oauth_state_cookie,
     is_wechat_browser,
     load_signed_payment_session_payload as _load_signed_blob,
     payment_identity_from_request,
@@ -47,6 +56,7 @@ from aicrm_next.shared.wechat_h5_session import (
     payment_session_signing_available,
     safe_local_return_url,
     sign_payment_session_payload as _signed_blob,
+    wechat_oauth_authorize_url,
 )
 
 from .repo import connect_h5_wechat_pay_db as _connect
@@ -56,8 +66,8 @@ from .service import format_price, get_public_product, product_not_found_payload
 
 
 COOKIE_NAME = WECHAT_PAYMENT_IDENTITY_COOKIE
-OAUTH_STATE_COOKIE_NAME = "wechat_pay_h5_oauth_state"
-OAUTH_STATE_COOKIE_PATH = "/api/h5/wechat-pay/oauth"
+OAUTH_STATE_COOKIE_NAME = WECHAT_PAYMENT_OAUTH_STATE_COOKIE
+OAUTH_STATE_COOKIE_PATH = WECHAT_PAYMENT_OAUTH_STATE_COOKIE_PATH
 STATE_TTL_SECONDS = 600
 _OAUTH_STATE_CLOCK_SKEW_SECONDS = 300
 _OAUTH_STATE_PATTERN = re.compile(r"^[a-f0-9]{48}$")
@@ -105,10 +115,6 @@ def _oauth_client():
     return _OAUTH_CLIENT_FACTORY()
 
 
-def _safe_return_url(value: Any) -> str:
-    return safe_local_return_url(value)
-
-
 def sidebar_product_context_status(context_token: str) -> str:
     result = load_sidebar_product_context_token(_normalized_text(context_token))
     return _normalized_text(result.get("status")) or "missing"
@@ -150,19 +156,6 @@ def _wechat_oauth_scope() -> str:
     return _env("WECHAT_PAY_OAUTH_SCOPE") or "snsapi_userinfo"
 
 
-def _wechat_oauth_authorize_url(*, app_id: str, redirect_uri: str, scope: str, state: str) -> str:
-    query = urlencode(
-        {
-            "appid": app_id,
-            "redirect_uri": redirect_uri,
-            "response_type": "code",
-            "scope": scope or "snsapi_base",
-            "state": state,
-        }
-    )
-    return f"https://open.weixin.qq.com/connect/oauth2/authorize?{query}#wechat_redirect"
-
-
 def _is_wechat_browser(request: Request) -> bool:
     return is_wechat_browser(request)
 
@@ -178,13 +171,12 @@ def h5_payment_identity_from_request(request: Request) -> dict[str, str]:
     return _identity_from_request(request)
 
 
-def payment_oauth_start_url(return_url: str) -> str:
-    return shared_payment_oauth_start_url(return_url)
+payment_oauth_start_url = shared_payment_oauth_start_url
 
 
 def payment_oauth_start(request: Request) -> RedirectResponse | JSONResponse:
-    return_url = _safe_return_url(request.query_params.get("return_url") or "/")
-    if _identity_from_request(request).get("openid"):
+    return_url = safe_local_return_url(request.query_params.get("return_url") or "/")
+    if _identity_from_request(request).get("unionid"):
         return RedirectResponse(return_url, status_code=302, headers=route_headers())
     if not _oauth_configured():
         return JSONResponse({"ok": False, "error": "wechat_pay_oauth_not_configured"}, status_code=501, headers=route_headers())
@@ -206,7 +198,7 @@ def payment_oauth_start(request: Request) -> RedirectResponse | JSONResponse:
             "exp": now + STATE_TTL_SECONDS,
         }
     )
-    authorize_url = _wechat_oauth_authorize_url(
+    authorize_url = wechat_oauth_authorize_url(
         app_id=_env("WECHAT_MP_APP_ID"),
         redirect_uri=f"{public_base_url}/api/h5/wechat-pay/oauth/callback",
         scope=_wechat_oauth_scope(),
@@ -225,18 +217,7 @@ def payment_oauth_start(request: Request) -> RedirectResponse | JSONResponse:
     return response
 
 
-def _clear_oauth_state_cookie(response: JSONResponse | RedirectResponse, *, secure: bool) -> JSONResponse | RedirectResponse:
-    response.delete_cookie(
-        OAUTH_STATE_COOKIE_NAME,
-        path=OAUTH_STATE_COOKIE_PATH,
-        secure=secure,
-        httponly=True,
-        samesite="lax",
-    )
-    return response
-
-
-def payment_oauth_callback(request: Request) -> RedirectResponse | JSONResponse:
+def payment_oauth_callback(request: Request) -> Response:
     try:
         public_base_url = _external_base_url(request)
     except RuntimeError:
@@ -261,8 +242,21 @@ def payment_oauth_callback(request: Request) -> RedirectResponse | JSONResponse:
         return JSONResponse({"ok": False, "error": "oauth_state_cookie_mismatch"}, status_code=400, headers=route_headers())
     secure_cookie = secure_cookie_environment() or public_base_url.startswith("https://")
 
-    def attributed_response(response: JSONResponse | RedirectResponse) -> JSONResponse | RedirectResponse:
-        return _clear_oauth_state_cookie(response, secure=secure_cookie)
+    def attributed_response(response: Response) -> Response:
+        return clear_payment_oauth_state_cookie(response, secure=secure_cookie)
+
+    return_url = safe_local_return_url(state_payload.get("return_url"))
+
+    def identity_failure(*, message: str, status_code: int = 409) -> Response:
+        return attributed_response(
+            wechat_identity_failure_response(
+                message=message,
+                retry_url=payment_oauth_start_url(return_url),
+                return_url=return_url,
+                status_code=status_code,
+                headers=route_headers(),
+            )
+        )
 
     try:
         issued_at = int(state_payload.get("iat"))
@@ -343,11 +337,11 @@ def payment_oauth_callback(request: Request) -> RedirectResponse | JSONResponse:
                     # Conflict projection writes only a redacted audit record;
                     # keep that evidence while refusing to issue a session.
                     conn.commit()
-                    return attributed_response(
-                        JSONResponse(
-                            {"ok": False, "error": projection.get("reason") or "wechat_oauth_identity_conflict"},
-                            status_code=409,
-                            headers=route_headers(),
+                    return identity_failure(
+                        message=(
+                            "当前微信身份存在冲突，请联系工作人员处理。"
+                            if projection.get("reason") != "unionid_required"
+                            else "微信未返回 UnionID，暂时无法继续，请确认授权后重试。"
                         )
                     )
                 unionid = _normalized_text(projection.get("unionid"))
@@ -361,7 +355,15 @@ def payment_oauth_callback(request: Request) -> RedirectResponse | JSONResponse:
                     headers=route_headers(),
                 )
             )
-    response = RedirectResponse(_safe_return_url(state_payload.get("return_url")), status_code=302, headers=route_headers())
+    unionid = resolve_oauth_unionid(
+        {"openid": openid, "unionid": unionid},
+        identity_query=ResolvePersonIdentityQuery(),
+    )
+    if not unionid:
+        return identity_failure(
+            message="微信未返回 UnionID，暂时无法继续，请确认授权后重试。"
+        )
+    response = RedirectResponse(return_url, status_code=302, headers=route_headers())
     issued_at = int(datetime.now(timezone.utc).timestamp())
     response.set_cookie(
         COOKIE_NAME,
@@ -388,7 +390,12 @@ def checkout_page_state(product: dict[str, Any], request: Request) -> dict[str, 
 
     identity = _identity_from_request(request)
     code = _normalized_text(product.get("product_code"))
-    paid_order = _existing_paid_order_for_checkout(product, identity) if identity.get("openid") else None
+    access = evaluate_wechat_unionid_access(
+        identity,
+        is_wechat_browser=_is_wechat_browser(request),
+        oauth_start_url=payment_oauth_start_url(f"/pay/{code}"),
+    )
+    paid_order = _existing_paid_order_for_checkout(product, identity) if access.allowed else None
     context_token = _normalized_text(request.cookies.get(SIDEBAR_PRODUCT_CONTEXT_COOKIE))
     context_result = load_sidebar_product_context_token(context_token)
     pay_path = f"/pay/{code}"
@@ -401,7 +408,10 @@ def checkout_page_state(product: dict[str, Any], request: Request) -> dict[str, 
             "amount_total": int(product.get("price_cents") or product.get("amount_total") or 0),
             "currency": _normalized_text(product.get("currency")) or "CNY",
         },
-        "identity_ready": bool(identity.get("openid")),
+        "identity_ready": access.allowed,
+        "identity_error": access.error,
+        "identity_message": access.message,
+        "is_wechat_browser": _is_wechat_browser(request),
         "oauth_start_url": payment_oauth_start_url(pay_path),
         "create_order_url": "/api/h5/wechat-pay/jsapi/orders",
         "status_url_template": "/api/h5/wechat-pay/orders/{out_trade_no}",
@@ -1126,7 +1136,11 @@ def create_jsapi_order_response(
     )
 
     if not _is_wechat_browser(request):
-        return JSONResponse({"ok": False, "error": "please_open_in_wechat"}, status_code=403, headers=route_headers())
+        return JSONResponse(
+            {"ok": False, "error": "wechat_browser_required", "message": "请在微信中打开后完成授权。"},
+            status_code=403,
+            headers=route_headers(),
+        )
     product_code = _normalized_text(payload.get("product_code"))
     if product_override is None:
         try:
@@ -1137,10 +1151,15 @@ def create_jsapi_order_response(
         product = dict(product_override)
         product_code = _normalized_text(product.get("product_code") or product_code)
     identity = _identity_from_request(request)
-    if not identity.get("openid"):
+    access = evaluate_wechat_unionid_access(
+        identity,
+        is_wechat_browser=True,
+        oauth_start_url=payment_oauth_start_url(checkout_return_path or f"/pay/{product_code}"),
+    )
+    if not access.allowed:
         return JSONResponse(
-            {"ok": False, "error": "openid_required", "oauth_start_url": payment_oauth_start_url(checkout_return_path or f"/pay/{product_code}")},
-            status_code=401,
+            access.payload(),
+            status_code=access.status_code,
             headers=route_headers(),
         )
     try:
@@ -1402,14 +1421,15 @@ def order_status_response(out_trade_no: str, request: Request) -> JSONResponse:
         return JSONResponse({"ok": False, "error": "production_database_required"}, status_code=503, headers=route_headers())
     trade_no = _normalized_text(out_trade_no)
     identity = _identity_from_request(request)
-    if not identity.get("openid"):
+    access = evaluate_wechat_unionid_access(
+        identity,
+        is_wechat_browser=_is_wechat_browser(request),
+        oauth_start_url=payment_oauth_start_url(f"/api/h5/wechat-pay/orders/{trade_no}"),
+    )
+    if not access.allowed:
         return JSONResponse(
-            {
-                "ok": False,
-                "error": "payment_identity_required",
-                "oauth_start_url": payment_oauth_start_url(f"/api/h5/wechat-pay/orders/{trade_no}"),
-            },
-            status_code=401,
+            access.payload(),
+            status_code=access.status_code,
             headers=route_headers(),
         )
     with _connect() as conn:

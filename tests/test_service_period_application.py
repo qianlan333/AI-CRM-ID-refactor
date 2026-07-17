@@ -20,6 +20,7 @@ from aicrm_next.service_period.application import (
 )
 from aicrm_next.service_period.dto import ServicePeriodProductCreateRequest
 from aicrm_next.service_period.repo import PostgresServicePeriodRepository, build_service_period_repository, reset_service_period_fixture_state
+from wechat_identity_test_support import authorize_wechat_client
 
 
 def _reset() -> None:
@@ -227,6 +228,7 @@ def test_update_service_period_product_persists_page_slices(next_client) -> None
 
 def test_public_state_and_page_use_service_period_slug(next_client) -> None:
     _reset()
+    authorize_wechat_client(next_client)
     CreateServicePeriodProductCommand()(ServicePeriodProductCreateRequest(**_payload(product_code="sp_public_001")))
 
     state = next_client.get("/api/h5/service-period-products/sp_public_001")
@@ -330,6 +332,7 @@ def test_public_state_hides_lead_qr_when_resolver_fails() -> None:
 
 def test_draft_service_period_slug_renders_owned_preview_without_payment(next_client) -> None:
     _reset()
+    authorize_wechat_client(next_client)
     CreateServicePeriodProductCommand()(ServicePeriodProductCreateRequest(**_payload(product_code="sp_public_draft", status="draft")))
 
     state = next_client.get("/api/h5/service-period-products/sp_public_draft")

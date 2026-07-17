@@ -18,6 +18,7 @@ from aicrm_next.shared.errors import ContractError, NotFoundError
 from aicrm_next.shared.safe_logging import safe_log_exception, safe_log_fields
 from aicrm_next.shared.share_qr import svg_qr_data_url
 from aicrm_next.shared.sync_request import read_request_json
+from aicrm_next.identity_contact.wechat_unionid_guard import evaluate_wechat_unionid_access
 
 from .application import (
     CopyServicePeriodProductCommand,
@@ -132,6 +133,11 @@ def _service_period_checkout_state(product: dict, request: Request, public_state
     link_slug = str(product.get("link_slug") or "").strip()
     checkout_path = f"/s/{link_slug}/pay"
     public_path = f"/s/{quote(link_slug, safe='')}"
+    access = evaluate_wechat_unionid_access(
+        identity,
+        is_wechat_browser=h5_wechat_pay._is_wechat_browser(request),
+        oauth_start_url=h5_wechat_pay.payment_oauth_start_url(checkout_path),
+    )
     checkout_product = _service_period_checkout_product(product, public_state)
     coupon_target_ref = target_ref_for_product_id(product.get("trade_product_id") or checkout_product.get("id"))
     return {
@@ -141,7 +147,10 @@ def _service_period_checkout_state(product: dict, request: Request, public_state
             "amount_total": int(checkout_product.get("price_cents") or checkout_product.get("amount_total") or 0),
             "currency": str(checkout_product.get("currency") or "CNY"),
         },
-        "identity_ready": bool(identity.get("openid")),
+        "identity_ready": access.allowed,
+        "identity_error": access.error,
+        "identity_message": access.message,
+        "is_wechat_browser": h5_wechat_pay._is_wechat_browser(request),
         "oauth_start_url": h5_wechat_pay.payment_oauth_start_url(checkout_path),
         "create_order_url": f"/api/h5/service-period-products/{link_slug}/wechat-pay/jsapi/orders",
         "status_url_template": "/api/h5/wechat-pay/orders/{out_trade_no}",
@@ -858,9 +867,16 @@ def public_service_period_product_page(request: Request, link_slug: str):
         _raise_http(exc)
     try:
         identity = h5_wechat_pay.h5_payment_identity_from_request(request)
-        if not identity.get("openid") and h5_wechat_pay._is_wechat_browser(request):
+        access = evaluate_wechat_unionid_access(
+            identity,
+            is_wechat_browser=h5_wechat_pay._is_wechat_browser(request),
+            oauth_start_url=h5_wechat_pay.payment_oauth_start_url(
+                f"/s/{quote(str(link_slug or '').strip(), safe='')}"
+            ),
+        )
+        if h5_wechat_pay._is_wechat_browser(request) and not access.allowed:
             return RedirectResponse(
-                h5_wechat_pay.payment_oauth_start_url(f"/s/{quote(str(link_slug or '').strip(), safe='')}"),
+                access.oauth_start_url,
                 status_code=302,
                 headers=route_headers(),
             )
@@ -878,6 +894,15 @@ def public_service_period_pay_page(request: Request, link_slug: str):
     try:
         product = GetPublicServicePeriodProductQuery()(link_slug)["product"]
         identity = h5_wechat_pay.h5_payment_identity_from_request(request)
+        access = evaluate_wechat_unionid_access(
+            identity,
+            is_wechat_browser=h5_wechat_pay._is_wechat_browser(request),
+            oauth_start_url=h5_wechat_pay.payment_oauth_start_url(
+                f"/s/{quote(str(link_slug or '').strip(), safe='')}/pay"
+            ),
+        )
+        if h5_wechat_pay._is_wechat_browser(request) and not access.allowed:
+            return RedirectResponse(access.oauth_start_url, status_code=302, headers=route_headers())
         public_state = GetServicePeriodPublicStateQuery()(link_slug, unionid=str(identity.get("unionid") or ""))
     except Exception as exc:
         if isinstance(exc, NotFoundError):
@@ -896,6 +921,15 @@ def public_service_period_pay_page(request: Request, link_slug: str):
 def public_service_period_product_state(request: Request, link_slug: str) -> dict:
     try:
         identity = h5_wechat_pay.h5_payment_identity_from_request(request)
+        access = evaluate_wechat_unionid_access(
+            identity,
+            is_wechat_browser=h5_wechat_pay._is_wechat_browser(request),
+            oauth_start_url=h5_wechat_pay.payment_oauth_start_url(
+                f"/s/{quote(str(link_slug or '').strip(), safe='')}"
+            ),
+        )
+        if not access.allowed:
+            return JSONResponse(access.payload(), status_code=access.status_code, headers=route_headers())
         return _payload(GetServicePeriodPublicStateQuery()(link_slug, unionid=str(identity.get("unionid") or "")))
     except Exception as exc:
         if isinstance(exc, NotFoundError):
