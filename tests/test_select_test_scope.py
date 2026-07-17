@@ -229,6 +229,40 @@ def test_deploy_script_and_expression_length_guard_have_permanent_full_ci_scope(
     assert result["architecture_gate"] == "full"
 
 
+def test_id_validation_queue_operations_have_permanent_postgres_full_ci_scope() -> None:
+    changed_paths = (
+        "scripts/ops/attest_queue_runtime_validation.py",
+        "scripts/ops/authorize_wecom_canary_execution.py",
+        "scripts/ops/configure_wecom_canary.py",
+        "scripts/ops/manage_queue_runtime_soak.py",
+        "scripts/ops/plan_wecom_canary.py",
+        "scripts/ops/run_id_validation_queue_operation.sh",
+        "scripts/ops/run_queue_runtime_fault_drill.py",
+        "scripts/ops/run_test_loopback_canary.py",
+        "scripts/ops/transition_queue_runtime_scope.py",
+        "tests/test_attest_queue_runtime_validation.py",
+        "tests/test_authorize_wecom_canary_execution.py",
+        "tests/test_id_validation_admin_config_lock.py",
+        "tests/test_id_validation_promotion_manifest.py",
+        "tests/test_plan_wecom_canary.py",
+        "tests/test_queue_runtime_fault_drill.py",
+        "tests/test_queue_runtime_operations_workflow.py",
+        "tests/test_queue_runtime_validation.py",
+        "tests/test_run_test_loopback_canary.py",
+        "tests/test_wecom_canary_configuration.py",
+        "tests/test_wecom_canary_policy.py",
+    )
+
+    result = _select(*changed_paths)
+
+    assert result["unmatched_files"] == []
+    assert "postgres_execution_runtime" in result["matched_scopes"]
+    assert set(changed_paths[9:]) <= set(result["python_tests"])
+    assert result["needs_postgres"] is True
+    assert result["needs_full_ci"] is True
+    assert result["architecture_gate"] == "full"
+
+
 def test_h5_wechat_pay_mobile_projection_test_selects_commerce_scope() -> None:
     result = _select("tests/test_h5_wechat_pay_mobile_projection.py")
 
