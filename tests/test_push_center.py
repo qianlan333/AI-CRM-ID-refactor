@@ -24,6 +24,7 @@ from aicrm_next.platform_foundation.push_center.view_model import (
     build_stats_payload,
 )
 from tests.admin_auth_test_helpers import install_admin_action_tokens
+from tests.wechat_identity_test_support import authorize_wechat_client
 
 pytest_plugins = ("tests.group_ops_test_helpers",)
 
@@ -516,6 +517,7 @@ def test_push_center_counts_cover_records_beyond_page_limit(monkeypatch) -> None
 def test_questionnaire_default_external_push_is_queue_first(client: TestClient, monkeypatch) -> None:
     from aicrm_next.questionnaire.repo import build_questionnaire_repository
 
+    authorize_wechat_client(client, {"external_userid": "wx_ext_001"})
     monkeypatch.delenv("AICRM_QUESTIONNAIRE_EXTERNAL_PUSH_MODE", raising=False)
     repo = build_questionnaire_repository()
     existing = repo.get_questionnaire_by_slug("hxc-activation-v1")

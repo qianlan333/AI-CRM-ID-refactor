@@ -34,6 +34,7 @@ from aicrm_next.platform_foundation.internal_events.worker import InternalEventW
 from aicrm_next.questionnaire import h5_write
 from aicrm_next.questionnaire.h5_write import reset_questionnaire_h5_write_fixture_state
 from aicrm_next.questionnaire.repo import reset_questionnaire_fixture_state
+from wechat_identity_test_support import authorize_wechat_client
 
 
 def _client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
@@ -92,6 +93,7 @@ def _enable_wecom_execution(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def _submit(client: TestClient, *, identity: dict, idempotency_key: str):
+    authorize_wechat_client(client, identity)
     return client.post(
         "/api/h5/questionnaires/hxc-activation-v1/submit",
         json={

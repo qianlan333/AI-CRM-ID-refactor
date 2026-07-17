@@ -17,11 +17,14 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Resp
 from fastapi.templating import Jinja2Templates
 
 from aicrm_next.navigation_target import safe_completion_url
+from aicrm_next.identity_contact.wechat_unionid_guard import evaluate_wechat_unionid_access
 from aicrm_next.shared.errors import ContractError, NotFoundError
 from aicrm_next.shared.pii_audit import infer_pii_result_count, set_pii_audit_result_count
 from aicrm_next.shared.runtime import production_data_ready
 from aicrm_next.shared.safe_logging import safe_log_fields
 from aicrm_next.shared.signed_session import session_cookie_secure
+from aicrm_next.shared.wechat_h5_session import payment_identity_from_request, payment_oauth_start_url
+from aicrm_next.shared.wechat_identity_page import wechat_identity_failure_response
 
 from .admin_write import (
     QuestionnaireAdminWriteCommand,
@@ -45,7 +48,6 @@ from .application import (
     GetPublicQuestionnaireQuery,
     GetPublicQuestionnaireSubmissionStatusQuery,
     GetQuestionnaireDetailQuery,
-    GetQuestionnaireOAuthConfigQuery,
     GetQuestionnairePreflightQuery,
     GetQuestionnaireShareQuery,
     GetQuestionnaireResultsSummaryQuery,
@@ -75,18 +77,12 @@ _TEMPLATES_DIR = Path(__file__).resolve().parents[1] / "frontend_compat" / "temp
 templates = Jinja2Templates(directory=_TEMPLATES_DIR)
 _EXTERNAL_SOURCE_STATUS = "external_questionnaire_submissions"
 
-_QUESTIONNAIRE_IDENTITY_HINT_FIELDS = (
-    "respondent_key",
-    "openid",
-    "unionid",
-    "external_userid",
-)
 _QUESTIONNAIRE_SOURCE_PARAM_FIELDS = (
     "source_channel",
     "campaign_id",
     "staff_id",
 )
-_QUESTIONNAIRE_META_FIELDS = _QUESTIONNAIRE_IDENTITY_HINT_FIELDS + _QUESTIONNAIRE_SOURCE_PARAM_FIELDS
+_QUESTIONNAIRE_META_FIELDS = _QUESTIONNAIRE_SOURCE_PARAM_FIELDS
 
 
 def _completion_target_redirect_url(slug: str, completion_target: Any, *, fallback_url: Any = "") -> str:
@@ -494,12 +490,6 @@ def _h5_identity_payload(payload: dict[str, Any]) -> dict[str, Any]:
     return identity
 
 
-def _h5_submit_identity_payload(payload: dict[str, Any], request: Request) -> dict[str, Any]:
-    identity = _questionnaire_identity_from_request(request)
-    identity.update(_h5_identity_payload(payload))
-    return identity
-
-
 def _h5_submit_answers_payload(payload: dict[str, Any]) -> dict[str, Any]:
     for field_name in ("answers", "answer_items", "responses"):
         if field_name not in payload:
@@ -551,26 +541,24 @@ def _h5_source_payload(payload: dict[str, Any], request: Request) -> dict[str, A
 async def _execute_h5_submit(request: Request, slug: str) -> Response:
     try:
         payload = await _h5_json_body(request)
-        identity_result = _questionnaire_identity_result_from_request(request)
-        request_identity = dict(identity_result.get("identity") or {})
-        if _wechat_submit_requires_oauth(request, request_identity=request_identity, identity_result=identity_result):
+        access = _questionnaire_access_decision(request, slug)
+        if not access.allowed:
             return JSONResponse(
                 {
-                    "ok": False,
-                    "error": "oauth_required",
-                    "message": "请先完成企微认证，认证成功后再提交问卷",
-                    "redirect_url": _questionnaire_oauth_start_url(slug, _request_values(request, _QUESTIONNAIRE_SOURCE_PARAM_FIELDS)),
-                    "source_status": "oauth_required",
+                    **access.payload(),
+                    "redirect_url": access.oauth_start_url,
+                    "source_status": "oauth_required" if access.oauth_start_url else "wechat_browser_required",
                     "write_model_status": "blocked",
                     "route_owner": "ai_crm_next",
                     "fallback_used": False,
                     "real_external_call_executed": False,
                     "degraded": False,
                 },
-                status_code=401,
+                status_code=access.status_code,
             )
+        identity_result = _questionnaire_identity_result_from_request(request)
+        request_identity = dict(identity_result.get("identity") or {})
         submit_identity = dict(request_identity)
-        submit_identity.update(_h5_identity_payload(payload))
         submission_identity_result = QuestionnaireRespondentIdentityService().resolve(
             cookies=request.cookies,
             request_identity=submit_identity,
@@ -742,34 +730,6 @@ def _is_wechat_browser(request: Request) -> bool:
     return "micromessenger" in str(request.headers.get("user-agent") or "").lower()
 
 
-def _is_anonymous_respondent_key(value: Any) -> bool:
-    return str(value or "").strip().startswith("anon_")
-
-
-def _is_authorized_identity(identity: dict[str, Any], identity_result: dict[str, Any] | None = None) -> bool:
-    respondent_key = str(identity.get("respondent_key") or "").strip()
-    return bool(
-        identity.get("openid")
-        or identity.get("unionid")
-        or identity.get("external_userid")
-        or (respondent_key and not _is_anonymous_respondent_key(respondent_key) and not (identity_result or {}).get("anonymous"))
-    )
-
-
-def _wechat_submit_requires_oauth(
-    request: Request,
-    *,
-    request_identity: dict[str, Any],
-    identity_result: dict[str, Any],
-) -> bool:
-    if not _is_wechat_browser(request):
-        return False
-    if _is_authorized_identity(request_identity, identity_result):
-        return False
-    oauth_config = GetQuestionnaireOAuthConfigQuery()()
-    return bool(oauth_config.get("configured"))
-
-
 def _request_values(request: Request, fields: tuple[str, ...]) -> dict[str, str]:
     payload: dict[str, str] = {}
     for key in fields:
@@ -781,18 +741,27 @@ def _request_values(request: Request, fields: tuple[str, ...]) -> dict[str, str]
 
 def _questionnaire_oauth_start_url(slug: str, source_params: dict[str, str]) -> str:
     slug_value = str(slug or "").strip()
-    query = {"slug": slug_value, "response_mode": "redirect", "redirect": f"/s/{slug_value}", **source_params}
-    return f"/api/h5/wechat/oauth/start?{urlencode(query)}"
+    return_url = f"/s/{slug_value}"
+    if source_params:
+        return_url = f"{return_url}?{urlencode(source_params)}"
+    return payment_oauth_start_url(return_url)
 
 
-def _questionnaire_identity_from_request(request: Request) -> dict[str, str]:
-    return _questionnaire_identity_result_from_request(request)["identity"]
+def _questionnaire_access_decision(request: Request, slug: str):
+    return evaluate_wechat_unionid_access(
+        payment_identity_from_request(request),
+        is_wechat_browser=_is_wechat_browser(request),
+        oauth_start_url=_questionnaire_oauth_start_url(
+            slug,
+            _request_values(request, _QUESTIONNAIRE_SOURCE_PARAM_FIELDS),
+        ),
+    )
 
 
 def _questionnaire_identity_result_from_request(request: Request) -> dict[str, Any]:
     return QuestionnaireRespondentIdentityService().resolve(
         cookies=request.cookies,
-        request_identity=_request_values(request, _QUESTIONNAIRE_IDENTITY_HINT_FIELDS),
+        request_identity=payment_identity_from_request(request),
         slug=str(request.path_params.get("slug") or request.query_params.get("slug") or ""),
     )
 
@@ -1018,6 +987,12 @@ def latest_submit_debug(questionnaire_id: int) -> dict:
 @router.get("/api/h5/questionnaires/{slug}")
 def public_get_questionnaire(request: Request, slug: str) -> Response:
     try:
+        access = _questionnaire_access_decision(request, slug)
+        if not access.allowed:
+            return JSONResponse(
+                {**access.payload(), "redirect_url": access.oauth_start_url},
+                status_code=access.status_code,
+            )
         identity_result = _questionnaire_identity_result_from_request(request)
         submission_status = GetPublicQuestionnaireSubmissionStatusQuery()(slug, identity=identity_result["identity"])
         if submission_status.get("submitted"):
@@ -1065,6 +1040,12 @@ def public_questionnaire_client_diagnostics_options(slug: str) -> Response:
 
 @router.get("/api/h5/questionnaires/{slug}/result")
 def public_submission_result(request: Request, slug: str) -> dict:
+    access = _questionnaire_access_decision(request, slug)
+    if not access.allowed:
+        return JSONResponse(
+            {**access.payload(), "redirect_url": access.oauth_start_url},
+            status_code=access.status_code,
+        )
     submission_id = str(getattr(request.state, "questionnaire_result_access_token", "") or "").strip()
     if not submission_id:
         set_pii_audit_result_count(request, 0)
@@ -1233,16 +1214,15 @@ def public_questionnaire_h5_page(request: Request, slug: str):
         _raise_http(exc)
     questionnaire = jsonable_encoder(payload["questionnaire"])
     questions = jsonable_encoder(payload.get("questions") or [])
-    source_params = _request_values(request, _QUESTIONNAIRE_SOURCE_PARAM_FIELDS)
     request_hints = _request_values(request, _QUESTIONNAIRE_META_FIELDS)
     identity_result = _questionnaire_identity_result_from_request(request)
     identity = dict(identity_result.get("identity") or {})
-    request_hints = {**request_hints, **{key: value for key, value in identity.items() if value}}
     is_wechat_browser = _is_wechat_browser(request)
-    is_authorized = _is_authorized_identity(identity, identity_result)
-    oauth_config = GetQuestionnaireOAuthConfigQuery()()
-    oauth_configured = bool(oauth_config.get("configured"))
-    should_require_oauth = is_wechat_browser and oauth_configured and not is_authorized
+    access = _questionnaire_access_decision(request, slug)
+    is_authorized = access.allowed
+    should_require_oauth = not access.allowed
+    if is_wechat_browser and should_require_oauth and access.oauth_start_url:
+        return RedirectResponse(access.oauth_start_url, status_code=302)
     submission_status = GetPublicQuestionnaireSubmissionStatusQuery()(slug, identity=identity)
     if submission_status.get("submitted") and not should_require_oauth:
         redirect_url = (
@@ -1257,14 +1237,14 @@ def public_questionnaire_h5_page(request: Request, slug: str):
     page_mode = "auth_gate" if should_require_oauth else "questionnaire"
     env_notice = ""
     if page_mode == "auth_gate":
-        env_notice = "认证成功后即可填写并提交问卷。" if oauth_configured else "当前企微认证配置未完成，请联系管理员。"
+        env_notice = access.message
     page_state = {
         "mode": page_mode,
         "slug": slug,
         "title": questionnaire["title"],
         "description": questionnaire.get("description") or "",
         "env_notice": env_notice,
-        "oauth_start_url": _questionnaire_oauth_start_url(slug, source_params) if oauth_configured else "",
+        "oauth_start_url": access.oauth_start_url,
         "submit_url": f"/api/h5/questionnaires/{slug}/submit",
         "api_url": f"/api/h5/questionnaires/{slug}",
         "diagnostics_url": f"/api/h5/questionnaires/{slug}/client-diagnostics",
@@ -1294,6 +1274,16 @@ def public_questionnaire_submitted(request: Request, slug: str):
         payload = GetPublicQuestionnaireQuery()(slug)
     except Exception as exc:
         _raise_http(exc)
+    access = _questionnaire_access_decision(request, slug)
+    if not access.allowed:
+        if access.oauth_start_url:
+            return RedirectResponse(access.oauth_start_url, status_code=302)
+        return wechat_identity_failure_response(
+            title="请在微信中打开",
+            message=access.message,
+            return_url=f"/s/{slug}",
+            status_code=access.status_code,
+        )
     questionnaire = jsonable_encoder(payload["questionnaire"])
     identity_result = _questionnaire_identity_result_from_request(request)
     submission_status = GetPublicQuestionnaireSubmissionStatusQuery()(

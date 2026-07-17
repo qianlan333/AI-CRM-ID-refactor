@@ -25,6 +25,7 @@ from aicrm_next.platform_foundation.internal_events.view_model import build_even
 from aicrm_next.platform_foundation.internal_events.worker import InternalEventWorker
 from aicrm_next.questionnaire.h5_write import reset_questionnaire_h5_write_fixture_state
 from aicrm_next.questionnaire.repo import reset_questionnaire_fixture_state
+from tests.wechat_identity_test_support import authorize_wechat_client
 
 
 QUESTIONNAIRE_CONSUMERS = [
@@ -57,6 +58,15 @@ def _client(monkeypatch, *, questionnaire_enabled: bool = True, allowed_event_ty
 
 
 def _submit(client: TestClient, *, key: str = "q-submit") -> dict:
+    authorize_wechat_client(
+        client,
+        {
+            "external_userid": f"wm_questionnaire_{key}",
+            "openid": f"openid_{key}",
+            "unionid": f"unionid_{key}",
+            "respondent_key": f"respondent_{key}",
+        },
+    )
     response = client.post(
         "/api/h5/questionnaires/hxc-activation-v1/submit",
         json={

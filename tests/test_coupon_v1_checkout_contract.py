@@ -75,7 +75,9 @@ def test_public_coupon_page_and_claim_enforce_wechat_oauth_and_idempotency(
     assert oauth_required.status_code == 401
     assert oauth_required.json() == {
         "ok": False,
-        "error": "openid_required",
+        "identity_ready": False,
+        "error": "unionid_oauth_required",
+        "message": "请先完成微信授权，获取稳定身份后继续。",
         "oauth_start_url": "/api/h5/wechat-pay/oauth/start?return_url=%2Fc%2Fcpn_public_test",
     }
 
@@ -102,7 +104,7 @@ def test_public_coupon_page_and_claim_enforce_wechat_oauth_and_idempotency(
     assert claimed.status_code == 201
     assert claimed.json()["claim"]["claim_no"] == "CLM_public_opaque"
     assert outside_wechat.status_code == 403
-    assert outside_wechat.json()["error"] == "please_open_in_wechat"
+    assert outside_wechat.json()["error"] == "wechat_browser_required"
     assert ("claim", "cpn_public_test", "claim-click-001") in calls
     assert not any(call[-1] == "claim-click-002" for call in calls)
 
