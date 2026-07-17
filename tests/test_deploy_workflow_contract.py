@@ -9,7 +9,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 RUNTIME_DIR = ROOT / ("wecom_ability" + "_service")
 RUNTIME_UNITS_HELPER = "python3 scripts/ops/manage_production_runtime_units.py"
-TEST_DEPLOY_WORKFLOW = ROOT / ".github" / "workflows" / "deploy.yml"
+PRODUCTION_DEPLOY_WORKFLOW = ROOT / ".github" / "workflows" / "deploy.yml"
 PRODUCTION_PROMOTION_WORKFLOW = ROOT / ".github" / "workflows" / "promote-production.yml"
 
 
@@ -27,17 +27,17 @@ def _runtime_units_phase(phase: str) -> str:
 
 
 def test_deploy_workflows_serialize_without_cancelling_active_release() -> None:
-    deploy = TEST_DEPLOY_WORKFLOW.read_text(encoding="utf-8")
+    deploy = PRODUCTION_DEPLOY_WORKFLOW.read_text(encoding="utf-8")
     promotion = PRODUCTION_PROMOTION_WORKFLOW.read_text(encoding="utf-8")
 
-    assert "group: aicrm-deploy-${{ inputs.target_environment || vars.DEFAULT_DEPLOY_ENVIRONMENT || 'test' }}" in deploy
+    assert "group: aicrm-production-deploy" in deploy
     assert "group: aicrm-production-promotion" in promotion
     assert "cancel-in-progress: false" in deploy
     assert "cancel-in-progress: false" in promotion
 
 
 def test_remote_deploy_holds_target_specific_server_lock_before_sha_checks() -> None:
-    workflow = TEST_DEPLOY_WORKFLOW.read_text(encoding="utf-8")
+    workflow = PRODUCTION_DEPLOY_WORKFLOW.read_text(encoding="utf-8")
 
     target_index = workflow.index("deploy_target=\"${{ env.DEPLOY_TARGET }}\"", workflow.index("Deploy via SSH"))
     lock_file_index = workflow.index('deploy_lock_file="/tmp/aicrm-deploy-${deploy_target}.lock"', target_index)
@@ -51,7 +51,7 @@ def test_remote_deploy_holds_target_specific_server_lock_before_sha_checks() -> 
 
 
 def test_failed_uncommitted_deploy_restores_previous_exact_sha_and_dependencies() -> None:
-    workflow = TEST_DEPLOY_WORKFLOW.read_text(encoding="utf-8")
+    workflow = PRODUCTION_DEPLOY_WORKFLOW.read_text(encoding="utf-8")
 
     switched_init = workflow.index("release_switched=0")
     committed_init = workflow.index("release_committed=0", switched_init)
@@ -74,7 +74,7 @@ def test_failed_uncommitted_deploy_restores_previous_exact_sha_and_dependencies(
 
 
 def test_failed_deploy_drain_restores_timers_without_killing_active_oneshots() -> None:
-    workflow = TEST_DEPLOY_WORKFLOW.read_text(encoding="utf-8")
+    workflow = PRODUCTION_DEPLOY_WORKFLOW.read_text(encoding="utf-8")
 
     partial_init = workflow.index("runtime_transaction_partial=0")
     mutation_index = workflow.index("runtime_mutation_started=1", partial_init)
@@ -95,7 +95,7 @@ def test_failed_deploy_drain_restores_timers_without_killing_active_oneshots() -
 
 
 def test_deploy_recovers_only_exact_identity_worker_self_deadlock_under_transaction_guard() -> None:
-    workflow = TEST_DEPLOY_WORKFLOW.read_text(encoding="utf-8")
+    workflow = PRODUCTION_DEPLOY_WORKFLOW.read_text(encoding="utf-8")
 
     mutation_index = workflow.index("runtime_mutation_started=1")
     begin_index = workflow.index("--phase begin-transaction --execute", mutation_index)
@@ -108,19 +108,19 @@ def test_deploy_recovers_only_exact_identity_worker_self_deadlock_under_transact
 
 
 def test_success_marks_release_committed_only_after_public_exact_sha_verification() -> None:
-    workflow = TEST_DEPLOY_WORKFLOW.read_text(encoding="utf-8")
+    workflow = PRODUCTION_DEPLOY_WORKFLOW.read_text(encoding="utf-8")
 
     switch_index = workflow.index("release_switched=1")
     local_exact_sha_index = workflow.index('grep -i "x-aicrm-release-sha: $after_sha"', switch_index)
-    production_exact_sha_index = workflow.index('--expected-sha "$after_sha"', local_exact_sha_index)
-    test_exact_sha_index = workflow.index('grep -i "x-aicrm-release-sha: $after_sha"', production_exact_sha_index)
-    committed_index = workflow.index("release_committed=1", test_exact_sha_index)
+    public_route_index = workflow.index("scripts/ops/ensure_production_public_release_route.py --execute")
+    public_exact_sha_index = workflow.index('--expected-sha "$after_sha"', public_route_index)
+    committed_index = workflow.index("release_committed=1", public_exact_sha_index)
 
-    assert switch_index < local_exact_sha_index < production_exact_sha_index < test_exact_sha_index < committed_index
+    assert switch_index < local_exact_sha_index < public_route_index < public_exact_sha_index < committed_index
 
 
 def test_deploy_requires_runtime_units_and_application_readiness_before_commit() -> None:
-    workflow = TEST_DEPLOY_WORKFLOW.read_text(encoding="utf-8")
+    workflow = PRODUCTION_DEPLOY_WORKFLOW.read_text(encoding="utf-8")
 
     verify_units_index = workflow.index(_runtime_units_phase("verify-staged-runtime"))
     readiness_index = workflow.index(
@@ -162,7 +162,7 @@ def test_production_deploy_stashes_dirty_worktree_before_remote_update():
 
     stash_index = workflow.index("git stash push --include-untracked")
     before_sha_index = workflow.index('before_sha="$(git rev-parse HEAD)"')
-    verified_sha_index = workflow.index('verified_sha="${{ inputs.release_sha || github.event.workflow_run.head_sha }}"', before_sha_index)
+    verified_sha_index = workflow.index('verified_sha="${{ inputs.release_sha }}"', before_sha_index)
     fetch_index = workflow.index('git fetch --no-tags "$release_bundle" "refs/deploy/release:refs/remotes/deploy/main"')
     reset_index = workflow.index('git reset --hard "$verified_sha"')
     stop_index = _deploy_runtime_phase_index(workflow, "stop-for-migration")
@@ -205,7 +205,7 @@ def test_production_deploy_fails_closed_unless_checkout_matches_verified_workflo
     workflow = (ROOT / ".github" / "workflows" / "deploy.yml").read_text(encoding="utf-8")
 
     remote_deploy_index = workflow.index("uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2")
-    verified_sha_index = workflow.index('verified_sha="${{ inputs.release_sha || github.event.workflow_run.head_sha }}"', remote_deploy_index)
+    verified_sha_index = workflow.index('verified_sha="${{ inputs.release_sha }}"', remote_deploy_index)
     release_head_index = workflow.index('release_head_sha="$(git rev-parse refs/remotes/deploy/main)"')
     head_guard_index = workflow.index('if [ "$release_head_sha" != "$verified_sha" ]; then')
     reset_index = workflow.index('git reset --hard "$verified_sha"')
@@ -215,7 +215,7 @@ def test_production_deploy_fails_closed_unless_checkout_matches_verified_workflo
 
     assert verified_sha_index < release_head_index < head_guard_index < reset_index < after_sha_index < checkout_guard_index < stop_index
     assert "invalid verified workflow sha" in workflow
-    assert "verified workflow sha is no longer the repository main head" in workflow
+    assert "requested production release is not the current repository main" in workflow
     assert "deployed checkout does not match verified workflow sha" in workflow
 
 
@@ -246,9 +246,9 @@ def test_production_deploy_builds_and_transfers_incremental_exact_sha_bundle_bef
 
     assert checkout_index < discover_index < build_index < transfer_index < remote_deploy_index
     assert "permissions:\n  contents: read" in workflow
-    assert "ref: ${{ inputs.release_sha || github.event.workflow_run.head_sha }}" in workflow
+    assert "ref: ${{ inputs.release_sha }}" in workflow
     assert "fetch-depth: 0" in workflow
-    assert 'verified_sha="${{ inputs.release_sha || github.event.workflow_run.head_sha }}"' in workflow
+    assert 'verified_sha="${{ inputs.release_sha }}"' in workflow
     assert "git fetch --no-tags origin main" in workflow
     assert 'if [ "$(git rev-parse FETCH_HEAD)" != "$verified_sha" ]; then' in workflow
     assert 'public_health_url="$PUBLIC_HEALTH_URL"' in workflow
@@ -260,37 +260,43 @@ def test_production_deploy_builds_and_transfers_incremental_exact_sha_bundle_bef
     assert "sha256sum aicrm-release.bundle" in workflow
     assert "git bundle verify release/aicrm-release.bundle" in workflow
     assert "git bundle create release/aicrm-release.bundle HEAD" not in workflow
-    assert "target: /tmp/aicrm-release-${{ inputs.release_sha || github.event.workflow_run.head_sha }}" in workflow
+    assert "target: /tmp/aicrm-release-${{ inputs.release_sha }}" in workflow
     assert "strip_components: 1" in workflow
     assert "overwrite: true" in workflow
 
 
-def test_orphaned_release_full_bundle_recovery_is_test_only_and_keeps_exact_base_guard():
-    workflow = TEST_DEPLOY_WORKFLOW.read_text(encoding="utf-8")
+def test_production_release_fails_closed_when_live_base_is_missing_or_diverged():
+    workflow = PRODUCTION_DEPLOY_WORKFLOW.read_text(encoding="utf-8")
 
     missing_base_index = workflow.index('if ! git cat-file -e "$base_sha^{commit}"; then')
-    test_only_index = workflow.index('if [ "$deploy_target" != "test" ]; then', missing_base_index)
-    full_mode_index = workflow.index('bundle_mode="full"', test_only_index)
-    full_bundle_index = workflow.index(
-        "git bundle create release/aicrm-release.bundle refs/deploy/release\n",
-        full_mode_index,
+    missing_base_error_index = workflow.index(
+        "production release is not present in repository history",
+        missing_base_index,
     )
+    ancestor_guard_index = workflow.index(
+        'git merge-base --is-ancestor "$base_sha" "$verified_sha"',
+        missing_base_error_index,
+    )
+    ancestor_error_index = workflow.index(
+        "production release is not an ancestor of the requested release",
+        ancestor_guard_index,
+    )
+    incremental_mode_index = workflow.index('echo "bundle_mode=incremental" >> "$GITHUB_OUTPUT"')
     remote_mode_index = workflow.index('bundle_mode="${{ steps.release.outputs.bundle_mode }}"')
-    remote_test_guard_index = workflow.index(
-        'if [ "$bundle_mode" = "full" ] && [ "$deploy_target" != "test" ]; then',
+    remote_mode_guard_index = workflow.index(
+        'if [ "$bundle_mode" != "incremental" ]; then',
         remote_mode_index,
     )
-    remote_base_guard_index = workflow.index('if [ "$before_sha" != "$base_sha" ]; then', remote_test_guard_index)
+    remote_base_guard_index = workflow.index('if [ "$before_sha" != "$base_sha" ]; then', remote_mode_guard_index)
 
-    assert missing_base_index < test_only_index < full_mode_index < full_bundle_index
-    assert full_bundle_index < remote_mode_index < remote_test_guard_index < remote_base_guard_index
-    assert 'echo "bundle_mode=$bundle_mode" >> "$GITHUB_OUTPUT"' in workflow
-    assert "test environment release is orphaned; building a full verified release bundle" in workflow
-    assert "full release bundle recovery is restricted to the test environment" in workflow
+    assert missing_base_index < missing_base_error_index < ancestor_guard_index < ancestor_error_index
+    assert ancestor_error_index < incremental_mode_index < remote_mode_index < remote_mode_guard_index < remote_base_guard_index
+    assert 'bundle_mode="full"' not in workflow
+    assert "test environment release is orphaned" not in workflow
 
 
 def test_production_deploy_requires_remote_head_to_match_bundle_prerequisite_before_fetch():
-    workflow = TEST_DEPLOY_WORKFLOW.read_text(encoding="utf-8")
+    workflow = PRODUCTION_DEPLOY_WORKFLOW.read_text(encoding="utf-8")
 
     before_sha_index = workflow.index('before_sha="$(git rev-parse HEAD)"')
     base_sha_index = workflow.index('base_sha="${{ steps.release.outputs.base_sha }}"')
@@ -496,7 +502,7 @@ def test_production_deploy_migrates_and_reconciles_secret_references_before_web_
 def test_production_deploy_serializes_workflow_and_host_transactions():
     workflow = (ROOT / ".github" / "workflows" / "deploy.yml").read_text(encoding="utf-8")
 
-    assert "group: aicrm-deploy-${{ inputs.target_environment || vars.DEFAULT_DEPLOY_ENVIRONMENT || 'test' }}" in workflow
+    assert "group: aicrm-production-deploy" in workflow
     assert "cancel-in-progress: false" in workflow
     remote_deploy_index = workflow.index("uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2")
     lock_path_index = workflow.index('deploy_lock_file="/tmp/aicrm-deploy-${deploy_target}.lock"', remote_deploy_index)
@@ -564,7 +570,7 @@ def test_production_deploy_installs_managed_web_and_checks_runtime_secret_readin
 
 
 def test_production_deploy_repairs_only_approved_legacy_nginx_web_route_and_requires_public_exact_sha():
-    workflow = TEST_DEPLOY_WORKFLOW.read_text(encoding="utf-8")
+    workflow = PRODUCTION_DEPLOY_WORKFLOW.read_text(encoding="utf-8")
 
     local_health_index = workflow.index('grep -i "x-aicrm-release-sha: $after_sha"')
     runtime_verify_index = workflow.index(_runtime_units_phase("verify-staged-runtime"))
@@ -578,19 +584,23 @@ def test_production_deploy_repairs_only_approved_legacy_nginx_web_route_and_requ
     assert "tee /tmp/aicrm-public-release-route.json" in workflow
 
 
-def test_automatic_test_deploy_uses_test_secrets_and_read_only_test_public_health_check():
-    workflow = TEST_DEPLOY_WORKFLOW.read_text(encoding="utf-8")
+def test_deploy_workflow_is_production_only_and_uses_only_production_credentials():
+    workflow = PRODUCTION_DEPLOY_WORKFLOW.read_text(encoding="utf-8")
 
     runtime_verify_index = workflow.index(_runtime_units_phase("verify-staged-runtime"))
-    public_health_index = workflow.index('"${{ env.PUBLIC_HEALTH_URL }}"', runtime_verify_index)
+    public_route_index = workflow.index("ensure_production_public_release_route.py", runtime_verify_index)
+    public_health_index = workflow.index('"${{ env.PUBLIC_HEALTH_URL }}"', public_route_index)
 
-    assert runtime_verify_index < public_health_index
-    assert "secrets.TEST_DEPLOY_HOST" in workflow
-    assert "secrets.TEST_DEPLOY_USER" in workflow
-    assert "secrets.TEST_DEPLOY_SSH_KEY" in workflow
-    assert "env.DEPLOY_TARGET == 'production' && secrets.DEPLOY_HOST || secrets.TEST_DEPLOY_HOST" in workflow
-    assert 'if [ "$deploy_target" = "production" ]; then' in workflow
-    assert workflow.index('if [ "$deploy_target" = "production" ]; then') < workflow.index("ensure_production_public_release_route.py")
+    assert runtime_verify_index < public_route_index < public_health_index
+    assert "environment: production" in workflow
+    assert "DEPLOY_TARGET: production" in workflow
+    assert "secrets.DEPLOY_HOST" in workflow
+    assert "secrets.DEPLOY_USER" in workflow
+    assert "secrets.DEPLOY_SSH_KEY" in workflow
+    assert "TEST_DEPLOY_" not in workflow
+    assert "target_environment" not in workflow
+    assert "workflow_run" not in workflow
+    assert 'if [ "$deploy_target" != "production" ]; then' in workflow
     assert 'grep -i "x-aicrm-release-sha: $after_sha"' in workflow
 
 
@@ -609,7 +619,7 @@ def test_production_deploy_polls_health_after_restart_instead_of_fixed_sleep():
 
 
 def test_deploy_admin_smoke_uses_short_lived_server_session_without_logging_cookie():
-    workflow = TEST_DEPLOY_WORKFLOW.read_text(encoding="utf-8")
+    workflow = PRODUCTION_DEPLOY_WORKFLOW.read_text(encoding="utf-8")
 
     issue_index = workflow.index("python3 scripts/ops/create_deploy_smoke_session.py issue")
     smoke_index = workflow.index("python scripts/ops/check_admin_read_pages_smoke.py", issue_index)
@@ -623,7 +633,6 @@ def test_deploy_admin_smoke_uses_short_lived_server_session_without_logging_cook
     assert "--ttl-seconds 300" in workflow
     assert '--admin-cookie-file "$deploy_smoke_session_file"' in workflow
     assert 'admin_smoke_sidebar_args=(--include-all-sidebar --require-all-data-health-green)' in workflow
-    assert 'if [ "$deploy_target" = "production" ]; then' in workflow[:smoke_index]
     assert '--cookie-file "$deploy_smoke_session_file"' in workflow
     assert "aicrm_next_admin_session=" not in workflow
     assert 'cat "$deploy_smoke_session_file"' not in workflow
@@ -631,7 +640,7 @@ def test_deploy_admin_smoke_uses_short_lived_server_session_without_logging_cook
 
 
 def test_deploy_exit_trap_revokes_smoke_session_and_restores_runtime_units():
-    workflow = TEST_DEPLOY_WORKFLOW.read_text(encoding="utf-8")
+    workflow = PRODUCTION_DEPLOY_WORKFLOW.read_text(encoding="utf-8")
 
     cleanup_index = workflow.index("cleanup_deploy() {")
     stop_index = workflow.index("--phase stop-for-migration --execute", cleanup_index)
@@ -1187,7 +1196,7 @@ def test_alembic_0009_is_pg_only():
 
 
 def test_deploy_runs_runtime_environment_as_repository_module():
-    workflow = TEST_DEPLOY_WORKFLOW.read_text(encoding="utf-8")
+    workflow = PRODUCTION_DEPLOY_WORKFLOW.read_text(encoding="utf-8")
 
     assert "python3 -m scripts.ops.ensure_runtime_environment" in workflow
     assert "python3 scripts/ops/ensure_runtime_environment.py" not in workflow

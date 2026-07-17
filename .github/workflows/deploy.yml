@@ -1,41 +1,27 @@
-name: Deploy
+name: Deploy Production Release
 
 on:
-  workflow_run:
-    workflows: ["CI Fast"]
-    types: [completed]
   workflow_call:
     inputs:
-      target_environment:
-        description: Deployment environment selected by a guarded caller
-        required: false
-        default: test
-        type: string
       release_sha:
-        description: Exact tested SHA selected for a manual production promotion
-        required: false
-        default: ""
+        description: Exact AI-CRM main SHA selected by the guarded production promotion workflow
+        required: true
         type: string
 
 permissions:
   contents: read
 
 concurrency:
-  group: aicrm-deploy-${{ inputs.target_environment || vars.DEFAULT_DEPLOY_ENVIRONMENT || 'test' }}
+  group: aicrm-production-deploy
   cancel-in-progress: false
 
 jobs:
   deploy:
-    if: >-
-      (github.event_name == 'workflow_run' &&
-       github.event.workflow_run.conclusion == 'success' &&
-       github.event.workflow_run.head_branch == 'main') ||
-      (inputs.target_environment == 'production' &&
-       inputs.release_sha != '')
-    environment: ${{ inputs.target_environment || vars.DEFAULT_DEPLOY_ENVIRONMENT || 'test' }}
+    if: inputs.release_sha != ''
+    environment: production
     runs-on: ubuntu-latest
     env:
-      DEPLOY_TARGET: ${{ inputs.target_environment || vars.DEFAULT_DEPLOY_ENVIRONMENT || 'test' }}
+      DEPLOY_TARGET: production
       PUBLIC_BASE_URL: ${{ vars.PUBLIC_BASE_URL }}
       PUBLIC_HEALTH_URL: ${{ vars.PUBLIC_HEALTH_URL }}
       PUBLIC_SERVER_NAME: ${{ vars.PUBLIC_SERVER_NAME }}
@@ -45,7 +31,7 @@ jobs:
       - name: Checkout verified release
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0 (Node 24)
         with:
-          ref: ${{ inputs.release_sha || github.event.workflow_run.head_sha }}
+          ref: ${{ inputs.release_sha }}
           fetch-depth: 0
 
       - name: Build verified release bundle
@@ -53,7 +39,7 @@ jobs:
         run: |
           set -e
           set -o pipefail
-          verified_sha="${{ inputs.release_sha || github.event.workflow_run.head_sha }}"
+          verified_sha="${{ inputs.release_sha }}"
           deploy_target="$DEPLOY_TARGET"
           if ! printf '%s' "$verified_sha" | grep -Eq '^[0-9a-f]{40}$'; then
             echo "invalid verified workflow sha"
@@ -64,13 +50,12 @@ jobs:
             exit 1
           fi
           git fetch --no-tags origin main
-          if [ "$deploy_target" = "production" ]; then
-            if ! git merge-base --is-ancestor "$verified_sha" FETCH_HEAD; then
-              echo "requested production release is not part of repository main"
-              exit 1
-            fi
-          elif [ "$(git rev-parse FETCH_HEAD)" != "$verified_sha" ]; then
-            echo "verified workflow sha is no longer the repository main head"
+          if [ "$deploy_target" != "production" ]; then
+            echo "AI-CRM deploy workflow is production-only"
+            exit 1
+          fi
+          if [ "$(git rev-parse FETCH_HEAD)" != "$verified_sha" ]; then
+            echo "requested production release is not the current repository main"
             exit 1
           fi
           public_base_url="${PUBLIC_BASE_URL%/}"
@@ -97,30 +82,20 @@ jobs:
             echo "target environment already runs the requested release"
             exit 1
           fi
-          bundle_mode="incremental"
           if ! git cat-file -e "$base_sha^{commit}"; then
-            if [ "$deploy_target" != "test" ]; then
-              echo "target environment release is not present in repository history"
-              exit 1
-            fi
-            echo "test environment release is orphaned; building a full verified release bundle"
-            bundle_mode="full"
+            echo "production release is not present in repository history"
+            exit 1
           elif ! git merge-base --is-ancestor "$base_sha" "$verified_sha"; then
-            echo "target environment release is not an ancestor of the requested release"
+            echo "production release is not an ancestor of the requested release"
             exit 1
           fi
           echo "base_sha=$base_sha" >> "$GITHUB_OUTPUT"
-          echo "bundle_mode=$bundle_mode" >> "$GITHUB_OUTPUT"
+          echo "bundle_mode=incremental" >> "$GITHUB_OUTPUT"
           mkdir -p release
           git update-ref refs/deploy/release "$verified_sha"
-          if [ "$bundle_mode" = "full" ]; then
-            trap 'git update-ref -d refs/deploy/release' EXIT
-            git bundle create release/aicrm-release.bundle refs/deploy/release
-          else
-            git update-ref refs/deploy/base "$base_sha"
-            trap 'git update-ref -d refs/deploy/release; git update-ref -d refs/deploy/base' EXIT
-            git bundle create release/aicrm-release.bundle refs/deploy/release ^refs/deploy/base
-          fi
+          git update-ref refs/deploy/base "$base_sha"
+          trap 'git update-ref -d refs/deploy/release; git update-ref -d refs/deploy/base' EXIT
+          git bundle create release/aicrm-release.bundle refs/deploy/release ^refs/deploy/base
           git bundle verify release/aicrm-release.bundle
           if ! git bundle list-heads release/aicrm-release.bundle \
             | grep -Fx "$verified_sha refs/deploy/release" >/dev/null; then
@@ -135,20 +110,20 @@ jobs:
       - name: Transfer verified release bundle
         uses: appleboy/scp-action@ff85246acaad7bdce478db94a363cd2bf7c90345 # v1.0.0
         with:
-          host: ${{ env.DEPLOY_TARGET == 'production' && secrets.DEPLOY_HOST || secrets.TEST_DEPLOY_HOST }}
-          username: ${{ env.DEPLOY_TARGET == 'production' && secrets.DEPLOY_USER || secrets.TEST_DEPLOY_USER }}
-          key: ${{ env.DEPLOY_TARGET == 'production' && secrets.DEPLOY_SSH_KEY || secrets.TEST_DEPLOY_SSH_KEY }}
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
           source: "release/aicrm-release.bundle,release/aicrm-release.bundle.sha256"
-          target: /tmp/aicrm-release-${{ inputs.release_sha || github.event.workflow_run.head_sha }}
+          target: /tmp/aicrm-release-${{ inputs.release_sha }}
           strip_components: 1
           overwrite: true
 
       - name: Deploy via SSH
         uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1.2.5
         with:
-          host: ${{ env.DEPLOY_TARGET == 'production' && secrets.DEPLOY_HOST || secrets.TEST_DEPLOY_HOST }}
-          username: ${{ env.DEPLOY_TARGET == 'production' && secrets.DEPLOY_USER || secrets.TEST_DEPLOY_USER }}
-          key: ${{ env.DEPLOY_TARGET == 'production' && secrets.DEPLOY_SSH_KEY || secrets.TEST_DEPLOY_SSH_KEY }}
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
           script: |
             set -e
             set -o pipefail
@@ -167,19 +142,19 @@ jobs:
             fi
             cd '/home/ubuntu/极简 crm'
             before_sha="$(git rev-parse HEAD)"
-            verified_sha="${{ inputs.release_sha || github.event.workflow_run.head_sha }}"
+            verified_sha="${{ inputs.release_sha }}"
             base_sha="${{ steps.release.outputs.base_sha }}"
             bundle_mode="${{ steps.release.outputs.bundle_mode }}"
             if ! printf '%s' "$verified_sha" | grep -Eq '^[0-9a-f]{40}$'; then
               echo "invalid verified workflow sha"
               exit 1
             fi
-            if [ "$bundle_mode" != "incremental" ] && [ "$bundle_mode" != "full" ]; then
-              echo "invalid release bundle mode"
+            if [ "$deploy_target" != "production" ]; then
+              echo "AI-CRM remote deploy target must be production"
               exit 1
             fi
-            if [ "$bundle_mode" = "full" ] && [ "$deploy_target" != "test" ]; then
-              echo "full release bundle recovery is restricted to the test environment"
+            if [ "$bundle_mode" != "incremental" ]; then
+              echo "invalid release bundle mode"
               exit 1
             fi
             if [ "$before_sha" != "$base_sha" ]; then
@@ -533,10 +508,7 @@ jobs:
               --output-file "$deploy_smoke_session_file" \
               --ttl-seconds 300 \
               | tee /tmp/aicrm-deploy-smoke-session-issue.json
-            admin_smoke_sidebar_args=()
-            if [ "$deploy_target" = "production" ]; then
-              admin_smoke_sidebar_args=(--include-all-sidebar --require-all-data-health-green)
-            fi
+            admin_smoke_sidebar_args=(--include-all-sidebar --require-all-data-health-green)
             if ! python scripts/ops/check_admin_read_pages_smoke.py \
               --base-url http://127.0.0.1:5001 \
               --require-admin-cookie \
@@ -569,38 +541,16 @@ jobs:
             # Count-only R10 Group Ops/broadcast reconciliation. Never repairs, resends, or calls providers.
             python scripts/ops/reconcile_group_ops_broadcast.py \
               | tee /tmp/aicrm-group-ops-broadcast-reconciliation.json
-            if [ "$deploy_target" = "production" ]; then
-              test -n "${{ env.PUBLIC_SERVER_NAME }}"
-              test -n "${{ env.NGINX_CONFIG_PATH }}"
-              sudo /home/ubuntu/venvs/openclaw/bin/python \
-                scripts/ops/ensure_production_public_release_route.py --execute \
-                --expected-sha "$after_sha" \
-                --server-name "${{ env.PUBLIC_SERVER_NAME }}" \
-                --nginx-config "${{ env.NGINX_CONFIG_PATH }}" \
-                --local-health-url http://127.0.0.1:5001/health \
-                --public-health-url "${{ env.PUBLIC_HEALTH_URL }}" \
-                | tee /tmp/aicrm-public-release-route.json
-            else
-              test_public_ready=0
-              for _ in $(seq 1 30); do
-                if curl -sSf -D /tmp/aicrm_test_public_health_headers.txt \
-                  "${{ env.PUBLIC_HEALTH_URL }}" \
-                  -o /tmp/aicrm_test_public_health.json \
-                  && grep -i "x-aicrm-release-sha: $after_sha" /tmp/aicrm_test_public_health_headers.txt; then
-                  test_public_ready=1
-                  break
-                fi
-                actual_test_release_sha="$(awk 'tolower($1) == "x-aicrm-release-sha:" {print $2}' \
-                  /tmp/aicrm_test_public_health_headers.txt 2>/dev/null | tr -d '\r' | tail -n 1 || true)"
-                echo "waiting for public test release sha: expected=$after_sha actual=${actual_test_release_sha:-missing}"
-                sleep 2
-              done
-              if [ "$test_public_ready" != "1" ]; then
-                echo "public test health does not expose the deployed release sha"
-                exit 1
-              fi
-              cat /tmp/aicrm_test_public_health.json
-            fi
+            test -n "${{ env.PUBLIC_SERVER_NAME }}"
+            test -n "${{ env.NGINX_CONFIG_PATH }}"
+            sudo /home/ubuntu/venvs/openclaw/bin/python \
+              scripts/ops/ensure_production_public_release_route.py --execute \
+              --expected-sha "$after_sha" \
+              --server-name "${{ env.PUBLIC_SERVER_NAME }}" \
+              --nginx-config "${{ env.NGINX_CONFIG_PATH }}" \
+              --local-health-url http://127.0.0.1:5001/health \
+              --public-health-url "${{ env.PUBLIC_HEALTH_URL }}" \
+              | tee /tmp/aicrm-public-release-route.json
             python3 scripts/ops/manage_production_runtime_units.py --phase release-runtime-guard --execute
             runtime_units_stopped=0
             runtime_committed=1
