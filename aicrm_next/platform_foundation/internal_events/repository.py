@@ -42,6 +42,7 @@ from .repository_support import (
     hashlib,
     json,
     public_datetime,
+    queue_metric_filter_sql,
     redact_sensitive_text,
     scrub_summary,
     text,
@@ -390,7 +391,7 @@ class SQLAlchemyInternalEventRepository(InternalEventRepository):
         )
         rows = self._all(
             f"""
-            SELECT r.*
+            SELECT r.*, r.xmin::text AS row_version
             FROM internal_event_consumer_run r
             JOIN internal_event e ON e.event_id = r.event_id
             {where}
@@ -401,16 +402,39 @@ class SQLAlchemyInternalEventRepository(InternalEventRepository):
         )
         return [run for row in rows if (run := _public_run(row)) is not None], int((count_row or {}).get("total") or 0)
 
+    def list_consumer_runs_for_events(
+        self,
+        event_ids: list[str],
+    ) -> dict[str, list[InternalEventConsumerRun]]:
+        normalized_ids = list(dict.fromkeys(_text(event_id) for event_id in event_ids if _text(event_id)))
+        grouped: dict[str, list[InternalEventConsumerRun]] = {event_id: [] for event_id in normalized_ids}
+        if not normalized_ids:
+            return grouped
+        rows = self._all(
+            """
+            SELECT r.*, r.xmin::text AS row_version
+            FROM internal_event_consumer_run r
+            WHERE r.event_id = ANY(:event_ids)
+            ORDER BY r.created_at DESC, r.id DESC
+            """,
+            {"event_ids": normalized_ids},
+        )
+        for row in rows:
+            run = _public_run(row)
+            if run and run.event_id in grouped:
+                grouped[run.event_id].append(run)
+        return grouped
+
     def get_consumer_run(self, event_id: str, consumer_name: str) -> InternalEventConsumerRun | None:
         return _public_run(
             self._one(
-                "SELECT * FROM internal_event_consumer_run WHERE event_id = :event_id AND consumer_name = :consumer_name LIMIT 1",
+                "SELECT internal_event_consumer_run.*, xmin::text AS row_version FROM internal_event_consumer_run WHERE event_id = :event_id AND consumer_name = :consumer_name LIMIT 1",
                 {"event_id": _text(event_id), "consumer_name": _text(consumer_name)},
             )
         )
 
     def get_consumer_run_by_id(self, run_id: int) -> InternalEventConsumerRun | None:
-        return _public_run(self._one("SELECT * FROM internal_event_consumer_run WHERE id = :run_id LIMIT 1", {"run_id": int(run_id)}))
+        return _public_run(self._one("SELECT internal_event_consumer_run.*, xmin::text AS row_version FROM internal_event_consumer_run WHERE id = :run_id LIMIT 1", {"run_id": int(run_id)}))
 
     def acquire_consumer_run(
         self,
@@ -482,28 +506,10 @@ class SQLAlchemyInternalEventRepository(InternalEventRepository):
 
     def queue_metrics(self, filters: dict[str, Any] | None = None) -> dict[str, Any]:
         filters = dict(filters or {})
-        clauses: list[str] = []
-        params: dict[str, Any] = {}
-        if _text(filters.get("event_type")):
-            clauses.append("e.event_type = :event_type")
-            params["event_type"] = _text(filters.get("event_type"))
-        if filters.get("event_types"):
-            event_types = [_text(item) for item in filters.get("event_types") or [] if _text(item)]
-            if event_types:
-                clauses.append("e.event_type = ANY(:event_types)")
-                params["event_types"] = event_types
-        if _text(filters.get("consumer_name")):
-            clauses.append("r.consumer_name = :consumer_name")
-            params["consumer_name"] = _text(filters.get("consumer_name"))
-        if filters.get("consumer_names"):
-            consumer_names = [_text(item) for item in filters.get("consumer_names") or [] if _text(item)]
-            if consumer_names:
-                clauses.append("r.consumer_name = ANY(:consumer_names)")
-                params["consumer_names"] = consumer_names
-        pair_clause = self._event_consumer_pair_clause(filters.get("event_consumers"), params)
-        if pair_clause:
-            clauses.append(pair_clause)
-        where = "WHERE " + " AND ".join(clauses) if clauses else ""
+        where, params = queue_metric_filter_sql(
+            filters,
+            event_consumer_pair_clause=self._event_consumer_pair_clause,
+        )
         due_predicate = automatic_due_predicate_sql("r")
         row = (
             self._one(

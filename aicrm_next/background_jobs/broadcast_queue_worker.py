@@ -229,6 +229,7 @@ def _effect_plan_request(
         "source_command_id": str(job_id),
         "status": "queued",
         "idempotency_key": f"broadcast-effect:{job_id}:{idempotency_suffix}",
+        "parent_execution_id": _text(job.get("execution_id")),
         "lane": "wecom_bulk",
         "ordering_key": ordering_key,
         "fairness_key": f"broadcast:{_text(job.get('batch_key')) or job_id}",

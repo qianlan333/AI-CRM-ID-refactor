@@ -282,7 +282,7 @@ class PostgresWebhookInboxRepository:
         with _connect(self._database_url) as conn, conn.cursor() as cur:
             cur.execute(
                 """
-                SELECT *
+                SELECT webhook_inbox.*, xmin::text AS row_version
                 FROM webhook_inbox
                 WHERE provider = %s
                   AND hold_reason = ''
@@ -337,7 +337,7 @@ class PostgresWebhookInboxRepository:
         with _connect(self._database_url) as conn, conn.cursor() as cur:
             cur.execute(
                 f"""
-                SELECT *
+                SELECT webhook_inbox.*, xmin::text AS row_version
                 FROM webhook_inbox
                 {where_sql}
                 ORDER BY received_at DESC, id DESC
@@ -351,7 +351,7 @@ class PostgresWebhookInboxRepository:
         with _connect(self._database_url) as conn, conn.cursor() as cur:
             cur.execute(
                 """
-                SELECT *
+                SELECT webhook_inbox.*, xmin::text AS row_version
                 FROM webhook_inbox
                 WHERE id = %s
                 LIMIT 1
@@ -884,6 +884,7 @@ class InMemoryWebhookInboxRepository:
             "heartbeat_at": None,
             "worker_generation": 0,
             "policy_version": "queue-v1",
+            "row_version": "1",
             "last_error_code": "",
             "last_error_message": "",
             "received_at": now,

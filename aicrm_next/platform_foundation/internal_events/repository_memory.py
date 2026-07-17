@@ -74,6 +74,8 @@ class InMemoryInternalEventRepository(InternalEventRepository):
             "trace_id": _text(request.context.trace_id),
             "request_id": _text(request.context.request_id),
             "correlation_id": _text(request.correlation_id),
+            "execution_id": _text(request.execution_id) or f"exe_internal_{self._next_event_id}",
+            "parent_execution_id": _text(request.parent_execution_id),
             "occurred_at": public_datetime(request.occurred_at or now),
             "payload_json": dict(request.payload or {}),
             "payload_summary_json": payload_summary,
@@ -140,6 +142,12 @@ class InMemoryInternalEventRepository(InternalEventRepository):
             "event_id": event.event_id,
             "consumer_name": consumer_name,
             "consumer_type": _text(consumer_type) or "projection",
+            "execution_id": f"exe_internal_run_{self._next_run_id}",
+            "parent_execution_id": event.execution_id,
+            "lane": "internal_financial" if event.event_type.startswith(("payment.", "refund.", "order.")) else "internal_general",
+            "available_at": now,
+            "ordering_key": f"{event.aggregate_type}:{event.aggregate_id}",
+            "fairness_key": event.event_type,
             "status": "pending",
             "attempt_count": 0,
             "max_attempts": max(1, int(max_attempts or 5)),
@@ -147,6 +155,11 @@ class InMemoryInternalEventRepository(InternalEventRepository):
             "locked_at": "",
             "locked_by": "",
             "lease_token": "",
+            "lease_expires_at": "",
+            "heartbeat_at": "",
+            "worker_generation": 0,
+            "policy_version": "queue-v1",
+            "row_version": str(self._next_run_id),
             "last_attempt_id": "",
             "last_error_code": "",
             "last_error_message": "",
@@ -169,6 +182,22 @@ class InMemoryInternalEventRepository(InternalEventRepository):
         total = len(rows)
         window = rows[max(0, int(offset or 0)) : max(0, int(offset or 0)) + max(1, min(int(limit or 100), 200))]
         return [run for row in window if (run := _public_run(row)) is not None], total
+
+    def list_consumer_runs_for_events(
+        self,
+        event_ids: list[str],
+    ) -> dict[str, list[InternalEventConsumerRun]]:
+        normalized_ids = list(dict.fromkeys(_text(event_id) for event_id in event_ids if _text(event_id)))
+        grouped: dict[str, list[InternalEventConsumerRun]] = {event_id: [] for event_id in normalized_ids}
+        for row in sorted(
+            (row for row in self._runs if _text(row.get("event_id")) in grouped),
+            key=lambda item: (item.get("created_at") or "", int(item.get("id") or 0)),
+            reverse=True,
+        ):
+            run = _public_run(row)
+            if run:
+                grouped[run.event_id].append(run)
+        return grouped
 
     def get_consumer_run(self, event_id: str, consumer_name: str) -> InternalEventConsumerRun | None:
         for row in self._runs:
@@ -220,7 +249,26 @@ class InMemoryInternalEventRepository(InternalEventRepository):
 
     def queue_metrics(self, filters: dict[str, Any] | None = None) -> dict[str, Any]:
         now = utcnow()
-        rows = list(self._filtered_runs(filters or {}))
+        normalized_filters = dict(filters or {})
+        rows = list(self._filtered_runs(normalized_filters))
+        if _text(normalized_filters.get("consumer_status")):
+            rows = [row for row in rows if _text(row.get("status")) == _text(normalized_filters.get("consumer_status"))]
+        event_filter_keys = {
+            "event_section",
+            "event_type",
+            "aggregate_type",
+            "aggregate_id",
+            "subject_type",
+            "subject_id",
+            "trace_id",
+            "idempotency_key",
+            "source_module",
+            "created_from",
+            "created_to",
+        }
+        if any(normalized_filters.get(key) not in (None, "") for key in event_filter_keys):
+            event_ids = {row.get("event_id") for row in self._filtered_events(normalized_filters)}
+            rows = [row for row in rows if row.get("event_id") in event_ids]
         event_type_set = {_text(item) for item in (filters or {}).get("event_types") or [] if _text(item)}
         consumer_set = {_text(item) for item in (filters or {}).get("consumer_names") or [] if _text(item)}
         pair_set = self._event_consumer_pair_set((filters or {}).get("event_consumers"))

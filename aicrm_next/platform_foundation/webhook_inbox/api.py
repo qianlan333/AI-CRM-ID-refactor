@@ -12,6 +12,7 @@ from starlette.concurrency import run_in_threadpool
 
 from aicrm_next.shared.admin_action_runtime import ensure_admin_action_token, validate_admin_action_token
 from aicrm_next.admin_shell import admin_path_for, shell_context
+from aicrm_next.platform_foundation.auth_platform.context import AuthContext
 from aicrm_next.platform_foundation.external_effects import ExternalEffectService
 from aicrm_next.platform_foundation.internal_events import InternalEventService
 from aicrm_next.platform_foundation.execution_runtime.api_command import (
@@ -39,6 +40,11 @@ templates = Jinja2Templates(directory=[_TEMPLATES_DIR, _FRONTEND_COMPAT_TEMPLATE
 
 def _text(value: Any) -> str:
     return str(value or "").strip()
+
+
+def _authenticated_actor(request: Request) -> str:
+    context = getattr(request.state, "auth_context", None)
+    return _text(context.sub) if isinstance(context, AuthContext) else ""
 
 
 def _int(value: Any, *, default: int, minimum: int = 0, maximum: int = 200) -> int:
@@ -201,6 +207,13 @@ def _filters(**kwargs: Any) -> dict[str, Any]:
 def _item_payload(row: dict[str, Any]) -> dict[str, Any]:
     return {
         "id": int(row.get("id") or 0),
+        "execution_id": _text(row.get("execution_id")),
+        "parent_execution_id": _text(row.get("parent_execution_id")),
+        "lane": _text(row.get("lane")),
+        "available_at": row.get("available_at"),
+        "hold_reason": _text(row.get("hold_reason")),
+        "policy_version": _text(row.get("policy_version")),
+        "row_version": _text(row.get("row_version")),
         "provider": _text(row.get("provider")),
         "event_family": _text(row.get("event_family")),
         "route": _text(row.get("route")),
@@ -320,6 +333,7 @@ def _page_context(request: Request) -> dict[str, Any]:
                 {"label": "Dry-run", "href": "#run-due-preview", "variant": "secondary"},
             ],
             "admin_action_token": ensure_admin_action_token(),
+            "operator_actor": _authenticated_actor(request),
             "url_for": admin_path_for,
         }
     )

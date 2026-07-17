@@ -14,6 +14,64 @@ from .repository import _default_connect, _psycopg_url, external_claim_scope_pre
 
 
 PROVENANCE_PATH = Path("/home/ubuntu/.aicrm-releases/id-validation.json")
+TIMELINE_MAX_DEPTH = 12
+TIMELINE_MAX_EXECUTION_NODES = 256
+TIMELINE_MAX_ITEMS = 1024
+
+
+def queue_policy_base_eligible_predicate(
+    row_alias: str = "rows",
+    control_alias: str = "control",
+    policy_alias: str = "policy",
+) -> str:
+    """Canonical eligibility gate excluding external execution scope."""
+
+    return f"""
+        {row_alias}.hold_reason = ''
+        AND {row_alias}.ready_state
+        AND {row_alias}.available_at <= CURRENT_TIMESTAMP
+        AND {row_alias}.attempt_count < {row_alias}.max_attempts
+        AND {row_alias}.worker_generation IN (0, {control_alias}.active_generation)
+        AND {row_alias}.policy_version = {control_alias}.policy_version
+        AND {control_alias}.active_generation > 0
+        AND {control_alias}.claim_enabled
+        AND {control_alias}.rollout_mode IN ('canary', 'execute')
+        AND {policy_alias}.enabled
+        AND {policy_alias}.rollout_mode IN ('canary', 'execute')
+        AND ({policy_alias}.blocked_until IS NULL OR {policy_alias}.blocked_until <= CURRENT_TIMESTAMP)
+        AND {policy_alias}.policy_version = {control_alias}.policy_version
+        AND NOT {row_alias}.in_flight
+        AND NOT {row_alias}.unknown_state
+        AND NOT {row_alias}.dlq_state
+        AND NOT {row_alias}.rate_limited
+        AND NOT {row_alias}.ordering_blocked
+    """
+
+
+def queue_policy_external_scope_predicate(
+    row_alias: str = "rows",
+    control_alias: str = "control",
+) -> str:
+    """Apply the durable DB external claim scope to external queue rows."""
+
+    external_scope = external_claim_scope_predicate(
+        row_alias=row_alias,
+        scope_expression=f"{control_alias}.external_claim_scope",
+        execution_scope_expression=f"{row_alias}.execution_scope",
+    )
+    return f"({row_alias}.queue_kind <> 'external_effect' OR {external_scope})"
+
+
+def queue_policy_eligible_predicate(
+    row_alias: str = "rows",
+    control_alias: str = "control",
+    policy_alias: str = "policy",
+) -> str:
+    """Canonical policy gate shared by claims, runtime and system health."""
+
+    base = queue_policy_base_eligible_predicate(row_alias, control_alias, policy_alias)
+    scope = queue_policy_external_scope_predicate(row_alias, control_alias)
+    return f"({base}) AND ({scope})"
 
 
 def _public_datetime(value: Any) -> str:
@@ -111,13 +169,24 @@ class ExecutionRuntimeReadModel:
         lane_items = [self._lane_payload(row) for row in lanes]
         worker_items = [self._worker_payload(row) for row in workers]
         fresh_worker_items = [item for item in worker_items if item["fresh"]]
+        control_payload = self._control_payload(control or {})
+        durable_external_scope = str(control_payload.get("external_claim_scope") or "blocked")
+        public_external_scope = "test_loopback_only" if durable_external_scope == "test_loopback" else durable_external_scope
+        external_scope_modes = {
+            lane["lane"]: public_external_scope
+            for lane in lane_items
+            if lane["lane"] in {"wecom_interactive", "wecom_bulk", "wecom_media", "outbound_webhook"}
+        }
+        policy_payload = self._policy_payload(policy or {})
+        policy_payload["external_claim_scope"] = durable_external_scope
+        policy_payload["external_execution_scope_mode"] = external_scope_modes
         return {
             "ok": bool(control),
-            "control": self._control_payload(control or {}),
+            "control": control_payload,
             "lanes": lane_items,
             "workers": worker_items,
             "active_rate_limits": [self._cooldown_payload(row) for row in cooldowns],
-            "policy_snapshot": self._policy_payload(policy or {}),
+            "policy_snapshot": policy_payload,
             "release": {
                 "web_release_sha": release_sha,
                 "fresh_worker_count": len(fresh_worker_items),
@@ -130,33 +199,143 @@ class ExecutionRuntimeReadModel:
             "secrets_in_output": False,
         }
 
+    def lane_summary(self, lane_names: set[str] | frozenset[str]) -> dict[str, Any]:
+        snapshot = self.runtime_snapshot()
+        selected = [lane for lane in snapshot.get("lanes", []) if lane.get("lane") in lane_names]
+        count_keys = (
+            "raw_open",
+            "held",
+            "eligible",
+            "policy_gated",
+            "scheduled",
+            "retry_wait",
+            "rate_limited",
+            "in_flight",
+            "unknown",
+            "dlq",
+        )
+        return {
+            "policy_version": str((snapshot.get("control") or {}).get("policy_version") or ""),
+            "active_generation": int((snapshot.get("control") or {}).get("active_generation") or 0),
+            "claim_enabled": bool((snapshot.get("control") or {}).get("claim_enabled")),
+            "rollout_mode": str((snapshot.get("control") or {}).get("rollout_mode") or "blocked"),
+            "lanes": selected,
+            **{key: sum(int(lane.get(key) or 0) for lane in selected) for key in count_keys},
+        }
+
     def execution_timeline(self, execution_id: str) -> dict[str, Any] | None:
         normalized = str(execution_id or "").strip()
         if not normalized:
             return None
         with self._connect(self._database_url) as connection:
-            rows = connection.execute(self._timeline_sql(), (normalized,) * 14).fetchall()
+            graph = self._discover_execution_graph(connection, normalized)
+            execution_ids = sorted(graph["execution_ids"])
+            rows = connection.execute(
+                self._timeline_sql(),
+                (*([execution_ids] * 7), TIMELINE_MAX_ITEMS + 1),
+            ).fetchall()
         if not rows:
             return None
+        items_truncated = len(rows) > TIMELINE_MAX_ITEMS
+        rows = rows[:TIMELINE_MAX_ITEMS]
         items = [self._timeline_payload(row) for row in rows]
-        parent_ids = sorted({str(row.get("parent_execution_id") or "") for row in rows if row.get("parent_execution_id")})
-        child_ids = sorted({str(row.get("execution_id") or "") for row in rows if row.get("execution_id") and str(row.get("execution_id")) != normalized})
+        parent_ids = sorted({parent_id for _, parent_id in graph["edges"]})
+        child_ids = sorted(set(execution_ids) - {normalized})
         return {
             "execution_id": normalized,
             "parent_execution_ids": parent_ids,
             "child_execution_ids": child_ids,
             "items": items,
+            "graph": {
+                "execution_node_count": len(execution_ids),
+                "edge_count": len(graph["edges"]),
+                "max_depth_reached": int(graph["max_depth_reached"]),
+                "max_depth": TIMELINE_MAX_DEPTH,
+                "max_execution_nodes": TIMELINE_MAX_EXECUTION_NODES,
+                "max_items": TIMELINE_MAX_ITEMS,
+                "truncated": bool(graph["truncated"] or items_truncated),
+            },
             "pii_in_output": False,
             "secrets_in_output": False,
         }
 
+    @classmethod
+    def _discover_execution_graph(cls, connection: Any, root_execution_id: str) -> dict[str, Any]:
+        """Discover the bounded connected execution graph around one public root.
+
+        Parent links are traversed in both directions so the same endpoint works
+        when an operator opens a root, an intermediate event, or a leaf run.  A
+        global visited set prevents cycles and caps database work independently
+        of malformed historical links.
+        """
+
+        execution_ids = {root_execution_id}
+        frontier = {root_execution_id}
+        edges: set[tuple[str, str]] = set()
+        max_depth_reached = 0
+        truncated = False
+
+        for depth in range(1, TIMELINE_MAX_DEPTH + 1):
+            if not frontier:
+                break
+            frontier_ids = sorted(frontier)
+            per_lookup_limit = TIMELINE_MAX_EXECUTION_NODES + 1
+            rows = connection.execute(
+                cls._timeline_links_sql(),
+                (
+                    *(
+                        value
+                        for _ in range(10)
+                        for value in (frontier_ids, per_lookup_limit)
+                    ),
+                    per_lookup_limit,
+                ),
+            ).fetchall()
+            discovered: set[str] = set()
+            for row in rows:
+                child_execution_id = str(row.get("execution_id") or "").strip()
+                parent_execution_id = str(row.get("parent_execution_id") or "").strip()
+                if child_execution_id and parent_execution_id:
+                    edges.add((child_execution_id, parent_execution_id))
+                for candidate in (child_execution_id, parent_execution_id):
+                    if candidate and candidate not in execution_ids:
+                        discovered.add(candidate)
+
+            remaining = TIMELINE_MAX_EXECUTION_NODES - len(execution_ids)
+            if len(discovered) > remaining:
+                truncated = True
+                discovered = set(sorted(discovered)[:remaining])
+            execution_ids.update(discovered)
+            frontier = discovered
+            if discovered:
+                max_depth_reached = depth
+            if len(execution_ids) >= TIMELINE_MAX_EXECUTION_NODES:
+                truncated = truncated or bool(frontier)
+                break
+        else:
+            truncated = truncated or bool(frontier)
+
+        bounded_edges = {
+            edge
+            for edge in edges
+            if edge[0] in execution_ids and edge[1] in execution_ids
+        }
+        return {
+            "execution_ids": execution_ids,
+            "edges": bounded_edges,
+            "max_depth_reached": max_depth_reached,
+            "truncated": truncated,
+        }
+
     @staticmethod
     def _lane_metrics_sql() -> str:
+        base_eligible = queue_policy_base_eligible_predicate()
         external_scope = external_claim_scope_predicate(
             row_alias="rows",
             scope_expression="control.external_claim_scope",
             execution_scope_expression="rows.execution_scope",
         )
+        eligible = queue_policy_eligible_predicate()
         return f"""
             WITH queue_rows AS (
                 SELECT 'external_effect'::TEXT AS queue_kind,
@@ -257,35 +436,11 @@ class ExecutionRuntimeReadModel:
                    COUNT(rows.*)::BIGINT AS raw_open,
                    COUNT(rows.*) FILTER (WHERE rows.hold_reason <> '')::BIGINT AS held,
                    COUNT(rows.*) FILTER (
-                       WHERE rows.hold_reason = ''
-                         AND rows.ready_state
-                         AND rows.available_at <= CURRENT_TIMESTAMP
-                         AND rows.attempt_count < rows.max_attempts
-                         AND rows.worker_generation IN (0, control.active_generation)
-                         AND rows.policy_version = control.policy_version
-                         AND control.active_generation > 0
-                         AND control.claim_enabled
-                         AND control.rollout_mode IN ('canary', 'execute')
-                         AND policy.enabled
-                         AND policy.rollout_mode IN ('canary', 'execute')
-                         AND (policy.blocked_until IS NULL OR policy.blocked_until <= CURRENT_TIMESTAMP)
-                         AND policy.policy_version = control.policy_version
-                         AND NOT rows.in_flight
-                         AND NOT rows.unknown_state
-                         AND NOT rows.dlq_state
-                         AND NOT rows.rate_limited
-                         AND NOT rows.ordering_blocked
-                         AND (
-                             rows.queue_kind <> 'external_effect'
-                             OR {external_scope}
-                         )
+                       WHERE {eligible}
                    )::BIGINT AS eligible,
                    COUNT(rows.*) FILTER (
                        WHERE rows.queue_kind = 'external_effect'
-                         AND rows.hold_reason = ''
-                         AND rows.ready_state
-                         AND rows.available_at <= CURRENT_TIMESTAMP
-                         AND rows.attempt_count < rows.max_attempts
+                         AND {base_eligible}
                          AND NOT ({external_scope})
                    )::BIGINT AS policy_gated,
                    COUNT(rows.*) FILTER (
@@ -314,28 +469,7 @@ class ExecutionRuntimeReadModel:
                    COUNT(rows.*) FILTER (WHERE rows.dlq_state)::BIGINT AS dlq,
                    COALESCE(
                        EXTRACT(EPOCH FROM CURRENT_TIMESTAMP - MIN(rows.available_at) FILTER (
-                           WHERE rows.hold_reason = ''
-                             AND rows.ready_state
-                             AND rows.available_at <= CURRENT_TIMESTAMP
-                             AND rows.attempt_count < rows.max_attempts
-                             AND rows.worker_generation IN (0, control.active_generation)
-                             AND rows.policy_version = control.policy_version
-                             AND control.active_generation > 0
-                             AND control.claim_enabled
-                             AND control.rollout_mode IN ('canary', 'execute')
-                             AND policy.enabled
-                             AND policy.rollout_mode IN ('canary', 'execute')
-                             AND (policy.blocked_until IS NULL OR policy.blocked_until <= CURRENT_TIMESTAMP)
-                             AND policy.policy_version = control.policy_version
-                             AND NOT rows.in_flight
-                             AND NOT rows.unknown_state
-                             AND NOT rows.dlq_state
-                             AND NOT rows.rate_limited
-                             AND NOT rows.ordering_blocked
-                             AND (
-                                 rows.queue_kind <> 'external_effect'
-                                 OR {external_scope}
-                             )
+                           WHERE {eligible}
                        )),
                        0
                    )::BIGINT AS oldest_eligible_age_seconds
@@ -351,6 +485,106 @@ class ExecutionRuntimeReadModel:
         """
 
     @staticmethod
+    def _timeline_links_sql() -> str:
+        return """
+            SELECT DISTINCT execution_id, parent_execution_id
+            FROM (
+                (
+                SELECT event.execution_id, event.parent_execution_id
+                FROM internal_event event
+                WHERE event.execution_id <> ''
+                  AND event.execution_id = ANY(%s::text[])
+                ORDER BY event.execution_id, event.parent_execution_id
+                LIMIT %s
+                )
+                UNION ALL
+                (
+                SELECT event.execution_id, event.parent_execution_id
+                FROM internal_event event
+                WHERE event.parent_execution_id <> ''
+                  AND event.parent_execution_id = ANY(%s::text[])
+                ORDER BY event.parent_execution_id, event.execution_id
+                LIMIT %s
+                )
+                UNION ALL
+                (
+                SELECT outbox.execution_id, outbox.parent_execution_id
+                FROM internal_event_outbox outbox
+                WHERE outbox.execution_id <> ''
+                  AND outbox.execution_id = ANY(%s::text[])
+                ORDER BY outbox.execution_id, outbox.parent_execution_id
+                LIMIT %s
+                )
+                UNION ALL
+                (
+                SELECT outbox.execution_id, outbox.parent_execution_id
+                FROM internal_event_outbox outbox
+                WHERE outbox.parent_execution_id <> ''
+                  AND outbox.parent_execution_id = ANY(%s::text[])
+                ORDER BY outbox.parent_execution_id, outbox.execution_id
+                LIMIT %s
+                )
+                UNION ALL
+                (
+                SELECT run.execution_id, run.parent_execution_id
+                FROM internal_event_consumer_run run
+                WHERE run.execution_id <> ''
+                  AND run.execution_id = ANY(%s::text[])
+                ORDER BY run.execution_id, run.parent_execution_id
+                LIMIT %s
+                )
+                UNION ALL
+                (
+                SELECT run.execution_id, run.parent_execution_id
+                FROM internal_event_consumer_run run
+                WHERE run.parent_execution_id <> ''
+                  AND run.parent_execution_id = ANY(%s::text[])
+                ORDER BY run.parent_execution_id, run.execution_id
+                LIMIT %s
+                )
+                UNION ALL
+                (
+                SELECT job.execution_id, job.parent_execution_id
+                FROM external_effect_job job
+                WHERE job.execution_id <> ''
+                  AND job.execution_id = ANY(%s::text[])
+                ORDER BY job.execution_id, job.parent_execution_id
+                LIMIT %s
+                )
+                UNION ALL
+                (
+                SELECT job.execution_id, job.parent_execution_id
+                FROM external_effect_job job
+                WHERE job.parent_execution_id <> ''
+                  AND job.parent_execution_id = ANY(%s::text[])
+                ORDER BY job.parent_execution_id, job.execution_id
+                LIMIT %s
+                )
+                UNION ALL
+                (
+                SELECT inbox.execution_id, inbox.parent_execution_id
+                FROM webhook_inbox inbox
+                WHERE inbox.execution_id <> ''
+                  AND inbox.execution_id = ANY(%s::text[])
+                ORDER BY inbox.execution_id, inbox.parent_execution_id
+                LIMIT %s
+                )
+                UNION ALL
+                (
+                SELECT inbox.execution_id, inbox.parent_execution_id
+                FROM webhook_inbox inbox
+                WHERE inbox.parent_execution_id <> ''
+                  AND inbox.parent_execution_id = ANY(%s::text[])
+                ORDER BY inbox.parent_execution_id, inbox.execution_id
+                LIMIT %s
+                )
+            ) links
+            WHERE execution_id <> '' OR parent_execution_id <> ''
+            ORDER BY execution_id ASC, parent_execution_id ASC
+            LIMIT %s
+        """
+
+    @staticmethod
     def _timeline_sql() -> str:
         return """
             SELECT 'internal_event' AS item_kind, event.id::TEXT AS item_id,
@@ -360,21 +594,24 @@ class ExecutionRuntimeReadModel:
                    event.created_at, event.created_at AS updated_at,
                    event.payload_summary_json AS summary_json
             FROM internal_event event
-            WHERE event.execution_id = %s OR event.parent_execution_id = %s
+            WHERE event.execution_id <> ''
+              AND event.execution_id = ANY(%s::text[])
             UNION ALL
             SELECT 'internal_outbox', outbox.id::TEXT, outbox.execution_id,
                    outbox.parent_execution_id, outbox.event_type, outbox.status,
                    outbox.lane, outbox.available_at, outbox.created_at, outbox.updated_at,
                    outbox.payload_summary_json
             FROM internal_event_outbox outbox
-            WHERE outbox.execution_id = %s OR outbox.parent_execution_id = %s
+            WHERE outbox.execution_id <> ''
+              AND outbox.execution_id = ANY(%s::text[])
             UNION ALL
             SELECT 'internal_consumer_run', run.id::TEXT, run.execution_id,
                    run.parent_execution_id, run.consumer_name, run.status,
                    run.lane, run.available_at, run.created_at, run.updated_at,
                    run.result_summary_json
             FROM internal_event_consumer_run run
-            WHERE run.execution_id = %s OR run.parent_execution_id = %s
+            WHERE run.execution_id <> ''
+              AND run.execution_id = ANY(%s::text[])
             UNION ALL
             SELECT 'internal_consumer_attempt', attempt.attempt_id, run.execution_id,
                    run.parent_execution_id, attempt.consumer_name, attempt.status,
@@ -383,14 +620,16 @@ class ExecutionRuntimeReadModel:
                    attempt.request_summary_json || attempt.response_summary_json
             FROM internal_event_consumer_attempt attempt
             JOIN internal_event_consumer_run run ON run.id = attempt.consumer_run_id
-            WHERE run.execution_id = %s OR run.parent_execution_id = %s
+            WHERE run.execution_id <> ''
+              AND run.execution_id = ANY(%s::text[])
             UNION ALL
             SELECT 'external_effect', job.id::TEXT, job.execution_id,
                    job.parent_execution_id, job.effect_type, job.status,
                    job.lane, job.available_at, job.created_at, job.updated_at,
                    job.payload_summary_json || job.result_summary_json
             FROM external_effect_job job
-            WHERE job.execution_id = %s OR job.parent_execution_id = %s
+            WHERE job.execution_id <> ''
+              AND job.execution_id = ANY(%s::text[])
             UNION ALL
             SELECT 'external_effect_attempt', attempt.attempt_id, job.execution_id,
                    job.parent_execution_id, attempt.operation, attempt.status,
@@ -399,15 +638,18 @@ class ExecutionRuntimeReadModel:
                    attempt.request_summary_json || attempt.response_summary_json
             FROM external_effect_attempt attempt
             JOIN external_effect_job job ON job.id = attempt.job_id
-            WHERE job.execution_id = %s OR job.parent_execution_id = %s
+            WHERE job.execution_id <> ''
+              AND job.execution_id = ANY(%s::text[])
             UNION ALL
             SELECT 'webhook_inbox', inbox.id::TEXT, inbox.execution_id,
                    inbox.parent_execution_id, inbox.event_family, inbox.status,
                    inbox.lane, inbox.available_at, inbox.created_at, inbox.updated_at,
                    inbox.payload_summary_json || inbox.processing_summary_json
             FROM webhook_inbox inbox
-            WHERE inbox.execution_id = %s OR inbox.parent_execution_id = %s
+            WHERE inbox.execution_id <> ''
+              AND inbox.execution_id = ANY(%s::text[])
             ORDER BY created_at ASC, item_kind ASC, item_id ASC
+            LIMIT %s
         """
 
     @staticmethod
@@ -503,4 +745,13 @@ class ExecutionRuntimeReadModel:
         }
 
 
-__all__ = ["ExecutionRuntimeReadModel", "release_provenance"]
+__all__ = [
+    "ExecutionRuntimeReadModel",
+    "TIMELINE_MAX_DEPTH",
+    "TIMELINE_MAX_EXECUTION_NODES",
+    "TIMELINE_MAX_ITEMS",
+    "queue_policy_base_eligible_predicate",
+    "queue_policy_eligible_predicate",
+    "queue_policy_external_scope_predicate",
+    "release_provenance",
+]

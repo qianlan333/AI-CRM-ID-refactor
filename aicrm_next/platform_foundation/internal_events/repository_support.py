@@ -66,6 +66,77 @@ def automatic_due_predicate_sql(alias: str = "r") -> str:
     """
 
 
+def queue_metric_filter_sql(
+    filters: dict[str, Any],
+    *,
+    event_consumer_pair_clause: Callable[[Any, dict[str, Any]], str],
+) -> tuple[str, dict[str, Any]]:
+    clauses: list[str] = []
+    params: dict[str, Any] = {}
+    if _text(filters.get("event_type")):
+        clauses.append("e.event_type = :event_type")
+        params["event_type"] = _text(filters.get("event_type"))
+    event_section = _text(filters.get("event_section"))
+    if event_section and not _text(filters.get("event_type")):
+        known_types = sorted({event_type for values in EVENT_SECTION_EVENT_TYPES.values() for event_type in values})
+        section_types = list(EVENT_SECTION_EVENT_TYPES.get(event_section, ()))
+        if section_types:
+            clauses.append("e.event_type = ANY(:metric_event_section_types)")
+            params["metric_event_section_types"] = section_types
+        elif event_section == "other" and known_types:
+            clauses.append("NOT (e.event_type = ANY(:metric_known_event_types))")
+            params["metric_known_event_types"] = known_types
+    for key in (
+        "aggregate_type",
+        "aggregate_id",
+        "subject_type",
+        "subject_id",
+        "trace_id",
+        "idempotency_key",
+        "source_module",
+    ):
+        value = _text(filters.get(key))
+        if value:
+            clauses.append(f"e.{key} = :metric_{key}")
+            params[f"metric_{key}"] = value
+    trace_hashes = _trace_hash_candidates(filters)
+    if trace_hashes:
+        trace_clauses: list[str] = []
+        for index, trace_hash in enumerate(trace_hashes):
+            param_key = f"metric_original_trace_hash_{index}"
+            trace_clauses.append(
+                f"(e.payload_json -> 'broadcast_task' ->> 'original_trace_hash' = :{param_key} "
+                f"OR e.payload_json -> 'broadcast_task' ->> 'trace_id_hash' = :{param_key})"
+            )
+            params[param_key] = trace_hash
+        clauses.append("(" + " OR ".join(trace_clauses) + ")")
+    for key, operator in (("created_from", ">="), ("created_to", "<=")):
+        value = _text(filters.get(key))
+        if value:
+            clauses.append(f"e.created_at {operator} CAST(:metric_{key} AS timestamptz)")
+            params[f"metric_{key}"] = value
+    for source_key, column, param_key in (
+        ("event_types", "e.event_type", "event_types"),
+        ("consumer_names", "r.consumer_name", "consumer_names"),
+    ):
+        values = [_text(item) for item in filters.get(source_key) or [] if _text(item)]
+        if values:
+            clauses.append(f"{column} = ANY(:{param_key})")
+            params[param_key] = values
+    for source_key, column, param_key in (
+        ("consumer_name", "r.consumer_name", "consumer_name"),
+        ("consumer_status", "r.status", "metric_consumer_status"),
+    ):
+        value = _text(filters.get(source_key))
+        if value:
+            clauses.append(f"{column} = :{param_key}")
+            params[param_key] = value
+    pair_clause = event_consumer_pair_clause(filters.get("event_consumers"), params)
+    if pair_clause:
+        clauses.append(pair_clause)
+    return ("WHERE " + " AND ".join(clauses) if clauses else ""), params
+
+
 def _run_is_automatically_due(row: dict[str, Any], *, now: datetime) -> bool:
     if _text(row.get("hold_reason")):
         return False
@@ -302,6 +373,25 @@ class InternalEventRepository:
 
     def list_consumer_runs(self, filters: dict[str, Any] | None = None, *, limit: int = 100, offset: int = 0) -> tuple[list[InternalEventConsumerRun], int]:
         raise NotImplementedError
+
+    def list_consumer_runs_for_events(
+        self,
+        event_ids: list[str],
+    ) -> dict[str, list[InternalEventConsumerRun]]:
+        """Return consumer runs grouped by event.
+
+        Concrete repositories override this with one batch query.  The fallback
+        keeps small test doubles source-compatible while they migrate to the
+        batch contract.
+        """
+
+        grouped: dict[str, list[InternalEventConsumerRun]] = {
+            _text(event_id): [] for event_id in event_ids if _text(event_id)
+        }
+        for event_id in grouped:
+            runs, _ = self.list_consumer_runs({"event_id": event_id}, limit=200)
+            grouped[event_id] = runs
+        return grouped
 
     def get_consumer_run(self, event_id: str, consumer_name: str) -> InternalEventConsumerRun | None:
         raise NotImplementedError

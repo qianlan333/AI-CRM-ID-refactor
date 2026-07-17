@@ -4,9 +4,10 @@ from datetime import date, datetime, time
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote
 
 from fastapi import APIRouter, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from starlette.concurrency import run_in_threadpool
 
@@ -24,6 +25,7 @@ from aicrm_next.platform_foundation.execution_runtime.commands import (
     QueueCommandConflict,
     QueueRuntimeCommandService,
 )
+from aicrm_next.platform_foundation.execution_runtime.read_model import ExecutionRuntimeReadModel
 
 from .config import diagnostics_payload as config_diagnostics_payload, worker_batch_size
 from .repository import build_internal_event_repository
@@ -36,6 +38,7 @@ ROUTE_OWNER = "ai_crm_next"
 _TEMPLATES_DIR = Path(__file__).resolve().parent / "templates"
 _FRONTEND_COMPAT_TEMPLATES_DIR = Path(__file__).resolve().parents[2] / "frontend_compat" / "templates"
 templates = Jinja2Templates(directory=[_TEMPLATES_DIR, _FRONTEND_COMPAT_TEMPLATES_DIR])
+_INTERNAL_LANES = frozenset({"internal_general", "internal_financial"})
 
 
 def _text(value: Any) -> str:
@@ -93,6 +96,17 @@ def _json_safe(value: Any) -> Any:
 def _action_or_internal_token_error(request: Request, payload: dict[str, Any]) -> str:
     token = _text(request.headers.get("X-Admin-Action-Token")) or _text(payload.get("admin_action_token"))
     return validate_admin_action_token(token, request=request)
+
+
+def _authenticated_actor(request: Request) -> str:
+    return _text(authenticated_queue_actor(request))
+
+
+def _runtime_queue_summary() -> dict[str, Any]:
+    try:
+        return ExecutionRuntimeReadModel().lane_summary(_INTERNAL_LANES)
+    except Exception:
+        return {}
 
 
 def _service() -> InternalEventService:
@@ -202,9 +216,6 @@ async def _accepted_action_response(
 
 
 def _page_context(request: Request) -> dict[str, Any]:
-    payload = build_events_payload(dict(request.query_params), repository=build_internal_event_repository())
-    selected_event_id = _text(request.query_params.get("event_id"))
-    selected_event = build_event_detail_payload(selected_event_id, service=_service()) if selected_event_id else None
     context = shell_context(
         request=request,
         page_title="事件中心",
@@ -214,12 +225,11 @@ def _page_context(request: Request) -> dict[str, Any]:
     context.update(
         {
             "breadcrumbs": [{"label": "客户管理后台", "href": "/"}, {"label": "事件中心", "href": ""}],
-            "internal_events": payload,
-            "selected_event": selected_event,
             "page_actions": [
                 {"label": "刷新", "href": "#refresh", "variant": "secondary"},
-                {"label": "导出当前筛选", "href": "#export", "variant": "secondary"},
+                {"label": "导出当前页", "href": "#export", "variant": "secondary"},
             ],
+            "operator_actor": _authenticated_actor(request),
             "admin_action_token": ensure_admin_action_token(),
             "url_for": admin_path_for,
         }
@@ -229,7 +239,39 @@ def _page_context(request: Request) -> dict[str, Any]:
 
 @router.get("/admin/internal-events", name="api.admin_internal_events_page", response_class=HTMLResponse)
 def admin_internal_events_page(request: Request):
+    selected_event_id = _text(request.query_params.get("event_id"))
+    if selected_event_id:
+        encoded = quote(selected_event_id, safe="")
+        return RedirectResponse(f"/admin/internal-events/{encoded}", status_code=303)
     return templates.TemplateResponse(request, "admin_console/internal_events.html", _page_context(request))
+
+
+@router.get(
+    "/admin/internal-events/{event_id}",
+    name="api.admin_internal_event_page",
+    response_class=HTMLResponse,
+)
+def admin_internal_event_page(event_id: str, request: Request):
+    context = shell_context(
+        request=request,
+        page_title="事件详情",
+        page_summary="查看单个业务事实、消费者执行与下游对账信息。",
+        active_endpoint="api.admin_internal_events_page",
+    )
+    context.update(
+        {
+            "breadcrumbs": [
+                {"label": "客户管理后台", "href": "/"},
+                {"label": "事件中心", "href": "/admin/internal-events"},
+                {"label": _text(event_id), "href": ""},
+            ],
+            "event_id": _text(event_id),
+            "operator_actor": _authenticated_actor(request),
+            "admin_action_token": ensure_admin_action_token(),
+            "url_for": admin_path_for,
+        }
+    )
+    return templates.TemplateResponse(request, "admin_console/internal_event_detail.html", context)
 
 
 @router.get("/api/admin/internal-events")
@@ -252,7 +294,20 @@ def list_internal_events(
     limit: int = 50,
     offset: int = 0,
 ) -> dict[str, Any]:
-    return build_events_payload(locals(), repository=build_internal_event_repository())
+    payload = build_events_payload(locals(), repository=build_internal_event_repository())
+    runtime_queue = _runtime_queue_summary()
+    payload["runtime_queue"] = runtime_queue
+    if runtime_queue and isinstance(payload.get("counts"), dict):
+        payload["counts"]["due"] = int(runtime_queue.get("eligible") or 0)
+        payload["counts"]["raw_open"] = int(runtime_queue.get("raw_open") or 0)
+        payload["counts"]["held"] = int(runtime_queue.get("held") or 0)
+        payload["counts"]["scheduled"] = int(runtime_queue.get("scheduled") or 0)
+        payload["counts"]["retry_wait"] = int(runtime_queue.get("retry_wait") or 0)
+        payload["counts"]["rate_limited"] = int(runtime_queue.get("rate_limited") or 0)
+        payload["counts"]["in_flight"] = int(runtime_queue.get("in_flight") or 0)
+        payload["counts"]["unknown"] = int(runtime_queue.get("unknown") or 0)
+        payload["counts"]["dlq"] = int(runtime_queue.get("dlq") or 0)
+    return payload
 
 
 @router.get("/api/admin/internal-events/diagnostics")

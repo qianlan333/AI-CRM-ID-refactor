@@ -6,6 +6,7 @@ import pytest
 from fastapi import HTTPException
 
 from aicrm_next.platform_foundation.execution_runtime import api
+from aicrm_next.platform_foundation.execution_runtime.read_model import ExecutionRuntimeReadModel
 
 
 def _body(response) -> dict:
@@ -88,3 +89,30 @@ def test_runtime_endpoint_fails_closed_without_leaking_error_text(monkeypatch) -
     assert body["error"] == "execution_runtime_unavailable"
     assert body["error_class"] == "RuntimeError"
     assert "postgresql://user:secret" not in response.body.decode("utf-8")
+
+
+def test_lane_summary_uses_the_runtime_policy_snapshot(monkeypatch) -> None:
+    model = object.__new__(ExecutionRuntimeReadModel)
+    monkeypatch.setattr(
+        model,
+        "runtime_snapshot",
+        lambda: {
+            "control": {
+                "policy_version": "queue-v7",
+                "active_generation": 7,
+                "claim_enabled": True,
+                "rollout_mode": "canary",
+            },
+            "lanes": [
+                {"lane": "internal_general", "raw_open": 583, "held": 583, "eligible": 0},
+                {"lane": "wecom_media", "raw_open": 2450, "held": 2450, "eligible": 0},
+            ],
+        },
+    )
+
+    summary = model.lane_summary(frozenset({"internal_general"}))
+
+    assert summary["policy_version"] == "queue-v7"
+    assert summary["raw_open"] == 583
+    assert summary["held"] == 583
+    assert summary["eligible"] == 0

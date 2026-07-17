@@ -71,6 +71,24 @@ def external_claim_scope_predicate(
     """
 
 
+def external_effect_claim_order_sql(
+    *,
+    row_alias: str = "job",
+    fairness_alias: str = "fairness",
+) -> str:
+    """Return the canonical external-effect claim order.
+
+    Keep operational read models on the same fairness/priority/due ordering as
+    ``claim_external_effect_one``.  Aliases are trusted static identifiers
+    supplied by repository code, never request input.
+    """
+
+    return (
+        f"COALESCE({fairness_alias}.last_claimed_at, '-infinity'::timestamptz), "
+        f"{row_alias}.priority ASC, {row_alias}.available_at ASC, {row_alias}.id ASC"
+    )
+
+
 @dataclass(frozen=True)
 class RuntimeControl:
     active_generation: int
@@ -566,6 +584,7 @@ class ExecutionRuntimeRepository:
                 row_alias="job",
                 scope_expression="(SELECT external_claim_scope FROM queue_runtime_control WHERE singleton = TRUE)",
             )
+            claim_order = external_effect_claim_order_sql()
             return f"""
                 WITH candidate AS (
                     SELECT job.id
@@ -598,8 +617,7 @@ class ExecutionRuntimeRepository:
                             AND active.lease_expires_at > CURRENT_TIMESTAMP
                       )
                       {test_predicate}
-                    ORDER BY COALESCE(fairness.last_claimed_at, '-infinity'),
-                             job.priority ASC, job.available_at ASC, job.id ASC
+                    ORDER BY {claim_order}
                     LIMIT 1
                     FOR UPDATE OF job SKIP LOCKED
                 )

@@ -275,7 +275,7 @@
       "accessor": "runtime_setting",
       "file": "aicrm_next/admin_jobs/application.py",
       "key": "AICRM_AUTH_MCP_CLIENT_ID",
-      "line": 281
+      "line": 282
     },
     {
       "accessor": "declared_runtime_environment_key",
@@ -371,7 +371,7 @@
       "accessor": "os.getenv",
       "file": "aicrm_next/admin_jobs/application.py",
       "key": "AICRM_ENABLE_IN_PROCESS_ARCHIVE_SYNC",
-      "line": 396
+      "line": 397
     },
     {
       "accessor": "os.getenv",
@@ -389,7 +389,7 @@
       "accessor": "runtime_setting",
       "file": "aicrm_next/background_jobs/broadcast_queue_worker.py",
       "key": "AICRM_EXTERNAL_EFFECT_ALLOWED_OWNER_USERIDS",
-      "line": 838
+      "line": 839
     },
     {
       "accessor": "declared_runtime_environment_key",
@@ -1103,13 +1103,13 @@
       "accessor": "os.getenv",
       "file": "aicrm_next/background_jobs/broadcast_queue_worker.py",
       "key": "BROADCAST_QUEUE_LEASE_SECONDS",
-      "line": 1219
+      "line": 1220
     },
     {
       "accessor": "os.getenv",
       "file": "aicrm_next/background_jobs/broadcast_queue_worker.py",
       "key": "BROADCAST_QUEUE_RETRY_DELAY_SECONDS",
-      "line": 388
+      "line": 389
     },
     {
       "accessor": "_env_flag",
@@ -1145,7 +1145,7 @@
       "accessor": "os.getenv",
       "file": "aicrm_next/admin_jobs/repository.py",
       "key": "DATABASE_URL",
-      "line": 78
+      "line": 80
     },
     {
       "accessor": "os.getenv",
@@ -1169,7 +1169,7 @@
       "accessor": "os.getenv",
       "file": "aicrm_next/cloud_orchestrator/repository.py",
       "key": "DATABASE_URL",
-      "line": 348
+      "line": 356
     },
     {
       "accessor": "os.getenv",
@@ -2009,7 +2009,7 @@
       "accessor": "os.getenv",
       "file": "aicrm_next/admin_jobs/application.py",
       "key": "WECOM_DEFAULT_OWNER_USERID",
-      "line": 82
+      "line": 83
     },
     {
       "accessor": "os.getenv",
@@ -3095,7 +3095,7 @@
     }
   ],
   "migration_heads": [
-    "0133_sidebar_customer_timeline"
+    "0134_execution_timeline_graph_indexes"
   ],
   "openapi_components": {
     "schemas": {
@@ -6503,6 +6503,55 @@
       "route_group": "admin_jobs"
     },
     {
+      "capability_owner": "admin_jobs",
+      "contract": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "title": "Job Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "request_body": null,
+        "responses": {
+          "200": {
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        }
+      },
+      "endpoint": "aicrm_next.admin_jobs.routes.admin_broadcast_job_page",
+      "include_in_schema": true,
+      "kind": "page",
+      "methods": [
+        "GET"
+      ],
+      "name": "api.admin_broadcast_job_page",
+      "operation_id": "api.admin_broadcast_job_page:GET:/admin/broadcast-jobs/{job_id}",
+      "path": "/admin/broadcast-jobs/{job_id}",
+      "route_group": "admin_jobs"
+    },
+    {
       "capability_owner": "automation_engine",
       "contract": {
         "parameters": [],
@@ -7682,6 +7731,55 @@
       "route_group": "internal_events"
     },
     {
+      "capability_owner": "platform_foundation",
+      "contract": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "title": "Event Id",
+              "type": "string"
+            }
+          }
+        ],
+        "request_body": null,
+        "responses": {
+          "200": {
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        }
+      },
+      "endpoint": "aicrm_next.platform_foundation.internal_events.api.admin_internal_event_page",
+      "include_in_schema": true,
+      "kind": "page",
+      "methods": [
+        "GET"
+      ],
+      "name": "api.admin_internal_event_page",
+      "operation_id": "api.admin_internal_event_page:GET:/admin/internal-events/{event_id}",
+      "path": "/admin/internal-events/{event_id}",
+      "route_group": "internal_events"
+    },
+    {
       "capability_owner": "admin_jobs",
       "contract": {
         "parameters": [],
@@ -8039,6 +8137,55 @@
       "name": "api.admin_push_center_page",
       "operation_id": "api.admin_push_center_page:GET:/admin/push-center",
       "path": "/admin/push-center",
+      "route_group": "push_center"
+    },
+    {
+      "capability_owner": "platform_foundation",
+      "contract": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "request_body": null,
+        "responses": {
+          "200": {
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        }
+      },
+      "endpoint": "aicrm_next.platform_foundation.push_center.api.admin_push_center_job_page",
+      "include_in_schema": true,
+      "kind": "page",
+      "methods": [
+        "GET"
+      ],
+      "name": "api.admin_push_center_job_page",
+      "operation_id": "api.admin_push_center_job_page:GET:/admin/push-center/jobs/{job_id}",
+      "path": "/admin/push-center/jobs/{job_id}",
       "route_group": "push_center"
     },
     {
@@ -13997,6 +14144,53 @@
       "name": "api_admin_broadcast_jobs_validate_feishu_notification_settings",
       "operation_id": "api_admin_broadcast_jobs_validate_feishu_notification_settings:POST:/api/admin/broadcast-jobs/notification-settings/feishu/validate",
       "path": "/api/admin/broadcast-jobs/notification-settings/feishu/validate",
+      "route_group": "admin_jobs"
+    },
+    {
+      "capability_owner": "admin_jobs",
+      "contract": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "title": "Job Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "request_body": null,
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        }
+      },
+      "endpoint": "aicrm_next.admin_jobs.routes.api_admin_broadcast_job_detail",
+      "include_in_schema": true,
+      "kind": "api",
+      "methods": [
+        "GET"
+      ],
+      "name": "api_admin_broadcast_job_detail",
+      "operation_id": "api_admin_broadcast_job_detail:GET:/api/admin/broadcast-jobs/{job_id}",
+      "path": "/api/admin/broadcast-jobs/{job_id}",
       "route_group": "admin_jobs"
     },
     {
@@ -25247,6 +25441,16 @@
               "title": "Offset",
               "type": "integer"
             }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "Cursor",
+              "type": "string"
+            }
           }
         ],
         "request_body": null,
@@ -25254,11 +25458,7 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Push Center Jobs Api Admin Push Center Jobs Get",
-                  "type": "object"
-                }
+                "schema": {}
               }
             },
             "description": "Successful Response"

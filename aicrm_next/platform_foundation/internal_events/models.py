@@ -141,6 +141,7 @@ class InternalEventConsumerRun:
     heartbeat_at: str = ""
     worker_generation: int = 0
     policy_version: str = ""
+    row_version: str = ""
     last_attempt_id: str = ""
     last_error_code: str = ""
     last_error_message: str = ""

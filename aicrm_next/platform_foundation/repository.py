@@ -4,6 +4,7 @@ from contextlib import AbstractContextManager
 from typing import Any, Callable
 
 from aicrm_next.shared.runtime import raw_database_url
+from aicrm_next.platform_foundation.execution_runtime.read_model import queue_policy_eligible_predicate
 
 
 def _psycopg_url(url: str) -> str:
@@ -68,7 +69,7 @@ class RuntimeReadinessRepository:
         allowed_pairs: tuple[tuple[str, str], ...] = (),
         allowed_event_types: tuple[str, ...] = (),
         allowed_consumers: tuple[str, ...] = (),
-    ) -> dict[str, int]:
+    ) -> dict[str, Any]:
         params: dict[str, Any] = {}
         if allowed_pairs:
             predicates = ["(e.event_type || ':' || r.consumer_name) = ANY(%(allowed_pairs)s)"]
@@ -86,25 +87,14 @@ class RuntimeReadinessRepository:
                 predicates.append("r.consumer_name = ANY(%(allowed_consumers)s)")
                 params["allowed_consumers"] = list(allowed_consumers)
             actionable_predicate = " AND ".join(predicates) if predicates else "TRUE"
+        eligible_predicate = queue_policy_eligible_predicate()
         row = self._execute(
             f"""
             WITH internal_rows AS (
               SELECT
                 r.*,
                 ({actionable_predicate}) AS policy_allowed,
-                r.status IN ('pending', 'running', 'failed_retryable') AS raw_open,
-                (
-                  r.hold_reason = ''
-                  AND ({actionable_predicate})
-                  AND r.attempt_count < r.max_attempts
-                  AND (
-                    (r.status = 'pending' AND (r.locked_at IS NULL OR r.locked_at <= CURRENT_TIMESTAMP - INTERVAL '5 minutes'))
-                    OR (r.status = 'failed_retryable'
-                        AND (r.next_retry_at IS NULL OR r.next_retry_at <= CURRENT_TIMESTAMP)
-                        AND (r.locked_at IS NULL OR r.locked_at <= CURRENT_TIMESTAMP - INTERVAL '5 minutes'))
-                    OR (r.status = 'running' AND r.locked_at <= CURRENT_TIMESTAMP - INTERVAL '5 minutes')
-                  )
-                ) AS eligible
+                r.status IN ('pending', 'running', 'failed_retryable') AS raw_open
               FROM internal_event_consumer_run r
               JOIN internal_event e ON e.event_id = r.event_id
             ), internal_terminal AS (
@@ -112,115 +102,157 @@ class RuntimeReadinessRepository:
               FROM internal_event_consumer_run r
               JOIN internal_event e ON e.event_id = r.event_id
               WHERE r.status IN ('failed_terminal', 'blocked')
-            ), queue_policy_rows AS (
+            ), queue_candidates AS (
               SELECT
                 'webhook_inbox'::text AS queue_kind,
                 i.received_at AS enqueued_at,
-                i.status IN ('received', 'processing', 'failed_retryable') AS raw_open,
-                i.hold_reason <> '' AND i.status IN ('received', 'processing', 'failed_retryable') AS held,
-                (
-                  i.hold_reason = '' AND i.attempt_count < i.max_attempts AND (
-                    (i.status IN ('received', 'failed_retryable')
-                     AND (i.next_retry_at IS NULL OR i.next_retry_at <= CURRENT_TIMESTAMP)
-                     AND (i.locked_at IS NULL OR i.locked_at <= CURRENT_TIMESTAMP - INTERVAL '5 minutes'))
-                    OR (i.status = 'processing' AND i.locked_at <= CURRENT_TIMESTAMP - INTERVAL '5 minutes')
-                  )
-                ) AS eligible,
-                FALSE AS scheduled,
-                (i.hold_reason = '' AND i.status = 'failed_retryable' AND i.next_retry_at > CURRENT_TIMESTAMP) AS retry_wait,
-                (i.hold_reason = '' AND i.status = 'processing'
-                 AND i.locked_at > CURRENT_TIMESTAMP - INTERVAL '5 minutes') AS in_flight,
-                FALSE AS unknown,
-                i.status IN ('dead_letter', 'failed_terminal') AS dlq
+                i.lane, i.status, i.hold_reason, i.available_at,
+                i.lease_expires_at, i.attempt_count, i.max_attempts,
+                i.worker_generation, i.policy_version,
+                i.status IN ('received', 'failed_retryable') AS ready_state,
+                i.status = 'processing' AS in_flight,
+                FALSE AS unknown_state,
+                i.status IN ('dead_letter', 'failed_terminal') AS dlq_state,
+                FALSE AS rate_limited,
+                ''::text AS execution_scope,
+                EXISTS (
+                  SELECT 1 FROM webhook_inbox active
+                  WHERE active.id <> i.id AND active.lane = i.lane
+                    AND active.ordering_key = i.ordering_key AND active.ordering_key <> ''
+                    AND active.status = 'processing'
+                    AND active.lease_expires_at > CURRENT_TIMESTAMP
+                ) AS ordering_blocked,
+                TRUE AS policy_allowed
               FROM webhook_inbox i
+              WHERE i.status IN ('received', 'processing', 'failed_retryable', 'failed_terminal', 'dead_letter')
 
               UNION ALL
 
               SELECT
-                'internal_event', r.created_at, r.raw_open,
-                r.hold_reason <> '' AND r.raw_open,
-                r.eligible,
-                FALSE,
-                (r.hold_reason = '' AND r.status = 'failed_retryable' AND r.next_retry_at > CURRENT_TIMESTAMP),
-                (r.hold_reason = '' AND r.status = 'running'
-                 AND r.locked_at > CURRENT_TIMESTAMP - INTERVAL '5 minutes'),
-                FALSE,
-                r.status IN ('failed_terminal', 'blocked')
+                'internal_event', r.created_at, r.lane, r.status, r.hold_reason,
+                r.available_at, r.lease_expires_at, r.attempt_count, r.max_attempts,
+                r.worker_generation, r.policy_version,
+                r.status IN ('pending', 'failed_retryable'),
+                r.status = 'running', FALSE,
+                r.status IN ('failed_terminal', 'blocked'), FALSE, '',
+                EXISTS (
+                  SELECT 1 FROM internal_event_consumer_run active
+                  WHERE active.id <> r.id AND active.lane = r.lane
+                    AND active.ordering_key = r.ordering_key AND active.ordering_key <> ''
+                    AND active.status = 'running'
+                    AND active.lease_expires_at > CURRENT_TIMESTAMP
+                ),
+                r.policy_allowed
               FROM internal_rows r
+              WHERE r.status IN ('pending', 'running', 'failed_retryable', 'failed_terminal', 'blocked')
 
               UNION ALL
 
               SELECT
-                'internal_event_outbox', o.created_at,
-                o.status IN ('pending', 'running', 'failed_retryable'),
-                o.hold_reason <> '' AND o.status IN ('pending', 'running', 'failed_retryable'),
-                (
-                  o.hold_reason = '' AND o.attempt_count < o.max_attempts AND (
-                    (o.status = 'pending' AND (o.locked_at IS NULL OR o.locked_at <= CURRENT_TIMESTAMP - INTERVAL '5 minutes'))
-                    OR (o.status = 'failed_retryable'
-                        AND (o.next_retry_at IS NULL OR o.next_retry_at <= CURRENT_TIMESTAMP)
-                        AND (o.locked_at IS NULL OR o.locked_at <= CURRENT_TIMESTAMP - INTERVAL '5 minutes'))
-                    OR (o.status = 'running' AND o.locked_at <= CURRENT_TIMESTAMP - INTERVAL '5 minutes')
-                  )
+                'internal_event_outbox', o.created_at, o.lane, o.status, o.hold_reason,
+                o.available_at, o.lease_expires_at, o.attempt_count, o.max_attempts,
+                o.worker_generation, o.policy_version,
+                o.status IN ('pending', 'failed_retryable'),
+                o.status = 'running', FALSE, o.status = 'failed_terminal', FALSE, '',
+                EXISTS (
+                  SELECT 1 FROM internal_event_outbox active
+                  WHERE active.id <> o.id AND active.lane = o.lane
+                    AND active.ordering_key = o.ordering_key AND active.ordering_key <> ''
+                    AND active.status = 'running'
+                    AND active.lease_expires_at > CURRENT_TIMESTAMP
                 ),
-                FALSE,
-                (o.hold_reason = '' AND o.status = 'failed_retryable' AND o.next_retry_at > CURRENT_TIMESTAMP),
-                (o.hold_reason = '' AND o.status = 'running'
-                 AND o.locked_at > CURRENT_TIMESTAMP - INTERVAL '5 minutes'),
-                FALSE,
-                o.status = 'failed_terminal'
+                TRUE
               FROM internal_event_outbox o
+              WHERE o.status IN ('pending', 'running', 'failed_retryable', 'failed_terminal')
 
               UNION ALL
 
               SELECT
-                'external_effect', j.created_at,
-                j.status IN ('planned', 'approved', 'queued', 'dispatching', 'failed_retryable'),
-                j.hold_reason <> '' AND j.status IN ('planned', 'approved', 'queued', 'dispatching', 'failed_retryable'),
-                (
-                  j.hold_reason = ''
-                  AND j.status IN ('queued', 'failed_retryable')
-                  AND j.attempt_count < j.max_attempts
-                  AND j.scheduled_at <= CURRENT_TIMESTAMP
-                  AND (j.next_retry_at IS NULL OR j.next_retry_at <= CURRENT_TIMESTAMP)
-                  AND (j.lease_expires_at IS NULL OR j.lease_expires_at <= CURRENT_TIMESTAMP)
+                'external_effect', j.created_at, j.lane, j.status, j.hold_reason,
+                j.available_at, j.lease_expires_at, j.attempt_count, j.max_attempts,
+                j.worker_generation, j.policy_version,
+                j.status IN ('queued', 'failed_retryable'),
+                j.status = 'dispatching',
+                j.status = 'unknown_after_dispatch',
+                j.status IN ('failed_terminal', 'blocked'),
+                EXISTS (
+                  SELECT 1 FROM queue_rate_scope_cooldown cooldown
+                  WHERE cooldown.rate_scope_key = j.rate_scope_key
+                    AND cooldown.blocked_until > CURRENT_TIMESTAMP
                 ),
-                (j.hold_reason = '' AND j.status = 'queued' AND j.scheduled_at > CURRENT_TIMESTAMP),
-                (j.hold_reason = '' AND j.status = 'failed_retryable' AND j.next_retry_at > CURRENT_TIMESTAMP),
-                (j.hold_reason = '' AND j.status = 'dispatching' AND j.lease_expires_at > CURRENT_TIMESTAMP),
-                (j.status = 'unknown_after_dispatch' OR j.reconciliation_required = TRUE),
-                j.status IN ('failed_terminal', 'blocked')
+                COALESCE(j.payload_json->>'execution_scope', ''),
+                EXISTS (
+                  SELECT 1 FROM external_effect_job active
+                  WHERE active.id <> j.id AND active.lane = j.lane
+                    AND active.ordering_key = j.ordering_key AND active.ordering_key <> ''
+                    AND active.status = 'dispatching'
+                    AND active.lease_expires_at > CURRENT_TIMESTAMP
+                ),
+                TRUE
               FROM external_effect_job j
-
-              UNION ALL
-
+              WHERE j.status IN (
+                'planned', 'approved', 'queued', 'dispatching', 'failed_retryable',
+                'unknown_after_dispatch', 'failed_terminal', 'blocked'
+              )
+            ), runtime_queue_rows AS (
               SELECT
-                'broadcast', b.created_at,
-                b.status IN ('waiting_approval', 'queued', 'claimed', 'dispatching', 'failed_retryable'),
-                b.hold_reason <> '' AND b.status IN ('waiting_approval', 'queued', 'claimed', 'dispatching', 'failed_retryable'),
+                rows.queue_kind,
+                rows.enqueued_at,
+                TRUE AS raw_open,
+                rows.hold_reason <> '' AS held,
+                (({eligible_predicate}) AND rows.policy_allowed) AS eligible,
                 (
-                  b.hold_reason = '' AND b.attempt_count < b.max_attempts AND b.scheduled_for <= CURRENT_TIMESTAMP AND (
-                    b.status = 'queued'
-                    OR (b.status = 'failed_retryable' AND (b.next_retry_at IS NULL OR b.next_retry_at <= CURRENT_TIMESTAMP))
-                    OR (b.status = 'claimed' AND b.lease_expires_at <= CURRENT_TIMESTAMP)
-                  )
-                ),
-                (b.hold_reason = '' AND b.status = 'queued' AND b.scheduled_for > CURRENT_TIMESTAMP),
-                (b.hold_reason = '' AND b.status = 'failed_retryable' AND b.next_retry_at > CURRENT_TIMESTAMP),
-                (b.hold_reason = '' AND b.status IN ('claimed', 'dispatching')
-                 AND b.lease_expires_at > CURRENT_TIMESTAMP),
-                (b.status = 'unknown_after_dispatch' OR b.reconciliation_required = TRUE),
-                b.status IN ('failed', 'failed_terminal', 'blocked')
-              FROM broadcast_jobs b
+                  rows.hold_reason = '' AND rows.ready_state
+                  AND rows.available_at > CURRENT_TIMESTAMP
+                  AND rows.status <> 'failed_retryable'
+                ) AS scheduled,
+                (
+                  rows.hold_reason = '' AND rows.ready_state
+                  AND rows.available_at > CURRENT_TIMESTAMP
+                  AND rows.status = 'failed_retryable'
+                ) AS retry_wait,
+                rows.rate_limited AND rows.ready_state AND rows.hold_reason = '' AS rate_limited,
+                rows.in_flight AND rows.lease_expires_at > CURRENT_TIMESTAMP AS in_flight,
+                rows.unknown_state AS unknown,
+                rows.dlq_state AS dlq
+              FROM queue_candidates rows
+              CROSS JOIN queue_runtime_control control
+              JOIN queue_lane_policy policy ON policy.lane = rows.lane
+            ), legacy_broadcast_rows AS (
+              SELECT
+                'broadcast'::text AS queue_kind,
+                job.created_at AS enqueued_at,
+                TRUE AS raw_open,
+                job.hold_reason <> '' AS held,
+                FALSE AS eligible,
+                FALSE AS scheduled,
+                FALSE AS retry_wait,
+                FALSE AS rate_limited,
+                FALSE AS in_flight,
+                job.status = 'unknown_after_dispatch' AS unknown,
+                job.status IN ('failed', 'failed_terminal', 'blocked') AS dlq
+              FROM broadcast_jobs job
+              WHERE COALESCE(NULLIF(job.execution_owner, ''), 'legacy_frozen') = 'legacy_frozen'
+                AND job.status IN (
+                  'waiting_approval', 'queued', 'claimed', 'dispatching',
+                  'failed', 'failed_retryable', 'failed_terminal', 'blocked',
+                  'unknown_after_dispatch'
+                )
+            ), queue_policy_rows AS (
+              SELECT * FROM runtime_queue_rows
+              UNION ALL
+              SELECT * FROM legacy_broadcast_rows
             )
             SELECT
-              1::BIGINT AS queue_policy_version,
+              (SELECT policy_version FROM queue_runtime_control WHERE singleton = TRUE)::TEXT AS queue_policy_version,
+              (SELECT active_generation FROM queue_runtime_control WHERE singleton = TRUE)::BIGINT AS queue_active_generation,
+              (SELECT external_claim_scope FROM queue_runtime_control WHERE singleton = TRUE)::TEXT AS queue_external_claim_scope,
               COUNT(*) FILTER (WHERE raw_open)::BIGINT AS queue_raw_open_count,
               COUNT(*) FILTER (WHERE held)::BIGINT AS queue_held_count,
               COUNT(*) FILTER (WHERE eligible)::BIGINT AS queue_eligible_count,
               COUNT(*) FILTER (WHERE scheduled)::BIGINT AS queue_scheduled_count,
               COUNT(*) FILTER (WHERE retry_wait)::BIGINT AS queue_retry_wait_count,
-              0::BIGINT AS queue_rate_limited_count,
+              COUNT(*) FILTER (WHERE rate_limited)::BIGINT AS queue_rate_limited_count,
               COUNT(*) FILTER (WHERE in_flight)::BIGINT AS queue_in_flight_count,
               COUNT(*) FILTER (WHERE unknown)::BIGINT AS queue_unknown_count,
               COUNT(*) FILTER (WHERE dlq)::BIGINT AS queue_dlq_count,
@@ -231,7 +263,7 @@ class RuntimeReadinessRepository:
               COUNT(*) FILTER (WHERE queue_kind = 'webhook_inbox' AND eligible)::BIGINT AS webhook_eligible_count,
               COUNT(*) FILTER (WHERE queue_kind = 'webhook_inbox' AND scheduled)::BIGINT AS webhook_scheduled_count,
               COUNT(*) FILTER (WHERE queue_kind = 'webhook_inbox' AND retry_wait)::BIGINT AS webhook_retry_wait_count,
-              0::BIGINT AS webhook_rate_limited_count,
+              COUNT(*) FILTER (WHERE queue_kind = 'webhook_inbox' AND rate_limited)::BIGINT AS webhook_rate_limited_count,
               COUNT(*) FILTER (WHERE queue_kind = 'webhook_inbox' AND in_flight)::BIGINT AS webhook_in_flight_count,
               COUNT(*) FILTER (WHERE queue_kind = 'webhook_inbox' AND unknown)::BIGINT AS webhook_unknown_count,
               COALESCE(EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - MIN(enqueued_at) FILTER (
@@ -243,21 +275,23 @@ class RuntimeReadinessRepository:
               (SELECT COUNT(*) FROM webhook_inbox WHERE status = 'dead_letter')::BIGINT AS webhook_dead_letter_count,
               COUNT(*) FILTER (WHERE queue_kind = 'webhook_inbox' AND dlq)::BIGINT AS webhook_dlq_count,
 
-              (SELECT COUNT(*) FROM internal_rows WHERE raw_open)::BIGINT AS internal_event_pending_count,
-              (SELECT COUNT(*) FROM internal_rows WHERE raw_open)::BIGINT AS internal_event_raw_open_count,
-              (SELECT COUNT(*) FROM internal_rows WHERE raw_open AND hold_reason <> '')::BIGINT AS internal_event_held_count,
-              (SELECT COUNT(*) FROM internal_rows WHERE eligible)::BIGINT AS internal_event_actionable_pending_count,
-              (SELECT COUNT(*) FROM internal_rows WHERE eligible)::BIGINT AS internal_event_eligible_count,
+              COUNT(*) FILTER (WHERE queue_kind = 'internal_event' AND raw_open)::BIGINT AS internal_event_pending_count,
+              COUNT(*) FILTER (WHERE queue_kind = 'internal_event' AND raw_open)::BIGINT AS internal_event_raw_open_count,
+              COUNT(*) FILTER (WHERE queue_kind = 'internal_event' AND held)::BIGINT AS internal_event_held_count,
+              COUNT(*) FILTER (WHERE queue_kind = 'internal_event' AND eligible)::BIGINT AS internal_event_actionable_pending_count,
+              COUNT(*) FILTER (WHERE queue_kind = 'internal_event' AND eligible)::BIGINT AS internal_event_eligible_count,
               COUNT(*) FILTER (WHERE queue_kind = 'internal_event' AND scheduled)::BIGINT AS internal_event_scheduled_count,
               COUNT(*) FILTER (WHERE queue_kind = 'internal_event' AND retry_wait)::BIGINT AS internal_event_retry_wait_count,
-              0::BIGINT AS internal_event_rate_limited_count,
+              COUNT(*) FILTER (WHERE queue_kind = 'internal_event' AND rate_limited)::BIGINT AS internal_event_rate_limited_count,
               COUNT(*) FILTER (WHERE queue_kind = 'internal_event' AND in_flight)::BIGINT AS internal_event_in_flight_count,
               COUNT(*) FILTER (WHERE queue_kind = 'internal_event' AND unknown)::BIGINT AS internal_event_unknown_count,
               COUNT(*) FILTER (WHERE queue_kind = 'internal_event' AND dlq)::BIGINT AS internal_event_dlq_count,
-              (SELECT COALESCE(EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - MIN(created_at))), 0)
-                 FROM internal_rows WHERE raw_open)::BIGINT AS internal_event_oldest_pending_age_seconds,
-              (SELECT COALESCE(EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - MIN(created_at))), 0)
-                 FROM internal_rows WHERE eligible)::BIGINT AS internal_event_actionable_oldest_pending_age_seconds,
+              COALESCE(EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - MIN(enqueued_at) FILTER (
+                WHERE queue_kind = 'internal_event' AND raw_open
+              ))), 0)::BIGINT AS internal_event_oldest_pending_age_seconds,
+              COALESCE(EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - MIN(enqueued_at) FILTER (
+                WHERE queue_kind = 'internal_event' AND eligible
+              ))), 0)::BIGINT AS internal_event_actionable_oldest_pending_age_seconds,
               (SELECT COUNT(*) FROM internal_rows WHERE raw_open AND NOT policy_allowed)::BIGINT AS internal_event_rollout_gated_pending_count,
               (SELECT COALESCE(EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - MIN(created_at))), 0)
                  FROM internal_rows WHERE raw_open AND NOT policy_allowed)::BIGINT AS internal_event_rollout_gated_oldest_pending_age_seconds,
@@ -270,7 +304,7 @@ class RuntimeReadinessRepository:
               COUNT(*) FILTER (WHERE queue_kind = 'internal_event_outbox' AND eligible)::BIGINT AS internal_event_outbox_eligible_count,
               COUNT(*) FILTER (WHERE queue_kind = 'internal_event_outbox' AND scheduled)::BIGINT AS internal_event_outbox_scheduled_count,
               COUNT(*) FILTER (WHERE queue_kind = 'internal_event_outbox' AND retry_wait)::BIGINT AS internal_event_outbox_retry_wait_count,
-              0::BIGINT AS internal_event_outbox_rate_limited_count,
+              COUNT(*) FILTER (WHERE queue_kind = 'internal_event_outbox' AND rate_limited)::BIGINT AS internal_event_outbox_rate_limited_count,
               COUNT(*) FILTER (WHERE queue_kind = 'internal_event_outbox' AND in_flight)::BIGINT AS internal_event_outbox_in_flight_count,
               COUNT(*) FILTER (WHERE queue_kind = 'internal_event_outbox' AND unknown)::BIGINT AS internal_event_outbox_unknown_count,
               COUNT(*) FILTER (WHERE queue_kind = 'internal_event_outbox' AND dlq)::BIGINT AS internal_event_outbox_dlq_count,
@@ -281,7 +315,7 @@ class RuntimeReadinessRepository:
               COUNT(*) FILTER (WHERE queue_kind = 'external_effect' AND eligible)::BIGINT AS external_effect_eligible_count,
               COUNT(*) FILTER (WHERE queue_kind = 'external_effect' AND scheduled)::BIGINT AS external_effect_scheduled_count,
               COUNT(*) FILTER (WHERE queue_kind = 'external_effect' AND retry_wait)::BIGINT AS external_effect_retry_wait_count,
-              0::BIGINT AS external_effect_rate_limited_count,
+              COUNT(*) FILTER (WHERE queue_kind = 'external_effect' AND rate_limited)::BIGINT AS external_effect_rate_limited_count,
               COUNT(*) FILTER (WHERE queue_kind = 'external_effect' AND in_flight)::BIGINT AS external_effect_in_flight_count,
               COUNT(*) FILTER (WHERE queue_kind = 'external_effect' AND unknown)::BIGINT AS external_effect_unknown_count,
               COALESCE(EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - MIN(enqueued_at) FILTER (
@@ -298,7 +332,7 @@ class RuntimeReadinessRepository:
               COUNT(*) FILTER (WHERE queue_kind = 'broadcast' AND eligible)::BIGINT AS broadcast_eligible_count,
               COUNT(*) FILTER (WHERE queue_kind = 'broadcast' AND scheduled)::BIGINT AS broadcast_scheduled_count,
               COUNT(*) FILTER (WHERE queue_kind = 'broadcast' AND retry_wait)::BIGINT AS broadcast_retry_wait_count,
-              0::BIGINT AS broadcast_rate_limited_count,
+              COUNT(*) FILTER (WHERE queue_kind = 'broadcast' AND rate_limited)::BIGINT AS broadcast_rate_limited_count,
               COUNT(*) FILTER (WHERE queue_kind = 'broadcast' AND in_flight)::BIGINT AS broadcast_in_flight_count,
               COUNT(*) FILTER (WHERE queue_kind = 'broadcast' AND unknown)::BIGINT AS broadcast_unknown_count,
               COUNT(*) FILTER (WHERE queue_kind = 'broadcast' AND dlq)::BIGINT AS broadcast_dlq_count
@@ -306,7 +340,11 @@ class RuntimeReadinessRepository:
             """,
             params,
         ).fetchone()
-        return {str(key): int(value or 0) for key, value in dict(row or {}).items()}
+        text_fields = {"queue_policy_version", "queue_external_claim_scope"}
+        return {
+            str(key): str(value or "") if key in text_fields else int(value or 0)
+            for key, value in dict(row or {}).items()
+        }
 
     def _execute(self, sql: str, params: dict[str, Any] | None = None):
         if self._connection is None:
