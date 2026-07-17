@@ -19,7 +19,7 @@ PAYMENT_CONSUMERS = frozenset({
     "ai_assist_notify_consumer",
     "ai_audience_source_poke_consumer",
     "customer_business_summary_consumer",
-    "customer_read_model_dirty_consumer",
+    "customer_timeline_projection_consumer",
     "dnd_policy_consumer",
     "order_projection_consumer",
     "product_paid_wecom_tag_consumer",

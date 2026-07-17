@@ -17,6 +17,11 @@ from .refresh_intents import (
     CUSTOMER_SOURCE_EVENTS,
     CustomerReadModelRefreshIntentService,
 )
+from .timeline_projection import (
+    TIMELINE_PROJECTION_CONSUMER,
+    TIMELINE_SOURCE_EVENTS,
+    customer_timeline_projection_consumer,
+)
 
 
 def _text(value: Any) -> str:
@@ -86,6 +91,14 @@ def register_customer_read_model_event_consumers(
             consumer_type="projection",
             max_attempts=10,
         )
+    for event_type in TIMELINE_SOURCE_EVENTS:
+        registry.register(
+            event_type,
+            TIMELINE_PROJECTION_CONSUMER,
+            customer_timeline_projection_consumer,
+            consumer_type="projection",
+            max_attempts=10,
+        )
     registry.register(
         CUSTOMER_REFRESH_REQUESTED_EVENT,
         CUSTOMER_REFRESH_CONSUMER,
@@ -115,5 +128,6 @@ def _summary(payload: dict[str, Any]) -> dict[str, Any]:
 __all__ = [
     "customer_read_model_dirty_consumer",
     "customer_read_model_refresh_consumer",
+    "customer_timeline_projection_consumer",
     "register_customer_read_model_event_consumers",
 ]

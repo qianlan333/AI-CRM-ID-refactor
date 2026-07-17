@@ -30,7 +30,7 @@ from aicrm_next.questionnaire.repo import reset_questionnaire_fixture_state
 QUESTIONNAIRE_CONSUMERS = frozenset({
     "ai_audience_source_poke_consumer",
     "automation_questionnaire_consumer",
-    "customer_read_model_dirty_consumer",
+    "customer_timeline_projection_consumer",
     "customer_summary_consumer",
     "questionnaire_projection_consumer",
     "questionnaire_tag_consumer",

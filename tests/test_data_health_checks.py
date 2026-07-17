@@ -245,6 +245,8 @@ def test_projection_freshness_probe_accepts_managed_fresh_parity(monkeypatch) ->
             "refresh_state_present": True,
             "refresh_source_count": 12,
             "refresh_target_count": 12,
+            "timeline_event_count": 48,
+            "timeline_duplicate_event_id_count": 0,
             "refresh_age_minutes": 5,
         },
     )
@@ -253,6 +255,31 @@ def test_projection_freshness_probe_accepts_managed_fresh_parity(monkeypatch) ->
 
     assert result.status == "ok"
     assert result.evidence["refresh_state_present"] is True
+    assert result.evidence["timeline_event_count"] == 48
+
+
+def test_projection_freshness_probe_rejects_duplicate_timeline_event_ids(monkeypatch) -> None:
+    from aicrm_next.data_health import checks
+
+    _patch_health_db(
+        monkeypatch,
+        {
+            "list_count": 12,
+            "detail_count": 12,
+            "refresh_state_present": True,
+            "refresh_source_count": 12,
+            "refresh_target_count": 12,
+            "timeline_event_count": 49,
+            "timeline_duplicate_event_id_count": 1,
+            "refresh_age_minutes": 5,
+        },
+    )
+
+    result = checks._projection_freshness_customer_read_model()
+
+    assert result.status == "fail"
+    assert result.evidence["timeline_duplicate_event_id_count"] == 1
+    assert "timeline_duplicate_event_id_count=1" in result.evidence["violations"]
 
 
 def test_projection_freshness_probe_does_not_fail_on_wall_clock_age_without_source_drift(monkeypatch) -> None:

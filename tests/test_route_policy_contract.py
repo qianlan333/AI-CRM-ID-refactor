@@ -36,7 +36,7 @@ def test_route_policy_inventory_covers_every_runtime_business_route() -> None:
     # table ACL plus external sharing adds nine, and the environment-backed
     # domain-verification route adds one;
     # static mounts are counted separately by the router-registry contract.
-    assert len(index) == len(inventory) == 740
+    assert len(index) == len(inventory) == 743
     for route in app.routes:
         if not isinstance(route, APIRoute) or route.path in FASTAPI_BUILTIN_ROUTE_PATHS:
             continue
