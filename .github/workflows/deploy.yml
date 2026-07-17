@@ -51,8 +51,91 @@ jobs:
           ref: ${{ github.event.workflow_run.head_sha }}
           fetch-depth: 0
 
+      - name: Probe active ID release
+        id: active_release
+        run: |
+          set -e
+          set -o pipefail
+          public_base_url="${PUBLIC_BASE_URL%/}"
+          public_health_url="$PUBLIC_HEALTH_URL"
+          if ! printf '%s' "$public_base_url" | grep -Eq '^https://[^/]+$'; then
+            echo "PUBLIC_BASE_URL must be an https origin"
+            exit 1
+          fi
+          if ! printf '%s' "$public_health_url" | grep -Eq '^https://[^/]+/health$'; then
+            echo "PUBLIC_HEALTH_URL must be an https /health URL"
+            exit 1
+          fi
+          rm -f /tmp/aicrm_current_release_headers.txt /tmp/aicrm_current_release.json
+          curl_exit=0
+          http_status="$(
+            curl --retry 3 --retry-all-errors --connect-timeout 10 --max-time 30 -sS \
+              -D /tmp/aicrm_current_release_headers.txt \
+              -o /tmp/aicrm_current_release.json \
+              -w '%{http_code}' \
+              "$public_health_url"
+          )" || curl_exit=$?
+          if [ "$curl_exit" -ne 0 ]; then
+            echo "public ID health probe failed without an authenticated HTTP response: curl_exit=$curl_exit"
+            exit 1
+          fi
+          case "$http_status" in
+            200)
+              active_sha="$(python3 - /tmp/aicrm_current_release_headers.txt <<'PY'
+          import re
+          import sys
+          from pathlib import Path
+
+          headers = Path(sys.argv[1]).read_text(encoding="iso-8859-1")
+          candidates = []
+          for line in headers.replace("\r\n", "\n").splitlines():
+              name, separator, value = line.partition(":")
+              if separator and name.lower() == "x-aicrm-release-sha":
+                  candidates.append(value.strip())
+          if len(candidates) != 1 or re.fullmatch(r"[0-9a-f]{40}", candidates[0]) is None:
+              raise SystemExit("health response must expose exactly one full release SHA header")
+          print(candidates[0])
+          PY
+              )"
+              if ! printf '%s' "$active_sha" | grep -Eq '^[0-9a-f]{40}$'; then
+                echo "healthy target does not expose a full current release sha"
+                exit 1
+              fi
+              echo "health_available=true" >> "$GITHUB_OUTPUT"
+              echo "release_sha=$active_sha" >> "$GITHUB_OUTPUT"
+              echo "active ID release resolved from public health: $active_sha"
+              ;;
+            502|503|504)
+              echo "health_available=false" >> "$GITHUB_OUTPUT"
+              echo "release_sha=" >> "$GITHUB_OUTPUT"
+              echo "public ID health returned recoverable status $http_status; guarded checkout attestation is required"
+              ;;
+            *)
+              echo "public ID health returned non-recoverable status $http_status"
+              exit 1
+              ;;
+          esac
+
+      - name: Resolve guarded ID recovery base
+        id: attested_release
+        if: steps.active_release.outputs.health_available != 'true'
+        uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1.2.5
+        with:
+          host: ${{ secrets.ID_VALIDATION_DEPLOY_HOST }}
+          username: ${{ secrets.ID_VALIDATION_DEPLOY_USER }}
+          key: ${{ secrets.ID_VALIDATION_DEPLOY_SSH_KEY }}
+          fingerprint: ${{ env.EXPECTED_SSH_HOST_FINGERPRINT }}
+          command_timeout: 2m
+          envs: EXPECTED_REPOSITORY,DEPLOY_TARGET,PUBLIC_HEALTH_URL
+          script_path: scripts/ops/resolve_id_validation_release_base.sh
+          capture_stdout: true
+
       - name: Build verified release bundle
         id: release
+        env:
+          ACTIVE_RELEASE_SHA: ${{ steps.active_release.outputs.release_sha }}
+          PUBLIC_HEALTH_AVAILABLE: ${{ steps.active_release.outputs.health_available }}
+          ATTESTED_RELEASE_SHA: ${{ steps.attested_release.outputs.stdout }}
         run: |
           set -e
           set -o pipefail
@@ -70,27 +153,31 @@ jobs:
             echo "verified workflow sha is no longer the repository main head"
             exit 1
           fi
-          public_base_url="${PUBLIC_BASE_URL%/}"
-          public_health_url="$PUBLIC_HEALTH_URL"
-          if ! printf '%s' "$public_base_url" | grep -Eq '^https://[^/]+$'; then
-            echo "PUBLIC_BASE_URL must be an https origin"
-            exit 1
-          fi
-          if ! printf '%s' "$public_health_url" | grep -Eq '^https://[^/]+/health$'; then
-            echo "PUBLIC_HEALTH_URL must be an https /health URL"
-            exit 1
-          fi
-          curl --retry 3 --retry-all-errors --connect-timeout 10 --max-time 30 -sSf \
-            -D /tmp/aicrm_current_release_headers.txt \
-            "$public_health_url" \
-            -o /tmp/aicrm_current_release.json
-          base_sha="$(awk 'tolower($1) == "x-aicrm-release-sha:" {print $2}' \
-            /tmp/aicrm_current_release_headers.txt | tr -d '\r' | tail -n 1)"
+          case "$PUBLIC_HEALTH_AVAILABLE" in
+            true)
+              base_sha="$ACTIVE_RELEASE_SHA"
+              base_source="public_health"
+              ;;
+            false)
+              base_sha="$(python3 -c 'import os, re; value=os.environ["ATTESTED_RELEASE_SHA"].strip(); raise SystemExit("guarded checkout attestation did not return exactly one SHA") if re.fullmatch(r"[0-9a-f]{40}", value) is None else None; print(value)')"
+              base_source="guarded_server_checkout"
+              ;;
+            *)
+              echo "active release probe did not return a recognized availability state"
+              exit 1
+              ;;
+          esac
           if ! printf '%s' "$base_sha" | grep -Eq '^[0-9a-f]{40}$'; then
-            echo "target environment does not expose a full current release sha"
+            echo "selected release base is not one full SHA"
             exit 1
           fi
+          echo "release base selected: source=$base_source sha=$base_sha"
+          echo "base_source=$base_source" >> "$GITHUB_OUTPUT"
           if [ "$base_sha" = "$verified_sha" ]; then
+            if [ "$base_source" != "public_health" ]; then
+              echo "same-SHA no-op is forbidden while public health is unavailable"
+              exit 1
+            fi
             echo "base_sha=$base_sha" >> "$GITHUB_OUTPUT"
             echo "noop=true" >> "$GITHUB_OUTPUT"
             echo "target environment already runs the requested release; successful no-op"
@@ -250,6 +337,7 @@ jobs:
           SOURCE_CI_RUN_ID: ${{ github.event.workflow_run.id }}
           VERIFIED_SHA: ${{ github.event.workflow_run.head_sha }}
           BASE_SHA: ${{ steps.release.outputs.base_sha }}
+          BASE_SOURCE: ${{ steps.release.outputs.base_source }}
           BUNDLE_SHA256: ${{ steps.release.outputs.bundle_sha256 }}
         uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1.2.5
         with:
@@ -260,5 +348,5 @@ jobs:
           # stop-for-migration may legitimately drain a running timer service
           # for up to 600s before migrations and health verification begin.
           command_timeout: 30m
-          envs: EXPECTED_REPOSITORY,DEPLOY_TARGET,RUNTIME_TARGET_ENVIRONMENT,PUBLIC_BASE_URL,PUBLIC_HEALTH_URL,ALLOW_MISSING_WECHAT_SHOP_CALLBACK_TOKEN,RELEASE_REPOSITORY,RELEASE_RUN_ID,RELEASE_RUN_ATTEMPT,SOURCE_CI_RUN_ID,VERIFIED_SHA,BASE_SHA,BUNDLE_SHA256
+          envs: EXPECTED_REPOSITORY,DEPLOY_TARGET,RUNTIME_TARGET_ENVIRONMENT,PUBLIC_BASE_URL,PUBLIC_HEALTH_URL,ALLOW_MISSING_WECHAT_SHOP_CALLBACK_TOKEN,RELEASE_REPOSITORY,RELEASE_RUN_ID,RELEASE_RUN_ATTEMPT,SOURCE_CI_RUN_ID,VERIFIED_SHA,BASE_SHA,BASE_SOURCE,BUNDLE_SHA256
           script_path: scripts/ops/deploy_id_validation_remote.sh

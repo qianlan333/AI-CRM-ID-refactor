@@ -207,13 +207,16 @@ def test_id_validation_provenance_recovery_has_permanent_full_ci_scope() -> None
 def test_deploy_script_and_expression_length_guard_have_permanent_full_ci_scope() -> None:
     result = _select(
         "scripts/ops/deploy_id_validation_remote.sh",
+        "scripts/ops/resolve_id_validation_release_base.sh",
         "scripts/ci/check_github_actions_expression_length.py",
+        "tests/test_id_validation_release_base_resolver.py",
         "tests/test_github_actions_expression_length.py",
     )
 
     assert result["unmatched_files"] == []
     assert "ci_deploy" in result["matched_scopes"]
     assert "tests/test_deploy_workflow_contract.py" in result["python_tests"]
+    assert "tests/test_id_validation_release_base_resolver.py" in result["python_tests"]
     assert "tests/test_ci_workflow_contract.py" in result["python_tests"]
     assert "tests/test_ai_audience_runtime_hotfixes.py" in result["python_tests"]
     assert "tests/test_identity_cutover_reconciliation_contract.py" in result["python_tests"]

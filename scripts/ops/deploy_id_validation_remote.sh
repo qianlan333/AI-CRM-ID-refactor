@@ -70,6 +70,7 @@ cd '/home/ubuntu/极简 crm'
 before_sha="$(git rev-parse HEAD)"
 readonly verified_sha="${VERIFIED_SHA}"
 readonly base_sha="${BASE_SHA}"
+readonly base_source="${BASE_SOURCE}"
 if ! printf '%s' "$verified_sha" | grep -Eq '^[0-9a-f]{40}$'; then
   echo "invalid verified workflow sha"
   exit 1
@@ -78,9 +79,61 @@ if ! printf '%s' "$bundle_sha256" | grep -Eq '^[0-9a-f]{64}$'; then
   echo "invalid release bundle provenance checksum"
   exit 1
 fi
+case "$base_source" in
+  public_health|guarded_server_checkout)
+    ;;
+  *)
+    echo "invalid release base source"
+    exit 1
+    ;;
+esac
 if [ "$before_sha" != "$base_sha" ]; then
   echo "target checkout moved after the incremental release bundle was built"
   exit 1
+fi
+if [ "$base_source" = "guarded_server_checkout" ]; then
+  # The first attestation lock is released while the runner builds and copies
+  # the bundle. Re-establish its non-HEAD invariants under the final deployment
+  # lock before any bundle, checkout, or runtime mutation.
+  remote_origin_url="$(git remote get-url origin)"
+  case "$remote_origin_url" in
+    "https://github.com/${expected_repository}"|\
+    "https://github.com/${expected_repository}.git"|\
+    "git@github.com:${expected_repository}"|\
+    "git@github.com:${expected_repository}.git")
+      ;;
+    *)
+      echo "guarded release base origin changed after attestation"
+      exit 1
+      ;;
+  esac
+  if [ -L .release-sha ] || [ ! -f .release-sha ]; then
+    echo "guarded release marker is missing or is a symlink"
+    exit 1
+  fi
+  release_marker_sha="$(python3 - <<'PY'
+import re
+from pathlib import Path
+
+raw = Path(".release-sha").read_bytes()
+if raw.endswith(b"\r\n"):
+    raw = raw[:-2]
+elif raw.endswith(b"\n"):
+    raw = raw[:-1]
+if re.fullmatch(rb"[0-9a-f]{40}", raw) is None:
+    raise SystemExit("guarded release marker is not exactly one SHA")
+print(raw.decode("ascii"))
+PY
+)"
+  if [ "$release_marker_sha" != "$base_sha" ]; then
+    echo "guarded release marker changed after attestation"
+    exit 1
+  fi
+  if [ -n "$(git status --porcelain=v1 --untracked-files=all)" ]; then
+    echo "guarded release checkout became dirty after attestation"
+    git status --short --untracked-files=all
+    exit 1
+  fi
 fi
 release_bundle_dir="/tmp/aicrm-release-$verified_sha"
 release_bundle="/tmp/aicrm-release-$verified_sha/aicrm-release.bundle"
