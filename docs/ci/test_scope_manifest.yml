@@ -567,6 +567,27 @@
       "architecture_gate": "full"
     },
     {
+      "name": "wechat_unionid_access",
+      "paths": [
+        "aicrm_next/identity_contact/wechat_unionid_guard.py",
+        "aicrm_next/shared/wechat_identity_page.py",
+        "tests/test_next_questionnaire_share.py",
+        "tests/test_wechat_unionid_access_guard.py",
+        "tests/wechat_identity_test_support.py"
+      ],
+      "python_tests": [
+        "tests/test_wechat_unionid_access_guard.py",
+        "tests/test_next_questionnaire_share.py",
+        "tests/test_public_product_h5_pay_oauth_native.py",
+        "tests/test_questionnaire_oauth_browser_redirect.py",
+        "tests/test_coupon_v1_checkout_contract.py",
+        "tests/test_service_period_frontend_contract.py",
+        "tests/test_radar_links.py"
+      ],
+      "needs_postgres": false,
+      "architecture_gate": "full"
+    },
+    {
       "name": "mobile_validation",
       "paths": [
         "aicrm_next/shared/mobile.py"
