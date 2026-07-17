@@ -829,13 +829,28 @@ def test_production_deploy_installs_callback_ingress_and_worker_isolated_runtime
     alembic_upgrade_index = workflow.index("python3 -m alembic upgrade head")
     health_index = workflow.index("curl -sSf -D /tmp/aicrm_health_headers.txt http://127.0.0.1:5001/health", workflow.index("for _ in $(seq 1 60); do"))
     install_index = workflow.index(_runtime_units_phase("install-enable-after-web-health"))
-    smoke_index = workflow.index("python scripts/ops/check_wecom_callback_deploy_smoke.py")
+    retry_loop_index = workflow.index("for callback_smoke_attempt in 1 2; do")
+    smoke_index = workflow.index("python scripts/ops/check_wecom_callback_deploy_smoke.py", retry_loop_index)
     smoke_evidence_index = workflow.index("tee /tmp/wecom-callback-deploy-smoke.json")
+    retry_message_index = workflow.index("callback deploy smoke failed during runtime warm-up; retrying once")
+    failure_guard_index = workflow.index('if [ "$callback_smoke_ready" != "1" ]; then')
+    ingress_status_index = workflow.index(
+        "systemctl status openclaw-wecom-callback-ingress.service",
+        failure_guard_index,
+    )
+    ingress_journal_index = workflow.index(
+        "journalctl -u openclaw-wecom-callback-ingress.service -n 120",
+        ingress_status_index,
+    )
     verify_index = workflow.index(_runtime_units_phase("verify-staged-runtime"))
 
     assert stop_runtime_units_index < alembic_upgrade_index
-    assert health_index < install_index < smoke_index < smoke_evidence_index < verify_index
-    assert "python scripts/ops/check_wecom_callback_deploy_smoke.py | tee /tmp/wecom-callback-deploy-smoke.json" in workflow
+    assert health_index < install_index < retry_loop_index < smoke_index < smoke_evidence_index
+    assert smoke_evidence_index < retry_message_index < failure_guard_index
+    assert failure_guard_index < ingress_status_index < ingress_journal_index < verify_index
+    assert "callback_smoke_ready=0" in workflow
+    assert 'if [ "$callback_smoke_attempt" -lt 2 ]; then' in workflow
+    assert "sleep 2" in workflow[retry_message_index:failure_guard_index]
     assert "nginx-wecom-callback-ingress.conf.example /etc" not in workflow
 
 
