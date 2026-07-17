@@ -305,6 +305,37 @@ def test_production_deploy_builds_and_transfers_incremental_exact_sha_bundle_bef
     assert "overwrite: true" in workflow
 
 
+def test_id_validation_rejects_orphaned_or_non_ancestor_base_without_full_bundle_fallback() -> None:
+    workflow = TEST_DEPLOY_WORKFLOW.read_text(encoding="utf-8")
+
+    missing_base_index = workflow.index('if ! git cat-file -e "$base_sha^{commit}"; then')
+    missing_base_exit = workflow.index("exit 1", missing_base_index)
+    ancestor_index = workflow.index(
+        'if ! git merge-base --is-ancestor "$base_sha" "$verified_sha"; then',
+        missing_base_exit,
+    )
+    ancestor_exit = workflow.index("exit 1", ancestor_index)
+    incremental_bundle_index = workflow.index(
+        "git bundle create release/aicrm-release.bundle refs/deploy/release ^refs/deploy/base",
+        ancestor_exit,
+    )
+
+    assert missing_base_index < missing_base_exit < ancestor_index < ancestor_exit
+    assert ancestor_exit < incremental_bundle_index
+    assert "target environment release is not present in repository history" in workflow[
+        missing_base_index:missing_base_exit
+    ]
+    assert "target environment release is not an ancestor of the requested release" in workflow[
+        ancestor_index:ancestor_exit
+    ]
+    assert "An orphaned base must be" in workflow
+    assert 'bundle_mode="full"' not in workflow
+    assert "full release bundle recovery" not in workflow
+    assert "test environment release is orphaned" not in workflow
+    assert workflow.count("git bundle create release/aicrm-release.bundle") == 1
+    assert "git bundle create release/aicrm-release.bundle refs/deploy/release\n" not in workflow
+
+
 def test_id_validation_deploy_treats_already_active_sha_as_successful_noop() -> None:
     workflow = TEST_DEPLOY_WORKFLOW.read_text(encoding="utf-8")
 

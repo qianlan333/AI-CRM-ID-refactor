@@ -96,6 +96,9 @@ jobs:
             echo "target environment already runs the requested release; successful no-op"
             exit 0
           fi
+          # ID validation runs against production data. An orphaned base must be
+          # audited explicitly; unlike the disposable test target it may not use
+          # a full-bundle recovery that bypasses repository ancestry.
           if ! git cat-file -e "$base_sha^{commit}"; then
             echo "target environment release is not present in repository history"
             exit 1
