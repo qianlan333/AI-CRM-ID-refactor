@@ -1,6 +1,10 @@
 from __future__ import annotations
 
 from collections import Counter
+import os
+from pathlib import Path
+import subprocess
+import sys
 from typing import Any
 
 import pytest
@@ -9,6 +13,7 @@ from scripts.ops import check_id_validation_release_readiness as readiness
 
 
 RELEASE_SHA = "a" * 40
+REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
 def _system_payload(*, migration_ready: bool = True) -> dict[str, Any]:
@@ -46,6 +51,27 @@ def _snapshot(*, workers: list[dict[str, Any]] | None = None) -> dict[str, Any]:
         "control": {"active_generation": 0, "claim_enabled": False, "rollout_mode": "standby"},
         "workers": worker_items,
     }
+
+
+def test_direct_file_entrypoint_bootstraps_repo_root_from_arbitrary_cwd(tmp_path: Path) -> None:
+    environment = dict(os.environ)
+    environment.pop("PYTHONPATH", None)
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(REPO_ROOT / "scripts/ops/check_id_validation_release_readiness.py"),
+            "--help",
+        ],
+        cwd=tmp_path,
+        env=environment,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "Verify exact ID validation Web, DB, and queue runtime readiness" in result.stdout
 
 
 def test_exact_http_migration_and_nine_listener_heartbeats_are_required(

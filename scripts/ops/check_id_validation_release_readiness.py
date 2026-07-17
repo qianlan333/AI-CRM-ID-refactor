@@ -2,16 +2,19 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 import time
 import urllib.error
 import urllib.request
 from collections import Counter
+from pathlib import Path
 from typing import Any
 
 try:
     from scripts.script_runtime import ensure_repo_root_on_path
 except ModuleNotFoundError:  # pragma: no cover - direct script execution
-    from script_runtime import ensure_repo_root_on_path
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+    from scripts.script_runtime import ensure_repo_root_on_path
 
 ensure_repo_root_on_path()
 
