@@ -441,8 +441,6 @@ def _projection_freshness_customer_read_model() -> DataHealthCheckResult:
         violations.append(f"projection_count_mismatch={list_count}:{detail_count}")
     if not refresh_state_present:
         violations.append("customer read model has no successful managed refresh")
-    elif refresh_age_minutes > PROJECTION_FRESHNESS_MAX_MINUTES:
-        violations.append(f"refresh_age_minutes={refresh_age_minutes:.1f} exceeds {PROJECTION_FRESHNESS_MAX_MINUTES}")
     if refresh_state_present and refresh_target_count != list_count:
         violations.append(f"refresh_target_count={refresh_target_count} does not match list_count={list_count}")
     if refresh_state_present and refresh_source_count != refresh_target_count:
@@ -454,7 +452,8 @@ def _projection_freshness_customer_read_model() -> DataHealthCheckResult:
         "refresh_source_count": refresh_source_count,
         "refresh_target_count": refresh_target_count,
         "refresh_age_minutes": refresh_age_minutes,
-        "max_stale_minutes": PROJECTION_FRESHNESS_MAX_MINUTES,
+        "freshness_policy": "source_change_lag",
+        "wall_clock_age_is_diagnostic": True,
     }
     if violations:
         return DataHealthCheckResult(
@@ -462,16 +461,16 @@ def _projection_freshness_customer_read_model() -> DataHealthCheckResult:
             title=title,
             status="fail",
             severity="red",
-            summary="Customer read model projections are empty or stale.",
+            summary="Customer read model projections are empty or inconsistent.",
             evidence={**evidence, "violations": violations},
-            remediation="Run the customer read model projection refresh and inspect failed projection jobs.",
+            remediation="Inspect the event-driven refresh intent and projection consumer; source-change lag is enforced by customer_360_freshness_guard.",
         )
     return DataHealthCheckResult(
         check_id=check_id,
         title=title,
         status="ok",
         severity="green",
-        summary="Customer read model projections are populated and fresh.",
+        summary="Customer read model projections are populated and internally consistent.",
         evidence=evidence,
         remediation="",
     )
