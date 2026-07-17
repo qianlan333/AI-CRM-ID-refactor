@@ -304,6 +304,9 @@ jobs:
             runtime_transaction_partial=0
             release_switched=0
             release_committed=0
+            schema_aligned_to_verified_release=0
+            verified_release_web_smoke_passed=0
+            restore_runtime_allowed=1
             restore_expected_sha="$before_sha"
             revoke_deploy_smoke_session() {
               local cookie_file="$1"
@@ -325,18 +328,19 @@ jobs:
               local expected_sha="$1"
               local report_file="$2"
               local headers_file="${report_file%.json}.headers"
-              if ! curl -sSf -D "$headers_file" \
-                http://127.0.0.1:5001/api/system/health \
-                -o "$report_file"; then
-                cat "$report_file" 2>/dev/null || true
-                return 1
-              fi
-              if ! EXPECTED_RELEASE_SHA="$expected_sha" REPORT_FILE="$report_file" \
-                python3 -c 'import json, os, sys; payload=json.load(open(os.environ["REPORT_FILE"], encoding="utf-8")); release=payload.get("components", {}).get("release", {}); migration=payload.get("components", {}).get("migration", {}); migration_ready=bool(migration.get("matches_head") or migration.get("forward_compatible")); ready=payload.get("ok") is True and int(payload.get("http_status") or 0) == 200 and release.get("release_sha") == os.environ["EXPECTED_RELEASE_SHA"] and release.get("exact_sha") is True and migration_ready; sys.exit(0 if ready else "runtime system health is not release-safe")'; then
-                cat "$report_file" 2>/dev/null || true
-                return 1
-              fi
-              cat "$report_file"
+              for _ in $(seq 1 10); do
+                if curl -sSf -D "$headers_file" \
+                  http://127.0.0.1:5001/api/system/health \
+                  -o "$report_file" \
+                  && EXPECTED_RELEASE_SHA="$expected_sha" REPORT_FILE="$report_file" \
+                    python3 -c 'import json, os, sys; payload=json.load(open(os.environ["REPORT_FILE"], encoding="utf-8")); release=payload.get("components", {}).get("release", {}); migration=payload.get("components", {}).get("migration", {}); migration_ready=bool(migration.get("matches_head") or migration.get("forward_compatible")); ready=payload.get("ok") is True and int(payload.get("http_status") or 0) == 200 and release.get("release_sha") == os.environ["EXPECTED_RELEASE_SHA"] and release.get("exact_sha") is True and migration_ready; sys.exit(0 if ready else "runtime system health is not release-safe")'; then
+                  cat "$report_file"
+                  return 0
+                fi
+                sleep 1
+              done
+              cat "$report_file" 2>/dev/null || true
+              return 1
             }
             print_runtime_release_diagnostics() {
               for marker in \
@@ -363,6 +367,32 @@ jobs:
                 openclaw-customer-read-model-refresh.timer \
                 openclaw-automation-ops-scheduler.timer || true
               curl -sS http://127.0.0.1:5001/api/system/health || true
+            }
+            restore_runtime_from_guard() {
+              local authorize_phase="$1"
+              python3 "$release_control_manager" \
+                --manifest "$release_control_manifest" \
+                --phase "$authorize_phase" --execute \
+                && python3 "$release_control_manager" \
+                  --manifest "$release_control_manifest" \
+                  --phase install-enable-after-web-health --execute \
+                && python3 "$release_control_manager" \
+                  --manifest "$release_control_manifest" \
+                  --phase verify-staged-runtime --execute \
+                && python3 "$release_control_manager" \
+                  --manifest "$release_control_manifest" \
+                  --phase release-runtime-guard --execute
+            }
+            resecure_runtime_guard() {
+              python3 "$release_control_manager" \
+                --manifest "$release_control_manifest" \
+                --phase begin-transaction --execute \
+                && python3 "$release_control_manager" \
+                  --manifest "$release_control_manifest" \
+                  --phase ensure-stopped-for-rollback --execute
+            }
+            schema_matches_verified_release() {
+              python3 -c 'from aicrm_next.platform_foundation.readiness import _expected_migration_heads; from aicrm_next.platform_foundation.repository import RuntimeReadinessRepository; from aicrm_next.shared.runtime import raw_database_url; expected=_expected_migration_heads(); context=RuntimeReadinessRepository(raw_database_url()); context.__enter__(); current=context.migration_revisions(); context.__exit__(None, None, None); raise SystemExit(0 if current == expected else 1)'
             }
             cleanup_deploy() {
               exit_status=$?
@@ -397,29 +427,62 @@ jobs:
               fi
               if [ "$exit_status" -ne 0 ] \
                 && [ "${release_switched:-0}" = "1" ] \
+                && [ "${schema_aligned_to_verified_release:-0}" = "1" ] \
+                && [ "${verified_release_web_smoke_passed:-0}" != "1" ] \
+                && [ "${runtime_units_stopped:-0}" != "1" ]; then
+                echo "schema is aligned to an uncommitted release without Web smoke; stopping runtime fail-closed"
+                if python3 "$release_control_manager" \
+                  --manifest "$release_control_manifest" \
+                  --phase begin-transaction --execute \
+                  && python3 "$release_control_manager" \
+                    --manifest "$release_control_manifest" \
+                    --phase ensure-stopped-for-rollback --execute; then
+                  runtime_units_stopped=1
+                  runtime_transaction_partial=0
+                else
+                  restore_runtime_allowed=0
+                  cleanup_failed=1
+                fi
+              fi
+              if [ "$exit_status" -ne 0 ] \
+                && [ "${release_switched:-0}" = "1" ] \
                 && [ "${release_committed:-0}" != "1" ]; then
-                echo "deployment failed before commit; rolling back to $before_sha"
                 if [ "${runtime_units_stopped:-0}" = "1" ]; then
                   sudo systemctl stop aicrm-web.service || true
                   sudo systemctl stop openclaw-wecom-postgres.service || true
                 else
                   echo "primary Web remains active while the partial runtime transaction is rolled back"
                 fi
-                if git reset --hard "$before_sha"; then
-                  printf '%s\n' "$before_sha" > .release-sha
-                  if ! git diff --quiet "$before_sha" "$verified_sha" -- requirements.lock; then
-                    if ! /home/ubuntu/venvs/openclaw/bin/python -m pip install \
-                      --require-hashes -r requirements.lock; then
-                      echo "failed to restore dependencies for $before_sha"
-                      cleanup_failed=1
-                    fi
+                if [ "${schema_aligned_to_verified_release:-0}" = "1" ]; then
+                  if [ "${verified_release_web_smoke_passed:-0}" = "1" ]; then
+                    echo "schema already matches verified release; preserving smoke-verified checkout $verified_sha"
+                    restore_expected_sha="$verified_sha"
+                  else
+                    echo "schema already matches verified release but Web smoke did not pass; keeping runtime guarded"
+                    restore_expected_sha="$verified_sha"
+                    restore_runtime_allowed=0
+                    cleanup_failed=1
                   fi
                 else
-                  echo "failed to restore checkout to $before_sha"
-                  cleanup_failed=1
+                  echo "deployment failed before schema alignment; rolling back to $before_sha"
+                  if git reset --hard "$before_sha"; then
+                    printf '%s\n' "$before_sha" > .release-sha
+                    if ! git diff --quiet "$before_sha" "$verified_sha" -- requirements.lock; then
+                      if ! /home/ubuntu/venvs/openclaw/bin/python -m pip install \
+                        --require-hashes -r requirements.lock; then
+                        echo "failed to restore dependencies for $before_sha"
+                        cleanup_failed=1
+                      fi
+                    fi
+                  else
+                    echo "failed to restore checkout to $before_sha"
+                    restore_runtime_allowed=0
+                    cleanup_failed=1
+                  fi
                 fi
               fi
-              if [ "${runtime_units_stopped:-0}" = "1" ]; then
+              if [ "${runtime_units_stopped:-0}" = "1" ] \
+                && [ "${restore_runtime_allowed:-1}" = "1" ]; then
                 echo "restoring runtime units for $restore_expected_sha"
                 if ! python3 "$release_control_manager" \
                   --manifest "$release_control_manifest" \
@@ -445,24 +508,10 @@ jobs:
                   if verify_system_health_for_runtime_release \
                     "$restore_expected_sha" \
                     /tmp/aicrm-cleanup-system-health.json; then
-                    if ! python3 "$release_control_manager" \
-                      --manifest "$release_control_manifest" \
-                      --phase authorize-runtime-start --execute; then
-                      cleanup_failed=1
-                    fi
-                    if ! python3 "$release_control_manager" \
-                      --manifest "$release_control_manifest" \
-                      --phase install-enable-after-web-health --execute; then
-                      cleanup_failed=1
-                    fi
-                    if ! python3 "$release_control_manager" \
-                      --manifest "$release_control_manifest" \
-                      --phase verify-staged-runtime --execute; then
-                      cleanup_failed=1
-                    fi
-                    if ! python3 "$release_control_manager" \
-                      --manifest "$release_control_manifest" \
-                      --phase release-runtime-guard --execute; then
+                    if ! restore_runtime_from_guard authorize-runtime-start; then
+                      echo "runtime restore failed; re-securing deploy guard"
+                      resecure_runtime_guard || true
+                      print_runtime_release_diagnostics
                       cleanup_failed=1
                     fi
                   else
@@ -494,27 +543,14 @@ jobs:
                   if verify_system_health_for_runtime_release \
                     "$restore_expected_sha" \
                     /tmp/aicrm-cleanup-partial-system-health.json; then
-                    if ! python3 "$release_control_manager" \
-                      --manifest "$release_control_manifest" \
-                      --phase authorize-runtime-restore --execute; then
+                    if ! restore_runtime_from_guard authorize-runtime-restore; then
+                      echo "partial runtime restore failed; re-securing deploy guard"
+                      resecure_runtime_guard || true
+                      print_runtime_release_diagnostics
                       cleanup_failed=1
+                    else
+                      runtime_transaction_partial=0
                     fi
-                    if ! python3 "$release_control_manager" \
-                      --manifest "$release_control_manifest" \
-                      --phase install-enable-after-web-health --execute; then
-                      cleanup_failed=1
-                    fi
-                    if ! python3 "$release_control_manager" \
-                      --manifest "$release_control_manifest" \
-                      --phase verify-staged-runtime --execute; then
-                      cleanup_failed=1
-                    fi
-                    if ! python3 "$release_control_manager" \
-                      --manifest "$release_control_manifest" \
-                      --phase release-runtime-guard --execute; then
-                      cleanup_failed=1
-                    fi
-                    runtime_transaction_partial=0
                   else
                     echo "partially stopped runtime failed release-safe system health; runtime remains guarded"
                     print_runtime_release_diagnostics
@@ -609,6 +645,9 @@ jobs:
             set -a
             source /home/ubuntu/.openclaw-wecom-pg.env
             set +a
+            if schema_matches_verified_release; then
+              schema_aligned_to_verified_release=1
+            fi
             # Identity preflight must fail before any runtime unit is stopped.
             python3 scripts/ops/check_unionid_identity_cutover.py \
               --phase preflight \
@@ -656,6 +695,11 @@ jobs:
             fi
             # 1) AI-CRM Next schema migrations
             python3 -m alembic upgrade head
+            if ! schema_matches_verified_release; then
+              echo "database schema does not match the verified release after migration"
+              exit 1
+            fi
+            schema_aligned_to_verified_release=1
             export AICRM_SECRET_STORE_DIR="${AICRM_SECRET_STORE_DIR:-/home/ubuntu/.aicrm-secrets}"
             python3 scripts/ops/migrate_app_setting_secrets.py --execute \
               --secret-store-dir "$AICRM_SECRET_STORE_DIR" \
@@ -735,6 +779,7 @@ jobs:
               sudo journalctl -u openclaw-wecom-postgres.service -n 120 --no-pager || true
               exit 1
             fi
+            verified_release_web_smoke_passed=1
             revoke_deploy_smoke_session "$deploy_smoke_session_file"
             deploy_smoke_session_file=""
             if ! verify_system_health_for_runtime_release \

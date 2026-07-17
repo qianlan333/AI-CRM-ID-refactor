@@ -87,12 +87,16 @@ def test_full_runtime_rollback_uses_staged_runtime_verification_contract() -> No
         'if [ "${runtime_transaction_partial:-0}" = "1" ]', full_restore_index
     )
     full_restore = workflow[full_restore_index:partial_restore_index]
-    install_index = full_restore.index("--phase install-enable-after-web-health --execute")
-    verify_index = full_restore.index("--phase verify-staged-runtime --execute")
-    release_index = full_restore.index("--phase release-runtime-guard --execute")
+    helper_start = workflow.index("restore_runtime_from_guard() {")
+    helper_end = workflow.index("resecure_runtime_guard() {", helper_start)
+    helper = workflow[helper_start:helper_end]
+    install_index = helper.index("--phase install-enable-after-web-health --execute")
+    verify_index = helper.index("--phase verify-staged-runtime --execute")
+    release_index = helper.index("--phase release-runtime-guard --execute")
 
     assert install_index < verify_index < release_index
-    assert "--phase verify --execute" not in full_restore
+    assert "restore_runtime_from_guard authorize-runtime-start" in full_restore
+    assert "--phase verify --execute" not in helper
 
 
 def test_failed_deploy_drain_restores_timers_without_killing_active_oneshots() -> None:
@@ -108,7 +112,7 @@ def test_failed_deploy_drain_restores_timers_without_killing_active_oneshots() -
     preserve_index = workflow.index("preserving active one-shot workers during rollback", cleanup_index)
     conditional_web_stop = workflow.index('if [ "${runtime_units_stopped:-0}" = "1" ]; then', preserve_index)
     rollback_index = workflow.index('git reset --hard "$before_sha"', conditional_web_stop)
-    restore_index = workflow.index("--phase authorize-runtime-restore --execute", rollback_index)
+    restore_index = workflow.index("restore_runtime_from_guard authorize-runtime-restore", rollback_index)
     install_index = workflow.index("--phase install-enable-after-web-health --execute", restore_index)
     release_index = workflow.index("--phase release-runtime-guard --execute", install_index)
 
@@ -694,16 +698,92 @@ def test_deploy_admin_smoke_uses_short_lived_server_session_without_logging_cook
     assert "print_runtime_release_diagnostics" in workflow[system_health_index:install_index]
 
 
+def test_release_safe_system_health_helper_preserves_validator_exit_status_in_shell_condition(tmp_path: Path) -> None:
+    workflow = TEST_DEPLOY_WORKFLOW.read_text(encoding="utf-8")
+    start = workflow.index("            verify_system_health_for_runtime_release() {")
+    end = workflow.index("            print_runtime_release_diagnostics() {", start)
+    function_source = "\n".join(
+        line.removeprefix("            ") for line in workflow[start:end].splitlines()
+    )
+
+    for validator_status, expected_status in ((0, 0), (7, 1)):
+        report_file = tmp_path / f"system-health-{validator_status}.json"
+        harness = f"""
+set -euo pipefail
+curl() {{
+  local headers_file=""
+  local report_file=""
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      -D) shift; headers_file="$1" ;;
+      -o) shift; report_file="$1" ;;
+    esac
+    shift
+  done
+  : > "$headers_file"
+  printf '%s\n' '{{"ok":true}}' > "$report_file"
+}}
+python3() {{ return {validator_status}; }}
+sleep() {{ :; }}
+{function_source}
+if verify_system_health_for_runtime_release "{'a' * 40}" "{report_file}"; then
+  exit 0
+fi
+exit 1
+"""
+        completed = subprocess.run(["bash", "-c", harness], check=False, capture_output=True, text=True)
+        assert completed.returncode == expected_status, completed.stderr
+
+
+def test_schema_aligned_failure_never_reopens_an_incompatible_previous_release() -> None:
+    workflow = TEST_DEPLOY_WORKFLOW.read_text(encoding="utf-8")
+
+    preflight_index = workflow.index("if schema_matches_verified_release; then")
+    migration_index = workflow.index("python3 -m alembic upgrade head", preflight_index)
+    alignment_index = workflow.index("schema_aligned_to_verified_release=1", migration_index)
+    smoke_index = workflow.index("verified_release_web_smoke_passed=1", alignment_index)
+    cleanup_index = workflow.index("cleanup_deploy() {")
+    preserve_index = workflow.index(
+        'schema already matches verified release; preserving smoke-verified checkout $verified_sha',
+        cleanup_index,
+    )
+    guarded_index = workflow.index(
+        "schema already matches verified release but Web smoke did not pass; keeping runtime guarded",
+        cleanup_index,
+    )
+
+    assert preflight_index < migration_index < alignment_index < smoke_index
+    assert cleanup_index < preserve_index < guarded_index
+    assert 'restore_expected_sha="$verified_sha"' in workflow[preserve_index:guarded_index]
+    assert "restore_runtime_allowed=0" in workflow[guarded_index:]
+    assert "alembic downgrade" not in workflow
+
+
+def test_cleanup_runtime_restore_short_circuits_and_resecures_on_any_phase_failure() -> None:
+    workflow = TEST_DEPLOY_WORKFLOW.read_text(encoding="utf-8")
+    helper_start = workflow.index("restore_runtime_from_guard() {")
+    helper_end = workflow.index("resecure_runtime_guard() {", helper_start)
+    helper = workflow[helper_start:helper_end]
+    cleanup = workflow[workflow.index("cleanup_deploy() {") : workflow.index("trap cleanup_deploy EXIT")]
+
+    assert helper.count("&& python3") == 3
+    assert helper.index("install-enable-after-web-health") < helper.index("verify-staged-runtime")
+    assert helper.index("verify-staged-runtime") < helper.index("release-runtime-guard")
+    assert "runtime restore failed; re-securing deploy guard" in cleanup
+    assert "partial runtime restore failed; re-securing deploy guard" in cleanup
+    assert cleanup.count("resecure_runtime_guard || true") == 2
+
+
 def test_deploy_exit_trap_revokes_smoke_session_and_restores_runtime_units():
     workflow = TEST_DEPLOY_WORKFLOW.read_text(encoding="utf-8")
 
     cleanup_index = workflow.index("cleanup_deploy() {")
     stop_index = workflow.index("--phase ensure-stopped-for-rollback --execute", cleanup_index)
-    verify_index = workflow.index("--phase verify-staged-runtime --execute", stop_index)
-    trap_index = workflow.index("trap cleanup_deploy EXIT", verify_index)
+    restore_call_index = workflow.index("restore_runtime_from_guard authorize-runtime-start", stop_index)
+    trap_index = workflow.index("trap cleanup_deploy EXIT", restore_call_index)
     restored_flag_index = workflow.index("runtime_units_stopped=0", trap_index)
 
-    assert cleanup_index < stop_index < verify_index < trap_index < restored_flag_index
+    assert cleanup_index < stop_index < restore_call_index < trap_index < restored_flag_index
     cleanup = workflow[cleanup_index:trap_index]
     assert 'revoke_deploy_smoke_session "$deploy_smoke_session_file"' in cleanup
     assert "--phase stop-for-migration --execute" not in cleanup
@@ -715,8 +795,10 @@ def test_deploy_exit_trap_revokes_smoke_session_and_restores_runtime_units():
     assert "verify_system_health_for_runtime_release" in cleanup
     assert "restored Web failed release-safe system health; runtime remains guarded" in cleanup
     assert "partially stopped runtime failed release-safe system health; runtime remains guarded" in cleanup
-    assert "--phase install-enable-after-web-health --execute" in cleanup
-    assert "--phase verify-staged-runtime --execute" in cleanup
+    assert "restore_runtime_from_guard authorize-runtime-start" in cleanup
+    helper = workflow[workflow.index("restore_runtime_from_guard() {") : cleanup_index]
+    assert "--phase install-enable-after-web-health --execute" in helper
+    assert "--phase verify-staged-runtime --execute" in helper
     assert "--phase verify --execute" not in cleanup
     assert "restored_web_ready" in cleanup
 
