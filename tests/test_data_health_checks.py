@@ -338,6 +338,11 @@ def test_broadcast_backlog_probe_counts_blocked_and_retryable(monkeypatch) -> No
     calls = _patch_health_db(
         monkeypatch,
         {
+            "raw_open_count": 4,
+            "held_count": 1,
+            "eligible_count": 999,
+            "dlq_count": 1,
+            "unknown_count": 0,
             "blocked_count": 1,
             "failed_terminal_count": 0,
             "due_retryable_count": 2,
@@ -348,6 +353,12 @@ def test_broadcast_backlog_probe_counts_blocked_and_retryable(monkeypatch) -> No
     result = checks._broadcast_job_blocked_backlog()
 
     assert result.status == "fail"
+    assert result.evidence["execution_owner"] == "legacy_frozen"
+    assert result.evidence["execution_semantics"] == "readonly"
+    assert result.evidence["raw_open_count"] == 4
+    assert result.evidence["held_count"] == 1
+    assert result.evidence["eligible_count"] == 0
+    assert result.evidence["dlq_count"] == 1
     assert result.evidence["blocked_count"] == 1
     assert result.evidence["due_retryable_count"] == 2
     assert any("FROM broadcast_jobs" in sql for sql in calls)
@@ -359,6 +370,11 @@ def test_broadcast_backlog_probe_keeps_historical_terminal_evidence_without_perm
     _patch_health_db(
         monkeypatch,
         {
+            "raw_open_count": 14,
+            "held_count": 14,
+            "eligible_count": 7,
+            "dlq_count": 14,
+            "unknown_count": 0,
             "recent_blocked_count": 0,
             "recent_failed_terminal_count": 0,
             "historical_blocked_count": 8,
@@ -371,6 +387,10 @@ def test_broadcast_backlog_probe_keeps_historical_terminal_evidence_without_perm
     result = checks._broadcast_job_blocked_backlog()
 
     assert result.status == "ok"
+    assert result.evidence["raw_open_count"] == 14
+    assert result.evidence["held_count"] == 14
+    assert result.evidence["eligible_count"] == 0
+    assert result.evidence["dlq_count"] == 14
     assert result.evidence["blocked_count"] == 0
     assert result.evidence["historical_blocked_count"] == 8
     assert result.evidence["historical_failed_terminal_count"] == 6

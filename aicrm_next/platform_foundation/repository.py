@@ -69,7 +69,7 @@ class RuntimeReadinessRepository:
         allowed_pairs: tuple[tuple[str, str], ...] = (),
         allowed_event_types: tuple[str, ...] = (),
         allowed_consumers: tuple[str, ...] = (),
-    ) -> dict[str, int]:
+    ) -> dict[str, Any]:
         params: dict[str, Any] = {}
         if allowed_pairs:
             predicates = ["(e.event_type || ':' || r.consumer_name) = ANY(%(allowed_pairs)s)"]
@@ -194,7 +194,7 @@ class RuntimeReadinessRepository:
                 'planned', 'approved', 'queued', 'dispatching', 'failed_retryable',
                 'unknown_after_dispatch', 'failed_terminal', 'blocked'
               )
-            ), queue_policy_rows AS (
+            ), runtime_queue_rows AS (
               SELECT
                 rows.queue_kind,
                 rows.enqueued_at,
@@ -218,9 +218,35 @@ class RuntimeReadinessRepository:
               FROM queue_candidates rows
               CROSS JOIN queue_runtime_control control
               JOIN queue_lane_policy policy ON policy.lane = rows.lane
+            ), legacy_broadcast_rows AS (
+              SELECT
+                'broadcast'::text AS queue_kind,
+                job.created_at AS enqueued_at,
+                TRUE AS raw_open,
+                job.hold_reason <> '' AS held,
+                FALSE AS eligible,
+                FALSE AS scheduled,
+                FALSE AS retry_wait,
+                FALSE AS rate_limited,
+                FALSE AS in_flight,
+                job.status = 'unknown_after_dispatch' AS unknown,
+                job.status IN ('failed', 'failed_terminal', 'blocked') AS dlq
+              FROM broadcast_jobs job
+              WHERE COALESCE(NULLIF(job.execution_owner, ''), 'legacy_frozen') = 'legacy_frozen'
+                AND job.status IN (
+                  'waiting_approval', 'queued', 'claimed', 'dispatching',
+                  'failed', 'failed_retryable', 'failed_terminal', 'blocked',
+                  'unknown_after_dispatch'
+                )
+            ), queue_policy_rows AS (
+              SELECT * FROM runtime_queue_rows
+              UNION ALL
+              SELECT * FROM legacy_broadcast_rows
             )
             SELECT
-              (SELECT active_generation FROM queue_runtime_control WHERE singleton = TRUE)::BIGINT AS queue_policy_version,
+              (SELECT policy_version FROM queue_runtime_control WHERE singleton = TRUE)::TEXT AS queue_policy_version,
+              (SELECT active_generation FROM queue_runtime_control WHERE singleton = TRUE)::BIGINT AS queue_active_generation,
+              (SELECT external_claim_scope FROM queue_runtime_control WHERE singleton = TRUE)::TEXT AS queue_external_claim_scope,
               COUNT(*) FILTER (WHERE raw_open)::BIGINT AS queue_raw_open_count,
               COUNT(*) FILTER (WHERE held)::BIGINT AS queue_held_count,
               COUNT(*) FILTER (WHERE eligible)::BIGINT AS queue_eligible_count,
@@ -314,7 +340,11 @@ class RuntimeReadinessRepository:
             """,
             params,
         ).fetchone()
-        return {str(key): int(value or 0) for key, value in dict(row or {}).items()}
+        text_fields = {"queue_policy_version", "queue_external_claim_scope"}
+        return {
+            str(key): str(value or "") if key in text_fields else int(value or 0)
+            for key, value in dict(row or {}).items()
+        }
 
     def _execute(self, sql: str, params: dict[str, Any] | None = None):
         if self._connection is None:

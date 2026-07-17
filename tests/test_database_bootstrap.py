@@ -657,10 +657,12 @@ def test_execution_runtime_correctness_freezes_and_classifies_pre_cutover_queue_
 
         with RuntimeReadinessRepository(database_url) as readiness_repo:
             queue_metrics = readiness_repo.queue_metrics(allowed_pairs=(("payment.succeeded", "payment_projection_consumer"),))
-        assert queue_metrics["queue_policy_version"] == 1
+        assert queue_metrics["queue_policy_version"] == "queue-v2-test-loopback"
+        assert queue_metrics["queue_active_generation"] == 0
+        assert queue_metrics["queue_external_claim_scope"] == "test_loopback"
         assert queue_metrics["queue_raw_open_count"] == 9
         assert queue_metrics["queue_held_count"] == 8
-        assert queue_metrics["queue_eligible_count"] == 1
+        assert queue_metrics["queue_eligible_count"] == 0
         assert queue_metrics["internal_event_pending_count"] == 1
         assert queue_metrics["internal_event_actionable_pending_count"] == 0
         assert queue_metrics["internal_event_outbox_raw_open_count"] == 1
@@ -671,10 +673,11 @@ def test_execution_runtime_correctness_freezes_and_classifies_pre_cutover_queue_
         assert queue_metrics["webhook_eligible_count"] == 0
         assert queue_metrics["external_effect_pending_count"] == 5
         assert queue_metrics["external_effect_held_count"] == 4
-        assert queue_metrics["external_effect_eligible_count"] == 1
+        assert queue_metrics["external_effect_eligible_count"] == 0
         assert queue_metrics["broadcast_raw_open_count"] == 1
         assert queue_metrics["broadcast_held_count"] == 1
         assert queue_metrics["broadcast_eligible_count"] == 0
+        assert queue_metrics["broadcast_dlq_count"] == 0
 
         from sqlalchemy import create_engine
         from sqlalchemy.orm import sessionmaker

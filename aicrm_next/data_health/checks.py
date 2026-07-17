@@ -498,7 +498,7 @@ def _projection_freshness_customer_read_model() -> DataHealthCheckResult:
 
 def _broadcast_job_blocked_backlog() -> DataHealthCheckResult:
     check_id = "broadcast_job_blocked_backlog"
-    title = "Broadcast job blocked backlog"
+    title = "Legacy broadcast ledger backlog"
     source_tables = ["broadcast_jobs", "broadcast_job_events"]
     if not database_schema_available():
         return _db_unavailable_placeholder(check_id, title, source_tables)
@@ -508,7 +508,34 @@ def _broadcast_job_blocked_backlog() -> DataHealthCheckResult:
                 session.execute(
                     text(
                         f"""
+                        WITH legacy_broadcast AS (
+                            SELECT *
+                            FROM broadcast_jobs
+                            WHERE COALESCE(NULLIF(execution_owner, ''), 'legacy_frozen') = 'legacy_frozen'
+                        )
                         SELECT
+                            COUNT(*) FILTER (
+                                WHERE status IN (
+                                    'waiting_approval', 'queued', 'claimed', 'dispatching',
+                                    'failed', 'failed_retryable', 'failed_terminal', 'blocked',
+                                    'unknown_after_dispatch'
+                                )
+                            ) AS raw_open_count,
+                            COUNT(*) FILTER (
+                                WHERE hold_reason <> ''
+                                  AND status IN (
+                                      'waiting_approval', 'queued', 'claimed', 'dispatching',
+                                      'failed', 'failed_retryable', 'failed_terminal', 'blocked',
+                                      'unknown_after_dispatch'
+                                  )
+                            ) AS held_count,
+                            COUNT(*) FILTER (
+                                WHERE status IN ('failed', 'failed_terminal', 'blocked')
+                            ) AS dlq_count,
+                            COUNT(*) FILTER (
+                                WHERE status = 'unknown_after_dispatch'
+                            ) AS unknown_count,
+                            0::BIGINT AS eligible_count,
                             COUNT(*) FILTER (
                                 WHERE status = 'blocked'
                                   AND updated_at >= CURRENT_TIMESTAMP - make_interval(hours => {BROADCAST_TERMINAL_LOOKBACK_HOURS})
@@ -528,7 +555,7 @@ def _broadcast_job_blocked_backlog() -> DataHealthCheckResult:
                                     WHERE status IN ('blocked', 'failed_terminal')
                                 )
                             )) / 3600 AS oldest_terminal_hours
-                        FROM broadcast_jobs
+                        FROM legacy_broadcast
                         """
                     )
                 )
@@ -542,11 +569,16 @@ def _broadcast_job_blocked_backlog() -> DataHealthCheckResult:
             title=title,
             status="fail",
             severity="red",
-            summary="Broadcast backlog check could not read the live queue.",
+            summary="Legacy broadcast ledger check could not read the live ledger.",
             evidence={"error": type(exc).__name__, "message": str(exc)[:300]},
             remediation="Verify broadcast_jobs migrations and DATABASE_URL read access.",
         )
 
+    raw_open_count = int(row.get("raw_open_count") or 0)
+    held_count = int(row.get("held_count") or 0)
+    dlq_count = int(row.get("dlq_count") or 0)
+    unknown_count = int(row.get("unknown_count") or 0)
+    eligible_count = 0
     blocked_count = int(row.get("recent_blocked_count", row.get("blocked_count")) or 0)
     failed_terminal_count = int(row.get("recent_failed_terminal_count", row.get("failed_terminal_count")) or 0)
     historical_blocked_count = int(row.get("historical_blocked_count") or blocked_count)
@@ -561,6 +593,13 @@ def _broadcast_job_blocked_backlog() -> DataHealthCheckResult:
     if due_retryable_count > BROADCAST_RETRYABLE_DUE_MAX_COUNT:
         violations.append(f"due_retryable_count={due_retryable_count} exceeds {BROADCAST_RETRYABLE_DUE_MAX_COUNT}")
     evidence = {
+        "execution_owner": "legacy_frozen",
+        "execution_semantics": "readonly",
+        "raw_open_count": raw_open_count,
+        "held_count": held_count,
+        "eligible_count": eligible_count,
+        "dlq_count": dlq_count,
+        "unknown_count": unknown_count,
         "blocked_count": blocked_count,
         "failed_terminal_count": failed_terminal_count,
         "historical_blocked_count": historical_blocked_count,
@@ -576,16 +615,16 @@ def _broadcast_job_blocked_backlog() -> DataHealthCheckResult:
             title=title,
             status="fail",
             severity="red",
-            summary="Broadcast queue has blocked, terminal, or excessive due retryable jobs.",
+            summary="Legacy broadcast ledger has recent DLQ entries or excessive frozen retryable history; eligible remains zero.",
             evidence={**evidence, "violations": violations},
-            remediation="Inspect broadcast_job_events, fix terminal causes, and requeue only after operator approval.",
+            remediation="Inspect and classify broadcast history manually; provider work must stay owned by external_effect_job and the legacy worker must remain retired.",
         )
     return DataHealthCheckResult(
         check_id=check_id,
         title=title,
         status="ok",
         severity="green",
-        summary="Broadcast blocked backlog is within threshold.",
+        summary="Legacy broadcast history is visible as a read-only ledger and has no executable rows.",
         evidence=evidence,
         remediation="",
     )
