@@ -188,6 +188,22 @@ def test_live_runtime_readiness_replacement_has_permanent_full_ci_scope() -> Non
     assert result["architecture_gate"] == "full"
 
 
+def test_id_validation_provenance_recovery_has_permanent_full_ci_scope() -> None:
+    result = _select(
+        "scripts/ops/check_id_validation_release_readiness.py",
+        "scripts/ops/recover_id_validation_provenance.py",
+        "tests/test_id_validation_provenance_recovery.py",
+        "tests/test_id_validation_release_readiness.py",
+    )
+
+    assert result["unmatched_files"] == []
+    assert "ci_deploy" in result["matched_scopes"]
+    assert "tests/test_id_validation_provenance_recovery.py" in result["python_tests"]
+    assert "tests/test_id_validation_release_readiness.py" in result["python_tests"]
+    assert result["needs_full_ci"] is True
+    assert result["architecture_gate"] == "full"
+
+
 def test_h5_wechat_pay_mobile_projection_test_selects_commerce_scope() -> None:
     result = _select("tests/test_h5_wechat_pay_mobile_projection.py")
 
