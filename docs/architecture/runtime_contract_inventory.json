@@ -389,7 +389,7 @@
       "accessor": "runtime_setting",
       "file": "aicrm_next/background_jobs/broadcast_queue_worker.py",
       "key": "AICRM_EXTERNAL_EFFECT_ALLOWED_OWNER_USERIDS",
-      "line": 838
+      "line": 839
     },
     {
       "accessor": "declared_runtime_environment_key",
@@ -1103,13 +1103,13 @@
       "accessor": "os.getenv",
       "file": "aicrm_next/background_jobs/broadcast_queue_worker.py",
       "key": "BROADCAST_QUEUE_LEASE_SECONDS",
-      "line": 1219
+      "line": 1220
     },
     {
       "accessor": "os.getenv",
       "file": "aicrm_next/background_jobs/broadcast_queue_worker.py",
       "key": "BROADCAST_QUEUE_RETRY_DELAY_SECONDS",
-      "line": 388
+      "line": 389
     },
     {
       "accessor": "_env_flag",
@@ -1169,7 +1169,7 @@
       "accessor": "os.getenv",
       "file": "aicrm_next/cloud_orchestrator/repository.py",
       "key": "DATABASE_URL",
-      "line": 348
+      "line": 356
     },
     {
       "accessor": "os.getenv",
