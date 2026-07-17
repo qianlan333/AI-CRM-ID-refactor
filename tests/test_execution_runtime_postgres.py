@@ -21,6 +21,7 @@ from aicrm_next.platform_foundation.execution_runtime.read_model import (
 from aicrm_next.platform_foundation.execution_runtime.repository import (
     ExecutionRuntimeRepository,
 )
+from aicrm_next.platform_foundation.repository import RuntimeReadinessRepository
 from aicrm_next.platform_foundation.external_effects.models import (
     ExternalEffectCreateRequest,
     ExternalEffectDispatchResult,
@@ -266,6 +267,83 @@ def test_database_scope_unifies_claim_deadline_and_runtime_metrics() -> None:
     assert claim is not None
     assert claim.item_id == loopback["id"]
     assert claim.item_id != real["id"]
+
+
+def test_canary_runtime_and_system_health_only_count_test_loopback_external_effects() -> None:
+    loopback = _job(execution_scope="test_loopback")
+    real_target = _job(execution_scope="")
+    with _connect() as connection:
+        connection.execute(
+            """
+            UPDATE queue_runtime_control
+            SET active_generation = 7, claim_enabled = TRUE, rollout_mode = 'canary'
+            WHERE singleton = TRUE
+            """
+        )
+        connection.execute(
+            """
+            UPDATE queue_lane_policy
+            SET enabled = TRUE, rollout_mode = 'canary', blocked_until = NULL
+            WHERE lane = 'wecom_interactive'
+            """
+        )
+        connection.execute(
+            """
+            UPDATE external_effect_job
+            SET created_at = CURRENT_TIMESTAMP - INTERVAL '2 hours',
+                available_at = CURRENT_TIMESTAMP - INTERVAL '2 hours'
+            WHERE id = %s
+            """,
+            (real_target["id"],),
+        )
+        connection.execute(
+            """
+            UPDATE external_effect_job
+            SET created_at = CURRENT_TIMESTAMP - INTERVAL '5 seconds',
+                available_at = CURRENT_TIMESTAMP - INTERVAL '5 seconds'
+            WHERE id = %s
+            """,
+            (loopback["id"],),
+        )
+
+    snapshot = ExecutionRuntimeReadModel(_database_url()).runtime_snapshot()
+    lanes = {
+        item["lane"]: item
+        for item in snapshot["lanes"]
+    }
+    with RuntimeReadinessRepository(_database_url()) as readiness:
+        health = readiness.queue_metrics()
+
+    assert lanes["wecom_interactive"]["raw_open"] == 2
+    assert lanes["wecom_interactive"]["eligible"] == 1
+    assert lanes["wecom_interactive"]["policy_gated"] == 1
+    assert lanes["wecom_interactive"]["oldest_eligible_age_seconds"] < 60
+    assert snapshot["policy_snapshot"]["external_execution_scope_mode"]["wecom_interactive"] == "test_loopback_only"
+    assert health["external_effect_raw_open_count"] == 2
+    assert health["external_effect_eligible_count"] == 1
+    assert health["external_effect_eligible_oldest_pending_age_seconds"] < 60
+
+
+def test_generation_zero_is_ineligible_in_runtime_and_system_health() -> None:
+    _job(execution_scope="test_loopback")
+    with _connect() as connection:
+        connection.execute(
+            """
+            UPDATE queue_lane_policy
+            SET enabled = TRUE, rollout_mode = 'canary', blocked_until = NULL
+            WHERE lane = 'wecom_interactive'
+            """
+        )
+    lanes = {
+        item["lane"]: item
+        for item in ExecutionRuntimeReadModel(_database_url()).runtime_snapshot()["lanes"]
+    }
+    with RuntimeReadinessRepository(_database_url()) as readiness:
+        health = readiness.queue_metrics()
+
+    assert lanes["wecom_interactive"]["eligible"] == 0
+    assert health["external_effect_eligible_count"] == 0
+    assert health["queue_eligible_count"] == 0
 
 
 def test_capacity_claims_only_real_slots_and_refills_immediately() -> None:

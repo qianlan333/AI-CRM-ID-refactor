@@ -42,6 +42,7 @@ from .repository_support import (
     hashlib,
     json,
     public_datetime,
+    queue_metric_filter_sql,
     redact_sensitive_text,
     scrub_summary,
     text,
@@ -505,75 +506,10 @@ class SQLAlchemyInternalEventRepository(InternalEventRepository):
 
     def queue_metrics(self, filters: dict[str, Any] | None = None) -> dict[str, Any]:
         filters = dict(filters or {})
-        clauses: list[str] = []
-        params: dict[str, Any] = {}
-        if _text(filters.get("event_type")):
-            clauses.append("e.event_type = :event_type")
-            params["event_type"] = _text(filters.get("event_type"))
-        event_section = _text(filters.get("event_section"))
-        if event_section and not _text(filters.get("event_type")):
-            known_types = sorted({event_type for values in EVENT_SECTION_EVENT_TYPES.values() for event_type in values})
-            section_types = list(EVENT_SECTION_EVENT_TYPES.get(event_section, ()))
-            if section_types:
-                clauses.append("e.event_type = ANY(:metric_event_section_types)")
-                params["metric_event_section_types"] = section_types
-            elif event_section == "other" and known_types:
-                clauses.append("NOT (e.event_type = ANY(:metric_known_event_types))")
-                params["metric_known_event_types"] = known_types
-        for key in (
-            "aggregate_type",
-            "aggregate_id",
-            "subject_type",
-            "subject_id",
-            "trace_id",
-            "idempotency_key",
-            "source_module",
-        ):
-            value = _text(filters.get(key))
-            if value:
-                clauses.append(f"e.{key} = :metric_{key}")
-                params[f"metric_{key}"] = value
-        trace_hashes = _trace_hash_candidates(filters)
-        if trace_hashes:
-            trace_clauses: list[str] = []
-            for index, trace_hash in enumerate(trace_hashes):
-                param_key = f"metric_original_trace_hash_{index}"
-                trace_clauses.append(
-                    f"""
-                    (
-                        e.payload_json -> 'broadcast_task' ->> 'original_trace_hash' = :{param_key}
-                        OR e.payload_json -> 'broadcast_task' ->> 'trace_id_hash' = :{param_key}
-                    )
-                    """
-                )
-                params[param_key] = trace_hash
-            clauses.append("(" + " OR ".join(trace_clauses) + ")")
-        if _text(filters.get("created_from")):
-            clauses.append("e.created_at >= CAST(:metric_created_from AS timestamptz)")
-            params["metric_created_from"] = _text(filters.get("created_from"))
-        if _text(filters.get("created_to")):
-            clauses.append("e.created_at <= CAST(:metric_created_to AS timestamptz)")
-            params["metric_created_to"] = _text(filters.get("created_to"))
-        if filters.get("event_types"):
-            event_types = [_text(item) for item in filters.get("event_types") or [] if _text(item)]
-            if event_types:
-                clauses.append("e.event_type = ANY(:event_types)")
-                params["event_types"] = event_types
-        if _text(filters.get("consumer_name")):
-            clauses.append("r.consumer_name = :consumer_name")
-            params["consumer_name"] = _text(filters.get("consumer_name"))
-        if _text(filters.get("consumer_status")):
-            clauses.append("r.status = :metric_consumer_status")
-            params["metric_consumer_status"] = _text(filters.get("consumer_status"))
-        if filters.get("consumer_names"):
-            consumer_names = [_text(item) for item in filters.get("consumer_names") or [] if _text(item)]
-            if consumer_names:
-                clauses.append("r.consumer_name = ANY(:consumer_names)")
-                params["consumer_names"] = consumer_names
-        pair_clause = self._event_consumer_pair_clause(filters.get("event_consumers"), params)
-        if pair_clause:
-            clauses.append(pair_clause)
-        where = "WHERE " + " AND ".join(clauses) if clauses else ""
+        where, params = queue_metric_filter_sql(
+            filters,
+            event_consumer_pair_clause=self._event_consumer_pair_clause,
+        )
         due_predicate = automatic_due_predicate_sql("r")
         row = (
             self._one(

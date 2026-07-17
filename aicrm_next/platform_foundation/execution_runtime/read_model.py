@@ -16,6 +16,61 @@ from .repository import _default_connect, _psycopg_url, external_claim_scope_pre
 PROVENANCE_PATH = Path("/home/ubuntu/.aicrm-releases/id-validation.json")
 
 
+def queue_policy_base_eligible_predicate(
+    row_alias: str = "rows",
+    control_alias: str = "control",
+    policy_alias: str = "policy",
+) -> str:
+    """Canonical eligibility gate excluding external execution scope."""
+
+    return f"""
+        {row_alias}.hold_reason = ''
+        AND {row_alias}.ready_state
+        AND {row_alias}.available_at <= CURRENT_TIMESTAMP
+        AND {row_alias}.attempt_count < {row_alias}.max_attempts
+        AND {row_alias}.worker_generation IN (0, {control_alias}.active_generation)
+        AND {row_alias}.policy_version = {control_alias}.policy_version
+        AND {control_alias}.active_generation > 0
+        AND {control_alias}.claim_enabled
+        AND {control_alias}.rollout_mode IN ('canary', 'execute')
+        AND {policy_alias}.enabled
+        AND {policy_alias}.rollout_mode IN ('canary', 'execute')
+        AND ({policy_alias}.blocked_until IS NULL OR {policy_alias}.blocked_until <= CURRENT_TIMESTAMP)
+        AND {policy_alias}.policy_version = {control_alias}.policy_version
+        AND NOT {row_alias}.in_flight
+        AND NOT {row_alias}.unknown_state
+        AND NOT {row_alias}.dlq_state
+        AND NOT {row_alias}.rate_limited
+        AND NOT {row_alias}.ordering_blocked
+    """
+
+
+def queue_policy_external_scope_predicate(
+    row_alias: str = "rows",
+    control_alias: str = "control",
+) -> str:
+    """Apply the durable DB external claim scope to external queue rows."""
+
+    external_scope = external_claim_scope_predicate(
+        row_alias=row_alias,
+        scope_expression=f"{control_alias}.external_claim_scope",
+        execution_scope_expression=f"{row_alias}.execution_scope",
+    )
+    return f"({row_alias}.queue_kind <> 'external_effect' OR {external_scope})"
+
+
+def queue_policy_eligible_predicate(
+    row_alias: str = "rows",
+    control_alias: str = "control",
+    policy_alias: str = "policy",
+) -> str:
+    """Canonical policy gate shared by claims, runtime and system health."""
+
+    base = queue_policy_base_eligible_predicate(row_alias, control_alias, policy_alias)
+    scope = queue_policy_external_scope_predicate(row_alias, control_alias)
+    return f"({base}) AND ({scope})"
+
+
 def _public_datetime(value: Any) -> str:
     if not isinstance(value, datetime):
         return str(value or "")
@@ -111,13 +166,24 @@ class ExecutionRuntimeReadModel:
         lane_items = [self._lane_payload(row) for row in lanes]
         worker_items = [self._worker_payload(row) for row in workers]
         fresh_worker_items = [item for item in worker_items if item["fresh"]]
+        control_payload = self._control_payload(control or {})
+        durable_external_scope = str(control_payload.get("external_claim_scope") or "blocked")
+        public_external_scope = "test_loopback_only" if durable_external_scope == "test_loopback" else durable_external_scope
+        external_scope_modes = {
+            lane["lane"]: public_external_scope
+            for lane in lane_items
+            if lane["lane"] in {"wecom_interactive", "wecom_bulk", "wecom_media", "outbound_webhook"}
+        }
+        policy_payload = self._policy_payload(policy or {})
+        policy_payload["external_claim_scope"] = durable_external_scope
+        policy_payload["external_execution_scope_mode"] = external_scope_modes
         return {
             "ok": bool(control),
-            "control": self._control_payload(control or {}),
+            "control": control_payload,
             "lanes": lane_items,
             "workers": worker_items,
             "active_rate_limits": [self._cooldown_payload(row) for row in cooldowns],
-            "policy_snapshot": self._policy_payload(policy or {}),
+            "policy_snapshot": policy_payload,
             "release": {
                 "web_release_sha": release_sha,
                 "fresh_worker_count": len(fresh_worker_items),
@@ -137,6 +203,7 @@ class ExecutionRuntimeReadModel:
             "raw_open",
             "held",
             "eligible",
+            "policy_gated",
             "scheduled",
             "retry_wait",
             "rate_limited",
@@ -175,11 +242,13 @@ class ExecutionRuntimeReadModel:
 
     @staticmethod
     def _lane_metrics_sql() -> str:
+        base_eligible = queue_policy_base_eligible_predicate()
         external_scope = external_claim_scope_predicate(
             row_alias="rows",
             scope_expression="control.external_claim_scope",
             execution_scope_expression="rows.execution_scope",
         )
+        eligible = queue_policy_eligible_predicate()
         return f"""
             WITH queue_rows AS (
                 SELECT 'external_effect'::TEXT AS queue_kind,
@@ -280,35 +349,11 @@ class ExecutionRuntimeReadModel:
                    COUNT(rows.*)::BIGINT AS raw_open,
                    COUNT(rows.*) FILTER (WHERE rows.hold_reason <> '')::BIGINT AS held,
                    COUNT(rows.*) FILTER (
-                       WHERE rows.hold_reason = ''
-                         AND rows.ready_state
-                         AND rows.available_at <= CURRENT_TIMESTAMP
-                         AND rows.attempt_count < rows.max_attempts
-                         AND rows.worker_generation IN (0, control.active_generation)
-                         AND rows.policy_version = control.policy_version
-                         AND control.active_generation > 0
-                         AND control.claim_enabled
-                         AND control.rollout_mode IN ('canary', 'execute')
-                         AND policy.enabled
-                         AND policy.rollout_mode IN ('canary', 'execute')
-                         AND (policy.blocked_until IS NULL OR policy.blocked_until <= CURRENT_TIMESTAMP)
-                         AND policy.policy_version = control.policy_version
-                         AND NOT rows.in_flight
-                         AND NOT rows.unknown_state
-                         AND NOT rows.dlq_state
-                         AND NOT rows.rate_limited
-                         AND NOT rows.ordering_blocked
-                         AND (
-                             rows.queue_kind <> 'external_effect'
-                             OR {external_scope}
-                         )
+                       WHERE {eligible}
                    )::BIGINT AS eligible,
                    COUNT(rows.*) FILTER (
                        WHERE rows.queue_kind = 'external_effect'
-                         AND rows.hold_reason = ''
-                         AND rows.ready_state
-                         AND rows.available_at <= CURRENT_TIMESTAMP
-                         AND rows.attempt_count < rows.max_attempts
+                         AND {base_eligible}
                          AND NOT ({external_scope})
                    )::BIGINT AS policy_gated,
                    COUNT(rows.*) FILTER (
@@ -337,28 +382,7 @@ class ExecutionRuntimeReadModel:
                    COUNT(rows.*) FILTER (WHERE rows.dlq_state)::BIGINT AS dlq,
                    COALESCE(
                        EXTRACT(EPOCH FROM CURRENT_TIMESTAMP - MIN(rows.available_at) FILTER (
-                           WHERE rows.hold_reason = ''
-                             AND rows.ready_state
-                             AND rows.available_at <= CURRENT_TIMESTAMP
-                             AND rows.attempt_count < rows.max_attempts
-                             AND rows.worker_generation IN (0, control.active_generation)
-                             AND rows.policy_version = control.policy_version
-                             AND control.active_generation > 0
-                             AND control.claim_enabled
-                             AND control.rollout_mode IN ('canary', 'execute')
-                             AND policy.enabled
-                             AND policy.rollout_mode IN ('canary', 'execute')
-                             AND (policy.blocked_until IS NULL OR policy.blocked_until <= CURRENT_TIMESTAMP)
-                             AND policy.policy_version = control.policy_version
-                             AND NOT rows.in_flight
-                             AND NOT rows.unknown_state
-                             AND NOT rows.dlq_state
-                             AND NOT rows.rate_limited
-                             AND NOT rows.ordering_blocked
-                             AND (
-                                 rows.queue_kind <> 'external_effect'
-                                 OR {external_scope}
-                             )
+                           WHERE {eligible}
                        )),
                        0
                    )::BIGINT AS oldest_eligible_age_seconds
@@ -526,4 +550,10 @@ class ExecutionRuntimeReadModel:
         }
 
 
-__all__ = ["ExecutionRuntimeReadModel", "release_provenance"]
+__all__ = [
+    "ExecutionRuntimeReadModel",
+    "queue_policy_base_eligible_predicate",
+    "queue_policy_eligible_predicate",
+    "queue_policy_external_scope_predicate",
+    "release_provenance",
+]
