@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "source": {
+    "repository": "qianlan333/AI-CRM-ID-refactor",
+    "release_sha": "ed5f3f455dd7d6c7b9e6d3b7f33cb414ffd7ccf5",
+    "pull_request": 179,
+    "ci_run_id": 29567949631,
+    "deploy_run_id": 29568443798
+  },
+  "target": {
+    "repository": "qianlan333/AI-CRM",
+    "candidate_sha": "27aed3df5c110ef9dd4a7a4da85b62036a0aaf85",
+    "pull_request": 1734
+  },
+  "allowed_post_candidate_paths": [
+    ".github/workflows/deploy.yml",
+    ".github/workflows/promote-production.yml",
+    "docs/adr/2026-07-17-cross-repository-production-promotion.md",
+    "docs/ci/test_scope_manifest.yml",
+    "docs/ci/test_scope_policy.yml",
+    "docs/releases/production_promotion.json",
+    "scripts/ops/validate_production_promotion.py",
+    "tests/test_ci_workflow_contract.py",
+    "tests/test_deploy_workflow_contract.py",
+    "tests/test_production_promotion_provenance.py"
+  ]
+}

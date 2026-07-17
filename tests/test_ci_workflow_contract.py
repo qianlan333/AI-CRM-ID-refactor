@@ -136,26 +136,26 @@ def test_full_regression_runs_governance_once_and_ci_fast_does_not_duplicate_it(
     assert "uses: ./.github/workflows/full-regression.yml\n    with:\n      run_governance: false" in ci_fast_source
 
 
-def test_test_deploy_waits_for_successful_ci_fast_on_main() -> None:
+def test_ai_crm_deploy_is_reusable_production_only_and_has_no_id_validation_access() -> None:
     source = _source(DEPLOY_WORKFLOW)
+    trigger = source[source.index("on:") : source.index("permissions:")]
 
-    assert "name: Deploy" in source
-    assert "workflow_run:" in source
-    assert 'workflows: ["CI Fast"]' in source
-    assert "types: [completed]" in source
-    assert "github.event.workflow_run.conclusion == 'success'" in source
-    assert "github.event.workflow_run.head_branch == 'main'" in source
-    assert "push:" not in source
-    assert "schedule:" not in source
-    assert "TEST_DEPLOY_HOST" in source
-    assert "TEST_DEPLOY_USER" in source
-    assert "TEST_DEPLOY_SSH_KEY" in source
-    assert "env.DEPLOY_TARGET == 'production' && secrets.DEPLOY_HOST || secrets.TEST_DEPLOY_HOST" in source
-    assert "env.DEPLOY_TARGET == 'production' && secrets.DEPLOY_USER || secrets.TEST_DEPLOY_USER" in source
-    assert "env.DEPLOY_TARGET == 'production' && secrets.DEPLOY_SSH_KEY || secrets.TEST_DEPLOY_SSH_KEY" in source
-    assert "environment: ${{ inputs.target_environment || vars.DEFAULT_DEPLOY_ENVIRONMENT || 'test' }}" in source
+    assert "name: Deploy Production Release" in source
+    assert "workflow_call:" in trigger
+    assert "workflow_run:" not in trigger
+    assert "push:" not in trigger
+    assert "schedule:" not in trigger
+    assert "TEST_DEPLOY" not in source
+    assert "id-dev.youcangogogo.com" not in source
+    assert "environment: production" in source
+    assert "DEPLOY_TARGET: production" in source
+    assert "host: ${{ secrets.DEPLOY_HOST }}" in source
+    assert "username: ${{ secrets.DEPLOY_USER }}" in source
+    assert "key: ${{ secrets.DEPLOY_SSH_KEY }}" in source
+    assert "ref: ${{ inputs.release_sha }}" in source
+    assert "AI-CRM deploy workflow is production-only" in source
+    assert "AI-CRM remote deploy target must be production" in source
     assert "PUBLIC_HEALTH_URL: ${{ vars.PUBLIC_HEALTH_URL }}" in source
-    assert 'if [ "$deploy_target" = "production" ]; then' in source
     assert "set -o pipefail" in source
     session_issue_index = source.index("python3 scripts/ops/create_deploy_smoke_session.py issue")
     admin_smoke_index = source.index("python scripts/ops/check_admin_read_pages_smoke.py", session_issue_index)
@@ -169,30 +169,38 @@ def test_test_deploy_waits_for_successful_ci_fast_on_main() -> None:
     assert "tee /tmp/aicrm-admin-read-pages-smoke.json" in source
 
 
-def test_production_promotion_is_manual_test_verified_and_environment_approved() -> None:
+def test_production_promotion_is_manual_cross_repo_verified_and_environment_approved() -> None:
     source = _source(PROMOTE_PRODUCTION_WORKFLOW)
     deploy_source = _source(DEPLOY_WORKFLOW)
 
     assert "name: Promote to Production (Manual)" in source
     assert "workflow_dispatch:" in source
     assert "release_sha:" in source
+    assert "validated_id_sha:" in source
     assert "confirmation:" in source
     assert "workflow_run:" not in source
     assert "push:" not in source
     assert "schedule:" not in source
-    assert "target_environment: production" in source
+    assert "target_environment:" not in source
     assert "uses: ./.github/workflows/deploy.yml" in source
     assert "needs: validate" in source
     assert "secrets: inherit" in source
-    assert "environment: ${{ inputs.target_environment || vars.DEFAULT_DEPLOY_ENVIRONMENT || 'test' }}" in deploy_source
+    assert "environment: production" in deploy_source
+    assert "DEPLOY_TARGET: production" in deploy_source
     assert "DEPLOY 150.158.82.186" in source
     assert "https://id-dev.youcangogogo.com/health" in source
-    assert "test release sha does not match requested production release" in source
-    assert "git merge-base --is-ancestor" in source
+    assert "qianlan333/AI-CRM-ID-refactor.git" in source
+    assert "docs/releases/production_promotion.json" in source
+    assert "scripts/ops/validate_production_promotion.py" in source
+    assert "aicrm_source_ci_run.json" in source
+    assert "aicrm_source_deploy_run.json" in source
+    assert "aicrm_target_ci_runs.json" in source
+    assert "id-dev health must expose exactly one full release SHA" in source
+    assert 'if [ "$(git rev-parse FETCH_HEAD)" != "$requested_sha" ]; then' in source
     assert "secrets.DEPLOY_HOST" in deploy_source
-    assert "github.event_name == 'workflow_call'" not in deploy_source
-    assert "inputs.target_environment == 'production'" in deploy_source
     assert "inputs.release_sha != ''" in deploy_source
+    assert "TEST_DEPLOY" not in deploy_source
+    assert "workflow_run:" not in deploy_source
     assert "scripts/ops/ensure_production_public_release_route.py --execute" in deploy_source
     assert '--public-health-url "${{ env.PUBLIC_HEALTH_URL }}"' in deploy_source
 
