@@ -55,7 +55,7 @@ def test_failed_uncommitted_deploy_restores_previous_exact_sha_and_dependencies(
     committed_init = workflow.index("release_committed=0", switched_init)
     cleanup_index = workflow.index("cleanup_deploy()", committed_init)
     transaction_guard = workflow.index('[ "${runtime_mutation_started:-0}" = "1" ]', cleanup_index)
-    stop_index = workflow.index("--phase stop-for-migration --execute", transaction_guard)
+    stop_index = workflow.index("--phase ensure-stopped-for-rollback --execute", transaction_guard)
     rollback_guard = workflow.index('[ "${release_switched:-0}" = "1" ]', stop_index)
     reset_index = workflow.index('git reset --hard "$before_sha"', rollback_guard)
     release_file_index = workflow.index("printf '%s\\n' \"$before_sha\" > .release-sha", reset_index)
@@ -574,7 +574,7 @@ def test_production_deploy_failure_after_quiesce_is_fail_closed():
         "--phase begin-transaction --execute",
         cleanup_guard_index,
     )
-    cleanup_stop_runtime_index = workflow.index("--phase stop-for-migration --execute", cleanup_begin_index)
+    cleanup_stop_runtime_index = workflow.index("--phase ensure-stopped-for-rollback --execute", cleanup_begin_index)
     cleanup_stop_web_index = workflow.index("sudo systemctl stop openclaw-wecom-postgres.service || true", cleanup_guard_index)
     deploy_stop_index = _deploy_runtime_phase_index(workflow, "stop-for-migration")
     reset_index = workflow.index('git reset --hard "$verified_sha"')
@@ -669,7 +669,7 @@ def test_deploy_admin_smoke_uses_short_lived_server_session_without_logging_cook
 
     issue_index = workflow.index("python3 scripts/ops/create_deploy_smoke_session.py issue")
     smoke_index = workflow.index("python scripts/ops/check_admin_read_pages_smoke.py", issue_index)
-    revoke_index = workflow.index("python3 scripts/ops/create_deploy_smoke_session.py revoke", smoke_index)
+    revoke_index = workflow.index('revoke_deploy_smoke_session "$deploy_smoke_session_file"', smoke_index)
     install_index = workflow.index(_runtime_units_phase("install-enable-after-web-health"))
     verify_index = workflow.index(_runtime_units_phase("verify-staged-runtime"))
 
@@ -680,28 +680,41 @@ def test_deploy_admin_smoke_uses_short_lived_server_session_without_logging_cook
     assert '--admin-cookie-file "$deploy_smoke_session_file"' in workflow
     assert 'admin_smoke_sidebar_args=(--include-all-sidebar --require-all-data-health-green)' in workflow
     assert 'if [ "$deploy_target" = "production" ]; then' not in workflow[:smoke_index]
-    assert '--cookie-file "$deploy_smoke_session_file"' in workflow
+    assert '--cookie-file "$cookie_file"' in workflow
     assert "aicrm_next_admin_session=" not in workflow
     assert 'cat "$deploy_smoke_session_file"' not in workflow
     assert 'echo "$deploy_smoke_session_file"' not in workflow
+    assert '| tee /tmp/aicrm-deploy-smoke-session-revoke.json' not in workflow
+    assert 'report_file="$(mktemp /tmp/aicrm-deploy-smoke-session-revoke.XXXXXX)"' in workflow
+    assert 'revoke_deploy_smoke_session "$deploy_smoke_session_file"' in workflow
+    system_health_index = workflow.index("verify_system_health_for_runtime_release", revoke_index)
+    authorize_index = workflow.index("--phase authorize-runtime-start --execute", system_health_index)
+    assert revoke_index < system_health_index < authorize_index < install_index
+    assert "aicrm-pre-runtime-release-system-health.json" in workflow[system_health_index:authorize_index]
+    assert "print_runtime_release_diagnostics" in workflow[system_health_index:install_index]
 
 
 def test_deploy_exit_trap_revokes_smoke_session_and_restores_runtime_units():
     workflow = TEST_DEPLOY_WORKFLOW.read_text(encoding="utf-8")
 
     cleanup_index = workflow.index("cleanup_deploy() {")
-    stop_index = workflow.index("--phase stop-for-migration --execute", cleanup_index)
+    stop_index = workflow.index("--phase ensure-stopped-for-rollback --execute", cleanup_index)
     verify_index = workflow.index("--phase verify-staged-runtime --execute", stop_index)
     trap_index = workflow.index("trap cleanup_deploy EXIT", verify_index)
     restored_flag_index = workflow.index("runtime_units_stopped=0", trap_index)
 
     assert cleanup_index < stop_index < verify_index < trap_index < restored_flag_index
     cleanup = workflow[cleanup_index:trap_index]
-    assert "create_deploy_smoke_session.py revoke" in cleanup
+    assert 'revoke_deploy_smoke_session "$deploy_smoke_session_file"' in cleanup
+    assert "--phase stop-for-migration --execute" not in cleanup
+    assert "--phase ensure-stopped-for-rollback --execute" in cleanup
     assert 'if [ "${runtime_units_stopped:-0}" = "1" ]; then' in cleanup
     assert 'echo "restoring runtime units for $restore_expected_sha"' in cleanup
     assert 'git reset --hard "$before_sha"' in cleanup
     assert 'grep -i "x-aicrm-release-sha: $restore_expected_sha"' in cleanup
+    assert "verify_system_health_for_runtime_release" in cleanup
+    assert "restored Web failed release-safe system health; runtime remains guarded" in cleanup
+    assert "partially stopped runtime failed release-safe system health; runtime remains guarded" in cleanup
     assert "--phase install-enable-after-web-health --execute" in cleanup
     assert "--phase verify-staged-runtime --execute" in cleanup
     assert "--phase verify --execute" not in cleanup

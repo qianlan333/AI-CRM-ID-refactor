@@ -139,7 +139,7 @@ def test_id_validation_deploy_waits_for_successful_ci_fast_on_main() -> None:
     session_issue_index = source.index("python3 scripts/ops/create_deploy_smoke_session.py issue")
     admin_smoke_index = source.index("python scripts/ops/check_admin_read_pages_smoke.py", session_issue_index)
     session_revoke_index = source.index(
-        "python3 scripts/ops/create_deploy_smoke_session.py revoke",
+        'revoke_deploy_smoke_session "$deploy_smoke_session_file"',
         admin_smoke_index,
     )
     assert session_issue_index < admin_smoke_index < session_revoke_index

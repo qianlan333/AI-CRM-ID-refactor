@@ -629,7 +629,12 @@ def _wait_for_timer_services_to_drain(manifest: dict[str, Any], runner: Runner, 
         time.sleep(min(TIMER_SERVICE_DRAIN_POLL_INTERVAL_SECONDS, remaining))
 
 
-def phase_stop_for_migration(manifest: dict[str, Any], runner: Runner) -> None:
+def phase_stop_for_migration(
+    manifest: dict[str, Any],
+    runner: Runner,
+    *,
+    allow_already_stopped: bool = False,
+) -> None:
     runner.run(["sudo", "test", "-e", str(DEPLOY_GUARD_FILE)])
     generation = staged_runtime_generation()
     cutover_timers = cutover_legacy_timers(manifest)
@@ -637,10 +642,12 @@ def phase_stop_for_migration(manifest: dict[str, Any], runner: Runner) -> None:
     if generation <= 0:
         for unit in cutover_timers:
             _require_enabled(runner, unit.timer, error_prefix="pre-cutover legacy timer is not enabled")
-            _require_active(runner, unit.timer, error_prefix="pre-cutover legacy timer is not active")
+            if not allow_already_stopped:
+                _require_active(runner, unit.timer, error_prefix="pre-cutover legacy timer is not active")
         for service in cutover_persistent:
             _require_enabled(runner, service.service, error_prefix="pre-cutover legacy service is not enabled")
-            _require_active(runner, service.service, error_prefix="pre-cutover legacy service is not active")
+            if not allow_already_stopped:
+                _require_active(runner, service.service, error_prefix="pre-cutover legacy service is not active")
         for unit in cutover_timers:
             runner.systemctl("stop", unit.timer, check=False)
         for service in cutover_persistent:
@@ -989,6 +996,7 @@ def main(argv: list[str] | None = None) -> int:
             "authorize-runtime-restore",
             "authorize-web-start",
             "begin-transaction",
+            "ensure-stopped-for-rollback",
             "retire-legacy-overlays",
             "stop-for-migration",
             "install-primary-web",
@@ -1012,6 +1020,7 @@ def main(argv: list[str] | None = None) -> int:
             "authorize-runtime-restore",
             "authorize-web-start",
             "begin-transaction",
+            "ensure-stopped-for-rollback",
             "stop-for-migration",
             "release-runtime-guard",
         },
@@ -1025,6 +1034,8 @@ def main(argv: list[str] | None = None) -> int:
         phase_authorize_web_start(manifest, runner)
     elif args.phase == "begin-transaction":
         phase_begin_transaction(manifest, runner)
+    elif args.phase == "ensure-stopped-for-rollback":
+        phase_stop_for_migration(manifest, runner, allow_already_stopped=True)
     elif args.phase == "retire-legacy-overlays":
         phase_retire_legacy_overlays(manifest, runner)
     elif args.phase == "stop-for-migration":

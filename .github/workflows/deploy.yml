@@ -305,15 +305,72 @@ jobs:
             release_switched=0
             release_committed=0
             restore_expected_sha="$before_sha"
+            revoke_deploy_smoke_session() {
+              local cookie_file="$1"
+              local report_file
+              if ! report_file="$(mktemp /tmp/aicrm-deploy-smoke-session-revoke.XXXXXX)"; then
+                return 1
+              fi
+              if ! python3 scripts/ops/create_deploy_smoke_session.py revoke \
+                --cookie-file "$cookie_file" \
+                > "$report_file"; then
+                cat "$report_file" || true
+                rm -f -- "$report_file"
+                return 1
+              fi
+              cat "$report_file"
+              rm -f -- "$report_file"
+            }
+            verify_system_health_for_runtime_release() {
+              local expected_sha="$1"
+              local report_file="$2"
+              local headers_file="${report_file%.json}.headers"
+              if ! curl -sSf -D "$headers_file" \
+                http://127.0.0.1:5001/api/system/health \
+                -o "$report_file"; then
+                cat "$report_file" 2>/dev/null || true
+                return 1
+              fi
+              if ! EXPECTED_RELEASE_SHA="$expected_sha" REPORT_FILE="$report_file" \
+                python3 -c 'import json, os, sys; payload=json.load(open(os.environ["REPORT_FILE"], encoding="utf-8")); release=payload.get("components", {}).get("release", {}); migration=payload.get("components", {}).get("migration", {}); migration_ready=bool(migration.get("matches_head") or migration.get("forward_compatible")); ready=payload.get("ok") is True and int(payload.get("http_status") or 0) == 200 and release.get("release_sha") == os.environ["EXPECTED_RELEASE_SHA"] and release.get("exact_sha") is True and migration_ready; sys.exit(0 if ready else "runtime system health is not release-safe")'; then
+                cat "$report_file" 2>/dev/null || true
+                return 1
+              fi
+              cat "$report_file"
+            }
+            print_runtime_release_diagnostics() {
+              for marker in \
+                /home/ubuntu/.aicrm-production-deploy-in-progress \
+                /run/aicrm-production-web-start-authorized \
+                /run/aicrm-production-runtime-start-authorized; do
+                if sudo test -e "$marker"; then
+                  echo "runtime_marker=$marker state=present"
+                else
+                  echo "runtime_marker=$marker state=absent"
+                fi
+              done
+              sudo systemctl is-active \
+                openclaw-wecom-postgres.service \
+                aicrm-internal-queue-runtime.service \
+                aicrm-inbox-queue-runtime.service \
+                aicrm-external-queue-runtime.service || true
+              sudo systemctl is-active \
+                openclaw-internal-event-worker.timer \
+                openclaw-external-effect-worker.timer \
+                openclaw-broadcast-queue-worker.timer \
+                openclaw-ai-audience-scheduler.timer \
+                openclaw-identity-resolution-worker.timer \
+                openclaw-customer-read-model-refresh.timer \
+                openclaw-automation-ops-scheduler.timer || true
+              curl -sS http://127.0.0.1:5001/api/system/health || true
+            }
             cleanup_deploy() {
               exit_status=$?
               trap - EXIT
               set +e
               cleanup_failed=0
               if [ -n "${deploy_smoke_session_file:-}" ] && [ -e "$deploy_smoke_session_file" ]; then
-                if ! python3 scripts/ops/create_deploy_smoke_session.py revoke \
-                  --cookie-file "$deploy_smoke_session_file" \
-                  | tee /tmp/aicrm-deploy-smoke-session-cleanup.json; then
+                if ! revoke_deploy_smoke_session "$deploy_smoke_session_file"; then
                   echo "failed to revoke temporary deploy smoke session"
                   cleanup_failed=1
                 fi
@@ -330,7 +387,7 @@ jobs:
                   fi
                   if ! python3 "$release_control_manager" \
                     --manifest "$release_control_manifest" \
-                    --phase stop-for-migration --execute; then
+                    --phase ensure-stopped-for-rollback --execute; then
                     cleanup_failed=1
                   fi
                 else
@@ -385,24 +442,32 @@ jobs:
                   sleep 1
                 done
                 if [ "$restored_web_ready" = "1" ]; then
-                  if ! python3 "$release_control_manager" \
-                    --manifest "$release_control_manifest" \
-                    --phase authorize-runtime-start --execute; then
-                    cleanup_failed=1
-                  fi
-                  if ! python3 "$release_control_manager" \
-                    --manifest "$release_control_manifest" \
-                    --phase install-enable-after-web-health --execute; then
-                    cleanup_failed=1
-                  fi
-                  if ! python3 "$release_control_manager" \
-                    --manifest "$release_control_manifest" \
-                    --phase verify-staged-runtime --execute; then
-                    cleanup_failed=1
-                  fi
-                  if ! python3 "$release_control_manager" \
-                    --manifest "$release_control_manifest" \
-                    --phase release-runtime-guard --execute; then
+                  if verify_system_health_for_runtime_release \
+                    "$restore_expected_sha" \
+                    /tmp/aicrm-cleanup-system-health.json; then
+                    if ! python3 "$release_control_manager" \
+                      --manifest "$release_control_manifest" \
+                      --phase authorize-runtime-start --execute; then
+                      cleanup_failed=1
+                    fi
+                    if ! python3 "$release_control_manager" \
+                      --manifest "$release_control_manifest" \
+                      --phase install-enable-after-web-health --execute; then
+                      cleanup_failed=1
+                    fi
+                    if ! python3 "$release_control_manager" \
+                      --manifest "$release_control_manifest" \
+                      --phase verify-staged-runtime --execute; then
+                      cleanup_failed=1
+                    fi
+                    if ! python3 "$release_control_manager" \
+                      --manifest "$release_control_manifest" \
+                      --phase release-runtime-guard --execute; then
+                      cleanup_failed=1
+                    fi
+                  else
+                    echo "restored Web failed release-safe system health; runtime remains guarded"
+                    print_runtime_release_diagnostics
                     cleanup_failed=1
                   fi
                 else
@@ -426,27 +491,35 @@ jobs:
                   sleep 1
                 done
                 if [ "$partial_web_ready" = "1" ]; then
-                  if ! python3 "$release_control_manager" \
-                    --manifest "$release_control_manifest" \
-                    --phase authorize-runtime-restore --execute; then
+                  if verify_system_health_for_runtime_release \
+                    "$restore_expected_sha" \
+                    /tmp/aicrm-cleanup-partial-system-health.json; then
+                    if ! python3 "$release_control_manager" \
+                      --manifest "$release_control_manifest" \
+                      --phase authorize-runtime-restore --execute; then
+                      cleanup_failed=1
+                    fi
+                    if ! python3 "$release_control_manager" \
+                      --manifest "$release_control_manifest" \
+                      --phase install-enable-after-web-health --execute; then
+                      cleanup_failed=1
+                    fi
+                    if ! python3 "$release_control_manager" \
+                      --manifest "$release_control_manifest" \
+                      --phase verify-staged-runtime --execute; then
+                      cleanup_failed=1
+                    fi
+                    if ! python3 "$release_control_manager" \
+                      --manifest "$release_control_manifest" \
+                      --phase release-runtime-guard --execute; then
+                      cleanup_failed=1
+                    fi
+                    runtime_transaction_partial=0
+                  else
+                    echo "partially stopped runtime failed release-safe system health; runtime remains guarded"
+                    print_runtime_release_diagnostics
                     cleanup_failed=1
                   fi
-                  if ! python3 "$release_control_manager" \
-                    --manifest "$release_control_manifest" \
-                    --phase install-enable-after-web-health --execute; then
-                    cleanup_failed=1
-                  fi
-                  if ! python3 "$release_control_manager" \
-                    --manifest "$release_control_manifest" \
-                    --phase verify-staged-runtime --execute; then
-                    cleanup_failed=1
-                  fi
-                  if ! python3 "$release_control_manager" \
-                    --manifest "$release_control_manifest" \
-                    --phase release-runtime-guard --execute; then
-                    cleanup_failed=1
-                  fi
-                  runtime_transaction_partial=0
                 else
                   echo "existing Web health unavailable; partially stopped timers could not be restored"
                   cleanup_failed=1
@@ -662,11 +735,20 @@ jobs:
               sudo journalctl -u openclaw-wecom-postgres.service -n 120 --no-pager || true
               exit 1
             fi
-            python3 scripts/ops/create_deploy_smoke_session.py revoke \
-              --cookie-file "$deploy_smoke_session_file" \
-              | tee /tmp/aicrm-deploy-smoke-session-revoke.json
+            revoke_deploy_smoke_session "$deploy_smoke_session_file"
             deploy_smoke_session_file=""
-            python3 scripts/ops/manage_production_runtime_units.py --phase authorize-runtime-start --execute
+            if ! verify_system_health_for_runtime_release \
+              "$after_sha" \
+              /tmp/aicrm-pre-runtime-release-system-health.json; then
+              echo "new release failed system health before runtime authorization"
+              print_runtime_release_diagnostics
+              exit 1
+            fi
+            if ! python3 scripts/ops/manage_production_runtime_units.py --phase authorize-runtime-start --execute; then
+              echo "runtime authorization failed after release-safe system health"
+              print_runtime_release_diagnostics
+              exit 1
+            fi
             python3 scripts/ops/manage_production_runtime_units.py --phase install-enable-after-web-health --execute
             python scripts/ops/check_wecom_callback_deploy_smoke.py | tee /tmp/wecom-callback-deploy-smoke.json
             python3 scripts/ops/manage_production_runtime_units.py --phase verify-staged-runtime --execute
