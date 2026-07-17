@@ -35,7 +35,7 @@ def _resolve_unionids(monkeypatch):
 
 def test_private_broadcast_is_only_delegated_to_external_effect():
     effects, dispatcher = _dispatcher()
-    repo = FakeRepo([_job()])
+    repo = FakeRepo([_job(execution_id="exe_broadcast_private_101")])
 
     summary = run_broadcast_queue_worker(
         repo=repo,
@@ -52,6 +52,7 @@ def test_private_broadcast_is_only_delegated_to_external_effect():
     assert jobs[0].business_type == "broadcast_job"
     assert jobs[0].business_id == "101"
     assert jobs[0].status == "queued"
+    assert jobs[0].parent_execution_id == "exe_broadcast_private_101"
     assert effects.list_attempts(jobs[0].id) == []
     assert repo.delegated[0]["external_effect_job_ids"] == [jobs[0].id]
     assert repo.delegated[0]["side_effect_executed"] is False

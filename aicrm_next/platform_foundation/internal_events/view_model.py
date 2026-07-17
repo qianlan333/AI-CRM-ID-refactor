@@ -339,7 +339,7 @@ def build_events_payload(params: dict[str, Any] | None = None, *, repository: In
             "event_types": configured_event_types,
             "consumers": configured_consumers,
         },
-        "count_semantics": "计数来自消费者执行记录，不代表消息、Webhook、标签等下游业务已经交付。",
+        "count_semantics": "计数来自消费者执行记录，不代表消息、外部投递、标签等下游业务已经交付。",
         "route_owner": ROUTE_OWNER,
         "real_external_call_executed": False,
     }
@@ -400,6 +400,6 @@ def _read_unavailable_payload(filters: dict[str, Any], exc: Exception, *, limit:
                 "event_types": [],
                 "consumers": [],
             },
-            "count_semantics": "计数来自消费者执行记录，不代表消息、Webhook、标签等下游业务已经交付。",
+            "count_semantics": "计数来自消费者执行记录，不代表消息、外部投递、标签等下游业务已经交付。",
         },
     )
