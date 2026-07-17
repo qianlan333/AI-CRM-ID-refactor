@@ -421,6 +421,58 @@ def test_runtime_units_stop_and_verify_dry_runs_are_manifest_driven(capsys) -> N
     assert expected_approval in verify_output
 
 
+def test_cleanup_stop_phase_accepts_generation_zero_legacy_units_that_are_already_inactive() -> None:
+    legacy_timer = "openclaw-internal-event-worker.timer"
+    legacy_service = "openclaw-internal-event-worker.service"
+    primary_web = "openclaw-wecom-postgres.service"
+    manifest = {
+        "primary_web": {"service": primary_web},
+        "active_services": [],
+        "active_autostart": [],
+        "cutover_replacement_autostart": {"owner_inventory": "pr3", "timers": []},
+        "cutover_managed_legacy": {
+            "owner_inventory": "pr3",
+            "timers": [{"timer": legacy_timer, "service": legacy_service}],
+            "persistent_services": [],
+        },
+        "approval_required": [],
+        "retired_forbidden": [],
+        "retired_unit_files": [],
+        "retired_dropins": [],
+    }
+    runner = _RecordingRunner(enabled_units={legacy_timer, primary_web})
+
+    runtime_units.phase_stop_for_migration(manifest, runner, allow_already_stopped=True)
+
+    assert ("sudo", "systemctl", "stop", legacy_timer) in runner.commands
+    assert ("sudo", "systemctl", "is-active", legacy_timer) in runner.commands
+    assert ("sudo", "systemctl", "is-active", legacy_service) in runner.commands
+
+
+def test_strict_stop_phase_still_rejects_inactive_generation_zero_legacy_timer() -> None:
+    legacy_timer = "openclaw-internal-event-worker.timer"
+    legacy_service = "openclaw-internal-event-worker.service"
+    manifest = {
+        "primary_web": {"service": "openclaw-wecom-postgres.service"},
+        "active_services": [],
+        "active_autostart": [],
+        "cutover_replacement_autostart": {"owner_inventory": "pr3", "timers": []},
+        "cutover_managed_legacy": {
+            "owner_inventory": "pr3",
+            "timers": [{"timer": legacy_timer, "service": legacy_service}],
+            "persistent_services": [],
+        },
+        "approval_required": [],
+        "retired_forbidden": [],
+        "retired_unit_files": [],
+        "retired_dropins": [],
+    }
+    runner = _RecordingRunner(enabled_units={legacy_timer})
+
+    with pytest.raises(RuntimeError, match="pre-cutover legacy timer is not active"):
+        runtime_units.phase_stop_for_migration(manifest, runner)
+
+
 def test_runtime_units_verify_requires_primary_active_and_enabled_approval_timer_active() -> None:
     manifest = {
         "primary_web": {"service": "openclaw-wecom-postgres.service"},
