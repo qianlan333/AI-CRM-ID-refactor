@@ -625,9 +625,16 @@ python3 "$release_control_manager" \
 python3 scripts/ops/recover_identity_resolution_worker_deadlock.py \
   --execute \
   | tee /tmp/aicrm-identity-worker-deadlock-recovery.json
-python3 "$release_control_manager" \
-  --manifest "$release_control_manifest" \
-  --phase stop-for-migration --execute
+if [ "$base_source" = "guarded_server_checkout" ]; then
+  echo "guarded recovery accepts enabled runtime units that are already inactive"
+  python3 "$release_control_manager" \
+    --manifest "$release_control_manifest" \
+    --phase stop-for-migration-recovery --execute
+else
+  python3 "$release_control_manager" \
+    --manifest "$release_control_manifest" \
+    --phase stop-for-migration --execute
+fi
 runtime_units_stopped=1
 runtime_transaction_partial=0
 if sudo fuser -s 5001/tcp; then

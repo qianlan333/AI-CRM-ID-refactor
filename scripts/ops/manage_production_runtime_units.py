@@ -999,6 +999,7 @@ def main(argv: list[str] | None = None) -> int:
             "ensure-stopped-for-rollback",
             "retire-legacy-overlays",
             "stop-for-migration",
+            "stop-for-migration-recovery",
             "install-primary-web",
             "release-runtime-guard",
             "install-enable-after-web-health",
@@ -1022,6 +1023,7 @@ def main(argv: list[str] | None = None) -> int:
             "begin-transaction",
             "ensure-stopped-for-rollback",
             "stop-for-migration",
+            "stop-for-migration-recovery",
             "release-runtime-guard",
         },
     )
@@ -1040,6 +1042,8 @@ def main(argv: list[str] | None = None) -> int:
         phase_retire_legacy_overlays(manifest, runner)
     elif args.phase == "stop-for-migration":
         phase_stop_for_migration(manifest, runner)
+    elif args.phase == "stop-for-migration-recovery":
+        phase_stop_for_migration(manifest, runner, allow_already_stopped=True)
     elif args.phase == "install-primary-web":
         phase_install_primary_web(manifest, runner)
     elif args.phase == "release-runtime-guard":

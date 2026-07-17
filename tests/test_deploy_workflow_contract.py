@@ -768,6 +768,38 @@ def test_guarded_base_is_re_attested_under_final_remote_lock_before_any_mutation
     assert "tr -d" not in guarded_block
 
 
+def test_guarded_checkout_uses_idempotent_runtime_stop_without_weakening_normal_deploy() -> None:
+    remote_script = REMOTE_DEPLOY_SCRIPT.read_text(encoding="utf-8")
+
+    identity_preflight_index = remote_script.index(
+        "python3 scripts/ops/check_unionid_identity_cutover.py"
+    )
+    begin_index = remote_script.index(
+        "--phase begin-transaction --execute",
+        identity_preflight_index,
+    )
+    guarded_branch_index = remote_script.index(
+        'if [ "$base_source" = "guarded_server_checkout" ]; then',
+        begin_index,
+    )
+    recovery_stop_index = remote_script.index(
+        "--phase stop-for-migration-recovery --execute",
+        guarded_branch_index,
+    )
+    normal_stop_index = remote_script.index(
+        "--phase stop-for-migration --execute",
+        recovery_stop_index,
+    )
+    stopped_index = remote_script.index("runtime_units_stopped=1", normal_stop_index)
+
+    assert begin_index < guarded_branch_index < recovery_stop_index < normal_stop_index
+    assert normal_stop_index < stopped_index
+    branch = remote_script[guarded_branch_index:stopped_index]
+    assert "guarded recovery accepts enabled runtime units that are already inactive" in branch
+    assert branch.count("--phase stop-for-migration-recovery --execute") == 1
+    assert branch.count("--phase stop-for-migration --execute") == 1
+
+
 def test_incremental_release_bundle_requires_live_base_and_fetches_exact_merge_sha(tmp_path: Path):
     source = tmp_path / "source"
     source.mkdir()

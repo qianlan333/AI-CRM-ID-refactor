@@ -449,6 +449,28 @@ def test_cleanup_stop_phase_accepts_generation_zero_legacy_units_that_are_alread
     assert ("sudo", "systemctl", "is-active", legacy_service) in runner.commands
 
 
+def test_guarded_recovery_cli_selects_already_stopped_runtime_semantics(monkeypatch) -> None:
+    calls: list[bool] = []
+
+    monkeypatch.setattr(runtime_units, "load_manifest", lambda _path: {})
+    monkeypatch.setattr(runtime_units, "validate_manifest", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(
+        runtime_units,
+        "phase_stop_for_migration",
+        lambda _manifest, _runner, *, allow_already_stopped=False: calls.append(
+            allow_already_stopped
+        ),
+    )
+
+    assert (
+        runtime_units.main(
+            ["--phase", "stop-for-migration-recovery", "--dry-run"]
+        )
+        == 0
+    )
+    assert calls == [True]
+
+
 def test_strict_stop_phase_still_rejects_inactive_generation_zero_legacy_timer() -> None:
     legacy_timer = "openclaw-internal-event-worker.timer"
     legacy_service = "openclaw-internal-event-worker.service"
