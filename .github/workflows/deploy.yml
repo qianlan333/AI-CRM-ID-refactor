@@ -97,20 +97,30 @@ jobs:
             echo "target environment already runs the requested release"
             exit 1
           fi
+          bundle_mode="incremental"
           if ! git cat-file -e "$base_sha^{commit}"; then
-            echo "target environment release is not present in repository history"
-            exit 1
-          fi
-          if ! git merge-base --is-ancestor "$base_sha" "$verified_sha"; then
+            if [ "$deploy_target" != "test" ]; then
+              echo "target environment release is not present in repository history"
+              exit 1
+            fi
+            echo "test environment release is orphaned; building a full verified release bundle"
+            bundle_mode="full"
+          elif ! git merge-base --is-ancestor "$base_sha" "$verified_sha"; then
             echo "target environment release is not an ancestor of the requested release"
             exit 1
           fi
           echo "base_sha=$base_sha" >> "$GITHUB_OUTPUT"
+          echo "bundle_mode=$bundle_mode" >> "$GITHUB_OUTPUT"
           mkdir -p release
           git update-ref refs/deploy/release "$verified_sha"
-          git update-ref refs/deploy/base "$base_sha"
-          trap 'git update-ref -d refs/deploy/release; git update-ref -d refs/deploy/base' EXIT
-          git bundle create release/aicrm-release.bundle refs/deploy/release ^refs/deploy/base
+          if [ "$bundle_mode" = "full" ]; then
+            trap 'git update-ref -d refs/deploy/release' EXIT
+            git bundle create release/aicrm-release.bundle refs/deploy/release
+          else
+            git update-ref refs/deploy/base "$base_sha"
+            trap 'git update-ref -d refs/deploy/release; git update-ref -d refs/deploy/base' EXIT
+            git bundle create release/aicrm-release.bundle refs/deploy/release ^refs/deploy/base
+          fi
           git bundle verify release/aicrm-release.bundle
           if ! git bundle list-heads release/aicrm-release.bundle \
             | grep -Fx "$verified_sha refs/deploy/release" >/dev/null; then
@@ -159,12 +169,21 @@ jobs:
             before_sha="$(git rev-parse HEAD)"
             verified_sha="${{ inputs.release_sha || github.event.workflow_run.head_sha }}"
             base_sha="${{ steps.release.outputs.base_sha }}"
+            bundle_mode="${{ steps.release.outputs.bundle_mode }}"
             if ! printf '%s' "$verified_sha" | grep -Eq '^[0-9a-f]{40}$'; then
               echo "invalid verified workflow sha"
               exit 1
             fi
+            if [ "$bundle_mode" != "incremental" ] && [ "$bundle_mode" != "full" ]; then
+              echo "invalid release bundle mode"
+              exit 1
+            fi
+            if [ "$bundle_mode" = "full" ] && [ "$deploy_target" != "test" ]; then
+              echo "full release bundle recovery is restricted to the test environment"
+              exit 1
+            fi
             if [ "$before_sha" != "$base_sha" ]; then
-              echo "target checkout moved after the incremental release bundle was built"
+              echo "target checkout moved after the release bundle was built"
               exit 1
             fi
             release_bundle_dir="/tmp/aicrm-release-$verified_sha"

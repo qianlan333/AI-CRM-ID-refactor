@@ -265,6 +265,30 @@ def test_production_deploy_builds_and_transfers_incremental_exact_sha_bundle_bef
     assert "overwrite: true" in workflow
 
 
+def test_orphaned_release_full_bundle_recovery_is_test_only_and_keeps_exact_base_guard():
+    workflow = TEST_DEPLOY_WORKFLOW.read_text(encoding="utf-8")
+
+    missing_base_index = workflow.index('if ! git cat-file -e "$base_sha^{commit}"; then')
+    test_only_index = workflow.index('if [ "$deploy_target" != "test" ]; then', missing_base_index)
+    full_mode_index = workflow.index('bundle_mode="full"', test_only_index)
+    full_bundle_index = workflow.index(
+        "git bundle create release/aicrm-release.bundle refs/deploy/release\n",
+        full_mode_index,
+    )
+    remote_mode_index = workflow.index('bundle_mode="${{ steps.release.outputs.bundle_mode }}"')
+    remote_test_guard_index = workflow.index(
+        'if [ "$bundle_mode" = "full" ] && [ "$deploy_target" != "test" ]; then',
+        remote_mode_index,
+    )
+    remote_base_guard_index = workflow.index('if [ "$before_sha" != "$base_sha" ]; then', remote_test_guard_index)
+
+    assert missing_base_index < test_only_index < full_mode_index < full_bundle_index
+    assert full_bundle_index < remote_mode_index < remote_test_guard_index < remote_base_guard_index
+    assert 'echo "bundle_mode=$bundle_mode" >> "$GITHUB_OUTPUT"' in workflow
+    assert "test environment release is orphaned; building a full verified release bundle" in workflow
+    assert "full release bundle recovery is restricted to the test environment" in workflow
+
+
 def test_production_deploy_requires_remote_head_to_match_bundle_prerequisite_before_fetch():
     workflow = TEST_DEPLOY_WORKFLOW.read_text(encoding="utf-8")
 
@@ -277,7 +301,7 @@ def test_production_deploy_requires_remote_head_to_match_bundle_prerequisite_bef
     stop_index = _deploy_runtime_phase_index(workflow, "stop-for-migration")
 
     assert before_sha_index < base_sha_index < base_guard_index < bundle_verify_index < stash_index < fetch_index < stop_index
-    assert "target checkout moved after the incremental release bundle was built" in workflow
+    assert "target checkout moved after the release bundle was built" in workflow
 
 
 def test_incremental_release_bundle_requires_live_base_and_fetches_exact_merge_sha(tmp_path: Path):
@@ -333,6 +357,45 @@ def test_incremental_release_bundle_requires_live_base_and_fetches_exact_merge_s
         "refs/deploy/release:refs/remotes/aicrm-release/main",
     )
     release_sha = _git(receiver, "rev-parse", "refs/remotes/aicrm-release/main").stdout.strip()
+    assert release_sha == verified_sha
+
+
+def test_full_release_bundle_recovers_receiver_with_orphaned_head(tmp_path: Path):
+    source = tmp_path / "source"
+    source.mkdir()
+    _git(source, "init", "-b", "main")
+    _git(source, "config", "user.name", "AI CRM CI")
+    _git(source, "config", "user.email", "ci@example.invalid")
+    (source / "release.txt").write_text("verified\n", encoding="utf-8")
+    _git(source, "add", "release.txt")
+    _git(source, "commit", "-m", "verified release")
+    verified_sha = _git(source, "rev-parse", "HEAD").stdout.strip()
+    _git(source, "update-ref", "refs/deploy/release", verified_sha)
+
+    bundle = tmp_path / "aicrm-full-release.bundle"
+    _git(source, "bundle", "create", str(bundle), "refs/deploy/release")
+
+    receiver = tmp_path / "receiver"
+    receiver.mkdir()
+    _git(receiver, "init", "-b", "main")
+    _git(receiver, "config", "user.name", "AI CRM Test")
+    _git(receiver, "config", "user.email", "test@example.invalid")
+    (receiver / "orphan.txt").write_text("orphaned test release\n", encoding="utf-8")
+    _git(receiver, "add", "orphan.txt")
+    _git(receiver, "commit", "-m", "orphaned release")
+    orphaned_sha = _git(receiver, "rev-parse", "HEAD").stdout.strip()
+
+    _git(receiver, "bundle", "verify", str(bundle))
+    _git(
+        receiver,
+        "fetch",
+        "--no-tags",
+        str(bundle),
+        "refs/deploy/release:refs/remotes/aicrm-release/main",
+    )
+    release_sha = _git(receiver, "rev-parse", "refs/remotes/aicrm-release/main").stdout.strip()
+
+    assert orphaned_sha != verified_sha
     assert release_sha == verified_sha
 
 
