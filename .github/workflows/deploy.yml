@@ -525,7 +525,23 @@ jobs:
             deploy_smoke_session_file=""
             python3 scripts/ops/manage_production_runtime_units.py --phase authorize-runtime-start --execute
             python3 scripts/ops/manage_production_runtime_units.py --phase install-enable-after-web-health --execute
-            python scripts/ops/check_wecom_callback_deploy_smoke.py | tee /tmp/wecom-callback-deploy-smoke.json
+            callback_smoke_ready=0
+            for callback_smoke_attempt in 1 2; do
+              if python scripts/ops/check_wecom_callback_deploy_smoke.py \
+                | tee /tmp/wecom-callback-deploy-smoke.json; then
+                callback_smoke_ready=1
+                break
+              fi
+              if [ "$callback_smoke_attempt" -lt 2 ]; then
+                echo "callback deploy smoke failed during runtime warm-up; retrying once"
+                sleep 2
+              fi
+            done
+            if [ "$callback_smoke_ready" != "1" ]; then
+              sudo systemctl status openclaw-wecom-callback-ingress.service --no-pager || true
+              sudo journalctl -u openclaw-wecom-callback-ingress.service -n 120 --no-pager || true
+              exit 1
+            fi
             python3 scripts/ops/manage_production_runtime_units.py --phase verify-staged-runtime --execute
             curl -sSf http://127.0.0.1:5001/api/system/health \
               | tee /tmp/aicrm-runtime-readiness.json
