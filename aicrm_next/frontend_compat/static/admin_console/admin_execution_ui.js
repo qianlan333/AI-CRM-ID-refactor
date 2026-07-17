@@ -7,6 +7,10 @@
     return window.AdminApi;
   }
 
+  async function readJson(response) {
+    try { return await response.json(); } catch (_) { return {}; }
+  }
+
   function escapeHtml(value) {
     if (api() && api().escapeHtml) return api().escapeHtml(value);
     return String(value == null ? "" : value)
@@ -333,6 +337,25 @@
       dialog.showModal();
       if (options.reasonRequired) reasonInput.focus();
     });
+  }
+
+  async function requestVersionedQueueCommand(root, options) {
+    const action = String(options.action || "dispatch");
+    const confirmation = await requestAction(root, {
+      title: action === "skip" ? "确认忽略回调" : action === "retry" ? "确认重试回调" : "确认执行回调",
+      description: action === "skip"
+        ? "忽略后会留下人工审计，且不会继续消费该回调。"
+        : "确认后只提交版本化队列命令，不会在页面请求内执行 handler。",
+      reasonRequired: true,
+      actor: root.dataset.operatorActor,
+      expectedVersion: options.expectedVersion,
+    });
+    if (!confirmation.confirmed) return null;
+    return {
+      actor: confirmation.actor,
+      reason: confirmation.reason,
+      expected_version: confirmation.expectedVersion,
+    };
   }
 
   function bindShellActions(load, exportRows) {
@@ -808,10 +831,11 @@
           `).join("") : '<div class="admin-state">暂无执行尝试</div>'}</div>
         </article>
         <article class="admin-card execution-detail-section">
-          <h2>下游关联</h2>
+          <h2>业务效果核对</h2>
           ${definitionList([
             ["External Effects", reconciliation.external_effect_count],
             ["状态", (reconciliation.external_effect_statuses || []).join(", ")],
+            ["Placeholder Consumers (not actionable)", reconciliation.placeholder_consumer_count],
           ])}
           <div class="execution-detail-actions">${externalEffects.map((effect) => {
             const id = effect.job_id || effect.id;
@@ -1074,6 +1098,7 @@
 
   window.AdminExecutionUI = {
     escapeHtml,
+    readJson,
     formParams,
     csvCell,
     statusTone,
@@ -1082,6 +1107,7 @@
     CapacitySummary,
     ExecutionTimeline,
     requestAction,
+    requestVersionedQueueCommand,
     boot,
   };
 

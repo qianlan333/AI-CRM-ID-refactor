@@ -49,6 +49,8 @@ vm.runInNewContext(source, {
 });
 
 const ui = window.AdminExecutionUI;
+assert.equal(typeof ui.requestVersionedQueueCommand, "function");
+assert.equal(typeof ui.readJson, "function");
 assert.equal(ui.statusTone("sent"), "ok");
 assert.equal(ui.statusTone("failed_terminal"), "danger");
 assert.equal(ui.statusTone("unknown_after_dispatch"), "warn");
@@ -62,6 +64,7 @@ assert.match(capacity, /wecom_bulk/);
 assert.match(capacity, /Policy Gate/);
 assert.match(capacity, /2 \/ 3/);
 assert.match(ui.ExecutionTimeline({ items: [{ item_kind: "external_effect", item_type: "wecom.message.group.send", status: "queued" }] }), /wecom\.message\.group\.send/);
+assert.match(source, /Placeholder Consumers \(not actionable\)/);
 
 const params = ui.formParams(null, { section: "group_ops", offset: 0, empty: "" });
 assert.equal(params.get("section"), "group_ops");
