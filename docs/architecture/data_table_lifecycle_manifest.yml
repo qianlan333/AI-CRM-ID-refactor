@@ -4691,10 +4691,13 @@ tables:
       - external_effect.completed continuation
     migration_source: 0127_group_ops_durable_effect_graph
     pii_level: none
+    status_enum:
+      column: status
     guard_tests:
       - tests/test_group_ops_durable_effect_graph.py
       - tests/test_group_ops_durable_effect_graph_postgres.py
       - tests/test_data_table_lifecycle_guard.py
+      - tests/test_data_health_checks.py::test_migrated_schema_matches_lifecycle_manifest
     notes: CAS-updated dependency state. Only every prerequisite succeeded may release the final planned effect; failed, cancelled and superseded graphs cannot release.
 
   channel_welcome_effect_graph:
@@ -4736,7 +4739,10 @@ tables:
       - channel welcome cancellation command
     migration_source: 0130_welcome_media_dependencies
     pii_level: internal_contact
+    status_enum:
+      column: status
     guard_tests:
       - tests/test_channel_welcome_media_dependencies_postgres.py
       - tests/test_data_table_lifecycle_guard.py
+      - tests/test_data_health_checks.py::test_migrated_schema_matches_lifecycle_manifest
     notes: CAS-updated dependency state. The final welcome effect is released only after every prerequisite succeeds and is never released by cancelled or failed graphs.

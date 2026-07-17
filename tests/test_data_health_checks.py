@@ -160,6 +160,22 @@ def test_schema_drift_guard_reports_manifest_and_live_schema_mismatches() -> Non
     assert "queue_with_status_enum" not in joined
 
 
+def test_migrated_schema_matches_lifecycle_manifest(next_pg_schema) -> None:
+    del next_pg_schema
+    from aicrm_next.data_health.schema_drift import (
+        evaluate_schema_drift,
+        load_table_lifecycle_manifest,
+        public_schema_snapshot,
+    )
+
+    violations = evaluate_schema_drift(
+        manifest=load_table_lifecycle_manifest(),
+        actual_schema=public_schema_snapshot(),
+    )
+
+    assert violations == []
+
+
 class _FakeResult:
     def __init__(self, row: dict):
         self._row = row
