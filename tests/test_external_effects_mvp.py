@@ -861,7 +861,7 @@ def test_cancelled_job_is_not_scanned_by_run_due_preview() -> None:
     assert preview["counts"]["candidate_count"] == 0
 
 
-def test_external_effect_cancel_api_supports_optional_row_version_cas(next_client: TestClient, monkeypatch) -> None:
+def test_external_effect_cancel_api_requires_actor_reason_and_row_version(next_client: TestClient, monkeypatch) -> None:
     tokens = _external_effect_admin_tokens(next_client, monkeypatch, CANCEL_JOB_ROUTE)
     service = ExternalEffectService()
     job = service.plan_effect(
@@ -874,36 +874,37 @@ def test_external_effect_cancel_api_supports_optional_row_version_cas(next_clien
         status="queued",
     )
 
-    stale = next_client.post(
+    missing_actor = next_client.post(
         f"/api/admin/external-effects/jobs/{job['id']}/cancel",
         json={
             "admin_action_token": tokens[CANCEL_JOB_ROUTE],
-            "expected_version": job["row_version"] + 1,
-            "actor": "operator",
-            "reason": "stale request",
+            "expected_version": job["row_version"],
+            "reason": "missing actor",
         },
     )
-    invalid = next_client.post(
-        f"/api/admin/external-effects/jobs/{job['id']}/cancel",
-        json={"admin_action_token": tokens[CANCEL_JOB_ROUTE], "expected_version": "invalid"},
-    )
-    cancelled = next_client.post(
+    missing_reason = next_client.post(
         f"/api/admin/external-effects/jobs/{job['id']}/cancel",
         json={
             "admin_action_token": tokens[CANCEL_JOB_ROUTE],
             "expected_version": job["row_version"],
             "actor": "operator",
-            "reason": "cancel with cas",
+        },
+    )
+    missing_version = next_client.post(
+        f"/api/admin/external-effects/jobs/{job['id']}/cancel",
+        json={
+            "admin_action_token": tokens[CANCEL_JOB_ROUTE],
+            "actor": "operator",
+            "reason": "missing version",
         },
     )
 
-    assert stale.status_code == 409
-    assert invalid.status_code == 422
-    assert cancelled.status_code == 200
-    assert cancelled.json()["job"]["status"] == "cancelled"
-    assert cancelled.json()["job"]["row_version"] == job["row_version"] + 1
-    assert cancelled.json()["job"]["cancel_requested_by"] == "operator"
-    assert cancelled.json()["job"]["cancel_reason"] == "cancel with cas"
+    assert missing_actor.status_code == 422
+    assert missing_actor.json()["missing_fields"] == ["actor"]
+    assert missing_reason.status_code == 422
+    assert missing_reason.json()["missing_fields"] == ["reason"]
+    assert missing_version.status_code == 422
+    assert missing_version.json()["missing_fields"] == ["expected_version"]
 
 
 def test_external_effect_admin_api_lists_previews_retries_and_cancels(next_client: TestClient, monkeypatch) -> None:
@@ -964,10 +965,10 @@ def test_external_effect_admin_api_lists_previews_retries_and_cancels(next_clien
     assert preview.json()["real_external_call_executed"] is False
     assert dry_run.status_code == 200
     assert dry_run.json()["dry_run"] is True
-    assert retried.status_code == 200
-    assert retried.json()["job"]["status"] == "queued"
-    assert cancelled.status_code == 200
-    assert cancelled.json()["job"]["status"] == "cancelled"
+    assert retried.status_code == 422
+    assert set(retried.json()["missing_fields"]) == {"actor", "reason", "expected_version"}
+    assert cancelled.status_code == 422
+    assert set(cancelled.json()["missing_fields"]) == {"actor", "reason", "expected_version"}
     assert unauthorized_cancel.status_code == 401
     assert diagnostics.status_code == 200
     assert diagnostics.json()["schema_contract"]["idempotency_constraint"] == "UNIQUE (tenant_id, idempotency_key)"
@@ -978,7 +979,7 @@ def test_external_effect_admin_api_lists_previews_retries_and_cancels(next_clien
     assert diagnostics.json()["wecom_execution"]["execution_mode"] == "disabled"
 
 
-def test_unknown_external_effect_api_retry_requires_duplicate_risk_confirmation(next_client: TestClient, monkeypatch) -> None:
+def test_unknown_external_effect_api_retry_requires_full_versioned_command(next_client: TestClient, monkeypatch) -> None:
     reset_external_effect_fixture_state()
     repo = build_external_effect_repository()
     job = _queued_webhook_job(ExternalEffectService(repo), idempotency_key="api-unknown-retry")
@@ -995,33 +996,18 @@ def test_unknown_external_effect_api_retry_requires_duplicate_risk_confirmation(
     )
     token = _external_effect_admin_tokens(next_client, monkeypatch, RETRY_JOB_ROUTE)[RETRY_JOB_ROUTE]
 
-    missing_confirmation = next_client.post(
-        f"/api/admin/external-effects/jobs/{job['id']}/retry",
-        json={"admin_action_token": token, "actor": "pytest", "reason": "checked provider"},
-    )
-    missing_audit_fields = next_client.post(
-        f"/api/admin/external-effects/jobs/{job['id']}/retry",
-        json={"admin_action_token": token, "confirm_duplicate_risk": True},
-    )
-    accepted = next_client.post(
+    missing_version = next_client.post(
         f"/api/admin/external-effects/jobs/{job['id']}/retry",
         json={
             "admin_action_token": token,
             "actor": "pytest",
             "reason": "provider confirms no delivery",
-            "confirm_duplicate_risk": True,
+            "duplicate_risk_confirmed": True,
         },
     )
 
-    assert missing_confirmation.status_code == 409
-    assert missing_confirmation.json()["error"] == "duplicate_risk_confirmation_required"
-    assert missing_audit_fields.status_code == 422
-    assert missing_audit_fields.json()["error"] == "manual_retry_actor_and_reason_required"
-    assert accepted.status_code == 200
-    assert accepted.json()["job"]["status"] == "queued"
-    audit_attempt = repo.list_attempts(job["id"])[0]
-    assert audit_attempt.adapter_mode == "manual_retry_authorization"
-    assert audit_attempt.request_summary_json["confirm_duplicate_risk"] is True
+    assert missing_version.status_code == 422
+    assert missing_version.json()["missing_fields"] == ["expected_version"]
 
 
 def test_wecom_execution_diagnostics_reports_unified_config(next_client: TestClient, monkeypatch) -> None:
@@ -1549,6 +1535,50 @@ def test_external_effect_loopback_dry_run_allowlist_miss_and_test_only_gate(next
     assert direct["job"]["status"] == "blocked"
     assert direct["attempt"]["error_code"] == "test_execution_only_required"
     assert repo.test_receipt_metrics()["non_test_execution_blocked_count"] == 1
+
+
+def test_test_loopback_scope_cannot_smuggle_a_real_wecom_adapter_call(monkeypatch) -> None:
+    monkeypatch.setenv("AICRM_EXTERNAL_EFFECT_TEST_EXECUTION_ONLY", "1")
+    monkeypatch.setenv("AICRM_WECOM_EXECUTION_MODE", "execute")
+    monkeypatch.setenv("AICRM_WECOM_ENABLED_EFFECT_TYPES", WECOM_CONTACT_TAG_MARK)
+    repo = InMemoryExternalEffectRepository()
+    calls: list[int] = []
+
+    class CountingAdapter:
+        def dispatch(self, job):
+            calls.append(int(job.id))
+            return ExternalEffectDispatchResult(status="succeeded", real_external_call_executed=True)
+
+    job = ExternalEffectService(repo).plan_effect(
+        effect_type=WECOM_CONTACT_TAG_MARK,
+        adapter_name="wecom_tag",
+        operation="mark",
+        target_type="external_userid",
+        target_id="wm_test_scope_must_not_reach_wecom",
+        payload={
+            "execution_scope": "test_loopback",
+            "is_test": True,
+            "external_userid": "wm_test_scope_must_not_reach_wecom",
+            "add_tags": ["tag-test"],
+            "remove_tags": [],
+        },
+        idempotency_key="test-loopback-cannot-smuggle-wecom",
+        lane="wecom_interactive",
+    )
+    registry = ExternalEffectAdapterRegistry({"wecom_tag": CountingAdapter()})
+
+    result = ExternalEffectWorker(repo, registry).run_due(
+        batch_size=1,
+        dry_run=False,
+        effect_types=[WECOM_CONTACT_TAG_MARK],
+        test_only=True,
+    )
+
+    updated = repo.get_job(job["id"])
+    assert calls == []
+    assert result["real_external_call_executed"] is False
+    assert updated is not None and updated.status == "blocked"
+    assert updated.last_error_code == "test_execution_adapter_not_allowed"
 
 
 def test_external_effect_diagnostics_and_api_docs_show_virtual_test_state(next_client: TestClient, monkeypatch) -> None:

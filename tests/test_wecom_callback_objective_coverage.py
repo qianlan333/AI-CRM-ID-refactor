@@ -40,10 +40,10 @@ def test_objective_coverage_local_contract_is_ready_without_production_completio
         ]
         is True
     )
-    assert payload["test_proofs"]["external_effect_realtime_unknown_quarantine"]["ok"] is True
+    assert payload["test_proofs"]["external_effect_realtime_signal_only"]["ok"] is True
     assert (
         payload["objective_requirements"]["real_outbound_effect_boundary"]["test_evidence"][
-            "external_effect_realtime_unknown_quarantine"
+            "external_effect_realtime_signal_only"
         ]
         is True
     )

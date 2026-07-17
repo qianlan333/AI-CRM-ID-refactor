@@ -325,7 +325,8 @@ def test_wecom_callback_ops_change_selects_identity_contact_slice() -> None:
     assert "tests/test_wecom_callback_permanent_fix_readiness.py" in result["python_tests"]
     assert result["unmatched_files"] == []
     assert result["needs_postgres"] is True
-    assert result["architecture_gate"] == "db"
+    assert result["architecture_gate"] == "full"
+    assert result["needs_full_ci"] is True
 
 
 def test_identity_worker_deadlock_recovery_has_permanent_deploy_and_identity_scope() -> None:
@@ -434,8 +435,19 @@ def test_external_effect_continuation_composition_has_a_permanent_full_ci_scope(
         "aicrm_next/external_effect_composition.py",
         "aicrm_next/automation_agents/external_effect_continuation.py",
         "aicrm_next/automation_agents/internal_webhook_adapter.py",
+        "aicrm_next/shared/automation_agent_webhook_contract.py",
+        "aicrm_next/channel_entry/identity_external_effect.py",
+        "aicrm_next/external_push/external_effect_continuation.py",
+        "aicrm_next/internal_event_composition.py",
         "aicrm_next/questionnaire/external_effect_continuation.py",
+        "aicrm_next/platform_foundation/external_effects/completion_events.py",
         "aicrm_next/platform_foundation/external_effects/continuations.py",
+        "aicrm_next/platform_foundation/external_effects/provider_result_repository.py",
+        "aicrm_next/platform_foundation/external_effects/repo_contract.py",
+        "aicrm_next/platform_foundation/external_effects/repo_memory.py",
+        "deploy/openclaw-internal-event-worker.service",
+        "migrations/versions/0131_external_effect_continuation_fanout.py",
+        "tests/test_external_effect_completion_event.py",
         "tests/test_automation_agent_internal_webhook_adapter.py",
         "tests/test_external_effect_continuation_composition.py",
     )
@@ -443,10 +455,63 @@ def test_external_effect_continuation_composition_has_a_permanent_full_ci_scope(
     assert "external_effect_continuation_composition" in result["matched_scopes"]
     assert result["unmatched_files"] == []
     assert "tests/test_external_effect_continuation_composition.py" in result["python_tests"]
+    assert "tests/test_external_effect_completion_event.py" in result["python_tests"]
+    assert "tests/test_internal_event_registry_composition.py" in result["python_tests"]
+    assert "tests/test_database_bootstrap.py" in result["python_tests"]
+    assert "tests/test_alembic_revision_chain.py" in result["python_tests"]
     assert "tests/test_external_effects_mvp.py" in result["python_tests"]
     assert "tests/test_questionnaire_h5_final_tags_real_wecom.py" in result["python_tests"]
     assert "tests/test_automation_agents_webhook_execution.py" in result["python_tests"]
     assert "tests/test_automation_agent_internal_webhook_adapter.py" in result["python_tests"]
+    assert result["needs_postgres"] is True
+    assert result["needs_full_ci"] is True
+    assert result["architecture_gate"] == "full"
+
+
+def test_welcome_media_dependency_migration_has_a_permanent_postgres_scope() -> None:
+    result = _select(
+        "aicrm_next/channel_entry/welcome_media_effects_repository.py",
+        "migrations/versions/0130_welcome_media_dependencies.py",
+        "scripts/ci/check_welcome_media_effect_ownership.py",
+        "tests/test_channel_welcome_media_dependencies_postgres.py",
+    )
+
+    assert result["unmatched_files"] == []
+    assert "identity_contact" in result["matched_scopes"]
+    assert "tests/test_channel_welcome_media_dependencies_postgres.py" in result["python_tests"]
+    assert "tests/test_database_bootstrap.py" in result["python_tests"]
+    assert result["needs_postgres"] is True
+    assert result["needs_full_ci"] is True
+    assert result["architecture_gate"] == "full"
+
+
+def test_external_claim_scope_policy_migration_has_a_permanent_postgres_scope() -> None:
+    result = _select(
+        "migrations/versions/0132_external_claim_scope_policy.py",
+        "scripts/ci/check_queue_runtime_cutover_kernel.py",
+    )
+
+    assert result["unmatched_files"] == []
+    assert "postgres_execution_runtime" in result["matched_scopes"]
+    assert "tests/test_execution_runtime_postgres.py" in result["python_tests"]
+    assert "tests/test_queue_runtime_cutover_postgres.py" in result["python_tests"]
+    assert "tests/test_database_bootstrap.py" in result["python_tests"]
+    assert "tests/test_alembic_revision_chain.py" in result["python_tests"]
+    assert result["needs_postgres"] is True
+    assert result["needs_full_ci"] is True
+    assert result["architecture_gate"] == "full"
+
+
+def test_admin_queue_commands_have_a_permanent_postgres_runtime_scope() -> None:
+    result = _select(
+        "tests/test_admin_queue_command_api.py",
+        "tests/test_admin_queue_command_boundary.py",
+    )
+
+    assert result["unmatched_files"] == []
+    assert "postgres_execution_runtime" in result["matched_scopes"]
+    assert "tests/test_admin_queue_command_api.py" in result["python_tests"]
+    assert "tests/test_admin_queue_command_boundary.py" in result["python_tests"]
     assert result["needs_postgres"] is True
     assert result["needs_full_ci"] is True
     assert result["architecture_gate"] == "full"

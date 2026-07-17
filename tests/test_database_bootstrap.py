@@ -74,7 +74,7 @@ def test_empty_postgres_database_installs_and_reuses_alembic_head() -> None:
 
         assert first.baseline_applied is True
         assert first.revision_before is None
-        assert first.revision_after == "0126_postgres_execution_runtime"
+        assert first.revision_after == "0132_external_claim_scope_policy"
         assert second.baseline_applied is False
         assert second.revision_before == first.revision_after
         assert second.revision_after == first.revision_after
@@ -95,6 +95,9 @@ def test_empty_postgres_database_installs_and_reuses_alembic_head() -> None:
             "service_period_huangyoucan_usage_snapshot",
             "service_period_huangyoucan_usage_sync_runs",
             "sync_runs",
+            "customer_read_model_refresh_intent",
+            "customer_read_model_refresh_source_receipt",
+            "identity_resolution_completion_receipt",
             "queue_fairness_cursor",
             "queue_lane_policy",
             "queue_policy_snapshot",
@@ -120,7 +123,7 @@ def test_empty_postgres_database_installs_and_reuses_alembic_head() -> None:
             runtime_control = connection.execute(
                 """
                 SELECT active_generation, claim_enabled, rollout_mode,
-                       global_max_in_flight, policy_version
+                       global_max_in_flight, policy_version, external_claim_scope
                 FROM queue_runtime_control
                 WHERE singleton = TRUE
                 """
@@ -141,9 +144,10 @@ def test_empty_postgres_database_installs_and_reuses_alembic_head() -> None:
                        (policy_json ->> 'heartbeat_seconds')::INTEGER,
                        (policy_json ->> 'lease_ttl_seconds')::INTEGER,
                        (policy_json ->> 'fallback_drain_seconds')::INTEGER,
-                       policy_json ->> 'outbound_webhook_default'
+                       policy_json ->> 'outbound_webhook_default',
+                       policy_json ->> 'external_claim_scope'
                 FROM queue_policy_snapshot
-                WHERE policy_version = 'queue-v1'
+                WHERE policy_version = 'queue-v2-test-loopback'
                 """
             ).fetchone()
             runtime_queue_columns = connection.execute(
@@ -193,7 +197,7 @@ def test_empty_postgres_database_installs_and_reuses_alembic_head() -> None:
             "expected_consumer_count",
         }
         assert all(row[1] == "NO" for row in manifest_columns)
-        assert runtime_control == (0, False, "standby", 20, "queue-v1")
+        assert runtime_control == (0, False, "standby", 20, "queue-v2-test-loopback", "test_loopback")
         assert lane_policies == {
             "internal_financial": (1, "standby", True),
             "internal_general": (4, "standby", True),
@@ -203,11 +207,8 @@ def test_empty_postgres_database_installs_and_reuses_alembic_head() -> None:
             "wecom_interactive": (4, "standby", True),
             "wecom_media": (2, "standby", True),
         }
-        assert policy_snapshot == ("queue-v1", 10, 30, 30, "blocked")
-        assert {
-            (str(table_name), str(column_name)): str(is_nullable)
-            for table_name, column_name, is_nullable in runtime_queue_columns
-        } == {
+        assert policy_snapshot == ("queue-v2-test-loopback", 10, 30, 30, "blocked", "test_loopback")
+        assert {(str(table_name), str(column_name)): str(is_nullable) for table_name, column_name, is_nullable in runtime_queue_columns} == {
             ("external_effect_job", "available_at"): "NO",
             ("external_effect_job", "lane"): "NO",
             ("internal_event_consumer_run", "available_at"): "NO",
@@ -261,16 +262,12 @@ def test_empty_postgres_database_installs_and_reuses_alembic_head() -> None:
 
         with psycopg.connect(database_url) as connection:
             with pytest.raises(psycopg.errors.RaiseException, match="queue_policy_snapshot is append-only"):
-                connection.execute(
-                    "UPDATE queue_policy_snapshot SET created_reason = 'tampered' WHERE policy_version = 'queue-v1'"
-                )
+                connection.execute("UPDATE queue_policy_snapshot SET created_reason = 'tampered' WHERE policy_version = 'queue-v1'")
             connection.rollback()
             with pytest.raises(psycopg.errors.RaiseException, match="queue_policy_snapshot is append-only"):
                 connection.execute("DELETE FROM queue_policy_snapshot WHERE policy_version = 'queue-v1'")
             connection.rollback()
-            assert connection.execute(
-                "SELECT COUNT(*) FROM queue_policy_snapshot WHERE policy_version = 'queue-v1'"
-            ).fetchone() == (1,)
+            assert connection.execute("SELECT COUNT(*) FROM queue_policy_snapshot WHERE policy_version = 'queue-v1'").fetchone() == (1,)
 
 
 def test_production_shape_alembic_database_upgrades_without_reapplying_baseline() -> None:
@@ -299,7 +296,7 @@ def test_production_shape_alembic_database_upgrades_without_reapplying_baseline(
 
         assert result.baseline_applied is False
         assert result.revision_before == "0098_admin_session_revocation"
-        assert result.revision_after == "0126_postgres_execution_runtime"
+        assert result.revision_after == "0132_external_claim_scope_policy"
         with psycopg.connect(database_url) as connection:
             preserved = connection.execute(
                 "SELECT wecom_userid, session_version FROM admin_users WHERE id = %s",
@@ -320,16 +317,14 @@ def test_upgrade_repairs_missing_or_partial_automation_agent_audit_tables_withou
             connection.execute("DROP TABLE automation_agent_llm_call_log")
             connection.execute("DROP TABLE automation_agent_output")
             connection.execute("CREATE TABLE automation_agent_output (id BIGSERIAL PRIMARY KEY)")
-            preserved_id = int(
-                connection.execute("INSERT INTO automation_agent_output DEFAULT VALUES RETURNING id").fetchone()[0]
-            )
+            preserved_id = int(connection.execute("INSERT INTO automation_agent_output DEFAULT VALUES RETURNING id").fetchone()[0])
             connection.commit()
 
         result = install_or_upgrade_database(database_url)
 
         assert result.baseline_applied is False
         assert result.revision_before == "0123_required_physical_schema_repair"
-        assert result.revision_after == "0126_postgres_execution_runtime"
+        assert result.revision_after == "0132_external_claim_scope_policy"
 
         expected_columns = {
             "automation_agent_output": {
@@ -424,10 +419,7 @@ def test_upgrade_repairs_missing_or_partial_automation_agent_audit_tables_withou
                 (preserved_id,),
             ).fetchone()
 
-        actual_columns = {
-            table_name: {column_name for row_table, column_name, _, _ in columns if row_table == table_name}
-            for table_name in expected_columns
-        }
+        actual_columns = {table_name: {column_name for row_table, column_name, _, _ in columns if row_table == table_name} for table_name in expected_columns}
         assert actual_columns == expected_columns
         assert all(is_nullable == "NO" for _, _, is_nullable, _ in columns)
         assert {
@@ -540,7 +532,7 @@ def test_execution_runtime_correctness_freezes_and_classifies_pre_cutover_queue_
                     ('webhook.test', 'http', 'post', 'loopback', 'terminal',
                      'history-freeze-terminal', 'succeeded', CURRENT_TIMESTAMP - INTERVAL '1 hour')
                     """
-                )
+            )
             connection.execute(
                 """
                 INSERT INTO external_effect_job (
@@ -641,9 +633,7 @@ def test_execution_runtime_correctness_freezes_and_classifies_pre_cutover_queue_
                 )
                 """
             )
-            new_hold = connection.execute(
-                "SELECT hold_reason, hold_at FROM external_effect_job WHERE idempotency_key = 'history-freeze-new-row'"
-            ).fetchone()
+            new_hold = connection.execute("SELECT hold_reason, hold_at FROM external_effect_job WHERE idempotency_key = 'history-freeze-new-row'").fetchone()
             connection.commit()
 
         assert classifications == {
@@ -666,9 +656,7 @@ def test_execution_runtime_correctness_freezes_and_classifies_pre_cutover_queue_
         from aicrm_next.platform_foundation.repository import RuntimeReadinessRepository
 
         with RuntimeReadinessRepository(database_url) as readiness_repo:
-            queue_metrics = readiness_repo.queue_metrics(
-                allowed_pairs=(("payment.succeeded", "payment_projection_consumer"),)
-            )
+            queue_metrics = readiness_repo.queue_metrics(allowed_pairs=(("payment.succeeded", "payment_projection_consumer"),))
         assert queue_metrics["queue_policy_version"] == 1
         assert queue_metrics["queue_raw_open_count"] == 9
         assert queue_metrics["queue_held_count"] == 8
@@ -696,11 +684,7 @@ def test_execution_runtime_correctness_freezes_and_classifies_pre_cutover_queue_
         from aicrm_next.platform_foundation.internal_events.repository import SQLAlchemyInternalEventRepository
         from aicrm_next.platform_foundation.webhook_inbox.repository import PostgresWebhookInboxRepository
 
-        sqlalchemy_url = (
-            "postgresql+psycopg://" + database_url[len("postgresql://") :]
-            if database_url.startswith("postgresql://")
-            else database_url
-        )
+        sqlalchemy_url = "postgresql+psycopg://" + database_url[len("postgresql://") :] if database_url.startswith("postgresql://") else database_url
         engine = create_engine(sqlalchemy_url)
         session_factory = sessionmaker(bind=engine, expire_on_commit=False)
         external_repo = SQLAlchemyExternalEffectRepository(session_factory)
@@ -716,12 +700,15 @@ def test_execution_runtime_correctness_freezes_and_classifies_pre_cutover_queue_
         previous_url = os.environ.get("DATABASE_URL")
         os.environ["DATABASE_URL"] = database_url
         try:
-            assert PostgresBroadcastQueueRepository().claim_due_jobs(
-                limit=10,
-                now=datetime.now(timezone.utc),
-                claim_token="history-freeze-test",
-                lease_seconds=30,
-            ) == []
+            assert (
+                PostgresBroadcastQueueRepository().claim_due_jobs(
+                    limit=10,
+                    now=datetime.now(timezone.utc),
+                    claim_token="history-freeze-test",
+                    lease_seconds=30,
+                )
+                == []
+            )
         finally:
             if previous_url is None:
                 os.environ.pop("DATABASE_URL", None)
@@ -938,6 +925,335 @@ def test_failed_baseline_is_atomic_and_does_not_fake_alembic_head(tmp_path: Path
                 """
             ).fetchone()
         assert row == (None, None)
+
+
+def test_identity_customer_cutover_holds_historical_work_without_replay() -> None:
+    with _isolated_database("identity_customer_history_hold") as database_url:
+        with psycopg.connect(database_url, autocommit=True) as connection:
+            connection.execute(BASELINE_PATH.read_text(encoding="utf-8"))
+        _upgrade_database_to(database_url, "0128_ai_audience_refresh_intents")
+
+        with psycopg.connect(database_url) as connection:
+            connection.execute(
+                """
+                INSERT INTO crm_user_identity_resolution_queue (
+                    source_type, source_key, external_userid, reason, status, next_attempt_at
+                ) VALUES
+                    ('history', 'pending', 'wm-history-pending', 'historical', 'pending', CURRENT_TIMESTAMP),
+                    ('history', 'polling', 'wm-history-polling', 'historical', 'polling', CURRENT_TIMESTAMP)
+                """
+            )
+            connection.execute(
+                """
+                INSERT INTO automation_channel_entry_runtime (
+                    corp_id, scene_value, external_userid, follow_user_userid,
+                    identity_status, runtime_status
+                ) VALUES
+                    ('ww-history', 'scene-pending', 'wm-runtime-pending', 'owner', 'pending', 'received'),
+                    ('ww-history', 'scene-failed', 'wm-runtime-failed', 'owner', 'failed', 'received')
+                """
+            )
+            connection.commit()
+
+        _upgrade_database_to(database_url, "head")
+
+        with psycopg.connect(database_url) as connection:
+            queue_rows = connection.execute(
+                """
+                SELECT source_key, status, hold_reason, held_at IS NOT NULL,
+                       next_attempt_at, external_effect_job_id
+                FROM crm_user_identity_resolution_queue
+                ORDER BY source_key
+                """
+            ).fetchall()
+            runtime_rows = connection.execute(
+                """
+                SELECT scene_value, identity_status, identity_hold_reason,
+                       identity_held_at IS NOT NULL, identity_next_attempt_at,
+                       identity_external_effect_job_id
+                FROM automation_channel_entry_runtime
+                ORDER BY scene_value
+                """
+            ).fetchall()
+            control = connection.execute(
+                "SELECT active_generation, claim_enabled FROM queue_runtime_control WHERE singleton = TRUE"
+            ).fetchone()
+
+        expected_reason = "pre_event_driven_cutover_requires_manual_classification"
+        assert queue_rows == [
+            ("pending", "held", expected_reason, True, None, None),
+            ("polling", "held", expected_reason, True, None, None),
+        ]
+        assert runtime_rows == [
+            ("scene-failed", "held", expected_reason, True, None, None),
+            ("scene-pending", "held", expected_reason, True, None, None),
+        ]
+        assert control == (0, False)
+
+        _downgrade_database_to(database_url, "0128_ai_audience_refresh_intents")
+        _upgrade_database_to(database_url, "head")
+        with psycopg.connect(database_url) as connection:
+            assert connection.execute("SELECT version_num FROM alembic_version").fetchone() == (
+                "0132_external_claim_scope_policy",
+            )
+
+
+def test_external_claim_scope_policy_upgrade_downgrade_and_reupgrade() -> None:
+    with _isolated_database("external_claim_scope_policy") as database_url:
+        with psycopg.connect(database_url, autocommit=True) as connection:
+            connection.execute(BASELINE_PATH.read_text(encoding="utf-8"))
+        _upgrade_database_to(database_url, "0131_external_effect_continuation_fanout")
+
+        with psycopg.connect(database_url) as connection:
+            before_column = connection.execute(
+                """
+                SELECT COUNT(*)
+                FROM information_schema.columns
+                WHERE table_schema = 'public'
+                  AND table_name = 'queue_runtime_control'
+                  AND column_name = 'external_claim_scope'
+                """
+            ).fetchone()
+        assert before_column == (0,)
+
+        _upgrade_database_to(database_url, "head")
+
+        with psycopg.connect(database_url) as connection:
+            control = connection.execute(
+                """
+                SELECT active_generation, claim_enabled, policy_version, external_claim_scope
+                FROM queue_runtime_control
+                WHERE singleton = TRUE
+                """
+            ).fetchone()
+            lane_versions = connection.execute(
+                "SELECT DISTINCT policy_version FROM queue_lane_policy"
+            ).fetchall()
+            snapshot = connection.execute(
+                """
+                SELECT policy_json ->> 'external_claim_scope',
+                       policy_json ->> 'outbound_webhook_default'
+                FROM queue_policy_snapshot
+                WHERE policy_version = 'queue-v2-test-loopback'
+                """
+            ).fetchone()
+            defaults = connection.execute(
+                """
+                SELECT table_name, column_default
+                FROM information_schema.columns
+                WHERE table_schema = 'public'
+                  AND table_name IN (
+                      'external_effect_job', 'internal_event_consumer_run',
+                      'internal_event_outbox', 'webhook_inbox'
+                  )
+                  AND column_name = 'policy_version'
+                ORDER BY table_name
+                """
+            ).fetchall()
+
+            with pytest.raises(psycopg.errors.CheckViolation):
+                connection.execute(
+                    "UPDATE queue_runtime_control SET external_claim_scope = 'unsafe' WHERE singleton = TRUE"
+                )
+            connection.rollback()
+
+        assert control == (0, False, "queue-v2-test-loopback", "test_loopback")
+        assert lane_versions == [("queue-v2-test-loopback",)]
+        assert snapshot == ("test_loopback", "blocked")
+        assert len(defaults) == 4
+        assert all("queue-v2-test-loopback" in str(column_default) for _, column_default in defaults)
+
+        _downgrade_database_to(database_url, "0131_external_effect_continuation_fanout")
+        with psycopg.connect(database_url) as connection:
+            downgraded_column = connection.execute(
+                """
+                SELECT COUNT(*)
+                FROM information_schema.columns
+                WHERE table_schema = 'public'
+                  AND table_name = 'queue_runtime_control'
+                  AND column_name = 'external_claim_scope'
+                """
+            ).fetchone()
+            downgraded_control = connection.execute(
+                "SELECT policy_version FROM queue_runtime_control WHERE singleton = TRUE"
+            ).fetchone()
+            downgraded_lanes = connection.execute(
+                "SELECT DISTINCT policy_version FROM queue_lane_policy"
+            ).fetchall()
+
+        assert downgraded_column == (0,)
+        assert downgraded_control == ("queue-v1",)
+        assert downgraded_lanes == [("queue-v1",)]
+
+        _upgrade_database_to(database_url, "head")
+        with psycopg.connect(database_url) as connection:
+            assert connection.execute("SELECT version_num FROM alembic_version").fetchone() == (
+                "0132_external_claim_scope_policy",
+            )
+            assert connection.execute(
+                """
+                SELECT policy_version, external_claim_scope
+                FROM queue_runtime_control
+                WHERE singleton = TRUE
+                """
+            ).fetchone() == ("queue-v2-test-loopback", "test_loopback")
+            assert connection.execute(
+                """
+                SELECT COUNT(*)
+                FROM queue_policy_snapshot
+                WHERE policy_version = 'queue-v2-test-loopback'
+                """
+            ).fetchone() == (1,)
+
+
+def test_continuation_fanout_cutover_holds_legacy_completion_work_without_replay() -> None:
+    with _isolated_database("continuation_fanout_history_hold") as database_url:
+        with psycopg.connect(database_url, autocommit=True) as connection:
+            connection.execute(BASELINE_PATH.read_text(encoding="utf-8"))
+        _upgrade_database_to(database_url, "0130_welcome_media_dependencies")
+
+        with psycopg.connect(database_url) as connection:
+            connection.execute(
+                """
+                INSERT INTO internal_event_outbox (
+                    outbox_id, event_type, aggregate_type, aggregate_id,
+                    idempotency_key, status
+                ) VALUES
+                    (
+                        'ieo-completion-pending', 'external_effect.completed',
+                        'external_effect_job', '8101', 'completion-pending', 'pending'
+                    ),
+                    (
+                        'ieo-completion-relayed', 'external_effect.completed',
+                        'external_effect_job', '8102', 'completion-relayed', 'relayed'
+                    )
+                """
+            )
+            connection.execute(
+                """
+                INSERT INTO internal_event (
+                    event_id, event_type, aggregate_type, aggregate_id, idempotency_key
+                ) VALUES
+                    (
+                        'iev-completion-pending', 'external_effect.completed',
+                        'external_effect_job', '8101', 'event-completion-pending'
+                    ),
+                    (
+                        'iev-completion-succeeded', 'external_effect.completed',
+                        'external_effect_job', '8102', 'event-completion-succeeded'
+                    )
+                """
+            )
+            connection.execute(
+                """
+                INSERT INTO internal_event_consumer_run (
+                    event_id, consumer_name, consumer_type, status
+                ) VALUES
+                    (
+                        'iev-completion-pending',
+                        'external_effect_completion_continuation_consumer',
+                        'orchestration', 'pending'
+                    ),
+                    (
+                        'iev-completion-succeeded',
+                        'external_effect_completion_continuation_consumer',
+                        'orchestration', 'succeeded'
+                    )
+                """
+            )
+            connection.commit()
+
+        _upgrade_database_to(database_url, "head")
+
+        with psycopg.connect(database_url) as connection:
+            outbox = connection.execute(
+                """
+                SELECT outbox_id, status, hold_reason, hold_at IS NOT NULL
+                FROM internal_event_outbox
+                WHERE outbox_id LIKE 'ieo-completion-%'
+                ORDER BY outbox_id
+                """
+            ).fetchall()
+            runs = connection.execute(
+                """
+                SELECT event_id, status, hold_reason, hold_at IS NOT NULL
+                FROM internal_event_consumer_run
+                WHERE consumer_name = 'external_effect_completion_continuation_consumer'
+                  AND event_id LIKE 'iev-completion-%'
+                ORDER BY event_id
+                """
+            ).fetchall()
+            classifications = connection.execute(
+                """
+                SELECT queue_kind, source_status, classification, hold_reason,
+                       evidence_json ->> 'automatic_replay_allowed'
+                FROM queue_history_classification
+                WHERE freeze_revision = '0131_external_effect_continuation_fanout'
+                ORDER BY queue_kind, queue_row_id
+                """
+            ).fetchall()
+            connection.execute(
+                """
+                INSERT INTO internal_event_outbox (
+                    outbox_id, event_type, aggregate_type, aggregate_id,
+                    idempotency_key, status
+                ) VALUES (
+                    'ieo-completion-new', 'external_effect.completed',
+                    'external_effect_job', '8103', 'completion-new', 'pending'
+                )
+                """
+            )
+            new_hold = connection.execute(
+                """
+                SELECT hold_reason, hold_at
+                FROM internal_event_outbox
+                WHERE outbox_id = 'ieo-completion-new'
+                """
+            ).fetchone()
+            connection.commit()
+
+        reason = "pre_independent_continuation_fanout_requires_manual_classification"
+        assert outbox == [
+            ("ieo-completion-pending", "pending", reason, True),
+            ("ieo-completion-relayed", "relayed", "", False),
+        ]
+        assert runs == [
+            ("iev-completion-pending", "pending", reason, True),
+            ("iev-completion-succeeded", "succeeded", "", False),
+        ]
+        assert classifications == [
+            ("internal_event_consumer", "pending", "ambiguous_hold", reason, "false"),
+            ("internal_event_consumer", "succeeded", "terminal_readonly", "", "false"),
+            ("internal_event_outbox", "pending", "ambiguous_hold", reason, "false"),
+            ("internal_event_outbox", "relayed", "terminal_readonly", "", "false"),
+        ]
+        assert new_hold == ("", None)
+
+        _downgrade_database_to(database_url, "0130_welcome_media_dependencies")
+        with psycopg.connect(database_url) as connection:
+            assert connection.execute(
+                """
+                SELECT hold_reason
+                FROM internal_event_outbox
+                WHERE outbox_id = 'ieo-completion-pending'
+                """
+            ).fetchone() == (reason,)
+        _upgrade_database_to(database_url, "head")
+        with psycopg.connect(database_url) as connection:
+            assert connection.execute(
+                """
+                SELECT COUNT(*)
+                FROM queue_history_classification
+                WHERE freeze_revision = '0131_external_effect_continuation_fanout'
+                """
+            ).fetchone() == (5,)
+            assert connection.execute(
+                """
+                SELECT hold_reason
+                FROM internal_event_outbox
+                WHERE outbox_id = 'ieo-completion-new'
+                """
+            ).fetchone() == (reason,)
 
 
 def _upgrade_database_to(database_url: str, revision: str) -> None:

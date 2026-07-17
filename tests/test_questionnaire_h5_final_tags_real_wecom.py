@@ -9,7 +9,10 @@ from aicrm_next.customer_tags.local_projection import (
     get_customer_tag_local_projection_fixture_rows,
     reset_customer_tag_local_projection_fixture_state,
 )
-from aicrm_next.external_effect_composition import build_external_effect_continuation_registry
+from aicrm_next.external_effect_composition import (
+    QUESTIONNAIRE_EXTERNAL_EFFECT_CONTINUATION_CONSUMER,
+    build_external_effect_continuation_registry,
+)
 from aicrm_next.identity_contact.dto import IdentityResolution, IdentityResolveResult
 from aicrm_next.integration_gateway import wecom_channel_entry_client
 from aicrm_next.integration_gateway.wecom_channel_entry_client import WeComApiError
@@ -24,7 +27,7 @@ from aicrm_next.platform_foundation.external_effects.adapters import (
     WeComContactTagAdapter,
 )
 from aicrm_next.platform_foundation.external_effects.completion_events import (
-    external_effect_completion_consumer,
+    external_effect_continuation_consumer,
 )
 from aicrm_next.platform_foundation.external_effects.repo import build_external_effect_repository
 from aicrm_next.platform_foundation.external_effects.worker import ExternalEffectWorker
@@ -39,6 +42,7 @@ from aicrm_next.platform_foundation.internal_events.models import (
     InternalEventConsumerRun,
 )
 from aicrm_next.questionnaire import h5_write
+from aicrm_next.questionnaire.external_effect_continuation import QUESTIONNAIRE_CONTACT_TAGS_CONTINUATION
 from aicrm_next.questionnaire.h5_write import reset_questionnaire_h5_write_fixture_state
 from aicrm_next.questionnaire.repo import reset_questionnaire_fixture_state
 
@@ -258,7 +262,7 @@ def test_provider_success_projects_tags_only_after_external_effect_success(monke
     assert executed["counts"]["succeeded_count"] == 1, executed
     assert executed["items"][0]["post_success_continuation"]["reason"] == "durable_completion_event_pending"
     queued_event = external_effect_repo.list_completion_events()[0]
-    completion_result = external_effect_completion_consumer(
+    completion_result = external_effect_continuation_consumer(
         InternalEvent(
             event_id="iev_questionnaire_tag_completion",
             event_type=queued_event["event_type"],
@@ -269,10 +273,10 @@ def test_provider_success_projects_tags_only_after_external_effect_success(monke
         InternalEventConsumerRun(
             id=1,
             event_id="iev_questionnaire_tag_completion",
-            consumer_name="external_effect_completion_continuation_consumer",
+            consumer_name=QUESTIONNAIRE_EXTERNAL_EFFECT_CONTINUATION_CONSUMER,
         ),
         repository_factory=lambda: external_effect_repo,
-        continuation_registry_factory=build_external_effect_continuation_registry,
+        continuation=QUESTIONNAIRE_CONTACT_TAGS_CONTINUATION,
     )
     assert completion_result.status == "succeeded"
     assert completion_result.response_summary["continuation"]["ok"] is True

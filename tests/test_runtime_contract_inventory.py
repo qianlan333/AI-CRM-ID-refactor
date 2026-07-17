@@ -30,7 +30,7 @@ def test_runtime_contract_inventory_covers_r00_behavior_surfaces() -> None:
     assert all(route["capability_owner"] for route in routes)
     assert all("responses" in route["contract"] for route in routes)
 
-    assert inventory["migration_heads"] == ["0126_postgres_execution_runtime"]
+    assert inventory["migration_heads"] == ["0132_external_claim_scope_policy"]
     assert len(inventory["tables"]) >= 150
     owned_lifecycles = {"canonical", "read_model", "event", "queue", "config"}
     assert all(table["write_owner"] for table in inventory["tables"] if table["lifecycle"] in owned_lifecycles)
@@ -84,6 +84,25 @@ def test_runtime_contract_inventory_covers_r00_behavior_surfaces() -> None:
         assert runtime_units[unit_name]["kind"] == "service"
         assert runtime_units[unit_name]["state"] == "active"
         assert runtime_units[unit_name]["stop_for_migration"] is True
+    for unit_name in (
+        "openclaw-internal-event-worker.timer",
+        "openclaw-external-effect-worker.timer",
+        "openclaw-broadcast-queue-worker.timer",
+        "openclaw-ai-audience-scheduler.timer",
+        "openclaw-identity-resolution-worker.timer",
+        "openclaw-customer-read-model-refresh.timer",
+        "openclaw-automation-ops-scheduler.timer",
+        "openclaw-wecom-callback-inbox-worker.service",
+    ):
+        assert runtime_units[unit_name]["state"] == "cutover_managed_legacy"
+        assert runtime_units[unit_name]["owner_inventory"] == "pr3"
+    assert runtime_units["aicrm-ai-audience-daily-intent.timer"] == {
+        "unit": "aicrm-ai-audience-daily-intent.timer",
+        "kind": "timer",
+        "state": "cutover_replacement_autostart",
+        "service": "aicrm-ai-audience-daily-intent.service",
+        "owner_inventory": "pr3",
+    }
     assert "DATABASE_URL" in inventory["environment_variables"]
     assert {
         "AICRM_AUTH_ARCHIVE_WORKER_CLIENT_ID",

@@ -39,6 +39,7 @@ from aicrm_next.platform_foundation.internal_events.worker import (
 
 
 EXECUTE_ENV = "AICRM_QUEUE_RUNTIME_EXECUTE"
+TEST_ONLY_ENV = "AICRM_QUEUE_RUNTIME_TEST_ONLY"
 
 
 def _truthy(value: str) -> bool:
@@ -57,8 +58,16 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         type=int,
         default=read_int_env("AICRM_QUEUE_WORKER_GENERATION", 0),
     )
-    parser.add_argument("--execute", action="store_true", default=False)
-    parser.add_argument("--test-only", action="store_true", default=False)
+    parser.add_argument(
+        "--execute",
+        action="store_true",
+        default=_truthy(os.getenv(EXECUTE_ENV, "")),
+    )
+    parser.add_argument(
+        "--test-only",
+        action="store_true",
+        default=_truthy(os.getenv(TEST_ONLY_ENV, "")),
+    )
     args = parser.parse_args(argv)
     if args.generation < 0:
         parser.error("--generation must be >= 0")

@@ -6,9 +6,14 @@ import os
 from uuid import uuid4
 
 import psycopg
+import pytest
 from psycopg.rows import dict_row
 
-from aicrm_next.background_jobs.broadcast_queue_worker import PostgresBroadcastQueueRepository
+import aicrm_next.background_jobs.broadcast_queue_worker as worker
+from aicrm_next.background_jobs.broadcast_queue_worker import (
+    PostgresBroadcastQueueRepository,
+    SafeSkippedBroadcastDispatcher,
+)
 
 
 def _seed_cloud_job(*, status: str = "queued", claim_token: str = "") -> dict[str, int | str]:
@@ -63,7 +68,14 @@ def _seed_cloud_job(*, status: str = "queued", claim_token: str = "") -> dict[st
                 f"{plan_id}:{recipient_id}",
                 status,
                 f"r10:{plan_id}:{recipient_id}",
-                json.dumps({"plan_id": plan_id, "recipient_id": recipient_id, "message_mode": "recipient_messages"}),
+                json.dumps(
+                    {
+                        "plan_id": plan_id,
+                        "recipient_id": recipient_id,
+                        "message_mode": "recipient_messages",
+                        "owner_userid": "owner_r10",
+                    }
+                ),
                 claim_token,
                 claim_token,
             ),
@@ -85,6 +97,94 @@ def _seed_cloud_job(*, status: str = "queued", claim_token: str = "") -> dict[st
 def _row(sql: str, params: tuple = ()) -> dict:
     with psycopg.connect(os.environ["DATABASE_URL"], row_factory=dict_row) as conn:
         return dict(conn.execute(sql, params).fetchone())
+
+
+def _delegated_outcome(monkeypatch, job: dict) -> dict:
+    monkeypatch.setattr(
+        worker,
+        "_resolve_private_targets_by_unionid",
+        lambda unionids: ([f"wm_{item.removeprefix('union_')}" for item in unionids], []),
+    )
+    outcome = SafeSkippedBroadcastDispatcher().dispatch(job)
+    assert outcome["status"] == "delegated"
+    assert outcome["external_effect_job_ids"] == []
+    assert len(outcome["effect_plan_requests"]) == 1
+    return outcome
+
+
+def test_broadcast_owner_link_and_external_effect_commit_atomically(next_pg_schema, monkeypatch) -> None:
+    seeded = _seed_cloud_job()
+    repo = PostgresBroadcastQueueRepository()
+    now = datetime.now(timezone.utc)
+    claimed = repo.claim_due_jobs(limit=1, now=now, claim_token="delegate-owner", lease_seconds=300)
+    dispatching = repo.begin_dispatch(int(seeded["job_id"]), claim_token="delegate-owner", now=now)
+
+    assert [int(item["id"]) for item in claimed] == [seeded["job_id"]]
+    assert dispatching is not None
+    outcome = _delegated_outcome(monkeypatch, dispatching)
+    finalized = repo.finalize_dispatch(
+        int(seeded["job_id"]),
+        claim_token="delegate-owner",
+        outcome=outcome,
+    )
+
+    assert finalized is not None
+    job = _row(
+        "SELECT status, execution_owner, external_effect_job_id, completed_at FROM broadcast_jobs WHERE id = %s",
+        (seeded["job_id"],),
+    )
+    effect = _row(
+        "SELECT id, business_type, business_id, status, lane, attempt_count FROM external_effect_job WHERE business_type = 'broadcast_job' AND business_id = %s",
+        (str(seeded["job_id"]),),
+    )
+    assert job == {
+        "status": "delegated",
+        "execution_owner": "external_effect_job",
+        "external_effect_job_id": effect["id"],
+        "completed_at": None,
+    }
+    assert effect["business_type"] == "broadcast_job"
+    assert effect["business_id"] == str(seeded["job_id"])
+    assert effect["status"] in {"blocked", "queued"}
+    assert effect["lane"] == "wecom_bulk"
+    assert effect["attempt_count"] == 0
+
+
+def test_broadcast_effect_insert_rolls_back_when_owner_link_finalization_fails(next_pg_schema, monkeypatch) -> None:
+    seeded = _seed_cloud_job()
+
+    def fail_before_outbound_task(stage: str) -> None:
+        if stage == "before_outbound_task":
+            raise RuntimeError("injected_owner_link_failure")
+
+    repo = PostgresBroadcastQueueRepository(fault_injector=fail_before_outbound_task)
+    now = datetime.now(timezone.utc)
+    repo.claim_due_jobs(limit=1, now=now, claim_token="rollback-owner", lease_seconds=300)
+    dispatching = repo.begin_dispatch(int(seeded["job_id"]), claim_token="rollback-owner", now=now)
+    assert dispatching is not None
+    outcome = _delegated_outcome(monkeypatch, dispatching)
+
+    with pytest.raises(RuntimeError, match="injected_owner_link_failure"):
+        repo.finalize_dispatch(
+            int(seeded["job_id"]),
+            claim_token="rollback-owner",
+            outcome=outcome,
+        )
+
+    job = _row(
+        "SELECT status, execution_owner, external_effect_job_id FROM broadcast_jobs WHERE id = %s",
+        (seeded["job_id"],),
+    )
+    count = _row(
+        "SELECT COUNT(*)::int AS count FROM external_effect_job WHERE business_type = 'broadcast_job' AND business_id = %s",
+        (str(seeded["job_id"]),),
+    )
+    assert job == {
+        "status": "dispatching",
+        "execution_owner": "legacy_frozen",
+        "external_effect_job_id": None,
+    }
+    assert count["count"] == 0
 
 
 def test_claim_begin_and_atomic_success_finalization_keep_all_projections_aligned(next_pg_schema) -> None:
@@ -239,9 +339,12 @@ def test_retryable_failure_at_max_attempts_becomes_terminal_and_is_not_reclaimed
         "max_attempts": 1,
         "next_retry_at": None,
     }
-    assert repo.claim_due_jobs(
-        limit=1,
-        now=now + timedelta(hours=1),
-        claim_token="must-not-reclaim",
-        lease_seconds=300,
-    ) == []
+    assert (
+        repo.claim_due_jobs(
+            limit=1,
+            now=now + timedelta(hours=1),
+            claim_token="must-not-reclaim",
+            lease_seconds=300,
+        )
+        == []
+    )

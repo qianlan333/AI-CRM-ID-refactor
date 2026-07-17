@@ -6,10 +6,22 @@ from typing import Any
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
+from starlette.concurrency import run_in_threadpool
 
 from aicrm_next.shared.admin_action_runtime import ensure_admin_action_token, validate_admin_action_token
 from aicrm_next.admin_shell import admin_path_for, shell_context
-from aicrm_next.platform_foundation.external_effects.service import ExternalEffectService
+from aicrm_next.platform_foundation.execution_runtime.api_command import (
+    QueueCommandPayloadError,
+    accepted_queue_command_payload,
+    authenticated_queue_actor,
+    parse_manual_queue_command,
+    submit_manual_queue_action,
+)
+from aicrm_next.platform_foundation.execution_runtime.commands import (
+    QueueCommandConflict,
+    QueueCommandDuplicateRiskRequired,
+    QueueRuntimeCommandService,
+)
 
 from . import CAPABILITY_OWNER, ROUTE_OWNER
 from .repository import PushCenterRepository
@@ -39,19 +51,6 @@ def _int(value: Any, *, default: int = 0, minimum: int = 0, maximum: int = 10**1
     return max(minimum, min(parsed, maximum))
 
 
-def _optional_expected_version(payload: dict[str, Any]) -> tuple[int | None, str]:
-    value = payload.get("expected_version", payload.get("row_version"))
-    if value in (None, ""):
-        return None, ""
-    try:
-        parsed = int(value)
-    except (TypeError, ValueError):
-        return None, "expected_version_must_be_a_positive_integer"
-    if parsed < 1:
-        return None, "expected_version_must_be_a_positive_integer"
-    return parsed, ""
-
-
 async def _payload(request: Request) -> dict[str, Any]:
     try:
         raw = await request.json()
@@ -76,6 +75,48 @@ def _json(payload: dict[str, Any], *, status_code: int = 200) -> JSONResponse:
 def _action_or_internal_token_error(request: Request, payload: dict[str, Any]) -> str:
     token = _text(request.headers.get("X-Admin-Action-Token")) or _text(payload.get("admin_action_token"))
     return validate_admin_action_token(token, request=request)
+
+
+def _queue_command_service(request: Request) -> QueueRuntimeCommandService:
+    service = getattr(request.app.state, "queue_runtime_command_service", None)
+    return service if service is not None else QueueRuntimeCommandService()
+
+
+def _command_payload_error(exc: QueueCommandPayloadError) -> JSONResponse:
+    return _json(
+        {
+            "ok": False,
+            "error": "manual_queue_command_fields_required",
+            "missing_fields": list(exc.missing_fields),
+        },
+        status_code=422,
+    )
+
+
+async def _accepted_action_response(
+    service: QueueRuntimeCommandService,
+    target: Any,
+    command: Any,
+    *,
+    action: str,
+    source_route: str,
+) -> JSONResponse:
+    try:
+        result = await run_in_threadpool(
+            submit_manual_queue_action,
+            service,
+            target,
+            command,
+            action=action,
+            source_route=source_route,
+        )
+    except QueueCommandDuplicateRiskRequired:
+        return _json({"ok": False, "error": "duplicate_risk_confirmation_required"}, status_code=409)
+    except QueueCommandConflict:
+        return _json({"ok": False, "error": "queue_command_cas_conflict"}, status_code=409)
+    except ValueError:
+        return _json({"ok": False, "error": "queue_command_target_not_eligible"}, status_code=409)
+    return _json(accepted_queue_command_payload(result, command), status_code=202)
 
 
 def _page_context(request: Request, *, page_notice: str = "", page_error: str = "", action_result: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -203,11 +244,27 @@ async def push_center_retry_job(job_id: int, request: Request) -> JSONResponse:
     token_error = _action_or_internal_token_error(request, payload)
     if token_error:
         return _json({"ok": False, "error": token_error}, status_code=401)
-    job = ExternalEffectService().retry(job_id)
-    if not job:
-        return _json({"ok": False, "error": "push_center_job_not_retryable"}, status_code=409)
-    detail = build_job_detail_payload(job.id, repository=PushCenterRepository())
-    return _json({"ok": True, "job": detail["job"] if detail else job.to_dict()})
+    try:
+        command = parse_manual_queue_command(
+            payload,
+            authenticated_actor=authenticated_queue_actor(request),
+        )
+    except QueueCommandPayloadError as exc:
+        return _command_payload_error(exc)
+    service = _queue_command_service(request)
+    target = await run_in_threadpool(
+        service.read_external_effect_target,
+        int(job_id),
+    )
+    if target is None:
+        return _json({"ok": False, "error": "push_center_job_not_found"}, status_code=404)
+    return await _accepted_action_response(
+        service,
+        target,
+        command,
+        action="retry",
+        source_route="/api/admin/push-center/jobs/{job_id}/retry",
+    )
 
 
 @router.post("/api/admin/push-center/jobs/{job_id}/cancel")
@@ -216,16 +273,24 @@ async def push_center_cancel_job(job_id: int, request: Request) -> JSONResponse:
     token_error = _action_or_internal_token_error(request, payload)
     if token_error:
         return _json({"ok": False, "error": token_error}, status_code=401)
-    expected_version, version_error = _optional_expected_version(payload)
-    if version_error:
-        return _json({"ok": False, "error": version_error}, status_code=422)
-    job = ExternalEffectService().cancel(
-        job_id,
-        actor=_text(payload.get("actor")),
-        reason=_text(payload.get("reason")),
-        expected_version=expected_version,
+    try:
+        command = parse_manual_queue_command(
+            payload,
+            authenticated_actor=authenticated_queue_actor(request),
+        )
+    except QueueCommandPayloadError as exc:
+        return _command_payload_error(exc)
+    service = _queue_command_service(request)
+    target = await run_in_threadpool(
+        service.read_external_effect_target,
+        int(job_id),
     )
-    if not job:
-        return _json({"ok": False, "error": "push_center_job_not_cancellable"}, status_code=409)
-    detail = build_job_detail_payload(job.id, repository=PushCenterRepository())
-    return _json({"ok": True, "job": detail["job"] if detail else job.to_dict()})
+    if target is None:
+        return _json({"ok": False, "error": "push_center_job_not_found"}, status_code=404)
+    return await _accepted_action_response(
+        service,
+        target,
+        command,
+        action="cancel",
+        source_route="/api/admin/push-center/jobs/{job_id}/cancel",
+    )

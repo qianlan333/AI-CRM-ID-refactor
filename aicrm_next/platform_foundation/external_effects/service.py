@@ -39,6 +39,7 @@ class ExternalEffectService:
         requires_approval: bool = False,
         execution_mode: str = "execute",
         scheduled_at: datetime | None = None,
+        available_at: datetime | None = None,
         priority: int = 100,
         max_attempts: int = 5,
         idempotency_key: str = "",
@@ -84,6 +85,7 @@ class ExternalEffectService:
             requires_approval=requires_approval,
             execution_mode=effective_execution_mode,
             scheduled_at=scheduled_at,
+            available_at=available_at,
             priority=priority,
             max_attempts=max_attempts,
             idempotency_key=idempotency_key,
@@ -96,9 +98,15 @@ class ExternalEffectService:
             rate_scope_key=rate_scope_key,
         )
         if connection is not None:
-            from .transactional import enqueue_transactional_external_effect_job
+            from sqlalchemy.orm import Session
 
-            return enqueue_transactional_external_effect_job(connection, request).to_dict()
+            from .transactional import (
+                enqueue_external_effect_job_in_session,
+                enqueue_transactional_external_effect_job,
+            )
+
+            enqueue = enqueue_external_effect_job_in_session if isinstance(connection, Session) else enqueue_transactional_external_effect_job
+            return enqueue(connection, request).to_dict()
         return self._repo.create_job(request).to_dict()
 
     def get(self, job_id: int) -> ExternalEffectJob | None:

@@ -154,7 +154,7 @@ def test_wecom_welcome_executes_through_external_effect_worker(monkeypatch) -> N
     assert "welcome-code" not in str(result["attempt"]["request_summary_json"])
 
 
-def test_wecom_welcome_resolves_library_materials_before_provider_call(monkeypatch) -> None:
+def test_wecom_welcome_rejects_unresolved_material_without_provider_or_resolver_call(monkeypatch) -> None:
     reset_external_effect_fixture_state()
     monkeypatch.setenv("AICRM_WECOM_EXECUTION_MODE", "execute")
     monkeypatch.setenv("AICRM_WECOM_ENABLED_EFFECT_TYPES", WECOM_WELCOME_MESSAGE_SEND)
@@ -182,11 +182,11 @@ def test_wecom_welcome_resolves_library_materials_before_provider_call(monkeypat
         ),
     ).dispatch_one(job["id"])
 
-    assert result["job"]["status"] == "succeeded"
-    assert resolver_calls == [[{"msgtype": "image", "material_id": 110}]]
-    assert fake.payloads[0]["attachments"] == [
-        {"msgtype": "image", "image": {"media_id": "resolved-image-media"}}
-    ]
+    assert result["job"]["status"] == "blocked"
+    assert result["attempt"]["error_code"] == "unresolved_material_dependency"
+    assert result["real_external_call_executed"] is False
+    assert resolver_calls == []
+    assert fake.payloads == []
 
 
 def test_production_welcome_material_translation_uses_wecom_welcome_shapes() -> None:

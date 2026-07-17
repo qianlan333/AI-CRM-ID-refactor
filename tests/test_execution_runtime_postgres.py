@@ -69,7 +69,8 @@ def _reset_runtime_control() -> None:
                 claim_enabled = FALSE,
                 rollout_mode = 'standby',
                 global_max_in_flight = 20,
-                policy_version = 'queue-v1'
+                policy_version = 'queue-v2-test-loopback',
+                external_claim_scope = 'test_loopback'
             WHERE singleton = TRUE
             """
         )
@@ -130,6 +131,9 @@ def _job(
     ordering_key: str = "",
     fairness_key: str = "",
     rate_scope_key: str = "",
+    execution_scope: str = "test_loopback",
+    priority: int = 100,
+    available_at: datetime | None = None,
 ) -> dict:
     key = uuid4().hex
     return ExternalEffectService().plan_effect(
@@ -140,13 +144,15 @@ def _job(
         target_id=f"target-{key}",
         business_type="runtime_test",
         business_id=f"business-{key}",
-        payload={"execution_scope": "test_loopback"},
+        payload={"execution_scope": execution_scope} if execution_scope else {},
         idempotency_key=f"runtime-{key}",
         status="queued",
         lane=lane,
         ordering_key=ordering_key,
         fairness_key=fairness_key,
         rate_scope_key=rate_scope_key,
+        priority=priority,
+        available_at=available_at,
     )
 
 
@@ -220,6 +226,46 @@ def test_runtime_snapshot_uses_the_claim_policy_gate() -> None:
         )
     mismatched = {item["lane"]: item for item in read_model.runtime_snapshot()["lanes"]}
     assert mismatched["wecom_interactive"]["eligible"] == 0
+
+
+def test_database_scope_unifies_claim_deadline_and_runtime_metrics() -> None:
+    now = datetime.now(timezone.utc)
+    real = _job(
+        execution_scope="",
+        priority=1,
+        available_at=now - timedelta(minutes=10),
+    )
+    loopback = _job(
+        execution_scope="test_loopback",
+        priority=200,
+        available_at=now - timedelta(minutes=1),
+    )
+    _enable(generation=7, wecom_interactive=1)
+    repository = ExecutionRuntimeRepository(_database_url())
+    lanes = {
+        item["lane"]: item
+        for item in ExecutionRuntimeReadModel(_database_url()).runtime_snapshot()["lanes"]
+    }
+
+    assert lanes["wecom_interactive"]["raw_open"] == 2
+    assert lanes["wecom_interactive"]["eligible"] == 1
+    assert lanes["wecom_interactive"]["policy_gated"] == 1
+    next_due = repository.next_due_at(
+        queue_kind="external_effect",
+        lane="wecom_interactive",
+        generation=7,
+    )
+    assert next_due is not None
+    assert next_due > now - timedelta(minutes=2)
+
+    claim = repository.claim_external_effect_one(
+        lane="wecom_interactive",
+        worker_id="scope-test",
+        generation=7,
+    )
+    assert claim is not None
+    assert claim.item_id == loopback["id"]
+    assert claim.item_id != real["id"]
 
 
 def test_capacity_claims_only_real_slots_and_refills_immediately() -> None:

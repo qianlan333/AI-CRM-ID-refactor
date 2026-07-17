@@ -3,9 +3,11 @@ from __future__ import annotations
 from dataclasses import replace
 import logging
 from typing import Any
+from urllib.parse import urlparse
 from uuid import uuid4
 
 from aicrm_next.platform_foundation.push_center.capability_registry import capability_for_section
+from aicrm_next.shared.automation_agent_webhook_contract import automation_agent_code_from_webhook_url
 from aicrm_next.platform_foundation.push_center.section_mapper import section_for_job
 from aicrm_next.shared.runtime_settings import runtime_bool, runtime_setting
 from aicrm_next.shared.safe_logging import safe_log_exception
@@ -40,6 +42,30 @@ def _enabled(name: str) -> bool:
 def _is_test_job(job: ExternalEffectJob) -> bool:
     payload = dict(job.payload_json or {})
     return payload.get("execution_scope") == "test_loopback" or payload.get("is_test") is True
+
+
+def _test_only_adapter_gate_error(job: ExternalEffectJob) -> str:
+    """Allow only loopbacks that cannot reach a real provider adapter."""
+
+    payload = dict(job.payload_json or {})
+    if payload.get("execution_scope") != "test_loopback" or payload.get("is_test") is not True:
+        return "test_execution_scope_invalid"
+    adapter_name = str(job.adapter_name or "").strip()
+    target_url = str(payload.get("webhook_url") or payload.get("target_url") or "").strip()
+    if adapter_name == "outbound_webhook":
+        from .test_receiver import TEST_RECEIVER_PATH_PREFIX
+
+        if (
+            urlparse(target_url).path == TEST_RECEIVER_PATH_PREFIX
+            and bool(str(payload.get("expected_payload_hash") or "").strip())
+        ):
+            return ""
+        return "test_receiver_contract_invalid"
+    if adapter_name == "webhook":
+        if automation_agent_code_from_webhook_url(target_url):
+            return ""
+        return "test_internal_webhook_contract_invalid"
+    return "test_execution_adapter_not_allowed"
 
 
 def _capability_gate_error(job: ExternalEffectJob) -> str:
@@ -243,6 +269,22 @@ class ExternalEffectWorker:
                 error_code="test_execution_only_required",
                 error_message="AICRM_EXTERNAL_EFFECT_TEST_EXECUTION_ONLY=1 blocks non-test jobs.",
             )
+        if dispatch_result is None and _enabled("AICRM_EXTERNAL_EFFECT_TEST_EXECUTION_ONLY"):
+            test_gate_error = _test_only_adapter_gate_error(job)
+            if test_gate_error:
+                dispatch_result = ExternalEffectDispatchResult(
+                    status="blocked",
+                    adapter_mode=job.execution_mode or "execute",
+                    request_summary={
+                        "effect_type": job.effect_type,
+                        "adapter_name": job.adapter_name,
+                        "execution_scope": "test_loopback",
+                    },
+                    response_summary={"blocked": True, "real_external_call_executed": False},
+                    error_code=test_gate_error,
+                    error_message="Test-loopback policy blocks this provider adapter contract.",
+                    real_external_call_executed=False,
+                )
         capability_error = _capability_gate_error(job)
         if dispatch_result is None and capability_error:
             message = (

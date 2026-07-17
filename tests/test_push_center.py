@@ -370,7 +370,6 @@ def test_push_center_sections_stats_retry_cancel_auth(next_client: TestClient, m
         json={
             "expected_version": queued["row_version"],
             "actor": "push-center-operator",
-            "reason": "manual stop",
         },
     )
 
@@ -383,15 +382,10 @@ def test_push_center_sections_stats_retry_cancel_auth(next_client: TestClient, m
     assert reconciliation.json()["reconciliation"]["next_action_label"] == "重试"
     assert reconciliation.json()["reconciliation"]["linked_record_counts"]["external_effect_jobs"] == 1
     assert rejected.status_code == 401
-    assert retried.status_code == 200
-    assert retried.json()["job"]["status"] == "pending"
-    assert retried.json()["job"]["raw_status"] == "queued"
-    assert cancelled.status_code == 200
-    assert cancelled.json()["job"]["status"] == "failed"
-    assert cancelled.json()["job"]["raw_status"] == "cancelled"
-    assert cancelled.json()["job"]["row_version"] == queued["row_version"] + 1
-    assert cancelled.json()["job"]["cancel_requested_by"] == "push-center-operator"
-    assert cancelled.json()["job"]["cancel_reason"] == "manual stop"
+    assert retried.status_code == 422
+    assert set(retried.json()["missing_fields"]) == {"actor", "reason", "expected_version"}
+    assert cancelled.status_code == 422
+    assert cancelled.json()["missing_fields"] == ["reason"]
 
 
 def test_push_center_page_smoke(next_client: TestClient) -> None:

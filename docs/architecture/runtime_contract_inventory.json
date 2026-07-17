@@ -71,7 +71,7 @@
       "accessor": "runtime_bool",
       "file": "aicrm_next/ai_audience_ops/webhook_service.py",
       "key": "AICRM_AI_AUDIENCE_INBOUND_ACTION_EXECUTE",
-      "line": 53
+      "line": 180
     },
     {
       "accessor": "os.getenv",
@@ -389,7 +389,7 @@
       "accessor": "runtime_setting",
       "file": "aicrm_next/background_jobs/broadcast_queue_worker.py",
       "key": "AICRM_EXTERNAL_EFFECT_ALLOWED_OWNER_USERIDS",
-      "line": 645
+      "line": 838
     },
     {
       "accessor": "declared_runtime_environment_key",
@@ -404,16 +404,10 @@
       "line": 19
     },
     {
-      "accessor": "runtime_bool",
-      "file": "aicrm_next/platform_foundation/external_effects/realtime.py",
-      "key": "AICRM_EXTERNAL_EFFECT_WEBHOOK_EXECUTE",
-      "line": 37
-    },
-    {
       "accessor": "runtime_setting",
       "file": "aicrm_next/platform_foundation/external_effects/adapters.py",
       "key": "AICRM_EXTERNAL_EFFECT_WEBHOOK_TIMEOUT_SECONDS",
-      "line": 310
+      "line": 312
     },
     {
       "accessor": "declared_runtime_environment_key",
@@ -431,19 +425,19 @@
       "accessor": "os.getenv",
       "file": "aicrm_next/automation_engine/group_ops/broadcast.py",
       "key": "AICRM_GROUP_OPS_BROADCAST_PLAN_ID",
-      "line": 260
+      "line": 270
     },
     {
       "accessor": "os.getenv",
       "file": "aicrm_next/automation_engine/group_ops/broadcast.py",
       "key": "AICRM_GROUP_OPS_MINIPROGRAM_APPID",
-      "line": 268
+      "line": 278
     },
     {
       "accessor": "os.getenv",
       "file": "aicrm_next/automation_engine/group_ops/scheduler.py",
       "key": "AICRM_GROUP_OPS_TIMEZONE",
-      "line": 23
+      "line": 29
     },
     {
       "accessor": "os.getenv",
@@ -839,7 +833,7 @@
       "accessor": "os.getenv",
       "file": "aicrm_next/ai_audience_ops/service.py",
       "key": "AICRM_PUBLIC_BASE_URL",
-      "line": 633
+      "line": 611
     },
     {
       "accessor": "os.getenv",
@@ -1103,19 +1097,19 @@
       "accessor": "os.getenv",
       "file": "aicrm_next/background_jobs/automation_ops_scheduler.py",
       "key": "AUTOMATION_OPS_SCHEDULER_OPERATOR",
-      "line": 48
+      "line": 35
     },
     {
       "accessor": "os.getenv",
       "file": "aicrm_next/background_jobs/broadcast_queue_worker.py",
       "key": "BROADCAST_QUEUE_LEASE_SECONDS",
-      "line": 1031
+      "line": 1219
     },
     {
       "accessor": "os.getenv",
       "file": "aicrm_next/background_jobs/broadcast_queue_worker.py",
       "key": "BROADCAST_QUEUE_RETRY_DELAY_SECONDS",
-      "line": 201
+      "line": 388
     },
     {
       "accessor": "_env_flag",
@@ -1275,6 +1269,18 @@
     },
     {
       "accessor": "os.getenv",
+      "file": "scripts/ops/check_ai_audience_refresh_owner.py",
+      "key": "DATABASE_URL",
+      "line": 111
+    },
+    {
+      "accessor": "os.getenv",
+      "file": "scripts/ops/check_ai_audience_refresh_owner.py",
+      "key": "DATABASE_URL",
+      "line": 140
+    },
+    {
+      "accessor": "os.getenv",
       "file": "scripts/ops/check_auth_readiness.py",
       "key": "DATABASE_URL",
       "line": 177
@@ -1284,6 +1290,12 @@
       "file": "scripts/ops/check_callback_quick_ack_state.py",
       "key": "DATABASE_URL",
       "line": 115
+    },
+    {
+      "accessor": "os.getenv",
+      "file": "scripts/ops/check_identity_customer_event_driven.py",
+      "key": "DATABASE_URL",
+      "line": 176
     },
     {
       "accessor": "os.getenv",
@@ -1823,7 +1835,7 @@
       "accessor": "runtime_setting",
       "file": "aicrm_next/channel_entry/application.py",
       "key": "WECOM_CALLBACK_AES_KEY",
-      "line": 54
+      "line": 58
     },
     {
       "accessor": "os.getenv",
@@ -1853,7 +1865,7 @@
       "accessor": "runtime_setting",
       "file": "aicrm_next/channel_entry/application.py",
       "key": "WECOM_CALLBACK_TOKEN",
-      "line": 53
+      "line": 57
     },
     {
       "accessor": "os.getenv",
@@ -1907,7 +1919,7 @@
       "accessor": "os.getenv",
       "file": "aicrm_next/channel_entry/application.py",
       "key": "WECOM_CORP_ID",
-      "line": 52
+      "line": 56
     },
     {
       "accessor": "os.getenv",
@@ -2057,13 +2069,13 @@
       "accessor": "os.getenv",
       "file": "aicrm_next/channel_entry/application.py",
       "key": "WORKER_RELEASE_SHA",
-      "line": 976
+      "line": 1016
     },
     {
       "accessor": "os.getenv",
       "file": "aicrm_next/channel_entry/application.py",
       "key": "WORKER_RELEASE_SHA",
-      "line": 1194
+      "line": 1234
     },
     {
       "accessor": "os.getenv",
@@ -2122,7 +2134,6 @@
     "AICRM_ENV_FILE",
     "AICRM_EXTERNAL_EFFECT_ALLOWED_OWNER_USERIDS",
     "AICRM_EXTERNAL_EFFECT_ALLOWED_TYPES",
-    "AICRM_EXTERNAL_EFFECT_WEBHOOK_EXECUTE",
     "AICRM_EXTERNAL_EFFECT_WEBHOOK_TIMEOUT_SECONDS",
     "AICRM_EXTERNAL_EFFECT_WECOM_EXECUTE",
     "AICRM_FORCE_FULL_CI",
@@ -2310,6 +2321,17 @@
       "migration_target": "aicrm_next/integration_gateway/wecom_channel_entry_client.py",
       "owner": "channel_entry",
       "provider": "wecom"
+    },
+    {
+      "adapter_module": "aicrm_next/platform_foundation/external_effects/adapters.py",
+      "allowed_runtime": "real_requires_approval",
+      "audit_required": true,
+      "boundary": "platform_foundation.external_effects",
+      "effect_key": "wecom.external_contact.detail.fetch",
+      "idempotency_required": true,
+      "migration_target": "aicrm_next/platform_foundation/external_effects/adapters.py",
+      "owner": "identity_contact",
+      "provider": "wecom"
     }
   ],
   "external_effects": [
@@ -2390,6 +2412,10 @@
       "effect_type": "wecom.contact.tag.unmark"
     },
     {
+      "constant": "WECOM_EXTERNAL_CONTACT_DETAIL_FETCH",
+      "effect_type": "wecom.external_contact.detail.fetch"
+    },
+    {
       "constant": "WECOM_MEDIA_UPLOAD",
       "effect_type": "wecom.media.upload"
     },
@@ -2417,6 +2443,13 @@
   "fixture_records_included": false,
   "internal_event_consumers": [
     {
+      "consumer_name": "ai_audience_inbound_action_planner",
+      "consumer_type": "external_effect_planner",
+      "event_type": "ai_audience.inbound.received",
+      "handler_registered": true,
+      "max_attempts": 5
+    },
+    {
       "consumer_name": "ai_audience_daily_refresh_consumer",
       "consumer_type": "orchestration",
       "event_type": "ai_audience.refresh.daily_tick",
@@ -2429,6 +2462,13 @@
       "event_type": "ai_audience.refresh.incremental_tick",
       "handler_registered": true,
       "max_attempts": 5
+    },
+    {
+      "consumer_name": "ai_audience_refresh_intent_consumer",
+      "consumer_type": "orchestration",
+      "event_type": "ai_audience.refresh.requested",
+      "handler_registered": true,
+      "max_attempts": 10
     },
     {
       "consumer_name": "ai_audience_outbound_effect_planner",
@@ -2571,6 +2611,13 @@
       "max_attempts": 5
     },
     {
+      "consumer_name": "customer_read_model_dirty_consumer",
+      "consumer_type": "projection",
+      "event_type": "channel_entry.entered",
+      "handler_registered": true,
+      "max_attempts": 10
+    },
+    {
       "consumer_name": "automation_phone_bound_consumer",
       "consumer_type": "orchestration",
       "event_type": "customer.phone_bound",
@@ -2590,6 +2637,13 @@
       "event_type": "customer.phone_bound",
       "handler_registered": true,
       "max_attempts": 5
+    },
+    {
+      "consumer_name": "customer_read_model_dirty_consumer",
+      "consumer_type": "projection",
+      "event_type": "customer.phone_bound",
+      "handler_registered": true,
+      "max_attempts": 10
     },
     {
       "consumer_name": "customer_summary_consumer",
@@ -2641,7 +2695,63 @@
       "max_attempts": 5
     },
     {
+      "consumer_name": "customer_read_model_refresh_intent_consumer",
+      "consumer_type": "projection",
+      "event_type": "customer_read_model.refresh.requested",
+      "handler_registered": true,
+      "max_attempts": 5
+    },
+    {
+      "consumer_name": "external_effect_automation_continuation_consumer",
+      "consumer_type": "orchestration",
+      "event_type": "external_effect.completed",
+      "handler_registered": true,
+      "max_attempts": 5
+    },
+    {
+      "consumer_name": "external_effect_broadcast_continuation_consumer",
+      "consumer_type": "orchestration",
+      "event_type": "external_effect.completed",
+      "handler_registered": true,
+      "max_attempts": 5
+    },
+    {
       "consumer_name": "external_effect_completion_continuation_consumer",
+      "consumer_type": "handler_alias",
+      "event_type": "external_effect.completed",
+      "handler_registered": true,
+      "max_attempts": null
+    },
+    {
+      "consumer_name": "external_effect_external_push_continuation_consumer",
+      "consumer_type": "orchestration",
+      "event_type": "external_effect.completed",
+      "handler_registered": true,
+      "max_attempts": 5
+    },
+    {
+      "consumer_name": "external_effect_group_ops_continuation_consumer",
+      "consumer_type": "orchestration",
+      "event_type": "external_effect.completed",
+      "handler_registered": true,
+      "max_attempts": 5
+    },
+    {
+      "consumer_name": "external_effect_identity_continuation_consumer",
+      "consumer_type": "orchestration",
+      "event_type": "external_effect.completed",
+      "handler_registered": true,
+      "max_attempts": 5
+    },
+    {
+      "consumer_name": "external_effect_questionnaire_continuation_consumer",
+      "consumer_type": "orchestration",
+      "event_type": "external_effect.completed",
+      "handler_registered": true,
+      "max_attempts": 5
+    },
+    {
+      "consumer_name": "external_effect_welcome_media_continuation_consumer",
       "consumer_type": "orchestration",
       "event_type": "external_effect.completed",
       "handler_registered": true,
@@ -2653,6 +2763,13 @@
       "event_type": "external_form.submitted",
       "handler_registered": true,
       "max_attempts": 5
+    },
+    {
+      "consumer_name": "customer_read_model_dirty_consumer",
+      "consumer_type": "projection",
+      "event_type": "identity.resolved",
+      "handler_registered": true,
+      "max_attempts": 10
     },
     {
       "consumer_name": "ai_assist_notify_consumer",
@@ -2744,6 +2861,13 @@
       "event_type": "payment.succeeded",
       "handler_registered": true,
       "max_attempts": 5
+    },
+    {
+      "consumer_name": "customer_read_model_dirty_consumer",
+      "consumer_type": "projection",
+      "event_type": "payment.succeeded",
+      "handler_registered": true,
+      "max_attempts": 10
     },
     {
       "consumer_name": "dnd_policy_consumer",
@@ -2851,6 +2975,13 @@
       "max_attempts": 5
     },
     {
+      "consumer_name": "customer_read_model_dirty_consumer",
+      "consumer_type": "projection",
+      "event_type": "questionnaire.submitted",
+      "handler_registered": true,
+      "max_attempts": 10
+    },
+    {
       "consumer_name": "customer_summary_consumer",
       "consumer_type": "projection",
       "event_type": "questionnaire.submitted",
@@ -2877,6 +3008,13 @@
       "event_type": "questionnaire.submitted",
       "handler_registered": true,
       "max_attempts": 5
+    },
+    {
+      "consumer_name": "queue_runtime_command_audit_consumer",
+      "consumer_type": "diagnostic",
+      "event_type": "queue.runtime.command.applied",
+      "handler_registered": true,
+      "max_attempts": 3
     },
     {
       "consumer_name": "service_period_refund_consumer",
@@ -2943,7 +3081,7 @@
     }
   ],
   "migration_heads": [
-    "0126_postgres_execution_runtime"
+    "0132_external_claim_scope_policy"
   ],
   "openapi_components": {
     "schemas": {
@@ -44797,6 +44935,13 @@
   "runtime_units": [
     {
       "kind": "timer",
+      "owner_inventory": "pr3",
+      "service": "aicrm-ai-audience-daily-intent.service",
+      "state": "cutover_replacement_autostart",
+      "unit": "aicrm-ai-audience-daily-intent.timer"
+    },
+    {
+      "kind": "timer",
       "service": "aicrm-archive-sync.service",
       "state": "approval_required",
       "unit": "aicrm-archive-sync.timer"
@@ -44849,6 +44994,14 @@
       "unit": "aicrm-internal-queue-runtime.service"
     },
     {
+      "kick_after_timer_restart": false,
+      "kick_failure_fatal": false,
+      "kind": "timer",
+      "service": "aicrm-queue-invariant-check.service",
+      "state": "active_autostart",
+      "unit": "aicrm-queue-invariant-check.timer"
+    },
+    {
       "kind": "service",
       "state": "retired_forbidden",
       "unit": "aicrm-reply-monitor-capture.service"
@@ -44880,11 +45033,10 @@
       "unit": "aicrm-wechat-shop-order-sync.timer"
     },
     {
-      "kick_after_timer_restart": true,
-      "kick_failure_fatal": false,
       "kind": "timer",
+      "owner_inventory": "pr3",
       "service": "openclaw-ai-audience-scheduler.service",
-      "state": "active_autostart",
+      "state": "cutover_managed_legacy",
       "unit": "openclaw-ai-audience-scheduler.timer"
     },
     {
@@ -44898,11 +45050,10 @@
       "unit": "openclaw-automation-conversion-due-runner.timer"
     },
     {
-      "kick_after_timer_restart": false,
-      "kick_failure_fatal": false,
       "kind": "timer",
+      "owner_inventory": "pr3",
       "service": "openclaw-automation-ops-scheduler.service",
-      "state": "active_autostart",
+      "state": "cutover_managed_legacy",
       "unit": "openclaw-automation-ops-scheduler.timer"
     },
     {
@@ -44912,19 +45063,17 @@
       "unit": "openclaw-broadcast-hourly-feishu-report.timer"
     },
     {
-      "kick_after_timer_restart": true,
-      "kick_failure_fatal": false,
       "kind": "timer",
+      "owner_inventory": "pr3",
       "service": "openclaw-broadcast-queue-worker.service",
-      "state": "active_autostart",
+      "state": "cutover_managed_legacy",
       "unit": "openclaw-broadcast-queue-worker.timer"
     },
     {
-      "kick_after_timer_restart": true,
-      "kick_failure_fatal": true,
       "kind": "timer",
+      "owner_inventory": "pr3",
       "service": "openclaw-customer-read-model-refresh.service",
-      "state": "active_autostart",
+      "state": "cutover_managed_legacy",
       "unit": "openclaw-customer-read-model-refresh.timer"
     },
     {
@@ -44940,11 +45089,10 @@
       "unit": "openclaw-external-contact-sync.timer"
     },
     {
-      "kick_after_timer_restart": false,
-      "kick_failure_fatal": false,
       "kind": "timer",
+      "owner_inventory": "pr3",
       "service": "openclaw-external-effect-worker.service",
-      "state": "active_autostart",
+      "state": "cutover_managed_legacy",
       "unit": "openclaw-external-effect-worker.timer"
     },
     {
@@ -44958,19 +45106,17 @@
       "unit": "openclaw-external-push-worker.timer"
     },
     {
-      "kick_after_timer_restart": false,
-      "kick_failure_fatal": false,
       "kind": "timer",
+      "owner_inventory": "pr3",
       "service": "openclaw-identity-resolution-worker.service",
-      "state": "active_autostart",
+      "state": "cutover_managed_legacy",
       "unit": "openclaw-identity-resolution-worker.timer"
     },
     {
-      "kick_after_timer_restart": true,
-      "kick_failure_fatal": false,
       "kind": "timer",
+      "owner_inventory": "pr3",
       "service": "openclaw-internal-event-worker.service",
-      "state": "active_autostart",
+      "state": "cutover_managed_legacy",
       "unit": "openclaw-internal-event-worker.timer"
     },
     {
@@ -44982,10 +45128,10 @@
       "unit": "openclaw-wechat-pay-order-reconciliation-worker.timer"
     },
     {
-      "health_url": "",
       "kind": "service",
-      "state": "active",
-      "stop_for_migration": true,
+      "owner_inventory": "pr3",
+      "persistent": true,
+      "state": "cutover_managed_legacy",
       "unit": "openclaw-wecom-callback-inbox-worker.service"
     },
     {
@@ -45195,6 +45341,31 @@
         "aicrm_next.ai_audience_ops"
       ],
       "table": "ai_audience_package_version",
+      "write_owner": "aicrm_next.ai_audience_ops"
+    },
+    {
+      "domain": "ai_audience_ops",
+      "drop_candidate": false,
+      "lifecycle": "canonical",
+      "migration_source": "0128_ai_audience_refresh_intents",
+      "pii_level": "restricted_business_payload",
+      "read_owners": [
+        "aicrm_next.ai_audience_ops",
+        "aicrm_next.platform_foundation.execution_runtime"
+      ],
+      "table": "ai_audience_refresh_intent",
+      "write_owner": "aicrm_next.ai_audience_ops"
+    },
+    {
+      "domain": "ai_audience_ops",
+      "drop_candidate": false,
+      "lifecycle": "audit",
+      "migration_source": "0128_ai_audience_refresh_intents",
+      "pii_level": "none",
+      "read_owners": [
+        "aicrm_next.ai_audience_ops"
+      ],
+      "table": "ai_audience_refresh_source_receipt",
       "write_owner": "aicrm_next.ai_audience_ops"
     },
     {
@@ -45648,7 +45819,7 @@
       "domain": "channel_entry",
       "drop_candidate": false,
       "lifecycle": "queue",
-      "migration_source": "0088_channel_entry_identity_best_effort, hardened by 0092_channel_entry_runtime_identity_backoff",
+      "migration_source": "0088_channel_entry_identity_best_effort, hardened by 0092_channel_entry_runtime_identity_backoff and 0129_identity_customer_event_driven",
       "pii_level": "internal_contact",
       "read_owners": [
         "aicrm_next.channel_entry.repo"
@@ -45758,6 +45929,45 @@
       ],
       "table": "automation_frequency_consumption",
       "write_owner": "aicrm_next.automation_engine"
+    },
+    {
+      "domain": "automation_engine_group_ops",
+      "drop_candidate": false,
+      "lifecycle": "queue",
+      "migration_source": "0127_group_ops_durable_effect_graph",
+      "pii_level": "none",
+      "read_owners": [
+        "Group Ops media completion continuation",
+        "execution runtime consistency audit"
+      ],
+      "table": "automation_group_ops_effect_dependency",
+      "write_owner": "aicrm_next.automation_engine.group_ops.durable_effects_repository"
+    },
+    {
+      "domain": "automation_engine_group_ops",
+      "drop_candidate": false,
+      "lifecycle": "canonical",
+      "migration_source": "0127_group_ops_durable_effect_graph",
+      "pii_level": "none",
+      "read_owners": [
+        "Group Ops execution status API",
+        "unified execution timeline"
+      ],
+      "table": "automation_group_ops_effect_graph",
+      "write_owner": "aicrm_next.automation_engine.group_ops.durable_effects_repository"
+    },
+    {
+      "domain": "automation_engine_group_ops",
+      "drop_candidate": false,
+      "lifecycle": "canonical",
+      "migration_source": "0127_group_ops_durable_effect_graph",
+      "pii_level": "none",
+      "read_owners": [
+        "Group Ops execution detail",
+        "Group Ops media completion continuation"
+      ],
+      "table": "automation_group_ops_effect_material",
+      "write_owner": "aicrm_next.automation_engine.group_ops.durable_effects_repository"
     },
     {
       "domain": "automation_group_ops",
@@ -46478,6 +46688,34 @@
       "write_owner": "aicrm_next.cloud_orchestrator.repository"
     },
     {
+      "domain": "channel_entry",
+      "drop_candidate": false,
+      "lifecycle": "queue",
+      "migration_source": "0130_welcome_media_dependencies",
+      "pii_level": "internal_contact",
+      "read_owners": [
+        "channel welcome completion continuation",
+        "execution runtime consistency audit",
+        "unified execution timeline"
+      ],
+      "table": "channel_welcome_effect_dependency",
+      "write_owner": "aicrm_next.channel_entry.welcome_media_effects_repository"
+    },
+    {
+      "domain": "channel_entry",
+      "drop_candidate": false,
+      "lifecycle": "canonical",
+      "migration_source": "0130_welcome_media_dependencies",
+      "pii_level": "internal_contact",
+      "read_owners": [
+        "channel welcome completion continuation",
+        "execution runtime consistency audit",
+        "unified execution timeline"
+      ],
+      "table": "channel_welcome_effect_graph",
+      "write_owner": "aicrm_next.channel_entry.welcome_media_effects_repository"
+    },
+    {
       "domain": "legacy_customer_tags",
       "drop_candidate": false,
       "lifecycle": "legacy",
@@ -46744,7 +46982,7 @@
       "domain": "identity_contact",
       "drop_candidate": false,
       "lifecycle": "queue",
-      "migration_source": "migrations/baselines/0001_post_legacy.sql",
+      "migration_source": "migrations/baselines/0001_post_legacy.sql, event-driven effect ownership added by 0129_identity_customer_event_driven",
       "pii_level": "internal_contact",
       "read_owners": [
         "aicrm_next.channel_entry"
@@ -46811,6 +47049,31 @@
       ],
       "table": "customer_read_model_current",
       "write_owner": "legacy.production_runtime"
+    },
+    {
+      "domain": "customer_read_model",
+      "drop_candidate": false,
+      "lifecycle": "canonical",
+      "migration_source": "0129_identity_customer_event_driven",
+      "pii_level": "aggregate_only",
+      "read_owners": [
+        "aicrm_next.customer_read_model.events",
+        "aicrm_next.data_health"
+      ],
+      "table": "customer_read_model_refresh_intent",
+      "write_owner": "aicrm_next.customer_read_model.refresh_intents"
+    },
+    {
+      "domain": "customer_read_model",
+      "drop_candidate": false,
+      "lifecycle": "audit",
+      "migration_source": "0129_identity_customer_event_driven",
+      "pii_level": "none",
+      "read_owners": [
+        "aicrm_next.customer_read_model.refresh_intents"
+      ],
+      "table": "customer_read_model_refresh_source_receipt",
+      "write_owner": "aicrm_next.customer_read_model.refresh_intents"
     },
     {
       "domain": "customer_read_model",
@@ -46902,7 +47165,7 @@
       "domain": "external_effects",
       "drop_candidate": false,
       "lifecycle": "audit",
-      "migration_source": "0039_external_effect_queue",
+      "migration_source": "0039_external_effect_queue, private provider-result handoff added by 0129_identity_customer_event_driven",
       "pii_level": "",
       "read_owners": [
         "admin external effect APIs",
@@ -47089,6 +47352,19 @@
       ],
       "table": "hxc_dashboard_broadcast_tasks",
       "write_owner": "aicrm_next.user_ops"
+    },
+    {
+      "domain": "identity_contact",
+      "drop_candidate": false,
+      "lifecycle": "audit",
+      "migration_source": "0129_identity_customer_event_driven",
+      "pii_level": "aggregate_only",
+      "read_owners": [
+        "aicrm_next.channel_entry.identity_external_effect",
+        "identity resolution reconciliation"
+      ],
+      "table": "identity_resolution_completion_receipt",
+      "write_owner": "aicrm_next.channel_entry.identity_external_effect"
     },
     {
       "domain": "media_library",

@@ -67,6 +67,7 @@ class QueueRuntimeService:
         self._claimless = bool(claimless)
 
     def run(self, *, stop_event: threading.Event) -> QueueRuntimeServiceResult:
+        self._validate_external_execution_scope()
         lane_results: dict[str, dict[str, int | bool]] = {}
         lane_errors: list[str] = []
         lock = threading.Lock()
@@ -133,6 +134,7 @@ class QueueRuntimeService:
                     queue_kind=self._queue_kind,
                     lane=lane.name,
                     generation=self._generation,
+                    test_only=self._test_only,
                 )
             ),
             listener=listener,
@@ -210,6 +212,18 @@ class QueueRuntimeService:
         if self._queue_kind == "internal_outbox":
             return self._repo.claim_internal_outbox_one(lane=lane.name, **kwargs)
         return self._repo.claim_webhook_inbox_one(**kwargs)
+
+    def _validate_external_execution_scope(self) -> None:
+        if self._queue_kind != "external_effect" or self._claimless:
+            return
+        control = self._repo.read_control()
+        scope = str(control.external_claim_scope or "blocked")
+        if scope == "blocked":
+            raise RuntimeError("external execution scope is blocked by database policy")
+        if self._test_only and scope != "test_loopback":
+            raise RuntimeError("external test-only worker does not match database claim scope")
+        if not self._test_only and scope == "test_loopback":
+            raise RuntimeError("database test-loopback scope requires a test-only worker")
 
     def _heartbeat_loop(
         self,

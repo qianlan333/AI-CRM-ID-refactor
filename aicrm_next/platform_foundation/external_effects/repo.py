@@ -25,6 +25,7 @@ from .models import (
     utcnow,
 )
 from .completion_events import build_external_effect_completed_event
+from .provider_result_repository import ExternalEffectProviderResultRepositoryMixin, encode_provider_result
 from .rate_limit import persist_rate_limit_cooldown
 from .repo_contract import (
     ExternalEffectRepository,
@@ -42,32 +43,27 @@ from .repo_contract import (
     _text,
 )
 
-class SQLAlchemyExternalEffectRepository(ExternalEffectRepository):
+class SQLAlchemyExternalEffectRepository(ExternalEffectProviderResultRepositoryMixin, ExternalEffectRepository):
     def __init__(self, session_factory: Callable[[], Session] | None = None):
         self._session_factory = session_factory or get_session_factory()
-
     def _one(self, statement: str, params: dict[str, Any] | None = None) -> dict[str, Any] | None:
         with self._session_factory() as session:
             row = session.execute(text(statement), params or {}).mappings().fetchone()
             return dict(row) if row else None
-
     def _all(self, statement: str, params: dict[str, Any] | None = None) -> list[dict[str, Any]]:
         with self._session_factory() as session:
             rows = session.execute(text(statement), params or {}).mappings().fetchall()
             return [dict(row) for row in rows]
-
     def _write_one(self, statement: str, params: dict[str, Any] | None = None) -> dict[str, Any] | None:
         with self._session_factory() as session:
             row = session.execute(text(statement), params or {}).mappings().fetchone()
             session.commit()
             return dict(row) if row else None
-
     def _write_all(self, statement: str, params: dict[str, Any] | None = None) -> list[dict[str, Any]]:
         with self._session_factory() as session:
             rows = session.execute(text(statement), params or {}).mappings().fetchall()
             session.commit()
             return [dict(row) for row in rows]
-
     def create_job(self, request: ExternalEffectCreateRequest) -> ExternalEffectJob:
         key = _idempotency_key(request)
         scheduled_at = request.scheduled_at or utcnow()
@@ -118,7 +114,7 @@ class SQLAlchemyExternalEffectRepository(ExternalEffectRepository):
                 "execution_id": _text(request.execution_id) or "exe_" + uuid4().hex,
                 "parent_execution_id": _text(request.parent_execution_id),
                 "lane": _execution_lane(request),
-                "available_at": public_datetime(scheduled_at),
+                "available_at": public_datetime(request.available_at or scheduled_at),
                 "ordering_key": _text(request.ordering_key) or _text(request.target_id) or f"effect:{key}",
                 "fairness_key": _text(request.fairness_key) or _text(request.business_id) or _text(request.target_id) or "default",
                 "rate_scope_key": _rate_scope_key(request),
@@ -147,7 +143,6 @@ class SQLAlchemyExternalEffectRepository(ExternalEffectRepository):
         if job is None:
             raise RuntimeError("external effect idempotent create failed")
         return job
-
     def get_job(self, job_id: int) -> ExternalEffectJob | None:
         return _public_job(self._one("SELECT * FROM external_effect_job WHERE id = :job_id LIMIT 1", {"job_id": int(job_id)}))
 
@@ -789,6 +784,7 @@ class SQLAlchemyExternalEffectRepository(ExternalEffectRepository):
                 "provider_result_received": bool(result.provider_result_received),
             }
         )
+        provider_result_json, provider_result_hash = encode_provider_result(result.provider_result)
         with self._session_factory() as session:
             current = (
                 session.execute(
@@ -834,6 +830,8 @@ class SQLAlchemyExternalEffectRepository(ExternalEffectRepository):
                                 adapter_mode = :adapter_mode,
                                 request_summary_json = CAST(:request_summary AS jsonb),
                                 response_summary_json = CAST(:response_summary AS jsonb),
+                                provider_result_json = CAST(:provider_result AS jsonb), provider_result_hash = :provider_result_hash,
+                                provider_result_consumed_at = NULL,
                                 error_code = :error_code,
                                 error_message = :error_message,
                                 completed_at = CURRENT_TIMESTAMP
@@ -850,6 +848,7 @@ class SQLAlchemyExternalEffectRepository(ExternalEffectRepository):
                             "adapter_mode": _text(result.adapter_mode) or "none",
                             "request_summary": _json_dumps(merged_request_summary),
                             "response_summary": _json_dumps(response_summary),
+                            "provider_result": provider_result_json, "provider_result_hash": provider_result_hash,
                             "error_code": _text(result.error_code),
                             "error_message": _safe_error_message(result.error_message),
                         },
@@ -869,11 +868,13 @@ class SQLAlchemyExternalEffectRepository(ExternalEffectRepository):
                             INSERT INTO external_effect_attempt (
                                 attempt_id, job_id, adapter_name, adapter_mode, operation, trace_id,
                                 request_id, status, request_summary_json, response_summary_json,
+                                provider_result_json, provider_result_hash,
                                 error_code, error_message, started_at, completed_at
                             ) VALUES (
                                 :attempt_id, :job_id, :adapter_name, :adapter_mode, :operation, :trace_id,
                                 :request_id, :status, CAST(:request_summary AS jsonb),
-                                CAST(:response_summary AS jsonb), :error_code, :error_message,
+                                CAST(:response_summary AS jsonb), CAST(:provider_result AS jsonb), :provider_result_hash,
+                                :error_code, :error_message,
                                 CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
                             )
                             RETURNING *
@@ -890,6 +891,7 @@ class SQLAlchemyExternalEffectRepository(ExternalEffectRepository):
                             "status": status,
                             "request_summary": _json_dumps(request_summary),
                             "response_summary": _json_dumps(response_summary),
+                            "provider_result": provider_result_json, "provider_result_hash": provider_result_hash,
                             "error_code": _text(result.error_code),
                             "error_message": _safe_error_message(result.error_message),
                         },

@@ -488,10 +488,10 @@ def _json_payload(value: Any) -> dict[str, Any]:
 
 def _enqueue_archive_identity_resolution(conn, message: JsonDict) -> None:
     external_userid = str(message.get("external_userid") or "").strip()
-    source_key = str(message.get("msgid") or message.get("seq") or "").strip()
-    if not external_userid or not source_key:
+    source_key = external_userid
+    if not external_userid:
         return
-    conn.execute(
+    cursor = conn.execute(
         """
         INSERT INTO crm_user_identity_resolution_queue (
             source_type,
@@ -520,12 +520,22 @@ def _enqueue_archive_identity_resolution(conn, message: JsonDict) -> None:
         DO UPDATE SET
             external_userid = COALESCE(NULLIF(EXCLUDED.external_userid, ''), crm_user_identity_resolution_queue.external_userid),
             payload_json = crm_user_identity_resolution_queue.payload_json || EXCLUDED.payload_json,
-            reason = EXCLUDED.reason,
-            last_seen_at = NOW(),
-            updated_at = NOW()
+        reason = EXCLUDED.reason,
+        last_seen_at = NOW(),
+        updated_at = NOW()
+        RETURNING *
         """,
         (source_key, external_userid, json.dumps({"message": message}, ensure_ascii=False, default=str)),
     )
+    row = cursor.fetchone()
+    if row:
+        from aicrm_next.identity_contact.resolution_effects import plan_identity_resolution_effect
+
+        plan_identity_resolution_effect(
+            conn,
+            dict(row),
+            source_route="message_archive.identity_resolution.enqueue",
+        )
 
 
 def _normalize_stored_chat_scene(value: str | None) -> str:

@@ -71,9 +71,7 @@ def _install_fake_wecom_group_message_adapter(monkeypatch) -> list[dict]:
     monkeypatch.setitem(
         DEFAULT_ADAPTER_REGISTRY._adapters,  # type: ignore[attr-defined]
         "wecom_group_message",
-        WeComGroupMessageExternalEffectAdapter(
-            adapter_factory=lambda: FakeWeComGroupMessageAdapter()
-        ),
+        WeComGroupMessageExternalEffectAdapter(adapter_factory=lambda: FakeWeComGroupMessageAdapter()),
     )
     return calls
 
@@ -294,7 +292,8 @@ def test_group_ops_legacy_bundle_external_effect_creates_wecom_group_job(group_o
     assert jobs[0].operation == "send_group_message"
     assert jobs[0].status == "queued"
     assert jobs[0].execution_mode == "execute"
-    assert jobs[0].business_type == "group_ops_plan"
+    assert jobs[0].business_type == "group_ops_effect_graph"
+    assert jobs[0].parent_execution_id == response.json()["execution_id"]
     assert jobs[0].payload_json["webhook_key"] == "daily-lesson-8f3a"
     assert jobs[0].payload_json["owner_userid"] == "owner_001"
     assert jobs[0].payload_json["mention_all"] is False

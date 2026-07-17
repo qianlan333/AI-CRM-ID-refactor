@@ -11,9 +11,15 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from aicrm_next.shared.errors import ContractError
 
 from .domain import build_node_group_message_content, clean_text, derive_node_scheduled_time
-from .external_effects import GROUP_OPS_MESSAGE_LOOPBACK, plan_group_ops_external_effect
+from .durable_effects_repository import (
+    GroupOpsEffectGraphRepository,
+    GroupOpsEffectGraphRequest,
+    GroupOpsEffectMaterial,
+    build_group_ops_effect_graph_repository,
+)
 from .integration_gateway import resolve_group_ops_content_package_materials
 from .repo import GroupOpsRepository, build_group_ops_repository
+from aicrm_next.shared.runtime import production_data_ready, raw_database_url
 
 
 DEFAULT_GROUP_OPS_TIMEZONE = "Asia/Shanghai"
@@ -72,6 +78,94 @@ def _content_hash(payload: dict[str, Any]) -> str:
     return _stable_hash(payload_for_hash, length=16)
 
 
+def _ids(value: Any, *, limit: int) -> list[int]:
+    values = value if isinstance(value, list) else []
+    result: list[int] = []
+    for item in values:
+        try:
+            item_id = int(item or 0)
+        except (TypeError, ValueError):
+            continue
+        if item_id > 0 and item_id not in result:
+            result.append(item_id)
+        if len(result) >= limit:
+            break
+    return result
+
+
+def _durable_content_package(
+    content_package: dict[str, Any],
+) -> tuple[list[dict[str, Any]], tuple[GroupOpsEffectMaterial, ...]]:
+    """Resolve local metadata without crossing the WeCom provider boundary."""
+
+    from aicrm_next.media_library.postgres_repo import PostgresMediaLibraryRepository
+
+    repository = PostgresMediaLibraryRepository(raw_database_url())
+    materials: list[GroupOpsEffectMaterial] = []
+    static_attachments: list[dict[str, Any]] = []
+    for item_id in _ids(content_package.get("image_library_ids"), limit=3):
+        materials.append(
+            GroupOpsEffectMaterial(
+                material_key=f"image-library:{item_id}",
+                role="image",
+                file_name="",
+                content_type="",
+                library_kind="image",
+                library_material_id=item_id,
+                upload_kind="image",
+            )
+        )
+    for item_id in _ids(content_package.get("attachment_library_ids"), limit=9):
+        materials.append(
+            GroupOpsEffectMaterial(
+                material_key=f"attachment-library:{item_id}",
+                role="file",
+                file_name="",
+                content_type="",
+                library_kind="attachment",
+                library_material_id=item_id,
+                upload_kind="attachment",
+            )
+        )
+    for item_id in _ids(content_package.get("miniprogram_library_ids"), limit=1):
+        item = repository.get_item("miniprogram", str(item_id), include_data=False)
+        if not item or not item.get("enabled"):
+            raise ContractError(f"miniprogram_resolve_failed:id={item_id}:not_found_or_disabled")
+        attachment_payload = {
+            "appid": clean_text(item.get("appid")),
+            "page": clean_text(item.get("pagepath") or item.get("page_path")),
+            "title": clean_text(item.get("title") or item.get("name")),
+        }
+        if not all(attachment_payload.values()):
+            raise ContractError(f"miniprogram_resolve_failed:id={item_id}:missing_required_fields")
+        materials.append(
+            GroupOpsEffectMaterial(
+                material_key=f"miniprogram-library:{item_id}",
+                role="miniprogram",
+                file_name="",
+                content_type="",
+                attachment_payload=attachment_payload,
+                library_kind="miniprogram",
+                library_material_id=item_id,
+                upload_kind="image",
+            )
+        )
+    for item_id in _ids(content_package.get("group_invite_library_ids"), limit=1):
+        item = repository.get_item("group_invite", str(item_id), include_data=False)
+        if not item or not item.get("enabled") or not clean_text(item.get("join_url")):
+            raise ContractError(f"group_invite_resolve_failed:id={item_id}:not_ready")
+        link = {
+            "title": clean_text(item.get("title") or item.get("name")),
+            "url": clean_text(item.get("join_url")),
+        }
+        if clean_text(item.get("description")):
+            link["desc"] = clean_text(item.get("description"))
+        if clean_text(item.get("pic_url")):
+            link["picurl"] = clean_text(item.get("pic_url"))
+        static_attachments.append({"msgtype": "link", "link": link})
+    return static_attachments, tuple(materials)
+
+
 @dataclass
 class GroupOpsSchedulerSummary:
     scanned_at: str
@@ -103,8 +197,10 @@ class GroupOpsDueScheduler:
         self,
         *,
         repo: GroupOpsRepository | None = None,
+        effect_graph_repo: GroupOpsEffectGraphRepository | None = None,
     ) -> None:
         self._repo = repo
+        self._effect_graph_repo = effect_graph_repo
 
     def run_due(self, *, now: datetime | None = None, operator: str = "automation_ops_scheduler") -> dict[str, Any]:
         current_time = now or datetime.now(timezone.utc)
@@ -113,6 +209,7 @@ class GroupOpsDueScheduler:
         summary = GroupOpsSchedulerSummary(scanned_at=current_time.isoformat())
         business_tz = _business_timezone()
         repo = self._repo or build_group_ops_repository()
+        effect_graph_repo = self._effect_graph_repo or build_group_ops_effect_graph_repository()
         if repo is None:
             summary.errors.append({"scope": "group_ops", "error": "group ops repository unavailable"})
             return summary.as_dict()
@@ -128,11 +225,7 @@ class GroupOpsDueScheduler:
                 ]
                 if not groups:
                     continue
-                nodes = [
-                    node
-                    for node in repo.list_nodes(plan_id)
-                    if clean_text(node.get("status") or "active") == "active"
-                ]
+                nodes = [node for node in repo.list_nodes(plan_id) if clean_text(node.get("status") or "active") == "active"]
                 for node in nodes:
                     node_id = int(node.get("id") or 0)
                     try:
@@ -144,6 +237,7 @@ class GroupOpsDueScheduler:
                             now=current_time,
                             operator=operator,
                             business_tz=business_tz,
+                            effect_graph_repo=effect_graph_repo,
                         )
                     except Exception as exc:
                         summary.errors.append(
@@ -168,9 +262,15 @@ class GroupOpsDueScheduler:
         now: datetime,
         operator: str,
         business_tz: ZoneInfo,
+        effect_graph_repo: GroupOpsEffectGraphRepository,
     ) -> None:
         content_package = node.get("content_package_json") if isinstance(node.get("content_package_json"), dict) else {}
-        resolved_attachments, resolved_image_media_ids = resolve_group_ops_content_package_materials(content_package)
+        materials: tuple[GroupOpsEffectMaterial, ...] = ()
+        if production_data_ready():
+            resolved_attachments, materials = _durable_content_package(content_package)
+            resolved_image_media_ids: list[str] = []
+        else:
+            resolved_attachments, resolved_image_media_ids = resolve_group_ops_content_package_materials(content_package)
         content = build_node_group_message_content(
             node=node,
             sender=clean_text(plan.get("owner_userid")),
@@ -189,8 +289,8 @@ class GroupOpsDueScheduler:
             due_at = _due_at_for_group(plan=plan, node=node, group=group, business_tz=business_tz)
             if due_at.astimezone(timezone.utc) > now.astimezone(timezone.utc):
                 summary.group_ops_skipped_future += 1
-                continue
-            summary.group_ops_due_nodes += 1
+            else:
+                summary.group_ops_due_nodes += 1
             key = (
                 due_at.isoformat(timespec="minutes"),
                 clean_text(plan.get("owner_userid")),
@@ -208,25 +308,27 @@ class GroupOpsDueScheduler:
             idempotency_key = f"group_ops:{source_id}:{scheduled_at}"
             content_payload = dict(base_payload)
             content_payload["chat_ids"] = chat_ids
-            planned = plan_group_ops_external_effect(
-                effect_type=GROUP_OPS_MESSAGE_LOOPBACK,
-                plan_id=int(plan["id"]),
-                target_type="group_ops_node",
-                target_id=str(node.get("id") or 0),
-                business_id=str(plan.get("id") or 0),
-                node_id=int(node.get("id") or 0),
-                chat_ids=chat_ids,
-                content_summary=(content.get("text") or {}).get("content", "") or clean_text(node.get("action_title")),
-                content_payload=content_payload,
-                operator_member_id=clean_text(operator) or "automation_ops_scheduler",
-                source_module="automation_engine.group_ops.scheduler",
-                source_route="group_ops_due_scheduler",
-                source_command_id=source_id,
-                idempotency_key=idempotency_key,
-                scheduled_at=scheduled_at,
+            planned = effect_graph_repo.plan(
+                GroupOpsEffectGraphRequest(
+                    idempotency_key=idempotency_key,
+                    source_kind="plan_node",
+                    plan_id=int(plan["id"]),
+                    node_id=int(node.get("id") or 0),
+                    chat_ids=chat_ids,
+                    content_summary=(content.get("text") or {}).get("content", "") or clean_text(node.get("action_title")),
+                    content_payload=content_payload,
+                    actor_id=clean_text(operator) or "automation_ops_scheduler",
+                    owner_userid=clean_text(plan.get("owner_userid")),
+                    source_module="automation_engine.group_ops.scheduler",
+                    source_route="group_ops_due_scheduler",
+                    source_command_id=source_id,
+                    scheduled_at=scheduled_at,
+                    version_fingerprint=content_hash,
+                    materials=materials,
+                )
             )
-            if planned and int(planned.get("id") or 0):
-                if planned.get("created_on_plan") is False:
+            if planned and int(planned.get("final_effect_job_id") or 0):
+                if planned.get("duplicate") is True:
                     summary.group_ops_reused_external_effect_jobs += 1
                     summary.group_ops_skipped_duplicate += 1
                 else:
@@ -242,3 +344,45 @@ def run_group_ops_due_scheduler(
     return GroupOpsDueScheduler(
         repo=repo,
     ).run_due(now=now, operator=operator)
+
+
+def materialize_group_ops_plan_node(
+    *,
+    repo: GroupOpsRepository,
+    plan: dict[str, Any],
+    node: dict[str, Any],
+    operator: str,
+    now: datetime | None = None,
+    effect_graph_repo: GroupOpsEffectGraphRepository | None = None,
+) -> dict[str, Any]:
+    """Pre-materialize every scheduled unit for one edited plan node."""
+
+    current_time = now or datetime.now(timezone.utc)
+    if current_time.tzinfo is None:
+        current_time = current_time.replace(tzinfo=timezone.utc)
+    summary = GroupOpsSchedulerSummary(scanned_at=current_time.isoformat())
+    groups = [
+        group
+        for group in repo.list_bound_groups(int(plan.get("id") or 0))
+        if clean_text(group.get("status") or "active") == "active" and clean_text(group.get("chat_id"))
+    ]
+    if not groups or clean_text(node.get("status") or "active") != "active":
+        return summary.as_dict()
+    GroupOpsDueScheduler(repo=repo, effect_graph_repo=effect_graph_repo)._schedule_node(
+        summary=summary,
+        plan=plan,
+        node=node,
+        groups=groups,
+        now=current_time,
+        operator=operator,
+        business_tz=_business_timezone(),
+        effect_graph_repo=effect_graph_repo or build_group_ops_effect_graph_repository(),
+    )
+    return summary.as_dict()
+
+
+__all__ = [
+    "GroupOpsDueScheduler",
+    "materialize_group_ops_plan_node",
+    "run_group_ops_due_scheduler",
+]

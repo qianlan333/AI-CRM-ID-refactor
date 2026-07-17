@@ -229,6 +229,12 @@ class ExternalEffectRepository:
     def get_attempt(self, attempt_id: str) -> ExternalEffectAttempt | None:
         raise NotImplementedError
 
+    def get_attempt_provider_result(self, attempt_id: str, *, job_id: int | None = None) -> dict[str, Any]:
+        raise NotImplementedError
+
+    def consume_attempt_provider_result(self, attempt_id: str, *, job_id: int) -> bool:
+        raise NotImplementedError
+
     def list_attempts_for_jobs(self, job_ids: list[int]) -> dict[int, list[ExternalEffectAttempt]]:
         normalized = sorted({int(job_id) for job_id in job_ids})
         return {job_id: self.list_attempts(job_id) for job_id in normalized}
