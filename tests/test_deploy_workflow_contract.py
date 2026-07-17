@@ -56,7 +56,7 @@ def test_remote_deploy_is_an_executable_script_path_with_explicit_environment() 
         "EXPECTED_REPOSITORY,DEPLOY_TARGET,RUNTIME_TARGET_ENVIRONMENT,"
         "PUBLIC_BASE_URL,PUBLIC_HEALTH_URL,ALLOW_MISSING_WECHAT_SHOP_CALLBACK_TOKEN,"
         "RELEASE_REPOSITORY,RELEASE_RUN_ID,RELEASE_RUN_ATTEMPT,SOURCE_CI_RUN_ID,"
-        "VERIFIED_SHA,BASE_SHA,BUNDLE_SHA256"
+        "VERIFIED_SHA,BASE_SHA,BASE_SOURCE,BUNDLE_SHA256"
     )
 
     assert "script: |" not in deploy_step
@@ -68,6 +68,7 @@ def test_remote_deploy_is_an_executable_script_path_with_explicit_environment() 
     assert "SOURCE_CI_RUN_ID: ${{ github.event.workflow_run.id }}" in deploy_step
     assert "VERIFIED_SHA: ${{ github.event.workflow_run.head_sha }}" in deploy_step
     assert "BASE_SHA: ${{ steps.release.outputs.base_sha }}" in deploy_step
+    assert "BASE_SOURCE: ${{ steps.release.outputs.base_source }}" in deploy_step
     assert "BUNDLE_SHA256: ${{ steps.release.outputs.bundle_sha256 }}" in deploy_step
     assert REMOTE_DEPLOY_SCRIPT.stat().st_mode & 0o111
     assert remote_script.startswith("#!/usr/bin/env bash\nset -e\nset -o pipefail\n")
@@ -96,6 +97,7 @@ def test_remote_deploy_snapshots_immutable_inputs_before_sourcing_server_environ
     assert snapshot_block.count("readonly ") == 11
     assert 'readonly verified_sha="${VERIFIED_SHA}"' in remote_script[:first_source]
     assert 'readonly base_sha="${BASE_SHA}"' in remote_script[:first_source]
+    assert 'readonly base_source="${BASE_SOURCE}"' in remote_script[:first_source]
     assert '${PUBLIC_BASE_URL}' not in source_tail
     assert '${PUBLIC_HEALTH_URL}' not in source_tail
     assert '${ALLOW_MISSING_WECHAT_SHOP_CALLBACK_TOKEN}' not in source_tail
@@ -406,7 +408,9 @@ def test_production_deploy_builds_and_transfers_incremental_exact_sha_bundle_bef
     workflow = _deploy_contract_source()
 
     checkout_index = workflow.index("uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0")
-    discover_index = workflow.index('public_health_url="$PUBLIC_HEALTH_URL"')
+    probe_index = workflow.index("- name: Probe active ID release")
+    discover_index = workflow.index('public_health_url="$PUBLIC_HEALTH_URL"', probe_index)
+    recovery_index = workflow.index("- name: Resolve guarded ID recovery base", discover_index)
     build_index = workflow.index("git bundle create release/aicrm-release.bundle refs/deploy/release ^refs/deploy/base")
     transfer_index = workflow.index("uses: appleboy/scp-action@ff85246acaad7bdce478db94a363cd2bf7c90345")
     remote_deploy_index = workflow.index(
@@ -414,7 +418,8 @@ def test_production_deploy_builds_and_transfers_incremental_exact_sha_bundle_bef
         transfer_index,
     )
 
-    assert checkout_index < discover_index < build_index < transfer_index < remote_deploy_index
+    assert checkout_index < probe_index < discover_index < recovery_index < build_index
+    assert build_index < transfer_index < remote_deploy_index
     assert "permissions:\n  contents: read" in workflow
     assert "ref: ${{ github.event.workflow_run.head_sha }}" in workflow
     assert "fetch-depth: 0" in workflow
@@ -422,7 +427,10 @@ def test_production_deploy_builds_and_transfers_incremental_exact_sha_bundle_bef
     assert "git fetch --no-tags origin main" in workflow
     assert 'if [ "$(git rev-parse FETCH_HEAD)" != "$verified_sha" ]; then' in workflow
     assert 'public_health_url="$PUBLIC_HEALTH_URL"' in workflow
-    assert 'base_sha="$(awk \'tolower($1) == "x-aicrm-release-sha:" {print $2}\'' in workflow
+    assert 'active_sha="$(python3 - /tmp/aicrm_current_release_headers.txt' in workflow
+    assert 'if len(candidates) != 1 or re.fullmatch(r"[0-9a-f]{40}", candidates[0]) is None:' in workflow
+    assert "ATTESTED_RELEASE_SHA: ${{ steps.attested_release.outputs.stdout }}" in workflow
+    assert 'base_source="guarded_server_checkout"' in workflow
     assert 'git merge-base --is-ancestor "$base_sha" "$verified_sha"' in workflow
     assert 'git update-ref refs/deploy/release "$verified_sha"' in workflow
     assert 'git update-ref refs/deploy/base "$base_sha"' in workflow
@@ -433,6 +441,105 @@ def test_production_deploy_builds_and_transfers_incremental_exact_sha_bundle_bef
     assert "target: /tmp/aicrm-release-${{ github.event.workflow_run.head_sha }}" in workflow
     assert "strip_components: 1" in workflow
     assert "overwrite: true" in workflow
+
+
+def test_active_release_probe_fails_closed_except_explicit_gateway_unavailability() -> None:
+    workflow = TEST_DEPLOY_WORKFLOW.read_text(encoding="utf-8")
+    probe_index = workflow.index("      - name: Probe active ID release")
+    recovery_index = workflow.index("      - name: Resolve guarded ID recovery base", probe_index)
+    probe = workflow[probe_index:recovery_index]
+
+    curl_index = probe.index("curl --retry 3 --retry-all-errors")
+    status_output_index = probe.index("-w '%{http_code}'", curl_index)
+    transport_guard_index = probe.index('if [ "$curl_exit" -ne 0 ]; then', status_output_index)
+    transport_exit_index = probe.index("exit 1", transport_guard_index)
+    status_case_index = probe.index('case "$http_status" in', transport_exit_index)
+    ok_index = probe.index("200)", status_case_index)
+    active_sha_index = probe.index('active_sha="$(python3', ok_index)
+    unique_header_index = probe.index("if len(candidates) != 1", active_sha_index)
+    active_sha_guard_index = probe.index(
+        "if ! printf '%s' \"$active_sha\" | grep -Eq '^[0-9a-f]{40}$'; then",
+        unique_header_index,
+    )
+    malformed_exit_index = probe.index("exit 1", active_sha_guard_index)
+    healthy_output_index = probe.index('echo "health_available=true"', malformed_exit_index)
+    recoverable_index = probe.index("502|503|504)", healthy_output_index)
+    fallback_output_index = probe.index('echo "health_available=false"', recoverable_index)
+    default_index = probe.index("*)", fallback_output_index)
+    default_exit_index = probe.index("exit 1", default_index)
+
+    assert curl_index < status_output_index < transport_guard_index < transport_exit_index
+    assert transport_exit_index < status_case_index < ok_index < active_sha_index
+    assert active_sha_index < unique_header_index < active_sha_guard_index
+    assert active_sha_guard_index < malformed_exit_index < healthy_output_index
+    assert healthy_output_index < recoverable_index < fallback_output_index < default_index < default_exit_index
+    assert "-sSf" not in probe
+    assert "401" not in probe
+    assert "403" not in probe
+    assert 'if [ "$curl_exit" -eq 28 ]' not in probe
+    assert probe.count('echo "health_available=false"') == 1
+
+
+def test_guarded_release_base_attestation_uses_only_pinned_id_credentials() -> None:
+    workflow = TEST_DEPLOY_WORKFLOW.read_text(encoding="utf-8")
+    probe_index = workflow.index("      - name: Probe active ID release")
+    recovery_index = workflow.index("      - name: Resolve guarded ID recovery base", probe_index)
+    build_step_index = workflow.index("      - name: Build verified release bundle", recovery_index)
+    recovery = workflow[recovery_index:build_step_index]
+
+    assert probe_index < recovery_index < build_step_index
+    assert "id: attested_release" in recovery
+    assert "if: steps.active_release.outputs.health_available != 'true'" in recovery
+    assert (
+        "uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2"
+        in recovery
+    )
+    assert "host: ${{ secrets.ID_VALIDATION_DEPLOY_HOST }}" in recovery
+    assert "username: ${{ secrets.ID_VALIDATION_DEPLOY_USER }}" in recovery
+    assert "key: ${{ secrets.ID_VALIDATION_DEPLOY_SSH_KEY }}" in recovery
+    assert "fingerprint: ${{ env.EXPECTED_SSH_HOST_FINGERPRINT }}" in recovery
+    assert "envs: EXPECTED_REPOSITORY,DEPLOY_TARGET,PUBLIC_HEALTH_URL" in recovery
+    assert "script_path: scripts/ops/resolve_id_validation_release_base.sh" in recovery
+    assert "capture_stdout: true" in recovery
+    assert "script: |" not in recovery
+    assert "secrets.TEST_DEPLOY_" not in recovery
+    assert "secrets.DEPLOY_" not in recovery
+
+
+def test_attested_current_head_is_strict_incremental_base_and_never_an_unhealthy_noop() -> None:
+    workflow = TEST_DEPLOY_WORKFLOW.read_text(encoding="utf-8")
+    build_step_index = workflow.index("      - name: Build verified release bundle")
+    noop_step_index = workflow.index("      - name: Verify already active ID release", build_step_index)
+    build = workflow[build_step_index:noop_step_index]
+
+    attested_env_index = build.index(
+        "ATTESTED_RELEASE_SHA: ${{ steps.attested_release.outputs.stdout }}"
+    )
+    unavailable_case_index = build.index("false)", attested_env_index)
+    strict_sha_index = build.index('os.environ["ATTESTED_RELEASE_SHA"].strip()', unavailable_case_index)
+    strict_regex_index = build.index(r're.fullmatch(r"[0-9a-f]{40}", value)', strict_sha_index)
+    guarded_source_index = build.index('base_source="guarded_server_checkout"', strict_regex_index)
+    same_sha_index = build.index('if [ "$base_sha" = "$verified_sha" ]; then', guarded_source_index)
+    public_only_index = build.index('if [ "$base_source" != "public_health" ]; then', same_sha_index)
+    unhealthy_exit_index = build.index("exit 1", public_only_index)
+    noop_output_index = build.index('echo "noop=true"', unhealthy_exit_index)
+    commit_guard_index = build.index('git cat-file -e "$base_sha^{commit}"', noop_output_index)
+    ancestry_index = build.index(
+        'git merge-base --is-ancestor "$base_sha" "$verified_sha"',
+        commit_guard_index,
+    )
+    base_ref_index = build.index('git update-ref refs/deploy/base "$base_sha"', ancestry_index)
+    incremental_bundle_index = build.index(
+        "git bundle create release/aicrm-release.bundle refs/deploy/release ^refs/deploy/base",
+        base_ref_index,
+    )
+
+    assert attested_env_index < unavailable_case_index < strict_sha_index < strict_regex_index
+    assert strict_regex_index < guarded_source_index < same_sha_index < public_only_index
+    assert public_only_index < unhealthy_exit_index < noop_output_index < commit_guard_index
+    assert commit_guard_index < ancestry_index < base_ref_index < incremental_bundle_index
+    assert 'bundle_mode="full"' not in build
+    assert "git bundle create release/aicrm-release.bundle HEAD" not in build
 
 
 def test_id_validation_rejects_orphaned_or_non_ancestor_base_without_full_bundle_fallback() -> None:
@@ -470,6 +577,11 @@ def test_id_validation_deploy_treats_already_active_sha_as_successful_noop() -> 
     workflow = _deploy_contract_source()
 
     active_sha_index = workflow.index('if [ "$base_sha" = "$verified_sha" ]; then')
+    public_source_guard_index = workflow.index(
+        'if [ "$base_source" != "public_health" ]; then',
+        active_sha_index,
+    )
+    unhealthy_exit_index = workflow.index("exit 1", public_source_guard_index)
     noop_output_index = workflow.index('echo "noop=true" >> "$GITHUB_OUTPUT"', active_sha_index)
     successful_message_index = workflow.index("successful no-op", noop_output_index)
     exit_zero_index = workflow.index("exit 0", successful_message_index)
@@ -477,8 +589,11 @@ def test_id_validation_deploy_treats_already_active_sha_as_successful_noop() -> 
     transfer_index = workflow.index("- name: Transfer verified release bundle", bundle_index)
     ssh_index = workflow.index("- name: Deploy via SSH", transfer_index)
 
-    assert active_sha_index < noop_output_index < successful_message_index < exit_zero_index < bundle_index
-    assert "exit 1" not in workflow[active_sha_index:exit_zero_index]
+    assert active_sha_index < public_source_guard_index < unhealthy_exit_index < noop_output_index
+    assert noop_output_index < successful_message_index < exit_zero_index < bundle_index
+    assert "same-SHA no-op is forbidden while public health is unavailable" in workflow[
+        public_source_guard_index:noop_output_index
+    ]
     assert "if: steps.release.outputs.noop != 'true'" in workflow[transfer_index:ssh_index]
     assert "if: steps.release.outputs.noop != 'true'" in workflow[ssh_index:]
     assert "Record successful no-op provenance" in workflow
@@ -519,7 +634,7 @@ def test_id_validation_deploy_pins_authenticated_server_host_key() -> None:
     expected = "SHA256:NXSJUveGoNy1lDsa+eOKho1h0ythB+pKTyijv8/KfU0"
 
     assert f"EXPECTED_SSH_HOST_FINGERPRINT: {expected}" in workflow
-    assert workflow.count("fingerprint: ${{ env.EXPECTED_SSH_HOST_FINGERPRINT }}") == 3
+    assert workflow.count("fingerprint: ${{ env.EXPECTED_SSH_HOST_FINGERPRINT }}") == 4
 
 
 def test_id_validation_deploy_records_exact_repository_run_and_bundle_provenance() -> None:
@@ -607,6 +722,48 @@ def test_production_deploy_requires_remote_head_to_match_bundle_prerequisite_bef
 
     assert before_sha_index < base_sha_index < base_guard_index < bundle_verify_index < stash_index < fetch_index < stop_index
     assert "target checkout moved after the incremental release bundle was built" in workflow
+
+
+def test_guarded_base_is_re_attested_under_final_remote_lock_before_any_mutation() -> None:
+    remote_script = REMOTE_DEPLOY_SCRIPT.read_text(encoding="utf-8")
+
+    lock_index = remote_script.index('deploy_lock_file="/tmp/aicrm-deploy-${deploy_target}.lock"')
+    flock_index = remote_script.index("if ! flock -n 9; then", lock_index)
+    before_sha_index = remote_script.index('before_sha="$(git rev-parse HEAD)"', flock_index)
+    source_index = remote_script.index('readonly base_source="${BASE_SOURCE}"', before_sha_index)
+    source_guard_index = remote_script.index('case "$base_source" in', source_index)
+    head_cas_index = remote_script.index('if [ "$before_sha" != "$base_sha" ]; then', source_guard_index)
+    guarded_index = remote_script.index(
+        'if [ "$base_source" = "guarded_server_checkout" ]; then',
+        head_cas_index,
+    )
+    origin_index = remote_script.index('remote_origin_url="$(git remote get-url origin)"', guarded_index)
+    marker_symlink_index = remote_script.index('if [ -L .release-sha ]', origin_index)
+    marker_bytes_index = remote_script.index('raw = Path(".release-sha").read_bytes()', marker_symlink_index)
+    marker_regex_index = remote_script.index(
+        're.fullmatch(rb"[0-9a-f]{40}", raw)',
+        marker_bytes_index,
+    )
+    marker_cas_index = remote_script.index(
+        'if [ "$release_marker_sha" != "$base_sha" ]; then',
+        marker_regex_index,
+    )
+    clean_index = remote_script.index(
+        'git status --porcelain=v1 --untracked-files=all',
+        marker_cas_index,
+    )
+    bundle_index = remote_script.index('release_bundle_dir="/tmp/aicrm-release-$verified_sha"', clean_index)
+    stash_index = remote_script.index("git stash push --include-untracked", bundle_index)
+
+    assert lock_index < flock_index < before_sha_index < source_index < source_guard_index
+    assert source_guard_index < head_cas_index < guarded_index < origin_index < marker_symlink_index
+    assert marker_symlink_index < marker_bytes_index < marker_regex_index < marker_cas_index
+    assert marker_cas_index < clean_index < bundle_index < stash_index
+    guarded_block = remote_script[guarded_index:bundle_index]
+    assert "guarded release base origin changed after attestation" in guarded_block
+    assert "guarded release marker changed after attestation" in guarded_block
+    assert "guarded release checkout became dirty after attestation" in guarded_block
+    assert "tr -d" not in guarded_block
 
 
 def test_incremental_release_bundle_requires_live_base_and_fetches_exact_merge_sha(tmp_path: Path):
@@ -764,7 +921,11 @@ def test_id_validation_deploy_serializes_workflow_and_host_transactions():
 
     assert "group: aicrm-id-validation-deploy" in workflow
     assert "cancel-in-progress: false" in workflow
-    remote_deploy_index = workflow.index("uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2")
+    deploy_step_index = workflow.index("- name: Deploy via SSH")
+    remote_deploy_index = workflow.index(
+        "uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2",
+        deploy_step_index,
+    )
     lock_path_index = workflow.index('deploy_lock_file="/tmp/aicrm-deploy-${deploy_target}.lock"', remote_deploy_index)
     lock_fd_index = workflow.index('exec 9>"$deploy_lock_file"', lock_path_index)
     flock_index = workflow.index("if ! flock -n 9; then", lock_fd_index)
