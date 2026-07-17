@@ -39,6 +39,22 @@ jobs:
         id: scope
         run: python scripts/ci/select_test_scope.py --github-output "$GITHUB_OUTPUT"
 
+      - name: Compare convention selector in shadow mode
+        continue-on-error: true
+        run: >-
+          python scripts/ci/select_test_scope_v2.py
+          --json-output "$RUNNER_TEMP/test-scope-v2-shadow.json"
+          --step-summary "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload selector shadow evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1 (Node 24)
+        with:
+          name: test-scope-v2-shadow
+          path: ${{ runner.temp }}/test-scope-v2-shadow.json
+          if-no-files-found: warn
+          retention-days: 30
+
   architecture-gates:
     needs: select
     if: needs.select.outputs.architecture_gate != 'none'

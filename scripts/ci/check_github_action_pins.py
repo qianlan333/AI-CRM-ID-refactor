@@ -15,6 +15,7 @@ TRUSTED_ACTIONS: dict[str, tuple[str, str]] = {
     "actions/setup-python": ("ece7cb06caefa5fff74198d8649806c4678c61a1", "v6.3.0"),
     "actions/setup-node": ("48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e", "v6.4.0"),
     "actions/upload-artifact": ("043fb46d1a93c77aae656e7c1c64a875d1fc6a0a", "v7.0.1"),
+    "actions/download-artifact": ("3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c", "v8.0.1"),
     "appleboy/scp-action": ("ff85246acaad7bdce478db94a363cd2bf7c90345", "v1.0.0"),
     "appleboy/ssh-action": ("0ff4204d59e8e51228ff73bce53f80d53301dee2", "v1.2.5"),
 }
