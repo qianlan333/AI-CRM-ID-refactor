@@ -19,6 +19,8 @@ from aicrm_next.shared.public_url import canonical_public_base_url
 from aicrm_next.shared.repository_provider import RepositoryProviderError
 from aicrm_next.shared.runtime_settings import runtime_setting
 from aicrm_next.shared.sidebar_access import sidebar_owner_context_from_request
+from aicrm_next.shared.wechat_identity_page import wechat_identity_failure_response
+from aicrm_next.shared.wechat_h5_session import is_wechat_browser
 
 from .application import (
     CompleteRadarOAuthCallbackCommand,
@@ -226,6 +228,17 @@ def _radar_oauth_return_url(state: str | None) -> str:
 
 
 def _radar_oauth_error_response(exc: Exception, *, state: str | None = None) -> HTMLResponse:
+    detail = str(exc)
+    if "unionid_required" in detail:
+        return_url = _radar_oauth_return_url(state)
+        retry_url = f"/api/h5/radar/oauth/start?state={state}" if state else return_url
+        return wechat_identity_failure_response(
+            title="内容授权未完成",
+            message="微信未返回 UnionID，暂时无法访问受保护内容。",
+            retry_url=retry_url,
+            return_url=return_url,
+            status_code=409,
+        )
     if isinstance(exc, RepositoryProviderError):
         status_code = 503
         message = "当前内容授权服务暂不可用，请稍后重试。"
@@ -235,7 +248,6 @@ def _radar_oauth_error_response(exc: Exception, *, state: str | None = None) -> 
     else:
         status_code = 400
         message = "内容授权未完成，请重新打开链接。"
-    detail = str(exc)
     if "production mode is not enabled" in detail:
         message = "当前微信授权配置未完成，请联系管理员。"
     return_url = html.escape(_radar_oauth_return_url(state), quote=True)
@@ -522,6 +534,12 @@ def radar_public_redirect(request: Request, code: str):
     except Exception as exc:
         _raise_http(exc)
     if result["action"] == "oauth_start":
+        if not is_wechat_browser(request):
+            return wechat_identity_failure_response(
+                title="请在微信中打开",
+                message="该内容需要微信身份验证，请复制链接后在微信中打开。",
+                status_code=403,
+            )
         return RedirectResponse(url=result["oauth_start_url"], status_code=302)
     return _redirect_with_viewer_cookie(str(result["redirect_url"]), str(result.get("viewer_session_token") or ""))
 

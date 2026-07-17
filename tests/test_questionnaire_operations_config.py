@@ -14,6 +14,7 @@ from aicrm_next.platform_foundation.push_center.capability_status import PushCap
 from aicrm_next.questionnaire.admin_write import reset_questionnaire_admin_write_fixture_state
 from aicrm_next.questionnaire.h5_write import reset_questionnaire_h5_write_fixture_state
 from aicrm_next.questionnaire.repo import reset_questionnaire_fixture_state
+from wechat_identity_test_support import authorize_wechat_client
 
 
 @pytest.fixture()
@@ -52,7 +53,9 @@ def client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
             },
         }
     )
-    return TestClient(create_app())
+    client = TestClient(create_app())
+    authorize_wechat_client(client, {"openid": "openid_001", "unionid": "unionid_001", "external_userid": "wx_ext_001"})
+    return client
 
 
 def _content_payload(title: str = "专项增强问卷") -> dict:

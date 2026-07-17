@@ -14,6 +14,9 @@ from aicrm_next.radar_links.repo import PostgresRadarLinksRepository, build_rada
 from tests.admin_auth_test_helpers import TEST_JWT_KEY, access_token_headers, install_access_token
 
 
+WECHAT_UA = "Mozilla/5.0 MicroMessenger/8.0.49"
+
+
 class RecordingAuditRepository:
     def __init__(self) -> None:
         self.events = []
@@ -62,7 +65,11 @@ def _create_link(*, title: str = "外部接口雷达", enabled: bool = True) -> 
 
 
 def _oauth_state(client: TestClient, code: str) -> str:
-    response = client.get(f"/r/{code}", follow_redirects=False)
+    response = client.get(
+        f"/r/{code}",
+        headers={"User-Agent": WECHAT_UA},
+        follow_redirects=False,
+    )
     assert response.status_code == 302
     return parse_qs(urlparse(response.headers["location"]).query)["state"][0]
 

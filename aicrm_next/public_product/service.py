@@ -304,7 +304,11 @@ def render_pay_landing(product: dict[str, Any], page_state: dict[str, Any]) -> s
     if paid_order:
         action_html = ""
     elif not identity_ready:
-        action_html = f'<a class="button-link" href="{escape(str(page_state.get("oauth_start_url") or ""), quote=True)}">授权登录</a>'
+        action_html = (
+            f'<a class="button-link" href="{escape(str(page_state.get("oauth_start_url") or ""), quote=True)}">微信授权后继续</a>'
+            if page_state.get("is_wechat_browser")
+            else '<button class="pay-action" type="button" disabled>请在微信中打开</button>'
+        )
     else:
         action_html = f'<button id="payButton" class="pay-action" type="button" {"disabled" if not page_state.get("enabled") else ""}>{cta_text}</button>'
     completion_action = page_state.get("completion_action") if isinstance(page_state.get("completion_action"), dict) else {}
@@ -318,7 +322,7 @@ def render_pay_landing(product: dict[str, Any], page_state: dict[str, Any]) -> s
     elif not page_state.get("enabled"):
         state_message = "当前支付暂未启用。"
     elif not identity_ready:
-        state_message = "需要先完成微信授权。"
+        state_message = str(page_state.get("identity_message") or "需要先完成微信授权。")
     else:
         state_message = "已就绪。"
     return f"""<!doctype html>

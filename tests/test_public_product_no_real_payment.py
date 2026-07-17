@@ -51,7 +51,7 @@ def test_h5_wechat_pay_create_order_requires_wechat_browser(monkeypatch) -> None
     response = _client(monkeypatch).post("/api/h5/wechat-pay/jsapi/orders", json={"product_code": "test-product"})
 
     assert response.status_code == 403
-    assert response.json()["error"] == "please_open_in_wechat"
+    assert response.json()["error"] == "wechat_browser_required"
 
 
 def test_h5_wechat_pay_create_order_requires_openid_in_wechat_browser(monkeypatch) -> None:
@@ -63,5 +63,5 @@ def test_h5_wechat_pay_create_order_requires_openid_in_wechat_browser(monkeypatc
 
     assert response.status_code == 401
     payload = response.json()
-    assert payload["error"] == "openid_required"
+    assert payload["error"] == "unionid_oauth_required"
     assert payload["oauth_start_url"].endswith("return_url=%2Fpay%2Ftest-product")

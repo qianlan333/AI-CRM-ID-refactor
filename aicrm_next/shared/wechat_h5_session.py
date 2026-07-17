@@ -9,12 +9,15 @@ from typing import Any
 from urllib.parse import urlencode
 
 from fastapi import Request
+from fastapi.responses import Response
 
 from .runtime import production_environment, runtime_setting
 
 
 WECHAT_PAYMENT_IDENTITY_COOKIE = "wechat_pay_h5_identity"
 WECHAT_PAYMENT_IDENTITY_TTL_SECONDS = 86400 * 30
+WECHAT_PAYMENT_OAUTH_STATE_COOKIE = "wechat_pay_h5_oauth_state"
+WECHAT_PAYMENT_OAUTH_STATE_COOKIE_PATH = "/api/h5/wechat-pay/oauth"
 _CLOCK_SKEW_SECONDS = 300
 
 
@@ -108,7 +111,8 @@ def _load_signed_identity(value: str) -> dict[str, Any]:
 
 
 def is_wechat_browser(request: Request) -> bool:
-    return "micromessenger" in (request.headers.get("User-Agent") or "").lower()
+    headers = getattr(request, "headers", None) or {}
+    return "micromessenger" in (headers.get("User-Agent") or "").lower()
 
 
 def safe_local_return_url(value: Any) -> str:
@@ -120,6 +124,30 @@ def safe_local_return_url(value: Any) -> str:
 
 def payment_oauth_start_url(return_url: str) -> str:
     return f"/api/h5/wechat-pay/oauth/start?{urlencode({'return_url': safe_local_return_url(return_url)})}"
+
+
+def wechat_oauth_authorize_url(*, app_id: str, redirect_uri: str, scope: str, state: str) -> str:
+    query = urlencode(
+        {
+            "appid": app_id,
+            "redirect_uri": redirect_uri,
+            "response_type": "code",
+            "scope": scope or "snsapi_base",
+            "state": state,
+        }
+    )
+    return f"https://open.weixin.qq.com/connect/oauth2/authorize?{query}#wechat_redirect"
+
+
+def clear_payment_oauth_state_cookie(response: Response, *, secure: bool) -> Response:
+    response.delete_cookie(
+        WECHAT_PAYMENT_OAUTH_STATE_COOKIE,
+        path=WECHAT_PAYMENT_OAUTH_STATE_COOKIE_PATH,
+        secure=secure,
+        httponly=True,
+        samesite="lax",
+    )
+    return response
 
 
 def payment_identity_from_request(request: Request) -> dict[str, str]:
@@ -139,6 +167,9 @@ def payment_identity_from_request(request: Request) -> dict[str, str]:
 __all__ = [
     "WECHAT_PAYMENT_IDENTITY_COOKIE",
     "WECHAT_PAYMENT_IDENTITY_TTL_SECONDS",
+    "WECHAT_PAYMENT_OAUTH_STATE_COOKIE",
+    "WECHAT_PAYMENT_OAUTH_STATE_COOKIE_PATH",
+    "clear_payment_oauth_state_cookie",
     "is_wechat_browser",
     "load_signed_payment_session_payload",
     "payment_identity_from_request",
@@ -146,4 +177,5 @@ __all__ = [
     "payment_session_signing_available",
     "safe_local_return_url",
     "sign_payment_session_payload",
+    "wechat_oauth_authorize_url",
 ]

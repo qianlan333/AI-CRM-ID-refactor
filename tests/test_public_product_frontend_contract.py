@@ -42,7 +42,7 @@ def test_public_product_frontend_redirects_empty_material_and_keeps_checkout_con
 
     assert 'data-route-owner="ai_crm_next"' in pay.text
     assert "确认报名信息" in pay.text
-    assert "授权登录" in pay.text
+    assert "请在微信中打开" in pay.text
     assert "/api/h5/wechat-pay/jsapi/orders" in pay.text
     assert "WeixinJSBridge.invoke" in pay.text
     assert 'id="leadQrModal"' in pay.text
@@ -179,8 +179,8 @@ def test_public_pay_landing_hides_mobile_before_oauth_for_mobile_required_produc
     response = client.get("/pay/oauth-mobile-required")
 
     assert response.status_code == 200
-    assert "授权登录" in response.text
-    assert "需要先完成微信授权。" in response.text
+    assert "请在微信中打开" in response.text
+    assert "请在微信中打开后完成授权。" in response.text
     assert 'id="mobileInput"' not in response.text
     assert 'id="payButton"' not in response.text
     assert "/api/h5/wechat-pay/oauth/start" in response.text
@@ -217,7 +217,7 @@ def test_public_pay_landing_shows_mobile_after_oauth_for_mobile_required_product
     assert "!/^1[3-9]\\d{9}$/.test(value)" in response.text
     assert "立即报名" in response.text
     assert "已就绪。" in response.text
-    assert "授权登录" not in response.text
+    assert "微信授权后继续" not in response.text
     assert 'id="payButton"' in response.text
 
 

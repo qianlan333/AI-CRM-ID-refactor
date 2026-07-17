@@ -9,6 +9,7 @@ from fastapi.encoders import jsonable_encoder
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
+from aicrm_next.identity_contact.wechat_unionid_guard import evaluate_wechat_unionid_access
 from aicrm_next.shared.errors import ContractError, NotFoundError
 from aicrm_next.shared.wechat_h5_session import (
     is_wechat_browser,
@@ -39,7 +40,9 @@ def _identity(request: Request) -> dict[str, str]:
 def _oauth_payload(public_slug: str) -> dict[str, Any]:
     return {
         "ok": False,
-        "error": "openid_required",
+        "identity_ready": False,
+        "error": "unionid_oauth_required",
+        "message": "请先完成微信授权，获取稳定身份后继续。",
         "oauth_start_url": payment_oauth_start_url(f"/c/{quote(public_slug, safe='')}"),
     }
 
@@ -51,17 +54,25 @@ def _json(payload: dict[str, Any], *, status_code: int = 200) -> JSONResponse:
 @router.get("/c/{public_slug}", response_class=HTMLResponse, name="api.public_coupon_page")
 def public_coupon_page(request: Request, public_slug: str):
     identity = _identity(request)
+    access = evaluate_wechat_unionid_access(
+        identity,
+        is_wechat_browser=is_wechat_browser(request),
+        oauth_start_url=payment_oauth_start_url(f"/c/{quote(public_slug, safe='')}"),
+    )
     try:
-        state = CouponPublicApplication().get_coupon(public_slug, identity=identity)
+        state = CouponPublicApplication().get_coupon(
+            public_slug,
+            identity=identity if access.allowed else {},
+        )
     except NotFoundError:
         return HTMLResponse(
             "<!doctype html><meta charset='utf-8'><main data-route-owner='ai_crm_next'>优惠券不存在</main>",
             status_code=404,
             headers=_HEADERS,
         )
-    if is_wechat_browser(request) and not identity.get("openid"):
+    if is_wechat_browser(request) and not access.allowed:
         return RedirectResponse(
-            payment_oauth_start_url(f"/c/{quote(public_slug, safe='')}"),
+            access.oauth_start_url,
             status_code=302,
             headers=_HEADERS,
         )
@@ -71,7 +82,8 @@ def public_coupon_page(request: Request, public_slug: str):
         "state_json": jsonable_encoder(state),
         "public_slug": public_slug,
         "is_wechat": is_wechat_browser(request),
-        "identity_ready": bool(identity.get("openid")),
+        "identity_ready": access.allowed,
+        "identity_message": access.message,
     }
     return templates.TemplateResponse(request, "coupon_public.html", context, headers=_HEADERS)
 
@@ -82,8 +94,14 @@ def available_coupons(
     target_ref: str = Query(..., min_length=1, max_length=200),
 ) -> JSONResponse:
     identity = _identity(request)
-    if not identity.get("openid"):
-        return _json({"ok": True, "items": [], "total": 0, "identity_ready": False})
+    return_url = request.url.path + (f"?{request.url.query}" if request.url.query else "")
+    access = evaluate_wechat_unionid_access(
+        identity,
+        is_wechat_browser=is_wechat_browser(request),
+        oauth_start_url=payment_oauth_start_url(return_url),
+    )
+    if not access.allowed:
+        return _json(access.payload(), status_code=access.status_code)
     try:
         payload = CouponPublicApplication().list_available_claims(target_ref, identity=identity)
     except ContractError as exc:
@@ -93,8 +111,16 @@ def available_coupons(
 
 @router.get("/api/h5/coupons/{public_slug}", name="api.h5_coupon_state")
 def public_coupon_state(request: Request, public_slug: str) -> JSONResponse:
+    identity = _identity(request)
+    access = evaluate_wechat_unionid_access(
+        identity,
+        is_wechat_browser=is_wechat_browser(request),
+        oauth_start_url=payment_oauth_start_url(f"/c/{quote(public_slug, safe='')}"),
+    )
+    if not access.allowed:
+        return _json(access.payload(), status_code=access.status_code)
     try:
-        payload = CouponPublicApplication().get_coupon(public_slug, identity=_identity(request))
+        payload = CouponPublicApplication().get_coupon(public_slug, identity=identity)
     except NotFoundError:
         return _json({"ok": False, "error": "coupon_not_found"}, status_code=404)
     return _json(payload)
@@ -103,9 +129,17 @@ def public_coupon_state(request: Request, public_slug: str) -> JSONResponse:
 @router.post("/api/h5/coupons/{public_slug}/claim", name="api.h5_coupon_claim")
 def claim_public_coupon(request: Request, public_slug: str) -> JSONResponse:
     if not is_wechat_browser(request):
-        return _json({"ok": False, "error": "please_open_in_wechat"}, status_code=403)
+        return _json(
+            {"ok": False, "identity_ready": False, "error": "wechat_browser_required", "message": "请在微信中打开后完成授权。"},
+            status_code=403,
+        )
     identity = _identity(request)
-    if not identity.get("openid"):
+    access = evaluate_wechat_unionid_access(
+        identity,
+        is_wechat_browser=True,
+        oauth_start_url=payment_oauth_start_url(f"/c/{quote(public_slug, safe='')}"),
+    )
+    if not access.allowed:
         return _json(_oauth_payload(public_slug), status_code=401)
     idempotency_key = str(request.headers.get("Idempotency-Key") or "").strip()
     if not idempotency_key:

@@ -52,6 +52,7 @@ from aicrm_next.questionnaire import external_push
 from aicrm_next.questionnaire.repo import build_questionnaire_repository
 from tests.webhook_hmac_test_helpers import install_webhook_hmac_client, outbound_webhook_hmac_signer
 from tests.admin_auth_test_helpers import install_admin_action_tokens
+from tests.wechat_identity_test_support import authorize_wechat_client
 
 
 RUN_DUE_ROUTE = "/api/admin/external-effects/run-due"
@@ -306,6 +307,7 @@ def _submit_questionnaire_queue_loopback_job(
     response_status: int,
     external_userid: str = "wx_ext_001",
 ) -> dict:
+    authorize_wechat_client(client, {"external_userid": external_userid})
     _questionnaire, phone_question_id = _seed_hxc_questionnaire(
         monkeypatch,
         {
@@ -1609,6 +1611,7 @@ def test_external_effect_diagnostics_and_api_docs_show_virtual_test_state(next_c
 
 
 def test_questionnaire_submit_queues_external_push_without_legacy_call(client: TestClient, monkeypatch) -> None:
+    authorize_wechat_client(client, {"external_userid": "wx_ext_001"})
     _questionnaire, phone_question_id = _seed_hxc_questionnaire(
         monkeypatch,
         {"enabled": True, "webhook_url": "https://hooks.example.com/questionnaire"},
@@ -1646,6 +1649,7 @@ def test_questionnaire_submit_queues_external_push_without_legacy_call(client: T
 
 
 def test_questionnaire_external_push_is_queue_only(client: TestClient, monkeypatch) -> None:
+    authorize_wechat_client(client, {"external_userid": "wx_ext_001"})
     monkeypatch.setenv("AICRM_QUESTIONNAIRE_EXTERNAL_PUSH_MODE", "legacy")
     _questionnaire, phone_question_id = _seed_hxc_questionnaire(
         monkeypatch,
@@ -1779,6 +1783,7 @@ def test_questionnaire_queue_mode_job_creation_failure_is_retryable_after_submis
     monkeypatch,
     failure_stage: str,
 ) -> None:
+    authorize_wechat_client(client, {"external_userid": "wx_ext_001"})
     monkeypatch.setenv("AICRM_QUESTIONNAIRE_EXTERNAL_PUSH_MODE", "queue")
     _questionnaire, phone_question_id = _seed_hxc_questionnaire(
         monkeypatch,
