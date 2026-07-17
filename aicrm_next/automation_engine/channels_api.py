@@ -578,12 +578,24 @@ def _payload_value(payload: dict[str, Any], existing: dict[str, Any], key: str, 
     return payload.get(key)
 
 
+def _generated_channel_code() -> str:
+    return f"channel_{uuid.uuid4().hex}"
+
+
+def _channel_write_error_detail(exc: Exception) -> str:
+    constraint_name = _text(getattr(getattr(exc, "diag", None), "constraint_name", ""))
+    error_text = _text(exc)
+    if constraint_name == "automation_channel_channel_code_key" or "automation_channel_channel_code_key" in error_text:
+        return "渠道编码已存在，请更换后重试"
+    return error_text or "渠道保存失败"
+
+
 def _coerce_channel_payload(payload: dict[str, Any], *, existing: dict[str, Any] | None = None, partial: bool = False) -> dict[str, Any]:
     existing = existing or {}
     type_source = {**existing, **payload} if partial else payload
     channel_type, carrier_type = _channel_type(type_source)
     customer_channel = _text(_payload_value(payload, existing, "customer_channel", partial=partial) or _payload_value(payload, existing, "scene_value", partial=partial))
-    channel_code = _text(_payload_value(payload, existing, "channel_code", partial=partial)) or _text(existing.get("channel_code"))
+    channel_code = _text(_payload_value(payload, existing, "channel_code", partial=partial)) or _text(existing.get("channel_code")) or _generated_channel_code()
     scene_payload = _text(payload.get("scene_value")) if "scene_value" in payload else ""
     qr_payload = _text(payload.get("qr_url")) if "qr_url" in payload else ""
     if carrier_type != "link" and scene_payload and scene_payload != _text(existing.get("scene_value")):
@@ -1020,7 +1032,7 @@ def create_channel(payload: dict[str, Any]) -> dict[str, Any]:
     try:
         channel = _save_postgres_channel(payload)
     except Exception as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        raise HTTPException(status_code=400, detail=_channel_write_error_detail(exc)) from exc
     return {"ok": True, "channel": channel, "reason": "channel_created", "source": "ai_crm_next"}
 
 
@@ -1044,7 +1056,7 @@ def update_channel(channel_id: int, payload: dict[str, Any]) -> dict[str, Any]:
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except Exception as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        raise HTTPException(status_code=400, detail=_channel_write_error_detail(exc)) from exc
     return {"ok": True, "channel": channel, "reason": "channel_updated", "source": "ai_crm_next"}
 
 
