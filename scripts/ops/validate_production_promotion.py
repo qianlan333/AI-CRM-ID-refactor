@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Validate one cross-repository ID-to-AI-CRM production promotion."""
+"""Validate one cross-repository ID-to-AI-CRM production promotion.
+
+The current reviewed binding promotes AI-CRM PR #1738 only after ID validation
+PR #181 is active on id-dev.
+"""
 
 from __future__ import annotations
 
