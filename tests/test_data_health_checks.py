@@ -255,6 +255,56 @@ def test_projection_freshness_probe_accepts_managed_fresh_parity(monkeypatch) ->
     assert result.evidence["refresh_state_present"] is True
 
 
+def test_projection_freshness_probe_does_not_fail_on_wall_clock_age_without_source_drift(monkeypatch) -> None:
+    from aicrm_next.data_health import checks
+
+    _patch_health_db(
+        monkeypatch,
+        {
+            "list_count": 12,
+            "detail_count": 12,
+            "refresh_state_present": True,
+            "refresh_source_count": 12,
+            "refresh_target_count": 12,
+            "refresh_age_minutes": 600,
+        },
+    )
+
+    result = checks._projection_freshness_customer_read_model()
+
+    assert result.status == "ok"
+    assert result.evidence["refresh_age_minutes"] == 600
+    assert result.evidence["freshness_policy"] == "source_change_lag"
+    assert result.evidence["wall_clock_age_is_diagnostic"] is True
+    assert "max_stale_minutes" not in result.evidence
+
+
+def test_customer_360_freshness_guard_still_blocks_real_source_lag(monkeypatch) -> None:
+    from aicrm_next.data_health import checks
+
+    _patch_health_db(
+        monkeypatch,
+        {
+            "refresh_state_present": True,
+            "refresh_age_minutes": 600,
+            "identity_lag_minutes": checks.PROJECTION_FRESHNESS_MAX_MINUTES + 1,
+            "order_lag_minutes": 0,
+            "questionnaire_lag_minutes": 0,
+            "message_lag_minutes": 0,
+        },
+    )
+
+    result = checks._customer_360_freshness_guard()
+
+    assert result.status == "fail"
+    assert result.evidence["identity_lag_minutes"] == checks.PROJECTION_FRESHNESS_MAX_MINUTES + 1
+    assert result.evidence["refresh_age_minutes"] == 600
+    assert result.evidence["violations"] == [
+        f"identity_lag_minutes={checks.PROJECTION_FRESHNESS_MAX_MINUTES + 1:.1f} "
+        f"exceeds {checks.PROJECTION_FRESHNESS_MAX_MINUTES}"
+    ]
+
+
 def test_broadcast_backlog_probe_counts_blocked_and_retryable(monkeypatch) -> None:
     from aicrm_next.data_health import checks
 
