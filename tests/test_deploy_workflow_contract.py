@@ -339,11 +339,16 @@ def test_id_validation_noop_revalidates_origin_checkout_provenance_and_runtime()
     assert "/home/ubuntu/.aicrm-releases/id-validation.json" in workflow[noop_index:summary_index]
     assert 'git status --porcelain=v1 --untracked-files=all' in workflow[noop_index:summary_index]
     assert "same-SHA verification refuses a dirty server checkout" in workflow[noop_index:summary_index]
-    assert 'payload.get("repository") == os.environ["EXPECTED_REPOSITORY"]' in workflow[noop_index:summary_index]
-    assert 'payload.get("release_sha") == os.environ["EXPECTED_SHA"]' in workflow[noop_index:summary_index]
-    assert "canonical ID validation provenance mismatch" in workflow[noop_index:summary_index]
-    assert "assert payload" not in workflow[noop_index:summary_index]
-    assert _runtime_units_phase("verify") in workflow[noop_index:summary_index]
+    verify_index = workflow.index(_runtime_units_phase("verify"), noop_index)
+    readiness_index = workflow.index("scripts/ops/check_id_validation_release_readiness.py", verify_index)
+    recovery_index = workflow.index("scripts/ops/recover_id_validation_provenance.py", readiness_index)
+    assert "id-validation.pending.json" in workflow[recovery_index:summary_index]
+    assert '--expected-release-sha "$verified_sha"' in workflow[recovery_index:summary_index]
+    assert '--expected-source-ci-run-id "${{ github.event.workflow_run.id }}"' in workflow[recovery_index:summary_index]
+    assert '--expected-deploy-run-id "${{ github.run_id }}"' in workflow[recovery_index:summary_index]
+    assert "--promote-pending" in workflow[recovery_index:summary_index]
+    assert "--allow-prepared-recovery" in workflow[recovery_index:summary_index]
+    assert verify_index < readiness_index < recovery_index
     assert "id-validation-last-verified.json" in workflow[noop_index:summary_index]
     assert noop_index < lock_index < flock_index < summary_index < transfer_index
 
@@ -369,21 +374,63 @@ def test_id_validation_deploy_records_exact_repository_run_and_bundle_provenance
         'grep -i "x-aicrm-release-sha: $after_sha"',
         workflow.index("public_release_ready=0", mutation_index),
     )
-    provenance_index = workflow.index('RELEASE_REPOSITORY="$release_repository"', public_sha_index)
+    final_readiness_index = workflow.index(
+        "scripts/ops/check_id_validation_release_readiness.py", public_sha_index
+    )
+    provenance_index = workflow.index('RELEASE_REPOSITORY="$release_repository"', final_readiness_index)
+    prepared_stage_index = workflow.index(
+        'mv -f "$release_provenance_tmp" "$release_provenance_prepared"', provenance_index
+    )
+    file_fsync_index = workflow.index('fsync_provenance_file "$release_provenance_tmp"', provenance_index)
     release_guard_index = workflow.index(_runtime_units_phase("release-runtime-guard"), provenance_index)
+    pending_commit_index = workflow.index(
+        'mv -f "$release_provenance_prepared" "$release_provenance_pending"', release_guard_index
+    )
     provenance_commit_index = workflow.index(
-        'mv -f "$release_provenance_tmp" /home/ubuntu/.aicrm-releases/id-validation.json',
+        'mv -f "$release_provenance_pending" /home/ubuntu/.aicrm-releases/id-validation.json',
         release_guard_index,
     )
-    runtime_commit_index = workflow.index("runtime_committed=1", provenance_commit_index)
+    runtime_commit_index = workflow.index("runtime_committed=1", release_guard_index)
+    release_commit_index = workflow.index("release_committed=1", provenance_commit_index)
 
     assert repository_guard_index < origin_guard_index < lock_index < checksum_index < mutation_index
-    assert public_sha_index < provenance_index < release_guard_index < provenance_commit_index < runtime_commit_index
+    assert public_sha_index < final_readiness_index < provenance_index < file_fsync_index
+    assert file_fsync_index < prepared_stage_index
+    assert prepared_stage_index < release_guard_index < runtime_commit_index
+    assert runtime_commit_index < pending_commit_index < provenance_commit_index < release_commit_index
     assert '"repository": os.environ["RELEASE_REPOSITORY"]' in workflow
     assert '"deploy_run_id": os.environ["RELEASE_RUN_ID"]' in workflow
     assert '"source_ci_run_id": os.environ["SOURCE_CI_RUN_ID"]' in workflow
     assert '"bundle_sha256": os.environ["BUNDLE_SHA256"]' in workflow
     assert '"environment": "id-validation"' in workflow
+
+
+def test_newer_main_recovers_active_release_provenance_before_switching_checkout() -> None:
+    workflow = TEST_DEPLOY_WORKFLOW.read_text(encoding="utf-8")
+
+    fetch_index = workflow.index(
+        'git fetch --no-tags "$release_bundle" "refs/deploy/release:refs/remotes/deploy/main"'
+    )
+    recovery_guard_index = workflow.index(
+        'if [ -e "$release_provenance_pending" ]', fetch_index
+    )
+    runtime_verify_index = workflow.index(_runtime_units_phase("verify"), recovery_guard_index)
+    readiness_index = workflow.index(
+        "scripts/ops/check_id_validation_release_readiness.py", runtime_verify_index
+    )
+    recovery_index = workflow.index(
+        '"$release_control_dir/scripts/ops/recover_id_validation_provenance.py"', readiness_index
+    )
+    reset_index = workflow.index('git reset --hard "$verified_sha"', recovery_index)
+
+    assert fetch_index < recovery_guard_index < runtime_verify_index < readiness_index < recovery_index
+    assert recovery_index < reset_index
+    recovery_block = workflow[recovery_guard_index:reset_index]
+    assert '--expected-release-sha "$before_sha"' in recovery_block
+    assert "--repository-path '/home/ubuntu/极简 crm'" in recovery_block
+    assert "--require-canonical-base-chain" in recovery_block
+    assert "--allow-prepared-recovery" in recovery_block
+    assert "rerun its same-SHA deployment before a new release" not in workflow
 
 
 def test_production_deploy_requires_remote_head_to_match_bundle_prerequisite_before_fetch():
@@ -738,11 +785,15 @@ exit 1
 def test_schema_aligned_failure_never_reopens_an_incompatible_previous_release() -> None:
     workflow = TEST_DEPLOY_WORKFLOW.read_text(encoding="utf-8")
 
-    preflight_index = workflow.index("if schema_matches_verified_release; then")
+    archive_index = workflow.index('git archive "$before_sha" alembic.ini migrations')
+    reset_index = workflow.index('git reset --hard "$verified_sha"', archive_index)
+    preflight_index = workflow.index("refresh_schema_recovery_target", reset_index)
     migration_index = workflow.index("python3 -m alembic upgrade head", preflight_index)
-    alignment_index = workflow.index("schema_aligned_to_verified_release=1", migration_index)
+    alignment_index = workflow.index("refresh_schema_recovery_target", migration_index)
     smoke_index = workflow.index("verified_release_web_smoke_passed=1", alignment_index)
     cleanup_index = workflow.index("cleanup_deploy() {")
+    cleanup_refresh_index = workflow.index("refresh_schema_recovery_target", cleanup_index)
+    cleanup_reset_index = workflow.index('git reset --hard "$before_sha"', cleanup_refresh_index)
     preserve_index = workflow.index(
         'schema already matches verified release; preserving smoke-verified checkout $verified_sha',
         cleanup_index,
@@ -752,11 +803,339 @@ def test_schema_aligned_failure_never_reopens_an_incompatible_previous_release()
         cleanup_index,
     )
 
-    assert preflight_index < migration_index < alignment_index < smoke_index
+    assert archive_index < reset_index < preflight_index < migration_index < alignment_index < smoke_index
+    assert cleanup_index < cleanup_refresh_index < cleanup_reset_index
     assert cleanup_index < preserve_index < guarded_index
+    assert 'target="previous" if matches_previous else ("verified" if matches_verified else "unknown")' in workflow
+    assert '[ "${schema_recovery_target:-unknown}" = "unknown" ]' in workflow
+    assert '[ "${schema_recovery_target:-unknown}" = "verified" ]' in workflow
     assert 'restore_expected_sha="$verified_sha"' in workflow[preserve_index:guarded_index]
     assert "restore_runtime_allowed=0" in workflow[guarded_index:]
     assert "alembic downgrade" not in workflow
+
+
+def test_runtime_commit_is_the_cleanup_point_of_no_return() -> None:
+    workflow = TEST_DEPLOY_WORKFLOW.read_text(encoding="utf-8")
+
+    guard_index = workflow.index(
+        _runtime_units_phase("release-runtime-guard"),
+        workflow.index('RELEASE_REPOSITORY="$release_repository"'),
+    )
+    runtime_commit_index = workflow.index("runtime_committed=1", guard_index)
+    provenance_move_index = workflow.index(
+        'mv -f "$release_provenance_pending" /home/ubuntu/.aicrm-releases/id-validation.json',
+        runtime_commit_index,
+    )
+    release_commit_index = workflow.index("release_committed=1", provenance_move_index)
+    cleanup = workflow[workflow.index("cleanup_deploy() {") : workflow.index("trap cleanup_deploy EXIT")]
+
+    assert guard_index < runtime_commit_index < provenance_move_index < release_commit_index
+    assert cleanup.count('[ "${runtime_committed:-0}" != "1" ]') >= 3
+    assert "preserving validated pending provenance for same-SHA no-op recovery" in cleanup
+
+
+def test_schema_recovery_classifier_prefers_previous_and_fails_closed(tmp_path: Path) -> None:
+    workflow = TEST_DEPLOY_WORKFLOW.read_text(encoding="utf-8")
+    start = workflow.index("            refresh_schema_recovery_target() {")
+    end = workflow.index("            cleanup_deploy() {", start)
+    function_source = "\n".join(
+        line.removeprefix("            ") for line in workflow[start:end].splitlines()
+    )
+
+    scenarios = {
+        "previous:0": ("previous", "0"),
+        "previous:1": ("previous", "1"),
+        "verified:1": ("verified", "1"),
+        "unknown:0": ("unknown", "0"),
+        "failure": ("unknown", "0"),
+    }
+    for classification, expected in scenarios.items():
+        result_file = tmp_path / f"classification-{classification.replace(':', '-')}.txt"
+        harness = f"""
+set -euo pipefail
+CLASSIFICATION={classification!r}
+classify_schema_recovery_target() {{
+  if [ "$CLASSIFICATION" = "failure" ]; then
+    return 1
+  fi
+  printf '%s\n' "$CLASSIFICATION"
+}}
+{function_source}
+refresh_schema_recovery_target
+printf '%s:%s\n' "$schema_recovery_target" "$schema_aligned_to_verified_release" > {str(result_file)!r}
+"""
+        completed = subprocess.run(["bash", "-c", harness], check=False, capture_output=True, text=True)
+        assert completed.returncode == 0, completed.stderr
+        assert result_file.read_text(encoding="utf-8").strip() == ":".join(expected)
+
+
+def test_cleanup_uses_live_schema_target_before_any_checkout_rollback(tmp_path: Path) -> None:
+    workflow = TEST_DEPLOY_WORKFLOW.read_text(encoding="utf-8")
+    start = workflow.index("            cleanup_deploy() {")
+    end = workflow.index("            trap cleanup_deploy EXIT", start)
+    cleanup_source = "\n".join(
+        line.removeprefix("            ") for line in workflow[start:end].splitlines()
+    )
+
+    for recovery_target in ("previous", "verified", "unknown"):
+        audit_file = tmp_path / f"cleanup-{recovery_target}.log"
+        harness = f"""
+set -u
+AUDIT_FILE={str(audit_file)!r}
+TARGET={recovery_target!r}
+python3() {{ printf 'python3 %s\n' "$*" >> "$AUDIT_FILE"; return 0; }}
+sudo() {{ printf 'sudo %s\n' "$*" >> "$AUDIT_FILE"; return 0; }}
+git() {{ printf 'git %s\n' "$*" >> "$AUDIT_FILE"; return 0; }}
+rm() {{ return 0; }}
+refresh_schema_recovery_target() {{
+  printf 'refresh %s\n' "$TARGET" >> "$AUDIT_FILE"
+  schema_recovery_target="$TARGET"
+  if [ "$TARGET" = "verified" ]; then
+    schema_aligned_to_verified_release=1
+  else
+    schema_aligned_to_verified_release=0
+  fi
+}}
+restore_runtime_from_guard() {{ printf 'restore %s\n' "$*" >> "$AUDIT_FILE"; return 0; }}
+resecure_runtime_guard() {{ printf 'resecure\n' >> "$AUDIT_FILE"; return 0; }}
+print_runtime_release_diagnostics() {{ :; }}
+verify_system_health_for_runtime_release() {{ return 1; }}
+revoke_deploy_smoke_session() {{ return 0; }}
+{cleanup_source}
+runtime_mutation_started=0
+runtime_committed=0
+runtime_units_stopped=0
+runtime_transaction_partial=0
+release_switched=1
+release_committed=0
+schema_recovery_target=unknown
+schema_aligned_to_verified_release=0
+verified_release_web_smoke_passed=0
+restore_runtime_allowed=1
+restore_expected_sha=before
+before_sha=before
+verified_sha=verified
+release_control_manager=manager
+release_control_manifest=manifest
+release_control_dir=""
+release_bundle_dir=""
+release_provenance_tmp=""
+deploy_smoke_session_file=""
+false
+cleanup_deploy
+"""
+        completed = subprocess.run(
+            ["bash", "-c", harness], cwd=tmp_path, check=False, capture_output=True, text=True
+        )
+        assert completed.returncode == 1, completed.stderr
+        audit = audit_file.read_text(encoding="utf-8")
+        assert f"refresh {recovery_target}" in audit
+        if recovery_target == "previous":
+            assert "git reset --hard before" in audit
+            assert "ensure-stopped-for-rollback" not in audit
+        else:
+            assert "ensure-stopped-for-rollback --execute" in audit
+            assert "git reset --hard before" not in audit
+            assert "restore " not in audit
+
+
+def test_provenance_move_failure_after_runtime_commit_never_resecures_runtime(tmp_path: Path) -> None:
+    workflow = TEST_DEPLOY_WORKFLOW.read_text(encoding="utf-8")
+    start = workflow.index("            cleanup_deploy() {")
+    end = workflow.index("            trap cleanup_deploy EXIT", start)
+    cleanup_source = "\n".join(
+        line.removeprefix("            ") for line in workflow[start:end].splitlines()
+    )
+    audit_file = tmp_path / "runtime-committed-cleanup.log"
+    pending_file = tmp_path / "id-validation.pending.json"
+    pending_file.write_text('{"validated":true}', encoding="utf-8")
+    harness = f"""
+set -u
+AUDIT_FILE={str(audit_file)!r}
+PENDING_FILE={str(pending_file)!r}
+python3() {{ printf 'python3 %s\n' "$*" >> "$AUDIT_FILE"; return 0; }}
+sudo() {{ printf 'sudo %s\n' "$*" >> "$AUDIT_FILE"; return 0; }}
+git() {{ printf 'git %s\n' "$*" >> "$AUDIT_FILE"; return 0; }}
+rm() {{
+  for argument in "$@"; do
+    if [ "$argument" = "$PENDING_FILE" ]; then printf 'remove-pending\n' >> "$AUDIT_FILE"; fi
+  done
+  return 0
+}}
+refresh_schema_recovery_target() {{ printf 'refresh\n' >> "$AUDIT_FILE"; return 0; }}
+restore_runtime_from_guard() {{ printf 'restore\n' >> "$AUDIT_FILE"; return 0; }}
+resecure_runtime_guard() {{ printf 'resecure\n' >> "$AUDIT_FILE"; return 0; }}
+print_runtime_release_diagnostics() {{ :; }}
+verify_system_health_for_runtime_release() {{ return 1; }}
+revoke_deploy_smoke_session() {{ return 0; }}
+{cleanup_source}
+runtime_mutation_started=1
+runtime_committed=1
+runtime_units_stopped=0
+runtime_transaction_partial=0
+release_switched=1
+release_committed=0
+schema_recovery_target=verified
+schema_aligned_to_verified_release=1
+verified_release_web_smoke_passed=1
+restore_runtime_allowed=1
+restore_expected_sha=verified
+before_sha=before
+verified_sha=verified
+release_control_manager=manager
+release_control_manifest=manifest
+release_control_dir=""
+release_bundle_dir=""
+release_provenance_tmp=""
+release_provenance_pending="$PENDING_FILE"
+release_provenance_pending_owned=1
+deploy_smoke_session_file=""
+false
+cleanup_deploy
+"""
+    completed = subprocess.run(
+        ["bash", "-c", harness], cwd=tmp_path, check=False, capture_output=True, text=True
+    )
+
+    assert completed.returncode == 1, completed.stderr
+    assert not audit_file.exists() or audit_file.read_text(encoding="utf-8") == ""
+    assert pending_file.exists()
+
+
+def test_dependency_rollback_failure_keeps_runtime_guarded(tmp_path: Path) -> None:
+    workflow = TEST_DEPLOY_WORKFLOW.read_text(encoding="utf-8")
+    start = workflow.index("            cleanup_deploy() {")
+    end = workflow.index("            trap cleanup_deploy EXIT", start)
+    cleanup_source = "\n".join(
+        line.removeprefix("            ") for line in workflow[start:end].splitlines()
+    ).replace("/home/ubuntu/venvs/openclaw/bin/python", "venv_python")
+
+    for initially_stopped in (0, 1):
+        audit_file = tmp_path / f"dependency-rollback-{initially_stopped}.log"
+        harness = f"""
+set -u
+AUDIT_FILE={str(audit_file)!r}
+python3() {{ printf 'python3 %s\n' "$*" >> "$AUDIT_FILE"; return 0; }}
+venv_python() {{ printf 'venv-python %s\n' "$*" >> "$AUDIT_FILE"; return 1; }}
+sudo() {{ printf 'sudo %s\n' "$*" >> "$AUDIT_FILE"; return 0; }}
+git() {{
+  printf 'git %s\n' "$*" >> "$AUDIT_FILE"
+  if [ "${{1:-}}" = "diff" ]; then
+    return 1
+  fi
+  return 0
+}}
+rm() {{ return 0; }}
+refresh_schema_recovery_target() {{ schema_recovery_target=previous; schema_aligned_to_verified_release=0; }}
+restore_runtime_from_guard() {{ printf 'restore %s\n' "$*" >> "$AUDIT_FILE"; return 0; }}
+resecure_runtime_guard() {{ printf 'resecure\n' >> "$AUDIT_FILE"; return 0; }}
+print_runtime_release_diagnostics() {{ :; }}
+verify_system_health_for_runtime_release() {{ return 1; }}
+revoke_deploy_smoke_session() {{ return 0; }}
+{cleanup_source}
+runtime_mutation_started=0
+runtime_committed=0
+runtime_units_stopped={initially_stopped}
+runtime_transaction_partial=$((1 - runtime_units_stopped))
+release_switched=1
+release_committed=0
+schema_recovery_target=previous
+schema_aligned_to_verified_release=0
+verified_release_web_smoke_passed=0
+restore_runtime_allowed=1
+restore_expected_sha=before
+before_sha=before
+verified_sha=verified
+release_control_manager=manager
+release_control_manifest=manifest
+release_control_dir=""
+release_bundle_dir=""
+release_provenance_tmp=""
+deploy_smoke_session_file=""
+false
+cleanup_deploy
+"""
+        completed = subprocess.run(
+            ["bash", "-c", harness], cwd=tmp_path, check=False, capture_output=True, text=True
+        )
+
+        assert completed.returncode == 1, completed.stderr
+        audit = audit_file.read_text(encoding="utf-8")
+        assert "venv-python -m pip install --require-hashes -r requirements.lock" in audit
+        assert "restore " not in audit
+        if initially_stopped:
+            assert "resecure" not in audit
+        else:
+            assert "resecure" in audit
+
+
+def test_partial_restore_obeys_commit_policy_and_schema_gates(tmp_path: Path) -> None:
+    workflow = TEST_DEPLOY_WORKFLOW.read_text(encoding="utf-8")
+    start = workflow.index("            cleanup_deploy() {")
+    end = workflow.index("            trap cleanup_deploy EXIT", start)
+    cleanup_source = "\n".join(
+        line.removeprefix("            ") for line in workflow[start:end].splitlines()
+    )
+    partial_index = cleanup_source.index('if [ "${runtime_transaction_partial:-0}" = "1" ]')
+    partial_condition = cleanup_source[partial_index : cleanup_source.index("; then", partial_index)]
+
+    assert '[ "${runtime_committed:-0}" != "1" ]' in partial_condition
+    assert '[ "${restore_runtime_allowed:-1}" = "1" ]' in partial_condition
+    assert '[ "${schema_recovery_target:-unknown}" = "previous" ]' in partial_condition
+
+    scenarios = (
+        ("verified", 0, 1),
+        ("unknown", 0, 0),
+        ("previous", 1, 1),
+    )
+    for recovery_target, runtime_committed, restore_allowed in scenarios:
+        audit_file = tmp_path / f"partial-{recovery_target}-{runtime_committed}.log"
+        harness = f"""
+set -u
+AUDIT_FILE={str(audit_file)!r}
+TARGET={recovery_target!r}
+python3() {{ printf 'python3 %s\n' "$*" >> "$AUDIT_FILE"; return 0; }}
+sudo() {{ printf 'sudo %s\n' "$*" >> "$AUDIT_FILE"; return 0; }}
+git() {{ printf 'git %s\n' "$*" >> "$AUDIT_FILE"; return 0; }}
+rm() {{ return 0; }}
+refresh_schema_recovery_target() {{
+  schema_recovery_target="$TARGET"
+  if [ "$TARGET" = "unknown" ]; then restore_runtime_allowed=0; fi
+}}
+restore_runtime_from_guard() {{ printf 'restore %s\n' "$*" >> "$AUDIT_FILE"; return 0; }}
+resecure_runtime_guard() {{ printf 'resecure\n' >> "$AUDIT_FILE"; return 0; }}
+print_runtime_release_diagnostics() {{ :; }}
+verify_system_health_for_runtime_release() {{ return 1; }}
+revoke_deploy_smoke_session() {{ return 0; }}
+{cleanup_source}
+runtime_mutation_started=0
+runtime_committed={runtime_committed}
+runtime_units_stopped=0
+runtime_transaction_partial=1
+release_switched=1
+release_committed=0
+schema_recovery_target="$TARGET"
+schema_aligned_to_verified_release=1
+verified_release_web_smoke_passed=1
+restore_runtime_allowed={restore_allowed}
+restore_expected_sha=verified
+before_sha=before
+verified_sha=verified
+release_control_manager=manager
+release_control_manifest=manifest
+release_control_dir=""
+release_bundle_dir=""
+release_provenance_tmp=""
+deploy_smoke_session_file=""
+false
+cleanup_deploy
+"""
+        completed = subprocess.run(
+            ["bash", "-c", harness], cwd=tmp_path, check=False, capture_output=True, text=True
+        )
+
+        assert completed.returncode == 1, completed.stderr
+        assert not audit_file.exists() or "restore " not in audit_file.read_text(encoding="utf-8")
 
 
 def test_cleanup_runtime_restore_short_circuits_and_resecures_on_any_phase_failure() -> None:

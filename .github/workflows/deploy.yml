@@ -167,16 +167,33 @@ jobs:
               git status --short --untracked-files=all
               exit 1
             fi
-            curl -sSf -D /tmp/aicrm_id_noop_health_headers.txt \
-              http://127.0.0.1:5001/health \
-              -o /tmp/aicrm_id_noop_health.json
-            grep -i "x-aicrm-release-sha: $verified_sha" \
-              /tmp/aicrm_id_noop_health_headers.txt
-            test -r /home/ubuntu/.aicrm-releases/id-validation.json
-            EXPECTED_REPOSITORY="$expected_repository" \
-            EXPECTED_SHA="$verified_sha" \
-              python3 -c 'import json, os, re, sys; payload=json.load(open("/home/ubuntu/.aicrm-releases/id-validation.json", encoding="utf-8")); valid=payload.get("repository") == os.environ["EXPECTED_REPOSITORY"] and payload.get("environment") == "id-validation" and payload.get("release_sha") == os.environ["EXPECTED_SHA"] and re.fullmatch(r"[0-9a-f]{64}", str(payload.get("bundle_sha256") or "")); sys.exit(0 if valid else "canonical ID validation provenance mismatch")'
+            set -a
+            source /home/ubuntu/.openclaw-wecom-pg.env
+            set +a
+            test -n "${DATABASE_URL:-}"
+            source /home/ubuntu/venvs/openclaw/bin/activate
             python3 scripts/ops/manage_production_runtime_units.py --phase verify --execute
+            python3 scripts/ops/check_id_validation_release_readiness.py \
+              --public-health-url "${{ env.PUBLIC_HEALTH_URL }}" \
+              --expected-sha "$verified_sha" \
+              > /tmp/aicrm-id-validation-release-readiness.json
+            cat /tmp/aicrm-id-validation-release-readiness.json
+            python3 scripts/ops/recover_id_validation_provenance.py \
+              --canonical /home/ubuntu/.aicrm-releases/id-validation.json \
+              --pending /home/ubuntu/.aicrm-releases/id-validation.pending.json \
+              --prepared /home/ubuntu/.aicrm-releases/id-validation.prepared.json \
+              --expected-repository "$expected_repository" \
+              --expected-release-sha "$verified_sha" \
+              --expected-source-ci-run-id "${{ github.event.workflow_run.id }}" \
+              --expected-deploy-run-id "${{ github.run_id }}" \
+              --current-deploy-run-attempt "${{ github.run_attempt }}" \
+              --repository-path '/home/ubuntu/极简 crm' \
+              --expected-public-health-url "${{ env.PUBLIC_HEALTH_URL }}" \
+              --promote-pending \
+              --allow-prepared-recovery \
+              --require-canonical-base-chain \
+              > /tmp/aicrm-id-validation-provenance-recovery.json
+            cat /tmp/aicrm-id-validation-provenance-recovery.json
             install -d -m 0750 /home/ubuntu/.aicrm-releases
             verification_tmp="$(mktemp /home/ubuntu/.aicrm-releases/id-validation-last-verified.XXXXXX)"
             trap 'rm -f -- "$verification_tmp"' EXIT
@@ -241,9 +258,15 @@ jobs:
             release_control_manager=""
             release_control_manifest=""
             release_provenance_tmp=""
+            release_provenance_directory="/home/ubuntu/.aicrm-releases"
+            release_provenance_prepared="/home/ubuntu/.aicrm-releases/id-validation.prepared.json"
+            release_provenance_prepared_owned=0
+            release_provenance_pending="/home/ubuntu/.aicrm-releases/id-validation.pending.json"
+            release_provenance_pending_owned=0
             cd '/home/ubuntu/极简 crm'
             deploy_target="${{ env.DEPLOY_TARGET }}"
             runtime_target_environment="${{ env.RUNTIME_TARGET_ENVIRONMENT }}"
+            public_health_url="${{ env.PUBLIC_HEALTH_URL }}"
             expected_repository="${{ env.EXPECTED_REPOSITORY }}"
             release_repository="${{ github.repository }}"
             release_run_id="${{ github.run_id }}"
@@ -260,6 +283,10 @@ jobs:
             fi
             if [ "$runtime_target_environment" != "production" ]; then
               echo "runtime target does not match the production data environment"
+              exit 1
+            fi
+            if [ "$public_health_url" != "https://id-dev.youcangogogo.com/health" ]; then
+              echo "public health URL does not match the immutable ID validation target"
               exit 1
             fi
             remote_origin_url="$(git remote get-url origin)"
@@ -304,6 +331,8 @@ jobs:
             runtime_transaction_partial=0
             release_switched=0
             release_committed=0
+            previous_expected_migration_heads_json=""
+            schema_recovery_target="unknown"
             schema_aligned_to_verified_release=0
             verified_release_web_smoke_passed=0
             restore_runtime_allowed=1
@@ -391,8 +420,43 @@ jobs:
                   --manifest "$release_control_manifest" \
                   --phase ensure-stopped-for-rollback --execute
             }
-            schema_matches_verified_release() {
-              python3 -c 'from aicrm_next.platform_foundation.readiness import _expected_migration_heads; from aicrm_next.platform_foundation.repository import RuntimeReadinessRepository; from aicrm_next.shared.runtime import raw_database_url; expected=_expected_migration_heads(); context=RuntimeReadinessRepository(raw_database_url()); context.__enter__(); current=context.migration_revisions(); context.__exit__(None, None, None); raise SystemExit(0 if current == expected else 1)'
+            fsync_provenance_file() {
+              PROVENANCE_FILE="$1" /home/ubuntu/venvs/openclaw/bin/python -c 'import os, stat; path=os.environ["PROVENANCE_FILE"]; flags=os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0); descriptor=os.open(path, flags); info=os.fstat(descriptor); assert stat.S_ISREG(info.st_mode) and info.st_uid == os.geteuid() and not (stat.S_IMODE(info.st_mode) & 0o022), "unsafe provenance file"; os.fsync(descriptor); os.close(descriptor)'
+            }
+            fsync_provenance_directory() {
+              PROVENANCE_DIRECTORY="$release_provenance_directory" /home/ubuntu/venvs/openclaw/bin/python -c 'import os; path=os.environ["PROVENANCE_DIRECTORY"]; flags=os.O_RDONLY | getattr(os, "O_DIRECTORY", 0); descriptor=os.open(path, flags); os.fsync(descriptor); os.close(descriptor)'
+            }
+            expected_migration_heads_for_tree() {
+              MIGRATION_TREE_ROOT="$1" /home/ubuntu/venvs/openclaw/bin/python -c 'import json, os; from pathlib import Path; from alembic.config import Config; from alembic.script import ScriptDirectory; root=Path(os.environ["MIGRATION_TREE_ROOT"]); config=Config(str(root / "alembic.ini")); config.set_main_option("script_location", str(root / "migrations")); heads=sorted(ScriptDirectory.from_config(config).get_heads()); assert heads, "migration tree has no heads"; print(json.dumps(heads))'
+            }
+            classify_schema_recovery_target() {
+              EXPECTED_PREVIOUS_HEADS_JSON="$previous_expected_migration_heads_json" /home/ubuntu/venvs/openclaw/bin/python -c 'import json, os; from aicrm_next.platform_foundation.readiness import _expected_migration_heads; from aicrm_next.platform_foundation.repository import RuntimeReadinessRepository; from aicrm_next.shared.runtime import raw_database_url; previous=tuple(sorted(json.loads(os.environ["EXPECTED_PREVIOUS_HEADS_JSON"]))); verified=tuple(sorted(_expected_migration_heads())); context=RuntimeReadinessRepository(raw_database_url()); context.__enter__(); current=context.migration_revisions(); context.__exit__(None, None, None); matches_previous=current == previous; matches_verified=current == verified; target="previous" if matches_previous else ("verified" if matches_verified else "unknown"); print(f"{target}:{1 if matches_verified else 0}")'
+            }
+            refresh_schema_recovery_target() {
+              local classification
+              if ! classification="$(classify_schema_recovery_target)"; then
+                classification="unknown:0"
+              fi
+              case "$classification" in
+                previous:0)
+                  schema_recovery_target="previous"
+                  schema_aligned_to_verified_release=0
+                  ;;
+                previous:1)
+                  schema_recovery_target="previous"
+                  schema_aligned_to_verified_release=1
+                  ;;
+                verified:1)
+                  schema_recovery_target="verified"
+                  schema_aligned_to_verified_release=1
+                  ;;
+                *)
+                  schema_recovery_target="unknown"
+                  schema_aligned_to_verified_release=0
+                  ;;
+              esac
+              echo "schema_recovery_target=$schema_recovery_target verified_match=$schema_aligned_to_verified_release"
+              return 0
             }
             cleanup_deploy() {
               exit_status=$?
@@ -405,6 +469,16 @@ jobs:
                   cleanup_failed=1
                 fi
                 rm -f -- "$deploy_smoke_session_file"
+              fi
+              if [ "$exit_status" -ne 0 ] \
+                && [ "${release_switched:-0}" = "1" ] \
+                && [ "${runtime_committed:-0}" != "1" ]; then
+                refresh_schema_recovery_target
+                if [ "${schema_recovery_target:-unknown}" = "unknown" ]; then
+                  echo "database schema matches neither the previous nor verified release; keeping runtime guarded"
+                  restore_runtime_allowed=0
+                  cleanup_failed=1
+                fi
               fi
               if [ "$exit_status" -ne 0 ] \
                 && [ "${runtime_mutation_started:-0}" = "1" ] \
@@ -427,10 +501,11 @@ jobs:
               fi
               if [ "$exit_status" -ne 0 ] \
                 && [ "${release_switched:-0}" = "1" ] \
-                && [ "${schema_aligned_to_verified_release:-0}" = "1" ] \
+                && [ "${runtime_committed:-0}" != "1" ] \
+                && [ "${schema_recovery_target:-unknown}" != "previous" ] \
                 && [ "${verified_release_web_smoke_passed:-0}" != "1" ] \
                 && [ "${runtime_units_stopped:-0}" != "1" ]; then
-                echo "schema is aligned to an uncommitted release without Web smoke; stopping runtime fail-closed"
+                echo "schema is not rollback-compatible with the previous release and Web smoke is absent; stopping runtime fail-closed"
                 if python3 "$release_control_manager" \
                   --manifest "$release_control_manifest" \
                   --phase begin-transaction --execute \
@@ -446,14 +521,20 @@ jobs:
               fi
               if [ "$exit_status" -ne 0 ] \
                 && [ "${release_switched:-0}" = "1" ] \
-                && [ "${release_committed:-0}" != "1" ]; then
+                && [ "${release_committed:-0}" != "1" ] \
+                && [ "${runtime_committed:-0}" != "1" ]; then
                 if [ "${runtime_units_stopped:-0}" = "1" ]; then
                   sudo systemctl stop aicrm-web.service || true
                   sudo systemctl stop openclaw-wecom-postgres.service || true
                 else
                   echo "primary Web remains active while the partial runtime transaction is rolled back"
                 fi
-                if [ "${schema_aligned_to_verified_release:-0}" = "1" ]; then
+                if [ "${schema_recovery_target:-unknown}" = "unknown" ]; then
+                  echo "database schema is in an unknown intermediate state; preserving verified checkout and deploy guard"
+                  restore_expected_sha="$verified_sha"
+                  restore_runtime_allowed=0
+                  cleanup_failed=1
+                elif [ "${schema_recovery_target:-unknown}" = "verified" ]; then
                   if [ "${verified_release_web_smoke_passed:-0}" = "1" ]; then
                     echo "schema already matches verified release; preserving smoke-verified checkout $verified_sha"
                     restore_expected_sha="$verified_sha"
@@ -471,7 +552,18 @@ jobs:
                       if ! /home/ubuntu/venvs/openclaw/bin/python -m pip install \
                         --require-hashes -r requirements.lock; then
                         echo "failed to restore dependencies for $before_sha"
+                        restore_runtime_allowed=0
                         cleanup_failed=1
+                        if [ "${runtime_units_stopped:-0}" != "1" ]; then
+                          echo "dependency rollback failed while runtime was only partially stopped; securing deploy guard"
+                          if resecure_runtime_guard; then
+                            runtime_units_stopped=1
+                            runtime_transaction_partial=0
+                          else
+                            echo "failed to secure deploy guard after dependency rollback failure"
+                            print_runtime_release_diagnostics
+                          fi
+                        fi
                       fi
                     fi
                   else
@@ -525,7 +617,10 @@ jobs:
                 fi
               fi
               if [ "${runtime_transaction_partial:-0}" = "1" ] \
-                && [ "${runtime_units_stopped:-0}" != "1" ]; then
+                && [ "${runtime_units_stopped:-0}" != "1" ] \
+                && [ "${runtime_committed:-0}" != "1" ] \
+                && [ "${restore_runtime_allowed:-1}" = "1" ] \
+                && [ "${schema_recovery_target:-unknown}" = "previous" ]; then
                 echo "restoring timers after a partial runtime stop for $restore_expected_sha"
                 partial_web_ready=0
                 for _ in $(seq 1 10); do
@@ -565,6 +660,22 @@ jobs:
               rm -rf -- "$release_bundle_dir"
               if [ -n "${release_provenance_tmp:-}" ]; then
                 rm -f -- "$release_provenance_tmp"
+              fi
+              if [ "${release_provenance_prepared_owned:-0}" = "1" ]; then
+                if [ "${runtime_committed:-0}" = "1" ] \
+                  && [ "${release_committed:-0}" != "1" ]; then
+                  echo "preserving validated prepared provenance for full-readiness recovery"
+                else
+                  rm -f -- "$release_provenance_prepared"
+                fi
+              fi
+              if [ "${release_provenance_pending_owned:-0}" = "1" ]; then
+                if [ "${runtime_committed:-0}" = "1" ] \
+                  && [ "${release_committed:-0}" != "1" ]; then
+                  echo "preserving validated pending provenance for same-SHA no-op recovery"
+                else
+                  rm -f -- "$release_provenance_pending"
+                fi
               fi
               if [ "$exit_status" -eq 0 ] && [ "$cleanup_failed" -ne 0 ]; then
                 exit_status=1
@@ -608,6 +719,45 @@ jobs:
               | tar -x -C "$release_control_dir"
             release_control_manager="$release_control_dir/scripts/ops/manage_production_runtime_units.py"
             release_control_manifest="$release_control_dir/deploy/production_runtime_units.json"
+            set -a
+            source /home/ubuntu/.openclaw-wecom-pg.env
+            set +a
+            test -n "${DATABASE_URL:-}"
+            source /home/ubuntu/venvs/openclaw/bin/activate
+            if [ -e "$release_provenance_pending" ] \
+              || [ -e "$release_provenance_prepared" ]; then
+              echo "recovering provenance for active base release $before_sha before deploying $verified_sha"
+              test "$(tr -d '\r\n' < .release-sha)" = "$before_sha"
+              python3 scripts/ops/manage_production_runtime_units.py --phase verify --execute
+              python3 scripts/ops/check_id_validation_release_readiness.py \
+                --public-health-url "$public_health_url" \
+                --expected-sha "$before_sha" \
+                > /tmp/aicrm-active-release-readiness.json
+              cat /tmp/aicrm-active-release-readiness.json
+              /home/ubuntu/venvs/openclaw/bin/python \
+                "$release_control_dir/scripts/ops/recover_id_validation_provenance.py" \
+                --canonical "$release_provenance_directory/id-validation.json" \
+                --pending "$release_provenance_pending" \
+                --prepared "$release_provenance_prepared" \
+                --expected-repository "$expected_repository" \
+                --expected-release-sha "$before_sha" \
+                --expected-public-health-url "$public_health_url" \
+                --repository-path '/home/ubuntu/极简 crm' \
+                --promote-pending \
+                --allow-prepared-recovery \
+                --require-canonical-base-chain \
+                > /tmp/aicrm-active-provenance-recovery.json
+              cat /tmp/aicrm-active-provenance-recovery.json
+              test ! -e "$release_provenance_pending"
+              test ! -e "$release_provenance_prepared"
+            fi
+            previous_migration_tree="$release_control_dir/previous-migration-tree"
+            mkdir -p "$previous_migration_tree"
+            git archive "$before_sha" alembic.ini migrations \
+              | tar -x -C "$previous_migration_tree"
+            previous_expected_migration_heads_json="$(
+              expected_migration_heads_for_tree "$previous_migration_tree"
+            )"
             git reset --hard "$verified_sha"
             release_switched=1
             after_sha="$(git rev-parse HEAD)"
@@ -645,9 +795,7 @@ jobs:
             set -a
             source /home/ubuntu/.openclaw-wecom-pg.env
             set +a
-            if schema_matches_verified_release; then
-              schema_aligned_to_verified_release=1
-            fi
+            refresh_schema_recovery_target
             # Identity preflight must fail before any runtime unit is stopped.
             python3 scripts/ops/check_unionid_identity_cutover.py \
               --phase preflight \
@@ -695,11 +843,11 @@ jobs:
             fi
             # 1) AI-CRM Next schema migrations
             python3 -m alembic upgrade head
-            if ! schema_matches_verified_release; then
+            refresh_schema_recovery_target
+            if [ "$schema_aligned_to_verified_release" != "1" ]; then
               echo "database schema does not match the verified release after migration"
               exit 1
             fi
-            schema_aligned_to_verified_release=1
             export AICRM_SECRET_STORE_DIR="${AICRM_SECRET_STORE_DIR:-/home/ubuntu/.aicrm-secrets}"
             python3 scripts/ops/migrate_app_setting_secrets.py --execute \
               --secret-store-dir "$AICRM_SECRET_STORE_DIR" \
@@ -831,6 +979,11 @@ jobs:
               exit 1
             fi
             cat /tmp/aicrm_id_validation_public_health.json
+            python3 scripts/ops/check_id_validation_release_readiness.py \
+              --public-health-url "$public_health_url" \
+              --expected-sha "$after_sha" \
+              > /tmp/aicrm-id-validation-final-readiness.json
+            cat /tmp/aicrm-id-validation-final-readiness.json
             install -d -m 0750 /home/ubuntu/.aicrm-releases
             release_provenance_tmp="$(mktemp /home/ubuntu/.aicrm-releases/id-validation.XXXXXX)"
             RELEASE_REPOSITORY="$release_repository" \
@@ -845,9 +998,19 @@ jobs:
               > "$release_provenance_tmp"
             python3 -m json.tool "$release_provenance_tmp" >/dev/null
             chmod 0640 "$release_provenance_tmp"
+            fsync_provenance_file "$release_provenance_tmp"
+            release_provenance_prepared_owned=1
+            mv -f "$release_provenance_tmp" "$release_provenance_prepared"
+            release_provenance_tmp=""
+            fsync_provenance_directory
             python3 scripts/ops/manage_production_runtime_units.py --phase release-runtime-guard --execute
             runtime_units_stopped=0
-            mv -f "$release_provenance_tmp" /home/ubuntu/.aicrm-releases/id-validation.json
-            release_provenance_tmp=""
             runtime_committed=1
+            release_provenance_pending_owned=1
+            mv -f "$release_provenance_prepared" "$release_provenance_pending"
+            release_provenance_prepared_owned=0
+            fsync_provenance_directory
+            mv -f "$release_provenance_pending" /home/ubuntu/.aicrm-releases/id-validation.json
+            release_provenance_pending_owned=0
+            fsync_provenance_directory
             release_committed=1
