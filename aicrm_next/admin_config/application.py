@@ -1,6 +1,7 @@
 # ruff: noqa: F401
 from __future__ import annotations
 
+from aicrm_next.platform_foundation.execution_runtime.validation import CANARY_CONFIG_KEYS
 from aicrm_next.service_period_grid_ports import SERVICE_PERIOD_GRID_COLLABORATOR_ROLE
 from aicrm_next.shared.wecom_runtime import (
     WECOM_ENABLED_EFFECT_TYPES_KEY,
@@ -685,10 +686,41 @@ class AdminConfigReadService:
 
 
 class AdminConfigWriteCommand:
+    _ALWAYS_QUEUE_OPERATION_CONTROLLED_KEYS = frozenset(
+        {
+            "AICRM_WECOM_PROVIDER_TARGET_POLICY",
+            "AICRM_EXTERNAL_EFFECT_ALLOWED_TARGET_EXTERNAL_USERIDS",
+            "AICRM_EXTERNAL_EFFECT_ALLOWED_OWNER_USERIDS",
+            "AICRM_EXTERNAL_EFFECT_ALLOWED_GROUP_OPS_WEBHOOK_KEYS",
+            "AICRM_EXTERNAL_EFFECT_ALLOWED_GROUP_CHAT_IDS",
+            "AICRM_WECOM_CANARY_ALLOWED_MEDIA_TARGETS",
+            "AICRM_WECOM_DEFAULT_SENDER_USERID",
+        }
+    )
+
     def __init__(self, repo: AdminConfigRepository | None = None) -> None:
         self.repo = repo or AdminConfigRepository()
 
+    def _reject_queue_operation_controlled_keys(self, keys: set[str]) -> None:
+        tracked = keys.intersection(CANARY_CONFIG_KEYS)
+        always_controlled = tracked.intersection(
+            self._ALWAYS_QUEUE_OPERATION_CONTROLLED_KEYS
+        )
+        controlled = sorted(always_controlled)
+        if tracked and not controlled:
+            policy = self.repo.get_app_setting("AICRM_WECOM_PROVIDER_TARGET_POLICY")
+            if _text((policy or {}).get("value")).lower() == "allowlisted_canary":
+                controlled = sorted(tracked)
+        if controlled:
+            raise ValueError(
+                "setting is controlled by ID-validation queue operation: "
+                + ", ".join(controlled)
+            )
+
     def execute(self, settings: dict[str, Any], *, operator: str) -> list[dict[str, Any]]:
+        self._reject_queue_operation_controlled_keys(
+            {_text(key) for key in settings if _text(key)}
+        )
         metadata = {item["key"]: dict(item) for item in APP_SETTING_DEFINITIONS}
         changed: list[dict[str, Any]] = []
         for key, raw_value in settings.items():
@@ -752,10 +784,11 @@ class AdminConfigWriteCommand:
 
     def save_category_settings(self, category_key: str, settings: dict[str, Any], *, operator: str) -> list[dict[str, Any]]:
         category = self._category_or_error(category_key)
-        if category.key == "webhooks_push":
-            raise ValueError("webhooks_push settings are managed by push capabilities API")
         allowed_refs = {ref.key: ref for ref in category.fields}
         submitted_keys = {_text(key) for key in settings if _text(key)}
+        self._reject_queue_operation_controlled_keys(submitted_keys)
+        if category.key == "webhooks_push":
+            raise ValueError("webhooks_push settings are managed by push capabilities API")
         unknown_keys = sorted(key for key in submitted_keys if key not in allowed_refs)
         if unknown_keys:
             raise ValueError(f"setting key is not in category: {', '.join(unknown_keys)}")
@@ -787,6 +820,7 @@ class AdminConfigWriteCommand:
         return changed
 
     def _upsert_setting_with_audit(self, *, key: str, value: str, operator: str, target_type: str = TARGET_APP_SETTING) -> dict[str, Any]:
+        self._reject_queue_operation_controlled_keys({key})
         before = self.repo.get_app_setting(key)
         after = self.repo.upsert_app_setting(key=key, value=value)
         if _text((before or {}).get("value")) != _text(after.get("value")):
@@ -898,6 +932,9 @@ class AdminConfigWriteCommand:
         return gates
 
     def set_push_capability_enabled(self, capability_key: str, enabled: bool, *, operator: str) -> dict[str, Any]:
+        self._reject_queue_operation_controlled_keys(
+            set(CANARY_CONFIG_KEYS) - self._ALWAYS_QUEUE_OPERATION_CONTROLLED_KEYS
+        )
         capability = get_push_capability(capability_key)
         if not capability:
             raise KeyError("push capability not found")

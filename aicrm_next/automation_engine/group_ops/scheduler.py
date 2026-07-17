@@ -16,6 +16,7 @@ from .durable_effects_repository import (
     GroupOpsEffectGraphRequest,
     GroupOpsEffectMaterial,
     build_group_ops_effect_graph_repository,
+    materialize_group_ops_content_dependencies,
 )
 from .integration_gateway import resolve_group_ops_content_package_materials
 from .repo import GroupOpsRepository, build_group_ops_repository
@@ -276,7 +277,9 @@ class GroupOpsDueScheduler:
             sender=clean_text(plan.get("owner_userid")),
             resolved_attachments=resolved_attachments,
             resolved_image_media_ids=resolved_image_media_ids,
+            allow_deferred_materials=bool(materials),
         )
+        content = materialize_group_ops_content_dependencies(content, materials)
         base_payload = dict(content)
         base_payload.setdefault("attachments", [])
         base_payload["channel"] = "wecom_customer_group"

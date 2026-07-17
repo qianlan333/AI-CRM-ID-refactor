@@ -99,6 +99,15 @@ def _enable_wecom_execution(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("AICRM_WECOM_DEFAULT_SENDER_USERID", "owner-default")
     monkeypatch.setenv("WECOM_CORP_ID", "corp-r09-tags")
     monkeypatch.setenv("WECOM_CONTACT_SECRET", "secret-r09-tags")
+    monkeypatch.setenv("AICRM_WECOM_PROVIDER_TARGET_POLICY", "allowlisted_canary")
+    monkeypatch.setenv(
+        "AICRM_EXTERNAL_EFFECT_ALLOWED_TARGET_EXTERNAL_USERIDS",
+        "wx_real_001,wx_retry_001",
+    )
+    monkeypatch.setenv(
+        "AICRM_EXTERNAL_EFFECT_ALLOWED_OWNER_USERIDS",
+        "owner-real-001,owner-retry-001",
+    )
     monkeypatch.delenv("AICRM_EXTERNAL_EFFECT_WECOM_EXECUTE", raising=False)
     monkeypatch.delenv("AICRM_EXTERNAL_EFFECT_ALLOWED_TYPES", raising=False)
 
@@ -124,6 +133,19 @@ def _run_tag_consumer(client: TestClient) -> dict:
         event_types=[QUESTIONNAIRE_SUBMITTED_EVENT_TYPE],
         consumer_names=["questionnaire_tag_consumer"],
     )
+
+
+def _authorize_tag_canary() -> None:
+    service = ExternalEffectService()
+    jobs, total = service.list_jobs({"effect_type": WECOM_CONTACT_TAG_MARK})
+    assert total == 1
+    authorized = service.authorize_allowlisted_canary(
+        jobs[0].id,
+        actor="pytest",
+        reason="explicit questionnaire canary target confirmation",
+        expected_version=jobs[0].row_version,
+    )
+    assert authorized is not None
 
 
 def test_h5_submit_never_calls_wecom_and_only_reports_durable_queue(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -244,6 +266,7 @@ def test_provider_success_projects_tags_only_after_external_effect_success(monke
     planned = _run_tag_consumer(client)
     assert planned["counts"]["succeeded_count"] == 1, planned
     assert get_customer_tag_local_projection_fixture_rows() == []
+    _authorize_tag_canary()
 
     registry = ExternalEffectAdapterRegistry()
     registry._adapters["wecom_tag"] = WeComContactTagAdapter(  # type: ignore[attr-defined]
@@ -333,6 +356,7 @@ def test_provider_429_and_timeout_keep_durable_recovery_truth_without_projection
         idempotency_key=f"questionnaire-r09-{provider_error.error_code}",
     )
     assert _run_tag_consumer(client)["counts"]["succeeded_count"] == 1
+    _authorize_tag_canary()
 
     registry = ExternalEffectAdapterRegistry()
     registry._adapters["wecom_tag"] = WeComContactTagAdapter(  # type: ignore[attr-defined]

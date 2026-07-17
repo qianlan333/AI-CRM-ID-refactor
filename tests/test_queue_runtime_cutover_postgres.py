@@ -43,10 +43,19 @@ def _connect(*, autocommit: bool = True):
     return psycopg.connect(_database_url(), autocommit=autocommit, row_factory=dict_row)
 
 
-@pytest.fixture(autouse=True)
-def _reset_control_plane() -> None:
+def _reset_control_plane_state() -> None:
     with _connect() as connection:
         connection.execute("DELETE FROM queue_worker_heartbeat")
+        for table in (
+            "external_effect_job",
+            "internal_event_consumer_run",
+            "internal_event_outbox",
+            "webhook_inbox",
+        ):
+            connection.execute(f"UPDATE {table} SET policy_version = 'queue-v2-test-loopback'")
+            connection.execute(
+                f"ALTER TABLE {table} ALTER COLUMN policy_version SET DEFAULT 'queue-v2-test-loopback'"
+            )
         connection.execute(
             """
             UPDATE queue_runtime_control
@@ -74,6 +83,13 @@ def _reset_control_plane() -> None:
                 updated_reason = 'cutover test reset'
             """
         )
+
+
+@pytest.fixture(autouse=True)
+def _reset_control_plane() -> None:
+    _reset_control_plane_state()
+    yield
+    _reset_control_plane_state()
 
 
 def test_numeric_generation_cas_allows_only_one_concurrent_winner() -> None:
@@ -728,6 +744,140 @@ def test_invariant_checker_rejects_scope_change_without_matching_policy_snapshot
     report = QueueRuntimeInvariantChecker(_database_url()).check()
 
     assert any(item.code == "runtime_control_invalid" for item in report.violations)
+
+
+def test_scope_transition_requires_closed_drained_gate_and_audits_snapshot_cas() -> None:
+    repository = RuntimeGenerationRepository(_database_url())
+    target_policy_version = f"queue-v2-allowlisted-{uuid4().hex[:10]}"
+    repository.activate_generation(
+        expected_generation=0,
+        target_generation=78,
+        expected_policy_version="queue-v2-test-loopback",
+        lanes=("wecom_interactive", "wecom_bulk", "wecom_media"),
+        actor="pytest",
+        reason="activate loopback before allowlisted canary",
+    )
+
+    with pytest.raises(GenerationCASConflict):
+        repository.transition_external_claim_scope(
+            expected_generation=78,
+            expected_policy_version="queue-v2-test-loopback",
+            target_policy_version=target_policy_version,
+            expected_scope="test_loopback",
+            target_scope="allowlisted",
+            actor="pytest",
+            reason="claim gate is still open",
+        )
+
+    repository.disable_claims(
+        expected_generation=78,
+        actor="pytest",
+        reason="drain before allowlisted canary",
+    )
+    transitioned = repository.transition_external_claim_scope(
+        expected_generation=78,
+        expected_policy_version="queue-v2-test-loopback",
+        target_policy_version=target_policy_version,
+        expected_scope="test_loopback",
+        target_scope="allowlisted",
+        actor="pytest",
+        reason="explicit allowlisted canary transition",
+    )
+    resumed = repository.resume_claims(
+        expected_generation=78,
+        expected_policy_version=target_policy_version,
+        expected_scope="allowlisted",
+        actor="pytest",
+        reason="resume only after worker restart verification",
+    )
+
+    assert transitioned.claim_enabled is False
+    assert transitioned.external_claim_scope == "allowlisted"
+    assert resumed.claim_enabled is True
+    assert resumed.external_claim_scope == "allowlisted"
+    with _connect() as connection:
+        snapshot = connection.execute(
+            """
+            SELECT policy_json
+            FROM queue_policy_snapshot
+            WHERE policy_version = %s
+            """,
+            (target_policy_version,),
+        ).fetchone()
+        audit = connection.execute(
+            """
+            SELECT active_generation, from_policy_version, to_policy_version,
+                   from_scope, to_scope, actor, reason,
+                   policy_json_before, policy_json_after
+            FROM queue_runtime_scope_transition_audit
+            WHERE to_policy_version = %s
+            """,
+            (target_policy_version,),
+        ).fetchone()
+    assert snapshot["policy_json"]["external_claim_scope"] == "allowlisted"
+    assert audit["active_generation"] == 78
+    assert audit["from_policy_version"] == "queue-v2-test-loopback"
+    assert audit["to_policy_version"] == target_policy_version
+    assert audit["from_scope"] == "test_loopback"
+    assert audit["to_scope"] == "allowlisted"
+    assert audit["actor"] == "pytest"
+    assert audit["policy_json_before"]["external_claim_scope"] == "test_loopback"
+    assert audit["policy_json_after"]["external_claim_scope"] == "allowlisted"
+    assert not any(
+        item.code == "runtime_control_invalid"
+        for item in QueueRuntimeInvariantChecker(_database_url()).check().violations
+    )
+
+
+def test_scope_transition_refuses_any_dispatching_external_effect() -> None:
+    repository = RuntimeGenerationRepository(_database_url())
+    target_policy_version = f"queue-v2-allowlisted-{uuid4().hex[:10]}"
+    repository.activate_generation(
+        expected_generation=0,
+        target_generation=79,
+        expected_policy_version="queue-v2-test-loopback",
+        lanes=("wecom_interactive",),
+        actor="pytest",
+        reason="activate before drain conflict",
+    )
+    repository.disable_claims(
+        expected_generation=79,
+        actor="pytest",
+        reason="close claim gate",
+    )
+    job = ExternalEffectService().plan_effect(
+        effect_type="test.queue.scope-drain",
+        adapter_name="test_provider",
+        operation="send",
+        target_type="test",
+        target_id=uuid4().hex,
+        payload={"execution_scope": "test_loopback"},
+        idempotency_key=f"scope-drain-{uuid4().hex}",
+        lane="wecom_interactive",
+    )
+    with _connect() as connection:
+        connection.execute(
+            """
+            UPDATE external_effect_job
+            SET status = 'dispatching', lease_token = 'active-scope-test',
+                lease_expires_at = CURRENT_TIMESTAMP + INTERVAL '5 minutes'
+            WHERE id = %s
+            """,
+            (int(job["id"]),),
+        )
+
+    with pytest.raises(GenerationCASConflict, match="not drained"):
+        repository.transition_external_claim_scope(
+            expected_generation=79,
+            expected_policy_version="queue-v2-test-loopback",
+            target_policy_version=target_policy_version,
+            expected_scope="test_loopback",
+            target_scope="allowlisted",
+            actor="pytest",
+            reason="must fail closed while one dispatch is active",
+        )
+
+    assert repository.read_state().external_claim_scope == "test_loopback"
 
 
 def test_invariant_checker_reports_missing_active_generation_heartbeats() -> None:

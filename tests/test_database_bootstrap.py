@@ -74,7 +74,7 @@ def test_empty_postgres_database_installs_and_reuses_alembic_head() -> None:
 
         assert first.baseline_applied is True
         assert first.revision_before is None
-        assert first.revision_after == "0134_execution_timeline_graph_indexes"
+        assert first.revision_after == "0136_queue_runtime_validation_soak"
         assert second.baseline_applied is False
         assert second.revision_before == first.revision_after
         assert second.revision_after == first.revision_after
@@ -296,7 +296,7 @@ def test_production_shape_alembic_database_upgrades_without_reapplying_baseline(
 
         assert result.baseline_applied is False
         assert result.revision_before == "0098_admin_session_revocation"
-        assert result.revision_after == "0134_execution_timeline_graph_indexes"
+        assert result.revision_after == "0136_queue_runtime_validation_soak"
         with psycopg.connect(database_url) as connection:
             preserved = connection.execute(
                 "SELECT wecom_userid, session_version FROM admin_users WHERE id = %s",
@@ -324,7 +324,7 @@ def test_upgrade_repairs_missing_or_partial_automation_agent_audit_tables_withou
 
         assert result.baseline_applied is False
         assert result.revision_before == "0123_required_physical_schema_repair"
-        assert result.revision_after == "0134_execution_timeline_graph_indexes"
+        assert result.revision_after == "0136_queue_runtime_validation_soak"
 
         expected_columns = {
             "automation_agent_output": {
@@ -997,7 +997,7 @@ def test_identity_customer_cutover_holds_historical_work_without_replay() -> Non
         _upgrade_database_to(database_url, "head")
         with psycopg.connect(database_url) as connection:
             assert connection.execute("SELECT version_num FROM alembic_version").fetchone() == (
-                "0134_execution_timeline_graph_indexes",
+                "0136_queue_runtime_validation_soak",
             )
 
 
@@ -1091,7 +1091,7 @@ def test_external_claim_scope_policy_upgrade_downgrade_and_reupgrade() -> None:
         _upgrade_database_to(database_url, "head")
         with psycopg.connect(database_url) as connection:
             assert connection.execute("SELECT version_num FROM alembic_version").fetchone() == (
-                "0134_execution_timeline_graph_indexes",
+                "0136_queue_runtime_validation_soak",
             )
             assert connection.execute(
                 """
@@ -1139,7 +1139,7 @@ def test_execution_timeline_graph_indexes_upgrade_downgrade_and_reupgrade() -> N
                 "SELECT indexname FROM pg_indexes WHERE schemaname = 'public' AND indexname = ANY(%s)",
                 (sorted(expected_indexes),),
             ).fetchall()
-        assert version == ("0134_execution_timeline_graph_indexes",)
+        assert version == ("0136_queue_runtime_validation_soak",)
         assert control == (0, False)
         assert {row[0] for row in installed} == expected_indexes
 
@@ -1158,6 +1158,158 @@ def test_execution_timeline_graph_indexes_upgrade_downgrade_and_reupgrade() -> N
                 (sorted(expected_indexes),),
             ).fetchall()
         assert {row[0] for row in reinstalled} == expected_indexes
+
+
+def test_queue_validation_audits_are_append_only_and_survive_additive_rollback() -> None:
+    with _isolated_database("queue_validation_soak") as database_url:
+        with psycopg.connect(database_url, autocommit=True) as connection:
+            connection.execute(BASELINE_PATH.read_text(encoding="utf-8"))
+        _upgrade_database_to(database_url, "head")
+        with psycopg.connect(database_url) as connection:
+            connection.execute(
+                """
+                INSERT INTO queue_runtime_scope_transition_audit (
+                    transition_id, active_generation, from_policy_version,
+                    to_policy_version, from_scope, to_scope, actor, reason,
+                    policy_json_before, policy_json_after
+                ) VALUES (
+                    'qrst-bootstrap', 1, 'queue-v2-test-loopback',
+                    'queue-v2-allowlisted-bootstrap', 'test_loopback', 'allowlisted',
+                    'pytest', 'append-only migration proof',
+                    '{"external_claim_scope":"test_loopback"}'::jsonb,
+                    '{"external_claim_scope":"allowlisted"}'::jsonb
+                )
+                """
+            )
+            connection.execute(
+                """
+                INSERT INTO queue_runtime_canary_config_audit (
+                    config_audit_id, active_generation, policy_version, config_mode,
+                    config_hash_before, config_hash_after, allowlist_counts_json,
+                    actor, reason
+                ) VALUES (
+                    'qrca-bootstrap', 1, 'queue-v2-allowlisted-bootstrap', 'enable',
+                    %s, %s, '{"external_userids":1}'::jsonb,
+                    'pytest', 'append-only migration proof'
+                )
+                """,
+                ("a" * 64, "b" * 64),
+            )
+            connection.execute(
+                """
+                INSERT INTO queue_runtime_validation_evidence (
+                    evidence_id, evidence_type, release_sha, active_generation,
+                    policy_version, status, evidence_json, actor, reason
+                ) VALUES (
+                    'qrve-bootstrap', 'test_loopback', %s, 1,
+                    'queue-v2-allowlisted-bootstrap', 'passed',
+                    '{"target_values_redacted":true}'::jsonb,
+                    'pytest', 'append-only migration proof'
+                )
+                """,
+                ("c" * 40,),
+            )
+            connection.execute(
+                """
+                INSERT INTO queue_runtime_lease_recovery_event (
+                    queue_kind, queue_row_id, worker_generation,
+                    error_code, lease_expires_at
+                ) VALUES (
+                    'external_effect', 91, 1,
+                    'lease_expired_before_dispatch', CURRENT_TIMESTAMP
+                )
+                """
+            )
+            connection.execute(
+                """
+                INSERT INTO queue_runtime_soak_run (
+                    soak_id, release_sha, migration_revision, active_generation,
+                    policy_version, external_claim_scope, configuration_hash,
+                    status, required_until, baseline_json, latest_snapshot_json,
+                    actor, reason
+                ) VALUES (
+                    'qrsoak-bootstrap', %s, '0136_queue_runtime_validation_soak', 1,
+                    'queue-v2-allowlisted-bootstrap', 'allowlisted', %s,
+                    'running', CURRENT_TIMESTAMP + INTERVAL '72 hours',
+                    '{}'::jsonb, '{}'::jsonb, 'pytest', 'soak migration proof'
+                )
+                """,
+                ("c" * 40, "d" * 64),
+            )
+            connection.execute(
+                """
+                INSERT INTO queue_runtime_soak_snapshot (
+                    snapshot_id, soak_id, release_sha, configuration_hash,
+                    ok, metrics_json
+                ) VALUES (
+                    'qrss-bootstrap', 'qrsoak-bootstrap', %s, %s, TRUE, '{}'::jsonb
+                )
+                """,
+                ("c" * 40, "d" * 64),
+            )
+            connection.commit()
+
+        append_only_statements = (
+            "UPDATE queue_runtime_scope_transition_audit SET reason = 'mutated' WHERE transition_id = 'qrst-bootstrap'",
+            "DELETE FROM queue_runtime_canary_config_audit WHERE config_audit_id = 'qrca-bootstrap'",
+            "UPDATE queue_runtime_validation_evidence SET status = 'failed' WHERE evidence_id = 'qrve-bootstrap'",
+            "DELETE FROM queue_runtime_lease_recovery_event WHERE queue_row_id = 91",
+            "DELETE FROM queue_runtime_soak_snapshot WHERE snapshot_id = 'qrss-bootstrap'",
+            "TRUNCATE queue_runtime_validation_evidence",
+            "TRUNCATE queue_runtime_lease_recovery_event",
+            "TRUNCATE queue_runtime_soak_snapshot",
+        )
+        for statement in append_only_statements:
+            with psycopg.connect(database_url, autocommit=True) as connection:
+                with pytest.raises(psycopg.errors.RaiseException, match="append-only"):
+                    connection.execute(statement)
+
+        with psycopg.connect(database_url) as connection:
+            updated = connection.execute(
+                """
+                UPDATE queue_runtime_soak_run
+                SET latest_snapshot_json = '{"sample":1}'::jsonb,
+                    row_version = row_version + 1
+                WHERE soak_id = 'qrsoak-bootstrap'
+                RETURNING row_version
+                """
+            ).fetchone()
+            assert updated == (2,)
+            connection.commit()
+        with psycopg.connect(database_url, autocommit=True) as connection:
+            with pytest.raises(psycopg.errors.ForeignKeyViolation):
+                connection.execute(
+                    """
+                    INSERT INTO queue_runtime_soak_snapshot (
+                        snapshot_id, soak_id, release_sha, configuration_hash,
+                        ok, metrics_json
+                    ) VALUES ('qrss-orphan', 'missing-soak', %s, %s, TRUE, '{}'::jsonb)
+                    """,
+                    ("c" * 40, "d" * 64),
+                )
+
+        _downgrade_database_to(database_url, "0134_execution_timeline_graph_indexes")
+        with psycopg.connect(database_url) as connection:
+            retained = connection.execute(
+                """
+                SELECT to_regclass('public.queue_runtime_validation_evidence'),
+                       to_regclass('public.queue_runtime_lease_recovery_event'),
+                       to_regclass('public.queue_runtime_soak_run'),
+                       to_regclass('public.queue_runtime_soak_snapshot')
+                """
+            ).fetchone()
+        assert retained == (
+            "queue_runtime_validation_evidence",
+            "queue_runtime_lease_recovery_event",
+            "queue_runtime_soak_run",
+            "queue_runtime_soak_snapshot",
+        )
+
+        _upgrade_database_to(database_url, "head")
+        with psycopg.connect(database_url) as connection:
+            assert connection.execute("SELECT version_num FROM alembic_version").fetchone() == (
+                "0136_queue_runtime_validation_soak",
+            )
 
 
 def test_continuation_fanout_cutover_holds_legacy_completion_work_without_replay() -> None:

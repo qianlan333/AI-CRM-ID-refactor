@@ -43,6 +43,7 @@ from .models import (
     ExternalEffectJob,
 )
 from .retry_policy import http_error_code
+from .wecom_canary_policy import wecom_canary_job_gate_error, wecom_canary_policy_snapshot
 
 LOW_RISK_WEBHOOK_EFFECT_TYPES = frozenset(
     {
@@ -200,11 +201,15 @@ def wecom_execution_settings() -> dict[str, Any]:
     enabled_types, enabled_types_source = _enabled_wecom_effect_types()
     default_sender = _configured_wecom_sender()
     deprecated_settings_present = list(config.deprecated_settings_present)
+    canary_policy = wecom_canary_policy_snapshot()
     blocking_reasons: list[str] = list(config.blocking_reasons)
     if execution_mode == "execute" and not enabled_types:
         blocking_reasons.append("wecom_enabled_effect_types_empty")
     if execution_mode == "execute" and not default_sender:
         blocking_reasons.append("default_sender_userid_missing")
+    if execution_mode == "execute":
+        blocking_reasons.extend(canary_policy["blocking_reasons"])
+    blocking_reasons = list(dict.fromkeys(blocking_reasons))
     return {
         "enabled": execution_mode == "execute" and not blocking_reasons,
         "execution_mode": execution_mode,
@@ -212,10 +217,10 @@ def wecom_execution_settings() -> dict[str, Any]:
         "allowed_types": enabled_types,
         "enabled_effect_types": enabled_types,
         "enabled_effect_types_source": enabled_types_source,
-        "allowed_target_external_userids": "all",
-        "allowed_group_ops_webhook_keys": "all",
-        "allowed_owner_userids": [default_sender] if default_sender else [],
-        "allowed_group_chat_ids": "all",
+        "provider_target_policy": canary_policy["provider_target_policy"],
+        "required_execution_scope": canary_policy["required_execution_scope"],
+        "allowlisted_canary_enabled": canary_policy["allowlisted_canary_enabled"],
+        "allowlist_counts": canary_policy["allowlist_counts"],
         "supported_types": list(WECOM_EFFECT_TYPES),
         "corp_id_present": bool(config.corp_id),
         "contact_secret_present": bool(config.contact_secret),
@@ -604,7 +609,7 @@ class WeComPrivateMessageAdapter:
         has_attachments = isinstance(payload.get("attachments"), list) and bool(payload.get("attachments"))
         if not has_text and not has_attachments:
             return "payload_invalid"
-        return ""
+        return wecom_canary_job_gate_error(job)
 
 
 class WeComGroupMessageExternalEffectAdapter:
@@ -716,7 +721,7 @@ class WeComGroupMessageExternalEffectAdapter:
         attachments = content_payload.get("attachments") if isinstance(content_payload.get("attachments"), list) else []
         if not str(text.get("content") or "").strip() and not attachments:
             return "payload_invalid"
-        return ""
+        return wecom_canary_job_gate_error(job)
 
     def _chat_ids(self, payload: dict[str, Any]) -> list[str]:
         return [str(item or "").strip() for item in list(payload.get("chat_ids") or []) if str(item or "").strip()]
@@ -813,7 +818,7 @@ class WeComWelcomeMessageAdapter:
             return "payload_invalid"
         if has_attachments and any(not self._provider_attachment_ready(item) for item in payload.get("attachments") or []):
             return "unresolved_material_dependency"
-        return ""
+        return wecom_canary_job_gate_error(job)
 
     @staticmethod
     def _provider_attachment_ready(item: Any) -> bool:
@@ -949,7 +954,7 @@ class WeComContactTagAdapter:
             return "add_tags_missing"
         if job.effect_type == WECOM_CONTACT_TAG_UNMARK and not remove_tags:
             return "remove_tags_missing"
-        return ""
+        return wecom_canary_job_gate_error(job)
 
     def _build_adapter(self):
         if self._adapter_factory is None:
@@ -1068,7 +1073,7 @@ class WeComProfileUpdateAdapter:
             return "owner_userid_missing"
         if not any(str(payload.get(key) or "").strip() for key in ("remark", "description", "remark_company")) and not payload.get("remark_mobiles"):
             return "profile_update_payload_missing"
-        return ""
+        return wecom_canary_job_gate_error(job)
 
     def _build_adapter(self):
         if self._adapter_factory is None:
@@ -1116,7 +1121,7 @@ class WeComExternalContactDetailAdapter:
             "queue_link_present": int(payload.get("queue_id") or 0) > 0,
             "event_link_present": int(payload.get("event_log_id") or 0) > 0,
         }
-        gate_error = self._execution_gate_error(job, external_userid=external_userid)
+        gate_error = self._execution_gate_error(job, payload=payload, external_userid=external_userid)
         if gate_error:
             return ExternalEffectDispatchResult(
                 status="failed_terminal",
@@ -1192,7 +1197,12 @@ class WeComExternalContactDetailAdapter:
         )
 
     @staticmethod
-    def _execution_gate_error(job: ExternalEffectJob, *, external_userid: str) -> str:
+    def _execution_gate_error(
+        job: ExternalEffectJob,
+        *,
+        payload: dict[str, Any],
+        external_userid: str,
+    ) -> str:
         if job.execution_mode in {"disabled", "shadow", "plan_only", "execute_dryrun"}:
             return "shadow_only"
         if job.effect_type != WECOM_EXTERNAL_CONTACT_DETAIL_FETCH:
@@ -1201,7 +1211,7 @@ class WeComExternalContactDetailAdapter:
             return "target_mismatch"
         if job.operation != "get_external_contact_detail":
             return "operation_not_allowed"
-        return ""
+        return wecom_canary_job_gate_error(job)
 
 
 class WeChatPaymentAdapter:

@@ -530,6 +530,8 @@ def test_execution_runtime_policy_and_timeline_migrations_have_a_permanent_postg
     result = _select(
         "migrations/versions/0132_external_claim_scope_policy.py",
         "migrations/versions/0134_execution_timeline_graph_indexes.py",
+        "migrations/versions/0135_queue_scope_transition_audit.py",
+        "migrations/versions/0136_queue_runtime_validation_soak.py",
         "scripts/ci/check_queue_runtime_cutover_kernel.py",
         "tests/test_execution_timeline_graph_postgres.py",
     )

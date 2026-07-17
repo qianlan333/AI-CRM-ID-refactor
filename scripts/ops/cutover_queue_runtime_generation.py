@@ -48,15 +48,18 @@ class SystemdQueueRuntimeLifecycle:
     """Operate only the three canonical PR-2 services and explicit old owners."""
 
     def stage_target_generation(self, generation: int) -> None:
-        self._write_generation_marker(generation=int(generation), committed=False)
+        self.write_generation_marker(generation=int(generation), committed=False, test_only=True)
 
     @staticmethod
-    def _write_generation_marker(*, generation: int, committed: bool) -> None:
+    def write_generation_marker(*, generation: int, committed: bool, test_only: bool) -> None:
+        test_flag = 1 if test_only else 0
+        allowlisted_flag = 0 if test_only else 1
         payload = (
             f"AICRM_QUEUE_WORKER_GENERATION={int(generation)}\n"
             "AICRM_QUEUE_RUNTIME_EXECUTE=1\n"
-            "AICRM_QUEUE_RUNTIME_TEST_ONLY=1\n"
-            "AICRM_EXTERNAL_EFFECT_TEST_EXECUTION_ONLY=1\n"
+            f"AICRM_QUEUE_RUNTIME_TEST_ONLY={test_flag}\n"
+            f"AICRM_QUEUE_RUNTIME_ALLOWLISTED_CANARY={allowlisted_flag}\n"
+            f"AICRM_EXTERNAL_EFFECT_TEST_EXECUTION_ONLY={test_flag}\n"
             f"AICRM_QUEUE_CUTOVER_COMMITTED={1 if committed else 0}\n"
         )
         with tempfile.NamedTemporaryFile("w", encoding="utf-8", delete=False) as handle:
@@ -183,7 +186,7 @@ class SystemdQueueRuntimeLifecycle:
                 raise RuntimeError(f"cutover replacement oneshot service remained active: {service}")
 
     def activate_post_cutover_replacements(self, generation: int) -> None:
-        self._write_generation_marker(generation=int(generation), committed=True)
+        self.write_generation_marker(generation=int(generation), committed=True, test_only=True)
         for timer, _service in PR3_REPLACEMENT_TIMER_OWNERS:
             _run(("sudo", "systemctl", "enable", timer))
             _run(("sudo", "systemctl", "restart", timer))
@@ -195,7 +198,7 @@ class SystemdQueueRuntimeLifecycle:
             _run(("sudo", "systemctl", "stop", service), check=False)
             _run(("sudo", "systemctl", "reset-failed", timer), check=False)
             _run(("sudo", "systemctl", "reset-failed", service), check=False)
-        self._write_generation_marker(generation=int(generation), committed=False)
+        self.write_generation_marker(generation=int(generation), committed=False, test_only=True)
 
 
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:

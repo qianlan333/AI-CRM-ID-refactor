@@ -627,7 +627,7 @@ def test_webhooks_push_category_controls_external_effect_runtime(monkeypatch, tm
     )
 
     assert rejected_legacy_save.status_code == 400
-    assert "push capabilities API" in rejected_legacy_save.json()["error"]
+    assert "controlled by ID-validation queue operation" in rejected_legacy_save.json()["error"]
 
     saved = client.patch(
         "/api/admin/config/push-capabilities/questionnaire_external_push",

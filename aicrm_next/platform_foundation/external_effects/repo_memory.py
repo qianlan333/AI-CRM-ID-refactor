@@ -926,6 +926,48 @@ class InMemoryExternalEffectRepository(ExternalEffectRepository):
             reconciliation_required=False,
         )
 
+    def authorize_allowlisted_canary(
+        self,
+        job_id: int,
+        *,
+        actor: str,
+        reason: str,
+        expected_version: int,
+    ) -> ExternalEffectJob | None:
+        with self._lock:
+            row = self._find(job_id)
+            if (
+                not row
+                or int(row.get("row_version") or 1) != int(expected_version)
+                or row.get("status") not in {"planned", "approved", "queued", "blocked"}
+                or int(row.get("attempt_count") or 0) != 0
+                or bool(row.get("provider_call_started_at"))
+                or bool(row.get("hold_reason"))
+                or bool(row.get("cancel_requested_at"))
+            ):
+                return None
+            now = public_datetime(utcnow())
+            payload = dict(row.get("payload_json") or {})
+            payload["execution_scope"] = "allowlisted_canary"
+            summary = dict(row.get("payload_summary_json") or {})
+            summary["canary_authorization"] = {
+                "actor": _text(actor),
+                "reason": _text(reason)[:500],
+                "authorized_at": now,
+                "authorized_job_id": int(job_id),
+                "authorized_from_version": int(expected_version),
+                "duplicate_risk_confirmed": False,
+            }
+            return self._mutate(
+                job_id,
+                payload_json=payload,
+                payload_summary_json=summary,
+                status="queued" if row.get("status") == "blocked" else row.get("status"),
+                last_error_code="" if row.get("status") == "blocked" else row.get("last_error_code"),
+                last_error_message="" if row.get("status") == "blocked" else row.get("last_error_message"),
+                completed_at="" if row.get("status") == "blocked" else row.get("completed_at"),
+            )
+
     def record_attempt(
         self,
         *,

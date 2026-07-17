@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import json
+import os
 from copy import deepcopy
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from urllib.parse import urlparse
 
 import requests
+import psycopg
 import pytest
 from fastapi.testclient import TestClient
 
@@ -103,6 +105,11 @@ class _QuestionnaireRepoOverride:
         if str(slug or "").strip() == str(self._questionnaire.get("slug") or ""):
             return deepcopy(self._questionnaire)
         return self._repo.get_questionnaire_by_slug(slug)
+
+    def get_questionnaire(self, questionnaire_id: int):
+        if int(questionnaire_id or 0) == int(self._questionnaire.get("id") or 0):
+            return deepcopy(self._questionnaire)
+        return self._repo.get_questionnaire(questionnaire_id)
 
     def __getattr__(self, name: str):
         return getattr(self._repo, name)
@@ -246,8 +253,45 @@ def _install_loopback_http_adapter(monkeypatch, client: TestClient) -> list[dict
 
 
 def _seed_hxc_questionnaire(monkeypatch, external_push_config: dict) -> tuple[dict, str]:
-    from aicrm_next.questionnaire import h5_write
+    from aicrm_next.questionnaire import event_consumers, h5_write
 
+    monkeypatch.setenv("AICRM_INTERNAL_EVENTS_ENABLED", "1")
+    monkeypatch.setenv("AICRM_INTERNAL_EVENTS_QUESTIONNAIRE_ENABLED", "1")
+    monkeypatch.setenv("AICRM_INTERNAL_EVENTS_AUTO_EXECUTE", "1")
+    monkeypatch.setenv(
+        "AICRM_INTERNAL_EVENTS_ALLOWED_EVENT_TYPES",
+        QUESTIONNAIRE_SUBMITTED_EVENT_TYPE,
+    )
+    monkeypatch.setenv(
+        "AICRM_INTERNAL_EVENTS_ALLOWED_EVENT_CONSUMERS",
+        f"{QUESTIONNAIRE_SUBMITTED_EVENT_TYPE}:questionnaire_webhook_consumer",
+    )
+    database_url = str(os.getenv("DATABASE_URL") or "").strip()
+    if database_url:
+        with psycopg.connect(database_url) as connection:
+            connection.execute(
+                """
+                INSERT INTO crm_user_identity (
+                    unionid, primary_external_userid, external_userids_json,
+                    identity_status, created_at, updated_at
+                ) VALUES
+                    (
+                        'union-questionnaire-external-effects-001',
+                        'wx_ext_001', '["wx_ext_001"]'::jsonb,
+                        'active', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+                    ),
+                    (
+                        'union-questionnaire-external-effects-002',
+                        'wx_ext_002', '["wx_ext_002"]'::jsonb,
+                        'active', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+                    )
+                ON CONFLICT (unionid) DO UPDATE
+                SET primary_external_userid = EXCLUDED.primary_external_userid,
+                    external_userids_json = EXCLUDED.external_userids_json,
+                    identity_status = EXCLUDED.identity_status,
+                    updated_at = CURRENT_TIMESTAMP
+                """
+            )
     repo = build_questionnaire_repository()
     existing = repo.get_questionnaire_by_slug("hxc-activation-v1")
     standard_config = {
@@ -269,7 +313,13 @@ def _seed_hxc_questionnaire(monkeypatch, external_push_config: dict) -> tuple[di
     patched = deepcopy(questionnaire)
     patched["external_push_config"] = {**dict(patched.get("external_push_config") or {}), **external_push_config}
     patched["external_push_enabled"] = bool(external_push_config.get("enabled"))
-    monkeypatch.setattr(h5_write, "build_questionnaire_repository", lambda: _QuestionnaireRepoOverride(repo, patched))
+    repository_override = _QuestionnaireRepoOverride(repo, patched)
+    monkeypatch.setattr(h5_write, "build_questionnaire_repository", lambda: repository_override)
+    monkeypatch.setattr(
+        event_consumers,
+        "build_questionnaire_repository",
+        lambda: repository_override,
+    )
     return patched, str((patched.get("questions") or [{}])[0].get("id") or "q_mobile")
 
 
@@ -336,6 +386,7 @@ def _submit_questionnaire_queue_loopback_job(
 
     planned = InternalEventWorker(
         consumer_registry=client.app.state.internal_event_consumer_registry,
+        relay_role="owner",
     ).run_due(
         batch_size=1,
         dry_run=False,
@@ -1019,6 +1070,7 @@ def test_wecom_execution_diagnostics_reports_unified_config(next_client: TestCli
     monkeypatch.setenv("WECOM_CONTACT_SECRET", "secret_fixture")
     monkeypatch.setenv("AICRM_WECOM_DEFAULT_SENDER_USERID", "owner_fixture")
     monkeypatch.setenv("AICRM_EXTERNAL_EFFECT_ALLOWED_OWNER_USERIDS", "legacy_owner")
+    monkeypatch.setenv("AICRM_WECOM_PROVIDER_TARGET_POLICY", "allowlisted_canary")
 
     response = next_client.get("/api/admin/wecom/execution-diagnostics")
     body = response.json()
@@ -1032,6 +1084,8 @@ def test_wecom_execution_diagnostics_reports_unified_config(next_client: TestCli
     assert body["enabled_effect_types"] == [WECOM_CONTACT_TAG_MARK, WECOM_WELCOME_MESSAGE_SEND]
     assert body["deprecated_settings_present"] == ["AICRM_EXTERNAL_EFFECT_ALLOWED_OWNER_USERIDS"]
     assert body["blocking_reasons"] == []
+    assert body["wecom_execution"]["allowlist_counts"]["owner_userid"] == 1
+    assert "legacy_owner" not in str(body["wecom_execution"]["allowlist_counts"])
 
 
 def test_external_effect_public_job_ignores_forward_schema_columns() -> None:
@@ -1636,6 +1690,7 @@ def test_questionnaire_submit_queues_external_push_without_legacy_call(client: T
 
     planned = InternalEventWorker(
         consumer_registry=client.app.state.internal_event_consumer_registry,
+        relay_role="owner",
     ).run_due(
         batch_size=1,
         dry_run=False,
@@ -1678,6 +1733,7 @@ def test_questionnaire_external_push_is_queue_only(client: TestClient, monkeypat
 
     planned = InternalEventWorker(
         consumer_registry=client.app.state.internal_event_consumer_registry,
+        relay_role="owner",
     ).run_due(
         batch_size=1,
         dry_run=False,
@@ -1822,6 +1878,7 @@ def test_questionnaire_queue_mode_job_creation_failure_is_retryable_after_submis
     assert body["external_effect_job_id"] is None
     planned = InternalEventWorker(
         consumer_registry=client.app.state.internal_event_consumer_registry,
+        relay_role="owner",
     ).run_due(
         batch_size=1,
         dry_run=False,
@@ -1871,6 +1928,9 @@ def test_wecom_tag_adapter_registry_dispatches_contact_tag_mark_and_unmark(monke
 
     monkeypatch.setenv("AICRM_EXTERNAL_EFFECT_WECOM_EXECUTE", "1")
     monkeypatch.setenv("AICRM_EXTERNAL_EFFECT_ALLOWED_TYPES", f"{WECOM_CONTACT_TAG_MARK},{WECOM_CONTACT_TAG_UNMARK}")
+    monkeypatch.setenv("AICRM_WECOM_PROVIDER_TARGET_POLICY", "allowlisted_canary")
+    monkeypatch.setenv("AICRM_EXTERNAL_EFFECT_ALLOWED_TARGET_EXTERNAL_USERIDS", "wx_ext_tag_dispatch")
+    monkeypatch.setenv("AICRM_EXTERNAL_EFFECT_ALLOWED_OWNER_USERIDS", "owner-a")
     repo = InMemoryExternalEffectRepository()
     mark_job = _service(repo).plan_effect(
         effect_type=WECOM_CONTACT_TAG_MARK,
@@ -1881,6 +1941,7 @@ def test_wecom_tag_adapter_registry_dispatches_contact_tag_mark_and_unmark(monke
         business_type="channel_entry",
         business_id="channel-1",
         payload={
+            "execution_scope": "allowlisted_canary",
             "external_userid": "wx_ext_tag_dispatch",
             "follow_user_userid": "owner-a",
             "add_tags": ["tag_a"],
@@ -1898,12 +1959,25 @@ def test_wecom_tag_adapter_registry_dispatches_contact_tag_mark_and_unmark(monke
         business_type="wecom_tag",
         business_id="wx_ext_tag_dispatch",
         payload={
+            "execution_scope": "allowlisted_canary",
             "external_userid": "wx_ext_tag_dispatch",
             "follow_user_userid": "owner-a",
             "tag_ids": ["tag_b"],
         },
         context=_sample_context("trace-wecom-tag-unmark-dispatch"),
         idempotency_key="wecom-tag-unmark-dispatch",
+    )
+    assert _service(repo).authorize_allowlisted_canary(
+        mark_job["id"],
+        actor="pytest",
+        reason="explicit tag canary authorization",
+        expected_version=mark_job["row_version"],
+    )
+    assert _service(repo).authorize_allowlisted_canary(
+        unmark_job["id"],
+        actor="pytest",
+        reason="explicit tag canary authorization",
+        expected_version=unmark_job["row_version"],
     )
     registry = ExternalEffectAdapterRegistry()
     assert isinstance(registry._adapters["wecom_tag"], WeComContactTagAdapter)  # type: ignore[attr-defined]
@@ -1946,6 +2020,9 @@ def test_wecom_profile_adapter_registry_dispatches_description_update(monkeypatc
 
     monkeypatch.setenv("AICRM_EXTERNAL_EFFECT_WECOM_EXECUTE", "1")
     monkeypatch.setenv("AICRM_EXTERNAL_EFFECT_ALLOWED_TYPES", WECOM_PROFILE_UPDATE)
+    monkeypatch.setenv("AICRM_WECOM_PROVIDER_TARGET_POLICY", "allowlisted_canary")
+    monkeypatch.setenv("AICRM_EXTERNAL_EFFECT_ALLOWED_TARGET_EXTERNAL_USERIDS", "wx_ext_profile")
+    monkeypatch.setenv("AICRM_EXTERNAL_EFFECT_ALLOWED_OWNER_USERIDS", "owner-a")
     repo = InMemoryExternalEffectRepository()
     job = _service(repo).plan_effect(
         effect_type=WECOM_PROFILE_UPDATE,
@@ -1956,12 +2033,19 @@ def test_wecom_profile_adapter_registry_dispatches_description_update(monkeypatc
         business_type="channel_entry",
         business_id="channel-1",
         payload={
+            "execution_scope": "allowlisted_canary",
             "external_userid": "wx_ext_profile",
             "follow_user_userid": "owner-a",
             "description": "wx_ext_profile",
         },
         context=_sample_context("trace-wecom-profile-dispatch"),
         idempotency_key="wecom-profile-dispatch",
+    )
+    assert _service(repo).authorize_allowlisted_canary(
+        job["id"],
+        actor="pytest",
+        reason="explicit profile canary authorization",
+        expected_version=job["row_version"],
     )
     registry = ExternalEffectAdapterRegistry()
     assert isinstance(registry._adapters["wecom_profile"], WeComProfileUpdateAdapter)  # type: ignore[attr-defined]

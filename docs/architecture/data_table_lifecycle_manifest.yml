@@ -1985,6 +1985,132 @@ tables:
       - tests/test_data_table_lifecycle_guard.py
     notes: Operational liveness projection keyed by service and worker. It exposes generation, release SHA, listener and drain timestamps without queue payloads or customer identifiers.
 
+  queue_runtime_scope_transition_audit:
+    domain: platform_foundation
+    lifecycle: audit
+    write_owner: aicrm_next.platform_foundation.execution_runtime.cutover
+    read_owners:
+      - ID-validation queue operation evidence
+      - execution runtime consistency audit
+    replacement: none; immutable scope and policy transition evidence
+    drop_candidate: false
+    drop_after: ""
+    runtime_entrypoints:
+      - scripts/ops/transition_queue_runtime_scope.py
+    migration_source: 0135_queue_scope_transition_audit
+    pii_level: none
+    guard_tests:
+      - tests/test_queue_runtime_cutover_postgres.py
+      - tests/test_database_bootstrap.py
+      - tests/test_data_table_lifecycle_guard.py
+    notes: Append-only evidence for each drained test_loopback to allowlisted transition or rollback. Policy JSON is non-secret and target identifiers are not stored.
+
+  queue_runtime_canary_config_audit:
+    domain: platform_foundation
+    lifecycle: audit
+    write_owner: scripts.ops.configure_wecom_canary
+    read_owners:
+      - ID-validation queue operation evidence
+      - execution runtime consistency audit
+    replacement: none; immutable canary configuration hash and count evidence
+    drop_candidate: false
+    drop_after: ""
+    runtime_entrypoints:
+      - scripts/ops/configure_wecom_canary.py
+    migration_source: 0135_queue_scope_transition_audit
+    pii_level: none
+    guard_tests:
+      - tests/test_wecom_canary_configuration.py
+      - tests/test_database_bootstrap.py
+      - tests/test_data_table_lifecycle_guard.py
+    notes: Append-only before and after configuration hashes plus allowlist counts. Exact target values and secrets are forbidden.
+
+  queue_runtime_validation_evidence:
+    domain: platform_foundation
+    lifecycle: audit
+    write_owner: aicrm_next.platform_foundation.execution_runtime.validation
+    read_owners:
+      - ID-validation 72-hour soak gate
+      - execution runtime consistency audit
+    replacement: none; immutable canary and fault-drill evidence
+    drop_candidate: false
+    drop_after: ""
+    runtime_entrypoints:
+      - scripts/ops/run_test_loopback_canary.py
+      - scripts/ops/plan_wecom_canary.py
+      - scripts/ops/attest_queue_runtime_validation.py
+      - scripts/ops/run_queue_runtime_fault_drill.py
+    migration_source: 0136_queue_runtime_validation_soak
+    pii_level: none
+    guard_tests:
+      - tests/test_queue_runtime_validation.py
+      - tests/test_database_bootstrap.py
+      - tests/test_data_table_lifecycle_guard.py
+    notes: Append-only redacted proof bound to release SHA, generation and immutable policy. It stores execution and numeric job IDs, outcome booleans and counts only, never provider targets, content or credentials.
+
+  queue_runtime_lease_recovery_event:
+    domain: platform_foundation
+    lifecycle: audit
+    write_owner: aicrm_next.platform_foundation.execution_runtime.repository
+    read_owners:
+      - ID-validation 72-hour soak gate
+      - execution runtime consistency audit
+    replacement: none; immutable lease-loss occurrence evidence
+    drop_candidate: false
+    drop_after: ""
+    runtime_entrypoints:
+      - aicrm_next.platform_foundation.execution_runtime.repository
+      - scripts/ops/manage_queue_runtime_soak.py
+    migration_source: 0136_queue_runtime_validation_soak
+    pii_level: none
+    guard_tests:
+      - tests/test_execution_runtime_postgres.py
+      - tests/test_database_bootstrap.py
+      - tests/test_data_table_lifecycle_guard.py
+    notes: Append-only recovery occurrence rows written before an expired queue lease is mutated. Stores queue kind, numeric row ID, generation, error code and timestamps only; no payload, target, lease token or credential.
+
+  queue_runtime_soak_run:
+    domain: platform_foundation
+    lifecycle: canonical
+    write_owner: scripts.ops.manage_queue_runtime_soak
+    read_owners:
+      - ID-validation queue operation status
+      - 15-minute soak snapshot service
+    replacement: none; canonical 72-hour validation state machine
+    drop_candidate: false
+    drop_after: ""
+    runtime_entrypoints:
+      - scripts/ops/manage_queue_runtime_soak.py
+      - aicrm-queue-soak-snapshot.service
+    migration_source: 0136_queue_runtime_validation_soak
+    pii_level: none
+    guard_tests:
+      - tests/test_queue_runtime_validation.py
+      - tests/test_database_bootstrap.py
+      - tests/test_data_table_lifecycle_guard.py
+    notes: CAS-controlled running, passed, failed or invalidated soak identity bound to one release, migration, generation, scope and configuration hash.
+
+  queue_runtime_soak_snapshot:
+    domain: platform_foundation
+    lifecycle: audit
+    write_owner: scripts.ops.manage_queue_runtime_soak
+    read_owners:
+      - ID-validation 72-hour soak completion gate
+      - execution runtime consistency audit
+    replacement: none; immutable periodic soak metrics
+    drop_candidate: false
+    drop_after: ""
+    runtime_entrypoints:
+      - aicrm-queue-soak-snapshot.service
+      - scripts/ops/manage_queue_runtime_soak.py
+    migration_source: 0136_queue_runtime_validation_soak
+    pii_level: none
+    guard_tests:
+      - tests/test_queue_runtime_validation.py
+      - tests/test_database_bootstrap.py
+      - tests/test_data_table_lifecycle_guard.py
+    notes: Append-only 15-minute operational metrics and invariant violations. It has a foreign key to the canonical soak run and contains no task payload or customer identity.
+
   external_effect_job:
     domain: external_effects
     lifecycle: queue

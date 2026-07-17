@@ -40,6 +40,7 @@ from aicrm_next.platform_foundation.internal_events.worker import (
 
 EXECUTE_ENV = "AICRM_QUEUE_RUNTIME_EXECUTE"
 TEST_ONLY_ENV = "AICRM_QUEUE_RUNTIME_TEST_ONLY"
+ALLOWLISTED_CANARY_ENV = "AICRM_QUEUE_RUNTIME_ALLOWLISTED_CANARY"
 
 
 def _truthy(value: str) -> bool:
@@ -75,8 +76,19 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         parser.error("--execute requires --generation > 0")
     if args.execute and not _truthy(os.getenv(EXECUTE_ENV, "")):
         parser.error(f"--execute requires {EXECUTE_ENV}=1")
-    if args.queue_kind == "external" and args.execute and not args.test_only:
-        parser.error("external execute starts test-only; remove only through reviewed canary policy")
+    if (
+        args.queue_kind == "external"
+        and args.execute
+        and not args.test_only
+        and not _truthy(os.getenv(ALLOWLISTED_CANARY_ENV, ""))
+    ):
+        parser.error(
+            "external allowlisted execute requires the reviewed canary generation marker"
+        )
+    if args.queue_kind == "external" and args.test_only and _truthy(
+        os.getenv(ALLOWLISTED_CANARY_ENV, "")
+    ):
+        parser.error("external runtime cannot be both test-only and allowlisted canary")
     return args
 
 

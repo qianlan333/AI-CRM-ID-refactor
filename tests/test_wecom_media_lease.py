@@ -134,7 +134,9 @@ def test_postgres_material_resolver_uses_lease_for_all_supported_material_kinds(
     assert attachments[1]["file"]["media_id"] == "real-file-2"
 
 
-def test_external_effect_adapter_reports_missing_source_without_false_external_call() -> None:
+def test_external_effect_adapter_reports_missing_source_without_false_external_call(monkeypatch) -> None:
+    monkeypatch.setenv("AICRM_WECOM_PROVIDER_TARGET_POLICY", "allowlisted_canary")
+    monkeypatch.setenv("AICRM_WECOM_CANARY_ALLOWED_MEDIA_TARGETS", "image:4:image")
     manager = _manager()
     adapter = WeComMediaUploadAdapter(manager_factory=lambda: manager)
     job = ExternalEffectJob(
@@ -142,8 +144,26 @@ def test_external_effect_adapter_reports_missing_source_without_false_external_c
         effect_type=WECOM_MEDIA_UPLOAD,
         adapter_name="wecom_media_upload",
         operation="refresh_temporary_media",
+        target_type="media_library_material",
         target_id="image:4:image",
-        payload_json={"material_kind": "image", "material_id": 4, "upload_kind": "image", "force_refresh": True},
+        payload_json={
+            "execution_scope": "allowlisted_canary",
+            "material_kind": "image",
+            "material_id": 4,
+            "upload_kind": "image",
+            "force_refresh": True,
+        },
+        payload_summary_json={
+            "canary_authorization": {
+                "actor": "pytest",
+                "reason": "explicit media canary authorization",
+                "authorized_at": NOW.isoformat(),
+                "authorized_job_id": 1,
+                "authorized_from_version": 1,
+                "duplicate_risk_confirmed": False,
+            }
+        },
+        row_version=2,
     )
 
     result = adapter.dispatch(job)

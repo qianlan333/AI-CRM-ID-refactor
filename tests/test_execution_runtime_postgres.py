@@ -21,6 +21,7 @@ from aicrm_next.platform_foundation.execution_runtime.read_model import (
 from aicrm_next.platform_foundation.execution_runtime.repository import (
     ExecutionRuntimeRepository,
 )
+from aicrm_next.platform_foundation.execution_runtime.validation import _lost_lease_count
 from aicrm_next.platform_foundation.repository import RuntimeReadinessRepository
 from aicrm_next.platform_foundation.external_effects.models import (
     ExternalEffectCreateRequest,
@@ -44,6 +45,7 @@ from aicrm_next.platform_foundation.internal_events.repository import (
     SQLAlchemyInternalEventRepository,
 )
 from aicrm_next.shared.db_session import get_session_factory
+from scripts.ops.manage_queue_runtime_soak import _evidence_types
 
 
 pytestmark = pytest.mark.usefixtures("next_pg_schema")
@@ -550,6 +552,16 @@ def test_expired_pre_provider_lease_is_safely_requeued_and_reclaimed() -> None:
     )
     assert first is not None and first.item_id == job["id"]
     with _connect() as connection:
+        lease_event_count_before = int(
+            connection.execute(
+                """
+                SELECT COUNT(*) AS count
+                FROM queue_runtime_lease_recovery_event
+                WHERE queue_kind = 'external_effect' AND queue_row_id = %s
+                """,
+                (job["id"],),
+            ).fetchone()["count"]
+        )
         connection.execute(
             "UPDATE external_effect_job SET lease_expires_at = CURRENT_TIMESTAMP - INTERVAL '1 second' WHERE id = %s",
             (job["id"],),
@@ -567,10 +579,132 @@ def test_expired_pre_provider_lease_is_safely_requeued_and_reclaimed() -> None:
             "SELECT status, attempt_count, provider_call_started_at, last_error_code FROM external_effect_job WHERE id = %s",
             (job["id"],),
         ).fetchone()
+        lease_event_count_after = int(
+            connection.execute(
+                """
+                SELECT COUNT(*) AS count
+                FROM queue_runtime_lease_recovery_event
+                WHERE queue_kind = 'external_effect' AND queue_row_id = %s
+                """,
+                (job["id"],),
+            ).fetchone()["count"]
+        )
+        latest_lease_event = connection.execute(
+            """
+            SELECT error_code, worker_generation
+            FROM queue_runtime_lease_recovery_event
+            WHERE queue_kind = 'external_effect' AND queue_row_id = %s
+            ORDER BY lease_event_id DESC
+            LIMIT 1
+            """,
+            (job["id"],),
+        ).fetchone()
     assert row["status"] == "dispatching"
     assert row["attempt_count"] == 0
     assert row["provider_call_started_at"] is None
     assert row["last_error_code"] == "lease_expired_before_dispatch"
+    assert lease_event_count_after == lease_event_count_before + 1
+    assert latest_lease_event == {
+        "error_code": "lease_expired_before_dispatch",
+        "worker_generation": 7,
+    }
+
+
+def test_soak_lost_lease_metric_keeps_recovered_rows_and_active_expirations() -> None:
+    started_at = datetime.now(timezone.utc) - timedelta(minutes=5)
+    recovered = _job()
+    active = _job()
+    with _connect() as connection:
+        baseline_count = _lost_lease_count(connection, started_at=started_at)
+        connection.execute(
+            """
+            UPDATE external_effect_job
+            SET status = 'succeeded',
+                last_error_code = '',
+                lease_expires_at = NULL,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = %s
+            """,
+            (recovered["id"],),
+        )
+        connection.execute(
+            """
+            INSERT INTO queue_runtime_lease_recovery_event (
+                queue_kind, queue_row_id, worker_generation,
+                error_code, lease_expires_at, detected_at
+            ) VALUES (
+                'external_effect', %s, 7,
+                'lease_expired_before_dispatch', %s, CURRENT_TIMESTAMP
+            )
+            """,
+            (recovered["id"], started_at + timedelta(seconds=1)),
+        )
+        connection.execute(
+            """
+            UPDATE external_effect_job
+            SET status = 'dispatching',
+                last_error_code = '',
+                lease_expires_at = CURRENT_TIMESTAMP - INTERVAL '1 second',
+                updated_at = %s
+            WHERE id = %s
+            """,
+            (started_at - timedelta(minutes=1), active["id"]),
+        )
+
+        assert _lost_lease_count(connection, started_at=started_at) == baseline_count + 2
+
+
+def test_soak_required_evidence_uses_latest_outcome_per_type() -> None:
+    release_sha = uuid4().hex + uuid4().hex[:8]
+    policy_version = f"queue-v2-evidence-{uuid4().hex}"
+    with _connect() as connection:
+        connection.execute(
+            """
+            INSERT INTO queue_runtime_validation_evidence (
+                evidence_id, evidence_type, release_sha, active_generation,
+                policy_version, status, evidence_json, actor, reason, created_at
+            ) VALUES
+                (%s, 'listener_reconnect', %s, 17, %s, 'passed', '{}'::jsonb,
+                 'pytest', 'older pass', CURRENT_TIMESTAMP - INTERVAL '1 minute'),
+                (%s, 'listener_reconnect', %s, 17, %s, 'failed', '{}'::jsonb,
+                 'pytest', 'newer failure', CURRENT_TIMESTAMP)
+            """,
+            (
+                "qrve_" + uuid4().hex,
+                release_sha,
+                policy_version,
+                "qrve_" + uuid4().hex,
+                release_sha,
+                policy_version,
+            ),
+        )
+
+        assert _evidence_types(
+            connection,
+            release_sha=release_sha,
+            generation=17,
+            policy_version=policy_version,
+        ) == set()
+
+        connection.execute(
+            """
+            INSERT INTO queue_runtime_validation_evidence (
+                evidence_id, evidence_type, release_sha, active_generation,
+                policy_version, status, evidence_json, actor, reason, created_at
+            ) VALUES (
+                %s, 'listener_reconnect', %s, 17, %s, 'passed', '{}'::jsonb,
+                'pytest', 'latest pass', CURRENT_TIMESTAMP + INTERVAL '1 second'
+            )
+            """,
+            ("qrve_" + uuid4().hex, release_sha, policy_version),
+        )
+
+        assert _evidence_types(
+            connection,
+            release_sha=release_sha,
+            generation=17,
+            policy_version=policy_version,
+        ) == {"listener_reconnect"}
 
 
 def test_expired_post_provider_lease_becomes_unknown_and_attempt_is_closed() -> None:

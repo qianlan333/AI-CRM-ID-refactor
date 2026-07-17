@@ -17,6 +17,7 @@ from aicrm_next.platform_foundation.external_effects.adapters import (
     WeComWelcomeMessageAdapter,
 )
 from aicrm_next.platform_foundation.external_effects.repo import SQLAlchemyExternalEffectRepository
+from aicrm_next.platform_foundation.external_effects.service import ExternalEffectService
 from aicrm_next.platform_foundation.external_effects.worker import ExternalEffectWorker
 from aicrm_next.shared.db_session import get_session_factory
 
@@ -32,6 +33,12 @@ def _wecom_execution_contract(monkeypatch):
         "wecom.media.upload,wecom.welcome_message.send",
     )
     monkeypatch.setenv("AICRM_EXTERNAL_EFFECT_TEST_EXECUTION_ONLY", "false")
+    monkeypatch.setenv("AICRM_WECOM_PROVIDER_TARGET_POLICY", "allowlisted_canary")
+    monkeypatch.setenv(
+        "AICRM_EXTERNAL_EFFECT_ALLOWED_TARGET_EXTERNAL_USERIDS",
+        "wm-postgres-welcome",
+    )
+    monkeypatch.setenv("AICRM_EXTERNAL_EFFECT_ALLOWED_OWNER_USERIDS", "owner-postgres")
     monkeypatch.setattr(
         "aicrm_next.platform_foundation.external_effects.worker._capability_gate_error",
         lambda job: "",
@@ -259,6 +266,15 @@ def test_upload_completion_releases_once_after_restart_and_one_welcome_attempt_c
         }
     )
     effect_repository = SQLAlchemyExternalEffectRepository(get_session_factory())
+    effect_service = ExternalEffectService(effect_repository)
+    final_job = effect_service.get(planned["final_effect_job_id"])
+    assert final_job is not None
+    assert effect_service.authorize_allowlisted_canary(
+        final_job.id,
+        actor="pytest",
+        reason="explicit welcome dependency canary authorization",
+        expected_version=final_job.row_version,
+    )
     dispatched = ExternalEffectWorker(effect_repository, registry, locked_by="welcome-postgres-worker").dispatch_one(
         planned["final_effect_job_id"]
     )

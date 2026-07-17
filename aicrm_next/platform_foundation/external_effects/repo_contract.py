@@ -383,6 +383,16 @@ class ExternalEffectRepository:
     def approve_job(self, job_id: int) -> ExternalEffectJob | None:
         raise NotImplementedError
 
+    def authorize_allowlisted_canary(
+        self,
+        job_id: int,
+        *,
+        actor: str,
+        reason: str,
+        expected_version: int,
+    ) -> ExternalEffectJob | None:
+        raise NotImplementedError
+
     def record_attempt(
         self,
         *,

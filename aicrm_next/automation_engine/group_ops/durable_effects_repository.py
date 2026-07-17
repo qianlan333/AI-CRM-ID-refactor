@@ -119,31 +119,41 @@ class GroupOpsEffectGraphRepository(Protocol):
     def cancel(self, execution_id: str, *, actor: str, reason: str) -> dict[str, Any]: ...
 
 
-def _materialized_content(
+def _material_dependency_key(attachment: dict[str, Any]) -> str:
+    msgtype = clean_text(attachment.get("msgtype"))
+    nested = attachment.get(msgtype) if isinstance(attachment.get(msgtype), dict) else {}
+    return clean_text(nested.get("media_dependency_key") or nested.get("pic_media_dependency_key"))
+
+
+def _material_dependency_attachment(material: GroupOpsEffectMaterial) -> dict[str, Any]:
+    if material.role in {"card_cover", "miniprogram"}:
+        card = dict(material.attachment_payload or {})
+        card["pic_media_dependency_key"] = material.material_key
+        return {"msgtype": "miniprogram", "miniprogram": card}
+    if material.role == "file":
+        return {
+            "msgtype": "file",
+            "file": {"media_dependency_key": material.material_key},
+        }
+    return {
+        "msgtype": "image",
+        "image": {"media_dependency_key": material.material_key},
+    }
+
+
+def materialize_group_ops_content_dependencies(
     content_payload: dict[str, Any],
     materials: tuple[GroupOpsEffectMaterial, ...],
 ) -> dict[str, Any]:
     payload = dict(content_payload or {})
     attachments = [dict(item) for item in list(payload.get("attachments") or []) if isinstance(item, dict)]
+    dependency_keys = {_material_dependency_key(item) for item in attachments}
+    dependency_keys.discard("")
     for material in materials:
-        if material.role in {"card_cover", "miniprogram"}:
-            card = dict(material.attachment_payload or {})
-            card["pic_media_dependency_key"] = material.material_key
-            attachments.append({"msgtype": "miniprogram", "miniprogram": card})
-        elif material.role == "file":
-            attachments.append(
-                {
-                    "msgtype": "file",
-                    "file": {"media_dependency_key": material.material_key},
-                }
-            )
-        else:
-            attachments.append(
-                {
-                    "msgtype": "image",
-                    "image": {"media_dependency_key": material.material_key},
-                }
-            )
+        if material.material_key in dependency_keys:
+            continue
+        attachments.append(_material_dependency_attachment(material))
+        dependency_keys.add(material.material_key)
     payload["attachments"] = attachments
     return payload
 
@@ -275,7 +285,7 @@ class SQLAlchemyGroupOpsEffectGraphRepository:
             )
             graph = dict(row)
             graph_id = int(graph["id"])
-            content_payload = _materialized_content(request.content_payload, request.materials)
+            content_payload = materialize_group_ops_content_dependencies(request.content_payload, request.materials)
             final_job = self._plan_final_effect(
                 session,
                 request=request,
@@ -1070,7 +1080,7 @@ class InMemoryGroupOpsEffectGraphRepository:
                         "version": source_version,
                         "execution_ids": [],
                     }
-            content_payload = _materialized_content(request.content_payload, request.materials)
+            content_payload = materialize_group_ops_content_dependencies(request.content_payload, request.materials)
             payload = _final_effect_payload(request, content_payload=content_payload, execution_id=execution_id)
             effect_type = WECOM_MESSAGE_GROUP_SEND
             adapter_name = "wecom_group_message"
