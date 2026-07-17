@@ -188,4 +188,4 @@ if ! git merge-base --is-ancestor "$release_sha" "$current_sha"; then
   exit 1
 fi
 
-printf '%s\n' "$current_sha"
+printf 'AICRM_ATTESTED_RELEASE_SHA=%s\n' "$current_sha"

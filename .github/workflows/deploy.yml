@@ -135,7 +135,7 @@ jobs:
         env:
           ACTIVE_RELEASE_SHA: ${{ steps.active_release.outputs.release_sha }}
           PUBLIC_HEALTH_AVAILABLE: ${{ steps.active_release.outputs.health_available }}
-          ATTESTED_RELEASE_SHA: ${{ steps.attested_release.outputs.stdout }}
+          ATTESTED_RELEASE_STDOUT: ${{ steps.attested_release.outputs.stdout }}
         run: |
           set -e
           set -o pipefail
@@ -159,7 +159,10 @@ jobs:
               base_source="public_health"
               ;;
             false)
-              base_sha="$(python3 -c 'import os, re; value=os.environ["ATTESTED_RELEASE_SHA"].strip(); raise SystemExit("guarded checkout attestation did not return exactly one SHA") if re.fullmatch(r"[0-9a-f]{40}", value) is None else None; print(value)')"
+              base_sha="$(
+                printf '%s' "$ATTESTED_RELEASE_STDOUT" \
+                  | python3 scripts/ops/extract_id_validation_release_base.py
+              )"
               base_source="guarded_server_checkout"
               ;;
             *)

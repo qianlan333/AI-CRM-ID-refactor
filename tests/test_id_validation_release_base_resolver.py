@@ -141,8 +141,10 @@ def test_guarded_resolver_outputs_current_checkout_head_not_stale_canonical_rele
     completed = _run_resolver(resolver_fixture)
 
     assert completed.returncode == 0, completed.stderr
-    assert completed.stdout == f"{resolver_fixture.current_sha}\n"
-    assert completed.stdout.strip() != resolver_fixture.canonical_sha
+    assert completed.stdout == (
+        f"AICRM_ATTESTED_RELEASE_SHA={resolver_fixture.current_sha}\n"
+    )
+    assert resolver_fixture.canonical_sha not in completed.stdout
 
 
 def test_guarded_resolver_rejects_dirty_checkout(resolver_fixture: ResolverFixture) -> None:

@@ -429,7 +429,7 @@ def test_production_deploy_builds_and_transfers_incremental_exact_sha_bundle_bef
     assert 'public_health_url="$PUBLIC_HEALTH_URL"' in workflow
     assert 'active_sha="$(python3 - /tmp/aicrm_current_release_headers.txt' in workflow
     assert 'if len(candidates) != 1 or re.fullmatch(r"[0-9a-f]{40}", candidates[0]) is None:' in workflow
-    assert "ATTESTED_RELEASE_SHA: ${{ steps.attested_release.outputs.stdout }}" in workflow
+    assert "ATTESTED_RELEASE_STDOUT: ${{ steps.attested_release.outputs.stdout }}" in workflow
     assert 'base_source="guarded_server_checkout"' in workflow
     assert 'git merge-base --is-ancestor "$base_sha" "$verified_sha"' in workflow
     assert 'git update-ref refs/deploy/release "$verified_sha"' in workflow
@@ -513,12 +513,14 @@ def test_attested_current_head_is_strict_incremental_base_and_never_an_unhealthy
     build = workflow[build_step_index:noop_step_index]
 
     attested_env_index = build.index(
-        "ATTESTED_RELEASE_SHA: ${{ steps.attested_release.outputs.stdout }}"
+        "ATTESTED_RELEASE_STDOUT: ${{ steps.attested_release.outputs.stdout }}"
     )
     unavailable_case_index = build.index("false)", attested_env_index)
-    strict_sha_index = build.index('os.environ["ATTESTED_RELEASE_SHA"].strip()', unavailable_case_index)
-    strict_regex_index = build.index(r're.fullmatch(r"[0-9a-f]{40}", value)', strict_sha_index)
-    guarded_source_index = build.index('base_source="guarded_server_checkout"', strict_regex_index)
+    extractor_index = build.index(
+        "python3 scripts/ops/extract_id_validation_release_base.py",
+        unavailable_case_index,
+    )
+    guarded_source_index = build.index('base_source="guarded_server_checkout"', extractor_index)
     same_sha_index = build.index('if [ "$base_sha" = "$verified_sha" ]; then', guarded_source_index)
     public_only_index = build.index('if [ "$base_source" != "public_health" ]; then', same_sha_index)
     unhealthy_exit_index = build.index("exit 1", public_only_index)
@@ -534,8 +536,8 @@ def test_attested_current_head_is_strict_incremental_base_and_never_an_unhealthy
         base_ref_index,
     )
 
-    assert attested_env_index < unavailable_case_index < strict_sha_index < strict_regex_index
-    assert strict_regex_index < guarded_source_index < same_sha_index < public_only_index
+    assert attested_env_index < unavailable_case_index < extractor_index
+    assert extractor_index < guarded_source_index < same_sha_index < public_only_index
     assert public_only_index < unhealthy_exit_index < noop_output_index < commit_guard_index
     assert commit_guard_index < ancestry_index < base_ref_index < incremental_bundle_index
     assert 'bundle_mode="full"' not in build
