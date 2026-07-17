@@ -574,6 +574,10 @@ WITH seed_group AS (
 """.replace("__EXTERNAL_SCOPE_GATED_SQL__", _DETAIL_EXTERNAL_SCOPE_GATED_SQL)
 
 
+# ``filtered`` is referenced by the page, total, status and section aggregates.
+# PostgreSQL otherwise materializes all wide source rows (including JSON) before
+# those consumers can prune their columns.  Inlining trades that wide spool for
+# narrow, independently planned scans and keeps the 100k-row read path stable.
 _FAST_PAGE_SQL = r"""
 WITH source_rows AS (
     SELECT
@@ -794,7 +798,7 @@ WITH source_rows AS (
     FROM broadcast_jobs b
     WHERE COALESCE(NULLIF(b.execution_owner, ''), 'legacy_frozen') <> 'external_effect'
       AND b.status <> 'delegated'
-), filtered AS (
+), filtered AS NOT MATERIALIZED (
     SELECT * FROM source_rows p
     WHERE (:section = '' OR p.section = :section)
       AND (:effect_type = '' OR p.effect_type ILIKE '%' || :effect_type || '%')

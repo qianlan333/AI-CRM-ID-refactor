@@ -22,6 +22,7 @@ from aicrm_next.platform_foundation.push_center.repository import PushCenterRepo
 from aicrm_next.platform_foundation.push_center.section_mapper import effect_types_for_section, label_for_section, section_for_job
 from aicrm_next.platform_foundation.push_center.sql_read_model import (
     InvalidPushCenterCursor,
+    _FAST_PAGE_SQL,
     _public_item,
     decode_push_center_cursor,
     encode_push_center_cursor,
@@ -35,6 +36,11 @@ from aicrm_next.platform_foundation.push_center.view_model import (
 from tests.admin_auth_test_helpers import install_admin_action_tokens
 
 pytest_plugins = ("tests.group_ops_test_helpers",)
+
+
+def test_push_center_aggregates_do_not_materialize_wide_filtered_rows() -> None:
+    assert "), filtered AS NOT MATERIALIZED (" in _FAST_PAGE_SQL
+    assert "(f.created_at, f.projection_id) <" in _FAST_PAGE_SQL
 
 
 def test_push_center_cursor_is_signed_and_bound_to_filters(monkeypatch) -> None:
