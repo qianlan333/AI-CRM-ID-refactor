@@ -204,6 +204,24 @@ def test_id_validation_provenance_recovery_has_permanent_full_ci_scope() -> None
     assert result["architecture_gate"] == "full"
 
 
+def test_deploy_script_and_expression_length_guard_have_permanent_full_ci_scope() -> None:
+    result = _select(
+        "scripts/ops/deploy_id_validation_remote.sh",
+        "scripts/ci/check_github_actions_expression_length.py",
+        "tests/test_github_actions_expression_length.py",
+    )
+
+    assert result["unmatched_files"] == []
+    assert "ci_deploy" in result["matched_scopes"]
+    assert "tests/test_deploy_workflow_contract.py" in result["python_tests"]
+    assert "tests/test_ci_workflow_contract.py" in result["python_tests"]
+    assert "tests/test_ai_audience_runtime_hotfixes.py" in result["python_tests"]
+    assert "tests/test_identity_cutover_reconciliation_contract.py" in result["python_tests"]
+    assert "tests/test_github_actions_expression_length.py" in result["python_tests"]
+    assert result["needs_full_ci"] is True
+    assert result["architecture_gate"] == "full"
+
+
 def test_h5_wechat_pay_mobile_projection_test_selects_commerce_scope() -> None:
     result = _select("tests/test_h5_wechat_pay_mobile_projection.py")
 

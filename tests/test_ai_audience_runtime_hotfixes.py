@@ -63,6 +63,6 @@ def test_ai_audience_external_api_env_allows_runtime_business_prefix(tmp_path) -
 
 
 def test_deploy_workflow_repairs_ai_audience_external_api_prefixes() -> None:
-    workflow = (ROOT / ".github/workflows/deploy.yml").read_text(encoding="utf-8")
+    workflow = (ROOT / "scripts/ops/deploy_id_validation_remote.sh").read_text(encoding="utf-8")
 
     assert "scripts/ops/ensure_ai_audience_external_api_env.py /home/ubuntu/.openclaw-wecom-pg.env" in workflow

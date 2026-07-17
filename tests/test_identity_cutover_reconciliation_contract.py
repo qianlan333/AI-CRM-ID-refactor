@@ -8,7 +8,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def test_identity_reconciliation_outputs_counts_only_and_runs_before_service_stop() -> None:
     script = (ROOT / "scripts/ops/check_unionid_identity_cutover.py").read_text(encoding="utf-8")
-    deploy = (ROOT / ".github/workflows/deploy.yml").read_text(encoding="utf-8")
+    deploy = (ROOT / "scripts/ops/deploy_id_validation_remote.sh").read_text(encoding="utf-8")
 
     for required in (
         "duplicate_alias_group_count",

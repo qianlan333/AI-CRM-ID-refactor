@@ -8,12 +8,17 @@ ROOT = Path(__file__).resolve().parents[1]
 CI_FAST_WORKFLOW = ROOT / ".github" / "workflows" / "ci-fast.yml"
 FULL_REGRESSION_WORKFLOW = ROOT / ".github" / "workflows" / "full-regression.yml"
 DEPLOY_WORKFLOW = ROOT / ".github" / "workflows" / "deploy.yml"
+REMOTE_DEPLOY_SCRIPT = ROOT / "scripts" / "ops" / "deploy_id_validation_remote.sh"
 PROMOTE_PRODUCTION_WORKFLOW = ROOT / ".github" / "workflows" / "promote-production.yml"
 LEGACY_CI_WORKFLOW = ROOT / ".github" / "workflows" / "ci.yml"
 
 
 def _source(path: Path) -> str:
     return path.read_text(encoding="utf-8")
+
+
+def _deploy_contract_source() -> str:
+    return _source(DEPLOY_WORKFLOW) + "\n" + _source(REMOTE_DEPLOY_SCRIPT)
 
 
 def test_ci_fast_uses_selector_and_single_required_result() -> None:
@@ -106,7 +111,7 @@ def test_full_regression_runs_governance_once_and_ci_fast_does_not_duplicate_it(
 
 
 def test_id_validation_deploy_waits_for_successful_ci_fast_on_main() -> None:
-    source = _source(DEPLOY_WORKFLOW)
+    source = _deploy_contract_source()
     trigger = source[source.index("on:") : source.index("permissions:")]
 
     assert "name: Deploy ID Validation" in source
@@ -149,7 +154,7 @@ def test_id_validation_deploy_waits_for_successful_ci_fast_on_main() -> None:
 
 
 def test_id_validation_deploy_has_no_manual_or_production_promotion_path() -> None:
-    source = _source(DEPLOY_WORKFLOW)
+    source = _deploy_contract_source()
 
     assert not PROMOTE_PRODUCTION_WORKFLOW.exists()
     assert "workflow_call:" not in source
