@@ -557,7 +557,7 @@
       "accessor": "runtime_setting",
       "file": "aicrm_next/shared/wechat_h5_session.py",
       "key": "AICRM_NEXT_ACTION_TOKEN_SECRET",
-      "line": 27
+      "line": 30
     },
     {
       "accessor": "os.getenv",
@@ -851,7 +851,7 @@
       "accessor": "runtime_setting",
       "file": "aicrm_next/public_product/h5_wechat_pay.py",
       "key": "AICRM_PUBLIC_BASE_URL",
-      "line": 119
+      "line": 125
     },
     {
       "accessor": "os.getenv",
@@ -1061,7 +1061,7 @@
       "accessor": "runtime_setting",
       "file": "aicrm_next/public_product/h5_wechat_pay.py",
       "key": "APP_BASE_URL",
-      "line": 121
+      "line": 127
     },
     {
       "accessor": "os.getenv",
@@ -1445,7 +1445,7 @@
       "accessor": "runtime_setting",
       "file": "aicrm_next/public_product/h5_wechat_pay.py",
       "key": "PUBLIC_BASE_URL",
-      "line": 120
+      "line": 126
     },
     {
       "accessor": "os.getenv",
@@ -1505,13 +1505,13 @@
       "accessor": "runtime_setting",
       "file": "aicrm_next/radar_links/api.py",
       "key": "SECRET_KEY",
-      "line": 185
+      "line": 187
     },
     {
       "accessor": "runtime_setting",
       "file": "aicrm_next/radar_links/application.py",
       "key": "SECRET_KEY",
-      "line": 41
+      "line": 43
     },
     {
       "accessor": "runtime_setting",
@@ -1523,7 +1523,7 @@
       "accessor": "runtime_setting",
       "file": "aicrm_next/shared/wechat_h5_session.py",
       "key": "SECRET_KEY",
-      "line": 28
+      "line": 31
     },
     {
       "accessor": "os.getenv",

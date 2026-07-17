@@ -20,6 +20,7 @@ from aicrm_next.main import create_app
 from aicrm_next.platform_foundation.internal_events import InternalEventService, reset_internal_event_fixture_state
 from aicrm_next.questionnaire.h5_write import reset_questionnaire_h5_write_fixture_state
 from aicrm_next.questionnaire.repo import reset_questionnaire_fixture_state
+from tests.wechat_identity_test_support import authorize_wechat_client
 
 
 def _client(monkeypatch) -> TestClient:
@@ -36,6 +37,14 @@ def test_questionnaire_submit_emits_durable_event_without_request_path_side_effe
     monkeypatch.setenv("AICRM_INTERNAL_EVENTS_QUESTIONNAIRE_ENABLED", "1")
     monkeypatch.setenv("AICRM_INTERNAL_EVENTS_ALLOWED_EVENT_TYPES", "questionnaire.submitted")
     client = _client(monkeypatch)
+    authorize_wechat_client(
+        client,
+        {
+            "external_userid": "wm_shadow_questionnaire",
+            "openid": "openid_shadow_questionnaire",
+            "unionid": "unionid_shadow_questionnaire",
+        },
+    )
 
     response = client.post(
         "/api/h5/questionnaires/hxc-activation-v1/submit",
@@ -55,7 +64,7 @@ def test_questionnaire_submit_emits_durable_event_without_request_path_side_effe
     assert body["external_effect_job_id"] is None
     assert body["external_effect_job_status"] == "not_planned"
     assert body["side_effects"]["wecom_tag"]["status"] == "queued"
-    assert body["side_effects"]["wecom_tag"]["error_code"] == "identity_pending_unionid"
+    assert body["side_effects"]["wecom_tag"]["error_code"] == ""
     assert body["side_effects"]["wecom_tag"]["external_effect_job_id"] is None
     assert body["side_effects"]["wecom_tag"]["wecom_api_called"] is False
     assert body["durable_continuation_queued"] is True
@@ -72,7 +81,7 @@ def test_questionnaire_submit_emits_durable_event_without_request_path_side_effe
         "questionnaire_id": 1,
         "slug": "hxc-activation-v1",
         "submission_id": body["submission_id"],
-        "unionid_present": False,
+        "unionid_present": True,
     }
     assert run_total == 6
     assert sorted(run.consumer_name for run in runs) == [

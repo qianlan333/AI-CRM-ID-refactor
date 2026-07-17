@@ -294,7 +294,7 @@ def _handle_submit(command: Command) -> dict[str, Any]:
             "person_id": identity.person_id if identity else None,
             "external_userid": (identity.external_userid if identity else identity_payload.get("external_userid")) or "",
             "openid": (identity.openid if identity else identity_payload.get("openid")) or "",
-            "unionid": (identity.unionid if identity else "") or "",
+            "unionid": (identity.unionid if identity else identity_payload.get("unionid")) or "",
             "mobile": identity_payload.get("mobile") or (identity.mobile if identity else "") or "",
             "binding_status": identity.binding_status if identity else ("identity_pending_unionid" if identity_input_present else "unresolved"),
             "identity_map_id": identity.identity_map_id if identity else None,

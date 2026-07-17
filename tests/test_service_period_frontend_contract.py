@@ -289,8 +289,8 @@ def test_service_period_public_page_renders_none_active_and_expired_ctas(next_cl
     none_page = next_client.get("/s/sp_public_none")
     none_state = next_client.get("/api/h5/service-period-products/sp_public_none")
     assert none_page.status_code == 200
-    assert none_state.status_code == 200
-    assert none_state.json()["lead_qr"] == {}
+    assert none_state.status_code == 403
+    assert none_state.json()["error"] == "wechat_browser_required"
     assert "立即报名" in none_page.text
     assert "开通后获得" not in none_page.text
     assert "测试会员设置" not in none_page.text
@@ -391,8 +391,8 @@ def test_service_period_pay_page_reuses_public_pay_confirmation_contract(next_cl
     before_auth = next_client.get("/s/sp_public_pay_mobile/pay")
     assert before_auth.status_code == 200
     assert "确认报名信息" in before_auth.text
-    assert "授权登录" in before_auth.text
-    assert "需要先完成微信授权。" in before_auth.text
+    assert "请在微信中打开" in before_auth.text
+    assert "请在微信中打开后完成授权。" in before_auth.text
     assert 'id="mobileInput"' not in before_auth.text
 
     next_client.cookies.set(h5_wechat_pay.COOKIE_NAME, h5_wechat_pay._signed_blob({"openid": "op_sp_pay", "unionid": "union_sp_pay"}))

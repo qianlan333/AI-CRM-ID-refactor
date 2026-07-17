@@ -9,6 +9,7 @@ from aicrm_next.questionnaire.h5_write import (
     reset_questionnaire_h5_write_fixture_state,
 )
 from aicrm_next.questionnaire.repo import build_questionnaire_repository, reset_questionnaire_fixture_state
+from wechat_identity_test_support import authorize_wechat_client
 
 
 @pytest.fixture()
@@ -18,7 +19,9 @@ def client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
     monkeypatch.delenv("AICRM_NEXT_ENABLE_LEGACY_PRODUCTION_FACADE", raising=False)
     reset_questionnaire_fixture_state()
     reset_questionnaire_h5_write_fixture_state()
-    return TestClient(create_app())
+    client = TestClient(create_app())
+    authorize_wechat_client(client, {"openid": "openid_001", "unionid": "unionid_001", "external_userid": "wx_ext_001"})
+    return client
 
 
 def _submission_count() -> int:

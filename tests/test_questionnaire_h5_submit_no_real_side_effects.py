@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 
 from aicrm_next.main import create_app
 from aicrm_next.questionnaire.h5_write import get_questionnaire_h5_side_effect_plans, reset_questionnaire_h5_write_fixture_state
+from wechat_identity_test_support import authorize_wechat_client
 
 
 @pytest.fixture()
@@ -15,7 +16,9 @@ def client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
     monkeypatch.delenv("DATABASE_URL", raising=False)
     monkeypatch.delenv("AICRM_NEXT_ENV", raising=False)
     monkeypatch.delenv("AICRM_NEXT_ENABLE_LEGACY_PRODUCTION_FACADE", raising=False)
-    return TestClient(create_app())
+    client = TestClient(create_app())
+    authorize_wechat_client(client, {"openid": "openid_001", "unionid": "unionid_001", "external_userid": "wx_ext_001"})
+    return client
 
 
 def test_h5_submit_reports_only_the_durable_continuation_and_never_checks_provider_config(client: TestClient) -> None:
