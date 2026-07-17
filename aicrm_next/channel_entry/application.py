@@ -42,7 +42,7 @@ from aicrm_next.platform_foundation.external_effects import (
 from aicrm_next.platform_foundation.internal_events import InternalEventService
 from aicrm_next.platform_foundation.external_effects.realtime import wake_external_effect_job
 from aicrm_next.platform_foundation.external_effects.adapters import ExternalEffectAdapterRegistry
-from aicrm_next.channel_entry.welcome_media_effects import (
+from aicrm_next.channel_entry.welcome_media_effects_repository import (
     WelcomeEffectGraphRequest,
     build_welcome_effect_graph_repository,
 )

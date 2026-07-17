@@ -861,6 +861,7 @@ def test_internal_event_worker_systemd_units_are_deployable():
     assert "external_effect.completed" in service
     assert "external_effect.completed:external_effect_identity_continuation_consumer" in service
     assert "external_effect.completed:external_effect_group_ops_continuation_consumer" in service
+    assert "external_effect.completed:external_effect_welcome_media_continuation_consumer" in service
     assert "external_effect.completed:external_effect_broadcast_continuation_consumer" in service
     assert "external_effect.completed:external_effect_questionnaire_continuation_consumer" in service
     assert "external_effect.completed:external_effect_external_push_continuation_consumer" in service

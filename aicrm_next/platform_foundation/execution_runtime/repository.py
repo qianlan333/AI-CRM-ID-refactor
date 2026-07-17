@@ -47,6 +47,7 @@ def external_claim_scope_predicate(
     *,
     row_alias: str = "job",
     scope_expression: str = "control.external_claim_scope",
+    execution_scope_expression: str | None = None,
 ) -> str:
     """Return the canonical SQL gate for external-effect execution scope.
 
@@ -54,7 +55,7 @@ def external_claim_scope_predicate(
     this module and the read model; no request data is interpolated here.
     """
 
-    execution_scope = f"COALESCE({row_alias}.payload_json->>'execution_scope', '')"
+    execution_scope = execution_scope_expression or f"COALESCE({row_alias}.payload_json->>'execution_scope', '')"
     return f"""
         (
             {scope_expression} = 'all'

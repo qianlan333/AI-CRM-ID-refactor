@@ -239,7 +239,7 @@ class AudienceInboundWebhookService:
             return {"status": "skipped", "reason": "missing_required_action_fields"}
         from aicrm_next.cloud_orchestrator.repository import build_cloud_plan_repository
 
-        return build_cloud_plan_repository().create_or_reuse_agent_send_plan(
+        send_plan = build_cloud_plan_repository().create_or_reuse_agent_send_plan(
             external_event_id=external_event_id,
             package_key=_text(package.get("package_key")),
             external_userid=target,
@@ -247,6 +247,28 @@ class AudienceInboundWebhookService:
             content_package=normalized_package,
             operator="automation_agent",
         )
+        plan_id = _text(send_plan.get("plan_id"))
+        recipient_id = int(send_plan.get("recipient_id") or 0)
+        if not plan_id or recipient_id <= 0:
+            return send_plan
+
+        # This runs only from the durable inbound-event consumer.  Approval is
+        # idempotent and creates durable broadcast intent; it never calls a
+        # provider in this transaction.
+        from aicrm_next.cloud_orchestrator.application import ApproveCloudPlanRecipientCommand
+
+        approval = ApproveCloudPlanRecipientCommand().execute(
+            plan_id,
+            recipient_id,
+            operator="automation_agent_inbound_consumer",
+        )
+        return {
+            **send_plan,
+            "approval": {
+                "status": _text(approval.get("status")),
+                "job_id": int(approval.get("job_id") or 0),
+            },
+        }
 
 
 def _test_scope(package: dict[str, Any]) -> dict[str, Any]:

@@ -155,6 +155,7 @@ class ExecutionRuntimeReadModel:
         external_scope = external_claim_scope_predicate(
             row_alias="rows",
             scope_expression="control.external_claim_scope",
+            execution_scope_expression="rows.execution_scope",
         )
         return f"""
             WITH queue_rows AS (

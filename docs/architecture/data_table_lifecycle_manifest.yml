@@ -1991,6 +1991,7 @@ tables:
     write_owner: aicrm_next.platform_foundation.external_effects.service
     write_owners:
       - aicrm_next.automation_engine.group_ops.durable_effects_repository
+      - aicrm_next.channel_entry.welcome_media_effects_repository
       - aicrm_next.platform_foundation.execution_runtime.repository
       - aicrm_next.platform_foundation.external_effects.service
       - aicrm_next.platform_foundation.external_effects.transactional
@@ -4695,3 +4696,47 @@ tables:
       - tests/test_group_ops_durable_effect_graph_postgres.py
       - tests/test_data_table_lifecycle_guard.py
     notes: CAS-updated dependency state. Only every prerequisite succeeded may release the final planned effect; failed, cancelled and superseded graphs cannot release.
+
+  channel_welcome_effect_graph:
+    domain: channel_entry
+    lifecycle: canonical
+    write_owner: aicrm_next.channel_entry.welcome_media_effects_repository
+    read_owners:
+      - channel welcome completion continuation
+      - unified execution timeline
+      - execution runtime consistency audit
+    replacement: none; canonical root for one welcome-message media dependency graph
+    drop_candidate: false
+    drop_after: ""
+    runtime_entrypoints:
+      - channel welcome effect planning
+      - external_effect.completed continuation
+      - channel welcome cancellation command
+    migration_source: 0130_welcome_media_dependencies
+    pii_level: internal_contact
+    guard_tests:
+      - tests/test_channel_welcome_media_dependencies_postgres.py
+      - tests/test_data_table_lifecycle_guard.py
+    notes: Stores only the public execution link, channel reference and final effect owner. Provider identity, payload and content remain in the external-effect boundary.
+
+  channel_welcome_effect_dependency:
+    domain: channel_entry
+    lifecycle: queue
+    write_owner: aicrm_next.channel_entry.welcome_media_effects_repository
+    read_owners:
+      - channel welcome completion continuation
+      - unified execution timeline
+      - execution runtime consistency audit
+    replacement: none; canonical prerequisite edge from one media upload effect to the held welcome effect
+    drop_candidate: false
+    drop_after: ""
+    runtime_entrypoints:
+      - channel welcome effect planning
+      - external_effect.completed continuation
+      - channel welcome cancellation command
+    migration_source: 0130_welcome_media_dependencies
+    pii_level: internal_contact
+    guard_tests:
+      - tests/test_channel_welcome_media_dependencies_postgres.py
+      - tests/test_data_table_lifecycle_guard.py
+    notes: CAS-updated dependency state. The final welcome effect is released only after every prerequisite succeeds and is never released by cancelled or failed graphs.

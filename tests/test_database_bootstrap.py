@@ -74,7 +74,7 @@ def test_empty_postgres_database_installs_and_reuses_alembic_head() -> None:
 
         assert first.baseline_applied is True
         assert first.revision_before is None
-        assert first.revision_after == "0131_external_effect_continuation_fanout"
+        assert first.revision_after == "0132_external_claim_scope_policy"
         assert second.baseline_applied is False
         assert second.revision_before == first.revision_after
         assert second.revision_after == first.revision_after
@@ -123,7 +123,7 @@ def test_empty_postgres_database_installs_and_reuses_alembic_head() -> None:
             runtime_control = connection.execute(
                 """
                 SELECT active_generation, claim_enabled, rollout_mode,
-                       global_max_in_flight, policy_version
+                       global_max_in_flight, policy_version, external_claim_scope
                 FROM queue_runtime_control
                 WHERE singleton = TRUE
                 """
@@ -144,9 +144,10 @@ def test_empty_postgres_database_installs_and_reuses_alembic_head() -> None:
                        (policy_json ->> 'heartbeat_seconds')::INTEGER,
                        (policy_json ->> 'lease_ttl_seconds')::INTEGER,
                        (policy_json ->> 'fallback_drain_seconds')::INTEGER,
-                       policy_json ->> 'outbound_webhook_default'
+                       policy_json ->> 'outbound_webhook_default',
+                       policy_json ->> 'external_claim_scope'
                 FROM queue_policy_snapshot
-                WHERE policy_version = 'queue-v1'
+                WHERE policy_version = 'queue-v2-test-loopback'
                 """
             ).fetchone()
             runtime_queue_columns = connection.execute(
@@ -196,7 +197,7 @@ def test_empty_postgres_database_installs_and_reuses_alembic_head() -> None:
             "expected_consumer_count",
         }
         assert all(row[1] == "NO" for row in manifest_columns)
-        assert runtime_control == (0, False, "standby", 20, "queue-v1")
+        assert runtime_control == (0, False, "standby", 20, "queue-v2-test-loopback", "test_loopback")
         assert lane_policies == {
             "internal_financial": (1, "standby", True),
             "internal_general": (4, "standby", True),
@@ -206,7 +207,7 @@ def test_empty_postgres_database_installs_and_reuses_alembic_head() -> None:
             "wecom_interactive": (4, "standby", True),
             "wecom_media": (2, "standby", True),
         }
-        assert policy_snapshot == ("queue-v1", 10, 30, 30, "blocked")
+        assert policy_snapshot == ("queue-v2-test-loopback", 10, 30, 30, "blocked", "test_loopback")
         assert {(str(table_name), str(column_name)): str(is_nullable) for table_name, column_name, is_nullable in runtime_queue_columns} == {
             ("external_effect_job", "available_at"): "NO",
             ("external_effect_job", "lane"): "NO",
@@ -295,7 +296,7 @@ def test_production_shape_alembic_database_upgrades_without_reapplying_baseline(
 
         assert result.baseline_applied is False
         assert result.revision_before == "0098_admin_session_revocation"
-        assert result.revision_after == "0131_external_effect_continuation_fanout"
+        assert result.revision_after == "0132_external_claim_scope_policy"
         with psycopg.connect(database_url) as connection:
             preserved = connection.execute(
                 "SELECT wecom_userid, session_version FROM admin_users WHERE id = %s",
@@ -323,7 +324,7 @@ def test_upgrade_repairs_missing_or_partial_automation_agent_audit_tables_withou
 
         assert result.baseline_applied is False
         assert result.revision_before == "0123_required_physical_schema_repair"
-        assert result.revision_after == "0131_external_effect_continuation_fanout"
+        assert result.revision_after == "0132_external_claim_scope_policy"
 
         expected_columns = {
             "automation_agent_output": {
@@ -993,8 +994,116 @@ def test_identity_customer_cutover_holds_historical_work_without_replay() -> Non
         _upgrade_database_to(database_url, "head")
         with psycopg.connect(database_url) as connection:
             assert connection.execute("SELECT version_num FROM alembic_version").fetchone() == (
-                "0131_external_effect_continuation_fanout",
+                "0132_external_claim_scope_policy",
             )
+
+
+def test_external_claim_scope_policy_upgrade_downgrade_and_reupgrade() -> None:
+    with _isolated_database("external_claim_scope_policy") as database_url:
+        with psycopg.connect(database_url, autocommit=True) as connection:
+            connection.execute(BASELINE_PATH.read_text(encoding="utf-8"))
+        _upgrade_database_to(database_url, "0131_external_effect_continuation_fanout")
+
+        with psycopg.connect(database_url) as connection:
+            before_column = connection.execute(
+                """
+                SELECT COUNT(*)
+                FROM information_schema.columns
+                WHERE table_schema = 'public'
+                  AND table_name = 'queue_runtime_control'
+                  AND column_name = 'external_claim_scope'
+                """
+            ).fetchone()
+        assert before_column == (0,)
+
+        _upgrade_database_to(database_url, "head")
+
+        with psycopg.connect(database_url) as connection:
+            control = connection.execute(
+                """
+                SELECT active_generation, claim_enabled, policy_version, external_claim_scope
+                FROM queue_runtime_control
+                WHERE singleton = TRUE
+                """
+            ).fetchone()
+            lane_versions = connection.execute(
+                "SELECT DISTINCT policy_version FROM queue_lane_policy"
+            ).fetchall()
+            snapshot = connection.execute(
+                """
+                SELECT policy_json ->> 'external_claim_scope',
+                       policy_json ->> 'outbound_webhook_default'
+                FROM queue_policy_snapshot
+                WHERE policy_version = 'queue-v2-test-loopback'
+                """
+            ).fetchone()
+            defaults = connection.execute(
+                """
+                SELECT table_name, column_default
+                FROM information_schema.columns
+                WHERE table_schema = 'public'
+                  AND table_name IN (
+                      'external_effect_job', 'internal_event_consumer_run',
+                      'internal_event_outbox', 'webhook_inbox'
+                  )
+                  AND column_name = 'policy_version'
+                ORDER BY table_name
+                """
+            ).fetchall()
+
+            with pytest.raises(psycopg.errors.CheckViolation):
+                connection.execute(
+                    "UPDATE queue_runtime_control SET external_claim_scope = 'unsafe' WHERE singleton = TRUE"
+                )
+            connection.rollback()
+
+        assert control == (0, False, "queue-v2-test-loopback", "test_loopback")
+        assert lane_versions == [("queue-v2-test-loopback",)]
+        assert snapshot == ("test_loopback", "blocked")
+        assert len(defaults) == 4
+        assert all("queue-v2-test-loopback" in str(column_default) for _, column_default in defaults)
+
+        _downgrade_database_to(database_url, "0131_external_effect_continuation_fanout")
+        with psycopg.connect(database_url) as connection:
+            downgraded_column = connection.execute(
+                """
+                SELECT COUNT(*)
+                FROM information_schema.columns
+                WHERE table_schema = 'public'
+                  AND table_name = 'queue_runtime_control'
+                  AND column_name = 'external_claim_scope'
+                """
+            ).fetchone()
+            downgraded_control = connection.execute(
+                "SELECT policy_version FROM queue_runtime_control WHERE singleton = TRUE"
+            ).fetchone()
+            downgraded_lanes = connection.execute(
+                "SELECT DISTINCT policy_version FROM queue_lane_policy"
+            ).fetchall()
+
+        assert downgraded_column == (0,)
+        assert downgraded_control == ("queue-v1",)
+        assert downgraded_lanes == [("queue-v1",)]
+
+        _upgrade_database_to(database_url, "head")
+        with psycopg.connect(database_url) as connection:
+            assert connection.execute("SELECT version_num FROM alembic_version").fetchone() == (
+                "0132_external_claim_scope_policy",
+            )
+            assert connection.execute(
+                """
+                SELECT policy_version, external_claim_scope
+                FROM queue_runtime_control
+                WHERE singleton = TRUE
+                """
+            ).fetchone() == ("queue-v2-test-loopback", "test_loopback")
+            assert connection.execute(
+                """
+                SELECT COUNT(*)
+                FROM queue_policy_snapshot
+                WHERE policy_version = 'queue-v2-test-loopback'
+                """
+            ).fetchone() == (1,)
 
 
 def test_continuation_fanout_cutover_holds_legacy_completion_work_without_replay() -> None:

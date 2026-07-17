@@ -7,6 +7,7 @@ from sqlalchemy import text
 
 from aicrm_next.automation_agents.context_builder import referenced_context_keys
 from aicrm_next.automation_agents.worker import AutomationAgentWorker
+from aicrm_next.ai_audience_ops.event_types import INBOUND_RECEIVED_EVENT
 from aicrm_next.external_effect_composition import (
     AUTOMATION_EXTERNAL_EFFECT_CONTINUATION_CONSUMER,
     build_external_effect_continuation_consumers,
@@ -51,6 +52,23 @@ def _insert_package(session, *, package_key: str = "agent_callback_pkg") -> int:
         .one()
     )
     return int(row["id"])
+
+
+def _dispatch_ai_audience_inbound_events() -> list[dict]:
+    registry = build_internal_event_consumer_registry()
+    relayed = InternalEventOutboxRelay(consumer_registry=registry).relay_due(limit=100)
+    assert relayed["ok"] is True
+    events, _ = InternalEventService().list_events({"event_type": INBOUND_RECEIVED_EVENT}, limit=100)
+    worker = InternalEventWorker(consumer_registry=registry)
+    results: list[dict] = []
+    for event in events:
+        runs, _ = InternalEventService().list_consumer_runs({"event_id": event.event_id}, limit=100)
+        for run in runs:
+            if run.status in {"pending", "failed_retryable"}:
+                results.append(worker.dispatch_one(run))
+    assert results
+    assert {item["consumer_run"]["status"] for item in results} == {"succeeded"}
+    return results
 
 
 def _insert_agent(
@@ -351,6 +369,10 @@ def test_worker_fake_mode_generates_package_and_enqueues_send_plan(next_client, 
     assert result["status"] == "succeeded"
     assert seen_keys["keys"] == {"tags", "recent_messages"}
     with get_session_factory()() as session:
+        assert int(session.execute(text("SELECT COUNT(*) FROM cloud_broadcast_plans")).scalar() or 0) == 0
+        assert int(session.execute(text("SELECT COUNT(*) FROM internal_event_outbox WHERE event_type = :event_type"), {"event_type": INBOUND_RECEIVED_EVENT}).scalar() or 0) == 1
+    _dispatch_ai_audience_inbound_events()
+    with get_session_factory()() as session:
         item = session.execute(text("SELECT * FROM automation_agent_webhook_item")).mappings().one()
         plan_count = int(session.execute(text("SELECT COUNT(*) FROM cloud_broadcast_plans")).scalar() or 0)
         message = session.execute(text("SELECT * FROM cloud_broadcast_plan_recipient_messages")).mappings().one()
@@ -545,6 +567,7 @@ def test_external_effect_agent_webhook_continuation_enqueues_broadcast_job(next_
     completion_result = completion_results[AUTOMATION_EXTERNAL_EFFECT_CONTINUATION_CONSUMER]
     assert completion_result["ok"] is True
     assert completion_result["consumer_run"]["result_summary_json"]["continuation"] == "dict"
+    _dispatch_ai_audience_inbound_events()
     with get_session_factory()() as session:
         job_row = session.execute(text("SELECT * FROM external_effect_job WHERE id = :job_id"), {"job_id": job["id"]}).mappings().one()
         attempt = session.execute(text("SELECT * FROM external_effect_attempt WHERE job_id = :job_id"), {"job_id": job["id"]}).mappings().one()
@@ -612,6 +635,7 @@ def test_worker_fixed_script_uses_configured_text_without_agent_generation(next_
 
     assert result["status"] == "succeeded"
     assert seen_keys["keys"] == set()
+    _dispatch_ai_audience_inbound_events()
     with get_session_factory()() as session:
         item = session.execute(text("SELECT * FROM automation_agent_webhook_item")).mappings().one()
         message = session.execute(text("SELECT * FROM cloud_broadcast_plan_recipient_messages")).mappings().one()

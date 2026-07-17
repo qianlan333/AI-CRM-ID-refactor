@@ -349,6 +349,21 @@ repositories:
       - contact_tags
       - crm_user_identity_resolution_queue
       - wecom_external_contact_event_logs
+  aicrm_next/channel_entry/welcome_media_effects_repository.py:
+    capability_owner: aicrm_next.channel_entry.welcome_media_effects_repository
+    table_reads:
+      - attachment_library
+      - channel_welcome_effect_dependency
+      - channel_welcome_effect_graph
+      - external_effect_attempt
+      - external_effect_job
+      - group_invite_library
+      - image_library
+      - miniprogram_library
+    table_writes:
+      - channel_welcome_effect_dependency
+      - channel_welcome_effect_graph
+      - external_effect_job
   aicrm_next/cloud_orchestrator/repository.py:
     capability_owner: aicrm_next.cloud_orchestrator
     table_reads:

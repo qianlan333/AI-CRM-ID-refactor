@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from .commerce.admin_transactions import apply_wechat_refund_result, mark_wechat_refund_request_failed
 from .channel_entry.identity_external_effect import IDENTITY_EXTERNAL_CONTACT_DETAIL_CONTINUATION
+from .channel_entry.welcome_media_effects_repository import WELCOME_MEDIA_DEPENDENCY_CONTINUATION
 from .automation_agents.external_effect_continuation import AUTOMATION_AGENT_AUDIENCE_WEBHOOK_CONTINUATION
 from .automation_engine.group_ops.external_effect_continuation import GROUP_OPS_MEDIA_DEPENDENCY_CONTINUATION
 from .background_jobs.broadcast_effect_repository import BROADCAST_EXTERNAL_EFFECT_READ_MODEL_CONTINUATION
@@ -33,6 +34,7 @@ from .questionnaire.external_effect_continuation import QUESTIONNAIRE_CONTACT_TA
 
 IDENTITY_EXTERNAL_EFFECT_CONTINUATION_CONSUMER = "external_effect_identity_continuation_consumer"
 GROUP_OPS_EXTERNAL_EFFECT_CONTINUATION_CONSUMER = "external_effect_group_ops_continuation_consumer"
+WELCOME_MEDIA_EXTERNAL_EFFECT_CONTINUATION_CONSUMER = "external_effect_welcome_media_continuation_consumer"
 BROADCAST_EXTERNAL_EFFECT_CONTINUATION_CONSUMER = "external_effect_broadcast_continuation_consumer"
 QUESTIONNAIRE_EXTERNAL_EFFECT_CONTINUATION_CONSUMER = "external_effect_questionnaire_continuation_consumer"
 EXTERNAL_PUSH_EFFECT_CONTINUATION_CONSUMER = "external_effect_external_push_continuation_consumer"
@@ -56,6 +58,10 @@ def build_external_effect_continuation_consumers() -> tuple[ExternalEffectContin
         ExternalEffectContinuationConsumer(
             GROUP_OPS_EXTERNAL_EFFECT_CONTINUATION_CONSUMER,
             GROUP_OPS_MEDIA_DEPENDENCY_CONTINUATION,
+        ),
+        ExternalEffectContinuationConsumer(
+            WELCOME_MEDIA_EXTERNAL_EFFECT_CONTINUATION_CONSUMER,
+            WELCOME_MEDIA_DEPENDENCY_CONTINUATION,
         ),
         ExternalEffectContinuationConsumer(
             BROADCAST_EXTERNAL_EFFECT_CONTINUATION_CONSUMER,
@@ -206,6 +212,7 @@ __all__ = [
     "GROUP_OPS_EXTERNAL_EFFECT_CONTINUATION_CONSUMER",
     "IDENTITY_EXTERNAL_EFFECT_CONTINUATION_CONSUMER",
     "QUESTIONNAIRE_EXTERNAL_EFFECT_CONTINUATION_CONSUMER",
+    "WELCOME_MEDIA_EXTERNAL_EFFECT_CONTINUATION_CONSUMER",
     "build_external_effect_adapter_registry",
     "build_external_effect_continuation_consumers",
     "build_external_effect_continuation_registry",

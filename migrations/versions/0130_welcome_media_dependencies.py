@@ -24,8 +24,6 @@ def upgrade() -> None:
             parent_execution_id TEXT NOT NULL DEFAULT '',
             idempotency_key TEXT NOT NULL,
             channel_id BIGINT NOT NULL DEFAULT 0,
-            external_userid TEXT NOT NULL DEFAULT '',
-            follow_user_userid TEXT NOT NULL DEFAULT '',
             status TEXT NOT NULL DEFAULT 'waiting_dependencies',
             final_effect_job_id BIGINT REFERENCES external_effect_job(id) ON DELETE SET NULL,
             actor_id TEXT NOT NULL DEFAULT '',

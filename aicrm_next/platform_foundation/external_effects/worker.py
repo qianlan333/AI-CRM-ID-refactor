@@ -7,6 +7,7 @@ from urllib.parse import urlparse
 from uuid import uuid4
 
 from aicrm_next.platform_foundation.push_center.capability_registry import capability_for_section
+from aicrm_next.shared.automation_agent_webhook_contract import automation_agent_code_from_webhook_url
 from aicrm_next.platform_foundation.push_center.section_mapper import section_for_job
 from aicrm_next.shared.runtime_settings import runtime_bool, runtime_setting
 from aicrm_next.shared.safe_logging import safe_log_exception
@@ -61,10 +62,6 @@ def _test_only_adapter_gate_error(job: ExternalEffectJob) -> str:
             return ""
         return "test_receiver_contract_invalid"
     if adapter_name == "webhook":
-        from aicrm_next.automation_agents.internal_webhook_adapter import (
-            automation_agent_code_from_webhook_url,
-        )
-
         if automation_agent_code_from_webhook_url(target_url):
             return ""
         return "test_internal_webhook_contract_invalid"

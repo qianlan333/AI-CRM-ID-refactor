@@ -1,3 +1,5 @@
+"""Repository and dependency continuation for durable welcome-message effects."""
+
 from __future__ import annotations
 
 import json
@@ -156,11 +158,11 @@ class SQLAlchemyWelcomeEffectGraphRepository:
                         """
                         INSERT INTO channel_welcome_effect_graph (
                             execution_id, parent_execution_id, idempotency_key, channel_id,
-                            external_userid, follow_user_userid, status, actor_id,
+                            status, actor_id,
                             created_at, updated_at
                         ) VALUES (
                             :execution_id, :parent_execution_id, :idempotency_key, :channel_id,
-                            :external_userid, :follow_user_userid, 'waiting_dependencies', :actor_id,
+                            'waiting_dependencies', :actor_id,
                             CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
                         ) RETURNING *
                         """
@@ -170,8 +172,6 @@ class SQLAlchemyWelcomeEffectGraphRepository:
                         "parent_execution_id": _clean(request.parent_execution_id),
                         "idempotency_key": _clean(request.idempotency_key),
                         "channel_id": int(request.channel_id or 0),
-                        "external_userid": _clean(request.external_userid),
-                        "follow_user_userid": _clean(request.follow_user_userid),
                         "actor_id": _clean(request.actor_id),
                     },
                 )

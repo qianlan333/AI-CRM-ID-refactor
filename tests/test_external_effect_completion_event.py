@@ -394,7 +394,8 @@ def test_real_external_push_and_automation_predicates_both_execute(monkeypatch) 
     ) == ("succeeded", "succeeded")
 
 
-def test_failing_overlap_does_not_block_sibling_and_only_failed_run_retries() -> None:
+def test_failing_overlap_does_not_block_sibling_and_only_failed_run_retries(monkeypatch) -> None:
+    monkeypatch.setenv("AICRM_INTERNAL_EVENTS_ENABLED", "1")
     external_repo = InMemoryExternalEffectRepository()
     job, attempt, event_payload = _completed_job(external_repo)
     calls = {"failed": 0, "succeeded": 0}
