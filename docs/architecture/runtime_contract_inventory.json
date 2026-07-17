@@ -23,7 +23,7 @@
       "accessor": "os.getenv",
       "file": "aicrm_next/commerce/coupons/admin_api.py",
       "key": "AICRM_ADMIN_AUTH_ENFORCED",
-      "line": 92
+      "line": 66
     },
     {
       "accessor": "os.getenv",
@@ -843,15 +843,15 @@
     },
     {
       "accessor": "runtime_setting",
-      "file": "aicrm_next/commerce/coupons/admin_api.py",
-      "key": "AICRM_PUBLIC_BASE_URL",
-      "line": 54
-    },
-    {
-      "accessor": "runtime_setting",
       "file": "aicrm_next/public_product/h5_wechat_pay.py",
       "key": "AICRM_PUBLIC_BASE_URL",
       "line": 119
+    },
+    {
+      "accessor": "runtime_setting",
+      "file": "aicrm_next/shared/public_url.py",
+      "key": "AICRM_PUBLIC_BASE_URL",
+      "line": 15
     },
     {
       "accessor": "os.getenv",
@@ -887,7 +887,7 @@
       "accessor": "os.getenv",
       "file": "aicrm_next/commerce/coupons/admin_api.py",
       "key": "AICRM_ROUTE_POLICY_ENFORCED",
-      "line": 91
+      "line": 65
     },
     {
       "accessor": "os.getenv",
@@ -1053,15 +1053,15 @@
     },
     {
       "accessor": "runtime_setting",
-      "file": "aicrm_next/commerce/coupons/admin_api.py",
-      "key": "APP_BASE_URL",
-      "line": 56
-    },
-    {
-      "accessor": "runtime_setting",
       "file": "aicrm_next/public_product/h5_wechat_pay.py",
       "key": "APP_BASE_URL",
       "line": 121
+    },
+    {
+      "accessor": "runtime_setting",
+      "file": "aicrm_next/shared/public_url.py",
+      "key": "APP_BASE_URL",
+      "line": 17
     },
     {
       "accessor": "os.getenv",
@@ -1133,13 +1133,13 @@
       "accessor": "os.getenv",
       "file": "aicrm_next/customer_read_model/api.py",
       "key": "CUSTOMER_READ_MODEL_REPO_BACKEND",
-      "line": 58
+      "line": 55
     },
     {
       "accessor": "os.getenv",
       "file": "aicrm_next/customer_read_model/repo.py",
       "key": "CUSTOMER_READ_MODEL_REPO_BACKEND",
-      "line": 592
+      "line": 670
     },
     {
       "accessor": "os.getenv",
@@ -1455,15 +1455,15 @@
     },
     {
       "accessor": "runtime_setting",
-      "file": "aicrm_next/commerce/coupons/admin_api.py",
-      "key": "PUBLIC_BASE_URL",
-      "line": 55
-    },
-    {
-      "accessor": "runtime_setting",
       "file": "aicrm_next/public_product/h5_wechat_pay.py",
       "key": "PUBLIC_BASE_URL",
       "line": 120
+    },
+    {
+      "accessor": "runtime_setting",
+      "file": "aicrm_next/shared/public_url.py",
+      "key": "PUBLIC_BASE_URL",
+      "line": 16
     },
     {
       "accessor": "os.getenv",
@@ -1487,7 +1487,7 @@
       "accessor": "os.getenv",
       "file": "aicrm_next/commerce/coupons/admin_api.py",
       "key": "PYTEST_CURRENT_TEST",
-      "line": 90
+      "line": 64
     },
     {
       "accessor": "os.getenv",
@@ -1523,7 +1523,7 @@
       "accessor": "runtime_setting",
       "file": "aicrm_next/radar_links/api.py",
       "key": "SECRET_KEY",
-      "line": 185
+      "line": 221
     },
     {
       "accessor": "runtime_setting",
@@ -1697,37 +1697,37 @@
       "accessor": "os.getenv",
       "file": "aicrm_next/commerce/wechat_shop_service.py",
       "key": "WECHAT_SHOP_API_BASE",
-      "line": 112
+      "line": 115
     },
     {
       "accessor": "os.getenv",
       "file": "aicrm_next/commerce/wechat_shop_service.py",
       "key": "WECHAT_SHOP_APPID",
-      "line": 110
+      "line": 113
     },
     {
       "accessor": "os.getenv",
       "file": "aicrm_next/commerce/wechat_shop_service.py",
       "key": "WECHAT_SHOP_APPID",
-      "line": 700
+      "line": 703
     },
     {
       "accessor": "runtime_setting",
       "file": "aicrm_next/commerce/wechat_shop_service.py",
       "key": "WECHAT_SHOP_APPSECRET",
-      "line": 96
+      "line": 99
     },
     {
       "accessor": "runtime_setting",
       "file": "aicrm_next/commerce/wechat_shop_service.py",
       "key": "WECHAT_SHOP_APPSECRET",
-      "line": 111
+      "line": 114
     },
     {
       "accessor": "runtime_setting",
       "file": "aicrm_next/commerce/wechat_shop_service.py",
       "key": "WECHAT_SHOP_CALLBACK_TOKEN",
-      "line": 96
+      "line": 99
     },
     {
       "accessor": "runtime_setting",
@@ -1745,7 +1745,7 @@
       "accessor": "os.getenv",
       "file": "aicrm_next/commerce/wechat_shop_service.py",
       "key": "WECHAT_SHOP_HTTP_TIMEOUT_SECONDS",
-      "line": 107
+      "line": 110
     },
     {
       "accessor": "os.getenv",
@@ -1929,12 +1929,6 @@
     },
     {
       "accessor": "os.getenv",
-      "file": "aicrm_next/customer_read_model/api.py",
-      "key": "WECOM_CORP_ID",
-      "line": 383
-    },
-    {
-      "accessor": "os.getenv",
       "file": "aicrm_next/identity_contact/api.py",
       "key": "WECOM_CORP_ID",
       "line": 246
@@ -1986,6 +1980,12 @@
       "file": "aicrm_next/questionnaire/application.py",
       "key": "WECOM_CORP_ID",
       "line": 309
+    },
+    {
+      "accessor": "os.getenv",
+      "file": "aicrm_next/shared/sidebar_access.py",
+      "key": "WECOM_CORP_ID",
+      "line": 34
     },
     {
       "accessor": "declared_runtime_environment_key",
@@ -2611,9 +2611,16 @@
       "max_attempts": 5
     },
     {
-      "consumer_name": "customer_read_model_dirty_consumer",
+      "consumer_name": "customer_timeline_projection_consumer",
       "consumer_type": "projection",
       "event_type": "channel_entry.entered",
+      "handler_registered": true,
+      "max_attempts": 10
+    },
+    {
+      "consumer_name": "customer_timeline_projection_consumer",
+      "consumer_type": "projection",
+      "event_type": "commerce.product_enrolled",
       "handler_registered": true,
       "max_attempts": 10
     },
@@ -2863,7 +2870,7 @@
       "max_attempts": 5
     },
     {
-      "consumer_name": "customer_read_model_dirty_consumer",
+      "consumer_name": "customer_timeline_projection_consumer",
       "consumer_type": "projection",
       "event_type": "payment.succeeded",
       "handler_registered": true,
@@ -2975,18 +2982,18 @@
       "max_attempts": 5
     },
     {
-      "consumer_name": "customer_read_model_dirty_consumer",
-      "consumer_type": "projection",
-      "event_type": "questionnaire.submitted",
-      "handler_registered": true,
-      "max_attempts": 10
-    },
-    {
       "consumer_name": "customer_summary_consumer",
       "consumer_type": "projection",
       "event_type": "questionnaire.submitted",
       "handler_registered": true,
       "max_attempts": 5
+    },
+    {
+      "consumer_name": "customer_timeline_projection_consumer",
+      "consumer_type": "projection",
+      "event_type": "questionnaire.submitted",
+      "handler_registered": true,
+      "max_attempts": 10
     },
     {
       "consumer_name": "questionnaire_projection_consumer",
@@ -3015,6 +3022,13 @@
       "event_type": "queue.runtime.command.applied",
       "handler_registered": true,
       "max_attempts": 3
+    },
+    {
+      "consumer_name": "customer_timeline_projection_consumer",
+      "consumer_type": "projection",
+      "event_type": "radar.opened",
+      "handler_registered": true,
+      "max_attempts": 10
     },
     {
       "consumer_name": "service_period_refund_consumer",
@@ -3081,7 +3095,7 @@
     }
   ],
   "migration_heads": [
-    "0132_external_claim_scope_policy"
+    "0133_sidebar_customer_timeline"
   ],
   "openapi_components": {
     "schemas": {
@@ -42812,6 +42826,33 @@
       "route_group": "customer_read_model"
     },
     {
+      "capability_owner": "commerce",
+      "contract": {
+        "parameters": [],
+        "request_body": null,
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        }
+      },
+      "endpoint": "aicrm_next.commerce.coupons.sidebar_api.list_sidebar_coupons",
+      "include_in_schema": true,
+      "kind": "api",
+      "methods": [
+        "GET"
+      ],
+      "name": "api.sidebar_v2_coupons",
+      "operation_id": "api.sidebar_v2_coupons:GET:/api/sidebar/v2/coupons",
+      "path": "/api/sidebar/v2/coupons",
+      "route_group": "coupons_sidebar"
+    },
+    {
       "capability_owner": "customer_read_model",
       "contract": {
         "parameters": [
@@ -43439,6 +43480,94 @@
       "name": "get_sidebar_v2_questionnaires",
       "operation_id": "get_sidebar_v2_questionnaires:GET:/api/sidebar/v2/questionnaires",
       "path": "/api/sidebar/v2/questionnaires",
+      "route_group": "customer_read_model"
+    },
+    {
+      "capability_owner": "radar_links",
+      "contract": {
+        "parameters": [],
+        "request_body": null,
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        }
+      },
+      "endpoint": "aicrm_next.radar_links.api.list_sidebar_radar_links",
+      "include_in_schema": true,
+      "kind": "api",
+      "methods": [
+        "GET"
+      ],
+      "name": "api.sidebar_v2_radar_links",
+      "operation_id": "api.sidebar_v2_radar_links:GET:/api/sidebar/v2/radar-links",
+      "path": "/api/sidebar/v2/radar-links",
+      "route_group": "radar_links"
+    },
+    {
+      "capability_owner": "customer_read_model",
+      "contract": {
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "request_body": null,
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        }
+      },
+      "endpoint": "aicrm_next.customer_read_model.api.get_sidebar_v2_timeline",
+      "include_in_schema": true,
+      "kind": "api",
+      "methods": [
+        "GET"
+      ],
+      "name": "get_sidebar_v2_timeline",
+      "operation_id": "get_sidebar_v2_timeline:GET:/api/sidebar/v2/timeline",
+      "path": "/api/sidebar/v2/timeline",
       "route_group": "customer_read_model"
     },
     {

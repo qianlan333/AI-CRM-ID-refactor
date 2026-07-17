@@ -380,7 +380,11 @@ def _identity_resolution_queue_backlog() -> DataHealthCheckResult:
 def _projection_freshness_customer_read_model() -> DataHealthCheckResult:
     check_id = "projection_freshness_customer_read_model"
     title = "Customer read model projection freshness"
-    source_tables = ["customer_list_index_next", "customer_detail_snapshot_next"]
+    source_tables = [
+        "customer_list_index_next",
+        "customer_detail_snapshot_next",
+        "customer_timeline_event_next",
+    ]
     if not database_schema_available():
         return _db_unavailable_placeholder(check_id, title, source_tables)
     try:
@@ -401,6 +405,16 @@ def _projection_freshness_customer_read_model() -> DataHealthCheckResult:
                             (
                                 SELECT target_count FROM customer_read_model_refresh_state WHERE singleton_id = 1
                             ) AS refresh_target_count,
+                            (SELECT COUNT(*) FROM customer_timeline_event_next) AS timeline_event_count,
+                            (
+                                SELECT COUNT(*)
+                                FROM (
+                                    SELECT event_id
+                                    FROM customer_timeline_event_next
+                                    GROUP BY event_id
+                                    HAVING COUNT(*) > 1
+                                ) duplicate_events
+                            ) AS timeline_duplicate_event_id_count,
                             EXTRACT(EPOCH FROM (
                                 CURRENT_TIMESTAMP - (
                                     SELECT last_succeeded_at
@@ -431,6 +445,8 @@ def _projection_freshness_customer_read_model() -> DataHealthCheckResult:
     refresh_state_present = bool(row.get("refresh_state_present"))
     refresh_source_count = int(row.get("refresh_source_count") or 0)
     refresh_target_count = int(row.get("refresh_target_count") or 0)
+    timeline_event_count = int(row.get("timeline_event_count") or 0)
+    timeline_duplicate_event_id_count = int(row.get("timeline_duplicate_event_id_count") or 0)
     refresh_age_minutes = float(row.get("refresh_age_minutes") or 0)
     violations = []
     if list_count <= 0:
@@ -445,12 +461,16 @@ def _projection_freshness_customer_read_model() -> DataHealthCheckResult:
         violations.append(f"refresh_target_count={refresh_target_count} does not match list_count={list_count}")
     if refresh_state_present and refresh_source_count != refresh_target_count:
         violations.append(f"refresh_count_mismatch={refresh_source_count}:{refresh_target_count}")
+    if timeline_duplicate_event_id_count > 0:
+        violations.append(f"timeline_duplicate_event_id_count={timeline_duplicate_event_id_count}")
     evidence = {
         "list_count": list_count,
         "detail_count": detail_count,
         "refresh_state_present": refresh_state_present,
         "refresh_source_count": refresh_source_count,
         "refresh_target_count": refresh_target_count,
+        "timeline_event_count": timeline_event_count,
+        "timeline_duplicate_event_id_count": timeline_duplicate_event_id_count,
         "refresh_age_minutes": refresh_age_minutes,
         "freshness_policy": "source_change_lag",
         "wall_clock_age_is_diagnostic": True,

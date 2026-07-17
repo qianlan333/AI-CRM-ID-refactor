@@ -23,11 +23,8 @@ CUSTOMER_REFRESH_COMPLETED_EVENT = "customer_read_model.refreshed"
 CUSTOMER_REFRESH_CONSUMER = "customer_read_model_refresh_intent_consumer"
 CUSTOMER_DIRTY_CONSUMER = "customer_read_model_dirty_consumer"
 CUSTOMER_SOURCE_EVENTS = (
-    "channel_entry.entered",
     "customer.phone_bound",
     "identity.resolved",
-    "payment.succeeded",
-    "questionnaire.submitted",
 )
 
 

@@ -61,7 +61,7 @@ def test_all_alembic_down_revisions_exist() -> None:
     assert missing == {}
 
 
-def test_external_claim_scope_policy_is_the_single_head() -> None:
+def test_sidebar_customer_timeline_is_the_single_head() -> None:
     revisions = _migration_revisions()
     referenced = {parent for item in revisions.values() for parent in _parents(item["down_revision"])}
     heads = set(revisions) - referenced
@@ -87,8 +87,11 @@ def test_external_claim_scope_policy_is_the_single_head() -> None:
     continuation_fanout_source = continuation_fanout.read_text(encoding="utf-8")
     external_scope = VERSIONS / "0132_external_claim_scope_policy.py"
     external_scope_source = external_scope.read_text(encoding="utf-8")
+    sidebar_timeline = VERSIONS / "0133_sidebar_customer_timeline.py"
+    sidebar_timeline_source = sidebar_timeline.read_text(encoding="utf-8")
 
-    assert heads == {"0132_external_claim_scope_policy"}
+    assert heads == {"0133_sidebar_customer_timeline"}
+    assert revisions["0133_sidebar_customer_timeline"]["down_revision"] == "0132_external_claim_scope_policy"
     assert revisions["0132_external_claim_scope_policy"]["down_revision"] == "0131_external_effect_continuation_fanout"
     assert revisions["0131_external_effect_continuation_fanout"]["down_revision"] == "0130_welcome_media_dependencies"
     assert revisions["0130_welcome_media_dependencies"]["down_revision"] == "0129_identity_customer_event_driven"
@@ -137,6 +140,9 @@ def test_external_claim_scope_policy_is_the_single_head() -> None:
     assert "pre_independent_continuation_fanout_requires_manual_classification" in continuation_fanout_source
     assert "external_effect_completion_continuation_consumer" in continuation_fanout_source
     assert "external_claim_scope" in external_scope_source
+    assert "uq_customer_timeline_event_next_event_id" in sidebar_timeline_source
+    assert "ix_customer_timeline_event_next_unionid_time_id" in sidebar_timeline_source
+    assert "ROW_NUMBER() OVER" in sidebar_timeline_source
     assert "queue-v2-test-loopback" in external_scope_source
     for constraint_name in (
         "ck_external_effect_job_runtime_lane",
