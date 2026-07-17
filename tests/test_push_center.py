@@ -38,9 +38,14 @@ from tests.admin_auth_test_helpers import install_admin_action_tokens
 pytest_plugins = ("tests.group_ops_test_helpers",)
 
 
-def test_push_center_aggregates_do_not_materialize_wide_filtered_rows() -> None:
-    assert "), filtered AS NOT MATERIALIZED (" in _FAST_PAGE_SQL
-    assert "(f.created_at, f.projection_id) <" in _FAST_PAGE_SQL
+def test_push_center_only_materializes_narrow_filter_rows() -> None:
+    assert "WITH runtime_control AS MATERIALIZED (" in _FAST_PAGE_SQL
+    assert "wide_source_rows AS NOT MATERIALIZED (" in _FAST_PAGE_SQL
+    assert "), filtered AS MATERIALIZED (" in _FAST_PAGE_SQL
+    assert "summary_counts AS MATERIALIZED (" in _FAST_PAGE_SQL
+    assert "CROSS JOIN LATERAL (" in _FAST_PAGE_SQL
+    assert "FROM wide_source_rows candidate" in _FAST_PAGE_SQL
+    assert ") < (CAST(:cursor_created_at AS timestamptz), :cursor_projection_id)" in _FAST_PAGE_SQL
 
 
 def test_push_center_cursor_is_signed_and_bound_to_filters(monkeypatch) -> None:

@@ -574,12 +574,16 @@ WITH seed_group AS (
 """.replace("__EXTERNAL_SCOPE_GATED_SQL__", _DETAIL_EXTERNAL_SCOPE_GATED_SQL)
 
 
-# ``filtered`` is referenced by the page, total, status and section aggregates.
-# PostgreSQL otherwise materializes all wide source rows (including JSON) before
-# those consumers can prune their columns.  Inlining trades that wide spool for
-# narrow, independently planned scans and keeps the 100k-row read path stable.
+# Keep the reusable source projection inline so PostgreSQL can prune expensive
+# JSON/runtime columns while building the narrow filter/count spool.  Only the
+# cursor-selected keys join back to the wide projection for page rendering.
 _FAST_PAGE_SQL = r"""
-WITH source_rows AS (
+WITH runtime_control AS MATERIALIZED (
+    SELECT external_claim_scope
+    FROM queue_runtime_control
+    WHERE singleton = TRUE
+    LIMIT 1
+), wide_source_rows AS NOT MATERIALIZED (
     SELECT
         'external_effect_job:' || e.id::text AS projection_id,
         'external_effect_job'::text AS record_type,
@@ -706,7 +710,7 @@ WITH source_rows AS (
         NULL::bigint AS sent_count,
         NULL::bigint AS failed_count
     FROM external_effect_job e
-    JOIN queue_runtime_control control ON control.singleton = TRUE
+    CROSS JOIN runtime_control control
 
     UNION ALL
 
@@ -798,8 +802,41 @@ WITH source_rows AS (
     FROM broadcast_jobs b
     WHERE COALESCE(NULLIF(b.execution_owner, ''), 'legacy_frozen') <> 'external_effect'
       AND b.status <> 'delegated'
-), filtered AS NOT MATERIALIZED (
-    SELECT * FROM source_rows p
+), filtered AS MATERIALIZED (
+    SELECT
+        CASE p.record_type
+            WHEN 'external_effect_job' THEN 1
+            ELSE 2
+        END::smallint AS record_kind,
+        p.source_record_id,
+        p.created_at,
+        CASE p.section
+            WHEN 'ai_assist' THEN 1
+            WHEN 'private_broadcast' THEN 2
+            WHEN 'group_ops' THEN 3
+            WHEN 'group_broadcast' THEN 4
+            WHEN 'questionnaire' THEN 5
+            WHEN 'order' THEN 6
+            WHEN 'customer_webhook' THEN 7
+            WHEN 'tags' THEN 8
+            WHEN 'welcome' THEN 9
+            WHEN 'payment' THEN 10
+            WHEN 'integrations' THEN 11
+            WHEN 'test_receiver' THEN 12
+            ELSE 13
+        END::smallint AS section_key,
+        CASE p.effective_status
+            WHEN 'pending' THEN 1
+            WHEN 'running' THEN 2
+            WHEN 'succeeded' THEN 3
+            WHEN 'sent' THEN 4
+            WHEN 'simulated' THEN 5
+            WHEN 'unknown_after_dispatch' THEN 6
+            WHEN 'shadow_failed_not_business_failed' THEN 7
+            WHEN 'sent_with_shadow_warning' THEN 8
+            ELSE 9
+        END::smallint AS effective_status_key
+    FROM wide_source_rows p
     WHERE (:section = '' OR p.section = :section)
       AND (:effect_type = '' OR p.effect_type ILIKE '%' || :effect_type || '%')
       AND (:status = '' OR p.effective_status = :status OR (:status = 'sent' AND p.effective_status = 'sent_with_shadow_warning'))
@@ -815,28 +852,102 @@ WITH source_rows AS (
       AND (:source_route = '' OR p.source_route ILIKE '%' || :source_route || '%')
       AND (:created_from = '' OR p.created_at >= CAST(:created_from AS timestamptz))
       AND (:created_to = '' OR p.created_at <= CAST(:created_to AS timestamptz))
-), cursor_page AS (
-    SELECT f.*
+), cursor_keys AS (
+    SELECT
+        CASE f.record_kind
+            WHEN 1 THEN 'external_effect_job:'
+            ELSE 'broadcast_job:'
+        END || f.source_record_id::text AS projection_id,
+        f.record_kind,
+        f.source_record_id,
+        f.created_at
     FROM filtered f
     WHERE (
         :cursor_created_at = ''
-        OR (f.created_at, f.projection_id) < (CAST(:cursor_created_at AS timestamptz), :cursor_projection_id)
+        OR (
+            f.created_at,
+            CASE f.record_kind
+                WHEN 1 THEN 'external_effect_job:'
+                ELSE 'broadcast_job:'
+            END || f.source_record_id::text
+        ) < (CAST(:cursor_created_at AS timestamptz), :cursor_projection_id)
     )
-    ORDER BY f.created_at DESC, f.projection_id DESC
+    ORDER BY
+        f.created_at DESC,
+        CASE f.record_kind
+            WHEN 1 THEN 'external_effect_job:'
+            ELSE 'broadcast_job:'
+        END || f.source_record_id::text DESC
     LIMIT :page_limit OFFSET :legacy_offset
-), status_counts AS (
-    SELECT effective_status, COUNT(*) AS count FROM filtered GROUP BY effective_status
-), section_counts AS (
-    SELECT section, COUNT(*) AS count FROM filtered GROUP BY section
+), cursor_page AS (
+    SELECT source.*
+    FROM cursor_keys page
+    CROSS JOIN LATERAL (
+        SELECT candidate.*
+        FROM wide_source_rows candidate
+        WHERE candidate.record_type = CASE page.record_kind
+            WHEN 1 THEN 'external_effect_job'
+            ELSE 'broadcast_job'
+        END
+          AND candidate.source_record_id = page.source_record_id
+        LIMIT 1
+    ) source
+    ORDER BY page.created_at DESC, page.projection_id DESC
+), summary_counts AS MATERIALIZED (
+    SELECT effective_status_key, section_key, COUNT(*) AS count
+    FROM filtered
+    GROUP BY GROUPING SETS ((effective_status_key), (section_key))
 )
 SELECT
     COALESCE((
         SELECT jsonb_agg(to_jsonb(c) ORDER BY c.created_at DESC, c.projection_id DESC)
         FROM cursor_page c
     ), '[]'::jsonb) AS items,
-    (SELECT COUNT(*) FROM filtered) AS total,
-    COALESCE((SELECT jsonb_object_agg(effective_status, count) FROM status_counts), '{}'::jsonb) AS by_status,
-    COALESCE((SELECT jsonb_object_agg(section, count) FROM section_counts), '{}'::jsonb) AS by_section
+    COALESCE((
+        SELECT SUM(count)
+        FROM summary_counts
+        WHERE effective_status_key IS NOT NULL
+    ), 0) AS total,
+    COALESCE((
+        SELECT jsonb_object_agg(
+            CASE effective_status_key
+                WHEN 1 THEN 'pending'
+                WHEN 2 THEN 'running'
+                WHEN 3 THEN 'succeeded'
+                WHEN 4 THEN 'sent'
+                WHEN 5 THEN 'simulated'
+                WHEN 6 THEN 'unknown_after_dispatch'
+                WHEN 7 THEN 'shadow_failed_not_business_failed'
+                WHEN 8 THEN 'sent_with_shadow_warning'
+                ELSE 'failed'
+            END,
+            count
+        )
+        FROM summary_counts
+        WHERE effective_status_key IS NOT NULL
+    ), '{}'::jsonb) AS by_status,
+    COALESCE((
+        SELECT jsonb_object_agg(
+            CASE section_key
+                WHEN 1 THEN 'ai_assist'
+                WHEN 2 THEN 'private_broadcast'
+                WHEN 3 THEN 'group_ops'
+                WHEN 4 THEN 'group_broadcast'
+                WHEN 5 THEN 'questionnaire'
+                WHEN 6 THEN 'order'
+                WHEN 7 THEN 'customer_webhook'
+                WHEN 8 THEN 'tags'
+                WHEN 9 THEN 'welcome'
+                WHEN 10 THEN 'payment'
+                WHEN 11 THEN 'integrations'
+                WHEN 12 THEN 'test_receiver'
+                ELSE 'other'
+            END,
+            count
+        )
+        FROM summary_counts
+        WHERE section_key IS NOT NULL
+    ), '{}'::jsonb) AS by_section
 """.replace("__EXTERNAL_SCOPE_GATED_SQL__", _PAGE_EXTERNAL_SCOPE_GATED_SQL)
 
 
