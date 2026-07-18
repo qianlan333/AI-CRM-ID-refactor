@@ -138,12 +138,24 @@ jobs:
             set +a
             source /home/ubuntu/venvs/openclaw/bin/activate
             python3 - <<'PY'
+            import hashlib
             import json
+            import re
 
             from sqlalchemy import text
 
             from aicrm_next.shared.db_session import get_session_factory
             from aicrm_next.shared.sensitive_data import redact_sensitive_text
+
+
+            def safe_error(value):
+                raw = str(value or "")
+                first_line = redact_sensitive_text(raw).splitlines()[0] if raw else ""
+                first_line = re.sub(r"'[^']{4,}'", "'[redacted-value]'", first_line)
+                return {
+                    "summary": first_line[:500],
+                    "sha256": hashlib.sha256(raw.encode("utf-8")).hexdigest() if raw else "",
+                }
 
 
             def safe_rows(rows):
@@ -152,7 +164,7 @@ jobs:
                     row = dict(raw)
                     for key in ("last_error_message", "error_message"):
                         if key in row:
-                            row[key] = redact_sensitive_text(str(row.get(key) or ""))[:1000]
+                            row[key] = safe_error(row.get(key))
                     payload.append(row)
                 return payload
 
