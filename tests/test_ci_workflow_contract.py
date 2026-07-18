@@ -223,6 +223,10 @@ def test_id_validation_deploy_waits_for_successful_ci_fast_on_main() -> None:
         admin_smoke_index,
     )
     runtime_install_index = source.index("--phase install-enable-after-web-health --execute", session_revoke_index)
+    refresh_auth_index = source.index(
+        "AICRM_CUSTOMER_READ_MODEL_RELEASE_REFRESH_AUTHORIZED=1",
+        runtime_install_index,
+    )
     refresh_index = source.index("python3 scripts/run_customer_read_model_refresh.py", runtime_install_index)
     strict_session_issue_index = source.index(
         "python3 scripts/ops/create_deploy_smoke_session.py issue",
@@ -237,7 +241,10 @@ def test_id_validation_deploy_waits_for_successful_ci_fast_on_main() -> None:
         strict_admin_smoke_index,
     )
     assert session_issue_index < admin_smoke_index < session_revoke_index < runtime_install_index
-    assert runtime_install_index < refresh_index < strict_session_issue_index
+    assert runtime_install_index < refresh_auth_index < refresh_index < strict_session_issue_index
+    refresh_block = source[refresh_auth_index:strict_session_issue_index]
+    assert "AICRM_CUSTOMER_READ_MODEL_RELEASE_REFRESH_AUTHORIZED=1" in refresh_block
+    assert "--release-refresh" in refresh_block
     assert strict_session_issue_index < strict_admin_smoke_index < strict_session_revoke_index
     assert '--admin-cookie-file "$deploy_smoke_session_file"' in source
     assert "admin_smoke_sidebar_args=(--include-all-sidebar)" in source

@@ -19,6 +19,20 @@ from .repo import (
     _normalize_bool_filter,
 )
 
+
+def _external_userids_statement(session: Session, sql: str):
+    """Bind one customer scope without expanding it past driver limits."""
+
+    if is_sqlite_session(session):
+        return text(sql).bindparams(bindparam("external_userids", expanding=True))
+    return text(
+        sql.replace(
+            "IN :external_userids",
+            "= ANY(CAST(:external_userids AS TEXT[]))",
+        )
+    )
+
+
 class LiveSourceCustomerReadRepository:
     """Read live customer data from production source tables when projections are not ready."""
 
@@ -173,7 +187,8 @@ class LiveSourceCustomerReadRepository:
         normalized = [str(value or "").strip() for value in unionids if str(value or "").strip()]
         if not normalized:
             return {}
-        stmt = text(
+        stmt = _external_userids_statement(
+            self._session,
             """
             WITH ranked AS (
                 SELECT id, msgid, chat_type, unionid, owner_userid, msgtype, content,
@@ -195,8 +210,8 @@ class LiveSourceCustomerReadRepository:
             FROM ranked
             WHERE row_number <= :per_customer_limit
             ORDER BY unionid ASC, send_time DESC, id DESC
-            """
-        ).bindparams(bindparam("external_userids", expanding=True))
+            """,
+        )
         rows = self._session.execute(
             stmt,
             {
@@ -234,9 +249,9 @@ class LiveSourceCustomerReadRepository:
         normalized = [str(value or "").strip() for value in unionids if str(value or "").strip()]
         if not normalized:
             return {}
-        statement = text(
-            """
-            WITH source_events AS (
+        sqlite = is_sqlite_session(self._session)
+        statement_sql = """
+            WITH __REQUESTED_UNIONIDS_CTE__ source_events AS (
                 SELECT
                     'channel_entry:' || entry.event_log_id::text AS event_id,
                     entry.unionid,
@@ -255,7 +270,7 @@ class LiveSourceCustomerReadRepository:
                            event_log_id, unionid, channel_id, scene_value, created_at
                     FROM automation_channel_entry_effect_log
                     WHERE event_log_id IS NOT NULL
-                      AND unionid IN :external_userids
+                      AND unionid __REQUESTED_UNIONIDS_FILTER__
                     ORDER BY event_log_id, unionid, created_at ASC, id ASC
                 ) entry
                 LEFT JOIN automation_channel channel ON channel.id = entry.channel_id
@@ -277,7 +292,7 @@ class LiveSourceCustomerReadRepository:
                     )
                 FROM questionnaire_submissions submission
                 LEFT JOIN questionnaires questionnaire ON questionnaire.id = submission.questionnaire_id
-                WHERE submission.unionid IN :external_userids
+                WHERE submission.unionid __REQUESTED_UNIONIDS_FILTER__
 
                 UNION ALL
 
@@ -296,7 +311,7 @@ class LiveSourceCustomerReadRepository:
                         'product_type', 'standard_product'
                     )
                 FROM wechat_pay_orders payment
-                WHERE payment.unionid IN :external_userids
+                WHERE payment.unionid __REQUESTED_UNIONIDS_FILTER__
                   AND (payment.status = 'paid' OR payment.trade_state = 'SUCCESS')
                   AND COALESCE(payment.out_trade_no, '') <> ''
 
@@ -317,7 +332,7 @@ class LiveSourceCustomerReadRepository:
                         'product_type', 'wechat_shop'
                     )
                 FROM wechat_shop_orders shop_order
-                WHERE shop_order.unionid IN :external_userids
+                WHERE shop_order.unionid __REQUESTED_UNIONIDS_FILTER__
                   AND shop_order.deal_recorded IS TRUE
                   AND COALESCE(shop_order.order_id, '') <> ''
 
@@ -341,7 +356,7 @@ class LiveSourceCustomerReadRepository:
                     )
                 FROM service_period_events period_event
                 LEFT JOIN wechat_pay_products trade_product ON trade_product.id = period_event.trade_product_id
-                WHERE period_event.unionid IN :external_userids
+                WHERE period_event.unionid __REQUESTED_UNIONIDS_FILTER__
                   AND period_event.event_type IN ('activated', 'renewed', 'admin_adjusted')
 
                 UNION ALL
@@ -362,7 +377,7 @@ class LiveSourceCustomerReadRepository:
                     )
                 FROM radar_click_events click_event
                 JOIN radar_links radar ON radar.id = click_event.link_id
-                WHERE click_event.unionid IN :external_userids
+                WHERE click_event.unionid __REQUESTED_UNIONIDS_FILTER__
                   AND (
                     click_event.stage = 'authorized'
                     OR (click_event.stage = 'landing' AND COALESCE(click_event.unionid, '') <> '')
@@ -381,7 +396,26 @@ class LiveSourceCustomerReadRepository:
             WHERE row_number <= :per_customer_limit
             ORDER BY unionid ASC, event_time DESC, event_id DESC
             """
-        ).bindparams(bindparam("external_userids", expanding=True))
+        if sqlite:
+            statement_sql = statement_sql.replace("__REQUESTED_UNIONIDS_CTE__", "").replace(
+                "__REQUESTED_UNIONIDS_FILTER__",
+                "IN :external_userids",
+            )
+            statement = text(statement_sql).bindparams(bindparam("external_userids", expanding=True))
+        else:
+            statement_sql = statement_sql.replace(
+                "__REQUESTED_UNIONIDS_CTE__",
+                """
+                requested_unionids AS (
+                    SELECT DISTINCT requested.unionid
+                    FROM unnest(CAST(:external_userids AS TEXT[])) AS requested(unionid)
+                ),
+                """,
+            ).replace(
+                "__REQUESTED_UNIONIDS_FILTER__",
+                "IN (SELECT unionid FROM requested_unionids)",
+            )
+            statement = text(statement_sql)
         rows = self._session.execute(
             statement,
             {
@@ -783,5 +817,5 @@ class LiveSourceCustomerReadRepository:
         normalized = [str(value or "").strip() for value in values if str(value or "").strip()]
         if not normalized:
             return []
-        stmt = text(sql).bindparams(bindparam("external_userids", expanding=True))
+        stmt = _external_userids_statement(self._session, sql)
         return [dict(row) for row in self._session.execute(stmt, {"external_userids": normalized}).mappings()]

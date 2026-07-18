@@ -784,8 +784,10 @@ python3 scripts/ops/manage_production_runtime_units.py --phase install-enable-af
 # The candidate internal runtime is now the sole queue owner. Ask it to repair
 # the local projection through the durable intent and wait for completion;
 # this deploy path never rebuilds inline and never calls a provider.
+AICRM_CUSTOMER_READ_MODEL_RELEASE_REFRESH_AUTHORIZED=1 \
 python3 scripts/run_customer_read_model_refresh.py \
   --execute \
+  --release-refresh \
   --source-key "deploy_runtime:${release_run_id}:${release_run_attempt}" \
   --wait-seconds 180 \
   | tee /tmp/aicrm-customer-read-model-deploy-runtime.json

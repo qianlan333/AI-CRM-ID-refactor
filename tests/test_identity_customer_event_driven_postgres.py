@@ -549,6 +549,80 @@ def test_customer_refresh_replaces_a_stale_policy_signal_owner_without_inline_wo
     assert rows[1]["policy_version"] == current_policy
 
 
+def test_customer_refresh_requires_explicit_versioned_release_recovery_after_terminal_failure() -> None:
+    repository = CustomerReadModelRefreshIntentRepository()
+    first = repository.mark_dirty(
+        source_event_key="evt-customer-blocked-1",
+        source_event_type="identity.resolved",
+    )
+    first_signal_key = f"customer_read_model.refresh.requested:{first['generation']}"
+    with _connect() as connection:
+        connection.execute(
+            """
+            UPDATE customer_read_model_refresh_intent
+            SET status = 'blocked', attempt_count = max_attempts,
+                last_error_code = 'customer_read_model_refresh_exception',
+                last_error_message = 'local projection failed',
+                row_version = row_version + 1
+            WHERE singleton_id = 1
+            """
+        )
+        connection.execute(
+            """
+            UPDATE internal_event_outbox
+            SET status = 'failed_terminal',
+                hold_reason = 'terminal_local_projection_failure'
+            WHERE idempotency_key = %s
+            """,
+            (first_signal_key,),
+        )
+
+    ordinary = repository.mark_dirty(
+        source_event_key="evt-customer-blocked-2",
+        source_event_type="questionnaire.submitted",
+    )
+    assert ordinary["signal_created"] is False
+    assert ordinary["intent"]["status"] == "blocked"
+    assert ordinary["blocked_recovered"] is False
+
+    with pytest.raises(RuntimeError, match="customer_read_model_refresh_recovery_version_mismatch"):
+        repository.mark_dirty(
+            source_event_key="deploy-runtime-stale-version",
+            source_event_type="customer_read_model.release_refresh",
+            recover_blocked=True,
+            expected_row_version=int(ordinary["intent"]["row_version"]) - 1,
+        )
+
+    recovered = repository.mark_dirty(
+        source_event_key="deploy-runtime-current-version",
+        source_event_type="customer_read_model.release_refresh",
+        recover_blocked=True,
+        expected_row_version=int(ordinary["intent"]["row_version"]),
+    )
+    assert recovered["signal_created"] is True
+    assert recovered["blocked_recovered"] is True
+    assert recovered["intent"]["status"] == "waiting"
+    assert recovered["intent"]["attempt_count"] == 0
+
+    with _connect() as connection:
+        signals = connection.execute(
+            """
+            SELECT idempotency_key, status
+            FROM internal_event_outbox
+            WHERE event_type = %s
+            ORDER BY id
+            """,
+            (CUSTOMER_REFRESH_REQUESTED_EVENT,),
+        ).fetchall()
+    assert signals == [
+        {"idempotency_key": first_signal_key, "status": "failed_terminal"},
+        {
+            "idempotency_key": f"customer_read_model.refresh.requested:{recovered['generation']}",
+            "status": "pending",
+        },
+    ]
+
+
 def test_customer_refresh_keeps_final_attempt_with_a_live_lease_as_the_single_owner() -> None:
     repository = CustomerReadModelRefreshIntentRepository()
     first = repository.mark_dirty(
