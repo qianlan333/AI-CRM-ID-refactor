@@ -5,7 +5,10 @@ from pathlib import Path
 from sqlalchemy import text
 
 from aicrm_next.commerce import wechat_shop_service
-from aicrm_next.customer_read_model.repo import LiveSourceCustomerReadRepository
+from aicrm_next.customer_read_model.repo import (
+    LiveSourceCustomerReadRepository,
+    SqlAlchemyCustomerReadModelRepository,
+)
 from aicrm_next.customer_read_model.timeline_projection import (
     CustomerTimelineProjectionRepository,
     customer_timeline_projection_consumer,
@@ -232,6 +235,38 @@ def test_reconciliation_large_postgres_scope_stays_below_driver_parameter_limit(
         )
 
     assert result == {}
+
+
+def test_bulk_timeline_upsert_stays_below_postgres_driver_parameter_limit(next_pg_schema) -> None:
+    events = [
+        {
+            "event_id": f"timeline-parameter-limit-{index}",
+            "unionid": f"union-timeline-parameter-limit-{index}",
+            "event_type": "parameter_limit_proof",
+            "event_time": "2026-07-18T12:00:00Z",
+            "title": "参数上限回归",
+            "summary": "",
+            "source_table": "test_customer_timeline_projection",
+            "source_id": str(index),
+            "metadata": {},
+        }
+        for index in range(7_000)
+    ]
+
+    with get_session_factory()() as session:
+        repository = SqlAlchemyCustomerReadModelRepository(session)
+        assert repository.upsert_timeline_events(events, commit=False) == 7_000
+        inserted = session.execute(
+            text(
+                """
+                SELECT COUNT(*)
+                FROM customer_timeline_event_next
+                WHERE event_id LIKE 'timeline-parameter-limit-%'
+                """
+            )
+        ).scalar_one()
+        assert int(inserted or 0) == 7_000
+        session.rollback()
 
 
 def test_timeline_migration_only_deduplicates_identical_event_ids_and_adds_indexes() -> None:

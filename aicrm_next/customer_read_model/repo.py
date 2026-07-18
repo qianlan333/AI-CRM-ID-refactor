@@ -31,6 +31,8 @@ from .models import (
 from .sql_dialect import is_sqlite_session, json_text_expression
 
 _DEFAULT_LIVE_SOURCE_LIST_LIMIT = 200
+# Ten binds per row today; leave wide headroom below PostgreSQL's 65,535 limit.
+_TIMELINE_UPSERT_BATCH_SIZE = 1_000
 
 
 class CustomerReadRepository(Protocol):
@@ -172,21 +174,23 @@ class SqlAlchemyCustomerReadModelRepository:
             return 0
         dialect = str(self._session.get_bind().dialect.name)
         insert_builder = sqlite_insert if dialect == "sqlite" else postgresql_insert
-        statement = insert_builder(customer_timeline_event_next).values(rows)
-        statement = statement.on_conflict_do_update(
-            index_elements=[customer_timeline_event_next.c.event_id],
-            set_={
-                "unionid": statement.excluded.unionid,
-                "event_type": statement.excluded.event_type,
-                "event_time": statement.excluded.event_time,
-                "title": statement.excluded.title,
-                "summary": statement.excluded.summary,
-                "source_table": statement.excluded.source_table,
-                "source_id": statement.excluded.source_id,
-                "metadata_json": statement.excluded.metadata_json,
-            },
-        )
-        self._session.execute(statement)
+        for offset in range(0, len(rows), _TIMELINE_UPSERT_BATCH_SIZE):
+            batch = rows[offset : offset + _TIMELINE_UPSERT_BATCH_SIZE]
+            statement = insert_builder(customer_timeline_event_next).values(batch)
+            statement = statement.on_conflict_do_update(
+                index_elements=[customer_timeline_event_next.c.event_id],
+                set_={
+                    "unionid": statement.excluded.unionid,
+                    "event_type": statement.excluded.event_type,
+                    "event_time": statement.excluded.event_time,
+                    "title": statement.excluded.title,
+                    "summary": statement.excluded.summary,
+                    "source_table": statement.excluded.source_table,
+                    "source_id": statement.excluded.source_id,
+                    "metadata_json": statement.excluded.metadata_json,
+                },
+            )
+            self._session.execute(statement)
         if commit:
             self._session.commit()
         return len(rows)
