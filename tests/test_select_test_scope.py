@@ -759,6 +759,23 @@ def test_internal_event_registry_composition_has_permanent_full_ci_scope() -> No
     assert result["architecture_gate"] == "full"
 
 
+def test_id_validation_media_import_and_group_diagnostics_have_full_postgres_scope() -> None:
+    result = _select(
+        "scripts/ops/import_wecom_canary_media_asset.py",
+        "tests/test_import_wecom_canary_media_asset.py",
+        "tests/test_wecom_group_provider_diagnostics.py",
+    )
+
+    assert result["unmatched_files"] == []
+    assert "postgres_execution_runtime" in result["matched_scopes"]
+    assert "external_effect_delivery_reliability" in result["matched_scopes"]
+    assert "tests/test_import_wecom_canary_media_asset.py" in result["python_tests"]
+    assert "tests/test_wecom_group_provider_diagnostics.py" in result["python_tests"]
+    assert result["needs_postgres"] is True
+    assert result["needs_full_ci"] is True
+    assert result["architecture_gate"] == "full"
+
+
 def test_questionnaire_editor_asset_split_has_permanent_full_ci_scope() -> None:
     result = _select(
         "aicrm_next/questionnaire/templates/admin_questionnaires.html",

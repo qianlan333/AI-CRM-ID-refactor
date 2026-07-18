@@ -47,6 +47,7 @@ def test_queue_operations_workflow_uses_pinned_ssh_and_private_canary_spec() -> 
     assert "ID_VALIDATION_WECOM_CHANNEL_ASSET_B64" not in job_env
     assert "ID_VALIDATION_WECOM_CALLBACK_EVENT_B64" not in job_env
     assert "Execute guarded canary-spec queue operation on 49" in source
+    assert "import_canary_media" in source
     assert "Import guarded production canary channel asset on 49" in source
     assert "Ingest guarded production canary callback transcript on 49" in source
     assert "Arm guarded real-time callback canary on 49" in source
@@ -68,6 +69,7 @@ def test_remote_queue_operation_has_server_lock_release_attestation_and_no_direc
         "cutover_queue_runtime_generation.py",
         "run_test_loopback_canary.py",
         "configure_wecom_canary.py",
+        "import_wecom_canary_media_asset.py",
         "import_wecom_canary_channel_asset.py",
         "ingest_wecom_canary_callback.py",
         "arm_wecom_callback_canary.py",
