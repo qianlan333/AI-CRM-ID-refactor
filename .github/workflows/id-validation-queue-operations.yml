@@ -8,6 +8,7 @@ on:
         required: true
         type: choice
         options:
+          - diagnose_customer_refresh
           - activate_test_loopback
           - verify_owner_state
           - run_test_loopback
@@ -94,14 +95,15 @@ jobs:
   diagnose_customer_refresh:
     if: >-
       github.repository == 'qianlan333/AI-CRM-ID-refactor' &&
-      inputs.operation == 'verify_owner_state' &&
-      startsWith(inputs.run_id, 'diagnose-refresh-')
+      inputs.operation == 'diagnose_customer_refresh'
+    environment: id-validation
     runs-on: ubuntu-latest
     env:
       EXPECTED_REPOSITORY: qianlan333/AI-CRM-ID-refactor
       EXPECTED_DEPLOY_HOST: 49.232.57.128
       EXPECTED_SSH_HOST_FINGERPRINT: SHA256:NXSJUveGoNy1lDsa+eOKho1h0ythB+pKTyijv8/KfU0
       EXPECTED_RELEASE_SHA: ${{ inputs.expected_release_sha }}
+      PUBLIC_HEALTH_URL: https://id-dev.youcangogogo.com/health
     steps:
       - name: Read failed customer refresh evidence from 49
         env:
@@ -113,15 +115,24 @@ jobs:
           key: ${{ secrets.ID_VALIDATION_DEPLOY_SSH_KEY }}
           fingerprint: ${{ env.EXPECTED_SSH_HOST_FINGERPRINT }}
           command_timeout: 5m
-          envs: EXPECTED_REPOSITORY,EXPECTED_DEPLOY_HOST,EXPECTED_RELEASE_SHA,DEPLOY_HOST
+          envs: EXPECTED_REPOSITORY,EXPECTED_DEPLOY_HOST,EXPECTED_RELEASE_SHA,PUBLIC_HEALTH_URL,DEPLOY_HOST
           script: |
             set -e
             set -o pipefail
             test "$DEPLOY_HOST" = "$EXPECTED_DEPLOY_HOST"
             test "$EXPECTED_REPOSITORY" = "qianlan333/AI-CRM-ID-refactor"
+            printf '%s' "$EXPECTED_RELEASE_SHA" | grep -Eq '^[0-9a-f]{40}$'
             cd '/home/ubuntu/极简 crm'
             test "$(git rev-parse HEAD)" = "$EXPECTED_RELEASE_SHA"
             test "$(tr -d '\r\n' < .release-sha)" = "$EXPECTED_RELEASE_SHA"
+            test -z "$(git status --porcelain=v1 --untracked-files=all)"
+            actual_public_sha="$(
+              curl --retry 3 --retry-all-errors --connect-timeout 10 --max-time 30 -fsS \
+                -D - -o /dev/null "$PUBLIC_HEALTH_URL" |
+                awk 'tolower($1) == "x-aicrm-release-sha:" {print $2}' |
+                tr -d '\r'
+            )"
+            test "$actual_public_sha" = "$EXPECTED_RELEASE_SHA"
             set -a
             source /home/ubuntu/.openclaw-wecom-pg.env
             set +a
@@ -163,24 +174,36 @@ jobs:
                 runs = session.execute(
                     text(
                         """
+                        WITH refresh_events AS (
+                            SELECT id, event_id, idempotency_key
+                            FROM internal_event
+                            WHERE event_type = 'customer_read_model.refresh.requested'
+                            ORDER BY id DESC
+                            LIMIT 10
+                        )
                         SELECT event.idempotency_key, run.id, run.consumer_name,
                                run.status, run.attempt_count, run.max_attempts,
                                run.last_error_code, run.last_error_message,
                                run.policy_version, run.worker_generation,
                                run.hold_reason, run.available_at,
                                run.next_retry_at, run.updated_at
-                        FROM internal_event event
+                        FROM refresh_events event
                         JOIN internal_event_consumer_run run
                           ON run.event_id = event.event_id
-                        WHERE event.idempotency_key =
-                              'customer_read_model.refresh.requested:44'
-                        ORDER BY run.id
+                        ORDER BY event.id DESC, run.id
                         """
                     )
                 ).mappings().all()
                 attempts = session.execute(
                     text(
                         """
+                        WITH refresh_events AS (
+                            SELECT id, event_id, idempotency_key
+                            FROM internal_event
+                            WHERE event_type = 'customer_read_model.refresh.requested'
+                            ORDER BY id DESC
+                            LIMIT 10
+                        )
                         SELECT attempt.consumer_run_id, attempt.attempt_id,
                                attempt.status, attempt.error_code,
                                attempt.error_message, attempt.started_at,
@@ -188,11 +211,9 @@ jobs:
                         FROM internal_event_consumer_attempt attempt
                         JOIN internal_event_consumer_run run
                           ON run.id = attempt.consumer_run_id
-                        JOIN internal_event event
+                        JOIN refresh_events event
                           ON event.event_id = run.event_id
-                        WHERE event.idempotency_key =
-                              'customer_read_model.refresh.requested:44'
-                        ORDER BY attempt.id
+                        ORDER BY event.id DESC, attempt.id
                         """
                     )
                 ).mappings().all()
@@ -204,9 +225,9 @@ jobs:
                                policy_version, worker_generation, hold_reason,
                                available_at, next_retry_at, updated_at
                         FROM internal_event_outbox
-                        WHERE idempotency_key =
-                              'customer_read_model.refresh.requested:44'
-                        ORDER BY id
+                        WHERE event_type = 'customer_read_model.refresh.requested'
+                        ORDER BY id DESC
+                        LIMIT 10
                         """
                     )
                 ).mappings().all()
@@ -217,15 +238,10 @@ jobs:
                 "outbox": safe_rows(outbox),
             }, ensure_ascii=False, default=str, sort_keys=True))
             PY
-            sudo journalctl -u aicrm-internal-queue-runtime.service \
-              --since '2026-07-18 18:37:45 UTC' \
-              --until '2026-07-18 18:41:00 UTC' \
-              --no-pager -o short-iso | tail -n 400
-
   operate:
     if: >-
       github.repository == 'qianlan333/AI-CRM-ID-refactor' &&
-      !startsWith(inputs.run_id, 'diagnose-refresh-')
+      inputs.operation != 'diagnose_customer_refresh'
     environment: id-validation
     runs-on: ubuntu-latest
     env:
