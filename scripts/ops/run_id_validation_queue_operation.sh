@@ -22,6 +22,7 @@ readonly queue_execution_id="${QUEUE_EXECUTION_ID:-}"
 readonly queue_job_id="${QUEUE_JOB_ID:-0}"
 readonly queue_expected_version="${QUEUE_EXPECTED_VERSION:-0}"
 readonly queue_evidence_type="${QUEUE_EVIDENCE_TYPE:-}"
+readonly queue_canary_scenarios="${QUEUE_CANARY_SCENARIOS:-private,group,contact_detail,media,profile}"
 
 fail() {
   echo "$1" >&2
@@ -63,7 +64,8 @@ if ! printf '%s' "$queue_job_id" | grep -Eq '^[0-9]+$' || \
 fi
 case "$queue_operation" in
   activate_test_loopback|verify_owner_state|run_test_loopback|configure_allowlisted|\
-  transition_allowlisted|run_wecom_canary|authorize_execution|attest_execution|fault_listener|\
+  import_canary_channel|ingest_canary_callback|transition_allowlisted|run_wecom_canary|\
+  authorize_execution|attest_execution|fault_listener|\
   fault_worker|fault_database|rollback_test_loopback|soak_start|soak_status|\
   soak_complete|soak_invalidate)
     ;;
@@ -77,6 +79,9 @@ if [ -z "$queue_run_id" ]; then
 fi
 if ! printf '%s' "$queue_run_id" | grep -Eq '^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$'; then
   fail "queue run id is invalid"
+fi
+if ! printf '%s' "$queue_canary_scenarios" | grep -Eq '^[a-z_]+(,[a-z_]+)*$'; then
+  fail "canary scenarios are invalid"
 fi
 if [ -z "$queue_target_policy_version" ]; then
   case "$queue_operation" in
@@ -167,20 +172,33 @@ source /home/ubuntu/venvs/openclaw/bin/activate
 readonly actor="github:${operator_actor}"
 readonly reason="ID validation ${queue_operation} via GitHub Actions ${operation_run_id}/${operation_run_attempt}"
 spec_file=""
+asset_file=""
+event_file=""
 cleanup() {
   if [ -n "$spec_file" ]; then
     rm -f -- "$spec_file"
+  fi
+  if [ -n "$asset_file" ]; then
+    rm -f -- "$asset_file"
+  fi
+  if [ -n "$event_file" ]; then
+    rm -f -- "$event_file"
   fi
   rm -f /tmp/aicrm-queue-operation-health.headers
 }
 trap cleanup EXIT
 
-require_canary_spec() {
-  if [ -z "${WECOM_CANARY_SPEC_B64:-}" ]; then
-    fail "ID_VALIDATION_WECOM_CANARY_SPEC_B64 is not configured"
+decode_private_json() {
+  local private_value="$1"
+  local private_error="$2"
+  local private_prefix="$3"
+  local private_output_variable="$4"
+  local private_file=""
+  if [ -z "$private_value" ]; then
+    fail "$private_error"
   fi
-  spec_file="$(mktemp /tmp/aicrm-wecom-canary.XXXXXX.json)"
-  WECOM_CANARY_SPEC_B64="$WECOM_CANARY_SPEC_B64" python3 - "$spec_file" <<'PY'
+  private_file="$(mktemp "/tmp/${private_prefix}.XXXXXX.json")"
+  PRIVATE_JSON_B64="$private_value" python3 - "$private_file" <<'PY'
 import base64
 import binascii
 import os
@@ -188,15 +206,42 @@ import sys
 from pathlib import Path
 
 try:
-    decoded = base64.b64decode(os.environ["WECOM_CANARY_SPEC_B64"], validate=True)
+    decoded = base64.b64decode(os.environ["PRIVATE_JSON_B64"], validate=True)
 except (KeyError, binascii.Error) as exc:
-    raise SystemExit("canary spec secret is not strict base64") from exc
-if not decoded or len(decoded) > 65536:
-    raise SystemExit("canary spec secret has an invalid size")
+    raise SystemExit("private operation secret is not strict base64") from exc
+if not decoded or len(decoded) > 131072:
+    raise SystemExit("private operation secret has an invalid size")
 Path(sys.argv[1]).write_bytes(decoded)
 PY
+  chmod 0600 "$private_file"
+  printf -v "$private_output_variable" '%s' "$private_file"
+}
+
+require_canary_spec() {
+  decode_private_json \
+    "${WECOM_CANARY_SPEC_B64:-}" \
+    "ID_VALIDATION_WECOM_CANARY_SPEC_B64 is not configured" \
+    "aicrm-wecom-canary" \
+    spec_file
   unset WECOM_CANARY_SPEC_B64
-  chmod 0600 "$spec_file"
+}
+
+require_channel_asset() {
+  decode_private_json \
+    "${WECOM_CHANNEL_ASSET_B64:-}" \
+    "ID_VALIDATION_WECOM_CHANNEL_ASSET_B64 is not configured" \
+    "aicrm-wecom-channel-asset" \
+    asset_file
+  unset WECOM_CHANNEL_ASSET_B64
+}
+
+require_callback_event() {
+  decode_private_json \
+    "${WECOM_CALLBACK_EVENT_B64:-}" \
+    "ID_VALIDATION_WECOM_CALLBACK_EVENT_B64 is not configured" \
+    "aicrm-wecom-callback-event" \
+    event_file
+  unset WECOM_CALLBACK_EVENT_B64
 }
 
 common_identity=(
@@ -258,6 +303,28 @@ case "$queue_operation" in
       --apply \
       --confirmation "CONFIGURE_WECOM_CANARY_${queue_generation}_ENABLE"
     ;;
+  import_canary_channel)
+    require_canary_spec
+    require_channel_asset
+    AICRM_WECOM_CANARY_CHANNEL_IMPORT_AUTHORIZED=1 python3 scripts/ops/import_wecom_canary_channel_asset.py \
+      --asset-file "$asset_file" \
+      --spec-file "$spec_file" \
+      "${common_identity[@]}" \
+      --apply \
+      --confirmation "IMPORT_WECOM_CANARY_CHANNEL_${queue_generation}"
+    ;;
+  ingest_canary_callback)
+    require_canary_spec
+    require_channel_asset
+    require_callback_event
+    AICRM_WECOM_CANARY_CALLBACK_INGEST_AUTHORIZED=1 python3 scripts/ops/ingest_wecom_canary_callback.py \
+      --event-file "$event_file" \
+      --asset-file "$asset_file" \
+      --spec-file "$spec_file" \
+      "${common_identity[@]}" \
+      --apply \
+      --confirmation "INGEST_WECOM_CANARY_CALLBACK_${queue_generation}"
+    ;;
   transition_allowlisted)
     test -n "$queue_target_policy_version" || fail "target policy version is required"
     AICRM_QUEUE_SCOPE_TRANSITION_AUTHORIZED=1 python3 scripts/ops/transition_queue_runtime_scope.py \
@@ -273,9 +340,19 @@ case "$queue_operation" in
     ;;
   run_wecom_canary)
     require_canary_spec
+    canary_scenario_args=()
+    IFS=',' read -r -a selected_canary_scenarios <<< "$queue_canary_scenarios"
+    for scenario in "${selected_canary_scenarios[@]}"; do
+      case "$scenario" in
+        private|group|contact_detail|media|profile) ;;
+        *) fail "unsupported direct canary scenario" ;;
+      esac
+      canary_scenario_args+=(--scenario "$scenario")
+    done
     AICRM_WECOM_CANARY_PLAN_AUTHORIZED=1 python3 scripts/ops/plan_wecom_canary.py \
       --spec-file "$spec_file" \
       --run-id "$queue_run_id" \
+      "${canary_scenario_args[@]}" \
       "${common_identity[@]}" \
       --apply \
       --confirmation "PLAN_WECOM_CANARY_${queue_run_id^^}_${queue_generation}"

@@ -34,6 +34,7 @@ from aicrm_next.platform_foundation.external_effects.models import (  # noqa: E4
     WECOM_MEDIA_UPLOAD,
     WECOM_MESSAGE_GROUP_SEND,
     WECOM_MESSAGE_PRIVATE_SEND,
+    WECOM_PROFILE_UPDATE,
 )
 from aicrm_next.platform_foundation.external_effects.repo import (  # noqa: E402
     SQLAlchemyExternalEffectRepository,
@@ -54,7 +55,7 @@ from scripts.ops.configure_wecom_canary import load_canary_spec  # noqa: E402
 AUTHORIZATION_ENV = "AICRM_WECOM_CANARY_PLAN_AUTHORIZED"
 FULL_SHA = re.compile(r"[0-9a-f]{40}\Z")
 RUN_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,63}\Z")
-SCENARIOS = ("private", "group", "contact_detail", "media")
+SCENARIOS = ("private", "group", "contact_detail", "media", "profile")
 
 
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -251,6 +252,42 @@ def _scenario_requests(
                 "ordering_key": f"media:{target}",
                 "fairness_key": "id_validation_canary",
                 "rate_scope_key": "wecom:id_validation:media",
+            }
+        )
+    if "profile" in scenarios:
+        remark = f"ID验证-{run_id[:12]}"
+        payload = {
+            "external_userid": external_userid,
+            "follow_user_userid": owner_userid,
+            "remark": remark,
+        }
+        error = wecom_canary_gate_error(
+            payload={**payload, "execution_scope": WECOM_ALLOWLISTED_CANARY_SCOPE},
+            external_userids=[external_userid],
+            owner_userids=[owner_userid],
+        )
+        if error:
+            raise RuntimeError(f"profile canary gate failed: {error}")
+        requests.append(
+            {
+                **common,
+                "scenario": "profile",
+                "effect_type": WECOM_PROFILE_UPDATE,
+                "adapter_name": "wecom_profile_update",
+                "operation": "update_external_contact_remark",
+                "target_type": "external_user",
+                "target_id": external_userid,
+                "payload": payload,
+                "payload_summary": {
+                    "external_userid_present": True,
+                    "owner_userid_present": True,
+                    "remark_present": True,
+                    "disposable_relationship_only": True,
+                },
+                "lane": "wecom_interactive",
+                "ordering_key": f"external_user:{external_userid}",
+                "fairness_key": "id_validation_canary",
+                "rate_scope_key": "wecom:id_validation:profile",
             }
         )
     return requests
