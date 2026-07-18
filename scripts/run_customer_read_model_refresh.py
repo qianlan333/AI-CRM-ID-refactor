@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 import time
 from datetime import datetime, timezone
@@ -69,6 +70,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--max-customers", type=int, default=None, help="Deprecated; retained for CLI compatibility and ignored.")
     parser.add_argument("--source-key", default="")
     parser.add_argument(
+        "--release-refresh",
+        action="store_true",
+        default=False,
+        help="Allow a verified deploy to supersede one blocked local projection intent.",
+    )
+    parser.add_argument(
         "--wait-seconds",
         type=int,
         default=0,
@@ -80,9 +87,30 @@ def main(argv: list[str] | None = None) -> int:
     try:
         now = datetime.now(timezone.utc)
         bucket = now.strftime("%Y-%m-%dT%H:%M")
-        result = CustomerReadModelRefreshIntentService().request_refresh(
-            source_event_key=str(args.source_key or f"compatibility_clock:{bucket}").strip(),
-            source_event_type="customer_read_model.compatibility_clock",
+        source_event_key = str(args.source_key or f"compatibility_clock:{bucket}").strip()
+        repository = CustomerReadModelRefreshIntentRepository()
+        recover_blocked = False
+        expected_row_version: int | None = None
+        source_event_type = "customer_read_model.compatibility_clock"
+        if args.release_refresh:
+            if not args.execute:
+                raise RuntimeError("customer_read_model_release_refresh_execute_required")
+            if os.getenv("AICRM_CUSTOMER_READ_MODEL_RELEASE_REFRESH_AUTHORIZED", "").strip() != "1":
+                raise RuntimeError("customer_read_model_release_refresh_not_authorized")
+            if not source_event_key.startswith("deploy_runtime:"):
+                raise RuntimeError("customer_read_model_release_refresh_source_key_required")
+            current = dict(repository.get() or {})
+            if str(current.get("status") or "").strip() == "blocked":
+                expected_row_version = int(current.get("row_version") or 0)
+                if expected_row_version <= 0:
+                    raise RuntimeError("customer_read_model_release_refresh_row_version_missing")
+                recover_blocked = True
+            source_event_type = "customer_read_model.release_refresh"
+        result = CustomerReadModelRefreshIntentService(repository=repository).request_refresh(
+            source_event_key=source_event_key,
+            source_event_type=source_event_type,
+            recover_blocked=recover_blocked,
+            expected_row_version=expected_row_version,
         )
         wait_result: dict[str, Any] | None = None
         if args.wait_seconds:
@@ -90,7 +118,7 @@ def main(argv: list[str] | None = None) -> int:
             if target_generation <= 0:
                 raise RuntimeError("customer_read_model_refresh_generation_missing")
             wait_result = wait_for_refresh_completion(
-                CustomerReadModelRefreshIntentRepository(),
+                repository,
                 target_generation=target_generation,
                 timeout_seconds=args.wait_seconds,
             )
@@ -114,7 +142,12 @@ def main(argv: list[str] | None = None) -> int:
         )
         print_json({"ok": False, "error": type(exc).__name__, "reason": reason})
         return 1
-    payload = {"accepted": bool(result.get("ok")), **result, "inline_refresh_executed": False}
+    payload = {
+        "accepted": bool(result.get("ok")),
+        **result,
+        "release_refresh": bool(args.release_refresh),
+        "inline_refresh_executed": False,
+    }
     if wait_result is not None:
         payload["wait"] = wait_result
     print_json(payload)

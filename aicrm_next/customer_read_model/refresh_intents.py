@@ -92,6 +92,8 @@ class CustomerReadModelRefreshIntentRepository:
         source_event_type: str,
         execution_id: str = "",
         parent_execution_id: str = "",
+        recover_blocked: bool = False,
+        expected_row_version: int | None = None,
     ) -> dict[str, Any]:
         with self._session_factory() as session:
             result = self.mark_dirty_in_session(
@@ -100,6 +102,8 @@ class CustomerReadModelRefreshIntentRepository:
                 source_event_type=source_event_type,
                 execution_id=execution_id,
                 parent_execution_id=parent_execution_id,
+                recover_blocked=recover_blocked,
+                expected_row_version=expected_row_version,
             )
             session.commit()
             return result
@@ -112,6 +116,8 @@ class CustomerReadModelRefreshIntentRepository:
         source_event_type: str,
         execution_id: str = "",
         parent_execution_id: str = "",
+        recover_blocked: bool = False,
+        expected_row_version: int | None = None,
     ) -> dict[str, Any]:
         event_key = _opaque(source_event_key)
         if not event_key:
@@ -161,6 +167,12 @@ class CustomerReadModelRefreshIntentRepository:
             text("SELECT * FROM customer_read_model_refresh_intent WHERE singleton_id = 1 FOR UPDATE")
         ).mappings().one()
         status = _text(current.get("status"))
+        blocked_recovery = status == "blocked" and bool(recover_blocked)
+        if blocked_recovery and (
+            expected_row_version is None
+            or int(expected_row_version) != int(current.get("row_version") or 0)
+        ):
+            raise RuntimeError("customer_read_model_refresh_recovery_version_mismatch")
         declared_owner = status in {"waiting", "running", "retry_wait"} and int(
             current.get("signal_generation") or 0
         ) > int(current.get("completed_generation") or 0)
@@ -179,7 +191,7 @@ class CustomerReadModelRefreshIntentRepository:
         )
         generation = int(current.get("dirty_generation") or 0) + 1
         root_execution_id = _text(execution_id) or _new_execution_id("refresh")
-        should_signal = not has_owner and status != "blocked"
+        should_signal = not has_owner and (status != "blocked" or blocked_recovery)
         updated = session.execute(
             text(
                 """
@@ -249,6 +261,7 @@ class CustomerReadModelRefreshIntentRepository:
             "generation": generation,
             "signal_created": bool(signal),
             "missing_owner_recovered": missing_owner_recovered,
+            "blocked_recovered": blocked_recovery,
             "superseded_owner": superseded_owner,
             "execution_id": root_execution_id,
             "parent_execution_id": _text(parent_execution_id),
@@ -712,12 +725,16 @@ class CustomerReadModelRefreshIntentService:
         source_event_type: str,
         execution_id: str = "",
         parent_execution_id: str = "",
+        recover_blocked: bool = False,
+        expected_row_version: int | None = None,
     ) -> dict[str, Any]:
         return self._repo.mark_dirty(
             source_event_key=source_event_key,
             source_event_type=source_event_type,
             execution_id=execution_id,
             parent_execution_id=parent_execution_id,
+            recover_blocked=recover_blocked,
+            expected_row_version=expected_row_version,
         )
 
     def process_requested(

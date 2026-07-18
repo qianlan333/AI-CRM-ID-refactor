@@ -215,8 +215,23 @@ def test_reconciliation_uses_one_set_query_for_all_unionids() -> None:
         "radar_click_events",
     ):
         assert source_table in sql
+    assert sql.count(":external_userids") == 1
+    assert "unnest(CAST(:external_userids AS TEXT[]))" in sql
+    assert sql.count("IN (SELECT unionid FROM requested_unionids)") == 6
     assert params["external_userids"] == ["union-1", "union-2"]
     assert params["per_customer_limit"] == 20
+
+
+def test_reconciliation_large_postgres_scope_stays_below_driver_parameter_limit(next_pg_schema) -> None:
+    unionids = [f"union-parameter-limit-{index}" for index in range(24_000)]
+
+    with get_session_factory()() as session:
+        result = LiveSourceCustomerReadRepository(session).snapshot_customer_activity_by_unionid(
+            unionids,
+            per_customer_limit=20,
+        )
+
+    assert result == {}
 
 
 def test_timeline_migration_only_deduplicates_identical_event_ids_and_adds_indexes() -> None:

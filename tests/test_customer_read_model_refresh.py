@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import json
 from datetime import timedelta
 
 from aicrm_next.customer_read_model.refresh_intents import CUSTOMER_SOURCE_EVENTS
 from aicrm_next.customer_read_model.repo import _coerce_datetime
 from aicrm_next.customer_read_model.refresh import CustomerReadModelRefreshService
+from scripts import run_customer_read_model_refresh as refresh_cli
 from scripts.run_customer_read_model_refresh import wait_for_refresh_completion
 
 
@@ -229,3 +231,65 @@ def test_deploy_wait_fails_closed_for_blocked_refresh() -> None:
 
     assert result["ok"] is False
     assert result["reason"] == "customer_read_model_refresh_blocked"
+
+
+def test_release_refresh_explicitly_recovers_blocked_intent_with_current_version(
+    monkeypatch,
+    capsys,
+) -> None:
+    calls: list[dict] = []
+
+    class Repository:
+        def get(self):
+            return {"status": "blocked", "row_version": 17}
+
+    class Service:
+        def __init__(self, repository):
+            assert isinstance(repository, Repository)
+
+        def request_refresh(self, **kwargs):
+            calls.append(dict(kwargs))
+            return {"ok": True, "generation": 18, "signal_created": True, "blocked_recovered": True}
+
+    monkeypatch.setattr(refresh_cli, "CustomerReadModelRefreshIntentRepository", Repository)
+    monkeypatch.setattr(refresh_cli, "CustomerReadModelRefreshIntentService", Service)
+    monkeypatch.setenv("AICRM_CUSTOMER_READ_MODEL_RELEASE_REFRESH_AUTHORIZED", "1")
+
+    exit_code = refresh_cli.main(
+        [
+            "--execute",
+            "--release-refresh",
+            "--source-key",
+            "deploy_runtime:123:1",
+        ]
+    )
+
+    payload = json.loads(capsys.readouterr().out)
+    assert exit_code == 0
+    assert payload["release_refresh"] is True
+    assert payload["blocked_recovered"] is True
+    assert calls == [
+        {
+            "source_event_key": "deploy_runtime:123:1",
+            "source_event_type": "customer_read_model.release_refresh",
+            "recover_blocked": True,
+            "expected_row_version": 17,
+        }
+    ]
+
+
+def test_release_refresh_fails_closed_without_deploy_authorization(monkeypatch, capsys) -> None:
+    monkeypatch.delenv("AICRM_CUSTOMER_READ_MODEL_RELEASE_REFRESH_AUTHORIZED", raising=False)
+
+    exit_code = refresh_cli.main(
+        [
+            "--execute",
+            "--release-refresh",
+            "--source-key",
+            "deploy_runtime:123:1",
+        ]
+    )
+
+    payload = json.loads(capsys.readouterr().out)
+    assert exit_code == 1
+    assert payload["reason"] == "customer_read_model_release_refresh_not_authorized"

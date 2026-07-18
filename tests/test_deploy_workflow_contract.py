@@ -1066,12 +1066,18 @@ def test_deploy_repairs_customer_projection_through_candidate_durable_runtime() 
     mutation_index = workflow.index("runtime_mutation_started=1", identity_preflight_index)
     begin_index = workflow.index("--phase begin-transaction --execute", mutation_index)
     install_index = workflow.index(_runtime_units_phase("install-enable-after-web-health"), begin_index)
+    refresh_auth_index = workflow.index(
+        "AICRM_CUSTOMER_READ_MODEL_RELEASE_REFRESH_AUTHORIZED=1",
+        install_index,
+    )
     refresh_intent_index = workflow.index("python3 scripts/run_customer_read_model_refresh.py", install_index)
     strict_smoke_index = workflow.index("python scripts/ops/check_admin_read_pages_smoke.py", refresh_intent_index)
-    refresh_block = workflow[refresh_intent_index:strict_smoke_index]
+    refresh_block = workflow[refresh_auth_index:strict_smoke_index]
 
     assert identity_preflight_index < mutation_index < begin_index < install_index
-    assert install_index < refresh_intent_index < strict_smoke_index
+    assert install_index < refresh_auth_index < refresh_intent_index < strict_smoke_index
+    assert "AICRM_CUSTOMER_READ_MODEL_RELEASE_REFRESH_AUTHORIZED=1" in refresh_block
+    assert "--release-refresh" in refresh_block
     assert '--source-key "deploy_runtime:${release_run_id}:${release_run_attempt}"' in refresh_block
     assert "--wait-seconds 180" in refresh_block
     assert "CustomerReadModelRefreshService().run" not in refresh_block

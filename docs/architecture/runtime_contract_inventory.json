@@ -333,6 +333,12 @@
     },
     {
       "accessor": "os.getenv",
+      "file": "scripts/run_customer_read_model_refresh.py",
+      "key": "AICRM_CUSTOMER_READ_MODEL_RELEASE_REFRESH_AUTHORIZED",
+      "line": 98
+    },
+    {
+      "accessor": "os.getenv",
       "file": "aicrm_next/data_health/checks.py",
       "key": "AICRM_DATA_HEALTH_BROADCAST_BLOCKED_MAX_COUNT",
       "line": 28
@@ -2166,6 +2172,7 @@
     "AICRM_AUTH_SESSION_HASH_PEPPER",
     "AICRM_COMPLETION_URL_LINK_API_PATH_PREFIXES",
     "AICRM_COMPLETION_URL_LINK_TIMEOUT_SECONDS",
+    "AICRM_CUSTOMER_READ_MODEL_RELEASE_REFRESH_AUTHORIZED",
     "AICRM_DATA_HEALTH_BROADCAST_BLOCKED_MAX_COUNT",
     "AICRM_DATA_HEALTH_BROADCAST_RETRYABLE_DUE_MAX_COUNT",
     "AICRM_DATA_HEALTH_BROADCAST_TERMINAL_LOOKBACK_HOURS",
