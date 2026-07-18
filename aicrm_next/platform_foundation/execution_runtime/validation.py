@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from datetime import datetime
 from types import SimpleNamespace
 from typing import Any, Mapping
@@ -24,6 +25,8 @@ CANARY_CONFIG_KEYS = (
     "AICRM_WECOM_CANARY_ALLOWED_MEDIA_TARGETS",
     "AICRM_WECOM_DEFAULT_SENDER_USERID",
     "AICRM_WECOM_ENABLED_EFFECT_TYPES",
+    "AICRM_WECOM_PRIVATE_ADAPTER_MODE",
+    "AICRM_WECOM_GROUP_ADAPTER_MODE",
     "AICRM_WECOM_EXECUTION_MODE",
     "AICRM_EXTERNAL_EFFECT_WECOM_EXECUTE",
     "AICRM_EXTERNAL_EFFECT_TEST_EXECUTION_ONLY",
@@ -32,9 +35,7 @@ CANARY_CONFIG_KEYS = (
     "AICRM_ENABLE_REAL_WECOM_GROUP_MESSAGE",
     "AICRM_EXTERNAL_EFFECT_MEDIA_UPLOAD_EXECUTE",
 )
-REQUIRED_FAULT_EVIDENCE = frozenset(
-    {"listener_reconnect", "worker_restart", "database_reconnect"}
-)
+REQUIRED_FAULT_EVIDENCE = frozenset({"listener_reconnect", "worker_restart", "database_reconnect"})
 REQUIRED_VALIDATION_EVIDENCE = frozenset(
     {
         "test_loopback",
@@ -59,6 +60,51 @@ TERMINAL_JOB_STATUSES = frozenset(
         "expired",
     }
 )
+SAFE_DIAGNOSTIC_CODE = re.compile(r"[A-Za-z0-9_.:-]{1,128}\Z")
+SAFE_ADAPTER_MODES = frozenset({"disabled", "execute", "fake", "fixture", "production", "simulated", "staging", "test_fake"})
+
+
+def _safe_diagnostic_code(value: Any) -> str:
+    normalized = str(value or "").strip()
+    if not normalized:
+        return ""
+    return normalized if SAFE_DIAGNOSTIC_CODE.fullmatch(normalized) else "redacted_noncanonical_code"
+
+
+def _provider_diagnostics(provider_attempts: list[Any]) -> dict[str, Any]:
+    if len(provider_attempts) != 1:
+        return {
+            "provider_adapter_mode": "",
+            "provider_attempt_status": "",
+            "provider_attempt_error_code": "",
+            "provider_error_classification": "",
+            "provider_errcode": 0,
+            "provider_http_status": 0,
+            "provider_execution_gate": "",
+            "provider_blocked": False,
+        }
+    attempt = provider_attempts[0]
+    response = dict(getattr(attempt, "response_summary_json", {}) or {})
+    adapter_mode = str(response.get("adapter_mode") or response.get("mode") or getattr(attempt, "adapter_mode", "") or "").strip().lower()
+    if adapter_mode not in SAFE_ADAPTER_MODES:
+        adapter_mode = "unknown" if adapter_mode else ""
+
+    def _safe_int(value: Any) -> int:
+        try:
+            return int(value or 0)
+        except (TypeError, ValueError):
+            return 0
+
+    return {
+        "provider_adapter_mode": adapter_mode,
+        "provider_attempt_status": _safe_diagnostic_code(getattr(attempt, "status", "")),
+        "provider_attempt_error_code": _safe_diagnostic_code(getattr(attempt, "error_code", "")),
+        "provider_error_classification": _safe_diagnostic_code(response.get("provider_error_classification")),
+        "provider_errcode": _safe_int(response.get("errcode")),
+        "provider_http_status": _safe_int(response.get("http_status")),
+        "provider_execution_gate": _safe_diagnostic_code(response.get("execution_gate")),
+        "provider_blocked": response.get("blocked") is True,
+    }
 
 
 def canary_configuration_values() -> dict[str, str]:
@@ -122,12 +168,8 @@ def test_loopback_receipt_evidence(repository: Any, job: Any) -> dict[str, Any]:
     return {
         "test_receipt_count": int(total),
         "test_receipt_signature_valid": bool(receipt and receipt.signature_valid is True),
-        "test_receipt_payload_hash_matches": bool(
-            receipt and expected_hash and receipt.payload_hash == expected_hash
-        ),
-        "test_receipt_response_2xx": bool(
-            receipt and 200 <= int(receipt.response_status or 0) < 300
-        ),
+        "test_receipt_payload_hash_matches": bool(receipt and expected_hash and receipt.payload_hash == expected_hash),
+        "test_receipt_response_2xx": bool(receipt and 200 <= int(receipt.response_status or 0) < 300),
     }
 
 
@@ -150,8 +192,7 @@ def record_external_effect_evidence(
     extra = dict(extra_evidence or {})
     is_loopback = normalized_type == "test_loopback"
     evidence_type_matches = bool(
-        (is_loopback and str(job.payload_json.get("execution_scope") or "") == "test_loopback")
-        or (mapped_type and normalized_type == mapped_type)
+        (is_loopback and str(job.payload_json.get("execution_scope") or "") == "test_loopback") or (mapped_type and normalized_type == mapped_type)
     )
     policy_matches = str(job.policy_version or "") == str(policy_version or "")
     policy_proof_valid = policy_matches
@@ -181,6 +222,7 @@ def record_external_effect_evidence(
     )
     evidence = {
         "job_status": str(job.status),
+        "job_error_code": _safe_diagnostic_code(getattr(job, "last_error_code", "")),
         "provider_boundary_started": bool(job.provider_call_started_at),
         "provider_result_received": bool(job.provider_result_received),
         "side_effect_executed": bool(job.side_effect_executed),
@@ -194,8 +236,10 @@ def record_external_effect_evidence(
         "provider_policy_gate_passed": not provider_policy_error,
         "test_receipt_proof_valid": receipt_proof_valid,
         "execution_scope": str(job.payload_json.get("execution_scope") or ""),
-        "target_values_redacted": True,
         **extra,
+        "target_values_redacted": True,
+        "error_messages_redacted": True,
+        **_provider_diagnostics(provider_attempts),
     }
     with open_runtime_connection(normalize_runtime_database_url(database_url)) as connection:
         connection.execute(
@@ -411,9 +455,7 @@ def collect_soak_metrics(
         **queue_metrics,
         "migration_revisions": migration_revisions,
         "fresh_listener_count": int((heartbeat or {}).get("fresh_listener_count") or 0),
-        "worker_release_mismatch_count": int(
-            (heartbeat or {}).get("worker_release_mismatch_count") or 0
-        ),
+        "worker_release_mismatch_count": int((heartbeat or {}).get("worker_release_mismatch_count") or 0),
         "lost_lease_count": lost_lease_count,
         "duplicate_provider_call_count": duplicate_provider_call_count,
         "unexpected_real_target_count": unexpected_real_target_count,

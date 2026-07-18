@@ -125,7 +125,32 @@ def test_disable_configuration_clears_every_real_target_and_provider_gate() -> N
     ):
         assert disabled[key] == ""
     assert disabled["AICRM_WECOM_EXECUTION_MODE"] == "disabled"
+    assert disabled["AICRM_WECOM_PRIVATE_ADAPTER_MODE"] == "disabled"
+    assert disabled["AICRM_WECOM_GROUP_ADAPTER_MODE"] == "disabled"
     assert disabled["AICRM_EXTERNAL_EFFECT_WECOM_EXECUTE"] == "false"
+
+
+def test_enable_configuration_selects_production_adapters_only_for_enabled_message_types() -> None:
+    spec = {field: tuple(_valid_spec()[field]) for field in configure_wecom_canary.LIST_FIELDS}
+    enabled = configure_wecom_canary._settings_for_enable(spec)
+
+    assert enabled["AICRM_WECOM_PRIVATE_ADAPTER_MODE"] == "production"
+    assert enabled["AICRM_WECOM_GROUP_ADAPTER_MODE"] == "production"
+    assert enabled["AICRM_ENABLE_REAL_WECOM_PRIVATE_MESSAGE"] == "true"
+    assert enabled["AICRM_ENABLE_REAL_WECOM_GROUP_MESSAGE"] == "true"
+
+    private_only = _valid_spec()
+    private_only["enabled_effect_types"] = ["wecom.message.private.send"]
+    private_only["group_chat_ids"] = []
+    private_only["group_webhook_keys"] = []
+    private_only["media_targets"] = []
+    private_spec = {field: tuple(private_only[field]) for field in configure_wecom_canary.LIST_FIELDS}
+    private = configure_wecom_canary._settings_for_enable(private_spec)
+
+    assert private["AICRM_WECOM_PRIVATE_ADAPTER_MODE"] == "production"
+    assert private["AICRM_WECOM_GROUP_ADAPTER_MODE"] == "disabled"
+    assert private["AICRM_ENABLE_REAL_WECOM_PRIVATE_MESSAGE"] == "true"
+    assert private["AICRM_ENABLE_REAL_WECOM_GROUP_MESSAGE"] == "false"
 
 
 class _Rows:
@@ -266,6 +291,10 @@ def test_enable_configuration_resumes_exact_test_loopback_claim_gate_after_commi
     output = json.loads(capsys.readouterr().out)
     assert output["claim_enabled"] is True
     assert output["external_claim_scope"] == "test_loopback"
+    assert output["provider_adapter_modes"] == {
+        "private": "production",
+        "group": "production",
+    }
 
 
 def test_disable_configuration_keeps_claim_gate_closed_for_scope_rollback(
@@ -300,3 +329,7 @@ def test_disable_configuration_keeps_claim_gate_closed_for_scope_rollback(
     output = json.loads(capsys.readouterr().out)
     assert output["claim_enabled"] is False
     assert output["external_claim_scope"] == "allowlisted"
+    assert output["provider_adapter_modes"] == {
+        "private": "disabled",
+        "group": "disabled",
+    }
