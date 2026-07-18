@@ -8,6 +8,7 @@ ROOT = Path(__file__).resolve().parents[1]
 CI_FAST_WORKFLOW = ROOT / ".github" / "workflows" / "ci-fast.yml"
 FULL_REGRESSION_WORKFLOW = ROOT / ".github" / "workflows" / "full-regression.yml"
 DURATION_BASELINE_REFRESH_WORKFLOW = ROOT / ".github" / "workflows" / "refresh-pytest-duration-baseline.yml"
+TEST_GOVERNANCE_OBSERVABILITY_WORKFLOW = ROOT / ".github" / "workflows" / "test-governance-observability.yml"
 DEPLOY_WORKFLOW = ROOT / ".github" / "workflows" / "deploy.yml"
 REMOTE_DEPLOY_SCRIPT = ROOT / "scripts" / "ops" / "deploy_id_validation_remote.sh"
 PROMOTE_PRODUCTION_WORKFLOW = ROOT / ".github" / "workflows" / "promote-production.yml"
@@ -35,7 +36,7 @@ def test_ci_fast_uses_selector_and_single_required_result() -> None:
     assert "python -m pytest tests/ -n auto" not in source
     assert "ci-fast-result:" in source
     assert "NEEDS_JSON: ${{ toJson(needs) }}" in source
-    assert "job[\"result\"] not in {\"success\", \"skipped\"}" in source
+    assert 'job["result"] not in {"success", "skipped"}' in source
     assert "needs.select.outputs.python_tests != ''" in source
     assert "needs.select.outputs.needs_postgres == 'true'" in source
     assert "needs.select.outputs.needs_postgres != 'true'" in source
@@ -63,19 +64,9 @@ def test_history_sensitive_governance_jobs_fetch_complete_commit_ancestry() -> N
     ci_fast = _source(CI_FAST_WORKFLOW)
     full_regression = _source(FULL_REGRESSION_WORKFLOW)
 
-    architecture_job = ci_fast[
-        ci_fast.index("  architecture-gates:") : ci_fast.index("  fast-python-no-pg:")
-    ]
-    governance_job = full_regression[
-        full_regression.index("  full-governance:") : full_regression.index(
-            "  performance-regression:"
-        )
-    ]
-    python_shard_job = full_regression[
-        full_regression.index("  full-python-shard:") : full_regression.index(
-            "  full-frontend:"
-        )
-    ]
+    architecture_job = ci_fast[ci_fast.index("  architecture-gates:") : ci_fast.index("  fast-python-no-pg:")]
+    governance_job = full_regression[full_regression.index("  full-governance:") : full_regression.index("  performance-regression:")]
+    python_shard_job = full_regression[full_regression.index("  full-python-shard:") : full_regression.index("  full-frontend:")]
 
     assert "fetch-depth: 0" in architecture_job
     assert "fetch-depth: 0" in governance_job
@@ -146,8 +137,37 @@ def test_duration_baseline_refresh_is_isolated_to_trusted_successful_main_runs()
     assert "run-id: ${{ github.event.workflow_run.id }}" in source
     assert "python scripts/ci/build_pytest_duration_baseline.py" in source
     assert 'branch="automation/pytest-duration-baseline"' in source
+    assert "name: Publish baseline branch" in source
     assert "gh pr create" in source
     assert "--draft" in source
+    assert "id: baseline_pr" in source
+    assert "continue-on-error: true" in source
+    assert "Report manual pull request fallback" in source
+    assert "compare/main...${branch}?expand=1" in source
+
+
+def test_governance_observability_is_read_only_and_aggregates_retained_evidence() -> None:
+    source = _source(TEST_GOVERNANCE_OBSERVABILITY_WORKFLOW)
+    trigger = source[source.index("on:") : source.index("permissions:")]
+    permissions = source[source.index("permissions:") : source.index("jobs:")]
+
+    assert "name: Test Governance Observability" in source
+    assert "workflow_dispatch:" in trigger
+    assert "schedule:" in trigger
+    assert "pull_request:" not in trigger
+    assert "push:" not in trigger
+    assert "actions: read" in permissions
+    assert "contents: read" in permissions
+    assert "write" not in permissions
+    assert "actions/workflows/ci-fast.yml/runs" in source
+    assert "--paginate --slurp" in source
+    assert "21 days ago" in source
+    assert "group_by(.head_branch)" in source
+    assert "xargs -r -n 1 -P 8" in source
+    assert "gh run download" in source
+    assert "scripts/ci/summarize_test_scope_shadow.py" in source
+    assert "scripts/ci/audit_test_inventory.py" in source
+    assert "test-governance-observability" in source
 
 
 def test_full_regression_runs_governance_once_and_ci_fast_does_not_duplicate_it() -> None:
@@ -204,7 +224,7 @@ def test_id_validation_deploy_waits_for_successful_ci_fast_on_main() -> None:
     )
     assert session_issue_index < admin_smoke_index < session_revoke_index
     assert '--admin-cookie-file "$deploy_smoke_session_file"' in source
-    assert 'admin_smoke_sidebar_args=(--include-all-sidebar --require-all-data-health-green)' in source
+    assert "admin_smoke_sidebar_args=(--include-all-sidebar --require-all-data-health-green)" in source
     assert "tee /tmp/aicrm-admin-read-pages-smoke.json" in source
 
 
@@ -230,7 +250,7 @@ def test_id_validation_deploy_has_no_manual_or_production_promotion_path() -> No
 def test_architecture_gate_script_has_fast_db_and_full_modes() -> None:
     script = _source(ROOT / "scripts" / "ci" / "run_architecture_gates.sh")
 
-    assert "MODE=\"full\"" in script
+    assert 'MODE="full"' in script
     assert "run_fast()" in script
     assert "run_db()" in script
     assert "run_full_only()" in script
@@ -250,10 +270,10 @@ def test_architecture_gate_script_has_fast_db_and_full_modes() -> None:
 def test_frontend_scripts_are_split_for_scoped_ci() -> None:
     package_json = _source(ROOT / "package.json")
 
-    assert "\"test:frontend\": \"npm run test:frontend:all\"" in package_json
-    assert "\"test:frontend:push-center\"" in package_json
-    assert "\"test:frontend:group-ops\"" in package_json
-    assert "\"test:frontend:ops-plan\"" in package_json
-    assert "\"test:frontend:wecom\"" in package_json
-    assert "\"test:frontend:preview\"" in package_json
-    assert "\"test:frontend:business-pages\"" in package_json
+    assert '"test:frontend": "npm run test:frontend:all"' in package_json
+    assert '"test:frontend:push-center"' in package_json
+    assert '"test:frontend:group-ops"' in package_json
+    assert '"test:frontend:ops-plan"' in package_json
+    assert '"test:frontend:wecom"' in package_json
+    assert '"test:frontend:preview"' in package_json
+    assert '"test:frontend:business-pages"' in package_json

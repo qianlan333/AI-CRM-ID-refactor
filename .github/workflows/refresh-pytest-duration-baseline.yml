@@ -66,10 +66,10 @@ jobs:
             echo "changed=true" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Open or update baseline draft pull request
+      - name: Publish baseline branch
         if: steps.baseline.outputs.changed == 'true'
+        id: baseline_branch
         env:
-          GH_TOKEN: ${{ github.token }}
           SOURCE_RUN_ID: ${{ github.event.workflow_run.id }}
         run: |
           branch="automation/pytest-duration-baseline"
@@ -80,6 +80,19 @@ jobs:
           git add docs/ci/pytest_duration_baseline.json
           git commit -m "ci: refresh pytest duration baseline from run ${SOURCE_RUN_ID}"
           git push --force-with-lease origin "HEAD:refs/heads/${branch}"
+          echo "branch=$branch" >> "$GITHUB_OUTPUT"
+          echo "compare_url=https://github.com/${GITHUB_REPOSITORY}/compare/main...${branch}?expand=1" >> "$GITHUB_OUTPUT"
+
+      - name: Open or update baseline draft pull request
+        if: steps.baseline.outputs.changed == 'true'
+        id: baseline_pr
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_RUN_ID: ${{ github.event.workflow_run.id }}
+          BASELINE_BRANCH: ${{ steps.baseline_branch.outputs.branch }}
+        run: |
+          branch="$BASELINE_BRANCH"
           existing_pr="$(gh pr list --base main --head "$branch" --state open --json url --jq '.[0].url // ""')"
           if [ -z "$existing_pr" ]; then
             existing_pr="$(gh pr create \
@@ -89,4 +102,19 @@ jobs:
               --title "ci: 自动刷新 pytest 耗时基线" \
               --body "由成功的 Full Regression #${SOURCE_RUN_ID} 自动生成。仅更新测试分片耗时数据，不自动合并。")"
           fi
+          echo "pr_url=$existing_pr" >> "$GITHUB_OUTPUT"
           echo "Duration baseline draft PR: $existing_pr" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Report manual pull request fallback
+        if: steps.baseline.outputs.changed == 'true' && steps.baseline_pr.outcome == 'failure'
+        env:
+          COMPARE_URL: ${{ steps.baseline_branch.outputs.compare_url }}
+        run: |
+          echo "::warning::GitHub Actions could not create the baseline pull request; the refreshed branch is available for a manual draft PR."
+          {
+            echo "## Pytest duration baseline publication"
+            echo
+            echo "The refreshed branch was pushed successfully, but the repository token could not create a pull request."
+            echo
+            echo "[Open the draft pull request manually]($COMPARE_URL)"
+          } >> "$GITHUB_STEP_SUMMARY"
