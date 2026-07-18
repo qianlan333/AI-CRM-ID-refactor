@@ -2138,15 +2138,29 @@ def test_deploy_runs_runtime_environment_as_repository_module():
     assert '--target-environment "$runtime_target_environment"' in workflow
     assert '--target-environment "$deploy_target"' not in workflow
     persistence_index = workflow.index("python3 -m scripts.ops.ensure_runtime_environment")
+    deprecated_key_source_index = workflow.index(
+        "from scripts.ops.ensure_runtime_environment import DEPRECATED_RUNTIME_ENV_KEYS",
+        persistence_index,
+    )
+    deprecated_key_unset_index = workflow.index(
+        'unset "$deprecated_runtime_env_key"',
+        deprecated_key_source_index,
+    )
+    environment_reload_index = workflow.index(
+        "source /home/ubuntu/.openclaw-wecom-pg.env",
+        deprecated_key_unset_index,
+    )
     wecom_preflight_index = workflow.index(
         "WeCom execution config remains conflicting after deprecated environment cleanup",
-        persistence_index,
+        environment_reload_index,
     )
     runtime_mutation_index = workflow.index("runtime_mutation_started=1", wecom_preflight_index)
     runtime_start_index = workflow.index("sudo systemctl start openclaw-wecom-postgres.service", persistence_index)
     flag_index = workflow.index("runtime_environment_args+=(--allow-missing-wechat-shop-callback-token)")
 
-    assert flag_index < persistence_index < wecom_preflight_index < runtime_mutation_index
+    assert flag_index < persistence_index < deprecated_key_source_index
+    assert deprecated_key_source_index < deprecated_key_unset_index < environment_reload_index
+    assert environment_reload_index < wecom_preflight_index < runtime_mutation_index
     assert wecom_preflight_index < runtime_start_index
     assert '"${runtime_environment_args[@]}"' in workflow[persistence_index:runtime_start_index]
 
